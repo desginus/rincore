@@ -285,6 +285,8 @@ dependencies {
     implementation(project(":workspace"))
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
     implementation(kotlin("reflect"))
+    // cron-utils: 定时任务调度（schedule_job 等工具的 cron 解析依赖）
+    implementation("com.cronutils:cron-utils:9.2.1")
 
     // Leak Canary
     // debugImplementation(libs.leakcanary.android)

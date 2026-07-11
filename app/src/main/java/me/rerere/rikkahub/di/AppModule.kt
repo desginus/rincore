@@ -5,9 +5,14 @@ import kotlinx.serialization.json.Json
 import me.rerere.highlight.Highlighter
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
+import me.rerere.rikkahub.data.agentrun.AgentRunRepository
 import me.rerere.rikkahub.data.event.AppEventBus
+import me.rerere.rikkahub.data.repository.ScheduledJobRepository
+import me.rerere.rikkahub.data.repository.ScheduledJobRunRepository
 import me.rerere.rikkahub.service.ChatNotificationManager
 import me.rerere.rikkahub.service.ChatService
+import me.rerere.rikkahub.service.CronJobScheduler
+import me.rerere.rikkahub.service.DirectModeActionRunner
 import me.rerere.rikkahub.utils.EmojiData
 import me.rerere.rikkahub.utils.EmojiUtils
 import me.rerere.rikkahub.utils.JsonInstant
@@ -30,11 +35,31 @@ val appModule = module {
     }
 
     single {
-        LocalTools(get(), get(), get(), get())
+        LocalTools(get(), get(), get(), get(), get(), get(), get())
     }
 
     single {
         UpdateChecker(get())
+    }
+
+    single {
+        ScheduledJobRepository(get<me.rerere.rikkahub.data.db.AppDatabase>().scheduledJobDao())
+    }
+
+    single {
+        ScheduledJobRunRepository(get<me.rerere.rikkahub.data.db.AppDatabase>().scheduledJobRunDao())
+    }
+
+    single {
+        DirectModeActionRunner(get())
+    }
+
+    single {
+        CronJobScheduler(get(), get())
+    }
+
+    single {
+        AgentRunRepository(get<me.rerere.rikkahub.data.db.AppDatabase>().agentRunDao())
     }
 
     single {
