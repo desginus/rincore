@@ -71,6 +71,10 @@ class LocalTools(
             tools.add(triggerJobNowTool(scheduledJobRepository, cronJobScheduler))
             tools.add(getJobHistoryTool(scheduledJobRepository, scheduledJobRunRepository))
         }
+        if (options.contains(LocalToolOption.ToastAndNotification)) {
+            tools.add(toastTool(context, invocationContext))
+            tools.add(notificationTool(context, invocationContext))
+        }
         return tools
     }
 }
