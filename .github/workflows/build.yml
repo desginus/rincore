@@ -23,7 +23,7 @@ jobs:
           version: 10
 
       - name: Install web-ui dependencies
-        run: cd web-ui && pnpm install --frozen-lockfile
+        run: cd web-ui && pnpm install --no-frozen-lockfile
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
