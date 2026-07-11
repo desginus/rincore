@@ -7,7 +7,7 @@
   <string name="about_page_version">Версия</string>
   <string name="about_page_website">Веб-сайт</string>
   <string name="add">Добавить</string>
-  <string name="app_name">RikkaHub</string>
+  <string name="app_name">RinCore</string>
   <string name="asr_button_content_description">Распознавание речи</string>
   <string name="asr_button_stop">Стоп</string>
   <string name="assistant_detail_basic_desc">Настройте имя, аватар, модель и параметры</string>
@@ -320,11 +320,6 @@
   <string name="deep_thinking">Глубокое мышление</string>
   <string name="deep_thinking_seconds">Думал %1$.1f секунд</string>
   <string name="delete">Удалить</string>
-  <string name="donate_page_afdian_desc">Для пользователей 🇨🇳</string>
-  <string name="donate_page_donation_methods">Способы пожертвований</string>
-  <string name="donate_page_kofi_desc">Для пользователей по всему миру</string>
-  <string name="donate_page_sponsor_list">Список спонсоров</string>
-  <string name="donate_page_title">Поддержать</string>
   <string name="edit">Редактировать</string>
   <string name="editing">Редактирование</string>
   <string name="emoji_picker_search_placeholder">Поиск эмодзи...</string>
@@ -789,8 +784,6 @@
   <string name="setting_page_display_setting_desc">Управление настройками отображения</string>
   <string name="setting_page_documentation">Документация</string>
   <string name="setting_page_documentation_desc">Просмотрите инструкции по использованию приложения и справочную документацию</string>
-  <string name="setting_page_donate">Поддержать</string>
-  <string name="setting_page_donate_desc">Если вам нравится, поддержите автора</string>
   <string name="setting_page_dynamic_color">Динамический цвет</string>
   <string name="setting_page_dynamic_color_desc">Динамически создавать цвета темы приложения на основе обоев</string>
   <string name="setting_page_extensions">Расширения</string>
@@ -819,11 +812,7 @@
   <string name="setting_page_search_title">Служба поиска</string>
   <string name="setting_page_share">Поделиться</string>
   <string name="setting_page_share_desc">Поделиться этим приложением с друзьями</string>
-  <string name="setting_page_share_text">RikkaHub — открытый Android-ассистент с ИИ\n\nСайт: https://rikka-ai.com/</string>
-  <string name="setting_page_sponsor_alert_confirm">Пожертвовать</string>
-  <string name="setting_page_sponsor_alert_desc">Вы запустили приложение более 100 раз! Если вам нравится им пользоваться, пожалуйста, поддержите разработчика.</string>
-  <string name="setting_page_sponsor_alert_dismiss">Не сейчас</string>
-  <string name="setting_page_sponsor_alert_title">Поддержать разработчика</string>
+  <string name="setting_page_share_text">RinCore - Personal AI Assistant</string>
   <string name="setting_page_theme_setting">Тема</string>
   <string name="setting_page_theme_setting_desc">Настроить цветовую схему приложения</string>
   <string name="setting_theme_page_preset_themes">Предустановленные темы</string>
@@ -847,7 +836,7 @@
   <string name="setting_page_web_server_address_note_desc">LAN-адрес: использует IP-адрес устройства в Wi-Fi, доступен другим устройствам в той же сети. Недоступен при использовании мобильных данных.
 Локальный адрес: использует localhost, доступен только на этом устройстве.
 Адрес mDNS: использует имя хоста .local, доступен по имени с других устройств в той же сети без знания IP-адреса.</string>
-  <string name="setting_page_web_server_desc">Разрешить доступ к RikkaHub через веб</string>
+  <string name="setting_page_web_server_desc">Разрешить доступ к RinCore через веб</string>
   <string name="setting_page_web_server_error">Ошибка</string>
   <string name="setting_page_web_server_jwt_enable">Включить аутентификацию</string>
   <string name="setting_page_web_server_jwt_enable_desc">Требовать проверку пароля при доступе к веб-интерфейсу</string>

@@ -90,32 +90,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val filesManager: FilesManager = koinInject()
 
-    if (settings.launchCount > 100 && (settings.launchCount - settings.sponsorAlertDismissedAt) >= 50) {
-        AlertDialog(
-            onDismissRequest = {
-                vm.updateSettings(settings.copy(sponsorAlertDismissedAt = settings.launchCount))
-            },
-            icon = { Icon(HugeIcons.WavingHand01, null) },
-            title = { Text(stringResource(R.string.setting_page_sponsor_alert_title)) },
-            text = { Text(stringResource(R.string.setting_page_sponsor_alert_desc)) },
-            confirmButton = {
-                Button(onClick = {
-                    vm.updateSettings(settings.copy(sponsorAlertDismissedAt = settings.launchCount))
-                    navController.navigate(Screen.SettingDonate)
-                }) {
-                    Text(stringResource(R.string.setting_page_sponsor_alert_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    vm.updateSettings(settings.copy(sponsorAlertDismissedAt = settings.launchCount))
-                }) {
-                    Text(stringResource(R.string.setting_page_sponsor_alert_dismiss))
-                }
-            },
-        )
-    }
-
     Scaffold(
         topBar = {
             LargeFlexibleTopAppBar(
@@ -294,65 +268,13 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         onClick = { navController.navigate(Screen.SettingAbout) },
                         leadingContent = { Icon(HugeIcons.Clapping01, null) },
                         supportingContent = { Text(stringResource(R.string.setting_page_about_desc)) },
-                        trailingContent = {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                var showQQGroupSheet by remember { mutableStateOf(false) }
-                                IconButton(
-                                    onClick = { showQQGroupSheet = true }
-                                ) {
-                                    Icon(
-                                        imageVector = TencentQQIcon,
-                                        contentDescription = "QQ",
-                                        tint = MaterialTheme.colorScheme.secondary
-                                    )
-                                }
-                                if (showQQGroupSheet) {
-                                    QQGroupBottomSheet(
-                                        onDismiss = { showQQGroupSheet = false }
-                                    )
-                                }
-                                IconButton(
-                                    onClick = {
-                                        context.openUrl("https://discord.gg/9weBqxe5c4")
-                                    }
-                                ) {
-                                    Icon(
-                                        imageVector = DiscordIcon,
-                                        contentDescription = "Discord",
-                                        tint = MaterialTheme.colorScheme.secondary
-                                    )
-                                }
-                            }
-                        },
                         headlineContent = { Text(stringResource(R.string.setting_page_about)) },
-                    )
-                    item(
-                        onClick = {
-                            val docUrl = if (java.util.Locale.getDefault().language == "zh") {
-                                "https://docs.rikka-ai.com/zh/introduction"
-                            } else {
-                                "https://docs.rikka-ai.com/introduction"
-                            }
-                            context.openUrl(docUrl)
-                        },
-                        leadingContent = { Icon(HugeIcons.Book01, null) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_documentation_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_documentation)) },
                     )
                     item(
                         onClick = { navController.navigate(Screen.Log) },
                         leadingContent = { Icon(HugeIcons.Bookshelf01, null) },
                         supportingContent = { Text(stringResource(R.string.setting_page_request_logs_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_request_logs)) },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.SettingDonate) },
-                        leadingContent = { Icon(HugeIcons.InLove, null) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_donate_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_donate)) },
                     )
                     item(
                         onClick = {
@@ -373,49 +295,8 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
             }
         }
     }
-}
 
-@Composable
-private fun ProviderConfigWarningCard(navController: Navigator) {
-    Card(
-        modifier = Modifier.padding(8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer
-        )
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp),
-            horizontalAlignment = Alignment.End
-        ) {
-            ListItem(
-                headlineContent = {
-                    Text(stringResource(R.string.setting_page_config_api_title))
-                },
-                supportingContent = {
-                    Text(stringResource(R.string.setting_page_config_api_desc))
-                },
-                leadingContent = {
-                    Icon(HugeIcons.Alert01, null)
-                },
-                colors = ListItemDefaults.colors(
-                    containerColor = Color.Transparent
-                )
-            )
-
-            TextButton(
-                onClick = {
-                    navController.navigate(Screen.SettingProvider)
-                }
-            ) {
-                Text(stringResource(R.string.setting_page_config))
-            }
-        }
-    }
-}
-
-private data class QQGroup(
+    private data class QQGroup(
     val name: String,
     val key: String,
 )
