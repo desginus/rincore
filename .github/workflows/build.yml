@@ -39,12 +39,7 @@ jobs:
 
       - name: Create signing config
         run: |
-          cat > local.properties << 'EOF'
-storeFile=../app/release.jks
-storePassword=release123
-keyAlias=rincore
-keyPassword=release123
-EOF
+          printf 'storeFile=../app/release.jks\nstorePassword=release123\nkeyAlias=rincore\nkeyPassword=release123\n' > local.properties
 
       - name: Build Release APK
         run: ./gradlew assembleRelease --no-daemon --stacktrace
