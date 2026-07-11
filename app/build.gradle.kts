@@ -16,7 +16,7 @@ plugins {
 
 android {
     namespace = "me.rincore.app"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "me.rincore.app"
