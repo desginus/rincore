@@ -28,49 +28,28 @@ class LocalTools(
     private val subAgentRegistry: SubAgentRegistry,
 ) {
     val javascriptTool by lazy { buildJavascriptTool() }
-
     val timeTool by lazy { buildTimeInfoTool() }
-
     val clipboardTool by lazy { buildClipboardTool(context) }
-
     val ttsTool by lazy { buildTextToSpeechTool(eventBus, ttsManager, settingsStore) }
-
     val askUserTool by lazy { buildAskUserTool() }
-
     val screenTimeTool by lazy { buildScreenTimeTool(context, eventBus) }
-
     val calendarQueryTool by lazy { buildCalendarQueryTool(context) }
-
     val calendarCreateTool by lazy { buildCalendarCreateTool(context) }
 
     fun getTools(options: List<LocalToolOption>, invocationContext: ToolInvocationContext = ToolInvocationContext.EMPTY): List<Tool> {
         val tools = mutableListOf<Tool>()
-        if (options.contains(LocalToolOption.JavascriptEngine)) {
-            tools.add(javascriptTool)
-        }
-        if (options.contains(LocalToolOption.TimeInfo)) {
-            tools.add(timeTool)
-        }
-        if (options.contains(LocalToolOption.Clipboard)) {
-            tools.add(clipboardTool)
-        }
-        if (options.contains(LocalToolOption.Tts)) {
-            tools.add(ttsTool)
-        }
-        if (options.contains(LocalToolOption.AskUser)) {
-            tools.add(askUserTool)
-        }
-        if (options.contains(LocalToolOption.ScreenTime)) {
-            tools.add(screenTimeTool)
-        }
+        if (options.contains(LocalToolOption.JavascriptEngine)) tools.add(javascriptTool)
+        if (options.contains(LocalToolOption.TimeInfo)) tools.add(timeTool)
+        if (options.contains(LocalToolOption.Clipboard)) tools.add(clipboardTool)
+        if (options.contains(LocalToolOption.Tts)) tools.add(ttsTool)
+        if (options.contains(LocalToolOption.AskUser)) tools.add(askUserTool)
+        if (options.contains(LocalToolOption.ScreenTime)) tools.add(screenTimeTool)
         if (options.contains(LocalToolOption.Calendar)) {
             tools.add(calendarQueryTool)
             tools.add(calendarCreateTool)
         }
         if (options.contains(LocalToolOption.CronJobs)) {
-            val knownToolNamesProvider: () -> List<String> = {
-                this.getTools(options, invocationContext).map { it.name }
-            }
+            val knownToolNamesProvider: () -> List<String> = { this.getTools(options, invocationContext).map { it.name } }
             tools.add(scheduleJobTool(scheduledJobRepository, cronJobScheduler, settingsStore, knownToolNamesProvider))
             tools.add(listJobsTool(scheduledJobRepository))
             tools.add(deleteJobTool(scheduledJobRepository, scheduledJobRunRepository, cronJobScheduler))
@@ -91,6 +70,23 @@ class LocalTools(
         }
         if (options.contains(LocalToolOption.SystemIntents)) {
             tools.add(showLocationOnMapTool(context))
+        }
+        if (options.contains(LocalToolOption.Location)) {
+            tools.add(locationTool(context))
+        }
+        if (options.contains(LocalToolOption.Battery)) {
+            tools.add(batteryTool(context))
+        }
+        if (options.contains(LocalToolOption.MediaPlayer)) {
+            tools.add(playMediaTool(context, invocationContext))
+            tools.add(stopMediaTool(context))
+            tools.add(pauseMediaTool(context))
+            tools.add(resumeMediaTool(context))
+            tools.add(seekMediaTool(context))
+            tools.add(getMediaStatusTool())
+        }
+        if (options.contains(LocalToolOption.MediaScanner)) {
+            tools.add(mediaScannerTool(context))
         }
         return tools
     }

@@ -288,6 +288,12 @@ dependencies {
     // cron-utils: 定时任务调度（schedule_job 等工具的 cron 解析依赖）
     implementation("com.cronutils:cron-utils:9.2.1")
 
+    // Google Play Services Location (get_location tool)
+    implementation(libs.play.services.location)
+
+    // AndroidX Media (MediaSessionCompat for media playback tools)
+    implementation(libs.androidx.media)
+
     // Leak Canary
     // debugImplementation(libs.leakcanary.android)
 
