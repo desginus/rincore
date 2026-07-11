@@ -13,7 +13,7 @@ plugins {
 }
 
 android {
-    namespace = "me.rincore.app"
+    namespace = "me.rerere.rikkahub"
     compileSdk = 37
 
     defaultConfig {
