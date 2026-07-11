@@ -668,8 +668,6 @@ sealed interface Screen : NavKey {
     data object SettingMcp : Screen
 
     @Serializable
-
-    @Serializable
     data object SettingFiles : Screen
 
     @Serializable
