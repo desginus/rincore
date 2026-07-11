@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "me.rerere.material3"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 26
