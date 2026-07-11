@@ -1,9 +1,6 @@
 package me.rerere.rikkahub.di
+import me.rerere.rikkahub.data.firebase.StubAnalytics
 
-import com.google.firebase.Firebase
-import com.google.firebase.analytics.analytics
-import com.google.firebase.crashlytics.crashlytics
-import com.google.firebase.remoteconfig.remoteConfig
 import kotlinx.serialization.json.Json
 import me.rerere.highlight.Highlighter
 import me.rerere.rikkahub.AppScope
@@ -21,6 +18,7 @@ import me.rerere.tts.provider.TTSManager
 import org.koin.dsl.module
 
 val appModule = module {
+    single { StubAnalytics }
     single<Json> { JsonInstant }
 
     single {
@@ -52,16 +50,10 @@ val appModule = module {
     }
 
     single {
-        Firebase.crashlytics
-    }
 
     single {
-        Firebase.remoteConfig
-    }
 
     single {
-        Firebase.analytics
-    }
 
     single {
         SoundEffectPlayer(get())
