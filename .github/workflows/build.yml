@@ -37,12 +37,21 @@ jobs:
           sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
           sdkmanager "ndk;28.2.13676358" || true
 
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+      - name: Create signing config
+        run: |
+          cat > local.properties << 'EOF'
+storeFile=../app/release.jks
+storePassword=release123
+keyAlias=rincore
+keyPassword=release123
+EOF
+
+      - name: Build Release APK
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: rincore-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: rincore-release
+          path: app/build/outputs/apk/release/*.apk
           retention-days: 7
