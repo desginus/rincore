@@ -8,7 +8,7 @@ plugins {
 
 android {
     namespace = "me.rerere.ai"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 26
