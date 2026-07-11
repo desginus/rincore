@@ -125,8 +125,33 @@ fun SettingAboutPage() {
                             style = MaterialTheme.typography.displaySmall,
                         )
                     }
+                }
+
+                item {
+                    CardGroup(
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                    ) {
+                        item(
+                            modifier = Modifier.combinedClickable(
+                                onClick = {},
+                                onLongClick = { navController.navigate(Screen.Debug) },
+                            ),
+                            leadingContent = { Icon(HugeIcons.Code, null) },
+                            supportingContent = {
+                                Text("${BuildConfig.VERSION_NAME} / ${BuildConfig.VERSION_CODE}")
+                            },
+                            headlineContent = { Text(stringResource(R.string.about_page_version)) },
+                        )
+                        item(
+                            leadingContent = { Icon(HugeIcons.SmartPhone01, null) },
+                            supportingContent = {
+                                Text("${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} / Android ${android.os.Build.VERSION.RELEASE} / SDK ${android.os.Build.VERSION.SDK_INT}")
+                            },
+                            headlineContent = { Text(stringResource(R.string.about_page_system)) },
+                        )
+                    }
+
+                }
 
             }
-        }
-    }
 }
