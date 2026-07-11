@@ -1,6 +1,6 @@
 package me.rerere.rikkahub.di
-import me.rerere.rikkahub.data.firebase.StubAnalytics
 
+import me.rerere.rikkahub.data.firebase.StubAnalytics
 import kotlinx.serialization.json.Json
 import me.rerere.highlight.Highlighter
 import me.rerere.rikkahub.AppScope
@@ -48,12 +48,6 @@ val appModule = module {
     single {
         TTSManager(get())
     }
-
-    single {
-
-    single {
-
-    single {
 
     single {
         SoundEffectPlayer(get())

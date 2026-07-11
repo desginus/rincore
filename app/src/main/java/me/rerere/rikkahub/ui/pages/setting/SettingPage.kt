@@ -71,13 +71,11 @@ import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.components.ui.icons.DiscordIcon
-import me.rerere.rikkahub.ui.components.ui.icons.TencentQQIcon
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.Navigator
 import me.rerere.rikkahub.ui.hooks.rememberColorMode
 import me.rerere.rikkahub.ui.theme.ColorMode
 import me.rerere.rikkahub.ui.theme.CustomColors
-import me.rerere.rikkahub.utils.joinQQGroup
 import me.rerere.rikkahub.utils.openUrl
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
@@ -296,43 +294,3 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
         }
     }
 
-    private data class QQGroup(
-    val name: String,
-    val key: String,
-)
-
-private val QQ_GROUPS = listOf(
-    QQGroup("RikkaHub 一群", "4POE46u9e_zoy1TkNfWdCvueR9CKFJdk"),
-    QQGroup("RikkaHub 二群", "Qsm0whzbPsm1UyNpR683ulLyMZ2Pqrw0"),
-    QQGroup("RikkaHub 三群", "Qc9oP-9tXioZeQEvEvI2_owWtBAIx3lS"),
-)
-
-@Composable
-private fun QQGroupBottomSheet(onDismiss: () -> Unit) {
-    val context = LocalContext.current
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            QQ_GROUPS.forEach { group ->
-                ListItem(
-                    headlineContent = { Text(group.name) },
-                    leadingContent = {
-                        Icon(
-                            imageVector = TencentQQIcon,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.secondary
-                        )
-                    },
-                    modifier = Modifier.clickable {
-                        context.joinQQGroup(group.key)
-                        onDismiss()
-                    }
-                )
-            }
-        }
-    }
-}
