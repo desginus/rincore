@@ -73,7 +73,7 @@ class McpManager(
     private val appEventBus: AppEventBus,
 ) {
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
+        .connectTimeout(3, TimeUnit.MINUTES)
         .readTimeout(10, TimeUnit.MINUTES)
         .writeTimeout(120, TimeUnit.SECONDS)
         .followSslRedirects(true)
