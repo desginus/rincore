@@ -14,9 +14,8 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.rikkahub.data.ai.tools.ToolInvocationContext
 
-private const val CHANNEL_ID = "rikkahub_ai_tool"
+private const val CHANNEL_ID = "rincore_ai_tool"
 private const val CHANNEL_NAME = "AI tool notifications"
 
 private fun ensureChannel(context: Context) {
@@ -31,13 +30,9 @@ private fun ensureChannel(context: Context) {
 
 fun notificationTool(
     context: Context,
-    invocationContext: ToolInvocationContext = ToolInvocationContext.EMPTY,
 ): Tool = Tool(
     name = "post_notification",
-    description = """
-        Post an Android notification on behalf of the user.
-        Use sparingly — notifications are intrusive.
-    """.trimIndent().replace("\n", " "),
+    description = "Post an Android notification on behalf of the user. Use sparingly — notifications are intrusive.",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {

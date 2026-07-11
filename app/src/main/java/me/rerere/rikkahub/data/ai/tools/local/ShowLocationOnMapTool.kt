@@ -12,11 +12,9 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.rikkahub.data.ai.tools.ToolInvocationContext
 
 fun showLocationOnMapTool(
     context: Context,
-    invocationContext: ToolInvocationContext = ToolInvocationContext.EMPTY,
 ): Tool = Tool(
     name = "show_location_on_map",
     description = "Open the user's default maps app showing the given place / address / coordinates. Useful for \"where is X?\", \"show me the way to X\", \"find Y on the map\".",
@@ -39,11 +37,10 @@ fun showLocationOnMapTool(
             data = "geo:0,0?q=${Uri.encode(query)}".toUri()
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        val result = fireIntent(
+        fireIntent(
             context, intent, action = "show_location_on_map",
             summary = "Map: $query",
         )
-        result
     },
 )
 

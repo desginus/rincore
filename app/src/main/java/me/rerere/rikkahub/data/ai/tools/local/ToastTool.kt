@@ -13,17 +13,12 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.rikkahub.data.ai.tools.ToolInvocationContext
 
 fun toastTool(
     context: Context,
-    invocationContext: ToolInvocationContext = ToolInvocationContext.EMPTY,
 ): Tool = Tool(
     name = "show_toast",
-    description = """
-        Show a brief toast popup over whatever is currently on screen.
-        Use sparingly — toasts are intrusive and only useful for short, momentary feedback.
-    """.trimIndent().replace("\n", " "),
+    description = "Show a brief toast popup over whatever is currently on screen. Use sparingly — toasts are intrusive and only useful for short, momentary feedback.",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
