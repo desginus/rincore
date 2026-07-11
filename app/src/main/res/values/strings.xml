@@ -1262,7 +1262,7 @@
   <string name="assistant_page_local_tools_system_intents_title">System Intents</string>
   <string name="assistant_page_local_tools_system_intents_desc">Let the AI open system native apps (maps, etc.) pre-filled with your request</string>
   <string name="assistant_page_local_tools_location_title">Location</string>
-  <string name="assistant_page_local_tools_location_desc">Let the AI read your device&apos;s GPS location (latitude, longitude, accuracy)</string>
+  <string name="assistant_page_local_tools_location_desc">Let the AI read your device\u0027s GPS location (latitude, longitude, accuracy)</string>
   <string name="assistant_page_local_tools_battery_title">Battery</string>
   <string name="assistant_page_local_tools_battery_desc">Let the AI read battery level, charging status, temperature, and voltage</string>
   <string name="assistant_page_local_tools_media_player_title">Media Player</string>
