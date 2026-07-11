@@ -7,21 +7,28 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
+        "mobilesdk_app_id": "1:000000000000:android:aaaaaaaaaaaaaaaaaaaaaa",
         "android_client_info": {
           "package_name": "me.rincore.app"
         }
       },
       "oauth_client": [],
-      "api_key": [
-        {
-          "current_key": "dummy"
-        }
-      ],
+      "api_key": [{ "current_key": "dummy" }],
       "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": []
+        "appinvite_service": { "other_platform_oauth_client": [] }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:000000000000:android:bbbbbbbbbbbbbbbbbbbbbb",
+        "android_client_info": {
+          "package_name": "me.rincore.app.debug"
         }
+      },
+      "oauth_client": [],
+      "api_key": [{ "current_key": "dummy" }],
+      "services": {
+        "appinvite_service": { "other_platform_oauth_client": [] }
       }
     }
   ],
