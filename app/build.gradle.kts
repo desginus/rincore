@@ -290,6 +290,7 @@ dependencies {
 
     // Google Play Services Location (get_location tool)
     implementation(libs.play.services.location)
+    implementation(libs.kotlinx.coroutines.play.services)
 
     // AndroidX Media (MediaSessionCompat for media playback tools)
     implementation(libs.androidx.media)
