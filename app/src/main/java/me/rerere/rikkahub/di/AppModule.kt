@@ -6,12 +6,12 @@ import me.rerere.highlight.Highlighter
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
 import me.rerere.rikkahub.data.agentrun.AgentRunRepository
+import me.rerere.rikkahub.data.agentrun.AgentRunBootRecovery
 import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.data.repository.ScheduledJobRepository
 import me.rerere.rikkahub.data.repository.ScheduledJobRunRepository
 import me.rerere.rikkahub.subagent.SubAgentEngine
 import me.rerere.rikkahub.subagent.SubAgentRegistry
-import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.service.ChatNotificationManager
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.service.CronJobScheduler
@@ -63,6 +63,10 @@ val appModule = module {
 
     single {
         AgentRunRepository(get<me.rerere.rikkahub.data.db.AppDatabase>().agentRunDao())
+    }
+
+    single {
+        AgentRunBootRecovery(get(), get())
     }
 
     single {

@@ -5,18 +5,15 @@ import me.rerere.ai.core.Tool
 import me.rerere.rikkahub.data.ai.tools.ToolInvocationContext
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.event.AppEventBus
-import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.ScheduledJobRepository
 import me.rerere.rikkahub.data.repository.ScheduledJobRunRepository
-import me.rerere.rikkahub.data.agentrun.AgentRunRepository
-import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.service.CronJobScheduler
 import me.rerere.rikkahub.subagent.SubAgentEngine
 import me.rerere.rikkahub.subagent.SubAgentRegistry
-import me.rerere.rikkahub.subagent.subagentDispatchTool
-import me.rerere.rikkahub.subagent.subagentListTool
-import me.rerere.rikkahub.subagent.subagentGetTool
 import me.rerere.rikkahub.subagent.subagentCancelTool
+import me.rerere.rikkahub.subagent.subagentDispatchTool
+import me.rerere.rikkahub.subagent.subagentGetTool
+import me.rerere.rikkahub.subagent.subagentListTool
 import me.rerere.tts.provider.TTSManager
 
 class LocalTools(
@@ -83,8 +80,8 @@ class LocalTools(
             tools.add(getJobHistoryTool(scheduledJobRepository, scheduledJobRunRepository))
         }
         if (options.contains(LocalToolOption.ToastAndNotification)) {
-            tools.add(toastTool(context, invocationContext))
-            tools.add(notificationTool(context, invocationContext))
+            tools.add(toastTool(context))
+            tools.add(notificationTool(context))
         }
         if (options.contains(LocalToolOption.SubAgents)) {
             tools.add(subagentDispatchTool(subAgentEngine, invocationContext))
@@ -93,7 +90,7 @@ class LocalTools(
             tools.add(subagentCancelTool(subAgentRegistry))
         }
         if (options.contains(LocalToolOption.SystemIntents)) {
-            tools.add(showLocationOnMapTool(context, invocationContext))
+            tools.add(showLocationOnMapTool(context))
         }
         return tools
     }
