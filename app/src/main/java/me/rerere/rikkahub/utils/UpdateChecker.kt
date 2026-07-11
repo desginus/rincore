@@ -7,49 +7,61 @@ import android.widget.Toast
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import me.rerere.common.http.await
 import me.rerere.rikkahub.BuildConfig
 import okhttp3.OkHttpClient
-import okhttp3.Request
 
-private const val API_URL = "https://updates.rikka-ai.com/"
 
 class UpdateChecker(private val client: OkHttpClient) {
-    private val json = Json { ignoreUnknownKeys = true }
 
+    /**
+     * RinCore: 更新检查已禁用。始终返回当前版本，永远不会提示更新。
+     * 如需重新启用，将下方 checkUpdate 方法恢复为原版实现即可。
+     */
     fun checkUpdate(): Flow<UiState<UpdateInfo>> = flow {
-        emit(UiState.Loading)
         emit(
             UiState.Success(
-                data = try {
-                    val response = client.newCall(
-                        Request.Builder()
-                            .url(API_URL)
-                            .get()
-                            .addHeader(
-                                "User-Agent",
-                                "RikkaHub ${BuildConfig.VERSION_NAME} #${BuildConfig.VERSION_CODE}"
-                            )
-                            .build()
-                    ).await()
-                    if (response.isSuccessful) {
-                        json.decodeFromString<UpdateInfo>(response.body.string())
-                    } else {
-                        throw Exception("Failed to fetch update info")
-                    }
-                } catch (e: Exception) {
-                    throw Exception("Failed to fetch update info", e)
-                }
+                data = UpdateInfo(
+                    version = BuildConfig.VERSION_NAME,
+                    publishedAt = "",
+                    changelog = "",
+                    downloads = emptyList()
+                )
             )
         )
-    }.catch {
-        emit(UiState.Error(it))
     }.flowOn(Dispatchers.IO)
+
+// 原版更新检查实现（已注释，API_URL = https://updates.rikka-ai.com/）
+//    fun checkUpdate(): Flow<UiState<UpdateInfo>> = flow {
+//        emit(UiState.Loading)
+//        emit(
+//            UiState.Success(
+//                data = try {
+//                    val response = client.newCall(
+//                        Request.Builder()
+//                            .url(API_URL)
+//                            .get()
+//                            .addHeader(
+//                                "User-Agent",
+//                                "RikkaHub ${BuildConfig.VERSION_NAME} #${BuildConfig.VERSION_CODE}"
+//                            )
+//                            .build()
+//                    ).await()
+//                    if (response.isSuccessful) {
+//                        json.decodeFromString<UpdateInfo>(response.body.string())
+//                    } else {
+//                        throw Exception("Failed to fetch update info")
+//                    }
+//                } catch (e: Exception) {
+//                    throw Exception("Failed to fetch update info", e)
+//                }
+//            )
+//        )
+//    }.catch {
+//        emit(UiState.Error(it))
+//    }.flowOn(Dispatchers.IO)
 
     fun downloadUpdate(context: Context, download: UpdateDownload) {
         runCatching {
