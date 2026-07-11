@@ -226,6 +226,34 @@ private fun AssistantLocalToolContent(
                     )
                 }
             )
+            item(
+                headlineContent = {
+                    Text(stringResource(R.string.assistant_page_local_tools_cron_jobs_title))
+                },
+                supportingContent = {
+                    Text(stringResource(R.string.assistant_page_local_tools_cron_jobs_desc))
+                },
+                trailingContent = {
+                    Switch(
+                        checked = assistant.localTools.contains(LocalToolOption.CronJobs),
+                        onCheckedChange = { toggleLocalTool(LocalToolOption.CronJobs, it) }
+                    )
+                }
+            )
+            item(
+                headlineContent = {
+                    Text(stringResource(R.string.assistant_page_local_tools_toast_notification_title))
+                },
+                supportingContent = {
+                    Text(stringResource(R.string.assistant_page_local_tools_toast_notification_desc))
+                },
+                trailingContent = {
+                    Switch(
+                        checked = assistant.localTools.contains(LocalToolOption.ToastAndNotification),
+                        onCheckedChange = { toggleLocalTool(LocalToolOption.ToastAndNotification, it) }
+                    )
+                }
+            )
         }
     }
 }
