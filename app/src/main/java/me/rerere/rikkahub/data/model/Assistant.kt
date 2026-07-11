@@ -48,6 +48,7 @@ data class Assistant(
     val enableTimeReminder: Boolean = false,            // 时间间隔提醒注入
     val allowConversationSystemPrompt: Boolean = false, // 允许对话单独重写 system prompt
     val allowConversationPromptInjection: Boolean = false, // 允许对话单独绑定提示词注入
+    val maxConcurrentSubAgents: Int = 3, // 子代理并行上限，1-8
 )
 
 @Serializable
