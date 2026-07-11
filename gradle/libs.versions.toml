@@ -68,6 +68,7 @@ termux = "0.118.0"
 diffutils = "4.17"
 play-services-location = "21.3.0"
 androidx-media = "1.7.0"
+kotlinx-coroutines-play-services = "1.11.0"
 
 [libraries]
 androidx-camera-core = { module = "androidx.camera:camera-core", version.ref = "cameraCore" }
@@ -186,6 +187,7 @@ termux-terminal-view = { module = "com.termux.termux-app:terminal-view", version
 guava-listenablefuture = { module = "com.google.guava:listenablefuture", version = "9999.0-empty-to-avoid-conflict-with-guava" }
 play-services-location = { module = "com.google.android.gms:play-services-location", version.ref = "play-services-location" }
 androidx-media = { module = "androidx.media:media", version.ref = "androidx-media" }
+kotlinx-coroutines-play-services = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-play-services", version.ref = "kotlinx-coroutines-play-services" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
