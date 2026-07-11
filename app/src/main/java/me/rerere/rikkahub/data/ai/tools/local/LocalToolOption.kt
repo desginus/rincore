@@ -40,4 +40,12 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("toast_notification")
     data object ToastAndNotification : LocalToolOption()
+
+    @Serializable
+    @SerialName("sub_agents")
+    data object SubAgents : LocalToolOption()
+
+    @Serializable
+    @SerialName("system_intents")
+    data object SystemIntents : LocalToolOption()
 }

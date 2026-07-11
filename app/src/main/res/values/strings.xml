@@ -1257,6 +1257,10 @@
   <string name="assistant_page_local_tools_cron_jobs_desc">Schedule recurring tasks — the AI can create timed jobs that run in the background</string>
   <string name="assistant_page_local_tools_toast_notification_title">Toast &amp; Notification</string>
   <string name="assistant_page_local_tools_toast_notification_desc">Let the AI show popup toasts and post system notifications</string>
+  <string name="assistant_page_local_tools_sub_agents_title">Sub-agents</string>
+  <string name="assistant_page_local_tools_sub_agents_desc">Allow the AI to dispatch focused sub-agents for parallel research and lookup tasks</string>
+  <string name="assistant_page_local_tools_system_intents_title">System Intents</string>
+  <string name="assistant_page_local_tools_system_intents_desc">Let the AI open system native apps (maps, etc.) pre-filled with your request</string>
   <string name="chat_message_tool_calendar_query">Query calendar events</string>
   <string name="chat_message_tool_calendar_create">Create event: %1$s</string>
   <string name="chat_page_move_to_folder">Move to Folder</string>

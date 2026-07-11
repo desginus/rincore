@@ -9,6 +9,9 @@ import me.rerere.rikkahub.data.agentrun.AgentRunRepository
 import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.data.repository.ScheduledJobRepository
 import me.rerere.rikkahub.data.repository.ScheduledJobRunRepository
+import me.rerere.rikkahub.subagent.SubAgentEngine
+import me.rerere.rikkahub.subagent.SubAgentRegistry
+import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.service.ChatNotificationManager
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.service.CronJobScheduler
@@ -35,7 +38,7 @@ val appModule = module {
     }
 
     single {
-        LocalTools(get(), get(), get(), get(), get(), get(), get())
+        LocalTools(get(), get(), get(), get(), get(), get(), get(), get(), get())
     }
 
     single {
@@ -60,6 +63,20 @@ val appModule = module {
 
     single {
         AgentRunRepository(get<me.rerere.rikkahub.data.db.AppDatabase>().agentRunDao())
+    }
+
+    single {
+        SubAgentRegistry()
+    }
+
+    single {
+        SubAgentEngine(
+            registry = get(),
+            conversationRepo = get(),
+            settingsStore = get(),
+            appScope = get(),
+            agentRunRepo = get(),
+        )
     }
 
     single {
