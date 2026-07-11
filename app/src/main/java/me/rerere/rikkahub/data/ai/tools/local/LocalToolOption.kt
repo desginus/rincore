@@ -36,4 +36,8 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("cron_jobs")
     data object CronJobs : LocalToolOption()
+
+    @Serializable
+    @SerialName("toast_notification")
+    data object ToastAndNotification : LocalToolOption()
 }
