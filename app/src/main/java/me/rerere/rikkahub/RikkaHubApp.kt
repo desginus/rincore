@@ -82,20 +82,11 @@ class RikkaHubApp : Application() {
         // sync upload files to DB
         syncManagedFiles()
 
-        }
-
         // Start WebServer if enabled in settings
         startWebServerIfEnabled()
 
-
         // Composer.setDiagnosticStackTraceMode(ComposeStackTraceMode.Auto)
     }
-
-        get<AppScope>().launch {
-            runCatching {
-                val store = get<SettingsStore>()
-                val current = store.settingsFlowRaw.first()
-                store.update(current.copy(launchCount = current.launchCount + 1))
 
     private fun cleanupWorkspaceTempDirs() {
         get<AppScope>().launch(Dispatchers.IO) {

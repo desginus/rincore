@@ -71,11 +71,13 @@ import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.components.ui.icons.DiscordIcon
+import me.rerere.rikkahub.ui.components.ui.icons.TencentQQIcon
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.Navigator
 import me.rerere.rikkahub.ui.hooks.rememberColorMode
 import me.rerere.rikkahub.ui.theme.ColorMode
 import me.rerere.rikkahub.ui.theme.CustomColors
+import me.rerere.rikkahub.utils.joinQQGroup
 import me.rerere.rikkahub.utils.openUrl
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
@@ -293,4 +295,44 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
             }
         }
     }
+}
 
+@Composable
+private fun ProviderConfigWarningCard(navController: Navigator) {
+    Card(
+        modifier = Modifier.padding(8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            horizontalAlignment = Alignment.End
+        ) {
+            ListItem(
+                headlineContent = {
+                    Text(stringResource(R.string.setting_page_config_api_title))
+                },
+                supportingContent = {
+                    Text(stringResource(R.string.setting_page_config_api_desc))
+                },
+                leadingContent = {
+                    Icon(HugeIcons.Alert01, null)
+                },
+                colors = ListItemDefaults.colors(
+                    containerColor = Color.Transparent
+                )
+            )
+
+            TextButton(
+                onClick = {
+                    navController.navigate(Screen.SettingProvider)
+                }
+            ) {
+                Text(stringResource(R.string.setting_page_config))
+            }
+        }
+    }
+}
