@@ -21,27 +21,6 @@ val DEFAULT_AUTO_MODEL_ID = Uuid.parse("b7055fb4-39f9-4042-a88a-0d80ed76cf08")
 
 val DEFAULT_PROVIDERS = listOf(
     ProviderSetting.OpenAI(
-        id = Uuid.parse("a8d2d463-e8c0-41f2-b89e-f5eb8e716cce"),
-        name = "RikkaHub",
-        baseUrl = "https://api.rikka-ai.com/v1",
-        apiKey = "",
-        enabled = true,
-        builtIn = true,
-        description = {
-            Text(stringResource(R.string.rikkahub_provider_description))
-        },
-        models = listOf(
-            Model(
-                id = DEFAULT_AUTO_MODEL_ID,
-                modelId = "auto",
-                displayName = "Auto",
-                inputModalities = listOf(Modality.TEXT),
-                outputModalities = listOf(Modality.TEXT),
-                abilities = listOf(ModelAbility.TOOL, ModelAbility.REASONING),
-            )
-        )
-    ),
-    ProviderSetting.OpenAI(
         id = Uuid.parse("1eeea727-9ee5-4cae-93e6-6fb01a4d051e"),
         name = "OpenAI",
         baseUrl = "https://api.openai.com/v1",
@@ -68,7 +47,7 @@ val DEFAULT_PROVIDERS = listOf(
                     append("提供 OpenAI、Claude、Google Gemini 等主流模型的高并发和稳定服务")
                     appendLine()
                     append("官网：")
-                    withLink(LinkAnnotation.Url("https://aihubmix.com?aff=pG7r")) {
+                    withLink(LinkAnnotation.Url("https://aihubmix.com")) {
                         withStyle(SpanStyle(MaterialTheme.colorScheme.primary)) {
                             append("https://aihubmix.com")
                         }
@@ -157,7 +136,7 @@ val DEFAULT_PROVIDERS = listOf(
             MarkdownBlock(
                 content = """
                     小马算力是一家提供国产模型的API网关服务，使用统一接口接入多种模型
-                    官网: [tokenpony.cn](https://www.tokenpony.cn/79clb)
+                    官网: [tokenpony.cn](https://www.tokenpony.cn)
                 """.trimIndent()
             )
         }
@@ -300,7 +279,7 @@ val DEFAULT_PROVIDERS = listOf(
                         "所有AI大模型全都可以用！无需翻墙！价格是官方5折！\n" +
                             "官网："
                     )
-                    withLink(LinkAnnotation.Url("https://ackai.fun/register?aff=jxpP")) {
+                    withLink(LinkAnnotation.Url("https://ackai.fun")) {
                         withStyle(SpanStyle(MaterialTheme.colorScheme.primary)) {
                             append("https://ackai.fun")
                         }

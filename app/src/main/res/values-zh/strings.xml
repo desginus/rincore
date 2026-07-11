@@ -7,7 +7,7 @@
   <string name="about_page_version">版本</string>
   <string name="about_page_website">官网</string>
   <string name="add">添加</string>
-  <string name="app_name">RikkaHub</string>
+  <string name="app_name">RinCore</string>
   <string name="asr_button_content_description">语音识别</string>
   <string name="asr_button_stop">停止</string>
   <string name="assistant_detail_basic_desc">配置名称、头像、模型和参数</string>
@@ -322,11 +322,6 @@
   <string name="deep_thinking">深度思考</string>
   <string name="deep_thinking_seconds">思考了 %1$.1f 秒</string>
   <string name="delete">删除</string>
-  <string name="donate_page_afdian_desc">适用于🇨🇳用户</string>
-  <string name="donate_page_donation_methods">赞助方式</string>
-  <string name="donate_page_kofi_desc">面向全球用户</string>
-  <string name="donate_page_sponsor_list">赞助用户列表</string>
-  <string name="donate_page_title">赞助</string>
   <string name="edit">编辑</string>
   <string name="editing">编辑中</string>
   <string name="emoji_picker_search_placeholder">搜索表情符号...</string>
@@ -821,8 +816,6 @@
   <string name="setting_page_display_setting_desc">管理显示设置</string>
   <string name="setting_page_documentation">使用文档</string>
   <string name="setting_page_documentation_desc">查看应用使用说明和帮助文档</string>
-  <string name="setting_page_donate">赞助</string>
-  <string name="setting_page_donate_desc">如果你喜欢这个应用，请赞助作者的工作</string>
   <string name="setting_page_dynamic_color">动态颜色</string>
   <string name="setting_page_dynamic_color_desc">是否基于壁纸动态生成 app 主题配色</string>
   <string name="setting_page_extensions">扩展管理</string>
@@ -851,11 +844,7 @@
   <string name="setting_page_search_title">搜索服务</string>
   <string name="setting_page_share">分享</string>
   <string name="setting_page_share_desc">分享本APP给朋友</string>
-  <string name="setting_page_share_text">RikkaHub - 开源安卓AI助手\n\n官网: https://rikka-ai.com/</string>
-  <string name="setting_page_sponsor_alert_confirm">捐赠</string>
-  <string name="setting_page_sponsor_alert_desc">您已启动应用超过100次！如果您喜欢使用它，请考虑支持开发者。</string>
-  <string name="setting_page_sponsor_alert_dismiss">暂不</string>
-  <string name="setting_page_sponsor_alert_title">支持开发者</string>
+  <string name="setting_page_share_text">RinCore - Personal AI Assistant</string>
   <string name="setting_page_theme_setting">主题</string>
   <string name="setting_page_theme_setting_desc">自定义应用配色方案</string>
   <string name="setting_theme_page_preset_themes">预设主题</string>
@@ -879,7 +868,7 @@
   <string name="setting_page_web_server_address_note_desc">局域网地址：使用设备 WiFi IP，同一网络中的其他设备可访问。移动数据网络下不可用。
 本地地址：使用 localhost，仅限本设备访问。
 mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过名称访问，无需知道 IP。</string>
-  <string name="setting_page_web_server_desc">允许你通过网页访问 RikkaHub</string>
+  <string name="setting_page_web_server_desc">允许你通过网页访问 RinCore</string>
   <string name="setting_page_web_server_error">错误</string>
   <string name="setting_page_web_server_jwt_enable">启用身份验证</string>
   <string name="setting_page_web_server_jwt_enable_desc">访问网页界面时需要密码验证</string>
