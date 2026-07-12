@@ -23,4 +23,5 @@ sealed class LocalToolOption {
     @Serializable @SerialName("files") data object Files : LocalToolOption()
     @Serializable @SerialName("download") data object Download : LocalToolOption()
     @Serializable @SerialName("archive") data object Archive : LocalToolOption()
+    @Serializable @SerialName("cost_guards") data object CostGuards : LocalToolOption()
 }

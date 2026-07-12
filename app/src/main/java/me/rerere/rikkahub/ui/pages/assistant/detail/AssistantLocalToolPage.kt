@@ -29,6 +29,7 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionInfo
+import me.rerere.rikkahub.ui.components.ui.permission.PermissionLocation
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
 import me.rerere.rikkahub.ui.components.ui.permission.rememberPermissionState
 import me.rerere.rikkahub.ui.context.LocalToaster
@@ -76,7 +77,10 @@ private fun AssistantLocalToolContent(
             PermissionInfo(permission = Manifest.permission.WRITE_CALENDAR, displayName = { Text(stringResource(R.string.permission_calendar_write)) }, usage = { Text(stringResource(R.string.permission_calendar_write_desc)) }, required = true),
         )
     )
+    val locationPermissionState = rememberPermissionState(permissions = setOf(PermissionLocation))
+
     PermissionManager(permissionState = calendarPermissionState)
+    PermissionManager(permissionState = locationPermissionState)
 
     fun toggleLocalTool(option: LocalToolOption, enabled: Boolean) {
         if (enabled && option == LocalToolOption.ScreenTime && !context.hasUsageStatsPermission()) {
@@ -85,6 +89,10 @@ private fun AssistantLocalToolContent(
         }
         if (enabled && option == LocalToolOption.Calendar && !calendarPermissionState.allPermissionsGranted) {
             calendarPermissionState.requestPermissions()
+            return
+        }
+        if (enabled && option == LocalToolOption.Location && !locationPermissionState.allPermissionsGranted) {
+            locationPermissionState.requestPermissions()
             return
         }
         val newLocalTools = if (enabled) assistant.localTools + option else assistant.localTools - option
@@ -119,6 +127,8 @@ private fun AssistantLocalToolContent(
             item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_files_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_files_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.Files), onCheckedChange = { toggleLocalTool(LocalToolOption.Files, it) }) })
             item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_download_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_download_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.Download), onCheckedChange = { toggleLocalTool(LocalToolOption.Download, it) }) })
             item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_archive_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_archive_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.Archive), onCheckedChange = { toggleLocalTool(LocalToolOption.Archive, it) }) })
+            // --- Cost Guard ---
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_cost_guards_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_cost_guards_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.CostGuards), onCheckedChange = { toggleLocalTool(LocalToolOption.CostGuards, it) }) })
         }
     }
 }
