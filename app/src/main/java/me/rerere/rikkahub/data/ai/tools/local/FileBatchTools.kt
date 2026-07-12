@@ -95,7 +95,7 @@ private fun batchErr(detail: String) =
 // ---------- batch_copy ----------
 
 fun batchCopyTool(): Tool = Tool(
-    name = "批量复制",
+    name = "batch_copy",
     description = """
         Copy many files to a destination directory in one call. Provide either paths (an
         explicit list) or root + pattern (a glob). dst_dir is the destination directory;
@@ -156,7 +156,7 @@ fun batchCopyTool(): Tool = Tool(
 // ---------- batch_move ----------
 
 fun batchMoveTool(): Tool = Tool(
-    name = "批量移动",
+    name = "batch_move",
     description = """
         Move many files into a destination directory in one call. Provide either paths (an
         explicit list) or root + pattern (a glob). dst_dir is the destination directory.
@@ -261,7 +261,7 @@ fun batchMoveTool(): Tool = Tool(
 // ---------- batch_delete ----------
 
 fun batchDeleteTool(): Tool = Tool(
-    name = "批量删除",
+    name = "batch_delete",
     description = """
         Delete many files or directories in one call. Provide either paths (an explicit list)
         or root + pattern (a glob). recursive defaults false (a non-empty directory fails

@@ -17,7 +17,7 @@ import me.rerere.ai.ui.UIMessagePart
 fun toastTool(
     context: Context,
 ): Tool = Tool(
-    name = "显示提示",
+    name = "show_toast",
     description = "Show a brief toast popup over whatever is currently on screen. Use sparingly — toasts are intrusive and only useful for short, momentary feedback.",
     parameters = {
         InputSchema.Obj(

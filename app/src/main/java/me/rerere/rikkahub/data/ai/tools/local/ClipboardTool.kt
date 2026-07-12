@@ -15,7 +15,7 @@ import me.rerere.rikkahub.utils.readClipboardText
 import me.rerere.rikkahub.utils.writeClipboardText
 
 internal fun buildClipboardTool(context: Context): Tool = Tool(
-    name = "读取剪贴板",
+    name = "clipboard_tool",
     description = """
         Read or write plain text from the device clipboard.
         Use action: read or write. For write, provide text.

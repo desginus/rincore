@@ -26,7 +26,7 @@ import java.time.ZoneOffset
 import java.time.ZonedDateTime
 
 internal fun buildCalendarQueryTool(context: Context): Tool = Tool(
-    name = "查询日历",
+    name = "calendar_query",
     description = """
         Query calendar events on the user's device within a time range.
         Specify a custom interval with 'begin'/'end', or use the 'range' preset (today/week/month).
@@ -221,7 +221,7 @@ internal fun buildCalendarQueryTool(context: Context): Tool = Tool(
 )
 
 internal fun buildCalendarCreateTool(context: Context): Tool = Tool(
-    name = "创建日历事件",
+    name = "calendar_create",
     description = """
         Create a new calendar event on the user's device.
         Requires title and start time at minimum. End time defaults to 1 hour after start.

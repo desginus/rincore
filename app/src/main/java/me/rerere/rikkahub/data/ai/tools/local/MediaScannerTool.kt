@@ -14,7 +14,7 @@ import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 
 fun mediaScannerTool(context: Context): Tool = Tool(
-    name = "扫描媒体",
+    name = "scan_media",
     description = "通知 Android 系统媒体扫描器刷新指定文件路径，使新文件出现在相册/音乐应用中。创建媒体文件后调用。",
     parameters = {
         InputSchema.Obj(

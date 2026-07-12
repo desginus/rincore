@@ -16,7 +16,7 @@ import me.rerere.ai.ui.UIMessagePart
 fun showLocationOnMapTool(
     context: Context,
 ): Tool = Tool(
-    name = "地图显示位置",
+    name = "show_location_on_map",
     description = "Open the user's default maps app showing the given place / address / coordinates. Useful for \"where is X?\", \"show me the way to X\", \"find Y on the map\".",
     parameters = {
         InputSchema.Obj(

@@ -11,7 +11,7 @@ import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 
 fun batteryTool(context: Context): Tool = Tool(
-    name = "获取电池状态",
+    name = "get_battery_status",
     description = "获取设备当前电池状态：电量百分比、是否充电、插电类型、健康度、温度、电压。",
     parameters = { InputSchema.Obj(properties = buildJsonObject { }) },
     execute = {

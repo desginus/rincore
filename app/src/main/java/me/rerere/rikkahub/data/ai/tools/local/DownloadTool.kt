@@ -14,7 +14,7 @@ import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 
 fun downloadTool(context: Context): Tool = Tool(
-    name = "下载文件",
+    name = "download_file",
     description = """
         Queue a file download via Android's DownloadManager. Files land in the public Downloads
         directory. Returns immediately with a download_id; the actual download proceeds in the

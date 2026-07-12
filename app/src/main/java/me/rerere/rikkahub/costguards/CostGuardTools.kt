@@ -28,7 +28,7 @@ fun checkTokenUsageTool(
     settingsStore: SettingsStore,
     conversationRepo: ConversationRepository,
 ): Tool = Tool(
-    name = "检查用量",
+    name = "check_token_usage",
     description = "读取当前会话的输入+输出 token 累计用量，与助手的软/硬上限对比。UNDER_SOFT=安全、WARN=接近上限应减速、OVER_HARD=已超限应停止。如未设置上限返回 NO_BUDGET。",
     parameters = {
         InputSchema.Obj(
