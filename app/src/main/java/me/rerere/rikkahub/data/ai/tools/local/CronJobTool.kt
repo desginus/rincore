@@ -179,7 +179,7 @@ fun scheduleJobTool(
     settingsStore: SettingsStore,
     knownToolNamesProvider: () -> List<String>,
 ): Tool = Tool(
-    name = "schedule_job",
+    name = "创建定时任务",
     description = """
         Schedule a recurring or one-shot job. Two modes: 'llm' (sends the prompt to an
         assistant at fire time, model decides what to do) and 'direct' (runs a fixed list
@@ -271,7 +271,7 @@ fun scheduleJobTool(
 )
 
 fun listJobsTool(repo: ScheduledJobRepository): Tool = Tool(
-    name = "list_jobs",
+    name = "列出定时任务",
     description = "List scheduled jobs. Optional filters: tag, mode, enabled.".trimIndent(),
     parameters = {
         InputSchema.Obj(properties = buildJsonObject {
@@ -297,7 +297,7 @@ fun deleteJobTool(
     runRepo: ScheduledJobRunRepository,
     scheduler: CronJobScheduler,
 ): Tool = Tool(
-    name = "delete_job",
+    name = "删除定时任务",
     description = "Permanently delete a scheduled job and its run history.".trimIndent(),
     parameters = {
         InputSchema.Obj(
@@ -318,7 +318,7 @@ fun deleteJobTool(
 )
 
 fun pauseJobTool(repo: ScheduledJobRepository, scheduler: CronJobScheduler): Tool = Tool(
-    name = "pause_job",
+    name = "暂停定时任务",
     description = "Pause a job — keeps the row but stops future fires until resume_job.".trimIndent(),
     parameters = {
         InputSchema.Obj(
@@ -338,7 +338,7 @@ fun pauseJobTool(repo: ScheduledJobRepository, scheduler: CronJobScheduler): Too
 )
 
 fun resumeJobTool(repo: ScheduledJobRepository, scheduler: CronJobScheduler): Tool = Tool(
-    name = "resume_job",
+    name = "恢复定时任务",
     description = "Resume a paused job — re-enables future fires.".trimIndent(),
     parameters = {
         InputSchema.Obj(
@@ -362,7 +362,7 @@ fun triggerJobNowTool(
     repo: ScheduledJobRepository,
     scheduler: CronJobScheduler,
 ): Tool = Tool(
-    name = "trigger_job_now",
+    name = "立即触发任务",
     description = "Manually fire a scheduled job immediately. Goes through the normal worker (HARDLINE checks, history row, concurrent-skip semantics). Does NOT affect the regular schedule.".trimIndent(),
     parameters = {
         InputSchema.Obj(
@@ -392,7 +392,7 @@ fun getJobHistoryTool(
     repo: ScheduledJobRepository,
     runRepo: ScheduledJobRunRepository,
 ): Tool = Tool(
-    name = "get_job_history",
+    name = "查看任务历史",
     description = "Return the most recent fires of a scheduled job, newest first.".trimIndent(),
     parameters = {
         InputSchema.Obj(

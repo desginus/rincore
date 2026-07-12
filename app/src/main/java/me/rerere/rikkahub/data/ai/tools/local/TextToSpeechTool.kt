@@ -19,7 +19,7 @@ internal fun buildTextToSpeechTool(
     ttsManager: TTSManager,
     settingsStore: SettingsStore,
 ): Tool = Tool(
-    name = "text_to_speech",
+    name = "文字转语音",
     description = """
         Speak text aloud to the user using the device's text-to-speech engine.
         Use this when the user asks you to read something aloud, or when audio output is appropriate.

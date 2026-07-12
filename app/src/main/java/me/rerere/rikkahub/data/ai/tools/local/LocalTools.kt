@@ -36,7 +36,10 @@ class LocalTools(
     val calendarQueryTool by lazy { buildCalendarQueryTool(context) }
     val calendarCreateTool by lazy { buildCalendarCreateTool(context) }
 
-    fun getTools(options: List<LocalToolOption>, invocationContext: ToolInvocationContext = ToolInvocationContext.EMPTY): List<Tool> {
+    fun getTools(
+        options: List<LocalToolOption>,
+        invocationContext: ToolInvocationContext = ToolInvocationContext.EMPTY,
+    ): List<Tool> {
         val tools = mutableListOf<Tool>()
         if (options.contains(LocalToolOption.JavascriptEngine)) tools.add(javascriptTool)
         if (options.contains(LocalToolOption.TimeInfo)) tools.add(timeTool)
@@ -87,6 +90,31 @@ class LocalTools(
         }
         if (options.contains(LocalToolOption.MediaScanner)) {
             tools.add(mediaScannerTool(context))
+        }
+        if (options.contains(LocalToolOption.Files)) {
+            tools.add(listFilesTool())
+            tools.add(readFileTool())
+            tools.add(writeBinaryFileTool())
+            tools.add(deleteFileTool())
+            tools.add(moveFileTool())
+            tools.add(copyFileTool())
+            tools.add(createDirectoryTool())
+            tools.add(fileInfoTool())
+            tools.add(findFilesTool())
+            tools.add(showImageTool(context, invocationContext.modelCanSeeImages))
+            tools.add(openFileTool(context, invocationContext))
+            tools.add(batchCopyTool())
+            tools.add(batchMoveTool())
+            tools.add(batchDeleteTool())
+        }
+        if (options.contains(LocalToolOption.Download)) {
+            tools.add(downloadTool(context))
+            tools.add(writeTextFileTool(context))
+        }
+        if (options.contains(LocalToolOption.Archive)) {
+            tools.add(zipFilesTool(context))
+            tools.add(unzipFileTool(context))
+            tools.add(listZipContentsTool(context))
         }
         return tools
     }

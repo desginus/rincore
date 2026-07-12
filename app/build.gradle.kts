@@ -292,6 +292,9 @@ dependencies {
     implementation(libs.play.services.location)
     implementation(libs.kotlinx.coroutines.play.services)
 
+    // AndroidX DocumentFile — SAF tree traversal for FileManager tools
+    implementation("androidx.documentfile:documentfile:1.0.1")
+
     // AndroidX Media (MediaSessionCompat for media playback tools)
     implementation(libs.androidx.media)
 

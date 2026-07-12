@@ -26,7 +26,7 @@ import java.time.ZoneId
 import java.time.ZonedDateTime
 
 internal fun buildScreenTimeTool(context: Context, eventBus: AppEventBus): Tool = Tool(
-    name = "get_screen_time",
+    name = "查看屏幕时间",
     description = """
         Get the user's app screen usage (screen time) over a time range.
         Specify a custom interval with 'begin'/'end', or use the 'range' preset (today/week).

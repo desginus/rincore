@@ -20,4 +20,7 @@ sealed class LocalToolOption {
     @Serializable @SerialName("battery") data object Battery : LocalToolOption()
     @Serializable @SerialName("media_player") data object MediaPlayer : LocalToolOption()
     @Serializable @SerialName("media_scanner") data object MediaScanner : LocalToolOption()
+    @Serializable @SerialName("files") data object Files : LocalToolOption()
+    @Serializable @SerialName("download") data object Download : LocalToolOption()
+    @Serializable @SerialName("archive") data object Archive : LocalToolOption()
 }

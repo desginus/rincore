@@ -19,8 +19,8 @@ fun playMediaTool(
     invocationContext: ToolInvocationContext = ToolInvocationContext.EMPTY,
     streamer: InteractiveToolStreamer = InteractiveToolStreamer.NoOp,
 ): Tool = Tool(
-    name = "play_media",
-    description = "Start a new playback session from position 0 with system media controls (lock-screen notification, Bluetooth buttons). DESTRUCTIVE — replaces any active session. Sources: file://, content://, https://. Optional title/artist/album/artwork_uri for the notification.",
+    name = "播放媒体",
+    description = "从头开始播放音视频文件，启用系统媒体控件（锁屏通知、蓝牙按钮）。会替换当前活动会话，如需继续之前播放请用恢复播放。支持 file://、content://、https:// 格式的源文件。",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
@@ -61,8 +61,8 @@ fun playMediaTool(
 )
 
 fun stopMediaTool(context: Context): Tool = Tool(
-    name = "stop_media",
-    description = "Stop the active media session and dismiss the notification. Tears the player down — for temporary pauses use pause_media instead.",
+    name = "停止播放",
+    description = "停止当前播放并关闭媒体通知。会销毁播放器实例——如需临时暂停请用暂停播放。停止前会保存播放位置快照，以便恢复播放时可以大致从断点继续。",
     parameters = { InputSchema.Obj(properties = buildJsonObject { }) },
     execute = {
         val wasPlaying = MediaPlaybackService.instance?.isPlaying ?: false
@@ -73,8 +73,8 @@ fun stopMediaTool(context: Context): Tool = Tool(
 )
 
 fun pauseMediaTool(context: Context): Tool = Tool(
-    name = "pause_media",
-    description = "Pause audio currently playing via play_media. Use resume_media to continue.",
+    name = "暂停播放",
+    description = "暂停当前播放的音频。使用恢复播放来继续。",
     parameters = { InputSchema.Obj(properties = buildJsonObject { }) },
     execute = {
         val svc = MediaPlaybackService.instance
@@ -92,8 +92,8 @@ fun pauseMediaTool(context: Context): Tool = Tool(
 )
 
 fun resumeMediaTool(context: Context): Tool = Tool(
-    name = "resume_media",
-    description = "Resume playback. Primary path: continues the active media session at its current position. Fallback: if the session was torn down by stop_media, restarts the last-stopped track at the saved position.",
+    name = "恢复播放",
+    description = "恢复播放。优先从当前会话的暂停位置继续；如果会话已被停止播放销毁，则从上次停止的快照恢复。",
     parameters = { InputSchema.Obj(properties = buildJsonObject { }) },
     execute = {
         val svc = MediaPlaybackService.instance
@@ -121,8 +121,8 @@ fun resumeMediaTool(context: Context): Tool = Tool(
 )
 
 fun seekMediaTool(context: Context): Tool = Tool(
-    name = "seek_media",
-    description = "Jump to a specific position (milliseconds from start) in the active media session. Works whether playing or paused — preserves play/pause state.",
+    name = "跳转播放",
+    description = "跳转到当前媒体会话的指定毫秒位置。播放或暂停状态下均可使用，保持原有播放/暂停状态。",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject { put("position_ms", buildJsonObject { put("type", "integer"); put("description", "Target position in milliseconds") }) },
@@ -146,8 +146,8 @@ fun seekMediaTool(context: Context): Tool = Tool(
 )
 
 fun getMediaStatusTool(): Tool = Tool(
-    name = "get_media_status",
-    description = "Get the current media playback status: whether something is playing, the source, position, duration, and metadata.",
+    name = "查询播放状态",
+    description = "查询当前媒体播放状态：是否正在播放、来源、当前位置、总时长和元数据。",
     parameters = { InputSchema.Obj(properties = buildJsonObject { }) },
     execute = {
         val svc = MediaPlaybackService.instance

@@ -16,6 +16,7 @@ import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import me.rerere.rikkahub.data.agentrun.AgentRunBootRecovery
+import me.rerere.rikkahub.data.ai.tools.local.AgentWorkspace
 import me.rerere.rikkahub.data.files.FileFolders
 import java.io.File
 import kotlinx.coroutines.SupervisorJob
@@ -67,6 +68,7 @@ class RikkaHubApp : Application() {
 
         // Init QuickJS native library
         QuickJSLoader.init()
+        AgentWorkspace.init(this)
 
         // delete temp files
         deleteTempFiles()
