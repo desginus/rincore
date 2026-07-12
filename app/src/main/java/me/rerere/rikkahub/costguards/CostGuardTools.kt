@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.costguards
 
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
