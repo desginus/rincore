@@ -3,7 +3,6 @@ package me.rerere.rikkahub.ui.pages.assistant.detail
 import android.Manifest
 import android.os.Build
 import android.os.Environment
-import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -12,13 +11,18 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
@@ -28,10 +32,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dokar.sonner.ToastType
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.tools.local.LocalToolOption
+import me.rerere.rikkahub.data.ai.tools.local.PermissionHelper
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
-import me.rerere.rikkahub.ui.components.ui.permission.PermissionAllFiles
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionInfo
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionLocation
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
@@ -82,11 +86,30 @@ private fun AssistantLocalToolContent(
         )
     )
     val locationPermissionState = rememberPermissionState(permissions = setOf(PermissionLocation))
-    val allFilesPermissionState = rememberPermissionState(permissions = setOf(PermissionAllFiles))
 
     PermissionManager(permissionState = calendarPermissionState)
     PermissionManager(permissionState = locationPermissionState)
-    PermissionManager(permissionState = allFilesPermissionState)
+
+    // 特殊权限对话框: MANAGE_EXTERNAL_STORAGE 不能用 requestPermissions()
+    var showAllFilesDialog by remember { mutableStateOf(false) }
+    if (showAllFilesDialog) {
+        AlertDialog(
+            onDismissRequest = { showAllFilesDialog = false },
+            title = { Text("需要访问所有文件权限") },
+            text = {
+                Text("文件管理工具需要访问共享存储上的文件。\n\n请在接下来的系统设置页面中，找到 RinCore 并开启「允许访问所有文件」开关。")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showAllFilesDialog = false
+                    context.startActivity(PermissionHelper.allFilesAccessIntent(context))
+                }) { Text("去设置") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAllFilesDialog = false }) { Text("取消") }
+            },
+        )
+    }
 
     fun toggleLocalTool(option: LocalToolOption, enabled: Boolean) {
         if (enabled && option == LocalToolOption.ScreenTime && !context.hasUsageStatsPermission()) {
@@ -101,22 +124,11 @@ private fun AssistantLocalToolContent(
             locationPermissionState.requestPermissions()
             return
         }
-        // Files 工具: ~/ 工作区无需权限，但建议授予 MANAGE_EXTERNAL_STORAGE 以访问 /sdcard/
-        if (enabled && option == LocalToolOption.Files) {
+        // Files / Download / Archive: MANAGE_EXTERNAL_STORAGE 是特殊权限，不能通过 requestPermissions() 请求
+        if (enabled && (option == LocalToolOption.Files || option == LocalToolOption.Download || option == LocalToolOption.Archive)) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
-                toaster.show(
-                    message = "文件管理工具已开启。~ 工作区路径无需额外权限；如需访问 /sdcard/ 路径，请在系统设置中授予「所有文件访问」权限。",
-                    type = ToastType.Info
-                )
-            }
-        }
-        // Download 工具: MANAGE_EXTERNAL_STORAGE 让 DownloadManager 写公共下载目录
-        if (enabled && option == LocalToolOption.Download) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
-                toaster.show(
-                    message = "下载工具已开启。DownloadManager 自动下载到公共下载目录；如需 AI 写入 /sdcard/ 路径，请授予「所有文件访问」权限。",
-                    type = ToastType.Info
-                )
+                showAllFilesDialog = true
+                return
             }
         }
         val newLocalTools = if (enabled) assistant.localTools + option else assistant.localTools - option

@@ -1,9 +1,12 @@
 package me.rerere.rikkahub.data.ai.tools.local
 
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.Settings
 import androidx.core.content.ContextCompat
 
 /** 运行时权限辅助工具 */
@@ -18,4 +21,10 @@ object PermissionHelper {
         } else {
             true
         }
+
+    /** 打开系统设置中"所有文件访问"页面 */
+    fun allFilesAccessIntent(ctx: Context): Intent =
+        Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+            .setData(Uri.parse("package:${ctx.packageName}"))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 }
