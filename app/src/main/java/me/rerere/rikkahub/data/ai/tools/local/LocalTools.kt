@@ -2,9 +2,11 @@ package me.rerere.rikkahub.data.ai.tools.local
 
 import android.content.Context
 import me.rerere.ai.core.Tool
+import me.rerere.rikkahub.costguards.checkTokenUsageTool
 import me.rerere.rikkahub.data.ai.tools.ToolInvocationContext
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.event.AppEventBus
+import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.ScheduledJobRepository
 import me.rerere.rikkahub.data.repository.ScheduledJobRunRepository
 import me.rerere.rikkahub.service.CronJobScheduler
@@ -26,6 +28,7 @@ class LocalTools(
     private val cronJobScheduler: CronJobScheduler,
     private val subAgentEngine: SubAgentEngine,
     private val subAgentRegistry: SubAgentRegistry,
+    private val conversationRepo: ConversationRepository,
 ) {
     val javascriptTool by lazy { buildJavascriptTool() }
     val timeTool by lazy { buildTimeInfoTool() }
@@ -35,6 +38,7 @@ class LocalTools(
     val screenTimeTool by lazy { buildScreenTimeTool(context, eventBus) }
     val calendarQueryTool by lazy { buildCalendarQueryTool(context) }
     val calendarCreateTool by lazy { buildCalendarCreateTool(context) }
+    val costGuardTool by lazy { checkTokenUsageTool(settingsStore, conversationRepo) }
 
     fun getTools(
         options: List<LocalToolOption>,
@@ -52,7 +56,9 @@ class LocalTools(
             tools.add(calendarCreateTool)
         }
         if (options.contains(LocalToolOption.CronJobs)) {
-            val knownToolNamesProvider: () -> List<String> = { this.getTools(options, invocationContext).map { it.name } }
+            val knownToolNamesProvider: () -> List<String> = {
+                this.getTools(options, invocationContext).map { it.name }
+            }
             tools.add(scheduleJobTool(scheduledJobRepository, cronJobScheduler, settingsStore, knownToolNamesProvider))
             tools.add(listJobsTool(scheduledJobRepository))
             tools.add(deleteJobTool(scheduledJobRepository, scheduledJobRunRepository, cronJobScheduler))
@@ -115,6 +121,9 @@ class LocalTools(
             tools.add(zipFilesTool(context))
             tools.add(unzipFileTool(context))
             tools.add(listZipContentsTool(context))
+        }
+        if (options.contains(LocalToolOption.CostGuards)) {
+            tools.add(costGuardTool)
         }
         return tools
     }

@@ -43,6 +43,9 @@ data class Assistant(
     val backgroundOpacity: Float = 1.0f, // 背景图不透明度(0~1)
     val useGradientBackground: Boolean = false, // 开启后聊天页使用动态渐变背景
     val modeInjectionIds: Set<Uuid> = emptySet(),      // 关联的模式注入 ID
+    // Phase 15 — 每任务 token 预算. 两者都为 null 时不过滤. LLM 通过 `检查用量` 检查
+    val tokenBudgetSoftCap: Int? = null,
+    val tokenBudgetHardCap: Int? = null,
     val lorebookIds: Set<Uuid> = emptySet(),            // 关联的 Lorebook ID
     val enabledSkills: Set<String> = emptySet(),        // 启用的 skill 名称列表
     val enableTimeReminder: Boolean = false,            // 时间间隔提醒注入
