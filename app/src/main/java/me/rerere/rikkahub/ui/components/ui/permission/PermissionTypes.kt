@@ -89,3 +89,10 @@ val PermissionLocation = PermissionInfo(
     usage = { Text(stringResource(R.string.permission_location_desc)) },
     required = true
 )
+
+val PermissionAllFiles = PermissionInfo(
+    permission = Manifest.permission.MANAGE_EXTERNAL_STORAGE,
+    displayName = { Text(stringResource(R.string.permission_all_files_title)) },
+    usage = { Text(stringResource(R.string.permission_all_files_desc)) },
+    required = false
+)
