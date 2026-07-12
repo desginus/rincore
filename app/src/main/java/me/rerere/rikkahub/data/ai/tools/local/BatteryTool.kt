@@ -11,8 +11,8 @@ import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 
 fun batteryTool(context: Context): Tool = Tool(
-    name = "get_battery_status",
-    description = "Get the current battery status of the device, including charge percentage, charging state, plug type, health, temperature, voltage, and battery technology.",
+    name = "获取电池状态",
+    description = "获取设备当前电池状态：电量百分比、是否充电、插电类型、健康度、温度、电压。",
     parameters = { InputSchema.Obj(properties = buildJsonObject { }) },
     execute = {
         val intent: Intent? = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))

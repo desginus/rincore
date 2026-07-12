@@ -1269,6 +1269,12 @@
   <string name="assistant_page_local_tools_media_player_desc">Let the AI play/pause/stop/seek audio files with lock-screen media controls</string>
   <string name="assistant_page_local_tools_media_scanner_title">Media Scanner</string>
   <string name="assistant_page_local_tools_media_scanner_desc">Let the AI trigger Android media scanner to index new files for gallery/music apps</string>
+  <string name="assistant_page_local_tools_files_title">文件管理</string>
+  <string name="assistant_page_local_tools_files_desc">让 AI 列出、读取、写入、删除、移动、复制、搜索文件，以及显示图片</string>
+  <string name="assistant_page_local_tools_download_title">下载工具</string>
+  <string name="assistant_page_local_tools_download_desc">让 AI 通过 DownloadManager 下载文件并写入文本文件</string>
+  <string name="assistant_page_local_tools_archive_title">压缩解压</string>
+  <string name="assistant_page_local_tools_archive_desc">让 AI 创建、解压 ZIP 压缩包，以及列出压缩包内容</string>
   <string name="chat_message_tool_calendar_query">Query calendar events</string>
   <string name="chat_message_tool_calendar_create">Create event: %1$s</string>
   <string name="chat_page_move_to_folder">Move to Folder</string>
