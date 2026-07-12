@@ -31,7 +31,7 @@ private fun ensureChannel(context: Context) {
 fun notificationTool(
     context: Context,
 ): Tool = Tool(
-    name = "发送通知",
+    name = "post_notification",
     description = "Post an Android notification on behalf of the user. Use sparingly — notifications are intrusive.",
     parameters = {
         InputSchema.Obj(

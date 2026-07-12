@@ -43,7 +43,7 @@ private fun JsonObjectBuilder.putLocation(loc: Location, providerName: String) {
 }
 
 fun locationTool(context: Context): Tool = Tool(
-    name = "获取位置",
+    name = "get_location",
     description = "获取设备当前 GPS 位置（经纬度、精度）。需要定位权限且定位服务已开启。支持高精度/均衡/低功耗三种模式，优先使用缓存热定位。",
     parameters = {
         InputSchema.Obj(

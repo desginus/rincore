@@ -31,7 +31,7 @@ import java.io.File
  * the wrong PATH, breaking every subsequent read/copy/move.
  */
 fun writeTextFileTool(context: Context): Tool = Tool(
-    name = "写入文本",
+    name = "write_text_file",
     description = """
         Save text content to a file at the given absolute path. The full path must be
         outside system / other-app sandboxes (the path-safety guard refuses those with a

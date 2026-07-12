@@ -44,7 +44,7 @@ fun showImageTool(
     @Suppress("UNUSED_PARAMETER") context: Context,
     modelCanSeeImages: Boolean = true,
 ): Tool = Tool(
-    name = "显示图片",
+    name = "show_image",
     description = "在聊天中内联显示图片。支持 PNG、JPEG、WebP、GIF、BMP 格式。",
     parameters = {
         InputSchema.Obj(

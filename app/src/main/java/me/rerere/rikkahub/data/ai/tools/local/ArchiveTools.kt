@@ -123,7 +123,7 @@ private fun collectContentSources(context: Context, raw: String): List<ArchiveSo
 // ---------- zip_files ----------
 
 fun zipFilesTool(context: Context): Tool = Tool(
-    name = "创建压缩",
+    name = "zip_files",
     description = """
         Create a .zip archive from a list of files and/or directories. sources and
         destination accept file:// and content:// (USB / SD / Downloads / cloud via SAF
@@ -236,7 +236,7 @@ internal fun isUnsafeZipEntry(entryName: String): Boolean {
 }
 
 fun unzipFileTool(context: Context): Tool = Tool(
-    name = "解压文件",
+    name = "unzip_file",
     description = """
         Extract a .zip archive into a directory. source and destination_dir accept file://
         and content:// URIs. Path-traversal entries (../) are rejected. overwrite defaults
@@ -406,7 +406,7 @@ private fun writeEntryToTree(
 // ---------- list_zip_contents ----------
 
 fun listZipContentsTool(context: Context): Tool = Tool(
-    name = "列出压缩",
+    name = "list_zip_contents",
     description = """
         List the entries of a .zip archive without extracting. source accepts file:// and
         content:// URIs. Returns {entries: [{name, size, compressed_size, is_dir,

@@ -51,7 +51,7 @@ fun subagentDispatchTool(
     callerContext: me.rerere.rikkahub.data.ai.tools.ToolInvocationContext =
         me.rerere.rikkahub.data.ai.tools.ToolInvocationContext.EMPTY,
 ): Tool = Tool(
-    name = "派发子代理",
+    name = "subagent_dispatch",
     description = """
         Dispatch a focused sub-agent — a clean-context LLM run that returns a concise
         summary. Use when the task is independent (research, lookup, multi-step work)
@@ -135,7 +135,7 @@ fun subagentDispatchTool(
 )
 
 fun subagentListTool(registry: SubAgentRegistry): Tool = Tool(
-    name = "列出子代理",
+    name = "subagent_list",
     description = """
         List sub-agent runs visible to this assistant. Set active_only=true to omit
         terminal runs. Read-only.
@@ -168,7 +168,7 @@ fun subagentListTool(registry: SubAgentRegistry): Tool = Tool(
 )
 
 fun subagentGetTool(registry: SubAgentRegistry): Tool = Tool(
-    name = "查看子代理",
+    name = "subagent_get",
     description = "Fetch the full run record for a sub-agent by id. Read-only.".trimIndent(),
     parameters = {
         InputSchema.Obj(
@@ -188,7 +188,7 @@ fun subagentGetTool(registry: SubAgentRegistry): Tool = Tool(
 )
 
 fun subagentCancelTool(registry: SubAgentRegistry): Tool = Tool(
-    name = "取消子代理",
+    name = "subagent_cancel",
     description = """
         Cancel a running sub-agent by id. Marks the run CANCELLED; safe to call on
         already-terminal runs (returns ok=false). Read-only from the user's perspective

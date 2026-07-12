@@ -34,7 +34,7 @@ fun openFileTool(
     invocationContext: ToolInvocationContext = ToolInvocationContext.EMPTY,
     streamer: InteractiveToolStreamer = InteractiveToolStreamer.NoOp,
 ): Tool = Tool(
-    name = "打开文件",
+    name = "open_file",
     description = "用系统默认查看器打开文件。支持 ~ 路径、绝对路径和 content:// URI，可选指定 MIME 类型。",
     parameters = {
         InputSchema.Obj(
