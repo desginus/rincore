@@ -398,13 +398,13 @@ class ChatCompletionsAPI(
                         put("thinking", buildJsonObject {
                             put("type", if (!level.isEnabled) "disabled" else "enabled")
                         })
-                        if (level.isEnabled) {
-                            // GLM-5.2 reasoning_effort: "high" (增强) / "max" (深度, 默认)
+                        if (level.isEnabled && level != ReasoningLevel.AUTO) {
+                            // AUTO 时不传 reasoning_effort, 让模型走默认 (本身就是 max)
+                            // LOW/MEDIUM → high; HIGH/XHIGH → max
                             val effort = when (level) {
-                                ReasoningLevel.AUTO -> "max"      // 默认深度推理
                                 ReasoningLevel.LOW, ReasoningLevel.MEDIUM -> "high"
                                 ReasoningLevel.HIGH, ReasoningLevel.XHIGH -> "max"
-                                ReasoningLevel.OFF -> "high"
+                                else -> "max" // unreachable
                             }
                             put("reasoning_effort", effort)
                         }
