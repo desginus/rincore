@@ -5,9 +5,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.channels.onFailure
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -151,102 +153,120 @@ class ChatCompletionsAPI(
 
         Log.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
 
-        // just for debugging response body
-        // println(client.newCall(request).await().body?.string())
+        // SSE 连接优化: 首次数据到达前断连时自动重试, 指数退避
+        val hasReceivedData = java.util.concurrent.atomic.AtomicBoolean(false)
+        val retryCount = java.util.concurrent.atomic.AtomicInteger(0)
+        val maxRetries = 3
+        var currentEventSource: EventSource? = null
+        val scope = this@callbackFlow
 
-        val listener = object : EventSourceListener() {
-            override fun onEvent(
-                eventSource: EventSource,
-                id: String?,
-                type: String?,
-                data: String
-            ) {
-                if (data == "[DONE]") {
-                    println("[onEvent] (done) 结束流: $data")
-                    close()
-                    return
-                }
-                Log.d(TAG, "onEvent: $data")
-                data
-                    .trim()
-                    .split("\n")
-                    .filter { it.isNotBlank() }
-                    .map { json.parseToJsonElement(it).jsonObject }
-                    .forEach {
-                        if (it["error"] != null) {
-                            val error = it["error"]!!.parseErrorDetail()
-                            throw error
-                        }
-                        val id = it["id"]?.jsonPrimitive?.contentOrNull ?: ""
-                        val model = it["model"]?.jsonPrimitive?.contentOrNull ?: ""
+        fun connect() {
+            val listener = object : EventSourceListener() {
+                override fun onEvent(
+                    eventSource: EventSource,
+                    id: String?,
+                    type: String?,
+                    data: String
+                ) {
+                    if (data == "[DONE]") {
+                        close()
+                        return
+                    }
+                    hasReceivedData.set(true)
+                    Log.d(TAG, "onEvent: $data")
+                    data
+                        .trim()
+                        .split("\n")
+                        .filter { it.isNotBlank() }
+                        .map { json.parseToJsonElement(it).jsonObject }
+                        .forEach {
+                            if (it["error"] != null) {
+                                val error = it["error"]!!.parseErrorDetail()
+                                throw error
+                            }
+                            val id = it["id"]?.jsonPrimitive?.contentOrNull ?: ""
+                            val model = it["model"]?.jsonPrimitive?.contentOrNull ?: ""
 
-                        val choices = it["choices"]?.jsonArray ?: JsonArray(emptyList())
-                        val choiceList = buildList {
-                            if (choices.isNotEmpty()) {
-                                val choice = choices[0].jsonObject
-                                val message =
-                                    choice["delta"]?.jsonObject ?: choice["message"]?.jsonObject
-                                    ?: throw Exception("delta/message is null")
-                                val finishReason =
-                                    choice["finish_reason"]?.jsonPrimitive?.contentOrNull
-                                        ?: "unknown"
-                                add(
-                                    UIMessageChoice(
-                                        index = 0,
-                                        delta = parseMessage(message),
-                                        message = null,
-                                        finishReason = finishReason,
+                            val choices = it["choices"]?.jsonArray ?: JsonArray(emptyList())
+                            val choiceList = buildList {
+                                if (choices.isNotEmpty()) {
+                                    val choice = choices[0].jsonObject
+                                    val message =
+                                        choice["delta"]?.jsonObject ?: choice["message"]?.jsonObject
+                                        ?: throw Exception("delta/message is null")
+                                    val finishReason =
+                                        choice["finish_reason"]?.jsonPrimitive?.contentOrNull
+                                            ?: "unknown"
+                                    add(
+                                        UIMessageChoice(
+                                            index = 0,
+                                            delta = parseMessage(message),
+                                            message = null,
+                                            finishReason = finishReason,
+                                        )
                                     )
-                                )
+                                }
+                            }
+                            val usage = parseTokenUsage(it["usage"] as? JsonObject)
+
+                            val messageChunk = MessageChunk(
+                                id = id,
+                                model = model,
+                                choices = choiceList,
+                                usage = usage
+                            )
+                            trySend(messageChunk).onFailure { e ->
+                                Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
                             }
                         }
-                        val usage = parseTokenUsage(it["usage"] as? JsonObject)
+                }
 
-                        val messageChunk = MessageChunk(
-                            id = id,
-                            model = model,
-                            choices = choiceList,
-                            usage = usage
-                        )
-                        trySend(messageChunk).onFailure { e ->
-                            Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
+                override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
+                    var exception = t
+
+                    t?.printStackTrace()
+                    Log.w(TAG, "onFailure: ${t?.javaClass?.name} ${t?.message} / $response")
+
+                    val bodyRaw = response?.body?.stringSafe()
+                    try {
+                        if (!bodyRaw.isNullOrBlank()) {
+                            val bodyElement = Json.parseToJsonElement(bodyRaw)
+                            exception = bodyElement.parseErrorDetail()
+                            Log.i(TAG, "onFailure: $exception")
                         }
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
+                        exception = e
                     }
-            }
 
-            override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
-                var exception = t
-
-                t?.printStackTrace()
-                println("[onFailure] 发生错误: ${t?.javaClass?.name} ${t?.message} / $response")
-
-                val bodyRaw = response?.body?.stringSafe()
-                try {
-                    if (!bodyRaw.isNullOrBlank()) {
-                        val bodyElement = Json.parseToJsonElement(bodyRaw)
-                        println(bodyElement)
-                        exception = bodyElement.parseErrorDetail()
-                        Log.i(TAG, "onFailure: $exception")
+                    // 仅在尚未收到任何数据时重试 (避免重复响应)
+                    if (!hasReceivedData.get() && retryCount.incrementAndGet() <= maxRetries && !scope.isClosedForSend) {
+                        val delayMs = 1000L * (1 shl (retryCount.get() - 1))
+                        Log.w(TAG, "SSE pre-data failure, retry ${retryCount.get()}/$maxRetries after ${delayMs}ms: ${exception?.message}")
+                        scope.launch {
+                            delay(delayMs)
+                            if (!scope.isClosedForSend) {
+                                connect()
+                            }
+                        }
+                        return
                     }
-                } catch (e: Throwable) {
-                    Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
-                    e.printStackTrace()
-                    exception = e
-                } finally {
+
                     close(exception)
                 }
-            }
 
-            override fun onClosed(eventSource: EventSource) {
-                close()
+                override fun onClosed(eventSource: EventSource) {
+                    close()
+                }
             }
+            currentEventSource = EventSources.createFactory(client).newEventSource(request, listener)
         }
 
-        val eventSource = EventSources.createFactory(client).newEventSource(request, listener)
+        connect()
 
         awaitClose {
-            println("[awaitClose] 关闭eventSource ")
-            eventSource.cancel()
+            Log.d(TAG, "awaitClose: cancelling eventSource")
+            currentEventSource?.cancel()
         }
         // trySend 在缓冲满时会静默丢弃 delta，导致回复中间缺字 (#1295)，因此缓冲必须无界
     }.buffer(Channel.UNLIMITED)
@@ -427,8 +447,9 @@ class ChatCompletionsAPI(
             }
 
             if (params.model.abilities.contains(ModelAbility.TOOL) && params.tools.isNotEmpty()) {
+                // 缓存优化: 按工具名排序, 确保跨请求的工具定义顺序一致, 最大化 DeepSeek 前缀缓存命中率
                 putJsonArray("tools") {
-                    params.tools.forEach { tool ->
+                    params.tools.sortedBy { it.name }.forEach { tool ->
                         add(buildJsonObject {
                             put("type", "function")
                             put("function", buildJsonObject {
@@ -787,12 +808,21 @@ class ChatCompletionsAPI(
 
     private fun parseTokenUsage(jsonObject: JsonObject?): TokenUsage? {
         if (jsonObject == null) return null
+        // DeepSeek 返回 prompt_cache_hit_tokens (顶层) 或 prompt_tokens_details.cached_tokens (OpenAI 格式)
+        val cachedTokens = jsonObject["prompt_cache_hit_tokens"]?.jsonPrimitive?.intOrNull
+            ?: jsonObject["prompt_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
+            ?: 0
+        // 缓存命中日志
+        if (cachedTokens > 0) {
+            val promptTokens = jsonObject["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+            val hitRate = if (promptTokens > 0) cachedTokens * 100 / promptTokens else 0
+            Log.i(TAG, "Cache hit: $cachedTokens/$promptTokens tokens (${hitRate}%)")
+        }
         return TokenUsage(
             promptTokens = jsonObject["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
             completionTokens = jsonObject["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
             totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            cachedTokens = jsonObject["prompt_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
-                ?: 0
+            cachedTokens = cachedTokens
         )
     }
 

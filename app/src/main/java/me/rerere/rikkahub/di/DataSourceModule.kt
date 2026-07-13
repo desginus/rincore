@@ -34,6 +34,7 @@ import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.sync.webdav.WebDavSync
 import me.rerere.search.SearchService
 import me.rerere.rikkahub.data.sync.S3Sync
+import okhttp3.ConnectionPool
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -165,9 +166,11 @@ val dataSourceModule = module {
         val acceptLang = AcceptLanguageBuilder.fromAndroid(get())
             .build()
         OkHttpClient.Builder()
-            .connectTimeout(20, TimeUnit.SECONDS)
+            .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.MINUTES)
             .writeTimeout(120, TimeUnit.SECONDS)
+            .pingInterval(30, TimeUnit.SECONDS)
+            .connectionPool(ConnectionPool(5, 5, TimeUnit.MINUTES))
             .followSslRedirects(true)
             .followRedirects(true)
             .retryOnConnectionFailure(true)
