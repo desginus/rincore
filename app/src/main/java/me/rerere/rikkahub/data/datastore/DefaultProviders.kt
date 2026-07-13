@@ -252,7 +252,7 @@ val DEFAULT_PROVIDERS = listOf(
     ProviderSetting.Claude(
         id = Uuid.parse("b4deabea-20fb-4101-a74c-65679c7e4754"),
         name = "MiniMax",
-        baseUrl = "https://api.minimaxi.com/anthropic/v1",
+        baseUrl = "https://api.minimaxi.com/v1",
         apiKey = "",
         enabled = false,
         builtIn = true,
@@ -287,5 +287,13 @@ val DEFAULT_PROVIDERS = listOf(
                 }
             )
         }
+    ),
+    ProviderSetting.OpenAI(
+        id = Uuid.parse("a1b2c3d4-e5f6-7890-abcd-ef1234567890"),
+        name = "MiniMax",
+        baseUrl = "https://api.minimaxi.com/v1",
+        apiKey = "",
+        enabled = false,
+        builtIn = true,
     ),
 )
