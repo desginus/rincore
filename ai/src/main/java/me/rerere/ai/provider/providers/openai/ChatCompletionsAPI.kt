@@ -330,10 +330,11 @@ class ChatCompletionsAPI(
                     }
 
                     "dashscope.aliyuncs.com" -> {
-                        // 阿里云百炼
-                        // https://bailian.console.aliyun.com/console?tab=doc#/doc/?type=model&url=https%3A%2F%2Fhelp.aliyun.com%2Fdocument_detail%2F2870973.html&renderType=iframe
+                        // 阿里云百炼 (Qwen3.7 / Qwen3.6 / Qwen3.5 / DeepSeek V4 / Kimi)
                         put("enable_thinking", level.isEnabled)
                         if (level != ReasoningLevel.AUTO) put("thinking_budget", level.budgetTokens)
+                        // preserve_thinking: 多轮对话中传递历史 reasoning_content, 提升 agent 连续性
+                        if (level.isEnabled) put("preserve_thinking", true)
                     }
 
                     "ark.cn-beijing.volces.com" -> {
@@ -393,9 +394,20 @@ class ChatCompletionsAPI(
                     }
 
                     "open.bigmodel.cn" -> {
+                        // 智谱 GLM-5.2: thinking + reasoning_effort (high/max)
                         put("thinking", buildJsonObject {
                             put("type", if (!level.isEnabled) "disabled" else "enabled")
                         })
+                        if (level.isEnabled) {
+                            // GLM-5.2 reasoning_effort: "high" (增强) / "max" (深度, 默认)
+                            val effort = when (level) {
+                                ReasoningLevel.AUTO -> "max"      // 默认深度推理
+                                ReasoningLevel.LOW, ReasoningLevel.MEDIUM -> "high"
+                                ReasoningLevel.HIGH, ReasoningLevel.XHIGH -> "max"
+                                ReasoningLevel.OFF -> "high"
+                            }
+                            put("reasoning_effort", effort)
+                        }
                     }
 
                     "api.moonshot.cn" -> {
@@ -410,6 +422,14 @@ class ChatCompletionsAPI(
                         })
                         if (level.isEnabled && level != ReasoningLevel.AUTO) {
                             put("reasoning_effort", level.effort)
+                        }
+                    }
+
+                    "api.minimaxi.com", "api.minimax.chat" -> {
+                        // MiniMax M3: reasoning_split 将推理内容分离到 delta.reasoning 字段
+                        // 不设置时推理内容以 <mm:think> 标签泄漏到 content 中
+                        if (level.isEnabled) {
+                            put("reasoning_split", true)
                         }
                     }
 
