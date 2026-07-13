@@ -362,9 +362,7 @@ class GenerationHandler(
         workspaceCwd: String? = null,
     ) {
         val internalMessages = buildList {
-            // 缓存优化: 将 system prompt 拆分为稳定前缀和易变后缀
-            // DeepSeek 自动缓存请求前缀, 前缀越稳定缓存命中率越高
-            val stableSystem = buildString {
+            val system = buildString {
                 val effectiveSystemPrompt =
                     if (assistant.allowConversationSystemPrompt && !conversationSystemPrompt.isNullOrBlank()) {
                         conversationSystemPrompt
@@ -374,22 +372,23 @@ class GenerationHandler(
                 if (effectiveSystemPrompt.isNotBlank()) {
                     append(effectiveSystemPrompt)
                 }
-                // 工具prompt — 工具列表在会话中稳定不变, 放入稳定前缀
+
+                // 记忆 — 仅在非空时追加 (空记忆时 buildMemoryPrompt 返回 "")
+                if (assistant.enableMemory) {
+                    val memoryPrompt = buildMemoryPrompt(memories = memories)
+                    if (memoryPrompt.isNotBlank()) {
+                        appendLine()
+                        append(memoryPrompt)
+                    }
+                }
+
+                // 工具prompt
                 tools.forEach { tool ->
                     appendLine()
                     append(tool.systemPrompt(model, messages))
                 }
             }
-            if (stableSystem.isNotBlank()) add(UIMessage.system(prompt = stableSystem))
-
-            // 记忆 — 半易变 (仅新增记忆时变化), 单独作为第二条 system 消息
-            // 这样即使记忆更新, 第一条 system 消息仍被缓存
-            if (assistant.enableMemory) {
-                val memoryPrompt = buildMemoryPrompt(memories = memories)
-                if (memoryPrompt.isNotBlank()) {
-                    add(UIMessage.system(prompt = memoryPrompt))
-                }
-            }
+            if (system.isNotBlank()) add(UIMessage.system(prompt = system))
             addAll(messages.limitContext(assistant.contextMessageSize))
         }.transforms(
             transformers = transformers,

@@ -7,7 +7,8 @@ import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.utils.JsonInstantPretty
 
 internal fun buildMemoryPrompt(memories: List<AssistantMemory>) =
-    buildString {
+    if (memories.isEmpty()) ""
+    else buildString {
         appendLine()
         append("**Memories**")
         appendLine()
