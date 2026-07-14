@@ -33,7 +33,7 @@ import me.rerere.rikkahub.data.db.migrations.Migration_15_16
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.sync.webdav.WebDavSync
 import me.rerere.search.SearchService
-import me.rerere.rikkahub.data.sync.S3Sync
+import me.rerere.rikkahub.service.CircuitBreaker
 import okhttp3.ConnectionPool
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -170,6 +170,8 @@ val dataSourceModule = module {
             directory = java.io.File(get<android.content.Context>().cacheDir, "okhttp-dns"),
             maxSize = 4L * 1024 * 1024 // 4MB
         )
+        // 断路器: 连续5次失败→熔断30s, 避免在服务端故障时持续消耗电量和用户耐心
+        val circuitBreaker = CircuitBreaker(failureThreshold = 5, meltDurationMs = 30_000L)
         OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.MINUTES)
@@ -180,6 +182,41 @@ val dataSourceModule = module {
             .followRedirects(true)
             .retryOnConnectionFailure(true)
             .cache(dnsCache)
+            // 断路器拦截器: 在请求发出前检查熔断状态
+            .addInterceptor { chain ->
+                val host = chain.request().url.host
+                if (!circuitBreaker.allowRequest(host)) {
+                    val resp = okhttp3.Response.Builder()
+                        .request(chain.request())
+                        .protocol(okhttp3.Protocol.HTTP_1_1)
+                        .code(503)
+                        .message("Service Unavailable (circuit open)")
+                        .body(okhttp3.ResponseBody.create(
+                            "application/json".toMediaType(),
+                            """{"error":"circuit_open","detail":"断路器已熔断, 请稍后重试"}"""
+                        ))
+                        .build()
+                    return@addInterceptor resp
+                }
+                try {
+                    val response = chain.proceed(chain.request())
+                    if (response.isSuccessful) {
+                        circuitBreaker.onSuccess(host)
+                    } else if (response.code >= 500) {
+                        circuitBreaker.onFailure(host)
+                    }
+                    response
+                } catch (e: java.net.ConnectException) {
+                    circuitBreaker.onFailure(host)
+                    throw e
+                } catch (e: java.net.SocketTimeoutException) {
+                    circuitBreaker.onFailure(host)
+                    throw e
+                } catch (e: java.net.UnknownHostException) {
+                    circuitBreaker.onFailure(host)
+                    throw e
+                }
+            }
             // 中国网络环境请求级重试: 收到响应后不再重试, 避免重复消费 SSE 流
             .addInterceptor { chain ->
                 val orig = chain.request()
