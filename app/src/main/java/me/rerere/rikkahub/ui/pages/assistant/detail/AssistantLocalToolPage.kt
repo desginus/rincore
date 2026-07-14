@@ -165,6 +165,8 @@ private fun AssistantLocalToolContent(
             item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_archive_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_archive_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.Archive), onCheckedChange = { toggleLocalTool(LocalToolOption.Archive, it) }) })
             // --- Cost Guard ---
             item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_cost_guards_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_cost_guards_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.CostGuards), onCheckedChange = { toggleLocalTool(LocalToolOption.CostGuards, it) }) })
+            // --- Browser ---
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_browser_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_browser_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.Browser), onCheckedChange = { toggleLocalTool(LocalToolOption.Browser, it) }) })
         }
     }
 }

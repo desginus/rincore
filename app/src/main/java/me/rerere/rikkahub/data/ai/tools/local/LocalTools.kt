@@ -16,6 +16,9 @@ import me.rerere.rikkahub.subagent.subagentCancelTool
 import me.rerere.rikkahub.subagent.subagentDispatchTool
 import me.rerere.rikkahub.subagent.subagentGetTool
 import me.rerere.rikkahub.subagent.subagentListTool
+import me.rerere.rikkahub.browser.BrowserPreferences
+import me.rerere.rikkahub.browser.BrowserToolDefaults
+import me.rerere.rikkahub.browser.createBrowserTool
 import me.rerere.tts.provider.TTSManager
 
 class LocalTools(
@@ -29,6 +32,7 @@ class LocalTools(
     private val subAgentEngine: SubAgentEngine,
     private val subAgentRegistry: SubAgentRegistry,
     private val conversationRepo: ConversationRepository,
+    private val browserPreferences: BrowserPreferences,
 ) {
     val javascriptTool by lazy { buildJavascriptTool() }
     val timeTool by lazy { buildTimeInfoTool() }
@@ -124,6 +128,14 @@ class LocalTools(
         }
         if (options.contains(LocalToolOption.CostGuards)) {
             tools.add(costGuardTool)
+        }
+        if (options.contains(LocalToolOption.Browser)) {
+            val enabledTools = browserPreferences.getAllEnabled()
+            BrowserToolDefaults.ALL_TOOLS.forEach { name ->
+                if (enabledTools[name] == true) {
+                    createBrowserTool(name, context)?.let { tools.add(it) }
+                }
+            }
         }
         return tools
     }
