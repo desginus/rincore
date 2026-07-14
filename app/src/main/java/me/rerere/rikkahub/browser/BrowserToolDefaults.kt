@@ -50,9 +50,7 @@ object BrowserToolDefaults {
     )
 
     val DEFAULT_ENABLED: Map<String, Boolean> = buildMap {
-        READ_TOOLS.forEach { put(it, true) }
-        LOOP_CONTROL_TOOLS.forEach { put(it, true) }
-        WRITE_TOOLS.forEach { put(it, false) }
+        ALL_TOOLS.forEach { put(it, true) }
     }
 
     enum class Category { READ, WRITE, LOOP_CONTROL }
