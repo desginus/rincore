@@ -30,16 +30,6 @@ android {
         }
     }
 
-    splits {
-        abi {
-            val isBuildingBundle = gradle.startParameter.taskNames.any { it.lowercase().contains("bundle") }
-            isEnable = !isBuildingBundle
-            reset()
-            include("arm64-v8a")
-            isUniversalApk = false
-        }
-    }
-
     signingConfigs {
         create("release") {
             val localProperties = Properties()
