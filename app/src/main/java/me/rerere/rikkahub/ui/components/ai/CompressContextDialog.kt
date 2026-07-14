@@ -34,11 +34,14 @@ import me.rerere.rikkahub.ui.components.ui.RabbitLoadingIndicator
 @Composable
 fun CompressContextDialog(
     onDismiss: () -> Unit,
+    totalMessages: Int = 0,
     onConfirm: (additionalPrompt: String, targetTokens: Int, keepRecentMessages: Int) -> Job
 ) {
     var additionalPrompt by remember { mutableStateOf("") }
     var selectedTokens by remember { mutableIntStateOf(2000) }
-    var keepRecentMessages by remember { mutableIntStateOf(10) }
+    // 默认保留当前对话消息数量的60%, 四舍五入, 至少1条
+    val defaultKeep = kotlin.math.max(1, (totalMessages * 0.6).roundToInt())
+    var keepRecentMessages by remember { mutableIntStateOf(defaultKeep) }
     val tokenOptions = listOf(500, 1000, 2000, 4000)
     var currentJob by remember { mutableStateOf<Job?>(null) }
     val isLoading = currentJob?.isActive == true
