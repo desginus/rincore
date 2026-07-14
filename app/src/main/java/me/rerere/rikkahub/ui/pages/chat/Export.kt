@@ -484,8 +484,6 @@ private fun shareAsText(
                     is UIMessagePart.Image -> appendLine("[Image]")
                     is UIMessagePart.Video -> appendLine("[Video]")
                     is UIMessagePart.Audio -> appendLine("[Audio]")
-                    is UIMessagePart.Reasoning -> appendLine("[Thinking: ${stripMarkdown(part.reasoning)}]")
-                    is UIMessagePart.Tool -> appendLine("[Tool: ${part.toolName}]")
                     is UIMessagePart.Document -> appendLine("[File: ${part.fileName}]")
                     else -> {}
                 }
