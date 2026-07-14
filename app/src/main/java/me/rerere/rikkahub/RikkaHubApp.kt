@@ -55,7 +55,10 @@ class RikkaHubApp : Application() {
     override fun onCreate() {
         super.onCreate()
         // 连接预热: 冷启动后预解析 DNS + 预建 TCP 到 API 端点, 首次请求延迟降低 200-500ms
-        ConnectionWarmer.warmConfiguredProviders(this, DEFAULT_PROVIDERS.map { it.baseUrl })
+        val warmUrls = DEFAULT_PROVIDERS
+            .filterIsInstance<me.rerere.ai.provider.ProviderSetting.OpenAI>()
+            .mapNotNull { it.baseUrl.takeIf { u -> u.isNotEmpty() } }
+        ConnectionWarmer.warmConfiguredProviders(this, warmUrls)
         startKoin {
             androidLogger()
             androidContext(this@RikkaHubApp)
