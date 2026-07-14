@@ -25,9 +25,9 @@ internal object BrowserCacheSweeper {
             if (!dir.isDirectory) continue
             val files = dir.listFiles() ?: continue
             files.sortByDescending { it.lastModified() }
-            files.drop(keepLast).forEach {
-                runCatching { it.delete() }.onFailure {
-                    Log.w(TAG, "Failed to delete ${it.name}", it)
+            files.drop(keepLast).forEach { file ->
+                runCatching { file.delete() }.onFailure {
+                    Log.w(TAG, "Failed to delete ${file.name}", it)
                 }
             }
         }
