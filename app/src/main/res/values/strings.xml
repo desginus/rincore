@@ -1312,7 +1312,7 @@
   <string name="assistant_page_local_tools_sub_agents_title">Sub-agents</string>
   <string name="assistant_page_local_tools_sub_agents_desc">Allow the AI to dispatch focused sub-agents for parallel research and lookup tasks</string>
   <string name="assistant_page_local_tools_system_intents_title">System Intents</string>
-  <string name="assistant_page_local_tools_system_intents_desc">Let the AI open system native apps (maps, etc.) pre-filled with your request</string>
+  <string name="assistant_page_local_tools_system_intents_desc">让 AI 调用系统分享、创建日程、打开地图等原生功能</string>
   <string name="assistant_page_local_tools_location_title">位置</string>
   <string name="assistant_page_local_tools_location_desc">允许 AI 读取设备的 GPS 位置（纬度、经度、精度）</string>
   <string name="assistant_page_local_tools_battery_title">电池</string>
