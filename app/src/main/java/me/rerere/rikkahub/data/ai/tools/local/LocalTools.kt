@@ -82,6 +82,8 @@ class LocalTools(
         }
         if (options.contains(LocalToolOption.SystemIntents)) {
             tools.add(showLocationOnMapTool(context))
+            tools.add(shareTool(context))
+            tools.add(createCalendarEventTool(context))
         }
         if (options.contains(LocalToolOption.Location)) {
             tools.add(locationTool(context))
