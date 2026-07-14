@@ -202,26 +202,43 @@ class RouteActivity : ComponentActivity() {
 
     @Composable
     private fun ShareHandler(backStack: MutableList<NavKey>) {
-        val shareIntent = remember {
-            Intent().apply {
-                action = intent?.action
-                putExtra(Intent.EXTRA_TEXT, intent?.getStringExtra(Intent.EXTRA_TEXT))
-                putExtra(Intent.EXTRA_STREAM, intent?.getStringExtra(Intent.EXTRA_STREAM))
-                putExtra(Intent.EXTRA_PROCESS_TEXT, intent?.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT))
-            }
-        }
-
-        LaunchedEffect(backStack) {
-            when (shareIntent.action) {
+        // 防止 recomposition 重复触发
+        var handled by remember { androidx.compose.runtime.mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            if (handled) return@LaunchedEffect
+            val action = intent?.action ?: return@LaunchedEffect
+            handled = true
+            when (action) {
                 Intent.ACTION_SEND -> {
-                    val text = shareIntent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
-                    val imageUri = shareIntent.getStringExtra(Intent.EXTRA_STREAM)
-                    backStack.add(Screen.ShareHandler(text, imageUri))
+                    val text = intent?.getStringExtra(Intent.EXTRA_TEXT) ?: ""
+                    val uri = intent?.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
+                    val files = mutableListOf<String>()
+                    uri?.let { files.add(it.toString()) }
+                    backStack.clear()
+                    backStack.add(Screen.Chat(
+                        id = kotlin.uuid.Uuid.random().toString(),
+                        text = text.ifBlank { null },
+                        files = files,
+                    ))
                 }
-
+                Intent.ACTION_SEND_MULTIPLE -> {
+                    val text = intent?.getStringExtra(Intent.EXTRA_TEXT) ?: ""
+                    val uris = intent?.getParcelableArrayListExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
+                    val files = uris?.map { it.toString() } ?: emptyList()
+                    backStack.clear()
+                    backStack.add(Screen.Chat(
+                        id = kotlin.uuid.Uuid.random().toString(),
+                        text = text.ifBlank { null },
+                        files = files,
+                    ))
+                }
                 Intent.ACTION_PROCESS_TEXT -> {
-                    val text = shareIntent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString() ?: ""
-                    backStack.add(Screen.ShareHandler(text, null))
+                    val txt = intent?.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString() ?: ""
+                    backStack.clear()
+                    backStack.add(Screen.Chat(
+                        id = kotlin.uuid.Uuid.random().toString(),
+                        text = txt.ifBlank { null },
+                    ))
                 }
             }
         }
