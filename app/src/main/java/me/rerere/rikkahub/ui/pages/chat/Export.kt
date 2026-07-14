@@ -166,6 +166,33 @@ fun ChatExportSheet(
 
                 val imageSuccessMessage =
                     stringResource(id = R.string.chat_page_export_success, "Image")
+
+                val plainTextSuccessMessage =
+                    stringResource(id = R.string.chat_page_export_success, "TXT")
+                OutlinedCard(
+                    onClick = {
+                        exportToPlainText(context, conversation, selectedMessages)
+                        toaster.show(
+                            plainTextSuccessMessage,
+                            type = ToastType.Success
+                        )
+                        onDismissRequest()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    ListItem(
+                        headlineContent = {
+                            Text(stringResource(id = R.string.chat_page_export_plain_text))
+                        },
+                        supportingContent = {
+                            Text(stringResource(id = R.string.chat_page_export_plain_text_desc))
+                        },
+                        leadingContent = {
+                            Icon(HugeIcons.File02, contentDescription = null)
+                        }
+                    )
+                }
+
                 OutlinedCard(
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -238,6 +265,182 @@ fun ChatExportSheet(
             }
         }
     }
+}
+
+private fun exportToPlainText(
+    context: Context,
+    conversation: Conversation,
+    messages: List<UIMessage>
+) {
+    val filename = "chat-export-${LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))}.txt"
+
+    val sb = buildString {
+        appendLine("${conversation.title}")
+        appendLine("*Exported on ${LocalDateTime.now().toLocalString()}*")
+        appendLine()
+
+        messages.forEach { message ->
+            val role = if (message.role == MessageRole.USER) "User" else "Assistant"
+            appendLine("$role:")
+            appendLine()
+            message.parts.forEach { part ->
+                when (part) {
+                    is UIMessagePart.Text -> {
+                        appendLine(stripMarkdown(part.text))
+                    }
+                    is UIMessagePart.Image -> {
+                        appendLine("[Image]")
+                    }
+                    is UIMessagePart.Video -> {
+                        appendLine("[Video]")
+                    }
+                    is UIMessagePart.Audio -> {
+                        appendLine("[Audio]")
+                    }
+                    is UIMessagePart.Reasoning -> {
+                        appendLine("[Thinking: ${stripMarkdown(part.reasoning)}]")
+                    }
+                    is UIMessagePart.Tool -> {
+                        appendLine("[Tool: ${part.toolName}]")
+                    }
+                    is UIMessagePart.Document -> {
+                        appendLine("[File: ${part.fileName}]")
+                    }
+                    else -> {}
+                }
+            }
+            appendLine()
+            appendLine("---")
+            appendLine()
+        }
+    }
+
+    try {
+        val dir = context.appTempFolder
+        val file = dir.resolve(filename)
+        if (!file.exists()) file.createNewFile()
+        else { file.delete(); file.createNewFile() }
+        FileOutputStream(file).use { it.write(sb.toByteArray()) }
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        shareFile(context, uri, "text/plain")
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+}
+
+/** 去除 Markdown 格式标记, 保留纯文本, 适合分享到社交软件 */
+private fun stripMarkdown(md: String): String {
+    val result = StringBuilder()
+    var i = 0
+    val len = md.length
+    while (i < len) {
+        val c = md[i]
+        when {
+            // 代码块 ```...```
+            c == '`' && i + 2 < len && md[i + 1] == '`' && md[i + 2] == '`' -> {
+                val end = md.indexOf("```", i + 3)
+                if (end >= 0) i = end + 3 else i += 3
+            }
+            // 行内代码 `...`
+            c == '`' -> {
+                val end = md.indexOf('`', i + 1)
+                if (end >= 0) {
+                    result.append(md.substring(i + 1, end))
+                    i = end + 1
+                } else {
+                    result.append(c)
+                    i++
+                }
+            }
+            // 链接 [text](url)
+            c == '[' -> {
+                val closeBracket = md.indexOf(']', i)
+                val openParen = if (closeBracket >= 0) closeBracket + 1 else -1
+                if (openParen < len && openParen >= 0 && md[openParen] == '(') {
+                    val closeParen = md.indexOf(')', openParen)
+                    if (closeParen >= 0) {
+                        // 保留链接文本
+                        result.append(md.substring(i + 1, closeBracket))
+                        i = closeParen + 1
+                        continue
+                    }
+                }
+                result.append(c)
+                i++
+            }
+            // 图片 ![alt](url)
+            c == '!' && i + 1 < len && md[i + 1] == '[' -> {
+                val closeBracket = md.indexOf(']', i + 1)
+                val openParen = if (closeBracket >= 0) closeBracket + 1 else -1
+                if (openParen < len && openParen >= 0 && md[openParen] == '(') {
+                    val closeParen = md.indexOf(')', openParen)
+                    if (closeParen >= 0) {
+                        result.append("[Image]")
+                        i = closeParen + 1
+                        continue
+                    }
+                }
+                result.append(c)
+                i++
+            }
+            // 粗体 **text** 或 __text__
+            ((c == '*' || c == '_') && i + 1 < len && md[i + 1] == c) -> {
+                val marker = c
+                val endMarker = "$marker$marker"
+                val end = md.indexOf(endMarker, i + 2)
+                if (end > i + 2) {
+                    result.append(md.substring(i + 2, end))
+                    i = end + 2
+                } else {
+                    result.append(c)
+                    i++
+                }
+            }
+            // 斜体 *text* 或 _text_ (单标记)
+            ((c == '*' || c == '_') && (i + 1 >= len || md[i + 1] != c)) -> {
+                val marker = c
+                // 找到下一个单独的同标记(不在 \n 后且不在行首)
+                val end = md.indexOf(marker.toString(), i + 1)
+                if (end > i + 1 && !md.substring(i + 1, end).contains('\n')) {
+                    result.append(md.substring(i + 1, end))
+                    i = end + 1
+                } else {
+                    result.append(c)
+                    i++
+                }
+            }
+            // 标题 #
+            c == '#' && (i == 0 || md[i - 1] == '\n') -> {
+                // 跳过标题标记直到遇到空格
+                var j = i
+                while (j < len && md[j] == '#') j++
+                if (j < len && md[j] == ' ') {
+                    i = j + 1 // 跳过 # 和空格
+                } else {
+                    result.append(c)
+                    i++
+                }
+            }
+            // 引用 >
+            c == '>' && (i == 0 || md[i - 1] == '\n') -> {
+                if (i + 1 < len && md[i + 1] == ' ') i += 2 else i++
+            }
+            // 水平线 ---
+            c == '-' && (i == 0 || md[i - 1] == '\n') && i + 2 < len && md[i + 1] == '-' && md[i + 2] == '-' -> {
+                // 跳过整行
+                while (i < len && md[i] != '\n') i++
+                result.appendLine()
+            }
+            else -> {
+                result.append(c)
+                i++
+            }
+        }
+    }
+    // 压缩连续空行
+    return result.toString()
+        .replace(Regex("\\n{3,}"), "\n\n")
+        .trim()
 }
 
 private fun exportToMarkdown(
