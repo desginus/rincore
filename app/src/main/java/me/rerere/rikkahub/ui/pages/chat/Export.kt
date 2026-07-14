@@ -170,11 +170,9 @@ fun ChatExportSheet(
                 val plainTextSuccessMessage =
                     stringResource(id = R.string.chat_page_export_success, "TXT")
 
-                val copySuccessMessage = stringResource(R.string.chat_page_export_copy_success)
                 OutlinedCard(
                     onClick = {
-                        exportToClipboard(context, conversation, selectedMessages)
-                        toaster.show(copySuccessMessage, type = ToastType.Success)
+                        shareAsText(context, conversation, selectedMessages)
                         onDismissRequest()
                     },
                     modifier = Modifier.fillMaxWidth()
@@ -466,8 +464,8 @@ private fun stripMarkdown(md: String): String {
         .trim()
 }
 
-/** 复制纯文本到剪贴板, 相当于是不经过文件系统的极速分享 */
-private fun exportToClipboard(
+/** 打开系统分享面板: 将选中对话纯文本通过 ACTION_SEND 分发, 与 share 工具同逻辑 */
+private fun shareAsText(
     context: Context,
     conversation: Conversation,
     messages: List<UIMessage>
@@ -498,9 +496,13 @@ private fun exportToClipboard(
         }
     }
 
-    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-    val clip = android.content.ClipData.newPlainText("chat-export", sb.toString().trim())
-    clipboard.setPrimaryClip(clip)
+    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(android.content.Intent.EXTRA_TEXT, sb.toString().trim())
+    }
+    val chooser = android.content.Intent.createChooser(intent, null)
+        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    context.startActivity(chooser)
 }
 
 private fun exportToMarkdown(
