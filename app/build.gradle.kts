@@ -36,7 +36,7 @@ android {
             isEnable = !isBuildingBundle
             reset()
             include("arm64-v8a")
-            isUniversalApk = true
+            isUniversalApk = false
         }
     }
 
