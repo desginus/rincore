@@ -1277,6 +1277,8 @@
   <string name="assistant_page_local_tools_archive_desc">让 AI 创建、解压 ZIP 压缩包，以及列出压缩包内容</string>
   <string name="assistant_page_local_tools_cost_guards_title">用量守护</string>
   <string name="assistant_page_local_tools_cost_guards_desc">让 AI 监控自身累计 token 用量，在接近预算上限时自动减速或停止</string>
+  <string name="assistant_page_local_tools_browser_title">浏览器操控</string>
+  <string name="assistant_page_local_tools_browser_desc">让 AI 通过内置浏览器访问网页、点击、填表、截图。共 18 个工具，写操作默认关闭需手动启用</string>
   <string name="permission_all_files_title">访问所有文件</string>
   <string name="permission_all_files_desc">用于读取和写入共享存储中的文件（如 /sdcard/Download/）。仅 ~ 工作区路径无需此权限。</string>
   <string name="permission_location_title">位置信息</string>
