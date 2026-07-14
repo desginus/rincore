@@ -16,6 +16,7 @@ sealed class LocalToolOption {
     @Serializable @SerialName("toast_notification") data object ToastAndNotification : LocalToolOption()
     @Serializable @SerialName("sub_agents") data object SubAgents : LocalToolOption()
     @Serializable @SerialName("system_intents") data object SystemIntents : LocalToolOption()
+    @Serializable @SerialName("share") data object Share : LocalToolOption()
     @Serializable @SerialName("location") data object Location : LocalToolOption()
     @Serializable @SerialName("battery") data object Battery : LocalToolOption()
     @Serializable @SerialName("media_player") data object MediaPlayer : LocalToolOption()
