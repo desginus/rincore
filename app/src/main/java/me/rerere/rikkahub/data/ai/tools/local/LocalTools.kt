@@ -18,7 +18,6 @@ import me.rerere.rikkahub.subagent.subagentGetTool
 import me.rerere.rikkahub.subagent.subagentListTool
 import me.rerere.rikkahub.browser.BrowserPreferences
 import me.rerere.rikkahub.browser.BrowserToolDefaults
-import me.rerere.rikkahub.browser.createBrowserTool
 import me.rerere.tts.provider.TTSManager
 
 class LocalTools(
