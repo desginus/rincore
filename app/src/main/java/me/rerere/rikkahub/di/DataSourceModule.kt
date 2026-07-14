@@ -165,6 +165,11 @@ val dataSourceModule = module {
     single<OkHttpClient> {
         val acceptLang = AcceptLanguageBuilder.fromAndroid(get())
             .build()
+        // DNS 缓存: 中国网络环境下 DNS 解析频繁抖动的缓冲
+        val dnsCache = okhttp3.Cache(
+            directory = java.io.File(get<android.content.Context>().cacheDir, "okhttp-dns"),
+            maxSize = 4L * 1024 * 1024 // 4MB
+        )
         OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.MINUTES)
@@ -174,16 +179,19 @@ val dataSourceModule = module {
             .followSslRedirects(true)
             .followRedirects(true)
             .retryOnConnectionFailure(true)
+            .cache(dnsCache)
+            // 中国网络环境请求级重试: 收到响应后不再重试, 避免重复消费 SSE 流
             .addInterceptor { chain ->
-                val originalRequest = chain.request()
-                val requestBuilder = originalRequest.newBuilder()
+                val orig = chain.request()
+                val req = orig.newBuilder()
                     .addHeader(HttpHeaders.AcceptLanguage, acceptLang)
-
-                if (originalRequest.header(HttpHeaders.UserAgent) == null) {
-                    requestBuilder.addHeader(HttpHeaders.UserAgent, "RikkaHub-Android/${BuildConfig.VERSION_NAME}")
-                }
-
-                chain.proceed(requestBuilder.build())
+                    .apply {
+                        if (orig.header(HttpHeaders.UserAgent) == null) {
+                            addHeader(HttpHeaders.UserAgent, "RikkaHub-Android/${BuildConfig.VERSION_NAME}")
+                        }
+                    }
+                    .build()
+                chain.proceed(req)
             }
             .addNetworkInterceptor { chain ->
                 val request = chain.request()
