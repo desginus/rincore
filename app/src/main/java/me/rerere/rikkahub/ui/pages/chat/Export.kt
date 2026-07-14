@@ -193,7 +193,6 @@ fun ChatExportSheet(
                 }
 
                 OutlinedCard(
-                OutlinedCard(
                     onClick = {
                         exportToPlainText(context, conversation, selectedMessages)
                         toaster.show(
