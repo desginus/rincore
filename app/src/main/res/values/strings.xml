@@ -812,6 +812,7 @@
   <string name="setting_page_chat_storage">Chat Storage</string>
   <string name="setting_page_chat_storage_desc">%1$d files, %2$.2f MB</string>
   <string name="setting_page_code_display_settings">Code Display</string>
+  <string name="setting_page_color_mode">Color Mode</string>
   <string name="setting_page_battery_optimization">电池优化</string>
   <string name="setting_page_battery_optimization_desc">关闭电池优化可防止后台连接被切断（HyperOS 等系统建议关闭）</string>
   <string name="setting_page_color_mode_dark">Dark</string>
