@@ -6,7 +6,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -56,7 +55,7 @@ private fun jsString(s: String): String = JsonPrimitive(s).toString()
 
 // ---- Read tools --------------------------------------------------------------------------
 
-fun browserOpenTool(context: Context): Tool = Tool(
+fun browserOpenTool(context: Context, callerConvId: () -> String): Tool = Tool(
     name = BrowserToolDefaults.OPEN,
     description = "Open a URL in the headless browser. Returns the URL and page title after navigation completes. If a previous session exists for this conversation, the page loads in that session (preserving cookies and history).",
     parameters = {
@@ -68,11 +67,14 @@ fun browserOpenTool(context: Context): Tool = Tool(
         }, required = listOf("url"))
     },
     execute = { input ->
-        val url = input.jsonObject["url"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
-        if (url == null || !url.startsWith("http")) {
-            return@Tool textPart(missingArgEnvelope("url", "url must be a valid http/https URL"))
+        val rawUrl = input.jsonObject["url"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+        // 安全边界: 仅允许 http/https, 拒绝 file:// content:// javascript: 等
+        val scheme = rawUrl?.let { android.net.Uri.parse(it.trim()).scheme?.lowercase() }
+        if (rawUrl == null || scheme !in setOf("http", "https")) {
+            return@Tool textPart(missingArgEnvelope("url",
+                if (rawUrl == null) "url is required" else "url scheme must be http or https, got: $scheme"))
         }
-        val convId = BrowserController.currentUrl().orEmpty().ifBlank { "default" }
+        val convId = callerConvId()
         val session = HeadlessBrowserSessionPool.getOrCreate(context, convId)
         val webView = session.start(convId)
         if (!BrowserController.bindHeadless(convId, webView)) {
@@ -82,9 +84,9 @@ fun browserOpenTool(context: Context): Tool = Tool(
         BrowserCacheSweeper.sweep(context)
         val out = withTimeoutOrNull(toolTimeoutMs) {
             BrowserControllerHandle.withController {
-                withContext(Dispatchers.Main) { webView.loadUrl(url) }
+                withContext(Dispatchers.Main) { webView.loadUrl(rawUrl) }
                 webView.awaitReadyState(12_000L)
-                BrowserController.appendAction("Open: $url")
+                BrowserController.appendAction("Open: $rawUrl")
                 buildJsonObject {
                     put("success", true)
                     put("current_url", webView.url.orEmpty())
@@ -635,7 +637,7 @@ fun browserClickAndReadTool(): Tool = Tool(
 
 // ---- Loop control --------------------------------------------------------------------------
 
-fun browserDoneTool(): Tool = Tool(
+fun browserDoneTool(callerConvId: () -> String): Tool = Tool(
     name = BrowserToolDefaults.DONE,
     description = "Signal that the AI has finished its browser task. Clears the per-task timer. The session stays alive for subsequent turns.",
     parameters = {
@@ -650,6 +652,8 @@ fun browserDoneTool(): Tool = Tool(
         else {
             BrowserController.appendAction("Done: $summary")
             BrowserController.clearTaskWindow()
+            BrowserController.unbindHeadless(callerConvId())
+            HeadlessBrowserSessionPool.release(callerConvId())
             buildJsonObject { put("success", true) }
         }
         textPart(out)
@@ -799,8 +803,8 @@ private suspend fun runHistoryNav(toolName: String, forward: Boolean): JsonObjec
     return out
 }
 
-fun createBrowserTool(toolName: String, context: Context): Tool? = when (toolName) {
-    BrowserToolDefaults.OPEN -> browserOpenTool(context)
+fun createBrowserTool(toolName: String, context: Context, convIdProvider: () -> String): Tool? = when (toolName) {
+    BrowserToolDefaults.OPEN -> browserOpenTool(context, convIdProvider)
     BrowserToolDefaults.CURRENT_URL -> browserCurrentUrlTool()
     BrowserToolDefaults.SCREENSHOT -> browserScreenshotTool(context)
     BrowserToolDefaults.GET_TEXT -> browserGetTextTool()
@@ -817,6 +821,6 @@ fun createBrowserTool(toolName: String, context: Context): Tool? = when (toolNam
     BrowserToolDefaults.PRESS_KEY -> browserPressKeyTool()
     BrowserToolDefaults.EVAL_JS -> browserEvalJsTool()
     BrowserToolDefaults.CLICK_AND_READ -> browserClickAndReadTool()
-    BrowserToolDefaults.DONE -> browserDoneTool()
+    BrowserToolDefaults.DONE -> browserDoneTool(convIdProvider)
     else -> null
 }
