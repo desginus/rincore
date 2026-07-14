@@ -9,6 +9,8 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.LinearLayout
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -17,57 +19,73 @@ import java.io.File
  * Parents the WebView to an unattached LinearLayout, drives measure/layout manually
  * with 1080x1920 viewport, and overrides visibility API so headless sessions work
  * on sites that gate behaviour on Page Visibility.
+ *
+ * WebView MUST be created on the main thread — Chromium's internal Handler
+ * initialization reads Looper.mQueue which is null on any thread without a Looper.
+ * [start] is therefore suspend and switches to Dispatchers.Main internally.
  */
 class HeadlessBrowserSession(private val context: Context) {
 
+    @Volatile
     private var webView: WebView? = null
     private var host: LinearLayout? = null
 
     @Synchronized
-    fun start(callerConvId: String): WebView {
+    suspend fun start(callerConvId: String): WebView {
         val existing = webView
         if (existing != null) return existing
 
-        val profileDir = File(context.filesDir, "browser-profile")
-        if (!profileDir.exists()) profileDir.mkdirs()
+        // WebView 构造必须在主线程执行: Chromium 初始化线程基础设施
+        // (ThreadUtils → Handler → Looper.mQueue) 依赖 Looper 已就绪
+        return withContext(Dispatchers.Main) {
+            // 二次检查: 可能另一个并发的 start() 已抢先完成
+            webView?.let { return@withContext it }
 
-        CookieManager.getInstance().setAcceptCookie(true)
+            val profileDir = File(context.filesDir, "browser-profile")
+            if (!profileDir.exists()) profileDir.mkdirs()
 
-        val parent = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-        }
+            CookieManager.getInstance().setAcceptCookie(true)
 
-        val wv = WebView(context).apply {
-            configureWebViewForRikka(this)
-            setLayerType(View.LAYER_TYPE_SOFTWARE, null)
-            webViewClient = object : WebViewClient() {
-                override fun shouldOverrideUrlLoading(
-                    view: WebView?,
-                    request: WebResourceRequest?,
-                ): Boolean {
-                    val toFile = request?.url?.scheme.equals("file", ignoreCase = true)
-                    return toFile && view?.url?.startsWith("file:", ignoreCase = true) != true
-                }
-
-                override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
-                    super.onPageStarted(view, url, favicon)
-                    view.evaluateJavascript(VISIBILITY_SHIM_JS, null)
-                }
+            val parent = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
             }
-            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+
+            val wv = WebView(context).apply {
+                configureWebViewForRikka(this)
+                setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+                webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(
+                        view: WebView?,
+                        request: WebResourceRequest?,
+                    ): Boolean {
+                        val toFile = request?.url?.scheme.equals("file", ignoreCase = true)
+                        return toFile && view?.url?.startsWith("file:", ignoreCase = true) != true
+                    }
+
+                    override fun onPageStarted(
+                        view: WebView,
+                        url: String?,
+                        favicon: android.graphics.Bitmap?,
+                    ) {
+                        super.onPageStarted(view, url, favicon)
+                        view.evaluateJavascript(VISIBILITY_SHIM_JS, null)
+                    }
+                }
+                CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+            }
+
+            parent.addView(wv, LinearLayout.LayoutParams(VIEWPORT_WIDTH, VIEWPORT_HEIGHT))
+            parent.measure(
+                View.MeasureSpec.makeMeasureSpec(VIEWPORT_WIDTH, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(VIEWPORT_HEIGHT, View.MeasureSpec.EXACTLY),
+            )
+            parent.layout(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
+
+            host = parent
+            webView = wv
+            wv
         }
-
-        parent.addView(wv, LinearLayout.LayoutParams(VIEWPORT_WIDTH, VIEWPORT_HEIGHT))
-        parent.measure(
-            View.MeasureSpec.makeMeasureSpec(VIEWPORT_WIDTH, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(VIEWPORT_HEIGHT, View.MeasureSpec.EXACTLY),
-        )
-        parent.layout(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-
-        host = parent
-        webView = wv
-        return wv
     }
 
     fun stop() {
