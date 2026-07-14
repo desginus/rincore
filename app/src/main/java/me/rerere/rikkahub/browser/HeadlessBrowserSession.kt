@@ -30,7 +30,6 @@ class HeadlessBrowserSession(private val context: Context) {
     private var webView: WebView? = null
     private var host: LinearLayout? = null
 
-    @Synchronized
     suspend fun start(callerConvId: String): WebView {
         val existing = webView
         if (existing != null) return existing
