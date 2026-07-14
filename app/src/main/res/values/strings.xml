@@ -1304,7 +1304,7 @@
   <string name="chat_message_tool_screen_time">Read screen time</string>
   <string name="tool_ui_screen_time_total">Total screen time</string>
   <string name="assistant_page_local_tools_calendar_title">Calendar</string>
-  <string name="assistant_page_local_tools_calendar_desc">Let the AI query and create calendar events</string>
+  <string name="assistant_page_local_tools_calendar_desc">让 AI 查询和创建日历日程（直接创建 + 打开日历预填确认）</string>
   <string name="assistant_page_local_tools_cron_jobs_title">Cron Jobs</string>
   <string name="assistant_page_local_tools_cron_jobs_desc">Schedule recurring tasks — the AI can create timed jobs that run in the background</string>
   <string name="assistant_page_local_tools_toast_notification_title">Toast &amp; Notification</string>
@@ -1312,7 +1312,7 @@
   <string name="assistant_page_local_tools_sub_agents_title">Sub-agents</string>
   <string name="assistant_page_local_tools_sub_agents_desc">Allow the AI to dispatch focused sub-agents for parallel research and lookup tasks</string>
   <string name="assistant_page_local_tools_system_intents_title">System Intents</string>
-  <string name="assistant_page_local_tools_system_intents_desc">让 AI 调用系统分享、创建日程、打开地图等原生功能</string>
+  <string name="assistant_page_local_tools_system_intents_desc">让 AI 打开系统地图等原生应用</string>
   <string name="assistant_page_local_tools_location_title">位置</string>
   <string name="assistant_page_local_tools_location_desc">允许 AI 读取设备的 GPS 位置（纬度、经度、精度）</string>
   <string name="assistant_page_local_tools_battery_title">电池</string>
@@ -1333,6 +1333,8 @@
   <string name="assistant_page_local_tools_browser_desc">让 AI 通过内置浏览器访问网页、点击、填表、截图。共 18 个工具，写操作默认关闭需手动启用</string>
   <string name="assistant_page_local_tools_section_basic">基础交互</string>
   <string name="assistant_page_local_tools_section_auto">自动化</string>
+  <string name="assistant_page_local_tools_share_title">Share</string>
+  <string name="assistant_page_local_tools_share_desc">让 AI 通过系统分享面板分享文本或链接到其他应用</string>
   <string name="assistant_page_local_tools_section_sensing">设备感知</string>
   <string name="assistant_page_local_tools_section_media">媒体控制</string>
   <string name="assistant_page_local_tools_section_files">文件管理</string>

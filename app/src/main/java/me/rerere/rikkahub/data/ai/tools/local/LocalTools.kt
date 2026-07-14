@@ -57,6 +57,7 @@ class LocalTools(
         if (options.contains(LocalToolOption.Calendar)) {
             tools.add(calendarQueryTool)
             tools.add(calendarCreateTool)
+            tools.add(createCalendarEventTool(context))
         }
         if (options.contains(LocalToolOption.CronJobs)) {
             val knownToolNamesProvider: () -> List<String> = {
@@ -82,8 +83,9 @@ class LocalTools(
         }
         if (options.contains(LocalToolOption.SystemIntents)) {
             tools.add(showLocationOnMapTool(context))
+        }
+        if (options.contains(LocalToolOption.Share)) {
             tools.add(shareTool(context))
-            tools.add(createCalendarEventTool(context))
         }
         if (options.contains(LocalToolOption.Location)) {
             tools.add(locationTool(context))
