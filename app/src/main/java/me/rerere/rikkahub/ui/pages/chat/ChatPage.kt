@@ -153,15 +153,23 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
             val contentTypes = files.mapNotNull { file ->
                 filesManager.getFileMimeType(file)
             }
+            val fileNames = files.mapNotNull { file ->
+                filesManager.getFileNameFromUri(file)
+            }
             val parts = buildList {
-                localFiles.forEachIndexed { index, file ->
+                localFiles.forEachIndexed { index, localUri ->
                     val type = contentTypes.getOrNull(index)
-                    if (type?.startsWith("image/") == true) {
-                        add(UIMessagePart.Image(url = file.toString()))
-                    } else if (type?.startsWith("video/") == true) {
-                        add(UIMessagePart.Video(url = file.toString()))
-                    } else if (type?.startsWith("audio/") == true) {
-                        add(UIMessagePart.Audio(url = file.toString()))
+                    val name = fileNames.getOrNull(index)
+                    when {
+                        type?.startsWith("image/") == true -> add(UIMessagePart.Image(url = localUri.toString()))
+                        type?.startsWith("video/") == true -> add(UIMessagePart.Video(url = localUri.toString()))
+                        type?.startsWith("audio/") == true -> add(UIMessagePart.Audio(url = localUri.toString()))
+                        // 非媒体文件: PDF/DOCX/XLSX 等, 作为 Document 附件
+                        else -> add(UIMessagePart.Document(
+                            url = localUri.toString(),
+                            fileName = name ?: localUri.lastPathSegment ?: "file",
+                            mime = type ?: "application/octet-stream"
+                        ))
                     }
                 }
             }
