@@ -169,6 +169,30 @@ fun ChatExportSheet(
 
                 val plainTextSuccessMessage =
                     stringResource(id = R.string.chat_page_export_success, "TXT")
+
+                val copySuccessMessage = stringResource(R.string.chat_page_export_copy_success)
+                OutlinedCard(
+                    onClick = {
+                        exportToClipboard(context, conversation, selectedMessages)
+                        toaster.show(copySuccessMessage, type = ToastType.Success)
+                        onDismissRequest()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    ListItem(
+                        headlineContent = {
+                            Text(stringResource(id = R.string.chat_page_export_copy))
+                        },
+                        supportingContent = {
+                            Text(stringResource(id = R.string.chat_page_export_copy_desc))
+                        },
+                        leadingContent = {
+                            Icon(HugeIcons.File02, contentDescription = null)
+                        }
+                    )
+                }
+
+                OutlinedCard(
                 OutlinedCard(
                     onClick = {
                         exportToPlainText(context, conversation, selectedMessages)
@@ -441,6 +465,43 @@ private fun stripMarkdown(md: String): String {
     return result.toString()
         .replace(Regex("\\n{3,}"), "\n\n")
         .trim()
+}
+
+/** 复制纯文本到剪贴板, 相当于是不经过文件系统的极速分享 */
+private fun exportToClipboard(
+    context: Context,
+    conversation: Conversation,
+    messages: List<UIMessage>
+) {
+    val sb = buildString {
+        appendLine(conversation.title)
+        appendLine()
+
+        messages.forEach { message ->
+            val role = if (message.role == MessageRole.USER) "User" else "Assistant"
+            appendLine("$role:")
+            appendLine()
+            message.parts.forEach { part ->
+                when (part) {
+                    is UIMessagePart.Text -> appendLine(stripMarkdown(part.text))
+                    is UIMessagePart.Image -> appendLine("[Image]")
+                    is UIMessagePart.Video -> appendLine("[Video]")
+                    is UIMessagePart.Audio -> appendLine("[Audio]")
+                    is UIMessagePart.Reasoning -> appendLine("[Thinking: ${stripMarkdown(part.reasoning)}]")
+                    is UIMessagePart.Tool -> appendLine("[Tool: ${part.toolName}]")
+                    is UIMessagePart.Document -> appendLine("[File: ${part.fileName}]")
+                    else -> {}
+                }
+            }
+            appendLine()
+            appendLine("---")
+            appendLine()
+        }
+    }
+
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+    val clip = android.content.ClipData.newPlainText("chat-export", sb.toString().trim())
+    clipboard.setPrimaryClip(clip)
 }
 
 private fun exportToMarkdown(
