@@ -471,16 +471,10 @@ private fun shareAsText(
     messages: List<UIMessage>
 ) {
     val sb = buildString {
-        appendLine(conversation.title)
-        appendLine()
-
-        messages.forEach { message ->
-            val role = if (message.role == MessageRole.USER) "User" else "Assistant"
-            appendLine("$role:")
-            appendLine()
+        messages.forEachIndexed { index, message ->
             message.parts.forEach { part ->
                 when (part) {
-                    is UIMessagePart.Text -> appendLine(stripMarkdown(part.text))
+                    is UIMessagePart.Text -> append(stripMarkdown(part.text))
                     is UIMessagePart.Image -> appendLine("[Image]")
                     is UIMessagePart.Video -> appendLine("[Video]")
                     is UIMessagePart.Audio -> appendLine("[Audio]")
@@ -488,9 +482,9 @@ private fun shareAsText(
                     else -> {}
                 }
             }
-            appendLine()
-            appendLine("---")
-            appendLine()
+            if (index < messages.size - 1) {
+                appendLine()
+            }
         }
     }
 
