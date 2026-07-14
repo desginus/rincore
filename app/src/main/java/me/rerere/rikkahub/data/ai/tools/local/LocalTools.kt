@@ -130,9 +130,11 @@ class LocalTools(
         }
         if (options.contains(LocalToolOption.Browser)) {
             val enabledTools = browserPreferences.getAllEnabled()
+            val convId = invocationContext.callerConversationId ?: ""
+            val convIdProvider = { convId }
             BrowserToolDefaults.ALL_TOOLS.forEach { name ->
                 if (enabledTools[name] == true) {
-                    createBrowserTool(name, context)?.let { tools.add(it) }
+                    createBrowserTool(name, context, convIdProvider)?.let { tools.add(it) }
                 }
             }
         }
