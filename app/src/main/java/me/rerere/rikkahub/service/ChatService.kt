@@ -844,7 +844,7 @@ class ChatService(
         conversation: Conversation,
         additionalPrompt: String,
         targetTokens: Int,
-        keepRecentMessages: Int = 32
+        keepRecentMessages: Int = 10
     ): Result<Unit> = runCatching {
         val settings = settingsStore.settingsFlow.first()
         val model = settings.findModelById(settings.compressModelId)
