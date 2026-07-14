@@ -130,28 +130,76 @@ fun ChainOfThoughtScope.ChatMessageToolStep(
         },
         extra = if (isPending && onToolApproval != null) {
             {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    FilledTonalIconButton(
-                        onClick = { showDenyDialog = true },
-                        modifier = Modifier.size(28.dp),
+                var showReplyInput by remember { mutableStateOf(false) }
+                var replyText by remember { mutableStateOf("") }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Icon(
-                            imageVector = HugeIcons.Cancel01,
-                            contentDescription = stringResource(R.string.chat_message_tool_deny),
-                            modifier = Modifier.size(14.dp)
-                        )
+                        FilledTonalIconButton(
+                            onClick = { showDenyDialog = true },
+                            modifier = Modifier.size(28.dp),
+                        ) {
+                            Icon(
+                                imageVector = HugeIcons.Cancel01,
+                                contentDescription = stringResource(R.string.chat_message_tool_deny),
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                        FilledTonalIconButton(
+                            onClick = { onToolApproval(tool.toolCallId, true, "") },
+                            modifier = Modifier.size(28.dp),
+                        ) {
+                            Icon(
+                                imageVector = HugeIcons.Tick01,
+                                contentDescription = stringResource(R.string.chat_message_tool_approve),
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                        // 文本回复按钮: 展开/收起输入框
+                        FilledTonalIconButton(
+                            onClick = { showReplyInput = !showReplyInput },
+                            modifier = Modifier.size(28.dp),
+                        ) {
+                            Icon(
+                                imageVector = HugeIcons.BubbleChatQuestion,
+                                contentDescription = stringResource(R.string.chat_message_tool_reply),
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
                     }
-                    FilledTonalIconButton(
-                        onClick = { onToolApproval(tool.toolCallId, true, "") },
-                        modifier = Modifier.size(28.dp),
-                    ) {
-                        Icon(
-                            imageVector = HugeIcons.Tick01,
-                            contentDescription = stringResource(R.string.chat_message_tool_approve),
-                            modifier = Modifier.size(14.dp)
+                    // 文本回复输入区
+                    if (showReplyInput) {
+                        OutlinedTextField(
+                            value = replyText,
+                            onValueChange = { replyText = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            textStyle = MaterialTheme.typography.bodySmall,
+                            placeholder = { Text(stringResource(R.string.chat_message_tool_reply_hint)) },
+                            singleLine = false,
+                            minLines = 2,
+                            maxLines = 4,
                         )
+                        FilledTonalButton(
+                            onClick = {
+                                val answer = replyText.trim()
+                                if (answer.isNotEmpty() && onToolAnswer != null) {
+                                    onToolAnswer(tool.toolCallId, answer)
+                                }
+                            },
+                            enabled = replyText.isNotBlank(),
+                            modifier = Modifier.align(Alignment.End),
+                        ) {
+                            Icon(
+                                imageVector = HugeIcons.Tick01,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Text(
+                                text = stringResource(R.string.chat_message_tool_send_reply),
+                                modifier = Modifier.padding(start = 4.dp),
+                            )
+                        }
                     }
                 }
             }

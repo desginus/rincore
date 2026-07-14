@@ -259,6 +259,9 @@
   <string name="chat_message_tool_search_results_count">%1$d results</string>
   <string name="chat_message_tool_search_web">Search web: %1$s</string>
   <string name="chat_message_tool_submit">Submit</string>
+  <string name="chat_message_tool_reply">文本回复</string>
+  <string name="chat_message_tool_reply_hint">输入回复内容...</string>
+  <string name="chat_message_tool_send_reply">发送回复</string>
   <string name="chat_page_cancel">Cancel</string>
   <string name="chat_page_check_title_model_settings">Check title model settings</string>
   <string name="chat_page_clear_all_errors">Clear all</string>
@@ -903,6 +906,55 @@
   <string name="setting_page_web_server_port_desc">Web server listen port (1024-65535)</string>
   <string name="setting_page_web_server_start">Start</string>
   <string name="setting_page_web_server_stop">Stop</string>
+
+  <!-- Scheduled Jobs -->
+  <string name="setting_page_scheduled_jobs">定时任务</string>
+  <string name="setting_page_scheduled_jobs_desc">查看和管理 AI 创建的定时任务</string>
+  <string name="setting_page_scheduled_jobs_empty">AI 尚未创建任何定时任务</string>
+  <string name="setting_page_scheduled_jobs_how_it_works">定时任务如何工作?</string>
+  <string name="setting_page_scheduled_jobs_how_it_works_title">关于定时任务</string>
+  <string name="setting_page_scheduled_jobs_how_it_works_body">定时任务由 AI 在聊天中创建。你可以在这里查看、启用、禁用或删除它们。每个定时任务按照设定的计划自动运行,无需手动触发。</string>
+  <string name="setting_page_scheduled_jobs_how_it_works_dismiss">了解</string>
+  <string name="setting_page_scheduled_jobs_subtitle_when">触发时间: %1$s</string>
+  <string name="setting_page_scheduled_jobs_subtitle_never_run">尚未运行过</string>
+  <string name="setting_page_scheduled_jobs_subtitle_ran">上次运行: %1$s</string>
+  <string name="setting_page_scheduled_jobs_section_description">描述</string>
+  <string name="setting_page_scheduled_jobs_section_schedule">计划</string>
+  <string name="setting_page_scheduled_jobs_section_what_runs">执行内容</string>
+  <string name="setting_page_scheduled_jobs_section_stats">统计</string>
+  <string name="setting_page_scheduled_jobs_section_history">运行历史</string>
+  <string name="setting_page_scheduled_jobs_history_empty">暂无运行记录</string>
+  <string name="setting_page_scheduled_jobs_no_actions">无直接操作</string>
+  <string name="setting_page_scheduled_jobs_show_args">查看参数</string>
+  <string name="setting_page_scheduled_jobs_hide_args">隐藏参数</string>
+  <string name="setting_page_scheduled_jobs_run_now">立即运行</string>
+  <string name="setting_page_scheduled_jobs_edit">编辑</string>
+  <string name="setting_page_scheduled_jobs_delete">删除</string>
+  <string name="setting_page_scheduled_jobs_edit_prefill">请修改定时任务: %1$s</string>
+  <string name="setting_page_scheduled_jobs_delete_confirm_title">删除定时任务?</string>
+  <string name="setting_page_scheduled_jobs_delete_confirm_body">此操作不可撤销。该定时任务及其全部运行记录将被永久删除。</string>
+  <string name="setting_page_scheduled_jobs_delete_confirm_yes">删除</string>
+  <string name="setting_page_scheduled_jobs_delete_confirm_no">取消</string>
+  <string name="setting_page_scheduled_jobs_run_now_fired">任务已触发</string>
+  <string name="setting_page_scheduled_jobs_run_now_disabled">任务已禁用,无法触发</string>
+  <string name="setting_page_scheduled_jobs_run_now_not_found">任务未找到</string>
+  <string name="setting_page_scheduled_jobs_schedule_tz">时区: %1$s</string>
+  <string name="setting_page_scheduled_jobs_schedule_starts">开始于: %1$s</string>
+  <string name="setting_page_scheduled_jobs_schedule_ends">结束于: %1$s</string>
+  <string name="setting_page_scheduled_jobs_stat_last_run">上次运行: %1$s</string>
+  <string name="setting_page_scheduled_jobs_stat_last_run_never">从未运行</string>
+  <string name="setting_page_scheduled_jobs_stat_next_run">下次运行: %1$s</string>
+  <string name="setting_page_scheduled_jobs_stat_next_run_unscheduled">未安排</string>
+  <string name="setting_page_scheduled_jobs_stat_runs">已运行 %1$d 次</string>
+  <string name="setting_page_scheduled_jobs_stat_runs_capped">已运行 %1$d/%2$d 次</string>
+  <string name="setting_page_scheduled_jobs_stat_catchup">追赶策略: %1$s</string>
+
+  <!-- Relative Time -->
+  <string name="relative_time_just_now">刚刚</string>
+  <string name="relative_time_seconds_ago">%1$d 秒前</string>
+  <string name="relative_time_minutes_ago">%1$d 分钟前</string>
+  <string name="relative_time_hours_ago">%1$d 小时前</string>
+  <string name="relative_time_days_ago">%1$d 天前</string>
   <string name="setting_provider_page_abilities">Abilities</string>
   <string name="setting_provider_page_add">Add</string>
   <string name="setting_provider_page_add_model">Add Model</string>
