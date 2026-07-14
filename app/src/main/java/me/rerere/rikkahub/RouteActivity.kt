@@ -31,6 +31,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -203,7 +206,7 @@ class RouteActivity : ComponentActivity() {
     @Composable
     private fun ShareHandler(backStack: MutableList<NavKey>) {
         // 防止 recomposition 重复触发
-        var handled by remember { androidx.compose.runtime.mutableStateOf(false) }
+        var handled by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) {
             if (handled) return@LaunchedEffect
             val action = intent?.action ?: return@LaunchedEffect
