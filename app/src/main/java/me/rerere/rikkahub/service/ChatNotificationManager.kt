@@ -208,6 +208,6 @@ class ChatNotificationManager(
             .getPendingIntent(
                 conversationId.hashCode(),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            )
+            )!!
     }
 }
