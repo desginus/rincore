@@ -90,47 +90,41 @@ fun locationTool(context: Context): Tool = Tool(
                                 .isGooglePlayServicesAvailable(context) == ConnectionResult.SUCCESS
                         } catch (t: Throwable) { Log.w(TAG_LOC, "GMS check failed", t); false }
 
-                        // Try cached fix first
-                        val cachedNow: Location? = try {
-                            if (gmsAvailable) LocationServices.getFusedLocationProviderClient(context).lastLocation.await()
-                            else null
-                        } catch (t: Throwable) { Log.w(TAG_LOC, "fused lastLocation failed", t); null }
-                            ?: try { lm.getLastKnownLocation(LocationManager.GPS_PROVIDER) } catch (_: SecurityException) { null }
-                            ?: try { lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) } catch (_: SecurityException) { null }
-                            ?: try { lm.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER) } catch (_: SecurityException) { null }
-
-                        val cachedAgeMs = cachedNow?.let { System.currentTimeMillis() - it.time }
-                        if (cachedNow != null && cachedAgeMs != null && cachedAgeMs < 120_000) {
-                            Log.i(TAG_LOC, "returning fresh cached fix age=${cachedAgeMs}ms provider=${cachedNow.provider}")
-                            buildJsonObject {
-                                putLocation(cachedNow, cachedNow.provider ?: "cached")
-                                put("cached", true)
-                                put("age_ms", cachedAgeMs)
-                            }
-                        } else if (gmsAvailable) {
-                            val fresh: Location? = try {
+                        // 实时优先: 先请求当前定位, 失败才降级缓存
+                        val fresh: Location? = if (gmsAvailable) {
+                            try {
                                 val client = LocationServices.getFusedLocationProviderClient(context)
                                 withTimeoutOrNull(timeoutMs.toLong()) {
                                     client.getCurrentLocation(priority, null).await()
                                 }
                             } catch (t: Throwable) { Log.w(TAG_LOC, "getCurrentLocation failed", t); null }
-                            when {
-                                fresh != null -> buildJsonObject { putLocation(fresh, "fused") }
-                                cachedNow != null -> buildJsonObject {
-                                    putLocation(cachedNow, cachedNow.provider ?: "cached")
+                        } else null
+
+                        if (fresh != null) {
+                            Log.i(TAG_LOC, "fresh fix obtained provider=fused")
+                            buildJsonObject { putLocation(fresh, "fused") }
+                        } else {
+                            // 降级: 尝试所有缓存源
+                            val cached = try {
+                                if (gmsAvailable) LocationServices.getFusedLocationProviderClient(context).lastLocation.await()
+                                else null
+                            } catch (t: Throwable) { Log.w(TAG_LOC, "fused lastLocation failed", t); null }
+                                ?: try { lm.getLastKnownLocation(LocationManager.GPS_PROVIDER) } catch (_: SecurityException) { null }
+                                ?: try { lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) } catch (_: SecurityException) { null }
+                                ?: try { lm.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER) } catch (_: SecurityException) { null }
+
+                            if (cached != null) {
+                                val ageMs = System.currentTimeMillis() - cached.time
+                                Log.i(TAG_LOC, "fallback cached fix age=${ageMs}ms provider=${cached.provider}")
+                                buildJsonObject {
+                                    putLocation(cached, cached.provider ?: "cached")
                                     put("cached", true)
-                                    put("age_ms", cachedAgeMs ?: -1L)
+                                    put("age_ms", ageMs)
                                     put("note", "fresh fix timed out after ${timeoutMs}ms; returning last known")
                                 }
-                                else -> errorPayload("no fix yet", "Try moving near a window/outdoors, or open a maps app once to seed the location cache.")
+                            } else {
+                                errorPayload("no fix available", "Try moving near a window/outdoors, ensure Location is enabled, or open a maps app once to seed the location cache.")
                             }
-                        } else {
-                            if (cachedNow != null) buildJsonObject {
-                                putLocation(cachedNow, cachedNow.provider ?: "lm")
-                                put("cached", true)
-                                if (cachedAgeMs != null) put("age_ms", cachedAgeMs)
-                            }
-                            else errorPayload("no fix available", "Google Play Services unavailable and no cached fix. Enable Wi-Fi for network-based location.")
                         }
                     }
                 }

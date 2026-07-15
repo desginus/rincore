@@ -8,6 +8,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
+import androidx.core.app.TaskStackBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import me.rerere.ai.ui.UIMessage
@@ -199,14 +200,14 @@ class ChatNotificationManager(
 
     private fun getPendingIntent(context: Context, conversationId: Uuid): PendingIntent {
         val intent = Intent(context, RouteActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("conversationId", conversationId.toString())
         }
-        return PendingIntent.getActivity(
-            context,
-            conversationId.hashCode(),
-            intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
+        return TaskStackBuilder.create(context)
+            .addNextIntentWithParentStack(intent)
+            .getPendingIntent(
+                conversationId.hashCode(),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
     }
 }
