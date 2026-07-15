@@ -209,6 +209,16 @@ class RouteActivity : ComponentActivity() {
         var handled by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) {
             if (handled) return@LaunchedEffect
+
+            // 通知点击: 从 PendingIntent 的 extra 中提取 conversationId
+            val notificationConversationId = intent?.getStringExtra("conversationId")
+            if (notificationConversationId != null) {
+                handled = true
+                backStack.clear()
+                backStack.add(Screen.Chat(notificationConversationId))
+                return@LaunchedEffect
+            }
+
             val action = intent?.action ?: return@LaunchedEffect
             handled = true
             when (action) {
