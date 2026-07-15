@@ -1,16 +1,14 @@
 package me.rerere.rikkahub.service
 
+import android.app.Activity
 import android.app.Application
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.os.Bundle
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.ProcessLifecycleOwner
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -25,6 +23,7 @@ import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.utils.cancelNotification
 import me.rerere.rikkahub.utils.sendNotification
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.uuid.Uuid
 
 // Live Update 通知节流间隔：流式输出每个chunk都会触发一次更新，
@@ -41,22 +40,33 @@ class ChatNotificationManager(
     eventBus: AppEventBus,
     private val settingsStore: SettingsStore,
 ) {
-    private val isForeground = MutableStateFlow(false)
     private val liveUpdateLastSentAt = ConcurrentHashMap<Uuid, Long>()
 
+    // ActivityLifecycleCallbacks: HyperOS 3 上 ProcessLifecycleOwner 回调不可靠,
+    // 改用 resumed activity 计数器判断前后台
+    @Volatile
+    private var isForeground: Boolean = false
+    private val resumedActivityCount = AtomicInteger(0)
+
     init {
-        // ProcessLifecycleOwner 要求在主线程注册观察者
-        appScope.launch {
-            ProcessLifecycleOwner.get().lifecycle.addObserver(
-                LifecycleEventObserver { _, event ->
-                    when (event) {
-                        Lifecycle.Event.ON_START -> isForeground.value = true
-                        Lifecycle.Event.ON_STOP -> isForeground.value = false
-                        else -> {}
-                    }
+        context.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
+            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
+            override fun onActivityStarted(activity: Activity) {}
+            override fun onActivityResumed(activity: Activity) {
+                if (resumedActivityCount.incrementAndGet() > 0) {
+                    isForeground = true
                 }
-            )
-        }
+            }
+            override fun onActivityPaused(activity: Activity) {
+                if (resumedActivityCount.decrementAndGet() <= 0) {
+                    isForeground = false
+                }
+            }
+            override fun onActivityStopped(activity: Activity) {}
+            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+            override fun onActivityDestroyed(activity: Activity) {}
+        })
+
         appScope.launch(Dispatchers.Default) {
             eventBus.events.collect { event ->
                 when (event) {
@@ -69,7 +79,7 @@ class ChatNotificationManager(
     }
 
     private fun handleGenerationUpdate(event: AppEvent.ChatGenerationUpdate) {
-        if (isForeground.value) return
+        if (isForeground) return
         val displaySetting = settingsStore.settingsFlow.value.displaySetting
         if (!displaySetting.enableNotificationOnMessageGeneration) return
         if (!displaySetting.enableLiveUpdateNotification) return
@@ -86,7 +96,7 @@ class ChatNotificationManager(
         cancelLiveUpdateNotification(event.conversationId)
 
         val contentPreview = event.contentPreview ?: return
-        if (isForeground.value) return
+        if (isForeground) return
         if (!settingsStore.settingsFlow.value.displaySetting.enableNotificationOnMessageGeneration) return
         sendGenerationDoneNotification(event.conversationId, event.senderName, contentPreview)
     }
@@ -104,6 +114,7 @@ class ChatNotificationManager(
             content = contentPreview
             autoCancel = true
             useDefaults = true
+            useBigTextStyle = true
             category = NotificationCompat.CATEGORY_MESSAGE
             contentIntent = getPendingIntent(context, conversationId)
         }
@@ -188,7 +199,7 @@ class ChatNotificationManager(
 
     private fun getPendingIntent(context: Context, conversationId: Uuid): PendingIntent {
         val intent = Intent(context, RouteActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra("conversationId", conversationId.toString())
         }
         return PendingIntent.getActivity(
