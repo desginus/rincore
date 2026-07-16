@@ -24,6 +24,13 @@ class ConversationSession(
     // 会话状态
     val state = MutableStateFlow(initial)
 
+    // 是否已从 DB 初始化 (防止 Activity 重建时用 DB 覆盖未落库的内存态)
+    @Volatile
+    var isInitialized: Boolean = false
+        private set
+
+    fun markInitialized() { isInitialized = true }
+
     // 原子引用计数
     private val refCount = AtomicInteger(0)
 
