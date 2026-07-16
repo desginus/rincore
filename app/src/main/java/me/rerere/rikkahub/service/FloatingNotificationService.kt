@@ -98,14 +98,14 @@ class FloatingNotificationService : Service() {
         dismiss()
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
 
-        // ComposeView WindowManager 三大件 — 合并 Lifecycle+SavedState
+        // SavedStateRegistryController.create() 要求 lifecycle 为 INITIALIZED
+        // 创建后再升到 CREATED,确保 observer 回调正常触发
         val lo = object : LifecycleOwner, SavedStateRegistryOwner {
-            override val lifecycle = LifecycleRegistry(this).also {
-                it.currentState = Lifecycle.State.CREATED
-            }
+            override val lifecycle = LifecycleRegistry(this)
             override val savedStateRegistry = SavedStateRegistryController.create(this).savedStateRegistry
         }
         lr = lo.lifecycle as LifecycleRegistry
+        lr!!.currentState = Lifecycle.State.CREATED
 
         val sso: SavedStateRegistryOwner = lo
         val vmo = object : ViewModelStoreOwner {
