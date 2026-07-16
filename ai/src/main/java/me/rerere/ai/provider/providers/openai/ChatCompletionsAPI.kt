@@ -174,30 +174,51 @@ class ChatCompletionsAPI(
                     }
                     hasReceivedData.set(true)
                     Log.d(TAG, "onEvent: $data")
-                    val trimmed = data.trim()
-                    if (trimmed.isEmpty()) return
-                    // 单行直接解析 (OpenAI/Deepseek/千问/Minimax 标准格式)
-                    if ('\n' !in trimmed) {
-                        val it = json.parseToJsonElement(trimmed).jsonObject
-                        val messageChunk = parseChunk(it)
-                        if (messageChunk != null) {
+                    data
+                        .trim()
+                        .split("\n")
+                        .filter { it.isNotBlank() }
+                        .map { json.parseToJsonElement(it).jsonObject }
+                        .forEach {
+                            if (it["error"] != null) {
+                                val error = it["error"]!!.parseErrorDetail()
+                                throw error
+                            }
+                            val id = it["id"]?.jsonPrimitive?.contentOrNull ?: ""
+                            val model = it["model"]?.jsonPrimitive?.contentOrNull ?: ""
+
+                            val choices = it["choices"]?.jsonArray ?: JsonArray(emptyList())
+                            val choiceList = buildList {
+                                if (choices.isNotEmpty()) {
+                                    val choice = choices[0].jsonObject
+                                    val message =
+                                        choice["delta"]?.jsonObject ?: choice["message"]?.jsonObject
+                                        ?: throw Exception("delta/message is null")
+                                    val finishReason =
+                                        choice["finish_reason"]?.jsonPrimitive?.contentOrNull
+                                            ?: "unknown"
+                                    add(
+                                        UIMessageChoice(
+                                            index = 0,
+                                            delta = parseMessage(message),
+                                            message = null,
+                                            finishReason = finishReason,
+                                        )
+                                    )
+                                }
+                            }
+                            val usage = parseTokenUsage(it["usage"] as? JsonObject)
+
+                            val messageChunk = MessageChunk(
+                                id = id,
+                                model = model,
+                                choices = choiceList,
+                                usage = usage
+                            )
                             trySend(messageChunk).onFailure { e ->
                                 Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
                             }
                         }
-                    } else {
-                        // 多行 SSE 数据 (罕见, 兼容处理)
-                        trimmed.split("\n").forEach { line ->
-                            if (line.isBlank()) return@forEach
-                            val it = json.parseToJsonElement(line).jsonObject
-                            val messageChunk = parseChunk(it)
-                            if (messageChunk != null) {
-                                trySend(messageChunk).onFailure { e ->
-                                    Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
-                                }
-                            }
-                        }
-                    }
                 }
 
                 override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
@@ -249,36 +270,6 @@ class ChatCompletionsAPI(
         }
         // trySend 在缓冲满时会静默丢弃 delta，导致回复中间缺字 (#1295)，因此缓冲必须无界
     }.buffer(Channel.UNLIMITED)
-
-    /**
-     * 单行 JSON 解析为 MessageChunk (优化热路径，避免每次都 split + filter)
-     */
-    private fun parseChunk(jsonObj: JsonObject): MessageChunk? {
-        if (jsonObj["error"] != null) {
-            throw jsonObj["error"]!!.parseErrorDetail()
-        }
-        val id = jsonObj["id"]?.jsonPrimitive?.contentOrNull ?: ""
-        val model = jsonObj["model"]?.jsonPrimitive?.contentOrNull ?: ""
-        val choices = jsonObj["choices"]?.jsonArray ?: JsonArray(emptyList())
-        val choiceList = buildList {
-            if (choices.isNotEmpty()) {
-                val choice = choices[0].jsonObject
-                val message = choice["delta"]?.jsonObject ?: choice["message"]?.jsonObject
-                    ?: throw Exception("delta/message is null")
-                val finishReason = choice["finish_reason"]?.jsonPrimitive?.contentOrNull ?: "unknown"
-                add(
-                    UIMessageChoice(
-                        index = 0,
-                        delta = parseMessage(message),
-                        message = null,
-                        finishReason = finishReason,
-                    )
-                )
-            }
-        }
-        val usage = parseTokenUsage(jsonObj["usage"] as? JsonObject)
-        return MessageChunk(id = id, model = model, choices = choiceList, usage = usage)
-    }
 
 
     private fun buildChatCompletionRequest(
