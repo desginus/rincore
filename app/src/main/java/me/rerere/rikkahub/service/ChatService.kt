@@ -2,7 +2,6 @@ package me.rerere.rikkahub.service
 
 import android.app.Application
 import android.content.Context
-import android.os.PowerManager
 import android.util.Log
 import androidx.core.net.toUri
 import kotlinx.coroutines.CancellationException
@@ -158,12 +157,6 @@ class ChatService(
     // 统一会话管理
     private val sessions = ConcurrentHashMap<Uuid, ConversationSession>()
     private val _sessionsVersion = MutableStateFlow(0L)
-
-    // CPU WakeLock: HyperOS 3 深度休眠时流式传输丢包
-    private val wakeLock: PowerManager.WakeLock by lazy {
-        (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
-            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RikkaHub:streaming")
-    }
 
     // 错误状态
     private val _errors = MutableStateFlow<List<ChatError>>(emptyList())
@@ -511,7 +504,6 @@ class ChatService(
 
             // start generating
             val session = getOrCreateSession(conversationId)
-            wakeLock.acquire(10 * 60 * 1000L) // 10 min timeout, prevent stuck wakelock
             generationHandler.generateText(
                 settings = settings,
                 model = model,
@@ -596,7 +588,6 @@ class ChatService(
                     }
                 },
             ).onCompletion {
-                wakeLock.apply { if (isHeld) release() }
                 // 可能被取消了，或者意外结束，兜底更新
                 val updatedConversation = getConversationFlow(conversationId).value.copy(
                     messageNodes = getConversationFlow(conversationId).value.messageNodes.map { node ->
@@ -635,7 +626,6 @@ class ChatService(
         }.onFailure {
             // 兜底取消 Live Update 通知（生成开始前失败时 onCompletion 不会执行）
             appEventBus.tryEmit(AppEvent.ChatGenerationEnded(conversationId, senderName, null))
-            wakeLock.apply { if (isHeld) release() }
 
             it.printStackTrace()
             addError(it, conversationId, title = context.getString(R.string.error_title_generation))
