@@ -49,6 +49,10 @@ import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.setViewTreeLifecycleOwner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -67,6 +71,7 @@ class FloatingNotificationService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var windowManager: WindowManager? = null
     private var floatingView: ComposeView? = null
+    private var floatingLifecycleOwner: LifecycleOwner? = null
     private var windowParams: WindowManager.LayoutParams? = null
     private var initialX = 0
     private var initialY = 0
@@ -100,7 +105,15 @@ class FloatingNotificationService : Service() {
 
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
 
+        // ComposeView 需要 LifecycleOwner (WindowManager 不提供)
+        val lifecycleOwner = object : LifecycleOwner {
+            override val lifecycle: Lifecycle = LifecycleRegistry(this)
+        }
+        (lifecycleOwner.lifecycle as LifecycleRegistry).currentState = Lifecycle.State.CREATED
+        floatingLifecycleOwner = lifecycleOwner
+
         val composeView = ComposeView(this).apply {
+            setViewTreeLifecycleOwner(lifecycleOwner)
             setContent {
                 val darkTheme = isSystemInDarkTheme()
                 val extendColors = if (darkTheme) darkExtendColors() else lightExtendColors()
@@ -183,11 +196,14 @@ class FloatingNotificationService : Service() {
         }
 
         floatingView = composeView
+        (lifecycleOwner.lifecycle as LifecycleRegistry).currentState = Lifecycle.State.RESUMED
         windowManager?.addView(composeView, windowParams)
     }
 
     private fun dismissFloatingWindow() {
         floatingView?.let { windowManager?.removeView(it) }
+        floatingLifecycleOwner?.let { (it.lifecycle as LifecycleRegistry).currentState = Lifecycle.State.DESTROYED }
+        floatingLifecycleOwner = null
         floatingView = null
     }
 
