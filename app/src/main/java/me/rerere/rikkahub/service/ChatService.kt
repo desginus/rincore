@@ -281,7 +281,11 @@ class ChatService(
     // ---- 初始化对话 ----
 
     suspend fun initializeConversation(conversationId: Uuid) {
-        getOrCreateSession(conversationId) // 确保 session 存在
+        val session = getOrCreateSession(conversationId)
+        // 若 session 已有数据 (已从 DB 加载过, 或正在生成中),
+        // 不再用 DB 覆盖内存态, 防止切出切回时丢失未落库的回复。
+        if (session.isInitialized) return
+        session.markInitialized()
         val conversation = conversationRepo.getConversationById(conversationId)
         if (conversation != null) {
             updateConversation(conversationId, conversation)
