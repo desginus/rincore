@@ -104,9 +104,8 @@ class FloatingNotificationService : Service() {
         lr = lo.lifecycle as LifecycleRegistry
         lr!!.currentState = Lifecycle.State.CREATED
 
-        val ssr = SavedStateRegistry()
         val sso = object : SavedStateRegistryOwner {
-            override val savedStateRegistry = ssr
+            override val savedStateRegistry = SavedStateRegistry(this)
             override val lifecycle: Lifecycle get() = lr!!
         }
         val vmo = object : ViewModelStoreOwner {
