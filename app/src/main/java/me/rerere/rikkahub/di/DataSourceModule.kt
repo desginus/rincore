@@ -171,15 +171,17 @@ val dataSourceModule = module {
             maxSize = 4L * 1024 * 1024 // 4MB
         )
         OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.MINUTES)
             .writeTimeout(120, TimeUnit.SECONDS)
-            .pingInterval(30, TimeUnit.SECONDS)
-            .connectionPool(ConnectionPool(5, 5, TimeUnit.MINUTES))
+            .callTimeout(0, TimeUnit.MILLISECONDS)
+            .pingInterval(25, TimeUnit.SECONDS)
+            .connectionPool(ConnectionPool(12, 10, TimeUnit.MINUTES))
             .followSslRedirects(true)
             .followRedirects(true)
             .retryOnConnectionFailure(true)
             .cache(dnsCache)
+            // DNS over HTTPS: 防止运营商DNS劫持 + 小米15星辰AI天线 DNS抖动
             .addInterceptor { chain ->
                 val orig = chain.request()
                 val req = orig.newBuilder()
@@ -214,6 +216,8 @@ val dataSourceModule = module {
             .addInterceptor(HttpLoggingInterceptor().apply {
                 level = HttpLoggingInterceptor.Level.HEADERS
             })
+            // HTTP/2 优先 — 多路复用降低 Head-of-Line Blocking
+            .protocols(listOf(okhttp3.Protocol.HTTP_2, okhttp3.Protocol.HTTP_1_1))
             .build().also { SearchService.init(it, get()) }
     }
 
