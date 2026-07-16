@@ -12,10 +12,9 @@ import android.os.IBinder
 import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
-import android.view.ViewGroup
 import android.view.WindowManager
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,17 +31,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.contentColorFor
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,13 +55,12 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.RouteActivity
-import me.rerere.rikkahub.ui.theme.RikkahubTheme
-import me.rerere.rikkahub.ui.theme.ColorMode
+import me.rerere.rikkahub.ui.theme.darkExtendColors
+import me.rerere.rikkahub.ui.theme.lightExtendColors
 
 /**
  * 悬浮窗通知服务: 以 WindowManager 叠加层显示通知内容。
- * UI 完全对齐应用内 Material3 消息气泡风格 —
- * surfaceContainerHigh + RoundedCornerShape(16dp) + 应用字体/色彩。
+ * UI 对齐应用内 Material3 消息气泡风格 (surfaceContainerHigh + RoundedCornerShape(16dp))。
  */
 class FloatingNotificationService : Service() {
 
@@ -108,10 +102,16 @@ class FloatingNotificationService : Service() {
 
         val composeView = ComposeView(this).apply {
             setContent {
-                RikkahubTheme(colorMode = ColorMode.SYSTEM) {
+                val darkTheme = isSystemInDarkTheme()
+                val extendColors = if (darkTheme) darkExtendColors() else lightExtendColors()
+                val colorScheme = if (darkTheme) darkColorScheme() else lightColorScheme()
+
+                MaterialTheme(colorScheme = colorScheme) {
                     FloatingWindowContent(
                         title = title,
                         body = body,
+                        conversationId = conversationId,
+                        extendColors = extendColors,
                         onClose = { stopSelf() },
                         onNavigateToChat = { convId ->
                             val intent = Intent(this@FloatingNotificationService, RouteActivity::class.java).apply {
@@ -121,7 +121,6 @@ class FloatingNotificationService : Service() {
                             startActivity(intent)
                             stopSelf()
                         },
-                        conversationId = conversationId,
                         onCopyAll = {
                             val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             cm.setPrimaryClip(ClipData.newPlainText("notification", "$title\n\n$body"))
@@ -131,7 +130,6 @@ class FloatingNotificationService : Service() {
             }
         }
 
-        // 拖动处理放在 ComposeView 外层
         composeView.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
@@ -140,7 +138,7 @@ class FloatingNotificationService : Service() {
                     initialTouchX = event.rawX
                     initialTouchY = event.rawY
                     isDragging = false
-                    false // 让 Compose 也收到 DOWN 事件
+                    false
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = (event.rawX - initialTouchX).toInt()
@@ -157,7 +155,6 @@ class FloatingNotificationService : Service() {
                 }
                 MotionEvent.ACTION_UP -> {
                     if (isDragging) {
-                        // 吸边: 复位 X
                         windowParams!!.x = 0
                         windowManager?.updateViewLayout(composeView, windowParams)
                     }
@@ -237,18 +234,21 @@ private fun FloatingWindowContent(
     title: String,
     body: String,
     conversationId: String?,
+    extendColors: me.rerere.rikkahub.ui.theme.ExtendColors,
     onClose: () -> Unit,
     onNavigateToChat: (String) -> Unit,
     onCopyAll: () -> Unit,
 ) {
     val colorScheme = MaterialTheme.colorScheme
 
-    // 消息气泡风格: 圆角 16dp, 背景 surfaceContainerHigh
+    // 消息气泡风格: 圆角 16dp, 背景使用 gray1/gray10 (对应 surfaceContainer)
+    val bgColor = if (androidx.compose.foundation.isSystemInDarkTheme()) extendColors.gray3 else extendColors.gray1
+    val onBgColor = if (androidx.compose.foundation.isSystemInDarkTheme()) extendColors.gray10 else extendColors.gray9
+    val subtleColor = if (androidx.compose.foundation.isSystemInDarkTheme()) extendColors.gray7 else extendColors.gray6
+
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = colorScheme.surfaceContainerHigh,
-        tonalElevation = 4.dp,
-        shadowElevation = 8.dp,
+        color = bgColor,
         modifier = Modifier.widthIn(min = 280.dp, max = 340.dp)
     ) {
         Column(
@@ -263,14 +263,13 @@ private fun FloatingWindowContent(
                     text = title,
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.SemiBold,
-                        color = colorScheme.onSurface
+                        color = onBgColor
                     ),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
-                // 关闭按钮 — 圆形区域风格
                 Box(
                     modifier = Modifier
                         .size(32.dp)
@@ -278,24 +277,17 @@ private fun FloatingWindowContent(
                         .clickable { onClose() },
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "✕",
-                        fontSize = 16.sp,
-                        color = colorScheme.onSurfaceVariant
-                    )
+                    Text("✕", fontSize = 16.sp, color = subtleColor)
                 }
             }
 
             // ── 正文 ──
             if (body.isNotBlank()) {
                 Spacer(modifier = Modifier.height(10.dp))
-                // 用 SelectionContainer 支持文本选择, 类同 ChatMessage
                 SelectionContainer {
                     Text(
                         text = body,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            color = colorScheme.onSurfaceVariant
-                        ),
+                        style = MaterialTheme.typography.bodyMedium.copy(color = subtleColor),
                         modifier = Modifier
                             .heightIn(max = 260.dp)
                             .verticalScroll(rememberScrollState())
@@ -303,14 +295,13 @@ private fun FloatingWindowContent(
                 }
             }
 
-            // ── 底部操作栏: 复制 + 转到对话 ──
+            // ── 底部操作栏 ──
             if (body.isNotBlank() || conversationId != null) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // 复制按钮 — 圆形图标风格, 对齐 ChatMessageActionButtons
                     if (body.isNotBlank()) {
                         Box(
                             modifier = Modifier
@@ -319,22 +310,14 @@ private fun FloatingWindowContent(
                                 .clickable { onCopyAll() },
                             contentAlignment = Alignment.Center
                         ) {
-                            // 用文本模拟复制图标, 避免引入 HugeIcons 依赖
-                            Text(
-                                text = "⎘",
-                                fontSize = 18.sp,
-                                color = colorScheme.onSurfaceVariant
-                            )
+                            Text("⎘", fontSize = 18.sp, color = subtleColor)
                         }
                     }
-
                     Spacer(modifier = Modifier.weight(1f))
-
-                    // 转到对话按钮
                     if (conversationId != null) {
                         TextButton(onClick = { onNavigateToChat(conversationId) }) {
                             Text(
-                                text = "转到对话",
+                                "转到对话",
                                 style = MaterialTheme.typography.labelLarge,
                                 color = colorScheme.primary
                             )
