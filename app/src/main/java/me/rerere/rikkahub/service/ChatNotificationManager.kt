@@ -56,6 +56,8 @@ class ChatNotificationManager(
             override fun onActivityResumed(activity: Activity) {
                 if (resumedActivityCount.incrementAndGet() > 0) {
                     isForeground = true
+                    // 回到前台时取消对话完成通知 (notificationId=1)
+                    context.cancelNotification(1)
                 }
             }
             override fun onActivityPaused(activity: Activity) {
