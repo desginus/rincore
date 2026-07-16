@@ -1,10 +1,13 @@
 package me.rerere.rikkahub.data.ai.tools.local
 
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.TaskStackBuilder
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -14,6 +17,8 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.R
+import me.rerere.rikkahub.RouteActivity
 
 private const val CHANNEL_ID = "rincore_ai_tool"
 private const val CHANNEL_NAME = "AI tool notifications"
@@ -21,11 +26,24 @@ private const val CHANNEL_NAME = "AI tool notifications"
 private fun ensureChannel(context: Context) {
     val channel = NotificationChannelCompat.Builder(
         CHANNEL_ID,
-        NotificationManager.IMPORTANCE_DEFAULT
+        NotificationManager.IMPORTANCE_HIGH
     )
         .setName(CHANNEL_NAME)
+        .setVibrationEnabled(true)
         .build()
     NotificationManagerCompat.from(context).createNotificationChannel(channel)
+}
+
+private fun buildContentIntent(context: Context, id: Int): PendingIntent {
+    val intent = Intent(context, RouteActivity::class.java).apply {
+        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+    }
+    return TaskStackBuilder.create(context)
+        .addNextIntentWithParentStack(intent)
+        .getPendingIntent(
+            id,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )!!
 }
 
 fun notificationTool(
@@ -74,10 +92,15 @@ fun notificationTool(
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle(title)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setSmallIcon(R.drawable.small_icon)
             .setAutoCancel(true)
+            .setContentIntent(buildContentIntent(context, id))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+
         if (body != null) {
             builder.setContentText(body)
+            builder.setStyle(NotificationCompat.BigTextStyle().bigText(body))
         }
 
         val payload = try {

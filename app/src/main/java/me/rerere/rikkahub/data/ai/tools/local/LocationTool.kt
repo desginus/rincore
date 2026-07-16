@@ -1,14 +1,20 @@
 package me.rerere.rikkahub.data.ai.tools.local
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.location.Location
+import android.location.LocationListener
 import android.location.LocationManager
+import android.os.Build
+import android.os.Looper
 import android.util.Log
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
+import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
@@ -22,6 +28,7 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
+import kotlin.coroutines.resume
 
 private const val TAG_LOC = "LocationTool"
 
@@ -42,9 +49,110 @@ private fun JsonObjectBuilder.putLocation(loc: Location, providerName: String) {
     put("timestamp_ms", loc.time)
 }
 
+/**
+ * 通过 LocationManager.requestLocationUpdates 强制触发 GPS 硬件获取实时定位。
+ * getCurrentLocation 是被动 API, 不会主动启动 GPS 接收器;
+ * requestLocationUpdates 会强制激活 GPS 硬件进行卫星锁定。
+ */
+@SuppressLint("MissingPermission")
+private suspend fun requestFreshFixViaLocationManager(
+    lm: LocationManager,
+    timeoutMs: Long
+): Location? = suspendCancellableCoroutine { cont ->
+    val listener = object : LocationListener {
+        override fun onLocationChanged(location: Location) {
+            if (cont.isActive) {
+                cont.resume(location)
+            }
+        }
+    }
+
+    try {
+        // 优先 GPS_PROVIDER — 唯一能触发真实卫星锁定的 provider
+        val provider = if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+            LocationManager.GPS_PROVIDER
+        } else if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+            LocationManager.NETWORK_PROVIDER
+        } else {
+            cont.resume(null)
+            return@suspendCancellableCoroutine
+        }
+
+        Log.i(TAG_LOC, "requestLocationUpdates provider=$provider timeout=${timeoutMs}ms")
+        lm.requestLocationUpdates(
+            provider,
+            0L,   // minTimeMs: 0 = 尽快
+            0F,   // minDistanceM: 0 = 不限距离
+            listener,
+            Looper.getMainLooper()
+        )
+
+        cont.invokeOnCancellation {
+            try { lm.removeUpdates(listener) } catch (_: Throwable) {}
+        }
+    } catch (e: SecurityException) {
+        Log.w(TAG_LOC, "requestLocationUpdates SecurityException", e)
+        cont.resume(null)
+    } catch (e: Throwable) {
+        Log.w(TAG_LOC, "requestLocationUpdates failed", e)
+        cont.resume(null)
+    }
+}
+
+/**
+ * 通过 FusedLocationProviderClient.requestLocationUpdates 触发实时定位。
+ */
+private suspend fun requestFreshFixViaFused(
+    context: Context,
+    priority: Int,
+    timeoutMs: Long
+): Location? {
+    return try {
+        val client = LocationServices.getFusedLocationProviderClient(context)
+        val request = LocationRequest.Builder(priority)
+            .setWaitForAccurateLocation(false)
+            .setMinUpdateIntervalMillis(0)
+            .setMaxUpdateDelayMillis(0)
+            .build()
+
+        val callback = object : com.google.android.gms.location.LocationCallback() {
+            // 不在这里处理, 用 suspendCancellableCoroutine 包装
+        }
+
+        suspendCancellableCoroutine<Location?> { cont ->
+            val fusedCallback = object : com.google.android.gms.location.LocationCallback() {
+                override fun onLocationResult(result: com.google.android.gms.location.LocationResult) {
+                    val loc = result.lastLocation
+                    if (loc != null && cont.isActive) {
+                        cont.resume(loc)
+                    }
+                }
+            }
+
+            try {
+                client.requestLocationUpdates(request, fusedCallback, Looper.getMainLooper())
+                    .addOnFailureListener {
+                        if (cont.isActive) cont.resume(null)
+                    }
+
+                cont.invokeOnCancellation {
+                    try { client.removeLocationUpdates(fusedCallback) } catch (_: Throwable) {}
+                }
+            } catch (e: Throwable) {
+                Log.w(TAG_LOC, "fused requestLocationUpdates failed", e)
+                if (cont.isActive) cont.resume(null)
+            }
+        }
+    } catch (e: Throwable) {
+        Log.w(TAG_LOC, "requestFreshFixViaFused failed", e)
+        null
+    }
+}
+
 fun locationTool(context: Context): Tool = Tool(
     name = "get_location",
-    description = "获取设备当前 GPS 位置（经纬度、精度）。需要定位权限且定位服务已开启。支持高精度/均衡/低功耗三种模式，优先使用缓存热定位。",
+    description = "获取设备当前实时 GPS 位置（经纬度、精度）。需要定位权限且定位服务已开启。" +
+        "主动触发 GPS 硬件进行卫星锁定, 返回实时定位而非缓存。支持高精度/均衡/低功耗三种模式。",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
@@ -54,7 +162,8 @@ fun locationTool(context: Context): Tool = Tool(
                 })
                 put("timeout_ms", buildJsonObject {
                     put("type", "integer")
-                    put("description", "Timeout in milliseconds (default 30000, min 1000, max 60000). After timeout, falls back to most recent cached fix.")
+                    put("description", "Timeout in milliseconds (default 30000, min 1000, max 60000). " +
+                        "After timeout, falls back to most recent cached fix.")
                 })
             }
         )
@@ -90,21 +199,29 @@ fun locationTool(context: Context): Tool = Tool(
                                 .isGooglePlayServicesAvailable(context) == ConnectionResult.SUCCESS
                         } catch (t: Throwable) { Log.w(TAG_LOC, "GMS check failed", t); false }
 
-                        // 实时优先: 先请求当前定位, 失败才降级缓存
-                        val fresh: Location? = if (gmsAvailable) {
-                            try {
-                                val client = LocationServices.getFusedLocationProviderClient(context)
-                                withTimeoutOrNull(timeoutMs.toLong()) {
-                                    client.getCurrentLocation(priority, null).await()
-                                }
-                            } catch (t: Throwable) { Log.w(TAG_LOC, "getCurrentLocation failed", t); null }
-                        } else null
+                        // ── 第一优先: LocationManager.requestLocationUpdates 强制触发 GPS ──
+                        // 这是唯一能主动激活 GPS 接收器进行卫星锁定的 API
+                        var fresh: Location? = null
+                        if (gpsEnabled || networkEnabled) {
+                            fresh = withTimeoutOrNull(timeoutMs) {
+                                requestFreshFixViaLocationManager(lm, timeoutMs)
+                            }
+                        }
+
+                        // ── 第二优先: FusedLocationProviderClient.requestLocationUpdates ──
+                        if (fresh == null && gmsAvailable) {
+                            Log.i(TAG_LOC, "LocationManager failed, trying Fused requestLocationUpdates")
+                            fresh = withTimeoutOrNull(timeoutMs) {
+                                requestFreshFixViaFused(context, priority, timeoutMs)
+                            }
+                        }
 
                         if (fresh != null) {
-                            Log.i(TAG_LOC, "fresh fix obtained provider=fused")
-                            buildJsonObject { putLocation(fresh, "fused") }
+                            Log.i(TAG_LOC, "fresh fix obtained provider=${fresh.provider}")
+                            buildJsonObject { putLocation(fresh, fresh.provider ?: "gps") }
                         } else {
-                            // 降级: 尝试所有缓存源
+                            // ── 降级: 缓存 ──
+                            Log.w(TAG_LOC, "all fresh fix methods failed, falling back to cache")
                             val cached = try {
                                 if (gmsAvailable) LocationServices.getFusedLocationProviderClient(context).lastLocation.await()
                                 else null
@@ -115,15 +232,15 @@ fun locationTool(context: Context): Tool = Tool(
 
                             if (cached != null) {
                                 val ageMs = System.currentTimeMillis() - cached.time
-                                Log.i(TAG_LOC, "fallback cached fix age=${ageMs}ms provider=${cached.provider}")
                                 buildJsonObject {
                                     putLocation(cached, cached.provider ?: "cached")
                                     put("cached", true)
                                     put("age_ms", ageMs)
-                                    put("note", "fresh fix timed out after ${timeoutMs}ms; returning last known")
+                                    put("note", "GPS fix timed out after ${timeoutMs}ms; returning last known location")
                                 }
                             } else {
-                                errorPayload("no fix available", "Try moving near a window/outdoors, ensure Location is enabled, or open a maps app once to seed the location cache.")
+                                errorPayload("no fix available", "GPS fix failed and no cached location. " +
+                                    "Try moving near a window/outdoors, ensure Location is enabled.")
                             }
                         }
                     }
