@@ -71,6 +71,35 @@ import me.rerere.rikkahub.ui.theme.darkExtendColors
 import me.rerere.rikkahub.ui.theme.lightExtendColors
 
 /**
+ * ComposeView 在 WindowManager 外挂所需的完整 Owner。
+ * 同时实现 LifecycleOwner + SavedStateRegistryOwner + ViewModelStoreOwner。
+ *
+ * 关键: SavedStateRegistryController.create() 只调 performAttach()，
+ * 必须再调 performRestore(null) 才能让 SavedStateRegistry 进入 RESTORED 状态，
+ * 否则 consumeRestoredStateForKey 会抛 IllegalStateException。
+ */
+private class FloatingWindowOwner : LifecycleOwner, SavedStateRegistryOwner, ViewModelStoreOwner {
+
+    private val lifecycleRegistry = LifecycleRegistry(this)
+    private val savedStateController = SavedStateRegistryController.create(this)
+    override val viewModelStore = ViewModelStore()
+
+    init {
+        // 1. performAttach 已在 create() 内完成
+        // 2. performRestore 将 SavedStateRegistry 内部状态从 UNINITIALIZED → RESTORED
+        savedStateController.performRestore(null)
+        // 3. lifecycle 推进到 CREATED, 让 observer 正确收到状态
+        lifecycleRegistry.currentState = Lifecycle.State.CREATED
+    }
+
+    override val lifecycle: Lifecycle get() = lifecycleRegistry
+    override val savedStateRegistry: SavedStateRegistry get() = savedStateController.savedStateRegistry
+
+    fun resume() { lifecycleRegistry.currentState = Lifecycle.State.RESUMED }
+    fun destroy() { lifecycleRegistry.currentState = Lifecycle.State.DESTROYED }
+}
+
+/**
  * 悬浮窗通知服务: WindowManager 叠加层 + ComposeView.
  */
 class FloatingNotificationService : Service() {
@@ -78,7 +107,7 @@ class FloatingNotificationService : Service() {
     private val svcScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var wm: WindowManager? = null
     private var cv: ComposeView? = null
-    private var lr: LifecycleRegistry? = null
+    private var owner: FloatingWindowOwner? = null
     private var wp: WindowManager.LayoutParams? = null
     private var ix = 0; private var iy = 0
     private var itx = 0f; private var ity = 0f
@@ -90,7 +119,11 @@ class FloatingNotificationService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent == null || !canDraw()) { stopSelf(); return START_NOT_STICKY }
-        show(extTitle(intent), extBody(intent), extConv(intent))
+        show(
+            intent.getStringExtra(EXTRA_TITLE) ?: "",
+            intent.getStringExtra(EXTRA_BODY) ?: "",
+            intent.getStringExtra(EXTRA_CONVERSATION_ID)
+        )
         return START_NOT_STICKY
     }
 
@@ -98,24 +131,14 @@ class FloatingNotificationService : Service() {
         dismiss()
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
 
-        // SavedStateRegistryController.create() 要求 lifecycle 为 INITIALIZED
-        // 创建后再升到 CREATED,确保 observer 回调正常触发
-        val lo = object : LifecycleOwner, SavedStateRegistryOwner {
-            override val lifecycle = LifecycleRegistry(this)
-            override val savedStateRegistry = SavedStateRegistryController.create(this).savedStateRegistry
-        }
-        lr = lo.lifecycle as LifecycleRegistry
-        lr!!.currentState = Lifecycle.State.CREATED
-
-        val sso: SavedStateRegistryOwner = lo
-        val vmo = object : ViewModelStoreOwner {
-            override val viewModelStore = ViewModelStore()
-        }
+        // 创建 Owner (内部已完成 performAttach + performRestore + CREATED)
+        val o = FloatingWindowOwner()
+        owner = o
 
         cv = ComposeView(this).apply {
-            setViewTreeLifecycleOwner(lo)
-            setViewTreeSavedStateRegistryOwner(sso)
-            setViewTreeViewModelStoreOwner(vmo)
+            setViewTreeLifecycleOwner(o)
+            setViewTreeSavedStateRegistryOwner(o)
+            setViewTreeViewModelStoreOwner(o)
 
             setContent {
                 val dark = isSystemInDarkTheme()
@@ -162,14 +185,14 @@ class FloatingNotificationService : Service() {
             type, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT
         ).apply { gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL; y = dp2px(120) }
 
-        lr!!.currentState = Lifecycle.State.RESUMED
+        o.resume()
         wm?.addView(cv, wp)
     }
 
     private fun dismiss() {
         cv?.let { wm?.removeView(it) }
-        lr?.currentState = Lifecycle.State.DESTROYED
-        lr = null; cv = null
+        owner?.destroy()
+        owner = null; cv = null
     }
 
     override fun onDestroy() { dismiss(); svcScope.cancel(); super.onDestroy() }
@@ -193,9 +216,6 @@ class FloatingNotificationService : Service() {
         const val EXTRA_TITLE = "title"
         const val EXTRA_BODY = "body"
         const val EXTRA_CONVERSATION_ID = "conversation_id"
-        private fun extTitle(i: Intent) = i.getStringExtra(EXTRA_TITLE) ?: ""
-        private fun extBody(i: Intent) = i.getStringExtra(EXTRA_BODY) ?: ""
-        private fun extConv(i: Intent) = i.getStringExtra(EXTRA_CONVERSATION_ID)
     }
 }
 
