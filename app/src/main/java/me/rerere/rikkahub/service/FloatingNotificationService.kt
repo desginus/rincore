@@ -57,6 +57,7 @@ import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.SavedStateRegistry
+import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import kotlinx.coroutines.CoroutineScope
@@ -97,17 +98,15 @@ class FloatingNotificationService : Service() {
         dismiss()
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
 
-        // ComposeView WindowManager 三大件
-        val lo = object : LifecycleOwner {
+        // ComposeView WindowManager 三大件 — 合并 Lifecycle+SavedState
+        val lo = object : LifecycleOwner, SavedStateRegistryOwner {
             override val lifecycle = LifecycleRegistry(this)
+            override val savedStateRegistry = SavedStateRegistryController.create(this).savedStateRegistry
         }
         lr = lo.lifecycle as LifecycleRegistry
         lr!!.currentState = Lifecycle.State.CREATED
 
-        val sso = object : SavedStateRegistryOwner {
-            override val savedStateRegistry = SavedStateRegistry(this)
-            override val lifecycle: Lifecycle get() = lr!!
-        }
+        val sso: SavedStateRegistryOwner = lo
         val vmo = object : ViewModelStoreOwner {
             override val viewModelStore = ViewModelStore()
         }
