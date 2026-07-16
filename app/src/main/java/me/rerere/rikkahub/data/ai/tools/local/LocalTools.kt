@@ -73,7 +73,7 @@ class LocalTools(
         }
         if (options.contains(LocalToolOption.ToastAndNotification)) {
             tools.add(toastTool(context))
-            tools.add(notificationTool(context))
+            tools.add(notificationTool(context, invocationContext))
         }
         if (options.contains(LocalToolOption.SubAgents)) {
             tools.add(subagentDispatchTool(subAgentEngine, invocationContext))
