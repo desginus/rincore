@@ -52,7 +52,14 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.lifecycle.setViewTreeViewModelStoreOwner
+import androidx.savedstate.SavedStateRegistry
+import androidx.savedstate.SavedStateRegistryController
+import androidx.savedstate.SavedStateRegistryOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -72,6 +79,7 @@ class FloatingNotificationService : Service() {
     private var windowManager: WindowManager? = null
     private var floatingView: ComposeView? = null
     private var floatingLifecycleOwner: LifecycleOwner? = null
+    private var floatingSavedState: SavedStateRegistryController? = null
     private var windowParams: WindowManager.LayoutParams? = null
     private var initialX = 0
     private var initialY = 0
@@ -105,15 +113,29 @@ class FloatingNotificationService : Service() {
 
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
 
-        // ComposeView 需要 LifecycleOwner (WindowManager 不提供)
+        // ComposeView 在 WindowManager 中需要三个 ViewTree Owner:
+        // LifecycleOwner / SavedStateRegistryOwner / ViewModelStoreOwner
         val lifecycleOwner = object : LifecycleOwner {
             override val lifecycle: Lifecycle = LifecycleRegistry(this)
         }
         (lifecycleOwner.lifecycle as LifecycleRegistry).currentState = Lifecycle.State.CREATED
         floatingLifecycleOwner = lifecycleOwner
 
+        val savedState = SavedStateRegistryController.create(this)
+        savedState.performRestore(null)
+        floatingSavedState = savedState
+
+        val vmStoreOwner = object : ViewModelStoreOwner {
+            override val viewModelStore: ViewModelStore = ViewModelStore()
+        }
+
         val composeView = ComposeView(this).apply {
             setViewTreeLifecycleOwner(lifecycleOwner)
+            setViewTreeSavedStateRegistryOwner(object : SavedStateRegistryOwner {
+                override val savedStateRegistry: SavedStateRegistry get() = savedState.savedStateRegistry
+                override val lifecycle: Lifecycle get() = lifecycleOwner.lifecycle
+            })
+            setViewTreeViewModelStoreOwner(vmStoreOwner)
             setContent {
                 val darkTheme = isSystemInDarkTheme()
                 val extendColors = if (darkTheme) darkExtendColors() else lightExtendColors()
