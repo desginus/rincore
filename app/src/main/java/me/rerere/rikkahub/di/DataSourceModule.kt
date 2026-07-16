@@ -286,7 +286,7 @@ val dataSourceModule = module {
  * 作用于 OkHttp 的所有连接, 内存上限: 256KB × 连接池(12) ≈ 3MB。
  */
 private object BufferedSocketFactory : SocketFactory() {
-    private const val RECEIVE_BUFFER_SIZE = 256 * 1024 // 256KB
+    private const val RECEIVE_BUFFER_SIZE = 512 * 1024 // 512KB
     private val delegate = SocketFactory.getDefault()
 
     override fun createSocket(): Socket {
