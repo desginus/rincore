@@ -70,17 +70,15 @@ import me.rerere.rikkahub.ui.theme.darkExtendColors
 import me.rerere.rikkahub.ui.theme.lightExtendColors
 
 /**
- * 悬浮窗通知服务: WindowManager 叠加层 + ComposeView。
- * UI 对齐应用内 Material3 消息气泡风格。
+ * 悬浮窗通知服务: WindowManager 叠加层 + ComposeView.
  */
 class FloatingNotificationService : Service() {
 
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private var winMgr: WindowManager? = null
-    private var compView: ComposeView? = null
-    private var floatingLife: LifecycleRegistry? = null
-    private var winParams: WindowManager.LayoutParams? = null
-
+    private val svcScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var wm: WindowManager? = null
+    private var cv: ComposeView? = null
+    private var lr: LifecycleRegistry? = null
+    private var wp: WindowManager.LayoutParams? = null
     private var ix = 0; private var iy = 0
     private var itx = 0f; private var ity = 0f
     private var drag = false
@@ -90,48 +88,42 @@ class FloatingNotificationService : Service() {
     override fun onCreate() { super.onCreate(); startFg() }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent == null || !canDrawOverlays()) { stopSelf(); return START_NOT_STICKY }
-        showWindow(
-            intent.getStringExtra(EXTRA_TITLE) ?: "",
-            intent.getStringExtra(EXTRA_BODY) ?: "",
-            intent.getStringExtra(EXTRA_CONVERSATION_ID)
-        )
+        if (intent == null || !canDraw()) { stopSelf(); return START_NOT_STICKY }
+        show(extTitle(intent), extBody(intent), extConv(intent))
         return START_NOT_STICKY
     }
 
-    private fun showWindow(title: String, body: String, convId: String?) {
-        dismissWindow()
-        winMgr = getSystemService(WINDOW_SERVICE) as WindowManager
+    private fun show(title: String, body: String, convId: String?) {
+        dismiss()
+        wm = getSystemService(WINDOW_SERVICE) as WindowManager
 
-        // ComposeView WindowManager 三件套
-        val lifecycleOwner = object : LifecycleOwner {
+        // ComposeView WindowManager 三大件
+        val lo = object : LifecycleOwner {
             override val lifecycle = LifecycleRegistry(this)
         }
-        val lr = lifecycleOwner.lifecycle as LifecycleRegistry
-        lr.currentState = Lifecycle.State.CREATED
-        floatingLife = lr
+        lr = lo.lifecycle as LifecycleRegistry
+        lr!!.currentState = Lifecycle.State.CREATED
 
-        val ssOwner = object : SavedStateRegistryOwner {
-            override val savedStateRegistry = SavedStateRegistry.create(null)
-            override val lifecycle: Lifecycle get() = lr
+        val ssr = SavedStateRegistry()
+        val sso = object : SavedStateRegistryOwner {
+            override val savedStateRegistry = ssr
+            override val lifecycle: Lifecycle get() = lr!!
         }
-
-        val vmOwner = object : ViewModelStoreOwner {
+        val vmo = object : ViewModelStoreOwner {
             override val viewModelStore = ViewModelStore()
         }
 
-        val cv = ComposeView(this).apply {
-            setViewTreeLifecycleOwner(lifecycleOwner)
-            setViewTreeSavedStateRegistryOwner(ssOwner)
-            setViewTreeViewModelStoreOwner(vmOwner)
+        cv = ComposeView(this).apply {
+            setViewTreeLifecycleOwner(lo)
+            setViewTreeSavedStateRegistryOwner(sso)
+            setViewTreeViewModelStoreOwner(vmo)
 
             setContent {
                 val dark = isSystemInDarkTheme()
                 val ex = if (dark) darkExtendColors() else lightExtendColors()
                 val cs = if (dark) darkColorScheme() else lightColorScheme()
                 MaterialTheme(colorScheme = cs) {
-                    FWC(
-                        title, body, convId, ex,
+                    Content(title, body, convId, ex,
                         onClose = { stopSelf() },
                         onNav = { cid ->
                             startActivity(Intent(this@FloatingNotificationService, RouteActivity::class.java).apply {
@@ -149,25 +141,15 @@ class FloatingNotificationService : Service() {
             }
         }
 
-        cv.setOnTouchListener { _, e ->
+        cv!!.setOnTouchListener { _, e ->
             when (e.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    ix = winParams!!.x; iy = winParams!!.y
-                    itx = e.rawX; ity = e.rawY; drag = false; false
-                }
+                MotionEvent.ACTION_DOWN -> { ix = wp!!.x; iy = wp!!.y; itx = e.rawX; ity = e.rawY; drag = false; false }
                 MotionEvent.ACTION_MOVE -> {
-                    val dx = (e.rawX - itx).toInt()
-                    val dy = (e.rawY - ity).toInt()
+                    val dx = (e.rawX - itx).toInt(); val dy = (e.rawY - ity).toInt()
                     if (kotlin.math.abs(dx) > 8 || kotlin.math.abs(dy) > 8) drag = true
-                    if (drag) {
-                        winParams!!.x = ix + dx; winParams!!.y = iy + dy
-                        winMgr?.updateViewLayout(cv, winParams); true
-                    } else false
+                    if (drag) { wp!!.x = ix + dx; wp!!.y = iy + dy; wm?.updateViewLayout(cv, wp); true } else false
                 }
-                MotionEvent.ACTION_UP -> {
-                    if (drag) { winParams!!.x = 0; winMgr?.updateViewLayout(cv, winParams) }
-                    drag
-                }
+                MotionEvent.ACTION_UP -> { if (drag) { wp!!.x = 0; wm?.updateViewLayout(cv, wp) }; drag }
                 else -> false
             }
         }
@@ -176,26 +158,24 @@ class FloatingNotificationService : Service() {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
 
-        winParams = WindowManager.LayoutParams(
+        wp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
             type, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT
         ).apply { gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL; y = dp2px(120) }
 
-        lr.currentState = Lifecycle.State.RESUMED
-        compView = cv
-        winMgr?.addView(cv, winParams)
+        lr!!.currentState = Lifecycle.State.RESUMED
+        wm?.addView(cv, wp)
     }
 
-    private fun dismissWindow() {
-        compView?.let { winMgr?.removeView(it) }
-        floatingLife?.currentState = Lifecycle.State.DESTROYED
-        floatingLife = null; compView = null
+    private fun dismiss() {
+        cv?.let { wm?.removeView(it) }
+        lr?.currentState = Lifecycle.State.DESTROYED
+        lr = null; cv = null
     }
 
-    override fun onDestroy() { dismissWindow(); serviceScope.cancel(); super.onDestroy() }
+    override fun onDestroy() { dismiss(); svcScope.cancel(); super.onDestroy() }
 
-    private fun canDrawOverlays() =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) Settings.canDrawOverlays(this) else true
+    private fun canDraw() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) Settings.canDrawOverlays(this) else true
 
     private fun startFg() {
         val ch = "floating_window"
@@ -204,8 +184,7 @@ class FloatingNotificationService : Service() {
                 .setName("Floating Window").setVibrationEnabled(false).setShowBadge(false).build()
         )
         startForeground(1001, NotificationCompat.Builder(this, ch)
-            .setContentTitle("RinCore notification")
-            .setSmallIcon(R.drawable.small_icon).setOngoing(true)
+            .setContentTitle("RinCore notification").setSmallIcon(R.drawable.small_icon).setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW).build())
     }
 
@@ -215,35 +194,38 @@ class FloatingNotificationService : Service() {
         const val EXTRA_TITLE = "title"
         const val EXTRA_BODY = "body"
         const val EXTRA_CONVERSATION_ID = "conversation_id"
+        private fun extTitle(i: Intent) = i.getStringExtra(EXTRA_TITLE) ?: ""
+        private fun extBody(i: Intent) = i.getStringExtra(EXTRA_BODY) ?: ""
+        private fun extConv(i: Intent) = i.getStringExtra(EXTRA_CONVERSATION_ID)
     }
 }
 
-// ─────────────────── Compose ───────────────────
+// ── Compose ──
 
 @Composable
-private fun FloatingWindowContent(
-    title: String, body: String, convId: String?,
-    ex: ExtendColors, onClose: () -> Unit, onNav: (String) -> Unit, onCopy: () -> Unit,
+private fun Content(
+    title: String, body: String, convId: String?, ex: ExtendColors,
+    onClose: () -> Unit, onNav: (String) -> Unit, onCopy: () -> Unit,
 ) {
     val dark = isSystemInDarkTheme()
-    val bg = if (dark) ex.gray3 else ex.gray1
-    val fg = if (dark) ex.gray10 else ex.gray9
-    val sub = if (dark) ex.gray7 else ex.gray6
-
-    Surface(shape = RoundedCornerShape(16.dp), color = bg, modifier = Modifier.widthIn(min = 280.dp, max = 340.dp)) {
+    Surface(shape = RoundedCornerShape(16.dp),
+        color = if (dark) ex.gray3 else ex.gray1,
+        modifier = Modifier.widthIn(min = 280.dp, max = 340.dp)
+    ) {
         Column(Modifier.padding(16.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold, color = fg),
-                    maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Text(title, style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.SemiBold, color = if (dark) ex.gray10 else ex.gray9
+                ), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                 Spacer(Modifier.width(4.dp))
-                Box(Modifier.size(32.dp).clip(CircleShape).clickable { onClose() }, contentAlignment = Alignment.Center) {
-                    Text("✕", fontSize = 16.sp, color = sub)
+                Box(Modifier.size(32.dp).clip(CircleShape).clickable(onClick = onClose), contentAlignment = Alignment.Center) {
+                    Text("✕", fontSize = 16.sp, color = if (dark) ex.gray7 else ex.gray6)
                 }
             }
             if (body.isNotBlank()) {
                 Spacer(Modifier.height(10.dp))
                 SelectionContainer {
-                    Text(body, style = MaterialTheme.typography.bodyMedium.copy(color = sub),
+                    Text(body, style = MaterialTheme.typography.bodyMedium.copy(color = if (dark) ex.gray7 else ex.gray6),
                         modifier = Modifier.heightIn(max = 260.dp).verticalScroll(rememberScrollState()))
                 }
             }
@@ -251,8 +233,8 @@ private fun FloatingWindowContent(
                 Spacer(Modifier.height(12.dp))
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     if (body.isNotBlank())
-                        Box(Modifier.size(36.dp).clip(CircleShape).clickable { onCopy() }, contentAlignment = Alignment.Center) {
-                            Text("⎘", fontSize = 18.sp, color = sub)
+                        Box(Modifier.size(36.dp).clip(CircleShape).clickable(onClick = onCopy), contentAlignment = Alignment.Center) {
+                            Text("⎘", fontSize = 18.sp, color = if (dark) ex.gray7 else ex.gray6)
                         }
                     Spacer(Modifier.weight(1f))
                     if (convId != null)
