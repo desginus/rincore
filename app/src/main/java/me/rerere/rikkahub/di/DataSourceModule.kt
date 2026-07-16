@@ -35,14 +35,17 @@ import me.rerere.rikkahub.data.sync.webdav.WebDavSync
 import me.rerere.search.SearchService
 import me.rerere.rikkahub.data.sync.S3Sync
 import okhttp3.ConnectionPool
+import okhttp3.Dispatcher
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import org.koin.dsl.module
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
+import java.net.Socket
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import javax.net.SocketFactory
 
 val dataSourceModule = module {
     single {
@@ -170,12 +173,17 @@ val dataSourceModule = module {
             directory = java.io.File(get<android.content.Context>().cacheDir, "okhttp-dns"),
             maxSize = 4L * 1024 * 1024 // 4MB
         )
+        val dispatcher = Dispatcher().apply {
+            maxRequestsPerHost = 8
+        }
         OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.MINUTES)
             .writeTimeout(120, TimeUnit.SECONDS)
             .pingInterval(30, TimeUnit.SECONDS)
             .connectionPool(ConnectionPool(12, 10, TimeUnit.MINUTES))
+            .dispatcher(dispatcher)
+            .socketFactory(BufferedSocketFactory)
             .followSslRedirects(true)
             .followRedirects(true)
             .retryOnConnectionFailure(true)
@@ -267,5 +275,37 @@ val dataSourceModule = module {
 
     single<RikkaHubAPI> {
         get<Retrofit>().create(RikkaHubAPI::class.java)
+    }
+}
+
+/**
+ * SocketFactory 包装: 为新创建的 Socket 设置 SO_RCVBUF=256KB。
+ * 增大接收缓冲区减少 TCP 窗口停等, 改善 Deepseek V4 Pro 等模型的
+ * 突发式 Token 输出的平滑度。
+ *
+ * 作用于 OkHttp 的所有连接, 内存上限: 256KB × 连接池(12) ≈ 3MB。
+ */
+private object BufferedSocketFactory : SocketFactory() {
+    private const val RECEIVE_BUFFER_SIZE = 256 * 1024 // 256KB
+    private val delegate = SocketFactory.getDefault()
+
+    override fun createSocket(): Socket {
+        return delegate.createSocket().apply { receiveBufferSize = RECEIVE_BUFFER_SIZE }
+    }
+
+    override fun createSocket(host: String, port: Int): Socket {
+        return delegate.createSocket(host, port).apply { receiveBufferSize = RECEIVE_BUFFER_SIZE }
+    }
+
+    override fun createSocket(host: String, port: Int, localHost: java.net.InetAddress, localPort: Int): Socket {
+        return delegate.createSocket(host, port, localHost, localPort).apply { receiveBufferSize = RECEIVE_BUFFER_SIZE }
+    }
+
+    override fun createSocket(address: java.net.InetAddress, port: Int): Socket {
+        return delegate.createSocket(address, port).apply { receiveBufferSize = RECEIVE_BUFFER_SIZE }
+    }
+
+    override fun createSocket(address: java.net.InetAddress, port: Int, localAddress: java.net.InetAddress, localPort: Int): Socket {
+        return delegate.createSocket(address, port, localAddress, localPort).apply { receiveBufferSize = RECEIVE_BUFFER_SIZE }
     }
 }

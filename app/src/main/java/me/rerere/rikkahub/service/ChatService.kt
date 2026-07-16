@@ -32,6 +32,7 @@ import me.rerere.ai.core.Tool
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderManager
+import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
@@ -475,6 +476,14 @@ class ChatService(
         val assistant = settings.getAssistantById(initialConversation.assistantId)
             ?: settings.getCurrentAssistant()
         val model = settings.findModelById(assistant.chatModelId ?: settings.chatModelId) ?: return
+
+        // 延迟连接预热: 与消息预处理(TCP+TLS ←→ 正则/模板)并行执行, 降低 TTFB
+        val provider = model.findProvider(settings.providers)
+        if (provider is ProviderSetting.OpenAI && provider.baseUrl.isNotBlank()) {
+            runCatching { java.net.URI(provider.baseUrl).host }
+                .getOrNull()
+                ?.let { host -> ConnectionWarmer.warmHostOnce(context, host) }
+        }
 
         val senderName = if (assistant.useAssistantAvatar) {
             assistant.name.ifEmpty { context.getString(R.string.assistant_page_default_assistant) }
