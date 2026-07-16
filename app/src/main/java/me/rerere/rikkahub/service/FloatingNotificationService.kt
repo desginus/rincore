@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.service
 
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
@@ -158,7 +159,7 @@ class FloatingNotificationService : Service() {
                 setColor(Color.parseColor("#F0F0F0"))
                 cornerRadius = dpToPx(16).toFloat()
             }
-            setShadowLayer(dpToPx(8).toFloat(), 0f, dpToPx(4).toFloat(), Color.parseColor("#40000000"))
+            elevation = dpToPx(8).toFloat()
         }
 
         // 标题行
