@@ -114,8 +114,8 @@ fun locationTool(context: Context): Tool = Tool(
                 })
                 put("timeout_ms", buildJsonObject {
                     put("type", "integer")
-                    put("description", "Timeout in milliseconds (default 30000, min 1000, max 60000). " +
-                        "After timeout, falls back to most recent cached fix.")
+                    put("description", "Timeout in milliseconds (default 30000, min 30000, max 60000). " +
+                        "GPS cold start needs 30-60 seconds. After timeout, falls back to cached fix.")
                 })
             }
         )
@@ -130,7 +130,7 @@ fun locationTool(context: Context): Tool = Tool(
             else -> null
         }
         val timeoutMs = (params["timeout_ms"]?.jsonPrimitive?.intOrNull ?: 30000)
-            .coerceIn(1000, 60000)
+            .coerceIn(30000, 60000)  // 最小 30 秒: GPS 冷启动需要 30-60 秒
 
         val payload: JsonObject = when {
             priority == null -> errorPayload("unknown accuracy: $accuracyStr")
