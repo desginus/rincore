@@ -174,4 +174,26 @@ object ConnectionWarmer {
             warmHost(context, host)
         }
     }
+
+    /**
+     * 单次预热某个主机 (不受 warmed 标记限制)。
+     * 用于对话启动时延迟预热, 与消息预处理并发执行。
+     */
+    fun warmHostOnce(context: Context, host: String, port: Int = 443) {
+        Thread({
+            try {
+                val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                    ?: return@Thread
+                val activeNetwork = connectivityManager.activeNetwork ?: return@Thread
+                val socketFactory = activeNetwork.socketFactory
+                val socket = socketFactory.createSocket()
+                val addr = java.net.InetSocketAddress(host, port)
+                socket.connect(addr, 2000)
+                socket.close()
+                Log.i(TAG, "延迟预热成功: $host:$port")
+            } catch (e: Exception) {
+                Log.w(TAG, "延迟预热失败: $host:$port — ${e.message}")
+            }
+        }, "lazy-warmup-$host").start()
+    }
 }
