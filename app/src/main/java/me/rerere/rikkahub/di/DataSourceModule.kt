@@ -220,7 +220,8 @@ val dataSourceModule = module {
             .addNetworkInterceptor(RequestLoggingInterceptor())
             .addInterceptor(AIRequestInterceptor())
             .addInterceptor(HttpLoggingInterceptor().apply {
-                level = HttpLoggingInterceptor.Level.HEADERS
+                level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.HEADERS
+                        else HttpLoggingInterceptor.Level.NONE
             })
             .build().also { SearchService.init(it, get()) }
     }
@@ -279,11 +280,11 @@ val dataSourceModule = module {
 }
 
 /**
- * SocketFactory 包装: 为新创建的 Socket 设置 SO_RCVBUF=256KB。
+ * SocketFactory 包装: 为新创建的 Socket 设置 SO_RCVBUF=512KB。
  * 增大接收缓冲区减少 TCP 窗口停等, 改善 Deepseek V4 Pro 等模型的
  * 突发式 Token 输出的平滑度。
  *
- * 作用于 OkHttp 的所有连接, 内存上限: 256KB × 连接池(12) ≈ 3MB。
+ * 作用于 OkHttp 的所有连接, 内存上限: 512KB × 连接池(12) ≈ 6MB。
  */
 private object BufferedSocketFactory : SocketFactory() {
     private const val RECEIVE_BUFFER_SIZE = 512 * 1024 // 512KB
