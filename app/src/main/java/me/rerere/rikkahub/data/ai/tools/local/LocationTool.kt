@@ -48,53 +48,60 @@ private fun JsonObjectBuilder.putLocation(loc: Location, providerName: String) {
 }
 
 /**
- * 通过 LocationManager.requestLocationUpdates 获取实时定位 (备用方案)。
+ * Try multiple LocationProviders in order, return first valid fix.
+ * Strategy: NETWORK first (cell/WiFi, seconds) -> GPS fallback (accurate but slow).
  *
- * 注意: minTime 设为 2000ms 而非 0, 避免 HyperOS 3 将过于激进的请求限流。
- * FusedLocation getCurrentLocation 是优先方案, 这里仅在 GMS 不可用或 Fused 超时时使用。
+ * On HyperOS 3, GPS may be "enabled" but deliver no fix indoors.
+ * Must fall back to Network provider instead of dead-waiting on GPS.
  */
 @SuppressLint("MissingPermission")
-private suspend fun requestFreshFixViaLocationManager(
+private suspend fun requestLocationFromProviders(
     lm: LocationManager,
+    timeoutMs: Long
+): Location? {
+    val providers = listOf(
+        LocationManager.NETWORK_PROVIDER,
+        LocationManager.GPS_PROVIDER,
+    ).filter { p ->
+        try { lm.isProviderEnabled(p) } catch (_: Throwable) { false }
+    }
+    if (providers.isEmpty()) return null
+    val perProviderMs = maxOf(timeoutMs / providers.size, 5000L)
+    for ((i, provider) in providers.withIndex()) {
+        val result = trySingleProvider(lm, provider, perProviderMs)
+        if (result != null) {
+            Log.i(TAG_LOC, "got fix from $provider (${i + 1}/${providers.size})")
+            return result
+        }
+        Log.w(TAG_LOC, "$provider timed out after ${perProviderMs}ms")
+    }
+    return null
+}
+
+@SuppressLint("MissingPermission")
+private suspend fun trySingleProvider(
+    lm: LocationManager,
+    provider: String,
     timeoutMs: Long
 ): Location? = withTimeoutOrNull(timeoutMs) {
     suspendCancellableCoroutine<Location?> { cont ->
         val listener = object : LocationListener {
             override fun onLocationChanged(location: Location) {
-                if (cont.isActive) {
-                    cont.resume(location)
-                }
+                if (cont.isActive) cont.resume(location)
             }
         }
-
-        val provider = if (try { lm.isProviderEnabled(LocationManager.GPS_PROVIDER) } catch (_: Throwable) { false }) {
-            LocationManager.GPS_PROVIDER
-        } else if (try { lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER) } catch (_: Throwable) { false }) {
-            LocationManager.NETWORK_PROVIDER
-        } else {
-            cont.resume(null)
-            return@suspendCancellableCoroutine
-        }
-
         Log.i(TAG_LOC, "requestLocationUpdates provider=$provider timeout=${timeoutMs}ms")
         try {
-            lm.requestLocationUpdates(
-                provider,
-                2000L,   // minTime: 2s, HyperOS 3 对 0ms 会限流不回调
-                0F,      // minDistance: 0
-                listener,
-                Looper.getMainLooper()
-            )
+            lm.requestLocationUpdates(provider, 2000L, 0F, listener, Looper.getMainLooper())
         } catch (e: SecurityException) {
-            Log.w(TAG_LOC, "requestLocationUpdates SecurityException", e)
+            Log.w(TAG_LOC, "SecurityException for $provider", e)
             cont.resume(null)
             return@suspendCancellableCoroutine
         } catch (e: Throwable) {
-            Log.w(TAG_LOC, "requestLocationUpdates failed", e)
+            Log.w(TAG_LOC, "requestLocationUpdates failed for $provider", e)
             cont.resume(null)
             return@suspendCancellableCoroutine
         }
-
         cont.invokeOnCancellation {
             try { lm.removeUpdates(listener) } catch (_: Throwable) {}
         }
@@ -103,9 +110,7 @@ private suspend fun requestFreshFixViaLocationManager(
 
 fun locationTool(context: Context): Tool = Tool(
     name = "get_location",
-    description = "获取设备当前实时 GPS 位置（经纬度、精度）。需要定位权限且定位服务已开启。" +
-        "优先使用 FusedLocation (Google Play Services), 不可用时降级为系统 LocationManager。" +
-        "若实时定位失败, 返回最近 5 分钟内的缓存位置。",
+    description = "获取设备当前实时位置。优先 Network 定位(蜂窝/WiFi,秒级),不可用时降级 GPS。失败则返回缓存。",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
@@ -115,8 +120,7 @@ fun locationTool(context: Context): Tool = Tool(
                 })
                 put("timeout_ms", buildJsonObject {
                     put("type", "integer")
-                    put("description", "Timeout in milliseconds (default 45000, min 30000, max 60000). " +
-                        "GPS cold start needs 30-60 seconds.")
+                    put("description", "Timeout in ms (default 45000, min 30000, max 60000).")
                 })
             }
         )
@@ -142,18 +146,20 @@ fun locationTool(context: Context): Tool = Tool(
                 if (lm == null) {
                     errorPayload("location services disabled")
                 } else {
-                    val gpsEnabled = try { lm.isProviderEnabled(LocationManager.GPS_PROVIDER) } catch (_: Throwable) { false }
-                    val networkEnabled = try { lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER) } catch (_: Throwable) { false }
-                    if (!gpsEnabled && !networkEnabled) {
-                        errorPayload("location services disabled", "Ask the user to enable Location in Settings → Location.")
+                    val anyEnabled = try {
+                        lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER) ||
+                            lm.isProviderEnabled(LocationManager.GPS_PROVIDER)
+                    } catch (_: Throwable) { false }
+                    if (!anyEnabled) {
+                        errorPayload("location services disabled",
+                            "Ask the user to enable Location in Settings -> Location.")
                     } else {
                         val gmsAvailable = try {
                             GoogleApiAvailability.getInstance()
                                 .isGooglePlayServicesAvailable(context) == ConnectionResult.SUCCESS
                         } catch (t: Throwable) { Log.w(TAG_LOC, "GMS check failed", t); false }
 
-                        // ── 第 0 步: 快速缓存检查 ──
-                        // 如果有 5 分钟内的缓存, 直接返回, 不触发硬件
+                        // Step 0: quick cache (<=5min, skip hardware)
                         val quickCache = getAnyLastLocation(lm, gmsAvailable, context)
                         if (quickCache != null && System.currentTimeMillis() - quickCache.time < 300_000L) {
                             Log.i(TAG_LOC, "quick cache hit age=${System.currentTimeMillis() - quickCache.time}ms")
@@ -163,31 +169,32 @@ fun locationTool(context: Context): Tool = Tool(
                                 put("age_ms", System.currentTimeMillis() - quickCache.time)
                             }
                         } else {
-                            // ── 第 1 步: FusedLocation getCurrentLocation (现代 Android 最可靠) ──
+                            // Step 1: FusedLocation (GMS devices)
                             var fresh: Location? = null
                             if (gmsAvailable) {
-                                Log.i(TAG_LOC, "trying FusedLocation getCurrentLocation priority=$accuracyStr timeout=${timeoutMs}ms")
+                                Log.i(TAG_LOC, "trying FusedLocation priority=$accuracyStr timeout=${timeoutMs}ms")
                                 fresh = try {
                                     val client = LocationServices.getFusedLocationProviderClient(context)
                                     withTimeoutOrNull(timeoutMs.toLong()) {
                                         client.getCurrentLocation(priority, null).await()
                                     }
-                                } catch (t: Throwable) { Log.w(TAG_LOC, "FusedLocation getCurrentLocation failed", t); null }
+                                } catch (t: Throwable) {
+                                    Log.w(TAG_LOC, "FusedLocation failed", t); null
+                                }
                             }
 
-                            // ── 第 2 步: LocationManager requestLocationUpdates (备用) ──
-                            // HyperOS 3 对 minTime=0 会限流, 改用 2000ms 避免被系统忽略
+                            // Step 2: LocationManager multi-provider (Network -> GPS)
                             if (fresh == null) {
-                                Log.i(TAG_LOC, "FusedLocation failed, trying LocationManager timeout=${timeoutMs}ms")
-                                fresh = requestFreshFixViaLocationManager(lm, timeoutMs.toLong())
+                                Log.i(TAG_LOC, "trying LocationManager multi-provider timeout=${timeoutMs}ms")
+                                fresh = requestLocationFromProviders(lm, timeoutMs.toLong())
                             }
 
                             if (fresh != null) {
-                                Log.i(TAG_LOC, "fresh fix obtained provider=${fresh.provider}")
-                                buildJsonObject { putLocation(fresh, fresh.provider ?: "gps") }
+                                Log.i(TAG_LOC, "fresh fix via ${fresh.provider}")
+                                buildJsonObject { putLocation(fresh, fresh.provider ?: "unknown") }
                             } else {
-                                // ── 第 3 步: 降级到任意缓存 ──
-                                Log.w(TAG_LOC, "all fresh fix methods failed, falling back to cache")
+                                // Step 3: any cached location
+                                Log.w(TAG_LOC, "all fresh methods failed, trying any cache")
                                 val cached = getAnyLastLocation(lm, gmsAvailable, context)
                                 if (cached != null) {
                                     val ageMs = System.currentTimeMillis() - cached.time
@@ -195,12 +202,15 @@ fun locationTool(context: Context): Tool = Tool(
                                         putLocation(cached, cached.provider ?: "cached")
                                         put("cached", true)
                                         put("age_ms", ageMs)
-                                        put("note", "GPS fix timed out after ${timeoutMs}ms; returning last known location")
+                                        put("note", "all fresh fix methods timed out; returning last known location")
                                     }
                                 } else {
-                                    errorPayload("no fix available", "GPS fix failed and no cached location. " +
-                                        "Try moving near a window/outdoors, ensure Location is enabled. " +
-                                        "On Xiaomi/HyperOS, check: Settings → Apps → RinCore → Permissions → Location → Allow all the time.")
+                                    errorPayload("no fix available",
+                                        "All location methods failed (FusedLocation + Network + GPS). " +
+                                        "No cached location on device. " +
+                                        "Try: 1) Move near window/outdoors. " +
+                                        "2) Settings -> Location -> toggle off/on. " +
+                                        "3) Settings -> Apps -> RinCore -> Permissions -> Location -> Allow all the time.")
                                 }
                             }
                         }
@@ -212,23 +222,21 @@ fun locationTool(context: Context): Tool = Tool(
     }
 )
 
-/** 从所有可用来源获取最近一次定位 (不触发硬件) */
+/** Get last known location from all sources (no hardware trigger) */
 @SuppressLint("MissingPermission")
 private suspend fun getAnyLastLocation(
     lm: LocationManager,
     gmsAvailable: Boolean,
     context: Context
 ): Location? {
-    // FusedLocation lastLocation (最可能有效)
     if (gmsAvailable) {
         try {
             val loc = LocationServices.getFusedLocationProviderClient(context).lastLocation.await()
             if (loc != null) return loc
         } catch (_: Throwable) {}
     }
-    // 系统 LocationManager 各 provider
-    try { lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)?.let { return it } } catch (_: Throwable) {}
     try { lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)?.let { return it } } catch (_: Throwable) {}
+    try { lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)?.let { return it } } catch (_: Throwable) {}
     try { lm.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER)?.let { return it } } catch (_: Throwable) {}
     return null
 }
