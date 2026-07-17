@@ -20,8 +20,8 @@ android {
         applicationId = "me.rincore.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 35
-        versionName = "2.4.10"
+        versionCode = 36
+        versionName = "2.4.11"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
