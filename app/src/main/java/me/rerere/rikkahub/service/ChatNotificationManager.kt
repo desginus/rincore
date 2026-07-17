@@ -132,65 +132,47 @@ class ChatNotificationManager(
         lastMessage: UIMessage,
         senderName: String
     ) {
-        // 确定当前状态
-        val (chipText, statusText, contentText) = determineNotificationContent(lastMessage.parts)
+        // 仅用稳定状态文本，不传流式内容——避免 HyperOS 动态通知做文本过渡动画导致卡顿
+        val (chipText, statusText) = determineNotificationContent(lastMessage.parts)
 
         context.sendNotification(
             channelId = CHAT_LIVE_UPDATE_NOTIFICATION_CHANNEL_ID,
             notificationId = getLiveUpdateNotificationId(conversationId)
         ) {
             title = senderName
-            content = contentText
-            subText = statusText
+            content = statusText
             ongoing = true
             onlyAlertOnce = true
             category = NotificationCompat.CATEGORY_PROGRESS
-            useBigTextStyle = true
             contentIntent = getPendingIntent(context, conversationId)
             requestPromotedOngoing = true
             shortCriticalText = chipText
         }
     }
 
-    private fun determineNotificationContent(parts: List<UIMessagePart>): Triple<String, String, String> {
-        // 检查最近的 part 来确定状态
+    /** 返回 (chipText, statusText)。不返回流式内容文本。 */
+    private fun determineNotificationContent(parts: List<UIMessagePart>): Pair<String, String> {
         val lastReasoning = parts.filterIsInstance<UIMessagePart.Reasoning>().lastOrNull()
         val lastTool = parts.filterIsInstance<UIMessagePart.Tool>().lastOrNull()
         val lastText = parts.filterIsInstance<UIMessagePart.Text>().lastOrNull()
 
         return when {
-            // 正在执行工具
             lastTool != null && !lastTool.isExecuted -> {
                 val toolName = lastTool.toolName.substringAfterLast("__")
-                Triple(
-                    context.getString(R.string.notification_live_update_chip_tool),
-                    context.getString(R.string.notification_live_update_tool, toolName),
-                    lastTool.input.take(100)
-                )
+                context.getString(R.string.notification_live_update_chip_tool) to
+                    context.getString(R.string.notification_live_update_tool, toolName)
             }
-            // 正在思考（Reasoning 未结束）
             lastReasoning != null && lastReasoning.finishedAt == null -> {
-                Triple(
-                    context.getString(R.string.notification_live_update_chip_thinking),
-                    context.getString(R.string.notification_live_update_thinking),
-                    lastReasoning.reasoning.takeLast(200)
-                )
+                context.getString(R.string.notification_live_update_chip_thinking) to
+                    context.getString(R.string.notification_live_update_thinking)
             }
-            // 正在写回复
             lastText != null -> {
-                Triple(
-                    context.getString(R.string.notification_live_update_chip_writing),
-                    context.getString(R.string.notification_live_update_writing),
-                    lastText.text.takeLast(200)
-                )
+                context.getString(R.string.notification_live_update_chip_writing) to
+                    context.getString(R.string.notification_live_update_writing)
             }
-            // 默认状态
             else -> {
-                Triple(
-                    context.getString(R.string.notification_live_update_chip_writing),
-                    context.getString(R.string.notification_live_update_title),
-                    ""
-                )
+                context.getString(R.string.notification_live_update_chip_writing) to
+                    context.getString(R.string.notification_live_update_title)
             }
         }
     }

@@ -362,6 +362,10 @@ class GenerationHandler(
         workspaceCwd: String? = null,
     ) {
         val internalMessages = buildList {
+            val sysPromptLen: Int
+            val memPromptLen: Int
+            val toolsPromptLen: Int
+
             val system = buildString {
                 val effectiveSystemPrompt =
                     if (assistant.allowConversationSystemPrompt && !conversationSystemPrompt.isNullOrBlank()) {
@@ -372,6 +376,7 @@ class GenerationHandler(
                 if (effectiveSystemPrompt.isNotBlank()) {
                     append(effectiveSystemPrompt)
                 }
+                sysPromptLen = length
 
                 // 记忆 — 仅在非空时追加 (空记忆时 buildMemoryPrompt 返回 "")
                 if (assistant.enableMemory) {
@@ -381,14 +386,24 @@ class GenerationHandler(
                         append(memoryPrompt)
                     }
                 }
+                memPromptLen = length - sysPromptLen
 
                 // 工具prompt
                 tools.forEach { tool ->
                     appendLine()
                     append(tool.systemPrompt(model, messages))
                 }
+                toolsPromptLen = length - sysPromptLen - memPromptLen
             }
-            if (system.isNotBlank()) add(UIMessage.system(prompt = system))
+            if (system.isNotBlank()) {
+                // 估算 tokens: 中文 ~1.5 chars/token, 英文 ~3.5 chars/token, 取混合 2.5
+                val estTokens = system.length / 2.5
+                Log.i(TAG, "System prompt breakdown: system=${sysPromptLen}c (~${(sysPromptLen/2.5).toInt()}t)" +
+                    " memory=${memPromptLen}c (~${(memPromptLen/2.5).toInt()}t)" +
+                    " tools=${toolsPromptLen}c (~${(toolsPromptLen/2.5).toInt()}t)" +
+                    " total=${system.length}c (~${estTokens.toInt()}t)")
+                add(UIMessage.system(prompt = system))
+            }
             addAll(messages.limitContext(assistant.contextMessageSize))
         }.transforms(
             transformers = transformers,
@@ -401,6 +416,12 @@ class GenerationHandler(
             processingStatus = processingStatus,
             workspaceCwd = workspaceCwd,
         )
+
+        val totalChars = internalMessages.sumOf { msg ->
+            msg.parts.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }
+        }
+        val estTotalTokens = totalChars / 2.5
+        Log.i(TAG, "Request total: ${internalMessages.size} messages, ${totalChars}c (~${estTotalTokens.toInt()}t)")
 
         var messages: List<UIMessage> = messages
         val params = TextGenerationParams(
