@@ -6,6 +6,9 @@ import android.content.Context
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.os.Build
+import android.os.CancellationSignal
+import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.google.android.gms.common.ConnectionResult
@@ -27,6 +30,7 @@ import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 import kotlin.coroutines.resume
+import java.util.concurrent.Executor
 
 private const val TAG_LOC = "LocationTool"
 
@@ -48,11 +52,99 @@ private fun JsonObjectBuilder.putLocation(loc: Location, providerName: String) {
 }
 
 /**
- * Try multiple LocationProviders in order, return first valid fix.
- * Strategy: NETWORK first (cell/WiFi, seconds) -> GPS fallback (accurate but slow).
- *
- * On HyperOS 3, GPS may be "enabled" but deliver no fix indoors.
- * Must fall back to Network provider instead of dead-waiting on GPS.
+ * Android R+ one-shot location via LocationManager.getCurrentLocation.
+ * No listener management needed — clean, no leak risk.
+ */
+@SuppressLint("MissingPermission")
+private suspend fun getCurrentLocationRPlus(
+    lm: LocationManager,
+    provider: String,
+    timeoutMs: Long
+): Location? = suspendCancellableCoroutine { cont ->
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+        cont.resume(null)
+        return@suspendCancellableCoroutine
+    }
+    val signal = CancellationSignal()
+    val executor = Executor { r -> r.run() }
+    Log.i(TAG_LOC, "getCurrentLocation provider=$provider timeout=${timeoutMs}ms")
+    try {
+        lm.getCurrentLocation(provider, signal, executor) { location ->
+            if (cont.isActive) cont.resume(location)
+        }
+    } catch (e: Throwable) {
+        Log.w(TAG_LOC, "getCurrentLocation failed for $provider", e)
+        cont.resume(null)
+        return@suspendCancellableCoroutine
+    }
+    cont.invokeOnCancellation {
+        signal.cancel()
+    }
+    // Manual timeout: getCurrentLocation doesn't support timeout natively
+    Handler(Looper.getMainLooper()).postDelayed({
+        if (cont.isActive) {
+            Log.w(TAG_LOC, "getCurrentLocation $provider timed out")
+            signal.cancel()
+            cont.resume(null)
+        }
+    }, timeoutMs)
+}
+
+/**
+ * Legacy requestLocationUpdates fallback (pre-R or when getCurrentLocation unavailable).
+ * Critical: removeUpdates MUST be posted to main looper (same thread as registration),
+ * otherwise HyperOS silently drops it and the listener leaks (green dot persists).
+ */
+@SuppressLint("MissingPermission")
+private suspend fun requestUpdatesLegacy(
+    lm: LocationManager,
+    provider: String,
+    timeoutMs: Long
+): Location? = withTimeoutOrNull(timeoutMs) {
+    suspendCancellableCoroutine<Location?> { cont ->
+        val listener = object : LocationListener {
+            override fun onLocationChanged(location: Location) {
+                if (cont.isActive) cont.resume(location)
+            }
+        }
+        Log.i(TAG_LOC, "requestLocationUpdates legacy provider=$provider timeout=${timeoutMs}ms")
+        try {
+            lm.requestLocationUpdates(provider, 2000L, 0F, listener, Looper.getMainLooper())
+        } catch (e: Throwable) {
+            Log.w(TAG_LOC, "requestLocationUpdates failed for $provider", e)
+            cont.resume(null)
+            return@suspendCancellableCoroutine
+        }
+        cont.invokeOnCancellation {
+            // MUST post to main looper — removeUpdates requires same looper as registration
+            Handler(Looper.getMainLooper()).post {
+                try { lm.removeUpdates(listener) } catch (_: Throwable) {}
+            }
+        }
+    }
+}
+
+/**
+ * Try to get fresh location from a specific provider.
+ * Prefers getCurrentLocation (R+) for reliability, falls back to legacy listener.
+ */
+@SuppressLint("MissingPermission")
+private suspend fun tryProvider(
+    lm: LocationManager,
+    provider: String,
+    timeoutMs: Long
+): Location? {
+    // R+: use one-shot API (no listener leak risk)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        val result = getCurrentLocationRPlus(lm, provider, timeoutMs)
+        if (result != null) return result
+    }
+    // Fallback: legacy listener approach
+    return requestUpdatesLegacy(lm, provider, timeoutMs)
+}
+
+/**
+ * Try multiple providers in order: NETWORK first (fast, works indoors) -> GPS (accurate).
  */
 @SuppressLint("MissingPermission")
 private suspend fun requestLocationFromProviders(
@@ -66,51 +158,27 @@ private suspend fun requestLocationFromProviders(
         try { lm.isProviderEnabled(p) } catch (_: Throwable) { false }
     }
     if (providers.isEmpty()) return null
-    val perProviderMs = maxOf(timeoutMs / providers.size, 5000L)
+
+    // Network: 15s (cell/WiFi, indoor-available)
+    // GPS: remaining time (or 30s minimum)
+    val networkTimeout = maxOf(timeoutMs / 3, 15_000L)
+    val gpsTimeout = maxOf(timeoutMs - networkTimeout, 30_000L)
+
     for ((i, provider) in providers.withIndex()) {
-        val result = trySingleProvider(lm, provider, perProviderMs)
+        val pt = if (provider == LocationManager.NETWORK_PROVIDER) networkTimeout else gpsTimeout
+        val result = tryProvider(lm, provider, pt)
         if (result != null) {
             Log.i(TAG_LOC, "got fix from $provider (${i + 1}/${providers.size})")
             return result
         }
-        Log.w(TAG_LOC, "$provider timed out after ${perProviderMs}ms")
+        Log.w(TAG_LOC, "$provider timed out after ${pt}ms")
     }
     return null
 }
 
-@SuppressLint("MissingPermission")
-private suspend fun trySingleProvider(
-    lm: LocationManager,
-    provider: String,
-    timeoutMs: Long
-): Location? = withTimeoutOrNull(timeoutMs) {
-    suspendCancellableCoroutine<Location?> { cont ->
-        val listener = object : LocationListener {
-            override fun onLocationChanged(location: Location) {
-                if (cont.isActive) cont.resume(location)
-            }
-        }
-        Log.i(TAG_LOC, "requestLocationUpdates provider=$provider timeout=${timeoutMs}ms")
-        try {
-            lm.requestLocationUpdates(provider, 2000L, 0F, listener, Looper.getMainLooper())
-        } catch (e: SecurityException) {
-            Log.w(TAG_LOC, "SecurityException for $provider", e)
-            cont.resume(null)
-            return@suspendCancellableCoroutine
-        } catch (e: Throwable) {
-            Log.w(TAG_LOC, "requestLocationUpdates failed for $provider", e)
-            cont.resume(null)
-            return@suspendCancellableCoroutine
-        }
-        cont.invokeOnCancellation {
-            try { lm.removeUpdates(listener) } catch (_: Throwable) {}
-        }
-    }
-}
-
 fun locationTool(context: Context): Tool = Tool(
     name = "get_location",
-    description = "获取设备当前实时位置。优先 Network 定位(蜂窝/WiFi,秒级),不可用时降级 GPS。失败则返回缓存。",
+    description = "获取设备当前实时位置。优先 Network 定位(蜂窝/WiFi),不可用时降级 GPS。失败则返回缓存。",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
@@ -120,7 +188,7 @@ fun locationTool(context: Context): Tool = Tool(
                 })
                 put("timeout_ms", buildJsonObject {
                     put("type", "integer")
-                    put("description", "Timeout in ms (default 45000, min 30000, max 60000).")
+                    put("description", "Timeout in ms (default 60000, min 45000, max 90000).")
                 })
             }
         )
@@ -134,8 +202,8 @@ fun locationTool(context: Context): Tool = Tool(
             "low" -> Priority.PRIORITY_LOW_POWER
             else -> null
         }
-        val timeoutMs = (params["timeout_ms"]?.jsonPrimitive?.intOrNull ?: 45000)
-            .coerceIn(30000, 60000)
+        val timeoutMs = (params["timeout_ms"]?.jsonPrimitive?.intOrNull ?: 60000)
+            .coerceIn(45000, 90000)
 
         val payload: JsonObject = when {
             priority == null -> errorPayload("unknown accuracy: $accuracyStr")
@@ -183,7 +251,7 @@ fun locationTool(context: Context): Tool = Tool(
                                 }
                             }
 
-                            // Step 2: LocationManager multi-provider (Network -> GPS)
+                            // Step 2: LocationManager (Network -> GPS with proper cleanup)
                             if (fresh == null) {
                                 Log.i(TAG_LOC, "trying LocationManager multi-provider timeout=${timeoutMs}ms")
                                 fresh = requestLocationFromProviders(lm, timeoutMs.toLong())
@@ -208,7 +276,7 @@ fun locationTool(context: Context): Tool = Tool(
                                     errorPayload("no fix available",
                                         "All location methods failed (FusedLocation + Network + GPS). " +
                                         "No cached location on device. " +
-                                        "Try: 1) Move near window/outdoors. " +
+                                        "Try: 1) Open Google Maps to trigger first fix. " +
                                         "2) Settings -> Location -> toggle off/on. " +
                                         "3) Settings -> Apps -> RinCore -> Permissions -> Location -> Allow all the time.")
                                 }
