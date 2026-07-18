@@ -757,6 +757,3 @@ val DEFAULT_MODE_INJECTIONS = listOf(
         name = "Learning Mode"
     )
 )
-
-
-@Serializable
