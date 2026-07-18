@@ -227,7 +227,8 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     )
                     item(
                         onClick = { navController.navigate(Screen.ScheduledJobs) },
-                        leadingContent = { Icon(HugeIcons.Book01, null) },\n                        supportingContent = { Text(stringResource(R.string.setting_page_scheduled_jobs_desc)) },
+                        leadingContent = { Icon(HugeIcons.Book01, null) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_scheduled_jobs_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_scheduled_jobs)) },
                     )
                     item(
