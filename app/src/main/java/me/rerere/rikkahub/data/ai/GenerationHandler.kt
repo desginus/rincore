@@ -139,7 +139,7 @@ class GenerationHandler(
                     for (domain in loadedDomains) {
                         addAll(ToolRouter.getDomainTools(domain, tools))
                     }
-                }
+                }.distinctBy { it.name }  // 防止 memory_tool 等跨路径重复
             } else {
                 buildList {
                     Log.i(TAG, "generateInternal: build tools($assistant)")
@@ -448,9 +448,10 @@ class GenerationHandler(
                 if (layer1Prompt != null) {
                     appendLine()
                     append(layer1Prompt)
-                    // 注入始终可用工具的 systemPrompt（memory tools 等，排除 use_domain）
+                    // 注入始终可用工具的 systemPrompt（memory tools 等，排除 use_domain/use_skill）
+                    // use_skill 的 skill 列表已由 use_domain("skills") 返回，避免重复注入
                     tools.forEach { tool ->
-                        if (tool.name != "use_domain") {
+                        if (tool.name != "use_domain" && tool.name != "use_skill") {
                             val sp = tool.systemPrompt(model, messages)
                             if (sp.isNotBlank()) {
                                 appendLine()
