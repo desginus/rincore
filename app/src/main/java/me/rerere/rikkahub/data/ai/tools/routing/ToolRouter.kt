@@ -16,18 +16,27 @@ class ToolRouter(
     private val overrides: Map<String, String> = emptyMap(),
     private val customDescriptions: Map<String, String> = emptyMap(),
     private val customDomains: List<CustomDomain> = emptyList(),
+    private val customKeywords: Map<String, List<String>> = emptyMap(),
 ) {
 
     fun classifyTool(tool: Tool): String {
+        // 1. 手动覆盖(最高优先级)
         overrides[tool.name]?.let { return it }
         if (tool.name == "use_domain") return "system"
 
-        // 先检查自定义域的关键词
         val text = "${tool.name} ${tool.description}".lowercase()
+
+        // 2. 自定义域关键词匹配
         for (cd in customDomains) {
             if (cd.keywords.any { text.contains(it) }) return cd.name
         }
-        // 再检查内置域
+
+        // 3. 自定义关键词覆盖内置域
+        for ((domain, keywords) in customKeywords) {
+            if (keywords.any { text.contains(it) }) return domain
+        }
+
+        // 4. 内置域关键词
         return ToolDomain.classify(tool)?.label ?: "uncategorized"
     }
 
@@ -35,17 +44,17 @@ class ToolRouter(
         return tools.groupBy { classifyTool(it) }
     }
 
-    private fun allDomainLabels(): List<String> {
-        val builtin = ToolDomain.entries.map { it.label }
-        val custom = customDomains.map { it.name }
-        return (builtin + custom).distinct()
-    }
-
     fun getTriggerDescription(domain: String): String {
         customDescriptions[domain]?.let { return it }
         ToolDomain.entries.find { it.label == domain }?.triggerDescription?.let { return it }
         customDomains.find { it.name == domain }?.description?.let { return it }
         return "其他操作"
+    }
+
+    fun getKeywords(domain: String): List<String> {
+        customKeywords[domain]?.let { return it }
+        customDomains.find { it.name == domain }?.keywords?.let { return it }
+        return ToolDomain.entries.find { it.label == domain }?.matchKeywords ?: emptyList()
     }
 
     fun buildLayer1(tools: List<Tool>): String {
@@ -90,45 +99,28 @@ class ToolRouter(
                     properties = buildJsonObject {
                         put("name", buildJsonObject {
                             put("type", "string")
-                            put("description", "类别名称，如 搜索、文件、工作区、AI 等")
+                            put("description", "类别名称")
                         })
                     },
                     required = listOf("name")
                 )
             },
             execute = { input ->
-                val rawName = input.jsonObject["name"]?.jsonPrimitive?.content
-                    ?: error("name is required")
-
+                val rawName = input.jsonObject["name"]?.jsonPrimitive?.content ?: error("name required")
                 when {
-                    rawName == "帮助" || rawName.equals("help", ignoreCase = true) -> {
+                    rawName == "帮助" || rawName.equals("help", ignoreCase = true) ->
                         listOf(UIMessagePart.Text(router.buildHelpText(allTools)))
-                    }
                     else -> {
                         val classified = router.classifyAll(allTools)
-                        val domainName = classified.keys
-                            .filter { it != "system" }
-                            .find { it == rawName }
-
-                        if (domainName == null) {
-                            val available = classified.keys.filter { it != "system" }.sorted()
-                            listOf(UIMessagePart.Text(
-                                "未知类别: '$rawName'。可用: ${available.joinToString("、")}"
-                            ))
+                        val dn = classified.keys.filter { it != "system" }.find { it == rawName }
+                        if (dn == null) {
+                            listOf(UIMessagePart.Text("未知类别: '$rawName'。可用: ${classified.keys.filter{it!="system"}.sorted().joinToString("、")}"))
                         } else {
-                            val domainTools = classified[domainName].orEmpty()
-                            loadedDomains.add(domainName)
-                            val toolNames = domainTools.map { it.name }
-                            Log.i(TAG, "Domain loaded: $domainName (${toolNames.size} tools)")
-
-                            val hasUseSkill = domainTools.any { it.name == "use_skill" }
-                            val skillNote = if (hasUseSkill && skillListText != null) {
-                                "\n\n$skillListText"
-                            } else ""
-
-                            listOf(UIMessagePart.Text(
-                                "已加载类别「$domainName」。${toolNames.size}个工具: ${toolNames.joinToString("、")}。$skillNote"
-                            ))
+                            val dTools = classified[dn].orEmpty()
+                            loadedDomains.add(dn)
+                            val names = dTools.map { it.name }
+                            val sn = if (dTools.any { it.name == "use_skill" } && skillListText != null) "\n\n$skillListText" else ""
+                            listOf(UIMessagePart.Text("已加载「$dn」。${names.size}个工具: ${names.joinToString("、")}。$sn"))
                         }
                     }
                 }
@@ -140,18 +132,32 @@ class ToolRouter(
         val classified = classifyAll(tools)
         return buildString {
             appendLine("全部类别:")
-            for ((domain, domainTools) in classified.toSortedMap()) {
-                if (domain == "system") continue
-                val sample = domainTools.take(2).map { it.name }.joinToString("、")
-                val more = if (domainTools.size > 2) "…" else ""
-                appendLine("  [$domain] ${domainTools.size}个 ($sample$more)")
+            for ((d, dts) in classified.toSortedMap()) {
+                if (d == "system") continue
+                val s = dts.take(2).map { it.name }.joinToString("、")
+                appendLine("  [$d] ${dts.size}个 ($s${if (dts.size>2)"…" else ""})")
             }
-            appendLine()
-            appendLine("调 use_domain(\"类别名\") 加载工具。")
+            appendLine(); appendLine("调 use_domain(\"类别名\") 加载。")
         }
     }
 
     fun getDomainTools(domainName: String, allTools: List<Tool>): List<Tool> {
         return allTools.filter { classifyTool(it) == domainName }
+    }
+
+    /** 用于 UI 预览：根据名称和描述对单个工具进行分类 */
+    fun classifyPreview(name: String, description: String): String {
+        overrides[name]?.let { return it }
+        if (name == "use_domain") return "system"
+        val text = "${name} ${description}".lowercase()
+        for (cd in customDomains) {
+            if (cd.keywords.any { text.contains(it) }) return cd.name
+        }
+        for ((domain, keywords) in customKeywords) {
+            if (keywords.any { text.contains(it) }) return domain
+        }
+        return ToolDomain.entries.find { dom ->
+            dom.matchKeywords.any { text.contains(it) }
+        }?.label ?: "uncategorized"
     }
 }
