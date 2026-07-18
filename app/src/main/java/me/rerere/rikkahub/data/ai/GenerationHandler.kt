@@ -452,10 +452,9 @@ class GenerationHandler(
                 if (layer1Prompt != null) {
                     appendLine()
                     append(layer1Prompt)
-                    // 注入始终可用工具的 systemPrompt（memory tools 等，排除 use_domain/use_skill）
-                    // use_skill 的 skill 列表已由 use_domain("skills") 返回，避免重复注入
+                    // 注入始终可用工具的 systemPrompt（memory tools 等，排除 use_domain）
                     tools.forEach { tool ->
-                        if (tool.name != "use_domain" && tool.name != "use_skill") {
+                        if (tool.name != "use_domain") {
                             val sp = tool.systemPrompt(model, messages)
                             if (sp.isNotBlank()) {
                                 appendLine()
