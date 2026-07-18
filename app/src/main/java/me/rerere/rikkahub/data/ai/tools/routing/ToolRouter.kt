@@ -131,32 +131,36 @@ object ToolRouter {
                 )
             },
             execute = { input ->
-                val domainName = input.jsonObject["name"]?.jsonPrimitive?.content
+                val rawDomainName = input.jsonObject["name"]?.jsonPrimitive?.content
                     ?: error("name is required")
 
                 when {
-                    domainName == "help" -> {
+                    rawDomainName.equals("help", ignoreCase = true) -> {
                         listOf(UIMessagePart.Text(buildHelpText(allTools)))
                     }
-                    domainName == "skills" && skillListText != null -> {
+                    rawDomainName.equals("skills", ignoreCase = true) && skillListText != null -> {
                         loadedDomains.add("skills")
                         Log.i(TAG, "Domain loaded: skills")
                         listOf(UIMessagePart.Text(skillListText))
                     }
                     else -> {
                         val classified = classifyAll(allTools)
-                        val domainTools = classified[domainName].orEmpty()
+                        // 大小写不敏感匹配域名（MCP 服务名也按不敏感处理）
+                        val domainName = classified.keys
+                            .filter { it != "system" }
+                            .find { it.equals(rawDomainName, ignoreCase = true) }
 
-                        if (domainTools.isEmpty()) {
+                        if (domainName == null) {
                             // 错误自愈：返回可用域列表
                             val available = classified.keys
                                 .filter { it != "system" }
                                 .sorted()
                             listOf(UIMessagePart.Text(
-                                "Unknown domain: '$domainName'. Available domains: ${available.joinToString(", ")}.\n" +
+                                "Unknown domain: '$rawDomainName'. Available domains: ${available.joinToString(", ")}.\n" +
                                 "Call use_domain(\"help\") for details."
                             ))
                         } else {
+                            val domainTools = classified[domainName].orEmpty()
                             loadedDomains.add(domainName)
                             val toolNames = domainTools.map { it.name }
                             Log.i(TAG, "Domain loaded: $domainName (${toolNames.size} tools)")
