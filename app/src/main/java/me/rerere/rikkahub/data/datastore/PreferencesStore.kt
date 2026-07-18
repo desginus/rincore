@@ -66,6 +66,13 @@ private val Context.settingsStore by preferencesDataStore(
     }
 )
 
+
+@Serializable
+data class CustomDomain(
+    val name: String = "",
+    val description: String = "",
+    val keywords: List<String> = emptyList(),
+)
 class SettingsStore(
     context: Context,
     scope: AppScope,
@@ -751,11 +758,5 @@ val DEFAULT_MODE_INJECTIONS = listOf(
     )
 )
 
-import kotlinx.serialization.Serializable
 
 @Serializable
-data class CustomDomain(
-    val name: String = "",
-    val description: String = "",
-    val keywords: List<String> = emptyList(),
-)
