@@ -93,10 +93,14 @@ class GenerationHandler(
         // === 分层路由状态 ===
         val useLayered = assistant.useLayeredTools && tools.isNotEmpty()
         val loadedDomains = mutableSetOf<String>()
+        val toolRouter = ToolRouter(
+            overrides = settings.toolDomainOverrides,
+            customDescriptions = settings.customDomainDescriptions,
+        )
 
         // 预计算 Layer1 路由表
         val layer1Prompt = if (useLayered) {
-            ToolRouter.buildLayer1(tools)
+            toolRouter.buildLayer1(tools)
         } else {
             null
         }
@@ -134,10 +138,10 @@ class GenerationHandler(
                         ).let(this::addAll)
                     }
                     // use_domain 工具（始终包含）
-                    add(ToolRouter.createUseDomainTool(tools, loadedDomains, skillListText))
+                    add(toolRouter.createUseDomainTool(tools, loadedDomains, skillListText))
                     // 已加载域的工具
                     for (domain in loadedDomains) {
-                        addAll(ToolRouter.getDomainTools(domain, tools))
+                        addAll(toolRouter.getDomainTools(domain, tools))
                     }
                 }.distinctBy { it.name }  // 防止 memory_tool 等跨路径重复
             } else {
@@ -329,7 +333,7 @@ class GenerationHandler(
                         runCatching {
                             val toolDef = toolsInternal.find { toolDef -> toolDef.name == tool.toolName }
                                 ?: (if (useLayered) tools.find { it.name == tool.toolName }?.also {
-                                    loadedDomains.add(ToolRouter.classifyTool(it))
+                                    loadedDomains.add(toolRouter.classifyTool(it))
                                     Log.i(TAG, "Auto-loading domain for tool: ${tool.toolName}")
                                 } else null)
                                 ?: error("Tool ${tool.toolName} not found")

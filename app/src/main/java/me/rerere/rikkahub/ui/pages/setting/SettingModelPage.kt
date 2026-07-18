@@ -22,7 +22,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -101,6 +104,16 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
 
 @Composable
 private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding: PaddingValues) {
+    var showDomainPage by remember { mutableStateOf(false) }
+
+    if (showDomainPage) {
+        SettingDomainPage(
+            settings = settings,
+            vm = vm,
+            onBack = { showDomainPage = false },
+        )
+        return
+    }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = contentPadding + PaddingValues(horizontal = 16.dp),
@@ -166,6 +179,28 @@ private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding:
                 providers = settings.providers,
                 onSelect = { vm.updateSettings(settings.copy(compressModelId = it.id)) },
             )
+        }
+        item {
+            ModelSettingItem(
+                title = stringResource(R.string.setting_model_page_routing_model),
+                description = stringResource(R.string.setting_model_page_routing_model_desc),
+                modelId = settings.routingModelId,
+                providers = settings.providers,
+                onSelect = { vm.updateSettings(settings.copy(routingModelId = it.id)) },
+                onClear = { vm.updateSettings(settings.copy(routingModelId = null)) },
+            )
+        }
+        item {
+            CardGroup(title = { Text(stringResource(R.string.setting_model_page_domain_override)) }) {
+                item(
+                    onClick = { showDomainPage = true },
+                    headlineContent = { Text(stringResource(R.string.setting_model_page_domain_override)) },
+                    supportingContent = { Text(stringResource(R.string.setting_model_page_domain_override_desc)) },
+                    trailingContent = {
+                        Icon(HugeIcons.ArrowRight01, contentDescription = null, modifier = Modifier.size(16.dp))
+                    },
+                )
+            }
         }
     }
 }
