@@ -28,8 +28,7 @@ class ToolRouter(
 
     fun getTriggerDescription(domain: String): String {
         customDescriptions[domain]?.let { return it }
-        return ToolDomain.entries.find { it.label == domain }?.triggerDescription
-            ?: "其他未分类操作"
+        return ToolDomain.entries.find { it.label == domain }?.triggerDescription ?: "其他操作"
     }
 
     fun buildLayer1(tools: List<Tool>): String {
@@ -38,21 +37,22 @@ class ToolRouter(
 
         return buildString {
             appendLine("<capability_routing>")
-            appendLine("你初始只有一个工具可用：use_domain(名称)。其他工具按需加载。")
+            appendLine("你只有一个初始工具: use_domain(name)。按需加载其他工具。")
             appendLine()
-            appendLine("根据用户的任务匹配对应类别，然后调用 use_domain(\"名称\")：")
+            appendLine("你的环境：完整的 Linux 工作区(sandbox rootfs)，/workspace 下文件持久化，可执行命令、读写编译文件。")
+            appendLine()
+            appendLine("匹配用户任务选择对应类别调用 use_domain(\"名称\")：")
             appendLine()
 
             for (domain in domains) {
                 val domainTools = classified[domain].orEmpty()
                 if (domainTools.isEmpty()) continue
-                val trigger = getTriggerDescription(domain)
-                appendLine("[$domain] 当用户需要${trigger}时，调用 use_domain(\"$domain\")")
+                val desc = getTriggerDescription(domain)
+                appendLine("  [${domain}] $desc → 调用 use_domain(\"${domain}\")")
             }
 
             appendLine()
-            appendLine("一个任务涉及多个类别时可以多次调用 use_domain。")
-            appendLine("不确定类别时，调用 use_domain(\"帮助\") 查看完整列表。")
+            appendLine("跨类别任务可多次调用 use_domain。不确定时调 use_domain(\"帮助\")。")
             appendLine("</capability_routing>")
         }
     }
@@ -65,15 +65,15 @@ class ToolRouter(
         val router = this
         return Tool(
             name = "use_domain",
-            description = "按类别加载工具。调用此工具后才能使用对应类别的工具。" +
+            description = "按类别加载工具。调用后才能使用对应类别的工具。" +
                 "可用类别见 system prompt 中的 <capability_routing> 部分。" +
-                "调用 use_domain(\"帮助\") 可列出所有类别。",
+                "调用 use_domain(\"帮助\") 列出所有类别。",
             parameters = {
                 InputSchema.Obj(
                     properties = buildJsonObject {
                         put("name", buildJsonObject {
                             put("type", "string")
-                            put("description", "类别名称，如 搜索、文件、日历、AI 等")
+                            put("description", "类别名称，如 搜索、文件、工作区、AI 等")
                         })
                     },
                     required = listOf("name")
@@ -94,11 +94,9 @@ class ToolRouter(
                             .find { it == rawName }
 
                         if (domainName == null) {
-                            val available = classified.keys
-                                .filter { it != "system" }
-                                .sorted()
+                            val available = classified.keys.filter { it != "system" }.sorted()
                             listOf(UIMessagePart.Text(
-                                "未知类别：'$rawName'。可用类别：${available.joinToString("、")}。"
+                                "未知类别: '$rawName'。可用: ${available.joinToString("、")}"
                             ))
                         } else {
                             val domainTools = classified[domainName].orEmpty()
@@ -106,14 +104,13 @@ class ToolRouter(
                             val toolNames = domainTools.map { it.name }
                             Log.i(TAG, "Domain loaded: $domainName (${toolNames.size} tools)")
 
-                            // 特殊：加载AI类时，如果包含use_skill，返回技能列表
                             val hasUseSkill = domainTools.any { it.name == "use_skill" }
                             val skillNote = if (hasUseSkill && skillListText != null) {
                                 "\n\n$skillListText"
                             } else ""
 
                             listOf(UIMessagePart.Text(
-                                "类别「$domainName」已加载。${toolNames.size} 个工具：${toolNames.joinToString("、")}。$skillNote"
+                                "已加载类别「$domainName」。${toolNames.size}个工具: ${toolNames.joinToString("、")}。$skillNote"
                             ))
                         }
                     }
@@ -125,14 +122,15 @@ class ToolRouter(
     private fun buildHelpText(tools: List<Tool>): String {
         val classified = classifyAll(tools)
         return buildString {
-            appendLine("可用类别：")
+            appendLine("全部类别:")
             for ((domain, domainTools) in classified.toSortedMap()) {
                 if (domain == "system") continue
                 val sample = domainTools.take(2).map { it.name }.joinToString("、")
-                appendLine("  [$domain] ${domainTools.size}个工具 ($sample${if (domainTools.size > 2) "…" else ""})")
+                val more = if (domainTools.size > 2) "…" else ""
+                appendLine("  [$domain] ${domainTools.size}个 ($sample$more)")
             }
             appendLine()
-            appendLine("调用 use_domain(\"类别名\") 加载对应工具。")
+            appendLine("调 use_domain(\"类别名\") 加载工具。")
         }
     }
 
