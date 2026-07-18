@@ -798,6 +798,8 @@
   <string name="domain_override_manual">Manual override</string>
   <string name="domain_override_select_domain">Select domain</string>
   <string name="domain_override_clear">Reset to auto</string>
+  <string name="setting_page_domain_management">Domain Classification</string>
+  <string name="setting_page_domain_management_desc">Manage tool categories: create new domains, edit trigger descriptions, manually reassign tools</string>
   <string name="setting_model_page_ocr_model">OCR Model</string>
   <string name="setting_model_page_ocr_model_desc">Model used for optical character recognition on images</string>
   <string name="setting_model_page_ocr_prompt_vars">Variables: Image data: {images}</string>
