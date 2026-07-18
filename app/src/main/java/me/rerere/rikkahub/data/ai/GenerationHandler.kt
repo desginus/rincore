@@ -96,6 +96,7 @@ class GenerationHandler(
         val toolRouter = ToolRouter(
             overrides = settings.toolDomainOverrides,
             customDescriptions = settings.customDomainDescriptions,
+            customDomains = settings.customDomains,
         )
 
         // 预计算 Layer1 路由表

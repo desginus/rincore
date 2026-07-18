@@ -8,17 +8,26 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.data.datastore.CustomDomain
 
 private const val TAG = "ToolRouter"
 
 class ToolRouter(
     private val overrides: Map<String, String> = emptyMap(),
     private val customDescriptions: Map<String, String> = emptyMap(),
+    private val customDomains: List<CustomDomain> = emptyList(),
 ) {
 
     fun classifyTool(tool: Tool): String {
         overrides[tool.name]?.let { return it }
         if (tool.name == "use_domain") return "system"
+
+        // 先检查自定义域的关键词
+        val text = "${tool.name} ${tool.description}".lowercase()
+        for (cd in customDomains) {
+            if (cd.keywords.any { text.contains(it) }) return cd.name
+        }
+        // 再检查内置域
         return ToolDomain.classify(tool)?.label ?: "uncategorized"
     }
 
@@ -26,9 +35,17 @@ class ToolRouter(
         return tools.groupBy { classifyTool(it) }
     }
 
+    private fun allDomainLabels(): List<String> {
+        val builtin = ToolDomain.entries.map { it.label }
+        val custom = customDomains.map { it.name }
+        return (builtin + custom).distinct()
+    }
+
     fun getTriggerDescription(domain: String): String {
         customDescriptions[domain]?.let { return it }
-        return ToolDomain.entries.find { it.label == domain }?.triggerDescription ?: "其他操作"
+        ToolDomain.entries.find { it.label == domain }?.triggerDescription?.let { return it }
+        customDomains.find { it.name == domain }?.description?.let { return it }
+        return "其他操作"
     }
 
     fun buildLayer1(tools: List<Tool>): String {

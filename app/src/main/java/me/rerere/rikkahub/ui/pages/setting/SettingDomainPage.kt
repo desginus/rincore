@@ -1,40 +1,18 @@
 package me.rerere.rikkahub.ui.pages.setting
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.ArrowLeft01
-import me.rerere.hugeicons.stroke.Delete01
-import me.rerere.hugeicons.stroke.Edit01
+import me.rerere.hugeicons.stroke.*
 import me.rerere.rikkahub.data.ai.tools.routing.ToolDomain
+import me.rerere.rikkahub.data.datastore.CustomDomain
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.plus
@@ -45,201 +23,200 @@ fun SettingDomainPage(
     vm: SettingVM,
     onBack: () -> Unit,
 ) {
+    var showAddOverride by remember { mutableStateOf(false) }
+    var showNewDomain by remember { mutableStateOf(false) }
+
     Scaffold(
         containerColor = CustomColors.topBarColors.containerColor,
         topBar = {
             TopAppBar(
                 title = { Text("域分类管理") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(HugeIcons.ArrowLeft01, contentDescription = null)
+                navigationIcon = { IconButton(onClick = onBack) { Icon(HugeIcons.ArrowLeft01, null) } },
+                actions = {
+                    IconButton(onClick = { showNewDomain = true }) {
+                        Icon(HugeIcons.Add01, "新建分类")
                     }
                 },
                 colors = CustomColors.topBarColors,
             )
         },
-    ) { contentPadding ->
+        floatingActionButton = {
+            FloatingActionButton(onClick = { showAddOverride = true }) {
+                Icon(HugeIcons.Edit01, "添加工具覆盖")
+            }
+        },
+    ) { pad ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = contentPadding + PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = pad + PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            // 域列表
             item {
-                Text(
-                    "域触发描述",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Text(
-                    "AI 在路由表中看到的域描述。修改后影响 use_domain 的触发准确率。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Text("类别管理", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text("编辑描述或删除自定义类别", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
-            items(ToolDomain.entries.toList()) { domain ->
-                val customDesc = settings.customDomainDescriptions[domain.label]
-                val currentDesc = customDesc ?: domain.triggerDescription
-                val isCustom = customDesc != null
+            val allDomains = ToolDomain.entries.map { d -> Pair(d.label, d.triggerDescription) } +
+                settings.customDomains.map { Pair(it.name, it.description) }
+            val customNames = settings.customDomains.map { it.name }.toSet()
 
-                DomainDescriptionCard(
-                    domainLabel = domain.label,
-                    description = currentDesc,
-                    isCustom = isCustom,
-                    onEdit = { newDesc ->
-                        val updated = settings.customDomainDescriptions.toMutableMap()
-                        updated[domain.label] = newDesc
-                        vm.updateSettings(settings.copy(customDomainDescriptions = updated))
-                    },
-                    onReset = {
-                        val updated = settings.customDomainDescriptions.toMutableMap()
-                        updated.remove(domain.label)
-                        vm.updateSettings(settings.copy(customDomainDescriptions = updated))
-                    },
-                )
-            }
+            items(allDomains) { (name, defaultDesc) ->
+                val isCustom = name in customNames
+                val desc = settings.customDomainDescriptions[name] ?: defaultDesc
+                var showEdit by remember { mutableStateOf(false) }
+                var editText by remember(desc) { mutableStateOf(desc) }
 
-            if (settings.toolDomainOverrides.isNotEmpty()) {
-                item {
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                    Text(
-                        "手动覆盖",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Text(
-                        "以下工具被手动指定了域，优先于自动分类。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-
-                items(settings.toolDomainOverrides.entries.toList()) { (toolName, domain) ->
-                    ToolOverrideCard(
-                        toolName = toolName,
-                        domain = domain,
-                        onRemove = {
-                            val updated = settings.toolDomainOverrides.toMutableMap()
-                            updated.remove(toolName)
-                            vm.updateSettings(settings.copy(toolDomainOverrides = updated))
-                        },
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DomainDescriptionCard(
-    domainLabel: String,
-    description: String,
-    isCustom: Boolean,
-    onEdit: (String) -> Unit,
-    onReset: () -> Unit,
-) {
-    var showDialog by remember { mutableStateOf(false) }
-    var editText by remember(description) { mutableStateOf(description) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { showDialog = true }
-            .padding(vertical = 4.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "[$domainLabel]",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (isCustom) {
-                    TextButton(onClick = onReset) {
-                        Text("重置", style = MaterialTheme.typography.labelSmall)
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("[$name]", fontWeight = FontWeight.SemiBold,
+                                color = if (isCustom) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                            Row {
+                                IconButton(onClick = { showEdit = true }, modifier = Modifier.size(24.dp)) {
+                                    Icon(HugeIcons.Edit01, null, modifier = Modifier.size(14.dp))
+                                }
+                                if (isCustom) {
+                                    IconButton(onClick = {
+                                        vm.updateSettings(settings.copy(
+                                            customDomains = settings.customDomains.filter { it.name != name }
+                                        ))
+                                    }, modifier = Modifier.size(24.dp)) {
+                                        Icon(HugeIcons.Delete01, null, modifier = Modifier.size(14.dp),
+                                            tint = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                            }
+                        }
+                        Text(desc, style = MaterialTheme.typography.bodySmall,
+                            color = if (name in settings.customDomainDescriptions)
+                                MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                IconButton(onClick = { showDialog = true }, modifier = Modifier.size(24.dp)) {
-                    Icon(HugeIcons.Edit01, contentDescription = null, modifier = Modifier.size(14.dp))
+
+                if (showEdit) {
+                    AlertDialog(
+                        onDismissRequest = { showEdit = false },
+                        title = { Text("编辑 [$name] 描述") },
+                        text = {
+                            OutlinedTextField(value = editText, onValueChange = { editText = it },
+                                label = { Text("触发描述") }, modifier = Modifier.fillMaxWidth(),
+                                singleLine = false, maxLines = 3)
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                val m = settings.customDomainDescriptions.toMutableMap()
+                                m[name] = editText
+                                vm.updateSettings(settings.copy(customDomainDescriptions = m))
+                                showEdit = false
+                            }) { Text("保存") }
+                        },
+                        dismissButton = { TextButton(onClick = { showEdit = false }) { Text("取消") } }
+                    )
+                }
+            }
+
+            // 工具覆盖
+            item {
+                Spacer(Modifier.height(8.dp))
+                Text("工具手动覆盖", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text("强制指定某工具归属的类别。优先于自动分类。",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
+            if (settings.toolDomainOverrides.isEmpty()) {
+                item {
+                    Text("暂无手动覆盖", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
+                items(settings.toolDomainOverrides.entries.toList()) { (tool, domain) ->
+                    Card(Modifier.fillMaxWidth()) {
+                        Row(Modifier.padding(12.dp).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(tool, style = MaterialTheme.typography.bodyMedium)
+                                Text("→ [$domain]", style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary)
+                            }
+                            IconButton(onClick = {
+                                val m = settings.toolDomainOverrides.toMutableMap(); m.remove(tool)
+                                vm.updateSettings(settings.copy(toolDomainOverrides = m))
+                            }, modifier = Modifier.size(24.dp)) {
+                                Icon(HugeIcons.Delete01, null, modifier = Modifier.size(14.dp))
+                            }
+                        }
+                    }
                 }
             }
         }
-        Text(
-            description,
-            style = MaterialTheme.typography.bodySmall,
-            color = if (isCustom) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 
-    if (showDialog) {
+    // 新建自定义域对话框
+    if (showNewDomain) {
+        var newName by remember { mutableStateOf("") }
+        var newDesc by remember { mutableStateOf("") }
+        var newKw by remember { mutableStateOf("") }
         AlertDialog(
-            onDismissRequest = { showDialog = false },
-            title = { Text("编辑 [$domainLabel] 触发描述") },
+            onDismissRequest = { showNewDomain = false },
+            title = { Text("新建分类") },
             text = {
-                Column {
-                    OutlinedTextField(
-                        value = editText,
-                        onValueChange = { editText = it },
-                        label = { Text("触发描述") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = false,
-                        maxLines = 3,
-                    )
-                    Text(
-                        "AI 会看到: $domainLabel - $editText",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = newName, onValueChange = { newName = it },
+                        label = { Text("类别名称") }, singleLine = true)
+                    OutlinedTextField(value = newDesc, onValueChange = { newDesc = it },
+                        label = { Text("触发描述") }, singleLine = false, maxLines = 2)
+                    OutlinedTextField(value = newKw, onValueChange = { newKw = it },
+                        label = { Text("关键词(逗号分隔)") }, singleLine = true,
+                        supportingText = { Text("自动分类时匹配工具名和描述中的关键词") })
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    onEdit(editText)
-                    showDialog = false
-                }) {
-                    Text("保存")
-                }
+                    if (newName.isNotBlank() && newDesc.isNotBlank()) {
+                        val kws = newKw.split(",", "，").map { it.trim().lowercase() }.filter { it.isNotBlank() }
+                        vm.updateSettings(settings.copy(
+                            customDomains = settings.customDomains + CustomDomain(newName.trim(), newDesc.trim(), kws)
+                        ))
+                        showNewDomain = false
+                    }
+                }) { Text("创建") }
             },
-            dismissButton = {
-                TextButton(onClick = { showDialog = false }) {
-                    Text("取消")
-                }
-            },
+            dismissButton = { TextButton(onClick = { showNewDomain = false }) { Text("取消") } }
         )
     }
-}
 
-@Composable
-private fun ToolOverrideCard(
-    toolName: String,
-    domain: String,
-    onRemove: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(toolName, style = MaterialTheme.typography.bodyMedium)
-            Text(
-                "-> [$domain]",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
-        IconButton(onClick = onRemove, modifier = Modifier.size(24.dp)) {
-            Icon(HugeIcons.Delete01, contentDescription = "Remove", modifier = Modifier.size(14.dp))
-        }
+    // 添加工具覆盖对话框
+    if (showAddOverride) {
+        var toolName by remember { mutableStateOf("") }
+        var targetDomain by remember { mutableStateOf("") }
+        val allDomainNames = ToolDomain.entries.map { it.label } + settings.customDomains.map { it.name }
+        AlertDialog(
+            onDismissRequest = { showAddOverride = false },
+            title = { Text("添加工具覆盖") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = toolName, onValueChange = { toolName = it },
+                        label = { Text("工具名称") }, singleLine = true,
+                        supportingText = { Text("如 list_files, search_web, mcp__github__xxx") })
+                    OutlinedTextField(value = targetDomain, onValueChange = { targetDomain = it },
+                        label = { Text("目标类别") }, singleLine = true,
+                        supportingText = { Text("可用: ${allDomainNames.joinToString("、")}") })
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (toolName.isNotBlank() && targetDomain.isNotBlank()) {
+                        val m = settings.toolDomainOverrides.toMutableMap()
+                        m[toolName.trim()] = targetDomain.trim()
+                        vm.updateSettings(settings.copy(toolDomainOverrides = m))
+                        showAddOverride = false
+                    }
+                }) { Text("添加") }
+            },
+            dismissButton = { TextButton(onClick = { showAddOverride = false }) { Text("取消") } }
+        )
     }
 }

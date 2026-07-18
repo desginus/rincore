@@ -544,6 +544,7 @@ data class Settings(
     val routingModelId: Uuid? = null, // 路由表生成模型。null=用静态模板
     val toolDomainOverrides: Map<String, String> = emptyMap(), // 工具名→强制域名。用户手动覆盖自动分类
     val customDomainDescriptions: Map<String, String> = emptyMap(), // 域名→自定义触发描述。覆盖 ToolDomain 默认值
+    val customDomains: List<CustomDomain> = emptyList(), // 用户自定义的域（新建分类）
 ) {
     companion object {
         // 构造一个用于初始化的settings, 但它不能用于保存，防止使用初始值存储
@@ -748,4 +749,13 @@ val DEFAULT_MODE_INJECTIONS = listOf(
         position = InjectionPosition.AFTER_SYSTEM_PROMPT,
         name = "Learning Mode"
     )
+)
+
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class CustomDomain(
+    val name: String = "",
+    val description: String = "",
+    val keywords: List<String> = emptyList(),
 )
