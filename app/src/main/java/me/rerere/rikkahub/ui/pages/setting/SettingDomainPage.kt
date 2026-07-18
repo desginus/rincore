@@ -37,6 +37,7 @@ import me.rerere.hugeicons.stroke.Edit01
 import me.rerere.rikkahub.data.ai.tools.routing.ToolDomain
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.ui.theme.CustomColors
+import me.rerere.rikkahub.utils.plus
 
 @Composable
 fun SettingDomainPage(
