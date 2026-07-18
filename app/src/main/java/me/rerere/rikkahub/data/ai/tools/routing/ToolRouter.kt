@@ -11,26 +11,14 @@ import me.rerere.ai.ui.UIMessagePart
 
 private const val TAG = "ToolRouter"
 
-/**
- * 工具路由引擎 — 统一管理内置工具、MCP 工具、Skill 工具的分层注入。
- *
- * 核心机制：
- * 1. [buildLayer1] 生成路由表（~800 tokens），替代全量工具描述（~17000 tokens）
- * 2. [createUseDomainTool] 创建 use_domain 工具，模型按需加载域
- * 3. 每步循环中根据 loadedDomains 动态构建 tools 列表
- *
- * 不需要修改任何现有 Tool 定义。新增工具自动被分类。
- */
-object ToolRouter {
+class ToolRouter(
+    private val overrides: Map<String, String> = emptyMap(),
+    private val customDescriptions: Map<String, String> = emptyMap(),
+) {
 
-    /**
-     * 对工具进行域分类。
-     * - MCP 工具按服务器名分组（mcp:serverName）
-     * - Skill 工具统一归入 skills 域
-     * - 其他工具按 [ToolDomain] 语义匹配
-     * - 未匹配的归入 uncategorized
-     */
     fun classifyTool(tool: Tool): String {
+        overrides[tool.name]?.let { return it }
+
         val name = tool.name
         return when {
             name.startsWith("mcp__") -> {
@@ -38,22 +26,21 @@ object ToolRouter {
                 if (parts.size >= 3) "mcp:${parts[1]}" else "mcp"
             }
             name == "use_skill" -> "skills"
-            name == "use_domain" -> "system"  // 路由工具本身不参与域分类
+            name == "use_domain" -> "system"
             else -> ToolDomain.classify(tool)?.label ?: "uncategorized"
         }
     }
 
-    /**
-     * 获取所有工具的分类结果。
-     */
     fun classifyAll(tools: List<Tool>): Map<String, List<Tool>> {
         return tools.groupBy { classifyTool(it) }
     }
 
-    /**
-     * 生成 Layer1 路由表。
-     * 约 800-1000 tokens，覆盖全部工具域。
-     */
+    fun getTriggerDescription(domain: String): String {
+        customDescriptions[domain]?.let { return it }
+        return ToolDomain.entries.find { it.label == domain }?.triggerDescription
+            ?: "miscellaneous operations not covered by other domains"
+    }
+
     fun buildLayer1(tools: List<Tool>): String {
         val classified = classifyAll(tools)
         val builtinDomains = classified.keys
@@ -69,16 +56,13 @@ object ToolRouter {
             appendLine("Choose the domain that matches the USER'S TASK, then call use_domain(\"name\"):")
             appendLine()
 
-            // 内置域（包括 uncategorized）
             for (domain in builtinDomains) {
                 val domainTools = classified[domain].orEmpty()
                 if (domainTools.isEmpty()) continue
-                val trigger = ToolDomain.entries.find { it.label == domain }?.triggerDescription
-                    ?: "miscellaneous operations not covered by other domains"
+                val trigger = getTriggerDescription(domain)
                 appendLine("[$domain] Call use_domain(\"$domain\") when the user wants to: $trigger")
             }
 
-            // MCP 域
             if (mcpDomains.isNotEmpty()) {
                 appendLine()
                 appendLine("[mcp] External MCP services. Call use_domain(\"mcp:serviceName\") for their tools.")
@@ -89,10 +73,9 @@ object ToolRouter {
                 }
             }
 
-            // Skills 域
             if (hasSkills) {
                 appendLine()
-                appendLine("[skills] Call use_domain(\"skills\") to see available specialized capabilities (document generation, web search, charts, etc).")
+                appendLine("[skills] Call use_domain(\"skills\") to see available specialized capabilities.")
             }
 
             appendLine()
@@ -102,29 +85,22 @@ object ToolRouter {
         }
     }
 
-    /**
-     * 创建 use_domain 工具。
-     *
-     * @param allTools 全部工具列表（用于域解析）
-     * @param loadedDomains 已加载域的集合（可变，execute 时修改）
-     * @param skillListText Skill 列表文本（可选，从 use_skill.systemPrompt 预提取）
-     */
     fun createUseDomainTool(
         allTools: List<Tool>,
         loadedDomains: MutableSet<String>,
         skillListText: String? = null,
     ): Tool {
+        val router = this
         return Tool(
             name = "use_domain",
             description = "Load tools from a domain. Call this BEFORE using any domain-specific tools. " +
-                "Available domains are listed in the <capability_routing> section. " +
-                "Call use_domain(\"help\") to list all available domains.",
+                "Available domains are listed in system prompt. Call use_domain(\"help\") to list all domains.",
             parameters = {
                 InputSchema.Obj(
                     properties = buildJsonObject {
                         put("name", buildJsonObject {
                             put("type", "string")
-                            put("description", "The domain name to load (e.g. \"file\", \"web\", \"mcp:github\", \"skills\")")
+                            put("description", "Domain name, e.g. file, web, mcp:github, skills")
                         })
                     },
                     required = listOf("name")
@@ -136,7 +112,7 @@ object ToolRouter {
 
                 when {
                     rawDomainName.equals("help", ignoreCase = true) -> {
-                        listOf(UIMessagePart.Text(buildHelpText(allTools)))
+                        listOf(UIMessagePart.Text(router.buildHelpText(allTools)))
                     }
                     rawDomainName.equals("skills", ignoreCase = true) && skillListText != null -> {
                         loadedDomains.add("skills")
@@ -144,20 +120,17 @@ object ToolRouter {
                         listOf(UIMessagePart.Text(skillListText))
                     }
                     else -> {
-                        val classified = classifyAll(allTools)
-                        // 大小写不敏感匹配域名（MCP 服务名也按不敏感处理）
+                        val classified = router.classifyAll(allTools)
                         val domainName = classified.keys
                             .filter { it != "system" }
                             .find { it.equals(rawDomainName, ignoreCase = true) }
 
                         if (domainName == null) {
-                            // 错误自愈：返回可用域列表
                             val available = classified.keys
                                 .filter { it != "system" }
                                 .sorted()
                             listOf(UIMessagePart.Text(
-                                "Unknown domain: '$rawDomainName'. Available domains: ${available.joinToString(", ")}.\n" +
-                                "Call use_domain(\"help\") for details."
+                                "Unknown domain: '$rawDomainName'. Available: ${available.joinToString(", ")}."
                             ))
                         } else {
                             val domainTools = classified[domainName].orEmpty()
@@ -165,8 +138,7 @@ object ToolRouter {
                             val toolNames = domainTools.map { it.name }
                             Log.i(TAG, "Domain loaded: $domainName (${toolNames.size} tools)")
                             listOf(UIMessagePart.Text(
-                                "Domain '$domainName' loaded. ${toolNames.size} tools now available: ${toolNames.joinToString(", ")}.\n" +
-                                "Call them directly in your next response."
+                                "Domain '$domainName' loaded. ${toolNames.size} tools: ${toolNames.joinToString(", ")}."
                             ))
                         }
                     }
@@ -175,9 +147,6 @@ object ToolRouter {
         )
     }
 
-    /**
-     * 生成帮助文本（所有域 + 工具数 + 示例工具名）。
-     */
     private fun buildHelpText(tools: List<Tool>): String {
         val classified = classifyAll(tools)
         return buildString {
@@ -193,9 +162,6 @@ object ToolRouter {
         }
     }
 
-    /**
-     * 获取指定域的工具列表（用于动态构建 tools 参数）。
-     */
     fun getDomainTools(domainName: String, allTools: List<Tool>): List<Tool> {
         return allTools.filter { classifyTool(it) == domainName }
     }

@@ -789,6 +789,15 @@
   <string name="setting_model_page_fast_model_desc">Model for fast or background tasks, also used as fallback for title and suggestion models when not set</string>
   <string name="setting_model_page_compress_model_desc">Model for compressing conversation history</string>
   <string name="setting_model_page_compress_prompt_vars">Variables: {content}, {target_tokens}, {additional_context}</string>
+  <string name="setting_model_page_routing_model">Tool Router Model</string>
+  <string name="setting_model_page_routing_model_desc">Model for generating tool routing tables. If not set, uses static templates.</string>
+  <string name="setting_model_page_domain_override">Domain Classification</string>
+  <string name="setting_model_page_domain_override_desc">View and override tool domain assignments</string>
+  <string name="domain_override_title">Domain Classification</string>
+  <string name="domain_override_auto">Auto</string>
+  <string name="domain_override_manual">Manual override</string>
+  <string name="domain_override_select_domain">Select domain</string>
+  <string name="domain_override_clear">Reset to auto</string>
   <string name="setting_model_page_ocr_model">OCR Model</string>
   <string name="setting_model_page_ocr_model_desc">Model used for optical character recognition on images</string>
   <string name="setting_model_page_ocr_prompt_vars">Variables: Image data: {images}</string>

@@ -542,6 +542,8 @@ data class Settings(
     val launchCount: Int = 0,
     val sponsorAlertDismissedAt: Int = 0,
     val routingModelId: Uuid? = null, // 路由表生成模型。null=用静态模板
+    val toolDomainOverrides: Map<String, String> = emptyMap(), // 工具名→强制域名。用户手动覆盖自动分类
+    val customDomainDescriptions: Map<String, String> = emptyMap(), // 域名→自定义触发描述。覆盖 ToolDomain 默认值
 ) {
     companion object {
         // 构造一个用于初始化的settings, 但它不能用于保存，防止使用初始值存储
