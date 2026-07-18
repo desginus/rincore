@@ -97,6 +97,7 @@ class GenerationHandler(
             overrides = settings.toolDomainOverrides,
             customDescriptions = settings.customDomainDescriptions,
             customDomains = settings.customDomains,
+            customKeywords = settings.customDomainKeywords,
         )
 
         // 预计算 Layer1 路由表
