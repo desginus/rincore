@@ -40,6 +40,7 @@ import me.rerere.rikkahub.data.ai.transformers.onGenerationFinish
 import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
+import me.rerere.rikkahub.data.ai.tools.routing.ToolRouter
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
@@ -89,31 +90,80 @@ class GenerationHandler(
 
         var messages: List<UIMessage> = messages
 
+        // === 分层路由状态 ===
+        val useLayered = assistant.useLayeredTools && tools.isNotEmpty()
+        val loadedDomains = mutableSetOf<String>()
+
+        // 预计算 Layer1 路由表
+        val layer1Prompt = if (useLayered) {
+            ToolRouter.buildLayer1(tools)
+        } else {
+            null
+        }
+
+        // 预提取 Skill 列表文本（从 use_skill 的 systemPrompt 中）
+        val skillListText = if (useLayered) {
+            tools.find { it.name == "use_skill" }?.systemPrompt?.invoke(model, messages)
+        } else {
+            null
+        }
+
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
 
-            val toolsInternal = buildList {
-                Log.i(TAG, "generateInternal: build tools($assistant)")
-                if (assistant?.enableMemory == true) {
-                    val memoryAssistantId = if (assistant.useGlobalMemory) {
-                        MemoryRepository.GLOBAL_MEMORY_ID
-                    } else {
-                        assistant.id.toString()
-                    }
-                    buildMemoryTools(
-                        json = json,
-                        onCreation = { content ->
-                            memoryRepo.addMemory(memoryAssistantId, content)
-                        },
-                        onUpdate = { id, content ->
-                            memoryRepo.updateContent(id, content)
-                        },
-                        onDelete = { id ->
-                            memoryRepo.deleteMemory(id)
+            val toolsInternal = if (useLayered) {
+                buildList {
+                    Log.i(TAG, "generateInternal: build tools (layered)($assistant)")
+                    if (assistant?.enableMemory == true) {
+                        val memoryAssistantId = if (assistant.useGlobalMemory) {
+                            MemoryRepository.GLOBAL_MEMORY_ID
+                        } else {
+                            assistant.id.toString()
                         }
-                    ).let(this::addAll)
+                        buildMemoryTools(
+                            json = json,
+                            onCreation = { content ->
+                                memoryRepo.addMemory(memoryAssistantId, content)
+                            },
+                            onUpdate = { id, content ->
+                                memoryRepo.updateContent(id, content)
+                            },
+                            onDelete = { id ->
+                                memoryRepo.deleteMemory(id)
+                            }
+                        ).let(this::addAll)
+                    }
+                    // use_domain 工具（始终包含）
+                    add(ToolRouter.createUseDomainTool(tools, loadedDomains, skillListText))
+                    // 已加载域的工具
+                    for (domain in loadedDomains) {
+                        addAll(ToolRouter.getDomainTools(domain, tools))
+                    }
                 }
-                addAll(tools)
+            } else {
+                buildList {
+                    Log.i(TAG, "generateInternal: build tools($assistant)")
+                    if (assistant?.enableMemory == true) {
+                        val memoryAssistantId = if (assistant.useGlobalMemory) {
+                            MemoryRepository.GLOBAL_MEMORY_ID
+                        } else {
+                            assistant.id.toString()
+                        }
+                        buildMemoryTools(
+                            json = json,
+                            onCreation = { content ->
+                                memoryRepo.addMemory(memoryAssistantId, content)
+                            },
+                            onUpdate = { id, content ->
+                                memoryRepo.updateContent(id, content)
+                            },
+                            onDelete = { id ->
+                                memoryRepo.deleteMemory(id)
+                            }
+                        ).let(this::addAll)
+                    }
+                    addAll(tools)
+                }
             }
 
             // Check if we have tool calls ready to continue after user interaction.
@@ -161,6 +211,7 @@ class GenerationHandler(
                     conversationModeInjectionIds = conversationModeInjectionIds,
                     conversationLorebookIds = conversationLorebookIds,
                     workspaceCwd = workspaceCwd,
+                    layer1Prompt = layer1Prompt,
                 )
                 messages = messages.visualTransforms(
                     transformers = outputTransformers,
@@ -277,6 +328,10 @@ class GenerationHandler(
                         // Auto or Approved - execute the tool
                         runCatching {
                             val toolDef = toolsInternal.find { toolDef -> toolDef.name == tool.toolName }
+                                ?: (if (useLayered) tools.find { it.name == tool.toolName }?.also {
+                                    loadedDomains.add(ToolRouter.classifyTool(it))
+                                    Log.i(TAG, "Auto-loading domain for tool: ${tool.toolName}")
+                                } else null)
                                 ?: error("Tool ${tool.toolName} not found")
                             val args = runCatching {
                                 json.parseToJsonElement(tool.input.ifBlank { "{}" })
@@ -360,6 +415,7 @@ class GenerationHandler(
         conversationModeInjectionIds: Set<Uuid> = emptySet(),
         conversationLorebookIds: Set<Uuid> = emptySet(),
         workspaceCwd: String? = null,
+        layer1Prompt: String? = null,
     ) {
         val internalMessages = buildList {
             val sysPromptLen: Int
@@ -389,9 +445,24 @@ class GenerationHandler(
                 memPromptLen = length - sysPromptLen
 
                 // 工具prompt
-                tools.forEach { tool ->
+                if (layer1Prompt != null) {
                     appendLine()
-                    append(tool.systemPrompt(model, messages))
+                    append(layer1Prompt)
+                    // 注入始终可用工具的 systemPrompt（memory tools 等，排除 use_domain）
+                    tools.forEach { tool ->
+                        if (tool.name != "use_domain") {
+                            val sp = tool.systemPrompt(model, messages)
+                            if (sp.isNotBlank()) {
+                                appendLine()
+                                append(sp)
+                            }
+                        }
+                    }
+                } else {
+                    tools.forEach { tool ->
+                        appendLine()
+                        append(tool.systemPrompt(model, messages))
+                    }
                 }
                 toolsPromptLen = length - sysPromptLen - memPromptLen
             }

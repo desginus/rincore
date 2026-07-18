@@ -52,6 +52,7 @@ data class Assistant(
     val allowConversationSystemPrompt: Boolean = false, // 允许对话单独重写 system prompt
     val allowConversationPromptInjection: Boolean = false, // 允许对话单独绑定提示词注入
     val maxConcurrentSubAgents: Int = 3, // 子代理并行上限，1-8
+    val useLayeredTools: Boolean = true, // 分层工具路由：true=按需加载(省token), false=全量注入(兜底)
 )
 
 @Serializable
