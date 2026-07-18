@@ -86,6 +86,16 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
     val navController = LocalNavController.current
     val settings by vm.settings.collectAsStateWithLifecycle()
     val filesManager: FilesManager = koinInject()
+    var showDomainPage by remember { mutableStateOf(false) }
+
+    if (showDomainPage) {
+        SettingDomainPage(
+            settings = settings,
+            vm = vm,
+            onBack = { showDomainPage = false },
+        )
+        return
+    }
 
     Scaffold(
         topBar = {
@@ -217,9 +227,14 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     )
                     item(
                         onClick = { navController.navigate(Screen.ScheduledJobs) },
-                        leadingContent = { Icon(HugeIcons.Book01, null) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_scheduled_jobs_desc)) },
+                        leadingContent = { Icon(HugeIcons.Book01, null) },\n                        supportingContent = { Text(stringResource(R.string.setting_page_scheduled_jobs_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_scheduled_jobs)) },
+                    )
+                    item(
+                        onClick = { showDomainPage = true },
+                        leadingContent = { Icon(HugeIcons.Settings03, null) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_domain_management_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_domain_management)) },
                     )
                 }
             }
