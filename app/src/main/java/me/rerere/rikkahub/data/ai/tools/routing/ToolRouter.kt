@@ -47,7 +47,7 @@ class ToolRouter(
                 val domainTools = classified[domain].orEmpty()
                 if (domainTools.isEmpty()) continue
                 val trigger = getTriggerDescription(domain)
-                appendLine("[$domain] 当用户需要$trigger时，调用 use_domain(\"$domain\")")
+                appendLine("[$domain] 当用户需要${trigger}时，调用 use_domain(\"$domain\")")
             }
 
             appendLine()
