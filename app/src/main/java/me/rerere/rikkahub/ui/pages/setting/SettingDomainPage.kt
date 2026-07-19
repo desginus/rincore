@@ -133,7 +133,15 @@ fun SettingDomainPage(
         val list = mutableListOf<ToolPreview>()
         // 1. 内置本地工具（全部列举，与ChatService一致）
         try {
-            val allOptions = LocalToolOption.values().toList()
+            val allOptions = listOf(
+                LocalToolOption.JavascriptEngine, LocalToolOption.TimeInfo, LocalToolOption.Clipboard,
+                LocalToolOption.Tts, LocalToolOption.AskUser, LocalToolOption.ScreenTime,
+                LocalToolOption.Calendar, LocalToolOption.CronJobs, LocalToolOption.ToastAndNotification,
+                LocalToolOption.SubAgents, LocalToolOption.SystemIntents, LocalToolOption.Share,
+                LocalToolOption.Location, LocalToolOption.Battery, LocalToolOption.MediaPlayer,
+                LocalToolOption.MediaScanner, LocalToolOption.Files, LocalToolOption.Download,
+                LocalToolOption.Archive, LocalToolOption.CostGuards, LocalToolOption.Browser,
+            )
             localTools.getTools(allOptions).forEach { t ->
                 list.add(ToolPreview(t.name, t.description))
             }
