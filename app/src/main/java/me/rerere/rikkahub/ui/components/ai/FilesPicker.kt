@@ -1,5 +1,3 @@
-package me.rerere.rikkahub.ui.components.ai
-
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -90,16 +88,10 @@ import me.rerere.workspace.WorkspaceFileEntry
 import me.rerere.workspace.WorkspaceStorageArea
 import me.rerere.hugeicons.stroke.ArrowTurnBackward
 import me.rerere.hugeicons.stroke.File01
-import me.rerere.workspace.WorkspaceFileEntry
-import me.rerere.workspace.WorkspaceStorageArea
-import me.rerere.hugeicons.stroke.File01
-import me.rerere.hugeicons.stroke.ArrowTurnBackward
 import me.rerere.rikkahub.data.files.FilesManager
-import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.ui.hooks.ToastType
+import me.rerere.rikkahub.ui.hooks.LocalToaster
 import me.rerere.ai.ui.UIMessagePart
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
 import java.io.File as JavaFile
