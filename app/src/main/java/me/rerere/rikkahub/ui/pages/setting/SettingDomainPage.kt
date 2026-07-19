@@ -38,10 +38,10 @@ private fun buildNestedDomains(
     for ((server, sTools) in mcpByServer) {
         if (sTools.size >= 8) {
             processedServers.add(server)
-            val subs = mutableMapOf<String, List<ToolPreview>>()
+            val subs = mutableMapOf<String, MutableList<ToolPreview>>()
             for (t in sTools) {
                 val sub = classifyMcpSubdomainStatic(t.name, t.description)
-                subs.getOrPut(sub) { mutableListOf() }.add(t)
+                    subs.getOrPut(sub) { mutableListOf() }.add(t)
             }
             result.add(server to subs)
         }
@@ -112,7 +112,7 @@ fun SettingDomainPage(
         LazyColumn(Modifier.fillMaxSize(), contentPadding = pad + PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
                 val mcpLarge = previewTools.filter { it.name.startsWith("mcp__") }.groupBy { it.name.removePrefix("mcp__").split("__").first() }.count { it.value.size >= 8 }
-                Text("${nestedDomains.size}个域 · ${previewTools.size}个工具 · $mcpLarge个大型MCP工具集 · ${settings.toolDomainOverrides.size}个覆盖 · ${settings.toolDescriptionOverrides.size}个描述修改",
+                Text("${nestedDomains.size}个域 · ${previewTools.size}个工具 · ${mcpLarge}个大型MCP工具集 · ${settings.toolDomainOverrides.size}个覆盖 · ${settings.toolDescriptionOverrides.size}个描述修改",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
