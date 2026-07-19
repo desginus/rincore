@@ -91,6 +91,10 @@ import me.rerere.workspace.WorkspaceFileEntry
 import me.rerere.workspace.WorkspaceStorageArea
 import me.rerere.hugeicons.stroke.ArrowTurnBackward
 import me.rerere.hugeicons.stroke.File01
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 
 @Composable
 internal fun FilesPicker(
