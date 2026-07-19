@@ -144,11 +144,12 @@ internal fun FilesPicker(
             WorkspaceFilePickButton(onClick = {
                 // 导航到工作区文件页面
                 val wsId = assistant.workspaceId?.toString()
-                if (wsId != null) {
-                    onDismiss()
-                    navController.navigate(Screen.WorkspaceDetail(wsId))
+                val firstWsId = workspaces.firstOrNull()?.id
+                val targetId = wsId ?: firstWsId
+                onDismiss()
+                if (targetId != null) {
+                    navController.navigate(Screen.WorkspaceDetail(targetId))
                 } else {
-                    onDismiss()
                     navController.navigate(Screen.Workspaces)
                 }
             })
