@@ -57,7 +57,7 @@ fun SettingToolListPage(
             val q = searchQuery.lowercase()
             if (q.isNotEmpty() && !t.name.lowercase().contains(q) && !t.description.lowercase().contains(q)) return@filter false
             if (filterDomain == "全部") return@filter true
-            router.classifyPreview(t.name, t.description) == filterDomain
+            router.classifyPreview(t.name, settings.toolDescriptionOverrides[t.name] ?: t.description) == filterDomain
         }
     }
 
@@ -77,7 +77,7 @@ fun SettingToolListPage(
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         FilterChip(selected = filterDomain == "全部", onClick = { filterDomain = "全部" }, label = { Text("全部(${allTools.size})") })
                         allDomainNames.take(6).forEach { dn ->
-                            val count = allTools.count { router.classifyPreview(it.name, it.description) == dn }
+                            val count = allTools.count { router.classifyPreview(it.name, settings.toolDescriptionOverrides[it.name] ?: it.description) == dn }
                             FilterChip(selected = filterDomain == dn, onClick = { filterDomain = dn }, label = { Text("$dn($count)") })
                         }
                     }
@@ -85,7 +85,7 @@ fun SettingToolListPage(
                 item { Text("${filtered.size}个工具", style = MaterialTheme.typography.bodySmall) }
 
                 items(filtered) { tool ->
-                    val domain = router.classifyPreview(tool.name, tool.description)
+                    val domain = router.classifyPreview(tool.name, settings.toolDescriptionOverrides[tool.name] ?: tool.description)
                     val hasDesc = tool.name in settings.toolDescriptionOverrides
                     val overridden = tool.name in settings.toolDomainOverrides
                     Card(Modifier.fillMaxWidth().clickable {
