@@ -312,24 +312,26 @@ fun SettingDomainPage(
         if (!isClassifying) return@LaunchedEffect
         classifyLog = "正在调用 AI 分类..."
         try {
-            val classifier = ToolClassifier(providerManager, settings)
             val toolList = previewTools.map { it.name to (settings.toolDescriptionOverrides[it.name] ?: it.description) }
-            // 获取分类模型：优先路由模型，否则聊天模型
             val modelId = settings.routingModelId ?: settings.chatModelId
-            val model = settings.providers.firstNotNullOfOrNull { p -> p.models.find { it.id == modelId } }
-            if (model == null) {
-                classifyLog = "错误: 未找到分类模型"
+            val providerSetting = settings.providers.find { p -> p.models.any { m -> m.id == modelId } }
+            val model = providerSetting?.models?.find { it.id == modelId }
+            if (providerSetting == null || model == null) {
+                classifyLog = "错误: 未找到分类模型或提供商"
                 isClassifying = false
                 return@LaunchedEffect
             }
-            classifier.classify(toolList, model).onSuccess { result ->
-                val m = settings.toolDomainOverrides.toMutableMap()
-                result.forEach { (tool, domain) -> m[tool] = domain }
-                vm.updateSettings(settings.copy(toolDomainOverrides = m))
-                classifyLog = "分类完成: ${result.size}个工具已归类"
-            }.onFailure { e ->
-                classifyLog = "分类失败: ${e.message?.take(200) ?: "未知错误"}"
-            }
+            val provider = providerManager.getProvider(providerSetting.providerName)
+            ToolClassifier.classify(toolList, model, provider, providerSetting, settings.classifierPrompt)
+                .onSuccess { result ->
+                    val m = settings.toolDomainOverrides.toMutableMap()
+                    result.forEach { (tool, domain) -> m[tool] = domain }
+                    vm.updateSettings(settings.copy(toolDomainOverrides = m))
+                    classifyLog = "分类完成: ${result.size}个工具已归类"
+                }
+                .onFailure { e ->
+                    classifyLog = "分类失败: ${e.message?.take(200) ?: "未知错误"}"
+                }
         } catch (e: Exception) {
             classifyLog = "异常: ${e.message?.take(200) ?: ""}"
         }

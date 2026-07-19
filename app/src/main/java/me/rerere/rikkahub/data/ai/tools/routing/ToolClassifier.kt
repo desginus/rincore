@@ -1,22 +1,19 @@
 package me.rerere.rikkahub.data.ai.tools.routing
 
-import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import me.rerere.ai.core.Message
-import me.rerere.ai.core.UIMessagePart
+import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Model
-import me.rerere.ai.provider.ProviderManager
+import me.rerere.ai.provider.Provider
+import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.datastore.Settings
 
-class ToolClassifier(
-    private val providerManager: ProviderManager,
-    private val settings: Settings,
-) {
-    companion object {
-        val DEFAULT_PROMPT = """
+object ToolClassifier {
+    val DEFAULT_PROMPT = """
 你是一个工具分类助手。根据用户的任务意图，将工具分配到合适的场景分类中。
 
 ## 可用场景（树状层级，路径越深越精准）：
@@ -48,75 +45,48 @@ class ToolClassifier(
 ## 分类规则：
 - 按用户需求分类，不是按技术来源分类
 - 忽略工具名前缀（如 mcp__xxx），只看功能
-- 不确定时选上层场景（如不确定是"计算/JS"还是"计算/物理"就选"计算"）
+- 不确定时选上层场景
 - 路径格式：一级场景 或 一级/子场景
 
 ## 任务：
-对以下工具列表进行分类，返回 JSON 格式。
-格式：{"tool_name":"场景路径", ...}
+对以下工具列表进行分类，返回 JSON 格式。只返回 JSON，不要其他内容。
+{"tool_name":"场景路径", ...}
 
 工具列表：
 {{TOOLS}}
 """.trimIndent()
-    }
 
     private val json = Json { ignoreUnknownKeys = true }
 
     /**
-     * 构建分类提示词，将工具列表嵌入模板
-     */
-    fun buildPrompt(tools: List<Pair<String, String>>, customPrompt: String = ""): String {
-        val prompt = if (customPrompt.isNotBlank()) customPrompt else DEFAULT_PROMPT
-        val toolList = tools.joinToString("\n") { (name, desc) ->
-            "- $name: ${desc.take(200)}"
-        }
-        return prompt.replace("{{TOOLS}}", toolList)
-    }
-
-    /**
-     * 调用 AI 模型分类工具
-     * @param tools 待分类工具 (名称 -> 描述)
-     * @return 分类结果 (工具名 -> 域路径)
+     * 调用 AI 分类工具
      */
     suspend fun classify(
         tools: List<Pair<String, String>>,
         model: Model,
+        provider: Provider<*>,
+        providerSetting: ProviderSetting,
+        customPrompt: String = "",
     ): Result<Map<String, String>> {
-        val prompt = buildPrompt(tools, settings.classifierPrompt)
-        val messages = listOf(
-            Message(role = "user", content = listOf(UIMessagePart.Text(prompt)))
-        )
+        val prompt = (if (customPrompt.isNotBlank()) customPrompt else DEFAULT_PROMPT)
+            .replace("{{TOOLS}}", tools.joinToString("\n") { (n, d) -> "- $n: ${d.take(200)}" })
 
         return try {
-            val provider = providerManager.getProvider(model)
-                ?: return Result.failure(Exception("找不到模型 ${model.displayName}"))
-
-            val providerSettings = settings.providers.find { it.id == model.providerId }
-                ?: return Result.failure(Exception("找不到提供商配置"))
-
-            val response = provider.textGeneration(
-                providerSetting = providerSettings,
-                model = model,
+            val messages = listOf(
+                UIMessage(role = MessageRole.USER, parts = listOf(UIMessagePart.Text(prompt)))
+            )
+            val chunk = provider.generateText(
+                providerSetting = providerSetting,
                 messages = messages,
-                tools = emptyList(),
-                generationConfig = TextGenerationParams(
+                params = TextGenerationParams(
+                    model = model,
                     temperature = 0.1f,
-                    maxTokens = 4096,
                 ),
             )
-
-            // 从流中收集所有响应
-            var fullText = ""
-            response.collect { chunk ->
-                chunk.choices.forEach { choice ->
-                    choice.delta.content?.let { fullText += it }
-                }
-            }
-
-            // 提取 JSON
+            val fullText = chunk.choices.firstOrNull()?.message?.parts
+                ?.filterIsInstance<UIMessagePart.Text>()?.joinToString("") { it.text } ?: ""
             val jsonStr = extractJson(fullText)
-            val result = parseClassificationResult(jsonStr)
-            Result.success(result)
+            Result.success(parseResult(jsonStr))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -125,16 +95,13 @@ class ToolClassifier(
     private fun extractJson(text: String): String {
         val start = text.indexOf('{')
         val end = text.lastIndexOf('}')
-        if (start < 0 || end < 0) return "{}"
+        if (start < 0 || end < 0 || start >= end) return "{}"
         return text.substring(start, end + 1)
     }
 
-    private fun parseClassificationResult(jsonStr: String): Map<String, String> {
-        try {
-            val obj = json.parseToJsonElement(jsonStr).jsonObject
-            return obj.mapValues { it.value.jsonPrimitive.content }
-        } catch (e: Exception) {
-            return emptyMap()
-        }
+    private fun parseResult(jsonStr: String): Map<String, String> {
+        return try {
+            json.parseToJsonElement(jsonStr).jsonObject.mapValues { it.value.jsonPrimitive.content }
+        } catch (_: Exception) { emptyMap() }
     }
 }
