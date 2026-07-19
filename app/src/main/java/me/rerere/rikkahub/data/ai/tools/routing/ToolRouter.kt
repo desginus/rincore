@@ -64,7 +64,7 @@ class ToolRouter(
                 // 按子域分类
                 val subDomains = serverTools.groupBy { classifyMcpSubdomain(it.name, it.description) }
                 for ((sub, subTools) in subDomains) {
-                    result["$serverName/$sub"] = subTools
+                    result["$serverName/$sub"] = subTools.toMutableList()
                 }
             } else {
                 // 低于阈值则合并回功能域
