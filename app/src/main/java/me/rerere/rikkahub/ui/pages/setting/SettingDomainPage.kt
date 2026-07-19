@@ -93,6 +93,7 @@ fun SettingDomainPage(
     var isClassifying by remember { mutableStateOf(false) }
     var classifyLog by remember { mutableStateOf("") }
     var showClassifierPrompt by remember { mutableStateOf(false) }
+    var autoChecked by remember { mutableStateOf(false) }
     var editClassifierPrompt by remember(settings.classifierPrompt) { mutableStateOf(settings.classifierPrompt.ifBlank { ToolClassifier.DEFAULT_PROMPT }) }
     var showNewDomain by remember { mutableStateOf(false) }
     var showToolList by remember { mutableStateOf(false) }

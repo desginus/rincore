@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import android.provider.DocumentsContract
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -654,6 +655,19 @@ private fun ChatFilesPickerSheet(
             }
         }
 
+    val workspaceFileLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) {
+                val fileName = filesManager.getFileNameFromUri(uri) ?: "file"
+                val mime = filesManager.getFileMimeType(uri) ?: "text/plain"
+                val localUri = filesManager.createChatFilesByContents(listOf(uri)).firstOrNull()
+                if (localUri != null) {
+                    inputState.addFiles(listOf(UIMessagePart.Document(url = localUri.toString(), fileName = fileName, mime = mime)))
+                }
+                dismissAll()
+            }
+        }
+
     val filesSheetState = rememberBottomSheetState(
         initialValue = SheetValue.Hidden,
         enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)
@@ -697,6 +711,9 @@ private fun ChatFilesPickerSheet(
             onPickVideo = { videoPickerLauncher.launch("video/*") },
             onPickAudio = { audioPickerLauncher.launch("audio/*") },
             onPickFile = { filePickerLauncher.launch(arrayOf("*/*")) },
+            onPickWorkspaceFile = {
+                workspaceFileLauncher.launch(arrayOf("*/*"))
+            },
         )
     }
 }
