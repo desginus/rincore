@@ -6,6 +6,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -20,6 +22,14 @@ import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.plus
 import org.koin.compose.koinInject
+import me.rerere.ai.provider.ProviderManager
+import me.rerere.rikkahub.data.ai.tools.routing.ToolClassifier
+import kotlinx.coroutines.launch
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberCoroutineScope
 
 data class ToolPreview(val name: String, val description: String)
 
@@ -75,6 +85,12 @@ fun SettingDomainPage(
     onBack: () -> Unit,
 ) {
     val skillManager: SkillManager = koinInject()
+
+    var deleteConfirm by remember { mutableStateOf<String?>(null) }
+    var isClassifying by remember { mutableStateOf(false) }
+    var classifyLog by remember { mutableStateOf("") }
+    var showClassifierPrompt by remember { mutableStateOf(false) }
+    var editClassifierPrompt by remember(settings.classifierPrompt) { mutableStateOf(settings.classifierPrompt.ifBlank { ToolClassifier.DEFAULT_PROMPT }) }
     var showNewDomain by remember { mutableStateOf(false) }
     var showToolList by remember { mutableStateOf(false) }
     var editingDomain by remember { mutableStateOf<String?>(null) }
@@ -104,6 +120,7 @@ fun SettingDomainPage(
             TopAppBar(title = { Text("域分类管理") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(HugeIcons.ArrowLeft01, null) } },
                 actions = {
+                    IconButton(onClick = { showClassifierPrompt = true }) { Icon(HugeIcons.AiMagic, "分类") }
                     IconButton(onClick = { showToolList = true }) { Icon(HugeIcons.View, "工具列表") }
                     IconButton(onClick = { showNewDomain = true }) { Icon(HugeIcons.Add01, "新建") }
                 }, colors = CustomColors.topBarColors)
@@ -112,6 +129,13 @@ fun SettingDomainPage(
         LazyColumn(Modifier.fillMaxSize(), contentPadding = pad + PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
                 val mcpLarge = previewTools.filter { it.name.startsWith("mcp__") }.groupBy { it.name.removePrefix("mcp__").split("__").first() }.count { it.value.size >= 8 }
+                if (isClassifying) {
+                item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
+            }
+            if (classifyLog.isNotEmpty()) {
+                item { Text(classifyLog, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
+            }
+            item {
                 Text("${nestedDomains.size}个域 · ${previewTools.size}个工具 · ${mcpLarge}个大型MCP工具集 · ${settings.toolDomainOverrides.size}个覆盖 · ${settings.toolDescriptionOverrides.size}个描述修改 · ${settings.hiddenDomains.size}个隐藏",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -280,6 +304,63 @@ fun SettingDomainPage(
                 deleteConfirm = null
             }) { Text("确认删除", color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton(onClick = { deleteConfirm = null }) { Text("取消") } }
+        )
+    }
+
+    // 自动分类按钮逻辑
+    LaunchedEffect(isClassifying) {
+        if (!isClassifying) return@LaunchedEffect
+        classifyLog = "正在调用 AI 分类..."
+        try {
+            val classifier = ToolClassifier(providerManager, settings)
+            val toolList = previewTools.map { it.name to (settings.toolDescriptionOverrides[it.name] ?: it.description) }
+            // 获取分类模型：优先路由模型，否则聊天模型
+            val modelId = settings.routingModelId ?: settings.chatModelId
+            val model = settings.providers.firstNotNullOfOrNull { p -> p.models.find { it.id == modelId } }
+            if (model == null) {
+                classifyLog = "错误: 未找到分类模型"
+                isClassifying = false
+                return@LaunchedEffect
+            }
+            classifier.classify(toolList, model).onSuccess { result ->
+                val m = settings.toolDomainOverrides.toMutableMap()
+                result.forEach { (tool, domain) -> m[tool] = domain }
+                vm.updateSettings(settings.copy(toolDomainOverrides = m))
+                classifyLog = "分类完成: ${result.size}个工具已归类"
+            }.onFailure { e ->
+                classifyLog = "分类失败: ${e.message?.take(200) ?: "未知错误"}"
+            }
+        } catch (e: Exception) {
+            classifyLog = "异常: ${e.message?.take(200) ?: ""}"
+        }
+        isClassifying = false
+    }
+
+    // 分类提示词编辑
+    if (showClassifierPrompt) {
+        AlertDialog(onDismissRequest = { showClassifierPrompt = false }, title = { Text("分类提示词") },
+            text = {
+                Column(Modifier.fillMaxWidth().heightIn(max = 400.dp)) {
+                    Text("此提示词发送给 AI 模型，用于自动将工具分配到合适的场景。", style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(editClassifierPrompt, { editClassifierPrompt = it }, modifier = Modifier.fillMaxWidth().weight(1f), maxLines = 20)
+                }
+            },
+            confirmButton = { TextButton(onClick = {
+                vm.updateSettings(settings.copy(classifierPrompt = editClassifierPrompt))
+                showClassifierPrompt = false
+                // 触发分类
+                isClassifying = true
+            }) { Text("保存并分类") } },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        editClassifierPrompt = ToolClassifier.DEFAULT_PROMPT
+                        vm.updateSettings(settings.copy(classifierPrompt = ""))
+                    }) { Text("恢复默认") }
+                    TextButton(onClick = { showClassifierPrompt = false }) { Text("取消") }
+                }
+            }
         )
     }
 }

@@ -167,6 +167,7 @@ class SettingsStore(
         val DOMAIN_NAME_OVERRIDES = stringPreferencesKey("domain_name_overrides")
         val HIDDEN_DOMAINS = stringPreferencesKey("hidden_domains")
         val REMOVED_BUILTIN_DOMAINS = stringPreferencesKey("removed_builtin_domains")
+        val CLASSIFIER_PROMPT = stringPreferencesKey("classifier_prompt")
     }
 
     private val dataStore = context.settingsStore
@@ -268,6 +269,7 @@ class SettingsStore(
                 domainNameOverrides = preferences[DOMAIN_NAME_OVERRIDES]?.let { JsonInstant.decodeFromString(it) } ?: emptyMap(),
                 hiddenDomains = preferences[HIDDEN_DOMAINS]?.let { JsonInstant.decodeFromString(it) } ?: emptySet(),
                 removedBuiltinDomains = preferences[REMOVED_BUILTIN_DOMAINS]?.let { JsonInstant.decodeFromString(it) } ?: emptySet(),
+                classifierPrompt = preferences[CLASSIFIER_PROMPT] ?: "",
             )
         }
         .map {
@@ -446,6 +448,7 @@ class SettingsStore(
             preferences[DOMAIN_NAME_OVERRIDES] = JsonInstant.encodeToString(settings.domainNameOverrides)
             preferences[HIDDEN_DOMAINS] = JsonInstant.encodeToString(settings.hiddenDomains)
             preferences[REMOVED_BUILTIN_DOMAINS] = JsonInstant.encodeToString(settings.removedBuiltinDomains)
+            preferences[CLASSIFIER_PROMPT] = settings.classifierPrompt
         }
     }
 
@@ -585,6 +588,7 @@ data class Settings(
     val domainNameOverrides: Map<String, String> = emptyMap(), // 域名→自定义显示名称
     val hiddenDomains: Set<String> = emptySet(), // 用户隐藏的域（内置域不删除但可隐藏）
     val removedBuiltinDomains: Set<String> = emptySet(), // 用户删除的内置域预设
+    val classifierPrompt: String = "", // 工具自动分类提示词。空=使用默认
 ) {
     companion object {
         // 构造一个用于初始化的settings, 但它不能用于保存，防止使用初始值存储
