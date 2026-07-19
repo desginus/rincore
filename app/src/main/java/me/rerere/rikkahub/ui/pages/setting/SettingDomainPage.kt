@@ -85,6 +85,7 @@ fun SettingDomainPage(
     onBack: () -> Unit,
 ) {
     val skillManager: SkillManager = koinInject()
+    val providerManager: ProviderManager = koinInject()
 
     var deleteConfirm by remember { mutableStateOf<String?>(null) }
     var isClassifying by remember { mutableStateOf(false) }
