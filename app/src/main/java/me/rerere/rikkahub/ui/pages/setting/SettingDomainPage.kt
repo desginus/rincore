@@ -139,6 +139,11 @@ fun SettingDomainPage(
             TopAppBar(title = { Text("域分类管理") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(HugeIcons.ArrowLeft01, null) } },
                 actions = {
+                    IconButton(onClick = {
+                    // 全域同步：强制重建分类
+                    classifyLog = "正在全域同步工具..."
+                    isClassifying = true
+                }) { Icon(HugeIcons.Refresh01, "同步") }
                     IconButton(onClick = { showClassifierPrompt = true }) { Icon(HugeIcons.AiMagic, "分类") }
                     IconButton(onClick = { showToolList = true }) { Icon(HugeIcons.View, "工具列表") }
                     IconButton(onClick = { showNewDomain = true }) { Icon(HugeIcons.Add01, "新建") }
