@@ -127,15 +127,14 @@ fun SettingDomainPage(
         },
     ) { pad ->
         LazyColumn(Modifier.fillMaxSize(), contentPadding = pad + PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item {
-                val mcpLarge = previewTools.filter { it.name.startsWith("mcp__") }.groupBy { it.name.removePrefix("mcp__").split("__").first() }.count { it.value.size >= 8 }
-                if (isClassifying) {
+            if (isClassifying) {
                 item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
             }
             if (classifyLog.isNotEmpty()) {
                 item { Text(classifyLog, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
             }
             item {
+                val mcpLarge = previewTools.filter { it.name.startsWith("mcp__") }.groupBy { it.name.removePrefix("mcp__").split("__").first() }.count { it.value.size >= 8 }
                 Text("${nestedDomains.size}个域 · ${previewTools.size}个工具 · ${mcpLarge}个大型MCP工具集 · ${settings.toolDomainOverrides.size}个覆盖 · ${settings.toolDescriptionOverrides.size}个描述修改 · ${settings.hiddenDomains.size}个隐藏",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -321,7 +320,13 @@ fun SettingDomainPage(
                 isClassifying = false
                 return@LaunchedEffect
             }
-            val provider = providerManager.getProvider(providerSetting.providerName)
+            val providerName = when (providerSetting) {
+                    is me.rerere.ai.provider.ProviderSetting.OpenAI -> "openai"
+                    is me.rerere.ai.provider.ProviderSetting.Google -> "google"
+                    is me.rerere.ai.provider.ProviderSetting.Claude -> "claude"
+                    else -> error("不支持的提供商类型")
+                }
+                val provider = providerManager.getProvider(providerName)
             ToolClassifier.classify(toolList, model, provider, providerSetting, settings.classifierPrompt)
                 .onSuccess { result ->
                     val m = settings.toolDomainOverrides.toMutableMap()
