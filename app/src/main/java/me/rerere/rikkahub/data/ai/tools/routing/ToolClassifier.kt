@@ -64,7 +64,8 @@ object ToolClassifier {
     suspend fun classify(
         tools: List<Pair<String, String>>,
         model: Model,
-        provider: Provider<*>,
+        @Suppress("UNCHECKED_CAST")
+        provider: Provider<ProviderSetting>,
         providerSetting: ProviderSetting,
         customPrompt: String = "",
     ): Result<Map<String, String>> {
