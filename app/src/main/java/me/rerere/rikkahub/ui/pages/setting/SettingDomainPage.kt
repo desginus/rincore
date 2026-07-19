@@ -94,7 +94,7 @@ fun SettingDomainPage(
         for (srv in settings.mcpServers) for (t in srv.commonOptions.tools.filter { it.enable }) list.add(ToolPreview("mcp__${srv.commonOptions.name}__${t.name}", t.description ?: ""))
         list
     }
-    val flatDomainMap = remember(previewTools, settings) { previewTools.groupBy { router.classifyPreview(it.name, settings.toolDescriptionOverrides[it.name] ?: it.description) } }
+    val flatDomainMap: Map<String, List<ToolPreview>> = remember(previewTools, settings) { previewTools.groupBy { router.classifyPreview(it.name, settings.toolDescriptionOverrides[it.name] ?: it.description) } }
     val nestedDomains = remember(flatDomainMap, previewTools, settings) { buildNestedDomains(flatDomainMap, previewTools, router) }
 
     Scaffold(
