@@ -43,7 +43,7 @@ class ToolRouter(
 
     fun classifyAll(tools: List<Tool>): Map<String, List<Tool>> {
         val raw = tools.groupBy { classifyTool(it) }
-        val result = mutableMapOf<String, List<Tool>>()
+        val result = mutableMapOf<String, MutableList<Tool>>()
 
         // 第一步：找出所有大型 MCP 工具集
         val mcpGroups = mutableMapOf<String, MutableList<Tool>>()
@@ -54,7 +54,7 @@ class ToolRouter(
                     mcpGroups.getOrPut(serverName) { mutableListOf() }.add(t)
                 }
             } else {
-                result[domain] = dTools
+                result[domain] = dTools.toMutableList()
             }
         }
 
@@ -70,7 +70,7 @@ class ToolRouter(
                 // 低于阈值则合并回功能域
                 for (t in serverTools) {
                     val funcDomain = raw.entries.find { it.value.contains(t) }?.key?.removePrefix("mcp_raw:") ?: "uncategorized"
-                    result.getOrPut(funcDomain) { mutableListOf() }.add(t)
+                result.getOrPut(funcDomain) { mutableListOf() }.add(t)
                 }
             }
         }
