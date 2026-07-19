@@ -157,6 +157,15 @@ class SettingsStore(
 
         // 赞助提醒
         val SPONSOR_ALERT_DISMISSED_AT = intPreferencesKey("sponsor_alert_dismissed_at")
+
+        // 工具路由
+        val TOOL_DOMAIN_OVERRIDES = stringPreferencesKey("tool_domain_overrides")
+        val CUSTOM_DOMAIN_DESCRIPTIONS = stringPreferencesKey("custom_domain_descriptions")
+        val CUSTOM_DOMAINS = stringPreferencesKey("custom_domains")
+        val CUSTOM_DOMAIN_KEYWORDS = stringPreferencesKey("custom_domain_keywords")
+        val TOOL_DESCRIPTION_OVERRIDES = stringPreferencesKey("tool_description_overrides")
+        val DOMAIN_NAME_OVERRIDES = stringPreferencesKey("domain_name_overrides")
+        val HIDDEN_DOMAINS = stringPreferencesKey("hidden_domains")
     }
 
     private val dataStore = context.settingsStore
@@ -250,6 +259,13 @@ class SettingsStore(
                 } ?: BackupReminderConfig(),
                 launchCount = preferences[LAUNCH_COUNT] ?: 0,
                 sponsorAlertDismissedAt = preferences[SPONSOR_ALERT_DISMISSED_AT] ?: 0,
+                toolDomainOverrides = preferences[TOOL_DOMAIN_OVERRIDES]?.let { JsonInstant.decodeFromString(it) } ?: emptyMap(),
+                customDomainDescriptions = preferences[CUSTOM_DOMAIN_DESCRIPTIONS]?.let { JsonInstant.decodeFromString(it) } ?: emptyMap(),
+                customDomains = preferences[CUSTOM_DOMAINS]?.let { JsonInstant.decodeFromString(it) } ?: emptyList(),
+                customDomainKeywords = preferences[CUSTOM_DOMAIN_KEYWORDS]?.let { JsonInstant.decodeFromString(it) } ?: emptyMap(),
+                toolDescriptionOverrides = preferences[TOOL_DESCRIPTION_OVERRIDES]?.let { JsonInstant.decodeFromString(it) } ?: emptyMap(),
+                domainNameOverrides = preferences[DOMAIN_NAME_OVERRIDES]?.let { JsonInstant.decodeFromString(it) } ?: emptyMap(),
+                hiddenDomains = preferences[HIDDEN_DOMAINS]?.let { JsonInstant.decodeFromString(it) } ?: emptySet(),
             )
         }
         .map {
@@ -418,6 +434,15 @@ class SettingsStore(
             preferences[BACKUP_REMINDER_CONFIG] = JsonInstant.encodeToString(settings.backupReminderConfig)
             preferences[LAUNCH_COUNT] = settings.launchCount
             preferences[SPONSOR_ALERT_DISMISSED_AT] = settings.sponsorAlertDismissedAt
+
+            // 工具路由
+            preferences[TOOL_DOMAIN_OVERRIDES] = JsonInstant.encodeToString(settings.toolDomainOverrides)
+            preferences[CUSTOM_DOMAIN_DESCRIPTIONS] = JsonInstant.encodeToString(settings.customDomainDescriptions)
+            preferences[CUSTOM_DOMAINS] = JsonInstant.encodeToString(settings.customDomains)
+            preferences[CUSTOM_DOMAIN_KEYWORDS] = JsonInstant.encodeToString(settings.customDomainKeywords)
+            preferences[TOOL_DESCRIPTION_OVERRIDES] = JsonInstant.encodeToString(settings.toolDescriptionOverrides)
+            preferences[DOMAIN_NAME_OVERRIDES] = JsonInstant.encodeToString(settings.domainNameOverrides)
+            preferences[HIDDEN_DOMAINS] = JsonInstant.encodeToString(settings.hiddenDomains)
         }
     }
 
