@@ -711,9 +711,6 @@ private fun ChatFilesPickerSheet(
             onPickVideo = { videoPickerLauncher.launch("video/*") },
             onPickAudio = { audioPickerLauncher.launch("audio/*") },
             onPickFile = { filePickerLauncher.launch(arrayOf("*/*")) },
-            onPickWorkspaceFile = {
-                workspaceFileLauncher.launch(arrayOf("*/*"))
-            },
         )
     }
 }
