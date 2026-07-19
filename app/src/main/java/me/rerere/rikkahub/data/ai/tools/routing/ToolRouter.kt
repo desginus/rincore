@@ -20,6 +20,7 @@ class ToolRouter(
     private val customKeywords: Map<String, List<String>> = emptyMap(),
     private val domainNameOverrides: Map<String, String> = emptyMap(),
     private val hiddenDomains: Set<String> = emptySet(),
+    private val removedBuiltinDomains: Set<String> = emptySet(),
 ) {
 
     fun classifyTool(tool: Tool): String {
@@ -102,6 +103,13 @@ class ToolRouter(
 
     fun displayName(domain: String): String = domainNameOverrides[domain] ?: domain
 
+    /** 检查域是否有效（未被删除的内置域） */
+    private fun isValidDomain(domain: String): Boolean {
+        val root = domain.split("/").first()
+        if (root in removedBuiltinDomains) return false
+        return domain !in hiddenDomains
+    }
+
     fun getTriggerDescription(domain: String): String {
         // 子域描述
         val sub = domain.substringAfterLast("/")
@@ -130,53 +138,64 @@ class ToolRouter(
 
     fun buildLayer1(tools: List<Tool>): String {
         val classified = classifyAll(tools)
-        val domains = classified.keys.filter { it != "system" && it !in hiddenDomains }.sorted()
-        // 按父域分组展示嵌套结构
-        val topDomains = mutableListOf<String>()
-        val subDomainMap = mutableMapOf<String, MutableList<String>>()
-        for (d in domains) {
-            if (d.contains("/")) {
-                val parent = d.substringBefore("/")
-                if (parent in hiddenDomains) continue
-                subDomainMap.getOrPut(parent) { mutableListOf() }.add(d)
-                if (parent !in topDomains) topDomains.add(parent)
-            } else {
-                topDomains.add(d)
-            }
+        val allDomains = classified.keys.filter { it != "system" && isValidDomain(it) }.sorted()
+        // 按一级场景分组
+        val topMap = mutableMapOf<String, MutableList<String>>()
+        for (d in allDomains) {
+            val root = d.split("/").first()
+            topMap.getOrPut(root) { mutableListOf() }.add(d)
         }
 
         return buildString {
-            appendLine("<capability_routing>")
-            appendLine("你只有一个初始工具: use_domain(name)。按需加载其他工具。")
+            appendLine("## 工具调度")
             appendLine()
-            appendLine("你的环境：完整的 Linux 工作区(sandbox rootfs)，/workspace 下文件持久化，可执行命令、读写编译文件。")
+            appendLine("你拥有一个工具总域 `工具`，包含完成各类任务所需的全部工具，按功能场景树状组织。")
             appendLine()
-            appendLine("匹配用户任务选择对应类别调用 use_domain(\"名称\")。")
-            appendLine("含有子域的工具集可以先加载父域再选择子域，或直接加载子域。")
+            appendLine("**加载方式**：`use_domain(\"场景名\")` 或 `use_domain(\"场景/子场景\")`。路径越深，加载的工具越少越精准。")
+            appendLine()
+            appendLine("### 调度原则")
+            appendLine()
+            appendLine("**积极调用，工具优先。** 你不是一个只能说话的模型——你有手（搜索/浏览器）、有眼（读取文件/截图）、有计算能力（物理引擎/JS执行）。能用工具解决的，不靠猜测。需要什么，加载什么。")
+            appendLine()
+            appendLine("**按需加载，用完即走。** 判断任务需要什么场景，精确加载。不需要囤积工具——上下文是你的工作台，只放当前要用的。场景不对就换，路径不够深就再下一层。")
+            appendLine()
+            appendLine("**不确定时向上看。** 不知道具体该加载哪个子场景？加载上层节点。比如不确定物理问题属于运动学还是动力学，加载 `计算/物理`，所有物理子场景的工具都会出现。")
+            appendLine()
+            appendLine("**复杂任务组合加载。** \"搜数据然后画图\"→ 先加载搜索工具搜到数据，再加载图表工具画图。\"打开网页填表提交\"→ 一次性加载浏览器工具。")
+            appendLine()
+            appendLine("### 场景地图")
             appendLine()
 
-            for (domain in topDomains.sorted()) {
-                val dn = displayName(domain)
-                val subs = subDomainMap[domain]
-                if (subs == null) {
-                    val dt = classified[domain].orEmpty()
-                    if (dt.isEmpty()) continue
-                    appendLine("  [${dn}] ${getTriggerDescription(domain)} → use_domain(\"${domain}\")")
-                } else {
-                    // 父域+子域
-                    val total = subs.sumOf { classified[it]?.size ?: 0 }
-                    appendLine("  [${dn}] ${total}个工具，${subs.size}个子域 → use_domain(\"${domain}\")")
-                    for (sub in subs.sorted()) {
-                        val sdn = displayName(sub)
-                        val subTools = classified[sub].orEmpty()
-                        appendLine("     └ [${sdn}] ${subTools.size}个 → use_domain(\"${sub}\")")
+            for ((root, subs) in topMap.toSortedMap()) {
+                val rootTools = classified.filterKeys { it == root || (it == "uncategorized").not() && it.startsWith("$root/") }.flatMap { it.value }
+                val total = rootTools.size
+                val subCount = subs.count { it != root && isValidDomain(it) }
+                val desc = getTriggerDescription(root)
+
+                // 找出子场景中最常用的几个用于展示
+                val leafSubs = subs.filter { it != root && isValidDomain(it) }.sorted()
+                val firstLeaf = leafSubs.firstOrNull()
+                val sample = classified[firstLeaf]?.take(2)?.map { it.name }?.joinToString("、") ?: ""
+
+                if (subCount > 0) {
+                    appendLine("| `$root` | $desc | ${total}个工具 · ${subCount}个子场景 |")
+                    if (firstLeaf != null && sample.isNotEmpty()) {
+                        // 展示一个子场景示例
                     }
+                    // 展示子场景
+                    leafSubs.take(4).forEach { sub ->
+                        val subTotal = classified[sub]?.size ?: 0
+                        val sDesc = getTriggerDescription(sub)
+                        appendLine("| 　└ `$sub` | $sDesc | ${subTotal}个 |")
+                    }
+                    if (leafSubs.size > 4) appendLine("| 　└ … | 还有${leafSubs.size - 4}个子场景 | |")
+                } else {
+                    appendLine("| `$root` | $desc | ${total}个工具 |")
                 }
             }
 
             appendLine()
-            appendLine("跨类别任务可多次调用 use_domain。不确定时调 use_domain(\"帮助\")。")
-            appendLine("</capability_routing>")
+            appendLine("跨类别任务可多次调用 use_domain。不确定时调 `use_domain(\"帮助\")` 查看完整列表。")
         }
     }
 

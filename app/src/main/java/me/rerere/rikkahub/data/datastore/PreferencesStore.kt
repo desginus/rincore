@@ -166,6 +166,7 @@ class SettingsStore(
         val TOOL_DESCRIPTION_OVERRIDES = stringPreferencesKey("tool_description_overrides")
         val DOMAIN_NAME_OVERRIDES = stringPreferencesKey("domain_name_overrides")
         val HIDDEN_DOMAINS = stringPreferencesKey("hidden_domains")
+        val REMOVED_BUILTIN_DOMAINS = stringPreferencesKey("removed_builtin_domains")
     }
 
     private val dataStore = context.settingsStore
@@ -266,6 +267,7 @@ class SettingsStore(
                 toolDescriptionOverrides = preferences[TOOL_DESCRIPTION_OVERRIDES]?.let { JsonInstant.decodeFromString(it) } ?: emptyMap(),
                 domainNameOverrides = preferences[DOMAIN_NAME_OVERRIDES]?.let { JsonInstant.decodeFromString(it) } ?: emptyMap(),
                 hiddenDomains = preferences[HIDDEN_DOMAINS]?.let { JsonInstant.decodeFromString(it) } ?: emptySet(),
+                removedBuiltinDomains = preferences[REMOVED_BUILTIN_DOMAINS]?.let { JsonInstant.decodeFromString(it) } ?: emptySet(),
             )
         }
         .map {
@@ -443,6 +445,7 @@ class SettingsStore(
             preferences[TOOL_DESCRIPTION_OVERRIDES] = JsonInstant.encodeToString(settings.toolDescriptionOverrides)
             preferences[DOMAIN_NAME_OVERRIDES] = JsonInstant.encodeToString(settings.domainNameOverrides)
             preferences[HIDDEN_DOMAINS] = JsonInstant.encodeToString(settings.hiddenDomains)
+            preferences[REMOVED_BUILTIN_DOMAINS] = JsonInstant.encodeToString(settings.removedBuiltinDomains)
         }
     }
 
@@ -581,6 +584,7 @@ data class Settings(
     val toolDescriptionOverrides: Map<String, String> = emptyMap(), // 工具名→自定义描述。覆盖原始Tool描述
     val domainNameOverrides: Map<String, String> = emptyMap(), // 域名→自定义显示名称
     val hiddenDomains: Set<String> = emptySet(), // 用户隐藏的域（内置域不删除但可隐藏）
+    val removedBuiltinDomains: Set<String> = emptySet(), // 用户删除的内置域预设
 ) {
     companion object {
         // 构造一个用于初始化的settings, 但它不能用于保存，防止使用初始值存储

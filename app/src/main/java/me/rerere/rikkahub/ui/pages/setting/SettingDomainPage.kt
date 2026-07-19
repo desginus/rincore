@@ -86,7 +86,7 @@ fun SettingDomainPage(
 
     val router = remember(settings) {
         ToolRouter(settings.toolDomainOverrides, settings.customDomainDescriptions, settings.customDomains,
-            settings.customDomainKeywords, settings.domainNameOverrides, settings.hiddenDomains)
+            settings.customDomainKeywords, settings.domainNameOverrides, settings.hiddenDomains, settings.removedBuiltinDomains)
     }
 
     val previewTools = remember(settings) {
@@ -148,27 +148,12 @@ fun SettingDomainPage(
                                     val hs = settings.hiddenDomains.toMutableSet()
                                     if (isHidden) hs.remove(domain) else hs.add(domain)
                                     vm.updateSettings(settings.copy(hiddenDomains = hs))
-                                }, modifier = Modifier.size(24.dp)) { Icon(if (isHidden) HugeIcons.View else HugeIcons.ViewOff, null, modifier = Modifier.size(14.dp)) }
-                                // 重置/删除
+                                }, modifier = Modifier.size(24.dp)) { Icon(if (isHidden) HugeIcons.ViewOff else HugeIcons.View, null, modifier = Modifier.size(14.dp)) }
+                                // 删除
                                 IconButton(onClick = {
-                                    if (isCustom) {
-                                        vm.updateSettings(settings.copy(
-                                            customDomains = settings.customDomains.filter { it.name != domain },
-                                            toolDomainOverrides = settings.toolDomainOverrides.filter { !it.value.startsWith(domain) },
-                                            customDomainDescriptions = settings.customDomainDescriptions.toMutableMap().also { it.remove(domain) },
-                                            customDomainKeywords = settings.customDomainKeywords.toMutableMap().also { it.remove(domain) },
-                                            domainNameOverrides = settings.domainNameOverrides.toMutableMap().also { it.remove(domain) },
-                                        ))
-                                    } else {
-                                        var s = settings
-                                        s = s.copy(customDomainDescriptions = s.customDomainDescriptions.toMutableMap().also { it.remove(domain) })
-                                        s = s.copy(customDomainKeywords = s.customDomainKeywords.toMutableMap().also { it.remove(domain) })
-                                        s = s.copy(domainNameOverrides = s.domainNameOverrides.toMutableMap().also { it.remove(domain) })
-                                        s = s.copy(toolDomainOverrides = s.toolDomainOverrides.filter { !it.value.startsWith(domain) })
-                                        vm.updateSettings(s)
-                                    }
+                                    deleteConfirm = domain
                                 }, modifier = Modifier.size(24.dp)) {
-                                    Icon(if (isCustom) HugeIcons.Delete01 else HugeIcons.Refresh01, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.error)
+                                    Icon(HugeIcons.Delete01, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.error)
                                 }
                                 IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(24.dp)) {
                                     Icon(if (expanded) HugeIcons.ArrowUp01 else HugeIcons.ArrowDown01, null, modifier = Modifier.size(14.dp))
@@ -268,6 +253,33 @@ fun SettingDomainPage(
                 showNewDomain = false
             }) { Text("创建") } },
             dismissButton = { TextButton(onClick = { showNewDomain = false }) { Text("取消") } }
+        )
+    }
+
+    // 删除确认对话框
+    if (deleteConfirm != null) {
+        val domain = deleteConfirm!!
+        val isCustom = domain in settings.customDomains.map { it.name }
+        AlertDialog(onDismissRequest = { deleteConfirm = null }, title = { Text("删除域") },
+            text = { Text(if (isCustom) "删除自定义域「${domain}」？此操作不可恢复。该域下的工具覆盖将一起清除。"
+                     else "删除内置域「${domain}」？它将从场景地图中消失。可通过新建域恢复。") },
+            confirmButton = { TextButton(onClick = {
+                var s = settings
+                if (isCustom) {
+                    s = s.copy(customDomains = s.customDomains.filter { it.name != domain })
+                } else {
+                    s = s.copy(removedBuiltinDomains = s.removedBuiltinDomains + domain)
+                }
+                s = s.copy(
+                    toolDomainOverrides = s.toolDomainOverrides.filter { !it.value.startsWith(domain) },
+                    customDomainDescriptions = s.customDomainDescriptions.toMutableMap().also { it.remove(domain) },
+                    customDomainKeywords = s.customDomainKeywords.toMutableMap().also { it.remove(domain) },
+                    domainNameOverrides = s.domainNameOverrides.toMutableMap().also { it.remove(domain) },
+                )
+                vm.updateSettings(s)
+                deleteConfirm = null
+            }) { Text("确认删除", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { deleteConfirm = null }) { Text("取消") } }
         )
     }
 }
