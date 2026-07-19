@@ -104,6 +104,7 @@ internal fun FilesPicker(
     onPickVideo: () -> Unit,
     onPickAudio: () -> Unit,
     onPickFile: () -> Unit,
+    onPickWorkspaceFile: () -> Unit,
 ) {
     val settings = LocalSettings.current
     val provider = settings.getCurrentChatModel()?.findProvider(providers = settings.providers)
@@ -132,6 +133,8 @@ internal fun FilesPicker(
             }
 
             FilePickButton(onClick = onPickFile)
+
+            WorkspaceFilePickButton(onClick = onPickWorkspaceFile)
         }
 
         HorizontalDivider(
@@ -536,5 +539,16 @@ private fun BigIconTextButtonPreview() {
         }, text = {
             Text(stringResource(R.string.photo))
         }) {}
+    }
+}
+
+@Composable
+fun WorkspaceFilePickButton(onClick: () -> Unit = {}) {
+    BigIconTextButton(icon = {
+        Icon(HugeIcons.Folder01, null)
+    }, text = {
+        Text("应用文件")
+    }) {
+        onClick()
     }
 }

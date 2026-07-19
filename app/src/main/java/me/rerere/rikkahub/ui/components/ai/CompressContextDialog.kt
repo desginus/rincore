@@ -38,7 +38,7 @@ fun CompressContextDialog(
     onConfirm: (additionalPrompt: String, targetTokens: Int, keepRecentMessages: Int) -> Job
 ) {
     var additionalPrompt by remember { mutableStateOf("") }
-    var selectedTokens by remember { mutableIntStateOf(2000) }
+    var selectedTokens by remember { mutableIntStateOf(4000) }
     // 默认保留当前对话消息数量的60%, 四舍五入, 至少1条
     val defaultKeep = kotlin.math.max(1, ((totalMessages * 0.6) + 0.5).toInt())
     var keepRecentMessages by remember { mutableIntStateOf(defaultKeep) }
