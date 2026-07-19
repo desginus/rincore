@@ -47,7 +47,7 @@ private fun buildNestedDomains(
         }
     }
     // 其他域
-    for ((domain, dTools) in flatMap.entries.toSortedMap()) {
+    for ((domain, dTools) in flatMap.entries.sortedBy { (k, _) -> k }) {
         if (domain == "system" || domain == "uncategorized") continue
         val serverCheck = dTools.firstOrNull()?.name?.let { n ->
             if (n.startsWith("mcp__")) n.removePrefix("mcp__").split("__").firstOrNull() else null
