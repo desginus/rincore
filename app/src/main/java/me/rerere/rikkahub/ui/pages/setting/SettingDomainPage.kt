@@ -32,6 +32,9 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberCoroutineScope
+import me.rerere.rikkahub.data.ai.tools.local.LocalTools
+import me.rerere.rikkahub.data.ai.tools.local.LocalToolOption
+import me.rerere.rikkahub.data.ai.mcp.McpManager
 
 data class ToolPreview(val name: String, val description: String)
 
@@ -88,6 +91,8 @@ fun SettingDomainPage(
 ) {
     val skillManager: SkillManager = koinInject()
     val providerManager: ProviderManager = koinInject()
+    val localTools: LocalTools = koinInject()
+    val mcpManager: McpManager = koinInject()
 
     var deleteConfirm by remember { mutableStateOf<String?>(null) }
     var isClassifying by remember { mutableStateOf(false) }
@@ -126,8 +131,21 @@ fun SettingDomainPage(
 
     val previewTools: List<ToolPreview> = run {
         val list = mutableListOf<ToolPreview>()
+        // 1. 内置本地工具（全部列举，与ChatService一致）
+        try {
+            val allOptions = LocalToolOption.entries
+            localTools.getTools(allOptions).forEach { t ->
+                list.add(ToolPreview(t.name, t.description))
+            }
+        } catch (_: Exception) {}
+        // 2. Skill工具
         try { skillManager.listSkills().forEach { s -> list.add(ToolPreview("use_skill", "技能:${s.name} - ${s.description}")) } } catch (_: Exception) {}
-        for (srv in settings.mcpServers) for (t in srv.commonOptions.tools.filter { it.enable }) list.add(ToolPreview("mcp__${srv.commonOptions.name}__${t.name}", t.description ?: ""))
+        // 3. MCP工具（从McpManager获取实际工具，不是配置快照）
+        try {
+            mcpManager.getAllAvailableTools().forEach { (_, serverName, tool) ->
+                list.add(ToolPreview("mcp__${serverName}__${tool.name}", tool.description ?: ""))
+            }
+        } catch (_: Exception) {}
         list
     }
     val flatDomainMap: Map<String, List<ToolPreview>> = remember(previewTools, settings.toolDescriptionOverrides, settings.toolDomainOverrides) { previewTools.groupBy { router.classifyPreview(it.name, settings.toolDescriptionOverrides[it.name] ?: it.description) } }
