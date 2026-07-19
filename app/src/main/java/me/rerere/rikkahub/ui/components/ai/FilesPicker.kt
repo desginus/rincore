@@ -74,7 +74,6 @@ import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
-import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.ui.components.ui.ExtensionSelector
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionCamera
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
@@ -91,17 +90,7 @@ import me.rerere.workspace.WorkspaceFileEntry
 import me.rerere.workspace.WorkspaceStorageArea
 import me.rerere.hugeicons.stroke.ArrowTurnBackward
 import me.rerere.hugeicons.stroke.File01
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 
-import me.rerere.rikkahub.ui.context.LocalToaster
-import com.dokar.sonner.ToastType
-import me.rerere.ai.ui.UIMessagePart
-import androidx.compose.material3.FilledTonalButton
-import android.webkit.MimeTypeMap
-import androidx.core.content.FileProvider
 @Composable
 internal fun FilesPicker(
     conversation: Conversation,
@@ -127,7 +116,6 @@ internal fun FilesPicker(
     val navController = LocalNavController.current
     val workspaceRepository: WorkspaceRepository = koinInject()
     val workspaces by workspaceRepository.listFlow().collectAsState(initial = emptyList())
-    var showWorkspaceFileSheet by remember { mutableStateOf(false) }
     val workspaceId = assistant.workspaceId?.toString()
     val inputState = state
 
@@ -154,7 +142,7 @@ internal fun FilesPicker(
             FilePickButton(onClick = onPickFile)
 
             WorkspaceFilePickButton(onClick = {
-                showWorkspaceFileSheet = true
+                onPickFile()
             })
         }
 
@@ -313,10 +301,6 @@ internal fun FilesPicker(
     }
 
     // Compress Context Dialog
-    if (showWorkspaceFileSheet && workspaceId != null) {
-        WorkspaceFilePickerSheet(assistant, state, { showWorkspaceFileSheet = false })
-    }
-
     if (showCompressDialog) {
         CompressContextDialog(
             totalMessages = conversation.currentMessages.size,
@@ -577,75 +561,3 @@ fun WorkspaceFilePickButton(onClick: () -> Unit = {}) {
         onClick()
     }
 }
-
-@Composable
-private fun WorkspaceFilePickerSheet(
-    assistant: Assistant,
-    state: ChatInputState,
-    onDismiss: () -> Unit,
-) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val workspaceRepository: WorkspaceRepository = koinInject()
-    val workspaceId = assistant.workspaceId?.toString() ?: return
-    val toaster = me.rerere.rikkahub.ui.hooks.LocalToaster.current
-    val filesManager: FilesManager = koinInject()
-    var browsePath by remember { mutableStateOf("") }
-    var entries by remember { mutableStateOf<List<WorkspaceFileEntry>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
-    var selectedFile by remember { mutableStateOf<WorkspaceFileEntry?>(null) }
-    LaunchedEffect(browsePath) {
-        loading = true
-        try {
-            val result = withContext(Dispatchers.IO) {
-                workspaceRepository.listFiles(workspaceId, WorkspaceStorageArea.FILES, browsePath)
-            }
-            entries = result.sortedWith(compareByDescending<WorkspaceFileEntry> { it.isDirectory }.thenBy { it.name })
-        } catch (_: Exception) { entries = emptyList() }
-        loading = false
-    }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("应用文件", style = MaterialTheme.typography.titleLarge)
-            Text("从工作区选择文件添加到对话", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                IconButton(enabled = browsePath.isNotBlank(), onClick = { browsePath = browsePath.substringBeforeLast("/", "") }) { Icon(HugeIcons.ArrowTurnBackward, null) }
-                Text(if (browsePath.isBlank()) "/workspace" else "/workspace/$browsePath", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            HorizontalDivider()
-            if (loading) {
-                LinearProgressIndicator(Modifier.fillMaxWidth())
-            } else {
-                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 350.dp)) {
-                    items(entries, key = { it.path }) { entry ->
-                        ListItem(
-                            headlineContent = { Text(entry.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                            supportingContent = if (!entry.isDirectory) { { Text(formatFileSize(entry.size), style = MaterialTheme.typography.bodySmall) } } else null,
-                            leadingContent = { Icon(if (entry.isDirectory) HugeIcons.Folder01 else HugeIcons.File01, null, Modifier.size(22.dp), tint = if (entry.isDirectory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) },
-                            colors = ListItemDefaults.colors(containerColor = if (selectedFile?.path == entry.path) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent),
-                            modifier = Modifier.clickable { if (entry.isDirectory) browsePath = entry.path else selectedFile = entry }
-                        )
-                    }
-                }
-            }
-            if (selectedFile != null) {
-                HorizontalDivider()
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                    TextButton(onClick = { selectedFile = null }) { Text("取消") }
-                    FilledTonalButton(onClick = {
-                        try {
-                            val wsFile = java.io.File("/workspace/${selectedFile!!.path}")
-                            if (!wsFile.exists()) { toaster.show("文件不存在", type = ToastType.Error); return@FilledTonalButton }
-                            val tempFile = java.io.File(context.cacheDir, "ws_pick_${selectedFile!!.name}")
-                            wsFile.copyTo(tempFile, overwrite = true)
-                            val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", tempFile)
-                            val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(tempFile.extension) ?: "application/octet-stream"
-                            state.addFiles(listOf(UIMessagePart.Document(url = uri.toString(), fileName = selectedFile!!.name, mime = mime)))
-                            onDismiss()
-                        } catch (e: Exception) { toaster.show("导入失败: ${e.message}", type = ToastType.Error) }
-                    }) { Text("导入到对话") }
-                }
-            }
-        }
-    }
-}
-private fun formatFileSize(bytes: Long): String = when { bytes < 1024 -> "${bytes}B"; bytes < 1024 * 1024 -> "${bytes / 1024}KB"; else -> "${String.format("%.1f", bytes.toDouble() / (1024 * 1024))}MB" }
