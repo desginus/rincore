@@ -38,7 +38,8 @@ fun SettingToolListPage(
 
     val router = remember(settings) {
         ToolRouter(settings.toolDomainOverrides, settings.customDomainDescriptions,
-            settings.customDomains, settings.customDomainKeywords)
+            settings.customDomains, settings.customDomainKeywords,
+            settings.domainNameOverrides, settings.hiddenDomains)
     }
 
     val allTools = remember(settings) {
@@ -78,7 +79,7 @@ fun SettingToolListPage(
                         FilterChip(selected = filterDomain == "全部", onClick = { filterDomain = "全部" }, label = { Text("全部(${allTools.size})") })
                         allDomainNames.take(6).forEach { dn ->
                             val count = allTools.count { router.classifyPreview(it.name, settings.toolDescriptionOverrides[it.name] ?: it.description) == dn }
-                            FilterChip(selected = filterDomain == dn, onClick = { filterDomain = dn }, label = { Text("$dn($count)") })
+                            FilterChip(selected = filterDomain == dn, onClick = { filterDomain = dn }, label = { Text("${router.displayName(dn)}($count)") })
                         }
                     }
                 }
@@ -98,7 +99,7 @@ fun SettingToolListPage(
                                 Text(tool.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text((settings.toolDescriptionOverrides[tool.name] ?: tool.description).take(80), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    AssistChip(onClick = {}, label = { Text(domain, style = MaterialTheme.typography.labelSmall) }, modifier = Modifier.height(24.dp))
+                                    AssistChip(onClick = {}, label = { Text(router.displayName(domain), style = MaterialTheme.typography.labelSmall) }, modifier = Modifier.height(24.dp))
                                     if (overridden) AssistChip(onClick = {}, label = { Text("覆盖", style = MaterialTheme.typography.labelSmall) }, modifier = Modifier.height(24.dp), colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.errorContainer))
                                     if (hasDesc) AssistChip(onClick = {}, label = { Text("描述", style = MaterialTheme.typography.labelSmall) }, modifier = Modifier.height(24.dp), colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.primaryContainer))
                                 }
