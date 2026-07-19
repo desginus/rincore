@@ -96,8 +96,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 
-import me.rerere.rikkahub.ui.hooks.LocalToaster
-import me.rerere.rikkahub.ui.hooks.ToastType
+import me.rerere.rikkahub.ui.context.LocalToaster
+import com.dokar.sonner.ToastType
 import me.rerere.ai.ui.UIMessagePart
 import androidx.compose.material3.FilledTonalButton
 import android.webkit.MimeTypeMap
