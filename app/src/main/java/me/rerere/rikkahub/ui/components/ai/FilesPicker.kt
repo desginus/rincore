@@ -84,6 +84,15 @@ import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.workspace.WorkspaceShellStatus
 import org.koin.compose.koinInject
 import kotlin.uuid.Uuid
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import me.rerere.rikkahub.data.repository.WorkspaceRepository
+import me.rerere.workspace.WorkspaceFileEntry
+import me.rerere.workspace.WorkspaceStorageArea
+import me.rerere.hugeicons.stroke.ArrowTurnBackward
+import me.rerere.hugeicons.stroke.File01
+import me.rerere.ui.hooks.ChatInputState
+import me.rerere.rikkahub.data.files.FilesManager
 
 @Composable
 internal fun FilesPicker(
@@ -104,13 +113,15 @@ internal fun FilesPicker(
     onPickVideo: () -> Unit,
     onPickAudio: () -> Unit,
     onPickFile: () -> Unit,
-    onPickWorkspaceFile: () -> Unit,
 ) {
     val settings = LocalSettings.current
     val provider = settings.getCurrentChatModel()?.findProvider(providers = settings.providers)
     val navController = LocalNavController.current
     val workspaceRepository: WorkspaceRepository = koinInject()
     val workspaces by workspaceRepository.listFlow().collectAsState(initial = emptyList())
+    var showWorkspaceFileSheet by remember { mutableStateOf(false) }
+    val workspaceId = assistant.workspaceId?.toString()
+    val inputState = state
 
     Column(
         modifier = Modifier
@@ -134,7 +145,9 @@ internal fun FilesPicker(
 
             FilePickButton(onClick = onPickFile)
 
-            WorkspaceFilePickButton(onClick = onPickWorkspaceFile)
+            WorkspaceFilePickButton(onClick = {
+                showWorkspaceFileSheet = true
+            })
         }
 
         HorizontalDivider(
