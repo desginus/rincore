@@ -124,7 +124,7 @@ fun SettingDomainPage(
             settings.customDomainKeywords, settings.domainNameOverrides, settings.hiddenDomains, settings.removedBuiltinDomains)
     }
 
-    val previewTools = remember(settings.mcpServers, settings.toolDomainOverrides.size, settings.toolDescriptionOverrides.size) {
+    val previewTools: List<ToolPreview> = run {
         val list = mutableListOf<ToolPreview>()
         try { skillManager.listSkills().forEach { s -> list.add(ToolPreview("use_skill", "技能:${s.name} - ${s.description}")) } } catch (_: Exception) {}
         for (srv in settings.mcpServers) for (t in srv.commonOptions.tools.filter { it.enable }) list.add(ToolPreview("mcp__${srv.commonOptions.name}__${t.name}", t.description ?: ""))
