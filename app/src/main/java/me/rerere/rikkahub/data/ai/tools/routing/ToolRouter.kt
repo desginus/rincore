@@ -18,6 +18,8 @@ class ToolRouter(
     private val customDescriptions: Map<String, String> = emptyMap(),
     private val customDomains: List<CustomDomain> = emptyList(),
     private val customKeywords: Map<String, List<String>> = emptyMap(),
+    private val domainNameOverrides: Map<String, String> = emptyMap(),
+    private val hiddenDomains: Set<String> = emptySet(),
 ) {
 
     fun classifyTool(tool: Tool): String {
@@ -98,8 +100,9 @@ class ToolRouter(
         }
     }
 
+    fun displayName(domain: String): String = domainNameOverrides[domain] ?: domain
+
     fun getTriggerDescription(domain: String): String {
-        customDescriptions[domain]?.let { return it }
         // 子域描述
         val sub = domain.substringAfterLast("/")
         if (sub.isNotEmpty() && sub != domain) {
@@ -127,13 +130,14 @@ class ToolRouter(
 
     fun buildLayer1(tools: List<Tool>): String {
         val classified = classifyAll(tools)
-        val domains = classified.keys.filter { it != "system" }.sorted()
+        val domains = classified.keys.filter { it != "system" && it !in hiddenDomains }.sorted()
         // 按父域分组展示嵌套结构
         val topDomains = mutableListOf<String>()
         val subDomainMap = mutableMapOf<String, MutableList<String>>()
         for (d in domains) {
             if (d.contains("/")) {
                 val parent = d.substringBefore("/")
+                if (parent in hiddenDomains) continue
                 subDomainMap.getOrPut(parent) { mutableListOf() }.add(d)
                 if (parent !in topDomains) topDomains.add(parent)
             } else {
@@ -152,18 +156,20 @@ class ToolRouter(
             appendLine()
 
             for (domain in topDomains.sorted()) {
+                val dn = displayName(domain)
                 val subs = subDomainMap[domain]
                 if (subs == null) {
                     val dt = classified[domain].orEmpty()
                     if (dt.isEmpty()) continue
-                    appendLine("  [${domain}] ${getTriggerDescription(domain)} → use_domain(\"${domain}\")")
+                    appendLine("  [${dn}] ${getTriggerDescription(domain)} → use_domain(\"${domain}\")")
                 } else {
                     // 父域+子域
                     val total = subs.sumOf { classified[it]?.size ?: 0 }
-                    appendLine("  [${domain}] ${total}个工具，${subs.size}个子域 → use_domain(\"${domain}\")")
+                    appendLine("  [${dn}] ${total}个工具，${subs.size}个子域 → use_domain(\"${domain}\")")
                     for (sub in subs.sorted()) {
+                        val sdn = displayName(sub)
                         val subTools = classified[sub].orEmpty()
-                        appendLine("     └ [${sub}] ${subTools.size}个 → use_domain(\"${sub}\")")
+                        appendLine("     └ [${sdn}] ${subTools.size}个 → use_domain(\"${sub}\")")
                     }
                 }
             }

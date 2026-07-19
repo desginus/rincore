@@ -23,14 +23,12 @@ import org.koin.compose.koinInject
 
 data class ToolPreview(val name: String, val description: String)
 
-/** 将扁平分类结果转换为嵌套结构。大型MCP工具集显示为父域+子域。 */
 private fun buildNestedDomains(
     flatMap: Map<String, List<ToolPreview>>,
     allTools: List<ToolPreview>,
     router: ToolRouter,
-): List<Pair<String, Map<String, List<ToolPreview>>?>> {
-    val result = mutableListOf<Pair<String, Map<String, List<ToolPreview>>?>>()
-    // 检测 MCP 工具集
+): List<Pair<String, Map<String, MutableList<ToolPreview>>?>> {
+    val result = mutableListOf<Pair<String, Map<String, MutableList<ToolPreview>>?>>()
     val mcpByServer = allTools.filter { it.name.startsWith("mcp__") }.groupBy {
         it.name.removePrefix("mcp__").split("__").firstOrNull() ?: "unknown"
     }
@@ -41,13 +39,12 @@ private fun buildNestedDomains(
             val subs = mutableMapOf<String, MutableList<ToolPreview>>()
             for (t in sTools) {
                 val sub = classifyMcpSubdomainStatic(t.name, t.description)
-                    subs.getOrPut(sub) { mutableListOf() }.add(t)
+                subs.getOrPut(sub) { mutableListOf() }.add(t)
             }
             result.add(server to subs)
         }
     }
-    // 其他域
-    for ((domain, dTools) in flatMap.entries.sortedBy { (k, _) -> k }) {
+    for ((domain, dTools) in flatMap.entries.sortedBy { it.key }) {
         if (domain == "system" || domain == "uncategorized") continue
         val serverCheck = dTools.firstOrNull()?.name?.let { n ->
             if (n.startsWith("mcp__")) n.removePrefix("mcp__").split("__").firstOrNull() else null
@@ -80,12 +77,16 @@ fun SettingDomainPage(
     val skillManager: SkillManager = koinInject()
     var showNewDomain by remember { mutableStateOf(false) }
     var showToolList by remember { mutableStateOf(false) }
-    var deleteConfirm by remember { mutableStateOf<String?>(null) }
+    var editingDomain by remember { mutableStateOf<String?>(null) }
+    var editName by remember { mutableStateOf("") }
+    var editDesc by remember { mutableStateOf("") }
+    var editKws by remember { mutableStateOf("") }
 
     if (showToolList) { SettingToolListPage(settings, vm, { showToolList = false }); return }
 
     val router = remember(settings) {
-        ToolRouter(settings.toolDomainOverrides, settings.customDomainDescriptions, settings.customDomains, settings.customDomainKeywords)
+        ToolRouter(settings.toolDomainOverrides, settings.customDomainDescriptions, settings.customDomains,
+            settings.customDomainKeywords, settings.domainNameOverrides, settings.hiddenDomains)
     }
 
     val previewTools = remember(settings) {
@@ -105,37 +106,70 @@ fun SettingDomainPage(
                 actions = {
                     IconButton(onClick = { showToolList = true }) { Icon(HugeIcons.View, "工具列表") }
                     IconButton(onClick = { showNewDomain = true }) { Icon(HugeIcons.Add01, "新建") }
-                },
-                colors = CustomColors.topBarColors)
+                }, colors = CustomColors.topBarColors)
         },
     ) { pad ->
         LazyColumn(Modifier.fillMaxSize(), contentPadding = pad + PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
                 val mcpLarge = previewTools.filter { it.name.startsWith("mcp__") }.groupBy { it.name.removePrefix("mcp__").split("__").first() }.count { it.value.size >= 8 }
-                Text("${nestedDomains.size}个域 · ${previewTools.size}个工具 · ${mcpLarge}个大型MCP工具集 · ${settings.toolDomainOverrides.size}个覆盖 · ${settings.toolDescriptionOverrides.size}个描述修改",
+                Text("${nestedDomains.size}个域 · ${previewTools.size}个工具 · ${mcpLarge}个大型MCP工具集 · ${settings.toolDomainOverrides.size}个覆盖 · ${settings.toolDescriptionOverrides.size}个描述修改 · ${settings.hiddenDomains.size}个隐藏",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
-            itemsIndexed(nestedDomains) { _, (name, subs) ->
-                val isCustom = name in settings.customDomains.map { it.name }
-                val desc = settings.customDomainDescriptions[name] ?: router.getTriggerDescription(name)
-                val overrideTools = settings.toolDomainOverrides.filter { it.value.startsWith(name) }
+            itemsIndexed(nestedDomains) { _, (domain, subs) ->
+                val displayName = settings.domainNameOverrides[domain] ?: domain
+                val isHidden = domain in settings.hiddenDomains
+                val isCustom = domain in settings.customDomains.map { it.name }
+                val desc = settings.customDomainDescriptions[domain] ?: router.getTriggerDescription(domain)
+                val overrideTools = settings.toolDomainOverrides.filter { it.value.startsWith(domain) }
                 val isMCPParent = subs != null
                 var expanded by remember { mutableStateOf(false) }
-                var showEdit by remember { mutableStateOf(false) }
-                var edDesc by remember(desc) { mutableStateOf(desc) }
-                val kws = router.getKeywords(name)
-                var edKws by remember(kws) { mutableStateOf(kws.joinToString(", ")) }
 
-                Card(Modifier.fillMaxWidth()) {
+                Card(Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = if (isHidden) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)) {
                     Column(Modifier.padding(12.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("[${name}]", fontWeight = FontWeight.Bold, color = if (isCustom) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-                                if (isMCPParent) Text(" (${subs.size}子域)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                Text("[${displayName}]", fontWeight = FontWeight.Bold, color = if (isCustom) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                                if (isMCPParent) Text(" (${subs!!.size}子域)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                if (isHidden) Text(" [已隐藏]", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                             }
                             Row {
-                                IconButton(onClick = { showEdit = true }, modifier = Modifier.size(24.dp)) { Icon(HugeIcons.Edit01, null, modifier = Modifier.size(14.dp)) }
+                                // 编辑按钮
+                                IconButton(onClick = {
+                                    editingDomain = domain
+                                    editName = displayName
+                                    editDesc = desc
+                                    val kws = router.getKeywords(domain)
+                                    editKws = kws.joinToString(", ")
+                                }, modifier = Modifier.size(24.dp)) { Icon(HugeIcons.Edit01, null, modifier = Modifier.size(14.dp)) }
+                                // 隐藏/显示
+                                IconButton(onClick = {
+                                    val hs = settings.hiddenDomains.toMutableSet()
+                                    if (isHidden) hs.remove(domain) else hs.add(domain)
+                                    vm.updateSettings(settings.copy(hiddenDomains = hs))
+                                }, modifier = Modifier.size(24.dp)) { Icon(if (isHidden) HugeIcons.View else HugeIcons.ViewOff, null, modifier = Modifier.size(14.dp)) }
+                                // 重置/删除
+                                IconButton(onClick = {
+                                    if (isCustom) {
+                                        vm.updateSettings(settings.copy(
+                                            customDomains = settings.customDomains.filter { it.name != domain },
+                                            toolDomainOverrides = settings.toolDomainOverrides.filter { !it.value.startsWith(domain) },
+                                            customDomainDescriptions = settings.customDomainDescriptions.toMutableMap().also { it.remove(domain) },
+                                            customDomainKeywords = settings.customDomainKeywords.toMutableMap().also { it.remove(domain) },
+                                            domainNameOverrides = settings.domainNameOverrides.toMutableMap().also { it.remove(domain) },
+                                        ))
+                                    } else {
+                                        var s = settings
+                                        s = s.copy(customDomainDescriptions = s.customDomainDescriptions.toMutableMap().also { it.remove(domain) })
+                                        s = s.copy(customDomainKeywords = s.customDomainKeywords.toMutableMap().also { it.remove(domain) })
+                                        s = s.copy(domainNameOverrides = s.domainNameOverrides.toMutableMap().also { it.remove(domain) })
+                                        s = s.copy(toolDomainOverrides = s.toolDomainOverrides.filter { !it.value.startsWith(domain) })
+                                        vm.updateSettings(s)
+                                    }
+                                }, modifier = Modifier.size(24.dp)) {
+                                    Icon(if (isCustom) HugeIcons.Delete01 else HugeIcons.Refresh01, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.error)
+                                }
                                 IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(24.dp)) {
                                     Icon(if (expanded) HugeIcons.ArrowUp01 else HugeIcons.ArrowDown01, null, modifier = Modifier.size(14.dp))
                                 }
@@ -148,58 +182,84 @@ fun SettingDomainPage(
                                 if (isMCPParent) {
                                     Text("子域:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                                     subs!!.forEach { (sub, subTools) ->
-                                        val subDesc = router.getTriggerDescription("$name/$sub")
+                                        val subDisplay = settings.domainNameOverrides["$domain/$sub"] ?: "$displayName/$sub"
                                         Card(Modifier.fillMaxWidth().padding(vertical = 2.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                                             Column(Modifier.padding(8.dp)) {
-                                                Text("[$name/$sub] ${subTools.size}个工具", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
-                                                Text(subDesc, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                                subTools.take(5).forEach { t -> Text("  ${t.name}", style = MaterialTheme.typography.bodySmall, maxLines = 1) }
+                                                Text("[$subDisplay] ${subTools.size}个工具", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+                                                subTools.take(5).forEach { t ->
+                                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                        Text("  ${t.name}", style = MaterialTheme.typography.bodySmall, maxLines = 1, modifier = Modifier.weight(1f))
+                                                        IconButton(onClick = { showToolList = true }, modifier = Modifier.size(18.dp)) {
+                                                            Icon(HugeIcons.Edit01, null, modifier = Modifier.size(10.dp))
+                                                        }
+                                                    }
+                                                }
                                                 if (subTools.size > 5) Text("  ...还有${subTools.size - 5}个", style = MaterialTheme.typography.bodySmall)
                                             }
                                         }
                                     }
                                 } else {
-                                    val domainTools = flatDomainMap[name].orEmpty()
-                                    Text("功能触发条件:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                    val domainTools = flatDomainMap[domain].orEmpty()
+                                    val kws = router.getKeywords(domain)
+                                    Text("触发条件:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                         kws.take(8).forEach { kw -> SuggestionChip(onClick = {}, label = { Text(kw, style = MaterialTheme.typography.labelSmall) }) }
                                     }
                                     if (domainTools.isNotEmpty()) {
                                         Spacer(Modifier.height(4.dp)); HorizontalDivider(); Spacer(Modifier.height(4.dp))
                                         Text("工具(${domainTools.size}):", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                                        domainTools.take(10).forEach { t -> Text("  ${t.name}", style = MaterialTheme.typography.bodySmall, maxLines = 1) }
+                                        domainTools.take(8).forEach { t ->
+                                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                Text("  ${t.name}", style = MaterialTheme.typography.bodySmall, maxLines = 1, modifier = Modifier.weight(1f))
+                                                IconButton(onClick = { showToolList = true }, modifier = Modifier.size(18.dp)) {
+                                                    Icon(HugeIcons.Edit01, null, modifier = Modifier.size(10.dp))
+                                                }
+                                            }
+                                        }
+                                        if (domainTools.size > 8) Text("  ...还有${domainTools.size - 8}个", style = MaterialTheme.typography.bodySmall)
                                     }
                                 }
-                                TextButton(onClick = { showToolList = true }) { Icon(HugeIcons.Edit01, null, Modifier.size(14.dp)); Spacer(Modifier.width(4.dp)); Text("去工具列表操作") }
+                                TextButton(onClick = { showToolList = true }) {
+                                    Icon(HugeIcons.Edit01, null, Modifier.size(14.dp)); Spacer(Modifier.width(4.dp)); Text("去工具列表详细操作")
+                                }
                             }
                         }
                     }
-                }
-
-                if (showEdit) {
-                    AlertDialog(onDismissRequest = { showEdit = false }, title = { Text("编辑 [$name]") },
-                        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(edDesc, { edDesc = it }, label = { Text("触发描述") }, modifier = Modifier.fillMaxWidth(), maxLines = 3)
-                            OutlinedTextField(edKws, { edKws = it }, label = { Text("触发条件") }, supportingText = { Text("逗号分隔") })
-                        }},
-                        confirmButton = { TextButton(onClick = {
-                            var s = settings
-                            s = s.copy(customDomainDescriptions = s.customDomainDescriptions.toMutableMap().also { it[name] = edDesc })
-                            s = s.copy(customDomainKeywords = s.customDomainKeywords.toMutableMap().also { it[name] = edKws.split(",","，").map{it.trim().lowercase()}.filter{it.isNotBlank()} })
-                            vm.updateSettings(s); showEdit = false
-                        }) { Text("保存") } },
-                        dismissButton = { TextButton(onClick = { showEdit = false }) { Text("取消") } }
-                    )
                 }
             }
         }
     }
 
+    // 编辑域对话框
+    if (editingDomain != null) {
+        val domain = editingDomain!!
+        AlertDialog(onDismissRequest = { editingDomain = null }, title = { Text("编辑域") },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(editName, { editName = it }, label = { Text("显示名称") }, singleLine = true)
+                OutlinedTextField(editDesc, { editDesc = it }, label = { Text("触发描述") }, maxLines = 3)
+                OutlinedTextField(editKws, { editKws = it }, label = { Text("触发条件(逗号分隔)") })
+            }},
+            confirmButton = { TextButton(onClick = {
+                var s = settings
+                s = s.copy(customDomainDescriptions = s.customDomainDescriptions.toMutableMap().also { it[domain] = editDesc })
+                s = s.copy(customDomainKeywords = s.customDomainKeywords.toMutableMap().also { it[domain] = editKws.split(",","，").map{it.trim().lowercase()}.filter{it.isNotBlank()} })
+                if (editName != domain && editName.isNotBlank()) {
+                    s = s.copy(domainNameOverrides = s.domainNameOverrides.toMutableMap().also { it[domain] = editName })
+                } else {
+                    s = s.copy(domainNameOverrides = s.domainNameOverrides.toMutableMap().also { it.remove(domain) })
+                }
+                vm.updateSettings(s); editingDomain = null
+            }) { Text("保存") } },
+            dismissButton = { TextButton(onClick = { editingDomain = null }) { Text("取消") } }
+        )
+    }
+
+    // 新建域
     if (showNewDomain) {
         var nn by remember { mutableStateOf("") }; var nd by remember { mutableStateOf("") }; var nk by remember { mutableStateOf("") }
         AlertDialog(onDismissRequest = { showNewDomain = false }, title = { Text("新建域") },
             text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(nn, { nn = it }, label = { Text("名称，如 物理/力学") })
+                OutlinedTextField(nn, { nn = it }, label = { Text("内部名称(英文)") }, supportingText = { Text("如 physics/sim，用作 use_domain 参数") })
                 OutlinedTextField(nd, { nd = it }, label = { Text("触发描述") }, maxLines = 2)
                 OutlinedTextField(nk, { nk = it }, label = { Text("触发条件") })
             }},

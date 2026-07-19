@@ -98,6 +98,8 @@ class GenerationHandler(
             customDescriptions = settings.customDomainDescriptions,
             customDomains = settings.customDomains,
             customKeywords = settings.customDomainKeywords,
+            domainNameOverrides = settings.domainNameOverrides,
+            hiddenDomains = settings.hiddenDomains,
         )
 
         // 预计算 Layer1 路由表
