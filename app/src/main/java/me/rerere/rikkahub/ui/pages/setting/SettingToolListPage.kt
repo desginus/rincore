@@ -39,7 +39,7 @@ fun SettingToolListPage(
     val router = remember(settings) {
         ToolRouter(settings.toolDomainOverrides, settings.customDomainDescriptions,
             settings.customDomains, settings.customDomainKeywords,
-            settings.domainNameOverrides, settings.hiddenDomains)
+            settings.domainNameOverrides, settings.hiddenDomains, settings.removedBuiltinDomains)
     }
 
     val allTools = remember(settings) {

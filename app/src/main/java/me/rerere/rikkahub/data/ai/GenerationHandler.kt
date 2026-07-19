@@ -100,6 +100,7 @@ class GenerationHandler(
             customKeywords = settings.customDomainKeywords,
             domainNameOverrides = settings.domainNameOverrides,
             hiddenDomains = settings.hiddenDomains,
+            removedBuiltinDomains = settings.removedBuiltinDomains,
         )
 
         // 预计算 Layer1 路由表
