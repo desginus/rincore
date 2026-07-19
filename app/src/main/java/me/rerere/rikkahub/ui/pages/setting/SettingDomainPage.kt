@@ -23,6 +23,8 @@ import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.plus
 import org.koin.compose.koinInject
 import me.rerere.ai.provider.ProviderManager
+import me.rerere.ai.provider.Provider
+import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.ai.tools.routing.ToolClassifier
 import kotlinx.coroutines.launch
 import androidx.compose.material3.LinearProgressIndicator
@@ -327,7 +329,8 @@ fun SettingDomainPage(
                     is me.rerere.ai.provider.ProviderSetting.Claude -> "claude"
                     else -> error("不支持的提供商类型")
                 }
-                val provider = providerManager.getProvider(providerName)
+                @Suppress("UNCHECKED_CAST")
+                val provider = providerManager.getProvider(providerName) as Provider<ProviderSetting>
             ToolClassifier.classify(toolList, model, provider, providerSetting, settings.classifierPrompt)
                 .onSuccess { result ->
                     val m = settings.toolDomainOverrides.toMutableMap()
