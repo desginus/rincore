@@ -95,6 +95,21 @@ fun SettingDomainPage(
     var showClassifierPrompt by remember { mutableStateOf(false) }
     var autoChecked by remember { mutableStateOf(false) }
     var editClassifierPrompt by remember(settings.classifierPrompt) { mutableStateOf(settings.classifierPrompt.ifBlank { ToolClassifier.DEFAULT_PROMPT }) }
+    var autoClassified by remember { mutableStateOf(false) }
+
+    // MCP工具变化时自动分类（仅在域管理页面打开时触发）
+    LaunchedEffect(settings.mcpServers.size) {
+        if (autoClassified || isClassifying) return@LaunchedEffect
+        // 统计未分类的MCP工具
+        val totalMcpTools = settings.mcpServers.sumOf { s -> s.commonOptions.tools.count { it.enable } }
+        val classifiedCount = settings.toolDomainOverrides.count { it.key.startsWith("mcp__") }
+        val unclassified = totalMcpTools - classifiedCount
+        if (unclassified >= 3) {
+            classifyLog = "检测到${unclassified}个新MCP工具，自动分类中..."
+            autoClassified = true
+            isClassifying = true
+        }
+    }
     var showNewDomain by remember { mutableStateOf(false) }
     var showToolList by remember { mutableStateOf(false) }
     var editingDomain by remember { mutableStateOf<String?>(null) }
@@ -346,6 +361,7 @@ fun SettingDomainPage(
             classifyLog = "异常: ${e.message?.take(200) ?: ""}"
         }
         isClassifying = false
+        autoClassified = false
     }
 
     // 分类提示词编辑
