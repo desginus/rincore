@@ -124,14 +124,14 @@ fun SettingDomainPage(
             settings.customDomainKeywords, settings.domainNameOverrides, settings.hiddenDomains, settings.removedBuiltinDomains)
     }
 
-    val previewTools = remember(settings) {
+    val previewTools = remember(settings.mcpServers, settings.toolDomainOverrides.size, settings.toolDescriptionOverrides.size) {
         val list = mutableListOf<ToolPreview>()
         try { skillManager.listSkills().forEach { s -> list.add(ToolPreview("use_skill", "技能:${s.name} - ${s.description}")) } } catch (_: Exception) {}
         for (srv in settings.mcpServers) for (t in srv.commonOptions.tools.filter { it.enable }) list.add(ToolPreview("mcp__${srv.commonOptions.name}__${t.name}", t.description ?: ""))
         list
     }
-    val flatDomainMap: Map<String, List<ToolPreview>> = remember(previewTools, settings) { previewTools.groupBy { router.classifyPreview(it.name, settings.toolDescriptionOverrides[it.name] ?: it.description) } }
-    val nestedDomains = remember(flatDomainMap, previewTools, settings) { buildNestedDomains(flatDomainMap, previewTools, router) }
+    val flatDomainMap: Map<String, List<ToolPreview>> = remember(previewTools, settings.toolDescriptionOverrides, settings.toolDomainOverrides) { previewTools.groupBy { router.classifyPreview(it.name, settings.toolDescriptionOverrides[it.name] ?: it.description) } }
+    val nestedDomains = remember(flatDomainMap, settings.hiddenDomains, settings.removedBuiltinDomains) { buildNestedDomains(flatDomainMap, previewTools, router) }
 
     Scaffold(
         containerColor = CustomColors.topBarColors.containerColor,
