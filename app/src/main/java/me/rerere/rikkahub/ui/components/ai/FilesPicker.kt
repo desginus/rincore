@@ -91,8 +91,6 @@ import me.rerere.workspace.WorkspaceFileEntry
 import me.rerere.workspace.WorkspaceStorageArea
 import me.rerere.hugeicons.stroke.ArrowTurnBackward
 import me.rerere.hugeicons.stroke.File01
-import me.rerere.ui.hooks.ChatInputState
-import me.rerere.rikkahub.data.files.FilesManager
 
 @Composable
 internal fun FilesPicker(
