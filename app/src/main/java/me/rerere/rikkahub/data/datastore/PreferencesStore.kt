@@ -553,6 +553,7 @@ data class Settings(
     val customDomainDescriptions: Map<String, String> = emptyMap(), // 域名→自定义触发描述。覆盖 ToolDomain 默认值
     val customDomains: List<CustomDomain> = emptyList(), // 用户自定义的域（新建分类）
     val customDomainKeywords: Map<String, List<String>> = emptyMap(), // 域名→自定义关键词。覆盖内置域关键词
+    val toolDescriptionOverrides: Map<String, String> = emptyMap(), // 工具名→自定义描述。覆盖原始Tool描述
 ) {
     companion object {
         // 构造一个用于初始化的settings, 但它不能用于保存，防止使用初始值存储

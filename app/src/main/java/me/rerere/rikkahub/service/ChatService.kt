@@ -599,6 +599,8 @@ class ChatService(
                             )
                         )
                     }
+                }.map { tool ->
+                    settings.toolDescriptionOverrides[tool.name]?.let { tool.copy(description = it) } ?: tool
                 },
             ).onCompletion {
                 // 可能被取消了，或者意外结束，兜底更新

@@ -31,25 +31,20 @@ fun SettingToolListPage(
     var searchQuery by remember { mutableStateOf("") }
     var filterDomain by remember { mutableStateOf("全部") }
     var selectedTool by remember { mutableStateOf<ToolPreview?>(null) }
+    var showMoveDialog by remember { mutableStateOf(false) }
+    var showEditDesc by remember { mutableStateOf(false) }
+    var moveTarget by remember { mutableStateOf("") }
+    var editDescText by remember { mutableStateOf("") }
 
     val router = remember(settings) {
         ToolRouter(settings.toolDomainOverrides, settings.customDomainDescriptions,
             settings.customDomains, settings.customDomainKeywords)
     }
 
-    // 收集所有工具
     val allTools = remember(settings) {
         val list = mutableListOf<ToolPreview>()
-        try {
-            skillManager.listSkills().forEach { s ->
-                list.add(ToolPreview("use_skill", "技能:${s.name} - ${s.description}"))
-            }
-        } catch (_: Exception) {}
-        for (srv in settings.mcpServers) {
-            for (t in srv.commonOptions.tools.filter { it.enable }) {
-                list.add(ToolPreview("mcp__${srv.commonOptions.name}__${t.name}", t.description ?: ""))
-            }
-        }
+        try { skillManager.listSkills().forEach { s -> list.add(ToolPreview("use_skill", "技能:${s.name} - ${s.description}")) } } catch (_: Exception) {}
+        for (srv in settings.mcpServers) for (t in srv.commonOptions.tools.filter { it.enable }) list.add(ToolPreview("mcp__${srv.commonOptions.name}__${t.name}", t.description ?: ""))
         list
     }
 
@@ -57,83 +52,55 @@ fun SettingToolListPage(
         ToolDomain.entries.map { it.label } + settings.customDomains.map { it.name }
     }
 
-    // 过滤
-    val filtered = remember(allTools, searchQuery, filterDomain, settings) {
+    val filtered = remember(allTools, searchQuery, filterDomain) {
         allTools.filter { t ->
             val q = searchQuery.lowercase()
-            val matchesQuery = q.isEmpty() || t.name.lowercase().contains(q) || t.description.lowercase().contains(q)
-            if (!matchesQuery) return@filter false
+            if (q.isNotEmpty() && !t.name.lowercase().contains(q) && !t.description.lowercase().contains(q)) return@filter false
             if (filterDomain == "全部") return@filter true
-            val classifyResult = router.classifyPreview(t.name, t.description)
-            classifyResult == filterDomain
+            router.classifyPreview(t.name, t.description) == filterDomain
         }
     }
 
     Scaffold(
         containerColor = CustomColors.topBarColors.containerColor,
-        topBar = {
-            TopAppBar(
-                title = { Text("工具列表") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(HugeIcons.ArrowLeft01, null) } },
-                colors = CustomColors.topBarColors,
-            )
-        },
+        topBar = { TopAppBar(title = { Text("工具列表") }, navigationIcon = { IconButton(onClick = onBack) { Icon(HugeIcons.ArrowLeft01, null) } }, colors = CustomColors.topBarColors) },
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad)) {
-            // 搜索+过滤
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    label = { Text("搜索工具") },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = searchQuery, onValueChange = { searchQuery = it }, label = { Text("搜索") },
+                    modifier = Modifier.weight(1f), singleLine = true,
                     leadingIcon = { Icon(HugeIcons.GlobalSearch, null, modifier = Modifier.size(16.dp)) },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty())
-                            IconButton(onClick = { searchQuery = "" }) { Icon(HugeIcons.Cancel01, null) }
-                    },
-                )
+                    trailingIcon = { if (searchQuery.isNotEmpty()) IconButton(onClick = { searchQuery = "" }) { Icon(HugeIcons.Cancel01, null) } })
             }
-            // 域过滤 chips
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
+            LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        FilterChip(selected = filterDomain == "全部", onClick = { filterDomain = "全部" },
-                            label = { Text("全部(${allTools.size})") })
-                        allDomainNames.take(5).forEach { dn ->
+                        FilterChip(selected = filterDomain == "全部", onClick = { filterDomain = "全部" }, label = { Text("全部(${allTools.size})") })
+                        allDomainNames.take(6).forEach { dn ->
                             val count = allTools.count { router.classifyPreview(it.name, it.description) == dn }
-                            FilterChip(selected = filterDomain == dn, onClick = { filterDomain = dn },
-                                label = { Text("$dn($count)") })
+                            FilterChip(selected = filterDomain == dn, onClick = { filterDomain = dn }, label = { Text("$dn($count)") })
                         }
                     }
                 }
-                item { Text("共 ${filtered.size} 个工具", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                item { Text("${filtered.size}个工具", style = MaterialTheme.typography.bodySmall) }
 
                 items(filtered) { tool ->
                     val domain = router.classifyPreview(tool.name, tool.description)
+                    val hasDesc = tool.name in settings.toolDescriptionOverrides
                     val overridden = tool.name in settings.toolDomainOverrides
-                    Card(Modifier.fillMaxWidth().clickable { selectedTool = tool }) {
-                        Row(Modifier.padding(12.dp).fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Card(Modifier.fillMaxWidth().clickable {
+                        selectedTool = tool
+                        moveTarget = domain
+                        editDescText = settings.toolDescriptionOverrides[tool.name] ?: tool.description
+                    }) {
+                        Row(Modifier.padding(12.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(tool.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(tool.description.take(80), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text((settings.toolDescriptionOverrides[tool.name] ?: tool.description).take(80), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    AssistChip(onClick = {}, label = { Text(domain, style = MaterialTheme.typography.labelSmall) },
-                                        modifier = Modifier.height(24.dp))
-                                    if (overridden) {
-                                        AssistChip(onClick = {}, label = { Text("覆盖", style = MaterialTheme.typography.labelSmall) },
-                                            modifier = Modifier.height(24.dp), colors = AssistChipDefaults.assistChipColors(
-                                                containerColor = MaterialTheme.colorScheme.errorContainer))
-                                    }
+                                    AssistChip(onClick = {}, label = { Text(domain, style = MaterialTheme.typography.labelSmall) }, modifier = Modifier.height(24.dp))
+                                    if (overridden) AssistChip(onClick = {}, label = { Text("覆盖", style = MaterialTheme.typography.labelSmall) }, modifier = Modifier.height(24.dp), colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.errorContainer))
+                                    if (hasDesc) AssistChip(onClick = {}, label = { Text("描述", style = MaterialTheme.typography.labelSmall) }, modifier = Modifier.height(24.dp), colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.primaryContainer))
                                 }
                             }
                             Icon(HugeIcons.ArrowRight01, null, modifier = Modifier.size(16.dp))
@@ -144,43 +111,58 @@ fun SettingToolListPage(
         }
     }
 
-    // 选择工具后的操作对话框
+    // 工具操作对话框
     if (selectedTool != null) {
         val tool = selectedTool!!
-        val currentDomain = router.classifyPreview(tool.name, tool.description)
-        var targetDomain by remember { mutableStateOf(currentDomain) }
         AlertDialog(
             onDismissRequest = { selectedTool = null },
             title = { Text(tool.name) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("当前分类: $currentDomain", fontWeight = FontWeight.SemiBold)
-                    Text("描述: ${tool.description.take(200)}", style = MaterialTheme.typography.bodySmall)
+                    Text("当前分类: $moveTarget", fontWeight = FontWeight.SemiBold)
+                    OutlinedTextField(
+                        value = editDescText,
+                        onValueChange = { editDescText = it },
+                        label = { Text("工具描述") },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 4,
+                        supportingText = { Text("修改后影响自动分类。留空恢复默认。") }
+                    )
                     Text("移动到:", style = MaterialTheme.typography.labelSmall)
                     allDomainNames.forEach { dn ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = targetDomain == dn, onClick = { targetDomain = dn })
-                            Text(dn, Modifier.clickable { targetDomain = dn })
+                            RadioButton(selected = moveTarget == dn, onClick = { moveTarget = dn })
+                            Text(dn, Modifier.clickable { moveTarget = dn })
                         }
                     }
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    val m = settings.toolDomainOverrides.toMutableMap()
-                    m[tool.name] = targetDomain
-                    vm.updateSettings(settings.copy(toolDomainOverrides = m))
+                    var s = settings
+                    // 移动
+                    val m = s.toolDomainOverrides.toMutableMap()
+                    m[tool.name] = moveTarget; s = s.copy(toolDomainOverrides = m)
+                    // 描述
+                    val dm = s.toolDescriptionOverrides.toMutableMap()
+                    if (editDescText.isNotBlank() && editDescText != tool.description) dm[tool.name] = editDescText
+                    else dm.remove(tool.name)
+                    s = s.copy(toolDescriptionOverrides = dm)
+                    vm.updateSettings(s)
                     selectedTool = null
-                }) { Text("移动到此域") }
+                }) { Text("保存") }
             },
             dismissButton = {
                 Row {
-                    if (tool.name in settings.toolDomainOverrides) {
+                    // 清除覆盖
+                    if (tool.name in settings.toolDomainOverrides || tool.name in settings.toolDescriptionOverrides) {
                         TextButton(onClick = {
-                            val m = settings.toolDomainOverrides.toMutableMap(); m.remove(tool.name)
-                            vm.updateSettings(settings.copy(toolDomainOverrides = m))
+                            var s = settings
+                            s = s.copy(toolDomainOverrides = s.toolDomainOverrides.toMutableMap().also { it.remove(tool.name) })
+                            s = s.copy(toolDescriptionOverrides = s.toolDescriptionOverrides.toMutableMap().also { it.remove(tool.name) })
+                            vm.updateSettings(s)
                             selectedTool = null
-                        }) { Text("清除覆盖") }
+                        }) { Text("清除所有覆盖") }
                     }
                     TextButton(onClick = { selectedTool = null }) { Text("取消") }
                 }
