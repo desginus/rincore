@@ -268,7 +268,9 @@ class ToolRouter(
     }
 
     fun classifyPreview(name: String, description: String): String {
-        overrides[name]?.let { return it }
+        // override需校验：只接受当前存在的域
+        val validLabels = ToolDomain.entries.map { it.label }.toSet() + customDomains.map { it.name }.toSet()
+        overrides[name]?.let { if (it in validLabels) return it }
         if (name == "use_domain") return "system"
         val text = "${name} ${description}".lowercase()
         for (cd in customDomains) { if (cd.keywords.any { text.contains(it) }) return cd.name }

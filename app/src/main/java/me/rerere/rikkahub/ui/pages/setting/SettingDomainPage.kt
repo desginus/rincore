@@ -44,61 +44,45 @@ private fun buildNestedDomains(
     allTools: List<ToolPreview>,
     router: ToolRouter,
 ): List<Pair<String, Map<String, MutableList<ToolPreview>>?>> {
-    // 构建 ToolDomain 父子关系
+    // ToolDomain 父子关系
     val domainChildren = mutableMapOf<String, MutableList<String>>()
     val allTopLevel = mutableSetOf<String>()
     for (td in ToolDomain.entries) {
-        if (td.parent != null) {
-            domainChildren.getOrPut(td.parent) { mutableListOf() }.add(td.label)
-        } else {
-            allTopLevel.add(td.label)
-        }
+        if (td.parent != null) domainChildren.getOrPut(td.parent) { mutableListOf() }.add(td.label)
+        else allTopLevel.add(td.label)
     }
     val childKeys = domainChildren.values.flatten().toSet()
 
-    // 自定义域也加入顶级
-    for (td in ToolDomain.entries) {
-        if (td.parent == null) allTopLevel.add(td.label)
-    }
-
-    // 清理：排除 system/uncategorized/自定义域
-    val customDomainNames = router.customDomains.map { it.name }.toSet()
-    val cleanKeys = flatMap.keys.filter { it !in childKeys && it != "system" && it != "uncategorized" }
+    // 排除 system/uncategorized/过期覆盖
+    val customNames = router.customDomains.map { it.name }.toSet()
     val result = mutableListOf<Pair<String, Map<String, MutableList<ToolPreview>>?>>()
+    val processed = mutableSetOf<String>()
 
-    // 已处理的顶级域
-    val processedTops = mutableSetOf<String>()
+    // 先处理子域（它们不单独出现，会被归入父域）
+    for (parent in allTopLevel.sorted()) {
+        val myTools = flatMap[parent].orEmpty()
+        val childDomains = domainChildren[parent].orEmpty()
+        val allMyTools = myTools.toMutableList()
+        childDomains.forEach { allMyTools.addAll(flatMap[it].orEmpty()) }
+        if (allMyTools.isEmpty()) continue  // 无工具不展示
 
-    for (key in cleanKeys) {
-        val isToolDomainTop = key in allTopLevel
-        val isCustom = key in customDomainNames
-        val hasChildren = (domainChildren[key]?.size ?: 0) > 0
-
-        if (hasChildren) {
+        if (childDomains.isNotEmpty()) {
             val subMap = mutableMapOf<String, MutableList<ToolPreview>>()
-            flatMap[key]?.let { subMap.getOrPut(key) { mutableListOf() }.addAll(it) }
-            for (child in domainChildren[key] ?: emptyList()) {
+            if (myTools.isNotEmpty()) subMap[parent] = myTools.toMutableList()
+            childDomains.forEach { child ->
                 flatMap[child]?.let { subMap[child] = it.toMutableList() }
             }
-            result.add(key to subMap)
-            processedTops.add(key)
-            processedTops.addAll(domainChildren[key] ?: emptyList())
-        } else if (isToolDomainTop) {
-            // 顶级域但无子域（如方法域）
-            result.add(key to null)
-            processedTops.add(key)
+            result.add(parent to subMap)
         } else {
-            // 自定义域或其他
-            result.add(key to null)
-            processedTops.add(key)
+            result.add(parent to null)
         }
+        processed.add(parent)
     }
 
-    // 补充尚未出现的顶级域（即使无工具也展示）
-    for (top in allTopLevel.sorted()) {
-        if (top !in processedTops) {
-            result.add(top to null)
-        }
+    // 自定义域（不在 ToolDomain 中的）
+    for ((key, tools) in flatMap.entries.sortedBy { it.key }) {
+        if (key in processed || key in childKeys || key == "system" || key == "uncategorized") continue
+        result.add(key to null)
     }
 
     return result
@@ -188,10 +172,14 @@ fun SettingDomainPage(
                 navigationIcon = { IconButton(onClick = onBack) { Icon(HugeIcons.ArrowLeft01, null) } },
                 actions = {
                     IconButton(onClick = {
-                    // 强制全域刷新：递增revision + 触发settings变更
+                    // 清理无效覆盖 + 强制刷新
+                    val validLabels = ToolDomain.entries.map { it.label }.toSet() + settings.customDomains.map { it.name }.toSet()
+                    val cleaned = settings.toolDomainOverrides.filterValues { it in validLabels }
+                    val removed = settings.toolDomainOverrides.size - cleaned.size
+                    vm.updateSettings(settings.copy(toolDomainOverrides = cleaned))
                     revision++
-                    vm.updateSettings(settings.copy())
                     classifyLog = "已刷新 (${previewTools.size}个工具, ${nestedDomains.size}个域)"
+                    if (removed > 0) classifyLog += " · 清理${removed}个过期覆盖"
                     isClassifying = false
                 }) { Icon(HugeIcons.Refresh01, "同步") }
                     IconButton(onClick = { showClassifierPrompt = true }) { Icon(HugeIcons.AiMagic, "分类") }
