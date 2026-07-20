@@ -232,17 +232,15 @@ class ToolRouter(
                         listOf(UIMessagePart.Text(router.buildHelpText(allTools)))
                     else -> {
                         val classified = router.classifyAll(allTools)
-                        val matchKeys = if (rawName in classified) {
-                            listOf(rawName)
-                        } else {
-                            classified.keys.filter { it.startsWith("$rawName/") || it == rawName }
-                        }
+                        // 严格按请求加载: rawName 本身或其下的所有子域
+                        val matchKeys = classified.keys.filter { it == rawName || it.startsWith("$rawName/") }
                         if (matchKeys.isEmpty()) {
                             val avail = classified.keys.filter { it != "system" }.sorted()
                             listOf(UIMessagePart.Text("未知: '$rawName'。可用: ${avail.joinToString("、")}"))
                         } else {
                             val dTools = matchKeys.flatMap { classified[it].orEmpty() }
-                            loadedDomains.addAll(matchKeys)
+                            // 只记录用户请求的域路径, getDomainTools 会自动展开子域
+                            loadedDomains.add(rawName)
                             val names = dTools.map { it.name }
                             val label = if (matchKeys.size > 1) "「$rawName」及其${matchKeys.size-1}个子域" else "「$rawName」"
                             val summary = buildString {

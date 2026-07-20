@@ -332,11 +332,15 @@ class GenerationHandler(
                         // Auto or Approved - execute the tool
                         runCatching {
                             val toolDef = toolsInternal.find { toolDef -> toolDef.name == tool.toolName }
-                                ?: (if (useLayered) tools.find { it.name == tool.toolName }?.also {
-                                    loadedDomains.add(toolRouter.classifyTool(it))
-                                    Log.i(TAG, "Auto-loading domain for tool: ${tool.toolName}")
-                                } else null)
-                                ?: error("Tool ${tool.toolName} not found")
+                            if (toolDef == null) {
+                                // 分层模式下工具必须先通过 invoke_tools 加载，禁止自动加载其他域工具
+                                val msg = if (useLayered) {
+                                    "工具 ${tool.toolName} 未加载。请先调用 invoke_tools(\"域名称\") 加载对应域。"
+                                } else {
+                                    "工具 ${tool.toolName} 未找到"
+                                }
+                                error(msg)
+                            }
                             val args = runCatching {
                                 json.parseToJsonElement(tool.input.ifBlank { "{}" })
                             }.getOrElse {
