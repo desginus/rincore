@@ -41,6 +41,8 @@ import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
 import me.rerere.rikkahub.data.ai.tools.routing.ToolRouter
+import me.rerere.rikkahub.data.ai.cache.CacheTier
+import me.rerere.rikkahub.data.ai.cache.PromptCacheManager
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
