@@ -13,6 +13,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.*
+import me.rerere.rikkahub.data.ai.mcp.McpManager
+import me.rerere.rikkahub.data.ai.tools.local.LocalToolOption
+import me.rerere.rikkahub.data.ai.tools.local.LocalTools
 import me.rerere.rikkahub.data.ai.tools.routing.ToolDomain
 import me.rerere.rikkahub.data.ai.tools.routing.ToolRouter
 import me.rerere.rikkahub.data.datastore.Settings
@@ -28,13 +31,11 @@ fun SettingToolListPage(
     onBack: () -> Unit,
 ) {
     val skillManager: SkillManager = koinInject()
+    val localTools: LocalTools = koinInject()
+    val mcpManager: McpManager = koinInject()
     var searchQuery by remember { mutableStateOf("") }
     var filterDomain by remember { mutableStateOf("全部") }
     var selectedTool by remember { mutableStateOf<ToolPreview?>(null) }
-    var showMoveDialog by remember { mutableStateOf(false) }
-    var showEditDesc by remember { mutableStateOf(false) }
-    var moveTarget by remember { mutableStateOf("") }
-    var editDescText by remember { mutableStateOf("") }
 
     val router = remember(settings) {
         ToolRouter(settings.toolDomainOverrides, settings.customDomainDescriptions,
@@ -42,10 +43,32 @@ fun SettingToolListPage(
             settings.domainNameOverrides, settings.hiddenDomains, settings.removedBuiltinDomains)
     }
 
-    val allTools = remember(settings) {
+    // 完整工具清单——包含内置+MCP+Skill
+    val allTools: List<ToolPreview> = remember(settings) {
         val list = mutableListOf<ToolPreview>()
+        // 内置本地工具
+        try {
+            val allOptions = listOf(
+                LocalToolOption.JavascriptEngine, LocalToolOption.TimeInfo, LocalToolOption.Clipboard,
+                LocalToolOption.Tts, LocalToolOption.AskUser, LocalToolOption.ScreenTime,
+                LocalToolOption.Calendar, LocalToolOption.CronJobs, LocalToolOption.ToastAndNotification,
+                LocalToolOption.SubAgents, LocalToolOption.SystemIntents, LocalToolOption.Share,
+                LocalToolOption.Location, LocalToolOption.Battery, LocalToolOption.MediaPlayer,
+                LocalToolOption.MediaScanner, LocalToolOption.Files, LocalToolOption.Download,
+                LocalToolOption.Archive, LocalToolOption.CostGuards, LocalToolOption.Browser,
+            )
+            localTools.getTools(allOptions).forEach { t ->
+                list.add(ToolPreview(t.name, t.description))
+            }
+        } catch (_: Exception) {}
+        // Skill工具
         try { skillManager.listSkills().forEach { s -> list.add(ToolPreview("use_skill", "技能:${s.name} - ${s.description}")) } } catch (_: Exception) {}
-        for (srv in settings.mcpServers) for (t in srv.commonOptions.tools.filter { it.enable }) list.add(ToolPreview("mcp__${srv.commonOptions.name}__${t.name}", t.description ?: ""))
+        // MCP工具
+        try {
+            mcpManager.getAllAvailableTools().forEach { (_, serverName, tool) ->
+                list.add(ToolPreview("mcp__${serverName}__${tool.name}", tool.description ?: ""))
+            }
+        } catch (_: Exception) {}
         list
     }
 
@@ -91,17 +114,35 @@ fun SettingToolListPage(
                     val overridden = tool.name in settings.toolDomainOverrides
                     Card(Modifier.fillMaxWidth().clickable {
                         selectedTool = tool
-                        moveTarget = domain
-                        editDescText = settings.toolDescriptionOverrides[tool.name] ?: tool.description
                     }) {
                         Row(Modifier.padding(12.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(tool.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text((settings.toolDescriptionOverrides[tool.name] ?: tool.description).take(80), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    AssistChip(onClick = {}, label = { Text(router.displayName(domain), style = MaterialTheme.typography.labelSmall) }, modifier = Modifier.height(24.dp))
-                                    if (overridden) AssistChip(onClick = {}, label = { Text("覆盖", style = MaterialTheme.typography.labelSmall) }, modifier = Modifier.height(24.dp), colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.errorContainer))
-                                    if (hasDesc) AssistChip(onClick = {}, label = { Text("描述", style = MaterialTheme.typography.labelSmall) }, modifier = Modifier.height(24.dp), colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.primaryContainer))
+                                    // 域名标签——点击可筛选
+                                    AssistChip(
+                                        onClick = { filterDomain = domain },
+                                        label = { Text(router.displayName(domain), style = MaterialTheme.typography.labelSmall) },
+                                        modifier = Modifier.height(24.dp)
+                                    )
+                                    // 覆盖标签——点击打开对话框编辑
+                                    if (overridden) {
+                                        AssistChip(
+                                            onClick = { selectedTool = tool },
+                                            label = { Text("覆盖", style = MaterialTheme.typography.labelSmall) },
+                                            modifier = Modifier.height(24.dp),
+                                            colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+                                        )
+                                    }
+                                    if (hasDesc) {
+                                        AssistChip(
+                                            onClick = { selectedTool = tool },
+                                            label = { Text("描述", style = MaterialTheme.typography.labelSmall) },
+                                            modifier = Modifier.height(24.dp),
+                                            colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                                        )
+                                    }
                                 }
                             }
                             Icon(HugeIcons.ArrowRight01, null, modifier = Modifier.size(16.dp))
@@ -115,6 +156,8 @@ fun SettingToolListPage(
     // 工具操作对话框
     if (selectedTool != null) {
         val tool = selectedTool!!
+        var moveTarget by remember(tool) { mutableStateOf(settings.toolDomainOverrides[tool.name] ?: router.classifyPreview(tool.name, settings.toolDescriptionOverrides[tool.name] ?: tool.description)) }
+        var editDescText by remember(tool) { mutableStateOf(settings.toolDescriptionOverrides[tool.name] ?: tool.description) }
         AlertDialog(
             onDismissRequest = { selectedTool = null },
             title = { Text(tool.name) },
@@ -155,7 +198,6 @@ fun SettingToolListPage(
             },
             dismissButton = {
                 Row {
-                    // 清除覆盖
                     if (tool.name in settings.toolDomainOverrides || tool.name in settings.toolDescriptionOverrides) {
                         TextButton(onClick = {
                             var s = settings
