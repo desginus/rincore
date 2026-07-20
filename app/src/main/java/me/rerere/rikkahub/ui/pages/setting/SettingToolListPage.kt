@@ -3,6 +3,7 @@ package me.rerere.rikkahub.ui.pages.setting
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -100,9 +101,9 @@ fun SettingToolListPage(
             }
             LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        FilterChip(selected = filterDomain == "全部", onClick = { filterDomain = "全部" }, label = { Text("全部(${allTools.size})") })
-                        allDomainNames.take(6).forEach { dn ->
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        item { FilterChip(selected = filterDomain == "全部", onClick = { filterDomain = "全部" }, label = { Text("全部(${allTools.size})") }) }
+                        items(allDomainNames) { dn ->
                             val count = allTools.count {
                                 val d = router.classifyPreview(it.name, settings.toolDescriptionOverrides[it.name] ?: it.description)
                                 d == dn || d.startsWith("$dn/")
