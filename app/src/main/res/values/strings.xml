@@ -1377,5 +1377,13 @@
   <string name="chat_page_folder_add">New</string>
   <string name="chat_page_delete_folder_confirm">Delete folder "%1$s"? Conversations inside will not be deleted, only removed from the folder.</string>
   <string name="chat_page_delete_folder_generating">Some conversations in this folder are still generating. Please stop them before deleting.</string>
+
+    <string name="setting_files_page_cleaned_toast">已清理</string>
+    <string name="setting_files_page_clean_failed_toast">清理失败</string>
+    <string name="setting_files_page_clean_title">清理文件</string>
+    <string name="setting_files_page_clean_confirmation">确定要删除此目录下的所有文件吗？此操作不可撤销。</string>
+    <string name="setting_files_page_clean_action">清理</string>
+    <string name="setting_files_page_cancel_action">取消</string>
+    <string name="setting_files_page_clean_content_description">一键清理</string>
 </resources>
 

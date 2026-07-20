@@ -537,7 +537,7 @@ class RouteActivity : ComponentActivity() {
                             }
 
                             entry<Screen.WorkspaceDetail> { key ->
-                                WorkspaceDetailPage(key.id)
+                                WorkspaceDetailPage(key.id, key.initialTab)
                             }
 
                             entry<Screen.WorkspaceTerminal> { key ->
@@ -741,7 +741,7 @@ sealed interface Screen : NavKey {
     data object Workspaces : Screen
 
     @Serializable
-    data class WorkspaceDetail(val id: String) : Screen
+    data class WorkspaceDetail(val id: String, val initialTab: Int = 0) : Screen
 
     @Serializable
     data class WorkspaceTerminal(val id: String) : Screen
