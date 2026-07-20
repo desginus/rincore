@@ -65,6 +65,7 @@ sealed class ProviderSetting {
         var chatCompletionsPath: String = "/chat/completions",
         var useResponseApi: Boolean = false,
         var includeHistoryReasoning: Boolean = true,
+        var promptCaching: Boolean = false,  // 启用提示词缓存 (DeepSeek/Qwen/Zhipu)
     ) : ProviderSetting() {
         override fun addModel(model: Model): ProviderSetting {
             return copy(models = models + model)

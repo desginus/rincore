@@ -63,6 +63,8 @@ data class TextGenerationParams(
     val reasoningLevel: ReasoningLevel = ReasoningLevel.OFF,
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBody: List<CustomBody> = emptyList(),
+    val enablePromptCache: Boolean = false,   // 启用提示词前缀缓存
+    val cacheTtlSeconds: Int = 600,           // 缓存 TTL（秒）
 )
 
 @Serializable

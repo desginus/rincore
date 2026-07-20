@@ -288,6 +288,26 @@ private fun ProviderConfigureOpenAI(
             onCheckedChange = { onEdit(provider.copy(includeHistoryReasoning = it)) }
         )
     }
+
+    // === 提示词缓存 (DeepSeek V4 Pro / Qwen 3.7 / Zhipu 5.2) ===
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(stringResource(R.string.setting_provider_page_prompt_caching))
+            Text(
+                "缓存系统提示词+路由表+工具定义，减少重复Token消耗",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(
+            checked = provider.promptCaching,
+            onCheckedChange = { onEdit(provider.copy(promptCaching = it)) }
+        )
+    }
 }
 
 @Composable
