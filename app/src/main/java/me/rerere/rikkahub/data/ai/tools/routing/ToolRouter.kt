@@ -27,10 +27,18 @@ class ToolRouter(
     val validDomainLabels: Set<String>
         get() = ToolDomain.entries.map { it.label }.toSet() + customDomains.map { it.name }.toSet()
 
+    /** 框架层工具名集合 — 不参与域分类, 分层模式下直接注入 */
+    private val frameworkToolNames = setOf(
+        "memory_tool", "invoke_tools",
+        "search_web", "scrape_web",
+        "recent_chats", "conversation_search",
+        "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file",
+    )
+
     fun classifyTool(tool: Tool): String {
         overrides[tool.name]?.let { if (it in validDomainLabels) return it }
         // 框架层工具不属于任何用户域, 始终归 system
-        if (tool.name == "invoke_tools" || tool.name.startsWith("memory_")) return "system"
+        if (tool.name in frameworkToolNames) return "system"
 
         // MCP 工具集：同一服务器工具数 > 阈值则启用子域
         if (tool.name.startsWith("mcp__")) {
@@ -298,7 +306,7 @@ class ToolRouter(
         // 1. 用户手动覆盖（校验合法性）
         overrides[name]?.let { if (it in valid) return it }
         // 框架层工具不属于任何用户域, 始终归 system
-        if (name == "invoke_tools" || name.startsWith("memory_")) return "system"
+        if (name in frameworkToolNames) return "system"
 
         val text = "${name} ${description}".lowercase()
 
