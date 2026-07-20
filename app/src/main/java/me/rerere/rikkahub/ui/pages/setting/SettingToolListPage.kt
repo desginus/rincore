@@ -51,7 +51,8 @@ fun SettingToolListPage(
     }
 
     val allDomainNames = remember(settings) {
-        ToolDomain.entries.filter { it.parent == null }.map { it.label } + settings.customDomains.map { it.name }
+        // 所有可用域路径：顶级 + 子域（内置 + 自定义）
+        ToolDomain.entries.map { it.label } + settings.customDomains.map { it.name }
     }
 
     val filtered = remember(allTools, searchQuery, filterDomain) {
@@ -130,7 +131,7 @@ fun SettingToolListPage(
         val tool = selectedTool!!
         var moveTarget by remember(tool) {
             val fullDomain = settings.toolDomainOverrides[tool.name] ?: router.classifyPreview(tool.name, settings.toolDescriptionOverrides[tool.name] ?: tool.description)
-            mutableStateOf(fullDomain.substringBefore("/"))
+            mutableStateOf(fullDomain)
         }
         var editDescText by remember(tool) { mutableStateOf(settings.toolDescriptionOverrides[tool.name] ?: tool.description) }
         AlertDialog(
