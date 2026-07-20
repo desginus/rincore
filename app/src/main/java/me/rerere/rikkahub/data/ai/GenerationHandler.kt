@@ -137,8 +137,8 @@ class GenerationHandler(
                             }
                         ).let(this::addAll)
                     }
-                    // use_domain 工具（始终包含）
-                    add(toolRouter.createUseDomainTool(tools, loadedDomains))
+                    // invoke_tools 工具（始终包含）
+                    add(toolRouter.createInvokeToolsTool(tools, loadedDomains))
                     // 已加载域的工具
                     for (domain in loadedDomains) {
                         addAll(toolRouter.getDomainTools(domain, tools))
@@ -452,9 +452,9 @@ class GenerationHandler(
                 if (layer1Prompt != null) {
                     appendLine()
                     append(layer1Prompt)
-                    // 注入始终可用工具的 systemPrompt（memory tools 等，排除 use_domain）
+                    // 注入始终可用工具的 systemPrompt（memory tools 等，排除 invoke_tools）
                     tools.forEach { tool ->
-                        if (tool.name != "use_domain") {
+                        if (tool.name != "invoke_tools") {
                             val sp = tool.systemPrompt(model, messages)
                             if (sp.isNotBlank()) {
                                 appendLine()

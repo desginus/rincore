@@ -72,6 +72,7 @@ data class CustomDomain(
     val name: String = "",
     val description: String = "",
     val keywords: List<String> = emptyList(),
+    val parent: String? = null, // 父域路径，null=顶级域
 )
 class SettingsStore(
     context: Context,

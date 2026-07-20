@@ -94,7 +94,6 @@ fun SettingToolListPage(
                     val domain = router.classifyPreview(tool.name, settings.toolDescriptionOverrides[tool.name] ?: tool.description)
                     val displayDomain = domain.substringBefore("/")
                     val hasDesc = tool.name in settings.toolDescriptionOverrides
-                    val overridden = tool.name in settings.toolDomainOverrides
                     Card(Modifier.fillMaxWidth().clickable {
                         selectedTool = tool
                     }) {
@@ -108,14 +107,6 @@ fun SettingToolListPage(
                                         label = { Text(displayDomain, style = MaterialTheme.typography.labelSmall) },
                                         modifier = Modifier.height(24.dp)
                                     )
-                                    if (overridden) {
-                                        AssistChip(
-                                            onClick = { selectedTool = tool },
-                                            label = { Text("覆盖", style = MaterialTheme.typography.labelSmall) },
-                                            modifier = Modifier.height(24.dp),
-                                            colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-                                        )
-                                    }
                                     if (hasDesc) {
                                         AssistChip(
                                             onClick = { selectedTool = tool },

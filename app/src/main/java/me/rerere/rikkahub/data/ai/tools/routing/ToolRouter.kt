@@ -29,7 +29,7 @@ class ToolRouter(
 
     fun classifyTool(tool: Tool): String {
         overrides[tool.name]?.let { if (it in validDomainLabels) return it }
-        if (tool.name == "use_domain") return "system"
+        if (tool.name == "invoke_tools") return "system"
 
         // MCP 工具集：同一服务器工具数 > 阈值则启用子域
         if (tool.name.startsWith("mcp__")) {
@@ -152,7 +152,7 @@ class ToolRouter(
             appendLine()
             appendLine("你拥有一个工具总域 `工具`，包含完成各类任务所需的全部工具，按功能场景树状组织。")
             appendLine()
-            appendLine("**加载方式**：`use_domain(\"场景名\")` 或 `use_domain(\"场景/子场景\")`。路径越深，加载的工具越少越精准。")
+            appendLine("**加载方式**：`invoke_tools(\"场景名\")` 或 `invoke_tools(\"场景/子场景\")`。路径越深，加载的工具越少越精准。")
             appendLine()
             appendLine("### 调度原则")
             appendLine()
@@ -189,7 +189,7 @@ class ToolRouter(
             }
 
             appendLine()
-            appendLine("跨类别任务可多次调用 use_domain。不确定时调 `use_domain(\"帮助\")` 查看完整列表。")
+            appendLine("跨类别任务可多次调用 invoke_tools。不确定时调 `invoke_tools(\"帮助\")` 查看完整列表。")
 
             // 列出所有 Skill 工具（帮助模型判断何时加载对应域）
             val skillTools = tools.filter { it.name.startsWith("skill_") }
@@ -201,18 +201,18 @@ class ToolRouter(
                     appendLine("- `${s.name}`: ${s.description.take(100)}")
                 }
                 appendLine()
-                appendLine("技能工具已按功能归入对应域。调用 `use_domain(\"域名\")` 加载后即可直接使用。")
+                appendLine("技能工具已按功能归入对应域。调用 `invoke_tools(\"域名\")` 加载后即可直接使用。")
             }
         }
     }
 
-    fun createUseDomainTool(
+    fun createInvokeToolsTool(
         allTools: List<Tool>,
         loadedDomains: MutableSet<String>,
     ): Tool {
         val router = this
         return Tool(
-            name = "use_domain",
+            name = "invoke_tools",
             description = "按类别加载工具。支持层级加载：父域加载所有子域，子域只加载自身。",
             parameters = {
                 InputSchema.Obj(
@@ -269,12 +269,12 @@ class ToolRouter(
                 val s = dts.take(2).map { it.name }.joinToString("、")
                 appendLine("  [$d] ${dts.size}个 ($s${if (dts.size>2)"…" else ""})")
             }
-            appendLine(); appendLine("调 use_domain(\"类别名\") 加载。")
+            appendLine(); appendLine("调 invoke_tools(\"类别名\") 加载。")
         }
     }
 
     /**
-     * 获取指定域下的工具 — 使用 classifyAll 确保与 createUseDomainTool 一致。
+     * 获取指定域下的工具 — 使用 classifyAll 确保与 createInvokeToolsTool 一致。
      * 修复: classifyTool 返回 mcp_raw:xxx 前缀，而 classifyAll 合并后返回功能性域标签，
      * 此处必须使用 classifyAll 避免工具遗漏。
      */
@@ -299,7 +299,7 @@ class ToolRouter(
         // 1. 用户手动覆盖（校验合法性）
         overrides[name]?.let { if (it in valid) return it }
 
-        if (name == "use_domain") return "system"
+        if (name == "invoke_tools") return "system"
 
         val text = "${name} ${description}".lowercase()
 
