@@ -245,7 +245,14 @@ class ToolRouter(
                             loadedDomains.addAll(matchKeys)
                             val names = dTools.map { it.name }
                             val label = if (matchKeys.size > 1) "「$rawName」及其${matchKeys.size-1}个子域" else "「$rawName」"
-                            listOf(UIMessagePart.Text("已加载$label。${names.size}个工具: ${names.joinToString("、")}。"))
+                            val summary = buildString {
+                                appendLine("已加载$label。${names.size}个工具:")
+                                for (t in dTools.sortedBy { it.name }) {
+                                    val desc = t.description.take(80).replace("\n", " ")
+                                    appendLine("- `${t.name}`: $desc")
+                                }
+                            }
+                            listOf(UIMessagePart.Text(summary))
                         }
                     }
                 }
@@ -266,8 +273,16 @@ class ToolRouter(
         }
     }
 
+    /**
+     * 获取指定域下的工具 — 使用 classifyAll 确保与 createUseDomainTool 一致。
+     * 修复: classifyTool 返回 mcp_raw:xxx 前缀，而 classifyAll 合并后返回功能性域标签，
+     * 此处必须使用 classifyAll 避免工具遗漏。
+     */
     fun getDomainTools(domainName: String, allTools: List<Tool>): List<Tool> {
-        return allTools.filter { classifyTool(it) == domainName }
+        val classified = classifyAll(allTools)
+        return classified.filterKeys { it == domainName || it.startsWith("$domainName/") }
+            .flatMap { it.value }
+            .distinctBy { it.name }
     }
 
     /**
