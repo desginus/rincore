@@ -168,7 +168,7 @@ class PromptCacheManager {
         }
         val stats = makeStats(actualCached)
         if (stats.estimatedSavingsUSD > 0.0001f) {
-            append(" · ~$${String.format("%.4f", stats.estimatedSavingsUSD)}节省")
+            append(" · ~$" + String.format("%.4f", stats.estimatedSavingsUSD) + "节省")
         }
     }
 
