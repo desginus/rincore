@@ -72,8 +72,9 @@ fun SettingToolListPage(
         list
     }
 
+    // 只展示顶级域名 + 自定义域（用于筛选）
     val allDomainNames = remember(settings) {
-        ToolDomain.entries.map { it.label } + settings.customDomains.map { it.name }
+        ToolDomain.entries.filter { it.parent == null }.map { it.label } + settings.customDomains.map { it.name }
     }
 
     val filtered = remember(allTools, searchQuery, filterDomain) {
@@ -81,7 +82,8 @@ fun SettingToolListPage(
             val q = searchQuery.lowercase()
             if (q.isNotEmpty() && !t.name.lowercase().contains(q) && !t.description.lowercase().contains(q)) return@filter false
             if (filterDomain == "全部") return@filter true
-            router.classifyPreview(t.name, settings.toolDescriptionOverrides[t.name] ?: t.description) == filterDomain
+            val d = router.classifyPreview(t.name, settings.toolDescriptionOverrides[t.name] ?: t.description)
+            d == filterDomain || d.startsWith("$filterDomain/")
         }
     }
 
@@ -101,7 +103,10 @@ fun SettingToolListPage(
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         FilterChip(selected = filterDomain == "全部", onClick = { filterDomain = "全部" }, label = { Text("全部(${allTools.size})") })
                         allDomainNames.take(6).forEach { dn ->
-                            val count = allTools.count { router.classifyPreview(it.name, settings.toolDescriptionOverrides[it.name] ?: it.description) == dn }
+                            val count = allTools.count {
+                                val d = router.classifyPreview(it.name, settings.toolDescriptionOverrides[it.name] ?: it.description)
+                                d == dn || d.startsWith("$dn/")
+                            }
                             FilterChip(selected = filterDomain == dn, onClick = { filterDomain = dn }, label = { Text("${router.displayName(dn)}($count)") })
                         }
                     }
@@ -110,6 +115,7 @@ fun SettingToolListPage(
 
                 items(filtered) { tool ->
                     val domain = router.classifyPreview(tool.name, settings.toolDescriptionOverrides[tool.name] ?: tool.description)
+                    val displayDomain = domain.substringBefore("/")
                     val hasDesc = tool.name in settings.toolDescriptionOverrides
                     val overridden = tool.name in settings.toolDomainOverrides
                     Card(Modifier.fillMaxWidth().clickable {
@@ -123,7 +129,7 @@ fun SettingToolListPage(
                                     // 域名标签——点击可筛选
                                     AssistChip(
                                         onClick = { filterDomain = domain },
-                                        label = { Text(router.displayName(domain), style = MaterialTheme.typography.labelSmall) },
+                                        label = { Text(displayDomain, style = MaterialTheme.typography.labelSmall) },
                                         modifier = Modifier.height(24.dp)
                                     )
                                     // 覆盖标签——点击打开对话框编辑
@@ -156,14 +162,18 @@ fun SettingToolListPage(
     // 工具操作对话框
     if (selectedTool != null) {
         val tool = selectedTool!!
-        var moveTarget by remember(tool) { mutableStateOf(settings.toolDomainOverrides[tool.name] ?: router.classifyPreview(tool.name, settings.toolDescriptionOverrides[tool.name] ?: tool.description)) }
+        var moveTarget by remember(tool) {
+            val fullDomain = settings.toolDomainOverrides[tool.name] ?: router.classifyPreview(tool.name, settings.toolDescriptionOverrides[tool.name] ?: tool.description)
+            // 提取顶级域名（去掉子路径，如 "搜索/搜索引擎" → "搜索"）
+            mutableStateOf(fullDomain.substringBefore("/"))
+        }
         var editDescText by remember(tool) { mutableStateOf(settings.toolDescriptionOverrides[tool.name] ?: tool.description) }
         AlertDialog(
             onDismissRequest = { selectedTool = null },
             title = { Text(tool.name) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("当前分类: $moveTarget", fontWeight = FontWeight.SemiBold)
+                    Text("当前分类: ${moveTarget}", fontWeight = FontWeight.SemiBold)
                     OutlinedTextField(
                         value = editDescText,
                         onValueChange = { editDescText = it },

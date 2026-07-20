@@ -44,43 +44,50 @@ private fun buildNestedDomains(
     router: ToolRouter,
 ): List<Pair<String, Map<String, MutableList<ToolPreview>>?>> {
     val result = mutableListOf<Pair<String, Map<String, MutableList<ToolPreview>>?>>()
-    val mcpByServer = allTools.filter { it.name.startsWith("mcp__") }.groupBy {
-        it.name.removePrefix("mcp__").split("__").firstOrNull() ?: "unknown"
-    }
-    val processedServers = mutableSetOf<String>()
-    for ((server, sTools) in mcpByServer) {
-        if (sTools.size >= 8) {
-            processedServers.add(server)
-            val subs = mutableMapOf<String, MutableList<ToolPreview>>()
-            for (t in sTools) {
-                val sub = classifyMcpSubdomainStatic(t.name, t.description)
-                subs.getOrPut(sub) { mutableListOf() }.add(t)
-            }
-            result.add(server to subs)
-        }
-    }
-    for ((domain, dTools) in flatMap.entries.sortedBy { it.key }) {
-        if (domain == "system" || domain == "uncategorized") continue
-        val serverCheck = dTools.firstOrNull()?.name?.let { n ->
-            if (n.startsWith("mcp__")) n.removePrefix("mcp__").split("__").firstOrNull() else null
-        }
-        if (serverCheck != null && serverCheck in processedServers) continue
-        result.add(domain to null)
-    }
-    return result
-}
 
-private fun classifyMcpSubdomainStatic(name: String, desc: String): String {
-    val text = "${name} ${desc}".lowercase()
-    return when {
-        text.contains("create") || text.contains("add_") || text.contains("new_") -> "创建"
-        text.contains("get_") || text.contains("query") || text.contains("list_") || text.contains("find_") -> "查询"
-        text.contains("set_") || text.contains("update") || text.contains("modify") || text.contains("config") -> "设置"
-        text.contains("delete") || text.contains("remove") || text.contains("clear") || text.contains("destroy") -> "删除"
-        text.contains("apply") || text.contains("simulate") || text.contains("compute") || text.contains("calculate") -> "计算"
-        text.contains("load") || text.contains("save") || text.contains("export") || text.contains("import") -> "数据"
-        else -> "其他"
+    // 构建 ToolDomain 父子关系：parent → list of child labels
+    val domainChildren = mutableMapOf<String, MutableList<String>>()
+    for (td in ToolDomain.entries) {
+        if (td.parent != null) {
+            domainChildren.getOrPut(td.parent) { mutableListOf() }.add(td.label)
+        }
     }
+
+    // 收集被分配到子域的工具，它们将被嵌套到父域下
+    val childKeys = domainChildren.values.flatten().toSet()
+    val topLevelKeys = flatMap.keys.filter { it !in childKeys }
+
+    // 分组：父域 → Map<子域名, List<ToolPreview>>
+    val topGrouped = mutableMapOf<String, MutableMap<String, MutableList<ToolPreview>>>()
+
+    for (key in topLevelKeys) {
+        val subs = domainChildren[key]
+        if (subs != null && subs.isNotEmpty()) {
+            // 这是一个有子域的父域
+            val subMap = mutableMapOf<String, MutableList<ToolPreview>>()
+            // 自己的工具
+            if (key in flatMap) {
+                subMap.getOrPut(key) { mutableListOf() }.addAll(flatMap[key] ?: emptyList())
+            }
+            // 子域的工具
+            for (child in subs) {
+                if (child in flatMap) {
+                    subMap[child] = (flatMap[child] ?: emptyList()).toMutableList()
+                }
+            }
+            topGrouped[key] = subMap
+        } else {
+            // 无子域的顶层域，显示为叶子
+            result.add(key to null)
+        }
+    }
+
+    // 输出排序后的父域
+    for (parent in topGrouped.keys.sorted()) {
+        result.add(parent to topGrouped[parent])
+    }
+
+    return result
 }
 
 @Composable
@@ -241,7 +248,10 @@ fun SettingDomainPage(
                                 if (isMCPParent) {
                                     Text("子域:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                                     subs!!.forEach { (sub, subTools) ->
-                                        val subDisplay = settings.domainNameOverrides["$domain/$sub"] ?: "$displayName/$sub"
+                                        val subName = sub.substringAfter("/", sub)
+                                        val subDisplay = settings.domainNameOverrides.getOrElse(sub) {
+                                            settings.domainNameOverrides["$domain/$subName"] ?: subName
+                                        }
                                         Card(Modifier.fillMaxWidth().padding(vertical = 2.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                                             Column(Modifier.padding(8.dp)) {
                                                 Text("[$subDisplay] ${subTools.size}个工具", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
