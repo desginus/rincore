@@ -163,7 +163,7 @@ fun SettingDomainPage(
             TopAppBar(title = { Text("域分类管理") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(HugeIcons.ArrowLeft01, null) } },
                 actions = {
-                    // 刷新按钮：清理过期数据 + 强制重算（本地即时）
+                    // 刷新按钮：清理过期数据 + 强制重算
                     IconButton(onClick = {
                         val valid = router.validDomainLabels
                         val cleanedOverrides = settings.toolDomainOverrides.filterValues { it in valid }
@@ -183,7 +183,14 @@ fun SettingDomainPage(
                             if (removedCount > 0) append(" · 清理${removedCount}个过期覆盖")
                         }
                     }) { Icon(HugeIcons.Refresh01, "同步") }
-                    IconButton(onClick = { showClassifierPrompt = true }) { Icon(HugeIcons.AiMagic, "AI分类") }
+                    // AI 一键分类 — 直接触发，不弹对话框
+                    TextButton(onClick = {
+                        isClassifying = true
+                    }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                        Icon(HugeIcons.AiMagic, "AI分类", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(4.dp))
+                        Text("AI分类", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    }
                     IconButton(onClick = { showToolList = true }) { Icon(HugeIcons.View, "工具列表") }
                     IconButton(onClick = { showNewDomain = true }) { Icon(HugeIcons.Add01, "新建") }
                 }, colors = CustomColors.topBarColors)
@@ -198,8 +205,13 @@ fun SettingDomainPage(
             }
             item {
                 val mcpLarge = previewTools.filter { it.name.startsWith("mcp__") }.groupBy { it.name.removePrefix("mcp__").split("__").first() }.count { it.value.size >= 8 }
-                Text("${nestedDomains.size}个域 · ${previewTools.size}个工具 · ${mcpLarge}个大型MCP工具集 · ${settings.toolDomainOverrides.size}个覆盖 · ${settings.toolDescriptionOverrides.size}个描述修改 · ${settings.hiddenDomains.size}个隐藏",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("${nestedDomains.size}个域 · ${previewTools.size}个工具 · ${mcpLarge}个大型MCP工具集 · ${settings.toolDomainOverrides.size}个覆盖 · ${settings.toolDescriptionOverrides.size}个描述修改 · ${settings.hiddenDomains.size}个隐藏",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = { showClassifierPrompt = true }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                        Text("⚙️ 提示词", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
             }
 
             itemsIndexed(nestedDomains) { _, (domain, subs) ->
@@ -412,7 +424,7 @@ fun SettingDomainPage(
         isClassifying = false
     }
 
-    // 分类提示词编辑
+    // 分类提示词编辑（通过统计行「⚙️ 提示词」入口）
     if (showClassifierPrompt) {
         AlertDialog(onDismissRequest = { showClassifierPrompt = false }, title = { Text("AI 分类提示词") },
             text = {
