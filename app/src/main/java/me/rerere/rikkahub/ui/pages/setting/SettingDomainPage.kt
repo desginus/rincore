@@ -98,6 +98,7 @@ fun SettingDomainPage(
     var isClassifying by remember { mutableStateOf(false) }
     var classifyLog by remember { mutableStateOf("") }
     var showClassifierPrompt by remember { mutableStateOf(false) }
+    var revision by remember { mutableStateOf(0) }
     var autoChecked by remember { mutableStateOf(false) }
     var editClassifierPrompt by remember(settings.classifierPrompt) { mutableStateOf(settings.classifierPrompt.ifBlank { ToolClassifier.DEFAULT_PROMPT }) }
     var autoClassified by remember { mutableStateOf(false) }
@@ -156,7 +157,7 @@ fun SettingDomainPage(
         } catch (_: Exception) {}
         list
     }
-    val flatDomainMap: Map<String, List<ToolPreview>> = remember(previewTools, settings.toolDescriptionOverrides, settings.toolDomainOverrides) { previewTools.groupBy { router.classifyPreview(it.name, settings.toolDescriptionOverrides[it.name] ?: it.description) } }
+    val flatDomainMap: Map<String, List<ToolPreview>> = remember(previewTools, settings.toolDescriptionOverrides, settings.toolDomainOverrides, revision) { previewTools.groupBy { router.classifyPreview(it.name, settings.toolDescriptionOverrides[it.name] ?: it.description) } }
     val nestedDomains = remember(flatDomainMap, settings.hiddenDomains, settings.removedBuiltinDomains) { buildNestedDomains(flatDomainMap, previewTools, router) }
 
     Scaffold(
@@ -167,8 +168,8 @@ fun SettingDomainPage(
                 actions = {
                     IconButton(onClick = {
                     // 全域同步：强制重建分类
-                    classifyLog = "正在全域同步工具..."
-                    isClassifying = true
+                    classifyLog = "工具列表已刷新 (${previewTools.size}个工具)"
+                    revision++
                 }) { Icon(HugeIcons.Refresh01, "同步") }
                     IconButton(onClick = { showClassifierPrompt = true }) { Icon(HugeIcons.AiMagic, "分类") }
                     IconButton(onClick = { showToolList = true }) { Icon(HugeIcons.View, "工具列表") }
