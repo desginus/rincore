@@ -31,10 +31,6 @@ import androidx.compose.foundation.layout.heightIn
 
 data class ToolPreview(val name: String, val description: String)
 
-/**
- * 构建预览工具列表——与 ChatService 实际注入的工具完全一致。
- * 使用当前助手的 localTools / enabledSkills / mcpServers 配置。
- */
 fun buildPreviewTools(
     settings: Settings,
     localTools: me.rerere.rikkahub.data.ai.tools.local.LocalTools,
@@ -43,23 +39,17 @@ fun buildPreviewTools(
 ): List<ToolPreview> {
     val list = mutableListOf<ToolPreview>()
     val assistant = settings.getCurrentAssistant()
-
-    // 1. 内置本地工具——只加载当前助手启用的
     try {
         localTools.getTools(assistant.localTools).forEach { t ->
             list.add(ToolPreview(t.name, t.description))
         }
     } catch (_: Exception) {}
-
-    // 2. Skill 工具——每个技能独立命名
     try {
         val allSkills = skillManager.listSkills()
         allSkills.filter { it.name in assistant.enabledSkills }.forEach { s ->
             list.add(ToolPreview(sanitizeSkillToolName(s.name), s.description))
         }
     } catch (_: Exception) {}
-
-    // 3. MCP 工具——getAllAvailableTools 已按助手过滤
     try {
         mcpManager.getAllAvailableTools().forEach { (_, serverName, tool) ->
             list.add(ToolPreview("mcp__${serverName}__${tool.name}", tool.description ?: ""))
@@ -68,9 +58,6 @@ fun buildPreviewTools(
     return list
 }
 
-/**
- * 构建嵌套域列表——严格只展示 ToolDomain 顶级域 + 自定义域。
- */
 private fun buildNestedDomains(
     flatMap: Map<String, List<ToolPreview>>,
     router: ToolRouter,
@@ -85,14 +72,18 @@ private fun buildNestedDomains(
             allTopLevel.add(td.label)
         }
     }
+    // 自定义域: parent=null → 顶级域; parent!=null → 子域
     for (cd in router.customDomains) {
-        allTopLevel.add(cd.name)
+        if (cd.parent == null) {
+            allTopLevel.add(cd.name)
+        } else {
+            domainChildren.getOrPut(cd.parent) { mutableListOf() }.add(cd.name)
+        }
     }
 
     val visibleTopLevel = allTopLevel.filter { it !in router.hiddenDomains && it !in router.removedBuiltinDomains }
 
     val result = mutableListOf<Pair<String, Map<String, MutableList<ToolPreview>>?>>()
-
     for (parent in visibleTopLevel) {
         val myTools = flatMap[parent].orEmpty()
         val childDomains = domainChildren[parent].orEmpty()
@@ -136,6 +127,10 @@ fun SettingDomainPage(
     var editDesc by remember { mutableStateOf("") }
     var editKws by remember { mutableStateOf("") }
 
+    // 子域管理状态
+    var subdomainParent by remember { mutableStateOf<String?>(null) }
+    var showNewSubdomain by remember { mutableStateOf(false) }
+
     if (showToolList) { SettingToolListPage(settings, vm, { showToolList = false }); return }
 
     val router = remember(settings) {
@@ -145,7 +140,6 @@ fun SettingDomainPage(
         )
     }
 
-    // 预览工具——与实际对话注入一致，依赖助手配置
     val previewTools: List<ToolPreview> = remember(settings, revision) {
         buildPreviewTools(settings, localTools, skillManager, mcpManager)
     }
@@ -163,14 +157,12 @@ fun SettingDomainPage(
             TopAppBar(title = { Text("域分类管理") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(HugeIcons.ArrowLeft01, null) } },
                 actions = {
-                    // 刷新按钮：清理过期数据 + 强制重算
                     IconButton(onClick = {
                         val valid = router.validDomainLabels
                         val cleanedOverrides = settings.toolDomainOverrides.filterValues { it in valid }
                         val cleanedKeywords = settings.customDomainKeywords.filterKeys { it in valid }
                         val cleanedDescs = settings.customDomainDescriptions.filterKeys { it in valid }
                         val cleanedNames = settings.domainNameOverrides.filterKeys { it in valid }
-                        val removedCount = settings.toolDomainOverrides.size - cleanedOverrides.size
                         vm.updateSettings(settings.copy(
                             toolDomainOverrides = cleanedOverrides,
                             customDomainKeywords = cleanedKeywords,
@@ -178,15 +170,10 @@ fun SettingDomainPage(
                             domainNameOverrides = cleanedNames,
                         ))
                         revision++
-                        classifyLog = buildString {
-                            append("已刷新 · ${previewTools.size}个工具 · ${nestedDomains.size}个域")
-                            if (removedCount > 0) append(" · 清理${removedCount}个过期覆盖")
-                        }
+                        classifyLog = "${previewTools.size}个工具 · ${nestedDomains.size}个域"
                     }) { Icon(HugeIcons.Refresh01, "同步") }
-                    // AI 一键分类 — 直接触发，不弹对话框
-                    TextButton(onClick = {
-                        isClassifying = true
-                    }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                    TextButton(onClick = { isClassifying = true },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
                         Icon(HugeIcons.AiMagic, "AI分类", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.width(4.dp))
                         Text("AI分类", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
@@ -205,8 +192,9 @@ fun SettingDomainPage(
             }
             item {
                 val mcpLarge = previewTools.filter { it.name.startsWith("mcp__") }.groupBy { it.name.removePrefix("mcp__").split("__").first() }.count { it.value.size >= 8 }
+                val customSubCount = settings.customDomains.count { it.parent != null }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("${nestedDomains.size}个域 · ${previewTools.size}个工具 · ${mcpLarge}个大型MCP工具集 · ${settings.toolDomainOverrides.size}个覆盖 · ${settings.toolDescriptionOverrides.size}个描述修改 · ${settings.hiddenDomains.size}个隐藏",
+                    Text("${nestedDomains.size}个域 · ${previewTools.size}个工具 · ${mcpLarge}个MCP工具集 · ${customSubCount}个自定义子域",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     TextButton(onClick = { showClassifierPrompt = true }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
                         Text("⚙️ 提示词", style = MaterialTheme.typography.labelSmall)
@@ -219,7 +207,7 @@ fun SettingDomainPage(
                 val isHidden = domain in settings.hiddenDomains
                 val isCustom = domain in settings.customDomains.map { it.name }
                 val desc = settings.customDomainDescriptions[domain] ?: router.getTriggerDescription(domain)
-                val isMCPParent = subs != null
+                val hasSubs = subs != null
                 var expanded by remember { mutableStateOf(false) }
 
                 Card(Modifier.fillMaxWidth(),
@@ -228,7 +216,7 @@ fun SettingDomainPage(
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text("[${displayName}]", fontWeight = FontWeight.Bold, color = if (isCustom) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-                                if (isMCPParent) {
+                                if (hasSubs) {
                                     val subCount = subs!!.size
                                     val toolCount = subs.values.sumOf { it.size } + (flatDomainMap[domain]?.size ?: 0)
                                     Text(" (${subCount}子域/${toolCount}工具)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
@@ -239,6 +227,9 @@ fun SettingDomainPage(
                                 if (isHidden) Text(" [已隐藏]", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                             }
                             Row {
+                                // ⚙ 子域管理
+                                IconButton(onClick = { subdomainParent = domain },
+                                    modifier = Modifier.size(24.dp)) { Icon(HugeIcons.Settings01, "子域管理", modifier = Modifier.size(14.dp)) }
                                 IconButton(onClick = {
                                     editingDomain = domain
                                     editName = displayName
@@ -262,7 +253,7 @@ fun SettingDomainPage(
 
                         AnimatedVisibility(expanded) {
                             Column(Modifier.padding(top = 8.dp)) {
-                                if (isMCPParent) {
+                                if (hasSubs) {
                                     Text("子域:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                                     subs!!.forEach { (sub, subTools) ->
                                         val subDisplay = settings.domainNameOverrides[sub] ?: sub.substringAfterLast("/")
@@ -291,9 +282,11 @@ fun SettingDomainPage(
                                 } else {
                                     val domainTools = flatDomainMap[domain].orEmpty()
                                     val kws = router.getKeywords(domain)
-                                    Text("触发条件:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        kws.take(8).forEach { kw -> SuggestionChip(onClick = {}, label = { Text(kw, style = MaterialTheme.typography.labelSmall) }) }
+                                    if (kws.isNotEmpty()) {
+                                        Text("触发条件:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            kws.take(8).forEach { kw -> SuggestionChip(onClick = {}, label = { Text(kw, style = MaterialTheme.typography.labelSmall) }) }
+                                        }
                                     }
                                     if (domainTools.isNotEmpty()) {
                                         Spacer(Modifier.height(4.dp)); HorizontalDivider(); Spacer(Modifier.height(4.dp))
@@ -313,6 +306,88 @@ fun SettingDomainPage(
                 }
             }
         }
+    }
+
+    // === 子域管理对话框 ===
+    if (subdomainParent != null) {
+        val parentDomain = subdomainParent!!
+        val parentSubdomains = settings.customDomains.filter { it.parent == parentDomain }
+        val parentTools = flatDomainMap[parentDomain].orEmpty()
+        AlertDialog(
+            onDismissRequest = { subdomainParent = null },
+            title = { Text("管理子域: $parentDomain") },
+            text = {
+                Column(Modifier.fillMaxWidth().heightIn(max = 400.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("父域工具: ${parentTools.size}个", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    HorizontalDivider()
+                    if (parentSubdomains.isEmpty()) {
+                        Text("暂无自定义子域", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    parentSubdomains.forEach { cd ->
+                        val subFull = cd.name
+                        val subShort = subFull.substringAfterLast("/")
+                        val subTools = flatDomainMap[subFull].orEmpty()
+                        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                            Row(Modifier.padding(8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(subShort, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+                                    Text("${subTools.size}个工具 · ${cd.description.take(40)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                IconButton(onClick = {
+                                    // 删除子域: 工具回归父域
+                                    val newOverrides = settings.toolDomainOverrides.mapValues { (_, v) ->
+                                        if (v == subFull) parentDomain else v
+                                    }
+                                    vm.updateSettings(settings.copy(
+                                        customDomains = settings.customDomains.filter { it.name != subFull },
+                                        toolDomainOverrides = newOverrides,
+                                    ))
+                                    revision++
+                                }, modifier = Modifier.size(24.dp)) {
+                                    Icon(HugeIcons.Delete01, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    TextButton(onClick = { showNewSubdomain = true }) {
+                        Icon(HugeIcons.Add01, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("新建子域")
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { subdomainParent = null }) { Text("完成") } },
+        )
+    }
+
+    // 新建子域
+    if (showNewSubdomain && subdomainParent != null) {
+        val parentDomain = subdomainParent!!
+        var sn by remember { mutableStateOf("") }
+        var sd by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showNewSubdomain = false },
+            title = { Text("新建子域: $parentDomain") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(sn, { sn = it }, label = { Text("子域名称") },
+                        supportingText = { Text("如 我的引擎。完整路径将为 $parentDomain/$sn") })
+                    OutlinedTextField(sd, { sd = it }, label = { Text("描述(可选)") }, maxLines = 2)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (sn.isNotBlank()) {
+                        val full = "$parentDomain/$sn"
+                        vm.updateSettings(settings.copy(
+                            customDomains = settings.customDomains + CustomDomain(full, sd.trim(), parent = parentDomain)
+                        ))
+                        revision++
+                    }
+                    showNewSubdomain = false
+                }) { Text("创建") }
+            },
+            dismissButton = { TextButton(onClick = { showNewSubdomain = false }) { Text("取消") } }
+        )
     }
 
     // 编辑域对话框
@@ -344,12 +419,16 @@ fun SettingDomainPage(
         var nn by remember { mutableStateOf("") }; var nd by remember { mutableStateOf("") }; var nk by remember { mutableStateOf("") }
         AlertDialog(onDismissRequest = { showNewDomain = false }, title = { Text("新建域") },
             text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(nn, { nn = it }, label = { Text("内部名称(英文)") }, supportingText = { Text("如 physics/sim，用作 use_domain 参数") })
+                OutlinedTextField(nn, { nn = it }, label = { Text("内部名称(英文)") }, supportingText = { Text("如 physics/sim，用作 invoke_tools 参数") })
                 OutlinedTextField(nd, { nd = it }, label = { Text("触发描述") }, maxLines = 2)
                 OutlinedTextField(nk, { nk = it }, label = { Text("触发条件") })
             }},
             confirmButton = { TextButton(onClick = {
-                if (nn.isNotBlank()) vm.updateSettings(settings.copy(customDomains = settings.customDomains + CustomDomain(nn.trim(), nd.trim(), nk.split(",", "，").map { it.trim().lowercase() }.filter { it.isNotBlank() })))
+                if (nn.isNotBlank()) {
+                    val parts = nn.trim().split("/")
+                    val parent = if (parts.size > 1) parts[0] else null
+                    vm.updateSettings(settings.copy(customDomains = settings.customDomains + CustomDomain(nn.trim(), nd.trim(), nk.split(",", "，").map { it.trim().lowercase() }.filter { it.isNotBlank() }, parent = parent)))
+                }
                 showNewDomain = false
             }) { Text("创建") } },
             dismissButton = { TextButton(onClick = { showNewDomain = false }) { Text("取消") } }
@@ -361,12 +440,14 @@ fun SettingDomainPage(
         val domain = deleteConfirm!!
         val isCustom = domain in settings.customDomains.map { it.name }
         AlertDialog(onDismissRequest = { deleteConfirm = null }, title = { Text("删除域") },
-            text = { Text(if (isCustom) "删除自定义域「${domain}」？此操作不可恢复。该域下的工具覆盖将一起清除。"
+            text = { Text(if (isCustom) "删除自定义域「${domain}」？此操作不可恢复。子域和覆盖将一起清除。"
                      else "删除内置域「${domain}」？它将从场景地图中消失。可通过新建域恢复。") },
             confirmButton = { TextButton(onClick = {
                 var s = settings
                 if (isCustom) {
-                    s = s.copy(customDomains = s.customDomains.filter { it.name != domain })
+                    // 同时删除该域的子和所属覆盖
+                    val allToRemove = s.customDomains.filter { it.name == domain || it.parent == domain }.map { it.name }.toSet()
+                    s = s.copy(customDomains = s.customDomains.filter { it.name !in allToRemove })
                 } else {
                     s = s.copy(removedBuiltinDomains = s.removedBuiltinDomains + domain)
                 }
@@ -424,7 +505,7 @@ fun SettingDomainPage(
         isClassifying = false
     }
 
-    // 分类提示词编辑（通过统计行「⚙️ 提示词」入口）
+    // 分类提示词编辑
     if (showClassifierPrompt) {
         AlertDialog(onDismissRequest = { showClassifierPrompt = false }, title = { Text("AI 分类提示词") },
             text = {
