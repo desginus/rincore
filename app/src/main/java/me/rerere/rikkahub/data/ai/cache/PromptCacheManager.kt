@@ -84,29 +84,21 @@ data class CacheSegment(
  * 缓存统计
  */
 data class CacheStats(
-    /** 可缓存的总 token 数（Tier1 + Tier2） */
     val cacheableTokens: Int = 0,
-
-    /** 实际从缓存命中的 token 数（来自 API 响应） */
     val actualCachedTokens: Int = 0,
-
-    /** 缓存命中率 = actualCached / cacheable */
+) {
     val hitRate: Float
-        get() = if (cacheableTokens > 0) actualCachedTokens.toFloat() / cacheableTokens else 0f,
+        get() = if (cacheableTokens > 0) actualCachedTokens.toFloat() / cacheableTokens else 0f
 
-    /** 节省的 prompt token 数 */
     val savedPromptTokens: Int
-        get() = actualCachedTokens,
+        get() = actualCachedTokens
 
-    /** 估算节省成本（DeepSeek: cache_hit = $0.014/1M, full_prompt = $0.28/1M） */
     val estimatedSavingsUSD: Float
         get() {
             val savedM = actualCachedTokens / 1_000_000f
-            val fullPriceM = 0.28f
-            val cachePriceM = 0.014f
-            return savedM * (fullPriceM - cachePriceM)
+            return savedM * (0.28f - 0.014f)
         }
-)
+}
 
 /**
  * 提示词缓存管理器 — 构建缓存感知的提示词结构。
