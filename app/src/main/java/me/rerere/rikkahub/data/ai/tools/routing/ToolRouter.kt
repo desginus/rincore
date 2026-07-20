@@ -190,13 +190,25 @@ class ToolRouter(
 
             appendLine()
             appendLine("跨类别任务可多次调用 use_domain。不确定时调 `use_domain(\"帮助\")` 查看完整列表。")
+
+            // 列出所有 Skill 工具（帮助模型判断何时加载对应域）
+            val skillTools = tools.filter { it.name.startsWith("skill_") }
+            if (skillTools.isNotEmpty()) {
+                appendLine()
+                appendLine("### 可用技能")
+                appendLine()
+                for (s in skillTools) {
+                    appendLine("- `${s.name}`: ${s.description.take(100)}")
+                }
+                appendLine()
+                appendLine("技能工具已按功能归入对应域。调用 `use_domain(\"域名\")` 加载后即可直接使用。")
+            }
         }
     }
 
     fun createUseDomainTool(
         allTools: List<Tool>,
         loadedDomains: MutableSet<String>,
-        skillListText: String? = null,
     ): Tool {
         val router = this
         return Tool(
@@ -232,10 +244,8 @@ class ToolRouter(
                             val dTools = matchKeys.flatMap { classified[it].orEmpty() }
                             loadedDomains.addAll(matchKeys)
                             val names = dTools.map { it.name }
-                            val hasSkill = dTools.any { it.name == "use_skill" }
-                            val sn = if (hasSkill && skillListText != null) "\n\n$skillListText" else ""
                             val label = if (matchKeys.size > 1) "「$rawName」及其${matchKeys.size-1}个子域" else "「$rawName」"
-                            listOf(UIMessagePart.Text("已加载$label。${names.size}个工具: ${names.joinToString("、")}。$sn"))
+                            listOf(UIMessagePart.Text("已加载$label。${names.size}个工具: ${names.joinToString("、")}。"))
                         }
                     }
                 }

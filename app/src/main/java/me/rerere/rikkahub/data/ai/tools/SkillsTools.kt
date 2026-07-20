@@ -10,6 +10,12 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.data.files.SkillMetadata
 
+/**
+ * 将每个启用的 Skill 创建为独立工具。
+ * 工具名: skill_<sanitized_name>
+ * 工具描述: Skill 的原始 description
+ * 参数: path (可选) — Skill 目录内的相对路径
+ */
 fun createSkillTools(
     enabledSkills: Set<String>,
     allSkills: List<SkillMetadata>,
@@ -18,35 +24,14 @@ fun createSkillTools(
     val available = allSkills.filter { it.name in enabledSkills }
     if (available.isEmpty()) return emptyList()
 
-    return listOf(
+    return available.map { skill ->
+        val toolName = sanitizeSkillToolName(skill.name)
         Tool(
-            name = "use_skill",
-            description = """
-                Load and apply a skill to get specialized instructions or capabilities.
-                Call this tool when the user's request matches one of the available skills.
-            """.trimIndent(),
-            systemPrompt = { _, _ ->
-                buildString {
-                    appendLine("**Skills**")
-                    appendLine("You have access to the following skills. Use the `use_skill` tool to load a skill's instructions when the user's request matches.")
-                    appendLine("<available_skills>")
-                    available.forEach { skill ->
-                        appendLine("  <skill>")
-                        appendLine("    <name>${skill.name}</name>")
-                        appendLine("    <description>${skill.description}</description>")
-                        appendLine("  </skill>")
-                    }
-                    append("</available_skills>")
-                    appendLine()
-                }
-            },
+            name = toolName,
+            description = skill.description.take(300),
             parameters = {
                 InputSchema.Obj(
                     properties = buildJsonObject {
-                        put("name", buildJsonObject {
-                            put("type", "string")
-                            put("description", "The name of the skill to use")
-                        })
                         put("path", buildJsonObject {
                             put("type", "string")
                             put(
@@ -55,27 +40,37 @@ fun createSkillTools(
                             )
                         })
                     },
-                    required = listOf("name")
+                    required = listOf<String>()
                 )
             },
             execute = {
-                val name = it.jsonObject["name"]?.jsonPrimitive?.content
-                    ?: error("name is required")
-                if (name !in enabledSkills) {
-                    error("Skill '$name' is not available. Available skills: ${enabledSkills.joinToString()}")
-                }
                 val path = it.jsonObject["path"]?.jsonPrimitive?.content
                 val content = if (path.isNullOrBlank()) {
-                    skillManager.readSkillBody(name)
-                        ?: error("Skill '$name' not found")
+                    skillManager.readSkillBody(skill.name)
+                        ?: error("Skill '${skill.name}' not found")
                 } else {
-                    val target = skillManager.resolveSkillFile(name, path)
+                    val target = skillManager.resolveSkillFile(skill.name, path)
                         ?: error("Path '$path' is outside the skill directory")
-                    require(target.exists()) { "File '$path' not found in skill '$name'" }
+                    require(target.exists()) { "File '$path' not found in skill '${skill.name}'" }
                     target.readText()
                 }
                 listOf(UIMessagePart.Text(content))
             }
         )
-    )
+    }
+}
+
+/** 将 Skill 名称转换为合法的工具名: skill_<lowercase_with_underscores> */
+fun sanitizeSkillToolName(skillName: String): String {
+    val sanitized = skillName.lowercase()
+        .replace(" ", "_")
+        .replace(Regex("[^a-z0-9_-]"), "")
+        .trim('_')
+    return "skill_$sanitized"
+}
+
+/** 从工具名还原 Skill 名称（用于 UI 显示） */
+fun desanitizeSkillName(toolName: String): String? {
+    if (!toolName.startsWith("skill_")) return null
+    return toolName.removePrefix("skill_")
 }

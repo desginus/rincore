@@ -135,7 +135,7 @@ enum class ToolDomain(
 
     CONV_UTIL("对话工具/小工具", "JS沙箱、Ask User、剪贴板、技能等高频率工具", listOf(
         "eval", "javascript", "js", "代码计算", "ask_user", "询问用户",
-        "use_skill", "技能", "clipboard", "复制", "TTS", "tts", "朗读",
+        "skill_", "技能", "clipboard", "复制", "TTS", "tts", "朗读",
         "text_to_speech", "语音合成", "屏幕时间", "screen_time",
         "子对话", "conversation", "skill", "shutdown", "restart",
         "toast", "notification", "通知", "分享", "share", "下载", "download"

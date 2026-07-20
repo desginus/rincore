@@ -110,12 +110,7 @@ class GenerationHandler(
             null
         }
 
-        // 预提取 Skill 列表文本（从 use_skill 的 systemPrompt 中）
-        val skillListText = if (useLayered) {
-            tools.find { it.name == "use_skill" }?.systemPrompt?.invoke(model, messages)
-        } else {
-            null
-        }
+        // Skill 已拆分为独立工具 (skill_<name>)，无需集中提取 skillListText
 
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
@@ -143,7 +138,7 @@ class GenerationHandler(
                         ).let(this::addAll)
                     }
                     // use_domain 工具（始终包含）
-                    add(toolRouter.createUseDomainTool(tools, loadedDomains, skillListText))
+                    add(toolRouter.createUseDomainTool(tools, loadedDomains))
                     // 已加载域的工具
                     for (domain in loadedDomains) {
                         addAll(toolRouter.getDomainTools(domain, tools))
