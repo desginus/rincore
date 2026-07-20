@@ -41,8 +41,6 @@ import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
 import me.rerere.rikkahub.data.ai.tools.routing.ToolRouter
-import me.rerere.rikkahub.data.ai.cache.CacheTier
-import me.rerere.rikkahub.data.ai.cache.PromptCacheManager
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
@@ -105,10 +103,8 @@ class GenerationHandler(
             removedBuiltinDomains = settings.removedBuiltinDomains,
         )
 
-        // === 缓存管理器 ===
         val isProviderOpenAI = provider is ProviderSetting.OpenAI
         val cacheEnabled = isProviderOpenAI && (provider as ProviderSetting.OpenAI).promptCaching
-        val promptCache = PromptCacheManager()
 
         val layer1Prompt = if (useLayered) {
             toolRouter.buildLayer1(tools)
@@ -220,7 +216,6 @@ class GenerationHandler(
                     conversationLorebookIds = conversationLorebookIds,
                     workspaceCwd = workspaceCwd,
                     layer1Prompt = layer1Prompt,
-                    promptCache = promptCache,
                     cacheEnabled = cacheEnabled,
                 )
                 messages = messages.visualTransforms(
@@ -426,7 +421,6 @@ class GenerationHandler(
         conversationLorebookIds: Set<Uuid> = emptySet(),
         workspaceCwd: String? = null,
         layer1Prompt: String? = null,
-        promptCache: PromptCacheManager = PromptCacheManager(),
         cacheEnabled: Boolean = false,
     ) {
         val internalMessages = buildList {
@@ -483,11 +477,8 @@ class GenerationHandler(
                     " memory=${memPromptLen}c (~${(memPromptLen/2.5).toInt()}t)" +
                     " tools=${toolsPromptLen}c (~${(toolsPromptLen/2.5).toInt()}t)" +
                     " total=${system.length}c (~${estTokens.toInt()}t)")
-                // 缓存追踪: 系统提示词 + 路由表是可缓存前缀
                 if (cacheEnabled) {
-                    promptCache.append(CacheTier.SYSTEM, system)
-                    val cacheableTokens = promptCache.cacheableTokens
-                    Log.i(TAG, "Cache: ${cacheableTokens}t cacheable prefix (~${(cacheableTokens*2.5).toInt()}c)")
+                    Log.i(TAG, "Cache: ${estTokens.toInt()}t prefix cacheable (system+memory+routing+tools)")
                 }
                 add(UIMessage.system(prompt = system))
             }

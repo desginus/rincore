@@ -68,9 +68,3 @@ fun sanitizeSkillToolName(skillName: String): String {
         .trim('_')
     return "skill_$sanitized"
 }
-
-/** 从工具名还原 Skill 名称（用于 UI 显示） */
-fun desanitizeSkillName(toolName: String): String? {
-    if (!toolName.startsWith("skill_")) return null
-    return toolName.removePrefix("skill_")
-}
