@@ -20,7 +20,7 @@ enum class ToolDomain(
 
     SEARCH_ENGINE("搜索/搜索引擎", "通用网页搜索引擎", listOf(
         "search", "搜一下", "搜狗", "夸克", "维基", "wikipedia", "webSearch", "scrape",
-        "搜素引擎", "查查", "网上找", "网页搜索", "网页"
+        "搜素引擎", "查查", "网上找", "网页搜索", "网页", "search_web", "web_search", "query", "Quark"
     ), "搜索"),
 
     SEARCH_SHOP("搜索/商品搜索", "商品搜索、比价", listOf(
@@ -57,7 +57,7 @@ enum class ToolDomain(
     // ============================================================
     // 4. 文件控制
     // ============================================================
-    FILE("文件控制", "读写管理文件、压缩解压", listOf("文件", "file", "读文件", "保存", "压缩", "解压", "zip", "目录"), null),
+    FILE("文件控制", "读写管理文件、压缩解压、工作区Shell", listOf("文件", "file", "读文件", "保存", "压缩", "解压", "zip", "目录", "workspace", "shell", "工作区", "bash", "mkdir", "delete", "move", "copy", "下载"), null),
 
     FILE_BROWSE("文件控制/浏览", "列出目录、查看文件信息", listOf(
         "列出", "列表", "list", "目录", "文件信息", "ls", "dir", "list_files", "read_file"
@@ -137,7 +137,8 @@ enum class ToolDomain(
         "eval", "javascript", "js", "代码计算", "ask_user", "询问用户",
         "use_skill", "技能", "clipboard", "复制", "TTS", "tts", "朗读",
         "text_to_speech", "语音合成", "屏幕时间", "screen_time",
-        "子对话", "conversation", "skill", "shutdown", "restart"
+        "子对话", "conversation", "skill", "shutdown", "restart",
+        "toast", "notification", "通知", "分享", "share", "下载", "download"
     ), "对话工具"),
 
     // ============================================================

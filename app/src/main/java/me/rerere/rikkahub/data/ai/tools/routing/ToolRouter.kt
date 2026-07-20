@@ -16,7 +16,7 @@ private const val MCP_SUBDOMAIN_THRESHOLD = 8 // 同一MCP服务器工具超过�
 class ToolRouter(
     private val overrides: Map<String, String> = emptyMap(),
     private val customDescriptions: Map<String, String> = emptyMap(),
-    private val customDomains: List<CustomDomain> = emptyList(),
+    internal val customDomains: List<CustomDomain> = emptyList(),
     private val customKeywords: Map<String, List<String>> = emptyMap(),
     private val domainNameOverrides: Map<String, String> = emptyMap(),
     private val hiddenDomains: Set<String> = emptySet(),
