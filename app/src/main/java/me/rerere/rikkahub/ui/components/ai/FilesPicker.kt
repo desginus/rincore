@@ -148,7 +148,7 @@ internal fun FilesPicker(
                 val targetId = wsId ?: firstWsId
                 onDismiss()
                 if (targetId != null) {
-                    navController.navigate(Screen.WorkspaceDetail(targetId))
+                    navController.navigate(Screen.WorkspaceDetail(targetId, initialTab = 1))
                 } else {
                     navController.navigate(Screen.Workspaces)
                 }
