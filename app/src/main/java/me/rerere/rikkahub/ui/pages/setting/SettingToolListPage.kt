@@ -43,8 +43,8 @@ fun SettingToolListPage(
             settings.domainNameOverrides, settings.hiddenDomains, settings.removedBuiltinDomains)
     }
 
-    // 完整工具清单——包含内置+MCP+Skill
-    val allTools: List<ToolPreview> = remember(settings) {
+    // 完整工具清单——依赖真实数据源而非settings快照
+    val allTools: List<ToolPreview> = run {
         val list = mutableListOf<ToolPreview>()
         // 内置本地工具
         try {
