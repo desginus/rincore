@@ -41,6 +41,7 @@ import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
 import me.rerere.rikkahub.data.ai.tools.routing.ToolRouter
+import me.rerere.rikkahub.data.ai.cache.PromptStabilityGuard
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
@@ -56,6 +57,9 @@ private const val TAG = "GenerationHandler"
 private const val MAX_TOOL_OUTPUT_CHARS = 8 * 1024           // 8K — 缓存友好阈值
 private const val TOOL_OUTPUT_PREVIEW_CHARS = 2 * 1024       // 2K 预览
 private const val CACHE_PREFIX_WARN_CHARS = 64 * 1024        // 64K — 超此前缀警告缓存效率下降
+
+/** 全局系统提示词稳定性哨兵 — 同一进程内所有 GenerationHandler 共享 */
+private val globalStabilityGuard = PromptStabilityGuard()
 
 @Serializable
 sealed interface GenerationChunk {
@@ -479,6 +483,7 @@ class GenerationHandler(
                     " total=${system.length}c (~${estTokens.toInt()}t)")
                 if (cacheEnabled) {
                     Log.i(TAG, "Cache: ${estTokens.toInt()}t prefix cacheable (system+memory+routing+tools)")
+                    globalStabilityGuard.check(system)
                 }
                 add(UIMessage.system(prompt = system))
             }
@@ -504,9 +509,14 @@ class GenerationHandler(
         // 缓存诊断: 前缀过大时警告
         val systemMsg = internalMessages.firstOrNull { it.role == MessageRole.SYSTEM }
         val prefixChars = systemMsg?.parts?.filterIsInstance<UIMessagePart.Text>()?.sumOf { it.text.length } ?: 0
-        if (cacheEnabled && totalChars > CACHE_PREFIX_WARN_CHARS) {
-            Log.i(TAG, "Cache prefix: ${prefixChars}c system + ${totalChars - prefixChars}c history = ${totalChars}c total — " +
-                "长前缀可能降低缓存效率, 工具输出会自动截断至${MAX_TOOL_OUTPUT_CHARS}c")
+        val historyChars = totalChars - prefixChars
+        if (cacheEnabled) {
+            val cacheRate = if (totalChars > 0) (prefixChars * 100 / totalChars) else 0
+            Log.i(TAG, "Cache: 锚点${prefixChars}c + 历史${historyChars}c = 总计${totalChars}c — " +
+                "锚点缓存命中率~${cacheRate}%")
+            if (totalChars > CACHE_PREFIX_WARN_CHARS) {
+                Log.w(TAG, "Cache: 前缀过长(${totalChars}c > ${CACHE_PREFIX_WARN_CHARS}c) — 工具输出截断至${MAX_TOOL_OUTPUT_CHARS}c已启用")
+            }
         }
 
         var messages: List<UIMessage> = messages
@@ -596,7 +606,9 @@ class GenerationHandler(
             UIMessagePart.Text(
                 buildString {
                     appendLine("[输出截断: $totalChars 字符 → /tool_outputs/$fileName]")
-                    appendLine(preview)
+                    appendLine("如需完整内容，调用 workspace_read_file(\"/tool_outputs/$fileName\")")
+                    appendLine()
+                    append(preview)
                 }
             )
         ) + nonTextParts
