@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.ui.pages.setting
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -130,6 +131,8 @@ fun SettingDomainPage(
     // 子域管理状态
     var subdomainParent by remember { mutableStateOf<String?>(null) }
     var showNewSubdomain by remember { mutableStateOf(false) }
+    var managingSubdomain by remember { mutableStateOf<String?>(null) }
+    var movingTool by remember { mutableStateOf<ToolPreview?>(null) }
 
     if (showToolList) { SettingToolListPage(settings, vm, { showToolList = false }); return }
 
@@ -311,52 +314,135 @@ fun SettingDomainPage(
     // === 子域管理对话框 ===
     if (subdomainParent != null) {
         val parentDomain = subdomainParent!!
-        val parentSubdomains = settings.customDomains.filter { it.parent == parentDomain }
+        // 收集该父域下的所有子域：内置 + 自定义
+        val builtinSubs = ToolDomain.entries.filter { it.parent == parentDomain }.map { it.label }
+        val customSubs = settings.customDomains.filter { it.parent == parentDomain }.map { it.name }
+        val allSubs = (builtinSubs + customSubs).sorted()
         val parentTools = flatDomainMap[parentDomain].orEmpty()
         AlertDialog(
             onDismissRequest = { subdomainParent = null },
             title = { Text("管理子域: $parentDomain") },
             text = {
-                Column(Modifier.fillMaxWidth().heightIn(max = 400.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("父域工具: ${parentTools.size}个", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                    HorizontalDivider()
-                    if (parentSubdomains.isEmpty()) {
-                        Text("暂无自定义子域", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 400.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    item {
+                        Text("父域直接工具: ${parentTools.size}个", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        HorizontalDivider()
                     }
-                    parentSubdomains.forEach { cd ->
-                        val subFull = cd.name
+                    if (allSubs.isEmpty()) {
+                        item { Text("暂无子域", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    }
+                    itemsIndexed(allSubs) { _, subFull ->
                         val subShort = subFull.substringAfterLast("/")
+                        val isCustom = subFull in customSubs
                         val subTools = flatDomainMap[subFull].orEmpty()
+                        val subDesc = settings.customDomainDescriptions[subFull] ?: router.getTriggerDescription(subFull)
                         Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                            Row(Modifier.padding(8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(subShort, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
-                                    Text("${subTools.size}个工具 · ${cd.description.take(40)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                IconButton(onClick = {
-                                    // 删除子域: 工具回归父域
-                                    val newOverrides = settings.toolDomainOverrides.mapValues { (_, v) ->
-                                        if (v == subFull) parentDomain else v
+                            Column(Modifier.padding(8.dp).fillMaxWidth()) {
+                                Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(subShort, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+                                        Text("${subTools.size}个工具 · ${subDesc.take(40)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
-                                    vm.updateSettings(settings.copy(
-                                        customDomains = settings.customDomains.filter { it.name != subFull },
-                                        toolDomainOverrides = newOverrides,
-                                    ))
-                                    revision++
-                                }, modifier = Modifier.size(24.dp)) {
-                                    Icon(HugeIcons.Delete01, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.error)
+                                    Row {
+                                        TextButton(onClick = { managingSubdomain = subFull }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                                            Text("管理工具", style = MaterialTheme.typography.labelSmall)
+                                        }
+                                        if (isCustom) {
+                                            IconButton(onClick = {
+                                                // 删除子域: 工具回归父域
+                                                val newOverrides = settings.toolDomainOverrides.mapValues { (_, v) ->
+                                                    if (v == subFull) parentDomain else v
+                                                }
+                                                vm.updateSettings(settings.copy(
+                                                    customDomains = settings.customDomains.filter { it.name != subFull },
+                                                    toolDomainOverrides = newOverrides,
+                                                ))
+                                                revision++
+                                            }, modifier = Modifier.size(24.dp)) {
+                                                Icon(HugeIcons.Delete01, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.error)
+                                            }
+                                        }
+                                    }
+                                }
+                                if (subTools.isNotEmpty()) {
+                                    Text(subTools.take(3).joinToString(", ") { it.name }, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    if (subTools.size > 3) Text("...等${subTools.size}个", style = MaterialTheme.typography.labelSmall)
                                 }
                             }
                         }
                     }
-                    Spacer(Modifier.height(4.dp))
-                    TextButton(onClick = { showNewSubdomain = true }) {
-                        Icon(HugeIcons.Add01, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("新建子域")
+                    item {
+                        Spacer(Modifier.height(4.dp))
+                        TextButton(onClick = { showNewSubdomain = true }) {
+                            Icon(HugeIcons.Add01, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("新建子域")
+                        }
                     }
                 }
             },
             confirmButton = { TextButton(onClick = { subdomainParent = null }) { Text("完成") } },
         )
+    }
+
+    // === 子域工具管理对话框 ===
+    if (managingSubdomain != null) {
+        val subFull = managingSubdomain!!
+        val parentDomain = subFull.substringBefore("/")
+        val subShort = subFull.substringAfterLast("/")
+        val subTools = flatDomainMap[subFull].orEmpty()
+        // 可移动目标：父域 + 该父域下所有其他子域
+        val moveTargets = (listOf(parentDomain) + (ToolDomain.entries.filter { it.parent == parentDomain }.map { it.label } + settings.customDomains.filter { it.parent == parentDomain }.map { it.name }).filter { it != subFull }).sorted()
+        AlertDialog(
+            onDismissRequest = { managingSubdomain = null },
+            title = { Text("管理工具: $subShort") },
+            text = {
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 400.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (subTools.isEmpty()) {
+                        item { Text("该子域暂无工具", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    }
+                    itemsIndexed(subTools) { _, tool ->
+                        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                            Row(Modifier.padding(8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(tool.name, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(tool.description.take(60), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                                TextButton(onClick = { movingTool = tool }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                                    Text("移到", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { managingSubdomain = null }) { Text("完成") } },
+        )
+
+        // 工具移动目标选择
+        if (movingTool != null) {
+            val tool = movingTool!!
+            AlertDialog(
+                onDismissRequest = { movingTool = null },
+                title = { Text("移动 ${tool.name}") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        moveTargets.forEach { target ->
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable {
+                                val newOverrides = settings.toolDomainOverrides.toMutableMap()
+                                newOverrides[tool.name] = target
+                                vm.updateSettings(settings.copy(toolDomainOverrides = newOverrides))
+                                revision++
+                                movingTool = null
+                            }.padding(vertical = 8.dp)) {
+                                RadioButton(selected = false, onClick = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(target, style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                    }
+                },
+                confirmButton = { TextButton(onClick = { movingTool = null }) { Text("取消") } },
+            )
+        }
     }
 
     // 新建子域
