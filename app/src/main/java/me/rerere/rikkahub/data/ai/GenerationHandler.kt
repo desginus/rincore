@@ -103,9 +103,19 @@ class GenerationHandler(
             removedBuiltinDomains = settings.removedBuiltinDomains,
         )
 
-        // 预计算 Layer1 路由表
+        // 分离框架工具与用户域工具
+        val frameworkToolSet = setOf(
+            "memory_tool", "invoke_tools",
+            "search_web", "scrape_web",
+            "recent_chats", "conversation_search",
+            "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file",
+        )
+        val domainTools = tools.filter { it.name !in frameworkToolSet }
+        val frameworkTools = tools.filter { it.name in frameworkToolSet }
+
+        // 预计算 Layer1 路由表 — 仅基于用户域工具
         val layer1Prompt = if (useLayered) {
-            toolRouter.buildLayer1(tools)
+            toolRouter.buildLayer1(domainTools)
         } else {
             null
         }
@@ -118,6 +128,7 @@ class GenerationHandler(
             val toolsInternal = if (useLayered) {
                 buildList {
                     Log.i(TAG, "generateInternal: build tools (layered)($assistant)")
+                    // 框架工具 — 始终可调用, 不走域系统
                     if (assistant?.enableMemory == true) {
                         val memoryAssistantId = if (assistant.useGlobalMemory) {
                             MemoryRepository.GLOBAL_MEMORY_ID
@@ -137,11 +148,13 @@ class GenerationHandler(
                             }
                         ).let(this::addAll)
                     }
-                    // invoke_tools 工具（始终包含）
-                    add(toolRouter.createInvokeToolsTool(tools, loadedDomains))
+                    // 其他框架工具 (search/conversation/workspace) — 始终注入
+                    addAll(frameworkTools.filter { it.name != "memory_tool" })
+                    // invoke_tools 工具（始终包含, 只对用户域工具分类）
+                    add(toolRouter.createInvokeToolsTool(domainTools, loadedDomains))
                     // 已加载域的工具
                     for (domain in loadedDomains) {
-                        addAll(toolRouter.getDomainTools(domain, tools))
+                        addAll(toolRouter.getDomainTools(domain, domainTools))
                     }
                 }.distinctBy { it.name }  // 防止 memory_tool 等跨路径重复
             } else {
