@@ -43,48 +43,61 @@ private fun buildNestedDomains(
     allTools: List<ToolPreview>,
     router: ToolRouter,
 ): List<Pair<String, Map<String, MutableList<ToolPreview>>?>> {
-    val result = mutableListOf<Pair<String, Map<String, MutableList<ToolPreview>>?>>()
-
-    // 构建 ToolDomain 父子关系：parent → list of child labels
+    // 构建 ToolDomain 父子关系
     val domainChildren = mutableMapOf<String, MutableList<String>>()
+    val allTopLevel = mutableSetOf<String>()
     for (td in ToolDomain.entries) {
         if (td.parent != null) {
             domainChildren.getOrPut(td.parent) { mutableListOf() }.add(td.label)
-        }
-    }
-
-    // 收集被分配到子域的工具，它们将被嵌套到父域下
-    val childKeys = domainChildren.values.flatten().toSet()
-    val topLevelKeys = flatMap.keys.filter { it !in childKeys }
-
-    // 分组：父域 → Map<子域名, List<ToolPreview>>
-    val topGrouped = mutableMapOf<String, MutableMap<String, MutableList<ToolPreview>>>()
-
-    for (key in topLevelKeys) {
-        val subs = domainChildren[key]
-        if (subs != null && subs.isNotEmpty()) {
-            // 这是一个有子域的父域
-            val subMap = mutableMapOf<String, MutableList<ToolPreview>>()
-            // 自己的工具
-            if (key in flatMap) {
-                subMap.getOrPut(key) { mutableListOf() }.addAll(flatMap[key] ?: emptyList())
-            }
-            // 子域的工具
-            for (child in subs) {
-                if (child in flatMap) {
-                    subMap[child] = (flatMap[child] ?: emptyList()).toMutableList()
-                }
-            }
-            topGrouped[key] = subMap
         } else {
-            // 无子域的顶层域，显示为叶子
+            allTopLevel.add(td.label)
+        }
+    }
+    val childKeys = domainChildren.values.flatten().toSet()
+
+    // 自定义域也加入顶级
+    for (td in ToolDomain.entries) {
+        if (td.parent == null) allTopLevel.add(td.label)
+    }
+
+    // 清理：排除 system/uncategorized/自定义域
+    val customDomainNames = router.customDomains.map { it.name }.toSet()
+    val cleanKeys = flatMap.keys.filter { it !in childKeys && it != "system" && it != "uncategorized" }
+    val result = mutableListOf<Pair<String, Map<String, MutableList<ToolPreview>>?>>()
+
+    // 已处理的顶级域
+    val processedTops = mutableSetOf<String>()
+
+    for (key in cleanKeys) {
+        val isToolDomainTop = key in allTopLevel
+        val isCustom = key in customDomainNames
+        val hasChildren = (domainChildren[key]?.size ?: 0) > 0
+
+        if (hasChildren) {
+            val subMap = mutableMapOf<String, MutableList<ToolPreview>>()
+            flatMap[key]?.let { subMap.getOrPut(key) { mutableListOf() }.addAll(it) }
+            for (child in domainChildren[key] ?: emptyList()) {
+                flatMap[child]?.let { subMap[child] = it.toMutableList() }
+            }
+            result.add(key to subMap)
+            processedTops.add(key)
+            processedTops.addAll(domainChildren[key] ?: emptyList())
+        } else if (isToolDomainTop) {
+            // 顶级域但无子域（如方法域）
             result.add(key to null)
+            processedTops.add(key)
+        } else {
+            // 自定义域或其他
+            result.add(key to null)
+            processedTops.add(key)
         }
     }
 
-    // 输出排序后的父域
-    for (parent in topGrouped.keys.sorted()) {
-        result.add(parent to topGrouped[parent])
+    // 补充尚未出现的顶级域（即使无工具也展示）
+    for (top in allTopLevel.sorted()) {
+        if (top !in processedTops) {
+            result.add(top to null)
+        }
     }
 
     return result
@@ -174,9 +187,11 @@ fun SettingDomainPage(
                 navigationIcon = { IconButton(onClick = onBack) { Icon(HugeIcons.ArrowLeft01, null) } },
                 actions = {
                     IconButton(onClick = {
-                    // 全域同步：强制重建分类
-                    classifyLog = "工具列表已刷新 (${previewTools.size}个工具)"
+                    // 强制全域刷新：递增revision + 触发settings变更
                     revision++
+                    vm.updateSettings(settings.copy())
+                    classifyLog = "已刷新 (${previewTools.size}个工具, ${nestedDomains.size}个域)"
+                    isClassifying = false
                 }) { Icon(HugeIcons.Refresh01, "同步") }
                     IconButton(onClick = { showClassifierPrompt = true }) { Icon(HugeIcons.AiMagic, "分类") }
                     IconButton(onClick = { showToolList = true }) { Icon(HugeIcons.View, "工具列表") }
@@ -253,17 +268,22 @@ fun SettingDomainPage(
                                             settings.domainNameOverrides["$domain/$subName"] ?: subName
                                         }
                                         Card(Modifier.fillMaxWidth().padding(vertical = 2.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                                            Column(Modifier.padding(8.dp)) {
-                                                Text("[$subDisplay] ${subTools.size}个工具", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
-                                                subTools.take(5).forEach { t ->
-                                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                                        Text("  ${t.name}", style = MaterialTheme.typography.bodySmall, maxLines = 1, modifier = Modifier.weight(1f))
-                                                        IconButton(onClick = { showToolList = true }, modifier = Modifier.size(18.dp)) {
-                                                            Icon(HugeIcons.Edit01, null, modifier = Modifier.size(10.dp))
-                                                        }
+                                            Row(Modifier.padding(8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                                Column(Modifier.weight(1f)) {
+                                                    Text("[$subDisplay] ${subTools.size}个工具", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+                                                    subTools.take(5).forEach { t ->
+                                                        Text("  ${t.name}", style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                                     }
+                                                    if (subTools.size > 5) Text("  ... 等${subTools.size}个", style = MaterialTheme.typography.bodySmall)
                                                 }
-                                                if (subTools.size > 5) Text("  ...还有${subTools.size - 5}个", style = MaterialTheme.typography.bodySmall)
+                                                IconButton(onClick = {
+                                                    editingDomain = sub
+                                                    editName = subName
+                                                    editDesc = settings.customDomainDescriptions[sub] ?: ""
+                                                    editKws = router.getKeywords(sub).joinToString(", ")
+                                                }, modifier = Modifier.size(24.dp)) {
+                                                    Icon(HugeIcons.Edit01, null, modifier = Modifier.size(14.dp))
+                                                }
                                             }
                                         }
                                     }
