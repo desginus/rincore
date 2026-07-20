@@ -1383,7 +1383,6 @@
     <string name="setting_files_page_clean_title">清理文件</string>
     <string name="setting_files_page_clean_confirmation">确定要删除此目录下的所有文件吗？此操作不可撤销。</string>
     <string name="setting_files_page_clean_action">清理</string>
-    <string name="setting_files_page_cancel_action">取消</string>
     <string name="setting_files_page_clean_content_description">一键清理</string>
 </resources>
 
