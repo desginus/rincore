@@ -93,9 +93,14 @@ private fun buildNestedDomains(
             val subMap = mutableMapOf<String, MutableList<ToolPreview>>()
             if (myTools.isNotEmpty()) subMap[parent] = myTools.toMutableList()
             childDomains.forEach { child ->
-                flatMap[child]?.takeIf { it.isNotEmpty() }?.let { subMap[child] = it.toMutableList() }
+                subMap[child] = (flatMap[child] ?: emptyList()).toMutableList()
             }
-            result.add(parent to subMap)
+            // 只过滤掉完全没有工具的空子域显示项 — 自定义空子域仍保留
+            if (subMap.isNotEmpty()) {
+                result.add(parent to subMap)
+            } else {
+                result.add(parent to null)
+            }
         } else {
             result.add(parent to null)
         }
