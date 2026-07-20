@@ -161,7 +161,7 @@ class ToolRouter(
             appendLine()
             appendLine("你拥有一个工具总域 `工具`，包含完成各类任务所需的全部工具，按功能场景树状组织。")
             appendLine()
-            appendLine("**加载方式**：`invoke_tools(\"场景名\")` 或 `invoke_tools(\"场景/子场景\")`。路径越深，加载的工具越少越精准。")
+            appendLine("**加载方式**：`invoke_tools(\"场景名\")` 查看子域列表(含描述与工具数)；`invoke_tools(\"场景/子域\")` 直接获取工具。父域返回子域总览+直接工具，子域返回工具列表。")
             appendLine()
             appendLine("### 调度原则")
             appendLine()
@@ -169,7 +169,7 @@ class ToolRouter(
             appendLine()
             appendLine("**按需加载，用完即走。** 判断任务需要什么场景，精确加载。不需要囤积工具——上下文是你的工作台，只放当前要用的。场景不对就换，路径不够深就再下一层。")
             appendLine()
-            appendLine("**不确定时向上看。** 不知道具体该加载哪个子场景？加载上层节点。比如不确定物理问题属于运动学还是动力学，加载 `计算/物理`，所有物理子场景的工具都会出现。")
+            appendLine("**不确定时向上看。** 不知道具体该加载哪个子场景？加载上层节点查看子域列表和描述，再根据描述选择目标加载。调 `invoke_tools(\"帮助\")` 也可查看全部类别。")
             appendLine()
             appendLine("**复杂任务组合加载。** \"搜数据然后画图\"→ 先加载搜索工具搜到数据，再加载图表工具画图。\"打开网页填表提交\"→ 一次性加载浏览器工具。")
             appendLine()
@@ -198,7 +198,7 @@ class ToolRouter(
             }
 
             appendLine()
-            appendLine("跨类别任务可多次调用 invoke_tools。不确定时调 `invoke_tools(\"帮助\")` 查看完整列表。")
+            appendLine("跨类别任务可多次调用 invoke_tools 加载不同子域。不确定时调 `invoke_tools(\"帮助\")` 查看完整列表。")
 
             // 列出所有 Skill 工具（帮助模型判断何时加载对应域）
             val skillTools = tools.filter { it.name.startsWith("skill_") }
@@ -222,7 +222,7 @@ class ToolRouter(
         val router = this
         return Tool(
             name = "invoke_tools",
-            description = "按类别加载工具。支持层级加载：父域加载所有子域，子域只加载自身。",
+            description = "按类别加载工具。有子域时返回子域列表(需再调用加载子域)，无子域时直接返回工具列表。",
             parameters = {
                 InputSchema.Obj(
                     properties = buildJsonObject {
@@ -241,25 +241,59 @@ class ToolRouter(
                         listOf(UIMessagePart.Text(router.buildHelpText(allTools)))
                     else -> {
                         val classified = router.classifyAll(allTools)
-                        // 严格按请求加载: rawName 本身或其下的所有子域
                         val matchKeys = classified.keys.filter { it == rawName || it.startsWith("$rawName/") }
                         if (matchKeys.isEmpty()) {
                             val avail = classified.keys.filter { it != "system" }.sorted()
                             listOf(UIMessagePart.Text("未知: '$rawName'。可用: ${avail.joinToString("、")}"))
                         } else {
-                            val dTools = matchKeys.flatMap { classified[it].orEmpty() }
-                            // 只记录用户请求的域路径, getDomainTools 会自动展开子域
                             loadedDomains.add(rawName)
-                            val names = dTools.map { it.name }
-                            val label = if (matchKeys.size > 1) "「$rawName」及其${matchKeys.size-1}个子域" else "「$rawName」"
-                            val summary = buildString {
-                                appendLine("已加载$label。${names.size}个工具:")
-                                for (t in dTools.sortedBy { it.name }) {
-                                    val desc = t.description.take(80).replace("\n", " ")
-                                    appendLine("- `${t.name}`: $desc")
+                            // 检查是否有子域
+                            val childKeys = matchKeys.filter { it != rawName }
+                            val directTools = classified[rawName].orEmpty()
+                            if (childKeys.isNotEmpty()) {
+                                // 有子域: 直接工具已加载, 子域需单独指定
+                                val summary = buildString {
+                                    val subInfo = buildString {
+                                        for (ck in childKeys.sorted()) {
+                                            val cd = ck.split("/")
+                                            val indent = "　".repeat(cd.size - 1)
+                                            val short = cd.last()
+                                            val desc = router.getTriggerDescription(ck)
+                                            val count = classified[ck]?.size ?: 0
+                                            appendLine("$indent- `$ck` ($short): $desc · ${count}个工具")
+                                        }
+                                    }
+                                    if (directTools.isNotEmpty()) {
+                                        appendLine("「$rawName」含${childKeys.size}个子域和${directTools.size}个直接工具:")
+                                        appendLine()
+                                        append(subInfo)
+                                        appendLine()
+                                        appendLine("直接工具(${directTools.size}):")
+                                        for (t in directTools.sortedBy { it.name }.take(8)) {
+                                            appendLine("- `${t.name}`: ${t.description.take(60).replace("\n", " ")}")
+                                        }
+                                        if (directTools.size > 8) appendLine("  ...等${directTools.size}个")
+                                    } else {
+                                        appendLine("「$rawName」含${childKeys.size}个子域:")
+                                        appendLine()
+                                        append(subInfo)
+                                    }
+                                    appendLine()
+                                    appendLine("调 `invoke_tools(\"${rawName}/子域名\")` 加载具体工具。")
                                 }
+                                listOf(UIMessagePart.Text(summary))
+                            } else {
+                                // 叶子域: 直接返回工具列表
+                                val summary = buildString {
+                                    val label = "「$rawName」"
+                                    appendLine("已加载$label。${directTools.size}个工具:")
+                                    for (t in directTools.sortedBy { it.name }) {
+                                        val desc = t.description.take(80).replace("\n", " ")
+                                        appendLine("- `${t.name}`: $desc")
+                                    }
+                                }
+                                listOf(UIMessagePart.Text(summary))
                             }
-                            listOf(UIMessagePart.Text(summary))
                         }
                     }
                 }
@@ -287,9 +321,7 @@ class ToolRouter(
      */
     fun getDomainTools(domainName: String, allTools: List<Tool>): List<Tool> {
         val classified = classifyAll(allTools)
-        return classified.filterKeys { it == domainName || it.startsWith("$domainName/") }
-            .flatMap { it.value }
-            .distinctBy { it.name }
+        return classified[domainName].orEmpty().distinctBy { it.name }
     }
 
     /**
