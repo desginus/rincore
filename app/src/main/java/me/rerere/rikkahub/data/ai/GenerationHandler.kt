@@ -41,7 +41,6 @@ import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
 import me.rerere.rikkahub.data.ai.tools.routing.ToolRouter
-import me.rerere.rikkahub.data.ai.cache.PromptStabilityGuard
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
@@ -54,12 +53,8 @@ import kotlin.time.Clock
 import kotlin.uuid.Uuid
 
 private const val TAG = "GenerationHandler"
-private const val MAX_TOOL_OUTPUT_CHARS = 8 * 1024           // 8K — 缓存友好阈值
-private const val TOOL_OUTPUT_PREVIEW_CHARS = 2 * 1024       // 2K 预览
-private const val CACHE_PREFIX_WARN_CHARS = 64 * 1024        // 64K — 超此前缀警告缓存效率下降
-
-/** 全局系统提示词稳定性哨兵 — 同一进程内所有 GenerationHandler 共享 */
-private val globalStabilityGuard = PromptStabilityGuard()
+private const val MAX_TOOL_OUTPUT_CHARS = 32 * 1024
+private const val TOOL_OUTPUT_PREVIEW_CHARS = 4 * 1024
 
 @Serializable
 sealed interface GenerationChunk {
@@ -108,14 +103,14 @@ class GenerationHandler(
             removedBuiltinDomains = settings.removedBuiltinDomains,
         )
 
-        val isProviderOpenAI = provider is ProviderSetting.OpenAI
-        val cacheEnabled = isProviderOpenAI && (provider as ProviderSetting.OpenAI).promptCaching
-
+        // 预计算 Layer1 路由表
         val layer1Prompt = if (useLayered) {
             toolRouter.buildLayer1(tools)
-        } else null
+        } else {
+            null
+        }
 
-        // Skill 已拆分为独立工具，无需集中提取 skillListText
+        // Skill 已拆分为独立工具 (skill_<name>)，无需集中提取 skillListText
 
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
@@ -221,7 +216,6 @@ class GenerationHandler(
                     conversationLorebookIds = conversationLorebookIds,
                     workspaceCwd = workspaceCwd,
                     layer1Prompt = layer1Prompt,
-                    cacheEnabled = cacheEnabled,
                 )
                 messages = messages.visualTransforms(
                     transformers = outputTransformers,
@@ -350,8 +344,9 @@ class GenerationHandler(
                             }
                             Log.i(TAG, "generateText: executing tool ${toolDef.name} with args: $args")
                             val result = toolDef.execute(args)
+                            val hasShellAccess = toolsInternal.any { it.name == "workspace_shell" }
                             executedTools += tool.copy(
-                                output = maybeCompactToolOutput(tool.toolCallId, result, context.filesDir)
+                                output = maybeTruncateToolOutput(tool.toolCallId, result, hasShellAccess)
                             )
                         }.onFailure {
                             // 取消必须向上传播，否则停止生成会被误报为工具执行错误
@@ -425,7 +420,6 @@ class GenerationHandler(
         conversationLorebookIds: Set<Uuid> = emptySet(),
         workspaceCwd: String? = null,
         layer1Prompt: String? = null,
-        cacheEnabled: Boolean = false,
     ) {
         val internalMessages = buildList {
             val sysPromptLen: Int
@@ -444,7 +438,7 @@ class GenerationHandler(
                 }
                 sysPromptLen = length
 
-                // 记忆 — 仅在非空时追加
+                // 记忆 — 仅在非空时追加 (空记忆时 buildMemoryPrompt 返回 "")
                 if (assistant.enableMemory) {
                     val memoryPrompt = buildMemoryPrompt(memories = memories)
                     if (memoryPrompt.isNotBlank()) {
@@ -458,6 +452,7 @@ class GenerationHandler(
                 if (layer1Prompt != null) {
                     appendLine()
                     append(layer1Prompt)
+                    // 注入始终可用工具的 systemPrompt（memory tools 等，排除 use_domain）
                     tools.forEach { tool ->
                         if (tool.name != "use_domain") {
                             val sp = tool.systemPrompt(model, messages)
@@ -476,15 +471,12 @@ class GenerationHandler(
                 toolsPromptLen = length - sysPromptLen - memPromptLen
             }
             if (system.isNotBlank()) {
+                // 估算 tokens: 中文 ~1.5 chars/token, 英文 ~3.5 chars/token, 取混合 2.5
                 val estTokens = system.length / 2.5
                 Log.i(TAG, "System prompt breakdown: system=${sysPromptLen}c (~${(sysPromptLen/2.5).toInt()}t)" +
                     " memory=${memPromptLen}c (~${(memPromptLen/2.5).toInt()}t)" +
                     " tools=${toolsPromptLen}c (~${(toolsPromptLen/2.5).toInt()}t)" +
                     " total=${system.length}c (~${estTokens.toInt()}t)")
-                if (cacheEnabled) {
-                    Log.i(TAG, "Cache: ${estTokens.toInt()}t prefix cacheable (system+memory+routing+tools)")
-                    globalStabilityGuard.check(system)
-                }
                 add(UIMessage.system(prompt = system))
             }
             addAll(messages.limitContext(assistant.contextMessageSize))
@@ -506,19 +498,6 @@ class GenerationHandler(
         val estTotalTokens = totalChars / 2.5
         Log.i(TAG, "Request total: ${internalMessages.size} messages, ${totalChars}c (~${estTotalTokens.toInt()}t)")
 
-        // 缓存诊断: 前缀过大时警告
-        val systemMsg = internalMessages.firstOrNull { it.role == MessageRole.SYSTEM }
-        val prefixChars = systemMsg?.parts?.filterIsInstance<UIMessagePart.Text>()?.sumOf { it.text.length } ?: 0
-        val historyChars = totalChars - prefixChars
-        if (cacheEnabled) {
-            val cacheRate = if (totalChars > 0) (prefixChars * 100 / totalChars) else 0
-            Log.i(TAG, "Cache: 锚点${prefixChars}c + 历史${historyChars}c = 总计${totalChars}c — " +
-                "锚点缓存命中率~${cacheRate}%")
-            if (totalChars > CACHE_PREFIX_WARN_CHARS) {
-                Log.w(TAG, "Cache: 前缀过长(${totalChars}c > ${CACHE_PREFIX_WARN_CHARS}c) — 工具输出截断至${MAX_TOOL_OUTPUT_CHARS}c已启用")
-            }
-        }
-
         var messages: List<UIMessage> = messages
         val params = TextGenerationParams(
             model = model,
@@ -527,8 +506,6 @@ class GenerationHandler(
             maxTokens = assistant.maxTokens,
             tools = tools,
             reasoningLevel = assistant.reasoningLevel,
-            enablePromptCache = cacheEnabled,
-            cacheTtlSeconds = 600,
             customHeaders = buildList {
                 addAll(assistant.customHeaders)
                 addAll(model.customHeaders)
@@ -578,35 +555,33 @@ class GenerationHandler(
         }
     }
 
-    /**
-     * 工具输出压缩 — 始终对大输出截断以保持前缀紧凑，提升缓存命中率。
-     * 完整输出保存到 /tool_outputs/ 供后续引用。
-     */
-    private fun maybeCompactToolOutput(
+    private fun maybeTruncateToolOutput(
         toolCallId: String,
         output: List<UIMessagePart>,
-        filesDir: File,
+        hasShellAccess: Boolean,
     ): List<UIMessagePart> {
         val textParts = output.filterIsInstance<UIMessagePart.Text>()
         val nonTextParts = output.filter { it !is UIMessagePart.Text }
         val totalChars = textParts.sumOf { it.text.length }
 
-        if (totalChars <= MAX_TOOL_OUTPUT_CHARS) return output
+        if (totalChars <= MAX_TOOL_OUTPUT_CHARS || !hasShellAccess) return output
 
-        Log.i(TAG, "Compact: truncating $toolCallId output ($totalChars → ${TOOL_OUTPUT_PREVIEW_CHARS} chars preview)")
+        Log.i(TAG, "maybeTruncateToolOutput: truncating tool $toolCallId output ($totalChars chars)")
 
         val fullText = textParts.joinToString("\n") { it.text }
         val preview = fullText.take(TOOL_OUTPUT_PREVIEW_CHARS)
 
-        val outputDir = File(filesDir, FileFolders.TOOL_OUTPUTS).apply { mkdirs() }
         val fileName = "${toolCallId}.txt"
+        val outputDir = File(context.filesDir, FileFolders.TOOL_OUTPUTS).apply { mkdirs() }
         File(outputDir, fileName).writeText(fullText)
 
         return listOf(
             UIMessagePart.Text(
                 buildString {
-                    appendLine("[输出截断: $totalChars 字符 → /tool_outputs/$fileName]")
-                    appendLine("如需完整内容，调用 workspace_read_file(\"/tool_outputs/$fileName\")")
+                    appendLine("[Tool output truncated: $totalChars characters total]")
+                    appendLine("Full output saved to: /tool_outputs/$fileName")
+                    appendLine("Use shell to read: `cat /tool_outputs/$fileName`")
+                    appendLine("Use shell to search: `grep \"pattern\" /tool_outputs/$fileName`")
                     appendLine()
                     append(preview)
                 }
