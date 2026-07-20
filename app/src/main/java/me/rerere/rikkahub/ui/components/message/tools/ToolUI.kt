@@ -109,7 +109,8 @@ object ToolUIRegistry {
     ).associateBy { it.toolName }
 
     /** 查找工具对应的渲染器, 未注册时返回默认渲染器 */
-    fun resolve(toolName: String): ToolUIRenderer = renderers[toolName] ?: DefaultToolUIRenderer
+    fun resolve(toolName: String): ToolUIRenderer =
+        renderers[toolName] ?: if (toolName.startsWith("skill_")) UseSkillToolUI else DefaultToolUIRenderer
 }
 
 internal fun JsonElement?.getStringContent(key: String): String? =

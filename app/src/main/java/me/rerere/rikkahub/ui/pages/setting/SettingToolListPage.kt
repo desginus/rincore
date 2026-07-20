@@ -15,11 +15,12 @@ import androidx.compose.ui.unit.dp
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.*
 import me.rerere.rikkahub.data.ai.mcp.McpManager
-import me.rerere.rikkahub.data.ai.tools.local.LocalToolOption
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
 import me.rerere.rikkahub.data.ai.tools.routing.ToolDomain
 import me.rerere.rikkahub.data.ai.tools.routing.ToolRouter
+import me.rerere.rikkahub.data.ai.tools.sanitizeSkillToolName
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.plus
@@ -44,36 +45,11 @@ fun SettingToolListPage(
             settings.domainNameOverrides, settings.hiddenDomains, settings.removedBuiltinDomains)
     }
 
-    // 完整工具清单——依赖真实数据源而非settings快照
-    val allTools: List<ToolPreview> = run {
-        val list = mutableListOf<ToolPreview>()
-        // 内置本地工具
-        try {
-            val allOptions = listOf(
-                LocalToolOption.JavascriptEngine, LocalToolOption.TimeInfo, LocalToolOption.Clipboard,
-                LocalToolOption.Tts, LocalToolOption.AskUser, LocalToolOption.ScreenTime,
-                LocalToolOption.Calendar, LocalToolOption.CronJobs, LocalToolOption.ToastAndNotification,
-                LocalToolOption.SubAgents, LocalToolOption.SystemIntents, LocalToolOption.Share,
-                LocalToolOption.Location, LocalToolOption.Battery, LocalToolOption.MediaPlayer,
-                LocalToolOption.MediaScanner, LocalToolOption.Files, LocalToolOption.Download,
-                LocalToolOption.Archive, LocalToolOption.CostGuards, LocalToolOption.Browser,
-            )
-            localTools.getTools(allOptions).forEach { t ->
-                list.add(ToolPreview(t.name, t.description))
-            }
-        } catch (_: Exception) {}
-        // Skill工具
-        try { skillManager.listSkills().forEach { s -> list.add(ToolPreview("use_skill", "技能:${s.name} - ${s.description}")) } } catch (_: Exception) {}
-        // MCP工具
-        try {
-            mcpManager.getAllAvailableTools().forEach { (_, serverName, tool) ->
-                list.add(ToolPreview("mcp__${serverName}__${tool.name}", tool.description ?: ""))
-            }
-        } catch (_: Exception) {}
-        list
+    // 完整工具清单——与实际对话注入一致
+    val allTools: List<ToolPreview> = remember(settings) {
+        buildPreviewTools(settings, localTools, skillManager, mcpManager)
     }
 
-    // 只展示顶级域名 + 自定义域（用于筛选）
     val allDomainNames = remember(settings) {
         ToolDomain.entries.filter { it.parent == null }.map { it.label } + settings.customDomains.map { it.name }
     }
@@ -127,13 +103,11 @@ fun SettingToolListPage(
                                 Text(tool.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text((settings.toolDescriptionOverrides[tool.name] ?: tool.description).take(80), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    // 域名标签——点击可筛选
                                     AssistChip(
                                         onClick = { filterDomain = domain },
                                         label = { Text(displayDomain, style = MaterialTheme.typography.labelSmall) },
                                         modifier = Modifier.height(24.dp)
                                     )
-                                    // 覆盖标签——点击打开对话框编辑
                                     if (overridden) {
                                         AssistChip(
                                             onClick = { selectedTool = tool },
@@ -165,7 +139,6 @@ fun SettingToolListPage(
         val tool = selectedTool!!
         var moveTarget by remember(tool) {
             val fullDomain = settings.toolDomainOverrides[tool.name] ?: router.classifyPreview(tool.name, settings.toolDescriptionOverrides[tool.name] ?: tool.description)
-            // 提取顶级域名（去掉子路径，如 "搜索/搜索引擎" → "搜索"）
             mutableStateOf(fullDomain.substringBefore("/"))
         }
         var editDescText by remember(tool) { mutableStateOf(settings.toolDescriptionOverrides[tool.name] ?: tool.description) }
@@ -195,10 +168,8 @@ fun SettingToolListPage(
             confirmButton = {
                 TextButton(onClick = {
                     var s = settings
-                    // 移动
                     val m = s.toolDomainOverrides.toMutableMap()
                     m[tool.name] = moveTarget; s = s.copy(toolDomainOverrides = m)
-                    // 描述
                     val dm = s.toolDescriptionOverrides.toMutableMap()
                     if (editDescText.isNotBlank() && editDescText != tool.description) dm[tool.name] = editDescText
                     else dm.remove(tool.name)

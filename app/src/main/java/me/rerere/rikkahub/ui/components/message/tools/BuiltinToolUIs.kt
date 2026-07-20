@@ -336,15 +336,16 @@ object TextToSpeechToolUI : ToolUIRenderer {
 
 /**
  * 技能调用: 标题显示技能名与路径
+ * 匹配所有 skill_ 前缀的工具名
  */
 object UseSkillToolUI : ToolUIRenderer {
-    override val toolName: String = "use_skill"
+    override val toolName: String = "skill_"  // 前缀匹配, 实际由 ToolUIRegistry.resolve 处理
 
     override fun icon(context: ToolUIContext): ImageVector = HugeIcons.MagicWand01
 
     @Composable
     override fun title(context: ToolUIContext): String {
-        val skillName = context.arguments.getStringContent("name") ?: ""
+        val skillName = context.tool.toolName.removePrefix("skill_")
         val path = context.arguments.getStringContent("path")
         return if (path != null) "Skill: $skillName / $path" else "Skill: $skillName"
     }

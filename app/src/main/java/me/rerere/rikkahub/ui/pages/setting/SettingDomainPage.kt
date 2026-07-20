@@ -6,7 +6,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -16,8 +15,10 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.*
 import me.rerere.rikkahub.data.ai.tools.routing.ToolDomain
 import me.rerere.rikkahub.data.ai.tools.routing.ToolRouter
+import me.rerere.rikkahub.data.ai.tools.sanitizeSkillToolName
 import me.rerere.rikkahub.data.datastore.CustomDomain
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.plus
@@ -26,14 +27,49 @@ import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.ai.tools.routing.ToolClassifier
-import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.heightIn
 
 data class ToolPreview(val name: String, val description: String)
 
 /**
+ * 构建预览工具列表——与 ChatService 实际注入的工具完全一致。
+ * 使用当前助手的 localTools / enabledSkills / mcpServers 配置。
+ */
+fun buildPreviewTools(
+    settings: Settings,
+    localTools: me.rerere.rikkahub.data.ai.tools.local.LocalTools,
+    skillManager: SkillManager,
+    mcpManager: me.rerere.rikkahub.data.ai.mcp.McpManager,
+): List<ToolPreview> {
+    val list = mutableListOf<ToolPreview>()
+    val assistant = settings.getCurrentAssistant()
+
+    // 1. 内置本地工具——只加载当前助手启用的
+    try {
+        localTools.getTools(assistant.localTools).forEach { t ->
+            list.add(ToolPreview(t.name, t.description))
+        }
+    } catch (_: Exception) {}
+
+    // 2. Skill 工具——每个技能独立命名
+    try {
+        val allSkills = skillManager.listSkills()
+        allSkills.filter { it.name in assistant.enabledSkills }.forEach { s ->
+            list.add(ToolPreview(sanitizeSkillToolName(s.name), s.description))
+        }
+    } catch (_: Exception) {}
+
+    // 3. MCP 工具——getAllAvailableTools 已按助手过滤
+    try {
+        mcpManager.getAllAvailableTools().forEach { (_, serverName, tool) ->
+            list.add(ToolPreview("mcp__${serverName}__${tool.name}", tool.description ?: ""))
+        }
+    } catch (_: Exception) {}
+    return list
+}
+
+/**
  * 构建嵌套域列表——严格只展示 ToolDomain 顶级域 + 自定义域。
- * 不展示 system / uncategorized / 任何过期覆盖产生的幽灵域。
  */
 private fun buildNestedDomains(
     flatMap: Map<String, List<ToolPreview>>,
@@ -49,12 +85,10 @@ private fun buildNestedDomains(
             allTopLevel.add(td.label)
         }
     }
-    // 自定义域作为顶级域追加
     for (cd in router.customDomains) {
         allTopLevel.add(cd.name)
     }
 
-    // 过滤隐藏和已删除的域
     val visibleTopLevel = allTopLevel.filter { it !in router.hiddenDomains && it !in router.removedBuiltinDomains }
 
     val result = mutableListOf<Pair<String, Map<String, MutableList<ToolPreview>>?>>()
@@ -74,7 +108,6 @@ private fun buildNestedDomains(
             result.add(parent to null)
         }
     }
-
     return result
 }
 
@@ -112,44 +145,9 @@ fun SettingDomainPage(
         )
     }
 
-    // 完整工具清单——每次重组都重新读取真实数据源
-    val previewTools: List<ToolPreview> = run {
-        val list = mutableListOf<ToolPreview>()
-        try {
-            val allOptions = listOf(
-                me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.JavascriptEngine,
-                me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.TimeInfo,
-                me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.Clipboard,
-                me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.Tts,
-                me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.AskUser,
-                me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.ScreenTime,
-                me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.Calendar,
-                me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.CronJobs,
-                me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.ToastAndNotification,
-                me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.SubAgents,
-                me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.SystemIntents,
-                me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.Share,
-                me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.Location,
-                me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.Battery,
-                me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.MediaPlayer,
-                me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.MediaScanner,
-                me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.Files,
-                me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.Download,
-                me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.Archive,
-                me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.CostGuards,
-                me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.Browser,
-            )
-            localTools.getTools(allOptions).forEach { t ->
-                list.add(ToolPreview(t.name, t.description))
-            }
-        } catch (_: Exception) {}
-        try { skillManager.listSkills().forEach { s -> list.add(ToolPreview("use_skill", "技能:${s.name} - ${s.description}")) } } catch (_: Exception) {}
-        try {
-            mcpManager.getAllAvailableTools().forEach { (_, serverName, tool) ->
-                list.add(ToolPreview("mcp__${serverName}__${tool.name}", tool.description ?: ""))
-            }
-        } catch (_: Exception) {}
-        list
+    // 预览工具——与实际对话注入一致，依赖助手配置
+    val previewTools: List<ToolPreview> = remember(settings, revision) {
+        buildPreviewTools(settings, localTools, skillManager, mcpManager)
     }
 
     val flatDomainMap: Map<String, List<ToolPreview>> = remember(previewTools, settings.toolDescriptionOverrides, settings.toolDomainOverrides, settings.customDomainKeywords, revision) {
@@ -165,7 +163,7 @@ fun SettingDomainPage(
             TopAppBar(title = { Text("域分类管理") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(HugeIcons.ArrowLeft01, null) } },
                 actions = {
-                    // 刷新按钮：清理过期数据 + 强制重算（本地即时，不依赖网络）
+                    // 刷新按钮：清理过期数据 + 强制重算（本地即时）
                     IconButton(onClick = {
                         val valid = router.validDomainLabels
                         val cleanedOverrides = settings.toolDomainOverrides.filterValues { it in valid }
@@ -185,7 +183,6 @@ fun SettingDomainPage(
                             if (removedCount > 0) append(" · 清理${removedCount}个过期覆盖")
                         }
                     }) { Icon(HugeIcons.Refresh01, "同步") }
-                    // AI 分类按钮（独立于刷新）
                     IconButton(onClick = { showClassifierPrompt = true }) { Icon(HugeIcons.AiMagic, "AI分类") }
                     IconButton(onClick = { showToolList = true }) { Icon(HugeIcons.View, "工具列表") }
                     IconButton(onClick = { showNewDomain = true }) { Icon(HugeIcons.Add01, "新建") }
@@ -268,7 +265,6 @@ fun SettingDomainPage(
                                                     }
                                                     if (subTools.size > 5) Text("  ... 等${subTools.size}个", style = MaterialTheme.typography.bodySmall)
                                                 }
-                                                // 子域编辑按钮——可编辑描述和关键词
                                                 IconButton(onClick = {
                                                     editingDomain = sub
                                                     editName = subDisplay
@@ -307,7 +303,7 @@ fun SettingDomainPage(
         }
     }
 
-    // 编辑域对话框（顶级域和子域通用）
+    // 编辑域对话框
     if (editingDomain != null) {
         val domain = editingDomain!!
         AlertDialog(onDismissRequest = { editingDomain = null }, title = { Text("编辑: $domain") },
@@ -399,7 +395,6 @@ fun SettingDomainPage(
             val provider = providerManager.getProvider(providerName) as Provider<ProviderSetting>
             ToolClassifier.classify(toolList, model, provider, providerSetting, settings.classifierPrompt)
                 .onSuccess { result ->
-                    // 只接受合法域名的分类结果
                     val valid = router.validDomainLabels
                     val filtered = result.filterValues { it in valid }
                     val m = settings.toolDomainOverrides.toMutableMap()
