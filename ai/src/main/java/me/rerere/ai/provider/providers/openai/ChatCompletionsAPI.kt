@@ -305,6 +305,26 @@ class ChatCompletionsAPI(
                 }
             }
 
+            // === 提示词缓存 (DeepSeek V4 / Qwen 3.7 / Zhipu 5.2) ===
+            if (params.enablePromptCache) {
+                when {
+                    // DeepSeek: 自动前缀缓存, 无需显式标记
+                    host == "api.deepseek.com" -> { /* auto */ }
+                    // 阿里百炼 (Qwen/DeepSeek V4): 支持 enable_cache 头
+                    host == "dashscope.aliyuncs.com" -> {
+                        // DashScope 自动缓存, 也可通过 X-DashScope-Cache 控制
+                    }
+                    // 智谱 GLM-5.2: 支持 cache_control 标记
+                    host == "open.bigmodel.cn" -> {
+                        put("cache_control", buildJsonObject {
+                            put("type", "ephemeral")
+                        })
+                    }
+                    // SiliconFlow (多模型代理): 透传缓存
+                    host == "api.siliconflow.cn" -> { /* auto */ }
+                }
+            }
+
             // open router适配
             if(host == "openrouter.ai") {
                 if(params.model.outputModalities.contains(Modality.IMAGE)) {

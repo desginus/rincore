@@ -103,14 +103,16 @@ class GenerationHandler(
             removedBuiltinDomains = settings.removedBuiltinDomains,
         )
 
-        // 预计算 Layer1 路由表
+        // === 缓存管理器 ===
+        val isProviderOpenAI = provider is ProviderSetting.OpenAI
+        val cacheEnabled = isProviderOpenAI && (provider as ProviderSetting.OpenAI).promptCaching
+        val promptCache = PromptCacheManager()
+
         val layer1Prompt = if (useLayered) {
             toolRouter.buildLayer1(tools)
-        } else {
-            null
-        }
+        } else null
 
-        // Skill 已拆分为独立工具 (skill_<name>)，无需集中提取 skillListText
+        // Skill 已拆分为独立工具，无需集中提取 skillListText
 
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
@@ -216,6 +218,8 @@ class GenerationHandler(
                     conversationLorebookIds = conversationLorebookIds,
                     workspaceCwd = workspaceCwd,
                     layer1Prompt = layer1Prompt,
+                    promptCache = promptCache,
+                    cacheEnabled = cacheEnabled,
                 )
                 messages = messages.visualTransforms(
                     transformers = outputTransformers,
@@ -420,6 +424,8 @@ class GenerationHandler(
         conversationLorebookIds: Set<Uuid> = emptySet(),
         workspaceCwd: String? = null,
         layer1Prompt: String? = null,
+        promptCache: PromptCacheManager = PromptCacheManager(),
+        cacheEnabled: Boolean = false,
     ) {
         val internalMessages = buildList {
             val sysPromptLen: Int
@@ -438,7 +444,7 @@ class GenerationHandler(
                 }
                 sysPromptLen = length
 
-                // 记忆 — 仅在非空时追加 (空记忆时 buildMemoryPrompt 返回 "")
+                // 记忆 — 仅在非空时追加
                 if (assistant.enableMemory) {
                     val memoryPrompt = buildMemoryPrompt(memories = memories)
                     if (memoryPrompt.isNotBlank()) {
@@ -452,7 +458,6 @@ class GenerationHandler(
                 if (layer1Prompt != null) {
                     appendLine()
                     append(layer1Prompt)
-                    // 注入始终可用工具的 systemPrompt（memory tools 等，排除 use_domain）
                     tools.forEach { tool ->
                         if (tool.name != "use_domain") {
                             val sp = tool.systemPrompt(model, messages)
@@ -471,12 +476,17 @@ class GenerationHandler(
                 toolsPromptLen = length - sysPromptLen - memPromptLen
             }
             if (system.isNotBlank()) {
-                // 估算 tokens: 中文 ~1.5 chars/token, 英文 ~3.5 chars/token, 取混合 2.5
                 val estTokens = system.length / 2.5
                 Log.i(TAG, "System prompt breakdown: system=${sysPromptLen}c (~${(sysPromptLen/2.5).toInt()}t)" +
                     " memory=${memPromptLen}c (~${(memPromptLen/2.5).toInt()}t)" +
                     " tools=${toolsPromptLen}c (~${(toolsPromptLen/2.5).toInt()}t)" +
                     " total=${system.length}c (~${estTokens.toInt()}t)")
+                // 缓存追踪: 系统提示词 + 路由表是可缓存前缀
+                if (cacheEnabled) {
+                    promptCache.append(CacheTier.SYSTEM, system)
+                    val cacheableTokens = promptCache.cacheableTokens
+                    Log.i(TAG, "Cache: ${cacheableTokens}t cacheable prefix (~${(cacheableTokens*2.5).toInt()}c)")
+                }
                 add(UIMessage.system(prompt = system))
             }
             addAll(messages.limitContext(assistant.contextMessageSize))
@@ -506,6 +516,8 @@ class GenerationHandler(
             maxTokens = assistant.maxTokens,
             tools = tools,
             reasoningLevel = assistant.reasoningLevel,
+            enablePromptCache = cacheEnabled,
+            cacheTtlSeconds = 600,
             customHeaders = buildList {
                 addAll(assistant.customHeaders)
                 addAll(model.customHeaders)
