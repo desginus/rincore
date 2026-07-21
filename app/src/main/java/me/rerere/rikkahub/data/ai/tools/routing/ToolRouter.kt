@@ -192,8 +192,6 @@ class ToolRouter(
             appendLine("调 `invoke_tools(\"域名称\")` 加载。不传参数或传\"帮助\"查看完整列表。")
         }
     }
-        }
-    }
 
     fun createInvokeToolsTool(
         allTools: List<Tool>,
