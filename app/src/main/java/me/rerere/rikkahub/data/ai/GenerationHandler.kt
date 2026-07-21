@@ -112,15 +112,14 @@ class GenerationHandler(
 
         // 分离框架工具与用户域工具
         val frameworkToolSet = setOf(
-            "memory_tool", "invoke_tools",
-            "search_web", "scrape_web",
-            "recent_chats", "conversation_search",
+            "invoke_tools",
             "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file",
+            "manage_domain", "list_domains", "move_tool_to_domain",
         )
         val domainTools = tools.filter { it.name !in frameworkToolSet }
         val frameworkTools = tools.filter { it.name in frameworkToolSet }
 
-        // 预计算 Layer1 路由表 — 仅基于用户域工具
+        // 预计算 Layer1 路由表 — 仅基于用户域工具（含 search_web, memory_tool 等）
         val layer1Prompt = if (useLayered) {
             toolRouter.buildLayer1(domainTools)
         } else {
