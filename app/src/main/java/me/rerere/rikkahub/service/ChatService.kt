@@ -607,7 +607,7 @@ class ChatService(
                     }
                 }.map { tool ->
                     settings.toolDescriptionOverrides[tool.name]?.let { tool.copy(description = it) } ?: tool
-                },
+                }.sortedBy { it.name },
             ).onCompletion {
                 // 可能被取消了，或者意外结束，兜底更新
                 val updatedConversation = getConversationFlow(conversationId).value.copy(
