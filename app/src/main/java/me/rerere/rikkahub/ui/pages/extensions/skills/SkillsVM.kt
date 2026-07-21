@@ -18,6 +18,8 @@ import me.rerere.rikkahub.data.files.FileUtils
 import me.rerere.rikkahub.data.files.SkillFrontmatterParser
 import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.data.files.SkillMetadata
+import me.rerere.rikkahub.data.datastore.getCurrentAssistant
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import org.json.JSONArray
 import kotlin.collections.iterator
 
@@ -55,7 +57,9 @@ class SkillsVM(
             }
             val updatedAssistant = assistant.copy(enabledSkills = newEnabled)
             val updatedSettings = settings.copy(
-                assistants = settings.assistants.map { if (it.id == assistant.id) updatedAssistant else it }
+                assistants = settings.assistants.map { assistant ->
+                    if (assistant.id == updatedAssistant.id) updatedAssistant else assistant
+                }
             )
             settingsStore.update(updatedSettings)
         }
