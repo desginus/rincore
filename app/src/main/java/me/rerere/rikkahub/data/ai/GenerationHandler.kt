@@ -455,6 +455,10 @@ class GenerationHandler(
             var layer1Len: Int = 0
 
             val system = buildString {
+                // 缓存锚点 — 静态规则块 (最大化五家前缀缓存命中)
+                append(buildCacheAnchor())
+                appendLine()
+
                 val effectiveSystemPrompt =
                     if (assistant.allowConversationSystemPrompt && !conversationSystemPrompt.isNullOrBlank()) {
                         conversationSystemPrompt
