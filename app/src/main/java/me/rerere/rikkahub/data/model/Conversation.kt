@@ -31,7 +31,8 @@ data class Conversation(
     val workspaceCwd: String? = null,
     // 所属文件夹（助手内分组），null 表示未归入任何文件夹
     val folderId: Uuid? = null,
-    // 已加载的工具域（用于跨对话持久化）
+    // 已加载的工具域（用于跨对话持久化，仅在内存中）
+    @Transient
     val loadedDomains: Set<String> = emptySet(),
     @Transient
     val newConversation: Boolean = false
