@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -94,7 +96,6 @@ fun SettingToolListPage(
                 items(filtered) { tool ->
                     val domain = router.classifyPreview(tool.name, settings.toolDescriptionOverrides[tool.name] ?: tool.description)
                     val displayDomain = domain.substringBefore("/")
-                    val hasDesc = tool.name in settings.toolDescriptionOverrides
                     Card(Modifier.fillMaxWidth().clickable {
                         selectedTool = tool
                     }) {
@@ -108,14 +109,6 @@ fun SettingToolListPage(
                                         label = { Text(displayDomain, style = MaterialTheme.typography.labelSmall) },
                                         modifier = Modifier.height(24.dp)
                                     )
-                                    if (hasDesc) {
-                                        AssistChip(
-                                            onClick = { selectedTool = tool },
-                                            label = { Text("描述", style = MaterialTheme.typography.labelSmall) },
-                                            modifier = Modifier.height(24.dp),
-                                            colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-                                        )
-                                    }
                                 }
                             }
                             Icon(HugeIcons.ArrowRight01, null, modifier = Modifier.size(16.dp))
@@ -138,7 +131,10 @@ fun SettingToolListPage(
             onDismissRequest = { selectedTool = null },
             title = { Text(tool.name) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.verticalScroll(rememberScrollState())
+                ) {
                     Text("当前分类: ${moveTarget}", fontWeight = FontWeight.SemiBold)
                     OutlinedTextField(
                         value = editDescText,

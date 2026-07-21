@@ -63,22 +63,22 @@ private fun buildNestedDomains(
     flatMap: Map<String, List<ToolPreview>>,
     router: ToolRouter,
 ): List<Pair<String, Map<String, MutableList<ToolPreview>>?>> {
-    val domainChildren = mutableMapOf<String, MutableList<String>>()
+    val domainChildren = mutableMapOf<String, LinkedHashSet<String>>()
     val allTopLevel = linkedSetOf<String>()
 
     for (td in ToolDomain.entries) {
         if (td.parent != null) {
-            domainChildren.getOrPut(td.parent) { mutableListOf() }.add(td.label)
+            domainChildren.getOrPut(td.parent) { linkedSetOf() }.add(td.label)
         } else {
             allTopLevel.add(td.label)
         }
     }
-    // 自定义域: parent=null → 顶级域; parent!=null → 子域
+    // 自定义域: parent=null → 顶级域; parent!=null → 子域 (去重)
     for (cd in router.customDomains) {
         if (cd.parent == null) {
             allTopLevel.add(cd.name)
         } else {
-            domainChildren.getOrPut(cd.parent) { mutableListOf() }.add(cd.name)
+            domainChildren.getOrPut(cd.parent) { linkedSetOf() }.add(cd.name)
         }
     }
 
@@ -87,7 +87,7 @@ private fun buildNestedDomains(
     val result = mutableListOf<Pair<String, Map<String, MutableList<ToolPreview>>?>>()
     for (parent in visibleTopLevel) {
         val myTools = flatMap[parent].orEmpty()
-        val childDomains = domainChildren[parent].orEmpty()
+        val childDomains = domainChildren[parent].orEmpty().filter { it !in router.hiddenDomains }
 
         if (childDomains.isNotEmpty()) {
             val subMap = mutableMapOf<String, MutableList<ToolPreview>>()
@@ -319,8 +319,8 @@ fun SettingDomainPage(
     // === 子域管理对话框 ===
     if (subdomainParent != null) {
         val parentDomain = subdomainParent!!
-        // 收集该父域下的所有子域：内置 + 自定义
-        val builtinSubs = ToolDomain.entries.filter { it.parent == parentDomain }.map { it.label }
+        // 收集该父域下的所有子域：内置 + 自定义 (排除已隐藏的)
+        val builtinSubs = ToolDomain.entries.filter { it.parent == parentDomain && it.label !in settings.hiddenDomains }.map { it.label }
         val customSubs = settings.customDomains.filter { it.parent == parentDomain }.map { it.name }
         val allSubs = (builtinSubs + customSubs).sorted()
         val parentTools = flatDomainMap[parentDomain].orEmpty()
@@ -352,9 +352,10 @@ fun SettingDomainPage(
                                         TextButton(onClick = { managingSubdomain = subFull }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
                                             Text("管理工具", style = MaterialTheme.typography.labelSmall)
                                         }
-                                        if (isCustom) {
-                                            IconButton(onClick = {
-                                                // 删除子域: 工具回归父域
+                                        // 删除按钮: 自定义域从 customDomains 移除, 内置域加入 hiddenDomains
+                                        IconButton(onClick = {
+                                            if (isCustom) {
+                                                // 删除自定义子域: 工具回归父域
                                                 val newOverrides = settings.toolDomainOverrides.mapValues { (_, v) ->
                                                     if (v == subFull) parentDomain else v
                                                 }
@@ -362,10 +363,15 @@ fun SettingDomainPage(
                                                     customDomains = settings.customDomains.filter { it.name != subFull },
                                                     toolDomainOverrides = newOverrides,
                                                 ))
-                                                revision++
-                                            }, modifier = Modifier.size(24.dp)) {
-                                                Icon(HugeIcons.Delete01, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.error)
+                                            } else {
+                                                // 隐藏内置子域
+                                                vm.updateSettings(settings.copy(
+                                                    hiddenDomains = settings.hiddenDomains + subFull
+                                                ))
                                             }
+                                            revision++
+                                        }, modifier = Modifier.size(24.dp)) {
+                                            Icon(HugeIcons.Delete01, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.error)
                                         }
                                     }
                                 }
