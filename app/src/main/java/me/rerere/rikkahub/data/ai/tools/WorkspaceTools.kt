@@ -66,7 +66,7 @@ private fun createReadFileTool(
     name = "workspace_read_file",
     description = """
         Read a file using the assistant's bound workspace Rootfs. Paths must be absolute inside Rootfs.
-        Use /workspace for the workspace files area.
+        Use /workspace for the workspace files area. Also supports /skills/ and /upload/ paths.
         Supports UTF-8 text files and image files (png, jpg, jpeg, gif, webp, bmp).
     """.trimIndent().replace("\n", " "),
     parameters = {
@@ -80,7 +80,16 @@ private fun createReadFileTool(
     needsApproval = { needsApproval("workspace_read_file") },
     execute = {
         val path = it.jsonObject.absolutePath("path")
-        if (path.isImagePath()) {
+        // 对于 /workspace 以外的路径 (如 /skills/, /upload/), 使用 shell 命令读取
+        if (!path.startsWith("/workspace/") && path != "/workspace") {
+            val result = workspaceRepository.executeCommand(workspaceId, "cat '$path'")
+            listOf(UIMessagePart.Text(
+                buildJsonObject {
+                    put("path", path)
+                    put("text", result)
+                }.toString()
+            ))
+        } else if (path.isImagePath()) {
             workspaceRepository.readImageInRootfs(workspaceId, path)
         } else {
             val text = workspaceRepository.readTextInRootfs(workspaceId, path)

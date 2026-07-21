@@ -133,11 +133,11 @@ enum class ToolDomain(
         "当前时间", "时间", "get_time_info", "time", "时钟"
     ), "对话工具"),
 
-    CONV_UTIL("对话工具/小工具", "JS沙箱、Ask User、剪贴板、技能等高频率工具", listOf(
+    CONV_UTIL("对话工具/小工具", "JS沙箱、Ask User、剪贴板等高频率工具", listOf(
         "eval", "javascript", "js", "代码计算", "ask_user", "询问用户",
-        "skill_", "技能", "clipboard", "复制", "TTS", "tts", "朗读",
+        "clipboard", "复制", "TTS", "tts", "朗读",
         "text_to_speech", "语音合成", "屏幕时间", "screen_time",
-        "子对话", "conversation", "skill", "shutdown", "restart",
+        "子对话", "conversation", "shutdown", "restart",
         "toast", "notification", "通知", "分享", "share", "下载", "download"
     ), "对话工具"),
 
@@ -158,6 +158,11 @@ enum class ToolDomain(
     // 9. 方法域（兜底）
     // ============================================================
     METHOD("方法域", "无法归入其他域的通用方法论工具", listOf("method", "方法", "流程", "策略", "框架", "分析器"), null),
+
+    // ============================================================
+    // 10. 技能 (Skills)
+    // ============================================================
+    SKILLS("技能", "Skill 能力模块，按功能场景组织", listOf("skill_", "技能", "skill", "能力模块"), null),
     ;
 
     companion object {
