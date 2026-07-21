@@ -451,6 +451,7 @@ class GenerationHandler(
             val sysPromptLen: Int
             val memPromptLen: Int
             val toolsPromptLen: Int
+            var layer1Len: Int = 0
 
             val system = buildString {
                 val effectiveSystemPrompt =
@@ -465,7 +466,6 @@ class GenerationHandler(
                 sysPromptLen = length
 
                 // Layer1 域概览 — 缓存友好: 仅在域配置变化时更新
-                var layer1Len = 0
                 if (layer1Prompt != null) {
                     appendLine()
                     append(layer1Prompt)
