@@ -474,18 +474,16 @@ class GenerationHandler(
                 }
                 memPromptLen = length - sysPromptLen
 
-                // 工具prompt
+                // 工具prompt — 分层模式仅注入框架工具 systemPrompt,
+                // 域工具仅在加载后作为 API tool definition 存在, 不污染 system prompt
                 if (layer1Prompt != null) {
                     appendLine()
                     append(layer1Prompt)
-                    // 注入始终可用工具的 systemPrompt（memory tools 等，排除 invoke_tools）
-                    tools.forEach { tool ->
-                        if (tool.name != "invoke_tools") {
-                            val sp = tool.systemPrompt(model, messages)
-                            if (sp.isNotBlank()) {
-                                appendLine()
-                                append(sp)
-                            }
+                    tools.filter { it.name in toolRouter.frameworkToolNames && it.name != "invoke_tools" }.forEach { tool ->
+                        val sp = tool.systemPrompt(model, messages)
+                        if (sp.isNotBlank()) {
+                            appendLine()
+                            append(sp)
                         }
                     }
                 } else {

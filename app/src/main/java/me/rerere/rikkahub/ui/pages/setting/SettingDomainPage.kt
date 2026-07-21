@@ -57,6 +57,12 @@ fun buildPreviewTools(
             list.add(ToolPreview("mcp__${serverName}__${tool.name}", tool.description ?: ""))
         }
     } catch (_: Exception) {}
+    // 内置框架工具 — 参与域分类与显示
+    list.add(ToolPreview("search_web", "Search the web for up-to-date information, news, facts. Generate focused keywords."))
+    list.add(ToolPreview("scrape_web", "Scrape a URL for detailed page content when search snippets are insufficient."))
+    list.add(ToolPreview("memory_tool", "Store, retrieve, update, and delete long-term memories across conversations."))
+    list.add(ToolPreview("conversation_search", "Full-text search across past conversations to recall specific information."))
+    list.add(ToolPreview("recent_chats", "List recent conversation titles and dates for context awareness."))
     return list
 }
 
