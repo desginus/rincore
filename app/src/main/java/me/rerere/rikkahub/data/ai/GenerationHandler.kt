@@ -479,7 +479,13 @@ class GenerationHandler(
                 if (layer1Prompt != null) {
                     appendLine()
                     append(layer1Prompt)
-                    tools.filter { it.name in toolRouter.frameworkToolNames && it.name != "invoke_tools" }.forEach { tool ->
+                    // 框架工具: 不参与域分类, 始终可用, 需注入 systemPrompt
+                    val frameworkIds = setOf(
+                        "invoke_tools",
+                        "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file",
+                        "manage_domain", "list_domains", "move_tool_to_domain",
+                    )
+                    tools.filter { it.name in frameworkIds && it.name != "invoke_tools" }.forEach { tool ->
                         val sp = tool.systemPrompt(model, messages)
                         if (sp.isNotBlank()) {
                             appendLine()
