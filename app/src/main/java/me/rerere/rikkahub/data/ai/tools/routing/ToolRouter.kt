@@ -39,6 +39,8 @@ class ToolRouter(
         overrides[tool.name]?.let { if (it in validDomainLabels) return it }
         // 框架层工具不属于任何用户域, 始终归 system
         if (tool.name in frameworkToolNames) return "system"
+        // Skill 工具归入「技能」域
+        if (tool.name.startsWith("skill_")) return "技能"
 
         // MCP 工具集：同一服务器工具数 > 阈值则启用子域
         if (tool.name.startsWith("mcp__")) {
@@ -200,7 +202,7 @@ class ToolRouter(
             appendLine()
             appendLine("跨类别任务可多次调用 invoke_tools 加载不同子域。不确定时调 `invoke_tools(\"帮助\")` 查看完整列表。")
 
-            // 列出所有 Skill 工具（帮助模型判断何时加载对应域）
+            // 列出所有 Skill 工具（帮助模型判断何时加载技能域）
             val skillTools = tools.filter { it.name.startsWith("skill_") }
             if (skillTools.isNotEmpty()) {
                 appendLine()
@@ -210,7 +212,7 @@ class ToolRouter(
                     appendLine("- `${s.name}`: ${s.description.take(100)}")
                 }
                 appendLine()
-                appendLine("技能工具已按功能归入对应域。调用 `invoke_tools(\"域名\")` 加载后即可直接使用。")
+                appendLine("技能工具归入「技能」域。调用 `invoke_tools(\"技能\")` 加载全部技能工具。")
             }
         }
     }
@@ -228,14 +230,14 @@ class ToolRouter(
                     properties = buildJsonObject {
                         put("name", buildJsonObject {
                             put("type", "string")
-                            put("description", "类别或子域名称，如 搜索、文件、物理引擎/创建")
+                            put("description", "类别或子域名称，如 搜索、文件、技能。留空或传\"帮助\"查看全部类别。")
                         })
                     },
-                    required = listOf("name")
+                    required = listOf<String>() // name 可选
                 )
             },
             execute = { input ->
-                val rawName = input.jsonObject["name"]?.jsonPrimitive?.content ?: error("name required")
+                val rawName = input.jsonObject["name"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() } ?: "帮助"
                 when {
                     rawName == "帮助" || rawName.equals("help", ignoreCase = true) ->
                         listOf(UIMessagePart.Text(router.buildHelpText(allTools)))
@@ -339,6 +341,8 @@ class ToolRouter(
         overrides[name]?.let { if (it in valid) return it }
         // 框架层工具不属于任何用户域, 始终归 system
         if (name in frameworkToolNames) return "system"
+        // Skill 工具归入「技能」域
+        if (name.startsWith("skill_")) return "技能"
 
         val text = "${name} ${description}".lowercase()
 

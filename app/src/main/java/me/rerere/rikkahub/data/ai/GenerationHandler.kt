@@ -363,7 +363,7 @@ class GenerationHandler(
                             val result = toolDef.execute(args)
                             val hasShellAccess = toolsInternal.any { it.name == "workspace_shell" }
                             executedTools += tool.copy(
-                                output = maybeTruncateToolOutput(tool.toolCallId, result, hasShellAccess)
+                                output = maybeTruncateToolOutput(tool.toolCallId, result, hasShellAccess, tool.toolName)
                             )
                         }.onFailure {
                             // 取消必须向上传播，否则停止生成会被误报为工具执行错误
@@ -572,11 +572,18 @@ class GenerationHandler(
         }
     }
 
+    // invoke_tools 输出 exempt from truncation (工具列表必须完整)
+    private val EXEMPT_FROM_TRUNCATION = setOf("invoke_tools")
+
     private fun maybeTruncateToolOutput(
         toolCallId: String,
         output: List<UIMessagePart>,
         hasShellAccess: Boolean,
+        toolName: String = "",
     ): List<UIMessagePart> {
+        // 特定工具(如 invoke_tools)不截断, 保证数据完整性
+        if (toolName in EXEMPT_FROM_TRUNCATION) return output
+
         val textParts = output.filterIsInstance<UIMessagePart.Text>()
         val nonTextParts = output.filter { it !is UIMessagePart.Text }
         val totalChars = textParts.sumOf { it.text.length }
