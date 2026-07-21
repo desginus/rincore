@@ -20,7 +20,7 @@ enum class ToolDomain(
 
     SEARCH_ENGINE("搜索/搜索引擎", "通用网页搜索引擎", listOf(
         "search", "搜一下", "搜狗", "夸克", "维基", "wikipedia", "webSearch", "scrape",
-        "搜素引擎", "查查", "网上找", "网页搜索", "网页", "search_web", "web_search", "query", "Quark"
+        "scrape_web", "搜素引擎", "查查", "网上找", "网页搜索", "网页", "search_web", "web_search", "query", "Quark"
     ), "搜索"),
 
     SEARCH_SHOP("搜索/商品搜索", "商品搜索、比价", listOf(
@@ -121,8 +121,9 @@ enum class ToolDomain(
     // ============================================================
     CONVERSATION("对话工具", "子代理、记忆、时间、高频率小工具", listOf("对话", "conversation", "子代理", "后台", "记住", "记忆", "时间", "token"), null),
 
-    CONV_MEMORY("对话工具/记忆", "记忆读写管理", listOf(
-        "memory", "memory_tool", "记忆", "记住", "备忘"
+    CONV_MEMORY("对话工具/记忆", "记忆读写管理、对话搜索、最近对话", listOf(
+        "memory", "memory_tool", "记忆", "记住", "备忘",
+        "conversation_search", "recent_chats", "对话搜索", "最近对话", "历史搜索"
     ), "对话工具"),
 
     CONV_SUBAGENT("对话工具/子代理", "子代理调度", listOf(

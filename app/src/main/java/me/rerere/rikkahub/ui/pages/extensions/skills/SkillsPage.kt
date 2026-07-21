@@ -30,6 +30,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.SheetValue
@@ -151,8 +152,11 @@ fun SkillsPage() {
             }
 
             items(skills, key = { it.name }) { skill ->
+                val enabled = vm.isSkillEnabled(skill.name)
                 SkillCard(
                     skill = skill,
+                    enabled = enabled,
+                    onToggle = { vm.toggleSkill(skill.name) },
                     onClick = { navController.navigate(Screen.SkillDetail(skill.name)) },
                     onDelete = { deleteTarget = skill },
                 )
@@ -233,6 +237,8 @@ fun SkillsPage() {
 @Composable
 private fun SkillCard(
     skill: SkillMetadata,
+    enabled: Boolean = true,
+    onToggle: () -> Unit = {},
     onClick: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -253,7 +259,8 @@ private fun SkillCard(
                 imageVector = HugeIcons.Puzzle,
                 contentDescription = null,
                 modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.primary,
+                tint = if (enabled) MaterialTheme.colorScheme.primary
+                       else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
             )
             Column(
                 modifier = Modifier
@@ -264,6 +271,8 @@ private fun SkillCard(
                 Text(
                     text = skill.name,
                     style = MaterialTheme.typography.titleSmallEmphasized,
+                    color = if (enabled) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
                 )
                 Text(
                     text = skill.description,
@@ -279,6 +288,11 @@ private fun SkillCard(
                     )
                 }
             }
+            Switch(
+                checked = enabled,
+                onCheckedChange = { onToggle() },
+                modifier = Modifier.padding(end = 8.dp),
+            )
             Box {
                 IconButton(onClick = { menuExpanded = true }) {
                     Icon(

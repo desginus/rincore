@@ -23,6 +23,7 @@ import kotlin.collections.iterator
 
 class SkillsVM(
     private val skillManager: SkillManager,
+    private val settingsStore: me.rerere.rikkahub.data.datastore.SettingsStore,
 ) : ViewModel() {
     private val _skills = MutableStateFlow<List<SkillMetadata>>(emptyList())
     val skills = _skills.asStateFlow()
@@ -34,6 +35,29 @@ class SkillsVM(
     private fun loadSkills() {
         viewModelScope.launch(Dispatchers.IO) {
             _skills.value = skillManager.listSkills()
+        }
+    }
+
+    fun isSkillEnabled(skillName: String): Boolean {
+        val settings = settingsStore.settingsFlow.value
+        val assistant = settings.getCurrentAssistant()
+        return skillName in assistant.enabledSkills
+    }
+
+    fun toggleSkill(skillName: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val settings = settingsStore.settingsFlow.value
+            val assistant = settings.getCurrentAssistant()
+            val newEnabled = if (skillName in assistant.enabledSkills) {
+                assistant.enabledSkills - skillName
+            } else {
+                assistant.enabledSkills + skillName
+            }
+            val updatedAssistant = assistant.copy(enabledSkills = newEnabled)
+            val updatedSettings = settings.copy(
+                assistants = settings.assistants.map { if (it.id == assistant.id) updatedAssistant else it }
+            )
+            settingsStore.update(updatedSettings)
         }
     }
 

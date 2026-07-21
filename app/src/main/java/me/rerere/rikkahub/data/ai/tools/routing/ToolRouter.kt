@@ -29,9 +29,7 @@ class ToolRouter(
 
     /** 框架层工具名集合 — 不参与域分类, 分层模式下直接注入 */
     private val frameworkToolNames = setOf(
-        "memory_tool", "invoke_tools",
-        "search_web", "scrape_web",
-        "recent_chats", "conversation_search",
+        "invoke_tools",
         "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file",
         "manage_domain", "list_domains", "move_tool_to_domain",
     )
@@ -174,47 +172,26 @@ class ToolRouter(
             appendLine()
             appendLine("**不确定时向上看。** 不知道具体该加载哪个子场景？加载上层节点查看子域列表和描述，再根据描述选择目标加载。调 `invoke_tools(\"帮助\")` 也可查看全部类别。")
             appendLine()
-            appendLine("**复杂任务组合加载。** \"搜数据然后画图\"→ 先加载搜索工具搜到数据，再加载图表工具画图。\"打开网页填表提交\"→ 一次性加载浏览器工具。")
+            appendLine("### 可用场景域")
             appendLine()
-            appendLine("### 场景地图")
-            appendLine()
-
             for ((root, subs) in topMap.toSortedMap()) {
-                val rootTools = classified.filterKeys { it == root || it.startsWith("$root/") }.flatMap { it.value }
-                val total = rootTools.size
-                val subCount = subs.count { it != root && isValidDomain(it) }
                 val desc = getTriggerDescription(root)
-
                 val leafSubs = subs.filter { it != root && isValidDomain(it) }.sorted()
-
-                if (subCount > 0) {
-                    appendLine("| `$root` | $desc | ${total}个工具 · ${subCount}个子场景 |")
-                    leafSubs.take(4).forEach { sub ->
-                        val subTotal = classified[sub]?.size ?: 0
+                if (leafSubs.isNotEmpty()) {
+                    appendLine("- **`$root`**: $desc")
+                    leafSubs.forEach { sub ->
                         val sDesc = getTriggerDescription(sub)
-                        appendLine("| 　└ `$sub` | $sDesc | ${subTotal}个 |")
+                        val subShort = sub.substringAfterLast("/")
+                        appendLine("  - `$subShort` ($sub): $sDesc")
                     }
-                    if (leafSubs.size > 4) appendLine("| 　└ … | 还有${leafSubs.size - 4}个子场景 | |")
                 } else {
-                    appendLine("| `$root` | $desc | ${total}个工具 |")
+                    appendLine("- **`$root`**: $desc")
                 }
             }
-
             appendLine()
-            appendLine("跨类别任务可多次调用 invoke_tools 加载不同子域。不确定时调 `invoke_tools(\"帮助\")` 查看完整列表。")
-
-            // 列出所有 Skill 工具（帮助模型判断何时加载技能域）
-            val skillTools = tools.filter { it.name.startsWith("skill_") }
-            if (skillTools.isNotEmpty()) {
-                appendLine()
-                appendLine("### 可用技能")
-                appendLine()
-                for (s in skillTools) {
-                    appendLine("- `${s.name}`: ${s.description.take(100)}")
-                }
-                appendLine()
-                appendLine("技能工具归入「技能」域。调用 `invoke_tools(\"技能\")` 加载全部技能工具。")
-            }
+            appendLine("调 `invoke_tools(\"域名称\")` 加载。不传参数或传\"帮助\"查看完整列表。")
+        }
+    }
         }
     }
 
