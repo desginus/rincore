@@ -464,22 +464,15 @@ class GenerationHandler(
                 }
                 sysPromptLen = length
 
-                // 记忆 — 仅在非空时追加 (空记忆时 buildMemoryPrompt 返回 "")
-                if (assistant.enableMemory) {
-                    val memoryPrompt = buildMemoryPrompt(memories = memories)
-                    if (memoryPrompt.isNotBlank()) {
-                        appendLine()
-                        append(memoryPrompt)
-                    }
-                }
-                memPromptLen = length - sysPromptLen
-
-                // 工具prompt — 分层模式仅注入框架工具 systemPrompt,
-                // 域工具仅在加载后作为 API tool definition 存在, 不污染 system prompt
+                // Layer1 域概览 — 缓存友好: 仅在域配置变化时更新
                 if (layer1Prompt != null) {
                     appendLine()
                     append(layer1Prompt)
-                    // 框架工具: 不参与域分类, 始终可用, 需注入 systemPrompt
+                }
+                val layer1Len = length - sysPromptLen
+
+                // 框架工具 systemPrompt — 静态内容, 有利于跨请求缓存前缀匹配
+                if (layer1Prompt != null) {
                     val frameworkIds = setOf(
                         "invoke_tools",
                         "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file",
@@ -498,14 +491,26 @@ class GenerationHandler(
                         append(tool.systemPrompt(model, messages))
                     }
                 }
-                toolsPromptLen = length - sysPromptLen - memPromptLen
+                toolsPromptLen = length - sysPromptLen - layer1Len
+
+                // 记忆块 — 放最后, 因为它是动态内容(随时可能增删改)
+                // DeepSeek/Qwen/智谱全部前缀匹配, 动态块放末尾最大化缓存命中
+                if (assistant.enableMemory) {
+                    val memoryPrompt = buildMemoryPrompt(memories = memories)
+                    if (memoryPrompt.isNotBlank()) {
+                        appendLine()
+                        append(memoryPrompt)
+                    }
+                }
+                memPromptLen = length - sysPromptLen - layer1Len - toolsPromptLen
             }
             if (system.isNotBlank()) {
                 // 估算 tokens: 中文 ~1.5 chars/token, 英文 ~3.5 chars/token, 取混合 2.5
                 val estTokens = system.length / 2.5
                 Log.i(TAG, "System prompt breakdown: system=${sysPromptLen}c (~${(sysPromptLen/2.5).toInt()}t)" +
-                    " memory=${memPromptLen}c (~${(memPromptLen/2.5).toInt()}t)" +
+                    " layer1=${layer1Len}c (~${(layer1Len/2.5).toInt()}t)" +
                     " tools=${toolsPromptLen}c (~${(toolsPromptLen/2.5).toInt()}t)" +
+                    " memory=${memPromptLen}c (~${(memPromptLen/2.5).toInt()}t)" +
                     " total=${system.length}c (~${estTokens.toInt()}t)")
                 add(UIMessage.system(prompt = system))
             }
