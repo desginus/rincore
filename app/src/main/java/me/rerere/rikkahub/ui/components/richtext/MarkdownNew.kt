@@ -101,6 +101,11 @@ private fun preProcess(content: String): String {
     result = BLOCK_LATEX_REGEX.replace(result) { m ->
         if (isInCodeBlock(m.range.first)) m.value else "$$" + m.groupValues[1] + "$$"
     }
+    
+    // Bug #12: Prevent single tilde from being parsed as strikethrough
+    // Only allow ~~text~~ pattern (double tilde) for strikethrough
+    result = result.replace(Regex("(?<!~)~(?!~)"), "\\~")
+    
     return result
 }
 

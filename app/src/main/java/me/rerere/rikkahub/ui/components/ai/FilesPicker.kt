@@ -153,6 +153,18 @@ internal fun FilesPicker(
                     navController.navigate(Screen.Workspaces)
                 }
             })
+
+            // Feature #5: 本地工具快捷入口
+            LocalToolsButton(onClick = {
+                onDismiss()
+                navController.navigate(Screen.AssistantLocalTool(assistant.id.toString()))
+            })
+
+            // Feature #5: Skill 快捷入口
+            SkillsButton(onClick = {
+                onDismiss()
+                navController.navigate(Screen.Skills)
+            })
         }
 
         HorizontalDivider(
@@ -566,6 +578,28 @@ fun WorkspaceFilePickButton(onClick: () -> Unit = {}) {
         Icon(HugeIcons.Folder01, null)
     }, text = {
         Text("应用文件")
+    }) {
+        onClick()
+    }
+}
+
+@Composable
+fun LocalToolsButton(onClick: () -> Unit = {}) {
+    BigIconTextButton(icon = {
+        Icon(HugeIcons.Settings02, null)
+    }, text = {
+        Text("本地工具")
+    }) {
+        onClick()
+    }
+}
+
+@Composable
+fun SkillsButton(onClick: () -> Unit = {}) {
+    BigIconTextButton(icon = {
+        Icon(HugeIcons.AiMagic, null)
+    }, text = {
+        Text("技能")
     }) {
         onClick()
     }

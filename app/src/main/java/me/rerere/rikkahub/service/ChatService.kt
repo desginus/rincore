@@ -50,6 +50,7 @@ import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.tools.HeadlessConversations
 import me.rerere.rikkahub.data.ai.tools.ToolInvocationContext
 import me.rerere.rikkahub.data.ai.tools.createConversationTools
+import me.rerere.rikkahub.data.ai.tools.createDomainTools
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
 import me.rerere.rikkahub.data.ai.tools.createSearchTools
 import me.rerere.rikkahub.data.ai.tools.createSkillTools
@@ -533,6 +534,7 @@ class ChatService(
                 conversationModeInjectionIds = conversation.modeInjectionIds,
                 conversationLorebookIds = conversation.lorebookIds,
                 workspaceCwd = conversation.workspaceCwd,
+                conversationLoadedDomains = conversation.loadedDomains,
                 memories = if (assistant.useGlobalMemory) {
                     memoryRepository.getGlobalMemories()
                 } else {
@@ -569,6 +571,10 @@ class ChatService(
                             )
                         )
                     }
+                    // Feature #2: AI 域管理工具
+                    if (assistant.useLayeredTools) {
+                        addAll(createDomainTools(settingsStore))
+                    }
                     mcpManager.getAllAvailableTools().also { allTools ->
                         val invalidNames = allTools
                             .map { it.second }
@@ -589,7 +595,7 @@ class ChatService(
                     }.forEach { (serverId, serverName, tool) ->
                         add(
                             Tool(
-                                name = "mcp__${serverName}__${tool.name}",
+                                name = "mcp__${sanitizeMcpName(serverName)}__${sanitizeMcpName(tool.name)}",
                                 description = tool.description ?: "",
                                 parameters = { tool.inputSchema },
                                 needsApproval = { tool.needsApproval },
@@ -635,6 +641,12 @@ class ChatService(
                                 AppEvent.ChatGenerationUpdate(conversationId, lastMessage, senderName)
                             )
                         }
+                    }
+                    is GenerationChunk.LoadedDomains -> {
+                        // Feature #4: 持久化已加载的域到 Conversation
+                        val updatedConversation = getConversationFlow(conversationId).value
+                            .copy(loadedDomains = chunk.domains)
+                        updateConversation(conversationId, updatedConversation)
                     }
                 }
             }
@@ -1284,4 +1296,22 @@ class ChatService(
         runCatching { job.join() }
         finishInterruptedPendingTools(conversationId)
     }
+}
+
+/**
+ * Sanitize MCP server/tool names to be ASCII-only for DeepSeek compatibility.
+ * Converts Chinese characters to pinyin-like representation, removes invalid chars.
+ */
+private fun sanitizeMcpName(name: String): String {
+    // Replace Chinese characters with underscore-separated segments
+    val sanitized = name.map { c ->
+        when {
+            c in 'a'..'z' || c in 'A'..'Z' || c in '0'..'9' || c == '_' || c == '-' -> c
+            c.code in 0x4E00..0x9FFF -> "_" // Chinese character range
+            else -> "_"
+        }
+    }.joinToString("")
+    
+    // Remove consecutive underscores and trim
+    return sanitized.replace(Regex("_+"), "_").trim('_').ifEmpty { "tool" }
 }
