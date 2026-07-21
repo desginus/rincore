@@ -86,7 +86,7 @@ private fun createReadFileTool(
             listOf(UIMessagePart.Text(
                 buildJsonObject {
                     put("path", path)
-                    put("text", result)
+                    put("text", result.stdout)
                 }.toString()
             ))
         } else if (path.isImagePath()) {
