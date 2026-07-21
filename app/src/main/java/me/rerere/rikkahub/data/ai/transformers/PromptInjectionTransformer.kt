@@ -117,6 +117,9 @@ internal fun collectInjections(
 
 /**
  * 应用注入到消息列表
+ *
+ * BEFORE/AFTER_SYSTEM_PROMPT 不修改系统消息本身,
+ * 而是插入为独立用户消息 — 保证系统消息缓存前缀稳定。
  */
 internal fun applyInjections(
     messages: List<UIMessage>,
@@ -124,58 +127,27 @@ internal fun applyInjections(
 ): List<UIMessage> {
     val result = messages.toMutableList()
 
-    // 找到系统消息的索引（通常是第一条）
+    // 找到系统消息和第一条用户消息的索引
     val systemIndex = result.indexOfFirst { it.role == MessageRole.SYSTEM }
+    val firstUserIndex = result.indexOfFirst { it.role == MessageRole.USER }
 
-    // 处理 BEFORE_SYSTEM_PROMPT 和 AFTER_SYSTEM_PROMPT
-    if (systemIndex >= 0) {
-        val beforeContent = byPosition[InjectionPosition.BEFORE_SYSTEM_PROMPT]
-            ?.joinToString("\n") { it.content } ?: ""
-        val afterContent = byPosition[InjectionPosition.AFTER_SYSTEM_PROMPT]
-            ?.joinToString("\n") { it.content } ?: ""
+    // BEFORE_SYSTEM_PROMPT → 作为独立用户消息插入系统消息之前
+    val beforeContent = byPosition[InjectionPosition.BEFORE_SYSTEM_PROMPT]
+        ?.joinToString("\n") { it.content } ?: ""
+    if (beforeContent.isNotEmpty()) {
+        result.add(
+            systemIndex.coerceAtLeast(0),
+            UIMessage.user(beforeContent)
+        )
+    }
 
-        if (beforeContent.isNotEmpty() || afterContent.isNotEmpty()) {
-            val systemMessage = result[systemIndex]
-            val originalText = systemMessage.parts
-                .filterIsInstance<UIMessagePart.Text>()
-                .joinToString("") { it.text }
-
-            val newText = buildString {
-                if (beforeContent.isNotEmpty()) {
-                    append(beforeContent)
-                    appendLine()
-                }
-                append(originalText)
-                if (afterContent.isNotEmpty()) {
-                    appendLine()
-                    append(afterContent)
-                }
-            }
-
-            result[systemIndex] = systemMessage.copy(
-                parts = listOf(UIMessagePart.Text(newText))
-            )
-        }
-    } else {
-        // 没有系统消息时，创建一个新的系统消息
-        val beforeContent = byPosition[InjectionPosition.BEFORE_SYSTEM_PROMPT]
-            ?.joinToString("\n") { it.content } ?: ""
-        val afterContent = byPosition[InjectionPosition.AFTER_SYSTEM_PROMPT]
-            ?.joinToString("\n") { it.content } ?: ""
-
-        val combinedContent = buildString {
-            if (beforeContent.isNotEmpty()) {
-                append(beforeContent)
-            }
-            if (afterContent.isNotEmpty()) {
-                if (isNotEmpty()) appendLine()
-                append(afterContent)
-            }
-        }
-
-        if (combinedContent.isNotEmpty()) {
-            result.add(0, UIMessage.system(combinedContent))
-        }
+    // AFTER_SYSTEM_PROMPT → 作为独立用户消息插入系统消息之后、第一条用户消息之前
+    val afterContent = byPosition[InjectionPosition.AFTER_SYSTEM_PROMPT]
+        ?.joinToString("\n") { it.content } ?: ""
+    if (afterContent.isNotEmpty()) {
+        val insertAt = if (firstUserIndex >= 0) firstUserIndex
+            else (systemIndex + 1).coerceAtMost(result.size)
+        result.add(insertAt, UIMessage.user(afterContent))
     }
 
     // 处理 TOP_OF_CHAT：在第一条用户消息之前插入
