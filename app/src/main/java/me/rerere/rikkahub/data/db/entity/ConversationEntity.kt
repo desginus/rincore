@@ -32,6 +32,4 @@ data class ConversationEntity(
     val workspaceCwd: String = "",
     @ColumnInfo("folder_id", defaultValue = "")
     val folderId: String = "",
-    @ColumnInfo("loaded_domains", defaultValue = "[]")
-    val loadedDomains: String = "[]",
 )
