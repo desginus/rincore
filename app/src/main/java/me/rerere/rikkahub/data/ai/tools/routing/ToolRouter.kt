@@ -33,6 +33,7 @@ class ToolRouter(
         "search_web", "scrape_web",
         "recent_chats", "conversation_search",
         "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file",
+        "manage_domain", "list_domains", "move_tool_to_domain",
     )
 
     fun classifyTool(tool: Tool): String {

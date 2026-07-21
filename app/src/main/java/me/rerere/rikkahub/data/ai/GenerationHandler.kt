@@ -61,6 +61,9 @@ sealed interface GenerationChunk {
     data class Messages(
         val messages: List<UIMessage>
     ) : GenerationChunk
+    data class LoadedDomains(
+        val domains: Set<String>
+    ) : GenerationChunk
 }
 
 class GenerationHandler(
@@ -84,6 +87,7 @@ class GenerationHandler(
         conversationModeInjectionIds: Set<Uuid> = emptySet(),
         conversationLorebookIds: Set<Uuid> = emptySet(),
         workspaceCwd: String? = null,
+        conversationLoadedDomains: Set<String>? = null,
     ): Flow<GenerationChunk> = flow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
@@ -92,7 +96,10 @@ class GenerationHandler(
 
         // === 分层路由状态 ===
         val useLayered = assistant.useLayeredTools && tools.isNotEmpty()
-        val loadedDomains = mutableSetOf<String>()
+        // 从 Conversation 恢复已加载的域（Feature #4: 跨对话持久化）
+        val loadedDomains = mutableSetOf<String>().apply {
+            conversationLoadedDomains?.let { addAll(it) }
+        }
         val toolRouter = ToolRouter(
             overrides = settings.toolDomainOverrides,
             customDescriptions = settings.customDomainDescriptions,
@@ -252,7 +259,10 @@ class GenerationHandler(
 
                 val tools = messages.last().getTools().filter { !it.isExecuted }
                 if (tools.isEmpty()) {
-                    // no tool calls, break
+                    // no tool calls, break — emit loadedDomains for persistence
+                    if (useLayered && loadedDomains.isNotEmpty()) {
+                        emit(GenerationChunk.LoadedDomains(loadedDomains.toSet()))
+                    }
                     break
                 }
 
