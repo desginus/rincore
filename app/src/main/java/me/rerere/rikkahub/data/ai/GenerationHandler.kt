@@ -162,7 +162,8 @@ class GenerationHandler(
                     for (domain in loadedDomains) {
                         addAll(toolRouter.getDomainTools(domain, domainTools))
                     }
-                }.distinctBy { it.name }  // 防止 memory_tool 等跨路径重复
+                }.distinctBy { it.name }
+                    .sortedBy { it.name }  // 确定性排序 → 五家前缀匹配缓存稳定
             } else {
                 buildList {
                     Log.i(TAG, "generateInternal: build tools($assistant)")
