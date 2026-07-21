@@ -28,7 +28,7 @@ class ToolRouter(
         get() = ToolDomain.entries.map { it.label }.toSet() + customDomains.map { it.name }.toSet()
 
     /** 框架层工具名集合 — 不参与域分类, 分层模式下直接注入 */
-    private val frameworkToolNames = setOf(
+    internal val frameworkToolNames = setOf(
         "invoke_tools",
         "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file",
         "manage_domain", "list_domains", "move_tool_to_domain",
