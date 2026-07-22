@@ -366,11 +366,24 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
     }
 
     moveTarget?.let { entry ->
-        var destPath by remember { mutableStateOf(state.path) }
-        val allDirs = remember(state.entries) {
-            listOf("/" to "根目录") + state.entries
-                .filter { it.isDirectory && it.path != entry.path }
-                .map { it.path to it.name }
+        val parentPath = state.path.substringBeforeLast('/', "")
+        val isInSubDir = state.path.isNotBlank()
+        var destPath by remember(isInSubDir, parentPath) {
+            mutableStateOf(if (isInSubDir) parentPath else state.path)
+        }
+        val allDirs = remember(state.entries, parentPath) {
+            val dirs = mutableListOf<Pair<String, String>>()
+            // 移出选项: 回退到父目录 (仅当在子目录内)
+            if (isInSubDir) {
+                dirs.add(parentPath to "📤 移出 (../)")
+            }
+            // 当前目录下的子文件夹 (排除自身)
+            dirs.addAll(
+                state.entries
+                    .filter { it.isDirectory && it.path != entry.path }
+                    .map { it.path to it.name }
+            )
+            dirs
         }
         AlertDialog(
             onDismissRequest = { moveTarget = null },
@@ -415,6 +428,8 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
             confirmButton = {
                 TextButton(
                     onClick = {
+                        // 禁止移到根目录
+                        if (destPath.isBlank()) return@TextButton
                         vm.moveFile(entry, destPath)
                         moveTarget = null
                     },
