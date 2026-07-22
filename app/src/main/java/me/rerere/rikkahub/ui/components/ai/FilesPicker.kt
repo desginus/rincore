@@ -101,6 +101,7 @@ internal fun FilesPicker(
     state: ChatInputState,
     mcpManager: McpManager,
     onCompressContext: (additionalPrompt: String, targetTokens: Int, keepRecentMessages: Int) -> Job,
+    onUndoCompress: () -> Unit = {},
     onUpdateAssistant: (Assistant) -> Unit,
     onUpdateConversation: (Conversation) -> Unit,
     showInjectionSheet: Boolean,
@@ -169,6 +170,35 @@ internal fun FilesPicker(
             CompressButton(onClick = {
                 onShowCompressDialogChange(true)
             }, modifier = Modifier.weight(1f))
+        }
+
+        // 撤销压缩 — 压缩后显示，独立一行
+        if (conversation.compressedContext != null) {
+            Surface(
+                onClick = onUndoCompress,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.errorContainer,
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    Icon(
+                        HugeIcons.ArrowTurnBackward,
+                        null,
+                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "撤销压缩 · 恢复完整对话",
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
         }
         val boundWorkspace = remember(workspaces, assistant.workspaceId) {
             workspaces.find { it.id == assistant.workspaceId?.toString() }
