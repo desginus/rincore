@@ -428,8 +428,6 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
             confirmButton = {
                 TextButton(
                     onClick = {
-                        // 禁止移到根目录
-                        if (destPath.isBlank()) return@TextButton
                         vm.moveFile(entry, destPath)
                         moveTarget = null
                     },
