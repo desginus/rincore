@@ -522,7 +522,7 @@ class ChatService(
                 settings = settings,
                 model = model,
                 processingStatus = session.processingStatus,
-                messages = conversation.messagesForApi().let {
+                messages = conversation.currentMessages.let {
                     if (messageRange != null) {
                         it.subList(messageRange.start, messageRange.endInclusive + 1)
                     } else {
@@ -935,15 +935,19 @@ class ChatService(
                 .awaitAll()
         }
 
-        // 不替换 messageNodes → 仅设置 compressedContext 标记
-        // currentMessages 会自动返回 摘要 + 分隔线 + 保留消息
-        val ctx = me.rerere.rikkahub.data.model.CompressedContext(
-            summaries = compressedSummaries,
-            originalNodeCount = conversation.messageNodes.size,
-            keptNodeCount = messagesToKeep.size,
-        )
+        // 存档原始消息 → 然后替换 messageNodes (与旧版压缩逻辑完全相同)
+        val savedNodes = conversation.messageNodes
+        val newMessageNodes = buildList {
+            compressedSummaries.forEach { summary ->
+                add(UIMessage.user(summary).toMessageNode())
+            }
+            addAll(messagesToKeep.map { it.toMessageNode() })
+        }
         val newConversation = conversation.copy(
-            compressedContext = ctx,
+            messageNodes = newMessageNodes,
+            compressedContext = me.rerere.rikkahub.data.model.CompressedContext(
+                savedMessageNodes = savedNodes,
+            ),
             chatSuggestions = emptyList(),
         )
 

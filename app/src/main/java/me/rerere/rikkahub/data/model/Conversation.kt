@@ -14,9 +14,7 @@ import kotlin.uuid.Uuid
 
 @Serializable
 data class CompressedContext(
-    val summaries: List<String>,          // AI 生成的压缩摘要
-    val originalNodeCount: Int,           // 压缩前 messageNodes 总数
-    val keptNodeCount: Int,               // 保留的最近 N 条
+    val savedMessageNodes: List<MessageNode>,  // 压缩前存档的原始消息
 )
 
 @Serializable
@@ -25,7 +23,7 @@ data class Conversation(
     val assistantId: Uuid,
     val title: String = "",
     val messageNodes: List<MessageNode>,
-    val compressedContext: CompressedContext? = null,  // 压缩标记 → messageNodes 永不删除
+    val compressedContext: CompressedContext? = null,
     val chatSuggestions: List<String> = emptyList(),
     val isPinned: Boolean = false,
     @Serializable(with = InstantSerializer::class)
@@ -51,32 +49,10 @@ data class Conversation(
             .collectAllParts()
             .mapNotNull { it.fileUri() }
 
-    /**
-     * 当前选中的 message。始终 1:1 映射 messageNodes。
-     * updateCurrentMessages 依赖此索引一致性。
-     */
     val currentMessages
         get(): List<UIMessage> {
             return messageNodes.map { node -> node.messages[node.selectIndex] }
         }
-
-    /**
-     * 发送给 API 的消息列表。若已压缩，返回 摘要+分隔线+保留最近N条。
-     * 不影响 messageNodes 结构和 updateCurrentMessages 的索引逻辑。
-     */
-    fun messagesForApi(): List<UIMessage> {
-        val ctx = compressedContext ?: return currentMessages
-        val result = mutableListOf<UIMessage>()
-        ctx.summaries.forEach { summary ->
-            result.add(UIMessage.user("📦 对话摘要：\n\n$summary"))
-        }
-        result.add(UIMessage.user("─── 以上为压缩上下文，以下为最近对话 ───"))
-        val keepStart = (messageNodes.size - ctx.keptNodeCount).coerceAtLeast(0)
-        for (i in keepStart until messageNodes.size) {
-            result.add(messageNodes[i].messages[messageNodes[i].selectIndex])
-        }
-        return result
-    }
 
     fun getMessageNodeByMessage(message: UIMessage): MessageNode? {
         return messageNodes.firstOrNull { node -> node.messages.contains(message) }
@@ -119,7 +95,14 @@ data class Conversation(
         )
     }
 
-    fun undoCompress(): Conversation = copy(compressedContext = null)
+    /** 撤销压缩: 还原存档的原始消息 */
+    fun undoCompress(): Conversation {
+        val saved = compressedContext ?: return this
+        return copy(
+            messageNodes = saved.savedMessageNodes,
+            compressedContext = null,
+        )
+    }
 
     companion object {
         fun ofId(
