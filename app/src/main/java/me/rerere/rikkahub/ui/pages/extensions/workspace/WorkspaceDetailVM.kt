@@ -172,6 +172,75 @@ class WorkspaceDetailVM(
         }
     }
 
+    fun renameFile(entry: WorkspaceFileEntry, newName: String) {
+        viewModelScope.launch {
+            runCatching {
+                repository.renameFile(
+                    id = id,
+                    area = state.value.area,
+                    path = entry.path,
+                    newName = newName,
+                )
+            }.onSuccess {
+                refresh()
+            }.onFailure { error ->
+                _state.update { it.copy(error = error.message ?: "重命名失败") }
+            }
+        }
+    }
+
+    fun createFolder(name: String) {
+        viewModelScope.launch {
+            runCatching {
+                repository.createFolder(
+                    id = id,
+                    area = state.value.area,
+                    path = state.value.path,
+                    name = name,
+                )
+            }.onSuccess {
+                refresh()
+            }.onFailure { error ->
+                _state.update { it.copy(error = error.message ?: "创建文件夹失败") }
+            }
+        }
+    }
+
+    fun createFile(name: String) {
+        viewModelScope.launch {
+            runCatching {
+                repository.createFile(
+                    id = id,
+                    area = state.value.area,
+                    path = state.value.path,
+                    name = name,
+                )
+            }.onSuccess {
+                refresh()
+            }.onFailure { error ->
+                _state.update { it.copy(error = error.message ?: "创建文件失败") }
+            }
+        }
+    }
+
+    fun moveFile(source: WorkspaceFileEntry, targetDir: String) {
+        viewModelScope.launch {
+            val targetPath = if (targetDir.isBlank()) "/${source.name}" else "$targetDir/${source.name}"
+            runCatching {
+                repository.moveFile(
+                    id = id,
+                    source = source.path,
+                    target = targetPath,
+                    overwrite = false,
+                )
+            }.onSuccess {
+                refresh()
+            }.onFailure { error ->
+                _state.update { it.copy(error = error.message ?: "移动文件失败") }
+            }
+        }
+    }
+
     fun installRootfs(url: String) {
         viewModelScope.launch {
             _installError.value = null

@@ -224,6 +224,53 @@ class WorkspaceRepository(
         manager.moveFile(workspace.root, source, target, overwrite)
     }
 
+    suspend fun renameFile(
+        id: String,
+        area: WorkspaceStorageArea,
+        path: String,
+        newName: String,
+    ): WorkspaceFileEntry {
+        val sourcePath = if (path.startsWith("/")) path else "/$path"
+        val parent = sourcePath.substringBeforeLast('/', "")
+        val targetPath = if (parent.isEmpty()) "/$newName" else "$parent/$newName"
+        return moveFile(id = id, source = sourcePath, target = targetPath, overwrite = false)
+    }
+
+    suspend fun createFolder(
+        id: String,
+        area: WorkspaceStorageArea,
+        path: String,
+        name: String,
+    ) = withContext(Dispatchers.IO) {
+        val workspace = dao.getById(id) ?: error("Workspace not found: $id")
+        manager.ensureWorkspace(workspace.root)
+        val areaRoot = when (area) {
+            WorkspaceStorageArea.FILES -> manager.filesDir(workspace.root)
+            WorkspaceStorageArea.LINUX -> manager.linuxDir(workspace.root)
+        }
+        val resolvedPath = if (path.isBlank()) name else "$path/$name"
+        val dir = java.io.File(areaRoot, resolvedPath)
+        if (!dir.mkdirs() && !dir.isDirectory) error("无法创建文件夹: $name")
+    }
+
+    suspend fun createFile(
+        id: String,
+        area: WorkspaceStorageArea,
+        path: String,
+        name: String,
+    ) = withContext(Dispatchers.IO) {
+        val workspace = dao.getById(id) ?: error("Workspace not found: $id")
+        manager.ensureWorkspace(workspace.root)
+        val areaRoot = when (area) {
+            WorkspaceStorageArea.FILES -> manager.filesDir(workspace.root)
+            WorkspaceStorageArea.LINUX -> manager.linuxDir(workspace.root)
+        }
+        val resolvedPath = if (path.isBlank()) name else "$path/$name"
+        val file = java.io.File(areaRoot, resolvedPath)
+        file.parentFile?.mkdirs()
+        if (!file.exists()) file.createNewFile()
+    }
+
     suspend fun executeCommand(
         id: String,
         command: String,
