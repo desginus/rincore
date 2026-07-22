@@ -227,9 +227,11 @@ class RouteActivity : ComponentActivity() {
                     val uri = intent?.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
                     val files = mutableListOf<String>()
                     uri?.let { files.add(it.toString()) }
+                    val currentId = readStringPreference("lastConversationId", Uuid.random().toString())
+                        ?: Uuid.random().toString()
                     backStack.clear()
                     backStack.add(Screen.Chat(
-                        id = kotlin.uuid.Uuid.random().toString(),
+                        id = currentId,
                         text = text.ifBlank { null },
                         files = files,
                     ))
@@ -238,18 +240,22 @@ class RouteActivity : ComponentActivity() {
                     val text = intent?.getStringExtra(Intent.EXTRA_TEXT) ?: ""
                     val uris = intent?.getParcelableArrayListExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
                     val files = uris?.map { it.toString() } ?: emptyList()
+                    val currentId = readStringPreference("lastConversationId", Uuid.random().toString())
+                        ?: Uuid.random().toString()
                     backStack.clear()
                     backStack.add(Screen.Chat(
-                        id = kotlin.uuid.Uuid.random().toString(),
+                        id = currentId,
                         text = text.ifBlank { null },
                         files = files,
                     ))
                 }
                 Intent.ACTION_PROCESS_TEXT -> {
                     val txt = intent?.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString() ?: ""
+                    val currentId = readStringPreference("lastConversationId", Uuid.random().toString())
+                        ?: Uuid.random().toString()
                     backStack.clear()
                     backStack.add(Screen.Chat(
-                        id = kotlin.uuid.Uuid.random().toString(),
+                        id = currentId,
                         text = txt.ifBlank { null },
                     ))
                 }
