@@ -498,17 +498,8 @@ class GenerationHandler(
                     }
                 }
                 toolsPromptLen = length - sysPromptLen - layer1Len
-
-                // 记忆块 — 放最后, 因为它是动态内容(随时可能增删改)
-                // DeepSeek/Qwen/智谱全部前缀匹配, 动态块放末尾最大化缓存命中
-                if (assistant.enableMemory) {
-                    val memoryPrompt = buildMemoryPrompt(memories = memories)
-                    if (memoryPrompt.isNotBlank()) {
-                        appendLine()
-                        append(memoryPrompt)
-                    }
-                }
-                memPromptLen = length - sysPromptLen - layer1Len - toolsPromptLen
+                // 记忆块不在此处 — 已移出系统消息, 保证 DeepSeek 缓存前缀单元完全静态
+                memPromptLen = 0
             }
             if (system.isNotBlank()) {
                 // 估算 tokens: 中文 ~1.5 chars/token, 英文 ~3.5 chars/token, 取混合 2.5
@@ -516,9 +507,17 @@ class GenerationHandler(
                 Log.i(TAG, "System prompt breakdown: system=${sysPromptLen}c (~${(sysPromptLen/2.5).toInt()}t)" +
                     " layer1=${layer1Len}c (~${(layer1Len/2.5).toInt()}t)" +
                     " tools=${toolsPromptLen}c (~${(toolsPromptLen/2.5).toInt()}t)" +
-                    " memory=${memPromptLen}c (~${(memPromptLen/2.5).toInt()}t)" +
                     " total=${system.length}c (~${estTokens.toInt()}t)")
                 add(UIMessage.system(prompt = system))
+            }
+            // 记忆块: 独立 user 消息, 放在 conversation 末尾而非 system 内
+            // DeepSeek 缓存前缀单元对 system message 全量匹配, 记忆变化=system 单元失效
+            // 独立消息仅影响末尾, 前缀 (system + 历史消息) 全部命中
+            if (assistant.enableMemory) {
+                val memoryPrompt = buildMemoryPrompt(memories = memories)
+                if (memoryPrompt.isNotBlank()) {
+                    add(UIMessage.user(memoryPrompt))
+                }
             }
             addAll(messages.limitContext(assistant.contextMessageSize))
         }.transforms(
