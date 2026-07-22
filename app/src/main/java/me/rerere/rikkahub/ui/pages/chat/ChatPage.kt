@@ -675,6 +675,7 @@ private fun ChatFilesPickerSheet(
     ModalBottomSheet(
         sheetState = filesSheetState,
         onDismissRequest = { dismissAll() },
+        scrimColor = Color.Transparent,
     ) {
         FilesPicker(
             conversation = conversation,

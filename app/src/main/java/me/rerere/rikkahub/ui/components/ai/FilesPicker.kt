@@ -18,7 +18,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -123,27 +127,32 @@ internal fun FilesPicker(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         FlowRow(
             modifier = Modifier.fillMaxWidth().wrapContentWidth(Alignment.CenterHorizontally),
             horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.Start),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            TakePicButton(onLaunchCamera = onTakePic)
-
+            // Row 1: 照片, 技能, 上传文件, 拍照
             ImagePickButton(onClick = onPickImage)
-
-            if (provider != null && provider is ProviderSetting.Google) {
-                VideoPickButton(onClick = onPickVideo)
-
-                AudioPickButton(onClick = onPickAudio)
-            }
-
+            SkillsButton(onClick = {
+                onDismiss()
+                navController.navigate(Screen.Skills)
+            })
             FilePickButton(onClick = onPickFile)
-
+            TakePicButton(onLaunchCamera = onTakePic)
+            // Row 2: MCP, 本地工具, 应用文件, 压缩历史
+            McpButton(
+                mcpManager = mcpManager,
+                assistant = assistant,
+                onUpdateAssistant = onUpdateAssistant,
+            )
+            LocalToolsButton(onClick = {
+                onDismiss()
+                navController.navigate(Screen.AssistantLocalTool(assistant.id.toString()))
+            })
             WorkspaceFilePickButton(onClick = {
-                // 导航到工作区文件页面
                 val wsId = assistant.workspaceId?.toString()
                 val firstWsId = workspaces.firstOrNull()?.id
                 val targetId = wsId ?: firstWsId
@@ -154,64 +163,10 @@ internal fun FilesPicker(
                     navController.navigate(Screen.Workspaces)
                 }
             })
-
-            // Feature #5: 本地工具快捷入口
-            LocalToolsButton(onClick = {
-                onDismiss()
-                navController.navigate(Screen.AssistantLocalTool(assistant.id.toString()))
-            })
-
-            // Feature #5: Skill 快捷入口
-            SkillsButton(onClick = {
-                onDismiss()
-                navController.navigate(Screen.Skills)
+            CompressButton(onClick = {
+                onShowCompressDialogChange(true)
             })
         }
-
-        HorizontalDivider(
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        if (settings.mcpServers.isNotEmpty()) {
-            McpPickerListItem(
-                assistant = assistant,
-                servers = settings.mcpServers,
-                mcpManager = mcpManager,
-                onUpdateAssistant = onUpdateAssistant,
-            )
-        }
-
-        // Compress History Button
-        ListItem(
-            leadingContent = {
-                Icon(
-                    imageVector = HugeIcons.Package01,
-                    contentDescription = stringResource(R.string.chat_page_compress_context),
-                )
-            },
-            headlineContent = {
-                Text(stringResource(R.string.chat_page_compress_context))
-            },
-            trailingContent = {
-                if (conversation.messageNodes.isNotEmpty()) {
-                    Text(
-                        text = stringResource(R.string.chat_page_message_count, conversation.messageNodes.size),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            },
-            colors = ListItemDefaults.colors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer
-            ),
-            modifier = Modifier
-                .clip(MaterialTheme.shapes.large)
-                .clickable {
-                    onShowCompressDialogChange(true)
-                },
-        )
-
-        // Workspace CWD
         val boundWorkspace = remember(workspaces, assistant.workspaceId) {
             workspaces.find { it.id == assistant.workspaceId?.toString() }
         }
@@ -539,6 +494,91 @@ fun SkillsButton(onClick: () -> Unit = {}) {
         Icon(HugeIcons.AiMagic, null)
     }, text = {
         Text("技能")
+    }) {
+        onClick()
+    }
+}
+
+@Composable
+private fun McpButton(
+    mcpManager: McpManager,
+    assistant: Assistant,
+    onUpdateAssistant: (Assistant) -> Unit,
+) {
+    val settings = LocalSettings.current
+    var showSelector by remember { mutableStateOf(false) }
+    BigIconTextButton(icon = {
+        Icon(HugeIcons.Codesandbox, null)
+    }, text = {
+        Text("MCP")
+    }) {
+        showSelector = true
+    }
+    if (showSelector && settings.mcpServers.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { showSelector = false },
+            title = { Text("MCP 服务器") },
+            text = {
+                LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
+                    items(settings.mcpServers) { server ->
+                        val enabled = assistant.enabledMcpServers.contains(server.id)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val newList = if (enabled) {
+                                        assistant.enabledMcpServers - server.id
+                                    } else {
+                                        assistant.enabledMcpServers + server.id
+                                    }
+                                    onUpdateAssistant(assistant.copy(enabledMcpServers = newList))
+                                    mcpManager.updateEnabledServers(
+                                        assistantId = assistant.id,
+                                        enabledServerIds = newList
+                                    )
+                                }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = enabled,
+                                onCheckedChange = { checked ->
+                                    val newList = if (checked) {
+                                        assistant.enabledMcpServers + server.id
+                                    } else {
+                                        assistant.enabledMcpServers - server.id
+                                    }
+                                    onUpdateAssistant(assistant.copy(enabledMcpServers = newList))
+                                    mcpManager.updateEnabledServers(
+                                        assistantId = assistant.id,
+                                        enabledServerIds = newList
+                                    )
+                                },
+                            )
+                            Column(modifier = Modifier.padding(start = 8.dp)) {
+                                Text(server.name, style = MaterialTheme.typography.bodyMedium)
+                                Text(server.url, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSelector = false }) {
+                    Text(stringResource(R.string.common_confirm))
+                }
+            },
+        )
+    }
+}
+}
+
+@Composable
+private fun CompressButton(onClick: () -> Unit) {
+    BigIconTextButton(icon = {
+        Icon(HugeIcons.Package01, null)
+    }, text = {
+        Text("压缩历史")
     }) {
         onClick()
     }
