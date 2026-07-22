@@ -287,6 +287,7 @@ class ChatCompletionsAPI(
                     messages = messages,
                     includeHistoryReasoning = providerSetting.includeHistoryReasoning,
                     supportInputModalities = params.model.inputModalities,
+                    promptCaching = providerSetting.promptCaching,
                 )
             )
 
@@ -467,9 +468,9 @@ class ChatCompletionsAPI(
             }
 
             if (params.model.abilities.contains(ModelAbility.TOOL) && params.tools.isNotEmpty()) {
-                // 缓存优化: 按工具名排序, 确保跨请求的工具定义顺序一致, 最大化 DeepSeek 前缀缓存命中率
+                // 缓存优化: 按工具名排序 + cache_control (Qwen/MiniMax 显式缓存)
                 putJsonArray("tools") {
-                    params.tools.sortedBy { it.name }.forEach { tool ->
+                    params.tools.sortedBy { it.name }.forEachIndexed { index, tool ->
                         add(buildJsonObject {
                             put("type", "function")
                             put("function", buildJsonObject {
@@ -482,6 +483,12 @@ class ChatCompletionsAPI(
                                     )
                                 )
                             })
+                            // 最后一个工具定义上加 cache_control (对标 Rikkahub ClaudeProvider)
+                            if (providerSetting.promptCaching && index == params.tools.lastIndex) {
+                                put("cache_control", buildJsonObject {
+                                    put("type", "ephemeral")
+                                })
+                            }
                         })
                     }
                 }
@@ -497,6 +504,7 @@ class ChatCompletionsAPI(
         messages: List<UIMessage>,
         includeHistoryReasoning: Boolean = true,
         supportInputModalities: List<Modality> = listOf(Modality.TEXT, Modality.IMAGE),
+        promptCaching: Boolean = false,
     ) = buildJsonArray {
         val filteredMessages = messages.filter { it.isValidToUpload() }
 
@@ -508,7 +516,7 @@ class ChatCompletionsAPI(
                     supportInputModalities = supportInputModalities,
                 )
             } else {
-                addNonAssistantMessage(message)
+                addNonAssistantMessage(message, promptCaching)
             }
         }
     }
@@ -654,20 +662,30 @@ class ChatCompletionsAPI(
         }
     }
 
-    private fun JsonArrayBuilder.addNonAssistantMessage(message: UIMessage) {
+    private fun JsonArrayBuilder.addNonAssistantMessage(
+        message: UIMessage,
+        promptCaching: Boolean = false,
+    ) {
+        val isSystem = message.role == MessageRole.SYSTEM
         add(buildJsonObject {
             put("role", JsonPrimitive(message.role.name.lowercase()))
 
-            if (message.parts.isOnlyTextPart()) {
+            if (message.parts.isOnlyTextPart() && !(isSystem && promptCaching)) {
                 put("content", message.parts.filterIsInstance<UIMessagePart.Text>().first().text)
             } else {
                 putJsonArray("content") {
-                    message.parts.forEach { part ->
+                    message.parts.forEachIndexed { index, part ->
                         when (part) {
                             is UIMessagePart.Text -> {
                                 add(buildJsonObject {
                                     put("type", "text")
                                     put("text", part.text)
+                                    // cache_control 放最后一个 content block (对标 Rikkahub ClaudeProvider)
+                                    if (isSystem && promptCaching && index == message.parts.lastIndex) {
+                                        put("cache_control", buildJsonObject {
+                                            put("type", "ephemeral")
+                                        })
+                                    }
                                 })
                             }
 
