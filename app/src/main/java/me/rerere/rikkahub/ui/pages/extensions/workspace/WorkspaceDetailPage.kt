@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -144,7 +145,7 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
                     if (pagerState.currentPage == 1) {
                         IconButton(onClick = { showCreateDialog = true }) {
                             Icon(
-                                HugeIcons.File01,
+                                HugeIcons.File02,
                                 contentDescription = "新建",
                             )
                         }
