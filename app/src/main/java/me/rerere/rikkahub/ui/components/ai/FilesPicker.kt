@@ -524,7 +524,6 @@ private fun McpButton(
         )
     }
 }
-}
 
 @Composable
 private fun CompressButton(onClick: () -> Unit) {
