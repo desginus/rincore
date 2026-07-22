@@ -88,19 +88,25 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
             }
             "delete" -> {
                 val existing = settings.customDomains.find { it.name == name }
+                // 清理所有指向该域的覆盖
+                val cleanedOverrides = settings.toolDomainOverrides.filterValues { it != name }
+                val cleanedDescs = settings.customDomainDescriptions.filterKeys { it != name }
+                val cleanedKeywords = settings.customDomainKeywords.filterKeys { it != name }
+                val cleanedNames = settings.domainNameOverrides.filterKeys { it != name }
+                
                 if (existing == null) {
-                    // 尝试隐藏内置域
+                    // 隐藏内置域
                     val builtinHidden = settings.hiddenDomains + name
-                    val updated = settings.copy(hiddenDomains = builtinHidden)
+                    val updated = settings.copy(
+                        hiddenDomains = builtinHidden,
+                        toolDomainOverrides = cleanedOverrides,
+                        customDomainDescriptions = cleanedDescs,
+                        customDomainKeywords = cleanedKeywords,
+                        domainNameOverrides = cleanedNames,
+                    )
                     settingsStore.update(updated)
-                    listOf(UIMessagePart.Text("已隐藏内置域 '$name'。场景地图已同步。"))
+                    listOf(UIMessagePart.Text("已隐藏内置域 '$name'，相关工具将自动重分类。"))
                 } else {
-                    // 删除自定义域，同时清理相关覆盖
-                    val cleanedOverrides = settings.toolDomainOverrides.filterValues { it != name }
-                    val cleanedDescs = settings.customDomainDescriptions.filterKeys { it != name }
-                    val cleanedKeywords = settings.customDomainKeywords.filterKeys { it != name }
-                    val cleanedNames = settings.domainNameOverrides.filterKeys { it != name }
-                    
                     val updated = settings.copy(
                         customDomains = settings.customDomains.filter { it.name != name },
                         toolDomainOverrides = cleanedOverrides,
@@ -109,7 +115,7 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
                         domainNameOverrides = cleanedNames,
                     )
                     settingsStore.update(updated)
-                    listOf(UIMessagePart.Text("已删除域 '$name' 及相关配置。场景地图已同步。"))
+                    listOf(UIMessagePart.Text("已删除域 '$name' 及相关配置。工具将自动重分类到最佳匹配域。"))
                 }
             }
             else -> listOf(UIMessagePart.Text("未知操作: $action。支持: create, delete"))
@@ -129,8 +135,15 @@ private fun deleteDomainTool(settingsStore: SettingsStore) = Tool(
     execute = {
         val settings = settingsStore.settingsFlow.value
         val domains = settings.customDomains
+        val builtin = me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.map { it.label }
+            .filter { it !in settings.hiddenDomains && it !in settings.removedBuiltinDomains }
         
         val result = buildString {
+            appendLine("内置域 (${builtin.size}个):")
+            builtin.forEach { d ->
+                appendLine("- $d")
+            }
+            appendLine()
             appendLine("自定义域 (${domains.size}个):")
             domains.forEach { d ->
                 val parentInfo = d.parent?.let { " (父: $it)" } ?: ""
@@ -139,8 +152,10 @@ private fun deleteDomainTool(settingsStore: SettingsStore) = Tool(
                     appendLine("  关键词: ${d.keywords.joinToString(", ")}")
                 }
             }
-            appendLine()
-            appendLine("已隐藏域: ${settings.hiddenDomains.joinToString(", ").ifEmpty { "无" }}")
+            if (settings.hiddenDomains.isNotEmpty()) {
+                appendLine()
+                appendLine("已隐藏域: ${settings.hiddenDomains.joinToString(", ")}")
+            }
         }
         listOf(UIMessagePart.Text(result))
     }
@@ -169,10 +184,23 @@ private fun listDomainsTool(settingsStore: SettingsStore) = Tool(
         val targetDomain = input.jsonObject["target_domain"]?.jsonPrimitive?.content ?: error("target_domain required")
 
         val settings = settingsStore.settingsFlow.value
-        val updated = settings.copy(
-            toolDomainOverrides = settings.toolDomainOverrides + (toolName to targetDomain)
-        )
-        settingsStore.update(updated)
-        listOf(UIMessagePart.Text("已将工具 '$toolName' 移动到域 '$targetDomain'"))
+        // 校验目标域有效性
+        val allValid = (me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.map { it.label }.toSet()
+            + settings.customDomains.map { it.name }.toSet())
+            .filter { it !in settings.hiddenDomains && it !in settings.removedBuiltinDomains }
+            .toSet()
+        val root = targetDomain.split("/").first()
+        if (root !in allValid) {
+            listOf(UIMessagePart.Text(
+                "无效目标域 '$targetDomain'。" +
+                "该域可能已被删除或隐藏。可用域: ${allValid.sorted().joinToString("、")}"
+            ))
+        } else {
+            val updated = settings.copy(
+                toolDomainOverrides = settings.toolDomainOverrides + (toolName to targetDomain)
+            )
+            settingsStore.update(updated)
+            listOf(UIMessagePart.Text("已将工具 '$toolName' 移动到域 '$targetDomain'"))
+        }
     }
 )
