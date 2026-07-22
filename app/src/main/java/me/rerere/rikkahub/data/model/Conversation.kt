@@ -52,27 +52,31 @@ data class Conversation(
             .mapNotNull { it.fileUri() }
 
     /**
-     * 当前选中的 message。若已压缩，返回压缩摘要 + 分隔线 + 保留的最近消息。
-     * 原始 messageNodes 不受影响。
+     * 当前选中的 message。始终 1:1 映射 messageNodes。
+     * updateCurrentMessages 依赖此索引一致性。
      */
     val currentMessages
         get(): List<UIMessage> {
-            val ctx = compressedContext
-            if (ctx == null) {
-                return messageNodes.map { node -> node.messages[node.selectIndex] }
-            }
-            // 压缩模式: 摘要 → 分隔线 → 保留的最近 N 条
-            val result = mutableListOf<UIMessage>()
-            ctx.summaries.forEach { summary ->
-                result.add(UIMessage.user("📦 对话摘要：\n\n$summary"))
-            }
-            result.add(UIMessage.user("─── 以上为压缩上下文，以下为最近对话 ───"))
-            val keepStart = (messageNodes.size - ctx.keptNodeCount).coerceAtLeast(0)
-            for (i in keepStart until messageNodes.size) {
-                result.add(messageNodes[i].messages[messageNodes[i].selectIndex])
-            }
-            return result
+            return messageNodes.map { node -> node.messages[node.selectIndex] }
         }
+
+    /**
+     * 发送给 API 的消息列表。若已压缩，返回 摘要+分隔线+保留最近N条。
+     * 不影响 messageNodes 结构和 updateCurrentMessages 的索引逻辑。
+     */
+    fun messagesForApi(): List<UIMessage> {
+        val ctx = compressedContext ?: return currentMessages
+        val result = mutableListOf<UIMessage>()
+        ctx.summaries.forEach { summary ->
+            result.add(UIMessage.user("📦 对话摘要：\n\n$summary"))
+        }
+        result.add(UIMessage.user("─── 以上为压缩上下文，以下为最近对话 ───"))
+        val keepStart = (messageNodes.size - ctx.keptNodeCount).coerceAtLeast(0)
+        for (i in keepStart until messageNodes.size) {
+            result.add(messageNodes[i].messages[messageNodes[i].selectIndex])
+        }
+        return result
+    }
 
     fun getMessageNodeByMessage(message: UIMessage): MessageNode? {
         return messageNodes.firstOrNull { node -> node.messages.contains(message) }
@@ -103,7 +107,6 @@ data class Conversation(
                 selectIndex = newMessageIndex
             )
 
-            // 更新newNodes
             if (index > newNodes.lastIndex) {
                 newNodes.add(newNode)
             } else {
@@ -116,9 +119,6 @@ data class Conversation(
         )
     }
 
-    /**
-     * 撤销压缩: 清空 compressedContext, 恢复完整 messageNodes
-     */
     fun undoCompress(): Conversation = copy(compressedContext = null)
 
     companion object {
@@ -167,15 +167,9 @@ fun UIMessage.toMessageNode(): MessageNode {
     )
 }
 
-/**
- * 递归展开所有 parts，包括工具调用结果中的嵌套 parts。
- */
 private fun List<UIMessagePart>.collectAllParts(): List<UIMessagePart> =
     this + filterIsInstance<UIMessagePart.Tool>().flatMap { it.output.collectAllParts() }
 
-/**
- * 提取 part 中引用的本地文件 URI，新增文件类型时只需在此处添加。
- */
 private fun UIMessagePart.fileUri(): Uri? = when (this) {
     is UIMessagePart.Image -> url.takeIf { it.startsWith("file://") }?.toUri()
     is UIMessagePart.Document -> url.takeIf { it.startsWith("file://") }?.toUri()
