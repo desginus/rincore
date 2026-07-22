@@ -36,6 +36,13 @@ class ToolRouter(
         "manage_domain", "list_domains", "move_tool_to_domain",
     )
 
+    /** MCP 服务器名 → 默认域快速映射 (避免关键词误匹配) */
+    private val mcpServerDomainDefaults = mapOf(
+        "physicsengine" to "物理引擎",
+        "qrcode" to "生成部署/二维码",
+        "edgeone" to "生成部署/网页部署",
+    )
+
     fun classifyTool(tool: Tool): String {
         // 1. 手动覆盖 — 仅指向有效域，否则 fall through
         overrides[tool.name]?.let { if (it in validDomainLabels && isValidDomain(it)) return it }
@@ -47,8 +54,12 @@ class ToolRouter(
             return "uncategorized"
         }
 
-        // MCP 工具集：同一服务器工具数 > 阈值则启用子域
+        // MCP 工具集
         if (tool.name.startsWith("mcp__")) {
+            val server = extractMcpServerName(tool.name)
+            // 快速路由: 服务器名直接映射 → 避免关键词误匹配
+            mcpServerDomainDefaults[server]?.let { if (isValidDomain(it)) return "mcp_raw:$it" }
+            
             val text = "${tool.name} ${tool.description}".lowercase()
             for (cd in customDomains) { if (cd.keywords.any { text.contains(it) }) return cd.name }
             for ((domain, keywords) in customKeywords) {
@@ -83,10 +94,14 @@ class ToolRouter(
         }
 
         for ((serverName, serverTools) in mcpGroups) {
+            // 获取该类工具的分类域名 (去除 mcp_raw: 前缀)
+            val classifiedDomain = raw.entries
+                .find { it.value.any { t -> t.name.startsWith("mcp__${serverName}__") } }
+                ?.key?.removePrefix("mcp_raw:") ?: serverName
             if (serverTools.size >= MCP_SUBDOMAIN_THRESHOLD) {
                 val subDomains = serverTools.groupBy { classifyMcpSubdomain(it.name, it.description) }
                 for ((sub, subTools) in subDomains) {
-                    result["$serverName/$sub"] = subTools.toMutableList()
+                    result["$classifiedDomain/$sub"] = subTools.toMutableList()
                 }
             } else {
                 for (t in serverTools) {
