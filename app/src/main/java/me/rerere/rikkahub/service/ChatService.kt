@@ -935,15 +935,15 @@ class ChatService(
                 .awaitAll()
         }
 
-        // Create new conversation with compressed history as multiple user messages + kept messages
-        val newMessageNodes = buildList {
-            compressedSummaries.forEach { summary ->
-                add(UIMessage.user(summary).toMessageNode())
-            }
-            addAll(messagesToKeep.map { it.toMessageNode() })
-        }
+        // 不替换 messageNodes → 仅设置 compressedContext 标记
+        // currentMessages 会自动返回 摘要 + 分隔线 + 保留消息
+        val ctx = me.rerere.rikkahub.data.model.CompressedContext(
+            summaries = compressedSummaries,
+            originalNodeCount = conversation.messageNodes.size,
+            keptNodeCount = messagesToKeep.size,
+        )
         val newConversation = conversation.copy(
-            messageNodes = newMessageNodes,
+            compressedContext = ctx,
             chatSuggestions = emptyList(),
         )
 

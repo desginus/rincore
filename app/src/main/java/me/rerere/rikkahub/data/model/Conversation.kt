@@ -13,11 +13,19 @@ import java.time.Instant
 import kotlin.uuid.Uuid
 
 @Serializable
+data class CompressedContext(
+    val summaries: List<String>,          // AI 生成的压缩摘要
+    val originalNodeCount: Int,           // 压缩前 messageNodes 总数
+    val keptNodeCount: Int,               // 保留的最近 N 条
+)
+
+@Serializable
 data class Conversation(
     val id: Uuid = Uuid.random(),
     val assistantId: Uuid,
     val title: String = "",
     val messageNodes: List<MessageNode>,
+    val compressedContext: CompressedContext? = null,  // 压缩标记 → messageNodes 永不删除
     val chatSuggestions: List<String> = emptyList(),
     val isPinned: Boolean = false,
     @Serializable(with = InstantSerializer::class)
@@ -44,11 +52,26 @@ data class Conversation(
             .mapNotNull { it.fileUri() }
 
     /**
-     *  当前选中的 message
+     * 当前选中的 message。若已压缩，返回压缩摘要 + 分隔线 + 保留的最近消息。
+     * 原始 messageNodes 不受影响。
      */
     val currentMessages
         get(): List<UIMessage> {
-            return messageNodes.map { node -> node.messages[node.selectIndex] }
+            val ctx = compressedContext
+            if (ctx == null) {
+                return messageNodes.map { node -> node.messages[node.selectIndex] }
+            }
+            // 压缩模式: 摘要 → 分隔线 → 保留的最近 N 条
+            val result = mutableListOf<UIMessage>()
+            ctx.summaries.forEach { summary ->
+                result.add(UIMessage.user("📦 对话摘要：\n\n$summary"))
+            }
+            result.add(UIMessage.user("─── 以上为压缩上下文，以下为最近对话 ───"))
+            val keepStart = (messageNodes.size - ctx.keptNodeCount).coerceAtLeast(0)
+            for (i in keepStart until messageNodes.size) {
+                result.add(messageNodes[i].messages[messageNodes[i].selectIndex])
+            }
+            return result
         }
 
     fun getMessageNodeByMessage(message: UIMessage): MessageNode? {
@@ -92,6 +115,11 @@ data class Conversation(
             messageNodes = newNodes
         )
     }
+
+    /**
+     * 撤销压缩: 清空 compressedContext, 恢复完整 messageNodes
+     */
+    fun undoCompress(): Conversation = copy(compressedContext = null)
 
     companion object {
         fun ofId(

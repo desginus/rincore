@@ -685,6 +685,9 @@ private fun ChatFilesPickerSheet(
             onCompressContext = { additionalPrompt, targetTokens, keepRecentMessages ->
                 vm.handleCompressContext(additionalPrompt, targetTokens, keepRecentMessages)
             },
+            onUndoCompress = {
+                vm.undoCompressContext()
+            },
             onUpdateAssistant = {
                 vm.updateSettings(
                     setting.copy(

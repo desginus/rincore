@@ -202,6 +202,15 @@ class ChatVM(
         }
     }
 
+    fun undoCompressContext() {
+        viewModelScope.launch {
+            val conv = conversation.value
+            if (conv.compressedContext != null) {
+                chatService.saveConversation(_conversationId, conv.undoCompress())
+            }
+        }
+    }
+
     suspend fun forkMessage(message: UIMessage): Conversation {
         return chatService.forkConversationAtMessage(_conversationId, message.id)
     }
