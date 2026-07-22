@@ -167,12 +167,13 @@ enum class ToolDomain(
     ;
 
     companion object {
-        fun classify(tool: Tool): ToolDomain? {
+        fun classify(tool: Tool, excludedDomains: Set<String> = emptySet(), hiddenDomains: Set<String> = emptySet()): ToolDomain? {
             val text = "${tool.name} ${tool.description}".lowercase()
-            // 优先匹配深层的叶子节点
+            val excluded = excludedDomains + hiddenDomains
+            // 优先匹配深层的叶子节点，跳过已删除/隐藏域
             return entries.sortedByDescending { it.label.count { c -> c == '/' } }
                 .firstOrNull { dom ->
-                    dom.matchKeywords.any { text.contains(it) }
+                    dom.matchKeywords.any { text.contains(it) } && dom.label !in excluded
                 }
         }
     }

@@ -23,9 +23,11 @@ class ToolRouter(
     internal val removedBuiltinDomains: Set<String> = emptySet(),
 ) {
 
-    /** 合法域标签集合（ToolDomain 全部标签 + 自定义域名） */
+    /** 合法域标签集合（ToolDomain 全部标签 + 自定义域名 - 已删除/隐藏） */
     val validDomainLabels: Set<String>
-        get() = ToolDomain.entries.map { it.label }.toSet() + customDomains.map { it.name }.toSet()
+        get() = (ToolDomain.entries.map { it.label }.toSet() + customDomains.map { it.name }.toSet())
+            .filter { isValidDomain(it) }
+            .toSet()
 
     /** 框架层工具名集合 — 不参与域分类, 分层模式下直接注入 */
     internal val frameworkToolNames = setOf(
@@ -35,25 +37,33 @@ class ToolRouter(
     )
 
     fun classifyTool(tool: Tool): String {
-        overrides[tool.name]?.let { if (it in validDomainLabels) return it }
+        // 1. 手动覆盖 — 仅指向有效域，否则 fall through
+        overrides[tool.name]?.let { if (it in validDomainLabels && isValidDomain(it)) return it }
         // 框架层工具不属于任何用户域, 始终归 system
         if (tool.name in frameworkToolNames) return "system"
         // Skill 工具归入「技能」域
-        if (tool.name.startsWith("skill_")) return "技能"
+        if (tool.name.startsWith("skill_")) {
+            if (isValidDomain("技能")) return "技能"
+            return "uncategorized"
+        }
 
         // MCP 工具集：同一服务器工具数 > 阈值则启用子域
         if (tool.name.startsWith("mcp__")) {
             val text = "${tool.name} ${tool.description}".lowercase()
             for (cd in customDomains) { if (cd.keywords.any { text.contains(it) }) return cd.name }
-            for ((domain, keywords) in customKeywords) { if (keywords.any { text.contains(it) } && domain in validDomainLabels) return domain }
-            val builtin = ToolDomain.classify(tool)?.label ?: "uncategorized"
-            return "mcp_raw:$builtin" // 临时标记，后续合并
+            for ((domain, keywords) in customKeywords) {
+                if (domain in validDomainLabels && keywords.any { text.contains(it) }) return domain
+            }
+            val builtin = ToolDomain.classify(tool, removedBuiltinDomains, hiddenDomains)?.label ?: "uncategorized"
+            return "mcp_raw:$builtin"
         }
 
         val text = "${tool.name} ${tool.description}".lowercase()
         for (cd in customDomains) { if (cd.keywords.any { text.contains(it) }) return cd.name }
-        for ((domain, keywords) in customKeywords) { if (keywords.any { text.contains(it) } && domain in validDomainLabels) return domain }
-        return ToolDomain.classify(tool)?.label ?: "uncategorized"
+        for ((domain, keywords) in customKeywords) {
+            if (domain in validDomainLabels && keywords.any { text.contains(it) }) return domain
+        }
+        return ToolDomain.classify(tool, removedBuiltinDomains, hiddenDomains)?.label ?: "uncategorized"
     }
 
     fun classifyAll(tools: List<Tool>): Map<String, List<Tool>> {
@@ -318,7 +328,7 @@ class ToolRouter(
         // 框架层工具不属于任何用户域, 始终归 system
         if (name in frameworkToolNames) return "system"
         // Skill 工具归入「技能」域
-        if (name.startsWith("skill_")) return "技能"
+        if (name.startsWith("skill_")) return if (isValidDomain("技能")) "技能" else "uncategorized"
 
         val text = "${name} ${description}".lowercase()
 
@@ -330,10 +340,13 @@ class ToolRouter(
             if (domain in valid && keywords.any { text.contains(it) }) return domain
         }
 
-        // 4. ToolDomain 关键词匹配（子域优先——深度排序）
+        // 4. ToolDomain 关键词匹配（子域优先——深度排序，跳过已删除/隐藏域）
+        val excluded = removedBuiltinDomains + hiddenDomains
         val result = ToolDomain.entries
             .sortedByDescending { it.label.count { c -> c == '/' } }
-            .firstOrNull { dom -> dom.matchKeywords.any { text.contains(it) } }?.label
+            .firstOrNull { dom ->
+                dom.matchKeywords.any { text.contains(it) } && dom.label !in excluded
+            }?.label
 
         return result ?: "uncategorized"
     }
