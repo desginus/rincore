@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -95,6 +96,10 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
     val pagerState = rememberPagerState(initialPage = initialTab.coerceIn(0, 1)) { 2 }
     val scope = rememberCoroutineScope()
     var deleteTarget by remember { mutableStateOf<WorkspaceFileEntry?>(null) }
+    var renameTarget by remember { mutableStateOf<WorkspaceFileEntry?>(null) }
+    var showCreateDialog by remember { mutableStateOf(false) }
+    var moveTarget by remember { mutableStateOf<WorkspaceFileEntry?>(null) }
+    var showMoveDestDialog by remember { mutableStateOf(false) }
     var showInstallDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val filePicker = rememberLauncherForActivityResult(
@@ -137,6 +142,12 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
                 navigationIcon = { BackButton() },
                 actions = {
                     if (pagerState.currentPage == 1) {
+                        IconButton(onClick = { showCreateDialog = true }) {
+                            Icon(
+                                HugeIcons.File01,
+                                contentDescription = "新建",
+                            )
+                        }
                         IconButton(onClick = { filePicker.launch(arrayOf("*/*")) }) {
                             Icon(
                                 HugeIcons.FileImport,
@@ -195,6 +206,8 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
                     onGoUp = vm::goUp,
                     onOpen = vm::open,
                     onDelete = { deleteTarget = it },
+                    onRename = { renameTarget = it },
+                    onMove = { moveTarget = it },
                     onExport = { entry ->
                         exportTarget = entry
                         exportLauncher.launch(entry.name)
@@ -259,6 +272,160 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
         ) {
             Text(stringResource(R.string.workspace_detail_will_delete, entry.path))
         }
+    }
+
+    renameTarget?.let { entry ->
+        var newName by remember(entry.path) { mutableStateOf(entry.name) }
+        AlertDialog(
+            onDismissRequest = { renameTarget = null },
+            title = { Text("重命名") },
+            text = {
+                OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("新名称") },
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (newName.isNotBlank() && newName != entry.name) {
+                            vm.renameFile(entry, newName)
+                        }
+                        renameTarget = null
+                    },
+                    enabled = newName.isNotBlank(),
+                ) {
+                    Text(stringResource(R.string.common_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameTarget = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
+    }
+
+    if (showCreateDialog) {
+        var createName by remember { mutableStateOf("") }
+        var isFolder by remember { mutableStateOf(true) }
+        AlertDialog(
+            onDismissRequest = { showCreateDialog = false },
+            title = { Text(if (isFolder) "新建文件夹" else "新建文件") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        SegmentedButton(
+                            selected = isFolder,
+                            onClick = { isFolder = true },
+                            shape = SegmentedButtonDefaults.itemShape(0, 2),
+                        ) {
+                            Text("文件夹")
+                        }
+                        SegmentedButton(
+                            selected = !isFolder,
+                            onClick = { isFolder = false },
+                            shape = SegmentedButtonDefaults.itemShape(1, 2),
+                        ) {
+                            Text("文件")
+                        }
+                    }
+                    OutlinedTextField(
+                        value = createName,
+                        onValueChange = { createName = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("名称") },
+                        singleLine = true,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (createName.isNotBlank()) {
+                            if (isFolder) vm.createFolder(createName) else vm.createFile(createName)
+                        }
+                        showCreateDialog = false
+                    },
+                    enabled = createName.isNotBlank(),
+                ) {
+                    Text("创建")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateDialog = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
+    }
+
+    moveTarget?.let { entry ->
+        var destPath by remember { mutableStateOf(state.path) }
+        val allDirs = remember(state.entries) {
+            listOf("/" to "根目录") + state.entries
+                .filter { it.isDirectory && it.path != entry.path }
+                .map { it.path to it.name }
+        }
+        AlertDialog(
+            onDismissRequest = { moveTarget = null },
+            title = { Text("移动到") },
+            text = {
+                if (allDirs.isEmpty()) {
+                    Text("当前目录无可移动位置", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 300.dp),
+                    ) {
+                        items(allDirs) { (path, name) ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { destPath = path }
+                                    .padding(vertical = 12.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    HugeIcons.Folder01,
+                                    null,
+                                    tint = if (path == destPath) MaterialTheme.colorScheme.primary
+                                           else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Text(
+                                    name,
+                                    modifier = Modifier.weight(1f),
+                                    color = if (path == destPath) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.onSurface,
+                                )
+                                if (path == destPath) {
+                                    Text("✓", color = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        vm.moveFile(entry, destPath)
+                        moveTarget = null
+                    },
+                ) {
+                    Text("移动")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { moveTarget = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
     }
 }
 
@@ -541,6 +708,8 @@ private fun WorkspaceFilesPage(
     onGoUp: () -> Unit,
     onOpen: (WorkspaceFileEntry) -> Unit,
     onDelete: (WorkspaceFileEntry) -> Unit,
+    onRename: (WorkspaceFileEntry) -> Unit,
+    onMove: (WorkspaceFileEntry) -> Unit,
     onExport: (WorkspaceFileEntry) -> Unit,
     onShare: (WorkspaceFileEntry) -> Unit,
 ) {
@@ -581,6 +750,8 @@ private fun WorkspaceFilesPage(
                 entry = entry,
                 onOpen = { onOpen(entry) },
                 onDelete = { onDelete(entry) },
+                onRename = { onRename(entry) },
+                onMove = { onMove(entry) },
                 onExport = { onExport(entry) },
                 onShare = { onShare(entry) },
             )
@@ -643,6 +814,8 @@ private fun WorkspaceFileCard(
     entry: WorkspaceFileEntry,
     onOpen: () -> Unit,
     onDelete: () -> Unit,
+    onRename: () -> Unit,
+    onMove: () -> Unit,
     onExport: () -> Unit,
     onShare: () -> Unit,
 ) {
@@ -698,6 +871,32 @@ private fun WorkspaceFileCard(
                     expanded = menuExpanded,
                     onDismissRequest = { menuExpanded = false },
                 ) {
+                    DropdownMenuItem(
+                        text = { Text("重命名") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = HugeIcons.File02,
+                                contentDescription = null,
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onRename()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("移动") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = HugeIcons.ArrowTurnBackward,
+                                contentDescription = null,
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onMove()
+                        },
+                    )
                     if (!entry.isDirectory) {
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.common_export)) },

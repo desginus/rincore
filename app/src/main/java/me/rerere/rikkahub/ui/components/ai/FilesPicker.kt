@@ -172,28 +172,6 @@ internal fun FilesPicker(
             modifier = Modifier.fillMaxWidth()
         )
 
-        if (workspaces.isNotEmpty()) {
-            WorkspacePickerListItem(
-                assistant = assistant,
-                conversation = conversation,
-                workspaces = workspaces,
-                onUpdateAssistant = onUpdateAssistant,
-                onUpdateConversation = onUpdateConversation,
-                onNavigateToDetail = { id ->
-                    onDismiss()
-                    navController.navigate(Screen.WorkspaceDetail(id))
-                },
-                onNavigateToTerminal = { id ->
-                    onDismiss()
-                    navController.navigate(Screen.WorkspaceTerminal(id))
-                },
-                onNavigateToManage = {
-                    onDismiss()
-                    navController.navigate(Screen.Workspaces)
-                },
-            )
-        }
-
         if (settings.mcpServers.isNotEmpty()) {
             McpPickerListItem(
                 assistant = assistant,
@@ -202,46 +180,6 @@ internal fun FilesPicker(
                 onUpdateAssistant = onUpdateAssistant,
             )
         }
-
-        // Extensions (Quick Messages + Prompt Injections + Skills)
-        val modeAndLorebookCount =
-            if (assistant.allowConversationPromptInjection) {
-                conversation.modeInjectionIds.size + conversation.lorebookIds.size
-            } else {
-                assistant.modeInjectionIds.size + assistant.lorebookIds.size
-            }
-        val activeCount =
-            assistant.quickMessageIds.size +
-                modeAndLorebookCount +
-                assistant.enabledSkills.size
-        ListItem(
-            leadingContent = {
-                Icon(
-                    imageVector = HugeIcons.Package,
-                    contentDescription = stringResource(R.string.assistant_page_tab_extensions),
-                )
-            },
-            headlineContent = {
-                Text(stringResource(R.string.assistant_page_tab_extensions))
-            },
-            trailingContent = {
-                if (activeCount > 0) {
-                    Text(
-                        text = activeCount.toString(),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-            },
-            colors = ListItemDefaults.colors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer
-            ),
-            modifier = Modifier
-                .clip(MaterialTheme.shapes.large)
-                .clickable {
-                    onShowInjectionSheetChange(true)
-                },
-        )
 
         // Compress History Button
         ListItem(
