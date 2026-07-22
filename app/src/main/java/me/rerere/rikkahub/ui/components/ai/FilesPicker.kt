@@ -127,29 +127,34 @@ internal fun FilesPicker(
             .fillMaxWidth()
             .padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        FlowRow(
-            modifier = Modifier.fillMaxWidth().wrapContentWidth(Alignment.CenterHorizontally),
-            horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.Start),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+        // Row 1: 照片, 技能, 上传文件, 拍照
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
-            // Row 1: 照片, 技能, 上传文件, 拍照
-            ImagePickButton(onClick = onPickImage)
+            ImagePickButton(onClick = onPickImage, modifier = Modifier.weight(1f))
             SkillsButton(onClick = {
                 onDismiss()
                 navController.navigate(Screen.Skills)
-            })
-            FilePickButton(onClick = onPickFile)
-            TakePicButton(onLaunchCamera = onTakePic)
-            // Row 2: MCP, 本地工具, 应用文件, 压缩历史
+            }, modifier = Modifier.weight(1f))
+            FilePickButton(onClick = onPickFile, modifier = Modifier.weight(1f))
+            TakePicButton(onLaunchCamera = onTakePic, modifier = Modifier.weight(1f))
+        }
+        // Row 2: MCP, 本地工具, 应用文件, 压缩历史
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
             McpButton(
                 mcpManager = mcpManager,
                 assistant = assistant,
                 onUpdateAssistant = onUpdateAssistant,
+                modifier = Modifier.weight(1f),
             )
             LocalToolsButton(onClick = {
                 onDismiss()
                 navController.navigate(Screen.AssistantLocalTool(assistant.id.toString()))
-            })
+            }, modifier = Modifier.weight(1f))
             WorkspaceFilePickButton(onClick = {
                 val wsId = assistant.workspaceId?.toString()
                 val firstWsId = workspaces.firstOrNull()?.id
@@ -160,10 +165,10 @@ internal fun FilesPicker(
                 } else {
                     navController.navigate(Screen.Workspaces)
                 }
-            })
+            }, modifier = Modifier.weight(1f))
             CompressButton(onClick = {
                 onShowCompressDialogChange(true)
-            })
+            }, modifier = Modifier.weight(1f))
         }
         val boundWorkspace = remember(workspaces, assistant.workspaceId) {
             workspaces.find { it.id == assistant.workspaceId?.toString() }
@@ -361,8 +366,8 @@ private fun InjectionQuickConfigSheet(
 }
 
 @Composable
-private fun ImagePickButton(onClick: () -> Unit = {}) {
-    BigIconTextButton(icon = {
+private fun ImagePickButton(onClick: () -> Unit = {}, modifier: Modifier = Modifier) {
+    BigIconTextButton(modifier = modifier, icon = {
         Icon(HugeIcons.Image02, null)
     }, text = {
         Text(stringResource(R.string.photo))
@@ -372,8 +377,8 @@ private fun ImagePickButton(onClick: () -> Unit = {}) {
 }
 
 @Composable
-fun TakePicButton(onLaunchCamera: () -> Unit = {}) {
-    BigIconTextButton(icon = {
+fun TakePicButton(onLaunchCamera: () -> Unit = {}, modifier: Modifier = Modifier) {
+    BigIconTextButton(modifier = modifier, icon = {
         Icon(HugeIcons.Camera01, null)
     }, text = {
         Text(stringResource(R.string.take_picture))
@@ -405,8 +410,8 @@ fun AudioPickButton(onClick: () -> Unit = {}) {
 }
 
 @Composable
-fun FilePickButton(onClick: () -> Unit = {}) {
-    BigIconTextButton(icon = {
+fun FilePickButton(onClick: () -> Unit = {}, modifier: Modifier = Modifier) {
+    BigIconTextButton(modifier = modifier, icon = {
         Icon(HugeIcons.Files02, null)
     }, text = {
         Text(stringResource(R.string.upload_file))
@@ -465,8 +470,8 @@ private fun BigIconTextButtonPreview() {
 }
 
 @Composable
-fun WorkspaceFilePickButton(onClick: () -> Unit = {}) {
-    BigIconTextButton(icon = {
+fun WorkspaceFilePickButton(onClick: () -> Unit = {}, modifier: Modifier = Modifier) {
+    BigIconTextButton(modifier = modifier, icon = {
         Icon(HugeIcons.Folder01, null)
     }, text = {
         Text("应用文件")
@@ -476,8 +481,8 @@ fun WorkspaceFilePickButton(onClick: () -> Unit = {}) {
 }
 
 @Composable
-fun LocalToolsButton(onClick: () -> Unit = {}) {
-    BigIconTextButton(icon = {
+fun LocalToolsButton(onClick: () -> Unit = {}, modifier: Modifier = Modifier) {
+    BigIconTextButton(modifier = modifier, icon = {
         Icon(HugeIcons.Settings02, null)
     }, text = {
         Text("本地工具")
@@ -487,8 +492,8 @@ fun LocalToolsButton(onClick: () -> Unit = {}) {
 }
 
 @Composable
-fun SkillsButton(onClick: () -> Unit = {}) {
-    BigIconTextButton(icon = {
+fun SkillsButton(onClick: () -> Unit = {}, modifier: Modifier = Modifier) {
+    BigIconTextButton(modifier = modifier, icon = {
         Icon(HugeIcons.AiMagic, null)
     }, text = {
         Text("技能")
@@ -502,12 +507,13 @@ private fun McpButton(
     mcpManager: McpManager,
     assistant: Assistant,
     onUpdateAssistant: (Assistant) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val settings = LocalSettings.current
     var showPicker by remember { mutableStateOf(false) }
     val status by mcpManager.syncingStatus.collectAsStateWithLifecycle()
     val loading = status.values.any { it == McpStatus.Connecting }
-    BigIconTextButton(icon = {
+    BigIconTextButton(modifier = modifier, icon = {
         Icon(HugeIcons.Codesandbox, null)
     }, text = {
         Text("MCP")
@@ -526,8 +532,8 @@ private fun McpButton(
 }
 
 @Composable
-private fun CompressButton(onClick: () -> Unit) {
-    BigIconTextButton(icon = {
+private fun CompressButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    BigIconTextButton(modifier = modifier, icon = {
         Icon(HugeIcons.Package01, null)
     }, text = {
         Text("压缩历史")
