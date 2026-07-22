@@ -18,11 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentWidth
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -55,6 +51,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Job
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.AiMagic
@@ -72,6 +69,7 @@ import me.rerere.hugeicons.stroke.Video01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.ai.mcp.McpManager
+import me.rerere.rikkahub.data.ai.mcp.McpStatus
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.data.datastore.findProvider
@@ -506,68 +504,23 @@ private fun McpButton(
     onUpdateAssistant: (Assistant) -> Unit,
 ) {
     val settings = LocalSettings.current
-    var showSelector by remember { mutableStateOf(false) }
+    var showPicker by remember { mutableStateOf(false) }
+    val status by mcpManager.syncingStatus.collectAsStateWithLifecycle()
+    val loading = status.values.any { it == McpStatus.Connecting }
     BigIconTextButton(icon = {
         Icon(HugeIcons.Codesandbox, null)
     }, text = {
         Text("MCP")
     }) {
-        showSelector = true
+        showPicker = true
     }
-    if (showSelector && settings.mcpServers.isNotEmpty()) {
-        AlertDialog(
-            onDismissRequest = { showSelector = false },
-            title = { Text("MCP 服务器") },
-            text = {
-                LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
-                    items(settings.mcpServers) { server ->
-                        val enabled = assistant.enabledMcpServers.contains(server.id)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    val newList = if (enabled) {
-                                        assistant.enabledMcpServers - server.id
-                                    } else {
-                                        assistant.enabledMcpServers + server.id
-                                    }
-                                    onUpdateAssistant(assistant.copy(enabledMcpServers = newList))
-                                    mcpManager.updateEnabledServers(
-                                        assistantId = assistant.id,
-                                        enabledServerIds = newList
-                                    )
-                                }
-                                .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Checkbox(
-                                checked = enabled,
-                                onCheckedChange = { checked ->
-                                    val newList = if (checked) {
-                                        assistant.enabledMcpServers + server.id
-                                    } else {
-                                        assistant.enabledMcpServers - server.id
-                                    }
-                                    onUpdateAssistant(assistant.copy(enabledMcpServers = newList))
-                                    mcpManager.updateEnabledServers(
-                                        assistantId = assistant.id,
-                                        enabledServerIds = newList
-                                    )
-                                },
-                            )
-                            Column(modifier = Modifier.padding(start = 8.dp)) {
-                                Text(server.name, style = MaterialTheme.typography.bodyMedium)
-                                Text(server.url, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showSelector = false }) {
-                    Text(stringResource(R.string.common_confirm))
-                }
-            },
+    if (showPicker && settings.mcpServers.isNotEmpty()) {
+        McpPickerSheet(
+            assistant = assistant,
+            servers = settings.mcpServers,
+            loading = loading,
+            onUpdateAssistant = onUpdateAssistant,
+            onDismiss = { showPicker = false },
         )
     }
 }
