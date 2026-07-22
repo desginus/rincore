@@ -522,7 +522,7 @@ class ChatService(
                 settings = settings,
                 model = model,
                 processingStatus = session.processingStatus,
-                messages = conversation.currentMessages.let {
+                messages = conversation.messagesForApi().let {
                     if (messageRange != null) {
                         it.subList(messageRange.start, messageRange.endInclusive + 1)
                     } else {
