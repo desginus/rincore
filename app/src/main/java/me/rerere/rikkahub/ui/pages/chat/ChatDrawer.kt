@@ -390,7 +390,7 @@ fun ChatDrawerContent(
                 // --- DESK BRANCH ---
                 DrawerAction(
                     icon = {
-                        Icon(HugeIcons.Bash, "Desk 编码工作站")
+                        Text("🖥", style = MaterialTheme.typography.titleLarge)
                     },
                     label = {
                         Text("Desk 编码")
