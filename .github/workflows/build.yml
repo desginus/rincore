@@ -2,7 +2,7 @@ name: Build RinCore APK
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, desk ]
   workflow_dispatch:
 
 jobs:
