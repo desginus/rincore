@@ -127,6 +127,8 @@ import me.rerere.rikkahub.ui.pages.setting.scheduledjobs.ScheduledJobsScreen
 import me.rerere.rikkahub.ui.pages.setting.scheduledjobs.ScheduledJobDetailScreen
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerPage
 import me.rerere.rikkahub.ui.pages.stats.StatsPage
+// --- DESK BRANCH ---
+import me.rerere.rikkahub.ui.pages.desk.DeskScreen
 import me.rerere.rikkahub.ui.pages.translator.TranslatorPage
 import me.rerere.rikkahub.ui.pages.webview.WebViewPage
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
@@ -561,6 +563,11 @@ class RouteActivity : ComponentActivity() {
                             entry<Screen.Stats> {
                                 StatsPage()
                             }
+
+                            // --- DESK BRANCH ---
+                            entry<Screen.Desk> {
+                                DeskScreen()
+                            }
                         }
                     )
                     if (BuildConfig.DEBUG) {
@@ -760,4 +767,8 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object Stats : Screen
+
+    // --- DESK BRANCH ---
+    @Serializable
+    data object Desk : Screen
 }
