@@ -468,9 +468,8 @@ class ChatCompletionsAPI(
             }
 
             if (params.model.abilities.contains(ModelAbility.TOOL) && params.tools.isNotEmpty()) {
-                // 缓存优化: 按工具名排序 + cache_control (Qwen/MiniMax 显式缓存)
                 putJsonArray("tools") {
-                    params.tools.sortedBy { it.name }.forEachIndexed { index, tool ->
+                    params.tools.sortedBy { it.name }.forEach { tool ->
                         add(buildJsonObject {
                             put("type", "function")
                             put("function", buildJsonObject {
@@ -483,12 +482,6 @@ class ChatCompletionsAPI(
                                     )
                                 )
                             })
-                            // 最后一个工具定义上加 cache_control (对标 Rikkahub ClaudeProvider)
-                            if (providerSetting.promptCaching && index == params.tools.lastIndex) {
-                                put("cache_control", buildJsonObject {
-                                    put("type", "ephemeral")
-                                })
-                            }
                         })
                     }
                 }
@@ -680,12 +673,6 @@ class ChatCompletionsAPI(
                                 add(buildJsonObject {
                                     put("type", "text")
                                     put("text", part.text)
-                                    // cache_control 放最后一个 content block (对标 Rikkahub ClaudeProvider)
-                                    if (isSystem && promptCaching && index == message.parts.lastIndex) {
-                                        put("cache_control", buildJsonObject {
-                                            put("type", "ephemeral")
-                                        })
-                                    }
                                 })
                             }
 
