@@ -387,6 +387,19 @@ fun ChatDrawerContent(
                     },
                 )
 
+                // --- DESK BRANCH ---
+                DrawerAction(
+                    icon = {
+                        Icon(HugeIcons.Bash, "Desk 编码工作站")
+                    },
+                    label = {
+                        Text("Desk 编码")
+                    },
+                    onClick = {
+                        navController.navigate(Screen.Desk)
+                    },
+                )
+
                 Spacer(Modifier.weight(1f))
 
                 DrawerAction(
