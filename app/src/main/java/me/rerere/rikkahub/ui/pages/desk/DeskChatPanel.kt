@@ -14,8 +14,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -28,7 +28,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import me.rerere.hugeicons.HugeIcons
 
 @Composable
 fun DeskChatPanel(
@@ -91,17 +90,17 @@ fun DeskChatPanel(
             )
             Spacer(modifier = Modifier.width(8.dp))
             if (isRunning) {
-                IconButton(onClick = onStop) {
-                    Icon(HugeIcons.StopCircle, "中断",
-                        tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(24.dp))
+                Button(onClick = onStop, colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                ), modifier = Modifier.size(44.dp)) {
+                    Text("⏹", style = MaterialTheme.typography.titleMedium)
                 }
             } else {
-                IconButton(onClick = { if (input.isNotBlank()) { onSend(input); input = "" } },
-                    enabled = input.isNotBlank()) {
-                    Icon(HugeIcons.ArrowUp02, "发送",
-                        tint = if (input.isNotBlank()) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-                        modifier = Modifier.size(24.dp))
+                Button(onClick = { if (input.isNotBlank()) { onSend(input); input = "" } },
+                    enabled = input.isNotBlank(),
+                    modifier = Modifier.size(44.dp)) {
+                    Text("⬆", style = MaterialTheme.typography.titleMedium)
                 }
             }
         }

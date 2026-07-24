@@ -90,16 +90,19 @@ object DeskTools {
         execute = { input ->
             val sub = input.jsonObject["path"]?.jsonPrimitive?.content ?: ""
             val dir = if (sub.isEmpty()) workspaceRoot else File(workspaceRoot, sub)
-            if (!dir.exists() || !dir.isDirectory) return@execute listOf(UIMessagePart.Text("目录不存在: $sub"))
-            val result = buildString {
-                appendLine("📁 ${sub.ifEmpty { "/" }}")
-                dir.listFiles()?.sortedBy { it.name }?.forEach { f ->
-                    val icon = if (f.isDirectory) "📁" else "📄"
-                    val size = if (f.isFile) " (${f.length() / 1024}KB)" else ""
-                    appendLine("  $icon ${f.name}$size")
+            if (!dir.exists() || !dir.isDirectory) {
+                listOf(UIMessagePart.Text("目录不存在: $sub"))
+            } else {
+                val result = buildString {
+                    appendLine("📁 ${sub.ifEmpty { "/" }}")
+                    dir.listFiles()?.sortedBy { it.name }?.forEach { f ->
+                        val icon = if (f.isDirectory) "📁" else "📄"
+                        val size = if (f.isFile) " (${f.length() / 1024}KB)" else ""
+                        appendLine("  $icon ${f.name}$size")
+                    }
                 }
+                listOf(UIMessagePart.Text(result))
             }
-            listOf(UIMessagePart.Text(result))
         }
     )
 }

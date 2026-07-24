@@ -4,8 +4,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -13,8 +11,6 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import me.rerere.hugeicons.HugeIcons
 
 @Composable
 fun DeskBottomPanel(
@@ -39,29 +35,41 @@ fun DeskBottomPanel(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             tonalElevation = 1.dp,
         ) {
-            DeskNavItem(DeskTab.CHAT, "AI 对话", HugeIcons.Code, activeTab, onTabChange)
-            DeskNavItem(DeskTab.BROWSER, "浏览器", HugeIcons.Earth, activeTab, onTabChange)
-            DeskNavItem(DeskTab.FILES, "文件", HugeIcons.Folder01, activeTab, onTabChange)
+            NavigationBarItem(
+                selected = activeTab == DeskTab.CHAT,
+                onClick = { onTabChange(DeskTab.CHAT) },
+                icon = { Text("💬", style = MaterialTheme.typography.titleSmall) },
+                label = { Text("AI 对话", style = MaterialTheme.typography.labelSmall) },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                ),
+            )
+            NavigationBarItem(
+                selected = activeTab == DeskTab.BROWSER,
+                onClick = { onTabChange(DeskTab.BROWSER) },
+                icon = { Text("🌐", style = MaterialTheme.typography.titleSmall) },
+                label = { Text("浏览器", style = MaterialTheme.typography.labelSmall) },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                ),
+            )
+            NavigationBarItem(
+                selected = activeTab == DeskTab.FILES,
+                onClick = { onTabChange(DeskTab.FILES) },
+                icon = { Text("📁", style = MaterialTheme.typography.titleSmall) },
+                label = { Text("文件", style = MaterialTheme.typography.labelSmall) },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                ),
+            )
         }
     }
-}
-
-@Composable
-private fun DeskNavItem(
-    tab: DeskTab, label: String, icon: androidx.compose.ui.graphics.vector.ImageVector,
-    active: DeskTab, onClick: (DeskTab) -> Unit,
-) {
-    NavigationBarItem(
-        selected = active == tab,
-        onClick = { onClick(tab) },
-        icon = { Icon(icon, label, Modifier.size(22.dp)) },
-        label = { Text(label, style = MaterialTheme.typography.labelSmall) },
-        colors = NavigationBarItemDefaults.colors(
-            selectedIconColor = MaterialTheme.colorScheme.primary,
-            selectedTextColor = MaterialTheme.colorScheme.primary,
-            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-        ),
-    )
 }
 
 enum class DeskTab { CHAT, BROWSER, FILES }

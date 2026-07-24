@@ -67,7 +67,7 @@ class DeskVM(
         chatService.initializeConversation(conv.id)
         conversationId = conv.id
         _messages.value = _messages.value + DeskMessage(
-            DeskMessageRole.SYSTEM, "✅ Desk 就绪，模型: ${model.name}")
+            DeskMessageRole.SYSTEM, "✅ Desk 就绪，模型: ${model.displayName}")
     }
 
     fun openFile(path: String) {
