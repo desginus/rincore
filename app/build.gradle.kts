@@ -14,10 +14,17 @@ plugins {
 
 android {
     namespace = "me.rerere.rikkahub"
+    /*
+     * 【三版本共存说明】
+     * RinCore / RinCore Desk / RikkaHub 共享同一内核(me.rerere.rikkahub)，
+     * 底层数据库、序列化、存储路径均基于此 namespace。
+     * applicationId 仅用于 Android 系统身份区分，实现共存安装。
+     * 修改 applicationId 时勿改 namespace，否则 Room/序列化/SharedPreferences 全部断裂。
+     */
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "me.rincore.app"
+        applicationId = "me.rincore.desk"
         minSdk = 26
         targetSdk = 37
         versionCode = 107
