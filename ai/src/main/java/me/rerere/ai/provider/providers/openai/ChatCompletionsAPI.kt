@@ -680,8 +680,11 @@ class ChatCompletionsAPI(
                                 add(buildJsonObject {
                                     put("type", "text")
                                     put("text", part.text)
-                                    // cache_control 放最后一个 content block (对标 Rikkahub ClaudeProvider)
-                                    if (isSystem && promptCaching && index == message.parts.lastIndex) {
+                                    // Bug #5 缓存分段修复: 每个 system content block 独立标注 cache_control
+                                    // 这样即使后续 block 内容变化（如工具列表更新），前段 block 的缓存仍然命中
+                                    // 之前只在最后一个 block 标注，导致 provider 按 4096-token chunk 对齐时
+                                    // 整个 system prompt 被作为单个单元，部分命中时前段缓存失效
+                                    if (isSystem && promptCaching) {
                                         put("cache_control", buildJsonObject {
                                             put("type", "ephemeral")
                                         })

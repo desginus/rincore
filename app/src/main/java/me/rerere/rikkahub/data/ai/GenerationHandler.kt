@@ -449,35 +449,55 @@ class GenerationHandler(
         layer1Prompt: String? = null,
     ) {
         val internalMessages = buildList {
+            // === 多段 system prompt 构建 (Bug #5 缓存分段修复) ===
+            // 将 system prompt 拆分为多个独立的 content block，每个段末尾标记 cache_control
+            // 这样即使后续段内容变化，前段缓存仍能命中，避免 4096-token chunk 对齐截断
+            // 段划分策略: 每段 < ~3000 tokens，自然边界（段落/空行）处拆分
+            val systemParts = mutableListOf<UIMessagePart.Text>()
+
+            // 段1: 缓存锚点 — 全局静态，跨所有对话永不变化
+            val cacheAnchorText = buildCacheAnchor()
+            systemParts.add(UIMessagePart.Text(cacheAnchorText))
+            val anchorLen = cacheAnchorText.length
+
+            // 段2: 角色预设提示词 — 单对话内静态
+            val effectiveSystemPrompt =
+                if (assistant.allowConversationSystemPrompt && !conversationSystemPrompt.isNullOrBlank()) {
+                    conversationSystemPrompt
+                } else {
+                    assistant.systemPrompt
+                }
             val sysPromptLen: Int
-            val memPromptLen: Int
-            val toolsPromptLen: Int
-            var layer1Len: Int = 0
-
-            val system = buildString {
-                // 缓存锚点 — 静态规则块 (最大化五家前缀缓存命中)
-                append(buildCacheAnchor())
-                appendLine()
-
-                val effectiveSystemPrompt =
-                    if (assistant.allowConversationSystemPrompt && !conversationSystemPrompt.isNullOrBlank()) {
-                        conversationSystemPrompt
-                    } else {
-                        assistant.systemPrompt
+            if (effectiveSystemPrompt.isNotBlank()) {
+                // 角色预设可能非常长（>8000 chars / >3200 tokens），需在段落边界拆分
+                val MAX_BLOCK_CHARS = 8000  // ~3200 tokens，安全在 4096 限制内
+                var remaining = effectiveSystemPrompt
+                while (remaining.isNotEmpty()) {
+                    if (remaining.length <= MAX_BLOCK_CHARS) {
+                        systemParts.add(UIMessagePart.Text(remaining))
+                        break
                     }
-                if (effectiveSystemPrompt.isNotBlank()) {
-                    append(effectiveSystemPrompt)
+                    // 在接近 MAX_BLOCK_CHARS 的段落边界处截断
+                    val cutPoint = remaining.indexOf('\n', MAX_BLOCK_CHARS)
+                    val split = if (cutPoint != -1 && cutPoint < remaining.length) cutPoint + 1
+                        else MAX_BLOCK_CHARS
+                    systemParts.add(UIMessagePart.Text(remaining.substring(0, split)))
+                    remaining = remaining.substring(split)
                 }
-                sysPromptLen = length
+                sysPromptLen = anchorLen + effectiveSystemPrompt.length
+            } else {
+                sysPromptLen = anchorLen
+            }
 
-                // Layer1 域概览 — 缓存友好: 仅在域配置变化时更新
-                if (layer1Prompt != null) {
-                    appendLine()
-                    append(layer1Prompt)
-                }
-                layer1Len = length - sysPromptLen
+            // 段3: Layer1 域概览 —域配置变化时更新（单对话内通常不变）
+            var layer1Len = 0
+            if (layer1Prompt != null) {
+                systemParts.add(UIMessagePart.Text(layer1Prompt))
+                layer1Len = layer1Prompt.length
+            }
 
-                // 框架工具 systemPrompt — 静态内容, 有利于跨请求缓存前缀匹配
+            // 段4: 框架工具 systemPrompt — MCP/workspace 等工具注入
+            val toolsPromptText = buildString {
                 if (layer1Prompt != null) {
                     val frameworkIds = setOf(
                         "invoke_tools",
@@ -497,19 +517,42 @@ class GenerationHandler(
                         append(tool.systemPrompt(model, messages))
                     }
                 }
-                toolsPromptLen = length - sysPromptLen - layer1Len
-                // 记忆块不在此处 — 已移出系统消息, 保证 DeepSeek 缓存前缀单元完全静态
-                memPromptLen = 0
             }
-            if (system.isNotBlank()) {
-                // 估算 tokens: 中文 ~1.5 chars/token, 英文 ~3.5 chars/token, 取混合 2.5
-                val estTokens = system.length / 2.5
-                Log.i(TAG, "System prompt breakdown: system=${sysPromptLen}c (~${(sysPromptLen/2.5).toInt()}t)" +
-                    " layer1=${layer1Len}c (~${(layer1Len/2.5).toInt()}t)" +
-                    " tools=${toolsPromptLen}c (~${(toolsPromptLen/2.5).toInt()}t)" +
-                    " total=${system.length}c (~${estTokens.toInt()}t)")
-                add(UIMessage.system(prompt = system))
+            val toolsPromptLen = toolsPromptText.length
+            if (toolsPromptText.isNotBlank()) {
+                // 工具定义也可能很长，需在段落边界拆分
+                val MAX_TOOLS_CHARS = 6000  // ~2400 tokens
+                var remaining = toolsPromptText
+                while (remaining.isNotEmpty()) {
+                    if (remaining.length <= MAX_TOOLS_CHARS) {
+                        systemParts.add(UIMessagePart.Text(remaining))
+                        break
+                    }
+                    val cutPoint = remaining.indexOf('\n', MAX_TOOLS_CHARS)
+                    val split = if (cutPoint != -1 && cutPoint < remaining.length) cutPoint + 1
+                        else MAX_TOOLS_CHARS
+                    systemParts.add(UIMessagePart.Text(remaining.substring(0, split)))
+                    remaining = remaining.substring(split)
+                }
             }
+
+            // 注入多段 system message — 每个段成为独立的 content block
+            if (systemParts.isNotEmpty()) {
+                val totalLen = systemParts.sumOf { it.text.length }
+                val estTokens = totalLen / 2.5
+                Log.i(TAG, "System prompt: ${systemParts.size} blocks, " +
+                    "anchor=${anchorLen}c, " +
+                    "role=${sysPromptLen - anchorLen}c, " +
+                    "layer1=${layer1Len}c, " +
+                    "tools=${toolsPromptLen}c, " +
+                    "total=${totalLen}c (~${estTokens.toInt()}t)")
+                add(UIMessage(
+                    role = MessageRole.SYSTEM,
+                    parts = systemParts
+                ))
+            }
+
+            val memPromptLen = 0  // 记忆块不在 system 内
             // 记忆块: 独立 user 消息, 放在 conversation 末尾而非 system 内
             // DeepSeek 缓存前缀单元对 system message 全量匹配, 记忆变化=system 单元失效
             // 独立消息仅影响末尾, 前缀 (system + 历史消息) 全部命中
