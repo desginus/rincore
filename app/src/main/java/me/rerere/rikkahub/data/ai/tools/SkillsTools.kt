@@ -76,5 +76,12 @@ fun createSkillTools(
                 listOf(UIMessagePart.Text(content))
             }
         )
-    )
+}
+
+fun sanitizeSkillToolName(skillName: String): String {
+        val sanitized = skillName.lowercase()
+            .replace(" ", "_")
+            .replace(Regex("[^a-z0-9_-]"), "")
+            .trim('_')
+        return "skill_$sanitized"
 }

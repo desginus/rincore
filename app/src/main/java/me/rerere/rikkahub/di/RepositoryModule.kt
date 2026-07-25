@@ -65,7 +65,6 @@ val repositoryModule = module {
                     target = "/upload",
                 ),
             ),
-            )
         )
     }
 
