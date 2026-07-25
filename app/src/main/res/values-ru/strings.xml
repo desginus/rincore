@@ -1044,6 +1044,8 @@
   <string name="text_area_save">Сохранить</string>
   <string name="theme_name_autumn">Осенний жёлтый</string>
   <string name="theme_name_black">Нейтральный чёрный</string>
+  <string name="theme_name_minimal">Minimal White</string>
+  <string name="theme_name_claude">Claude</string>
   <string name="theme_name_ocean">Океанический синий</string>
   <string name="theme_name_sakura">Сакура Розовый</string>
   <string name="theme_name_spring">Луговой зелёный</string>
