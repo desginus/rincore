@@ -457,33 +457,30 @@ class GenerationHandler(
             val toolsPromptLen: Int
             var layer1Len: Int = 0
 
-            val systemParts = mutableListOf<UIMessagePart.Text>()
+            val system = buildString {
+                // 缓存锚点 — 静态规则块 (最大化五家前缀缓存命中)
+                append(buildCacheAnchor())
+                appendLine()
 
-            // Part 1: 缓存锚点 — 静态规则块 (最大化五家前缀缓存命中)
-            val cacheAnchorText = buildCacheAnchor()
-            systemParts.add(UIMessagePart.Text(cacheAnchorText))
-            val anchorLen = cacheAnchorText.length
-
-            // Part 2: 角色预设
-            val effectiveSystemPrompt =
-                if (assistant.allowConversationSystemPrompt && !conversationSystemPrompt.isNullOrBlank()) {
-                    conversationSystemPrompt
-                } else {
-                    assistant.systemPrompt
+                val effectiveSystemPrompt =
+                    if (assistant.allowConversationSystemPrompt && !conversationSystemPrompt.isNullOrBlank()) {
+                        conversationSystemPrompt
+                    } else {
+                        assistant.systemPrompt
+                    }
+                if (effectiveSystemPrompt.isNotBlank()) {
+                    append(effectiveSystemPrompt)
                 }
-            if (effectiveSystemPrompt.isNotBlank()) {
-                systemParts.add(UIMessagePart.Text(effectiveSystemPrompt))
-            }
-            sysPromptLen = anchorLen + effectiveSystemPrompt.length
+                sysPromptLen = length
 
-            // Part 3: Layer1 域概览 — 缓存友好: 仅在域配置变化时更新
-            if (layer1Prompt != null) {
-                systemParts.add(UIMessagePart.Text(layer1Prompt))
-                layer1Len = layer1Prompt.length
-            }
+                // Layer1 域概览 — 缓存友好: 仅在域配置变化时更新
+                if (layer1Prompt != null) {
+                    appendLine()
+                    append(layer1Prompt)
+                }
+                layer1Len = length - sysPromptLen
 
-            // Part 4: 工具定义 systemPrompt — 静态内容, 有利于跨请求缓存前缀匹配
-            val toolsPromptText = buildString {
+                // 框架工具 systemPrompt — 静态内容, 有利于跨请求缓存前缀匹配
                 if (layer1Prompt != null) {
                     val frameworkIds = setOf(
                         "invoke_tools",
@@ -503,22 +500,18 @@ class GenerationHandler(
                         append(tool.systemPrompt(model, messages))
                     }
                 }
+                toolsPromptLen = length - sysPromptLen - layer1Len
+                // 记忆块不在此处 — 已移出系统消息, 保证 DeepSeek 缓存前缀单元完全静态
+                memPromptLen = 0
             }
-            if (toolsPromptText.isNotBlank()) {
-                systemParts.add(UIMessagePart.Text(toolsPromptText.trimStart()))
-            }
-            toolsPromptLen = toolsPromptText.length
-
-            // 记忆块不在此处 — 已移出系统消息, 保证 DeepSeek 缓存前缀单元完全静态
-            memPromptLen = 0
-
-            if (systemParts.isNotEmpty()) {
-                val totalLen = systemParts.sumOf { it.text.length }
-                val estTokens = totalLen / 2.5
-                Log.i(TAG, "System prompt breakdown: anchor=${anchorLen}c system=${sysPromptLen}c" +
-                    " layer1=${layer1Len}c tools=${toolsPromptLen}c" +
-                    " total=${totalLen}c (~${estTokens.toInt()}t)")
-                add(UIMessage(role = MessageRole.SYSTEM, parts = systemParts))
+            if (system.isNotBlank()) {
+                // 估算 tokens: 中文 ~1.5 chars/token, 英文 ~3.5 chars/token, 取混合 2.5
+                val estTokens = system.length / 2.5
+                Log.i(TAG, "System prompt breakdown: system=${sysPromptLen}c (~${(sysPromptLen/2.5).toInt()}t)" +
+                    " layer1=${layer1Len}c (~${(layer1Len/2.5).toInt()}t)" +
+                    " tools=${toolsPromptLen}c (~${(toolsPromptLen/2.5).toInt()}t)" +
+                    " total=${system.length}c (~${estTokens.toInt()}t)")
+                add(UIMessage.system(prompt = system))
             }
             // 记忆块: 独立 user 消息, 放在 conversation 末尾而非 system 内
             // DeepSeek 缓存前缀单元对 system message 全量匹配, 记忆变化=system 单元失效
