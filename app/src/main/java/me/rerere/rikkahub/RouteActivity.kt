@@ -220,44 +220,92 @@ class RouteActivity : ComponentActivity() {
             }
 
             val action = intent?.action ?: return@LaunchedEffect
+            val isSpecialAction = action in setOf(
+                Intent.ACTION_SEND,
+                Intent.ACTION_SEND_MULTIPLE,
+                Intent.ACTION_PROCESS_TEXT
+            )
+            if (!isSpecialAction) return@LaunchedEffect
+
             handled = true
+
+            // Bug #1/#3 修复: 检查 backStack 是否已包含目标对话
+            val existingChatScreen = backStack.lastOrNull() as? Screen.Chat
+            val lastId = readStringPreference("lastConversationId", Uuid.random().toString())
+                ?: Uuid.random().toString()
+
             when (action) {
                 Intent.ACTION_SEND -> {
                     val text = intent?.getStringExtra(Intent.EXTRA_TEXT) ?: ""
                     val uri = intent?.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
                     val files = mutableListOf<String>()
                     uri?.let { files.add(it.toString()) }
-                    val currentId = readStringPreference("lastConversationId", Uuid.random().toString())
-                        ?: Uuid.random().toString()
-                    backStack.clear()
-                    backStack.add(Screen.Chat(
-                        id = currentId,
-                        text = text.ifBlank { null },
-                        files = files,
-                    ))
+
+                    if (existingChatScreen != null && lastId == existingChatScreen.id) {
+                        if (files.isNotEmpty() || text.isNotBlank()) {
+                            backStack.add(
+                                Screen.Chat(
+                                    id = lastId,
+                                    text = text.ifBlank { null },
+                                    files = files,
+                                    nodeId = null
+                                )
+                            )
+                        }
+                    } else {
+                        backStack.clear()
+                        backStack.add(Screen.Chat(
+                            id = lastId,
+                            text = text.ifBlank { null },
+                            files = files,
+                        ))
+                    }
                 }
                 Intent.ACTION_SEND_MULTIPLE -> {
                     val text = intent?.getStringExtra(Intent.EXTRA_TEXT) ?: ""
                     val uris = intent?.getParcelableArrayListExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
                     val files = uris?.map { it.toString() } ?: emptyList()
-                    val currentId = readStringPreference("lastConversationId", Uuid.random().toString())
-                        ?: Uuid.random().toString()
-                    backStack.clear()
-                    backStack.add(Screen.Chat(
-                        id = currentId,
-                        text = text.ifBlank { null },
-                        files = files,
-                    ))
+
+                    if (existingChatScreen != null && lastId == existingChatScreen.id) {
+                        if (files.isNotEmpty() || text.isNotBlank()) {
+                            backStack.add(
+                                Screen.Chat(
+                                    id = lastId,
+                                    text = text.ifBlank { null },
+                                    files = files,
+                                    nodeId = null
+                                )
+                            )
+                        }
+                    } else {
+                        backStack.clear()
+                        backStack.add(Screen.Chat(
+                            id = lastId,
+                            text = text.ifBlank { null },
+                            files = files,
+                        ))
+                    }
                 }
                 Intent.ACTION_PROCESS_TEXT -> {
                     val txt = intent?.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString() ?: ""
-                    val currentId = readStringPreference("lastConversationId", Uuid.random().toString())
-                        ?: Uuid.random().toString()
-                    backStack.clear()
-                    backStack.add(Screen.Chat(
-                        id = currentId,
-                        text = txt.ifBlank { null },
-                    ))
+
+                    if (existingChatScreen != null && lastId == existingChatScreen.id) {
+                        if (txt.isNotBlank()) {
+                            backStack.add(
+                                Screen.Chat(
+                                    id = lastId,
+                                    text = txt,
+                                    nodeId = null
+                                )
+                            )
+                        }
+                    } else {
+                        backStack.clear()
+                        backStack.add(Screen.Chat(
+                            id = lastId,
+                            text = txt.ifBlank { null },
+                        ))
+                    }
                 }
             }
         }
@@ -268,6 +316,47 @@ class RouteActivity : ComponentActivity() {
         // Navigate to the chat screen if a conversation ID is provided
         intent.getStringExtra("conversationId")?.let { text ->
             navStack?.add(Screen.Chat(text))
+            return
+        }
+
+        // Bug #1/#3 修复: singleTask 模式下处理到达的 ACTION_SEND
+        val action = intent.action
+        if (action == Intent.ACTION_SEND || action == Intent.ACTION_SEND_MULTIPLE || action == Intent.ACTION_PROCESS_TEXT) {
+            val lastId = readStringPreference("lastConversationId", Uuid.random().toString())
+                ?: Uuid.random().toString()
+            when (action) {
+                Intent.ACTION_SEND -> {
+                    val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
+                    val uri = intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
+                    val files = mutableListOf<String>()
+                    uri?.let { files.add(it.toString()) }
+                    navStack?.add(Screen.Chat(
+                        id = lastId,
+                        text = text.ifBlank { null },
+                        files = files,
+                        nodeId = null
+                    ))
+                }
+                Intent.ACTION_SEND_MULTIPLE -> {
+                    val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
+                    val uris = intent.getParcelableArrayListExtra<android.net.Uri>(Intent.EXTRA_STREAM)
+                    val files = uris?.map { it.toString() } ?: emptyList()
+                    navStack?.add(Screen.Chat(
+                        id = lastId,
+                        text = text.ifBlank { null },
+                        files = files,
+                        nodeId = null
+                    ))
+                }
+                Intent.ACTION_PROCESS_TEXT -> {
+                    val txt = intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString() ?: ""
+                    navStack?.add(Screen.Chat(
+                        id = lastId,
+                        text = txt.ifBlank { null },
+                        nodeId = null
+                    ))
+                }
+            }
         }
     }
 

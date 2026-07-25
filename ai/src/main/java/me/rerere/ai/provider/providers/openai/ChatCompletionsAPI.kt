@@ -667,7 +667,7 @@ class ChatCompletionsAPI(
                 put("content", message.parts.filterIsInstance<UIMessagePart.Text>().first().text)
             } else {
                 putJsonArray("content") {
-                    message.parts.forEachIndexed { index, part ->
+                    message.parts.forEach { part ->
                         when (part) {
                             is UIMessagePart.Text -> {
                                 add(buildJsonObject {

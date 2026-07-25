@@ -42,6 +42,7 @@ import me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
 import me.rerere.rikkahub.data.ai.tools.routing.ToolRouter
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.model.Assistant
@@ -71,6 +72,7 @@ class GenerationHandler(
     private val providerManager: ProviderManager,
     private val json: Json,
     private val memoryRepo: MemoryRepository,
+    private val settingsStore: SettingsStore,
 ) {
     fun generateText(
         settings: Settings,
@@ -100,15 +102,6 @@ class GenerationHandler(
         val loadedDomains = mutableSetOf<String>().apply {
             conversationLoadedDomains?.let { addAll(it) }
         }
-        val toolRouter = ToolRouter(
-            overrides = settings.toolDomainOverrides,
-            customDescriptions = settings.customDomainDescriptions,
-            customDomains = settings.customDomains,
-            customKeywords = settings.customDomainKeywords,
-            domainNameOverrides = settings.domainNameOverrides,
-            hiddenDomains = settings.hiddenDomains,
-            removedBuiltinDomains = settings.removedBuiltinDomains,
-        )
 
         // 分离框架工具与用户域工具
         val frameworkToolSet = setOf(
@@ -119,17 +112,27 @@ class GenerationHandler(
         val domainTools = tools.filter { it.name !in frameworkToolSet }
         val frameworkTools = tools.filter { it.name in frameworkToolSet }
 
-        // 预计算 Layer1 路由表 — 仅基于用户域工具（含 search_web, memory_tool 等）
-        val layer1Prompt = if (useLayered) {
-            toolRouter.buildLayer1(domainTools)
-        } else {
-            null
-        }
-
         // Skill 已拆分为独立工具 (skill_<name>)，无需集中提取 skillListText
 
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
+
+            // Bug #2 修复: 每步重建 ToolRouter，读取最新 settings
+            val currentSettings = settingsStore.settingsFlow.value
+            val toolRouter = ToolRouter(
+                overrides = currentSettings.toolDomainOverrides,
+                customDescriptions = currentSettings.customDomainDescriptions,
+                customDomains = currentSettings.customDomains,
+                customKeywords = currentSettings.customDomainKeywords,
+                domainNameOverrides = currentSettings.domainNameOverrides,
+                hiddenDomains = currentSettings.hiddenDomains,
+                removedBuiltinDomains = currentSettings.removedBuiltinDomains,
+            )
+            val layer1Prompt = if (useLayered) {
+                toolRouter.buildLayer1(domainTools)
+            } else {
+                null
+            }
 
             val toolsInternal = if (useLayered) {
                 buildList {
@@ -454,30 +457,33 @@ class GenerationHandler(
             val toolsPromptLen: Int
             var layer1Len: Int = 0
 
-            val system = buildString {
-                // 缓存锚点 — 静态规则块 (最大化五家前缀缓存命中)
-                append(buildCacheAnchor())
-                appendLine()
+            val systemParts = mutableListOf<UIMessagePart.Text>()
 
-                val effectiveSystemPrompt =
-                    if (assistant.allowConversationSystemPrompt && !conversationSystemPrompt.isNullOrBlank()) {
-                        conversationSystemPrompt
-                    } else {
-                        assistant.systemPrompt
-                    }
-                if (effectiveSystemPrompt.isNotBlank()) {
-                    append(effectiveSystemPrompt)
+            // Part 1: 缓存锚点 — 静态规则块 (最大化五家前缀缓存命中)
+            val cacheAnchorText = buildCacheAnchor()
+            systemParts.add(UIMessagePart.Text(cacheAnchorText))
+            val anchorLen = cacheAnchorText.length
+
+            // Part 2: 角色预设
+            val effectiveSystemPrompt =
+                if (assistant.allowConversationSystemPrompt && !conversationSystemPrompt.isNullOrBlank()) {
+                    conversationSystemPrompt
+                } else {
+                    assistant.systemPrompt
                 }
-                sysPromptLen = length
+            if (effectiveSystemPrompt.isNotBlank()) {
+                systemParts.add(UIMessagePart.Text(effectiveSystemPrompt))
+            }
+            sysPromptLen = anchorLen + effectiveSystemPrompt.length
 
-                // Layer1 域概览 — 缓存友好: 仅在域配置变化时更新
-                if (layer1Prompt != null) {
-                    appendLine()
-                    append(layer1Prompt)
-                }
-                layer1Len = length - sysPromptLen
+            // Part 3: Layer1 域概览 — 缓存友好: 仅在域配置变化时更新
+            if (layer1Prompt != null) {
+                systemParts.add(UIMessagePart.Text(layer1Prompt))
+                layer1Len = layer1Prompt.length
+            }
 
-                // 框架工具 systemPrompt — 静态内容, 有利于跨请求缓存前缀匹配
+            // Part 4: 工具定义 systemPrompt — 静态内容, 有利于跨请求缓存前缀匹配
+            val toolsPromptText = buildString {
                 if (layer1Prompt != null) {
                     val frameworkIds = setOf(
                         "invoke_tools",
@@ -497,18 +503,22 @@ class GenerationHandler(
                         append(tool.systemPrompt(model, messages))
                     }
                 }
-                toolsPromptLen = length - sysPromptLen - layer1Len
-                // 记忆块不在此处 — 已移出系统消息, 保证 DeepSeek 缓存前缀单元完全静态
-                memPromptLen = 0
             }
-            if (system.isNotBlank()) {
-                // 估算 tokens: 中文 ~1.5 chars/token, 英文 ~3.5 chars/token, 取混合 2.5
-                val estTokens = system.length / 2.5
-                Log.i(TAG, "System prompt breakdown: system=${sysPromptLen}c (~${(sysPromptLen/2.5).toInt()}t)" +
-                    " layer1=${layer1Len}c (~${(layer1Len/2.5).toInt()}t)" +
-                    " tools=${toolsPromptLen}c (~${(toolsPromptLen/2.5).toInt()}t)" +
-                    " total=${system.length}c (~${estTokens.toInt()}t)")
-                add(UIMessage.system(prompt = system))
+            if (toolsPromptText.isNotBlank()) {
+                systemParts.add(UIMessagePart.Text(toolsPromptText.trimStart()))
+            }
+            toolsPromptLen = toolsPromptText.length
+
+            // 记忆块不在此处 — 已移出系统消息, 保证 DeepSeek 缓存前缀单元完全静态
+            memPromptLen = 0
+
+            if (systemParts.isNotEmpty()) {
+                val totalLen = systemParts.sumOf { it.text.length }
+                val estTokens = totalLen / 2.5
+                Log.i(TAG, "System prompt breakdown: anchor=${anchorLen}c system=${sysPromptLen}c" +
+                    " layer1=${layer1Len}c tools=${toolsPromptLen}c" +
+                    " total=${totalLen}c (~${estTokens.toInt()}t)")
+                add(UIMessage(role = MessageRole.SYSTEM, parts = systemParts))
             }
             // 记忆块: 独立 user 消息, 放在 conversation 末尾而非 system 内
             // DeepSeek 缓存前缀单元对 system message 全量匹配, 记忆变化=system 单元失效
