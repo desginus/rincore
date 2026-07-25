@@ -79,6 +79,16 @@
 
         <category android:name="android.intent.category.LAUNCHER" />
       </intent-filter>
+
+      <meta-data
+        android:name="android.app.shortcuts"
+        android:resource="@xml/shortcuts" />
+    </activity>
+    <activity
+      android:name=".ui.activity.ShareReceiverActivity"
+      android:exported="true"
+      android:excludeFromRecents="true"
+      android:theme="@android:style/Theme.Translucent.NoTitleBar">
       <intent-filter>
         <action android:name="android.intent.action.SEND" />
 
@@ -107,10 +117,6 @@
 
         <data android:mimeType="text/plain" />
       </intent-filter>
-
-      <meta-data
-        android:name="android.app.shortcuts"
-        android:resource="@xml/shortcuts" />
     </activity>
     <activity
       android:name=".ui.activity.ShortcutHandlerActivity"

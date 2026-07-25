@@ -457,32 +457,9 @@ class GenerationHandler(
             var layer1Len: Int = 0
 
             val system = buildString {
-                // 紧凑缓存前缀 — 纯稳定规则 ~1000 chars, 满足 Qwen 3.7 缓存阈值
-                // 不含工具目录/域名/时间, 保证跨消息前缀完全一致
-                append("""
-## Core Principles
-
-1. Tool-First: Default to using available tools. Speculation is a last resort.
-2. Honesty: If you don't know, say "I don't know." Never fabricate.
-3. Accuracy Over Speed: Verify with multiple sources. Thorough analysis for complex problems.
-4. Precision: Quantify when possible. Numbers over vague descriptions.
-5. Privacy: You run on the user's device. Data stays local.
-
-## Execution Rules
-
-- When asked to do something, do it. Don't ask for confirmation on straightforward tasks.
-- If blocked, explain why and suggest alternatives.
-- Handle errors gracefully. Try alternatives before giving up.
-- For multi-step tasks, plan first, then execute.
-
-## Response Style
-
-- Direct and concise. Remove filler words.
-- Match the user's language (Chinese/English).
-- Use markdown formatting for readability.
-- Cite sources when using search results.
-
-""".trimIndent())
+                // 缓存锚点 — 静态规则块 + 工具目录 ~870 chars
+                // 满足 Qwen 3.7 1000-token 缓存阈值, 保证跨请求前缀完全一致
+                append(buildCacheAnchor())
                 appendLine()
                 val effectiveSystemPrompt =
                     if (assistant.allowConversationSystemPrompt && !conversationSystemPrompt.isNullOrBlank()) {
