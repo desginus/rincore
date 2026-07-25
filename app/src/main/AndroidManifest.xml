@@ -72,7 +72,6 @@
       android:exported="true"
       android:importantForAutofill="noExcludeDescendants"
       android:launchMode="singleTask"
-      android:taskAffinity=""
       android:theme="@style/Theme.Rikkahub"
       android:windowSoftInputMode="adjustResize">
       <intent-filter>
