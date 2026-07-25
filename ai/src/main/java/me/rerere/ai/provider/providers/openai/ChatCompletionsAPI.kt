@@ -5,11 +5,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.channels.onFailure
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -153,120 +151,102 @@ class ChatCompletionsAPI(
 
         Log.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
 
-        // SSE 连接优化: 首次数据到达前断连时自动重试, 指数退避
-        val hasReceivedData = java.util.concurrent.atomic.AtomicBoolean(false)
-        val retryCount = java.util.concurrent.atomic.AtomicInteger(0)
-        val maxRetries = 3
-        var currentEventSource: EventSource? = null
-        val scope = this@callbackFlow
+        // just for debugging response body
+        // println(client.newCall(request).await().body?.string())
 
-        fun connect() {
-            val listener = object : EventSourceListener() {
-                override fun onEvent(
-                    eventSource: EventSource,
-                    id: String?,
-                    type: String?,
-                    data: String
-                ) {
-                    if (data == "[DONE]") {
-                        close()
-                        return
-                    }
-                    hasReceivedData.set(true)
-                    Log.d(TAG, "onEvent: $data")
-                    data
-                        .trim()
-                        .split("\n")
-                        .filter { it.isNotBlank() }
-                        .map { json.parseToJsonElement(it).jsonObject }
-                        .forEach {
-                            if (it["error"] != null) {
-                                val error = it["error"]!!.parseErrorDetail()
-                                throw error
-                            }
-                            val id = it["id"]?.jsonPrimitive?.contentOrNull ?: ""
-                            val model = it["model"]?.jsonPrimitive?.contentOrNull ?: ""
-
-                            val choices = it["choices"]?.jsonArray ?: JsonArray(emptyList())
-                            val choiceList = buildList {
-                                if (choices.isNotEmpty()) {
-                                    val choice = choices[0].jsonObject
-                                    val message =
-                                        choice["delta"]?.jsonObject ?: choice["message"]?.jsonObject
-                                        ?: throw Exception("delta/message is null")
-                                    val finishReason =
-                                        choice["finish_reason"]?.jsonPrimitive?.contentOrNull
-                                            ?: "unknown"
-                                    add(
-                                        UIMessageChoice(
-                                            index = 0,
-                                            delta = parseMessage(message),
-                                            message = null,
-                                            finishReason = finishReason,
-                                        )
-                                    )
-                                }
-                            }
-                            val usage = parseTokenUsage(it["usage"] as? JsonObject)
-
-                            val messageChunk = MessageChunk(
-                                id = id,
-                                model = model,
-                                choices = choiceList,
-                                usage = usage
-                            )
-                            trySend(messageChunk).onFailure { e ->
-                                Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
-                            }
-                        }
+        val listener = object : EventSourceListener() {
+            override fun onEvent(
+                eventSource: EventSource,
+                id: String?,
+                type: String?,
+                data: String
+            ) {
+                if (data == "[DONE]") {
+                    println("[onEvent] (done) 结束流: $data")
+                    close()
+                    return
                 }
-
-                override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
-                    var exception = t
-
-                    t?.printStackTrace()
-                    Log.w(TAG, "onFailure: ${t?.javaClass?.name} ${t?.message} / $response")
-
-                    val bodyRaw = response?.body?.stringSafe()
-                    try {
-                        if (!bodyRaw.isNullOrBlank()) {
-                            val bodyElement = Json.parseToJsonElement(bodyRaw)
-                            exception = bodyElement.parseErrorDetail()
-                            Log.i(TAG, "onFailure: $exception")
+                Log.d(TAG, "onEvent: $data")
+                data
+                    .trim()
+                    .split("\n")
+                    .filter { it.isNotBlank() }
+                    .map { json.parseToJsonElement(it).jsonObject }
+                    .forEach {
+                        if (it["error"] != null) {
+                            val error = it["error"]!!.parseErrorDetail()
+                            throw error
                         }
-                    } catch (e: Throwable) {
-                        Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
-                        exception = e
-                    }
+                        val id = it["id"]?.jsonPrimitive?.contentOrNull ?: ""
+                        val model = it["model"]?.jsonPrimitive?.contentOrNull ?: ""
 
-                    // 仅在尚未收到任何数据时重试 (避免重复响应)
-                    if (!hasReceivedData.get() && retryCount.incrementAndGet() <= maxRetries && !scope.isClosedForSend) {
-                        val delayMs = 1000L * (1 shl (retryCount.get() - 1))
-                        Log.w(TAG, "SSE pre-data failure, retry ${retryCount.get()}/$maxRetries after ${delayMs}ms: ${exception?.message}")
-                        scope.launch {
-                            delay(delayMs)
-                            if (!scope.isClosedForSend) {
-                                connect()
+                        val choices = it["choices"]?.jsonArray ?: JsonArray(emptyList())
+                        val choiceList = buildList {
+                            if (choices.isNotEmpty()) {
+                                val choice = choices[0].jsonObject
+                                val message =
+                                    choice["delta"]?.jsonObject ?: choice["message"]?.jsonObject
+                                    ?: throw Exception("delta/message is null")
+                                val finishReason =
+                                    choice["finish_reason"]?.jsonPrimitive?.contentOrNull
+                                        ?: "unknown"
+                                add(
+                                    UIMessageChoice(
+                                        index = 0,
+                                        delta = parseMessage(message),
+                                        message = null,
+                                        finishReason = finishReason,
+                                    )
+                                )
                             }
                         }
-                        return
-                    }
+                        val usage = parseTokenUsage(it["usage"] as? JsonObject)
 
+                        val messageChunk = MessageChunk(
+                            id = id,
+                            model = model,
+                            choices = choiceList,
+                            usage = usage
+                        )
+                        trySend(messageChunk).onFailure { e ->
+                            Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
+                        }
+                    }
+            }
+
+            override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
+                var exception = t
+
+                t?.printStackTrace()
+                println("[onFailure] 发生错误: ${t?.javaClass?.name} ${t?.message} / $response")
+
+                val bodyRaw = response?.body?.stringSafe()
+                try {
+                    if (!bodyRaw.isNullOrBlank()) {
+                        val bodyElement = Json.parseToJsonElement(bodyRaw)
+                        println(bodyElement)
+                        exception = bodyElement.parseErrorDetail()
+                        Log.i(TAG, "onFailure: $exception")
+                    }
+                } catch (e: Throwable) {
+                    Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
+                    e.printStackTrace()
+                    exception = e
+                } finally {
                     close(exception)
                 }
-
-                override fun onClosed(eventSource: EventSource) {
-                    close()
-                }
             }
-            currentEventSource = EventSources.createFactory(client).newEventSource(request, listener)
+
+            override fun onClosed(eventSource: EventSource) {
+                close()
+            }
         }
 
-        connect()
+        val eventSource = EventSources.createFactory(client).newEventSource(request, listener)
 
         awaitClose {
-            Log.d(TAG, "awaitClose: cancelling eventSource")
-            currentEventSource?.cancel()
+            println("[awaitClose] 关闭eventSource ")
+            eventSource.cancel()
         }
         // trySend 在缓冲满时会静默丢弃 delta，导致回复中间缺字 (#1295)，因此缓冲必须无界
     }.buffer(Channel.UNLIMITED)
@@ -287,7 +267,6 @@ class ChatCompletionsAPI(
                     messages = messages,
                     includeHistoryReasoning = providerSetting.includeHistoryReasoning,
                     supportInputModalities = params.model.inputModalities,
-                    promptCaching = providerSetting.promptCaching,
                 )
             )
 
@@ -331,11 +310,10 @@ class ChatCompletionsAPI(
                     }
 
                     "dashscope.aliyuncs.com" -> {
-                        // 阿里云百炼 (Qwen3.7 / Qwen3.6 / Qwen3.5 / DeepSeek V4 / Kimi)
+                        // 阿里云百炼
+                        // https://bailian.console.aliyun.com/console?tab=doc#/doc/?type=model&url=https%3A%2F%2Fhelp.aliyun.com%2Fdocument_detail%2F2870973.html&renderType=iframe
                         put("enable_thinking", level.isEnabled)
                         if (level != ReasoningLevel.AUTO) put("thinking_budget", level.budgetTokens)
-                        // preserve_thinking: 多轮对话中传递历史 reasoning_content, 提升 agent 连续性
-                        if (level.isEnabled) put("preserve_thinking", true)
                     }
 
                     "ark.cn-beijing.volces.com" -> {
@@ -395,20 +373,9 @@ class ChatCompletionsAPI(
                     }
 
                     "open.bigmodel.cn" -> {
-                        // 智谱 GLM-5.2: thinking + reasoning_effort (high/max)
                         put("thinking", buildJsonObject {
                             put("type", if (!level.isEnabled) "disabled" else "enabled")
                         })
-                        if (level.isEnabled && level != ReasoningLevel.AUTO) {
-                            // AUTO 时不传 reasoning_effort, 让模型走默认 (本身就是 max)
-                            // LOW/MEDIUM → high; HIGH/XHIGH → max
-                            val effort = when (level) {
-                                ReasoningLevel.LOW, ReasoningLevel.MEDIUM -> "high"
-                                ReasoningLevel.HIGH, ReasoningLevel.XHIGH -> "max"
-                                else -> "max" // unreachable
-                            }
-                            put("reasoning_effort", effort)
-                        }
                     }
 
                     "api.moonshot.cn" -> {
@@ -423,14 +390,6 @@ class ChatCompletionsAPI(
                         })
                         if (level.isEnabled && level != ReasoningLevel.AUTO) {
                             put("reasoning_effort", level.effort)
-                        }
-                    }
-
-                    "api.minimaxi.com", "api.minimax.chat" -> {
-                        // MiniMax M3: reasoning_split 将推理内容分离到 delta.reasoning 字段
-                        // 不设置时推理内容以 <mm:think> 标签泄漏到 content 中
-                        if (level.isEnabled) {
-                            put("reasoning_split", true)
                         }
                     }
 
@@ -469,7 +428,7 @@ class ChatCompletionsAPI(
 
             if (params.model.abilities.contains(ModelAbility.TOOL) && params.tools.isNotEmpty()) {
                 putJsonArray("tools") {
-                    params.tools.sortedBy { it.name }.forEach { tool ->
+                    params.tools.forEach { tool ->
                         add(buildJsonObject {
                             put("type", "function")
                             put("function", buildJsonObject {
@@ -497,7 +456,6 @@ class ChatCompletionsAPI(
         messages: List<UIMessage>,
         includeHistoryReasoning: Boolean = true,
         supportInputModalities: List<Modality> = listOf(Modality.TEXT, Modality.IMAGE),
-        promptCaching: Boolean = false,
     ) = buildJsonArray {
         val filteredMessages = messages.filter { it.isValidToUpload() }
 
@@ -509,7 +467,7 @@ class ChatCompletionsAPI(
                     supportInputModalities = supportInputModalities,
                 )
             } else {
-                addNonAssistantMessage(message, promptCaching)
+                addNonAssistantMessage(message)
             }
         }
     }
@@ -655,19 +613,15 @@ class ChatCompletionsAPI(
         }
     }
 
-    private fun JsonArrayBuilder.addNonAssistantMessage(
-        message: UIMessage,
-        promptCaching: Boolean = false,
-    ) {
-        val isSystem = message.role == MessageRole.SYSTEM
+    private fun JsonArrayBuilder.addNonAssistantMessage(message: UIMessage) {
         add(buildJsonObject {
             put("role", JsonPrimitive(message.role.name.lowercase()))
 
-            if (message.parts.isOnlyTextPart() && !(isSystem && promptCaching)) {
+            if (message.parts.isOnlyTextPart()) {
                 put("content", message.parts.filterIsInstance<UIMessagePart.Text>().first().text)
             } else {
                 putJsonArray("content") {
-                    message.parts.forEachIndexed { index, part ->
+                    message.parts.forEach { part ->
                         when (part) {
                             is UIMessagePart.Text -> {
                                 add(buildJsonObject {
@@ -833,21 +787,12 @@ class ChatCompletionsAPI(
 
     private fun parseTokenUsage(jsonObject: JsonObject?): TokenUsage? {
         if (jsonObject == null) return null
-        // DeepSeek 返回 prompt_cache_hit_tokens (顶层) 或 prompt_tokens_details.cached_tokens (OpenAI 格式)
-        val cachedTokens = jsonObject["prompt_cache_hit_tokens"]?.jsonPrimitive?.intOrNull
-            ?: jsonObject["prompt_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
-            ?: 0
-        // 缓存命中日志
-        if (cachedTokens > 0) {
-            val promptTokens = jsonObject["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-            val hitRate = if (promptTokens > 0) cachedTokens * 100 / promptTokens else 0
-            Log.i(TAG, "Cache hit: $cachedTokens/$promptTokens tokens (${hitRate}%)")
-        }
         return TokenUsage(
             promptTokens = jsonObject["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
             completionTokens = jsonObject["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
             totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            cachedTokens = cachedTokens
+            cachedTokens = jsonObject["prompt_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
+                ?: 0
         )
     }
 

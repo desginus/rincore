@@ -458,10 +458,6 @@ class GenerationHandler(
             var layer1Len: Int = 0
 
             val system = buildString {
-                // 缓存锚点 — 静态规则块 (最大化五家前缀缓存命中)
-                append(buildCacheAnchor())
-                appendLine()
-
                 val effectiveSystemPrompt =
                     if (assistant.allowConversationSystemPrompt && !conversationSystemPrompt.isNullOrBlank()) {
                         conversationSystemPrompt
@@ -480,7 +476,7 @@ class GenerationHandler(
                 }
                 layer1Len = length - sysPromptLen
 
-                // 框架工具 systemPrompt — 静态内容, 有利于跨请求缓存前缀匹配
+                // 框架工具 systemPrompt
                 if (layer1Prompt != null) {
                     val frameworkIds = setOf(
                         "invoke_tools",
@@ -501,26 +497,25 @@ class GenerationHandler(
                     }
                 }
                 toolsPromptLen = length - sysPromptLen - layer1Len
-                // 记忆块不在此处 — 已移出系统消息, 保证 DeepSeek 缓存前缀单元完全静态
-                memPromptLen = 0
+
+                // 记忆 — 原始 RikkaHub 策略: 在 system message 内
+                memPromptLen = if (assistant.enableMemory) {
+                    val memoryPrompt = buildMemoryPrompt(memories = memories)
+                    if (memoryPrompt.isNotBlank()) {
+                        appendLine()
+                        append(memoryPrompt)
+                        memoryPrompt.length
+                    } else 0
+                } else 0
             }
             if (system.isNotBlank()) {
-                // 估算 tokens: 中文 ~1.5 chars/token, 英文 ~3.5 chars/token, 取混合 2.5
                 val estTokens = system.length / 2.5
                 Log.i(TAG, "System prompt breakdown: system=${sysPromptLen}c (~${(sysPromptLen/2.5).toInt()}t)" +
                     " layer1=${layer1Len}c (~${(layer1Len/2.5).toInt()}t)" +
                     " tools=${toolsPromptLen}c (~${(toolsPromptLen/2.5).toInt()}t)" +
+                    " memory=${memPromptLen}c (~${(memPromptLen/2.5).toInt()}t)" +
                     " total=${system.length}c (~${estTokens.toInt()}t)")
                 add(UIMessage.system(prompt = system))
-            }
-            // 记忆块: 独立 user 消息, 放在 conversation 末尾而非 system 内
-            // DeepSeek 缓存前缀单元对 system message 全量匹配, 记忆变化=system 单元失效
-            // 独立消息仅影响末尾, 前缀 (system + 历史消息) 全部命中
-            if (assistant.enableMemory) {
-                val memoryPrompt = buildMemoryPrompt(memories = memories)
-                if (memoryPrompt.isNotBlank()) {
-                    add(UIMessage.user(memoryPrompt))
-                }
             }
             addAll(messages.limitContext(assistant.contextMessageSize))
         }.transforms(

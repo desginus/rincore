@@ -65,7 +65,6 @@ sealed class ProviderSetting {
         var chatCompletionsPath: String = "/chat/completions",
         var useResponseApi: Boolean = false,
         var includeHistoryReasoning: Boolean = true,
-        var promptCaching: Boolean = false,
     ) : ProviderSetting() {
         override fun addModel(model: Model): ProviderSetting {
             return copy(models = models + model)
