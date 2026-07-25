@@ -330,22 +330,22 @@ class RouteActivity : ComponentActivity() {
             fun addChat(text: String?, files: List<String> = emptyList()) {
                 val alreadyInChat = existingChatScreen != null && lastId == existingChatScreen.id
                 if (alreadyInChat) {
-                    // 文件分享到已有对话: 推送新 entry 携带 files/text
-                    if (files.isNotEmpty() || !text.isNullOrBlank()) {
-                        navStack?.add(Screen.Chat(
-                            id = lastId,
-                            text = text?.ifBlank { null },
-                            files = files.ifEmpty { null },
-                            nodeId = null
-                        ))
-                    }
-                } else {
-                    navStack?.clear()
+                // 文件分享到已有对话: 推送新 entry 携带 files/text
+                if (files.isNotEmpty() || !text.isNullOrBlank()) {
                     navStack?.add(Screen.Chat(
                         id = lastId,
                         text = text?.ifBlank { null },
-                        files = files.ifEmpty { null },
+                        files = files,
+                        nodeId = null
                     ))
+                }
+                } else {
+                navStack?.clear()
+                navStack?.add(Screen.Chat(
+                    id = lastId,
+                    text = text?.ifBlank { null },
+                    files = files,
+                ))
                 }
             }
 
