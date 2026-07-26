@@ -32,13 +32,10 @@ class ContextCompressionTransformer : InputMessageTransformer {
         ctx: TransformerContext,
         messages: List<UIMessage>,
     ): List<UIMessage> {
-        // 检查是否启用
-        if (!ctx.assistant.enableMemory) return messages
-
         val totalMessages = messages.size
         if (totalMessages <= PROTECT_RECENT_MESSAGES) return messages
 
-        var tokensSaved = 0L
+        var charsSaved = 0L
         val compressed = messages.mapIndexed { index, message ->
             // 保护机制:
             // 1. System 消息不压缩 (影响前缀缓存)
@@ -50,7 +47,7 @@ class ContextCompressionTransformer : InputMessageTransformer {
             }
 
             val (newParts, saved) = compressMessage(message)
-            tokensSaved += saved
+            charsSaved += saved
             if (newParts != null) {
                 message.copy(parts = newParts)
             } else {
@@ -58,8 +55,9 @@ class ContextCompressionTransformer : InputMessageTransformer {
             }
         }
 
-        if (tokensSaved > 0) {
-            Log.i(TAG, "Compression saved ~$tokensSaved chars (${tokensSaved * 100 / (tokensSaved + messages.sumOf { it.toText().length }.coerceAtLeast(1))}%)")
+        if (charsSaved > 0) {
+            val totalChars = messages.sumOf { it.toText().length }
+            Log.i(TAG, "Compression saved ~$charsSaved chars (${charsSaved * 100 / totalChars.coerceAtLeast(1)}%)")
         }
 
         return compressed
@@ -84,10 +82,7 @@ class ContextCompressionTransformer : InputMessageTransformer {
                     if (jsonCompressed != null) {
                         totalSaved += (text.length - jsonCompressed.length)
                         anyCompressed = true
-                        return@map UIMessagePart.Text(
-                            text = jsonCompressed,
-                            metadata = part.metadata
-                        )
+                        return@map UIMessagePart.Text(text = jsonCompressed)
                     }
 
                     // 尝试文本压缩
@@ -95,28 +90,24 @@ class ContextCompressionTransformer : InputMessageTransformer {
                     if (textCompressed != null) {
                         totalSaved += (text.length - textCompressed.length)
                         anyCompressed = true
-                        return@map UIMessagePart.Text(
-                            text = textCompressed,
-                            metadata = part.metadata
-                        )
+                        return@map UIMessagePart.Text(text = textCompressed)
                     }
 
                     part
                 }
 
                 is UIMessagePart.Tool -> {
-                    if (!part.isExecuted || part.output.isNullOrBlank()) return@map part
-                    val output = part.output
+                    if (!part.isExecuted) return@map part
 
-                    // 工具输出专用压缩
-                    val toolCompressed = ToolOutputCompressor.compress(part.name, output)
-                    if (toolCompressed != null) {
-                        totalSaved += (output.length - toolCompressed.length)
+                    // 压缩工具输出中的每个 Text part
+                    val (newOutput, saved) = compressToolOutput(part.toolName, part.output)
+                    totalSaved += saved
+                    if (newOutput != null) {
                         anyCompressed = true
-                        return@map part.copy(output = toolCompressed)
+                        part.copy(output = newOutput)
+                    } else {
+                        part
                     }
-
-                    part
                 }
 
                 else -> part
@@ -124,6 +115,40 @@ class ContextCompressionTransformer : InputMessageTransformer {
         }
 
         return if (anyCompressed) compressedParts to totalSaved
+        else null to 0
+    }
+
+    /**
+     * 压缩工具输出 parts 列表。
+     */
+    private fun compressToolOutput(
+        toolName: String,
+        output: List<UIMessagePart>,
+    ): Pair<List<UIMessagePart>?, Long> {
+        var totalSaved = 0L
+        var anyCompressed = false
+
+        val compressedOutput = output.map { part ->
+            when (part) {
+                is UIMessagePart.Text -> {
+                    val text = part.text
+                    if (text.length < MIN_CHARS_TO_COMPRESS) return@map part
+
+                    // 工具输出专用压缩
+                    val toolCompressed = ToolOutputCompressor.compress(toolName, text)
+                    if (toolCompressed != null) {
+                        totalSaved += (text.length - toolCompressed.length)
+                        anyCompressed = true
+                        UIMessagePart.Text(text = toolCompressed)
+                    } else {
+                        part
+                    }
+                }
+                else -> part
+            }
+        }
+
+        return if (anyCompressed) compressedOutput to totalSaved
         else null to 0
     }
 }
