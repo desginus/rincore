@@ -12,11 +12,9 @@ import kotlinx.serialization.json.jsonObject
  * Headroom SmartCrusher 风格 JSON 压缩器。
  *
  * 策略:
- * - 顶层 JSON 数组: 保留前 3 + 后 2 条, 中间替换为列描述 + 计数
- * - 顶层 JSON 对象包裹数组 (如 {"items":[...], "total":N}):
- *   提取外层元信息 + 压缩内层数组
- * - 嵌套数组: 递归压缩
- * - 非 JSON: 返回 null
+ * - 顶层数组: 保留前 3 + 后 2, 中间替换为 schema + 计数
+ * - 包裹对象 (如 {"items":[...]}): 保留外层元信息 + 压缩内层数组
+ * - 广告过滤: 排除含 "ad"/"sponsored"/"广告"/"推广" 的条目
  */
 object JsonCompressor {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
@@ -25,9 +23,6 @@ object JsonCompressor {
     private const val MAX_SAMPLE_LAST = 2
     private const val MIN_ITEMS_TO_COMPRESS = 6
 
-    /**
-     * 尝试压缩 JSON 内容。如果不是有效 JSON 或不需要压缩则返回 null。
-     */
     fun compress(input: String): String? {
         val parsed = try {
             json.parseToJsonElement(input.trim())
@@ -38,7 +33,6 @@ object JsonCompressor {
         return when (parsed) {
             is JsonArray -> compressArray(parsed, indent = "")
             is JsonObject -> {
-                // 检测对象是否包裹了可压缩数组 (如搜索结果的 {"items":[...]})
                 val compressibleArray = findCompressibleArray(parsed)
                 if (compressibleArray != null) {
                     compressWrappedObject(parsed, compressibleArray)
@@ -50,13 +44,11 @@ object JsonCompressor {
         }
     }
 
-    /**
-     * 在 JSON 对象中查找可压缩的数组:
-     * - "items", "results", "data", "documents", "entries" 等键
-     * - 数组长度 >= MIN_ITEMS_TO_COMPRESS
-     */
     private fun findCompressibleArray(obj: JsonObject): Pair<String, JsonArray>? {
-        val candidateKeys = listOf("items", "results", "data", "documents", "entries", "records", "matches", "hits")
+        val candidateKeys = listOf(
+            "items", "results", "data", "documents", "entries",
+            "records", "matches", "hits", "list", "rows"
+        )
         for (key in candidateKeys) {
             val arr = obj[key]?.jsonArray
             if (arr != null && arr.size >= MIN_ITEMS_TO_COMPRESS) {
@@ -68,11 +60,11 @@ object JsonCompressor {
 
     private fun compressWrappedObject(obj: JsonObject, arrayInfo: Pair<String, JsonArray>): String {
         val (key, arr) = arrayInfo
-        val compressedArray = compressArray(arr, indent = "  ")
-
-        // 提取外层元信息 (排除数组本身)
+        // 过滤广告条目
+        val cleaned = filterAds(arr)
+        val compressedArray = compressArray(cleaned, indent = "  ")
         val meta = obj.filterKeys { it != key }
-            .map { (k, v) -> "\"$k\": ${v.toCompactString()}" }
+            .map { (k, v) -> "${jsonKey(k)}: ${v.toCompactString()}" }
             .joinToString(", ")
 
         return buildString {
@@ -80,7 +72,9 @@ object JsonCompressor {
             if (meta.isNotEmpty()) {
                 appendLine("  $meta,")
             }
-            appendLine("  \"$key\": $compressedArray")
+            append("  ${jsonKey(key)}: ")
+            append(compressedArray)
+            appendLine()
             append("}")
         }
     }
@@ -118,6 +112,25 @@ object JsonCompressor {
         }
     }
 
+    /**
+     * 过滤广告/赞助/推广条目。
+     * 匹配模式: title/name/description 中包含 "ad"/"sponsored"/"广告"/"推广"。
+     */
+    private fun filterAds(arr: JsonArray): JsonArray {
+        val adKeywords = listOf(
+            "\"ad\"", "\"sponsored\"", "\"promotion\"",
+            "广告", "推广", "赞助", "Ad", "AD"
+        )
+        val filtered = arr.filter { item ->
+            val text = item.toString().lowercase()
+            !adKeywords.any { kw -> kw.lowercase() in text }
+        }
+        // 过滤后仍然足够多就用过滤后的
+        return if (filtered.size >= MIN_ITEMS_TO_COMPRESS) {
+            JsonArray(filtered)
+        } else arr
+    }
+
     private fun extractArraySchema(samples: List<JsonElement>): String {
         if (samples.isEmpty()) return "empty"
         val keys = mutableSetOf<String>()
@@ -149,10 +162,12 @@ object JsonCompressor {
         }
     }
 
+    private fun jsonKey(key: String): String = "\"$key\""
+
     private fun JsonElement.toCompactString(): String = when (this) {
         is JsonObject -> {
             val inner = entries.take(3).joinToString(", ") { (k, v) ->
-                "\"$k\": ${v.toCompactString()}"
+                "${jsonKey(k)}: ${v.toCompactString()}"
             }
             if (entries.size > 3) "{ $inner, ... }" else "{ $inner }"
         }

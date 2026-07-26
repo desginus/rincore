@@ -12,19 +12,15 @@ import me.rerere.rikkahub.data.ai.compression.ToolOutputCompressor
  *
  * 在消息发送到 LLM 之前对长内容进行压缩:
  * - JSON 输出: 提取 schema + 首尾样本
- * - 工具输出: 按工具类型选择最优策略
+ * - 工具输出: 按工具名 + 输出内容启发式分类
  * - 长文本: 提取式摘要
  *
- * 保护机制:
- * - 不压缩 system 消息 (保护前缀缓存)
- * - 保护最近 N 条消息 (保留对话连续性)
- * - 过短内容不压缩 (阈值 500 chars)
+ * 保护: system 消息始终不压缩 (前缀缓存)
  */
 class ContextCompressionTransformer : InputMessageTransformer {
 
     companion object {
         private const val TAG = "ContextCompression"
-        private const val PROTECT_RECENT_MESSAGES = 6
         private const val MIN_CHARS_TO_COMPRESS = 500
     }
 
@@ -33,16 +29,15 @@ class ContextCompressionTransformer : InputMessageTransformer {
         messages: List<UIMessage>,
     ): List<UIMessage> {
         val totalMessages = messages.size
-        if (totalMessages <= PROTECT_RECENT_MESSAGES) return messages
 
         var charsSaved = 0L
         val compressed = messages.mapIndexed { index, message ->
-            // 保护机制:
-            // 1. System 消息不压缩 (影响前缀缓存)
-            // 2. 最近 N 条消息不压缩
-            if (message.role == me.rerere.ai.core.MessageRole.SYSTEM ||
-                index >= totalMessages - PROTECT_RECENT_MESSAGES
-            ) {
+            // system 消息永不压缩 (保护前缀缓存)
+            if (message.role == me.rerere.ai.core.MessageRole.SYSTEM) {
+                return@mapIndexed message
+            }
+            // 最后 2 条消息也保护 (保留即时上下文)
+            if (index >= totalMessages - 2) {
                 return@mapIndexed message
             }
 
@@ -57,7 +52,7 @@ class ContextCompressionTransformer : InputMessageTransformer {
 
         if (charsSaved > 0) {
             val totalChars = messages.sumOf { it.toText().length }
-            Log.i(TAG, "Compression saved ~$charsSaved chars (${charsSaved * 100 / totalChars.coerceAtLeast(1)}%)")
+            Log.i(TAG, "Compression saved $charsSaved chars (${charsSaved * 100 / totalChars.coerceAtLeast(1)}%)")
         }
 
         return compressed
@@ -77,7 +72,7 @@ class ContextCompressionTransformer : InputMessageTransformer {
                     val text = part.text
                     if (text.length < MIN_CHARS_TO_COMPRESS) return@map part
 
-                    // 尝试 JSON 压缩
+                    // 先试 JSON (搜索结果通常为 JSON)
                     val jsonCompressed = JsonCompressor.compress(text)
                     if (jsonCompressed != null) {
                         totalSaved += (text.length - jsonCompressed.length)
@@ -85,7 +80,7 @@ class ContextCompressionTransformer : InputMessageTransformer {
                         return@map UIMessagePart.Text(text = jsonCompressed)
                     }
 
-                    // 尝试文本压缩
+                    // 再试文本
                     val textCompressed = TextCompressor.compress(text)
                     if (textCompressed != null) {
                         totalSaved += (text.length - textCompressed.length)
@@ -99,7 +94,6 @@ class ContextCompressionTransformer : InputMessageTransformer {
                 is UIMessagePart.Tool -> {
                     if (!part.isExecuted) return@map part
 
-                    // 压缩工具输出中的每个 Text part
                     val (newOutput, saved) = compressToolOutput(part.toolName, part.output)
                     totalSaved += saved
                     if (newOutput != null) {
@@ -134,7 +128,6 @@ class ContextCompressionTransformer : InputMessageTransformer {
                     val text = part.text
                     if (text.length < MIN_CHARS_TO_COMPRESS) return@map part
 
-                    // 工具输出专用压缩
                     val toolCompressed = ToolOutputCompressor.compress(toolName, text)
                     if (toolCompressed != null) {
                         totalSaved += (text.length - toolCompressed.length)
