@@ -7,20 +7,22 @@ import me.rerere.rikkahub.data.ai.compression.ToolOutputCompressor
 
 /**
  * 工具输出压缩器。
- * 只压缩工具执行后的 output, 不碰用户/助手/system 消息。
+ * 只压缩 Tool part 的 output，不动用户/助手/system 文本。
  */
 class ContextCompressionTransformer : InputMessageTransformer {
 
     companion object {
         private const val TAG = "ContextCompress"
-        private const val MIN_CHARS = 500
+        private const val MIN_CHARS = 200
     }
 
     override suspend fun transform(
         ctx: TransformerContext,
         messages: List<UIMessage>,
     ): List<UIMessage> {
-        var hit = false
+
+        var compressedCount = 0
+        var savedChars = 0L
 
         val result = messages.map { message ->
             if (message.role == me.rerere.ai.core.MessageRole.SYSTEM) return@map message
@@ -32,30 +34,41 @@ class ContextCompressionTransformer : InputMessageTransformer {
             val newParts = message.parts.map { part ->
                 if (part !is UIMessagePart.Tool || !part.isExecuted) return@map part
 
-                val (newOutput, ok) = compressToolOutput(part.toolName, part.output)
-                if (ok) { modified = true; hit = true; part.copy(output = newOutput) }
-                else part
+                val (newOutput, saved) = compressParts(part.toolName, part.output)
+                if (saved > 0) {
+                    modified = true
+                    compressedCount++
+                    savedChars += saved
+                    part.copy(output = newOutput)
+                } else part
             }
             if (modified) message.copy(parts = newParts) else message
         }
 
-        if (hit) Log.w(TAG, "*** COMPRESSED ***")
+        if (compressedCount > 0) {
+            val msg = "compressed $compressedCount tool outputs, saved $savedChars chars"
+            Log.wtf(TAG, msg)
+            ctx.processingStatus.value = msg
+        }
+
         return result
     }
 
-    private fun compressToolOutput(
+    private fun compressParts(
         toolName: String,
         output: List<UIMessagePart>,
-    ): Pair<List<UIMessagePart>, Boolean> {
-        var did = false
+    ): Pair<List<UIMessagePart>, Long> {
+        var saved = 0L
         val parts = output.map { part ->
             if (part !is UIMessagePart.Text || part.text.length < MIN_CHARS) part
             else {
-                val c = ToolOutputCompressor.compress(toolName, part.text)
-                if (c != null) { did = true; Log.d(TAG, "$toolName ${part.text.length}->${c.length}"); UIMessagePart.Text(text = c) }
-                else part
+                val compressed = ToolOutputCompressor.compress(toolName, part.text)
+                if (compressed != null && compressed.length < part.text.length) {
+                    saved += (part.text.length - compressed.length)
+                    UIMessagePart.Text(text = compressed)
+                } else part
             }
         }
-        return parts to did
+        return parts to saved
     }
 }
