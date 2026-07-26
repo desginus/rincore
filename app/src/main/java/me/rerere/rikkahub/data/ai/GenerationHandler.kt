@@ -29,6 +29,8 @@ import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.ToolApprovalState
+import me.rerere.rikkahub.data.ai.compression.NaturalLanguageFormatter
+import me.rerere.rikkahub.data.ai.compression.ToolOutputCompressor
 import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
@@ -403,6 +405,21 @@ class GenerationHandler(
                 }
             }
 
+            // Headroom: compress tool outputs at source (before storing in conversation history)
+            val compressedTools = executedTools.map { tool ->
+                if (tool.output.isEmpty()) return@map tool
+                val compressedOutput = tool.output.map { part ->
+                    if (part is UIMessagePart.Text && part.text.length > 200) {
+                        val formatted = NaturalLanguageFormatter.format(part.text)
+                        if (formatted.length < part.text.length) {
+                            Log.i(TAG, "compress: ${tool.toolName} ${part.text.length} -> ${formatted.length}c")
+                            UIMessagePart.Text(text = formatted)
+                        } else part
+                    } else part
+                }
+                tool.copy(output = compressedOutput)
+            }
+
             if (executedTools.isEmpty()) {
                 // No results to add (all tools were pending)
                 break
@@ -412,7 +429,7 @@ class GenerationHandler(
             val lastMessage = messages.last()
             val updatedParts = lastMessage.parts.map { part ->
                 if (part is UIMessagePart.Tool) {
-                    executedTools.find { it.toolCallId == part.toolCallId } ?: part
+                    compressedTools.find { it.toolCallId == part.toolCallId } ?: part
                 } else part
             }
             messages = messages.dropLast(1) + lastMessage.copy(parts = updatedParts)
