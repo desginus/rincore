@@ -66,7 +66,7 @@ object NaturalLanguageFormatter {
         }
         // 普通对象
         return obj.entries
-            .filterValues { it is JsonPrimitive }
+            .filter { it.value is JsonPrimitive }
             .take(10)
             .joinToString(" | ") { (k, v) -> "${human(k)}: ${(v as JsonPrimitive).content}" }
             .ifEmpty { regexFallback(obj.toString()) }
@@ -74,7 +74,7 @@ object NaturalLanguageFormatter {
 
     private fun metaLine(meta: Map<String, *>): String {
         val parts = meta.entries
-            .filterValues { it is JsonPrimitive }
+            .filter { it.value is JsonPrimitive }
             .map { (k, v) -> "${human(k)}: ${(v as JsonPrimitive).content}" }
         return if (parts.isNotEmpty()) parts.joinToString(" | ") + "\n\n" else ""
     }
