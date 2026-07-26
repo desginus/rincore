@@ -9,12 +9,13 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 
 /**
- * Headroom SmartCrusher 风格的 JSON 压缩器。
+ * Headroom SmartCrusher 风格 JSON 压缩器。
  *
  * 策略:
- * - 检测顶层 JSON 数组: 保留前 3 + 后 2 条, 中间替换为列描述 + 计数
- * - 检测顶层 JSON 对象: 提取所有 key 名 + 类型信息
- * - 嵌套数组: 相同策略递归应用
+ * - 顶层 JSON 数组: 保留前 3 + 后 2 条, 中间替换为列描述 + 计数
+ * - 顶层 JSON 对象包裹数组 (如 {"items":[...], "total":N}):
+ *   提取外层元信息 + 压缩内层数组
+ * - 嵌套数组: 递归压缩
  * - 非 JSON: 返回 null
  */
 object JsonCompressor {
@@ -35,47 +36,86 @@ object JsonCompressor {
         }
 
         return when (parsed) {
-            is JsonArray -> compressArray(parsed)
-            is JsonObject -> compressObject(parsed)
+            is JsonArray -> compressArray(parsed, indent = "")
+            is JsonObject -> {
+                // 检测对象是否包裹了可压缩数组 (如搜索结果的 {"items":[...]})
+                val compressibleArray = findCompressibleArray(parsed)
+                if (compressibleArray != null) {
+                    compressWrappedObject(parsed, compressibleArray)
+                } else {
+                    compressSimpleObject(parsed)
+                }
+            }
             else -> null
         }
     }
 
-    private fun compressArray(arr: JsonArray): String {
+    /**
+     * 在 JSON 对象中查找可压缩的数组:
+     * - "items", "results", "data", "documents", "entries" 等键
+     * - 数组长度 >= MIN_ITEMS_TO_COMPRESS
+     */
+    private fun findCompressibleArray(obj: JsonObject): Pair<String, JsonArray>? {
+        val candidateKeys = listOf("items", "results", "data", "documents", "entries", "records", "matches", "hits")
+        for (key in candidateKeys) {
+            val arr = obj[key]?.jsonArray
+            if (arr != null && arr.size >= MIN_ITEMS_TO_COMPRESS) {
+                return key to arr
+            }
+        }
+        return null
+    }
+
+    private fun compressWrappedObject(obj: JsonObject, arrayInfo: Pair<String, JsonArray>): String {
+        val (key, arr) = arrayInfo
+        val compressedArray = compressArray(arr, indent = "  ")
+
+        // 提取外层元信息 (排除数组本身)
+        val meta = obj.filterKeys { it != key }
+            .map { (k, v) -> "\"$k\": ${v.toCompactString()}" }
+            .joinToString(", ")
+
+        return buildString {
+            appendLine("{")
+            if (meta.isNotEmpty()) {
+                appendLine("  $meta,")
+            }
+            appendLine("  \"$key\": $compressedArray")
+            append("}")
+        }
+    }
+
+    private fun compressSimpleObject(obj: JsonObject): String? {
+        if (obj.size < 5) return null
+        val schema = obj.map { (k, v) -> "$k: ${jsonTypeName(v)}" }.joinToString(", ")
+        return "{ /* ${obj.size} keys: $schema */ }"
+    }
+
+    private fun compressArray(arr: JsonArray, indent: String): String {
         if (arr.size < MIN_ITEMS_TO_COMPRESS) return arr.toString()
 
         val first = arr.take(MAX_SAMPLE_FIRST)
         val last = arr.takeLast(MAX_SAMPLE_LAST)
         val middleCount = arr.size - MAX_SAMPLE_FIRST - MAX_SAMPLE_LAST
-
         val schema = extractArraySchema(first + last)
 
         return buildString {
             appendLine("[")
             first.forEachIndexed { i, item ->
-                append("  ")
+                append("$indent  ")
                 append(item.toCompactString())
-                if (i < first.size - 1 || last.isNotEmpty()) appendLine(",")
+                if (i < first.size - 1 || last.isNotEmpty()) append(",")
+                appendLine()
             }
-            appendLine("  /* ... $middleCount items omitted. Schema: $schema */")
+            appendLine("$indent  /* ... $middleCount items omitted. Schema: $schema */")
             last.forEachIndexed { i, item ->
-                append("  ")
+                append("$indent  ")
                 append(item.toCompactString())
-                if (i < last.size - 1) appendLine(",")
+                if (i < last.size - 1) append(",")
+                appendLine()
             }
-            appendLine()
-            append("]")
+            append("$indent]")
         }
-    }
-
-    private fun compressObject(obj: JsonObject): String? {
-        if (obj.size < 5) return null
-
-        val schema = obj.map { (k, v) ->
-            "$k: ${jsonTypeName(v)}"
-        }.joinToString(", ")
-
-        return "{ /* ${obj.size} keys: $schema */ }"
     }
 
     private fun extractArraySchema(samples: List<JsonElement>): String {
@@ -118,13 +158,5 @@ object JsonCompressor {
         }
         is JsonArray -> "[${size} items]"
         is JsonPrimitive -> toString()
-    }
-
-    /** 估算压缩前字符数 */
-    fun originalSize(input: String): Int = input.length
-
-    /** 估算压缩后字符数。如果未压缩则为 0 */
-    fun compressedSize(input: String): Int {
-        return compress(input)?.length ?: 0
     }
 }

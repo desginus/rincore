@@ -1,40 +1,41 @@
 package me.rerere.rikkahub.data.ai.compression
 
 /**
- * Headroom Kompress 风格的文本压缩器。
+ * Headroom Kompress 风格文本压缩器 (提取式摘要)。
  *
- * 策略 (提取式摘要, 无 ML 模型):
- * - 保留首段 (通常包含主题)
- * - 保留末段 (通常包含结论)
- * - 中间: 提取关键句 (含数字/实体/引用的句子)
- * - 对极长文本: 额外提取每段首句
+ * 策略 (无 ML 模型, 纯规则):
+ * - 保留首段 (主题)
+ * - 保留末段 (结论)
+ * - 中间: 提取关键句 (含数字/实体/引用/中英文关键词的句子)
+ * - 支持中英文混排分词
  */
 object TextCompressor {
     private const val MIN_CHARS_TO_COMPRESS = 400
     private const val MAX_KEY_SENTENCES = 8
 
+    // 关键句模式 — 同时支持中文和英文
     private val keySentencePattern = Regex(
-        """(contains|important|note|warning|error|key|critical|significant|"""
-                + """must|should|required|necessary|一定要|必须|注意|警告|关键|重要|"""
-                + """\b\d{2,}\b|"""
-                + """[""''].+?[""'']|"""
-                + """https?://\S+|"""
-                + """\b[A-Z][a-z]+ [A-Z][a-z]+\b)""",
-        RegexOption.IGNORE_CASE
+        """(contains|important|note|warning|error|key|critical|significant|""" +
+                """must|should|required|necessary|""" +
+                """一定要|必须|注意|警告|关键|重要|核心|结论|综上|""" +
+                """\b\d{2,}\b|""" +
+                """[""''].+?[""'']|""" +
+                """https?://\S+|""" +
+                """\b[A-Z][a-z]+ [A-Z][a-z]+\b)""",
+        setOf(RegexOption.IGNORE_CASE)
     )
 
     /**
-     * 压缩文本内容。如果文本太短则返回 null。
+     * 压缩文本。太短则返回 null。
      */
     fun compress(text: String): String? {
         if (text.length < MIN_CHARS_TO_COMPRESS) return null
 
-        val paragraphs = text.split(Regex("\n\n|\r\n\r\n"))
+        val paragraphs = text.split(Regex("""\n\n|\r\n\r\n"""))
             .map { it.trim() }
             .filter { it.isNotBlank() }
 
         if (paragraphs.size <= 2) return compressSingleBlock(text)
-
         return compressMultiParagraph(paragraphs)
     }
 
@@ -43,7 +44,7 @@ object TextCompressor {
         if (sentences.size <= 5) return null
 
         val keyIndices = findKeySentences(sentences)
-        return buildCompressed(sentences, keyIndices, text.length)
+        return buildCompressed(sentences, keyIndices)
     }
 
     private fun compressMultiParagraph(paragraphs: List<String>): String {
@@ -77,8 +78,13 @@ object TextCompressor {
         return sb.toString()
     }
 
+    /**
+     * 中英文混合分句:
+     * - 英文: 以 .!? 后跟空格或换行为界
+     * - 中文: 以 。！？ 为界 (不要求后续空格)
+     */
     private fun splitSentences(text: String): List<String> {
-        return text.split(Regex("(?<=[.!?。！？])\\s+"))
+        return text.split(Regex("""(?<=[.!?。！？])\s*|\n+"""))
             .map { it.trim() }
             .filter { it.length > 5 }
     }
@@ -96,7 +102,7 @@ object TextCompressor {
             }
         }
 
-        // 如果关键句不够, 均匀采样
+        // 关键句不够时均匀采样
         if (keySet.size < 3 && sentences.size > 5) {
             val step = sentences.size / 3
             for (j in 1..2) {
@@ -113,7 +119,6 @@ object TextCompressor {
     private fun buildCompressed(
         sentences: List<String>,
         keyIndices: Set<Int>,
-        originalLength: Int
     ): String {
         val sb = StringBuilder()
         sb.appendLine(sentences.first())
@@ -129,10 +134,6 @@ object TextCompressor {
         }
 
         sb.append(sentences.last())
-
         return sb.toString()
     }
-
-    fun originalSize(text: String) = text.length
-    fun compressedSize(text: String) = compress(text)?.length ?: 0
 }
