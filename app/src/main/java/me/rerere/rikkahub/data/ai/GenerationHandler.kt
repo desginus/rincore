@@ -407,13 +407,14 @@ class GenerationHandler(
 
             // Headroom: compress tool outputs at source (before storing in conversation history)
             val compressedTools = executedTools.map { tool ->
+                if (!ToolOutputCompressor.isSearchTool(tool.toolName)) return@map tool
                 if (tool.output.isEmpty()) return@map tool
                 val compressedOutput = tool.output.map { part ->
                     if (part is UIMessagePart.Text && part.text.length > 200) {
                         val formatted = NaturalLanguageFormatter.format(part.text)
                         if (formatted.length < part.text.length) {
                             Log.i(TAG, "compress: ${tool.toolName} ${part.text.length} -> ${formatted.length}c")
-                            UIMessagePart.Text(text = formatted)
+                            UIMessagePart.Text(text = formatted.ifBlank { Log.w(TAG, "compress: empty output for ${tool.toolName}, keeping original"); part.text })
                         } else part
                     } else part
                 }

@@ -18,6 +18,8 @@ import kotlinx.serialization.json.jsonPrimitive
  * JSON 解析失败时用正则兜底提取。
  */
 object NaturalLanguageFormatter {
+    private const val TAG = "NLFormatter"
+
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private const val MAX = 8
@@ -29,18 +31,22 @@ object NaturalLanguageFormatter {
     // ── 主入口 ──
 
     fun format(input: String): String {
+        if (input.isBlank()) return input
         val t = input.trim()
 
-        // 尝试 JSON 解析
-        try {
-            return when (val p = json.parseToJsonElement(t)) {
+        return try {
+            val result = when (val p = json.parseToJsonElement(t)) {
                 is JsonArray -> fmtArray(p)
                 is JsonObject -> fmtObj(p)
-                else -> regexFallback(t)
+                else -> safeRegex(t)
             }
-        } catch (_: Exception) {
-            // JSON 解析失败 -> 正则兜底
-            return regexFallback(t)
+            result.ifBlank {
+                android.util.Log.w(TAG, "EMPTY OUTPUT, returning cleaned original")
+                cleanCharsOnly(t)
+            }
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "format crashed: ${e.message}")
+            cleanCharsOnly(t)
         }
     }
 
@@ -226,5 +232,23 @@ object NaturalLanguageFormatter {
     private fun human(key: String): String {
         return key.replace("_", " ")
             .replace(Regex("([a-z])([A-Z])")) { "${it.groupValues[1]} ${it.groupValues[2]}" }
+    }
+
+    // ── 安全封装 ──
+
+    private fun safeRegex(text: String): String = try {
+        regexFallback(text)
+    } catch (e: Exception) {
+        android.util.Log.w(TAG, "regexFallback failed: ${e.message}")
+        cleanCharsOnly(text)
+    }
+
+    private fun cleanCharsOnly(text: String): String {
+        return text
+            .replace(Regex("""[\[\]{}"\\]"""), " ")
+            .replace(Regex("""[:,/]"""), " ")
+            .replace(Regex("""\s{2,}"""), " ")
+            .trim()
+            .take(3000)
     }
 }
