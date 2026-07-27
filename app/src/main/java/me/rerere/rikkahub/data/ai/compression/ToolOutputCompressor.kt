@@ -43,9 +43,9 @@ object ToolOutputCompressor {
         val lower = name.lowercase()
         // ── 通用搜索关键词 ──
         val generic = listOf(
-            "search", "find", "query", "web", "browse", "internet",
+            "search", "find", "query", "browse", "internet",
             "google", "bing", "duckduckgo", "brave", "serp", "searx",
-            "fetch", "scrape", "parse", "wiki",
+            "wiki",
             "搜索", "检索", "查找", "搜寻", "联网", "上网", "查"
         )
         if (generic.any { it in lower }) return true
