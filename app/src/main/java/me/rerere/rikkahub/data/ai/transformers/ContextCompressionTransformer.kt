@@ -48,7 +48,7 @@ class ContextCompressionTransformer : InputMessageTransformer {
         if (compressedCount > 0) {
             val msg = "compressed $compressedCount tool outputs, saved $savedChars chars"
             Log.wtf(TAG, msg)
-            ctx.processingStatus.value = msg
+            // ctx.processingStatus removed per user request
         }
 
         return result

@@ -61,21 +61,43 @@ object NaturalLanguageFormatter {
     }
 
     private fun fmtObj(obj: JsonObject): String {
-        // 检测包裹对象: {"items":[...], "results":[...], ...}
-        for (k in listOf("items", "results", "data", "documents", "entries", "records")) {
-            val arr = obj[k]?.jsonArray
-            if (arr != null && arr.isNotEmpty()) {
-                val objs = arr.filterIsInstance<JsonObject>()
-                val head = metaLine(obj.filterKeys { it != k })
-                return head + buildResult(filterAds(objs))
+        // 收集所有数组字段(不限键名)和基本字段
+        val arrays = mutableListOf<Pair<String, JsonArray>>()
+        val primitives = mutableListOf<Pair<String, JsonPrimitive>>()
+
+        obj.forEach { (k, v) ->
+            when (v) {
+                is JsonArray -> if (v.isNotEmpty()) arrays.add(k to v)
+                is JsonPrimitive -> primitives.add(k to v)
+                else -> {}
             }
         }
-        // 普通对象
-        return obj.entries
-            .filter { it.value is JsonPrimitive }
-            .take(10)
-            .joinToString(" | ") { (k, v) -> "${human(k)}: ${(v as JsonPrimitive).content}" }
-            .ifEmpty { regexFallback(obj.toString()) }
+
+        if (arrays.isNotEmpty()) {
+            val sb = StringBuilder()
+            if (primitives.isNotEmpty()) {
+                sb.appendLine(primitives.joinToString(" | ") { (k, v) ->
+                    "${human(k)}: ${v.content}"
+                })
+                sb.appendLine()
+            }
+            arrays.forEach { (key, arr) ->
+                val items = arr.filterIsInstance<JsonObject>()
+                if (items.isEmpty()) return@forEach
+                if (arrays.size > 1) sb.appendLine("${human(key)}:")
+                sb.append(buildResult(filterAds(items)))
+                sb.appendLine()
+            }
+            return sb.toString().trimEnd()
+        }
+
+        if (primitives.isNotEmpty()) {
+            return primitives.take(20).joinToString("\n") { (k, v) ->
+                "${human(k)}: ${v.content}"
+            }
+        }
+
+        return safeRegex(obj.toString())
     }
 
     private fun metaLine(meta: Map<String, *>): String {
@@ -101,18 +123,37 @@ object NaturalLanguageFormatter {
         val sb = StringBuilder()
         sb.append(idx).append(". ")
 
-        val title = pick(obj, "title", "name", "heading", "subject")
+        val title = pick(obj,
+            "title", "name", "heading", "subject",
+            "rank_title", "item_name", "product_name", "keyword", "query"
+        )
         if (title.isNotBlank()) sb.append(title) else sb.append("[untitled]")
 
-        val url = pick(obj, "url", "link", "href", "source")
+        val url = pick(obj,
+            "url", "link", "href", "source", "share_url",
+            "item_url", "product_url", "detail_url", "target_url"
+        )
         if (url.isNotBlank()) sb.append(" | ").append(url)
 
-        val desc = pick(obj, "text", "snippet", "description", "summary", "content", "abstract")
+        val desc = pick(obj,
+            "text", "snippet", "description", "summary",
+            "content", "abstract", "intro", "brief", "intro_text", "desc"
+        )
         if (desc.isNotBlank()) {
             sb.appendLine()
             sb.append("   ").append(desc.take(200))
             if (desc.length > 200) sb.append("...")
         }
+
+        // 如果什么都没匹配到，展示前3个基本字段
+        if (title.isBlank() && url.isBlank() && desc.isBlank()) {
+            val fields = obj.entries
+                .filter { it.value is JsonPrimitive }
+                .take(3)
+                .joinToString(" | ") { "${human(it.key)}: ${(it.value as JsonPrimitive).content}" }
+            sb.append(if (fields.isBlank()) "[item]" else fields)
+        }
+
         return sb.toString()
     }
 
