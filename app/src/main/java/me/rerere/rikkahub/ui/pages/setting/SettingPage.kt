@@ -274,7 +274,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     )
                     item(
                         onClick = { navController.navigate(Screen.SettingCallTrace) },
-                        leadingContent = { Icon(HugeIcons.Bug01, null) },
+                        leadingContent = { Icon(HugeIcons.Code, null) },
                         supportingContent = { Text("查看最近一条消息的完整运行流程") },
                         headlineContent = { Text("运行日志") },
                     )
