@@ -54,6 +54,7 @@ import me.rerere.rikkahub.utils.applyPlaceholders
 import java.util.Locale
 import kotlin.time.Clock
 import kotlin.uuid.Uuid
+import me.rerere.rikkahub.data.ai.CallTracer
 
 private const val TAG = "GenerationHandler"
 private const val MAX_TOOL_OUTPUT_CHARS = 32 * 1024
@@ -93,6 +94,7 @@ class GenerationHandler(
         workspaceCwd: String? = null,
         conversationLoadedDomains: Set<String>? = null,
     ): Flow<GenerationChunk> = flow {
+        CallTracer.startTrace(id = model.id)
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
 
@@ -118,6 +120,7 @@ class GenerationHandler(
 
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
+            CallTracer.event("STEP", "step_$stepIndex", "Step $stepIndex begin, ${tools.size} tools loaded, messages=${messages.size}")
 
             // Bug #2 修复: 每步重建 ToolRouter，读取最新 settings
             val currentSettings = settingsStore.settingsFlow.value
@@ -204,6 +207,7 @@ class GenerationHandler(
 
             // Skip generation if we have approved/denied tool calls to handle
             if (pendingTools.isEmpty()) {
+                CallTracer.event("SEND", "pre_api", "Calling generateInternal: model=${model.id}, provider=${provider.javaClass.simpleName}")
                 generateInternal(
                     assistant = assistant,
                     settings = settings,
@@ -242,6 +246,7 @@ class GenerationHandler(
                     workspaceCwd = workspaceCwd,
                     layer1Prompt = layer1Prompt,
                 )
+                CallTracer.event("RECV", "post_api", "generateInternal returned, messages=${messages.size}")
                 messages = messages.visualTransforms(
                     transformers = outputTransformers,
                     context = context,
@@ -268,6 +273,7 @@ class GenerationHandler(
                     if (useLayered && loadedDomains.isNotEmpty()) {
                         emit(GenerationChunk.LoadedDomains(loadedDomains.toSet()))
                     }
+                    CallTracer.event("FINISH", "no_tools", "Conversation finished, no pending tools")
                     break
                 }
 
@@ -309,6 +315,7 @@ class GenerationHandler(
                 // If there are pending approvals, break and wait for user
                 if (hasPendingApproval) {
                     Log.i(TAG, "generateText: waiting for tool approval")
+                    CallTracer.event("PAUSE", "tool_approval", "Waiting for user approval on ${pendingTools.size} tools")
                     break
                 }
 
@@ -376,10 +383,16 @@ class GenerationHandler(
                                 error("Invalid tool arguments JSON for ${tool.toolName}: ${it.message}")
                             }
                             Log.i(TAG, "generateText: executing tool ${toolDef.name} with args: $args")
+                            CallTracer.event("TOOL", "exec_${toolDef.name}", "Executing ${toolDef.name}, args=${tool.input.length}c")
                             val result = toolDef.execute(args)
                             val hasShellAccess = toolsInternal.any { it.name == "workspace_shell" }
+                            val truncated = maybeTruncateToolOutput(tool.toolCallId, result, hasShellAccess, tool.toolName)
+                            val outChars = result.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }
+                            CallTracer.event("TOOL", "result_${toolDef.name}",
+                                "Exe输出: ${result.size} parts, ${outChars}c",
+                                mapOf("tool" to toolDef.name, "parts" to "${result.size}"))
                             executedTools += tool.copy(
-                                output = maybeTruncateToolOutput(tool.toolCallId, result, hasShellAccess, tool.toolName)
+                                output = truncated
                             )
                         }.onFailure {
                             // 取消必须向上传播，否则停止生成会被误报为工具执行错误
@@ -408,6 +421,7 @@ class GenerationHandler(
             }
 
             // Headroom: compress tool outputs at source (before storing in conversation history)
+            CallTracer.event("TOOL", "compress_start", "Compressing ${executedTools.size} executed tool outputs")
             val compressedTools = executedTools.map { tool ->
                 if (!ToolOutputCompressor.isSearchTool(tool.toolName)) return@map tool
                 if (tool.output.isEmpty()) return@map tool
@@ -449,6 +463,7 @@ class GenerationHandler(
                 )
             )
         }
+        CallTracer.finishTrace()
 
     }.flowOn(Dispatchers.IO)
 

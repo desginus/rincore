@@ -114,6 +114,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingPreferencesGeneralPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPreferencesUIPage
 import me.rerere.rikkahub.ui.pages.setting.SettingThemePage
 import me.rerere.rikkahub.ui.pages.setting.SettingFilesPage
+import me.rerere.rikkahub.ui.pages.setting.SettingCallTracePage
 import me.rerere.rikkahub.ui.pages.setting.SettingMcpPage
 import me.rerere.rikkahub.ui.pages.setting.SettingModelPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPage
@@ -601,6 +602,9 @@ class RouteActivity : ComponentActivity() {
                             entry<Screen.SettingFiles> {
                                 SettingFilesPage()
                             }
+                            entry<Screen.SettingCallTrace> {
+                                SettingCallTracePage()
+                            }
 
                             entry<Screen.SettingWeb> {
                                 SettingWebPage()
@@ -815,6 +819,9 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object SettingFiles : Screen
+
+    @Serializable
+    data object SettingCallTrace : Screen
 
     @Serializable
     data object SettingWeb : Screen

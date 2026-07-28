@@ -272,6 +272,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         },
                         headlineContent = { Text(stringResource(R.string.setting_page_chat_storage)) },
                     )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingCallTrace) },
+                        leadingContent = { Icon(HugeIcons.Analytics02, null) },
+                        supportingContent = { Text("查看最近一条消息的完整运行流程") },
+                        headlineContent = { Text("运行日志") },
+                    )
                 }
             }
 
