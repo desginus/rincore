@@ -38,6 +38,7 @@ import okhttp3.ConnectionPool
 import okhttp3.Dispatcher
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.logging.HttpLoggingInterceptor
 import org.koin.dsl.module
 import retrofit2.Retrofit
@@ -178,11 +179,12 @@ val dataSourceModule = module {
             maxRequestsPerHost = 8
         }
         OkHttpClient.Builder()
+            .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.MINUTES)
-            .writeTimeout(120, TimeUnit.SECONDS)
-            .pingInterval(30, TimeUnit.SECONDS)
-            .connectionPool(ConnectionPool(12, 10, TimeUnit.MINUTES))
+            .writeTimeout(60, TimeUnit.SECONDS)
+            .pingInterval(15, TimeUnit.SECONDS)
+            .connectionPool(ConnectionPool(16, 5, TimeUnit.MINUTES))
             .dispatcher(dispatcher)
             .socketFactory(BufferedSocketFactory)
             .followSslRedirects(true)

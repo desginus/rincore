@@ -154,6 +154,7 @@ class ChatCompletionsAPI(
         // just for debugging response body
         // println(client.newCall(request).await().body?.string())
 
+        var hasData = false
         val listener = object : EventSourceListener() {
             override fun onEvent(
                 eventSource: EventSource,
@@ -211,6 +212,7 @@ class ChatCompletionsAPI(
                         trySend(messageChunk).onFailure { e ->
                             Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
                         }
+                        hasData = true
                     }
             }
 
@@ -219,6 +221,16 @@ class ChatCompletionsAPI(
 
                 t?.printStackTrace()
                 println("[onFailure] 发生错误: ${t?.javaClass?.name} ${t?.message} / $response")
+
+                // 流式传输中断恢复: 如果已有部分数据则保留, 避免整个响应丢失
+                if (t is java.io.IOException && isRecoverableStreamError(t)) {
+                    if (hasData) {
+                        Log.w(TAG, "onFailure: stream interrupted (recoverable), closing with partial data")
+                        close()
+                        return
+                    }
+                    Log.w(TAG, "onFailure: stream interrupted before any data, will propagate: ${t.message}")
+                }
 
                 val bodyRaw = response?.body?.stringSafe()
                 try {
@@ -800,5 +812,22 @@ class ChatCompletionsAPI(
         val gonnaSend = filter { it is UIMessagePart.Text || it is UIMessagePart.Image }.size
         val texts = filter { it is UIMessagePart.Text }.size
         return gonnaSend == texts && texts == 1
+    }
+
+    companion object {
+        /**
+         * 判断流式传输中断是否为可恢复错误 (stream reset / protocol error).
+         * 对于可恢复错误, 若已有部分数据到达则保留部分响应, 避免整体丢失.
+         */
+        fun isRecoverableStreamError(e: java.io.IOException): Boolean {
+            val msg = e.message ?: return false
+            return msg.contains("stream was reset", ignoreCase = true) ||
+                   msg.contains("protocol error", ignoreCase = true) ||
+                   msg.contains("unexpected end of stream", ignoreCase = true) ||
+                   msg.contains("connection reset", ignoreCase = true) ||
+                   msg.contains("timeout", ignoreCase = true) ||
+                   msg.contains("broken pipe", ignoreCase = true) ||
+                   msg.contains("connection closed", ignoreCase = true)
+        }
     }
 }

@@ -175,6 +175,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
             Log.i(TAG, "streamText: $it")
         }
 
+        var hasData = false
         val listener = object : EventSourceListener() {
             override fun onEvent(
                 eventSource: EventSource,
@@ -216,6 +217,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
                 trySend(messageChunk).onFailure { e ->
                     Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
                 }
+                hasData = true
 
                 when (type) {
                     "message_stop" -> {
@@ -236,6 +238,20 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
 
                 t?.printStackTrace()
                 Log.e(TAG, "onFailure: ${t?.javaClass?.name} ${t?.message} / $response")
+
+                // 流式传输中断恢复: 如果已有部分数据则保留
+                if (t is java.io.IOException &&
+                    (t.message?.contains("stream was reset", ignoreCase = true) == true ||
+                     t.message?.contains("protocol error", ignoreCase = true) == true ||
+                     t.message?.contains("connection reset", ignoreCase = true) == true ||
+                     t.message?.contains("timeout", ignoreCase = true) == true)
+                ) {
+                    if (hasData) {
+                        Log.w(TAG, "onFailure: stream interrupted (recoverable), closing with partial data")
+                        close()
+                        return
+                    }
+                }
 
                 val bodyRaw = response?.body?.stringSafe()
                 try {
