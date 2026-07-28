@@ -6,20 +6,19 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.data.ai.CallTracer
 import me.rerere.rikkahub.ui.components.BackButton
 import me.rerere.rikkahub.ui.theme.CustomColors
 
 @Composable
 fun SettingCallTracePage() {
-    val trace by remember { mutableStateOf(CallTracer.getTrace()) }
-    val traceId by remember { mutableStateOf(CallTracer.getTraceId()) }
+    val trace by CallTracer.traceFlow.collectAsStateWithLifecycle()
+    val traceId = CallTracer.getTraceId()
 
     Scaffold(
         topBar = {
@@ -31,12 +30,7 @@ fun SettingCallTracePage() {
         }
     ) { innerPadding ->
         if (trace.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(32.dp)
-            ) {
+            Box(modifier = Modifier.fillMaxSize().padding(innerPadding).padding(32.dp)) {
                 Text(
                     "暂无运行日志\n\n发送一条消息后，此处将显示完整的代码运行轨迹。",
                     style = MaterialTheme.typography.bodyLarge,
@@ -44,25 +38,29 @@ fun SettingCallTracePage() {
                 )
             }
         } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-            ) {
-                Text(
-                    text = "${trace.size} events • ${trace.lastOrNull()?.elapsedMs?.let { "${it}ms" } ?: ""}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                )
-
+            Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = "${trace.size} events",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (CallTracer.isActive) {
+                        Text(
+                            text = "记录中...",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                 ) {
-                    items(trace) { event ->
-                        TraceItem(event)
-                    }
+                    items(trace) { event -> TraceItem(event) }
                 }
             }
         }
@@ -80,11 +78,8 @@ private fun TraceItem(event: CallTracer.TraceEvent) {
         "FINISH" -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
-
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
         ),

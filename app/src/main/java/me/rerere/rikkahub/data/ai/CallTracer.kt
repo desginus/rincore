@@ -1,26 +1,34 @@
 package me.rerere.rikkahub.data.ai
 
 import android.util.Log
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
  * 消息处理全链路追踪。
  * 记录最近一条消息从预处理到 API 调用到后处理的完整运行流程。
+ *
+ * UI 通过 [traceFlow] 订阅实时更新.
  */
 object CallTracer {
     private const val TAG = "CallTracer"
     private val mutex = Mutex()
 
     data class TraceEvent(
-        val elapsedMs: Long,      // 距 trace 开始的毫秒数
-        val phase: String,        // 阶段名
-        val step: String,         // 具体步骤
-        val detail: String,       // 运行细节
+        val elapsedMs: Long,
+        val phase: String,
+        val step: String,
+        val detail: String,
         val metrics: Map<String, String> = emptyMap(),
     )
 
     private var events = mutableListOf<TraceEvent>()
+    private val _traceFlow = MutableStateFlow<List<TraceEvent>>(emptyList())
+    val traceFlow: StateFlow<List<TraceEvent>> = _traceFlow.asStateFlow()
+
     private var startTime: Long = 0L
     private var traceId: String = ""
 
@@ -34,6 +42,7 @@ object CallTracer {
         traceId = id
         events = mutableListOf()
         isActive = true
+        _traceFlow.value = emptyList()
         event("INIT", "trace_start", "Trace ID: $id")
     }
 
@@ -48,6 +57,7 @@ object CallTracer {
                 metrics = metrics,
             )
             events.add(e)
+            _traceFlow.value = events.toList()
             Log.d(TAG, "[+${e.elapsedMs}ms] ${e.phase}/${e.step}: ${e.detail}")
         }
     }
@@ -61,12 +71,11 @@ object CallTracer {
                 step = "trace_end",
                 detail = "Total: ${totalMs}ms, ${events.size} events",
             ))
+            _traceFlow.value = events.toList()
             isActive = false
             Log.i(TAG, "=== TRACE END: ${totalMs}ms, ${events.size} events ===")
         }
     }
-
-    fun getTrace(): List<TraceEvent> = events.toList()
 
     fun getTraceId(): String = traceId
 }
