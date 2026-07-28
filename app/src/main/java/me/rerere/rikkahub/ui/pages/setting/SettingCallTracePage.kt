@@ -12,7 +12,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.data.ai.CallTracer
-import me.rerere.rikkahub.ui.components.BackButton
+import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.theme.CustomColors
 
 @Composable

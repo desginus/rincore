@@ -94,7 +94,7 @@ class GenerationHandler(
         workspaceCwd: String? = null,
         conversationLoadedDomains: Set<String>? = null,
     ): Flow<GenerationChunk> = flow {
-        CallTracer.startTrace(id = model.id)
+        CallTracer.startTrace(id = model.id.toString())
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
 

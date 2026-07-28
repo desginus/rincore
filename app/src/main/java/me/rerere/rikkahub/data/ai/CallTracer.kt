@@ -42,8 +42,8 @@ object CallTracer {
         traceId = id
         events = mutableListOf()
         isActive = true
-        _traceFlow.value = emptyList()
-        event("INIT", "trace_start", "Trace ID: $id")
+        events.add(TraceEvent(elapsedMs = 0, phase = "INIT", step = "trace_start", detail = "Trace ID: $id"))
+        _traceFlow.value = events.toList()
     }
 
     suspend fun event(phase: String, step: String, detail: String, metrics: Map<String, String> = emptyMap()) {
