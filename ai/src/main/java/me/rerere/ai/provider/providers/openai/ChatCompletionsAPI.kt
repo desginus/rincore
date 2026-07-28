@@ -50,6 +50,7 @@ import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.parseErrorDetail
 import me.rerere.ai.util.stringSafe
 import me.rerere.ai.util.toHeaders
+import me.rerere.ai.util.TraceLogger
 import me.rerere.common.http.await
 import me.rerere.common.http.jsonArrayOrNull
 import me.rerere.common.http.jsonObjectOrNull
@@ -226,6 +227,7 @@ class ChatCompletionsAPI(
                 if (t is java.io.IOException && isRecoverableStreamError(t)) {
                     if (hasData) {
                         Log.w(TAG, "onFailure: stream interrupted (recoverable), closing with partial data")
+                        TraceLogger.log("SSE", "recovered: ${t.message}")
                         close()
                         return
                     }
@@ -245,11 +247,13 @@ class ChatCompletionsAPI(
                     e.printStackTrace()
                     exception = e
                 } finally {
+                    TraceLogger.dumpAndLog(TAG, exception ?: Exception("Unknown"), 60)
                     close(exception)
                 }
             }
 
             override fun onClosed(eventSource: EventSource) {
+                TraceLogger.log("SSE", "stream closed by server")
                 close()
             }
         }

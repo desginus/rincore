@@ -47,6 +47,7 @@ import me.rerere.ai.util.KeyRoulette
 import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.encodeBase64
 import me.rerere.ai.util.json
+import me.rerere.ai.util.TraceLogger
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.parseErrorDetail
 import me.rerere.ai.util.stringSafe
@@ -248,6 +249,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
                 ) {
                     if (hasData) {
                         Log.w(TAG, "onFailure: stream interrupted (recoverable), closing with partial data")
+                        TraceLogger.log("SSE", "recovered: ${t.message}")
                         close()
                         return
                     }
@@ -264,6 +266,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
                     Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
                     e.printStackTrace()
                 } finally {
+                    TraceLogger.dumpAndLog(TAG, exception ?: Exception("Unknown"), 60)
                     close(exception)
                 }
             }

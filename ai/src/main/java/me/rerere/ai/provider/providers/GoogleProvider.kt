@@ -51,6 +51,7 @@ import me.rerere.ai.util.KeyRoulette
 import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.encodeBase64
 import me.rerere.ai.util.json
+import me.rerere.ai.util.TraceLogger
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.removeElements
 import me.rerere.ai.util.stringSafe
@@ -319,6 +320,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                 ) {
                     if (hasData) {
                         Log.w(TAG, "onFailure: stream interrupted (recoverable), closing with partial data")
+                        TraceLogger.log("SSE", "recovered: ${t.message}")
                         close()
                         return
                     }
@@ -344,6 +346,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                     e.printStackTrace()
                     exception = e
                 } finally {
+                    TraceLogger.dumpAndLog(TAG, exception ?: Exception("Stream failed"), 60)
                     close(exception ?: Exception("Stream failed"))
                 }
             }

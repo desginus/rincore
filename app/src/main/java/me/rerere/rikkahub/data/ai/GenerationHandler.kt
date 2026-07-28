@@ -30,6 +30,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.rikkahub.data.ai.compression.NaturalLanguageFormatter
+import me.rerere.ai.util.TraceLogger
 import me.rerere.rikkahub.data.ai.compression.ToolOutputCompressor
 import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
@@ -357,7 +358,8 @@ class GenerationHandler(
 
                     else -> {
                         // Auto or Approved - execute the tool
-                        runCatching {
+                        TraceLogger.log("ToolExec", "${tool.toolName}")
+                            runCatching {
                             val toolDef = toolsInternal.find { toolDef -> toolDef.name == tool.toolName }
                             if (toolDef == null) {
                                 // 分层模式下工具必须先通过 invoke_tools 加载，禁止自动加载其他域工具
@@ -413,6 +415,7 @@ class GenerationHandler(
                     if (part is UIMessagePart.Text && part.text.length > 200) {
                         val formatted = NaturalLanguageFormatter.format(part.text)
                         if (formatted.length < part.text.length) {
+                            TraceLogger.log("Compress", "${tool.toolName}: ${part.text.length}c -> ${formatted.length}c")
                             Log.i(TAG, "compress: ${tool.toolName} ${part.text.length} -> ${formatted.length}c")
                             UIMessagePart.Text(text = formatted.ifBlank { Log.w(TAG, "compress: empty output for ${tool.toolName}, keeping original"); part.text })
                         } else part
