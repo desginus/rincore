@@ -4,12 +4,16 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
+import me.rerere.rikkahub.data.ai.transformers.TransformerContext
 import me.rerere.rikkahub.ecosystem.EcosystemInstruction
 import me.rerere.rikkahub.ecosystem.EcosystemManager
 
 object SlashCommandRouter : InputMessageTransformer {
 
-    override suspend fun transform(messages: List<UIMessage>): List<UIMessage> {
+    override suspend fun transform(
+        ctx: TransformerContext,
+        messages: List<UIMessage>,
+    ): List<UIMessage> {
         return messages.map { msg ->
             if (msg.role != MessageRole.USER) return@map msg
 
@@ -28,21 +32,12 @@ object SlashCommandRouter : InputMessageTransformer {
             val matched = findMatchingInstruction(allInstructions, commandMatch)
                 ?: return@map msg
 
-            val newText = text + "
-
---- Slash Command: /" + commandMatch + " ---
-" +
-                "Source: [" + matched.source.displayName + "] " + matched.fileName + "
-
-" +
+            val newText = text + "\n\n--- Slash Command: /$commandMatch ---\n" +
+                "Source: [${matched.source.displayName}] ${matched.fileName}\n\n" +
                 matched.content.take(3000)
 
             val newParts = msg.parts.map { part ->
-                if (part is UIMessagePart.Text) {
-                    UIMessagePart.Text(newText)
-                } else {
-                    part
-                }
+                if (part is UIMessagePart.Text) UIMessagePart.Text(newText) else part
             }
             msg.copy(parts = newParts)
         }
