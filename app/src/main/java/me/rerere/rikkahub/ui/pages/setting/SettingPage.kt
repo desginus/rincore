@@ -285,6 +285,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = { Text("管理 OpenClaw 技能生态兼容层") },
                         headlineContent = { Text("OpenClaw 技能") },
                     )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingEcosystem) },
+                        leadingContent = { Icon(HugeIcons.Connect, null) },
+                        supportingContent = { Text("OpenClaw / Claude Code / Cursor / Copilot 生态指令") },
+                        headlineContent = { Text("生态系统") },
+                    )
                 }
             }
 
