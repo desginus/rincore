@@ -98,8 +98,10 @@ class RikkaHubApp : Application() {
         // AgentRun boot recovery — flip stranded in-flight runs to process_lost
         get<AgentRunBootRecovery>().runSweep()
 
-        // 多生态系统兼容层 — OpenClaw / Claude Code / Cursor / Copilot / Windsurf
+        // 多生态系统兼容层
         me.rerere.rikkahub.ecosystem.EcosystemManager.initialize(this)
+        // 插件管理器
+        me.rerere.rikkahub.ecosystem.plugin.PluginManager.initialize(this)
 
         // Composer.setDiagnosticStackTraceMode(ComposeStackTraceMode.Auto)
     }

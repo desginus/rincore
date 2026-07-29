@@ -116,8 +116,37 @@ object EcosystemScanner {
             }
         }
 
+        // 扫描插件 skills 目录
+        me.rerere.rikkahub.ecosystem.plugin.PluginManager.getSkillRoots().forEach { pluginSkillRoot ->
+            scanSkillsDirectory(pluginSkillRoot, results)
+        }
+
         Log.i(TAG, "Scanned ${results.size} ecosystem files from ${rootDir.absolutePath}")
         return results
+    }
+
+    private fun scanSkillsDirectory(skillsDir: File, results: MutableList<EcosystemInstruction>) {
+        if (!skillsDir.isDirectory) return
+        skillsDir.listFiles()?.filter { it.isDirectory }?.forEach { skillDir ->
+            val skillMd = File(skillDir, "SKILL.md")
+            if (skillMd.isFile && skillMd.canRead()) {
+                try {
+                    val content = skillMd.readText()
+                    if (content.isNotBlank()) {
+                        results.add(
+                            EcosystemInstruction(
+                                source = EcosystemSource.OPENCLAW,
+                                fileName = "SKILL.md (${skillDir.name})",
+                                displayPath = skillMd.absolutePath,
+                                content = content,
+                                role = InstructionRole.SKILL_MANUAL,
+                                metadata = mapOf("skillName" to skillDir.name),
+                            )
+                        )
+                    }
+                } catch (_: Exception) {}
+            }
+        }
     }
 
     /**

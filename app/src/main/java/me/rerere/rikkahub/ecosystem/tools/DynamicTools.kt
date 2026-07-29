@@ -12,6 +12,7 @@ import me.rerere.rikkahub.ecosystem.EcosystemManager
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlin.text.Charsets
 import kotlin.uuid.Uuid
 
 object DynamicTools {
@@ -30,7 +31,7 @@ object DynamicTools {
 
     private fun createMcpConnectTool(): Tool = Tool(
         name = "mcp_connect",
-        description = "Dynamically add an MCP server connection. Args: {name, url, transport: sse|streamable_http}",
+        description = "Dynamically add an MCP server. Args: {name, url, transport: sse|streamable_http|stdio, command: shell command for stdio mode}",
         systemPrompt = { _, _ -> "" },
         needsApproval = { true },
         execute = { input: JsonElement ->
@@ -41,29 +42,44 @@ object DynamicTools {
                     ?: return@Tool listOf(UIMessagePart.Text("Invalid args, need JSON object"))
                 val name = obj["name"]?.jsonPrimitive?.content
                     ?: return@Tool listOf(UIMessagePart.Text("Missing: name"))
-                val url = obj["url"]?.jsonPrimitive?.content
-                    ?: return@Tool listOf(UIMessagePart.Text("Missing: url"))
                 val transport = obj["transport"]?.jsonPrimitive?.content ?: "streamable_http"
 
-                val config = when (transport.lowercase()) {
-                    "sse" -> McpServerConfig.SseTransportServer(
-                        id = Uuid.random(),
-                        commonOptions = McpCommonOptions(name = name),
-                        url = url,
-                    )
-                    else -> McpServerConfig.StreamableHTTPServer(
-                        id = Uuid.random(),
-                        commonOptions = McpCommonOptions(name = name),
-                        url = url,
-                    )
+                when (transport.lowercase()) {
+                    "stdio" -> {
+                        val command = obj["command"]?.jsonPrimitive?.content
+                            ?: return@Tool listOf(UIMessagePart.Text("stdio mode requires: command (shell command to launch MCP server)"))
+                        listOf(
+                            UIMessagePart.Text(
+                                "stdio MCP mode: Launch the server first with:\n" +
+                                "  $command &\n" +
+                                "Then connect with mcp_connect using streamable_http or sse.\n" +
+                                "stdio subprocess management is handled via workspace_shell."
+                            )
+                        )
+                    }
+                    else -> {
+                        val url = obj["url"]?.jsonPrimitive?.content
+                            ?: return@Tool listOf(UIMessagePart.Text("Missing: url"))
+                        val config = when (transport.lowercase()) {
+                            "sse" -> McpServerConfig.SseTransportServer(
+                                id = Uuid.random(),
+                                commonOptions = McpCommonOptions(name = name),
+                                url = url,
+                            )
+                            else -> McpServerConfig.StreamableHTTPServer(
+                                id = Uuid.random(),
+                                commonOptions = McpCommonOptions(name = name),
+                                url = url,
+                            )
+                        }
+                        mcp.addClient(config)
+                        listOf(UIMessagePart.Text(
+                            "MCP server added: $name ($transport)\n$url\nConnecting..."
+                        ))
+                    }
                 }
-
-                mcp.addClient(config)
-                listOf(UIMessagePart.Text(
-                    "MCP server added: $name ($transport)\n$url\nConnecting... tools will be available shortly."
-                ))
             } catch (e: Exception) {
-                listOf(UIMessagePart.Text("Failed to add MCP server: ${e.message}"))
+                listOf(UIMessagePart.Text("Failed: ${e.message}"))
             }
         },
     )
@@ -95,22 +111,96 @@ object DynamicTools {
         },
     )
 
+    private fun installFromClawHub(slug: String): List<UIMessagePart> {
+        // 解析 @owner/name 格式
+        val (owner, skillSlug) = if (slug.startsWith("@")) {
+            val parts = slug.removePrefix("@").split("/", limit = 2)
+            Pair(parts.getOrNull(0) ?: "", parts.getOrNull(1) ?: parts.getOrNull(0) ?: "")
+        } else {
+            Pair(null, slug)
+        }
+
+        // ClawHub download API: GET /api/v1/download?slug={slug}&ownerHandle={owner}
+        val apiUrl = buildString {
+            append("https://clawhub.ai/api/v1/download")
+            append("?slug=$skillSlug")
+            if (owner != null) append("&ownerHandle=$owner")
+        }
+
+        val result = fetchUrlAsBytes(apiUrl)
+        if (result == null) {
+            return listOf(UIMessagePart.Text("ClawHub query failed: network error for $skillSlug"))
+        }
+
+        val skillDir = File(ecosystemWorkspaceRoot, "skills/$skillSlug")
+        skillDir.mkdirs()
+
+        // 如果是 ZIP 响应, 解压到技能目录
+        val (content, isZip) = result
+        if (isZip) {
+            // ZIP — 尝试解压 (简单实现：保存为 zip 并提示)
+            val zipFile = File(skillDir, "_download.zip")
+            zipFile.writeBytes(content)
+            listOf(
+                UIMessagePart.Text(
+                    "Downloaded: $slug (ZIP archive)\n" +
+                    "Saved to: ${zipFile.absolutePath}\n" +
+                    "Use workspace_shell to unzip: unzip ${zipFile.absolutePath} -d ${skillDir.absolutePath}"
+                )
+            )
+        } else {
+            // 纯文本 — 直接作为 SKILL.md
+            val text = String(content, Charsets.UTF_8)
+            File(skillDir, "SKILL.md").writeText(text.take(50000))
+            listOf(UIMessagePart.Text(
+                "Installed: $skillSlug (from ClawHub: $slug)\nPath: ${skillDir.absolutePath}"
+            ))
+        }
+    }
+
+    private fun fetchUrlAsBytes(urlStr: String): Pair<ByteArray, Boolean>? {
+        return try {
+            val conn = URL(urlStr).openConnection() as HttpURLConnection
+            conn.setRequestProperty("User-Agent", "RinCore/3.3")
+            conn.setRequestProperty("Accept", "application/zip, text/plain, application/json")
+            conn.instanceFollowRedirects = true
+            conn.connectTimeout = 15000
+            conn.readTimeout = 30000
+            conn.connect()
+            if (conn.responseCode in 200..299) {
+                val bytes = conn.inputStream.readBytes()
+                val contentType = conn.contentType ?: ""
+                val isZip = contentType.contains("zip") || urlStr.contains("download")
+                Pair(bytes, isZip)
+            } else {
+                val errorBody = try {
+                    conn.errorStream?.bufferedReader()?.readText()?.take(500)
+                } catch (_: Exception) { "" }
+                null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private fun installFromGitHub(repoPath: String): List<UIMessagePart> {
         val parts = repoPath.split("/", limit = 4)
-        val owner = parts.getOrNull(0) ?: return listOf(UIMessagePart.Text("Invalid format"))
-        val repo = parts.getOrNull(1) ?: return listOf(UIMessagePart.Text("Invalid format"))
+        val owner = parts.getOrNull(0) ?: return listOf(UIMessagePart.Text("Invalid GitHub path"))
+        val repo = parts.getOrNull(1) ?: return listOf(UIMessagePart.Text("Invalid GitHub path"))
         val branch = parts.getOrNull(2) ?: "main"
-        val path = parts.getOrNull(3) ?: ""
+        val subPath = parts.getOrNull(3) ?: ""
 
-        val apiUrl = if (path.isNotEmpty()) {
-            "https://api.github.com/repos/$owner/$repo/contents/$path?ref=$branch"
+        // GitHub raw content API
+        val apiUrl = if (subPath.isNotEmpty()) {
+            "https://raw.githubusercontent.com/$owner/$repo/$branch/$subPath"
         } else {
+            // Search for SKILL.md in repo
             "https://api.github.com/search/code?q=filename:SKILL.md+repo:$owner/$repo"
         }
 
         val content = fetchUrl(apiUrl)
         if (content.startsWith("ERROR:")) {
-            return listOf(UIMessagePart.Text("GitHub fetch failed: $content"))
+            return listOf(UIMessagePart.Text("GitHub fetch failed: $content\nTip: Ensure repo is public and path is correct."))
         }
 
         val skillName = repo.lowercase().replace(Regex("[^a-z0-9]"), "-")
@@ -123,23 +213,6 @@ object DynamicTools {
 
         return listOf(UIMessagePart.Text(
             "Installed: $skillName (from github:$owner/$repo)\nPath: ${skillDir.absolutePath}"
-        ))
-    }
-
-    private fun installFromClawHub(slug: String): List<UIMessagePart> {
-        val apiUrl = "https://clawhub.ai/api/skills/$slug"
-        val content = fetchUrl(apiUrl)
-        if (content.startsWith("ERROR:")) {
-            return listOf(UIMessagePart.Text("ClawHub query failed: $content"))
-        }
-
-        val skillName = slug.split("/").last().lowercase().replace(Regex("[^a-z0-9]"), "-")
-        val skillDir = File(ecosystemWorkspaceRoot, "skills/$skillName")
-        skillDir.mkdirs()
-        File(skillDir, "SKILL.md").writeText(content.take(10000))
-
-        return listOf(UIMessagePart.Text(
-            "Installed: $skillName (from ClawHub: $slug)\nPath: ${skillDir.absolutePath}"
         ))
     }
 
