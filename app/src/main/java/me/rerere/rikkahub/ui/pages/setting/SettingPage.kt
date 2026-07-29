@@ -287,7 +287,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     )
                     item(
                         onClick = { navController.navigate(Screen.SettingEcosystem) },
-                        leadingContent = { Icon(HugeIcons.Connect, null) },
+                        leadingContent = { Icon(HugeIcons.ServerStack01, null) },
                         supportingContent = { Text("OpenClaw / Claude Code / Cursor / Copilot 生态指令") },
                         headlineContent = { Text("生态系统") },
                     )
