@@ -154,7 +154,13 @@ class ChatService(
     private val workspaceRepository: WorkspaceRepository,
     private val folderRepository: FolderRepository,
 ) {
-    // workspace 系统提示注入 (依赖 workspaceRepository, 故在类内构造)
+    init {
+        me.rerere.rikkahub.ecosystem.tools.DynamicTools.initialize(
+            mcp = mcpManager,
+            workspaceRoot = context.filesDir.resolve("ecosystem").absolutePath,
+        )
+    }
+
     private val workspaceReminderTransformer = WorkspaceReminderTransformer(workspaceRepository)
 
     // 统一会话管理
@@ -546,6 +552,7 @@ class ChatService(
                     add(templateTransformer)
                     add(workspaceReminderTransformer)
                     add(ContextCompressionTransformer())
+                    add(me.rerere.rikkahub.ecosystem.tools.SlashCommandRouter)
                 },
                 outputTransformers = outputTransformers,
                 tools = buildList {
@@ -564,8 +571,10 @@ class ChatService(
                         addAll(createConversationTools(conversationRepo, assistant.id))
                     }
                     addAll(createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), conversation.workspaceCwd))
-                    // 多生态系统指令工具 (OpenClaw/Claude Code/Cursor/Copilot/Windsurf)
+                    // 多生态系统指令工具
                     addAll(me.rerere.rikkahub.ecosystem.EcosystemManager.getEnabledTools())
+                    // 动态工具 (MCP 连接 / Marketplace 安装)
+                    addAll(me.rerere.rikkahub.ecosystem.tools.DynamicTools.all())
                     if (assistant.enabledSkills.isNotEmpty()) {
                         addAll(
                             createSkillTools(
