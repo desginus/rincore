@@ -205,11 +205,11 @@ object DynamicTools {
 
         val content = fetchUrl(apiUrl, token)
         if (content.startsWith("ERROR:")) {
-            return listOf(UIMessagePart.Text(
-                "GitHub fetch failed: $content\n" +
-                if (!useAuth) "Tip: Configure GitHub token in Settings > Ecosystem for private repos"
-                else "Tip: Verify repo exists and token has read access"
-            ))
+            val tip = if (token.isEmpty())
+                "Tip: Configure GitHub token in Settings > Ecosystem for private repos"
+            else
+                "Tip: Verify repo exists and token has read access"
+            return listOf(UIMessagePart.Text("GitHub fetch failed: $content\n$tip"))
         }
 
         val skillName = repo.lowercase().replace(Regex("[^a-z0-9]"), "-")

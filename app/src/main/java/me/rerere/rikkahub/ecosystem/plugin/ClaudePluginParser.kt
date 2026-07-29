@@ -167,7 +167,7 @@ object ClaudePluginParser {
             ?: emptyList()
     }
 
-    private fun parseMcpJson(dir: File): List<McpServerDef> {
+    fun parseMcpJson(dir: File): List<McpServerDef> {
         val mcpFile = File(dir, ".mcp.json")
             .takeIf { it.isFile } ?: return emptyList()
         return try {
