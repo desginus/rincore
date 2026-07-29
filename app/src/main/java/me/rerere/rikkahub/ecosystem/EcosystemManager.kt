@@ -120,3 +120,14 @@ object EcosystemManager {
         prefs?.edit()?.putStringSet("ids", _enabledIds.value)?.apply()
     }
 }
+
+    fun setGitHubToken(token: String) {
+        context?.getSharedPreferences("eco_tokens", android.content.Context.MODE_PRIVATE)
+            ?.edit()?.putString("github_token", token)?.apply()
+    }
+
+    fun getGitHubToken(): String {
+        return context?.getSharedPreferences("eco_tokens", android.content.Context.MODE_PRIVATE)
+            ?.getString("github_token", "") ?: ""
+    }
+

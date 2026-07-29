@@ -190,17 +190,26 @@ object DynamicTools {
         val branch = parts.getOrNull(2) ?: "main"
         val subPath = parts.getOrNull(3) ?: ""
 
-        // GitHub raw content API
+        val token = EcosystemManager.getGitHubToken()
+        val useAuth = token.isNotEmpty()
+
         val apiUrl = if (subPath.isNotEmpty()) {
             "https://raw.githubusercontent.com/$owner/$repo/$branch/$subPath"
         } else {
-            // Search for SKILL.md in repo
-            "https://api.github.com/search/code?q=filename:SKILL.md+repo:$owner/$repo"
+            if (useAuth) {
+                "https://api.github.com/repos/$owner/$repo/contents/"
+            } else {
+                "https://api.github.com/search/code?q=filename:SKILL.md+repo:$owner/$repo"
+            }
         }
 
-        val content = fetchUrl(apiUrl)
+        val content = fetchUrl(apiUrl, token)
         if (content.startsWith("ERROR:")) {
-            return listOf(UIMessagePart.Text("GitHub fetch failed: $content\nTip: Ensure repo is public and path is correct."))
+            return listOf(UIMessagePart.Text(
+                "GitHub fetch failed: $content\n" +
+                if (!useAuth) "Tip: Configure GitHub token in Settings > Ecosystem for private repos"
+                else "Tip: Verify repo exists and token has read access"
+            ))
         }
 
         val skillName = repo.lowercase().replace(Regex("[^a-z0-9]"), "-")
@@ -211,16 +220,30 @@ object DynamicTools {
             "---\nname: $skillName\ndescription: Skill from $owner/$repo\n---\n\n${content.take(10000)}"
         )
 
+        // 写入 lock 记录
+        writeLockEntry(skillName, "github:$owner/$repo", "latest")
+
         return listOf(UIMessagePart.Text(
             "Installed: $skillName (from github:$owner/$repo)\nPath: ${skillDir.absolutePath}"
         ))
     }
 
-    private fun fetchUrl(urlStr: String): String {
+    private fun writeLockEntry(name: String, source: String, version: String) {
+        val lockFile = File(ecosystemWorkspaceRoot, "skills-lock.json")
+        val existing = if (lockFile.isFile) lockFile.readText() else "{}"
+        val entry = """"$name": {"source": "$source", "version": "$version", "installedAt": "${System.currentTimeMillis()}"}"""
+        val updated = if (existing.trim() == "{}") "{$entry}" else existing.dropLast(1) + ",$entry}"
+        lockFile.writeText(updated)
+    }
+
+    private fun fetchUrl(urlStr: String, token: String = ""): String {
         return try {
             val conn = URL(urlStr).openConnection() as HttpURLConnection
-            conn.setRequestProperty("User-Agent", "RinCore/3.2")
-            conn.setRequestProperty("Accept", "application/json, text/plain")
+            conn.setRequestProperty("User-Agent", "RinCore/3.3")
+            conn.setRequestProperty("Accept", "application/json, text/plain, application/vnd.github.v3+json")
+            if (token.isNotEmpty()) {
+                conn.setRequestProperty("Authorization", "Bearer $token")
+            }
             conn.connectTimeout = 10000
             conn.readTimeout = 15000
             conn.connect()

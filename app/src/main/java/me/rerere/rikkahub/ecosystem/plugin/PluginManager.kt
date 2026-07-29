@@ -91,7 +91,6 @@ object PluginManager {
             ?.map { File(it, "skills") }
             ?: emptyList()
     }
-}
 
 @Serializable
 data class PluginManifest(
@@ -106,3 +105,22 @@ data class PluginInfo(
     val manifest: PluginManifest,
     val directory: File,
 )
+
+    fun installFromParsed(pluginName: String, parsed: ClaudePluginParser.ParsedPlugin, targetDir: File) {
+        targetDir.mkdirs()
+        // 写入解析后的信息
+        File(targetDir, "_parsed.json").writeText(
+            "{\"name\":\"${parsed.manifest.name}\",\"skills\":${parsed.skills.size}," +
+            "\"commands\":${parsed.commands.size},\"mcps\":${parsed.mcpServers.size}}"
+        )
+        refresh()
+    }
+
+    fun getInstalledMcpServers(): List<ClaudePluginParser.McpServerDef> {
+        val dir = pluginsDir ?: return emptyList()
+        return dir.listFiles()
+            ?.filter { it.isDirectory }
+            ?.flatMap { ClaudePluginParser.parseMcpJson(it) }
+            ?: emptyList()
+    }
+}

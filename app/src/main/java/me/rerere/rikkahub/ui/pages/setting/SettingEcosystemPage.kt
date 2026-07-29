@@ -6,6 +6,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
@@ -68,6 +74,31 @@ fun SettingEcosystemPage() {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                     )
+                }
+                // GitHub Token 配置
+                item {
+                    Card(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text("GitHub Token", style = MaterialTheme.typography.titleSmall)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            var token by remember { mutableStateOf(me.rerere.rikkahub.ecosystem.EcosystemManager.getGitHubToken()) }
+                            OutlinedTextField(
+                                value = token,
+                                onValueChange = {
+                                    token = it
+                                    me.rerere.rikkahub.ecosystem.EcosystemManager.setGitHubToken(it)
+                                },
+                                label = { Text("Personal Access Token") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Text(
+                                "用于 github:owner/repo 格式的 clawhub_install",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 }
                 grouped.forEach { (source, insts) ->
                     item {
