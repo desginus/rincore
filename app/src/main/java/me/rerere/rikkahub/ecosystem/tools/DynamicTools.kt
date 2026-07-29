@@ -141,7 +141,7 @@ object DynamicTools {
             // ZIP — 尝试解压 (简单实现：保存为 zip 并提示)
             val zipFile = File(skillDir, "_download.zip")
             zipFile.writeBytes(content)
-            listOf(
+            return listOf(
                 UIMessagePart.Text(
                     "Downloaded: $slug (ZIP archive)\n" +
                     "Saved to: ${zipFile.absolutePath}\n" +
@@ -152,7 +152,7 @@ object DynamicTools {
             // 纯文本 — 直接作为 SKILL.md
             val text = String(content, Charsets.UTF_8)
             File(skillDir, "SKILL.md").writeText(text.take(50000))
-            listOf(UIMessagePart.Text(
+            return listOf(UIMessagePart.Text(
                 "Installed: $skillSlug (from ClawHub: $slug)\nPath: ${skillDir.absolutePath}"
             ))
         }
