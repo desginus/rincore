@@ -1,25 +1,22 @@
 package me.rerere.rikkahub.ecosystem.tools
 
+import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
 import me.rerere.rikkahub.ecosystem.EcosystemInstruction
 import me.rerere.rikkahub.ecosystem.EcosystemManager
 
-/**
- * Slash Command 路由器 — InputMessageTransformer 实现。
- *
- * 拦截用户消息中以 / 开头的行, 匹配已启用的生态系统指令
- * (尤其是 Claude Code 的 .claude/commands/*.md),
- * 将其内容注入到消息上下文中。
- */
 object SlashCommandRouter : InputMessageTransformer {
 
     override suspend fun transform(messages: List<UIMessage>): List<UIMessage> {
         return messages.map { msg ->
-            if (msg.from != UIMessage.From.User) return@map msg
+            if (msg.role != MessageRole.USER) return@map msg
 
-            val text = msg.getMessageText()
+            val textParts = msg.parts.filterIsInstance<UIMessagePart.Text>()
+            if (textParts.isEmpty()) return@map msg
+
+            val text = textParts.joinToString("") { it.text }
             val commandMatch = text.lines()
                 .firstOrNull { it.trimStart().startsWith("/") }
                 ?.trimStart()
@@ -31,21 +28,23 @@ object SlashCommandRouter : InputMessageTransformer {
             val matched = findMatchingInstruction(allInstructions, commandMatch)
                 ?: return@map msg
 
-            // 注入匹配的指令内容到消息末尾
-            val newText = buildString {
-                appendLine(text)
-                appendLine()
-                appendLine("--- Slash 命令: /$commandMatch ---")
-                appendLine("来源: [${matched.source.displayName}] ${matched.fileName}")
-                appendLine()
-                appendLine(matched.content.take(3000))
-            }
+            val newText = text + "
 
-            msg.copy(parts = msg.parts.map { part ->
+--- Slash Command: /" + commandMatch + " ---
+" +
+                "Source: [" + matched.source.displayName + "] " + matched.fileName + "
+
+" +
+                matched.content.take(3000)
+
+            val newParts = msg.parts.map { part ->
                 if (part is UIMessagePart.Text) {
                     UIMessagePart.Text(newText)
-                } else part
-            })
+                } else {
+                    part
+                }
+            }
+            msg.copy(parts = newParts)
         }
     }
 
@@ -55,7 +54,6 @@ object SlashCommandRouter : InputMessageTransformer {
     ): EcosystemInstruction? {
         if (instructions.isEmpty()) return null
 
-        // 精确匹配: 文件名去除扩展名 == command
         instructions.firstOrNull { inst ->
             val name = inst.fileName
                 .removeSuffix(".md")
@@ -64,12 +62,10 @@ object SlashCommandRouter : InputMessageTransformer {
             name == command.lowercase()
         }?.let { return it }
 
-        // 模糊匹配: command 包含在文件名中
         instructions.firstOrNull { inst ->
             inst.fileName.lowercase().contains(command.lowercase())
         }?.let { return it }
 
-        // OpenClaw skill name 匹配
         instructions.firstOrNull { inst ->
             inst.metadata["skillName"]?.lowercase() == command.lowercase()
         }?.let { return it }
