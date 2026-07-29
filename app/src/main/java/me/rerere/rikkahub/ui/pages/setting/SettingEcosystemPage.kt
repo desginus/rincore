@@ -12,7 +12,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import me.rerere.rikkahub.ecosystem.EcosystemBridge
 import me.rerere.rikkahub.ecosystem.EcosystemInstruction
 import me.rerere.rikkahub.ecosystem.EcosystemManager
 import me.rerere.rikkahub.ecosystem.EcosystemSource

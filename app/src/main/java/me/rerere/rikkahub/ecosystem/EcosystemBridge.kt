@@ -1,8 +1,6 @@
 package me.rerere.rikkahub.ecosystem
 
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 
@@ -68,12 +66,8 @@ object EcosystemBridge {
     }
 
     private fun buildSystemPromptFor(inst: EcosystemInstruction): String {
-        return buildString {
-            appendLine("## [${inst.source.displayName}] ${inst.fileName}")
-            appendLine("来源: ${inst.displayPath}")
-            appendLine()
-            appendLine(inst.content)
-        }
+        // 仅返回简短摘要 — 完整指令在 execute() 中按需提供 (零 Token 浪费)
+        return "[${inst.source.displayName}] ${inst.fileName} — 调用此工具获取完整指令 (${inst.content.length}c)"
     }
 
     /**

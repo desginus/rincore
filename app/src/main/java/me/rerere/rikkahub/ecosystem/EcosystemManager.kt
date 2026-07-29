@@ -2,9 +2,13 @@ package me.rerere.rikkahub.ecosystem
 
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import me.rerere.ai.core.Tool
 import java.io.File
 
@@ -20,6 +24,7 @@ object EcosystemManager {
     private const val TAG = "EcosystemManager"
     private const val ENABLED_PREFS = "ecosystem_enabled"
 
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var context: Context? = null
     private var rootDirs: List<File> = emptyList()
 
@@ -51,16 +56,27 @@ object EcosystemManager {
         rootDirs = dirs
         _scannedDirs.value = dirs.map { it.absolutePath }
         loadEnabledSet()
-        refresh()
+        // 首次扫描 (同步, 确保第一个对话就能用)
+        refreshBlocking()
     }
 
     /**
-     * 重新扫描所有根目录。
+     * 重新扫描所有根目录 (后台线程, UI 触发)。
      */
     fun refresh() {
+        scope.launch {
+            try {
+                refreshBlocking()
+            } catch (e: Exception) {
+                Log.e(TAG, "Refresh failed: ${e.message}", e)
+            }
+        }
+    }
+
+    private fun refreshBlocking() {
         val all = EcosystemScanner.scanAll(rootDirs)
         _instructions.value = all
-        Log.i(TAG, "Refreshed: ${all.size} instructions from ${rootDirs.size} roots")
+        Log.i(TAG, "Scanned ${all.size} instructions from ${rootDirs.size} roots")
     }
 
     /**
