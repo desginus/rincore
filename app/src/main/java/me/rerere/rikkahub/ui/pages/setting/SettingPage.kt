@@ -279,6 +279,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = { Text("查看最近一条消息的完整运行流程") },
                         headlineContent = { Text("运行日志") },
                     )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingClawSkills) },
+                        leadingContent = { Icon(HugeIcons.Package, null) },
+                        supportingContent = { Text("管理 OpenClaw 技能生态兼容层") },
+                        headlineContent = { Text("OpenClaw 技能") },
+                    )
                 }
             }
 

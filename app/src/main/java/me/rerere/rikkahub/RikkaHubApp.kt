@@ -98,6 +98,9 @@ class RikkaHubApp : Application() {
         // AgentRun boot recovery — flip stranded in-flight runs to process_lost
         get<AgentRunBootRecovery>().runSweep()
 
+        // OpenClaw 技能生态初始化
+        me.rerere.rikkahub.openclaw.ClawSkillManager.initialize(this, null)
+
         // Composer.setDiagnosticStackTraceMode(ComposeStackTraceMode.Auto)
     }
 

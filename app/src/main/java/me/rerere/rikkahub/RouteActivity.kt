@@ -115,6 +115,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingPreferencesUIPage
 import me.rerere.rikkahub.ui.pages.setting.SettingThemePage
 import me.rerere.rikkahub.ui.pages.setting.SettingFilesPage
 import me.rerere.rikkahub.ui.pages.setting.SettingCallTracePage
+import me.rerere.rikkahub.ui.pages.setting.SettingClawSkillsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingMcpPage
 import me.rerere.rikkahub.ui.pages.setting.SettingModelPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPage
@@ -605,6 +606,9 @@ class RouteActivity : ComponentActivity() {
                             entry<Screen.SettingCallTrace> {
                                 SettingCallTracePage()
                             }
+                            entry<Screen.SettingClawSkills> {
+                                SettingClawSkillsPage()
+                            }
 
                             entry<Screen.SettingWeb> {
                                 SettingWebPage()
@@ -822,6 +826,9 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object SettingCallTrace : Screen
+
+    @Serializable
+    data object SettingClawSkills : Screen
 
     @Serializable
     data object SettingWeb : Screen

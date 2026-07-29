@@ -564,6 +564,8 @@ class ChatService(
                         addAll(createConversationTools(conversationRepo, assistant.id))
                     }
                     addAll(createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), conversation.workspaceCwd))
+                    // OpenClaw 技能生态 — 启用状态由 ClawSkillManager 管理
+                    addAll(me.rerere.rikkahub.openclaw.ClawSkillManager.getEnabledTools())
                     if (assistant.enabledSkills.isNotEmpty()) {
                         addAll(
                             createSkillTools(
