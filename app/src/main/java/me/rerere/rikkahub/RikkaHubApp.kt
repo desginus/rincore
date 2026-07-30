@@ -98,6 +98,8 @@ class RikkaHubApp : Application() {
         // AgentRun boot recovery — flip stranded in-flight runs to process_lost
         get<AgentRunBootRecovery>().runSweep()
 
+        // 初始化诊断日志
+        me.rerere.rikkahub.data.ai.diagnostics.DiagnosticLogger.initialize(this)
         // 多生态系统兼容层
         me.rerere.rikkahub.ecosystem.EcosystemManager.initialize(this)
         // 插件管理器

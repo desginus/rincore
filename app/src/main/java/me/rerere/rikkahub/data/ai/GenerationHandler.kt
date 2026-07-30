@@ -29,9 +29,7 @@ import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.ToolApprovalState
-import me.rerere.rikkahub.data.ai.compression.NaturalLanguageFormatter
 import me.rerere.ai.util.TraceLogger
-import me.rerere.rikkahub.data.ai.compression.ToolOutputCompressor
 import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
@@ -40,6 +38,7 @@ import me.rerere.rikkahub.data.files.FileFolders
 import java.io.File
 import me.rerere.rikkahub.data.ai.transformers.onGenerationFinish
 import me.rerere.rikkahub.data.ai.transformers.transforms
+import me.rerere.rikkahub.data.ai.diagnostics.DiagnosticLogger
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
 import me.rerere.rikkahub.data.ai.tools.routing.ToolRouter
@@ -426,23 +425,6 @@ class GenerationHandler(
             }
 
             // Headroom: compress tool outputs at source (before storing in conversation history)
-            CallTracer.event("TOOL", "compress_start", "Compressing ${executedTools.size} executed tool outputs")
-            val compressedTools = executedTools.map { tool ->
-                if (!ToolOutputCompressor.isSearchTool(tool.toolName)) return@map tool
-                if (tool.output.isEmpty()) return@map tool
-                val compressedOutput = tool.output.map { part ->
-                    if (part is UIMessagePart.Text && part.text.length > 200) {
-                        val formatted = NaturalLanguageFormatter.format(part.text)
-                        if (formatted.length < part.text.length) {
-                            TraceLogger.log("Compress", "${tool.toolName}: ${part.text.length}c -> ${formatted.length}c")
-                            Log.i(TAG, "compress: ${tool.toolName} ${part.text.length} -> ${formatted.length}c")
-                            UIMessagePart.Text(text = formatted.ifBlank { Log.w(TAG, "compress: empty output for ${tool.toolName}, keeping original"); part.text })
-                        } else part
-                    } else part
-                }
-                tool.copy(output = compressedOutput)
-            }
-
             if (executedTools.isEmpty()) {
                 // No results to add (all tools were pending)
                 break
@@ -452,7 +434,7 @@ class GenerationHandler(
             val lastMessage = messages.last()
             val updatedParts = lastMessage.parts.map { part ->
                 if (part is UIMessagePart.Tool) {
-                    compressedTools.find { it.toolCallId == part.toolCallId } ?: part
+                    executedTools.find { it.toolCallId == part.toolCallId } ?: part
                 } else part
             }
             messages = messages.dropLast(1) + lastMessage.copy(parts = updatedParts)
@@ -598,22 +580,40 @@ class GenerationHandler(
             }
         )
         if (stream) {
-            providerImpl.streamText(
-                providerSetting = provider,
-                messages = internalMessages,
-                params = params
-            ).collect {
-                messages = messages.handleMessageChunk(chunk = it, model = model)
-                it.usage?.let { usage ->
-                    messages = messages.mapIndexed { index, message ->
-                        if (index == messages.lastIndex) {
-                            message.copy(usage = message.usage.merge(usage))
-                        } else {
-                            message
+            val sessionMid = DiagnosticLogger.startSession(
+                model = model.id,
+                messageCount = internalMessages.size,
+                toolsCount = tools.size,
+                estimatedTokens = (totalChars / 2.5).toInt(),
+            )
+            try {
+                providerImpl.streamText(
+                    providerSetting = provider,
+                    messages = internalMessages,
+                    params = params
+                ).collect {
+                    DiagnosticLogger.chunkReceived(
+                        it.choices?.sumOf { c -> (c.delta?.parts?.sumOf { p -> if (p is UIMessagePart.Text) p.text.length else 0 } ?: 0) }
+                            ?: 0
+                    )
+                    messages = messages.handleMessageChunk(chunk = it, model = model)
+                    it.usage?.let { usage ->
+                        messages = messages.mapIndexed { index, message ->
+                            if (index == messages.lastIndex) {
+                                message.copy(usage = message.usage.merge(usage))
+                            } else {
+                                message
+                            }
                         }
                     }
+                    onUpdateMessages(messages)
                 }
-                onUpdateMessages(messages)
+                DiagnosticLogger.sessionComplete()
+            } catch (e: Exception) {
+                DiagnosticLogger.sessionError(null, e.message)
+                Log.w(TAG, "Stream error: ${e.message}")
+                CallTracer.event("ERR", "stream_failure", "Stream failed: ${e.message}")
+                throw e
             }
         } else {
             val chunk = providerImpl.generateText(
