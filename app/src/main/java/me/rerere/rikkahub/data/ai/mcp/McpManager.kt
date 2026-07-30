@@ -139,7 +139,7 @@ class McpManager(
     fun getAllAvailableTools(): List<Triple<Uuid, String, McpTool>> {
         val settings = settingsStore.settingsFlow.value
         val assistant = settings.getCurrentAssistant()
-        val static = settings.mcpServers
+        return settings.mcpServers
             .filter {
                 it.commonOptions.enable && it.id in assistant.mcpServers
             }
@@ -148,17 +148,7 @@ class McpManager(
                     .filter { tool -> tool.enable }
                     .map { tool -> Triple(server.id, server.commonOptions.name, tool) }
             }
-        // 追加动态连接的工具
-        val dynamic = dynamicServerTools.flatMap { (serverId, nameMap) ->
-            nameMap.flatMap { (name, tools) ->
-                tools.map { tool -> Triple(serverId, name, tool) }
-            }
-        }
-        return static + dynamic
     }
-
-    // 动态连接的 MCP Server 工具 (不持久化, 会话级)
-    private val dynamicServerTools = mutableMapOf<Uuid, Map<String, List<McpTool>>>()
 
     suspend fun callTool(serverId: Uuid, toolName: String, args: JsonObject): List<UIMessagePart> {
         val entry = clients.entries.find { it.key.id == serverId }
@@ -242,13 +232,8 @@ class McpManager(
         }
 
         is McpServerConfig.StdioTransportServer -> {
-            // stdio: 进程由调用方管理 (workspace_shell 或 mcp_connect stdio)
-            throw UnsupportedOperationException(
-                "Stdio transport not supported via SDK. " +
-                "Use mcp_connect with transport=stdio to auto-launch, " +
-                "or manually start server and connect via streamable_http/sse."
-            )
-        }        }
+            throw UnsupportedOperationException("Stdio transport not supported via SDK. Use workspace_shell to start server, then connect via streamable_http.")
+        }
     }
 
     /** 合并用户自定义请求头与 OAuth Bearer 令牌。 */
@@ -326,21 +311,6 @@ class McpManager(
         }
         val serverTools = client.listTools().tools
         Log.i(TAG, "sync: tools: $serverTools")
-
-        // 动态连接的工具 — 存入内存映射 (绕过 settings 持久化延迟)
-        val mcpTools = serverTools.map { serverTool ->
-            McpTool(
-                name = serverTool.name,
-                description = serverTool.description,
-                enable = true,
-                inputSchema = serverTool.inputSchema.toSchema()
-            )
-        }
-        dynamicServerTools[config.id] = mapOf(
-            config.commonOptions.name to mcpTools
-        )
-        Log.i(TAG, "sync: dynamic tools registered — ${mcpTools.size} tools for ${config.commonOptions.name}")
-
         settingsStore.update { old ->
             old.copy(
                 mcpServers = old.mcpServers.map { serverConfig ->
