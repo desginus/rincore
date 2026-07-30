@@ -29,7 +29,9 @@ import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.ToolApprovalState
+import me.rerere.rikkahub.data.ai.compression.NaturalLanguageFormatter
 import me.rerere.ai.util.TraceLogger
+import me.rerere.rikkahub.data.ai.compression.ToolOutputCompressor
 import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
@@ -38,7 +40,6 @@ import me.rerere.rikkahub.data.files.FileFolders
 import java.io.File
 import me.rerere.rikkahub.data.ai.transformers.onGenerationFinish
 import me.rerere.rikkahub.data.ai.transformers.transforms
-import me.rerere.rikkahub.data.ai.diagnostics.DiagnosticLogger
 import me.rerere.rikkahub.ecosystem.tools.DynamicTools
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
@@ -144,12 +145,10 @@ class GenerationHandler(
                 null
             }
 
-            // 动态 MCP 工具 (每步从 McpManager 获取, 必须在 buildList 外部计算因 getMcpTools 是 suspend)
-            val mcpTools = DynamicTools.getMcpTools()
-
             val toolsInternal = if (useLayered) {
                 buildList {
                     Log.i(TAG, "generateInternal: build tools (layered)($assistant)")
+                    // 框架工具 — 始终可调用, 不走域系统
                     if (assistant?.enableMemory == true) {
                         val memoryAssistantId = if (assistant.useGlobalMemory) {
                             MemoryRepository.GLOBAL_MEMORY_ID
@@ -169,14 +168,18 @@ class GenerationHandler(
                             }
                         ).let(this::addAll)
                     }
+                    // 其他框架工具 (search/conversation/workspace) — 始终注入
                     addAll(frameworkTools.filter { it.name != "memory_tool" })
-                    addAll(mcpTools)
+                    // 动态 MCP 工具 (mcp_connect 运行时添加, 从 settings 读取)
+                    addAll(DynamicTools.getMcpTools())
+                    // invoke_tools 工具（始终包含, 只对用户域工具分类）
                     add(toolRouter.createInvokeToolsTool(domainTools, loadedDomains))
+                    // 已加载域的工具
                     for (domain in loadedDomains) {
                         addAll(toolRouter.getDomainTools(domain, domainTools))
                     }
                 }.distinctBy { it.name }
-                    .sortedBy { it.name }
+                    .sortedBy { it.name }  // 确定性排序 → 五家前缀匹配缓存稳定
             } else {
                 buildList {
                     Log.i(TAG, "generateInternal: build tools($assistant)")
@@ -200,7 +203,8 @@ class GenerationHandler(
                         ).let(this::addAll)
                     }
                     addAll(tools)
-                    addAll(mcpTools)
+                    // 动态 MCP 工具
+                    addAll(DynamicTools.getMcpTools())
                 }
             }
 
@@ -427,6 +431,23 @@ class GenerationHandler(
             }
 
             // Headroom: compress tool outputs at source (before storing in conversation history)
+            CallTracer.event("TOOL", "compress_start", "Compressing ${executedTools.size} executed tool outputs")
+            val compressedTools = executedTools.map { tool ->
+                if (!ToolOutputCompressor.isSearchTool(tool.toolName)) return@map tool
+                if (tool.output.isEmpty()) return@map tool
+                val compressedOutput = tool.output.map { part ->
+                    if (part is UIMessagePart.Text && part.text.length > 200) {
+                        val formatted = NaturalLanguageFormatter.format(part.text)
+                        if (formatted.length < part.text.length) {
+                            TraceLogger.log("Compress", "${tool.toolName}: ${part.text.length}c -> ${formatted.length}c")
+                            Log.i(TAG, "compress: ${tool.toolName} ${part.text.length} -> ${formatted.length}c")
+                            UIMessagePart.Text(text = formatted.ifBlank { Log.w(TAG, "compress: empty output for ${tool.toolName}, keeping original"); part.text })
+                        } else part
+                    } else part
+                }
+                tool.copy(output = compressedOutput)
+            }
+
             if (executedTools.isEmpty()) {
                 // No results to add (all tools were pending)
                 break
@@ -436,7 +457,7 @@ class GenerationHandler(
             val lastMessage = messages.last()
             val updatedParts = lastMessage.parts.map { part ->
                 if (part is UIMessagePart.Tool) {
-                    executedTools.find { it.toolCallId == part.toolCallId } ?: part
+                    compressedTools.find { it.toolCallId == part.toolCallId } ?: part
                 } else part
             }
             messages = messages.dropLast(1) + lastMessage.copy(parts = updatedParts)
@@ -582,40 +603,22 @@ class GenerationHandler(
             }
         )
         if (stream) {
-            val sessionMid = DiagnosticLogger.startSession(
-                model = model.id.toString(),
-                messageCount = internalMessages.size,
-                toolsCount = tools.size,
-                estimatedTokens = (totalChars / 2.5).toInt(),
-            )
-            try {
-                providerImpl.streamText(
-                    providerSetting = provider,
-                    messages = internalMessages,
-                    params = params
-                ).collect {
-                    DiagnosticLogger.chunkReceived(
-                        it.choices?.sumOf { c -> (c.delta?.parts?.sumOf { p -> if (p is UIMessagePart.Text) p.text.length else 0 } ?: 0) }
-                            ?: 0
-                    )
-                    messages = messages.handleMessageChunk(chunk = it, model = model)
-                    it.usage?.let { usage ->
-                        messages = messages.mapIndexed { index, message ->
-                            if (index == messages.lastIndex) {
-                                message.copy(usage = message.usage.merge(usage))
-                            } else {
-                                message
-                            }
+            providerImpl.streamText(
+                providerSetting = provider,
+                messages = internalMessages,
+                params = params
+            ).collect {
+                messages = messages.handleMessageChunk(chunk = it, model = model)
+                it.usage?.let { usage ->
+                    messages = messages.mapIndexed { index, message ->
+                        if (index == messages.lastIndex) {
+                            message.copy(usage = message.usage.merge(usage))
+                        } else {
+                            message
                         }
                     }
-                    onUpdateMessages(messages)
                 }
-                DiagnosticLogger.sessionComplete()
-            } catch (e: Exception) {
-                DiagnosticLogger.sessionError(null, e.message)
-                Log.w(TAG, "Stream error: ${e.message}")
-                CallTracer.event("ERR", "stream_failure", "Stream failed: ${e.message}")
-                throw e
+                onUpdateMessages(messages)
             }
         } else {
             val chunk = providerImpl.generateText(

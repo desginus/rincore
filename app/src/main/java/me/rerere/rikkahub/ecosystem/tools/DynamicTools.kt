@@ -42,9 +42,9 @@ object DynamicTools {
     }
 
     /** 动态 MCP 工具 — 每个 step 都会重新获取，确保 mcp_connect 后立即可用。 */
-    suspend fun getMcpTools(): List<Tool> {
+    fun getMcpTools(): List<Tool> {
         val mcp = mcpManager ?: return emptyList()
-        return mcp.getAllAvailableToolsWithDynamic().map { (serverId, serverName, tool) ->
+        return mcp.getAllAvailableTools().map { (serverId, serverName, tool) ->
             Tool(
                 name = "mcp__${sanitize(serverName)}__${sanitize(tool.name)}",
                 description = tool.description ?: "",

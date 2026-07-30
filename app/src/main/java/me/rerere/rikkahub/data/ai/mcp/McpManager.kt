@@ -136,37 +136,9 @@ class McpManager(
         return clients.entries.find { it.key.id == config.id }?.value
     }
 
-    private suspend fun getDynamicToolsForStep(): List<kotlin.Triple<java.util.UUID, String, McpTool>> {
-        return clients.entries
-            .filter { (config, _) ->
-                config.id !in settingsStore.settingsFlow.value.mcpServers.map { it.id }
-            }
-            .flatMap { (config, client) ->
-                try {
-                    if (client.transport == null) emptyList()
-                    else client.listTools().tools.map { tool ->
-                        kotlin.Triple(
-                            config.id,
-                            config.commonOptions.name,
-                            McpTool(
-                                name = tool.name,
-                                description = tool.description,
-                                enable = true,
-                                inputSchema = tool.inputSchema.toSchema(),
-                            )
-                        )
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "skip dynamic tools for ${config.commonOptions.name}: ${e.message}")
-                    emptyList()
-                }
-            }
-    }
-
     fun getAllAvailableTools(): List<Triple<Uuid, String, McpTool>> {
         val settings = settingsStore.settingsFlow.value
         val assistant = settings.getCurrentAssistant()
-        // 仅预集成服务器 (settings 中配置的, 不包含动态 — 动态走 getDynamicToolsForStep)
         return settings.mcpServers
             .filter {
                 it.commonOptions.enable && it.id in assistant.mcpServers
@@ -176,10 +148,6 @@ class McpManager(
                     .filter { tool -> tool.enable }
                     .map { tool -> Triple(server.id, server.commonOptions.name, tool) }
             }
-    }
-
-    suspend fun getAllAvailableToolsWithDynamic(): List<Triple<Uuid, String, McpTool>> {
-        return getAllAvailableTools() + getDynamicToolsForStep()
     }
 
     suspend fun callTool(serverId: Uuid, toolName: String, args: JsonObject): List<UIMessagePart> {
@@ -258,8 +226,13 @@ class McpManager(
                         config.resolveHeaders().forEach {
                             append(it.first, it.second)
                         }
+                    })
+                }
+            )
+        }
+    }
 
-                        /** 合并用户自定义请求头与 OAuth Bearer 令牌。 */
+    /** 合并用户自定义请求头与 OAuth Bearer 令牌。 */
     private fun McpServerConfig.resolveHeaders(): List<Pair<String, String>> {
         val base = commonOptions.headers
         val token = commonOptions.oauth?.takeIf { it.enabled }?.accessToken
@@ -334,43 +307,37 @@ class McpManager(
         }
         val serverTools = client.listTools().tools
         Log.i(TAG, "sync: tools: $serverTools")
-
-        // 构建工具列表
-        val resolvedTools = serverTools.map { serverTool ->
-            McpTool(
-                name = serverTool.name,
-                description = serverTool.description,
-                enable = true,
-                inputSchema = serverTool.inputSchema.toSchema(),
-            )
-        }
-
         settingsStore.update { old ->
             val existingIndex = old.mcpServers.indexOfFirst { it.id == config.id }
-            val updatedServers = if (existingIndex >= 0) {
+            val updatedServers: List<McpServerConfig>
+            if (existingIndex >= 0) {
                 // 更新已有配置
-                old.mcpServers.mapIndexed { i, serverConfig ->
+                updatedServers = old.mcpServers.mapIndexed { i, serverConfig ->
                     if (i != existingIndex) serverConfig
                     else serverConfig.clone(
-                        commonOptions = serverConfig.commonOptions.copy(tools = resolvedTools)
+                        commonOptions = serverConfig.commonOptions.copy(tools = tools)
                     )
                 }
             } else {
-                // 动态添加: 将 config 加入列表 (标记为启用)
-                val newConfig = config.clone(
-                    commonOptions = config.commonOptions.copy(tools = resolvedTools, enable = true)
+                // 动态添加: config 不在 settings 中, 追加
+                updatedServers = old.mcpServers + serverConfig.clone(
+                    commonOptions = common.copy(tools = tools, enable = true)
                 )
-                old.mcpServers + newConfig
+                // 同时将 config.id 加入当前 assistant 的白名单
+                val assistant = old.getCurrentAssistant()
+                if (config.id !in assistant.mcpServers) {
+                    val updatedAssistants = old.assistants.map { a ->
+                        if (a.id != assistant.id) a
+                        else a.copy(mcpServers = a.mcpServers + config.id)
+                    }
+                    return@update old.copy(
+                        mcpServers = updatedServers,
+                        assistants = updatedAssistants
+                    )
+                }
             }
             old.copy(mcpServers = updatedServers)
         }
-
-        // 更新 clients 中的 config (携带最新工具)
-        clients.remove(config)
-        clients.put(
-            config.clone(commonOptions = config.commonOptions.copy(tools = resolvedTools)),
-            client
-        )
 
         setStatus(config = config, status = McpStatus.Connected)
     }
