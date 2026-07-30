@@ -339,7 +339,6 @@ private fun McpServerItem(
                             when (item) {
                                 is McpServerConfig.SseTransportServer -> Text("SSE")
                                 is McpServerConfig.StreamableHTTPServer -> Text("Streamable HTTP")
-                                is McpServerConfig.StdioTransportServer -> Text("stdio")
                             }
                         }
                     }
@@ -519,9 +518,6 @@ private fun McpCommonOptionsConfigure(
                                 is McpServerConfig.StreamableHTTPServer -> config.copy(
                                     commonOptions = config.commonOptions.copy(enable = enabled)
                                 )
-                                is McpServerConfig.StdioTransportServer -> config.copy(
-                                    commonOptions = config.commonOptions.copy(enable = enabled)
-                                )
                             }
                         )
                     }
@@ -553,7 +549,6 @@ private fun McpCommonOptionsConfigure(
                             is McpServerConfig.StreamableHTTPServer -> config.copy(
                                 commonOptions = config.commonOptions.copy(name = name)
                             )
-
                             is McpServerConfig.StdioTransportServer -> config.copy(
                                 commonOptions = config.commonOptions.copy(name = name)
                             )
@@ -654,7 +649,7 @@ private fun McpCommonOptionsConfigure(
                 value = when (config) {
                     is McpServerConfig.SseTransportServer -> config.url
                     is McpServerConfig.StreamableHTTPServer -> config.url
-                    is McpServerConfig.StdioTransportServer -> config.command
+                                            is McpServerConfig.StdioTransportServer -> config.command
                 },
                 onValueChange = { url ->
                     update(
@@ -717,9 +712,6 @@ private fun McpCommonOptionsConfigure(
                                             )
 
                                             is McpServerConfig.StreamableHTTPServer -> config.copy(
-                                            is McpServerConfig.StdioTransportServer -> config.copy(
-                                                commonOptions = config.commonOptions.copy(headers = updatedHeaders)
-                                            )
                                                 commonOptions = config.commonOptions.copy(headers = updatedHeaders)
                                             )
                                         }
@@ -744,9 +736,6 @@ private fun McpCommonOptionsConfigure(
                                             )
 
                                             is McpServerConfig.StreamableHTTPServer -> config.copy(
-                                            is McpServerConfig.StdioTransportServer -> config.copy(
-                                                commonOptions = config.commonOptions.copy(headers = updatedHeaders)
-                                            )
                                                 commonOptions = config.commonOptions.copy(headers = updatedHeaders)
                                             )
                                         }
@@ -767,9 +756,6 @@ private fun McpCommonOptionsConfigure(
                                     )
 
                                     is McpServerConfig.StreamableHTTPServer -> config.copy(
-                                    is McpServerConfig.StdioTransportServer -> config.copy(
-                                        commonOptions = config.commonOptions.copy(headers = updatedHeaders)
-                                    )
                                         commonOptions = config.commonOptions.copy(headers = updatedHeaders)
                                     )
                                 }
@@ -794,9 +780,6 @@ private fun McpCommonOptionsConfigure(
                                 )
 
                                 is McpServerConfig.StreamableHTTPServer -> config.copy(
-                                is McpServerConfig.StdioTransportServer -> config.copy(
-                                    commonOptions = config.commonOptions.copy(headers = updatedHeaders)
-                                )
                                     commonOptions = config.commonOptions.copy(headers = updatedHeaders)
                                 )
                             }

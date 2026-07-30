@@ -252,10 +252,31 @@ class McpManager(
                 .redirectErrorStream(true)
                 .start()
             Log.i(TAG, "stdio: spawned process ${parts[0]}")
-            // 使用 MCP SDK 的 stdio transport
+            // MCP Kotlin SDK StdioClientTransport expects kotlinx.io Source/Sink.
+            // We bridge java streams via okio inline adapters.
+            val stdioSource = object : kotlinx.io.Source {
+                private val os = okio.Okio.source(process.inputStream)
+                override fun readAtMostTo(sink: kotlinx.io.Buffer, byteCount: Long): Long {
+                    val tmp = okio.Buffer()
+                    val n = os.read(tmp, byteCount)
+                    if (n > 0) sink.write(tmp.readByteArray(), 0, n.toInt())
+                    return n
+                }
+                override fun close() = os.close()
+            }
+            val stdioSink = object : kotlinx.io.Sink {
+                private val snk = okio.Okio.sink(process.outputStream)
+                override fun write(source: kotlinx.io.Buffer, byteCount: Long) {
+                    val tmp = okio.Buffer()
+                    tmp.write(source.readByteArray(), 0, byteCount.toInt())
+                    snk.write(tmp, byteCount)
+                }
+                override fun flush() = snk.flush()
+                override fun close() = snk.close()
+            }
             io.modelcontextprotocol.kotlin.sdk.client.StdioClientTransport(
-                input = process.inputStream.asSource(),
-                output = process.outputStream.asSink(),
+                input = stdioSource,
+                output = stdioSink,
             )
         }
     }
