@@ -245,7 +245,12 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
                     (t.message?.contains("stream was reset", ignoreCase = true) == true ||
                      t.message?.contains("protocol error", ignoreCase = true) == true ||
                      t.message?.contains("connection reset", ignoreCase = true) == true ||
-                     t.message?.contains("timeout", ignoreCase = true) == true)
+                     t.message?.contains("connection abort", ignoreCase = true) == true ||
+                     t.message?.contains("software caused", ignoreCase = true) == true ||
+                     t.message?.contains("timeout", ignoreCase = true) == true ||
+                     t.message?.contains("broken pipe", ignoreCase = true) == true ||
+                     t.message?.contains("connection closed", ignoreCase = true) == true ||
+                     t.message?.contains("canceled", ignoreCase = true) == true)
                 ) {
                     if (hasData) {
                         Log.w(TAG, "onFailure: stream interrupted (recoverable), closing with partial data")

@@ -829,9 +829,12 @@ class ChatCompletionsAPI(
                    msg.contains("protocol error", ignoreCase = true) ||
                    msg.contains("unexpected end of stream", ignoreCase = true) ||
                    msg.contains("connection reset", ignoreCase = true) ||
+                   msg.contains("connection abort", ignoreCase = true) ||
+                   msg.contains("software caused", ignoreCase = true) ||
                    msg.contains("timeout", ignoreCase = true) ||
                    msg.contains("broken pipe", ignoreCase = true) ||
-                   msg.contains("connection closed", ignoreCase = true)
+                   msg.contains("connection closed", ignoreCase = true) ||
+                   msg.contains("canceled", ignoreCase = true)
         }
     }
 }
