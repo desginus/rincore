@@ -254,8 +254,8 @@ class McpManager(
             Log.i(TAG, "stdio: spawned process ${parts[0]}")
             // 使用 MCP SDK 的 stdio transport
             io.modelcontextprotocol.kotlin.sdk.client.StdioClientTransport(
-                input = process.inputStream,
-                output = process.outputStream,
+                input = okio.Okio.source(process.inputStream),
+                output = okio.Okio.sink(process.outputStream),
             )
         }
     }

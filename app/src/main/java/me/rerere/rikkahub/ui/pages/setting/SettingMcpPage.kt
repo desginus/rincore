@@ -553,6 +553,10 @@ private fun McpCommonOptionsConfigure(
                             is McpServerConfig.StreamableHTTPServer -> config.copy(
                                 commonOptions = config.commonOptions.copy(name = name)
                             )
+
+                            is McpServerConfig.StdioTransportServer -> config.copy(
+                                commonOptions = config.commonOptions.copy(name = name)
+                            )
                         }
                     )
                 },
@@ -584,6 +588,7 @@ private fun McpCommonOptionsConfigure(
             val currentTypeIndex = when (config) {
                 is McpServerConfig.StreamableHTTPServer -> 0
                 is McpServerConfig.SseTransportServer -> 1
+                is McpServerConfig.StdioTransportServer -> 2
             }
 
             SingleChoiceSegmentedButtonRow(
@@ -601,6 +606,7 @@ private fun McpCommonOptionsConfigure(
                                         url = when (config) {
                                             is McpServerConfig.SseTransportServer -> config.url
                                             is McpServerConfig.StreamableHTTPServer -> config.url
+                                            is McpServerConfig.StdioTransportServer -> config.command
                                         }
                                     )
 
@@ -638,6 +644,7 @@ private fun McpCommonOptionsConfigure(
                     when (config) {
                         is McpServerConfig.SseTransportServer -> stringResource(R.string.setting_mcp_page_sse_url_desc)
                         is McpServerConfig.StreamableHTTPServer -> stringResource(R.string.setting_mcp_page_streamable_http_url_desc)
+                        is McpServerConfig.StdioTransportServer -> "Stdio process transport"
                     }
                 )
             }
@@ -646,12 +653,14 @@ private fun McpCommonOptionsConfigure(
                 value = when (config) {
                     is McpServerConfig.SseTransportServer -> config.url
                     is McpServerConfig.StreamableHTTPServer -> config.url
+                    is McpServerConfig.StdioTransportServer -> config.command
                 },
                 onValueChange = { url ->
                     update(
                         when (config) {
                             is McpServerConfig.SseTransportServer -> config.copy(url = url)
                             is McpServerConfig.StreamableHTTPServer -> config.copy(url = url)
+                            is McpServerConfig.StdioTransportServer -> config.copy(command = url)
                         }
                     )
                 },
@@ -662,6 +671,7 @@ private fun McpCommonOptionsConfigure(
                         when (config) {
                             is McpServerConfig.SseTransportServer -> stringResource(R.string.setting_mcp_page_sse_url_placeholder)
                             is McpServerConfig.StreamableHTTPServer -> stringResource(R.string.setting_mcp_page_streamable_http_url_placeholder)
+                            is McpServerConfig.StdioTransportServer -> "python3 server.py"
                         }
                     )
                 }
