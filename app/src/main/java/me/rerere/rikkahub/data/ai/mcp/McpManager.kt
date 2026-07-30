@@ -139,7 +139,8 @@ class McpManager(
     fun getAllAvailableTools(): List<Triple<Uuid, String, McpTool>> {
         val settings = settingsStore.settingsFlow.value
         val assistant = settings.getCurrentAssistant()
-        return settings.mcpServers
+        // 1. 预集成服务器 (settings 中配置的)
+        val configuredTools = settings.mcpServers
             .filter {
                 it.commonOptions.enable && it.id in assistant.mcpServers
             }
@@ -148,6 +149,33 @@ class McpManager(
                     .filter { tool -> tool.enable }
                     .map { tool -> Triple(server.id, server.commonOptions.name, tool) }
             }
+        // 2. 动态连接服务器 (mcp_connect 运行时添加的)
+        val dynamicTools = clients.entries
+            .filter { (config, _) ->
+                // 只包含不在 settings 中的动态服务器 (避免重复)
+                config.id !in settings.mcpServers.map { it.id }
+            }
+            .flatMap { (config, client) ->
+                try {
+                    if (client.transport == null) emptyList()
+                    else client.listTools().tools.map { tool ->
+                        Triple(
+                            config.id,
+                            config.commonOptions.name,
+                            McpTool(
+                                name = tool.name,
+                                description = tool.description,
+                                enable = true,
+                                inputSchema = tool.inputSchema.toSchema(),
+                            )
+                        )
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "getAllAvailableTools: failed to list tools for ${config.commonOptions.name}: ${e.message}")
+                    emptyList()
+                }
+            }
+        return configuredTools + dynamicTools
     }
 
     suspend fun callTool(serverId: Uuid, toolName: String, args: JsonObject): List<UIMessagePart> {
@@ -226,17 +254,8 @@ class McpManager(
                         config.resolveHeaders().forEach {
                             append(it.first, it.second)
                         }
-                    })
-                }
-            )
-        }
 
-        is McpServerConfig.StdioTransportServer -> {
-            throw UnsupportedOperationException("Stdio transport not supported via SDK. Use workspace_shell to start server, then connect via streamable_http.")
-        }
-    }
-
-    /** 合并用户自定义请求头与 OAuth Bearer 令牌。 */
+                        /** 合并用户自定义请求头与 OAuth Bearer 令牌。 */
     private fun McpServerConfig.resolveHeaders(): List<Pair<String, String>> {
         val base = commonOptions.headers
         val token = commonOptions.oauth?.takeIf { it.enabled }?.accessToken
@@ -311,56 +330,43 @@ class McpManager(
         }
         val serverTools = client.listTools().tools
         Log.i(TAG, "sync: tools: $serverTools")
-        settingsStore.update { old ->
-            old.copy(
-                mcpServers = old.mcpServers.map { serverConfig ->
-                    if (serverConfig.id != config.id) return@map serverConfig
-                    val common = serverConfig.commonOptions
-                    val tools = common.tools.toMutableList()
 
-                    // 基于server对比
-                    serverTools.forEach { serverTool ->
-                        val tool = tools.find { it.name == serverTool.name }
-                        if (tool == null) {
-                            tools.add(
-                                McpTool(
-                                    name = serverTool.name,
-                                    description = serverTool.description,
-                                    enable = true,
-                                    inputSchema = serverTool.inputSchema.toSchema()
-                                )
-                            )
-                        } else {
-                            val index = tools.indexOf(tool)
-                            tools[index] = tool.copy(
-                                description = serverTool.description,
-                                inputSchema = serverTool.inputSchema.toSchema()
-                            )
-                        }
-                    }
-
-                    // 删除不在server内的
-                    tools.removeIf { tool -> serverTools.none { it.name == tool.name } }
-
-                    // 更新clients
-                    clients.remove(config)
-                    clients.put(
-                        config.clone(
-                            commonOptions = common.copy(
-                                tools = tools
-                            )
-                        ), client
-                    )
-
-                    // 返回新的serverConfig，更新到settings store
-                    serverConfig.clone(
-                        commonOptions = common.copy(
-                            tools = tools
-                        )
-                    )
-                }
+        // 构建工具列表
+        val resolvedTools = serverTools.map { serverTool ->
+            McpTool(
+                name = serverTool.name,
+                description = serverTool.description,
+                enable = true,
+                inputSchema = serverTool.inputSchema.toSchema(),
             )
         }
+
+        settingsStore.update { old ->
+            val existingIndex = old.mcpServers.indexOfFirst { it.id == config.id }
+            val updatedServers = if (existingIndex >= 0) {
+                // 更新已有配置
+                old.mcpServers.mapIndexed { i, serverConfig ->
+                    if (i != existingIndex) serverConfig
+                    else serverConfig.clone(
+                        commonOptions = serverConfig.commonOptions.copy(tools = resolvedTools)
+                    )
+                }
+            } else {
+                // 动态添加: 将 config 加入列表 (标记为启用)
+                val newConfig = config.clone(
+                    commonOptions = config.commonOptions.copy(tools = resolvedTools, enable = true)
+                )
+                old.mcpServers + newConfig
+            }
+            old.copy(mcpServers = updatedServers)
+        }
+
+        // 更新 clients 中的 config (携带最新工具)
+        clients.remove(config)
+        clients.put(
+            config.clone(commonOptions = config.commonOptions.copy(tools = resolvedTools)),
+            client
+        )
 
         setStatus(config = config, status = McpStatus.Connected)
     }
