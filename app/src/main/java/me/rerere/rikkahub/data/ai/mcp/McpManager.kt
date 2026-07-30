@@ -242,43 +242,13 @@ class McpManager(
         }
 
         is McpServerConfig.StdioTransportServer -> {
-            // stdio: 启动子进程作为 MCP 服务器
-            val processCmd = if (config.command.isNotBlank()) config.command else config.url
-            if (processCmd.isBlank()) {
-                throw IllegalStateException("stdio transport requires command or url")
-            }
-            val parts = processCmd.split("\\s+".toRegex())
-            val process = ProcessBuilder(parts)
-                .redirectErrorStream(true)
-                .start()
-            Log.i(TAG, "stdio: spawned process ${parts[0]}")
-            // MCP Kotlin SDK StdioClientTransport expects kotlinx.io Source/Sink.
-            // We bridge java streams via okio inline adapters.
-            val stdioSource = object : kotlinx.io.Source {
-                private val os = okio.Okio.source(process.inputStream)
-                override fun readAtMostTo(sink: kotlinx.io.Buffer, byteCount: Long): Long {
-                    val tmp = okio.Buffer()
-                    val n = os.read(tmp, byteCount)
-                    if (n > 0) sink.write(tmp.readByteArray(), 0, n.toInt())
-                    return n
-                }
-                override fun close() = os.close()
-            }
-            val stdioSink = object : kotlinx.io.Sink {
-                private val snk = okio.Okio.sink(process.outputStream)
-                override fun write(source: kotlinx.io.Buffer, byteCount: Long) {
-                    val tmp = okio.Buffer()
-                    tmp.write(source.readByteArray(), 0, byteCount.toInt())
-                    snk.write(tmp, byteCount)
-                }
-                override fun flush() = snk.flush()
-                override fun close() = snk.close()
-            }
-            io.modelcontextprotocol.kotlin.sdk.client.StdioClientTransport(
-                input = stdioSource,
-                output = stdioSink,
+            // stdio: 进程由调用方管理 (workspace_shell 或 mcp_connect stdio)
+            throw UnsupportedOperationException(
+                "Stdio transport not supported via SDK. " +
+                "Use mcp_connect with transport=stdio to auto-launch, " +
+                "or manually start server and connect via streamable_http/sse."
             )
-        }
+        }        }
     }
 
     /** 合并用户自定义请求头与 OAuth Bearer 令牌。 */
