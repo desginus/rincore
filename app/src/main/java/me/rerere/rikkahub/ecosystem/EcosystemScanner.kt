@@ -74,6 +74,8 @@ object EcosystemScanner {
         val skillsDir = File(rootDir, "skills")
         if (skillsDir.isDirectory) {
             me.rerere.rikkahub.openclaw.ClawSkillLoader.scanDirectory(skillsDir).forEach { skill ->
+                // 提取 SKILL.md frontmatter 中的 slash_commands
+                val slashCommands = extractSlashCommands(skill.body)
                 val instruction = EcosystemInstruction(
                     source = EcosystemSource.OPENCLAW,
                     fileName = "SKILL.md (${skill.name})",
@@ -89,6 +91,7 @@ object EcosystemScanner {
                     metadata = mapOf(
                         "skillName" to skill.name,
                         "version" to skill.version,
+                        "slash_commands" to slashCommands,
                     ),
                 )
                 results.add(instruction)
@@ -154,5 +157,22 @@ object EcosystemScanner {
      */
     fun scanAll(rootDirs: List<File>): List<EcosystemInstruction> {
         return rootDirs.flatMap { scan(it) }
+    }
+
+    /**
+     * 从 SKILL.md body 提取 frontmatter 中的 slash_commands。
+     * 格式: slash_commands: [/cmd1, /cmd2]
+     */
+    private fun extractSlashCommands(body: String): String {
+        // YAML frontmatter 在第一组 --- 之间
+        val frontmatterMatch = Regex("---\\s*\\n([\\s\\S]*?)\\n---").find(body)
+        if (frontmatterMatch == null) return ""
+        val frontmatter = frontmatterMatch.groupValues[1]
+        val slashLine = frontmatter.lines().firstOrNull {
+            it.trimStart().startsWith("slash_commands") || it.trimStart().startsWith("commands")
+        } ?: return ""
+        // 提取 [...] 中的内容
+        val cmds = Regex("\\[([^\\]]+)\\]").find(slashLine)?.groupValues?.get(1) ?: return ""
+        return cmds.replace("\"", "").replace("'", "").trim()
     }
 }

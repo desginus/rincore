@@ -112,8 +112,9 @@ class GenerationHandler(
             "invoke_tools",
             "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file",
             "manage_domain", "list_domains", "move_tool_to_domain",
-            // 生态系统动态工具 — 不属于任何域, 始终可用
-            "mcp_connect", "clawhub_install", "list_ecosystem_tools",
+            // 生态系统动态工具
+            "mcp_connect", "clawhub_install", "clawhub_search", "plugin_install", "skills_lock",
+            "list_ecosystem_tools",
         )
         val domainTools = tools.filter { it.name !in frameworkToolSet }
         val frameworkTools = tools.filter { it.name in frameworkToolSet }

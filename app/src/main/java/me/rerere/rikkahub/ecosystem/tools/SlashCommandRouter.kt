@@ -49,18 +49,26 @@ object SlashCommandRouter : InputMessageTransformer {
     ): EcosystemInstruction? {
         if (instructions.isEmpty()) return null
 
+        // 1. 精确匹配 metadata.slash_commands 列表
+        instructions.firstOrNull { inst ->
+            val slashCmds = inst.metadata["slash_commands"]
+            slashCmds != null && slashCmds.split(",").any { it.trim().lowercase() == command.lowercase() }
+        }?.let { return it }
+
+        // 2. 精确匹配文件名 (去扩展名)
         instructions.firstOrNull { inst ->
             val name = inst.fileName
-                .removeSuffix(".md")
-                .removeSuffix(".json")
+                .removeSuffix(".md").removeSuffix(".json")
                 .lowercase()
             name == command.lowercase()
         }?.let { return it }
 
+        // 3. 模糊匹配: command 包含在文件名中
         instructions.firstOrNull { inst ->
             inst.fileName.lowercase().contains(command.lowercase())
         }?.let { return it }
 
+        // 4. skill name 匹配 (来自 OpenClaw SKILL.md metadata)
         instructions.firstOrNull { inst ->
             inst.metadata["skillName"]?.lowercase() == command.lowercase()
         }?.let { return it }
