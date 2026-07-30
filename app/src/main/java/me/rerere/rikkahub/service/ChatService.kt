@@ -574,7 +574,9 @@ class ChatService(
                     // 多生态系统指令工具
                     addAll(me.rerere.rikkahub.ecosystem.EcosystemManager.getEnabledTools())
                     // 动态工具 (MCP 连接 / Marketplace 安装)
-                    addAll(me.rerere.rikkahub.ecosystem.tools.DynamicTools.all())
+                    val dynTools = me.rerere.rikkahub.ecosystem.tools.DynamicTools.all()
+                    addAll(dynTools)
+                    Log.i("ChatService", "buildTools: ${dynTools.size} dynamic tools added")
                     if (assistant.enabledSkills.isNotEmpty()) {
                         addAll(
                             createSkillTools(

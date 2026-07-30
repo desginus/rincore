@@ -118,6 +118,8 @@ class GenerationHandler(
         )
         val domainTools = tools.filter { it.name !in frameworkToolSet }
         val frameworkTools = tools.filter { it.name in frameworkToolSet }
+        Log.i(TAG, "frameworkToolSet(${frameworkToolSet.size}): ${frameworkToolSet.sorted()}")
+        Log.i(TAG, "frameworkTools found: ${frameworkTools.map { it.name }.sorted()}")
 
         // Skill 已拆分为独立工具 (skill_<name>)，无需集中提取 skillListText
 

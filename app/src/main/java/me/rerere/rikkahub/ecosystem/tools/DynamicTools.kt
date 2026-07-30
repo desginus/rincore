@@ -15,10 +15,12 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.zip.ZipInputStream
+import android.util.Log
 import kotlin.text.Charsets
 import kotlin.uuid.Uuid
 
 object DynamicTools {
+    private const val TAG = "DynamicTools"
     private var mcpManager: McpManager? = null
     private var ecosystemWorkspaceRoot: String = ""
 
@@ -27,13 +29,17 @@ object DynamicTools {
         ecosystemWorkspaceRoot = workspaceRoot
     }
 
-    fun all(): List<Tool> = listOf(
-        createMcpConnectTool(),
-        createClawhubInstallTool(),
-        createClawhubSearchTool(),
-        createPluginInstallTool(),
-        createSkillsLockTool(),
-    )
+    fun all(): List<Tool> {
+        val tools = listOf(
+            createMcpConnectTool(),
+            createClawhubInstallTool(),
+            createClawhubSearchTool(),
+            createPluginInstallTool(),
+            createSkillsLockTool(),
+        )
+        Log.i(TAG, "DynamicTools.all() → ${tools.size} tools: ${tools.joinToString { it.name }}")
+        return tools
+    }
 
     // ═══ mcp_connect — P0 MCP 动态连接 ═══════════════════════
 
