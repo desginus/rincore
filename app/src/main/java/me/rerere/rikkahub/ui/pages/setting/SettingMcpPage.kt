@@ -339,6 +339,7 @@ private fun McpServerItem(
                             when (item) {
                                 is McpServerConfig.SseTransportServer -> Text("SSE")
                                 is McpServerConfig.StreamableHTTPServer -> Text("Streamable HTTP")
+                                is McpServerConfig.StdioTransportServer -> Text("stdio")
                             }
                         }
                     }
@@ -516,6 +517,9 @@ private fun McpCommonOptionsConfigure(
                                 )
 
                                 is McpServerConfig.StreamableHTTPServer -> config.copy(
+                                    commonOptions = config.commonOptions.copy(enable = enabled)
+                                )
+                                is McpServerConfig.StdioTransportServer -> config.copy(
                                     commonOptions = config.commonOptions.copy(enable = enabled)
                                 )
                             }

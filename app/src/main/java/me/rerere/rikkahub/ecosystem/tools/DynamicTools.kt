@@ -62,9 +62,16 @@ object DynamicTools {
                     "stdio" -> {
                         val command = obj["command"]?.jsonPrimitive?.content
                             ?: return@Tool listOf(UIMessagePart.Text("stdio mode requires: command"))
+                        val config = McpServerConfig.StdioTransportServer(
+                            id = Uuid.random(),
+                            commonOptions = McpCommonOptions(name = name),
+                            command = command,
+                        )
+                        mcp.addClient(config)
                         listOf(UIMessagePart.Text(
-                            "stdio MCP: launch server with:\n  $command &\n" +
-                            "Then connect via workspace_shell or streamable_http."
+                            "MCP server (stdio) spawned: $name\n" +
+                            "Command: $command\n" +
+                            "Process managed by RinCore. Tools available next step."
                         ))
                     }
                     else -> {

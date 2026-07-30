@@ -139,7 +139,7 @@ class McpManager(
     fun getAllAvailableTools(): List<Triple<Uuid, String, McpTool>> {
         val settings = settingsStore.settingsFlow.value
         val assistant = settings.getCurrentAssistant()
-        return settings.mcpServers
+        val static = settings.mcpServers
             .filter {
                 it.commonOptions.enable && it.id in assistant.mcpServers
             }
@@ -148,7 +148,17 @@ class McpManager(
                     .filter { tool -> tool.enable }
                     .map { tool -> Triple(server.id, server.commonOptions.name, tool) }
             }
+        // 追加动态连接的工具
+        val dynamic = dynamicServerTools.flatMap { (serverId, entry) ->
+            entry.value.map { tool ->
+                Triple(serverId, entry.key, tool)
+            }
+        }
+        return static + dynamic
     }
+
+    // 动态连接的 MCP Server 工具 (不持久化, 会话级)
+    private val dynamicServerTools = mutableMapOf<Uuid, Map<String, List<McpTool>>>()
 
     suspend fun callTool(serverId: Uuid, toolName: String, args: JsonObject): List<UIMessagePart> {
         val entry = clients.entries.find { it.key.id == serverId }
@@ -230,6 +240,24 @@ class McpManager(
                 }
             )
         }
+
+        is McpServerConfig.StdioTransportServer -> {
+            // stdio: 启动子进程作为 MCP 服务器
+            val processCmd = if (config.command.isNotBlank()) config.command else config.url
+            if (processCmd.isBlank()) {
+                throw IllegalStateException("stdio transport requires command or url")
+            }
+            val parts = processCmd.split("\\s+".toRegex())
+            val process = ProcessBuilder(parts)
+                .redirectErrorStream(true)
+                .start()
+            Log.i(TAG, "stdio: spawned process ${parts[0]} (pid=${process.pid()})")
+            // 使用 MCP SDK 的 stdio transport
+            io.modelcontextprotocol.kotlin.sdk.client.StdioClientTransport(
+                input = process.inputStream,
+                output = process.outputStream,
+            )
+        }
     }
 
     /** 合并用户自定义请求头与 OAuth Bearer 令牌。 */
@@ -307,6 +335,21 @@ class McpManager(
         }
         val serverTools = client.listTools().tools
         Log.i(TAG, "sync: tools: $serverTools")
+
+        // 动态连接的工具 — 存入内存映射 (绕过 settings 持久化延迟)
+        val mcpTools = serverTools.map { serverTool ->
+            McpTool(
+                name = serverTool.name,
+                description = serverTool.description,
+                enable = true,
+                inputSchema = serverTool.inputSchema.toSchema()
+            )
+        }
+        dynamicServerTools[config.id] = mapOf(
+            config.commonOptions.name to mcpTools
+        )
+        Log.i(TAG, "sync: dynamic tools registered — ${mcpTools.size} tools for ${config.commonOptions.name}")
+
         settingsStore.update { old ->
             old.copy(
                 mcpServers = old.mcpServers.map { serverConfig ->
