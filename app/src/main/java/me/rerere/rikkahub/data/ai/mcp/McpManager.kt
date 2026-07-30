@@ -149,9 +149,9 @@ class McpManager(
                     .map { tool -> Triple(server.id, server.commonOptions.name, tool) }
             }
         // 追加动态连接的工具
-        val dynamic = dynamicServerTools.flatMap { (serverId, entry) ->
-            entry.value.map { tool ->
-                Triple(serverId, entry.key, tool)
+        val dynamic = dynamicServerTools.flatMap { (serverId, nameMap) ->
+            nameMap.flatMap { (name, tools) ->
+                tools.map { tool -> Triple(serverId, name, tool) }
             }
         }
         return static + dynamic
@@ -251,7 +251,7 @@ class McpManager(
             val process = ProcessBuilder(parts)
                 .redirectErrorStream(true)
                 .start()
-            Log.i(TAG, "stdio: spawned process ${parts[0]} (pid=${process.pid()})")
+            Log.i(TAG, "stdio: spawned process ${parts[0]}")
             // 使用 MCP SDK 的 stdio transport
             io.modelcontextprotocol.kotlin.sdk.client.StdioClientTransport(
                 input = process.inputStream,
