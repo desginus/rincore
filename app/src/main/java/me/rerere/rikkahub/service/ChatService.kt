@@ -317,6 +317,13 @@ class ChatService(
         if (content.isEmptyInputMessage()) return
 
         val session = getOrCreateSession(conversationId)
+        // Hook Engine: onMessage 事件
+        me.rerere.rikkahub.ecosystem.plugin.HookEngine.dispatch(
+            me.rerere.rikkahub.ecosystem.plugin.HookEngine.HookEvent(
+                type = "onMessage",
+                payload = mapOf("conversationId" to conversationId.toString()),
+            )
+        )
         val previousJob = session.getJob()
         previousJob?.cancel()
 

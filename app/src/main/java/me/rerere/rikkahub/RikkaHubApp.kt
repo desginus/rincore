@@ -102,6 +102,14 @@ class RikkaHubApp : Application() {
         me.rerere.rikkahub.ecosystem.EcosystemManager.initialize(this)
         // 插件管理器
         me.rerere.rikkahub.ecosystem.plugin.PluginManager.initialize(this)
+        // Hooks 执行引擎
+        me.rerere.rikkahub.ecosystem.plugin.HookEngine.refresh(
+            me.rerere.rikkahub.ecosystem.plugin.PluginManager.getSkillRoots().map { it.parentFile!! }
+        )
+        // Agent 注册表
+        me.rerere.rikkahub.ecosystem.plugin.AgentRegistry.loadFromDir(
+            this.filesDir.resolve("ecosystem")
+        )
 
         // Composer.setDiagnosticStackTraceMode(ComposeStackTraceMode.Auto)
     }
