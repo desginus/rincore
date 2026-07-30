@@ -581,7 +581,7 @@ class GenerationHandler(
         )
         if (stream) {
             val sessionMid = DiagnosticLogger.startSession(
-                model = model.id,
+                model = model.id.toString(),
                 messageCount = internalMessages.size,
                 toolsCount = tools.size,
                 estimatedTokens = (totalChars / 2.5).toInt(),
