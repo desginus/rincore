@@ -229,6 +229,9 @@ class McpManager(
                     })
                 }
             )
+
+            is McpServerConfig.StdioTransportServer ->
+                throw UnsupportedOperationException("Stdio not supported. Start server with workspace_shell, then mcp_connect via streamable_http.")
         }
     }
 
@@ -307,37 +310,49 @@ class McpManager(
         }
         val serverTools = client.listTools().tools
         Log.i(TAG, "sync: tools: $serverTools")
+
+        // 从 MCP 服务器返回构建工具列表
+        val resolvedTools = serverTools.map { st ->
+            McpTool(
+                name = st.name,
+                description = st.description,
+                enable = true,
+                inputSchema = st.inputSchema.toSchema(),
+            )
+        }
+
         settingsStore.update { old ->
             val existingIndex = old.mcpServers.indexOfFirst { it.id == config.id }
-            val updatedServers: List<McpServerConfig>
             if (existingIndex >= 0) {
                 // 更新已有配置
-                updatedServers = old.mcpServers.mapIndexed { i, serverConfig ->
-                    if (i != existingIndex) serverConfig
-                    else serverConfig.clone(
-                        commonOptions = serverConfig.commonOptions.copy(tools = tools)
-                    )
-                }
+                old.copy(mcpServers = old.mcpServers.mapIndexed { i, sc ->
+                    if (i != existingIndex) sc
+                    else sc.clone(commonOptions = sc.commonOptions.copy(tools = resolvedTools))
+                })
             } else {
-                // 动态添加: config 不在 settings 中, 追加
-                updatedServers = old.mcpServers + serverConfig.clone(
-                    commonOptions = common.copy(tools = tools, enable = true)
+                // 动态添加: config + tools 写入 settings
+                val newConfig = config.clone(
+                    commonOptions = config.commonOptions.copy(tools = resolvedTools, enable = true)
                 )
-                // 同时将 config.id 加入当前 assistant 的白名单
+                val newServers = old.mcpServers + newConfig
+                // 同时将 config.id 加入当前 assistant 白名单
                 val assistant = old.getCurrentAssistant()
-                if (config.id !in assistant.mcpServers) {
-                    val updatedAssistants = old.assistants.map { a ->
+                val newAssistants = if (config.id !in assistant.mcpServers) {
+                    old.assistants.map { a ->
                         if (a.id != assistant.id) a
                         else a.copy(mcpServers = a.mcpServers + config.id)
                     }
-                    return@update old.copy(
-                        mcpServers = updatedServers,
-                        assistants = updatedAssistants
-                    )
-                }
+                } else old.assistants
+                old.copy(mcpServers = newServers, assistants = newAssistants)
             }
-            old.copy(mcpServers = updatedServers)
         }
+
+        // 更新 clients 中的 config (携带最新工具)
+        clients.remove(config)
+        clients.put(
+            config.clone(commonOptions = config.commonOptions.copy(tools = resolvedTools)),
+            client
+        )
 
         setStatus(config = config, status = McpStatus.Connected)
     }
