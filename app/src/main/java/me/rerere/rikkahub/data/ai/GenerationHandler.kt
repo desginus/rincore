@@ -39,6 +39,7 @@ import java.io.File
 import me.rerere.rikkahub.data.ai.transformers.onGenerationFinish
 import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.data.ai.diagnostics.DiagnosticLogger
+import me.rerere.rikkahub.ecosystem.tools.DynamicTools
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
 import me.rerere.rikkahub.data.ai.tools.routing.ToolRouter
@@ -168,6 +169,8 @@ class GenerationHandler(
                     }
                     // 其他框架工具 (search/conversation/workspace) — 始终注入
                     addAll(frameworkTools.filter { it.name != "memory_tool" })
+                    // 动态 MCP 工具 (mcp_connect 后实时注入)
+                    addAll(DynamicTools.getMcpTools())
                     // invoke_tools 工具（始终包含, 只对用户域工具分类）
                     add(toolRouter.createInvokeToolsTool(domainTools, loadedDomains))
                     // 已加载域的工具
@@ -199,6 +202,8 @@ class GenerationHandler(
                         ).let(this::addAll)
                     }
                     addAll(tools)
+                    // 动态 MCP 工具
+                    addAll(DynamicTools.getMcpTools())
                 }
             }
 

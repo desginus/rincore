@@ -41,6 +41,26 @@ object DynamicTools {
         return tools
     }
 
+    /** 动态 MCP 工具 — 每个 step 都会重新获取，确保 mcp_connect 后立即可用。 */
+    fun getMcpTools(): List<Tool> {
+        val mcp = mcpManager ?: return emptyList()
+        return mcp.getAllAvailableTools().map { (serverId, serverName, tool) ->
+            Tool(
+                name = "mcp__${sanitize(serverName)}__${sanitize(tool.name)}",
+                description = tool.description ?: "",
+                parameters = { tool.inputSchema },
+                needsApproval = { tool.needsApproval },
+                execute = { input ->
+                    mcp.callTool(serverId, tool.name, if (input is kotlinx.serialization.json.JsonObject) input else kotlinx.serialization.json.JsonObject(emptyMap()))
+                },
+            )
+        }
+    }
+
+    private fun sanitize(name: String): String {
+        return name.lowercase().replace(Regex("[^a-z0-9_]"), "_").take(40)
+    }
+
     // ═══ mcp_connect — P0 MCP 动态连接 ═══════════════════════
 
     private fun createMcpConnectTool(): Tool = Tool(
