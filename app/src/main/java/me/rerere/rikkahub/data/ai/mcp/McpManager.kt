@@ -136,30 +136,16 @@ class McpManager(
         return clients.entries.find { it.key.id == config.id }?.value
     }
 
-    fun getAllAvailableTools(): List<Triple<Uuid, String, McpTool>> {
-        val settings = settingsStore.settingsFlow.value
-        val assistant = settings.getCurrentAssistant()
-        // 1. 预集成服务器 (settings 中配置的)
-        val configuredTools = settings.mcpServers
-            .filter {
-                it.commonOptions.enable && it.id in assistant.mcpServers
-            }
-            .flatMap { server ->
-                server.commonOptions.tools
-                    .filter { tool -> tool.enable }
-                    .map { tool -> Triple(server.id, server.commonOptions.name, tool) }
-            }
-        // 2. 动态连接服务器 (mcp_connect 运行时添加的)
-        val dynamicTools = clients.entries
+    private suspend fun getDynamicToolsForStep(): List<kotlin.Triple<java.util.UUID, String, McpTool>> {
+        return clients.entries
             .filter { (config, _) ->
-                // 只包含不在 settings 中的动态服务器 (避免重复)
-                config.id !in settings.mcpServers.map { it.id }
+                config.id !in settingsStore.settingsFlow.value.mcpServers.map { it.id }
             }
             .flatMap { (config, client) ->
                 try {
                     if (client.transport == null) emptyList()
                     else client.listTools().tools.map { tool ->
-                        Triple(
+                        kotlin.Triple(
                             config.id,
                             config.commonOptions.name,
                             McpTool(
@@ -171,11 +157,29 @@ class McpManager(
                         )
                     }
                 } catch (e: Exception) {
-                    Log.w(TAG, "getAllAvailableTools: failed to list tools for ${config.commonOptions.name}: ${e.message}")
+                    Log.w(TAG, "skip dynamic tools for ${config.commonOptions.name}: ${e.message}")
                     emptyList()
                 }
             }
-        return configuredTools + dynamicTools
+    }
+
+    fun getAllAvailableTools(): List<Triple<Uuid, String, McpTool>> {
+        val settings = settingsStore.settingsFlow.value
+        val assistant = settings.getCurrentAssistant()
+        // 仅预集成服务器 (settings 中配置的, 不包含动态 — 动态走 getDynamicToolsForStep)
+        return settings.mcpServers
+            .filter {
+                it.commonOptions.enable && it.id in assistant.mcpServers
+            }
+            .flatMap { server ->
+                server.commonOptions.tools
+                    .filter { tool -> tool.enable }
+                    .map { tool -> Triple(server.id, server.commonOptions.name, tool) }
+            }
+    }
+
+    suspend fun getAllAvailableToolsWithDynamic(): List<Triple<Uuid, String, McpTool>> {
+        return getAllAvailableTools() + getDynamicToolsForStep()
     }
 
     suspend fun callTool(serverId: Uuid, toolName: String, args: JsonObject): List<UIMessagePart> {
