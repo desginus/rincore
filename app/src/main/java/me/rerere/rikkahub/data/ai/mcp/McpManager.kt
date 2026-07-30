@@ -229,10 +229,10 @@ class McpManager(
                     })
                 }
             )
-
-            is McpServerConfig.StdioTransportServer ->
-                throw UnsupportedOperationException("Stdio not supported. Start server with workspace_shell, then mcp_connect via streamable_http.")
         }
+
+        is McpServerConfig.StdioTransportServer ->
+            throw UnsupportedOperationException("Stdio not supported. Use workspace_shell + mcp_connect via streamable_http.")
     }
 
     /** 合并用户自定义请求头与 OAuth Bearer 令牌。 */
