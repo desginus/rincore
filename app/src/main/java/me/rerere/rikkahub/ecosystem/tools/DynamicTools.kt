@@ -277,7 +277,7 @@ object DynamicTools {
 
     // ═══ 内部实现 ════════════════════════════════════════════
 
-    private fun installFromUrl(url: String): List<UIMessagePart> {
+    private suspend fun installFromUrl(url: String): List<UIMessagePart> {
         val result = fetchUrlAsBytes(url) ?: return listOf(UIMessagePart.Text("Download failed"))
         val (content, isZip) = result
 
@@ -294,7 +294,7 @@ object DynamicTools {
         return listOf(UIMessagePart.Text("Installed: $skillName\nPath: ${skillDir.absolutePath}"))
     }
 
-    private fun installZipContent(zipBytes: ByteArray, name: String): List<UIMessagePart> {
+    private suspend fun installZipContent(zipBytes: ByteArray, name: String): List<UIMessagePart> {
         val targetDir = File(ecosystemWorkspaceRoot, "skills/$name")
         targetDir.mkdirs()
 
@@ -349,7 +349,7 @@ object DynamicTools {
         return listOf(UIMessagePart.Text(msg))
     }
 
-    private fun installFromClawHub(slug: String): List<UIMessagePart> {
+    private suspend fun installFromClawHub(slug: String): List<UIMessagePart> {
         val (owner, skillSlug) = if (slug.startsWith("@")) {
             val parts = slug.removePrefix("@").split("/", limit = 2)
             Pair(parts.getOrNull(0) ?: "", parts.getOrNull(1) ?: parts.getOrNull(0) ?: "")
@@ -387,7 +387,7 @@ object DynamicTools {
         ))
     }
 
-    private fun installFromClawHubSlug(slug: String): List<UIMessagePart> {
+    private suspend fun installFromClawHubSlug(slug: String): List<UIMessagePart> {
         return installFromClawHub(slug)
     }
 
