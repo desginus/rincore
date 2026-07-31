@@ -191,13 +191,14 @@ private fun deleteDomainTool(settingsStore: SettingsStore) = Tool(
         val settings = settingsStore.settingsFlow.value
         val removedSet = settings.removedBuiltinDomains
         val hiddenSet = settings.hiddenDomains
-        // 与 Prompt buildDomainTree 过滤一致: 已删除/已隐藏的域不显示
+        // 与 buildDomainTree 过滤一致: 按根域过滤
         val domains = settings.customDomains.filter {
-            it.name !in removedSet && it.name !in hiddenSet &&
+            val root = it.name.split("/").first()
+            root !in removedSet && root !in hiddenSet &&
             (it.parent == null || it.parent!!.split("/").first() !in removedSet && it.parent!!.split("/").first() !in hiddenSet)
         }
         val builtin = me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.map { it.label }
-            .filter { it !in hiddenSet && it !in removedSet }
+            .filter { it.split("/").first() !in hiddenSet && it.split("/").first() !in removedSet }
         
         val result = buildString {
             appendLine("内置域 (${builtin.size}个):")

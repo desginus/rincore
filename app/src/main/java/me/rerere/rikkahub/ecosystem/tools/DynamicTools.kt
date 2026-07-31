@@ -58,7 +58,14 @@ object DynamicTools {
     }
 
     private fun sanitize(name: String): String {
-        return name.lowercase().replace(Regex("[^a-z0-9_]"), "_").take(40)
+        // 与 ChatService.sanitizeMcpName 保持一致 — 保留大小写, 确保 distinctBy 能去重
+        val sanitized = name.map { c ->
+            when {
+                c in 'a'..'z' || c in 'A'..'Z' || c in '0'..'9' || c == '_' || c == '-' -> c
+                else -> "_"
+            }
+        }.joinToString("")
+        return sanitized.replace(Regex("_+"), "_").trim('_').ifEmpty { "tool" }
     }
 
     // ═══ mcp_connect — P0 MCP 动态连接 ═══════════════════════
