@@ -95,17 +95,17 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
                 val cleanedNames = settings.domainNameOverrides.filterKeys { it != name }
                 
                 if (existing == null) {
-                    // 隐藏内置域
-                    val builtinHidden = settings.hiddenDomains + name
+                    // 内置域: 永久移除 (不复活)
+                    val removed = settings.removedBuiltinDomains + name
                     val updated = settings.copy(
-                        hiddenDomains = builtinHidden,
+                        removedBuiltinDomains = removed,
                         toolDomainOverrides = cleanedOverrides,
                         customDomainDescriptions = cleanedDescs,
                         customDomainKeywords = cleanedKeywords,
                         domainNameOverrides = cleanedNames,
                     )
                     settingsStore.update(updated)
-                    listOf(UIMessagePart.Text("已隐藏内置域 '$name'，相关工具将自动重分类。"))
+                    listOf(UIMessagePart.Text("已删除内置域 '$name'，工具将自动重分类。"))
                 } else {
                     val updated = settings.copy(
                         customDomains = settings.customDomains.filter { it.name != name },
@@ -152,9 +152,9 @@ private fun deleteDomainTool(settingsStore: SettingsStore) = Tool(
                     appendLine("  关键词: ${d.keywords.joinToString(", ")}")
                 }
             }
-            if (settings.hiddenDomains.isNotEmpty()) {
+            if (settings.removedBuiltinDomains.isNotEmpty()) {
                 appendLine()
-                appendLine("已隐藏域: ${settings.hiddenDomains.joinToString(", ")}")
+                appendLine("已删除域: ${settings.removedBuiltinDomains.joinToString(", ")}")
             }
         }
         listOf(UIMessagePart.Text(result))

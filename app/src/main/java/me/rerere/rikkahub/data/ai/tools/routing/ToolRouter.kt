@@ -139,8 +139,7 @@ class ToolRouter(
     /** 检查域是否有效（未被删除的内置域） */
     private fun isValidDomain(domain: String): Boolean {
         val root = domain.split("/").first()
-        if (root in removedBuiltinDomains) return false
-        return domain !in hiddenDomains
+        return root !in removedBuiltinDomains
     }
 
     fun getTriggerDescription(domain: String): String {
@@ -175,12 +174,8 @@ class ToolRouter(
 
     fun buildLayer1(tools: List<Tool>): String {
         val classified = classifyAll(tools)
-        val allDomains = classified.keys.filter { it != "system" && isValidDomain(it) }.sorted()
-        val topMap = mutableMapOf<String, MutableList<String>>()
-        for (d in allDomains) {
-            val root = d.split("/").first()
-            topMap.getOrPut(root) { mutableListOf() }.add(d)
-        }
+        // 构建声明式域树 (ToolDomain枚举 + customDomains), 而非分类输出的域来定义结构
+        val treeNodes = buildDomainTree()
 
         return buildString {
             appendLine("## 工具调度")
@@ -191,31 +186,63 @@ class ToolRouter(
             appendLine()
             appendLine("### 调度原则")
             appendLine()
-            appendLine("**积极调用，工具优先。** 你不是一个只能说话的模型——你有手（搜索/浏览器）、有眼（读取文件/截图）、有计算能力（物理引擎/JS执行）。能用工具解决的，不靠猜测。需要什么，加载什么。")
+            appendLine("**积极调用，工具优先。** 能用工具解决的，不靠猜测。需要什么，加载什么。")
             appendLine()
-            appendLine("**按需加载，用完即走。** 判断任务需要什么场景，精确加载。不需要囤积工具——上下文是你的工作台，只放当前要用的。场景不对就换，路径不够深就再下一层。")
+            appendLine("**按需加载，用完即走。** 判断任务需要什么场景，精确加载。上下文是你的工作台，只放当前要用的。")
             appendLine()
-            appendLine("**不确定时向上看。** 不知道具体该加载哪个子场景？加载上层节点查看子域列表和描述，再根据描述选择目标加载。调 `invoke_tools(\"帮助\")` 也可查看全部类别。")
+            appendLine("**不确定时向上看。** 不知道具体该加载哪个子场景？加载上层节点查看子域列表和描述，再选择目标加载。调 `invoke_tools(\"帮助\")` 也可查看全部类别。")
             appendLine()
             appendLine("### 可用场景域")
             appendLine()
-            for ((root, subs) in topMap.toSortedMap()) {
+            for ((root, subs) in treeNodes) {
+                val rootTools = classified[root]?.size ?: 0
                 val desc = getTriggerDescription(root)
-                val leafSubs = subs.filter { it != root && isValidDomain(it) }.sorted()
-                if (leafSubs.isNotEmpty()) {
-                    appendLine("- **`$root`**: $desc")
-                    leafSubs.forEach { sub ->
+                if (subs.isNotEmpty()) {
+                    val subTotal = subs.sumOf { classified[it]?.size ?: 0 }
+                    appendLine("- **`$root`**: $desc (${rootTools + subTotal}工具)")
+                    subs.sorted().forEach { sub ->
+                        val subCount = classified[sub]?.size ?: 0
                         val sDesc = getTriggerDescription(sub)
                         val subShort = sub.substringAfterLast("/")
-                        appendLine("  - `$subShort` ($sub): $sDesc")
+                        appendLine("  - `$subShort`: $sDesc (${subCount}工具)")
                     }
                 } else {
-                    appendLine("- **`$root`**: $desc")
+                    appendLine("- **`$root`**: $desc (${rootTools}工具)")
                 }
             }
             appendLine()
             appendLine("调 `invoke_tools(\"域名称\")` 加载。不传参数或传\"帮助\"查看完整列表。")
         }
+    }
+
+    /** 构建声明式域树: ToolDomain枚举 + customDomains, 过滤 removedBuiltinDomains */
+    private fun buildDomainTree(): Map<String, List<String>> {
+        val result = mutableMapOf<String, MutableList<String>>()
+
+        // 内置域 (ToolDomain枚举)
+        for (entry in ToolDomain.entries) {
+            val label = entry.label
+            val parts = label.split("/")
+            val root = parts.first()
+            if (root in removedBuiltinDomains) continue  // 删除的域直接跳过
+            result.getOrPut(root) { mutableListOf() }
+            if (parts.size > 1) result[root]!!.add(label)
+        }
+
+        // 自定义域
+        for (cd in customDomains) {
+            if (cd.name in removedBuiltinDomains) continue
+            if (cd.parent != null) {
+                val parentRoot = cd.parent!!.split("/").first()
+                if (parentRoot !in removedBuiltinDomains) {
+                    result.getOrPut(parentRoot) { mutableListOf() }.add(cd.name)
+                }
+            } else {
+                result.getOrPut(cd.name) { mutableListOf() }
+            }
+        }
+
+        return result.toSortedMap()
     }
 
     fun createInvokeToolsTool(
@@ -244,26 +271,39 @@ class ToolRouter(
                         listOf(UIMessagePart.Text(router.buildHelpText(allTools)))
                     else -> {
                         val classified = router.classifyAll(allTools)
-                        val matchKeys = classified.keys.filter { it == rawName || it.startsWith("$rawName/") }
-                        if (matchKeys.isEmpty()) {
-                            val avail = classified.keys.filter { it != "system" }.sorted()
-                            listOf(UIMessagePart.Text("未知: '$rawName'。可用: ${avail.joinToString("、")}"))
+                        val treeNodes = router.buildDomainTree()
+
+                        // 用声明式域树检查域名是否存在 + 获取子域列表
+                        val domainExists = treeNodes.containsKey(rawName) ||
+                            treeNodes.values.flatten().any { it == rawName }
+
+                        if (!domainExists) {
+                            val avail = treeNodes.keys.toList()
+                            listOf(UIMessagePart.Text("未知: '$rawName'。可用顶级域: ${avail.joinToString("、")}。调 `invoke_tools(\"帮助\")` 查看详情。"))
                         } else {
                             loadedDomains.add(rawName)
-                            // 检查是否有子域
-                            val childKeys = matchKeys.filter { it != rawName }
+
+                            // 子域列表从声明式域树获取
+                            val childKeys = when {
+                                treeNodes.containsKey(rawName) -> treeNodes[rawName]!!
+                                else -> treeNodes.entries
+                                    .find { it.value.contains(rawName) }
+                                    ?.let { (parent, subs) ->
+                                        subs.filter { it.startsWith("$rawName/") }
+                                    } ?: emptyList()
+                            }
+
+                            // 工具从分类结果获取
                             val directTools = classified[rawName].orEmpty()
                             if (childKeys.isNotEmpty()) {
-                                // 有子域: 直接工具已加载, 子域需单独指定
+                                // 有子域: 显示子域列表
                                 val summary = buildString {
                                     val subInfo = buildString {
                                         for (ck in childKeys.sorted()) {
-                                            val cd = ck.split("/")
-                                            val indent = "　".repeat(cd.size - 1)
-                                            val short = cd.last()
+                                            val short = ck.substringAfterLast("/")
                                             val desc = router.getTriggerDescription(ck)
                                             val count = classified[ck]?.size ?: 0
-                                            appendLine("$indent- `$ck` ($short): $desc · ${count}个工具")
+                                            appendLine("- `$ck` ($short): $desc · ${count}个工具")
                                         }
                                     }
                                     if (directTools.isNotEmpty()) {
@@ -271,26 +311,39 @@ class ToolRouter(
                                         appendLine()
                                         append(subInfo)
                                         appendLine()
-                                        appendLine("直接工具(${directTools.size}):")
+                                        appendLine("直接工具(${directTools.size})：")
                                         for (t in directTools.sortedBy { it.name }.take(8)) {
                                             appendLine("- `${t.name}`: ${t.description.take(60).replace("\n", " ")}")
                                         }
                                         if (directTools.size > 8) appendLine("  ...等${directTools.size}个")
                                     } else {
-                                        appendLine("「$rawName」含${childKeys.size}个子域:")
+                                        appendLine("「$rawName」含${childKeys.size}个子域：")
                                         appendLine()
                                         append(subInfo)
                                     }
                                     appendLine()
-                                    appendLine("调 `invoke_tools(\"${rawName}/子域名\")` 加载具体工具。")
+                                    appendLine("调 `invoke_tools(\"子域完整路径\")` 加载具体工具。")
                                 }
                                 listOf(UIMessagePart.Text(summary))
                             } else {
                                 // 叶子域: 直接返回工具列表
+                                val parentRoot = rawName.split("/").first()
+                                val allInParent = classified.entries
+                                    .filter { it.key == parentRoot || it.key.startsWith("$parentRoot/") }
+                                    .flatMap { it.value }
+                                    .toSet()
+                                    .let { parentTools ->
+                                        // 去重：子域有 → 从父级移走；父级直接挂的保留
+                                        val subDomainsInParent = treeNodes[parentRoot] ?: emptyList()
+                                        val subTools = subDomainsInParent.flatMap { classified[it].orEmpty() }.toSet()
+                                        parentTools - subTools
+                                    }
+                                // 不在这 parentRoot 的子域里的直接工具
+                                val rootOnly = if (rawName == parentRoot) allInParent else directTools
+
                                 val summary = buildString {
-                                    val label = "「$rawName」"
-                                    appendLine("已加载$label。${directTools.size}个工具:")
-                                    for (t in directTools.sortedBy { it.name }) {
+                                    appendLine("已加载「$rawName」。${rootOnly.size}个工具：")
+                                    for (t in rootOnly.sortedBy { it.name }) {
                                         val desc = t.description.take(80).replace("\n", " ")
                                         appendLine("- `${t.name}`: $desc")
                                     }
@@ -306,14 +359,23 @@ class ToolRouter(
 
     private fun buildHelpText(tools: List<Tool>): String {
         val classified = classifyAll(tools)
+        val treeNodes = buildDomainTree()
         return buildString {
             appendLine("全部类别:")
-            for ((d, dts) in classified.toSortedMap()) {
-                if (d == "system") continue
-                val s = dts.take(2).map { it.name }.joinToString("、")
-                appendLine("  [$d] ${dts.size}个 ($s${if (dts.size>2)"…" else ""})")
+            for ((root, subs) in treeNodes) {
+                val rootCount = classified[root]?.size ?: 0
+                val subCount = subs.sumOf { classified[it]?.size ?: 0 }
+                val desc = getTriggerDescription(root)
+                appendLine("- **`$root`**: $desc (${rootCount + subCount}工具)")
+                for (sub in subs.sorted()) {
+                    val count = classified[sub]?.size ?: 0
+                    val sDesc = getTriggerDescription(sub)
+                    val short = sub.substringAfterLast("/")
+                    appendLine("  - `$short`: $sDesc ($count工具)")
+                }
             }
-            appendLine(); appendLine("调 invoke_tools(\"类别名\") 加载。")
+            appendLine()
+            appendLine("调 `invoke_tools(\"域名称\")` 加载。")
         }
     }
 
