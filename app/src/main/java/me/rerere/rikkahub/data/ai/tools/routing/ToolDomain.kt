@@ -164,6 +164,14 @@ enum class ToolDomain(
     // 10. 技能 (Skills)
     // ============================================================
     SKILLS("技能", "Skill 能力模块，按功能场景组织", listOf("skill_", "技能", "skill", "能力模块"), null),
+
+    // ============================================================
+    // 11. 系统 (域管理/生态工具)
+    // ============================================================
+    SYSTEM("系统", "域管理、MCP连接、插件安装等系统级工具", listOf(
+        "manage_domain", "list_domains", "move_tool", "mcp_connect", "clawhub", "plugin_install",
+        "skills_lock", "list_ecosystem", "ecosystem"
+    ), null),
     ;
 
     companion object {

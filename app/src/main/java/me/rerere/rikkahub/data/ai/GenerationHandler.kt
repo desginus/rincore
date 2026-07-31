@@ -58,15 +58,6 @@ import kotlin.uuid.Uuid
 import me.rerere.rikkahub.data.ai.CallTracer
 
 private const val TAG = "GenerationHandler"
-
-/** 框架层工具名 — 不参与域分类, 分层模式下直接注入, 非分层模式下也直接注入 */
-private val FRAMEWORK_TOOL_SET = setOf(
-    "invoke_tools",
-    "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file",
-    "manage_domain", "list_domains", "move_tool_to_domain",
-    "mcp_connect", "clawhub_install", "clawhub_search", "plugin_install", "skills_lock",
-    "list_ecosystem_tools",
-)
 private const val MAX_TOOL_OUTPUT_CHARS = 32 * 1024
 private const val TOOL_OUTPUT_PREVIEW_CHARS = 4 * 1024
 
@@ -112,18 +103,10 @@ class GenerationHandler(
 
         // === 分层路由状态 ===
         val useLayered = assistant.useLayeredTools && tools.isNotEmpty()
-        // 从 Conversation 恢复已加载的域（Feature #4: 跨对话持久化）
+        // 从 Conversation 恢复已加载的域（跨对话持久化）
         val loadedDomains = mutableSetOf<String>().apply {
             conversationLoadedDomains?.let { addAll(it) }
         }
-
-        // 分离框架工具与用户域工具
-        val domainTools = tools.filter { it.name !in FRAMEWORK_TOOL_SET }
-        val frameworkTools = tools.filter { it.name in FRAMEWORK_TOOL_SET }
-        Log.i(TAG, "frameworkToolSet(${FRAMEWORK_TOOL_SET.size}): ${FRAMEWORK_TOOL_SET.sorted()}")
-        Log.i(TAG, "frameworkTools found: ${frameworkTools.map { it.name }.sorted()}")
-
-        // Skill 已拆分为独立工具 (skill_<name>)，无需集中提取 skillListText
 
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
@@ -142,20 +125,20 @@ class GenerationHandler(
             )
 
             // 每步刷新 MCP 工具 (支持 mcp_connect 运行时添加)
-            // 合并到域工具池, 走懒加载 — 不直接注入函数定义
             val currentMcpTools = DynamicTools.getMcpTools()
-            val allDomainTools = (domainTools + currentMcpTools).distinctBy { it.name }
+            // 全部工具合并为一个池 — 不再区分框架/域工具, 统一走 invoke_tools 懒加载
+            val allTools = (tools + currentMcpTools).distinctBy { it.name }
 
             val layer1Prompt = if (useLayered) {
-                toolRouter.buildLayer1(allDomainTools)
+                toolRouter.buildLayer1(allTools)
             } else {
                 null
             }
 
             val toolsInternal = if (useLayered) {
                 buildList {
-                    Log.i(TAG, "generateInternal: build tools (layered)($assistant), domainTools=${allDomainTools.size}, loadedDomains=${loadedDomains}")
-                    // 框架工具 — 始终可调用
+                    Log.i(TAG, "generateInternal: build tools (layered)($assistant), pool=${allTools.size}, loadedDomains=${loadedDomains}")
+                    // Memory 工具 — 始终可用 (高频, 带闭包回调, 不适合懒加载)
                     if (assistant?.enableMemory == true) {
                         val memoryAssistantId = if (assistant.useGlobalMemory) {
                             MemoryRepository.GLOBAL_MEMORY_ID
@@ -175,12 +158,11 @@ class GenerationHandler(
                             }
                         ).let(this::addAll)
                     }
-                    addAll(frameworkTools.filter { it.name != "memory_tool" })
-                    // invoke_tools 元工具 — 操作 allDomainTools (含MCP), 模型按需加载
-                    add(toolRouter.createInvokeToolsTool(allDomainTools, loadedDomains))
-                    // 已加载域的工具 (含MCP工具, 通过分类归入域)
+                    // invoke_tools — 唯一始终注入的非 memory 工具, 模型通过它按需加载所有其他工具
+                    add(toolRouter.createInvokeToolsTool(allTools, loadedDomains))
+                    // 已加载域的工具
                     for (domain in loadedDomains) {
-                        addAll(toolRouter.getDomainTools(domain, allDomainTools))
+                        addAll(toolRouter.getDomainTools(domain, allTools))
                     }
                 }.distinctBy { it.name }
                     .sortedBy { it.name }
@@ -206,8 +188,7 @@ class GenerationHandler(
                             }
                         ).let(this::addAll)
                     }
-                    addAll(tools)
-                    addAll(currentMcpTools)
+                    addAll(allTools)
                 }.distinctBy { it.name }.sortedBy { it.name }
             }
 
@@ -528,9 +509,9 @@ class GenerationHandler(
                 }
                 layer1Len = length - sysPromptLen
 
-                // 框架工具 systemPrompt — 与 FRAMEWORK_TOOL_SET 保持一致
+                // 工具 systemPrompt — 分层模式下只注入 invoke_tools 自身; 非分层注入全部
                 if (layer1Prompt != null) {
-                    tools.filter { it.name in FRAMEWORK_TOOL_SET && it.name != "invoke_tools" }.forEach { tool ->
+                    tools.filter { it.name == "invoke_tools" }.forEach { tool ->
                         val sp = tool.systemPrompt(model, messages)
                         if (sp.isNotBlank()) {
                             appendLine()

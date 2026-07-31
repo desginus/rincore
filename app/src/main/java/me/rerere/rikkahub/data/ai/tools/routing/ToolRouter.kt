@@ -28,11 +28,13 @@ class ToolRouter(
             .filter { isValidDomain(it) }
             .toSet()
 
-    /** 框架层工具名集合 — 不参与域分类, 分层模式下直接注入 */
-    internal val frameworkToolNames = setOf(
-        "invoke_tools",
-        "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file",
+    /** invoke_tools 自身不参与分类 */
+    private val metaToolNames = setOf("invoke_tools")
+
+    /** 系统级工具名称前缀 — 精确匹配, 避免被关键词误分类 (如 clawhub_search → 系统, 而非 搜索) */
+    private val SYSTEM_TOOL_PREFIXES = listOf(
         "manage_domain", "list_domains", "move_tool_to_domain",
+        "mcp_connect", "clawhub_", "plugin_install", "skills_lock", "list_ecosystem_tools",
     )
 
     /** MCP 服务器名 → 默认域快速映射 (避免关键词误匹配) */
@@ -59,13 +61,18 @@ class ToolRouter(
     )
 
     fun classifyTool(tool: Tool): String {
+        // 0. invoke_tools 自身不分类
+        if (tool.name in metaToolNames) return "system"
         // 1. 手动覆盖 — 仅指向有效域，否则 fall through
         overrides[tool.name]?.let { if (it in validDomainLabels && isValidDomain(it)) return it }
-        // 2. 框架层工具不属于任何用户域
-        if (tool.name in frameworkToolNames) return "system"
-        // 3. Skill 工具归入「技能」域
+        // 2. Skill 工具归入「技能」域
         if (tool.name.startsWith("skill_")) {
             return if (isValidDomain("技能")) "技能" else "方法域"
+        }
+        // 3. 系统级工具 — 按名称前缀精确匹配, 优先于关键词避免误分类
+        //    (如 clawhub_search 不应被 "search" 关键词拉入「搜索」域)
+        if (SYSTEM_TOOL_PREFIXES.any { tool.name.startsWith(it) }) {
+            return if (isValidDomain("系统")) "系统" else "方法域"
         }
 
         // 4. MCP 工具 — 服务器名映射 → 关键词 → AI兜底
@@ -74,14 +81,14 @@ class ToolRouter(
             mcpServerDomainDefaults[server]?.let { if (isValidDomain(it)) return it }
         }
 
-        // 5. 关键词匹配 (自定义域 → 自定义关键词覆盖)
+        // 5. 关键词匹配 (自定义域 → 自定义关键词覆盖 → 内置域)
         val text = "${tool.name} ${tool.description}".lowercase()
         for (cd in customDomains) { if (cd.keywords.any { text.contains(it) }) return cd.name }
         for ((domain, keywords) in customKeywords) {
             if (domain in validDomainLabels && keywords.any { text.contains(it) }) return domain
         }
 
-        // 6. AI 兜底 — 无法分类的工具归入「方法域」(兜底域, 始终可见)
+        // 6. 内置域关键词兜底
         return ToolDomain.classify(tool, removedBuiltinDomains, hiddenDomains)?.label ?: "方法域"
     }
 
@@ -133,14 +140,16 @@ class ToolRouter(
                 val rootCount = classified[root]?.size ?: 0
                 val nonEmpty = subs.filter { (classified[it]?.size ?: 0) > 0 }
                 if (rootCount == 0 && nonEmpty.isEmpty()) continue
-                appendLine("- **`$root`**")
+                val desc = getTriggerDescription(root)
+                appendLine("- **`$root`** — $desc")
                 for (sub in nonEmpty.sorted()) {
                     val short = sub.substringAfterLast("/")
-                    appendLine("  - `$short`")
+                    val subCount = classified[sub]?.size ?: 0
+                    appendLine("  - `$short` ($subCount)")
                 }
             }
             appendLine()
-            appendLine("调 `invoke_tools(\"域名称\")` 加载。")
+            appendLine("调 `invoke_tools(\"域名称\")` 加载。不确定时调 `invoke_tools(\"帮助\")`。")
         }
     }
 
@@ -326,12 +335,16 @@ class ToolRouter(
     fun classifyPreview(name: String, description: String): String {
         val valid = validDomainLabels
 
+        // 0. invoke_tools 自身不分类
+        if (name in metaToolNames) return "system"
         // 1. 用户手动覆盖（校验合法性）
         overrides[name]?.let { if (it in valid) return it }
-        // 框架层工具不属于任何用户域, 始终归 system
-        if (name in frameworkToolNames) return "system"
-        // Skill 工具归入「技能」域
+        // 2. Skill 工具归入「技能」域
         if (name.startsWith("skill_")) return if (isValidDomain("技能")) "技能" else "方法域"
+        // 3. 系统级工具 — 按名称前缀精确匹配
+        if (SYSTEM_TOOL_PREFIXES.any { name.startsWith(it) }) {
+            return if (isValidDomain("系统")) "系统" else "方法域"
+        }
 
         val text = "${name} ${description}".lowercase()
 

@@ -63,6 +63,19 @@ fun buildPreviewTools(
     list.add(ToolPreview("memory_tool", "Store, retrieve, update, and delete long-term memories across conversations."))
     list.add(ToolPreview("conversation_search", "Full-text search across past conversations to recall specific information."))
     list.add(ToolPreview("recent_chats", "List recent conversation titles and dates for context awareness."))
+    list.add(ToolPreview("workspace_shell", "Run a shell command in the assistant's bound workspace Rootfs."))
+    list.add(ToolPreview("workspace_read_file", "Read a file using the assistant's bound workspace Rootfs."))
+    list.add(ToolPreview("workspace_write_file", "Write a UTF-8 text file using the assistant's bound workspace Rootfs."))
+    list.add(ToolPreview("workspace_edit_file", "Edit a UTF-8 text file using the assistant's bound workspace Rootfs."))
+    list.add(ToolPreview("manage_domain", "创建或删除工具域/子域。操作后场景地图自动同步。"))
+    list.add(ToolPreview("list_domains", "列出所有可用域及其工具数量"))
+    list.add(ToolPreview("move_tool_to_domain", "将工具移动到指定域"))
+    list.add(ToolPreview("mcp_connect", "Connect to an MCP server at runtime."))
+    list.add(ToolPreview("clawhub_install", "Install a tool from ClawHub marketplace."))
+    list.add(ToolPreview("clawhub_search", "Search ClawHub marketplace for tools."))
+    list.add(ToolPreview("plugin_install", "Install a Claude plugin from a URL."))
+    list.add(ToolPreview("skills_lock", "Lock skill versions for reproducibility."))
+    list.add(ToolPreview("list_ecosystem_tools", "List all available ecosystem tools and their status."))
     return list
 }
 
@@ -89,12 +102,12 @@ private fun buildNestedDomains(
         }
     }
 
-    val visibleTopLevel = allTopLevel.filter { it !in router.hiddenDomains && it !in router.removedBuiltinDomains }
+    val visibleTopLevel = allTopLevel.filter { it !in router.removedBuiltinDomains }
 
     val result = mutableListOf<Pair<String, Map<String, MutableList<ToolPreview>>?>>()
     for (parent in visibleTopLevel) {
         val myTools = flatMap[parent].orEmpty()
-        val childDomains = domainChildren[parent].orEmpty().filter { it !in router.hiddenDomains }
+        val childDomains = domainChildren[parent].orEmpty()
 
         if (childDomains.isNotEmpty()) {
             val subMap = mutableMapOf<String, MutableList<ToolPreview>>()
@@ -328,7 +341,7 @@ fun SettingDomainPage(
     if (subdomainParent != null) {
         val parentDomain = subdomainParent!!
         // 收集该父域下的所有子域：内置 + 自定义 (排除已隐藏的)
-        val builtinSubs = ToolDomain.entries.filter { it.parent == parentDomain && it.label !in settings.hiddenDomains }.map { it.label }
+        val builtinSubs = ToolDomain.entries.filter { it.parent == parentDomain }.map { it.label }
         val customSubs = settings.customDomains.filter { it.parent == parentDomain }.map { it.name }
         val allSubs = (builtinSubs + customSubs).sorted()
         val parentTools = flatDomainMap[parentDomain].orEmpty()
@@ -347,18 +360,30 @@ fun SettingDomainPage(
                     itemsIndexed(allSubs) { _, subFull ->
                         val subShort = subFull.substringAfterLast("/")
                         val isCustom = subFull in customSubs
+                        val isSubHidden = subFull in settings.hiddenDomains
                         val subTools = flatDomainMap[subFull].orEmpty()
                         val subDesc = settings.customDomainDescriptions[subFull] ?: router.getTriggerDescription(subFull)
-                        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = if (isSubHidden) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surfaceVariant)) {
                             Column(Modifier.padding(8.dp).fillMaxWidth()) {
                                 Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f)) {
-                                        Text(subShort, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+                                        Text(subShort + (if (isSubHidden) " [已隐藏]" else ""), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
                                         Text("${subTools.size}个工具 · ${subDesc.take(40)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     Row {
                                         TextButton(onClick = { managingSubdomain = subFull }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
                                             Text("管理工具", style = MaterialTheme.typography.labelSmall)
+                                        }
+                                        // 隐藏/显示切换 (内置子域)
+                                        if (!isCustom) {
+                                            IconButton(onClick = {
+                                                val hs = settings.hiddenDomains.toMutableSet()
+                                                if (isSubHidden) hs.remove(subFull) else hs.add(subFull)
+                                                vm.updateSettings(settings.copy(hiddenDomains = hs))
+                                                revision++
+                                            }, modifier = Modifier.size(24.dp)) {
+                                                Icon(if (isSubHidden) HugeIcons.ViewOff else HugeIcons.View, null, modifier = Modifier.size(14.dp))
+                                            }
                                         }
                                         // 删除按钮: 自定义域从 customDomains 移除, 内置域加入 hiddenDomains
                                         IconButton(onClick = {
