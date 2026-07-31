@@ -59,9 +59,6 @@ class ToolRouter(
         "sequentialthinking" to "辅助推理/序列思考",
     )
 
-    /** 硬编码 MCP 前缀→域映射 (确定性, 兜底 mcpServerDomainDefaults) */
-    private val MCP_PREFIX_DOMAIN = mcpServerDomainDefaults
-
     fun classifyTool(tool: Tool): String {
         // 1. 手动覆盖 — 仅指向有效域，否则 fall through
         overrides[tool.name]?.let { if (it in validDomainLabels && isValidDomain(it)) return it }
@@ -73,20 +70,18 @@ class ToolRouter(
             return "uncategorized"
         }
 
-        // MCP 工具集 — 硬前缀映射, 确定性归位
+        // MCP 工具集
         if (tool.name.startsWith("mcp__")) {
             val server = extractMcpServerName(tool.name)
             // 1. 用户覆盖 (mcpServerDomainDefaults)
             mcpServerDomainDefaults[server]?.let { if (isValidDomain(it)) return "mcp_raw:$it" }
-            // 2. 硬编码前缀映射表 (确定性, 不依赖关键词猜测)
-            MCP_PREFIX_DOMAIN[server]?.let { if (isValidDomain(it)) return "mcp_raw:$it" }
-            // 3. 自定义域关键词
+            // 2. 自定义域关键词
             val text = "${tool.name} ${tool.description}".lowercase()
             for (cd in customDomains) { if (cd.keywords.any { text.contains(it) }) return cd.name }
             for ((domain, keywords) in customKeywords) {
                 if (domain in validDomainLabels && keywords.any { text.contains(it) }) return domain
             }
-            // 4. AI分类兜底
+            // 3. AI分类兜底
             val builtin = ToolDomain.classify(tool, removedBuiltinDomains, hiddenDomains)?.label ?: "uncategorized"
             return "mcp_raw:$builtin"
         }
@@ -196,48 +191,29 @@ class ToolRouter(
 
     fun buildLayer1(tools: List<Tool>): String {
         val classified = classifyAll(tools)
-        // 构建声明式域树 (ToolDomain枚举 + customDomains), 而非分类输出的域来定义结构
         val treeNodes = buildDomainTree()
 
         return buildString {
             appendLine("## 工具调度")
             appendLine()
-            appendLine("你拥有一个工具总域 `工具`，包含完成各类任务所需的全部工具，按功能场景树状组织。")
+            appendLine("你拥有一个工具总域 `工具`，按功能场景树状组织。")
             appendLine()
-            appendLine("**加载方式**：`invoke_tools(\"场景名\")` 查看子域列表(含描述与工具数)；`invoke_tools(\"场景/子域\")` 直接获取工具。父域返回子域总览+直接工具，子域返回工具列表。")
-            appendLine()
-            appendLine("### 调度原则")
-            appendLine()
-            appendLine("**积极调用，工具优先。** 能用工具解决的，不靠猜测。需要什么，加载什么。")
-            appendLine()
-            appendLine("**按需加载，用完即走。** 判断任务需要什么场景，精确加载。上下文是你的工作台，只放当前要用的。")
-            appendLine()
-            appendLine("**不确定时向上看。** 不知道具体该加载哪个子场景？加载上层节点查看子域列表和描述，再选择目标加载。调 `invoke_tools(\"帮助\")` 也可查看全部类别。")
+            appendLine("**加载**：`invoke_tools(\"场景名\")` 查看子域；`invoke_tools(\"场景/子域\")` 加载工具。调 `invoke_tools(\"帮助\")` 查看全部。")
             appendLine()
             appendLine("### 可用场景域")
             appendLine()
             for ((root, subs) in treeNodes) {
-                val rootTools = classified[root]?.size ?: 0
-                // 非空子域列表
-                val nonEmptySubs = subs.filter { (classified[it]?.size ?: 0) > 0 }
-                val subTotal = nonEmptySubs.sumOf { classified[it]?.size ?: 0 }
-                // 空域跳过
-                if (rootTools == 0 && nonEmptySubs.isEmpty()) continue
-                val desc = getTriggerDescription(root)
-                if (nonEmptySubs.isNotEmpty()) {
-                    appendLine("- **`$root`**: $desc (${rootTools + subTotal}工具)")
-                    nonEmptySubs.sorted().forEach { sub ->
-                        val subCount = classified[sub]?.size ?: 0
-                        val sDesc = getTriggerDescription(sub)
-                        val subShort = sub.substringAfterLast("/")
-                        appendLine("  - `$subShort`: $sDesc (${subCount}工具)")
-                    }
-                } else {
-                    appendLine("- **`$root`**: $desc (${rootTools}工具)")
+                val rootCount = classified[root]?.size ?: 0
+                val nonEmpty = subs.filter { (classified[it]?.size ?: 0) > 0 }
+                if (rootCount == 0 && nonEmpty.isEmpty()) continue
+                appendLine("- **`$root`**")
+                for (sub in nonEmpty.sorted()) {
+                    val short = sub.substringAfterLast("/")
+                    appendLine("  - `$short`")
                 }
             }
             appendLine()
-            appendLine("调 `invoke_tools(\"域名称\")` 加载。不传参数或传\"帮助\"查看完整列表。")
+            appendLine("调 `invoke_tools(\"域名称\")` 加载。")
         }
     }
 
@@ -392,16 +368,12 @@ class ToolRouter(
             appendLine("全部类别:")
             for ((root, subs) in treeNodes) {
                 val rootCount = classified[root]?.size ?: 0
-                val nonEmptySubs = subs.filter { (classified[it]?.size ?: 0) > 0 }
-                val subCount = nonEmptySubs.sumOf { classified[it]?.size ?: 0 }
-                if (rootCount == 0 && nonEmptySubs.isEmpty()) continue
-                val desc = getTriggerDescription(root)
-                appendLine("- **`$root`**: $desc (${rootCount + subCount}工具)")
-                for (sub in nonEmptySubs.sorted()) {
-                    val count = classified[sub]?.size ?: 0
-                    val sDesc = getTriggerDescription(sub)
+                val nonEmpty = subs.filter { (classified[it]?.size ?: 0) > 0 }
+                if (rootCount == 0 && nonEmpty.isEmpty()) continue
+                appendLine("- **`$root`**")
+                for (sub in nonEmpty.sorted()) {
                     val short = sub.substringAfterLast("/")
-                    appendLine("  - `$short`: $sDesc (${count}工具)")
+                    appendLine("  - `$short`")
                 }
             }
             appendLine()
