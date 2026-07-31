@@ -2,7 +2,6 @@ package me.rerere.rikkahub.di
 
 import me.rerere.rikkahub.data.firebase.StubAnalytics
 import kotlinx.serialization.json.Json
-import me.rerere.highlight.Highlighter
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
 import me.rerere.rikkahub.data.agentrun.AgentRunRepository
@@ -29,10 +28,6 @@ import org.koin.dsl.module
 val appModule = module {
     single { StubAnalytics }
     single<Json> { JsonInstant }
-
-    single {
-        Highlighter(get())
-    }
 
     single {
         AppEventBus()

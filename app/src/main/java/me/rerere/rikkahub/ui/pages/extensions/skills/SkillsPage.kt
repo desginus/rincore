@@ -151,7 +151,7 @@ fun SkillsPage() {
                 }
             }
 
-            items(skills, key = { it.name }) { skill ->
+            items(skills, key = { it.skillDir.absolutePath }) { skill ->
                 val enabled = vm.isSkillEnabled(skill.name)
                 SkillCard(
                     skill = skill,

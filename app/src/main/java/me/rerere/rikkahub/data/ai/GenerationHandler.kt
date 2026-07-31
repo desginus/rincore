@@ -33,6 +33,7 @@ import me.rerere.rikkahub.data.ai.compression.NaturalLanguageFormatter
 import me.rerere.ai.util.TraceLogger
 import me.rerere.rikkahub.data.ai.compression.ToolOutputCompressor
 import me.rerere.ai.ui.handleMessageChunk
+import me.rerere.ai.ui.limitContext
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.OutputMessageTransformer
@@ -545,7 +546,7 @@ class GenerationHandler(
                     " total=${system.length}c (~${estTokens.toInt()}t)")
                 add(UIMessage.system(prompt = system))
             }
-            addAll(messages)
+            addAll(messages.limitContext(assistant.contextMessageLimit))
         }.transforms(
             transformers = transformers,
             context = context,
