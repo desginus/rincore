@@ -371,7 +371,7 @@ class ToolRouter(
                     val count = classified[sub]?.size ?: 0
                     val sDesc = getTriggerDescription(sub)
                     val short = sub.substringAfterLast("/")
-                    appendLine("  - `$short`: $sDesc ($count工具)")
+                    appendLine("  - `$short`: $sDesc (${count}工具)")
                 }
             }
             appendLine()
