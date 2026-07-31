@@ -241,7 +241,7 @@ class ToolRouter(
         }
     }
 
-    /** 构建声明式域树: ToolDomain枚举 + customDomains, 过滤 removedBuiltinDomains */
+    /** 构建声明式域树: ToolDomain枚举 + customDomains, 过滤 hiddenDomains + removedBuiltinDomains */
     private fun buildDomainTree(): Map<String, List<String>> {
         val result = mutableMapOf<String, MutableList<String>>()
 
@@ -251,6 +251,7 @@ class ToolRouter(
             val parts = label.split("/")
             val root = parts.first()
             if (root in removedBuiltinDomains) continue  // 删除的域直接跳过
+            if (root in hiddenDomains) continue          // 隐藏的域不显示
             result.getOrPut(root) { mutableListOf() }
             if (parts.size > 1) result[root]!!.add(label)
         }
@@ -258,9 +259,10 @@ class ToolRouter(
         // 自定义域
         for (cd in customDomains) {
             if (cd.name in removedBuiltinDomains) continue
+            if (cd.name in hiddenDomains) continue
             if (cd.parent != null) {
                 val parentRoot = cd.parent!!.split("/").first()
-                if (parentRoot !in removedBuiltinDomains) {
+                if (parentRoot !in removedBuiltinDomains && parentRoot !in hiddenDomains) {
                     result.getOrPut(parentRoot) { mutableListOf() }.add(cd.name)
                 }
             } else {

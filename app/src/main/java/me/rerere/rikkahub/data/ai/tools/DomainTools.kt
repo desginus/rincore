@@ -53,6 +53,10 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
                     put("items", buildJsonObject { put("type", "string") })
                     put("description", "关键词列表(可选)，用于自动分类")
                 })
+                put("new_name", buildJsonObject {
+                    put("type", "string")
+                    put("description", "新域名(仅 rename 操作使用)")
+                })
             },
             required = listOf("action", "name")
         )
@@ -88,12 +92,16 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
             }
             "delete" -> {
                 val existing = settings.customDomains.find { it.name == name }
-                // 清理所有指向该域的覆盖
-                val cleanedOverrides = settings.toolDomainOverrides.filterValues { it != name }
-                val cleanedDescs = settings.customDomainDescriptions.filterKeys { it != name }
-                val cleanedKeywords = settings.customDomainKeywords.filterKeys { it != name }
-                val cleanedNames = settings.domainNameOverrides.filterKeys { it != name }
-                
+                // 子域一并处理 (parent == name 或 parent 以 name/ 开头)
+                val childDomains = settings.customDomains.filter { it.parent == name }
+                // 清理所有指向该域及其子域的覆盖
+                fun targetsDomain(domain: String): Boolean =
+                    domain == name || domain.startsWith("$name/")
+                val cleanedOverrides = settings.toolDomainOverrides.filterValues { !targetsDomain(it) }
+                val cleanedDescs = settings.customDomainDescriptions.filterKeys { !targetsDomain(it) }
+                val cleanedKeywords = settings.customDomainKeywords.filterKeys { !targetsDomain(it) }
+                val cleanedNames = settings.domainNameOverrides.filterKeys { !targetsDomain(it) }
+
                 if (existing == null) {
                     // 内置域: 永久移除 (不复活)
                     val removed = settings.removedBuiltinDomains + name
@@ -105,20 +113,67 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
                         domainNameOverrides = cleanedNames,
                     )
                     settingsStore.update(updated)
-                    listOf(UIMessagePart.Text("已删除内置域 '$name'，工具将自动重分类。"))
+                    listOf(UIMessagePart.Text(
+                        "已删除内置域 '$name'，相关配置已清理。域内工具按前缀规则自动重分类。"
+                    ))
                 } else {
                     val updated = settings.copy(
-                        customDomains = settings.customDomains.filter { it.name != name },
+                        customDomains = settings.customDomains.filter { it.name != name && it.parent != name },
                         toolDomainOverrides = cleanedOverrides,
                         customDomainDescriptions = cleanedDescs,
                         customDomainKeywords = cleanedKeywords,
                         domainNameOverrides = cleanedNames,
                     )
                     settingsStore.update(updated)
-                    listOf(UIMessagePart.Text("已删除域 '$name' 及相关配置。工具将自动重分类到最佳匹配域。"))
+                    val childInfo = if (childDomains.isNotEmpty())
+                        "，同时删除子域 ${childDomains.joinToString("、") { it.name }}"
+                    else ""
+                    listOf(UIMessagePart.Text(
+                        "已删除域 '$name'$childInfo。域内工具的挂载覆盖已清理，将按前缀规则/关键词自动重分类。"
+                    ))
                 }
             }
-            else -> listOf(UIMessagePart.Text("未知操作: $action。支持: create, delete"))
+            "rename" -> {
+                val newName = input.jsonObject["new_name"]?.jsonPrimitive?.content
+                    ?: return@Tool listOf(UIMessagePart.Text("rename 需要 new_name 参数"))
+                val existing = settings.customDomains.find { it.name == name }
+                    ?: return@Tool listOf(UIMessagePart.Text("自定义域 '$name' 不存在。内置域不支持重命名。"))
+                if (settings.customDomains.any { it.name == newName }) {
+                    return@Tool listOf(UIMessagePart.Text("域 '$newName' 已存在"))
+                }
+                // 1. 域本身改名 + 子域 parent 随迁
+                val newDomains = settings.customDomains.map { d ->
+                    when {
+                        d.name == name -> d.copy(name = newName)
+                        d.parent == name -> d.copy(parent = newName)
+                        else -> d
+                    }
+                }
+                // 2. 迁移所有指向旧域的配置 (含子域路径前缀)
+                fun remapKey(key: String): String =
+                    if (key == name) newName
+                    else if (key.startsWith("$name/")) newName + key.removePrefix(name)
+                    else key
+                val newOverrides = settings.toolDomainOverrides.mapValues { (_, v) ->
+                    if (v == name || v.startsWith("$name/")) remapKey(v) else v
+                }
+                val newDescs = settings.customDomainDescriptions.mapKeys { (k, _) -> remapKey(k) }
+                val newKeywords = settings.customDomainKeywords.mapKeys { (k, _) -> remapKey(k) }
+                val newNames = settings.domainNameOverrides.mapKeys { (k, _) -> remapKey(k) }
+
+                val updated = settings.copy(
+                    customDomains = newDomains,
+                    toolDomainOverrides = newOverrides,
+                    customDomainDescriptions = newDescs,
+                    customDomainKeywords = newKeywords,
+                    domainNameOverrides = newNames,
+                )
+                settingsStore.update(updated)
+                listOf(UIMessagePart.Text(
+                    "已重命名域 '$name' → '$newName'。挂载映射、描述、关键词、子域父级均已迁移。"
+                ))
+            }
+            else -> listOf(UIMessagePart.Text("未知操作: $action。支持: create, delete, rename"))
         }
     }
 )
@@ -134,9 +189,15 @@ private fun deleteDomainTool(settingsStore: SettingsStore) = Tool(
     },
     execute = {
         val settings = settingsStore.settingsFlow.value
-        val domains = settings.customDomains
+        val removedSet = settings.removedBuiltinDomains
+        val hiddenSet = settings.hiddenDomains
+        // 与 Prompt buildDomainTree 过滤一致: 已删除/已隐藏的域不显示
+        val domains = settings.customDomains.filter {
+            it.name !in removedSet && it.name !in hiddenSet &&
+            (it.parent == null || it.parent!!.split("/").first() !in removedSet && it.parent!!.split("/").first() !in hiddenSet)
+        }
         val builtin = me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.map { it.label }
-            .filter { it !in settings.hiddenDomains && it !in settings.removedBuiltinDomains }
+            .filter { it !in hiddenSet && it !in removedSet }
         
         val result = buildString {
             appendLine("内置域 (${builtin.size}个):")
