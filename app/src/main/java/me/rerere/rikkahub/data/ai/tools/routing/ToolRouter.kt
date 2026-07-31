@@ -38,10 +38,29 @@ class ToolRouter(
 
     /** MCP 服务器名 → 默认域快速映射 (避免关键词误匹配) */
     private val mcpServerDomainDefaults = mapOf(
+        // 物理引擎
         "physicsengine" to "物理引擎",
+        // 图表
+        "charting" to "生成部署/图表",
+        // 二维码
         "qrcode" to "生成部署/二维码",
+        // 网页部署
         "edgeone" to "生成部署/网页部署",
+        "webpagegeneration" to "生成部署/网页部署",
+        // 搜索/商品
+        "productinquiry" to "搜索/商品搜索",
+        // 搜索/搜索引擎
+        "searchoptimization" to "搜索/搜索引擎",
+        "wikipedia" to "搜索/搜索引擎",
+        // 搜索/政策搜索
+        "trustedsearch" to "搜索/政策搜索",
+        // 辅助推理
+        "thinkingmethodology" to "辅助推理/方法论",
+        "sequentialthinking" to "辅助推理/序列思考",
     )
+
+    /** 硬编码 MCP 前缀→域映射 (确定性, 兜底 mcpServerDomainDefaults) */
+    private val MCP_PREFIX_DOMAIN = mcpServerDomainDefaults
 
     fun classifyTool(tool: Tool): String {
         // 1. 手动覆盖 — 仅指向有效域，否则 fall through
@@ -54,17 +73,20 @@ class ToolRouter(
             return "uncategorized"
         }
 
-        // MCP 工具集
+        // MCP 工具集 — 硬前缀映射, 确定性归位
         if (tool.name.startsWith("mcp__")) {
             val server = extractMcpServerName(tool.name)
-            // 快速路由: 服务器名直接映射 → 避免关键词误匹配
+            // 1. 用户覆盖 (mcpServerDomainDefaults)
             mcpServerDomainDefaults[server]?.let { if (isValidDomain(it)) return "mcp_raw:$it" }
-            
+            // 2. 硬编码前缀映射表 (确定性, 不依赖关键词猜测)
+            MCP_PREFIX_DOMAIN[server]?.let { if (isValidDomain(it)) return "mcp_raw:$it" }
+            // 3. 自定义域关键词
             val text = "${tool.name} ${tool.description}".lowercase()
             for (cd in customDomains) { if (cd.keywords.any { text.contains(it) }) return cd.name }
             for ((domain, keywords) in customKeywords) {
                 if (domain in validDomainLabels && keywords.any { text.contains(it) }) return domain
             }
+            // 4. AI分类兜底
             val builtin = ToolDomain.classify(tool, removedBuiltinDomains, hiddenDomains)?.label ?: "uncategorized"
             return "mcp_raw:$builtin"
         }
@@ -196,11 +218,15 @@ class ToolRouter(
             appendLine()
             for ((root, subs) in treeNodes) {
                 val rootTools = classified[root]?.size ?: 0
+                // 非空子域列表
+                val nonEmptySubs = subs.filter { (classified[it]?.size ?: 0) > 0 }
+                val subTotal = nonEmptySubs.sumOf { classified[it]?.size ?: 0 }
+                // 空域跳过
+                if (rootTools == 0 && nonEmptySubs.isEmpty()) continue
                 val desc = getTriggerDescription(root)
-                if (subs.isNotEmpty()) {
-                    val subTotal = subs.sumOf { classified[it]?.size ?: 0 }
+                if (nonEmptySubs.isNotEmpty()) {
                     appendLine("- **`$root`**: $desc (${rootTools + subTotal}工具)")
-                    subs.sorted().forEach { sub ->
+                    nonEmptySubs.sorted().forEach { sub ->
                         val subCount = classified[sub]?.size ?: 0
                         val sDesc = getTriggerDescription(sub)
                         val subShort = sub.substringAfterLast("/")
@@ -364,10 +390,12 @@ class ToolRouter(
             appendLine("全部类别:")
             for ((root, subs) in treeNodes) {
                 val rootCount = classified[root]?.size ?: 0
-                val subCount = subs.sumOf { classified[it]?.size ?: 0 }
+                val nonEmptySubs = subs.filter { (classified[it]?.size ?: 0) > 0 }
+                val subCount = nonEmptySubs.sumOf { classified[it]?.size ?: 0 }
+                if (rootCount == 0 && nonEmptySubs.isEmpty()) continue
                 val desc = getTriggerDescription(root)
                 appendLine("- **`$root`**: $desc (${rootCount + subCount}工具)")
-                for (sub in subs.sorted()) {
+                for (sub in nonEmptySubs.sorted()) {
                     val count = classified[sub]?.size ?: 0
                     val sDesc = getTriggerDescription(sub)
                     val short = sub.substringAfterLast("/")
