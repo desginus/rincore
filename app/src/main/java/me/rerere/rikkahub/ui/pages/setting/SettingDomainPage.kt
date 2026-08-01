@@ -45,9 +45,23 @@ fun buildPreviewTools(
             list.add(ToolPreview(t.name, t.description))
         }
     } catch (_: Exception) {}
-    // 模型侧 skill 体系只有 use_skill 统一入口 (无 skill_ 前缀的独立工具),
-    // 故不在此添加 phantom skill 工具 — 避免 UI 工具数 ≠ 模型侧工具数。
-    // 已启用 skill 由 use_skill + invoke_tools("技能") 承载。
+    // Skill 条目 — Skill 与 MCP 同等次(一个 Skill = 一个工具):
+    //   - 已挂载的 skill (toolDomainOverrides["skill:名"]=域) → 挂载目标域 (overrides 覆盖优先分类)
+    //   - 未挂载的已启用 skill → 技能域 (与 invoke_tools("技能") 语义一致)
+    // 条目命名 "skill:名" — classifyByName 识别 skill: 前缀归技能域; 挂载的经 overrides 命中目标域
+    try {
+        val allSkills = skillManager.listSkills().filter { it.name in assistant.enabledSkills }
+        val skillMounts = settings.toolDomainOverrides.entries
+            .filter { it.key.startsWith("skill:") }
+            .map { it.key.removePrefix("skill:") to it.value }
+        val mountedNames = skillMounts.map { it.first }.toSet()
+        skillMounts.forEach { (sname, _) ->
+            list.add(ToolPreview("skill:$sname", "Skill 能力模块（通过 use_skill 加载其指令后调用）"))
+        }
+        allSkills.filter { it.name !in mountedNames }.forEach { s ->
+            list.add(ToolPreview("skill:${s.name}", "Skill 能力模块（通过 use_skill 加载其指令后调用）"))
+        }
+    } catch (_: Exception) {}
     try {
         mcpManager.getAllAvailableTools().forEach { (_, serverName, tool) ->
             list.add(ToolPreview("mcp__${serverName}__${tool.name}", tool.description ?: ""))

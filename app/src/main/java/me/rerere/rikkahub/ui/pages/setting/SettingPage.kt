@@ -127,16 +127,9 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
             }
 
             item("generalSettings") {
-                val context = LocalContext.current
-                var colorMode by rememberColorMode()
-                val selectedColorModeText = when (colorMode) {
-                    ColorMode.SYSTEM -> stringResource(R.string.setting_page_color_mode_system)
-                    ColorMode.LIGHT -> stringResource(R.string.setting_page_color_mode_light)
-                    ColorMode.DARK -> stringResource(R.string.setting_page_color_mode_dark)
-                }
                 CardGroup(
                     modifier = Modifier.padding(horizontal = 8.dp),
-                    title = { Text(stringResource(R.string.setting_page_general_settings)) },
+                    title = { Text("通用与外观") },
                 ) {
                     item(
                         leadingContent = { Icon(HugeIcons.Sun01, null) },
@@ -177,19 +170,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = { Text(stringResource(R.string.setting_page_assistant_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_assistant)) },
                     )
-                    item(
-                        onClick = { navController.navigate(Screen.Extensions) },
-                        leadingContent = { Icon(HugeIcons.Package, null) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_extensions_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_extensions)) },
-                    )
                 }
             }
-
             item("modelServices") {
                 CardGroup(
                     modifier = Modifier.padding(horizontal = 8.dp),
-                    title = { Text(stringResource(R.string.setting_page_model_and_services)) },
+                    title = { Text("模型与服务") },
                 ) {
                     item(
                         onClick = { navController.navigate(Screen.SettingModels) },
@@ -216,22 +202,29 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         headlineContent = { Text(stringResource(R.string.setting_page_tts_service)) },
                     )
                     item(
-                        onClick = { navController.navigate(Screen.SettingMcp) },
-                        leadingContent = { Icon(HugeIcons.McpServer, null) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_mcp_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_mcp)) },
-                    )
-                    item(
                         onClick = { navController.navigate(Screen.SettingWeb) },
                         leadingContent = { Icon(HugeIcons.ServerStack01, null) },
                         supportingContent = { Text(stringResource(R.string.setting_page_web_server_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_web_server)) },
                     )
+                }
+            }
+            item("extensionsTools") {
+                CardGroup(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    title = { Text("扩展与工具") },
+                ) {
                     item(
-                        onClick = { navController.navigate(Screen.ScheduledJobs) },
-                        leadingContent = { Icon(HugeIcons.Book01, null) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_scheduled_jobs_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_scheduled_jobs)) },
+                        onClick = { navController.navigate(Screen.Extensions) },
+                        leadingContent = { Icon(HugeIcons.Package, null) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_extensions_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_extensions)) },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingMcp) },
+                        leadingContent = { Icon(HugeIcons.McpServer, null) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_mcp_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_mcp)) },
                     )
                     item(
                         onClick = { showDomainPage = true },
@@ -239,16 +232,30 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = { Text(stringResource(R.string.setting_page_domain_management_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_domain_management)) },
                     )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingSkillsEcosystem) },
+                        leadingContent = { Icon(HugeIcons.Package, null) },
+                        supportingContent = { Text("OpenClaw 技能 + 生态指令（合并管理）") },
+                        headlineContent = { Text("技能与生态") },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.Skills) },
+                        leadingContent = { Icon(HugeIcons.Puzzle, null) },
+                        supportingContent = { Text("Agent Skills 能力模块（原在扩展管理中）") },
+                        headlineContent = { Text("Agent Skills") },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.ScheduledJobs) },
+                        leadingContent = { Icon(HugeIcons.Book01, null) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_scheduled_jobs_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_scheduled_jobs)) },
+                    )
                 }
             }
-
             item("dataSettings") {
-                val storageState by produceState(-1 to 0L) {
-                    value = filesManager.countChatFiles()
-                }
                 CardGroup(
                     modifier = Modifier.padding(horizontal = 8.dp),
-                    title = { Text(stringResource(R.string.setting_page_data_settings)) },
+                    title = { Text("数据与存储") },
                 ) {
                     item(
                         onClick = { navController.navigate(Screen.Backup) },
@@ -280,21 +287,8 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = { Text("查看最近一条消息的完整运行流程") },
                         headlineContent = { Text("运行日志") },
                     )
-                    item(
-                        onClick = { navController.navigate(Screen.SettingSkillsEcosystem) },
-                        leadingContent = { Icon(HugeIcons.Package, null) },
-                        supportingContent = { Text("OpenClaw 技能 + 生态指令（合并管理）") },
-                        headlineContent = { Text("技能与生态") },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.Skills) },
-                        leadingContent = { Icon(HugeIcons.Puzzle, null) },
-                        supportingContent = { Text("Agent Skills 能力模块（原在扩展管理中）") },
-                        headlineContent = { Text("Agent Skills") },
-                    )
                 }
             }
-
             item("aboutSettings") {
                 val context = LocalContext.current
                 val shareText = stringResource(R.string.setting_page_share_text)

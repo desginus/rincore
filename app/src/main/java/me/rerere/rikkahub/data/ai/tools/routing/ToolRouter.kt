@@ -81,8 +81,8 @@ class ToolRouter(
         if (name in metaToolNames) return "system"
         // 1. 手动覆盖 — 仅指向有效域，否则 fall through
         overrides[name]?.let { if (it in validDomainLabels && isValidDomain(it)) return it }
-        // 2. Skill 工具归入「技能」域 (use_skill 是 skill 体系的统一入口)
-        if (name == "use_skill" || name.startsWith("skill_")) {
+        // 2. Skill 工具归入「技能」域 (use_skill 是 skill 体系的统一入口; skill: 前缀 = skill 挂载条目)
+        if (name == "use_skill" || name.startsWith("skill_") || name.startsWith("skill:")) {
             return if (isValidDomain("技能")) "技能" else "方法域"
         }
         // 3. 系统级工具 — 按名称前缀精确匹配, 优先于关键词避免误分类
