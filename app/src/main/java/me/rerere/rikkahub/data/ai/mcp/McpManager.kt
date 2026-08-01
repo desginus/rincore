@@ -321,30 +321,46 @@ class McpManager(
             )
         }
 
-        settingsStore.update { old ->
-            val existingIndex = old.mcpServers.indexOfFirst { it.id == config.id }
-            if (existingIndex >= 0) {
-                // 更新已有配置
-                old.copy(mcpServers = old.mcpServers.mapIndexed { i, sc ->
-                    if (i != existingIndex) sc
-                    else sc.clone(commonOptions = sc.commonOptions.copy(tools = resolvedTools))
-                })
-            } else {
-                // 动态添加: config + tools 写入 settings
-                val newConfig = config.clone(
-                    commonOptions = config.commonOptions.copy(tools = resolvedTools, enable = true)
-                )
-                val newServers = old.mcpServers + newConfig
-                // 同时将 config.id 加入当前 assistant 白名单
-                val assistant = old.getCurrentAssistant()
-                val newAssistants = if (config.id !in assistant.mcpServers) {
-                    old.assistants.map { a ->
-                        if (a.id != assistant.id) a
-                        else a.copy(mcpServers = a.mcpServers + config.id)
-                    }
-                } else old.assistants
-                old.copy(mcpServers = newServers, assistants = newAssistants)
+        // 幂等化: 工具列表 (name/description/enable) 与现有配置相同则跳过写入 —
+        // 避免无意义 settings 广播 → toolRouter 重建 → system/tools 变化 → 缓存失效
+        val currentSettings = settingsStore.settingsFlow.value
+        val existingIndex = currentSettings.mcpServers.indexOfFirst { it.id == config.id }
+        val toolsUnchanged = existingIndex >= 0 && run {
+            val existing = currentSettings.mcpServers[existingIndex].commonOptions.tools
+            existing.size == resolvedTools.size &&
+                existing.zip(resolvedTools).all { (a, b) ->
+                    a.name == b.name && a.description == b.description && a.enable == b.enable
+                }
+        }
+
+        if (!toolsUnchanged) {
+            settingsStore.update { old ->
+                val idx = old.mcpServers.indexOfFirst { it.id == config.id }
+                if (idx >= 0) {
+                    // 更新已有配置
+                    old.copy(mcpServers = old.mcpServers.mapIndexed { i, sc ->
+                        if (i != idx) sc
+                        else sc.clone(commonOptions = sc.commonOptions.copy(tools = resolvedTools))
+                    })
+                } else {
+                    // 动态添加: config + tools 写入 settings
+                    val newConfig = config.clone(
+                        commonOptions = config.commonOptions.copy(tools = resolvedTools, enable = true)
+                    )
+                    val newServers = old.mcpServers + newConfig
+                    // 同时将 config.id 加入当前 assistant 白名单
+                    val assistant = old.getCurrentAssistant()
+                    val newAssistants = if (config.id !in assistant.mcpServers) {
+                        old.assistants.map { a ->
+                            if (a.id != assistant.id) a
+                            else a.copy(mcpServers = a.mcpServers + config.id)
+                        }
+                    } else old.assistants
+                    old.copy(mcpServers = newServers, assistants = newAssistants)
+                }
             }
+        } else {
+            Log.i(TAG, "sync: tools unchanged for ${config.commonOptions.name}, skip settings write (cache-friendly)")
         }
 
         // 更新 clients 中的 config (携带最新工具)

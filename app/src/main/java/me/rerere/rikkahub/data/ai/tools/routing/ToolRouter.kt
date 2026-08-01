@@ -130,7 +130,7 @@ class ToolRouter(
      * 域基本信息注入格式：显示名称 + 触发描述 + 触发条件(关键词)
      * 关键词超过 MAX_KEYWORDS_INJECT 时取前几个 + 计数，避免膨胀
      */
-    private fun domainInfo(domain: String, toolCount: Int? = null, indent: String = ""): String {
+    private fun domainInfo(domain: String, indent: String = ""): String {
         val display = displayName(domain)
         val desc = getTriggerDescription(domain)
         val keywords = getKeywords(domain)
@@ -142,14 +142,20 @@ class ToolRouter(
             val suffix = if (rest > 0) " 等${keywords.size}个" else ""
             " [触发: ${shown.joinToString("、")}$suffix]"
         }
-        val countText = toolCount?.let { " · ${it}工具" } ?: ""
         // 路径名为主键（可直接用于 invoke_tools 加载），显示名不同时附注
         val nameText = if (display == domain) "`$domain`" else "`$domain`（显示名: $display）"
-        return "$indent**$nameText** — $desc$kwText$countText"
+        return "$indent**$nameText** — $desc$kwText"
     }
 
+    /**
+     * 域地图 — 缓存稳定版。
+     *
+     * 输出只依赖静态配置（域树/显示名/触发描述/触发条件），**不包含工具数**：
+     * 工具数依赖运行时工具池（MCP 连接状态），嵌入 system 会导致 MCP 任何波动
+     * 都改变 system 文本 → 国内模型（DeepSeek/Qwen）前缀缓存整体失效。
+     * 工具数由 invoke_tools 返回（消息层，不影响缓存）。
+     */
     fun buildLayer1(tools: List<Tool>): String {
-        val classified = classifyAll(tools)
         val treeNodes = buildDomainTree()
 
         return buildString {
@@ -162,16 +168,15 @@ class ToolRouter(
             appendLine("### 可用场景域")
             appendLine()
             for ((root, subs) in treeNodes) {
-                val rootCount = classified[root]?.size ?: 0
-                // 全空域(根+所有子域都0工具)也注入，标注 0 工具，避免模型按 UI 猜测
-                appendLine(domainInfo(root, rootCount))
+                appendLine(domainInfo(root))
                 for (sub in subs.sorted()) {
-                    val subCount = classified[sub]?.size ?: 0
-                    appendLine(domainInfo(sub, subCount, "  "))
+                    appendLine(domainInfo(sub, "  "))
                 }
             }
             appendLine()
-            appendLine("工具数标注为 0 的域为空壳，无需加载。调 `invoke_tools(\"域名称\")` 加载。不确定时调 `invoke_tools(\"帮助\")`。")
+            appendLine("加载域后其工具保持可用，跨请求不会丢失。若任务需要多个域的工具，请一次加载齐所需域（每次加载新域会使一次请求的缓存失效，加载齐后保持稳定）。")
+            appendLine()
+            appendLine("调 `invoke_tools(\"域名称\")` 加载。不确定时调 `invoke_tools(\"帮助\")`。")
         }
     }
 
@@ -335,16 +340,13 @@ class ToolRouter(
     }
 
     private fun buildHelpText(tools: List<Tool>): String {
-        val classified = classifyAll(tools)
         val treeNodes = buildDomainTree()
         return buildString {
             appendLine("全部类别:")
             for ((root, subs) in treeNodes) {
-                val rootCount = classified[root]?.size ?: 0
-                appendLine(domainInfo(root, rootCount))
+                appendLine(domainInfo(root))
                 for (sub in subs.sorted()) {
-                    val subCount = classified[sub]?.size ?: 0
-                    appendLine(domainInfo(sub, subCount, "  "))
+                    appendLine(domainInfo(sub, "  "))
                 }
             }
             appendLine()

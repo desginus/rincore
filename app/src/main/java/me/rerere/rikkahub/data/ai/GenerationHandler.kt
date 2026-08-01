@@ -104,10 +104,15 @@ class GenerationHandler(
 
         // === 分层路由状态 ===
         val useLayered = assistant.useLayeredTools && tools.isNotEmpty()
-        // 从 Conversation 恢复已加载的域（跨对话持久化）
+        // 从 Conversation 恢复已加载的域（跨对话持久化），并过滤无效域（配置已删除/不再存在的域）
         val loadedDomains = mutableSetOf<String>().apply {
             conversationLoadedDomains?.let { addAll(it) }
         }
+
+        // 工具池基准快照 — 请求内稳定 (缓存友好: 工具池内容不变则 system/tools 文本不变)
+        val baseMcpTools = DynamicTools.getMcpTools()
+        val baseAllTools = (tools + baseMcpTools).distinctBy { it.name }
+        var currentAllTools = baseAllTools
 
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
@@ -125,10 +130,24 @@ class GenerationHandler(
                 removedBuiltinDomains = currentSettings.removedBuiltinDomains,
             )
 
-            // 每步刷新 MCP 工具 (支持 mcp_connect 运行时添加)
-            val currentMcpTools = DynamicTools.getMcpTools()
-            // 全部工具合并为一个池 — 不再区分框架/域工具, 统一走 invoke_tools 懒加载
-            val allTools = (tools + currentMcpTools).distinctBy { it.name }
+            // 幽灵域清理: 已加载域中配置已删除/隐藏的, 从 loadedDomains 移除 (懒加载同步)
+            val validDomains = toolRouter.validDomainLabels
+            val staleDomains = loadedDomains.filter { it !in validDomains }
+            if (staleDomains.isNotEmpty()) {
+                loadedDomains.removeAll(staleDomains.toSet())
+                Log.i(TAG, "streamText: pruned ${staleDomains.size} stale loaded domains: $staleDomains")
+            }
+
+            // MCP 工具池变化检测: 名称集合相同则复用快照 (避免 Tool 对象重建/顺序波动),
+            // 变化(如 mcp_connect 运行时新连接)才重建 — 缓存友好
+            val stepMcpTools = DynamicTools.getMcpTools()
+            val mcpNamesNow = stepMcpTools.map { it.name }
+            val mcpNamesSnapshot = currentAllTools.filter { it.name.startsWith("mcp__") }.map { it.name }
+            if (mcpNamesNow != mcpNamesSnapshot) {
+                currentAllTools = (tools + stepMcpTools).distinctBy { it.name }
+                Log.i(TAG, "streamText: MCP tool pool changed (${mcpNamesSnapshot.size} -> ${mcpNamesNow.size}), rebuilding allTools")
+            }
+            val allTools = currentAllTools
 
             val layer1Prompt = if (useLayered) {
                 toolRouter.buildLayer1(allTools)
