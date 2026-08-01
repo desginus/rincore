@@ -365,8 +365,15 @@ class GenerationHandler(
                             val toolDef = toolsInternal.find { toolDef -> toolDef.name == tool.toolName }
                             if (toolDef == null) {
                                 // 分层模式下工具必须先通过 invoke_tools 加载，禁止自动加载其他域工具
+                                // 提示实际所属域, 引导模型自愈(加载正确域后重试)
                                 val msg = if (useLayered) {
-                                    "工具 ${tool.toolName} 未加载。请先调用 invoke_tools(\"域名称\") 加载对应域。"
+                                    val knownTool = allTools.find { it.name == tool.toolName }
+                                    if (knownTool != null) {
+                                        val actualDomain = toolRouter.classifyTool(knownTool)
+                                        "工具 ${tool.toolName} 未加载。它属于域「$actualDomain」。请先调用 invoke_tools(\"$actualDomain\") 加载对应域后再重试。"
+                                    } else {
+                                        "工具 ${tool.toolName} 不存在于任何域。"
+                                    }
                                 } else {
                                     "工具 ${tool.toolName} 未找到"
                                 }

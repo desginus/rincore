@@ -31,6 +31,9 @@ class ToolRouter(
     /** invoke_tools 自身不参与分类 */
     private val metaToolNames = setOf("invoke_tools")
 
+    /** 单个域注入的最大关键词数量, 超出显示 "等N个" */
+    private val MAX_KEYWORDS_INJECT = 8
+
     /** 系统级工具名称前缀 — 精确匹配, 避免被关键词误分类 (如 clawhub_search → 系统, 而非 搜索) */
     private val SYSTEM_TOOL_PREFIXES = listOf(
         "manage_domain", "list_domains", "move_tool_to_domain",
@@ -123,6 +126,26 @@ class ToolRouter(
         return ToolDomain.entries.find { it.label == domain }?.matchKeywords ?: emptyList()
     }
 
+    /**
+     * 域基本信息注入格式：显示名称 + 触发描述 + 触发条件(关键词)
+     * 关键词超过 MAX_KEYWORDS_INJECT 时取前几个 + 计数，避免膨胀
+     */
+    private fun domainInfo(domain: String, toolCount: Int? = null, indent: String = ""): String {
+        val display = displayName(domain)
+        val desc = getTriggerDescription(domain)
+        val keywords = getKeywords(domain)
+        val kwText = if (keywords.isEmpty()) {
+            ""
+        } else {
+            val shown = keywords.take(MAX_KEYWORDS_INJECT)
+            val rest = keywords.size - shown.size
+            val suffix = if (rest > 0) " 等${keywords.size}个" else ""
+            " [触发: ${shown.joinToString("、")}$suffix]"
+        }
+        val countText = toolCount?.let { " · ${it}工具" } ?: ""
+        return "$indent**`$display`** — $desc$kwText$countText"
+    }
+
     fun buildLayer1(tools: List<Tool>): String {
         val classified = classifyAll(tools)
         val treeNodes = buildDomainTree()
@@ -130,7 +153,7 @@ class ToolRouter(
         return buildString {
             appendLine("## 工具调度")
             appendLine()
-            appendLine("你拥有一个工具总域 `工具`，按功能场景树状组织。")
+            appendLine("你拥有一个工具总域 `工具`，按功能场景树状组织。每个域含：显示名称、触发描述、触发条件。")
             appendLine()
             appendLine("**加载**：`invoke_tools(\"场景名\")` 查看子域；`invoke_tools(\"场景/子域\")` 加载工具。调 `invoke_tools(\"帮助\")` 查看全部。")
             appendLine()
@@ -138,18 +161,15 @@ class ToolRouter(
             appendLine()
             for ((root, subs) in treeNodes) {
                 val rootCount = classified[root]?.size ?: 0
-                val nonEmpty = subs.filter { (classified[it]?.size ?: 0) > 0 }
-                if (rootCount == 0 && nonEmpty.isEmpty()) continue
-                val desc = getTriggerDescription(root)
-                appendLine("- **`$root`** — $desc")
-                for (sub in nonEmpty.sorted()) {
-                    val short = sub.substringAfterLast("/")
+                // 全空域(根+所有子域都0工具)也注入，标注 0 工具，避免模型按 UI 猜测
+                appendLine(domainInfo(root, rootCount))
+                for (sub in subs.sorted()) {
                     val subCount = classified[sub]?.size ?: 0
-                    appendLine("  - `$short` ($subCount)")
+                    appendLine(domainInfo(sub, subCount, "  "))
                 }
             }
             appendLine()
-            appendLine("调 `invoke_tools(\"域名称\")` 加载。不确定时调 `invoke_tools(\"帮助\")`。")
+            appendLine("工具数标注为 0 的域为空壳，无需加载。调 `invoke_tools(\"域名称\")` 加载。不确定时调 `invoke_tools(\"帮助\")`。")
         }
     }
 
@@ -243,7 +263,14 @@ class ToolRouter(
                                             val short = ck.substringAfterLast("/")
                                             val desc = router.getTriggerDescription(ck)
                                             val count = classified[ck]?.size ?: 0
-                                            appendLine("- `$ck` ($short): $desc · ${count}个工具")
+                                            val keywords = router.getKeywords(ck)
+                                            val kwText = if (keywords.isEmpty()) "" else {
+                                                val shown = keywords.take(8)
+                                                val rest = keywords.size - shown.size
+                                                val suffix = if (rest > 0) " 等${keywords.size}个" else ""
+                                                " [触发: ${shown.joinToString("、")}$suffix]"
+                                            }
+                                            appendLine("- **`$ck`** ($short): $desc · ${count}个工具$kwText")
                                         }
                                     }
                                     if (directTools.isNotEmpty()) {
@@ -262,7 +289,7 @@ class ToolRouter(
                                         append(subInfo)
                                     }
                                     appendLine()
-                                    appendLine("调 `invoke_tools(\"子域完整路径\")` 加载具体工具。")
+                                    appendLine("子域标注了触发描述与触发条件(关键词)，据此判断是否加载。调 `invoke_tools(\"子域完整路径\")` 加载具体工具。")
                                 }
                                 listOf(UIMessagePart.Text(summary))
                             } else {
@@ -304,12 +331,10 @@ class ToolRouter(
             appendLine("全部类别:")
             for ((root, subs) in treeNodes) {
                 val rootCount = classified[root]?.size ?: 0
-                val nonEmpty = subs.filter { (classified[it]?.size ?: 0) > 0 }
-                if (rootCount == 0 && nonEmpty.isEmpty()) continue
-                appendLine("- **`$root`**")
-                for (sub in nonEmpty.sorted()) {
-                    val short = sub.substringAfterLast("/")
-                    appendLine("  - `$short`")
+                appendLine(domainInfo(root, rootCount))
+                for (sub in subs.sorted()) {
+                    val subCount = classified[sub]?.size ?: 0
+                    appendLine(domainInfo(sub, subCount, "  "))
                 }
             }
             appendLine()

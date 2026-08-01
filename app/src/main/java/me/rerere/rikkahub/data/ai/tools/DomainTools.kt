@@ -203,7 +203,15 @@ private fun deleteDomainTool(settingsStore: SettingsStore) = Tool(
         val result = buildString {
             appendLine("内置域 (${builtin.size}个):")
             builtin.forEach { d ->
-                appendLine("- $d")
+                val builtinEntry = me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.find { it.label == d }
+                if (builtinEntry != null) {
+                    val kwText = if (builtinEntry.matchKeywords.isEmpty()) "" else
+                        " [触发: ${builtinEntry.matchKeywords.take(8).joinToString("、")}" +
+                        (if (builtinEntry.matchKeywords.size > 8) " 等${builtinEntry.matchKeywords.size}个" else "") + "]"
+                    appendLine("- $d: ${builtinEntry.triggerDescription}$kwText")
+                } else {
+                    appendLine("- $d")
+                }
             }
             appendLine()
             appendLine("自定义域 (${domains.size}个):")
@@ -211,7 +219,8 @@ private fun deleteDomainTool(settingsStore: SettingsStore) = Tool(
                 val parentInfo = d.parent?.let { " (父: $it)" } ?: ""
                 appendLine("- ${d.name}$parentInfo: ${d.description}")
                 if (d.keywords.isNotEmpty()) {
-                    appendLine("  关键词: ${d.keywords.joinToString(", ")}")
+                    appendLine("  触发: ${d.keywords.take(8).joinToString("、")}" +
+                        (if (d.keywords.size > 8) " 等${d.keywords.size}个" else ""))
                 }
             }
             if (settings.removedBuiltinDomains.isNotEmpty()) {
