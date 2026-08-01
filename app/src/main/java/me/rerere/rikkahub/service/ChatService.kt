@@ -572,6 +572,7 @@ class ChatService(
                 },
                 outputTransformers = outputTransformers,
                 tools = buildList {
+                    val toolsList = this // 供 knownToolNames 延迟引用(工具池构建完成后)
                     if (settings.enableWebSearch) {
                         addAll(createSearchTools(settings))
                     }
@@ -609,7 +610,7 @@ class ChatService(
                                 settingsStore,
                                 knownToolNames = {
                                     buildSet {
-                                        addAll(tools.map { it.name })
+                                        addAll(toolsList.map { it.name })
                                         addAll(me.rerere.rikkahub.ecosystem.tools.DynamicTools.all().map { it.name })
                                         addAll(mcpManager.getAllAvailableTools().map { it.second })
                                         add("memory_tool")

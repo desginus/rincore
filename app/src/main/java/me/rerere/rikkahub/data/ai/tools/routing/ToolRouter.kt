@@ -360,7 +360,7 @@ class ToolRouter(
                                             appendLine("调 `use_skill(name=\"skill名\")` 加载 skill 的 SKILL.md 指令。")
                                         }
                                         // 其他域的 skill 挂载 (move_tool_to_domain 挂载的 skill)
-                                        val mountedSkills = toolDomainOverrides.entries
+                                        val mountedSkills = overrides.entries
                                             .filter { it.key.startsWith("skill:") && it.value == resolvedName }
                                             .map { it.key.removePrefix("skill:") }
                                         if (mountedSkills.isNotEmpty()) {

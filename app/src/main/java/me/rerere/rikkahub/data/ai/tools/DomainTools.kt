@@ -31,8 +31,7 @@ fun createDomainTools(
     return listOf(
         createDomainTool(settingsStore),
         deleteDomainTool(settingsStore),
-        listDomainsTool(settingsStore),
-        moveToolTool(settingsStore, knownToolNames, knownSkillNames),
+        listDomainsTool(settingsStore, knownToolNames, knownSkillNames),
     )
 }
 
