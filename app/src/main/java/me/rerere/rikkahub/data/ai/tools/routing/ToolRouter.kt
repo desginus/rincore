@@ -277,7 +277,6 @@ class ToolRouter(
                                             val display = router.displayName(ck)
                                             val nameText = if (display == ck) ck else "$ck（$display）"
                                             val desc = router.getTriggerDescription(ck)
-                                            val count = classified[ck]?.size ?: 0
                                             val keywords = router.getKeywords(ck)
                                             val kwText = if (keywords.isEmpty()) "" else {
                                                 val shown = keywords.take(8)
@@ -285,26 +284,25 @@ class ToolRouter(
                                                 val suffix = if (rest > 0) " 等${keywords.size}个" else ""
                                                 " [触发: ${shown.joinToString("、")}$suffix]"
                                             }
-                                            appendLine("- **`$nameText`** ($short): $desc · ${count}个工具$kwText")
+                                            appendLine("- **`$nameText`** ($short): $desc$kwText")
                                         }
                                     }
                                     if (directTools.isNotEmpty()) {
-                                        appendLine("「$resolvedName」含${childKeys.size}个子域和${directTools.size}个直接工具:")
+                                        appendLine("「$resolvedName」含${childKeys.size}个子域及直接工具:")
                                         appendLine()
                                         append(subInfo)
                                         appendLine()
-                                        appendLine("直接工具(${directTools.size})：")
+                                        appendLine("直接工具：")
                                         for (t in directTools.sortedBy { it.name }.take(8)) {
-                                            appendLine("- `${t.name}`: ${t.description.take(60).replace("\n", " ")}")
+                                            appendLine("- `${t.name}`: ${t.description.take(60).replace("\\n", " ")}")
                                         }
-                                        if (directTools.size > 8) appendLine("  ...等${directTools.size}个")
                                     } else {
                                         appendLine("「$resolvedName」含${childKeys.size}个子域：")
                                         appendLine()
                                         append(subInfo)
                                     }
                                     appendLine()
-                                    appendLine("子域标注了触发描述与触发条件(关键词)，据此判断是否加载。调 `invoke_tools(\"子域完整路径\")` 加载具体工具。")
+                                    appendLine("子域标注了触发描述与触发条件(关键词)，据此判断是否加载。调 `invoke_tools(\\\"子域完整路径\\\")` 加载具体工具。")
                                 }
                                 listOf(UIMessagePart.Text(summary))
                             } else {
@@ -324,10 +322,15 @@ class ToolRouter(
                                 val rootOnly = if (resolvedName == parentRoot) allInParent else directTools
 
                                 val summary = buildString {
-                                    appendLine("已加载「$resolvedName」。${rootOnly.size}个工具：")
-                                    for (t in rootOnly.sortedBy { it.name }) {
-                                        val desc = t.description.take(80).replace("\n", " ")
-                                        appendLine("- `${t.name}`: $desc")
+                                    if (rootOnly.isEmpty()) {
+                                        appendLine("已加载「$resolvedName」，但该域当前无可用工具。")
+                                        appendLine("可尝试 `invoke_tools(\\\"帮助\\\")` 查看其他域。")
+                                    } else {
+                                        appendLine("已加载「$resolvedName」。可用工具：")
+                                        for (t in rootOnly.sortedBy { it.name }) {
+                                            val desc = t.description.take(80).replace("\\n", " ")
+                                            appendLine("- `${t.name}`: $desc")
+                                        }
                                     }
                                 }
                                 listOf(UIMessagePart.Text(summary))

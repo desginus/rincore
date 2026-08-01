@@ -9,10 +9,10 @@ import me.rerere.rikkahub.data.db.entity.MemoryEntity
 
 @Dao
 interface MemoryDAO {
-    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId")
+    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId ORDER BY id ASC")
     fun getMemoriesOfAssistantFlow(assistantId: String): Flow<List<MemoryEntity>>
 
-    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId")
+    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId ORDER BY id ASC")
     suspend fun getMemoriesOfAssistant(assistantId: String): List<MemoryEntity>
 
     @Query("SELECT * FROM memoryentity")
