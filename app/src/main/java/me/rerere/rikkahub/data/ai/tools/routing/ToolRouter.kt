@@ -143,7 +143,9 @@ class ToolRouter(
             " [触发: ${shown.joinToString("、")}$suffix]"
         }
         val countText = toolCount?.let { " · ${it}工具" } ?: ""
-        return "$indent**`$display`** — $desc$kwText$countText"
+        // 路径名为主键（可直接用于 invoke_tools 加载），显示名不同时附注
+        val nameText = if (display == domain) "`$domain`" else "`$domain`（显示名: $display）"
+        return "$indent**$nameText** — $desc$kwText$countText"
     }
 
     fun buildLayer1(tools: List<Tool>): String {
@@ -218,7 +220,7 @@ class ToolRouter(
                     properties = buildJsonObject {
                         put("name", buildJsonObject {
                             put("type", "string")
-                            put("description", "类别或子域名称，如 搜索、文件、技能。留空或传\"帮助\"查看全部类别。")
+                            put("description", "类别或子域完整路径（如 搜索/搜索引擎），显示名也可。留空或传\"帮助\"查看全部类别。")
                         })
                     },
                     required = listOf<String>() // name 可选
@@ -233,34 +235,42 @@ class ToolRouter(
                         val classified = router.classifyAll(allTools)
                         val treeNodes = router.buildDomainTree()
 
+                        // 显示名 → 路径名 反查: 模型可能直接复制帮助地图上的显示名调用
+                        // (domainNameOverrides 配置了显示名覆盖时, 加载仍按路径名解析)
+                        val resolvedName = router.domainNameOverrides.entries
+                            .firstOrNull { it.value == rawName }
+                            ?.key ?: rawName
+
                         // 用声明式域树检查域名是否存在 + 获取子域列表
-                        val domainExists = treeNodes.containsKey(rawName) ||
-                            treeNodes.values.flatten().any { it == rawName }
+                        val domainExists = treeNodes.containsKey(resolvedName) ||
+                            treeNodes.values.flatten().any { it == resolvedName }
 
                         if (!domainExists) {
                             val avail = treeNodes.keys.toList()
                             listOf(UIMessagePart.Text("未知: '$rawName'。可用顶级域: ${avail.joinToString("、")}。调 `invoke_tools(\"帮助\")` 查看详情。"))
                         } else {
-                            loadedDomains.add(rawName)
+                            loadedDomains.add(resolvedName)
 
                             // 子域列表从声明式域树获取
                             val childKeys = when {
-                                treeNodes.containsKey(rawName) -> treeNodes[rawName]!!
+                                treeNodes.containsKey(resolvedName) -> treeNodes[resolvedName]!!
                                 else -> treeNodes.entries
-                                    .find { it.value.contains(rawName) }
+                                    .find { it.value.contains(resolvedName) }
                                     ?.let { (parent, subs) ->
-                                        subs.filter { it.startsWith("$rawName/") }
+                                        subs.filter { it.startsWith("$resolvedName/") }
                                     } ?: emptyList()
                             }
 
                             // 工具从分类结果获取
-                            val directTools = classified[rawName].orEmpty()
+                            val directTools = classified[resolvedName].orEmpty()
                             if (childKeys.isNotEmpty()) {
                                 // 有子域: 显示子域列表
                                 val summary = buildString {
                                     val subInfo = buildString {
                                         for (ck in childKeys.sorted()) {
                                             val short = ck.substringAfterLast("/")
+                                            val display = router.displayName(ck)
+                                            val nameText = if (display == ck) ck else "$ck（$display）"
                                             val desc = router.getTriggerDescription(ck)
                                             val count = classified[ck]?.size ?: 0
                                             val keywords = router.getKeywords(ck)
@@ -270,11 +280,11 @@ class ToolRouter(
                                                 val suffix = if (rest > 0) " 等${keywords.size}个" else ""
                                                 " [触发: ${shown.joinToString("、")}$suffix]"
                                             }
-                                            appendLine("- **`$ck`** ($short): $desc · ${count}个工具$kwText")
+                                            appendLine("- **`$nameText`** ($short): $desc · ${count}个工具$kwText")
                                         }
                                     }
                                     if (directTools.isNotEmpty()) {
-                                        appendLine("「$rawName」含${childKeys.size}个子域和${directTools.size}个直接工具:")
+                                        appendLine("「$resolvedName」含${childKeys.size}个子域和${directTools.size}个直接工具:")
                                         appendLine()
                                         append(subInfo)
                                         appendLine()
@@ -284,7 +294,7 @@ class ToolRouter(
                                         }
                                         if (directTools.size > 8) appendLine("  ...等${directTools.size}个")
                                     } else {
-                                        appendLine("「$rawName」含${childKeys.size}个子域：")
+                                        appendLine("「$resolvedName」含${childKeys.size}个子域：")
                                         appendLine()
                                         append(subInfo)
                                     }
@@ -294,7 +304,7 @@ class ToolRouter(
                                 listOf(UIMessagePart.Text(summary))
                             } else {
                                 // 叶子域: 直接返回工具列表
-                                val parentRoot = rawName.split("/").first()
+                                val parentRoot = resolvedName.split("/").first()
                                 val allInParent = classified.entries
                                     .filter { it.key == parentRoot || it.key.startsWith("$parentRoot/") }
                                     .flatMap { it.value }
@@ -306,10 +316,10 @@ class ToolRouter(
                                         parentTools - subTools
                                     }
                                 // 不在这 parentRoot 的子域里的直接工具
-                                val rootOnly = if (rawName == parentRoot) allInParent else directTools
+                                val rootOnly = if (resolvedName == parentRoot) allInParent else directTools
 
                                 val summary = buildString {
-                                    appendLine("已加载「$rawName」。${rootOnly.size}个工具：")
+                                    appendLine("已加载「$resolvedName」。${rootOnly.size}个工具：")
                                     for (t in rootOnly.sortedBy { it.name }) {
                                         val desc = t.description.take(80).replace("\n", " ")
                                         appendLine("- `${t.name}`: $desc")
