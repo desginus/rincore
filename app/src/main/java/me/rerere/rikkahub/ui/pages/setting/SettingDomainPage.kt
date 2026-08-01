@@ -86,23 +86,31 @@ private fun buildNestedDomains(
     val domainChildren = mutableMapOf<String, LinkedHashSet<String>>()
     val allTopLevel = linkedSetOf<String>()
 
+    // 管理页可见性: 真删除(removed)的域不显示(不可恢复); 隐藏(hidden)的域保留显示+标记(可恢复)
+    fun notRemoved(domain: String): Boolean {
+        val root = domain.split("/").first()
+        return domain !in router.removedBuiltinDomains && root !in router.removedBuiltinDomains
+    }
+
     for (td in ToolDomain.entries) {
+        if (!notRemoved(td.label)) continue
         if (td.parent != null) {
             domainChildren.getOrPut(td.parent) { linkedSetOf() }.add(td.label)
         } else {
             allTopLevel.add(td.label)
         }
     }
-    // 自定义域: parent=null → 顶级域; parent!=null → 子域 (去重)
+    // 自定义域: parent=null → 顶级域; parent!=null → 子域 (去重) — 过滤真删除
     for (cd in router.customDomains) {
+        if (!notRemoved(cd.name)) continue
         if (cd.parent == null) {
             allTopLevel.add(cd.name)
-        } else {
+        } else if (notRemoved(cd.parent!!)) {
             domainChildren.getOrPut(cd.parent) { linkedSetOf() }.add(cd.name)
         }
     }
 
-    val visibleTopLevel = allTopLevel.filter { it !in router.removedBuiltinDomains }
+    val visibleTopLevel = allTopLevel.filter { notRemoved(it) }
 
     val result = mutableListOf<Pair<String, Map<String, MutableList<ToolPreview>>?>>()
     for (parent in visibleTopLevel) {
@@ -340,9 +348,14 @@ fun SettingDomainPage(
     // === 子域管理对话框 ===
     if (subdomainParent != null) {
         val parentDomain = subdomainParent!!
-        // 收集该父域下的所有子域：内置 + 自定义 (排除已隐藏的)
-        val builtinSubs = ToolDomain.entries.filter { it.parent == parentDomain }.map { it.label }
-        val customSubs = settings.customDomains.filter { it.parent == parentDomain }.map { it.name }
+        // 收集该父域下的所有子域：内置 + 自定义
+        // 管理页规则: 真删除(removed)不显示; 隐藏(hidden)保留显示+[已隐藏]标记(可恢复)
+        fun notRemoved(domain: String): Boolean {
+            val root = domain.split("/").first()
+            return domain !in settings.removedBuiltinDomains && root !in settings.removedBuiltinDomains
+        }
+        val builtinSubs = ToolDomain.entries.filter { it.parent == parentDomain }.map { it.label }.filter { notRemoved(it) }
+        val customSubs = settings.customDomains.filter { it.parent == parentDomain }.map { it.name }.filter { notRemoved(it) }
         val allSubs = (builtinSubs + customSubs).sorted()
         val parentTools = flatDomainMap[parentDomain].orEmpty()
         AlertDialog(
@@ -385,7 +398,7 @@ fun SettingDomainPage(
                                                 Icon(if (isSubHidden) HugeIcons.ViewOff else HugeIcons.View, null, modifier = Modifier.size(14.dp))
                                             }
                                         }
-                                        // 删除按钮: 自定义域从 customDomains 移除, 内置域加入 hiddenDomains
+                                        // 删除按钮: 自定义域从 customDomains 移除, 内置域永久删除 (removedBuiltinDomains)
                                         IconButton(onClick = {
                                             if (isCustom) {
                                                 // 删除自定义子域: 工具回归父域
@@ -397,9 +410,13 @@ fun SettingDomainPage(
                                                     toolDomainOverrides = newOverrides,
                                                 ))
                                             } else {
-                                                // 隐藏内置子域
+                                                // 真删除内置子域 (removedBuiltinDomains, 不可恢复) + 清理相关配置
                                                 vm.updateSettings(settings.copy(
-                                                    hiddenDomains = settings.hiddenDomains + subFull
+                                                    removedBuiltinDomains = settings.removedBuiltinDomains + subFull,
+                                                    toolDomainOverrides = settings.toolDomainOverrides.filter { !it.value.startsWith(subFull) },
+                                                    customDomainDescriptions = settings.customDomainDescriptions.toMutableMap().also { it.remove(subFull) },
+                                                    customDomainKeywords = settings.customDomainKeywords.toMutableMap().also { it.remove(subFull) },
+                                                    domainNameOverrides = settings.domainNameOverrides.toMutableMap().also { it.remove(subFull) },
                                                 ))
                                             }
                                             revision++

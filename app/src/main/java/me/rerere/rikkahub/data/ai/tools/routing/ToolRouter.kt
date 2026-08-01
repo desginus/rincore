@@ -107,11 +107,17 @@ class ToolRouter(
 
     fun displayName(domain: String): String = domainNameOverrides[domain] ?: domain
 
-    /** 检查域是否有效（未被删除/隐藏） — 与 buildDomainTree 过滤逻辑一致 */
+    /** 检查域是否有效（未被删除/隐藏） — 支持子域级删除/隐藏 (完整路径 + 根域级联) */
     private fun isValidDomain(domain: String): Boolean {
         val root = domain.split("/").first()
+        // 子域级: 完整路径在 removed/hidden 中 → 不可见
+        if (domain in removedBuiltinDomains || domain in hiddenDomains) return false
+        // 根域级: 根被删除/隐藏 → 级联其全部子域
         return root !in removedBuiltinDomains && root !in hiddenDomains
     }
+
+    /** 公开可见性判断 — 供 UI/管理工具使用 (与 isValidDomain 同一逻辑) */
+    fun isDomainVisible(domain: String): Boolean = isValidDomain(domain)
 
     fun getTriggerDescription(domain: String): String {
         customDescriptions[domain]?.let { return it }
@@ -180,29 +186,26 @@ class ToolRouter(
         }
     }
 
-    /** 构建声明式域树: ToolDomain枚举 + customDomains, 过滤 hiddenDomains + removedBuiltinDomains */
+    /** 构建声明式域树: ToolDomain枚举 + customDomains, 过滤 hiddenDomains + removedBuiltinDomains (含子域级) */
     private fun buildDomainTree(): Map<String, List<String>> {
         val result = mutableMapOf<String, MutableList<String>>()
 
         // 内置域 (ToolDomain枚举)
         for (entry in ToolDomain.entries) {
             val label = entry.label
+            if (!isValidDomain(label)) continue  // 根域或子域被删除/隐藏都跳过
             val parts = label.split("/")
             val root = parts.first()
-            if (root in removedBuiltinDomains) continue  // 删除的域直接跳过
-            if (root in hiddenDomains) continue          // 隐藏的域不显示
             result.getOrPut(root) { mutableListOf() }
             if (parts.size > 1) result[root]!!.add(label)
         }
 
         // 自定义域
         for (cd in customDomains) {
-            if (cd.name in removedBuiltinDomains) continue
-            if (cd.name in hiddenDomains) continue
+            if (!isValidDomain(cd.name)) continue
             if (cd.parent != null) {
-                val parentRoot = cd.parent!!.split("/").first()
-                if (parentRoot !in removedBuiltinDomains && parentRoot !in hiddenDomains) {
-                    result.getOrPut(parentRoot) { mutableListOf() }.add(cd.name)
+                if (isValidDomain(cd.parent!!)) {
+                    result.getOrPut(cd.parent!!) { mutableListOf() }.add(cd.name)
                 }
             } else {
                 result.getOrPut(cd.name) { mutableListOf() }

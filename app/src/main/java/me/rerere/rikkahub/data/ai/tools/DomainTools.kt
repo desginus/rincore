@@ -191,14 +191,14 @@ private fun deleteDomainTool(settingsStore: SettingsStore) = Tool(
         val settings = settingsStore.settingsFlow.value
         val removedSet = settings.removedBuiltinDomains
         val hiddenSet = settings.hiddenDomains
-        // 与 buildDomainTree 过滤一致: 按根域过滤
-        val domains = settings.customDomains.filter {
-            val root = it.name.split("/").first()
-            root !in removedSet && root !in hiddenSet &&
-            (it.parent == null || it.parent!!.split("/").first() !in removedSet && it.parent!!.split("/").first() !in hiddenSet)
+        // 与 ToolRouter.isValidDomain 过滤一致: 完整路径 + 根域级联 (支持子域级删除/隐藏)
+        fun visible(domain: String): Boolean {
+            val root = domain.split("/").first()
+            return domain !in removedSet && domain !in hiddenSet &&
+                root !in removedSet && root !in hiddenSet
         }
-        val builtin = me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.map { it.label }
-            .filter { it.split("/").first() !in hiddenSet && it.split("/").first() !in removedSet }
+        val domains = settings.customDomains.filter { visible(it.name) && (it.parent == null || visible(it.parent!!)) }
+        val builtin = me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.map { it.label }.filter { visible(it) }
         
         val result = buildString {
             appendLine("内置域 (${builtin.size}个):")
@@ -255,13 +255,17 @@ private fun listDomainsTool(settingsStore: SettingsStore) = Tool(
         val targetDomain = input.jsonObject["target_domain"]?.jsonPrimitive?.content ?: error("target_domain required")
 
         val settings = settingsStore.settingsFlow.value
-        // 校验目标域有效性
+        // 校验目标域有效性 — 完整路径 + 根域级联 (与 ToolRouter.isValidDomain 一致)
+        fun visible(domain: String): Boolean {
+            val root = domain.split("/").first()
+            return domain !in settings.hiddenDomains && domain !in settings.removedBuiltinDomains &&
+                root !in settings.hiddenDomains && root !in settings.removedBuiltinDomains
+        }
         val allValid = (me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.map { it.label }.toSet()
             + settings.customDomains.map { it.name }.toSet())
-            .filter { it !in settings.hiddenDomains && it !in settings.removedBuiltinDomains }
+            .filter { visible(it) }
             .toSet()
-        val root = targetDomain.split("/").first()
-        if (root !in allValid) {
+        if (targetDomain !in allValid) {
             listOf(UIMessagePart.Text(
                 "无效目标域 '$targetDomain'。" +
                 "该域可能已被删除或隐藏。可用域: ${allValid.sorted().joinToString("、")}"
