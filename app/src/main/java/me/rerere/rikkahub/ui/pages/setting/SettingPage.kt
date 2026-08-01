@@ -127,6 +127,13 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
             }
 
             item("generalSettings") {
+                val context = LocalContext.current
+                var colorMode by rememberColorMode()
+                val selectedColorModeText = when (colorMode) {
+                    ColorMode.SYSTEM -> stringResource(R.string.setting_page_color_mode_system)
+                    ColorMode.LIGHT -> stringResource(R.string.setting_page_color_mode_light)
+                    ColorMode.DARK -> stringResource(R.string.setting_page_color_mode_dark)
+                }
                 CardGroup(
                     modifier = Modifier.padding(horizontal = 8.dp),
                     title = { Text("通用与外观") },
@@ -253,6 +260,9 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                 }
             }
             item("dataSettings") {
+                val storageState by produceState(-1 to 0L) {
+                    value = filesManager.countChatFiles()
+                }
                 CardGroup(
                     modifier = Modifier.padding(horizontal = 8.dp),
                     title = { Text("数据与存储") },
