@@ -256,6 +256,12 @@ class ToolRouter(
                         if (!domainExists) {
                             val avail = treeNodes.keys.toList()
                             listOf(UIMessagePart.Text("未知: '$rawName'。可用顶级域: ${avail.joinToString("、")}。调 `invoke_tools(\"帮助\")` 查看详情。"))
+                        } else if (resolvedName in loadedDomains) {
+                            // 已加载: 返回状态提示, 避免模型重复加载同域 (tools 不变 → 缓存稳定)
+                            listOf(UIMessagePart.Text(
+                                "「$resolvedName」已加载，其工具可直接调用，无需重复加载。\n" +
+                                "如需其他域的工具，调 `invoke_tools(\"其他域路径\")` 加载；域结构见 `invoke_tools(\"帮助\")`。"
+                            ))
                         } else {
                             loadedDomains.add(resolvedName)
 

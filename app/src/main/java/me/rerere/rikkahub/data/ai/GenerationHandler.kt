@@ -114,6 +114,7 @@ class GenerationHandler(
         val baseAllTools = (tools + baseMcpTools).distinctBy { it.name }
         var currentAllTools = baseAllTools
 
+        var loadedDomainsEmitted = false
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
             CallTracer.event("STEP", "step_$stepIndex", "Step $stepIndex begin, ${tools.size} tools loaded, messages=${messages.size}")
@@ -286,6 +287,7 @@ class GenerationHandler(
                     // no tool calls, break — emit loadedDomains for persistence
                     if (useLayered && loadedDomains.isNotEmpty()) {
                         emit(GenerationChunk.LoadedDomains(loadedDomains.toSet()))
+                        loadedDomainsEmitted = true
                     }
                     CallTracer.event("FINISH", "no_tools", "Conversation finished, no pending tools")
                     break
@@ -483,6 +485,12 @@ class GenerationHandler(
                     )
                 )
             )
+        }
+        // 兜底持久化: 无论循环如何退出(maxSteps 用尽/工具链中断/正常结束),
+        // 只要加载过域就持久化 — 避免下一轮恢复失败导致 tools 变化 → 缓存失效
+        if (!loadedDomainsEmitted && useLayered && loadedDomains.isNotEmpty()) {
+            emit(GenerationChunk.LoadedDomains(loadedDomains.toSet()))
+            Log.i(TAG, "streamText: fallback emit LoadedDomains after loop (maxSteps exhausted or interrupted)")
         }
         CallTracer.finishTrace()
 
