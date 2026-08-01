@@ -68,8 +68,8 @@ class ToolRouter(
         if (tool.name in metaToolNames) return "system"
         // 1. 手动覆盖 — 仅指向有效域，否则 fall through
         overrides[tool.name]?.let { if (it in validDomainLabels && isValidDomain(it)) return it }
-        // 2. Skill 工具归入「技能」域
-        if (tool.name.startsWith("skill_")) {
+        // 2. Skill 工具归入「技能」域 (use_skill 是 skill 体系的统一入口)
+        if (tool.name == "use_skill" || tool.name.startsWith("skill_")) {
             return if (isValidDomain("技能")) "技能" else "方法域"
         }
         // 3. 系统级工具 — 按名称前缀精确匹配, 优先于关键词避免误分类
@@ -218,6 +218,7 @@ class ToolRouter(
     fun createInvokeToolsTool(
         allTools: List<Tool>,
         loadedDomains: MutableSet<String>,
+        skills: List<Pair<String, String>> = emptyList(), // skill 名 to 描述 (由 invoke_tools 返回, 不进 system/tools)
     ): Tool {
         val router = this
         return Tool(
@@ -333,12 +334,26 @@ class ToolRouter(
                                 val summary = buildString {
                                     if (rootOnly.isEmpty()) {
                                         appendLine("已加载「$resolvedName」，但该域当前无可用工具。")
-                                        appendLine("可尝试 `invoke_tools(\\\"帮助\\\")` 查看其他域。")
+                                        appendLine("可尝试 `invoke_tools(\"帮助\")` 查看其他域。")
                                     } else {
                                         appendLine("已加载「$resolvedName」。可用工具：")
                                         for (t in rootOnly.sortedBy { it.name }) {
-                                            val desc = t.description.take(80).replace("\\n", " ")
+                                            val desc = t.description.take(80).replace("\n", " ")
                                             appendLine("- `${t.name}`: $desc")
+                                        }
+                                        // 技能域: 附加已启用 skill 列表 (由 invoke_tools 返回, 模型通过 use_skill 调用)
+                                        if (rootOnly.any { it.name == "use_skill" }) {
+                                            appendLine()
+                                            appendLine("可用 Skills（通过 `use_skill` 加载其指令后调用）:")
+                                            if (skills.isEmpty()) {
+                                                appendLine("  （当前没有已启用的 skill）")
+                                            } else {
+                                                for ((sname, sdesc) in skills) {
+                                                    appendLine("- `$sname`: ${sdesc.take(120).replace("\n", " ")}")
+                                                }
+                                            }
+                                            appendLine()
+                                            appendLine("调 `use_skill(name=\"skill名\")` 加载 skill 的 SKILL.md 指令。")
                                         }
                                     }
                                 }

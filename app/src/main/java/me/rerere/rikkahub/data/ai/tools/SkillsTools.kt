@@ -21,25 +21,10 @@ fun createSkillTools(
     return listOf(
         Tool(
             name = "use_skill",
-            description = """
-                Load and apply a skill to get specialized instructions or capabilities.
-                Call this tool when the user's request matches one of the available skills.
-            """.trimIndent(),
-            systemPrompt = { _, _ ->
-                buildString {
-                    appendLine("**Skills**")
-                    appendLine("You have access to the following skills. Use the `use_skill` tool to load a skill's instructions when the user's request matches.")
-                    appendLine("<available_skills>")
-                    available.forEach { skill ->
-                        appendLine("  <skill>")
-                        appendLine("    <name>${skill.name}</name>")
-                        appendLine("    <description>${skill.description}</description>")
-                        appendLine("  </skill>")
-                    }
-                    append("</available_skills>")
-                    appendLine()
-                }
-            },
+            description = "Load and apply a skill to get specialized instructions or capabilities. Call this tool when the user's request matches one of the available skills. 可用 skill 列表由 invoke_tools(\"技能\") 返回。",
+            // 注意: 不再通过 systemPrompt 注入 skills 列表 —
+            // 分层模式下 systemPrompt 不注入, 且动态列表破坏缓存。
+            // skills 元数据统一由 invoke_tools("技能") 在消息层返回。
             parameters = {
                 InputSchema.Obj(
                     properties = buildJsonObject {

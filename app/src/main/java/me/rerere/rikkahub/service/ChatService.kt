@@ -548,6 +548,11 @@ class ChatService(
                 conversationLorebookIds = conversation.lorebookIds,
                 workspaceCwd = conversation.workspaceCwd,
                 conversationLoadedDomains = conversation.loadedDomains,
+                enabledSkills = if (assistant.enabledSkills.isNotEmpty()) {
+                    skillManager.listSkills()
+                        .filter { it.name in assistant.enabledSkills }
+                        .map { it.name to it.description }
+                } else emptyList(),
                 memories = if (assistant.useGlobalMemory) {
                     memoryRepository.getGlobalMemories()
                 } else {

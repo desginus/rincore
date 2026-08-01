@@ -94,12 +94,19 @@ class GenerationHandler(
         conversationLorebookIds: Set<Uuid> = emptySet(),
         workspaceCwd: String? = null,
         conversationLoadedDomains: Set<String>? = null,
+        enabledSkills: List<Pair<String, String>> = emptyList(), // skill 名 to 描述 (invoke_tools 返回)
     ): Flow<GenerationChunk> = flow {
         CallTracer.startTrace(id = model.id.toString())
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
 
         var messages: List<UIMessage> = messages
+        // 清洗非法消息序列 (未配对 tool_call / 孤儿 tool 消息) — 防止 Qwen 报 "Required settings preface not received"
+        val sanitized = messages.sanitizeToolCallSequence()
+        if (sanitized.size != messages.size) {
+            Log.w(TAG, "streamText: sanitized message sequence (${messages.size} -> ${sanitized.size})")
+        }
+        messages = sanitized
 
         // === 分层路由状态 ===
         val useLayered = assistant.useLayeredTools && tools.isNotEmpty()
@@ -179,7 +186,7 @@ class GenerationHandler(
                         ).let(this::addAll)
                     }
                     // invoke_tools — 唯一始终注入的非 memory 工具, 模型通过它按需加载所有其他工具
-                    add(toolRouter.createInvokeToolsTool(allTools, loadedDomains))
+                    add(toolRouter.createInvokeToolsTool(allTools, loadedDomains, enabledSkills))
                     // 已加载域的工具
                     for (domain in loadedDomains) {
                         addAll(toolRouter.getDomainTools(domain, allTools))
@@ -767,4 +774,45 @@ class GenerationHandler(
             }
         }
     }.flowOn(Dispatchers.IO)
+}
+
+
+/**
+ * 清洗消息序列中的非法工具调用结构, 防止 Qwen/DashScope 校验失败
+ * ("Required settings preface not received" 通常是消息序列非法的报错)
+ *
+ * 1. 丢弃孤儿 tool 消息 (TOOL 角色但前面无对应 assistant tool_call)
+ * 2. 移除末尾未配对的 assistant tool_call (生成中断/压缩残留)
+ */
+private fun List<UIMessage>.sanitizeToolCallSequence(): List<UIMessage> {
+    val pendingCalls = mutableSetOf<String>()
+    val result = mutableListOf<UIMessage>()
+    for (msg in this) {
+        when (msg.role) {
+            MessageRole.ASSISTANT -> {
+                result.add(msg)
+                msg.getTools().filter { it.output.isEmpty() }.forEach { pendingCalls.add(it.toolCallId) }
+            }
+            MessageRole.TOOL -> {
+                val ids = msg.getTools().map { it.toolCallId }
+                if (ids.isNotEmpty() && ids.all { it in pendingCalls }) {
+                    result.add(msg)
+                    pendingCalls.removeAll(ids)
+                } else {
+                    Log.w(TAG, "sanitize: dropping orphan tool message $ids")
+                }
+            }
+            else -> result.add(msg)
+        }
+    }
+    // 移除末尾未配对的 assistant tool_call (生成中断残留)
+    while (result.isNotEmpty()) {
+        val last = result.last()
+        val unpaired = last.getTools().filter { it.output.isEmpty() && it.toolCallId in pendingCalls }
+        if (last.role == MessageRole.ASSISTANT && unpaired.isNotEmpty()) {
+            pendingCalls.removeAll(unpaired.map { it.toolCallId })
+            result.removeAt(result.size - 1)
+        } else break
+    }
+    return result
 }
