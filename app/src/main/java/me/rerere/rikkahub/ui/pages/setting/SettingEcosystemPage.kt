@@ -26,10 +26,6 @@ import me.rerere.rikkahub.ui.theme.CustomColors
 
 @Composable
 fun SettingEcosystemPage() {
-    val instructions by EcosystemManager.instructions.collectAsStateWithLifecycle()
-    val enabledIds by EcosystemManager.enabledIds.collectAsStateWithLifecycle()
-    val scannedDirs by EcosystemManager.scannedDirs.collectAsStateWithLifecycle()
-
     Scaffold(
         topBar = {
             LargeFlexibleTopAppBar(
@@ -44,6 +40,18 @@ fun SettingEcosystemPage() {
             )
         }
     ) { innerPadding ->
+        EcosystemContent(innerPadding)
+    }
+}
+
+/** 生态系统内容 — 供独立页与「技能与生态」合并页复用 */
+@Composable
+fun EcosystemContent(innerPadding: PaddingValues = PaddingValues()) {
+    val instructions by EcosystemManager.instructions.collectAsStateWithLifecycle()
+    val enabledIds by EcosystemManager.enabledIds.collectAsStateWithLifecycle()
+    val scannedDirs by EcosystemManager.scannedDirs.collectAsStateWithLifecycle()
+
+    if (instructions.isEmpty()) {
         if (instructions.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize().padding(innerPadding).padding(32.dp),

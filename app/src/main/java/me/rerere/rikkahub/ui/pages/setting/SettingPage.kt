@@ -280,16 +280,16 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         headlineContent = { Text("运行日志") },
                     )
                     item(
-                        onClick = { navController.navigate(Screen.SettingClawSkills) },
+                        onClick = { navController.navigate(Screen.SettingSkillsEcosystem) },
                         leadingContent = { Icon(HugeIcons.Package, null) },
-                        supportingContent = { Text("管理 OpenClaw 技能生态兼容层") },
-                        headlineContent = { Text("OpenClaw 技能") },
+                        supportingContent = { Text("OpenClaw 技能 + 生态指令（合并管理）") },
+                        headlineContent = { Text("技能与生态") },
                     )
                     item(
-                        onClick = { navController.navigate(Screen.SettingEcosystem) },
-                        leadingContent = { Icon(HugeIcons.ServerStack01, null) },
-                        supportingContent = { Text("OpenClaw / Claude Code / Cursor / Copilot 生态指令") },
-                        headlineContent = { Text("生态系统") },
+                        onClick = { navController.navigate(Screen.Skills) },
+                        leadingContent = { Icon(HugeIcons.Puzzle, null) },
+                        supportingContent = { Text("Agent Skills 能力模块（原在扩展管理中）") },
+                        headlineContent = { Text("Agent Skills") },
                     )
                 }
             }

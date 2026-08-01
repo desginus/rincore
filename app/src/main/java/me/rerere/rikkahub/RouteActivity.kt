@@ -113,8 +113,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingPreferencesUIPage
 import me.rerere.rikkahub.ui.pages.setting.SettingThemePage
 import me.rerere.rikkahub.ui.pages.setting.SettingFilesPage
 import me.rerere.rikkahub.ui.pages.setting.SettingCallTracePage
-import me.rerere.rikkahub.ui.pages.setting.SettingClawSkillsPage
-import me.rerere.rikkahub.ui.pages.setting.SettingEcosystemPage
+import me.rerere.rikkahub.ui.pages.setting.SettingSkillsEcosystemPage
 import me.rerere.rikkahub.ui.pages.setting.SettingMcpPage
 import me.rerere.rikkahub.ui.pages.setting.SettingModelPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPage
@@ -603,11 +602,8 @@ class RouteActivity : ComponentActivity() {
                             entry<Screen.SettingCallTrace> {
                                 SettingCallTracePage()
                             }
-                            entry<Screen.SettingClawSkills> {
-                                SettingClawSkillsPage()
-                            }
-                            entry<Screen.SettingEcosystem> {
-                                SettingEcosystemPage()
+                            entry<Screen.SettingSkillsEcosystem> {
+                                SettingSkillsEcosystemPage()
                             }
 
                             entry<Screen.SettingWeb> {
@@ -828,10 +824,7 @@ sealed interface Screen : NavKey {
     data object SettingCallTrace : Screen
 
     @Serializable
-    data object SettingClawSkills : Screen
-
-    @Serializable
-    data object SettingEcosystem : Screen
+    data object SettingSkillsEcosystem : Screen
 
     @Serializable
     data object SettingWeb : Screen

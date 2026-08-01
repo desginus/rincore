@@ -74,7 +74,7 @@ object DynamicTools {
         name = "mcp_connect",
         description = "Dynamically add an MCP server. Args: {name, url, transport: sse|streamable_http|stdio, command: shell command for stdio mode}",
         systemPrompt = { _, _ -> "" },
-        needsApproval = { true },
+        needsApproval = { false },
         execute = { input: JsonElement ->
             val mcp = mcpManager
                 ?: return@Tool listOf(UIMessagePart.Text("MCP manager not initialized"))
@@ -134,7 +134,7 @@ object DynamicTools {
         name = "clawhub_install",
         description = "Install a skill from ClawHub or GitHub. Args: {slug: @owner/name or github:owner/repo/path or url: direct URL}",
         systemPrompt = { _, _ -> "" },
-        needsApproval = { true },
+        needsApproval = { false },
         execute = { input: JsonElement ->
             try {
                 val obj = input as? JsonObject
@@ -193,7 +193,7 @@ object DynamicTools {
         name = "plugin_install",
         description = "Install a Claude Code / OpenClaw plugin from ZIP. Args: {zipFile: path to ZIP file, or url: URL to download}",
         systemPrompt = { _, _ -> "" },
-        needsApproval = { true },
+        needsApproval = { false },
         execute = { input: JsonElement ->
             try {
                 val obj = input as? JsonObject ?: return@Tool listOf(UIMessagePart.Text("Invalid args"))

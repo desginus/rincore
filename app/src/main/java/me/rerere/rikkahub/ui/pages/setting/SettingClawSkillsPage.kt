@@ -19,10 +19,6 @@ import me.rerere.rikkahub.ui.theme.CustomColors
 
 @Composable
 fun SettingClawSkillsPage() {
-    val skills by ClawSkillManager.skills.collectAsStateWithLifecycle()
-    val enabledNames by ClawSkillManager.enabledNames.collectAsStateWithLifecycle()
-    val workspaceRoot by ClawSkillManager.workspaceRoot.collectAsStateWithLifecycle()
-
     Scaffold(
         topBar = {
             LargeFlexibleTopAppBar(
@@ -32,6 +28,18 @@ fun SettingClawSkillsPage() {
             )
         }
     ) { innerPadding ->
+        ClawSkillsContent(innerPadding)
+    }
+}
+
+/** OpenClaw 技能内容 — 供独立页与「技能与生态」合并页复用 */
+@Composable
+fun ClawSkillsContent(innerPadding: PaddingValues = PaddingValues()) {
+    val skills by ClawSkillManager.skills.collectAsStateWithLifecycle()
+    val enabledNames by ClawSkillManager.enabledNames.collectAsStateWithLifecycle()
+    val workspaceRoot by ClawSkillManager.workspaceRoot.collectAsStateWithLifecycle()
+
+    if (skills.isEmpty()) {
         if (skills.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize().padding(innerPadding).padding(32.dp),

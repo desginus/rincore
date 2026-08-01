@@ -389,7 +389,10 @@ class GenerationHandler(
                         // Auto or Approved - execute the tool
                         TraceLogger.log("ToolExec", "${tool.toolName}")
                             runCatching {
+                            // 优先已加载域; 已批准工具允许从全量池兜底执行 (用户已批准 = 信任,
+                            // 避免工具未加载时执行失败 → 模型重试 → 再次调用 → 死循环)
                             val toolDef = toolsInternal.find { toolDef -> toolDef.name == tool.toolName }
+                                ?: allTools.find { it.name == tool.toolName }
                             if (toolDef == null) {
                                 // 分层模式下工具必须先通过 invoke_tools 加载，禁止自动加载其他域工具
                                 // 提示实际所属域, 引导模型自愈(加载正确域后重试)
