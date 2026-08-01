@@ -42,6 +42,14 @@ class ToolRouter(
 
     /** MCP 服务器名 → 默认域快速映射 (避免关键词误匹配) */
     private val mcpServerDomainDefaults = mapOf(
+        // 爬虫/搜索类 MCP (常见误分: firecrawl/exa 曾被内置域关键词拉到编程/用户交互)
+        "firecrawl" to "搜索",
+        "exa" to "搜索",
+        "tavily" to "搜索",
+        "brave" to "搜索",
+        "duckduckgo" to "搜索",
+        "serper" to "搜索",
+        "serpapi" to "搜索",
         // 物理引擎
         "physicsengine" to "物理引擎",
         // 图表
@@ -261,13 +269,9 @@ class ToolRouter(
                         if (!domainExists) {
                             val avail = treeNodes.keys.toList()
                             listOf(UIMessagePart.Text("未知: '$rawName'。可用顶级域: ${avail.joinToString("、")}。调 `invoke_tools(\"帮助\")` 查看详情。"))
-                        } else if (resolvedName in loadedDomains) {
-                            // 已加载: 返回状态提示, 避免模型重复加载同域 (tools 不变 → 缓存稳定)
-                            listOf(UIMessagePart.Text(
-                                "「$resolvedName」已加载，其工具可直接调用，无需重复加载。\n" +
-                                "如需其他域的工具，调 `invoke_tools(\"其他域路径\")` 加载；域结构见 `invoke_tools(\"帮助\")`。"
-                            ))
                         } else {
+                            // 已加载也返回最新完整摘要 (loadedDomains.add 幂等, tools 不变 → 缓存稳定;
+                            //  挂载/工具变更后 invoke_tools 同域即可刷新, 无需新会话)
                             loadedDomains.add(resolvedName)
 
                             // 子域列表从声明式域树获取
@@ -359,17 +363,17 @@ class ToolRouter(
                                             appendLine()
                                             appendLine("调 `use_skill(name=\"skill名\")` 加载 skill 的 SKILL.md 指令。")
                                         }
-                                        // 其他域的 skill 挂载 (move_tool_to_domain 挂载的 skill)
-                                        val mountedSkills = overrides.entries
-                                            .filter { it.key.startsWith("skill:") && it.value == resolvedName }
-                                            .map { it.key.removePrefix("skill:") }
-                                        if (mountedSkills.isNotEmpty()) {
-                                            appendLine()
-                                            appendLine("挂载到本域的 Skills（通过 `use_skill` 加载）:")
-                                            for (sname in mountedSkills.sorted()) {
-                                                val sdesc = skills.find { it.first == sname }?.second ?: ""
-                                                appendLine("- `$sname`: ${sdesc.take(100).replace("\n", " ")}")
-                                            }
+                                    }
+                                    // 无条件输出 skill 挂载 (修复: 纯技能域(无 MCP 工具)也渲染挂载的 Skills)
+                                    val mountedSkills = overrides.entries
+                                        .filter { it.key.startsWith("skill:") && it.value == resolvedName }
+                                        .map { it.key.removePrefix("skill:") }
+                                    if (mountedSkills.isNotEmpty()) {
+                                        appendLine()
+                                        appendLine("挂载到本域的 Skills（通过 `use_skill` 加载其指令后调用）:")
+                                        for (sname in mountedSkills.sorted()) {
+                                            val sdesc = skills.find { it.first == sname }?.second ?: ""
+                                            appendLine("- `$sname`: ${sdesc.take(100).replace("\n", " ")}")
                                         }
                                     }
                                 }

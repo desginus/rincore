@@ -86,10 +86,19 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
         when (action.lowercase()) {
             "create" -> {
                 val msg = settingsStore.updateWithResult { settings ->
+                    val builtinNames = me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.map { it.label }.toSet()
                     val existing = settings.customDomains.find { it.name == name }
                     when {
+                        // 内置域名: 复活 (移除 removedBuiltinDomains) + 清理 customDomains 同名冲突
+                        // 修复: 「技能」等内置域删除后"半存在"(配置层有/工具树无) — create 幂等复活
+                        name in builtinNames -> {
+                            settings.copy(
+                                removedBuiltinDomains = settings.removedBuiltinDomains - name,
+                                customDomains = settings.customDomains.filter { it.name != name && it.parent != name },
+                            ) to "内置域 '$name' 已就绪（如曾被删除现已复活；同名自定义记录已清理）。场景地图已同步。"
+                        }
                         existing != null -> settings to "域 '$name' 已存在"
-                        // 复活已删除的内置域 (removedBuiltinDomains 移除) — 修复「技能」等域删除后无法重建
+                        // 复活已删除的内置域 (removedBuiltinDomains 移除) — 兜底
                         name in settings.removedBuiltinDomains -> {
                             settings.copy(
                                 removedBuiltinDomains = settings.removedBuiltinDomains - name
