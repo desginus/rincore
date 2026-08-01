@@ -157,6 +157,8 @@ class ChatService(
         me.rerere.rikkahub.ecosystem.tools.DynamicTools.initialize(
             mcp = mcpManager,
             workspaceRoot = context.filesDir.resolve("ecosystem").absolutePath,
+            // ClawHub 安装的 skill 与 Agent Skills 同目录 (use_skill/proot 可见)
+            skillsRoot = context.filesDir.resolve(me.rerere.rikkahub.data.files.FileFolders.SKILLS).absolutePath,
         )
     }
 
@@ -551,7 +553,11 @@ class ChatService(
                 enabledSkills = if (assistant.enabledSkills.isNotEmpty()) {
                     skillManager.listSkills()
                         .filter { it.name in assistant.enabledSkills }
-                        .map { it.name to it.description }
+                        .map {
+                            // bug 13: name 与目录名不一致时附注目录名, 便于用户对应
+                            val dirNote = if (it.skillDir.name != it.name) " (目录: ${it.skillDir.name})" else ""
+                            it.name to (it.description + dirNote)
+                        }
                 } else emptyList(),
                 memories = if (assistant.useGlobalMemory) {
                     memoryRepository.getGlobalMemories()
@@ -592,12 +598,31 @@ class ChatService(
                             createSkillTools(
                                 enabledSkills = assistant.enabledSkills,
                                 allSkills = skillManager.listSkills(),
+                                skillProvider = { skillManager.listSkills() }, // 实时: 新增 Skill 无需重启
                             )
                         )
                     }
                     // Feature #2: AI 域管理工具
                     if (assistant.useLayeredTools) {
-                        addAll(createDomainTools(settingsStore))
+                        addAll(
+                            createDomainTools(
+                                settingsStore,
+                                knownToolNames = {
+                                    buildSet {
+                                        addAll(tools.map { it.name })
+                                        addAll(me.rerere.rikkahub.ecosystem.tools.DynamicTools.all().map { it.name })
+                                        addAll(mcpManager.getAllAvailableTools().map { it.second })
+                                        add("memory_tool")
+                                        add("invoke_tools")
+                                    }
+                                },
+                                knownSkillNames = {
+                                    skillManager.listSkills()
+                                        .filter { it.name in assistant.enabledSkills }
+                                        .map { it.name }.toSet()
+                                },
+                            )
+                        )
                     }
                     mcpManager.getAllAvailableTools().also { allTools ->
                         val invalidNames = allTools

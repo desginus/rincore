@@ -77,6 +77,10 @@ class ToolRouter(
         if (SYSTEM_TOOL_PREFIXES.any { tool.name.startsWith(it) }) {
             return if (isValidDomain("系统")) "系统" else "方法域"
         }
+        // 3.5 Memory 工具 — 归「对话工具/记忆」域 (不受 enableMemory 开关影响分类)
+        if (tool.name == "memory_tool") {
+            return if (isValidDomain("对话工具/记忆")) "对话工具/记忆" else "方法域"
+        }
 
         // 4. MCP 工具 — 服务器名映射 → 关键词 → AI兜底
         if (tool.name.startsWith("mcp__")) {
@@ -354,6 +358,18 @@ class ToolRouter(
                                             }
                                             appendLine()
                                             appendLine("调 `use_skill(name=\"skill名\")` 加载 skill 的 SKILL.md 指令。")
+                                        }
+                                        // 其他域的 skill 挂载 (move_tool_to_domain 挂载的 skill)
+                                        val mountedSkills = toolDomainOverrides.entries
+                                            .filter { it.key.startsWith("skill:") && it.value == resolvedName }
+                                            .map { it.key.removePrefix("skill:") }
+                                        if (mountedSkills.isNotEmpty()) {
+                                            appendLine()
+                                            appendLine("挂载到本域的 Skills（通过 `use_skill` 加载）:")
+                                            for (sname in mountedSkills.sorted()) {
+                                                val sdesc = skills.find { it.first == sname }?.second ?: ""
+                                                appendLine("- `$sname`: ${sdesc.take(100).replace("\n", " ")}")
+                                            }
                                         }
                                     }
                                 }

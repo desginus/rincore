@@ -14,6 +14,7 @@ import me.rerere.rikkahub.data.files.SkillPaths
 fun createSkillTools(
     enabledSkills: Set<String>,
     allSkills: List<SkillMetadata>,
+    skillProvider: () -> List<SkillMetadata> = { allSkills }, // 实时查询(可选) — 修复列表快照滞后: 新增 Skill 无需重启
 ): List<Tool> {
     val available = allSkills.filter { it.name in enabledSkills }
     if (available.isEmpty()) return emptyList()
@@ -46,8 +47,10 @@ fun createSkillTools(
             execute = {
                 val name = it.jsonObject["name"]?.jsonPrimitive?.content
                     ?: error("name is required")
-                val skill = available.firstOrNull { skill -> skill.name == name }
-                    ?: error("Skill '$name' is not available. Available skills: ${available.joinToString { it.name }}")
+                // 实时查询 (修复: 新增 Skill 无需重启, 立即可用)
+                val liveAvailable = skillProvider().filter { s -> s.name in enabledSkills }
+                val skill = liveAvailable.firstOrNull { s -> s.name == name }
+                    ?: error("Skill '$name' is not available. Available skills: ${liveAvailable.joinToString { it.name }}")
                 val path = it.jsonObject["path"]?.jsonPrimitive?.content
                 val content = if (path.isNullOrBlank()) {
                     require(skill.skillFile.exists()) { "Skill '$name' not found" }

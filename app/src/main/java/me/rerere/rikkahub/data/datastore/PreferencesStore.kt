@@ -79,6 +79,9 @@ class SettingsStore(
     context: Context,
     scope: AppScope,
 ) : KoinComponent {
+    /** 设置读-改-写互斥锁 — 保证并行域操作(create/delete/rename/move)原子性 */
+    private val settingsMutex = kotlinx.coroutines.sync.Mutex()
+
     companion object {
         // 版本号
         val VERSION = intPreferencesKey("data_version")
@@ -458,7 +461,20 @@ class SettingsStore(
     }
 
     suspend fun update(fn: (Settings) -> Settings) {
-        update(fn(settingsFlow.value))
+        // 原子读-改-写: 并行操作(create/delete/rename/move)基于最新值,
+        // 避免丢失更新 (此前并行 create 丢域 / rename+delete 竞态)
+        settingsMutex.withLock {
+            update(fn(settingsFlow.value))
+        }
+    }
+
+    /** 原子读-改-写并返回操作结果 — 供工具 execute 在锁内计算并携带结果 */
+    suspend fun <T> updateWithResult(fn: (Settings) -> Pair<Settings, T>): T {
+        settingsMutex.withLock {
+            val (newSettings, result) = fn(settingsFlow.value)
+            update(newSettings)
+            return result
+        }
     }
 
     suspend fun updateAssistant(assistantId: Uuid) {

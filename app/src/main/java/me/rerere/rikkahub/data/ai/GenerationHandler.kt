@@ -401,6 +401,8 @@ class GenerationHandler(
                                     if (knownTool != null) {
                                         val actualDomain = toolRouter.classifyTool(knownTool)
                                         "工具 ${tool.toolName} 未加载。它属于域「$actualDomain」。请先调用 invoke_tools(\"$actualDomain\") 加载对应域后再重试。"
+                                    } else if (tool.toolName == "memory_tool") {
+                                        "memory_tool 不可用：记忆功能未启用。请在助手设置中开启「长期记忆」(enableMemory) 后重试。"
                                     } else {
                                         "工具 ${tool.toolName} 不存在于任何域。"
                                     }

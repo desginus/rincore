@@ -23,10 +23,14 @@ object DynamicTools {
     private const val TAG = "DynamicTools"
     private var mcpManager: McpManager? = null
     private var ecosystemWorkspaceRoot: String = ""
+    // ClawHub 安装的 skill 落此目录 — 与 Agent Skills(SkillManager.getSkillsDir) 同一目录,
+    // 修复: 此前落 ecosystem 私有目录, proot/use_skill 不可见
+    private var skillsRoot: String = ""
 
-    fun initialize(mcp: McpManager, workspaceRoot: String) {
+    fun initialize(mcp: McpManager, workspaceRoot: String, skillsRoot: String = "") {
         mcpManager = mcp
         ecosystemWorkspaceRoot = workspaceRoot
+        this.skillsRoot = skillsRoot.ifEmpty { File(workspaceRoot, "skills").absolutePath }
     }
 
     fun all(): List<Tool> {
@@ -326,7 +330,7 @@ object DynamicTools {
         }
 
         val skillName = url.substringAfterLast("/").removeSuffix(".md")
-        val skillDir = File(ecosystemWorkspaceRoot, "skills/$skillName")
+        val skillDir = File(skillsRoot, skillName)
         skillDir.mkdirs()
         val text = String(content, Charsets.UTF_8)
         File(skillDir, "SKILL.md").writeText(text.take(50000))
@@ -335,7 +339,7 @@ object DynamicTools {
     }
 
     private suspend fun installZipContent(zipBytes: ByteArray, name: String): List<UIMessagePart> {
-        val targetDir = File(ecosystemWorkspaceRoot, "skills/$name")
+        val targetDir = File(skillsRoot, name)
         targetDir.mkdirs()
 
         ZipInputStream(ByteArrayInputStream(zipBytes)).use { zis ->
