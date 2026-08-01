@@ -71,40 +71,53 @@ class ToolRouter(
         "sequentialthinking" to "辅助推理/序列思考",
     )
 
-    fun classifyTool(tool: Tool): String {
+    fun classifyTool(tool: Tool): String = classifyByName(tool.name, tool.description)
+
+    /**
+     * 统一分类逻辑 (UI 与模型侧共用) — 名称+描述, 避免 UI(classifyPreview)与模型(classifyTool)分叉
+     */
+    fun classifyByName(name: String, description: String): String {
         // 0. invoke_tools 自身不分类
-        if (tool.name in metaToolNames) return "system"
+        if (name in metaToolNames) return "system"
         // 1. 手动覆盖 — 仅指向有效域，否则 fall through
-        overrides[tool.name]?.let { if (it in validDomainLabels && isValidDomain(it)) return it }
+        overrides[name]?.let { if (it in validDomainLabels && isValidDomain(it)) return it }
         // 2. Skill 工具归入「技能」域 (use_skill 是 skill 体系的统一入口)
-        if (tool.name == "use_skill" || tool.name.startsWith("skill_")) {
+        if (name == "use_skill" || name.startsWith("skill_")) {
             return if (isValidDomain("技能")) "技能" else "方法域"
         }
         // 3. 系统级工具 — 按名称前缀精确匹配, 优先于关键词避免误分类
         //    (如 clawhub_search 不应被 "search" 关键词拉入「搜索」域)
-        if (SYSTEM_TOOL_PREFIXES.any { tool.name.startsWith(it) }) {
+        if (SYSTEM_TOOL_PREFIXES.any { name.startsWith(it) }) {
             return if (isValidDomain("系统")) "系统" else "方法域"
         }
         // 3.5 Memory 工具 — 归「对话工具/记忆」域 (不受 enableMemory 开关影响分类)
-        if (tool.name == "memory_tool") {
+        if (name == "memory_tool") {
             return if (isValidDomain("对话工具/记忆")) "对话工具/记忆" else "方法域"
         }
 
         // 4. MCP 工具 — 服务器名映射 → 关键词 → AI兜底
-        if (tool.name.startsWith("mcp__")) {
-            val server = extractMcpServerName(tool.name)
+        if (name.startsWith("mcp__")) {
+            val server = extractMcpServerName(name)
             mcpServerDomainDefaults[server]?.let { if (isValidDomain(it)) return it }
         }
 
         // 5. 关键词匹配 (自定义域 → 自定义关键词覆盖 → 内置域)
-        val text = "${tool.name} ${tool.description}".lowercase()
+        val text = "${name} ${description}".lowercase()
         for (cd in customDomains) { if (cd.keywords.any { text.contains(it) }) return cd.name }
         for ((domain, keywords) in customKeywords) {
             if (domain in validDomainLabels && keywords.any { text.contains(it) }) return domain
         }
 
-        // 6. 内置域关键词兜底
-        return ToolDomain.classify(tool, removedBuiltinDomains, hiddenDomains)?.label ?: "方法域"
+        // 6. 内置域关键词兜底 (根域级联过滤: 根域已删/隐藏 → 子域不可用)
+        val excluded = removedBuiltinDomains + hiddenDomains
+        val result = ToolDomain.entries
+            .sortedByDescending { it.label.count { c -> c == '/' } }
+            .firstOrNull { dom ->
+                val root = dom.label.split("/").first()
+                dom.label !in excluded && root !in excluded &&
+                    dom.matchKeywords.any { text.contains(it) }
+            }?.label
+        return result ?: "方法域"
     }
 
     fun classifyAll(tools: List<Tool>): Map<String, List<Tool>> {
@@ -416,38 +429,5 @@ class ToolRouter(
      * 2. customKeywords 结果校验合法性（过滤指向旧域名的过期关键词）
      * 3. ToolDomain 匹配按深度排序（子域优先，避免被父域关键词抢先匹配）
      */
-    fun classifyPreview(name: String, description: String): String {
-        val valid = validDomainLabels
-
-        // 0. invoke_tools 自身不分类
-        if (name in metaToolNames) return "system"
-        // 1. 用户手动覆盖（校验合法性）
-        overrides[name]?.let { if (it in valid) return it }
-        // 2. Skill 工具归入「技能」域
-        if (name.startsWith("skill_")) return if (isValidDomain("技能")) "技能" else "方法域"
-        // 3. 系统级工具 — 按名称前缀精确匹配
-        if (SYSTEM_TOOL_PREFIXES.any { name.startsWith(it) }) {
-            return if (isValidDomain("系统")) "系统" else "方法域"
-        }
-
-        val text = "${name} ${description}".lowercase()
-
-        // 2. 自定义域关键词
-        for (cd in customDomains) { if (cd.keywords.any { text.contains(it) }) return cd.name }
-
-        // 3. 自定义关键词覆盖（校验合法性——过滤旧域名）
-        for ((domain, keywords) in customKeywords) {
-            if (domain in valid && keywords.any { text.contains(it) }) return domain
-        }
-
-        // 4. ToolDomain 关键词匹配（子域优先——深度排序，跳过已删除/隐藏域）
-        val excluded = removedBuiltinDomains + hiddenDomains
-        val result = ToolDomain.entries
-            .sortedByDescending { it.label.count { c -> c == '/' } }
-            .firstOrNull { dom ->
-                dom.matchKeywords.any { text.contains(it) } && dom.label !in excluded
-            }?.label
-
-        return result ?: "方法域"
-    }
+    fun classifyPreview(name: String, description: String): String = classifyByName(name, description)
 }

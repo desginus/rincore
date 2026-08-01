@@ -21,7 +21,6 @@ import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
 import me.rerere.rikkahub.data.ai.tools.routing.ToolDomain
 import me.rerere.rikkahub.data.ai.tools.routing.ToolRouter
-import me.rerere.rikkahub.data.ai.tools.sanitizeSkillToolName
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.files.SkillManager
@@ -54,8 +53,21 @@ fun SettingToolListPage(
     }
 
     val allDomainNames = remember(settings) {
-        // 所有可用域路径：顶级 + 子域（内置 + 自定义）
-        ToolDomain.entries.map { it.label } + settings.customDomains.map { it.name }
+        // 所有可用域路径：顶级 + 子域（内置 + 自定义）— 过滤已删除(removed)/隐藏(hidden)的幽灵域
+        // 过滤规则与 ToolRouter.isValidDomain 一致: 完整路径 + 根域级联
+        fun visible(domain: String): Boolean {
+            val root = domain.split("/").first()
+            return domain !in settings.removedBuiltinDomains && domain !in settings.hiddenDomains &&
+                root !in settings.removedBuiltinDomains && root !in settings.hiddenDomains
+        }
+        (ToolDomain.entries.map { it.label } + settings.customDomains.map { it.name })
+            .distinct()
+            .filter { visible(it) }
+            .filter { d ->
+                // 子域: 父域也必须可见
+                val parent = d.substringBeforeLast("/")
+                parent == d || visible(parent)
+            }
     }
 
     val filtered = remember(allTools, searchQuery, filterDomain) {

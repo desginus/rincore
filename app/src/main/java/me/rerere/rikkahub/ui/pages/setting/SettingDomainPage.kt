@@ -17,7 +17,6 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.*
 import me.rerere.rikkahub.data.ai.tools.routing.ToolDomain
 import me.rerere.rikkahub.data.ai.tools.routing.ToolRouter
-import me.rerere.rikkahub.data.ai.tools.sanitizeSkillToolName
 import me.rerere.rikkahub.data.datastore.CustomDomain
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
@@ -46,12 +45,9 @@ fun buildPreviewTools(
             list.add(ToolPreview(t.name, t.description))
         }
     } catch (_: Exception) {}
-    try {
-        val allSkills = skillManager.listSkills()
-        allSkills.filter { it.name in assistant.enabledSkills }.forEach { s ->
-            list.add(ToolPreview(sanitizeSkillToolName(s.name), s.description))
-        }
-    } catch (_: Exception) {}
+    // 模型侧 skill 体系只有 use_skill 统一入口 (无 skill_ 前缀的独立工具),
+    // 故不在此添加 phantom skill 工具 — 避免 UI 工具数 ≠ 模型侧工具数。
+    // 已启用 skill 由 use_skill + invoke_tools("技能") 承载。
     try {
         mcpManager.getAllAvailableTools().forEach { (_, serverName, tool) ->
             list.add(ToolPreview("mcp__${serverName}__${tool.name}", tool.description ?: ""))
@@ -67,6 +63,7 @@ fun buildPreviewTools(
     list.add(ToolPreview("workspace_read_file", "Read a file using the assistant's bound workspace Rootfs."))
     list.add(ToolPreview("workspace_write_file", "Write a UTF-8 text file using the assistant's bound workspace Rootfs."))
     list.add(ToolPreview("workspace_edit_file", "Edit a UTF-8 text file using the assistant's bound workspace Rootfs."))
+    list.add(ToolPreview("use_skill", "Load and apply a skill to get specialized instructions or capabilities. 可用 skill 列表由 invoke_tools(\"技能\") 返回。"))
     list.add(ToolPreview("manage_domain", "创建或删除工具域/子域。操作后场景地图自动同步。"))
     list.add(ToolPreview("list_domains", "列出所有可用域及其工具数量"))
     list.add(ToolPreview("move_tool_to_domain", "将工具移动到指定域"))
@@ -76,6 +73,12 @@ fun buildPreviewTools(
     list.add(ToolPreview("plugin_install", "Install a Claude plugin from a URL."))
     list.add(ToolPreview("skills_lock", "Lock skill versions for reproducibility."))
     list.add(ToolPreview("list_ecosystem_tools", "List all available ecosystem tools and their status."))
+    // 生态指令工具 (与 ChatService buildTools 的 EcosystemManager.getEnabledTools 对齐)
+    try {
+        me.rerere.rikkahub.ecosystem.EcosystemManager.getEnabledTools().forEach { t ->
+            list.add(ToolPreview(t.name, t.description))
+        }
+    } catch (_: Exception) {}
     return list
 }
 
@@ -300,10 +303,9 @@ fun SettingDomainPage(
                                                 Column(Modifier.weight(1f)) {
                                                     Text("[$subDisplay] ${subTools.size}个工具", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
                                                     Text(subDesc, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                    subTools.take(5).forEach { t ->
+                                                    subTools.forEach { t ->
                                                         Text("  ${t.name}", style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                                     }
-                                                    if (subTools.size > 5) Text("  ... 等${subTools.size}个", style = MaterialTheme.typography.bodySmall)
                                                 }
                                                 IconButton(onClick = {
                                                     editingDomain = sub
@@ -325,13 +327,23 @@ fun SettingDomainPage(
                                             kws.take(8).forEach { kw -> SuggestionChip(onClick = {}, label = { Text(kw, style = MaterialTheme.typography.labelSmall) }) }
                                         }
                                     }
+                                    // skill 挂载显示 (move_tool_to_domain 挂载的 skill:名)
+                                    val mountedSkills = settings.toolDomainOverrides.entries
+                                        .filter { it.key.startsWith("skill:") && it.value == domain }
+                                        .map { it.key.removePrefix("skill:") }
+                                    if (mountedSkills.isNotEmpty()) {
+                                        Spacer(Modifier.height(4.dp)); HorizontalDivider(); Spacer(Modifier.height(4.dp))
+                                        Text("挂载的 Skills(${mountedSkills.size}):", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                        mountedSkills.sorted().forEach { sname ->
+                                            Text("  $sname", style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                    }
                                     if (domainTools.isNotEmpty()) {
                                         Spacer(Modifier.height(4.dp)); HorizontalDivider(); Spacer(Modifier.height(4.dp))
                                         Text("工具(${domainTools.size}):", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                                        domainTools.take(8).forEach { t ->
+                                        domainTools.forEach { t ->
                                             Text("  ${t.name}", style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         }
-                                        if (domainTools.size > 8) Text("  ...还有${domainTools.size - 8}个", style = MaterialTheme.typography.bodySmall)
                                     }
                                 }
                                 TextButton(onClick = { showToolList = true }) {
