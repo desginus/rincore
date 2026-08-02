@@ -9,6 +9,12 @@ import me.rerere.rikkahub.data.agentrun.AgentRunBootRecovery
 import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.data.alarm.AlarmRepository
 import me.rerere.rikkahub.data.repository.ScheduledJobRepository
+import me.rerere.rikkahub.workflow.trigger.TriggerRegistry
+import me.rerere.rikkahub.workflow.condition.ContextProvider
+import me.rerere.rikkahub.workflow.execution.WorkflowActionRunner
+import me.rerere.rikkahub.workflow.execution.WorkflowEmergencyController
+import me.rerere.rikkahub.workflow.execution.WorkflowEngine
+import me.rerere.rikkahub.workflow.repository.WorkflowRepository
 import me.rerere.rikkahub.data.repository.ScheduledJobRunRepository
 import me.rerere.rikkahub.subagent.SubAgentEngine
 import me.rerere.rikkahub.subagent.SubAgentRegistry
@@ -39,7 +45,7 @@ val appModule = module {
     }
 
     single {
-        LocalTools(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get())
+        LocalTools(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get())
     }
 
     single {
@@ -48,7 +54,17 @@ val appModule = module {
 
     single {
         ScheduledJobRepository(get<me.rerere.rikkahub.data.db.AppDatabase>().scheduledJobDao())
+    }
+
+    single {
         AlarmRepository(get<me.rerere.rikkahub.data.db.AppDatabase>().alarmDao())
+    }
+
+    single {
+        WorkflowRepository(
+            get<me.rerere.rikkahub.data.db.AppDatabase>().workflowDao(),
+            get<me.rerere.rikkahub.data.db.AppDatabase>().workflowRunDao(),
+        )
     }
 
     single {
@@ -57,6 +73,26 @@ val appModule = module {
 
     single {
         DirectModeActionRunner(get())
+    }
+
+    single {
+        WorkflowEmergencyController()
+    }
+
+    single {
+        WorkflowActionRunner(get())
+    }
+
+    single {
+        ContextProvider(get())
+    }
+
+    single {
+        WorkflowEngine(get(), get(), get(), get(), get())
+    }
+
+    single {
+        TriggerRegistry(get(), get(), get())
     }
 
     single {

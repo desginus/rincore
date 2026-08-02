@@ -94,6 +94,7 @@ class RikkaHubApp : Application() {
 
         // Start WebServer if enabled in settings
         startWebServerIfEnabled()
+        startWorkflowRegistry()
 
         // AgentRun boot recovery — flip stranded in-flight runs to process_lost
         get<AgentRunBootRecovery>().runSweep()
@@ -162,6 +163,19 @@ class RikkaHubApp : Application() {
                 get<FilesManager>().syncFolder()
             }.onFailure {
                 Log.e(TAG, "syncManagedFiles failed", it)
+            }
+        }
+    }
+
+    private fun startWorkflowRegistry() {
+        get<AppScope>().launch(Dispatchers.IO) {
+            runCatching {
+                val registry = get<me.rerere.rikkahub.workflow.trigger.TriggerRegistry>()
+                val engine = get<me.rerere.rikkahub.workflow.execution.WorkflowEngine>()
+                registry.setEngineCallback(engine.triggerCallback)
+                registry.start()
+            }.onFailure {
+                Log.e(TAG, "startWorkflowRegistry failed", it)
             }
         }
     }

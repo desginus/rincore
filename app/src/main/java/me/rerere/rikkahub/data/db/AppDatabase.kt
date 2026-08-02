@@ -15,6 +15,10 @@ import me.rerere.rikkahub.data.db.dao.MemoryDAO
 import me.rerere.rikkahub.data.db.dao.MessageNodeDAO
 import me.rerere.rikkahub.data.db.dao.AlarmDao
 import me.rerere.rikkahub.data.db.dao.WorkspaceDAO
+import me.rerere.rikkahub.workflow.db.WorkflowDao
+import me.rerere.rikkahub.workflow.db.WorkflowRunDao
+import me.rerere.rikkahub.workflow.db.WorkflowEntity
+import me.rerere.rikkahub.workflow.db.WorkflowRunEntity
 import me.rerere.rikkahub.data.db.entity.ConversationEntity
 import me.rerere.rikkahub.data.db.entity.FavoriteEntity
 import me.rerere.rikkahub.data.db.entity.FolderEntity
@@ -49,8 +53,10 @@ import me.rerere.rikkahub.utils.JsonInstant
         ScheduledJobRunEntity::class,
         AgentRun::class,
         AlarmEntity::class,
+        WorkflowEntity::class,
+        WorkflowRunEntity::class,
     ],
-    version = 26,
+    version = 27,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -72,6 +78,7 @@ import me.rerere.rikkahub.utils.JsonInstant
         AutoMigration(from = 23, to = 24),
         AutoMigration(from = 24, to = 25),
         AutoMigration(from = 25, to = 26),
+        AutoMigration(from = 26, to = 27),
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -97,6 +104,10 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun scheduledJobRunDao(): ScheduledJobRunDao
 
     abstract fun alarmDao(): AlarmDao
+
+    abstract fun workflowDao(): WorkflowDao
+
+    abstract fun workflowRunDao(): WorkflowRunDao
 
     abstract fun agentRunDao(): AgentRunDao
 }

@@ -10,6 +10,7 @@ sealed class LocalToolOption {
     @Serializable @SerialName("clipboard") data object Clipboard : LocalToolOption()
     @Serializable @SerialName("tts") data object Tts : LocalToolOption()
     @Serializable @SerialName("battery") data object Battery : LocalToolOption()
+    @Serializable @SerialName("workflows") data object Workflows : LocalToolOption()
     @Serializable @SerialName("ask_user") data object AskUser : LocalToolOption()
     @Serializable @SerialName("screen_time") data object ScreenTime : LocalToolOption()
     @Serializable @SerialName("calendar") data object Calendar : LocalToolOption()

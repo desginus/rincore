@@ -32,6 +32,8 @@ class LocalTools(
     private val subAgentRegistry: SubAgentRegistry,
     private val conversationRepo: ConversationRepository,
     private val browserPreferences: BrowserPreferences,
+    private val workflowRepository: me.rerere.rikkahub.workflow.repository.WorkflowRepository,
+    private val workflowEngine: me.rerere.rikkahub.workflow.execution.WorkflowEngine,
 ) {
     val javascriptTool by lazy { buildJavascriptTool() }
     val timeTool by lazy { buildTimeInfoTool() }
@@ -53,6 +55,24 @@ class LocalTools(
         if (options.contains(LocalToolOption.Clipboard)) tools.add(clipboardTool)
         if (options.contains(LocalToolOption.Tts)) tools.add(ttsTool)
         if (options.contains(LocalToolOption.Battery)) tools.add(batteryTool(context))
+        if (options.contains(LocalToolOption.Workflows)) {
+            val knownToolNames = { tools.map { it.name } }
+            tools.add(me.rerere.rikkahub.workflow.tools.workflowCreateTool(
+                workflowRepository,
+                knownToolNamesProvider = knownToolNames,
+                callerContext = invocationContext,
+            ))
+            tools.add(me.rerere.rikkahub.workflow.tools.workflowListTool(workflowRepository))
+            tools.add(me.rerere.rikkahub.workflow.tools.workflowGetTool(workflowRepository))
+            tools.add(me.rerere.rikkahub.workflow.tools.workflowUpdateTool(
+                workflowRepository,
+                knownToolNamesProvider = knownToolNames,
+                callerContext = invocationContext,
+            ))
+            tools.add(me.rerere.rikkahub.workflow.tools.workflowDeleteTool(workflowRepository))
+            tools.add(me.rerere.rikkahub.workflow.tools.workflowSetEnabledTool(workflowRepository))
+            tools.add(me.rerere.rikkahub.workflow.tools.workflowRunTool(workflowEngine, workflowRepository))
+        }
         if (options.contains(LocalToolOption.AskUser)) tools.add(askUserTool)
         if (options.contains(LocalToolOption.ScreenTime)) tools.add(screenTimeTool)
         if (options.contains(LocalToolOption.Calendar)) {
