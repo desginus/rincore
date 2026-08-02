@@ -105,7 +105,11 @@ object PermissionInventory {
             "background_location", "后台定位", "工作流地理围栏/位置工具在后台运行时使用 (Android 11+ 需系统设置开启)",
             granted, Group.SpecialAccess,
             GrantAction.SystemSettings(
-                Intent(Settings.ACTION_APP_LOCATION_SETTINGS, Uri.parse("package:${context.packageName}"))
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    Intent(Settings.ACTION_APP_LOCATION_SETTINGS, Uri.parse("package:${context.packageName}"))
+                } else {
+                    Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                }
             )
         )
     }

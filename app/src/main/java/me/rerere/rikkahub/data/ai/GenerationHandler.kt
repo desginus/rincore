@@ -653,7 +653,7 @@ class GenerationHandler(
                 }
                 onUpdateMessages(messages)
             }
-            logCacheUsage(stepIndex, messages)
+            logCacheUsage(messages)
         } else {
             val chunk = providerImpl.generateText(
                 providerSetting = provider,
@@ -673,7 +673,7 @@ class GenerationHandler(
                 }
             }
             onUpdateMessages(messages)
-            logCacheUsage(stepIndex, messages)
+            logCacheUsage(messages)
         }
     }
 
@@ -683,13 +683,13 @@ class GenerationHandler(
     // 平台台阶机制 vs 客户端前缀变化.
     private var lastStepCachedTokens = 0
 
-    private fun logCacheUsage(stepIndex: Int, messages: List<UIMessage>) {
+    private fun logCacheUsage(messages: List<UIMessage>) {
         val usage = messages.lastOrNull()?.usage ?: return
         val cached = usage.cachedTokens
         val prompt = usage.promptTokens
         if (cached <= 0) return
         val pct = prompt.takeIf { it > 0 }?.let { cached * 100 / it }
-        Log.i(TAG, "cache: step=$stepIndex prompt=$prompt cached=$cached (${pct}%)")
+        Log.i(TAG, "cache: prompt=$prompt cached=$cached (${pct}%)")
         if (lastStepCachedTokens > 0 && cached < lastStepCachedTokens * 0.5) {
             Log.w(TAG, "cache: 缓存断层! ${lastStepCachedTokens} -> $cached (prompt=$prompt) — 平台台阶重排或前缀变化")
         }

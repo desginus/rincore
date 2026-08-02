@@ -6,10 +6,13 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import me.rerere.rikkahub.data.alarm.AlarmRepository
 import me.rerere.rikkahub.data.alarm.AlarmScheduler
 import me.rerere.rikkahub.data.db.entity.AlarmEntity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import org.koin.java.KoinJavaComponent
 
 class AlarmReceiver : BroadcastReceiver() {
