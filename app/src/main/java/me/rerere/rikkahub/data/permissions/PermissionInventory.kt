@@ -106,7 +106,7 @@ object PermissionInventory {
             granted, Group.SpecialAccess,
             GrantAction.SystemSettings(
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    Intent(Settings.ACTION_APP_LOCATION_SETTINGS, Uri.parse("package:${context.packageName}"))
+                    Intent("android.settings.APP_LOCATION_SETTINGS", Uri.parse("package:${context.packageName}"))
                 } else {
                     Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
                 }

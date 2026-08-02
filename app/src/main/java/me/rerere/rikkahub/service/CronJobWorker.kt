@@ -132,7 +132,7 @@ class CronJobWorker(
                 .setContentText(jobId.take(20))
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .build()
-            setForeground(fgNotification)
+            setForeground(androidx.work.ForegroundInfo(FG_NOTIFICATION_ID, fgNotification))
         }.onFailure {
             Log.w(TAG, "setForeground failed (may lack FGS type permission): ${it.message}")
         }
