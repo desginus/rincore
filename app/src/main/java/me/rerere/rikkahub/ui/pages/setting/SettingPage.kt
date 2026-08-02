@@ -264,6 +264,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         headlineContent = { Text("Agent Skills") },
                     )
                     item(
+                        onClick = { navController.navigate(Screen.Workflows) },
+                        leadingContent = { Icon(HugeIcons.AiEditing, null) },
+                        supportingContent = { Text("触发器 + 条件 + 动作序列") },
+                        headlineContent = { Text("工作流") },
+                    )
+                    item(
                         onClick = { navController.navigate(Screen.ScheduledJobs) },
                         leadingContent = { Icon(HugeIcons.Book01, null) },
                         supportingContent = { Text(stringResource(R.string.setting_page_scheduled_jobs_desc)) },
