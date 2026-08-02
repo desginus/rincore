@@ -29,14 +29,13 @@ class ContextProvider(private val context: Context) {
         val (level, charging) = batteryStatus()
         val ssid = currentWifiSsid()
         val screenOn = isScreenOn()
-        val foregroundPackage = me.rerere.rikkahub.workflow.trigger.AppForegroundLastKnown.value
         val (lat, lng) = if (needsLocation) lastKnownLocation() else (null to null)
         return WorkflowContext(
             nowMs = now,
             batteryLevel = level,
             isCharging = charging,
             wifiSsid = ssid,
-            foregroundPackage = foregroundPackage,
+            foregroundPackage = null,
             screenOn = screenOn,
             latitude = lat,
             longitude = lng,

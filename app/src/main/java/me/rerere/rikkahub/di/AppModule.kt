@@ -80,7 +80,7 @@ val appModule = module {
     }
 
     single {
-        WorkflowActionRunner(get())
+        WorkflowActionRunner(get<DirectModeActionRunner>())
     }
 
     single {

@@ -606,13 +606,13 @@ class RouteActivity : ComponentActivity() {
                                 SettingCallTracePage()
                             }
                             entry<Screen.SettingAlarms> {
-                                AlarmSettingsPage(onBack = { navController.popBackStack() })
+                                AlarmSettingsPage(onBack = { backStack.removeLastOrNull() })
                             }
                             entry<Screen.SettingPermissions> {
-                                SettingPermissionsPage(onBack = { navController.popBackStack() })
+                                SettingPermissionsPage(onBack = { backStack.removeLastOrNull() })
                             }
                             entry<Screen.Workflows> {
-                                WorkflowsScreen(onBack = { navController.popBackStack() })
+                                WorkflowsScreen(onBack = { backStack.removeLastOrNull() })
                             }
                             entry<Screen.SettingSkillsEcosystem> {
                                 SettingSkillsEcosystemPage()
