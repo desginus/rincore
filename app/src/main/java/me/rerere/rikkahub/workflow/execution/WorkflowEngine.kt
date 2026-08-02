@@ -12,6 +12,7 @@ import kotlinx.serialization.json.jsonObject
 import me.rerere.ai.core.Tool
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.service.DirectModeActionRunner
 import me.rerere.rikkahub.workflow.condition.ConditionEvaluator
 import me.rerere.rikkahub.workflow.condition.ContextProvider
 import me.rerere.rikkahub.workflow.model.WorkflowAction
@@ -201,7 +202,7 @@ class WorkflowEngine(
                     Log.w(TAG, "fire: authoring assistant $storedId for workflow $workflowId no longer exists; falling back to first-with-Workflows")
                 }
                 settings.assistants.firstOrNull { asst ->
-                    asst.localTools.any { it is me.rerere.rikkahub.data.ai.tools.LocalToolOption.Workflows }
+                    asst.localTools.any { it is me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.Workflows }
                 }
             }
         }
@@ -218,7 +219,6 @@ class WorkflowEngine(
             me.rerere.rikkahub.data.ai.tools.ToolInvocationContext(
                 callerAssistantId = authoringAssistant.id.toString(),
                 callerConversationId = null, // headless workflow fire — no conv
-                callerWorkspaceId = authoringAssistant.workspaceId?.toString(),
                 isHeadless = true,
             ),
         )
@@ -263,15 +263,13 @@ class WorkflowEngine(
                 }
             }
             is me.rerere.rikkahub.workflow.model.TriggerSpec.NotificationReceived -> {
-                if (!me.rerere.rikkahub.data.ai.tools.local.NotificationListenerHandle.isBound()) {
-                    "notification_listener_not_enabled: enable the RikkaHub notification listener in Settings → Apps → Special access → Notification access"
-                } else null
+                // 通知监听服务尚未移植 (二期) — 触发不会发生, 提示即可
+                "notification_listener_not_enabled: 通知监听服务未启用 (该触发器尚未完全支持)"
             }
             is me.rerere.rikkahub.workflow.model.TriggerSpec.AppLaunched,
             is me.rerere.rikkahub.workflow.model.TriggerSpec.AppClosed -> {
-                if (!me.rerere.rikkahub.data.ai.tools.local.AccessibilityServiceHandle.isRunning()) {
-                    "accessibility_not_enabled: enable the RikkaHub accessibility service in Settings → Accessibility (required for app_launched / app_closed triggers)"
-                } else null
+                // 无障碍服务未移植 (二期) — 前台应用触发器未支持
+                "accessibility_not_enabled: 无障碍服务未启用 (app_launched/app_closed 触发器尚未支持)"
             }
             is me.rerere.rikkahub.workflow.model.TriggerSpec.BluetoothDeviceConnected,
             is me.rerere.rikkahub.workflow.model.TriggerSpec.BluetoothDeviceDisconnected -> {
