@@ -36,6 +36,8 @@ import org.koin.core.component.inject
 private const val TAG = "CronJobWorker"
 
 /** Outer bound on how long after [startedAtMs] a WorkManager replay can plausibly arrive. */
+internal const val FG_NOTIFICATION_ID = 8001
+
 internal const val REPLAY_WINDOW_MS = 10L * 60_000L
 
 /**
