@@ -113,6 +113,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingPreferencesUIPage
 import me.rerere.rikkahub.ui.pages.setting.SettingThemePage
 import me.rerere.rikkahub.ui.pages.setting.SettingFilesPage
 import me.rerere.rikkahub.ui.pages.setting.AlarmSettingsPage
+import me.rerere.rikkahub.ui.pages.setting.SettingPermissionsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingCallTracePage
 import me.rerere.rikkahub.ui.pages.setting.SettingSkillsEcosystemPage
 import me.rerere.rikkahub.ui.pages.setting.SettingMcpPage
@@ -606,6 +607,9 @@ class RouteActivity : ComponentActivity() {
                             entry<Screen.SettingAlarms> {
                                 AlarmSettingsPage(onBack = { navController.popBackStack() })
                             }
+                            entry<Screen.SettingPermissions> {
+                                SettingPermissionsPage(onBack = { navController.popBackStack() })
+                            }
                             entry<Screen.SettingSkillsEcosystem> {
                                 SettingSkillsEcosystemPage()
                             }
@@ -829,6 +833,9 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object SettingAlarms : Screen
+
+    @Serializable
+    data object SettingPermissions : Screen
 
     @Serializable
     data object SettingSkillsEcosystem : Screen

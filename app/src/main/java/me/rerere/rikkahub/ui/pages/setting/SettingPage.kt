@@ -183,6 +183,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = { Text("设备闹钟 · AlarmManager 精确调度") },
                         headlineContent = { Text("闹钟") },
                     )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingPermissions) },
+                        leadingContent = { Icon(HugeIcons.Settings01, null) },
+                        supportingContent = { Text("权限自动发现 · 后台保障链引导") },
+                        headlineContent = { Text("权限管理") },
+                    )
                 }
             }
             item("modelServices") {
