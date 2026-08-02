@@ -13,6 +13,7 @@ import me.rerere.rikkahub.data.db.dao.GenMediaDAO
 import me.rerere.rikkahub.data.db.dao.ManagedFileDAO
 import me.rerere.rikkahub.data.db.dao.MemoryDAO
 import me.rerere.rikkahub.data.db.dao.MessageNodeDAO
+import me.rerere.rikkahub.data.db.dao.AlarmDao
 import me.rerere.rikkahub.data.db.dao.WorkspaceDAO
 import me.rerere.rikkahub.data.db.entity.ConversationEntity
 import me.rerere.rikkahub.data.db.entity.FavoriteEntity
@@ -26,6 +27,7 @@ import me.rerere.rikkahub.data.db.dao.ScheduledJobRunDao
 import me.rerere.rikkahub.data.agentrun.AgentRunDao
 import me.rerere.rikkahub.data.db.entity.ScheduledJobEntity
 import me.rerere.rikkahub.data.db.entity.ScheduledJobRunEntity
+import me.rerere.rikkahub.data.db.entity.AlarmEntity
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.agentrun.AgentRun
 import me.rerere.rikkahub.data.db.migrations.Migration_16_17
@@ -46,8 +48,9 @@ import me.rerere.rikkahub.utils.JsonInstant
         ScheduledJobEntity::class,
         ScheduledJobRunEntity::class,
         AgentRun::class,
+        AlarmEntity::class,
     ],
-    version = 25,
+    version = 26,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -68,6 +71,7 @@ import me.rerere.rikkahub.utils.JsonInstant
         AutoMigration(from = 22, to = 23, spec = Migration_22_23::class),
         AutoMigration(from = 23, to = 24),
         AutoMigration(from = 24, to = 25),
+        AutoMigration(from = 25, to = 26),
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -91,6 +95,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun scheduledJobDao(): ScheduledJobDao
 
     abstract fun scheduledJobRunDao(): ScheduledJobRunDao
+
+    abstract fun alarmDao(): AlarmDao
 
     abstract fun agentRunDao(): AgentRunDao
 }

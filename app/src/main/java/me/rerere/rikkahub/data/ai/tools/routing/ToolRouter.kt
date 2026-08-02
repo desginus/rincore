@@ -38,6 +38,7 @@ class ToolRouter(
     private val SYSTEM_TOOL_PREFIXES = listOf(
         "manage_domain", "list_domains", "move_tool_to_domain",
         "mcp_connect", "clawhub_", "plugin_install", "skills_lock", "list_ecosystem_tools",
+        "get_battery_status",
     )
 
     /** MCP 服务器名 → 默认域快速映射 (避免关键词误匹配) */

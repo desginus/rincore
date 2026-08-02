@@ -1,12 +1,17 @@
 package me.rerere.rikkahub.service
 
+import android.app.AlarmManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import android.os.Build
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import me.rerere.rikkahub.data.db.entity.ScheduledJobEntity
 import me.rerere.rikkahub.data.repository.ScheduledJobRepository
+import me.rerere.rikkahub.service.CronAlarmReceiver
 import java.time.Instant
 import java.time.ZoneId
 import java.util.concurrent.TimeUnit
@@ -40,6 +45,52 @@ class CronJobScheduler(
             .setInputData(Data.Builder().putString(CronJobWorker.KEY_JOB_ID, job.id).build())
             .build()
         wm.enqueueUniqueWork(workNameFor(job.id), ExistingWorkPolicy.REPLACE, req)
+        // AlarmManager 双通道: 系统进程精确唤醒 (WorkManager 在澎湃省电策略下可能延迟)
+        scheduleAlarmChannel(job.id, nextRun)
+    }
+
+    /**
+     * AlarmManager 精确触发通道 — 注册在系统进程, app 进程被杀后到点仍会唤醒。
+     * 无 SCHEDULE_EXACT_ALARM 权限时静默跳过 (WorkManager 单通道兜底)。
+     */
+    private fun scheduleAlarmChannel(jobId: String, fireAtMs: Long) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            if (!am.canScheduleExactAlarms()) return
+        }
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(context, CronAlarmReceiver::class.java).apply {
+            putExtra(CronAlarmReceiver.EXTRA_JOB_ID, jobId)
+        }
+        val pi = PendingIntent.getBroadcast(
+            context,
+            jobId.hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, fireAtMs, pi)
+    }
+
+    private fun cancelAlarmChannel(jobId: String) {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(context, CronAlarmReceiver::class.java).apply {
+            putExtra(CronAlarmReceiver.EXTRA_JOB_ID, jobId)
+        }
+        val pi = PendingIntent.getBroadcast(
+            context,
+            jobId.hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        am.cancel(pi)
+    }
+
+    /** 重启/时区变化后重排所有 cron 的 AlarmManager 通道 (由 AlarmRescheduleReceiver 调用) */
+    suspend fun rescheduleAlarmChannels() {
+        repo.getEnabled().forEach { job ->
+            val nextRun = nextRunMs(job, System.currentTimeMillis())
+            if (nextRun != null) scheduleAlarmChannel(job.id, nextRun)
+        }
     }
 
     /**
@@ -60,6 +111,7 @@ class CronJobScheduler(
 
     fun cancel(jobId: String) {
         wm.cancelUniqueWork(workNameFor(jobId))
+        cancelAlarmChannel(jobId)
     }
 
     suspend fun scheduleAllEnabled() {

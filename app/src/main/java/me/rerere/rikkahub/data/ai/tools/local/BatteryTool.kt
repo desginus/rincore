@@ -12,10 +12,16 @@ import me.rerere.ai.ui.UIMessagePart
 
 fun batteryTool(context: Context): Tool = Tool(
     name = "get_battery_status",
-    description = "获取设备当前电池状态：电量百分比、是否充电、插电类型、健康度、温度、电压。",
-    parameters = { InputSchema.Obj(properties = buildJsonObject { }) },
+    description = "Get the current battery status of the device, including charge percentage, " +
+        "charging state, plug type, health, temperature, voltage, and battery technology.",
+    parameters = {
+        InputSchema.Obj(properties = buildJsonObject { })
+    },
     execute = {
-        val intent: Intent? = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val intent: Intent? = context.registerReceiver(
+            null,
+            IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+        )
         val payload = if (intent == null) {
             buildJsonObject { put("error", "battery status unavailable") }
         } else {
@@ -49,7 +55,9 @@ fun batteryTool(context: Context): Tool = Tool(
                 put("charging", charging)
                 put("plugged", plugged)
                 put("health", health)
-                if (tempTenths != Int.MIN_VALUE) put("temperature_c", tempTenths / 10.0)
+                if (tempTenths != Int.MIN_VALUE) {
+                    put("temperature_c", tempTenths / 10.0)
+                }
                 put("voltage_mv", voltage)
                 put("technology", technology ?: "")
             }

@@ -7,6 +7,7 @@ import me.rerere.rikkahub.data.ai.tools.local.LocalTools
 import me.rerere.rikkahub.data.agentrun.AgentRunRepository
 import me.rerere.rikkahub.data.agentrun.AgentRunBootRecovery
 import me.rerere.rikkahub.data.event.AppEventBus
+import me.rerere.rikkahub.data.alarm.AlarmRepository
 import me.rerere.rikkahub.data.repository.ScheduledJobRepository
 import me.rerere.rikkahub.data.repository.ScheduledJobRunRepository
 import me.rerere.rikkahub.subagent.SubAgentEngine
@@ -47,6 +48,7 @@ val appModule = module {
 
     single {
         ScheduledJobRepository(get<me.rerere.rikkahub.data.db.AppDatabase>().scheduledJobDao())
+        AlarmRepository(get<me.rerere.rikkahub.data.db.AppDatabase>().alarmDao())
     }
 
     single {

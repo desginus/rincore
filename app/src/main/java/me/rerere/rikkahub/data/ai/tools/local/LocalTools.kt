@@ -52,6 +52,7 @@ class LocalTools(
         if (options.contains(LocalToolOption.TimeInfo)) tools.add(timeTool)
         if (options.contains(LocalToolOption.Clipboard)) tools.add(clipboardTool)
         if (options.contains(LocalToolOption.Tts)) tools.add(ttsTool)
+        if (options.contains(LocalToolOption.Battery)) tools.add(batteryTool(context))
         if (options.contains(LocalToolOption.AskUser)) tools.add(askUserTool)
         if (options.contains(LocalToolOption.ScreenTime)) tools.add(screenTimeTool)
         if (options.contains(LocalToolOption.Calendar)) {
