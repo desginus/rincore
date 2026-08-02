@@ -14,6 +14,7 @@
   <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
   <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
   <uses-permission
     android:name="android.permission.PACKAGE_USAGE_STATS"
@@ -198,6 +199,13 @@
         android:value="androidx.startup"
         tools:node="remove" />
     </provider>
+
+    <!-- WorkManager 前台服务类型覆盖: Android 14+ (targetSdk 34+) 禁止 type=none FGS -->
+    <service
+      android:name="androidx.work.impl.foreground.SystemForegroundService"
+      android:foregroundServiceType="dataSync"
+      android:exported="false"
+      tools:node="merge" />
 
     <service
       android:name=".service.MediaPlaybackService"
