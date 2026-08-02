@@ -3,8 +3,11 @@ package me.rerere.rikkahub.service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
 import android.util.Log
-import kotlinx.coroutines.runBlocking
 import me.rerere.rikkahub.data.alarm.AlarmScheduler
 import org.koin.java.KoinJavaComponent
 
@@ -20,18 +23,19 @@ class AlarmRescheduleReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         Log.i(TAG, "Reschedule triggered: ${intent.action}")
         val pendingResult = goAsync()
-        try {
-            runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        scope.launch {
+            try {
                 val scheduler: AlarmScheduler = KoinJavaComponent.get(AlarmScheduler::class.java)
                 scheduler.rescheduleAll()
                 // 同步恢复定时任务的 AlarmManager 双通道
                 val cronScheduler: CronJobScheduler = KoinJavaComponent.get(CronJobScheduler::class.java)
                 cronScheduler.rescheduleAlarmChannels()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to reschedule alarms", e)
+            } finally {
+                pendingResult.finish()
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to reschedule alarms", e)
-        } finally {
-            pendingResult.finish()
         }
     }
 }

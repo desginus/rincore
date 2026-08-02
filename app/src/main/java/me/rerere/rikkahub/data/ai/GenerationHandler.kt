@@ -653,6 +653,7 @@ class GenerationHandler(
                 }
                 onUpdateMessages(messages)
             }
+            logCacheUsage(stepIndex, messages)
         } else {
             val chunk = providerImpl.generateText(
                 providerSetting = provider,
@@ -672,7 +673,27 @@ class GenerationHandler(
                 }
             }
             onUpdateMessages(messages)
+            logCacheUsage(stepIndex, messages)
         }
+    }
+
+    // ===== 缓存断层诊断 =====
+    // DeepSeek 缓存 = 前缀单元制 (固定 token 间隔切单元), 输入跨台阶时单元重排会导致
+    // 缓存断到 system (≈9.7K). 记录每轮缓存命中, 检测断层 (骤降 >50%) 以便区分
+    // 平台台阶机制 vs 客户端前缀变化.
+    private var lastStepCachedTokens = 0
+
+    private fun logCacheUsage(stepIndex: Int, messages: List<UIMessage>) {
+        val usage = messages.lastOrNull()?.usage ?: return
+        val cached = usage.cachedTokens
+        val prompt = usage.promptTokens
+        if (cached <= 0) return
+        val pct = prompt.takeIf { it > 0 }?.let { cached * 100 / it }
+        Log.i(TAG, "cache: step=$stepIndex prompt=$prompt cached=$cached (${pct}%)")
+        if (lastStepCachedTokens > 0 && cached < lastStepCachedTokens * 0.5) {
+            Log.w(TAG, "cache: 缓存断层! ${lastStepCachedTokens} -> $cached (prompt=$prompt) — 平台台阶重排或前缀变化")
+        }
+        lastStepCachedTokens = cached
     }
 
     // invoke_tools 输出 exempt from truncation (工具列表必须完整)

@@ -6,7 +6,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CoroutineScope
 import me.rerere.rikkahub.data.alarm.AlarmRepository
 import me.rerere.rikkahub.data.alarm.AlarmScheduler
 import me.rerere.rikkahub.data.db.entity.AlarmEntity
@@ -23,9 +23,11 @@ class AlarmReceiver : BroadcastReceiver() {
         val alarmId = intent.getStringExtra("alarm_id") ?: return
         Log.i(TAG, "Alarm triggered: $alarmId")
 
+        // 协程化处理 (BroadcastReceiver 主线程 — runBlocking 会阻塞主线程导致 ANR)
         val pendingResult = goAsync()
-        try {
-            runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        scope.launch {
+            try {
                 val repository: AlarmRepository = KoinJavaComponent.get(AlarmRepository::class.java)
                 val scheduler: AlarmScheduler = KoinJavaComponent.get(AlarmScheduler::class.java)
                 val alarm = repository.getById(alarmId)
@@ -48,11 +50,11 @@ class AlarmReceiver : BroadcastReceiver() {
 
                     sendAlarmNotification(context, alarm)
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to process alarm $alarmId", e)
+            } finally {
+                pendingResult.finish()
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to process alarm $alarmId", e)
-        } finally {
-            pendingResult.finish()
         }
     }
 

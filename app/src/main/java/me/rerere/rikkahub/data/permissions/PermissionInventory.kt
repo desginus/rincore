@@ -51,6 +51,8 @@ object PermissionInventory {
         rows += batteryOptimizationRow(context)
         rows += notificationRow(context)
         rows += usageStatsRow(context)
+        // 深度权限: 后台定位 (工作流地理围栏/位置工具后台使用)
+        rows += backgroundLocationRow(context)
         // 其他特殊权限
         rows += overlayRow(context)
         rows += writeSettingsRow(context)
@@ -93,6 +95,20 @@ object PermissionInventory {
         PermissionHelper.hasUsageStatsAccess(context), Group.SpecialAccess,
         GrantAction.SystemSettings(PermissionHelper.usageAccessIntent(context))
     )
+
+    private fun backgroundLocationRow(context: Context): Row {
+        val granted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED
+        } else true
+        return row(
+            "background_location", "后台定位", "工作流地理围栏/位置工具在后台运行时使用 (Android 11+ 需系统设置开启)",
+            granted, Group.SpecialAccess,
+            GrantAction.SystemSettings(
+                Intent(Settings.ACTION_APP_LOCATION_SETTINGS, Uri.parse("package:${context.packageName}"))
+            )
+        )
+    }
 
     private fun overlayRow(context: Context) = row(
         Manifest.permission.SYSTEM_ALERT_WINDOW, "悬浮窗", "AI 工作状态悬浮提示",

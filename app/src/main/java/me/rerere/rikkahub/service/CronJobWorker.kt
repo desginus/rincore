@@ -117,6 +117,26 @@ class CronJobWorker(
         val jobId = inputData.getString(KEY_JOB_ID) ?: return Result.failure()
         val isManual = inputData.getBoolean(KEY_MANUAL, false)
 
+        // 前台服务保活: LLM 生成可能持续 1-2 分钟, 小米澎湃等厂商省电策略
+        // 会在后台杀进程 — 前台通知保证执行不被打断 (WorkManager 自动管理生命周期)
+        runCatching {
+            // 确保通知渠道存在 (前台通知与错误通知共用)
+            val nm = applicationContext.getSystemService(NotificationManager::class.java)
+            if (nm.getNotificationChannel(CHANNEL_ID) == null) {
+                nm.createNotificationChannel(NotificationChannel(
+                    CHANNEL_ID, "Scheduled jobs", NotificationManager.IMPORTANCE_DEFAULT))
+            }
+            val fgNotification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_popup_sync)
+                .setContentTitle("定时任务执行中")
+                .setContentText(jobId.take(20))
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .build()
+            setForeground(fgNotification)
+        }.onFailure {
+            Log.w(TAG, "setForeground failed (may lack FGS type permission): ${it.message}")
+        }
+
         if (!CronJobRunningTracker.start(jobId)) {
             recordRun(jobId, scheduledAtMs = System.currentTimeMillis(),
                 outcome = "concurrent_skip", mode = "?", convId = null, errorMessage = null)
