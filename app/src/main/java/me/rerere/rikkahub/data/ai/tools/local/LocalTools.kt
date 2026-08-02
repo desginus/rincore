@@ -55,6 +55,11 @@ class LocalTools(
         if (options.contains(LocalToolOption.Clipboard)) tools.add(clipboardTool)
         if (options.contains(LocalToolOption.Tts)) tools.add(ttsTool)
         if (options.contains(LocalToolOption.Battery)) tools.add(batteryTool(context))
+        if (options.contains(LocalToolOption.Alarm)) {
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.alarmCreateTool())
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.alarmListTool())
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.alarmDeleteTool())
+        }
         if (options.contains(LocalToolOption.Workflows)) {
             val knownToolNames = { tools.map { it.name } }
             tools.add(me.rerere.rikkahub.workflow.tools.workflowCreateTool(

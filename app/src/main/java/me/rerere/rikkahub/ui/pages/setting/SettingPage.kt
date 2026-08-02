@@ -282,6 +282,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     title = { Text("数据与存储") },
                 ) {
                     item(
+                        onClick = { navController.navigate(Screen.SettingAlarms) },
+                        leadingContent = { Icon(HugeIcons.Alert01, null) },
+                        supportingContent = { Text("设备闹钟") },
+                        headlineContent = { Text("闹钟") },
+                    )
+                    item(
                         onClick = { navController.navigate(Screen.Backup) },
                         leadingContent = { Icon(HugeIcons.Database02, null) },
                         supportingContent = { Text(stringResource(R.string.setting_page_data_backup_desc)) },
