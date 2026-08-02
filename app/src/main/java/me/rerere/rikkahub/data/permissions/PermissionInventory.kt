@@ -45,6 +45,14 @@ object PermissionInventory {
     )
 
     fun build(context: Context): List<Row> {
+        // 整体兜底: 任一权限检测异常 (部分 ROM 的 AppOps 行为差异) 不崩整页
+        return runCatching { buildSafe(context) }.getOrElse {
+            android.util.Log.w("PermissionInventory", "build failed: ${it.message}")
+            emptyList()
+        }
+    }
+
+    private fun buildSafe(context: Context): List<Row> {
         val rows = mutableListOf<Row>()
         // 保活关键权限 — 后台任务可靠性保障链 (置顶)
         rows += exactAlarmRow(context)
@@ -167,8 +175,8 @@ object PermissionInventory {
             )
         ) return null
 
-        // 运行时权限 — 按 SDK 版本过滤
-        val pm = context.packageManager
+        // 运行时权限 — 按 SDK 版本过滤 (低版本平台不存在的权限直接跳过, 避免请求无反应)
+        if (Build.VERSION.SDK_INT < minSdkFor(perm)) return null
         val granted = ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_GRANTED
         val label = labelOrHumanize(perm)
         val desc = descriptionOrDefault(perm)
@@ -180,6 +188,16 @@ object PermissionInventory {
             group = Group.Runtime,
             grant = GrantAction.Runtime(perm),
         )
+    }
+
+    private fun minSdkFor(perm: String): Int = when (perm) {
+        Manifest.permission.ACCESS_BACKGROUND_LOCATION -> 29
+        Manifest.permission.POST_NOTIFICATIONS -> 33
+        Manifest.permission.ACCESS_LOCAL_NETWORK -> 36
+        Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO -> 33
+        Manifest.permission.READ_MEDIA_AUDIO -> 33
+        Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED -> 34
+        else -> 1
     }
 
     private fun labelOrHumanize(perm: String): String {

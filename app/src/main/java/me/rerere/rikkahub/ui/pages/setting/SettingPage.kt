@@ -180,12 +180,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         headlineContent = { Text(stringResource(R.string.setting_page_assistant)) },
                     )
                     item(
-                        onClick = { navController.navigate(Screen.SettingAlarms) },
-                        leadingContent = { Icon(HugeIcons.Alert01, null) },
-                        supportingContent = { Text("设备闹钟 · AlarmManager 精确调度") },
-                        headlineContent = { Text("闹钟") },
-                    )
-                    item(
                         onClick = { navController.navigate(Screen.SettingPermissions) },
                         leadingContent = { Icon(HugeIcons.Settings01, null) },
                         supportingContent = { Text("权限自动发现 · 后台保障链引导") },

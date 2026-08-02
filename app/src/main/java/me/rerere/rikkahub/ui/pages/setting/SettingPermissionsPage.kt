@@ -96,9 +96,15 @@ fun SettingPermissionsPage(
                     onGrant = {
                         when (val g = row.grant) {
                             is PermissionInventory.GrantAction.Runtime ->
-                                runtimeLauncher.launch(g.permission)
+                                runCatching { runtimeLauncher.launch(g.permission) }
                             is PermissionInventory.GrantAction.SystemSettings ->
-                                context.startActivity(g.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                                runCatching {
+                                    context.startActivity(g.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                                }.onFailure {
+                                    android.widget.Toast.makeText(
+                                        context, "无法打开设置页: ${it.message}", android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                }
                             PermissionInventory.GrantAction.None -> {}
                         }
                         refreshTick++

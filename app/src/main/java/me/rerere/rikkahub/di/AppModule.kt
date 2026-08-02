@@ -8,6 +8,7 @@ import me.rerere.rikkahub.data.agentrun.AgentRunRepository
 import me.rerere.rikkahub.data.agentrun.AgentRunBootRecovery
 import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.data.alarm.AlarmRepository
+import me.rerere.rikkahub.data.alarm.AlarmScheduler
 import me.rerere.rikkahub.data.repository.ScheduledJobRepository
 import me.rerere.rikkahub.workflow.trigger.TriggerRegistry
 import me.rerere.rikkahub.workflow.condition.ContextProvider
@@ -58,6 +59,10 @@ val appModule = module {
 
     single {
         AlarmRepository(get<me.rerere.rikkahub.data.db.AppDatabase>().alarmDao())
+    }
+
+    single {
+        AlarmScheduler(get(), get())
     }
 
     single {
