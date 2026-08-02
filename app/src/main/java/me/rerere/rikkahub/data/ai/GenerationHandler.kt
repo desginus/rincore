@@ -122,6 +122,14 @@ class GenerationHandler(
 
         var loadedDomainsEmitted = false
         for (stepIndex in 0 until maxSteps) {
+            // 每步清洗非法消息序列 — 流中断/工具失败会在循环内产生孤儿 tool_call,
+            // 仅入口清洗无法覆盖 (Qwen/DeepSeek 会报 "Required settings preface not received")
+            val stepCleaned = messages.sanitizeToolCallSequence()
+            if (stepCleaned.size != messages.size) {
+                Log.w(TAG, "streamText: step #$stepIndex sanitized (${messages.size} -> ${stepCleaned.size})")
+            }
+            messages = stepCleaned
+
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
             CallTracer.event("STEP", "step_$stepIndex", "Step $stepIndex begin, ${tools.size} tools loaded, messages=${messages.size}")
 
@@ -787,7 +795,8 @@ class GenerationHandler(
  * ("Required settings preface not received" 通常是消息序列非法的报错)
  *
  * 1. 丢弃孤儿 tool 消息 (TOOL 角色但前面无对应 assistant tool_call)
- * 2. 移除末尾未配对的 assistant tool_call (生成中断/压缩残留)
+ * 2. 移除所有未配对的 assistant tool_call (流中断/多 tool_call 部分执行/工具失败残留,
+ *    保留消息中的文本与已配对 tool_call)
  */
 private fun List<UIMessage>.sanitizeToolCallSequence(): List<UIMessage> {
     val pendingCalls = mutableSetOf<String>()
@@ -810,14 +819,31 @@ private fun List<UIMessage>.sanitizeToolCallSequence(): List<UIMessage> {
             else -> result.add(msg)
         }
     }
-    // 移除末尾未配对的 assistant tool_call (生成中断残留)
-    while (result.isNotEmpty()) {
-        val last = result.last()
-        val unpaired = last.getTools().filter { it.output.isEmpty() && it.toolCallId in pendingCalls }
-        if (last.role == MessageRole.ASSISTANT && unpaired.isNotEmpty()) {
-            pendingCalls.removeAll(unpaired.map { it.toolCallId })
-            result.removeAt(result.size - 1)
-        } else break
+    // 移除所有未配对的 assistant tool_call (不只末尾 — 流中断/多 tool_call 部分执行/工具失败残留)
+    if (pendingCalls.isNotEmpty()) {
+        Log.w(TAG, "sanitize: removing ${pendingCalls.size} unpaired tool calls: $pendingCalls")
+        val cleaned = mutableListOf<UIMessage>()
+        for (msg in result) {
+            if (msg.role == MessageRole.ASSISTANT) {
+                val tools = msg.getTools()
+                val kept = tools.filter { it.toolCallId !in pendingCalls }
+                if (kept.size != tools.size) {
+                    val hasText = msg.parts.any { it is UIMessagePart.Text && it.text.isNotBlank() }
+                    if (kept.isEmpty() && !hasText) {
+                        continue // 无内容无 tool_call → 整体移除
+                    }
+                    // 保留文本与已配对 tool_call, 仅移除未配对部分
+                    cleaned.add(
+                        msg.copy(parts = msg.parts.filterNot {
+                            it is UIMessagePart.Tool && it.toolCallId in pendingCalls
+                        })
+                    )
+                    continue
+                }
+            }
+            cleaned.add(msg)
+        }
+        return cleaned
     }
     return result
 }
