@@ -55,3 +55,13 @@ description: "[中优先级·RinCore路线对照] RinCore 更新路线与待办�
 - 每次修改：小步提交 → CI 验证（约 11-15 分钟）→ 用户实测
 - 用户偏好：不要大改；适当优化；稳定优先
 - 遇到反复问题的原则：回滚到稳定基线 → 从基线重新诊断 → 只移植验证过的修复
+
+## 石山清理计划（全量清单见 docs/architecture-audit-20260803.md）
+- G1 BEFORE_SYSTEM_PROMPT 协议违规（P0——SETTINGS 隐患，需移植 v3.4.5 合并修复）
+- G2 孤儿 tool_call 无清洗（P1——需评估移植 v3.3.13）
+- G3 平台空流无应对（P1——观察后决定）
+- G4 缓存断层诊断缺失（P2——重加 cache 日志）
+- S6 RouteActivity 导航碎片化（P2——适配时拆分）
+- S7 SkillsTools 裁剪完整性验证（P2——skill_ 工具检查）
+- S9 fork 未移植 165 文件适配管理（P2——Telegram/Codex/Skill管理/触发器）
+- S10 版本号漏改无自动校验（P3——发布流程加校验）

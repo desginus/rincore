@@ -56,3 +56,14 @@ DeepSeek V4 系列、千问 3.7 系列（按国内模型前缀自动缓存理解
 - 工具数：UI 统计行 == invoke_tools 返回
 - 缓存日志：`cache: prompt=X cached=Y` / `缓存断层!` 行
 - 流式诊断：`SSE done/failure` chunks+finish_reason / `gen_return` last_role+last_len
+
+
+## 内容来源标注体系（三来源）
+| 来源 | 定义 |
+|---|---|
+| 🟢 自研 | 我们在 fork 基础上自己新增（fork 无同名文件）：LocalTools 体系/域分类/生态/闹钟/文件夹/压缩/诊断/MCP OAuth/ClawSkill |
+| 🟡 移植 fork | 从 AAAelina/rikkahub-agent 选择性手动移植：权限/工作流(部分)/三功能 |
+| 🔵 继承原版 | 继承自原版 RikkaHub 并随上游更新移植：GenerationHandler/ChatService/Provider/UI 框架/CronJob 定时任务 |
+
+**关键修正**：设备闹钟（data/alarm/）实为**自研**（fork 无此模块——之前误标"移植 fork"）。
+**fork 未移植 165 文件**（Telegram 7/Codex 6/Skill 管理 5+/工作流触发器 5/UI 20）——后续适配目标，详见 docs/architecture-audit-20260803.md
