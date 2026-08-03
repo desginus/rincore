@@ -131,21 +131,14 @@ internal fun applyInjections(
     val systemIndex = result.indexOfFirst { it.role == MessageRole.SYSTEM }
     val firstUserIndex = result.indexOfFirst { it.role == MessageRole.USER }
 
-    // BEFORE_SYSTEM_PROMPT → 合并进 system 消息开头 (不插独立消息)
-    // 原因: DeepSeek V4 Flash 等严格端点要求第一条消息为 system/SETTINGS,
-    // 独立 user 消息插到 system 前会报 "Required SETTINGS preface not received"
+    // BEFORE_SYSTEM_PROMPT → 作为独立用户消息插入系统消息之前
     val beforeContent = byPosition[InjectionPosition.BEFORE_SYSTEM_PROMPT]
         ?.joinToString("\n") { it.content } ?: ""
     if (beforeContent.isNotEmpty()) {
-        if (systemIndex >= 0) {
-            val sys = result[systemIndex]
-            result[systemIndex] = sys.copy(
-                parts = listOf(UIMessagePart.Text(beforeContent + "\n\n")) + sys.parts
-            )
-        } else {
-            // 无 system 时创建 system 消息 (保持首条为 system 的协议要求)
-            result.add(0, UIMessage.system(beforeContent))
-        }
+        result.add(
+            systemIndex.coerceAtLeast(0),
+            UIMessage.user(beforeContent)
+        )
     }
 
     // AFTER_SYSTEM_PROMPT → 作为独立用户消息插入系统消息之后、第一条用户消息之前

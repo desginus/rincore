@@ -32,7 +32,6 @@ import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.rikkahub.data.ai.compression.NaturalLanguageFormatter
 import me.rerere.ai.util.TraceLogger
 import me.rerere.rikkahub.data.ai.compression.ToolOutputCompressor
-import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
@@ -95,46 +94,41 @@ class GenerationHandler(
         conversationLorebookIds: Set<Uuid> = emptySet(),
         workspaceCwd: String? = null,
         conversationLoadedDomains: Set<String>? = null,
-        enabledSkills: List<Pair<String, String>> = emptyList(), // skill 名 to 描述 (invoke_tools 返回)
     ): Flow<GenerationChunk> = flow {
         CallTracer.startTrace(id = model.id.toString())
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
 
         var messages: List<UIMessage> = messages
-        // 清洗非法消息序列 (未配对 tool_call / 孤儿 tool 消息) — 防止 Qwen 报 "Required settings preface not received"
-        val sanitized = messages.sanitizeToolCallSequence()
-        if (sanitized.size != messages.size) {
-            Log.w(TAG, "streamText: sanitized message sequence (${messages.size} -> ${sanitized.size})")
-        }
-        messages = sanitized
 
         // === 分层路由状态 ===
         val useLayered = assistant.useLayeredTools && tools.isNotEmpty()
-        // 从 Conversation 恢复已加载的域（跨对话持久化），并过滤无效域（配置已删除/不再存在的域）
+        // 从 Conversation 恢复已加载的域（Feature #4: 跨对话持久化）
         val loadedDomains = mutableSetOf<String>().apply {
             conversationLoadedDomains?.let { addAll(it) }
         }
 
-        // 工具池基准快照 — 请求内稳定 (缓存友好: 工具池内容不变则 system/tools 文本不变)
-        val baseMcpTools = DynamicTools.getMcpTools()
-        val baseAllTools = (tools + baseMcpTools).distinctBy { it.name }
-        var currentAllTools = baseAllTools
+        // 分离框架工具与用户域工具
+        val frameworkToolSet = setOf(
+            "invoke_tools",
+            "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file",
+            "manage_domain", "list_domains", "move_tool_to_domain",
+            // 生态系统动态工具
+            "mcp_connect", "clawhub_install", "clawhub_search", "plugin_install", "skills_lock",
+            "list_ecosystem_tools",
+        )
+        val domainTools = tools.filter { it.name !in frameworkToolSet }
+        val frameworkTools = tools.filter { it.name in frameworkToolSet }
+        Log.i(TAG, "frameworkToolSet(${frameworkToolSet.size}): ${frameworkToolSet.sorted()}")
+        Log.i(TAG, "frameworkTools found: ${frameworkTools.map { it.name }.sorted()}")
 
-        var loadedDomainsEmitted = false
+        // Skill 已拆分为独立工具 (skill_<name>)，无需集中提取 skillListText
+
         for (stepIndex in 0 until maxSteps) {
-            // 每步清洗非法消息序列 — 流中断/工具失败会在循环内产生孤儿 tool_call,
-            // 仅入口清洗无法覆盖 (Qwen/DeepSeek 会报 "Required settings preface not received")
-            val stepCleaned = messages.sanitizeToolCallSequence()
-            if (stepCleaned.size != messages.size) {
-                Log.w(TAG, "streamText: step #$stepIndex sanitized (${messages.size} -> ${stepCleaned.size})")
-            }
-            messages = stepCleaned
-
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
             CallTracer.event("STEP", "step_$stepIndex", "Step $stepIndex begin, ${tools.size} tools loaded, messages=${messages.size}")
 
-            // 每步重建 ToolRouter，读取最新 settings (三位一体: UI/invoke_tools/prompt 同源)
+            // Bug #2 修复: 每步重建 ToolRouter，读取最新 settings
             val currentSettings = settingsStore.settingsFlow.value
             val toolRouter = ToolRouter(
                 overrides = currentSettings.toolDomainOverrides,
@@ -145,36 +139,16 @@ class GenerationHandler(
                 hiddenDomains = currentSettings.hiddenDomains,
                 removedBuiltinDomains = currentSettings.removedBuiltinDomains,
             )
-
-            // 幽灵域清理: 已加载域中配置已删除/隐藏的, 从 loadedDomains 移除 (懒加载同步)
-            val validDomains = toolRouter.validDomainLabels
-            val staleDomains = loadedDomains.filter { it !in validDomains }
-            if (staleDomains.isNotEmpty()) {
-                loadedDomains.removeAll(staleDomains.toSet())
-                Log.i(TAG, "streamText: pruned ${staleDomains.size} stale loaded domains: $staleDomains")
-            }
-
-            // MCP 工具池变化检测: 名称集合相同则复用快照 (避免 Tool 对象重建/顺序波动),
-            // 变化(如 mcp_connect 运行时新连接)才重建 — 缓存友好
-            val stepMcpTools = DynamicTools.getMcpTools()
-            val mcpNamesNow = stepMcpTools.map { it.name }
-            val mcpNamesSnapshot = currentAllTools.filter { it.name.startsWith("mcp__") }.map { it.name }
-            if (mcpNamesNow != mcpNamesSnapshot) {
-                currentAllTools = (tools + stepMcpTools).distinctBy { it.name }
-                Log.i(TAG, "streamText: MCP tool pool changed (${mcpNamesSnapshot.size} -> ${mcpNamesNow.size}), rebuilding allTools")
-            }
-            val allTools = currentAllTools
-
             val layer1Prompt = if (useLayered) {
-                toolRouter.buildLayer1(allTools)
+                toolRouter.buildLayer1(domainTools)
             } else {
                 null
             }
 
             val toolsInternal = if (useLayered) {
                 buildList {
-                    Log.i(TAG, "generateInternal: build tools (layered)($assistant), pool=${allTools.size}, loadedDomains=${loadedDomains}")
-                    // Memory 工具 — 始终可用 (高频, 带闭包回调, 不适合懒加载)
+                    Log.i(TAG, "generateInternal: build tools (layered)($assistant)")
+                    // 框架工具 — 始终可调用, 不走域系统
                     if (assistant?.enableMemory == true) {
                         val memoryAssistantId = if (assistant.useGlobalMemory) {
                             MemoryRepository.GLOBAL_MEMORY_ID
@@ -194,14 +168,18 @@ class GenerationHandler(
                             }
                         ).let(this::addAll)
                     }
-                    // invoke_tools — 唯一始终注入的非 memory 工具, 模型通过它按需加载所有其他工具
-                    add(toolRouter.createInvokeToolsTool(allTools, loadedDomains, enabledSkills))
+                    // 其他框架工具 (search/conversation/workspace) — 始终注入
+                    addAll(frameworkTools.filter { it.name != "memory_tool" })
+                    // 动态 MCP 工具 (mcp_connect 运行时添加, 从 settings 读取)
+                    addAll(DynamicTools.getMcpTools())
+                    // invoke_tools 工具（始终包含, 只对用户域工具分类）
+                    add(toolRouter.createInvokeToolsTool(domainTools, loadedDomains))
                     // 已加载域的工具
                     for (domain in loadedDomains) {
-                        addAll(toolRouter.getDomainTools(domain, allTools))
+                        addAll(toolRouter.getDomainTools(domain, domainTools))
                     }
                 }.distinctBy { it.name }
-                    .sortedBy { it.name }
+                    .sortedBy { it.name }  // 确定性排序 → 五家前缀匹配缓存稳定
             } else {
                 buildList {
                     Log.i(TAG, "generateInternal: build tools($assistant)")
@@ -224,8 +202,10 @@ class GenerationHandler(
                             }
                         ).let(this::addAll)
                     }
-                    addAll(allTools)
-                }.distinctBy { it.name }.sortedBy { it.name }
+                    addAll(tools)
+                    // 动态 MCP 工具
+                    addAll(DynamicTools.getMcpTools())
+                }
             }
 
             // Check if we have tool calls ready to continue after user interaction.
@@ -277,13 +257,6 @@ class GenerationHandler(
                     layer1Prompt = layer1Prompt,
                 )
                 CallTracer.event("RECV", "post_api", "generateInternal returned, messages=${messages.size}")
-                // 中断诊断: 记录最后一条消息角色与内容长度 — 空返回/截断可定位
-                runCatching {
-                    val last = messages.lastOrNull()
-                    val lastLen = last?.toText()?.length ?: 0
-                    val lastRole = last?.role?.name ?: "none"
-                    Log.i(TAG, "gen_return: last_role=$lastRole last_len=$lastLen messages=${messages.size}")
-                }
                 messages = messages.visualTransforms(
                     transformers = outputTransformers,
                     context = context,
@@ -309,7 +282,6 @@ class GenerationHandler(
                     // no tool calls, break — emit loadedDomains for persistence
                     if (useLayered && loadedDomains.isNotEmpty()) {
                         emit(GenerationChunk.LoadedDomains(loadedDomains.toSet()))
-                        loadedDomainsEmitted = true
                     }
                     CallTracer.event("FINISH", "no_tools", "Conversation finished, no pending tools")
                     break
@@ -405,23 +377,11 @@ class GenerationHandler(
                         // Auto or Approved - execute the tool
                         TraceLogger.log("ToolExec", "${tool.toolName}")
                             runCatching {
-                            // 优先已加载域; 已批准工具允许从全量池兜底执行 (用户已批准 = 信任,
-                            // 避免工具未加载时执行失败 → 模型重试 → 再次调用 → 死循环)
                             val toolDef = toolsInternal.find { toolDef -> toolDef.name == tool.toolName }
-                                ?: allTools.find { it.name == tool.toolName }
                             if (toolDef == null) {
                                 // 分层模式下工具必须先通过 invoke_tools 加载，禁止自动加载其他域工具
-                                // 提示实际所属域, 引导模型自愈(加载正确域后重试)
                                 val msg = if (useLayered) {
-                                    val knownTool = allTools.find { it.name == tool.toolName }
-                                    if (knownTool != null) {
-                                        val actualDomain = toolRouter.classifyTool(knownTool)
-                                        "工具 ${tool.toolName} 未加载。它属于域「$actualDomain」。请先调用 invoke_tools(\"$actualDomain\") 加载对应域后再重试。"
-                                    } else if (tool.toolName == "memory_tool") {
-                                        "memory_tool 不可用：记忆功能未启用。请在助手设置中开启「长期记忆」(enableMemory) 后重试。"
-                                    } else {
-                                        "工具 ${tool.toolName} 不存在于任何域。"
-                                    }
+                                    "工具 ${tool.toolName} 未加载。请先调用 invoke_tools(\"域名称\") 加载对应域。"
                                 } else {
                                     "工具 ${tool.toolName} 未找到"
                                 }
@@ -513,12 +473,6 @@ class GenerationHandler(
                 )
             )
         }
-        // 兜底持久化: 无论循环如何退出(maxSteps 用尽/工具链中断/正常结束),
-        // 只要加载过域就持久化 — 避免下一轮恢复失败导致 tools 变化 → 缓存失效
-        if (!loadedDomainsEmitted && useLayered && loadedDomains.isNotEmpty()) {
-            emit(GenerationChunk.LoadedDomains(loadedDomains.toSet()))
-            Log.i(TAG, "streamText: fallback emit LoadedDomains after loop (maxSteps exhausted or interrupted)")
-        }
         CallTracer.finishTrace()
 
     }.flowOn(Dispatchers.IO)
@@ -571,9 +525,14 @@ class GenerationHandler(
                 }
                 layer1Len = length - sysPromptLen
 
-                // 工具 systemPrompt — 分层模式下只注入 invoke_tools 自身; 非分层注入全部
+                // 框架工具 systemPrompt
                 if (layer1Prompt != null) {
-                    tools.filter { it.name == "invoke_tools" }.forEach { tool ->
+                    val frameworkIds = setOf(
+                        "invoke_tools",
+                        "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file",
+                        "manage_domain", "list_domains", "move_tool_to_domain",
+                    )
+                    tools.filter { it.name in frameworkIds && it.name != "invoke_tools" }.forEach { tool ->
                         val sp = tool.systemPrompt(model, messages)
                         if (sp.isNotBlank()) {
                             appendLine()
@@ -620,30 +579,11 @@ class GenerationHandler(
             workspaceCwd = workspaceCwd,
         )
 
-        // 协议兜底: 严格端点 (DeepSeek V4 Flash/中转) 要求第一条消息为 system —
-        // 若 transformer 产生非 system 首条 (如未来注入位置变化), 合并进 system
-        val normalizedMessages = if (internalMessages.firstOrNull()?.role != MessageRole.SYSTEM) {
-            val sysIdx = internalMessages.indexOfFirst { it.role == MessageRole.SYSTEM }
-            if (sysIdx > 0) {
-                val sys = internalMessages[sysIdx]
-                internalMessages.toMutableList().apply {
-                    removeAt(sysIdx)
-                    this[0] = this[0].copy(
-                        parts = listOf(UIMessagePart.Text("\n\n")) + sys.parts + this[0].parts
-                    )
-                }
-            } else {
-                internalMessages
-            }
-        } else {
-            internalMessages
-        }
-
-        val totalChars = normalizedMessages.sumOf { msg ->
+        val totalChars = internalMessages.sumOf { msg ->
             msg.parts.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }
         }
         val estTotalTokens = totalChars / 2.5
-        Log.i(TAG, "Request total: ${normalizedMessages.size} messages, ${totalChars}c (~${estTotalTokens.toInt()}t)")
+        Log.i(TAG, "Request total: ${internalMessages.size} messages, ${totalChars}c (~${estTotalTokens.toInt()}t)")
 
         var messages: List<UIMessage> = messages
         val params = TextGenerationParams(
@@ -663,52 +603,31 @@ class GenerationHandler(
             }
         )
         if (stream) {
-            // 空返回自动重试: DeepSeek V4 Flash 平台偶发空流 (连接建立但无有效 chunk,
-            // 流 [DONE] 结束) — 重试一次, 避免用户看到"输出中断"
-            val beforeSize = messages.size
-            var attempts = 0
-            while (attempts < 2) {
-                providerImpl.streamText(
-                    providerSetting = provider,
-                    messages = normalizedMessages,
-                    params = params
-                ).collect {
-                    messages = messages.handleMessageChunk(chunk = it, model = model)
-                    it.usage?.let { usage ->
-                        messages = messages.mapIndexed { index, message ->
-                            if (index == messages.lastIndex) {
-                                message.copy(usage = message.usage.merge(usage))
-                            } else {
-                                message
-                            }
+            providerImpl.streamText(
+                providerSetting = provider,
+                messages = internalMessages,
+                params = params
+            ).collect {
+                messages = messages.handleMessageChunk(chunk = it, model = model)
+                it.usage?.let { usage ->
+                    messages = messages.mapIndexed { index, message ->
+                        if (index == messages.lastIndex) {
+                            message.copy(usage = message.usage.merge(usage))
+                        } else {
+                            message
                         }
                     }
-                    onUpdateMessages(messages)
                 }
-                if (messages.size > beforeSize || attempts >= 1) break
-                Log.w(TAG, "gen_retry: empty stream (attempt $attempts) — retrying generateInternal")
-                TraceLogger.log("Retry", "empty stream attempt=$attempts")
-                attempts++
+                onUpdateMessages(messages)
             }
-            logCacheUsage(messages)
         } else {
-            // 非流式: 空 chunk 同样重试
-            var chunk: MessageChunk? = null
-            val beforeSize = messages.size
-            var attempts = 0
-            while (attempts < 2) {
-                chunk = providerImpl.generateText(
-                    providerSetting = provider,
-                    messages = normalizedMessages,
-                    params = params,
-                )
-                messages = messages.handleMessageChunk(chunk = chunk, model = model)
-                if (messages.size > beforeSize || attempts >= 1) break
-                Log.w(TAG, "gen_retry: empty response (attempt $attempts) — retrying generateInternal")
-                TraceLogger.log("Retry", "empty response attempt=$attempts")
-                attempts++
-            }
-            chunk?.usage?.let { usage ->
+            val chunk = providerImpl.generateText(
+                providerSetting = provider,
+                messages = internalMessages,
+                params = params,
+            )
+            messages = messages.handleMessageChunk(chunk = chunk, model = model)
+            chunk.usage?.let { usage ->
                 messages = messages.mapIndexed { index, message ->
                     if (index == messages.lastIndex) {
                         message.copy(
@@ -720,27 +639,7 @@ class GenerationHandler(
                 }
             }
             onUpdateMessages(messages)
-            logCacheUsage(messages)
         }
-    }
-
-    // ===== 缓存断层诊断 =====
-    // DeepSeek 缓存 = 前缀单元制 (固定 token 间隔切单元), 输入跨台阶时单元重排会导致
-    // 缓存断到 system (≈9.7K). 记录每轮缓存命中, 检测断层 (骤降 >50%) 以便区分
-    // 平台台阶机制 vs 客户端前缀变化.
-    private var lastStepCachedTokens = 0
-
-    private fun logCacheUsage(messages: List<UIMessage>) {
-        val usage = messages.lastOrNull()?.usage ?: return
-        val cached = usage.cachedTokens
-        val prompt = usage.promptTokens
-        if (cached <= 0) return
-        val pct = prompt.takeIf { it > 0 }?.let { cached * 100 / it }
-        Log.i(TAG, "cache: prompt=$prompt cached=$cached (${pct}%)")
-        if (lastStepCachedTokens > 0 && cached < lastStepCachedTokens * 0.5) {
-            Log.w(TAG, "cache: 缓存断层! ${lastStepCachedTokens} -> $cached (prompt=$prompt) — 平台台阶重排或前缀变化")
-        }
-        lastStepCachedTokens = cached
     }
 
     // invoke_tools 输出 exempt from truncation (工具列表必须完整)
@@ -855,63 +754,4 @@ class GenerationHandler(
             }
         }
     }.flowOn(Dispatchers.IO)
-}
-
-
-/**
- * 清洗消息序列中的非法工具调用结构, 防止 Qwen/DashScope 校验失败
- * ("Required settings preface not received" 通常是消息序列非法的报错)
- *
- * 1. 丢弃孤儿 tool 消息 (TOOL 角色但前面无对应 assistant tool_call)
- * 2. 移除所有未配对的 assistant tool_call (流中断/多 tool_call 部分执行/工具失败残留,
- *    保留消息中的文本与已配对 tool_call)
- */
-private fun List<UIMessage>.sanitizeToolCallSequence(): List<UIMessage> {
-    val pendingCalls = mutableSetOf<String>()
-    val result = mutableListOf<UIMessage>()
-    for (msg in this) {
-        when (msg.role) {
-            MessageRole.ASSISTANT -> {
-                result.add(msg)
-                msg.getTools().filter { it.output.isEmpty() }.forEach { pendingCalls.add(it.toolCallId) }
-            }
-            MessageRole.TOOL -> {
-                val ids = msg.getTools().map { it.toolCallId }
-                if (ids.isNotEmpty() && ids.all { it in pendingCalls }) {
-                    result.add(msg)
-                    pendingCalls.removeAll(ids)
-                } else {
-                    Log.w(TAG, "sanitize: dropping orphan tool message $ids")
-                }
-            }
-            else -> result.add(msg)
-        }
-    }
-    // 移除所有未配对的 assistant tool_call (不只末尾 — 流中断/多 tool_call 部分执行/工具失败残留)
-    if (pendingCalls.isNotEmpty()) {
-        Log.w(TAG, "sanitize: removing ${pendingCalls.size} unpaired tool calls: $pendingCalls")
-        val cleaned = mutableListOf<UIMessage>()
-        for (msg in result) {
-            if (msg.role == MessageRole.ASSISTANT) {
-                val tools = msg.getTools()
-                val kept = tools.filter { it.toolCallId !in pendingCalls }
-                if (kept.size != tools.size) {
-                    val hasText = msg.parts.any { it is UIMessagePart.Text && it.text.isNotBlank() }
-                    if (kept.isEmpty() && !hasText) {
-                        continue // 无内容无 tool_call → 整体移除
-                    }
-                    // 保留文本与已配对 tool_call, 仅移除未配对部分
-                    cleaned.add(
-                        msg.copy(parts = msg.parts.filterNot {
-                            it is UIMessagePart.Tool && it.toolCallId in pendingCalls
-                        })
-                    )
-                    continue
-                }
-            }
-            cleaned.add(msg)
-        }
-        return cleaned
-    }
-    return result
 }

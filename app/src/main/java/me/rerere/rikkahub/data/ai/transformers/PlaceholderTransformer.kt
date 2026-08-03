@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.ai.transformers
 
 import android.content.Context
+import android.os.BatteryManager
 import android.os.Build
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -95,6 +96,10 @@ object DefaultPlaceholderProvider : PlaceholderProvider {
             "${Build.BRAND} ${Build.MODEL}"
         }
 
+        placeholder("battery_level", { Text(stringResource(R.string.placeholder_battery_level)) }) {
+            it.context.batteryLevel().toString()
+        }
+
         placeholder("nickname", { Text(stringResource(R.string.placeholder_nickname)) }) {
             it.settingsStore.settingsFlow.value.displaySetting.userNickname.ifBlank { "user" }
         }
@@ -108,6 +113,11 @@ object DefaultPlaceholderProvider : PlaceholderProvider {
         }
     }
 
+    private fun Temporal.toDateString() = DateTimeFormatter
+        .ofLocalizedDate(FormatStyle.MEDIUM)
+        .withLocale(Locale.getDefault())
+        .format(this)
+
     private fun Temporal.toTimeString() = DateTimeFormatter
         .ofLocalizedTime(FormatStyle.MEDIUM)
         .withLocale(Locale.getDefault())
@@ -118,10 +128,10 @@ object DefaultPlaceholderProvider : PlaceholderProvider {
         .withLocale(Locale.getDefault())
         .format(this)
 
-    private fun Temporal.toDateString() = DateTimeFormatter
-        .ofLocalizedDate(FormatStyle.MEDIUM)
-        .withLocale(Locale.getDefault())
-        .format(this)
+    private fun Context.batteryLevel(): Int {
+        val batteryManager = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+        return batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+    }
 }
 
 object PlaceholderTransformer : InputMessageTransformer, KoinComponent {

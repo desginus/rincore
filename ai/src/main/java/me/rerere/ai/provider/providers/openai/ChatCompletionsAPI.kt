@@ -157,9 +157,6 @@ class ChatCompletionsAPI(
 
         var hasData = false
         val listener = object : EventSourceListener() {
-            private var chunkCount = 0
-            private var lastFinishReason: String? = null
-
             override fun onEvent(
                 eventSource: EventSource,
                 id: String?,
@@ -167,8 +164,7 @@ class ChatCompletionsAPI(
                 data: String
             ) {
                 if (data == "[DONE]") {
-                    Log.i(TAG, "SSE done: chunks=$chunkCount finish=$lastFinishReason")
-                    TraceLogger.log("SSE", "done chunks=$chunkCount finish=$lastFinishReason")
+                    println("[onEvent] (done) 结束流: $data")
                     close()
                     return
                 }
@@ -204,7 +200,6 @@ class ChatCompletionsAPI(
                                         finishReason = finishReason,
                                     )
                                 )
-                                if (finishReason != null) lastFinishReason = finishReason
                             }
                         }
                         val usage = parseTokenUsage(it["usage"] as? JsonObject)
@@ -218,7 +213,6 @@ class ChatCompletionsAPI(
                         trySend(messageChunk).onFailure { e ->
                             Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
                         }
-                        chunkCount++
                         hasData = true
                     }
             }
@@ -226,8 +220,6 @@ class ChatCompletionsAPI(
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
                 var exception = t
 
-                Log.i(TAG, "SSE failure: chunks=$chunkCount finish=$lastFinishReason err=${t?.javaClass?.name}: ${t?.message}")
-                TraceLogger.log("SSE", "failure chunks=$chunkCount finish=$lastFinishReason err=${t?.javaClass?.name}: ${t?.message}")
                 t?.printStackTrace()
                 println("[onFailure] 发生错误: ${t?.javaClass?.name} ${t?.message} / $response")
 
@@ -289,9 +281,7 @@ class ChatCompletionsAPI(
                 "messages",
                 buildMessages(
                     messages = messages,
-                    // DeepSeek 思考模式硬性要求: 历史 reasoning (reason text) 必须
-                    // 原样回传, 否则报错 — 该 provider 强制开启, 不受 UI 开关影响
-                    includeHistoryReasoning = providerSetting.includeHistoryReasoning || host.contains("deepseek"),
+                    includeHistoryReasoning = providerSetting.includeHistoryReasoning,
                     supportInputModalities = params.model.inputModalities,
                 )
             )
@@ -407,11 +397,6 @@ class ChatCompletionsAPI(
                     "api.moonshot.cn" -> {
                         put("thinking", buildJsonObject {
                             put("type", if (!level.isEnabled) "disabled" else "enabled")
-                            // K2.6 的 thinking.keep 默认为 null（忽略历史思考），思考开启时
-                            // 需显式传 "all" 才是保留式思考；文档推荐与 enabled 搭配
-                            if (level.isEnabled && ModelRegistry.KIMI_K2_6.match(params.model.modelId)) {
-                                put("keep", "all")
-                            }
                         })
                     }
 
@@ -480,13 +465,7 @@ class ChatCompletionsAPI(
     }
 
     private fun isModelAllowTemperature(model: Model): Boolean {
-        val isMoonshotRestricted = ModelRegistry.KIMI_K2_5.match(model.modelId) ||
-                ModelRegistry.KIMI_K2_6.match(model.modelId) ||
-                ModelRegistry.KIMI_K3.match(model.modelId) ||
-                ModelRegistry.KIMI_K3_ALIAS.match(model.modelId)
-        return !ModelRegistry.OPENAI_O_MODELS.match(model.modelId) &&
-               !ModelRegistry.GPT_5.match(model.modelId) &&
-               !isMoonshotRestricted
+        return !ModelRegistry.OPENAI_O_MODELS.match(model.modelId) && !ModelRegistry.GPT_5.match(model.modelId)
     }
 
     private fun buildMessages(

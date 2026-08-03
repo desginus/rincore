@@ -219,7 +219,7 @@ class ResponseAPI(
             }
 
             // messages
-            put("input", buildMessages(messages, host))
+            put("input", buildMessages(messages))
 
             // reasoning
             if (params.model.abilities.contains(ModelAbility.REASONING)) {
@@ -285,19 +285,19 @@ class ResponseAPI(
         }.mergeCustomBody(params.customBody)
     }
 
-    internal fun buildMessages(messages: List<UIMessage>, host: String = "") = buildJsonArray {
+    internal fun buildMessages(messages: List<UIMessage>) = buildJsonArray {
         messages
             .filter { it.isValidToUpload() && it.role != MessageRole.SYSTEM }
             .forEach { message ->
                 if (message.role == MessageRole.ASSISTANT) {
-                    addAssistantItems(message, host)
+                    addAssistantItems(message)
                 } else {
                     addUserItems(message)
                 }
             }
     }
 
-    private fun JsonArrayBuilder.addAssistantItems(message: UIMessage, host: String = "") {
+    private fun JsonArrayBuilder.addAssistantItems(message: UIMessage) {
         val groups = groupPartsByToolBoundary(message.parts)
         val contentBuffer = mutableListOf<UIMessagePart>()
 
@@ -313,10 +313,6 @@ class ResponseAPI(
                                     contentBuffer.clear()
                                 }
                                 // 输出 reasoning item
-                                // DeepSeek thinking 模式: summary 元素类型必须为
-                                // reasoning_text (OpenAI 标准为 summary_text) —
-                                // 发错类型报 "reasoning_text must be passed back to the API";
-                                // content 内加 reasoning_text 又会被拒 (unknown variant)
                                 val reasoningMetadata = part.metadataAs<OpenAIReasoningMetadata>()
                                 add(buildJsonObject {
                                     put("type", "reasoning")
@@ -325,10 +321,7 @@ class ResponseAPI(
                                     }
                                     put("summary", buildJsonArray {
                                         add(buildJsonObject {
-                                            put(
-                                                "type",
-                                                if (host.contains("deepseek")) "reasoning_text" else "summary_text"
-                                            )
+                                            put("type", "summary_text")
                                             put("text", part.reasoning)
                                         })
                                     })

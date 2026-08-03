@@ -215,11 +215,7 @@ class OpenAIProvider(
                 put("model", params.model.modelId)
                 put("prompt", params.prompt)
                 put("n", params.numOfImages)
-                
-                val isGrok = providerSetting.baseUrl.contains("x.ai", ignoreCase = true) || 
-                    params.model.modelId.contains("grok", ignoreCase = true)
-                
-                if (params.size.isNotBlank() && !isGrok) {
+                if (params.size.isNotBlank()) {
                     put("size", params.size)
                 }
             }

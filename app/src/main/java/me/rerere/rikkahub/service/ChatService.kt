@@ -157,8 +157,6 @@ class ChatService(
         me.rerere.rikkahub.ecosystem.tools.DynamicTools.initialize(
             mcp = mcpManager,
             workspaceRoot = context.filesDir.resolve("ecosystem").absolutePath,
-            // ClawHub 安装的 skill 与 Agent Skills 同目录 (use_skill/proot 可见)
-            skillsRoot = context.filesDir.resolve(me.rerere.rikkahub.data.files.FileFolders.SKILLS).absolutePath,
         )
     }
 
@@ -550,15 +548,6 @@ class ChatService(
                 conversationLorebookIds = conversation.lorebookIds,
                 workspaceCwd = conversation.workspaceCwd,
                 conversationLoadedDomains = conversation.loadedDomains,
-                enabledSkills = if (assistant.enabledSkills.isNotEmpty()) {
-                    skillManager.listSkills()
-                        .filter { it.name in assistant.enabledSkills }
-                        .map {
-                            // bug 13: name 与目录名不一致时附注目录名, 便于用户对应
-                            val dirNote = if (it.skillDir.name != it.name) " (目录: ${it.skillDir.name})" else ""
-                            it.name to (it.description + dirNote)
-                        }
-                } else emptyList(),
                 memories = if (assistant.useGlobalMemory) {
                     memoryRepository.getGlobalMemories()
                 } else {
@@ -572,7 +561,6 @@ class ChatService(
                 },
                 outputTransformers = outputTransformers,
                 tools = buildList {
-                    val toolsList = this // 供 knownToolNames 延迟引用(工具池构建完成后)
                     if (settings.enableWebSearch) {
                         addAll(createSearchTools(settings))
                     }
@@ -599,31 +587,12 @@ class ChatService(
                             createSkillTools(
                                 enabledSkills = assistant.enabledSkills,
                                 allSkills = skillManager.listSkills(),
-                                skillProvider = { skillManager.listSkills() }, // 实时: 新增 Skill 无需重启
                             )
                         )
                     }
                     // Feature #2: AI 域管理工具
                     if (assistant.useLayeredTools) {
-                        addAll(
-                            createDomainTools(
-                                settingsStore,
-                                knownToolNames = {
-                                    buildSet {
-                                        addAll(toolsList.map { it.name })
-                                        addAll(me.rerere.rikkahub.ecosystem.tools.DynamicTools.all().map { it.name })
-                                        addAll(mcpManager.getAllAvailableTools().map { it.second })
-                                        add("memory_tool")
-                                        add("invoke_tools")
-                                    }
-                                },
-                                knownSkillNames = {
-                                    skillManager.listSkills()
-                                        .filter { it.name in assistant.enabledSkills }
-                                        .map { it.name }.toSet()
-                                },
-                            )
-                        )
+                        addAll(createDomainTools(settingsStore))
                     }
                     mcpManager.getAllAvailableTools().also { allTools ->
                         val invalidNames = allTools
@@ -688,8 +657,7 @@ class ChatService(
                         updateConversation(conversationId, updatedConversation)
 
                         // 流式增量落盘 (每步 1 次): 生成中切后台/进程被杀时
-                        // 已生成的 assistant 内容不丢 — 之前仅在 onSuccess 落盘,
-                        // 生成中切后台重新进入 → 回答全部消失
+                        // 已生成的 assistant 内容不丢 (v3.4.6 保留)
                         saveConversation(conversationId, updatedConversation)
 
                         // 通知等边缘副作用由 ChatNotificationManager 消费；
