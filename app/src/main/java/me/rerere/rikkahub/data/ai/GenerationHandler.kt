@@ -540,9 +540,20 @@ class GenerationHandler(
                         }
                     }
                 } else {
-                    tools.forEach { tool ->
-                        appendLine()
-                        append(tool.systemPrompt(model, messages))
+                    // 瘦身 (v2.9.4 移植): 与分层模式一致 — 只注入框架工具 systemPrompt。
+                    // 其余工具 (MCP/域/搜索等) 描述已在请求 tools 数组, system 内
+                    // 全量注入会导致工具池膨胀时 (264 tools) 冷启动 system 70K+ tokens
+                    val frameworkIds = setOf(
+                        "invoke_tools",
+                        "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file",
+                        "manage_domain", "list_domains", "move_tool_to_domain",
+                    )
+                    tools.filter { it.name in frameworkIds && it.name != "invoke_tools" }.forEach { tool ->
+                        val sp = tool.systemPrompt(model, messages)
+                        if (sp.isNotBlank()) {
+                            appendLine()
+                            append(sp)
+                        }
                     }
                 }
                 toolsPromptLen = length - sysPromptLen - layer1Len
