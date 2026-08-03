@@ -1,3 +1,15 @@
+/**
+ * 会话编排服务 — 模块: B. 会话与存储
+ *
+ * 职责:
+ *  - 工具池构建: local/搜索/workspace/生态/动态/技能/域/MCP 全量收集
+ *  - 生成编排: 调 GenerationHandler + 流式增量落盘 (v3.4.6 保留)
+ *  - 审批流/通知/会话管理
+ *
+ * 来源: 继承原版 + 自研 (落盘/通知/审批)
+ *
+ * 问题定位: 回答丢失/切后台/工具不出现 → 查本模块
+ */
 package me.rerere.rikkahub.service
 
 import android.app.Application

@@ -1,3 +1,17 @@
+/**
+ * 生成编排器（AI 传输链核心）— 模块: A. 传输链
+ *
+ * 职责:
+ *  - 消息组装: system(缓存锚点+提示+层1概览+框架工具+记忆) + 历史 + 新消息
+ *  - 分层路由: frameworkTools / domainTools 分离 + 域懒加载 (MCP 走 allDomainTools 池)
+ *  - 协议强制: 发送前 MessageProtocol.enforce (首条 system + tool 配对)
+ *  - 流式输出: GenerationChunk 回调 → 上层落盘
+ *
+ * 基线: 回滚自 3.2.2 (v3.5.0), 保留 v3.5.3 MCP 懒加载 (813af56d 移植)
+ * 来源: 继承原版 + 自研演进
+ *
+ * 问题定位: 连接中断/SETTINGS/工具调用异常/冷启动 token 高 → 查本模块 + protocol + transformers
+ */
 package me.rerere.rikkahub.data.ai
 
 import android.content.Context

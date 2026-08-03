@@ -37,10 +37,10 @@ object MessageProtocol {
             .filterIsInstance<UIMessagePart.Text>()
             .joinToString("\n") { it.text }
         val nonTextParts = first.parts.filterNot { it is UIMessagePart.Text }
-        val system = if (systemText.isBlank() && nonTextParts.isEmpty()) {
-            UIMessage.system("")
-        } else {
-            UIMessage.system(systemText).copy(
+        val system = when {
+            systemText.isBlank() && nonTextParts.isEmpty() -> UIMessage.system("")
+            systemText.isBlank() -> UIMessage.system("").copy(parts = nonTextParts)
+            else -> UIMessage.system(systemText).copy(
                 parts = listOf(UIMessagePart.Text(systemText)) + nonTextParts
             )
         }
