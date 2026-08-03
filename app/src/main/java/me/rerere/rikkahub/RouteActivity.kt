@@ -1,3 +1,11 @@
+/**
+ * 路由 Activity + 导航注册中心 — 模块: F. UI 层
+ *
+ * 职责: 应用入口 + 所有页面导航注册 (持续增长 — 适配新功能时建议拆分)。
+ * 注意: 与 fork 差异 432 行 (S6 石山) — 新页面注册集中在此。
+ *
+ * 问题定位: 导航闪退/页面找不到 → 查本文件注册
+ */
 package me.rerere.rikkahub
 
 import android.annotation.SuppressLint
