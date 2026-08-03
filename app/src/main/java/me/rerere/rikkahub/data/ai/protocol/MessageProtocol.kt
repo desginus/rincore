@@ -85,9 +85,13 @@ object MessageProtocol {
                         }
                     }
                     MessageRole.USER -> {
-                        val kept = msg.parts.filterNot {
-                            (it is UIMessagePart.Tool || it is UIMessagePart.ToolResult) &&
-                                it.toolCallId in orphanResults
+                        // when 分支内智能转换 — (A || B) 联合类型无法直接访问 toolCallId
+                        val kept = msg.parts.filterNot { part ->
+                            when (part) {
+                                is UIMessagePart.Tool -> part.toolCallId in orphanResults
+                                is UIMessagePart.ToolResult -> part.toolCallId in orphanResults
+                                else -> false
+                            }
                         }
                         if (kept.size != msg.parts.size) { changed = true; msg.copy(parts = kept) }
                         else msg
