@@ -150,7 +150,11 @@ class ResponseAPI(
                     close()
                     return
                 }
-                Log.d(TAG, "onEvent: $id/$type $data")
+                if (type?.contains("reasoning") == true || type == "response.output_item.done") {
+                    Log.i(TAG, "onEvent($type): $data")
+                } else {
+                    Log.d(TAG, "onEvent: $id/$type $data")
+                }
                 val json = json.parseToJsonElement(data).jsonObject
                 var chunk = parseResponseDelta(json)
                 // output_item.done — 完整 reasoning item (含 id/encrypted_content) 补全
@@ -233,7 +237,15 @@ class ResponseAPI(
             }
 
             // messages
-            put("input", buildMessages(messages, capabilities))
+            val inputArray = buildMessages(messages, capabilities)
+            // 诊断: 回传的 reasoning item 完整内容 (DeepSeek thinking 校验依据)
+            val reasoningItems = inputArray.filter { item ->
+                item.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "reasoning"
+            }
+            if (reasoningItems.isNotEmpty()) {
+                Log.i(TAG, "send reasoning items: ${reasoningItems.size} -> $reasoningItems")
+            }
+            put("input", inputArray)
 
             // reasoning
             if (params.model.abilities.contains(ModelAbility.REASONING)) {
@@ -498,16 +510,18 @@ class ResponseAPI(
             }
 
             "response.reasoning_summary_text.delta", "response.reasoning_text.delta" -> {
-                // item_id 必须保留 — DeepSeek 要求 reasoning 原样回传 (含 id)
+                // item_id / encrypted_content 必须保留 — DeepSeek 要求 reasoning 原样回传 (含 id)
                 val itemId = jsonObject["item_id"]?.jsonPrimitive?.contentOrNull
+                val encryptedDelta = jsonObject["encrypted_content"]?.jsonPrimitive?.contentOrNull
                 val reasoningPart = UIMessagePart.Reasoning(
                     reasoning = jsonObject["delta"]?.jsonPrimitive?.contentOrNull ?: "",
                     createdAt = Clock.System.now(),
                     finishedAt = null
                 ).also { part ->
-                    if (itemId != null) {
+                    if (itemId != null || encryptedDelta != null) {
                         part.metadata = buildJsonObject {
-                            put("reasoning_id", itemId)
+                            itemId?.let { put("reasoning_id", it) }
+                            encryptedDelta?.let { put("encrypted_content", it) }
                         }
                     }
                 }
@@ -707,7 +721,13 @@ class ResponseAPI(
         val type = item["type"]?.jsonPrimitive?.content ?: return null
         if (type != "reasoning") return null
         val itemId = item["id"]?.jsonPrimitive?.contentOrNull
-        val encrypted = item["encrypted_content"]?.jsonPrimitive?.contentOrNull
+        // encrypted_content 提取: 顶层字段 / content 数组内的 reasoning_text 元素
+        var encrypted = item["encrypted_content"]?.jsonPrimitive?.contentOrNull
+        if (encrypted == null) {
+            encrypted = item["content"]?.jsonArray?.firstOrNull { el ->
+                el.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "reasoning_text"
+            }?.jsonObject?.get("encrypted_content")?.jsonPrimitive?.contentOrNull
+        }
         if (itemId == null && encrypted == null) return null
 
         return MessageChunk(
