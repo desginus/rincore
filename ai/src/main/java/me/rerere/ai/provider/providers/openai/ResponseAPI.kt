@@ -312,7 +312,11 @@ class ResponseAPI(
                                     addContentItem(MessageRole.ASSISTANT, contentBuffer)
                                     contentBuffer.clear()
                                 }
-                                // 输出 reasoning item (OpenAI 标准)
+                                // 输出 reasoning item
+                                // DeepSeek thinking 模式: summary 元素类型必须为
+                                // reasoning_text (OpenAI 标准为 summary_text) —
+                                // 发错类型报 "reasoning_text must be passed back to the API";
+                                // content 内加 reasoning_text 又会被拒 (unknown variant)
                                 val reasoningMetadata = part.metadataAs<OpenAIReasoningMetadata>()
                                 add(buildJsonObject {
                                     put("type", "reasoning")
@@ -321,24 +325,15 @@ class ResponseAPI(
                                     }
                                     put("summary", buildJsonArray {
                                         add(buildJsonObject {
-                                            put("type", "summary_text")
+                                            put(
+                                                "type",
+                                                if (host.contains("deepseek")) "reasoning_text" else "summary_text"
+                                            )
                                             put("text", part.reasoning)
                                         })
                                     })
                                     reasoningMetadata?.encryptedContent?.let {
                                         put("encrypted_content", it)
-                                    }
-                                })
-                                // DeepSeek thinking 模式硬性要求: 历史 assistant 消息
-                                // content 内必须含 reasoning_text 块原样回传, 否则报错
-                                // "The reasoning_text in the thinking mode must be passed back to the API"
-                                add(buildJsonObject {
-                                    put("role", "assistant")
-                                    putJsonArray("content") {
-                                        add(buildJsonObject {
-                                            put("type", "reasoning_text")
-                                            put("text", part.reasoning)
-                                        })
                                     }
                                 })
                             }
