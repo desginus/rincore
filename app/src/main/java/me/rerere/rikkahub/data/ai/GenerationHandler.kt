@@ -186,7 +186,7 @@ class GenerationHandler(
                     .sortedBy { it.name }  // 确定性排序 → 五家前缀匹配缓存稳定
                     .also { built ->
                         val mcpCount = built.count { it.name.startsWith("mcp__") }
-                        val frameworkCount = built.count { it.name in frameworkToolSet }
+                        val frameworkCount = built.count { it.name in FRAMEWORK_TOOL_SET }
                         Log.i(TAG, "toolsInternal (layered): ${built.size} total" +
                             " (mcp=$mcpCount framework=$frameworkCount domain=${built.size - mcpCount - frameworkCount})")
                     }
