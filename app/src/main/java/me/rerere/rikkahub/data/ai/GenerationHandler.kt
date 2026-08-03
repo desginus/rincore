@@ -58,6 +58,15 @@ import kotlin.uuid.Uuid
 import me.rerere.rikkahub.data.ai.CallTracer
 
 private const val TAG = "GenerationHandler"
+
+/** 框架层工具名 — 不参与域分类, 分层模式下直接注入 */
+private val FRAMEWORK_TOOL_SET = setOf(
+    "invoke_tools",
+    "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file",
+    "manage_domain", "list_domains", "move_tool_to_domain",
+    "mcp_connect", "clawhub_install", "clawhub_search", "plugin_install", "skills_lock",
+    "list_ecosystem_tools",
+)
 private const val MAX_TOOL_OUTPUT_CHARS = 32 * 1024
 private const val TOOL_OUTPUT_PREVIEW_CHARS = 4 * 1024
 
@@ -109,17 +118,9 @@ class GenerationHandler(
         }
 
         // 分离框架工具与用户域工具
-        val frameworkToolSet = setOf(
-            "invoke_tools",
-            "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file",
-            "manage_domain", "list_domains", "move_tool_to_domain",
-            // 生态系统动态工具
-            "mcp_connect", "clawhub_install", "clawhub_search", "plugin_install", "skills_lock",
-            "list_ecosystem_tools",
-        )
-        val domainTools = tools.filter { it.name !in frameworkToolSet }
-        val frameworkTools = tools.filter { it.name in frameworkToolSet }
-        Log.i(TAG, "frameworkToolSet(${frameworkToolSet.size}): ${frameworkToolSet.sorted()}")
+        val domainTools = tools.filter { it.name !in FRAMEWORK_TOOL_SET }
+        val frameworkTools = tools.filter { it.name in FRAMEWORK_TOOL_SET }
+        Log.i(TAG, "frameworkToolSet(${FRAMEWORK_TOOL_SET.size}): ${FRAMEWORK_TOOL_SET.sorted()}")
         Log.i(TAG, "frameworkTools found: ${frameworkTools.map { it.name }.sorted()}")
 
         // Skill 已拆分为独立工具 (skill_<name>)，无需集中提取 skillListText
@@ -139,8 +140,13 @@ class GenerationHandler(
                 hiddenDomains = currentSettings.hiddenDomains,
                 removedBuiltinDomains = currentSettings.removedBuiltinDomains,
             )
+            // 每步刷新 MCP 工具 (支持 mcp_connect 运行时添加) — 合并到域池走懒加载,
+            // 不直接注入函数定义 (813af56d 移植: Token 65K → ~6K)
+            val currentMcpTools = DynamicTools.getMcpTools()
+            val allDomainTools = (domainTools + currentMcpTools).distinctBy { it.name }
+
             val layer1Prompt = if (useLayered) {
-                toolRouter.buildLayer1(domainTools)
+                toolRouter.buildLayer1(allDomainTools)
             } else {
                 null
             }
@@ -170,13 +176,11 @@ class GenerationHandler(
                     }
                     // 其他框架工具 (search/conversation/workspace) — 始终注入
                     addAll(frameworkTools.filter { it.name != "memory_tool" })
-                    // 动态 MCP 工具 (mcp_connect 运行时添加, 从 settings 读取)
-                    addAll(DynamicTools.getMcpTools())
-                    // invoke_tools 工具（始终包含, 只对用户域工具分类）
-                    add(toolRouter.createInvokeToolsTool(domainTools, loadedDomains))
-                    // 已加载域的工具
+                    // invoke_tools 元工具 — 操作 allDomainTools (含MCP), 模型按需加载
+                    add(toolRouter.createInvokeToolsTool(allDomainTools, loadedDomains))
+                    // 已加载域的工具 (含MCP工具, 通过分类归入域)
                     for (domain in loadedDomains) {
-                        addAll(toolRouter.getDomainTools(domain, domainTools))
+                        addAll(toolRouter.getDomainTools(domain, allDomainTools))
                     }
                 }.distinctBy { it.name }
                     .sortedBy { it.name }  // 确定性排序 → 五家前缀匹配缓存稳定
@@ -209,9 +213,8 @@ class GenerationHandler(
                         ).let(this::addAll)
                     }
                     addAll(tools)
-                    // 动态 MCP 工具
-                    addAll(DynamicTools.getMcpTools())
-                }.also { built ->
+                    addAll(currentMcpTools)
+                }.distinctBy { it.name }.sortedBy { it.name }.also { built ->
                     val mcpCount = built.count { it.name.startsWith("mcp__") }
                     Log.i(TAG, "toolsInternal (full): ${built.size} total (mcp=$mcpCount)")
                 }
@@ -536,12 +539,7 @@ class GenerationHandler(
 
                 // 框架工具 systemPrompt
                 if (layer1Prompt != null) {
-                    val frameworkIds = setOf(
-                        "invoke_tools",
-                        "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file",
-                        "manage_domain", "list_domains", "move_tool_to_domain",
-                    )
-                    tools.filter { it.name in frameworkIds && it.name != "invoke_tools" }.forEach { tool ->
+                    tools.filter { it.name in FRAMEWORK_TOOL_SET && it.name != "invoke_tools" }.forEach { tool ->
                         val sp = tool.systemPrompt(model, messages)
                         if (sp.isNotBlank()) {
                             appendLine()
@@ -549,15 +547,10 @@ class GenerationHandler(
                         }
                     }
                 } else {
-                    // 瘦身 (v2.9.4 移植): 与分层模式一致 — 只注入框架工具 systemPrompt。
+                    // 瘦身 (v2.9.4/v3.5.1): 与分层模式一致 — 只注入框架工具 systemPrompt。
                     // 其余工具 (MCP/域/搜索等) 描述已在请求 tools 数组, system 内
                     // 全量注入会导致工具池膨胀时 (264 tools) 冷启动 system 70K+ tokens
-                    val frameworkIds = setOf(
-                        "invoke_tools",
-                        "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file",
-                        "manage_domain", "list_domains", "move_tool_to_domain",
-                    )
-                    tools.filter { it.name in frameworkIds && it.name != "invoke_tools" }.forEach { tool ->
+                    tools.filter { it.name in FRAMEWORK_TOOL_SET && it.name != "invoke_tools" }.forEach { tool ->
                         val sp = tool.systemPrompt(model, messages)
                         if (sp.isNotBlank()) {
                             appendLine()
