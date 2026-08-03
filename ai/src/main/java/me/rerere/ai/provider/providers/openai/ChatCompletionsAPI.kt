@@ -157,6 +157,9 @@ class ChatCompletionsAPI(
 
         var hasData = false
         val listener = object : EventSourceListener() {
+            private var chunkCount = 0
+            private var lastFinishReason: String? = null
+
             override fun onEvent(
                 eventSource: EventSource,
                 id: String?,
@@ -164,7 +167,8 @@ class ChatCompletionsAPI(
                 data: String
             ) {
                 if (data == "[DONE]") {
-                    println("[onEvent] (done) 结束流: $data")
+                    Log.i(TAG, "SSE done: chunks=$chunkCount finish=$lastFinishReason")
+                    TraceLogger.log("SSE", "done chunks=$chunkCount finish=$lastFinishReason")
                     close()
                     return
                 }
@@ -200,6 +204,7 @@ class ChatCompletionsAPI(
                                         finishReason = finishReason,
                                     )
                                 )
+                                if (finishReason != null) lastFinishReason = finishReason
                             }
                         }
                         val usage = parseTokenUsage(it["usage"] as? JsonObject)
@@ -213,6 +218,7 @@ class ChatCompletionsAPI(
                         trySend(messageChunk).onFailure { e ->
                             Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
                         }
+                        chunkCount++
                         hasData = true
                     }
             }
@@ -220,6 +226,8 @@ class ChatCompletionsAPI(
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
                 var exception = t
 
+                Log.i(TAG, "SSE failure: chunks=$chunkCount finish=$lastFinishReason err=${t?.javaClass?.name}: ${t?.message}")
+                TraceLogger.log("SSE", "failure chunks=$chunkCount finish=$lastFinishReason err=${t?.javaClass?.name}: ${t?.message}")
                 t?.printStackTrace()
                 println("[onFailure] 发生错误: ${t?.javaClass?.name} ${t?.message} / $response")
 

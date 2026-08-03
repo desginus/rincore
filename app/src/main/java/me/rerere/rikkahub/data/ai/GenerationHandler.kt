@@ -32,6 +32,7 @@ import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.rikkahub.data.ai.compression.NaturalLanguageFormatter
 import me.rerere.ai.util.TraceLogger
 import me.rerere.rikkahub.data.ai.compression.ToolOutputCompressor
+import me.rerere.ai.core.MessageChunk
 import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
@@ -276,6 +277,13 @@ class GenerationHandler(
                     layer1Prompt = layer1Prompt,
                 )
                 CallTracer.event("RECV", "post_api", "generateInternal returned, messages=${messages.size}")
+                // 中断诊断: 记录最后一条消息角色与内容长度 — 空返回/截断可定位
+                runCatching {
+                    val last = messages.lastOrNull()
+                    val lastLen = last?.toText()?.length ?: 0
+                    val lastRole = last?.role?.name ?: "none"
+                    Log.i(TAG, "gen_return: last_role=$lastRole last_len=$lastLen messages=${messages.size}")
+                }
                 messages = messages.visualTransforms(
                     transformers = outputTransformers,
                     context = context,
@@ -655,32 +663,52 @@ class GenerationHandler(
             }
         )
         if (stream) {
-            providerImpl.streamText(
-                providerSetting = provider,
-                messages = normalizedMessages,
-                params = params
-            ).collect {
-                messages = messages.handleMessageChunk(chunk = it, model = model)
-                it.usage?.let { usage ->
-                    messages = messages.mapIndexed { index, message ->
-                        if (index == messages.lastIndex) {
-                            message.copy(usage = message.usage.merge(usage))
-                        } else {
-                            message
+            // 空返回自动重试: DeepSeek V4 Flash 平台偶发空流 (连接建立但无有效 chunk,
+            // 流 [DONE] 结束) — 重试一次, 避免用户看到"输出中断"
+            val beforeSize = messages.size
+            var attempts = 0
+            while (attempts < 2) {
+                providerImpl.streamText(
+                    providerSetting = provider,
+                    messages = normalizedMessages,
+                    params = params
+                ).collect {
+                    messages = messages.handleMessageChunk(chunk = it, model = model)
+                    it.usage?.let { usage ->
+                        messages = messages.mapIndexed { index, message ->
+                            if (index == messages.lastIndex) {
+                                message.copy(usage = message.usage.merge(usage))
+                            } else {
+                                message
+                            }
                         }
                     }
+                    onUpdateMessages(messages)
                 }
-                onUpdateMessages(messages)
+                if (messages.size > beforeSize || attempts >= 1) break
+                Log.w(TAG, "gen_retry: empty stream (attempt $attempts) — retrying generateInternal")
+                TraceLogger.log("Retry", "empty stream attempt=$attempts")
+                attempts++
             }
             logCacheUsage(messages)
         } else {
-            val chunk = providerImpl.generateText(
-                providerSetting = provider,
-                messages = normalizedMessages,
-                params = params,
-            )
-            messages = messages.handleMessageChunk(chunk = chunk, model = model)
-            chunk.usage?.let { usage ->
+            // 非流式: 空 chunk 同样重试
+            var chunk: MessageChunk? = null
+            val beforeSize = messages.size
+            var attempts = 0
+            while (attempts < 2) {
+                chunk = providerImpl.generateText(
+                    providerSetting = provider,
+                    messages = normalizedMessages,
+                    params = params,
+                )
+                messages = messages.handleMessageChunk(chunk = chunk, model = model)
+                if (messages.size > beforeSize || attempts >= 1) break
+                Log.w(TAG, "gen_retry: empty response (attempt $attempts) — retrying generateInternal")
+                TraceLogger.log("Retry", "empty response attempt=$attempts")
+                attempts++
+            }
+            chunk?.usage?.let { usage ->
                 messages = messages.mapIndexed { index, message ->
                     if (index == messages.lastIndex) {
                         message.copy(
