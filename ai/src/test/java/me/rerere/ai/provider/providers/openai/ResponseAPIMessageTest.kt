@@ -39,8 +39,11 @@ class ResponseAPIMessageTest {
     }
 
     // Helper to invoke buildMessages method
-    private fun invokeBuildMessages(messages: List<UIMessage>): JsonArray {
-        return api.buildMessages(messages)
+    private fun invokeBuildMessages(
+        messages: List<UIMessage>,
+        host: String = "api.openai.com",
+    ): JsonArray {
+        return api.buildMessages(messages, resolveResponseProviderCapabilities(host))
     }
 
     private fun invokeBuildRequestBody(
@@ -353,6 +356,43 @@ class ResponseAPIMessageTest {
         assertTrue("reasoning should exist", reasoning != null)
         assertEquals("low", reasoning!!["effort"]?.jsonPrimitive?.content)
     }
+
+    @Test
+    fun `deepseek response api should use reasoning_text in summary array`() {
+        // DeepSeek thinking 模式: 历史 reasoning 回传的 summary 元素类型必须为
+        // reasoning_text (OpenAI 标准为 summary_text) — 否则报
+        // "The reasoning_text in the thinking mode must be passed back to the API"
+        val messages = listOf(
+            UIMessage.system("sys"),
+            assistantWithReasoning("思考内容"),
+        )
+        val input = invokeBuildMessages(messages, host = "api.deepseek.com")[0].jsonObject
+        assertEquals("reasoning", input["type"]?.jsonPrimitive?.content)
+        val summary = input["summary"]?.jsonArray
+        assertTrue("summary should exist", summary != null && summary.size() > 0)
+        val summaryItem = summary!![0].jsonObject
+        assertEquals("reasoning_text", summaryItem["type"]?.jsonPrimitive?.content)
+        assertEquals("思考内容", summaryItem["text"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `openai response api should use summary_text in summary array`() {
+        val messages = listOf(
+            UIMessage.system("sys"),
+            assistantWithReasoning("思考内容"),
+        )
+        val input = invokeBuildMessages(messages, host = "api.openai.com")[0].jsonObject
+        assertEquals("reasoning", input["type"]?.jsonPrimitive?.content)
+        val summary = input["summary"]?.jsonArray
+        assertTrue("summary should exist", summary != null && summary.size() > 0)
+        assertEquals("summary_text", summary!![0].jsonObject["type"]?.jsonPrimitive?.content)
+    }
+
+    private fun assistantWithReasoning(reasoningText: String): UIMessage =
+        UIMessage(
+            role = MessageRole.ASSISTANT,
+            parts = listOf(UIMessagePart.Reasoning(reasoning = reasoningText))
+        )
 
     // ==================== Helper Functions ====================
 

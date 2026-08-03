@@ -228,7 +228,7 @@ class ResponseAPI(
             }
 
             // messages
-            put("input", buildMessages(messages))
+            put("input", buildMessages(messages, capabilities))
 
             // reasoning
             if (params.model.abilities.contains(ModelAbility.REASONING)) {
@@ -294,19 +294,25 @@ class ResponseAPI(
         }.mergeCustomBody(params.customBody)
     }
 
-    internal fun buildMessages(messages: List<UIMessage>) = buildJsonArray {
+    internal fun buildMessages(
+        messages: List<UIMessage>,
+        capabilities: ResponseProviderCapabilities = resolveResponseProviderCapabilities(""),
+    ) = buildJsonArray {
         messages
             .filter { it.isValidToUpload() && it.role != MessageRole.SYSTEM }
             .forEach { message ->
                 if (message.role == MessageRole.ASSISTANT) {
-                    addAssistantItems(message)
+                    addAssistantItems(message, capabilities)
                 } else {
                     addUserItems(message)
                 }
             }
     }
 
-    private fun JsonArrayBuilder.addAssistantItems(message: UIMessage) {
+    private fun JsonArrayBuilder.addAssistantItems(
+        message: UIMessage,
+        capabilities: ResponseProviderCapabilities,
+    ) {
         val groups = groupPartsByToolBoundary(message.parts)
         val contentBuffer = mutableListOf<UIMessagePart>()
 
@@ -330,7 +336,7 @@ class ResponseAPI(
                                     }
                                     put("summary", buildJsonArray {
                                         add(buildJsonObject {
-                                            put("type", "summary_text")
+                                            put("type", capabilities.summaryElementType)
                                             put("text", part.reasoning)
                                         })
                                     })
@@ -786,14 +792,28 @@ private fun List<UIMessagePart>.isOnlyTextPart(): Boolean {
 
 internal data class ResponseProviderCapabilities(
     val supportsReasoningSummary: Boolean = true,
-    val supportEncryptedContent: Boolean = true
+    val supportEncryptedContent: Boolean = true,
+    /**
+     * reasoning item 的 summary 元素类型:
+     *  - OpenAI 标准: "summary_text"
+     *  - DeepSeek (thinking 模式): "reasoning_text" — 发错类型报
+     *    "The reasoning_text in the thinking mode must be passed back to the API"
+     *    (content 数组内加 reasoning_text 又会被拒 unknown variant — 正确位置是 summary 数组)
+     */
+    val summaryElementType: String = "summary_text"
 )
 
 internal fun resolveResponseProviderCapabilities(host: String): ResponseProviderCapabilities {
-    return when (host) {
-        "ark.cn-beijing.volces.com" -> ResponseProviderCapabilities(
+    return when {
+        // 火山方舟: 不支持 reasoning summary / encrypted content
+        host == "ark.cn-beijing.volces.com" -> ResponseProviderCapabilities(
             supportsReasoningSummary = false,
             supportEncryptedContent = false
+        )
+
+        // DeepSeek thinking 模式: summary 元素类型必须为 reasoning_text
+        host.contains("deepseek") -> ResponseProviderCapabilities(
+            summaryElementType = "reasoning_text"
         )
 
         else -> ResponseProviderCapabilities()
