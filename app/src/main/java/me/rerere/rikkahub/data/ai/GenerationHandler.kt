@@ -615,20 +615,20 @@ class GenerationHandler(
         // 协议兜底: 严格端点 (DeepSeek V4 Flash/中转) 要求第一条消息为 system —
         // 若 transformer 产生非 system 首条 (如未来注入位置变化), 合并进 system
         val normalizedMessages = if (internalMessages.firstOrNull()?.role != MessageRole.SYSTEM) {
-            val sysIdx = normalizedMessages.indexOfFirst { it.role == MessageRole.SYSTEM }
+            val sysIdx = internalMessages.indexOfFirst { it.role == MessageRole.SYSTEM }
             if (sysIdx > 0) {
-                val sys = normalizedMessages[sysIdx]
-                normalizedMessages.toMutableList().apply {
+                val sys = internalMessages[sysIdx]
+                internalMessages.toMutableList().apply {
                     removeAt(sysIdx)
                     this[0] = this[0].copy(
                         parts = listOf(UIMessagePart.Text("\n\n")) + sys.parts + this[0].parts
                     )
                 }
             } else {
-                normalizedMessages
+                internalMessages
             }
         } else {
-            normalizedMessages
+            internalMessages
         }
 
         val totalChars = normalizedMessages.sumOf { msg ->
