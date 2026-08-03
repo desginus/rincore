@@ -394,6 +394,61 @@ class ResponseAPIMessageTest {
             parts = listOf(UIMessagePart.Reasoning(reasoning = reasoningText))
         )
 
+    // ==================== Response parsing (reasoning metadata) ====================
+
+    private fun invokeParseResponseDelta(json: String): MessageChunk? {
+        val method = ResponseAPI::class.java.getDeclaredMethod(
+            "parseResponseDelta",
+            kotlinx.serialization.json.JsonObject::class.java
+        )
+        method.isAccessible = true
+        val jsonObject = kotlinx.serialization.json.Json.parseToJsonElement(json).jsonObject
+        return method.invoke(api, jsonObject) as MessageChunk?
+    }
+
+    private fun invokeParseOutputItemDone(json: String): MessageChunk? {
+        val method = ResponseAPI::class.java.getDeclaredMethod(
+            "parseOutputItemDone",
+            kotlinx.serialization.json.JsonObject::class.java
+        )
+        method.isAccessible = true
+        val jsonObject = kotlinx.serialization.json.Json.parseToJsonElement(json).jsonObject
+        return method.invoke(api, jsonObject) as MessageChunk?
+    }
+
+    @Test
+    fun `reasoning delta should preserve item id in metadata`() {
+        val chunk = invokeParseResponseDelta(
+            """{"type":"response.reasoning_text.delta","item_id":"rs_123","delta":"思考片段"}"""
+        )
+        val part = chunk!!.choices[0].delta!!.parts[0] as UIMessagePart.Reasoning
+        assertEquals("思考片段", part.reasoning)
+        assertEquals("rs_123", part.metadata!!["reasoning_id"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `output item done should extract encrypted content into metadata`() {
+        val chunk = invokeParseOutputItemDone(
+            """{"type":"response.output_item.done","output_index":0,
+               "item":{"type":"reasoning","id":"rs_456",
+               "summary":[{"type":"reasoning_text","text":"sum"}],
+               "encrypted_content":"enc_789"}}"""
+        )
+        val part = chunk!!.choices[0].delta!!.parts[0] as UIMessagePart.Reasoning
+        assertEquals("", part.reasoning)
+        assertEquals("rs_456", part.metadata!!["reasoning_id"]?.jsonPrimitive?.content)
+        assertEquals("enc_789", part.metadata!!["encrypted_content"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `non reasoning output item done should return null`() {
+        val chunk = invokeParseOutputItemDone(
+            """{"type":"response.output_item.done","output_index":1,
+               "item":{"type":"message","id":"msg_1"}}"""
+        )
+        assertEquals(null, chunk)
+    }
+
     // ==================== Helper Functions ====================
 
     private fun createExecutedTool(

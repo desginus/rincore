@@ -152,7 +152,12 @@ class ResponseAPI(
                 }
                 Log.d(TAG, "onEvent: $id/$type $data")
                 val json = json.parseToJsonElement(data).jsonObject
-                val chunk = parseResponseDelta(json)
+                var chunk = parseResponseDelta(json)
+                // output_item.done — 完整 reasoning item (含 id/encrypted_content) 补全
+                // 合并层会把 metadata 补到已累积的 Reasoning part 上 (reasoning 文本为空 → 不重复)
+                if (chunk == null && type == "response.output_item.done") {
+                    chunk = parseOutputItemDone(json)
+                }
                 if (chunk != null) {
                     trySend(chunk).onFailure { e ->
                         Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
@@ -493,22 +498,28 @@ class ResponseAPI(
             }
 
             "response.reasoning_summary_text.delta", "response.reasoning_text.delta" -> {
+                // item_id 必须保留 — DeepSeek 要求 reasoning 原样回传 (含 id)
+                val itemId = jsonObject["item_id"]?.jsonPrimitive?.contentOrNull
+                val reasoningPart = UIMessagePart.Reasoning(
+                    reasoning = jsonObject["delta"]?.jsonPrimitive?.contentOrNull ?: "",
+                    createdAt = Clock.System.now(),
+                    finishedAt = null
+                ).also { part ->
+                    if (itemId != null) {
+                        part.metadata = buildJsonObject {
+                            put("reasoning_id", itemId)
+                        }
+                    }
+                }
                 return MessageChunk(
-                    id = jsonObject["item_id"]?.jsonPrimitive?.contentOrNull ?: "",
+                    id = itemId ?: "",
                     model = "",
                     choices = listOf(
                         UIMessageChoice(
                             index = 0,
                             delta = UIMessage(
                                 role = MessageRole.ASSISTANT,
-                                parts = listOf(
-                                    UIMessagePart.Reasoning(
-                                        reasoning = jsonObject["delta"]?.jsonPrimitive?.contentOrNull
-                                            ?: "",
-                                        createdAt = Clock.System.now(),
-                                        finishedAt = null
-                                    )
-                                )
+                                parts = listOf(reasoningPart)
                             ),
                             message = null,
                             finishReason = null
@@ -686,6 +697,47 @@ class ResponseAPI(
         return null
     }
 
+    /**
+     * 解析 response.output_item.done — 提取 reasoning item 的 id / encrypted_content,
+     * 发出只带 metadata 的补全 chunk (reasoning 文本为空 — 合并层不重复追加)。
+     * DeepSeek thinking 模式: 回传必须携带 id + encrypted_content (若有)。
+     */
+    private fun parseOutputItemDone(jsonObject: JsonObject): MessageChunk? {
+        val item = jsonObject["item"]?.jsonObject ?: return null
+        val type = item["type"]?.jsonPrimitive?.content ?: return null
+        if (type != "reasoning") return null
+        val itemId = item["id"]?.jsonPrimitive?.contentOrNull
+        val encrypted = item["encrypted_content"]?.jsonPrimitive?.contentOrNull
+        if (itemId == null && encrypted == null) return null
+
+        return MessageChunk(
+            id = itemId ?: "",
+            model = "",
+            choices = listOf(
+                UIMessageChoice(
+                    index = 0,
+                    delta = UIMessage(
+                        role = MessageRole.ASSISTANT,
+                        parts = listOf(
+                            UIMessagePart.Reasoning(
+                                reasoning = "",
+                                createdAt = Clock.System.now(),
+                                finishedAt = Clock.System.now()
+                            ).also { part ->
+                                part.metadata = buildJsonObject {
+                                    itemId?.let { put("reasoning_id", it) }
+                                    encrypted?.let { put("encrypted_content", it) }
+                                }
+                            }
+                        )
+                    ),
+                    message = null,
+                    finishReason = null
+                )
+            )
+        )
+    }
+
     private fun parseResponseOutput(jsonObject: JsonObject): MessageChunk {
         println(jsonObject)
         val outputs = jsonObject["output"]?.jsonArray ?: error("output not found")
@@ -696,18 +748,26 @@ class ResponseAPI(
             val type = output["type"]?.jsonPrimitive?.content ?: error("output type not found")
             when (type) {
                 "reasoning" -> {
+                    // DeepSeek: item 的 id / encrypted_content 必须原样回传 — 提取进 metadata
+                    val itemId = output["id"]?.jsonPrimitive?.contentOrNull
+                    val encrypted = output["encrypted_content"]?.jsonPrimitive?.contentOrNull
                     val summary = output["summary"]?.jsonArray ?: error("summary not found")
                     summary.map { it.jsonObject }.forEach { part ->
                         val partType = part["type"]?.jsonPrimitive?.content ?: error("part type not found")
                         when (partType) {
-                            "summary_text" -> {
+                            "summary_text", "reasoning_text" -> {
                                 val text = part["text"]?.jsonPrimitive?.content ?: error("text not found")
                                 parts.add(
                                     UIMessagePart.Reasoning(
                                         reasoning = text,
                                         createdAt = Clock.System.now(),
                                         finishedAt = Clock.System.now()
-                                    )
+                                    ).also { rp ->
+                                        rp.metadata = buildJsonObject {
+                                            itemId?.let { put("reasoning_id", it) }
+                                            encrypted?.let { put("encrypted_content", it) }
+                                        }.takeIf { it.isNotEmpty() }
+                                    }
                                 )
                             }
                         }
