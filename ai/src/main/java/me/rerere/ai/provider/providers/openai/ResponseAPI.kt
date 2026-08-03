@@ -1,3 +1,12 @@
+/**
+ * Responses API 传输 — 模块: A. 传输链 / ai
+ *
+ * 职责: Responses 协议消息组装 + HTTP + SSE (thinking/reasoning 处理)。
+ * 基线: 回滚自 3.2.2 (v3.5.0)。
+ * 注意: DeepSeek thinking 回传格式问题历史记录见 rincore-bug-record B16 (v3.5.0 回滚后未重移植)。
+ *
+ * 问题定位: reasoning 回传报错/step 中断 → 查本文件 addAssistantItems
+ */
 package me.rerere.ai.provider.providers.openai
 
 import android.util.Log

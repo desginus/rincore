@@ -1,3 +1,11 @@
+/**
+ * 工具域路由 — 模块: A. 传输链 / tools/routing
+ *
+ * 职责: 域树构建/工具分类/层1概览生成/invoke_tools 元工具/按域加载工具。
+ * 三位一体: UI 域管理 / list_domains / Prompt 概览 同源于本类 (每步从 settings 重建)。
+ *
+ * 问题定位: 工具不显示/域混乱/invoke_tools 行为异常 → 查本文件 + ToolDomain
+ */
 package me.rerere.rikkahub.data.ai.tools.routing
 
 import android.util.Log

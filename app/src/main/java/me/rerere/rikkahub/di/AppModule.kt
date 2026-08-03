@@ -1,3 +1,11 @@
+/**
+ * Koin 依赖注入注册 — 模块: G. 其他 / di
+ *
+ * 职责: 全局单例注册 (Repository/Manager/Scheduler/Handler)。
+ * 注意: 新增组件必须在此注册 — 缺失会 NoDefinitionFoundException (R8 混淆类名不可信)。
+ *
+ * 问题定位: 闪退 NoDefinitionFoundException → 查本文件是否缺注册
+ */
 package me.rerere.rikkahub.di
 
 import me.rerere.rikkahub.data.firebase.StubAnalytics

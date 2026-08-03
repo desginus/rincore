@@ -1,3 +1,11 @@
+/**
+ * ChatCompletions API 传输 — 模块: A. 传输链 / ai
+ *
+ * 职责: messages/tools 序列化 + HTTP 发送 + SSE 流式解析。
+ * 基线: 回滚自 3.2.2 (v3.5.0)。
+ *
+ * 问题定位: 序列化错误/SSE 异常/工具格式问题 → 查本文件
+ */
 package me.rerere.ai.provider.providers.openai
 
 import android.util.Log

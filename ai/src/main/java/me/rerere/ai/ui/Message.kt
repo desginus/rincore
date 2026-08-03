@@ -1,3 +1,14 @@
+/**
+ * 消息模型 — 模块: A. 传输链 / ai (核心数据结构)
+ *
+ * 职责: UIMessage (role+parts) / UIMessagePart 类型体系 (Text/Image/ToolCall/Tool/Reasoning)
+ *       / MessageChunk 流式块 / 审批状态。
+ * 所有消息操作 (组装/清洗/序列化) 基于此模型 — 协议层 MessageProtocol 也操作它。
+ *
+ * 注意: UIMessagePart.ToolResult 已 @Deprecated (用 Tool); 新增 part 类型需同步序列化器。
+ *
+ * 问题定位: 消息结构/序列化/part 类型问题 → 查本文件
+ */
 package me.rerere.ai.ui
 
 import kotlinx.datetime.LocalDateTime

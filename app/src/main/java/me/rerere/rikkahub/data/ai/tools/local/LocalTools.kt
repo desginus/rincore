@@ -1,3 +1,12 @@
+/**
+ * 本地工具集 — 模块: A. 传输链 / tools/local
+ *
+ * 职责: 按 LocalToolOption 门控构建本地工具 (时间/剪贴板/TTS/闹钟/日历/屏幕时间/
+ *       电量/位置/JS 引擎/询问用户等)。
+ * 来源: 自研 (fork 无此体系)。
+ *
+ * 问题定位: 本地工具缺失/开关不生效 → 查本文件 + LocalToolOption + 对应工具文件
+ */
 package me.rerere.rikkahub.data.ai.tools.local
 
 import android.content.Context

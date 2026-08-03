@@ -1,3 +1,11 @@
+/**
+ * 诊断日志器 — 模块: A. 传输链 / diagnostics
+ *
+ * 职责: 结构化诊断输出 (CallTracer/诊断事件)。供问题定位使用。
+ * 关联: GenerationHandler 的 cache/Request total/toolsInternal 日志。
+ *
+ * 问题定位: 需要诊断数据 → 查本文件输出格式
+ */
 package me.rerere.rikkahub.data.ai.diagnostics
 
 import android.content.Context

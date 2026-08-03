@@ -645,6 +645,17 @@ class GenerationHandler(
             ).collect {
                 messages = messages.handleMessageChunk(chunk = it, model = model)
                 it.usage?.let { usage ->
+                    // 缓存诊断 (G4): 每次 usage 回传记录 prompt/cached 构成
+                    if (usage.promptTokens > 0) {
+                        val cacheHitRate = if (usage.promptTokens > 0) {
+                            usage.cachedTokens * 100 / usage.promptTokens
+                        } else 0
+                        Log.i(
+                            TAG,
+                            "cache: prompt=${usage.promptTokens} cached=${usage.cachedTokens}" +
+                                " hit=$cacheHitRate%"
+                        )
+                    }
                     messages = messages.mapIndexed { index, message ->
                         if (index == messages.lastIndex) {
                             message.copy(usage = message.usage.merge(usage))

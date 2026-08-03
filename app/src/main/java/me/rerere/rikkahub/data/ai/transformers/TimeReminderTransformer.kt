@@ -1,3 +1,11 @@
+/**
+ * 时间提醒转换器 — 模块: A. 传输链 / transformers
+ *
+ * 职责: 按消息固定时间戳注入当前时间 (缓存友好 — 不引入动态前缀)。
+ * 注入策略: 基于消息时间戳, 保证 system 前缀稳定 → 缓存命中不被打断。
+ *
+ * 问题定位: 缓存断层与时间注入相关 → 查本文件注入位置与时戳取值
+ */
 package me.rerere.rikkahub.data.ai.transformers
 
 import kotlin.time.Instant

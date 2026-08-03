@@ -1,3 +1,14 @@
+/**
+ * 提示词注入转换器 — 模块: A. 传输链 / transformers
+ *
+ * 职责: 按 Assistant 的 ModeInjection 与 Lorebook 触发注入。
+ * 注入位置语义 (v3.5.x 修正, 协议合规):
+ *  - BEFORE_SYSTEM_PROMPT = system 前缀 (合并进 system — 首条保持 system)
+ *  - AFTER_SYSTEM_PROMPT  = system 后缀 (同属 system)
+ *  - TOP_OF_CHAT          = 独立消息 (对话顶部)
+ *
+ * 问题定位: SETTINGS 报错/首条非 system → 查本文件 + MessageProtocol
+ */
 package me.rerere.rikkahub.data.ai.transformers
 
 import me.rerere.ai.core.MessageRole

@@ -1,3 +1,11 @@
+/**
+ * 域管理工具 — 模块: A. 传输链 / tools
+ *
+ * 职责: manage_domain / delete_domain / list_domains 三个域管理 AI 工具。
+ * 域操作事务化: 变更后场景地图自动同步 (ToolRouter 每步从 settings 重建)。
+ *
+ * 问题定位: 域操作工具异常/域变更不同步 → 查本文件 + ToolRouter
+ */
 package me.rerere.rikkahub.data.ai.tools
 
 import kotlinx.serialization.json.buildJsonObject

@@ -1,3 +1,11 @@
+/**
+ * OpenAI Provider 实现 — 模块: A. 传输链 / ai
+ *
+ * 职责: ChatCompletions / Responses API 分发 + 参数组装 + 流式/非流式。
+ * 基线: 回滚自 3.2.2 (v3.5.0)。
+ *
+ * 问题定位: 请求被拒/参数错误/流式中断 → 查本文件 + ChatCompletionsAPI + ResponseAPI
+ */
 package me.rerere.ai.provider.providers.openai
 
 import kotlinx.coroutines.flow.Flow

@@ -1,3 +1,12 @@
+/**
+ * 动态工具 — 模块: D. 生态与技能
+ *
+ * 职责: 生态工具 (mcp_connect/plugin_install 等 5 个) + MCP 运行时工具注入。
+ * 懒加载 (v3.5.3): MCP 工具经 getMcpTools 合并到域池, 不直接注入函数定义。
+ * sanitize 与 ChatService.sanitizeMcpName 保持一致 (去重关键)。
+ *
+ * 问题定位: MCP 工具不出现/冷启动 token 高 → 查本文件 + GenerationHandler
+ */
 package me.rerere.rikkahub.ecosystem.tools
 
 import kotlinx.serialization.json.JsonElement

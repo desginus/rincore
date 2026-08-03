@@ -1,3 +1,11 @@
+/**
+ * 生态管理器 — 模块: D. 生态与技能
+ *
+ * 职责: 生态工具注册/启用管理/扫描 (ecosystem 目录) + getEnabledTools 供给。
+ * 来源: 自研 (fork 无同名模块)。
+ *
+ * 问题定位: 生态工具缺失/重复 → 查本文件 + EcosystemScanner + EcosystemSource
+ */
 package me.rerere.rikkahub.ecosystem
 
 import android.content.Context

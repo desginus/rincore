@@ -1,3 +1,14 @@
+/**
+ * 偏好存储 + SettingsStore (SSOT) — 模块: B. 会话与存储
+ *
+ * 职责: DataStore 持久化 + SettingsStore.settingsFlow 唯一真值源 —
+ *       UI / list_domains / invoke_tools / Prompt 四投影均从此派生。
+ * 域配置 (toolDomainOverrides/hiddenDomains/removedBuiltinDomains 等) 也在此。
+ *
+ * 注意: 修改设置结构需同步四投影验证 (UI 统计行 == invoke_tools 返回工具数)。
+ *
+ * 问题定位: 设置不生效/四投影不一致 → 查本文件 + GenerationHandler 每步读取点
+ */
 package me.rerere.rikkahub.data.datastore
 
 import android.content.Context
