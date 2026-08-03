@@ -219,7 +219,7 @@ class ResponseAPI(
             }
 
             // messages
-            put("input", buildMessages(messages))
+            put("input", buildMessages(messages, host))
 
             // reasoning
             if (params.model.abilities.contains(ModelAbility.REASONING)) {
