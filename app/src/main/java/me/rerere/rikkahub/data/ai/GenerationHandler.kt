@@ -32,7 +32,7 @@ import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.rikkahub.data.ai.compression.NaturalLanguageFormatter
 import me.rerere.ai.util.TraceLogger
 import me.rerere.rikkahub.data.ai.compression.ToolOutputCompressor
-import me.rerere.ai.core.MessageChunk
+import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
