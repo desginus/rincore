@@ -180,6 +180,12 @@ class GenerationHandler(
                     }
                 }.distinctBy { it.name }
                     .sortedBy { it.name }  // 确定性排序 → 五家前缀匹配缓存稳定
+                    .also { built ->
+                        val mcpCount = built.count { it.name.startsWith("mcp__") }
+                        val frameworkCount = built.count { it.name in frameworkToolSet }
+                        Log.i(TAG, "toolsInternal (layered): ${built.size} total" +
+                            " (mcp=$mcpCount framework=$frameworkCount domain=${built.size - mcpCount - frameworkCount})")
+                    }
             } else {
                 buildList {
                     Log.i(TAG, "generateInternal: build tools($assistant)")
@@ -205,6 +211,9 @@ class GenerationHandler(
                     addAll(tools)
                     // 动态 MCP 工具
                     addAll(DynamicTools.getMcpTools())
+                }.also { built ->
+                    val mcpCount = built.count { it.name.startsWith("mcp__") }
+                    Log.i(TAG, "toolsInternal (full): ${built.size} total (mcp=$mcpCount)")
                 }
             }
 
