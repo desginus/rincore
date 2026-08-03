@@ -63,3 +63,9 @@ description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日�
 | 后台保活（AlarmScheduler 双通道 + SCHEDULE_EXACT_ALARM + 电池优化引导） | ✅ 阶段 1（6af4e530） |
 | 权限自动发现（PermissionInventory + SettingPermissionsPage + BatteryTool） | ✅ 阶段 2（89fbf274） |
 | 工作流（WorkflowEngine + 触发器 + DB + MCP 工具） | ⚠️ 阶段 3 未完成（执行层/UI/MCP 集成未做） |
+
+## 版本线理顺（2026-08-03 深度审计）
+- **两轮循环**：第一轮 v2.9.x→v3.8.x（07-11~07-30 上午，已废弃）；第二轮 v3.2.0→v3.5.x（07-30 下午~今，当前）
+- **硬重置**：07-30 13:16 v3.8.0→v3.2.0（版本号复用）
+- **唯一可靠标识：versionCode**（全程递增，当前 164）——此后版本对照一律以 versionCode 为准
+- 分支：backup-bad-merge（第一轮存档）/ desk（Desk 面板）/ upstream-try（上游 2.4.5 适配试验）
