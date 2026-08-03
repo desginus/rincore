@@ -289,7 +289,9 @@ class ChatCompletionsAPI(
                 "messages",
                 buildMessages(
                     messages = messages,
-                    includeHistoryReasoning = providerSetting.includeHistoryReasoning,
+                    // DeepSeek 思考模式硬性要求: 历史 reasoning (reason text) 必须
+                    // 原样回传, 否则报错 — 该 provider 强制开启, 不受 UI 开关影响
+                    includeHistoryReasoning = providerSetting.includeHistoryReasoning || host.contains("deepseek"),
                     supportInputModalities = params.model.inputModalities,
                 )
             )
