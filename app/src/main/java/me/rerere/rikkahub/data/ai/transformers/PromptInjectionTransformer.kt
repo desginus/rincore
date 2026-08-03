@@ -128,26 +128,30 @@ internal fun applyInjections(
     val result = messages.toMutableList()
 
     // 找到系统消息和第一条用户消息的索引
-    val systemIndex = result.indexOfFirst { it.role == MessageRole.SYSTEM }
     val firstUserIndex = result.indexOfFirst { it.role == MessageRole.USER }
 
-    // BEFORE_SYSTEM_PROMPT → 作为独立用户消息插入系统消息之前
+    // BEFORE_SYSTEM_PROMPT → system 前缀（语义: system 的一部分 — 结构上保证首条为 system）
     val beforeContent = byPosition[InjectionPosition.BEFORE_SYSTEM_PROMPT]
         ?.joinToString("\n") { it.content } ?: ""
     if (beforeContent.isNotEmpty()) {
-        result.add(
-            systemIndex.coerceAtLeast(0),
-            UIMessage.user(beforeContent)
-        )
+        val sysIdx = result.indexOfFirst { it.role == MessageRole.SYSTEM }
+        if (sysIdx >= 0) {
+            result[sysIdx] = prependToSystem(result[sysIdx], beforeContent)
+        } else {
+            result.add(0, UIMessage.system(beforeContent))
+        }
     }
 
-    // AFTER_SYSTEM_PROMPT → 作为独立用户消息插入系统消息之后、第一条用户消息之前
+    // AFTER_SYSTEM_PROMPT → system 后缀（同样属于 system 的一部分 — 保持首条 system 不变）
     val afterContent = byPosition[InjectionPosition.AFTER_SYSTEM_PROMPT]
         ?.joinToString("\n") { it.content } ?: ""
     if (afterContent.isNotEmpty()) {
-        val insertAt = if (firstUserIndex >= 0) firstUserIndex
-            else (systemIndex + 1).coerceAtMost(result.size)
-        result.add(insertAt, UIMessage.user(afterContent))
+        val sysIdx = result.indexOfFirst { it.role == MessageRole.SYSTEM }
+        if (sysIdx >= 0) {
+            result[sysIdx] = appendToSystem(result[sysIdx], afterContent)
+        } else {
+            result.add(0, UIMessage.system(afterContent))
+        }
     }
 
     // 处理 TOP_OF_CHAT：在第一条用户消息之前插入
@@ -217,6 +221,23 @@ private fun createMergedInjectionMessages(injections: List<PromptInjection>): Li
  * 某些提供商（如 deepseek）要求 USER 之后紧跟带工具的 ASSISTANT，
  * 在两者之间插入消息会导致报错或破坏推理连续性。
  */
+
+/** system 前缀注入 — 文本合并到 system 开头, 保留非文本 parts */
+private fun prependToSystem(msg: UIMessage, text: String): UIMessage {
+    val textParts = msg.parts.filterIsInstance<UIMessagePart.Text>()
+    val nonTextParts = msg.parts.filterNot { it is UIMessagePart.Text }
+    val merged = text + "\n" + textParts.joinToString("\n") { it.text }
+    return msg.copy(parts = listOf(UIMessagePart.Text(merged)) + nonTextParts)
+}
+
+/** system 后缀注入 — 文本合并到 system 末尾 */
+private fun appendToSystem(msg: UIMessage, text: String): UIMessage {
+    val textParts = msg.parts.filterIsInstance<UIMessagePart.Text>()
+    val nonTextParts = msg.parts.filterNot { it is UIMessagePart.Text }
+    val merged = textParts.joinToString("\n") { it.text } + "\n" + text
+    return msg.copy(parts = nonTextParts + listOf(UIMessagePart.Text(merged)))
+}
+
 internal fun findSafeInsertIndex(messages: List<UIMessage>, targetIndex: Int): Int {
     var index = targetIndex.coerceIn(0, messages.size)
 

@@ -30,6 +30,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.rikkahub.data.ai.compression.NaturalLanguageFormatter
+import me.rerere.rikkahub.data.ai.protocol.MessageProtocol
 import me.rerere.ai.util.TraceLogger
 import me.rerere.rikkahub.data.ai.compression.ToolOutputCompressor
 import me.rerere.ai.ui.handleMessageChunk
@@ -508,7 +509,7 @@ class GenerationHandler(
         workspaceCwd: String? = null,
         layer1Prompt: String? = null,
     ) {
-        val internalMessages = buildList {
+        var internalMessages = buildList {
             val sysPromptLen: Int
             val memPromptLen: Int
             val toolsPromptLen: Int
@@ -597,6 +598,13 @@ class GenerationHandler(
         }
         val estTotalTokens = totalChars / 2.5
         Log.i(TAG, "Request total: ${internalMessages.size} messages, ${totalChars}c (~${estTotalTokens.toInt()}t)")
+
+        // 协议层: 发送前结构性保证 (首条 system + tool 配对) — 幂等, 合规消息零修改
+        val protocolMessages = MessageProtocol.enforce(internalMessages)
+        if (protocolMessages != internalMessages) {
+            Log.i(TAG, "MessageProtocol: 消息序列已修复 (${internalMessages.size} → ${protocolMessages.size})")
+        }
+        internalMessages = protocolMessages
 
         var messages: List<UIMessage> = messages
         val params = TextGenerationParams(
