@@ -668,6 +668,9 @@ class ChatService(
                 )
                 updateConversation(conversationId, updatedConversation)
 
+                // 兜底落盘 (异常/流中断路径 — onSuccess 可能不执行)
+                saveConversation(conversationId, updatedConversation)
+
                 // 生成结束：取消 Live Update 通知，后台时发送完成通知
                 appEventBus.emit(
                     AppEvent.ChatGenerationEnded(
@@ -683,6 +686,11 @@ class ChatService(
                         val updatedConversation = getConversationFlow(conversationId).value
                             .updateCurrentMessages(chunk.messages)
                         updateConversation(conversationId, updatedConversation)
+
+                        // 流式增量落盘 (每步 1 次): 生成中切后台/进程被杀时
+                        // 已生成的 assistant 内容不丢 — 之前仅在 onSuccess 落盘,
+                        // 生成中切后台重新进入 → 回答全部消失
+                        saveConversation(conversationId, updatedConversation)
 
                         // 通知等边缘副作用由 ChatNotificationManager 消费；
                         // tryEmit 不挂起，事件丢失只影响单次通知更新，不能反压生成链
