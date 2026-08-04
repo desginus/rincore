@@ -651,6 +651,31 @@ class GenerationHandler(
         }
         internalMessages = protocolMessages
 
+        // G4 缓存诊断增强: 消息指纹 — 跨请求对比定位缓存断点 (哪条消息每轮变化)
+        // 复现缓存卡住时: adb logcat 抓相邻两轮 msg_fp, 指纹不同的消息即断点
+        Log.i(TAG, "msg_fp: " + internalMessages.mapIndexed { i, m ->
+            val types = m.parts.joinToString("+") { p ->
+                when (p) {
+                    is UIMessagePart.Text -> "t"
+                    is UIMessagePart.Reasoning -> "r"
+                    is UIMessagePart.Tool -> "tl"
+                    is UIMessagePart.Image -> "i"
+                    is UIMessagePart.ToolCall -> "tc"
+                    else -> "?"
+                }
+            }
+            val hash = m.parts.joinToString("|") { p ->
+                when (p) {
+                    is UIMessagePart.Text -> p.text.hashCode()
+                    is UIMessagePart.Reasoning -> p.reasoning.hashCode()
+                    is UIMessagePart.Tool -> (p.toolName + p.output.hashCode()).hashCode()
+                    is UIMessagePart.ToolCall -> p.toolCallId.hashCode()
+                    else -> 0
+                }
+            }.hashCode()
+            "[$i:${m.role.name}:$types:$hash]"
+        }.joinToString(" "))
+
         var messages: List<UIMessage> = messages
         val params = TextGenerationParams(
             model = model,
