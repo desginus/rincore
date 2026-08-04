@@ -39,11 +39,8 @@ class ResponseAPIMessageTest {
     }
 
     // Helper to invoke buildMessages method
-    private fun invokeBuildMessages(
-        messages: List<UIMessage>,
-        host: String = "api.openai.com",
-    ): JsonArray {
-        return api.buildMessages(messages, resolveResponseProviderCapabilities(host))
+    private fun invokeBuildMessages(messages: List<UIMessage>): JsonArray {
+        return api.buildMessages(messages)
     }
 
     private fun invokeBuildRequestBody(
@@ -355,98 +352,6 @@ class ResponseAPIMessageTest {
         val reasoning = requestBody["reasoning"]?.jsonObject
         assertTrue("reasoning should exist", reasoning != null)
         assertEquals("low", reasoning!!["effort"]?.jsonPrimitive?.content)
-    }
-
-    @Test
-    fun `deepseek response api should use reasoning_text in summary array`() {
-        // DeepSeek thinking 模式: 历史 reasoning 回传的 summary 元素类型必须为
-        // reasoning_text (OpenAI 标准为 summary_text) — 否则报
-        // "The reasoning_text in the thinking mode must be passed back to the API"
-        val messages = listOf(
-            UIMessage.system("sys"),
-            assistantWithReasoning("思考内容"),
-        )
-        val input = invokeBuildMessages(messages, host = "api.deepseek.com")[0].jsonObject
-        assertEquals("reasoning", input["type"]?.jsonPrimitive?.content)
-        val summary = input["summary"]?.jsonArray
-        assertTrue("summary should exist", summary != null && summary.size() > 0)
-        val summaryItem = summary!![0].jsonObject
-        assertEquals("reasoning_text", summaryItem["type"]?.jsonPrimitive?.content)
-        assertEquals("思考内容", summaryItem["text"]?.jsonPrimitive?.content)
-    }
-
-    @Test
-    fun `openai response api should use summary_text in summary array`() {
-        val messages = listOf(
-            UIMessage.system("sys"),
-            assistantWithReasoning("思考内容"),
-        )
-        val input = invokeBuildMessages(messages, host = "api.openai.com")[0].jsonObject
-        assertEquals("reasoning", input["type"]?.jsonPrimitive?.content)
-        val summary = input["summary"]?.jsonArray
-        assertTrue("summary should exist", summary != null && summary.size() > 0)
-        assertEquals("summary_text", summary!![0].jsonObject["type"]?.jsonPrimitive?.content)
-    }
-
-    private fun assistantWithReasoning(reasoningText: String): UIMessage =
-        UIMessage(
-            role = MessageRole.ASSISTANT,
-            parts = listOf(UIMessagePart.Reasoning(reasoning = reasoningText))
-        )
-
-    // ==================== Response parsing (reasoning metadata) ====================
-
-    private fun invokeParseResponseDelta(json: String): MessageChunk? {
-        val method = ResponseAPI::class.java.getDeclaredMethod(
-            "parseResponseDelta",
-            kotlinx.serialization.json.JsonObject::class.java
-        )
-        method.isAccessible = true
-        val jsonObject = kotlinx.serialization.json.Json.parseToJsonElement(json).jsonObject
-        return method.invoke(api, jsonObject) as MessageChunk?
-    }
-
-    private fun invokeParseOutputItemDone(json: String): MessageChunk? {
-        val method = ResponseAPI::class.java.getDeclaredMethod(
-            "parseOutputItemDone",
-            kotlinx.serialization.json.JsonObject::class.java
-        )
-        method.isAccessible = true
-        val jsonObject = kotlinx.serialization.json.Json.parseToJsonElement(json).jsonObject
-        return method.invoke(api, jsonObject) as MessageChunk?
-    }
-
-    @Test
-    fun `reasoning delta should preserve item id in metadata`() {
-        val chunk = invokeParseResponseDelta(
-            """{"type":"response.reasoning_text.delta","item_id":"rs_123","delta":"思考片段"}"""
-        )
-        val part = chunk!!.choices[0].delta!!.parts[0] as UIMessagePart.Reasoning
-        assertEquals("思考片段", part.reasoning)
-        assertEquals("rs_123", part.metadata!!["reasoning_id"]?.jsonPrimitive?.content)
-    }
-
-    @Test
-    fun `output item done should extract encrypted content into metadata`() {
-        val chunk = invokeParseOutputItemDone(
-            """{"type":"response.output_item.done","output_index":0,
-               "item":{"type":"reasoning","id":"rs_456",
-               "summary":[{"type":"reasoning_text","text":"sum"}],
-               "encrypted_content":"enc_789"}}"""
-        )
-        val part = chunk!!.choices[0].delta!!.parts[0] as UIMessagePart.Reasoning
-        assertEquals("", part.reasoning)
-        assertEquals("rs_456", part.metadata!!["reasoning_id"]?.jsonPrimitive?.content)
-        assertEquals("enc_789", part.metadata!!["encrypted_content"]?.jsonPrimitive?.content)
-    }
-
-    @Test
-    fun `non reasoning output item done should return null`() {
-        val chunk = invokeParseOutputItemDone(
-            """{"type":"response.output_item.done","output_index":1,
-               "item":{"type":"message","id":"msg_1"}}"""
-        )
-        assertEquals(null, chunk)
     }
 
     // ==================== Helper Functions ====================

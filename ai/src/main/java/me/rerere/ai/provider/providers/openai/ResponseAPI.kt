@@ -1,12 +1,3 @@
-/**
- * Responses API 传输 — 模块: A. 传输链 / ai
- *
- * 职责: Responses 协议消息组装 + HTTP + SSE (thinking/reasoning 处理)。
- * 基线: 回滚自 3.2.2 (v3.5.0)。
- * 注意: DeepSeek thinking 回传格式问题历史记录见 rincore-bug-record B16 (v3.5.0 回滚后未重移植)。
- *
- * 问题定位: reasoning 回传报错/step 中断 → 查本文件 addAssistantItems
- */
 package me.rerere.ai.provider.providers.openai
 
 import android.util.Log
@@ -150,18 +141,9 @@ class ResponseAPI(
                     close()
                     return
                 }
-                if (type?.contains("reasoning") == true || type == "response.output_item.done") {
-                    Log.i(TAG, "onEvent($type): $data")
-                } else {
-                    Log.d(TAG, "onEvent: $id/$type $data")
-                }
+                Log.d(TAG, "onEvent: $id/$type $data")
                 val json = json.parseToJsonElement(data).jsonObject
-                var chunk = parseResponseDelta(json)
-                // output_item.done — 完整 reasoning item (含 id/encrypted_content) 补全
-                // 合并层会把 metadata 补到已累积的 Reasoning part 上 (reasoning 文本为空 → 不重复)
-                if (chunk == null && type == "response.output_item.done") {
-                    chunk = parseOutputItemDone(json)
-                }
+                val chunk = parseResponseDelta(json)
                 if (chunk != null) {
                     trySend(chunk).onFailure { e ->
                         Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
@@ -237,15 +219,7 @@ class ResponseAPI(
             }
 
             // messages
-            val inputArray = buildMessages(messages, capabilities)
-            // 诊断: 回传的 reasoning item 完整内容 (DeepSeek thinking 校验依据)
-            val reasoningItems = inputArray.filter { item ->
-                item.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "reasoning"
-            }
-            if (reasoningItems.isNotEmpty()) {
-                Log.i(TAG, "send reasoning items: ${reasoningItems.size} -> $reasoningItems")
-            }
-            put("input", inputArray)
+            put("input", buildMessages(messages))
 
             // reasoning
             if (params.model.abilities.contains(ModelAbility.REASONING)) {
@@ -311,25 +285,19 @@ class ResponseAPI(
         }.mergeCustomBody(params.customBody)
     }
 
-    internal fun buildMessages(
-        messages: List<UIMessage>,
-        capabilities: ResponseProviderCapabilities = resolveResponseProviderCapabilities(""),
-    ) = buildJsonArray {
+    internal fun buildMessages(messages: List<UIMessage>) = buildJsonArray {
         messages
             .filter { it.isValidToUpload() && it.role != MessageRole.SYSTEM }
             .forEach { message ->
                 if (message.role == MessageRole.ASSISTANT) {
-                    addAssistantItems(message, capabilities)
+                    addAssistantItems(message)
                 } else {
                     addUserItems(message)
                 }
             }
     }
 
-    private fun JsonArrayBuilder.addAssistantItems(
-        message: UIMessage,
-        capabilities: ResponseProviderCapabilities,
-    ) {
+    private fun JsonArrayBuilder.addAssistantItems(message: UIMessage) {
         val groups = groupPartsByToolBoundary(message.parts)
         val contentBuffer = mutableListOf<UIMessagePart>()
 
@@ -353,7 +321,7 @@ class ResponseAPI(
                                     }
                                     put("summary", buildJsonArray {
                                         add(buildJsonObject {
-                                            put("type", capabilities.summaryElementType)
+                                            put("type", "summary_text")
                                             put("text", part.reasoning)
                                         })
                                     })
@@ -510,31 +478,22 @@ class ResponseAPI(
             }
 
             "response.reasoning_summary_text.delta", "response.reasoning_text.delta" -> {
-                // item_id / encrypted_content 必须保留 — DeepSeek 要求 reasoning 原样回传 (含 id)
-                val itemId = jsonObject["item_id"]?.jsonPrimitive?.contentOrNull
-                    ?: jsonObject["id"]?.jsonPrimitive?.contentOrNull
-                val encryptedDelta = jsonObject["encrypted_content"]?.jsonPrimitive?.contentOrNull
-                val reasoningPart = UIMessagePart.Reasoning(
-                    reasoning = jsonObject["delta"]?.jsonPrimitive?.contentOrNull ?: "",
-                    createdAt = Clock.System.now(),
-                    finishedAt = null
-                ).also { part ->
-                    if (itemId != null || encryptedDelta != null) {
-                        part.metadata = buildJsonObject {
-                            itemId?.let { put("reasoning_id", it) }
-                            encryptedDelta?.let { put("encrypted_content", it) }
-                        }
-                    }
-                }
                 return MessageChunk(
-                    id = itemId ?: "",
+                    id = jsonObject["item_id"]?.jsonPrimitive?.contentOrNull ?: "",
                     model = "",
                     choices = listOf(
                         UIMessageChoice(
                             index = 0,
                             delta = UIMessage(
                                 role = MessageRole.ASSISTANT,
-                                parts = listOf(reasoningPart)
+                                parts = listOf(
+                                    UIMessagePart.Reasoning(
+                                        reasoning = jsonObject["delta"]?.jsonPrimitive?.contentOrNull
+                                            ?: "",
+                                        createdAt = Clock.System.now(),
+                                        finishedAt = null
+                                    )
+                                )
                             ),
                             message = null,
                             finishReason = null
@@ -712,53 +671,6 @@ class ResponseAPI(
         return null
     }
 
-    /**
-     * 解析 response.output_item.done — 提取 reasoning item 的 id / encrypted_content,
-     * 发出只带 metadata 的补全 chunk (reasoning 文本为空 — 合并层不重复追加)。
-     * DeepSeek thinking 模式: 回传必须携带 id + encrypted_content (若有)。
-     */
-    private fun parseOutputItemDone(jsonObject: JsonObject): MessageChunk? {
-        val item = jsonObject["item"]?.jsonObject ?: return null
-        val type = item["type"]?.jsonPrimitive?.content ?: return null
-        if (type != "reasoning") return null
-        val itemId = item["id"]?.jsonPrimitive?.contentOrNull
-        // encrypted_content 提取: 顶层字段 / content 数组内的 reasoning_text 元素
-        var encrypted = item["encrypted_content"]?.jsonPrimitive?.contentOrNull
-        if (encrypted == null) {
-            encrypted = item["content"]?.jsonArray?.firstOrNull { el ->
-                el.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "reasoning_text"
-            }?.jsonObject?.get("encrypted_content")?.jsonPrimitive?.contentOrNull
-        }
-        if (itemId == null && encrypted == null) return null
-
-        return MessageChunk(
-            id = itemId ?: "",
-            model = "",
-            choices = listOf(
-                UIMessageChoice(
-                    index = 0,
-                    delta = UIMessage(
-                        role = MessageRole.ASSISTANT,
-                        parts = listOf(
-                            UIMessagePart.Reasoning(
-                                reasoning = "",
-                                createdAt = Clock.System.now(),
-                                finishedAt = Clock.System.now()
-                            ).also { part ->
-                                part.metadata = buildJsonObject {
-                                    itemId?.let { put("reasoning_id", it) }
-                                    encrypted?.let { put("encrypted_content", it) }
-                                }
-                            }
-                        )
-                    ),
-                    message = null,
-                    finishReason = null
-                )
-            )
-        )
-    }
-
     private fun parseResponseOutput(jsonObject: JsonObject): MessageChunk {
         println(jsonObject)
         val outputs = jsonObject["output"]?.jsonArray ?: error("output not found")
@@ -769,26 +681,18 @@ class ResponseAPI(
             val type = output["type"]?.jsonPrimitive?.content ?: error("output type not found")
             when (type) {
                 "reasoning" -> {
-                    // DeepSeek: item 的 id / encrypted_content 必须原样回传 — 提取进 metadata
-                    val itemId = output["id"]?.jsonPrimitive?.contentOrNull
-                    val encrypted = output["encrypted_content"]?.jsonPrimitive?.contentOrNull
                     val summary = output["summary"]?.jsonArray ?: error("summary not found")
                     summary.map { it.jsonObject }.forEach { part ->
                         val partType = part["type"]?.jsonPrimitive?.content ?: error("part type not found")
                         when (partType) {
-                            "summary_text", "reasoning_text" -> {
+                            "summary_text" -> {
                                 val text = part["text"]?.jsonPrimitive?.content ?: error("text not found")
                                 parts.add(
                                     UIMessagePart.Reasoning(
                                         reasoning = text,
                                         createdAt = Clock.System.now(),
                                         finishedAt = Clock.System.now()
-                                    ).also { rp ->
-                                        rp.metadata = buildJsonObject {
-                                            itemId?.let { put("reasoning_id", it) }
-                                            encrypted?.let { put("encrypted_content", it) }
-                                        }.takeIf { it.isNotEmpty() }
-                                    }
+                                    )
                                 )
                             }
                         }
@@ -873,32 +777,13 @@ private fun List<UIMessagePart>.isOnlyTextPart(): Boolean {
 
 internal data class ResponseProviderCapabilities(
     val supportsReasoningSummary: Boolean = true,
-    val supportEncryptedContent: Boolean = true,
-    /**
-     * reasoning item 的 summary 元素类型:
-     *  - OpenAI 标准: "summary_text"
-     *  - DeepSeek (thinking 模式): "reasoning_text" — 发错类型报
-     *    "The reasoning_text in the thinking mode must be passed back to the API"
-     *    (content 数组内加 reasoning_text 又会被拒 unknown variant — 正确位置是 summary 数组)
-     */
-    val summaryElementType: String = "summary_text"
+    val supportEncryptedContent: Boolean = true
 )
 
 internal fun resolveResponseProviderCapabilities(host: String): ResponseProviderCapabilities {
-    return when {
-        // 火山方舟: 不支持 reasoning summary / encrypted content
-        host == "ark.cn-beijing.volces.com" -> ResponseProviderCapabilities(
+    return when (host) {
+        "ark.cn-beijing.volces.com" -> ResponseProviderCapabilities(
             supportsReasoningSummary = false,
-            supportEncryptedContent = false
-        )
-
-        // DeepSeek thinking 模式:
-        //  - summary 元素类型必须为 reasoning_text
-        //  - 不请求 encrypted_content (supportEncryptedContent=false): 返回明文 thinking,
-        //    回传 reasoning_text 明文 — 避开 encrypted_content 加密结构提取盲区
-        //    (若 DeepSeek 强制加密, 此分支需按实际响应结构补 encrypted_content 提取)
-        host.contains("deepseek") -> ResponseProviderCapabilities(
-            summaryElementType = "reasoning_text",
             supportEncryptedContent = false
         )
 
