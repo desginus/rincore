@@ -10,6 +10,8 @@ package me.rerere.ai.provider.providers.openai
 
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.channels.onFailure
@@ -163,6 +165,19 @@ class ChatCompletionsAPI(
         // just for debugging response body
         // println(client.newCall(request).await().body?.string())
 
+        // SSE 无数据看门狗: 120s 无任何事件 → 主动断开 (快速失败, 不等 readTimeout)
+        val lastEventAt = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
+        val watchdog = launch {
+            while (true) {
+                delay(10_000)
+                if (System.currentTimeMillis() - lastEventAt.get() > 120_000) {
+                    Log.w(TAG, "onFailure: SSE no-data watchdog fired (120s)")
+                    close(java.util.concurrent.TimeoutException("SSE 流无数据超时 (120s)，连接可能挂起"))
+                    break
+                }
+            }
+        }
+
         var hasData = false
         val listener = object : EventSourceListener() {
             override fun onEvent(
@@ -176,6 +191,7 @@ class ChatCompletionsAPI(
                     close()
                     return
                 }
+                lastEventAt.set(System.currentTimeMillis())
                 Log.d(TAG, "onEvent: $data")
                 data
                     .trim()
@@ -270,6 +286,7 @@ class ChatCompletionsAPI(
 
         awaitClose {
             println("[awaitClose] 关闭eventSource ")
+            watchdog.cancel()
             eventSource.cancel()
         }
         // trySend 在缓冲满时会静默丢弃 delta，导致回复中间缺字 (#1295)，因此缓冲必须无界
@@ -413,7 +430,15 @@ class ChatCompletionsAPI(
                             put("type", if (!level.isEnabled) "disabled" else "enabled")
                         })
                         if (level.isEnabled && level != ReasoningLevel.AUTO) {
-                            put("reasoning_effort", level.effort)
+                            // DeepSeek 官方只支持 low/high/max —
+                            // medium/xhigh 不合法 → 服务端拒绝
+                            // (报错 'required settings preferences not received')
+                            val effort = when (level) {
+                                ReasoningLevel.MEDIUM -> "high"  // medium 不支持, 映射官方默认 high
+                                ReasoningLevel.XHIGH -> "max"
+                                else -> level.effort
+                            }
+                            put("reasoning_effort", effort)
                         }
                     }
 

@@ -1,6 +1,8 @@
 package me.rerere.ai.provider.providers.openai
 
 import android.util.Log
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.channels.onFailure
@@ -45,6 +47,7 @@ import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.encodeBase64
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
+import me.rerere.ai.util.TraceLogger
 import me.rerere.ai.util.parseErrorDetail
 import me.rerere.ai.util.stringSafe
 import me.rerere.ai.util.toHeaders
@@ -132,6 +135,20 @@ class ResponseAPI(
 
         Log.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
 
+        // SSE 无数据看门狗: 120s 无任何事件 → 主动断开 (快速失败, 不等 readTimeout)
+        val lastEventAt = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
+        val watchdog = launch {
+            while (true) {
+                delay(10_000)
+                if (System.currentTimeMillis() - lastEventAt.get() > 120_000) {
+                    Log.w(TAG, "onFailure: SSE no-data watchdog fired (120s)")
+                    close(java.util.concurrent.TimeoutException("SSE 流无数据超时 (120s)，连接可能挂起"))
+                    break
+                }
+            }
+        }
+
+        var hasData = false
         val listener = object : EventSourceListener() {
             override fun onEvent(
                 eventSource: EventSource,
@@ -143,6 +160,8 @@ class ResponseAPI(
                     close()
                     return
                 }
+                lastEventAt.set(System.currentTimeMillis())
+                hasData = true
                 Log.d(TAG, "onEvent: $id/$type $data")
                 val json = json.parseToJsonElement(data).jsonObject
                 val chunk = parseResponseDelta(json)
@@ -162,6 +181,17 @@ class ResponseAPI(
                 t?.printStackTrace()
                 println("[onFailure] 发生错误: ${t?.javaClass?.name} ${t?.message} / $response")
 
+                // 流式传输中断恢复: 已有部分数据则保留, 避免整个响应丢失
+                // (与 ChatCompletionsAPI 对齐 — stream reset/protocol error/timeout 等)
+                if (t is java.io.IOException && ChatCompletionsAPI.isRecoverableStreamError(t)) {
+                    if (hasData) {
+                        Log.w(TAG, "onFailure: stream interrupted (recoverable), closing with partial data")
+                        close()
+                        return
+                    }
+                    Log.w(TAG, "onFailure: stream interrupted before any data, will propagate: ${t.message}")
+                }
+
                 val bodyRaw = response?.body?.stringSafe()
                 try {
                     if (!bodyRaw.isNullOrBlank()) {
@@ -174,6 +204,7 @@ class ResponseAPI(
                     Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
                     e.printStackTrace()
                 } finally {
+                    TraceLogger.dumpAndLog(TAG, exception ?: Exception("Unknown"), 60)
                     close(exception)
                 }
             }
@@ -188,6 +219,7 @@ class ResponseAPI(
 
         awaitClose {
             println("[awaitClose] 关闭eventSource ")
+            watchdog.cancel()
             eventSource.cancel()
         }
         // trySend 在缓冲满时会静默丢弃 delta，导致回复中间缺字 (#1295)，因此缓冲必须无界

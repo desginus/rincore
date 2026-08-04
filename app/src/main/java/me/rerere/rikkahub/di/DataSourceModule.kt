@@ -184,7 +184,7 @@ val dataSourceModule = module {
         OkHttpClient.Builder()
             .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
             .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(10, TimeUnit.MINUTES)
+            .readTimeout(3, TimeUnit.MINUTES) // 10min→3min: 网络挂起兜底缩短 (流式长思考仍足够, 挂起不无限等)
             .writeTimeout(60, TimeUnit.SECONDS)
             .pingInterval(15, TimeUnit.SECONDS)
             .connectionPool(ConnectionPool(16, 5, TimeUnit.MINUTES))

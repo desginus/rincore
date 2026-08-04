@@ -11,8 +11,12 @@ import io.ktor.serialization.kotlinx.json.json
 import io.ktor.util.StringValues
 import io.modelcontextprotocol.kotlin.sdk.client.Client
 import io.modelcontextprotocol.kotlin.sdk.client.SseClientTransport
+import io.modelcontextprotocol.kotlin.sdk.client.StdioClientTransport
 import io.modelcontextprotocol.kotlin.sdk.client.StreamableHttpClientTransport
 import io.modelcontextprotocol.kotlin.sdk.shared.AbstractTransport
+import kotlinx.io.asSink
+import kotlinx.io.asSource
+import kotlinx.io.buffered
 import io.modelcontextprotocol.kotlin.sdk.shared.RequestOptions
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequestParams
@@ -96,6 +100,7 @@ class McpManager(
     private val oauthClient = McpOAuthClient(okHttpClient)
 
     private val clients: MutableMap<McpServerConfig, Client> = mutableMapOf()
+    private val stdioProcesses = mutableMapOf<Uuid, Process>()
     private val reconnectJobs: MutableMap<Uuid, Job> = mutableMapOf()
     private val reconnectAttempts: MutableMap<Uuid, Int> = mutableMapOf()
     private val authorizationJobs: MutableMap<Uuid, Job> = mutableMapOf()
@@ -231,8 +236,23 @@ class McpManager(
             )
         }
 
-        is McpServerConfig.StdioTransportServer ->
-            throw UnsupportedOperationException("Stdio not supported. Use workspace_shell + mcp_connect via streamable_http.")
+        is McpServerConfig.StdioTransportServer -> {
+            check(config.command.isNotBlank()) { "stdio mode requires: command" }
+            // 启动子进程, stdin/stdout 走 JSON-RPC, stderr 按严重级别转发
+            val process = ProcessBuilder(listOf(config.command) + config.args).start()
+            stdioProcesses[config.id] = process
+            StdioClientTransport(
+                input = process.inputStream.asSource().buffered(),
+                output = process.outputStream.asSink().buffered(),
+                error = process.errorStream.asSource().buffered(),
+            ) { line ->
+                when {
+                    line.contains("error", ignoreCase = true) -> StdioClientTransport.StderrSeverity.FATAL
+                    line.contains("warning", ignoreCase = true) -> StdioClientTransport.StderrSeverity.WARNING
+                    else -> StdioClientTransport.StderrSeverity.INFO
+                }
+            }
+        }
     }
 
     /** 合并用户自定义请求头与 OAuth Bearer 令牌。 */
@@ -397,6 +417,9 @@ class McpManager(
             }.onFailure {
                 it.printStackTrace()
             }
+            stdioProcesses.remove(entry.key.id)?.let { proc ->
+                runCatching { proc.destroy() }.onFailure { it.printStackTrace() }
+            }
             clients.remove(entry.key)
             syncingStatus.emit(syncingStatus.value.toMutableMap().apply { remove(entry.key.id) })
             Log.i(TAG, "removeClient: ${entry.key} / ${entry.key.commonOptions.name}")
@@ -469,6 +492,9 @@ class McpManager(
         val oldEntry = clients.entries.find { it.key.id == config.id }
         if (oldEntry != null) {
             runCatching { oldEntry.value.close() }.onFailure { it.printStackTrace() }
+            stdioProcesses.remove(oldEntry.key.id)?.let { proc ->
+                runCatching { proc.destroy() }.onFailure { it.printStackTrace() }
+            }
             clients.remove(oldEntry.key)
         }
 
