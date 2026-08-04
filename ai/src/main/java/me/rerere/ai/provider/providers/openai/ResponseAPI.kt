@@ -79,6 +79,7 @@ class ResponseAPI(
             params = params,
             stream = false,
         )
+        logReasoningItems(requestBody)
         val request = Request.Builder()
             .url("${providerSetting.baseUrl}/responses")
             .headers(params.customHeaders.toHeaders())
@@ -117,6 +118,7 @@ class ResponseAPI(
             params = params,
             stream = true,
         )
+        logReasoningItems(requestBody)
         val request = Request.Builder()
             .url("${providerSetting.baseUrl}/responses")
             .headers(params.customHeaders.toHeaders())
@@ -861,3 +863,20 @@ internal fun resolveResponseProviderCapabilities(host: String): ResponseProvider
     }
 }
 
+    /**
+     * 诊断日志: 打印发送的 reasoning items 摘要 (定位 'reasoning_text must be
+     * passed back' — 复现时 adb logcat 过滤 'send reasoning items')
+     */
+    private fun logReasoningItems(requestBody: JsonObject) {
+        val input = requestBody["input"]?.jsonArray ?: return
+        val reasoning = input.filter { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "reasoning" }
+        if (reasoning.isEmpty()) return
+        val desc = reasoning.map { item ->
+            val o = item.jsonObject
+            val text = o["content"]?.jsonArray?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull
+                ?: o["summary"]?.jsonArray?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull
+                ?: ""
+            "id=${o["id"]?.jsonPrimitive?.contentOrNull ?: "-"}[${text.length}c]"
+        }.joinToString(", ")
+        Log.i(TAG, "send reasoning items: ${reasoning.size} -> $desc")
+    }

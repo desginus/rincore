@@ -18,6 +18,8 @@ import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
@@ -102,6 +104,11 @@ class GenerationHandler(
     private val memoryRepo: MemoryRepository,
     private val settingsStore: SettingsStore,
 ) {
+    companion object {
+        /** 工具执行超时 (ms): 工具挂起时返回超时错误, 不阻塞整个生成流程 */
+        private const val TOOL_EXECUTION_TIMEOUT_MS = 60_000L
+    }
+
     fun generateText(
         settings: Settings,
         model: Model,
@@ -421,7 +428,11 @@ class GenerationHandler(
                             }
                             Log.i(TAG, "generateText: executing tool ${toolDef.name} with args: $args")
                             CallTracer.event("TOOL", "exec_${toolDef.name}", "Executing ${toolDef.name}, args=${tool.input.length}c")
-                            val result = toolDef.execute(args)
+                            // 工具执行超时兜底: 工具挂起(网络/IO)时不永久卡住,
+                            // 超时返回错误结果让模型继续 (修复: ChatCompletions 工具调用后一直加载)
+                            val result = withTimeout(TOOL_EXECUTION_TIMEOUT_MS) {
+                                toolDef.execute(args)
+                            }
                             val hasShellAccess = toolsInternal.any { it.name == "workspace_shell" }
                             val truncated = maybeTruncateToolOutput(tool.toolCallId, result, hasShellAccess, tool.toolName)
                             val outChars = result.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }
@@ -432,6 +443,26 @@ class GenerationHandler(
                                 output = truncated
                             )
                         }.onFailure {
+                            // 工具执行超时: 写回超时错误, 让模型继续 (不传播为取消)
+                            if (it is TimeoutCancellationException) {
+                                Log.w(TAG, "generateText: tool ${tool.toolName} timed out after ${TOOL_EXECUTION_TIMEOUT_MS}ms")
+                                CallTracer.event("TOOL", "timeout_${tool.toolName}", "Tool execution timed out")
+                                executedTools += tool.copy(
+                                    output = listOf(
+                                        UIMessagePart.Text(
+                                            json.encodeToString(
+                                                buildJsonObject {
+                                                    put(
+                                                        "error",
+                                                        JsonPrimitive("工具执行超时(${TOOL_EXECUTION_TIMEOUT_MS / 1000}s): ${tool.toolName}")
+                                                    )
+                                                }
+                                            )
+                                        )
+                                    )
+                                )
+                                return@onFailure
+                            }
                             // 取消必须向上传播，否则停止生成会被误报为工具执行错误
                             if (it is CancellationException) throw it
                             it.printStackTrace()
