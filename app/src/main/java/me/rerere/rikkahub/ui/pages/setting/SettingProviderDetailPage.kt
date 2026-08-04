@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.data.datastore.cleanupDeletedModels
+
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Package01
 import me.rerere.hugeicons.stroke.Connect
@@ -160,7 +162,8 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
         val newSettings = settings.copy(
             providers = settings.providers - provider
         )
-        vm.updateSettings(newSettings)
+        // 级联清理: 该提供商下所有模型的引用一并清空
+        vm.updateSettings(newSettings.cleanupDeletedModels(provider.models.map { it.id }.toSet()))
         navController.popBackStack()
     }
 
@@ -449,6 +452,8 @@ private fun ModelList(
                             model = item,
                             onDelete = {
                                 onUpdateProvider(providerSetting.delModel(item))
+                                // 级联清理: 所有指向被删模型的引用 (设置项/收藏/助手绑定)
+                                vm.updateSettings(settings.cleanupDeletedModels(setOf(item.id)))
                             },
                             onEdit = { editedModel ->
                                 onUpdateProvider(providerSetting.editModel(editedModel))

@@ -728,6 +728,31 @@ fun List<ProviderSetting>.findModelById(uuid: Uuid): Model? {
     return null
 }
 
+/**
+ * 删除模型后的级联清理: 所有指向被删模型的引用全部清空/回退 —
+ * 设置项 (chat/fast/title/image/translate/suggestion/ocr/compress/routing)
+ * + 收藏列表 + 助手绑定 (回退全局默认 null)
+ */
+fun Settings.cleanupDeletedModels(deletedModelIds: Set<Uuid>): Settings {
+    fun Uuid?.clearIfDeleted(): Uuid? = if (this != null && this in deletedModelIds) null else this
+    fun Uuid.rollbackIfDeleted(): Uuid = if (this in deletedModelIds) Uuid.random() else this
+    return copy(
+        chatModelId = chatModelId.rollbackIfDeleted(),
+        fastModelId = fastModelId.rollbackIfDeleted(),
+        titleModelId = titleModelId.clearIfDeleted(),
+        imageGenerationModelId = imageGenerationModelId.rollbackIfDeleted(),
+        translateModeId = translateModeId.rollbackIfDeleted(),
+        suggestionModelId = suggestionModelId.clearIfDeleted(),
+        ocrModelId = ocrModelId.rollbackIfDeleted(),
+        compressModelId = compressModelId.rollbackIfDeleted(),
+        routingModelId = routingModelId.clearIfDeleted(),
+        favoriteModels = favoriteModels.filterNot { it in deletedModelIds },
+        assistants = assistants.map { a ->
+            if (a.chatModelId != null && a.chatModelId in deletedModelIds) a.copy(chatModelId = null) else a
+        },
+    )
+}
+
 fun Settings.getCurrentChatModel(): Model? {
     return findModelById(this.getCurrentAssistant().chatModelId ?: this.chatModelId)
 }
