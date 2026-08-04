@@ -19,6 +19,7 @@ description: "[中优先级·RinCore决策对照] RinCore 关键方案对比迭�
 - **决策**：system 完全静态化（v3.3.6 移除 use_skill 动态注入）——动态注入会破坏公共前缀
 - **矛盾记录**：v2.9.5"注入隔离"（BEFORE_SYSTEM_PROMPT 独立消息）为了缓存前缀稳定，却破坏协议（首条非 system）——缓存优化不能牺牲协议正确性
 - **缓存门槛**（千问）：隐式缓存自动开启；Qwen3.7 ~2000 tokens 门槛；命中率非 100%；首次无缓存——非客户端可控
+- **v3.5.11 结论（2026-08-04）**：移植原版 SystemPromptBuilder（stable/volatile 分区）后缓存正常（用户确认）。跨步不稳定（卡 9.7K→突跳 80K→线性）确认是 DeepSeek 服务端磁盘缓存机制（官方文档：构建延迟秒级 + 固定 token 间隔切分 + 滑动窗口独立单元），客户端不可控——停止优化（用户指示"优化不了就不要改了"）。诊断日志保留：msg_fp 指纹 + cache: prompt/cached
 
 ## D3. 注入隔离 vs 协议正确性（v2.9.5 → v3.4.5 → v3.5.0）
 - **v2.9.5 决策**：BEFORE_SYSTEM_PROMPT 作为独立 user 消息（注入隔离，最大化前缀命中）——结果：首条非 system，严格端点报 SETTINGS

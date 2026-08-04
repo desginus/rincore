@@ -9,7 +9,7 @@ description: "[中优先级·RinCore路线对照] RinCore 更新路线与待办�
 传输层已回滚到 3.2.2 稳定基线 + 流式落盘保留 + 70K 注入修复。CI 绿。
 
 ## 主线任务
-1. **缓存稳定性/协调性**（回滚后需重新验证）
+1. **缓存稳定性/协调性**（✅ 已关闭 2026-08-04：v3.5.11 移植原版 SystemPromptBuilder 后正常；跨步不稳定为 DeepSeek 服务端机制，客户端不可控，停止优化——见 rincore-decisions D2）
 2. **RikkaHub fork 三功能移植**（保活 ✅ / 权限 ✅ / 工作流 ⚠️）
 3. **稳定性加固**（不出现 bug、权限深度、保活性）
 
@@ -18,7 +18,7 @@ description: "[中优先级·RinCore路线对照] RinCore 更新路线与待办�
 ### P0：回滚后验证（当前最紧急）
 - [ ] **连接稳定性复测**：DeepSeek V4 Flash 长对话 + 工具调用链（3.2.2 基线是否消除中断——若仍中断，从基线重新诊断，勿照搬旧补丁）
 - [ ] **冷启动 token 验证**：确认 system 从 70K 降到 ~10K（看 `System prompt breakdown` 日志行）
-- [ ] **缓存命中验证**：确认 3.2.2 基线的缓存行为（system 静态 + 公共前缀命中）
+- [x] **缓存命中验证**：✅（v3.5.11 移植 SystemPromptBuilder stable/volatile 分区后缓存正常，公共前缀命中；跨步不稳定为服务端单元制限制，关闭）
 
 ### P1：工作流阶段 3（fork 三功能最后一环）
 - [ ] WorkflowEngine 执行层重写（对齐 ToolExecutionContext/ToolCallOrigin）
