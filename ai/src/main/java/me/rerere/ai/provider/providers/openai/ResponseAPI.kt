@@ -512,6 +512,7 @@ class ResponseAPI(
             "response.reasoning_summary_text.delta", "response.reasoning_text.delta" -> {
                 // item_id / encrypted_content 必须保留 — DeepSeek 要求 reasoning 原样回传 (含 id)
                 val itemId = jsonObject["item_id"]?.jsonPrimitive?.contentOrNull
+                    ?: jsonObject["id"]?.jsonPrimitive?.contentOrNull
                 val encryptedDelta = jsonObject["encrypted_content"]?.jsonPrimitive?.contentOrNull
                 val reasoningPart = UIMessagePart.Reasoning(
                     reasoning = jsonObject["delta"]?.jsonPrimitive?.contentOrNull ?: "",
@@ -891,9 +892,14 @@ internal fun resolveResponseProviderCapabilities(host: String): ResponseProvider
             supportEncryptedContent = false
         )
 
-        // DeepSeek thinking 模式: summary 元素类型必须为 reasoning_text
+        // DeepSeek thinking 模式:
+        //  - summary 元素类型必须为 reasoning_text
+        //  - 不请求 encrypted_content (supportEncryptedContent=false): 返回明文 thinking,
+        //    回传 reasoning_text 明文 — 避开 encrypted_content 加密结构提取盲区
+        //    (若 DeepSeek 强制加密, 此分支需按实际响应结构补 encrypted_content 提取)
         host.contains("deepseek") -> ResponseProviderCapabilities(
-            summaryElementType = "reasoning_text"
+            summaryElementType = "reasoning_text",
+            supportEncryptedContent = false
         )
 
         else -> ResponseProviderCapabilities()
