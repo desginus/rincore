@@ -697,6 +697,19 @@ class ChatService(
             appEventBus.tryEmit(AppEvent.ChatGenerationEnded(conversationId, senderName, null))
 
             it.printStackTrace()
+            // 错误上下文记录 (运行日志页可见) — 定位 'required settings preferences not received'
+            // 等 DeepSeek 服务端偶发 400: 记录模型/thinking 档位/消息数/工具数, 复现时对照
+            runCatching {
+                val conv = getConversationFlow(conversationId).value
+                val msgCount = conv.currentMessages.size
+                val toolCount = conv.currentMessages.flatMap { m -> m.parts.filterIsInstance<UIMessagePart.Tool>() }.size
+                val baseUrl = model.findProvider(settings.providers)?.baseUrl ?: "?"
+                me.rerere.rikkahub.data.ai.CallTracer.event(
+                    "ERROR", "generation_failed",
+                    "${it.message ?: it.javaClass.simpleName} | model=${model.displayName} " +
+                        "baseUrl=$baseUrl msgs=$msgCount tools=$toolCount reasoning=${assistant.reasoningLevel.name}"
+                )
+            }
             addError(it, conversationId, title = context.getString(R.string.error_title_generation))
             Logging.log(TAG, "handleMessageComplete: $it")
             Logging.log(TAG, it.stackTraceToString())
