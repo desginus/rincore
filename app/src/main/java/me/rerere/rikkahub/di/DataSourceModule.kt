@@ -182,7 +182,12 @@ val dataSourceModule = module {
             maxRequestsPerHost = 8
         }
         OkHttpClient.Builder()
-            .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
+            // 协议顺序对齐原版 (OkHttp 默认 HTTP_1_1 优先) — 历史教训:
+            // v3.1.0 (583a38c1) 显式 HTTP_2 优先 → HTTP/2 连接建立时 SETTINGS 帧
+            // 交换, 网络不稳定时 SETTINGS 帧被吞/超时 → DeepSeek 服务端报
+            // 'required settings preferences not received' (原版 HTTP/1.1 无此问题)
+            // 断线恢复已由 isRecoverableStreamError 覆盖, HTTP/1.1 同样稳定
+            .protocols(listOf(Protocol.HTTP_1_1, Protocol.HTTP_2))
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(3, TimeUnit.MINUTES) // 10min→3min: 网络挂起兜底缩短 (流式长思考仍足够, 挂起不无限等)
             .writeTimeout(60, TimeUnit.SECONDS)
