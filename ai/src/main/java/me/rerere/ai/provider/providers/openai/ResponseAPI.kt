@@ -306,6 +306,7 @@ class ResponseAPI(
     ) {
         val groups = groupPartsByToolBoundary(message.parts)
         val contentBuffer = mutableListOf<UIMessagePart>()
+        var reasoningEmitted = false
 
         for (group in groups) {
             when (group) {
@@ -347,6 +348,7 @@ class ResponseAPI(
                                         })
                                     }
                                 })
+                                reasoningEmitted = true
                             }
 
                             is UIMessagePart.Image -> {
@@ -371,6 +373,13 @@ class ResponseAPI(
                     if (contentBuffer.isNotEmpty()) {
                         addContentItem(MessageRole.ASSISTANT, contentBuffer)
                         contentBuffer.clear()
+                    } else if (reasoningEmitted && capabilities.requiresAdjacentAssistantMessage) {
+                        // DeepSeek: reasoning 明文必须 "merged into the adjacent assistant
+                        // message" — 工具轮无文本时补空 assistant 消息供服务器合并
+                        add(buildJsonObject {
+                            put("role", "assistant")
+                            put("content", "")
+                        })
                     }
 
                     // 输出 function_call + function_call_output
@@ -823,7 +832,13 @@ internal data class ResponseProviderCapabilities(
      *    assistant message" (api-docs.deepseek.com/guides/responses_api)
      */
     val supportsReasoningSummary: Boolean = true,
-    val supportEncryptedContent: Boolean = true
+    val supportEncryptedContent: Boolean = true,
+    /**
+     * DeepSeek: reasoning 明文 "merged into the adjacent assistant message" —
+     * 工具轮 (reasoning + function_call, 无文本) 回传时必须补相邻 assistant 消息,
+     * 否则服务器无法合并 → 报 'reasoning_text must be passed back'
+     */
+    val requiresAdjacentAssistantMessage: Boolean = false
 )
 
 internal fun resolveResponseProviderCapabilities(host: String): ResponseProviderCapabilities {
@@ -838,7 +853,8 @@ internal fun resolveResponseProviderCapabilities(host: String): ResponseProvider
         // reasoning 明文 content (reasoning_text) 必须回传
         host.contains("deepseek") -> ResponseProviderCapabilities(
             supportsReasoningSummary = false,
-            supportEncryptedContent = false
+            supportEncryptedContent = false,
+            requiresAdjacentAssistantMessage = true
         )
 
         else -> ResponseProviderCapabilities()

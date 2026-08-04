@@ -460,3 +460,57 @@ class ResponseAPIMessageTest {
         assertEquals(1, reasoning.size)
         assertEquals("摘要思考", reasoning[0].reasoning)
     }
+
+    // ==================== 工具轮 reasoning 相邻 assistant 消息 (DeepSeek) ====================
+
+    private fun assistantWithReasoningAndToolCall(reasoningText: String, callId: String): UIMessage =
+        UIMessage(
+            role = MessageRole.ASSISTANT,
+            parts = listOf(
+                UIMessagePart.Reasoning(reasoning = reasoningText),
+                UIMessagePart.ToolCall(callId, "get_time_info", "{}"),
+            ),
+        )
+
+    @Test
+    fun `deepseek tool-call round should include adjacent assistant message`() {
+        // DeepSeek 官方: reasoning 明文 "merged into the adjacent assistant message" —
+        // 工具轮 (reasoning+function_call 无文本) 必须补 assistant 消息, 否则报
+        // 'reasoning_text must be passed back'
+        val messages = listOf(
+            UIMessage.system("sys"),
+            UIMessage.user("现在几点"),
+            assistantWithReasoningAndToolCall("工具轮思考", "call-1"),
+            userWithToolResult("call-1"),
+        )
+        val input = api.buildMessages(
+            messages,
+            resolveResponseProviderCapabilities("api.deepseek.com"),
+        )
+        // 序列: reasoning → assistant(空 content) → function_call → function_call_output
+        val reasoningIdx = input.indexOfFirst { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "reasoning" }
+        assertTrue("reasoning item 必须存在", reasoningIdx >= 0)
+        val next = input[reasoningIdx + 1].jsonObject
+        assertEquals("assistant", next["role"]?.jsonPrimitive?.content)
+        assertEquals("", next["content"]?.jsonPrimitive?.contentOrNull)
+        val callIdx = input.indexOfFirst { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "function_call" }
+        assertTrue("function_call 必须存在", callIdx >= 0)
+    }
+
+    @Test
+    fun `openai tool-call round should not add empty assistant message`() {
+        val messages = listOf(
+            UIMessage.system("sys"),
+            UIMessage.user("现在几点"),
+            assistantWithReasoningAndToolCall("工具轮思考", "call-1"),
+            userWithToolResult("call-1"),
+        )
+        val input = api.buildMessages(
+            messages,
+            resolveResponseProviderCapabilities("api.openai.com"),
+        )
+        // OpenAI 标准: reasoning item 后直接 function_call, 不补空 assistant 消息
+        val reasoningIdx = input.indexOfFirst { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "reasoning" }
+        val next = input[reasoningIdx + 1].jsonObject
+        assertEquals("function_call", next["type"]?.jsonPrimitive?.content)
+    }
