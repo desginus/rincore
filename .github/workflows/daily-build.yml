@@ -78,14 +78,9 @@ jobs:
 
       - name: Prepare build files
         run: |
-          # 解码base64编码的keystore文件
-          echo "${{ secrets.KEY_BASE64 }}" | base64 -d > app/app.key
-
-          # 写入签名配置到local.properties
-          echo "${{ secrets.SIGNING_CONFIG }}" > local.properties
-
-          # 写入Google Services配置
-          echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > app/google-services.json
+          # 与 build.yml 一致 — 使用仓库内 app/release.jks, 不依赖 secrets
+          # (修复: secrets 未配置导致 validateSigningRelease 失败)
+          printf 'storeFile=../app/release.jks\nstorePassword=release123\nkeyAlias=rincore\nkeyPassword=release123\n' > local.properties
 
       - name: Gradle Build
         run: |
