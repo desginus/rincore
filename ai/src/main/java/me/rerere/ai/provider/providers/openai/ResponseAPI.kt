@@ -319,14 +319,26 @@ class ResponseAPI(
                                     reasoningMetadata?.reasoningId?.let {
                                         put("id", it)
                                     }
-                                    put("summary", buildJsonArray {
-                                        add(buildJsonObject {
-                                            put("type", "summary_text")
-                                            put("text", part.reasoning)
+                                    if (capabilities.supportsReasoningSummary) {
+                                        // OpenAI 标准: summary 数组
+                                        put("summary", buildJsonArray {
+                                            add(buildJsonObject {
+                                                put("type", "summary_text")
+                                                put("text", part.reasoning)
+                                            })
                                         })
-                                    })
-                                    reasoningMetadata?.encryptedContent?.let {
-                                        put("encrypted_content", it)
+                                        reasoningMetadata?.encryptedContent?.let {
+                                            put("encrypted_content", it)
+                                        }
+                                    } else {
+                                        // DeepSeek 官方: 明文 content (reasoning_text) —
+                                        // summary/encrypted_content 不支持
+                                        put("content", buildJsonArray {
+                                            add(buildJsonObject {
+                                                put("type", "reasoning_text")
+                                                put("text", part.reasoning)
+                                            })
+                                        })
                                     }
                                 })
                             }
@@ -413,6 +425,19 @@ class ResponseAPI(
         val contentParts = message.parts.filter { it is UIMessagePart.Text || it is UIMessagePart.Image }
         if (contentParts.isNotEmpty()) {
             addContentItem(message.role, contentParts)
+        }
+        // 防御: user 消息意外含工具结果 (正常链路在 assistant Tools 组成对输出) —
+        // 单独出现时按 function_call_output 回传, 避免工具结果丢失
+        message.parts.filterIsInstance<UIMessagePart.Tool>().forEach { tool ->
+            add(buildJsonObject {
+                put("type", "function_call_output")
+                put("call_id", tool.toolCallId)
+                put(
+                    "output",
+                    tool.output.filterIsInstance<UIMessagePart.Text>()
+                        .joinToString("\n") { it.text }
+                )
+            })
         }
     }
 
@@ -681,21 +706,29 @@ class ResponseAPI(
             val type = output["type"]?.jsonPrimitive?.content ?: error("output type not found")
             when (type) {
                 "reasoning" -> {
-                    val summary = output["summary"]?.jsonArray ?: error("summary not found")
-                    summary.map { it.jsonObject }.forEach { part ->
-                        val partType = part["type"]?.jsonPrimitive?.content ?: error("part type not found")
-                        when (partType) {
-                            "summary_text" -> {
-                                val text = part["text"]?.jsonPrimitive?.content ?: error("text not found")
-                                parts.add(
-                                    UIMessagePart.Reasoning(
-                                        reasoning = text,
-                                        createdAt = Clock.System.now(),
-                                        finishedAt = Clock.System.now()
-                                    )
-                                )
-                            }
+                    // OpenAI 标准: summary 数组 (summary_text);
+                    // DeepSeek (官方 Responses API): 明文 content (reasoning_text) — summary 不生成
+                    val reasoningTexts = mutableListOf<String>()
+                    output["summary"]?.jsonArray?.forEach { el ->
+                        val part = el.jsonObject
+                        if (part["type"]?.jsonPrimitive?.contentOrNull == "summary_text") {
+                            part["text"]?.jsonPrimitive?.contentOrNull?.let { reasoningTexts.add(it) }
                         }
+                    }
+                    output["content"]?.jsonArray?.forEach { el ->
+                        val part = el.jsonObject
+                        if (part["type"]?.jsonPrimitive?.contentOrNull == "reasoning_text") {
+                            part["text"]?.jsonPrimitive?.contentOrNull?.let { reasoningTexts.add(it) }
+                        }
+                    }
+                    reasoningTexts.forEach { text ->
+                        parts.add(
+                            UIMessagePart.Reasoning(
+                                reasoning = text,
+                                createdAt = Clock.System.now(),
+                                finishedAt = Clock.System.now()
+                            )
+                        )
                     }
                 }
 
@@ -776,13 +809,28 @@ private fun List<UIMessagePart>.isOnlyTextPart(): Boolean {
 }
 
 internal data class ResponseProviderCapabilities(
+    /**
+     * reasoning 回传格式 (官方协议):
+     *  - true  (OpenAI 标准): reasoning item 用 summary 数组 (summary_text)
+     *  - false (DeepSeek):    summary/encrypted_content 不支持 — 用明文 content
+     *    (reasoning_text) — "Plain-text content is merged into the adjacent
+     *    assistant message" (api-docs.deepseek.com/guides/responses_api)
+     */
     val supportsReasoningSummary: Boolean = true,
     val supportEncryptedContent: Boolean = true
 )
 
 internal fun resolveResponseProviderCapabilities(host: String): ResponseProviderCapabilities {
-    return when (host) {
-        "ark.cn-beijing.volces.com" -> ResponseProviderCapabilities(
+    return when {
+        // 火山方舟: 不支持 reasoning summary / encrypted content
+        host == "ark.cn-beijing.volces.com" -> ResponseProviderCapabilities(
+            supportsReasoningSummary = false,
+            supportEncryptedContent = false
+        )
+
+        // DeepSeek (官方 Responses API 文档): summary/encrypted_content 不支持,
+        // reasoning 明文 content (reasoning_text) 必须回传
+        host.contains("deepseek") -> ResponseProviderCapabilities(
             supportsReasoningSummary = false,
             supportEncryptedContent = false
         )

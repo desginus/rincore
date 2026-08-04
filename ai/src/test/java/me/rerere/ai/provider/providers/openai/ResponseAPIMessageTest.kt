@@ -370,3 +370,93 @@ class ResponseAPIMessageTest {
         )
     }
 }
+
+    // ==================== reasoning 回传格式 (官方协议) ====================
+
+    private fun assistantWithReasoning(reasoningText: String): UIMessage =
+        UIMessage(
+            role = MessageRole.ASSISTANT,
+            parts = listOf(UIMessagePart.Reasoning(reasoning = reasoningText))
+        )
+
+    @Test
+    fun `deepseek response api should pass reasoning as plain content`() {
+        // DeepSeek 官方 Responses API: summary/encrypted_content 不支持,
+        // reasoning 明文 content (reasoning_text) 必须回传
+        val messages = listOf(
+            UIMessage.system("sys"),
+            assistantWithReasoning("思考内容"),
+        )
+        val input = api.buildMessages(
+            messages,
+            resolveResponseProviderCapabilities("api.deepseek.com"),
+        )[0].jsonObject
+        assertEquals("reasoning", input["type"]?.jsonPrimitive?.content)
+        assertFalse("DeepSeek 不支持 summary", input.containsKey("summary"))
+        assertFalse("DeepSeek 不支持 encrypted_content", input.containsKey("encrypted_content"))
+        val content = input["content"]?.jsonArray
+        assertTrue("明文 content 必须存在", content != null && content.size() > 0)
+        assertEquals("reasoning_text", content!![0].jsonObject["type"]?.jsonPrimitive?.content)
+        assertEquals("思考内容", content[0].jsonObject["text"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `openai response api should pass reasoning as summary`() {
+        val messages = listOf(
+            UIMessage.system("sys"),
+            assistantWithReasoning("思考内容"),
+        )
+        val input = api.buildMessages(
+            messages,
+            resolveResponseProviderCapabilities("api.openai.com"),
+        )[0].jsonObject
+        assertEquals("reasoning", input["type"]?.jsonPrimitive?.content)
+        val summary = input["summary"]?.jsonArray
+        assertTrue("summary 必须存在", summary != null && summary.size() > 0)
+        assertEquals("summary_text", summary!![0].jsonObject["type"]?.jsonPrimitive?.content)
+    }
+
+    // ==================== 非流式响应解析 (DeepSeek 明文 reasoning) ====================
+
+    private fun invokeParseResponseOutput(json: String): MessageChunk? {
+        val method = ResponseAPI::class.java.getDeclaredMethod(
+            "parseResponseOutput",
+            kotlinx.serialization.json.JsonObject::class.java
+        )
+        method.isAccessible = true
+        val jsonObject = kotlinx.serialization.json.Json.parseToJsonElement(json).jsonObject
+        return method.invoke(api, jsonObject) as MessageChunk?
+    }
+
+    @Test
+    fun `non-stream response should parse deepseek plain reasoning content`() {
+        // DeepSeek 非流式: reasoning item 用明文 content (reasoning_text), 无 summary
+        val chunk = invokeParseResponseOutput(
+            """{"id":"rsp_1","model":"deepseek-v4-flash","output":[
+               {"type":"reasoning","id":"rs_1",
+                "content":[{"type":"reasoning_text","text":"明文思考"}]},
+               {"type":"message","content":[{"type":"output_text","text":"回答"}]}
+            ]}"""
+        )
+        val parts = chunk!!.choices[0].message!!.parts
+        val reasoning = parts.filterIsInstance<UIMessagePart.Reasoning>()
+        assertEquals(1, reasoning.size)
+        assertEquals("明文思考", reasoning[0].reasoning)
+        assertTrue(parts.any { it is UIMessagePart.Text && (it as UIMessagePart.Text).text == "回答" })
+    }
+
+    @Test
+    fun `non-stream response should keep openai summary reasoning`() {
+        // OpenAI 非流式: reasoning item 用 summary (summary_text)
+        val chunk = invokeParseResponseOutput(
+            """{"id":"rsp_2","model":"gpt-x","output":[
+               {"type":"reasoning","id":"rs_2",
+                "summary":[{"type":"summary_text","text":"摘要思考"}]},
+               {"type":"message","content":[{"type":"output_text","text":"回答"}]}
+            ]}"""
+        )
+        val parts = chunk!!.choices[0].message!!.parts
+        val reasoning = parts.filterIsInstance<UIMessagePart.Reasoning>()
+        assertEquals(1, reasoning.size)
+        assertEquals("摘要思考", reasoning[0].reasoning)
+    }
