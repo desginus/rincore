@@ -239,7 +239,9 @@ class McpManager(
         is McpServerConfig.StdioTransportServer -> {
             check(config.command.isNotBlank()) { "stdio mode requires: command" }
             // 启动子进程, stdin/stdout 走 JSON-RPC, stderr 按严重级别转发
-            val process = ProcessBuilder(listOf(config.command) + config.args).start()
+            // command 按空白拆分 (支持 'python3 /path/server.py' 单字段写法)
+            val cmdParts = config.command.split(Regex("\\s+")).filter { it.isNotBlank() }
+            val process = ProcessBuilder(cmdParts + config.args).start()
             stdioProcesses[config.id] = process
             StdioClientTransport(
                 input = process.inputStream.asSource().buffered(),

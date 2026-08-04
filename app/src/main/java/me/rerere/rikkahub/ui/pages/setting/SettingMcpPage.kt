@@ -580,7 +580,8 @@ private fun McpCommonOptionsConfigure(
         ) {
             val transportTypes = listOf(
                 "Streamable HTTP",
-                "SSE"
+                "SSE",
+                "Stdio"
             )
             val currentTypeIndex = when (config) {
                 is McpServerConfig.StreamableHTTPServer -> 0
@@ -611,6 +612,16 @@ private fun McpCommonOptionsConfigure(
                                         id = config.id,
                                         commonOptions = config.commonOptions,
                                         url = when (config) {
+                                            is McpServerConfig.SseTransportServer -> config.url
+                                            is McpServerConfig.StreamableHTTPServer -> config.url
+                                            is McpServerConfig.StdioTransportServer -> config.command
+                                        }
+                                    )
+
+                                    2 -> McpServerConfig.StdioTransportServer(
+                                        id = config.id,
+                                        commonOptions = config.commonOptions,
+                                        command = when (config) {
                                             is McpServerConfig.SseTransportServer -> config.url
                                             is McpServerConfig.StreamableHTTPServer -> config.url
                                             is McpServerConfig.StdioTransportServer -> config.command
