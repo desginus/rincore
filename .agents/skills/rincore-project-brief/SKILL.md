@@ -67,3 +67,6 @@ DeepSeek V4 系列、千问 3.7 系列（按国内模型前缀自动缓存理解
 
 **关键修正**：设备闹钟（data/alarm/）实为**自研**（fork 无此模块——之前误标"移植 fork"）。
 **fork 未移植 165 文件**（Telegram 7/Codex 6/Skill 管理 5+/工作流触发器 5/UI 20）——后续适配目标，详见 docs/architecture-audit-20260803.md
+
+## 开发流程（必读）
+任何修改前加载 **rincore-dev-process**（Scrum 式工作流）——问题分析/修改纪律/梳理/测试/推送全流程固化（含版本号规则与推包方式）。
