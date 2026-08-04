@@ -666,11 +666,11 @@ class GenerationHandler(
             }
             val hash = m.parts.joinToString("|") { p ->
                 when (p) {
-                    is UIMessagePart.Text -> p.text.hashCode()
-                    is UIMessagePart.Reasoning -> p.reasoning.hashCode()
-                    is UIMessagePart.Tool -> (p.toolName + p.output.hashCode()).hashCode()
-                    is UIMessagePart.ToolCall -> p.toolCallId.hashCode()
-                    else -> 0
+                    is UIMessagePart.Text -> p.text.hashCode().toString()
+                    is UIMessagePart.Reasoning -> p.reasoning.hashCode().toString()
+                    is UIMessagePart.Tool -> (p.toolName + p.output.hashCode()).hashCode().toString()
+                    is UIMessagePart.ToolCall -> p.toolCallId.hashCode().toString()
+                    else -> "0"
                 }
             }.hashCode()
             "[$i:${m.role.name}:$types:$hash]"
