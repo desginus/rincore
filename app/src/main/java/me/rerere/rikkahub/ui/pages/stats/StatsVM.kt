@@ -54,18 +54,23 @@ class StatsVM(
 
         // 基于用户消息的 createdAt 统计每日活跃消息数，SQLite 侧 GROUP BY，返回 ≤371 行
         val conversationsPerDay = withContext(Dispatchers.IO) {
-            messageNodeDAO
-                .getMessageCountPerDay(startDate)
-                .mapNotNull { entry ->
-                    runCatching { LocalDate.parse(entry.day) to entry.count }.getOrNull()
-                }
-                .toMap()
+            // 兜底: SQL 层已过滤损坏行 (json_valid), 此处再防一层 — 异常时显示空而非崩溃
+            runCatching {
+                messageNodeDAO
+                    .getMessageCountPerDay(startDate)
+                    .mapNotNull { entry ->
+                        runCatching { LocalDate.parse(entry.day) to entry.count }.getOrNull()
+                    }
+                    .toMap()
+            }.getOrDefault(emptyMap())
         }
 
-        val totalConversations = conversationDAO.countAll()
+        val totalConversations = runCatching { conversationDAO.countAll() }.getOrDefault(0)
 
         // json_each() + json_extract() 在 SQLite 侧聚合，不再加载完整 JSON 到 Kotlin
-        val tokenStats = messageNodeDAO.getTokenStats()
+        val tokenStats = runCatching { messageNodeDAO.getTokenStats() }.getOrElse {
+            MessageTokenStats()
+        }
 
         val launchCount = settingsStore.settingsFlow.value.launchCount
 
