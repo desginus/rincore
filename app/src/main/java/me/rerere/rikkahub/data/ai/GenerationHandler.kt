@@ -560,62 +560,53 @@ class GenerationHandler(
             val toolsPromptLen: Int
             var layer1Len: Int = 0
 
-            val system = buildString {
-                // 缓存锚点 — 静态规则块 + 工具目录 ~870 chars
-                // 满足 Qwen 3.7 1000-token 缓存阈值, 保证跨请求前缀完全一致
+            // 原版 SystemPromptBuilder (stable/volatile 分区) 移植:
+            // stable = 缓存锚点 + 系统提示 + Layer1 + 工具提示 (跨请求字节一致 → 缓存前缀)
+            // volatile = 记忆 (易变 → 放前缀之后, 不破坏缓存)
+            // 原版注释: "Volatile text in the prefix busts the cache every turn"
+            val effectiveSystemPrompt =
+                if (assistant.allowConversationSystemPrompt && !conversationSystemPrompt.isNullOrBlank()) {
+                    conversationSystemPrompt
+                } else {
+                    assistant.systemPrompt
+                }
+            // stable 部分: 缓存锚点 (静态规则块 ~870c) + 系统提示 + Layer1 域概览
+            val stablePrompt = buildString {
+                // 缓存锚点 — 静态规则块, 满足缓存阈值, 跨请求前缀完全一致
                 append(buildCacheAnchor())
-                appendLine()
-                val effectiveSystemPrompt =
-                    if (assistant.allowConversationSystemPrompt && !conversationSystemPrompt.isNullOrBlank()) {
-                        conversationSystemPrompt
-                    } else {
-                        assistant.systemPrompt
-                    }
                 if (effectiveSystemPrompt.isNotBlank()) {
+                    appendLine()
                     append(effectiveSystemPrompt)
                 }
-                sysPromptLen = length
-
-                // Layer1 域概览 — 缓存友好: 仅在域配置变化时更新
+                // Layer1 域概览 — 静态 (域配置变化才更新)
                 if (layer1Prompt != null) {
                     appendLine()
                     append(layer1Prompt)
                 }
-                layer1Len = length - sysPromptLen
-
-                // 框架工具 systemPrompt
-                if (layer1Prompt != null) {
-                    tools.filter { it.name in FRAMEWORK_TOOL_SET && it.name != "invoke_tools" }.forEach { tool ->
-                        val sp = tool.systemPrompt(model, messages)
-                        if (sp.isNotBlank()) {
-                            appendLine()
-                            append(sp)
-                        }
-                    }
-                } else {
-                    // 瘦身 (v2.9.4/v3.5.1): 与分层模式一致 — 只注入框架工具 systemPrompt。
-                    // 其余工具 (MCP/域/搜索等) 描述已在请求 tools 数组, system 内
-                    // 全量注入会导致工具池膨胀时 (264 tools) 冷启动 system 70K+ tokens
-                    tools.filter { it.name in FRAMEWORK_TOOL_SET && it.name != "invoke_tools" }.forEach { tool ->
-                        val sp = tool.systemPrompt(model, messages)
-                        if (sp.isNotBlank()) {
-                            appendLine()
-                            append(sp)
-                        }
-                    }
-                }
-                toolsPromptLen = length - sysPromptLen - layer1Len
-
-                // 记忆 — 原始 RikkaHub 策略: 在 system message 内
-                memPromptLen = if (assistant.enableMemory) {
-                    val memoryPrompt = buildMemoryPrompt(memories = memories)
-                    if (memoryPrompt.isNotBlank()) {
-                        appendLine()
-                        append(memoryPrompt)
-                        memoryPrompt.length
-                    } else 0
-                } else 0
             }
+            sysPromptLen = stablePrompt.length
+            layer1Len = layer1Prompt?.length ?: 0
+
+            // 框架工具 systemPrompt (瘦身 — v2.9.4/v3.5.1: 其余工具描述在请求 tools 数组,
+            // 全量注入会导致工具池膨胀时冷启动 system 70K+ tokens)
+            val toolPrompts = tools
+                .filter { it.name in FRAMEWORK_TOOL_SET && it.name != "invoke_tools" }
+                .map { tool -> tool.systemPrompt(model, messages) }
+                .filter { it.isNotBlank() }
+            toolsPromptLen = toolPrompts.sumOf { it.length }
+
+            // volatile 部分: 记忆 (易变, 放缓存前缀之后)
+            val memoryPrompt = if (assistant.enableMemory) buildMemoryPrompt(memories = memories) else ""
+            memPromptLen = memoryPrompt.length
+
+            val (stableSystem, volatileSystem) = SystemPromptBuilder().buildSections(
+                assistantPrompt = stablePrompt,
+                memoryPrompt = memoryPrompt,
+                recentChatsPrompt = "",   // 本项目未启用 recent chats 参考
+                toolPrompts = toolPrompts,
+                systemAddendum = null,
+            )
+            val system = listOf(stableSystem, volatileSystem).filter { it.isNotBlank() }.joinToString("\n")
             if (system.isNotBlank()) {
                 val estTokens = system.length / 2.5
                 Log.i(TAG, "System prompt breakdown: system=${sysPromptLen}c (~${(sysPromptLen/2.5).toInt()}t)" +
