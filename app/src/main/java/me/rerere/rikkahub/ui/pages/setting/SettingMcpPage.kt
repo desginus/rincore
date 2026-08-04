@@ -984,14 +984,30 @@ private fun parseMcpServersFromJson(json: String): List<McpServerConfig> {
     return mcpServers.entries.mapNotNull { (name, element) ->
         val obj = element.jsonObject
         val type = obj["type"]?.jsonPrimitive?.contentOrNull ?: "streamable_http"
-        val url = obj["url"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
         val headers = obj["headers"]?.jsonObject?.entries?.map { (k, v) ->
             k to (v.jsonPrimitive.contentOrNull ?: "")
         } ?: emptyList()
         val commonOptions = McpCommonOptions(name = name, headers = headers)
         when (type) {
-            "sse" -> McpServerConfig.SseTransportServer(commonOptions = commonOptions, url = url)
-            else -> McpServerConfig.StreamableHTTPServer(commonOptions = commonOptions, url = url)
+            "sse" -> {
+                val url = obj["url"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                McpServerConfig.SseTransportServer(commonOptions = commonOptions, url = url)
+            }
+            "stdio" -> {
+                // stdio: 必需 command, 可选 args (MCP 标准格式)
+                val command = obj["command"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                val args = obj["args"]?.jsonArray
+                    ?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+                McpServerConfig.StdioTransportServer(
+                    commonOptions = commonOptions,
+                    command = command,
+                    args = args,
+                )
+            }
+            else -> {
+                val url = obj["url"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                McpServerConfig.StreamableHTTPServer(commonOptions = commonOptions, url = url)
+            }
         }
     }
 }
