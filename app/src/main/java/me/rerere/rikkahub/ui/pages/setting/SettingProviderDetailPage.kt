@@ -156,7 +156,11 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                 }
             }
         )
-        vm.updateSettings(newSettings)
+        // 级联清理: 模型被删除时清空所有引用 (设置项/收藏/助手绑定)
+        val deletedIds = provider.models.map { it.id }.toSet() - newProvider.models.map { it.id }.toSet()
+        vm.updateSettings(
+            if (deletedIds.isNotEmpty()) newSettings.cleanupDeletedModels(deletedIds) else newSettings
+        )
     }
     val onDelete = {
         val newSettings = settings.copy(
@@ -452,8 +456,6 @@ private fun ModelList(
                             model = item,
                             onDelete = {
                                 onUpdateProvider(providerSetting.delModel(item))
-                                // 级联清理: 所有指向被删模型的引用 (设置项/收藏/助手绑定)
-                                vm.updateSettings(settings.cleanupDeletedModels(setOf(item.id)))
                             },
                             onEdit = { editedModel ->
                                 onUpdateProvider(providerSetting.editModel(editedModel))

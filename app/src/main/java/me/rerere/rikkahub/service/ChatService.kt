@@ -442,14 +442,14 @@ class ChatService(
         answer: String? = null,
     ) {
         val session = getOrCreateSession(conversationId)
-        me.rerere.rikkahub.data.ai.CallTracer.event(
-            "TOOL", "approval_${if (approved) "approved" else "denied"}",
-            "tool=$toolCallId reason=$reason answer=$answer"
-        )
         session.getJob()?.cancel()
 
         val job = appScope.launch {
             try {
+                me.rerere.rikkahub.data.ai.CallTracer.event(
+                    "TOOL", "approval_${if (approved) "approved" else "denied"}",
+                    "tool=$toolCallId reason=$reason answer=$answer"
+                )
                 val conversation = session.state.value
                 val newApprovalState = when {
                     answer != null -> ToolApprovalState.Answered(answer)
