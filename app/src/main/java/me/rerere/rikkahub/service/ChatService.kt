@@ -703,7 +703,7 @@ class ChatService(
                 val conv = getConversationFlow(conversationId).value
                 val msgCount = conv.currentMessages.size
                 val toolCount = conv.currentMessages.flatMap { m -> m.parts.filterIsInstance<UIMessagePart.Tool>() }.size
-                val baseUrl = model.findProvider(settings.providers)?.baseUrl ?: "?"
+                val baseUrl = (model.findProvider(settings.providers) as? me.rerere.ai.provider.ProviderSetting.OpenAI)?.baseUrl ?: "?"
                 me.rerere.rikkahub.data.ai.CallTracer.event(
                     "ERROR", "generation_failed",
                     "${it.message ?: it.javaClass.simpleName} | model=${model.displayName} " +
