@@ -5,8 +5,12 @@ description: "[中优先级·RinCore路线对照] RinCore 更新路线与待办�
 
 # RinCore 更新路线
 
-## 当前状态（v3.5.1）
-传输层已回滚到 3.2.2 稳定基线 + 流式落盘保留 + 70K 注入修复。CI 绿。
+## 当前状态（v3.5.14）
+传输层 3.2.2 基线 + 连接稳定性加固（断线恢复/看门狗/超时）+ MCP STDIO + 缓存正常（SystemPromptBuilder 移植）。CI 绿。
+
+## 版本管理状态（2026-08-05 建立）
+版本控制体系已建立：rincore-changelog 补全至 3.5.14 + 历史教训区 + docs/version-management.md 规范。
+教训：limitContext 滞回策略（v3.3.0→v3.3.5 回滚，缓存报废）曾被我再次"发现"——版本记录不完整的代价，已固化防重踩。
 
 ## 主线任务
 1. **缓存稳定性/协调性**（✅ 已关闭 2026-08-04：v3.5.11 移植原版 SystemPromptBuilder 后正常；跨步不稳定为 DeepSeek 服务端机制，客户端不可控，停止优化——见 rincore-decisions D2）

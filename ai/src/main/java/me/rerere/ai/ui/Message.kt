@@ -280,6 +280,10 @@ fun List<UIMessagePart>.isEmptyUIMessage(): Boolean {
     }
 }
 
+/**
+ * ⚠️ 历史教训（勿启用）：v3.3.0 引入滞回策略导致缓存机制报废，v3.3.5 回滚，
+ * v3.3.12 确认（见 decisions D5）。当前无人调用——启用即破坏 DeepSeek 前缀缓存。
+ */
 fun List<UIMessage>.limitContext(size: Int): List<UIMessage> {
     if (size <= 0 || this.size <= size) return this
 

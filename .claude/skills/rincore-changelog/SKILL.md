@@ -3,9 +3,33 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v2.9.4 → v3.5.1）
+# RinCore 更新日志（v2.9.4 → v3.5.14）
 
-## v3.5.x（传输层回滚期）
+## 历史教训（防重踩——每次改动前必读）
+- **limitContext 滞回策略 ↔ 缓存**：v3.3.0 引入（2.4.5 适配）→ v3.3.5 回滚（**缓存机制报废**）→ v3.3.12 确认回滚。函数仍在 Message.kt 但未启用（无 contextMessageSize 字段）——**勿重新启用**，启用即破坏缓存前缀
+- **缓存锚点/注入隔离**：v2.9.5 注入隔离（BEFORE_SYSTEM_PROMPT 变独立 user 消息）引入 SETTINGS 协议违规 → v3.4.5 修复——**协议合规 > 缓存边际收益**
+- **DeepSeek Responses reasoning**：3.5.4~3.5.6 猜测性修复全废（服务端格式不成熟）→ 3.5.7 按官方协议（明文 content）→ 3.5.8 工具轮相邻 assistant 消息 → 3.5.9 起搁置（等官方更新）
+- **工具执行无超时**：3.5.9 withTimeout 60s 兜底——工具挂起不永久阻塞生成
+- **缓存"卡-跳-线性"**：DeepSeek 服务端磁盘缓存机制（构建延迟秒级+固定间隔切分+SWA 独立单元）——客户端不可控，已入库 decisions D2
+
+## v3.5.x（传输层回滚期 → 当前）
+- **v3.5.14**（a4b73fc0 起）：连接稳定性加固 + MCP STDIO + effort 映射
+  - ResponseAPI 断线恢复（对齐 ChatCompletionsAPI：stream reset/timeout 等保留部分数据）
+  - SSE 无数据看门狗 120s（两个 API）——挂起快速失败，不再无限等
+  - readTimeout 10min → 3min
+  - DeepSeek reasoning_effort 映射（medium→high/xhigh→max；AUTO 不触发——非根因，保留无害）
+  - MCP 第三种连接 STDIO（getTransport 实现 + UI 三并列 + command 拆分 + 进程生命周期）
+  - 生成错误上下文日志（CallTracer ERROR/generation_failed + baseUrl/msgs/tools/thinking）
+- **v3.5.13**（fa61f6ca）：删除模型级联清理引用（设置项 9 字段/收藏/助手绑定）
+- **v3.5.12**（bcec24a0）：热力图/统计页崩溃——json_each 展开损坏 JSON（json_valid 过滤 + VM 兜底）
+- **v3.5.11**（fbd5e11e）：移植原版 SystemPromptBuilder（stable/volatile 分区）——缓存前缀稳定【缓存正常化关键版本】
+- **v3.5.10**（772d00e5）：G4 缓存诊断增强——msg_fp 消息指纹（跨请求对比定位缓存断点）
+- **v3.5.9**（e22e7fc9）：工具执行超时兜底（withTimeout 60s）+ reasoning 发送诊断日志
+- **v3.5.8**（690f9d7f）：DeepSeek 工具轮 reasoning 相邻 assistant 消息（Responses API）
+- **v3.5.7**（8b36dca3+df796efb）：DeepSeek reasoning 回传按官方协议重写（明文 content 替代 summary）——核心修复
+- **v3.5.4 ~ v3.5.6**：**废弃**（reasoning 猜测性修复全部无效）——d36eac68 回滚到 3.5.3 纯基线
+- **v3.5.3**（67701acf/c46a9607）：70K 根治——MCP 懒加载移植（冷启动 65K→~6K）【干净基线】
+- **v3.5.2**（05fc3485/e36562aa）：系统梳理——toolsInternal 构成诊断 + 版本号补正
 - **v3.5.1**（10a62b5d）：冷启动 70K 注入修复——v2.9.4 工具 systemPrompt 瘦身移植到 else 分支（layer1Prompt 无调用方传入，恒走 else 全量注入 264 工具 → 70K；改后只注入 7 框架工具）
 - **v3.5.0**（5dacddfd）：传输层整体回滚到 3.2.2（checkout 8 文件：OpenAIProvider/ChatCompletionsAPI/ResponseAPI/Message/GenerationHandler/PlaceholderTransformer/PromptInjectionTransformer/ChatService）——用户决策：补丁式修复无法解决连接中断；保留流式落盘/保活/权限/闹钟/FGS/DI
 
