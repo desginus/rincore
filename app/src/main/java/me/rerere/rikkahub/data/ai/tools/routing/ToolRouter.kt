@@ -92,16 +92,16 @@ class ToolRouter(
         overrides[name]?.let { if (it in validDomainLabels && isValidDomain(it)) return it }
         // 2. Skill 工具归入「技能」域 (use_skill 是 skill 体系的统一入口; skill: 前缀 = skill 挂载条目)
         if (name == "use_skill" || name.startsWith("skill_") || name.startsWith("skill:")) {
-            return if (isValidDomain("技能")) "技能" else "未分类"
+            return if (isValidDomain("技能")) "技能" else "方法域"
         }
         // 3. 系统级工具 — 按名称前缀精确匹配, 优先于关键词避免误分类
         //    (如 clawhub_search 不应被 "search" 关键词拉入「搜索」域)
         if (SYSTEM_TOOL_PREFIXES.any { name.startsWith(it) }) {
-            return if (isValidDomain("系统")) "系统" else "未分类"
+            return if (isValidDomain("系统")) "系统" else "方法域"
         }
         // 3.5 Memory 工具 — 归「对话工具/记忆」域 (不受 enableMemory 开关影响分类)
         if (name == "memory_tool") {
-            return if (isValidDomain("对话工具/记忆")) "对话工具/记忆" else "未分类"
+            return if (isValidDomain("对话工具/记忆")) "对话工具/记忆" else "方法域"
         }
 
         // 4. MCP 工具 — 服务器名映射 → 关键词 → AI兜底
@@ -126,7 +126,7 @@ class ToolRouter(
                 dom.label !in excluded && root !in excluded &&
                     dom.matchKeywords.any { text.contains(it) }
             }?.label
-        return result ?: "未分类"
+        return result ?: "方法域"
     }
 
     fun classifyAll(tools: List<Tool>): Map<String, List<Tool>> {
