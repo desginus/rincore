@@ -189,7 +189,7 @@ val dataSourceModule = module {
             // 断线恢复已由 isRecoverableStreamError 覆盖, HTTP/1.1 同样稳定
             .protocols(listOf(Protocol.HTTP_1_1, Protocol.HTTP_2))
             .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(10, TimeUnit.MINUTES) // 恢复原版基线: 不主动掐断长思考 (3min 曾引入中断)
+            .readTimeout(3, TimeUnit.MINUTES)
             .writeTimeout(60, TimeUnit.SECONDS)
             .pingInterval(15, TimeUnit.SECONDS)
             .connectionPool(ConnectionPool(16, 5, TimeUnit.MINUTES))
