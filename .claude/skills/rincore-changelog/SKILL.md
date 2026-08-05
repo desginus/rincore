@@ -20,6 +20,18 @@ description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日�
   - DeepSeek reasoning_effort 映射（medium→high/xhigh→max；AUTO 不触发——非根因，保留无害）
   - MCP 第三种连接 STDIO（getTransport 实现 + UI 三并列 + command 拆分 + 进程生命周期）
   - 生成错误上下文日志（CallTracer ERROR/generation_failed + baseUrl/msgs/tools/thinking）
+  - 补: CallTracer 移入 launch + 级联清理移到 onEdit + baseUrl 类型修复 (编译修复)
+- **v3.5.15**（1de789a4 起）：MCP STDIO 导入支持 + HTTP/1.1 优先
+  - parseMcpServersFromJson 补 stdio 分支（command 必需 + args 可选；原只认 url → stdio 配置被丢弃报"没有找到正确的 MCP 配置"）
+  - HTTP/1.1 优先（protocols HTTP_2,HTTP_1_1 → HTTP_1_1,HTTP_2）：v3.1.0 引入的 HTTP/2 优先在弱网下 SETTINGS 帧丢失/超时 → DeepSeek 服务端报 'required settings preferences not received'（原版默认 HTTP/1.1 优先无此问题）【SETTINGS 帧根因修复】
+- **v3.5.16**（cd51a2fa 起）：缺陷报告 v5 全部 7 项
+  - P0-1 根因: 子请求（标题/建议/背景文本/工具分类）首条 user 无 system → DeepSeek 报 'Required SETTINGS preface not received'（主请求有 MessageProtocol 保证, 子请求漏了）→ OpenAIProvider.generateText 统一兜底前置空 system；Trace ID 从 model.id 改随机 UUID；CallTracer 计数修正（trace_end 实参先于 add 求值）
+  - P0-2 错误弹窗细化（ErrorCard 点击展开完整详情/复制完整堆栈）
+  - P1-1 MCP 状态文本（Idle 引导/Error 消息/Connected 工具列表）
+  - P1-2 UNCLASSIFIED('未分类') 显式兜底域（原'方法域'兜底）
+  - P2-1 思考链计时兜底（finishedAt null 不再持续累计）
+  - P2-2 list_domains 移除'已删除域'残留行
+  - P3-1 use_skill 入框架工具集（懒加载直接可用）
 - **v3.5.13**（fa61f6ca）：删除模型级联清理引用（设置项 9 字段/收藏/助手绑定）
 - **v3.5.12**（bcec24a0）：热力图/统计页崩溃——json_each 展开损坏 JSON（json_valid 过滤 + VM 兜底）
 - **v3.5.11**（fbd5e11e）：移植原版 SystemPromptBuilder（stable/volatile 分区）——缓存前缀稳定【缓存正常化关键版本】
