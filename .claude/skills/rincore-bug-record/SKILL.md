@@ -15,6 +15,29 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 
 ## 已修复 Bug 明细（按时间倒序）
 
+
+### B18. 流式中断静默恢复（根因版本 v3.1.0 — 已根治 2026-08-05）
+- **现象**：工具轮后请求返回空/回复缺失，无任何报错，用户感知莫名中断；运行日志 SEND→RECV 正常、FINISH 正常、messages 无新增
+- **根因链**：
+  - v3.1.0 (583a38c1) 在三个 Provider（ChatCompletionsAPI/Claude/Google）同时引入静默恢复：onFailure 时若 hasData=true 直接 close() 结束，中断被吞
+  - v2.9.8 (c0280099) 有正确机制：未收到任何数据时自动重试（指数退避 3 次），收到数据后中断才传播异常
+  - v3.5.0 回滚到 3.2.2 基线时丢失 v2.9.8 重试；3.5.14 又重复引入静默恢复（hasData→close），问题复现且更隐蔽
+- **修复**：ChatCompletionsAPI 移植 v2.9.8 完整重试机制（hasReceivedData/retryCount/maxRetries=3/currentEventSource/connect()）；三 Provider 静默恢复全部移除，中断统一传播异常可见
+- **铁律**：连接层改动的正确参照是 v2.9.8（自己 2.x 稳定版），不是原版 fork-ref；禁止任何"静默吞错"逻辑；中断必须可见或自动重试
+- **对比法**：查问题首次引入版本 = git log 连接相关关键词 → 对比该版本与上一版本
+
+### B19. MCP 状态撕裂 — no such mcp client（2026-08-05 修复）
+- **现象**：分层调用工具时报 Failed to execute tool, because no such mcp client for the tool
+- **根因**：addClient 中 getTransport 在 runCatching 外——stdio 分支 check(command 非空)/ProcessBuilder.start() 失败时，removeClient 已执行但新 client 未注册，clients 缺失；而配置里 commonOptions.tools 仍持久化，getAllAvailableTools 显示工具 → 调用撕裂
+- **修复**：getTransport 包 runCatching（失败 setStatus Error 并明确显示原因）；getAllAvailableTools 过滤 Error 状态服务器；callTool 报错明确化（区分未连接/不存在）
+- **教训**：任何资源创建（进程/连接）必须在错误处理内，失败要状态一致；配置持久化的工具可见性必须与连接状态联动
+
+### 缓存反复被改坏的经验（2026-08-05 三次教训）
+- **事实**：缓存键 = 请求体前缀（system + 早期消息 + tools 数组）；请求体任何变化都导致缓存失效
+- **已犯错误**：3.5.16 把 use_skill 加入框架工具集（tools 数组变化）+ 新增 UNCLASSIFIED 域（layer1 域概览变化）→ 缓存率暴跌
+- **铁律**：请求体零改动原则——任何想改 system 提示/tools 数组/域概览/消息结构的改动，必须先评估缓存影响；缓存优先于功能优化；P1-2/P3-1 类优化需以不影响请求体的方式实现
+- **正确参照**：3.5.11（SystemPromptBuilder stable/volatile 分区）是缓存正常化的基准版本
+
 ### B17. 冷启动注入 70K tokens（v3.5.1 修复）
 - **现象**：回滚 3.2.2 后每次对话起始冷启动注入 70K+ tokens
 - **根因**：GenerationHandler system 构建——`layer1Prompt` 无任何调用方传入（全项目 grep 确认），恒走 `else` 分支 `tools.forEach` 全量注入 264 工具 systemPrompt；3.2.2 时代工具池小（几十个）无感，工具池膨胀后（264 tools）暴露

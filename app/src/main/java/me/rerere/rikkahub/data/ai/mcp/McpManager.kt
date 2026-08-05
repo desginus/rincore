@@ -146,7 +146,8 @@ class McpManager(
         val assistant = settings.getCurrentAssistant()
         return settings.mcpServers
             .filter {
-                it.commonOptions.enable && it.id in assistant.mcpServers
+                it.commonOptions.enable && it.id in assistant.mcpServers &&
+                    syncingStatus.value[it.id] != McpStatus.Error // 连接失败的服务器工具不可见
             }
             .flatMap { server ->
                 server.commonOptions.tools
@@ -158,7 +159,12 @@ class McpManager(
     suspend fun callTool(serverId: Uuid, toolName: String, args: JsonObject): List<UIMessagePart> {
         val entry = clients.entries.find { it.key.id == serverId }
         var client = entry?.value
-            ?: return listOf(UIMessagePart.Text("Failed to execute tool, because no such mcp client for the tool"))
+            ?: return listOf(
+                UIMessagePart.Text(
+                    "工具执行失败: MCP 服务器未连接或连接已断开 (serverId=$serverId)。" +
+                        "请检查 MCP 服务器状态后重试。"
+                )
+            )
         var config = entry.key
 
         // 调用前确保 OAuth 令牌新鲜。若发生刷新，已连接的 transport 仍携带过期令牌
@@ -271,11 +277,18 @@ class McpManager(
 
     suspend fun addClient(configInput: McpServerConfig) = withContext(Dispatchers.IO) {
         val config = ensureFreshToken(configInput)
-        removeClient(config) // Remove first
         cancelReconnect(config.id)
         reconnectAttempts[config.id] = 0
 
-        val transport = getTransport(config)
+        // getTransport 可能抛异常 (stdio command 非法/进程启动失败) — 必须在
+        // runCatching 内, 否则 removeClient 后中途退出 → clients 缺失而配置里
+        // 工具仍在 → 调用报 'no such mcp client' (状态撕裂)
+        val transport = runCatching { getTransport(config) }.getOrElse { e ->
+            Log.e(TAG, "addClient: getTransport failed for ${config.commonOptions.name}: ${e.message}", e)
+            setStatus(config = config, status = McpStatus.Error(e.message ?: e.javaClass.name))
+            return@withContext
+        }
+        removeClient(config) // Remove old entry after transport created successfully
         val client = Client(
             clientInfo = Implementation(
                 name = config.commonOptions.name,
