@@ -166,14 +166,18 @@ class ChatCompletionsAPI(
         // println(client.newCall(request).await().body?.string())
 
         // SSE 无数据看门狗: 120s 无任何事件 → 主动断开 (快速失败, 不等 readTimeout)
+        // 无数据看门狗: 只记录日志不主动断开 — 主动断开曾引入长思考中断 (3.5.14)
+        // 服务端长思考期间可能无流式事件, 宁可等待由 readTimeout 兜底
         val lastEventAt = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
         val watchdog = launch {
             while (true) {
-                delay(10_000)
-                if (System.currentTimeMillis() - lastEventAt.get() > 120_000) {
-                    Log.w(TAG, "onFailure: SSE no-data watchdog fired (120s)")
-                    close(java.util.concurrent.TimeoutException("SSE 流无数据超时 (120s)，连接可能挂起"))
-                    break
+                delay(30_000)
+                val idleMs = System.currentTimeMillis() - lastEventAt.get()
+                if (idleMs > 120_000) {
+                    Log.w(TAG, "SSE idle ${idleMs / 1000}s (no-data watchdog, waiting)")
+                }
+                if (idleMs > 600_000) {
+                    Log.w(TAG, "SSE idle ${idleMs / 1000}s, still waiting (readTimeout will cap)")
                 }
             }
         }
