@@ -159,12 +159,6 @@ class OpenAIProvider(
                 params = params
             )
         }
-    } else {
-        chatCompletionsAPI.generateText(
-            providerSetting = providerSetting,
-            messages = messages,
-            params = params
-        )
     }
 
     override suspend fun generateEmbedding(
