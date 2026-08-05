@@ -182,12 +182,12 @@ val dataSourceModule = module {
             maxRequestsPerHost = 8
         }
         OkHttpClient.Builder()
-            // 协议顺序对齐原版 (OkHttp 默认 HTTP_1_1 优先) — 历史教训:
-            // v3.1.0 (583a38c1) 显式 HTTP_2 优先 → HTTP/2 连接建立时 SETTINGS 帧
-            // 交换, 网络不稳定时 SETTINGS 帧被吞/超时 → DeepSeek 服务端报
-            // 'required settings preferences not received' (原版 HTTP/1.1 无此问题)
-            // 断线恢复已由 isRecoverableStreamError 覆盖, HTTP/1.1 同样稳定
-            .protocols(listOf(Protocol.HTTP_1_1, Protocol.HTTP_2))
+            // 完全禁用 HTTP/2 — 实测证据 (2026-08-05 20:06): DeepSeek 服务端
+            // ALPN 协商到 h2 后报 stream was reset: PROTOCOL_ERROR
+            // (okhttp3.internal.http2.StreamResetException)。
+            // protocols(HTTP_1_1, HTTP_2) 顺序不影响 ALPN — 服务端支持 h2 必选 h2,
+            // 唯一可靠方案是协议列表只留 HTTP_1_1
+            .protocols(listOf(Protocol.HTTP_1_1))
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(3, TimeUnit.MINUTES)
             .writeTimeout(60, TimeUnit.SECONDS)
