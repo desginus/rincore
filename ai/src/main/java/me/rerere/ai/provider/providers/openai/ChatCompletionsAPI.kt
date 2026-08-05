@@ -182,8 +182,16 @@ class ChatCompletionsAPI(
             }
         }
 
-        var hasData = false
-        val listener = object : EventSourceListener() {
+        // SSE 连接优化: 首次数据到达前断连时自动重试, 指数退避 (移植 v2.9.8 稳定行为)
+        val hasReceivedData = java.util.concurrent.atomic.AtomicBoolean(false)
+        val retryCount = java.util.concurrent.atomic.AtomicInteger(0)
+        val maxRetries = 3
+        var currentEventSource: EventSource? = null
+        val scope = this@callbackFlow
+        lateinit var listener: EventSourceListener
+
+        fun connect() {
+            listener = object : EventSourceListener() {
             override fun onEvent(
                 eventSource: EventSource,
                 id: String?,
@@ -241,52 +249,58 @@ class ChatCompletionsAPI(
                         trySend(messageChunk).onFailure { e ->
                             Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
                         }
-                        hasData = true
+                        hasReceivedData.set(true)
                     }
             }
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
                 var exception = t
-
                 t?.printStackTrace()
-                println("[onFailure] 发生错误: ${t?.javaClass?.name} ${t?.message} / $response")
-
-                // 流中断不再静默保留部分数据 — 曾导致工具轮后回复缺失, 无报错感知中断
-                // 对齐原版: 中断传播异常, 用户可见明确错误, 由上层决定重试
-                if (t is java.io.IOException && isRecoverableStreamError(t)) {
-                    Log.w(TAG, "onFailure: recoverable stream error (will propagate): ${t.message} hasData=$hasData")
-                }
+                Log.w(TAG, "onFailure: ${t?.javaClass?.name} ${t?.message} / $response")
 
                 val bodyRaw = response?.body?.stringSafe()
                 try {
                     if (!bodyRaw.isNullOrBlank()) {
                         val bodyElement = Json.parseToJsonElement(bodyRaw)
-                        println(bodyElement)
                         exception = bodyElement.parseErrorDetail()
                         Log.i(TAG, "onFailure: $exception")
                     }
                 } catch (e: Throwable) {
                     Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
-                    e.printStackTrace()
                     exception = e
-                } finally {
-                    TraceLogger.dumpAndLog(TAG, exception ?: Exception("Unknown"), 60)
-                    close(exception)
                 }
+
+                // 仅在尚未收到任何数据时重试 (避免重复响应) — 移植 v2.9.8 稳定行为
+                if (!hasReceivedData.get() && retryCount.incrementAndGet() <= maxRetries && !scope.isClosedForSend) {
+                    val delayMs = 1000L * (1 shl (retryCount.get() - 1))
+                    Log.w(TAG, "SSE pre-data failure, retry ${retryCount.get()}/$maxRetries after ${delayMs}ms: ${exception?.message}")
+                    scope.launch {
+                        delay(delayMs)
+                        if (!scope.isClosedForSend) {
+                            connect()
+                        }
+                    }
+                    return
+                }
+
+                close(exception)
             }
 
             override fun onClosed(eventSource: EventSource) {
                 TraceLogger.log("SSE", "stream closed by server")
                 close()
             }
+            }
+
+            currentEventSource = EventSources.createFactory(client).newEventSource(request, listener)
         }
 
-        val eventSource = EventSources.createFactory(client).newEventSource(request, listener)
+        connect()
 
         awaitClose {
             println("[awaitClose] 关闭eventSource ")
             watchdog.cancel()
-            eventSource.cancel()
+            currentEventSource?.cancel()
         }
         // trySend 在缓冲满时会静默丢弃 delta，导致回复中间缺字 (#1295)，因此缓冲必须无界
     }.buffer(Channel.UNLIMITED)
