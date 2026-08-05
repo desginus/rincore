@@ -187,13 +187,10 @@ class ResponseAPI(
 
                 // 流式传输中断恢复: 已有部分数据则保留, 避免整个响应丢失
                 // (与 ChatCompletionsAPI 对齐 — stream reset/protocol error/timeout 等)
+                // 流中断不再静默保留部分数据 — 曾导致回复缺失, 无报错感知中断
+                // 对齐原版: 中断传播异常, 用户可见明确错误, 由上层决定重试
                 if (t is java.io.IOException && ChatCompletionsAPI.isRecoverableStreamError(t)) {
-                    if (hasData) {
-                        Log.w(TAG, "onFailure: stream interrupted (recoverable), closing with partial data")
-                        close()
-                        return
-                    }
-                    Log.w(TAG, "onFailure: stream interrupted before any data, will propagate: ${t.message}")
+                    Log.w(TAG, "onFailure: recoverable stream error (will propagate): ${t.message} hasData=$hasData")
                 }
 
                 val bodyRaw = response?.body?.stringSafe()

@@ -251,15 +251,10 @@ class ChatCompletionsAPI(
                 t?.printStackTrace()
                 println("[onFailure] 发生错误: ${t?.javaClass?.name} ${t?.message} / $response")
 
-                // 流式传输中断恢复: 如果已有部分数据则保留, 避免整个响应丢失
+                // 流中断不再静默保留部分数据 — 曾导致工具轮后回复缺失, 无报错感知中断
+                // 对齐原版: 中断传播异常, 用户可见明确错误, 由上层决定重试
                 if (t is java.io.IOException && isRecoverableStreamError(t)) {
-                    if (hasData) {
-                        Log.w(TAG, "onFailure: stream interrupted (recoverable), closing with partial data")
-                        TraceLogger.log("SSE", "recovered: ${t.message}")
-                        close()
-                        return
-                    }
-                    Log.w(TAG, "onFailure: stream interrupted before any data, will propagate: ${t.message}")
+                    Log.w(TAG, "onFailure: recoverable stream error (will propagate): ${t.message} hasData=$hasData")
                 }
 
                 val bodyRaw = response?.body?.stringSafe()
@@ -758,8 +753,17 @@ class ChatCompletionsAPI(
             jsonObject["role"]?.jsonPrimitive?.contentOrNull?.uppercase() ?: "ASSISTANT"
         )
 
-        // 也许支持其他模态的输出content?
-        val content = jsonObject["content"]?.jsonPrimitiveOrNull?.contentOrNull ?: ""
+        // content 可能是字符串或 block 数组 (如 [{type:"text",text:"..."}]); 数组时拼接 text 块, 否则文本丢失 (对齐原版)
+        val contentElement = jsonObject["content"]
+        val content = contentElement?.jsonPrimitiveOrNull?.contentOrNull
+            ?: (contentElement as? JsonArray)?.mapNotNull { block ->
+                val obj = block.jsonObjectOrNull ?: return@mapNotNull null
+                if (obj["type"]?.jsonPrimitiveOrNull?.contentOrNull == "text") {
+                    obj["text"]?.jsonPrimitiveOrNull?.contentOrNull
+                } else {
+                    null
+                }
+            }?.joinToString("") ?: ""
         val reasoning = jsonObject["reasoning_content"]?.jsonPrimitiveOrNull?.contentOrNull
             ?: jsonObject["reasoning"]?.jsonPrimitiveOrNull?.contentOrNull
             ?: jsonObject["content"]?.takeIf { it is JsonArray }?.let { arr ->
