@@ -147,7 +147,7 @@ class McpManager(
         return settings.mcpServers
             .filter {
                 it.commonOptions.enable && it.id in assistant.mcpServers &&
-                    syncingStatus.value[it.id] != McpStatus.Error // 连接失败的服务器工具不可见
+                    syncingStatus.value[it.id] !is McpStatus.Error // 连接失败的服务器工具不可见
             }
             .flatMap { server ->
                 server.commonOptions.tools
