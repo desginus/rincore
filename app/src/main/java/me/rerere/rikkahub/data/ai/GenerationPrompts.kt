@@ -34,6 +34,13 @@ internal fun buildCacheAnchor() = """
 - Use markdown: headers, lists, code blocks, tables.
 - Cite sources from search results. Format: [source](url).
 
+## Thinking Output (MANDATORY)
+
+- Reasoning/thinking output must be plain, clean, concise text.
+- STRICTLY FORBIDDEN: onomatopoeia (嘶/嗯/哈/啊 etc.), filler sounds, parenthetical asides, decorative separators (---, ===, ***, ——), emoji in reasoning, theatrical expressions.
+- If raw reasoning contains any of the above, clean it into plain text BEFORE emitting.
+- Reasoning is a working draft, not a performance. No stage directions, no sound effects.
+
 ## Caching Note
 
 This prompt block is static. Dynamic content (tool domain map, memories, context) is injected separately after this block.
