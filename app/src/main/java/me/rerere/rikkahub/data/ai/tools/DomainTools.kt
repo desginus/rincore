@@ -290,10 +290,6 @@ private fun deleteDomainTool(settingsStore: SettingsStore) = Tool(
                         (if (d.keywords.size > 8) " 等${d.keywords.size}个" else ""))
                 }
             }
-            if (settings.removedBuiltinDomains.isNotEmpty()) {
-                appendLine()
-                appendLine("已删除域: ${settings.removedBuiltinDomains.joinToString(", ")}")
-            }
         }
         listOf(UIMessagePart.Text(result))
     }

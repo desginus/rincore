@@ -353,6 +353,31 @@ private fun McpServerItem(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
+                    if (status == McpStatus.Idle) {
+                        Text(
+                            text = "未连接 — 配置已加载，连接建立后工具自动注册。查看位置: 工具与分类管理页 / 对话中 invoke_tools(\"MCP 域\")",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        )
+                    }
+                    if (status == McpStatus.Connected) {
+                        val tools = item.commonOptions.tools
+                        if (tools.isEmpty()) {
+                            Text(
+                                text = "已连接 — 服务器未返回工具（检查服务器是否实现了 MCP 工具协议）",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            )
+                        } else {
+                            Text(
+                                text = "已连接 — ${tools.size} 个工具: " + tools.joinToString(", ") { t -> t.name },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
                     if (status == McpStatus.NeedsAuthorization) {
                         val context = LocalContext.current
                         Text(

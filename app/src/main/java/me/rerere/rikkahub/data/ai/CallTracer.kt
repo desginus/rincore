@@ -65,11 +65,12 @@ object CallTracer {
     suspend fun finishTrace() {
         mutex.withLock {
             val totalMs = System.currentTimeMillis() - startTime
+            // TraceEvent 实参先求值 (此时 trace_end 未入列), 总数 = events.size + 1
             events.add(TraceEvent(
                 elapsedMs = totalMs,
                 phase = "FINISH",
                 step = "trace_end",
-                detail = "Total: ${totalMs}ms, ${events.size} events",
+                detail = "Total: ${totalMs}ms, ${events.size + 1} events",
             ))
             _traceFlow.value = events.toList()
             isActive = false

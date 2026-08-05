@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -42,9 +43,13 @@ import me.rerere.hugeicons.stroke.Copy01
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.ai.CallTracer
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.service.ChatErrorSolution
 import me.rerere.rikkahub.ui.context.LocalNavController
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.uuid.Uuid
 
 @Composable
@@ -111,6 +116,7 @@ fun ErrorCard(
     val clipboard = LocalClipboard.current
     val navController = LocalNavController.current
     val scope = rememberCoroutineScope()
+    var expanded by remember { mutableStateOf(false) }
     val checkTitleModelSettings = stringResource(R.string.chat_page_check_title_model_settings)
     val linkColor = MaterialTheme.colorScheme.primary
 
@@ -134,7 +140,7 @@ fun ErrorCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).clickable { expanded = !expanded },
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 if (error.title != null) {
@@ -150,8 +156,25 @@ fun ErrorCard(
                     text = error.error.message ?: "Unknown error",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
+                    maxLines = if (expanded) Int.MAX_VALUE else 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (expanded) {
+                    val ts = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(error.timestamp))
+                    val traceId = CallTracer.getTraceId()
+                    Text(
+                        text = buildString {
+                            appendLine("错误类型: ${error.error.javaClass.simpleName}")
+                            appendLine("时间戳: $ts")
+                            appendLine("Trace ID: ${traceId.ifBlank { "—" }}")
+                            if (error.conversationId != null) appendLine("会话 ID: ${error.conversationId}")
+                            appendLine("--- 堆栈 ---")
+                            append(error.error.stackTraceToString().take(1200))
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f),
+                    )
+                }
                 if (error.solution == ChatErrorSolution.CheckTitleModelSettings) {
                     Text(
                         text = buildAnnotatedString {
@@ -181,9 +204,19 @@ fun ErrorCard(
             IconButton(
                 onClick = {
                     scope.launch {
+                        val ts = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(error.timestamp))
+                        val fullText = buildString {
+                            appendLine("${error.title ?: "Error"}: ${error.error.message ?: "Unknown error"}")
+                            appendLine("类型: ${error.error.javaClass.simpleName}")
+                            appendLine("时间戳: $ts")
+                            appendLine("Trace ID: ${CallTracer.getTraceId().ifBlank { "—" }}")
+                            if (error.conversationId != null) appendLine("会话 ID: ${error.conversationId}")
+                            appendLine("--- 堆栈 ---")
+                            append(error.error.stackTraceToString())
+                        }
                         clipboard.setClipEntry(
                             ClipEntry(
-                                clipData = ClipData.newPlainText("Error", error.error.message ?: "Unknown error")
+                                clipData = ClipData.newPlainText("Error", fullText)
                             )
                         )
                     }

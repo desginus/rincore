@@ -78,6 +78,7 @@ private const val TAG = "GenerationHandler"
 
 /** 框架层工具名 — 不参与域分类, 分层模式下直接注入 */
 private val FRAMEWORK_TOOL_SET = setOf(
+    "use_skill", // 技能懒加载入口: 直接可用 (框架工具), skill 列表由 invoke_tools("技能") 按需返回
     "invoke_tools",
     "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file",
     "manage_domain", "list_domains", "move_tool_to_domain",
@@ -126,7 +127,8 @@ class GenerationHandler(
         workspaceCwd: String? = null,
         conversationLoadedDomains: Set<String>? = null,
     ): Flow<GenerationChunk> = flow {
-        CallTracer.startTrace(id = model.id.toString())
+        // Trace ID 每次生成唯一 — 之前用 model.id 导致所有 trace 同 ID (日志无法区分)
+        CallTracer.startTrace(id = java.util.UUID.randomUUID().toString().take(8))
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
 

@@ -135,7 +135,30 @@ class OpenAIProvider(
         providerSetting: ProviderSetting.OpenAI,
         messages: List<UIMessage>,
         params: TextGenerationParams
-    ): MessageChunk = if (providerSetting.useResponseApi) {
+    ): MessageChunk {
+        // 协议兜底: 严格端点 (DeepSeek V4 Flash 等) 要求首条消息为 system —
+        // 子请求 (标题生成/建议/背景文本/工具分类) 常直接传 user 消息,
+        // 缺 system 前缀 → 服务端报 'Required SETTINGS preface not received'
+        // 主请求已由 MessageProtocol.enforce 保证, 此处为全请求统一兜底 (幂等)
+        val normalized = if (messages.firstOrNull()?.role != MessageRole.SYSTEM) {
+            listOf(UIMessage.system("")) + messages
+        } else {
+            messages
+        }
+        return if (providerSetting.useResponseApi) {
+            responseAPI.generateText(
+                providerSetting = providerSetting,
+                messages = normalized,
+                params = params
+            )
+        } else {
+            chatCompletionsAPI.generateText(
+                providerSetting = providerSetting,
+                messages = normalized,
+                params = params
+            )
+        }
+    }
         responseAPI.generateText(
             providerSetting = providerSetting,
             messages = messages,

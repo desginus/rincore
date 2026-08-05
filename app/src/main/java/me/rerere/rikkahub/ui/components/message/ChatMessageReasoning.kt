@@ -88,8 +88,9 @@ private fun rememberReasoningState(reasoning: UIMessagePart.Reasoning): Pair<Rea
     val state = remember(reasoning.createdAt) {
         ReasoningState(
             scrollState = scrollState,
-            initialDuration = reasoning.finishedAt?.let { it - reasoning.createdAt }
-                ?: (Clock.System.now() - reasoning.createdAt)
+            // 中断兜底: finishedAt null (中断/崩溃未收尾) → 0 时长 + 中断标记,
+            // 不再用 now-createdAt 持续累计 (P2-1: 中断后计时失真)
+            initialDuration = reasoning.finishedAt?.let { it - reasoning.createdAt } ?: Duration.ZERO
         )
     }
 
