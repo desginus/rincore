@@ -645,26 +645,30 @@ class ChatService(
                 }.sortedBy { it.name },
             ).onCompletion {
                 // 可能被取消了，或者意外结束，兜底更新
-                val updatedConversation = getConversationFlow(conversationId).value.copy(
-                    messageNodes = getConversationFlow(conversationId).value.messageNodes.map { node ->
-                        node.copy(messages = node.messages.map { it.finishReasoning() })
-                    },
-                    updateAt = Instant.now()
-                )
-                updateConversation(conversationId, updatedConversation)
-
-                // 兜底落盘 (异常/流中断路径 — onSuccess 可能不执行)
-                saveConversation(conversationId, updatedConversation)
-
-                // 生成结束：取消 Live Update 通知，后台时发送完成通知
-                appEventBus.emit(
-                    AppEvent.ChatGenerationEnded(
-                        conversationId = conversationId,
-                        senderName = senderName,
-                        contentPreview = updatedConversation.currentMessages.lastOrNull()
-                            ?.toText()?.take(50)?.trim() ?: "",
+                // 关键: 取消态 (用户停止/切后台) 下挂起调用会跳过 — 必须 NonCancellable
+                // 否则 saveConversation/emit Ended 不执行 → 灵动岛不消失, 计时器不停
+                withContext(NonCancellable) {
+                    val updatedConversation = getConversationFlow(conversationId).value.copy(
+                        messageNodes = getConversationFlow(conversationId).value.messageNodes.map { node ->
+                            node.copy(messages = node.messages.map { it.finishReasoning() })
+                        },
+                        updateAt = Instant.now()
                     )
-                )
+                    updateConversation(conversationId, updatedConversation)
+
+                    // 兜底落盘 (异常/流中断路径 — onSuccess 可能不执行)
+                    saveConversation(conversationId, updatedConversation)
+
+                    // 生成结束：取消 Live Update 通知，后台时发送完成通知
+                    appEventBus.emit(
+                        AppEvent.ChatGenerationEnded(
+                            conversationId = conversationId,
+                            senderName = senderName,
+                            contentPreview = updatedConversation.currentMessages.lastOrNull()
+                                ?.toText()?.take(50)?.trim() ?: "",
+                        )
+                    )
+                }
             }.collect { chunk ->
                 when (chunk) {
                     is GenerationChunk.Messages -> {
@@ -1354,6 +1358,8 @@ class ChatService(
         job.cancel()
         runCatching { job.join() }
         finishInterruptedPendingTools(conversationId)
+        // 显式收尾: 取消灵动岛 (不依赖 onCompletion — 取消态可能跳过)
+        appEventBus.tryEmit(AppEvent.ChatGenerationEnded(conversationId, "assistant", null))
     }
 }
 
