@@ -185,7 +185,7 @@ class ChatCompletionsAPI(
         // SSE 连接优化: 首次数据到达前断连时自动重试, 指数退避 (移植 v2.9.8 稳定行为)
         val hasReceivedData = java.util.concurrent.atomic.AtomicBoolean(false)
         val retryCount = java.util.concurrent.atomic.AtomicInteger(0)
-        val maxRetries = 3
+        val maxRetries = 5 // 指数退避 1+2+4+8+16=31s 窗口, 覆盖瞬时网络波动
         var currentEventSource: EventSource? = null
         val scope = this@callbackFlow
         lateinit var listener: EventSourceListener

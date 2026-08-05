@@ -190,9 +190,14 @@ val dataSourceModule = module {
             .protocols(listOf(Protocol.HTTP_1_1))
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(3, TimeUnit.MINUTES)
-            .writeTimeout(60, TimeUnit.SECONDS)
-            .pingInterval(15, TimeUnit.SECONDS)
-            .connectionPool(ConnectionPool(16, 5, TimeUnit.MINUTES))
+            .writeTimeout(120, TimeUnit.SECONDS) // 对齐 v2.9.8 — 大请求体写入宽容
+            .pingInterval(30, TimeUnit.SECONDS) // 对齐 v2.9.8
+            .connectionPool(
+                // 12 连接对齐 v2.9.8; keepalive 60s — DeepSeek 服务端空闲关闭快,
+                // 长 keepalive 导致连接池复用陈旧连接 → unexpected end of stream
+                // (工具执行 60s+ 后请求必触发, 近几版才出现)
+                ConnectionPool(12, 60, TimeUnit.SECONDS)
+            )
             .dispatcher(dispatcher)
             .socketFactory(BufferedSocketFactory)
             .followSslRedirects(true)
