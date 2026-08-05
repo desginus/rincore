@@ -323,12 +323,9 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                      t.message?.contains("connection closed", ignoreCase = true) == true ||
                      t.message?.contains("canceled", ignoreCase = true) == true)
                 ) {
-                    if (hasData) {
-                        Log.w(TAG, "onFailure: stream interrupted (recoverable), closing with partial data")
-                        TraceLogger.log("SSE", "recovered: ${t.message}")
-                        close()
-                        return
-                    }
+                    // 移除静默恢复 (v3.1.0 引入) — 曾致回复缺失无报错感知中断
+                    // 中断传播异常, 用户可见明确错误
+                    Log.w(TAG, "onFailure: recoverable stream error (will propagate): ${t.message} hasData=$hasData")
                 }
 
                 try {
