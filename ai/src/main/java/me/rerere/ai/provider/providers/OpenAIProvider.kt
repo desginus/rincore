@@ -21,6 +21,7 @@ import me.rerere.ai.provider.ImageGenerationParams
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.provider.providers.openai.ChatCompletionsAPI
 import me.rerere.ai.provider.providers.openai.ResponseAPI
@@ -158,12 +159,6 @@ class OpenAIProvider(
                 params = params
             )
         }
-    }
-        responseAPI.generateText(
-            providerSetting = providerSetting,
-            messages = messages,
-            params = params
-        )
     } else {
         chatCompletionsAPI.generateText(
             providerSetting = providerSetting,
