@@ -84,7 +84,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
                 error("Failed to get models: ${response.code} ${response.body.string()}")
             }
 
-            val bodyStr = response.body.string() ?: ""
+            val bodyStr = response.body.string()
             val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
             val data = bodyJson["data"]?.jsonArray ?: return@withContext emptyList()
 
@@ -129,7 +129,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
             throw Exception("Failed to get response: ${response.code} ${response.body.string()}")
         }
 
-        val bodyStr = response.body.string() ?: ""
+        val bodyStr = response.body.string()
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
 
         // 从 JsonObject 中提取必要的信息

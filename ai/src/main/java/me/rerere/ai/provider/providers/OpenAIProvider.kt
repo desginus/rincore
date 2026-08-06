@@ -71,7 +71,7 @@ class OpenAIProvider(
                 error("Failed to get models: ${response.code} ${response.body.string()}")
             }
 
-            val bodyStr = response.body.string() ?: ""
+            val bodyStr = response.body.string()
             val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
             val data = bodyJson["data"]?.jsonArray ?: return@withContext emptyList()
 
@@ -195,7 +195,7 @@ class OpenAIProvider(
             error("Failed to generate embedding: ${response.code} ${response.body.string()}")
         }
 
-        val bodyStr = response.body.string() ?: ""
+        val bodyStr = response.body.string()
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
         val data = bodyJson["data"]?.jsonArray ?: error("No data in response")
         val model = bodyJson["model"]?.jsonPrimitive?.contentOrNull ?: params.model.modelId

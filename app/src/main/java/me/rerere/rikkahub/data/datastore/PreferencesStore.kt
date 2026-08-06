@@ -598,7 +598,7 @@ data class Settings(
     val webDavConfig: WebDavConfig = WebDavConfig(),
     val s3Config: S3Config = S3Config(),
     val ttsProviders: List<TTSProviderSetting> = DEFAULT_TTS_PROVIDERS,
-    val selectedTTSProviderId: Uuid = DEFAULT_SYSTEM_TTS_ID,
+    val selectedTTSProviderId: Uuid? = null, // 类型修正: 未选择时为空 (原声明非空与 442 行 remove 逻辑矛盾)
     val defaultTTSPlaybackSpeed: Float = 1.0f,
     val asrProviders: List<ASRProviderSetting> = emptyList(),
     val selectedASRProviderId: Uuid? = null,

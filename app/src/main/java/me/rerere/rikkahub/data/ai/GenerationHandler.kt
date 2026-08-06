@@ -181,7 +181,7 @@ class GenerationHandler(
                 buildList {
                     Log.i(TAG, "generateInternal: build tools (layered)($assistant)")
                     // 框架工具 — 始终可调用, 不走域系统
-                    if (assistant?.enableMemory == true) {
+                    if (assistant.enableMemory == true) {
                         val memoryAssistantId = if (assistant.useGlobalMemory) {
                             MemoryRepository.GLOBAL_MEMORY_ID
                         } else {
@@ -219,7 +219,7 @@ class GenerationHandler(
             } else {
                 buildList {
                     Log.i(TAG, "generateInternal: build tools($assistant)")
-                    if (assistant?.enableMemory == true) {
+                    if (assistant.enableMemory == true) {
                         val memoryAssistantId = if (assistant.useGlobalMemory) {
                             MemoryRepository.GLOBAL_MEMORY_ID
                         } else {

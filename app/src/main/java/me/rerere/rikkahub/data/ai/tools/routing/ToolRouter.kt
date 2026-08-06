@@ -238,8 +238,8 @@ class ToolRouter(
         for (cd in customDomains) {
             if (!isValidDomain(cd.name)) continue
             if (cd.parent != null) {
-                if (isValidDomain(cd.parent!!)) {
-                    result.getOrPut(cd.parent!!) { mutableListOf() }.add(cd.name)
+                if (isValidDomain(cd.parent)) {
+                    result.getOrPut(cd.parent) { mutableListOf() }.add(cd.name)
                 }
             } else {
                 result.getOrPut(cd.name) { mutableListOf() }

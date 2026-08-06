@@ -253,7 +253,7 @@ class MiMoASRController(
 
         val text = withContext(Dispatchers.IO) {
             httpClient.newCall(request).execute().use { resp ->
-                val respBody = resp.body?.string().orEmpty()
+                val respBody = resp.body.string().orEmpty()
                 if (!resp.isSuccessful) {
                     throw IOException("MiMo ASR HTTP ${resp.code}: $respBody")
                 }
