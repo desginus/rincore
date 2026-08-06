@@ -62,10 +62,6 @@ val DEFAULT_PROVIDERS = listOf(
         )
     ),
     ProviderSetting.OpenAI(
-        id = Uuid.parse("386e0f29-8228-4512-affe-8fd8add82d88"),
-    ProviderSetting.OpenAI(
-        id = Uuid.parse("da020a90-f7b3-4c29-b90e-c511a0630630"),
-    ProviderSetting.OpenAI(
         id = Uuid.parse("f76cae46-069a-4334-ab8e-224e4979e58c"),
         name = "阿里云百炼",
         baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1",
