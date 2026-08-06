@@ -163,11 +163,6 @@ fun UpdateCard(vm: ChatVM) {
                             },
                         ) {
                             ListItem(
-                                headlineContent = {
-                                    Text(
-                                        text = downloadItem.name,
-                                    )
-                                },
                                 supportingContent = {
                                     Text(
                                         text = downloadItem.size
@@ -178,8 +173,11 @@ fun UpdateCard(vm: ChatVM) {
                                         imageVector = HugeIcons.Download01,
                                         contentDescription = null
                                     )
-                                }
-                            )
+                                } ) {
+Text(
+                                        text = downloadItem.name,
+                                    )
+}
                         }
                     }
                 }

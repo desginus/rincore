@@ -91,9 +91,6 @@ internal fun WorkspaceSelectSheet(
                 leadingContent = {
                     Icon(HugeIcons.Codesandbox, contentDescription = null)
                 },
-                headlineContent = {
-                    Text(stringResource(R.string.workspace_manage))
-                },
                 trailingContent = {
                     Icon(
                         imageVector = HugeIcons.ArrowRight01,
@@ -104,8 +101,9 @@ internal fun WorkspaceSelectSheet(
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 modifier = Modifier
                     .clip(MaterialTheme.shapes.large)
-                    .clickable { onManage() },
-            )
+                    .clickable { onManage() } ) {
+Text(stringResource(R.string.workspace_manage))
+}
         }
     }
 }
@@ -120,13 +118,6 @@ private fun WorkspaceSelectRow(
     ListItem(
         leadingContent = {
             Icon(HugeIcons.Codesandbox, contentDescription = null)
-        },
-        headlineContent = {
-            Text(
-                text = title,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
         },
         supportingContent = status?.let {
             {
@@ -157,6 +148,11 @@ private fun WorkspaceSelectRow(
         ),
         modifier = Modifier
             .clip(MaterialTheme.shapes.large)
-            .clickable { onClick() },
-    )
+            .clickable { onClick() } ) {
+Text(
+                text = title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+}
 }

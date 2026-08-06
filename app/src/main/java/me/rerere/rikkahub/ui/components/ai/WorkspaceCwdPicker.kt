@@ -125,13 +125,6 @@ fun WorkspaceCwdPickerSheet(
                 val dirs = entries.filter { it.isDirectory }
                 items(dirs, key = { it.path }) { entry ->
                     ListItem(
-                        headlineContent = {
-                            Text(
-                                text = entry.name,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        },
                         leadingContent = {
                             Icon(
                                 imageVector = HugeIcons.Folder01,
@@ -143,8 +136,13 @@ fun WorkspaceCwdPickerSheet(
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         modifier = Modifier.clickable {
                             browsePath = entry.path
-                        },
-                    )
+                        } ) {
+Text(
+                                text = entry.name,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+}
                 }
 
                 if (!loading && dirs.isEmpty()) {

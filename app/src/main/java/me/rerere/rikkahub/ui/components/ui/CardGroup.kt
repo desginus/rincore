@@ -140,7 +140,9 @@ private fun CardGroupListItem(
         leadingContent = item.leadingContent,
         trailingContent = item.trailingContent,
         colors = item.colors ?: CustomColors.listItemColors,
-    )
+    ) {
+        item.headlineContent
+    }
 }
 
 @Composable
