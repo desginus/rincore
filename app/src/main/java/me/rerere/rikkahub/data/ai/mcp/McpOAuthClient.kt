@@ -323,7 +323,7 @@ class McpOAuthClient(
 
     private suspend fun execute(request: Request): String {
         executeRaw(request).use { response ->
-            val body = response.body?.string().orEmpty()
+            val body = response.body.string()
             if (!response.isSuccessful) {
                 throw IOException("HTTP ${response.code} for ${request.url}: ${body.take(300)}")
             }

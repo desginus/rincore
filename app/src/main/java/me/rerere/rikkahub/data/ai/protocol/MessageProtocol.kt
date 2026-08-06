@@ -1,3 +1,4 @@
+@file:Suppress("DEPRECATION") // ToolCall/ToolResult 序列化兼容必需
 package me.rerere.rikkahub.data.ai.protocol
 
 import android.util.Log

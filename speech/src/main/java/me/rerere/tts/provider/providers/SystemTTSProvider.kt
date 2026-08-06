@@ -110,7 +110,7 @@ class SystemTTSProvider : TTSProvider<TTSProviderSetting.SystemTTS> {
         tts = TextToSpeech(context, listener)
 
         continuation.invokeOnCancellation {
-            tts?.shutdown()
+            tts.shutdown()
         }
     }
 

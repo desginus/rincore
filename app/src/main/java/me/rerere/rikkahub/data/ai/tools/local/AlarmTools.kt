@@ -113,7 +113,7 @@ fun alarmCreateTool(): Tool = Tool(
                     put("error", "INVALID_TIME"); put("message", "hour (0-23) and minute (0-59) are required for weekly.")
                 }.toString()))
             }
-            val days = daysRaw?.jsonArray?.mapNotNull { it.jsonPrimitive?.contentOrNull?.toIntOrNull() }
+            val days = daysRaw?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull?.toIntOrNull() }
                 ?: return@Tool listOf(UIMessagePart.Text(buildJsonObject {
                     put("error", "MISSING_DAYS"); put("message", "days_of_week is required for weekly alarms.")
                 }.toString()))

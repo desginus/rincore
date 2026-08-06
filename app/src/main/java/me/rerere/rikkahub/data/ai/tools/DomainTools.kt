@@ -264,7 +264,7 @@ private fun deleteDomainTool(settingsStore: SettingsStore) = Tool(
             return domain !in removedSet && domain !in hiddenSet &&
                 root !in removedSet && root !in hiddenSet
         }
-        val domains = settings.customDomains.filter { visible(it.name) && (it.parent == null || visible(it.parent!!)) }
+        val domains = settings.customDomains.filter { visible(it.name) && (it.parent == null || visible(it.parent)) }
         val builtin = me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.map { it.label }.filter { visible(it) }
 
         val result = buildString {

@@ -284,9 +284,6 @@ private fun WorkspacePickerListItem(
                 contentDescription = stringResource(R.string.assistant_page_workspace),
             )
         },
-        headlineContent = {
-            Text(stringResource(R.string.assistant_page_workspace))
-        },
         supportingContent = {
             Text(
                 text = boundWorkspace?.name ?: stringResource(R.string.assistant_page_workspace_unbound),
@@ -321,8 +318,9 @@ private fun WorkspacePickerListItem(
         ),
         modifier = Modifier
             .clip(MaterialTheme.shapes.large)
-            .clickable { showSheet = true },
-    )
+            .clickable { showSheet = true } ) {
+Text(stringResource(R.string.assistant_page_workspace))
+}
 
     if (showSheet) {
         WorkspaceSelectSheet(

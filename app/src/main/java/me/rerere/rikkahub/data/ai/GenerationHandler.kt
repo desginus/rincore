@@ -664,6 +664,7 @@ class GenerationHandler(
         // 复现缓存卡住时: adb logcat 抓相邻两轮 msg_fp, 指纹不同的消息即断点
         Log.i(TAG, "msg_fp: " + internalMessages.mapIndexed { i, m ->
             val types = m.parts.joinToString("+") { p ->
+                @Suppress("DEPRECATION") // 序列化兼容必需
                 when (p) {
                     is UIMessagePart.Text -> "t"
                     is UIMessagePart.Reasoning -> "r"

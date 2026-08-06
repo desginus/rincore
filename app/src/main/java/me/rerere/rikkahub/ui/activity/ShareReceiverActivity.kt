@@ -1,4 +1,5 @@
 package me.rerere.rikkahub.ui.activity
+@file:Suppress("DEPRECATION") // getParcelableExtra 平台 API 无替代
 
 import android.content.Intent
 import android.net.Uri

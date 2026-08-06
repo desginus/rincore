@@ -356,7 +356,7 @@ private class Evaluator(private val root: JsonObject) {
                 else elem.doubleOrNull()?.let { Value.Num("%.2f".format(it).toDouble()) } ?: Value.Str(elem.content)
             }
             is JsonObject, is JsonArray -> Value.Str(elem.toString())
-            else -> Value.Str(elem.toString())
+            is JsonNull -> Value.Str("") // 前置 return 已排除, 此处仅为编译器完整性
         }
     }
 

@@ -32,7 +32,6 @@ object ToolOutputCompressor {
             compressShell(output)
         } else {
             NaturalLanguageFormatter.format(output)
-            ?: TextCompressor.compress(output)
         }
 
         if (result != null) Log.d(TAG, "$toolName: ${output.length} -> ${result.length} chars")

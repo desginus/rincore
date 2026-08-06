@@ -216,13 +216,6 @@ private fun AssistantItem(
     onEdit: () -> Unit
 ) {
     ListItem(
-        headlineContent = {
-            Text(
-                text = assistant.name.ifEmpty { defaultAssistantName },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        },
         leadingContent = {
             UIAvatar(
                 name = assistant.name.ifEmpty { defaultAssistantName },
@@ -242,6 +235,11 @@ private fun AssistantItem(
                 )
             }
         },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-    )
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent) ) {
+Text(
+                text = assistant.name.ifEmpty { defaultAssistantName },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+}
 }

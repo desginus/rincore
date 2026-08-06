@@ -35,7 +35,8 @@ object PermissionHelper {
     fun hasUsageStatsAccess(ctx: Context): Boolean {
         val appOps = ctx.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
         val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            appOps.unsafeCheckOpNoThrow(
+            @Suppress("DEPRECATION") // AppOps 查询无公开替代
+        appOps.unsafeCheckOpNoThrow(
                 AppOpsManager.OPSTR_GET_USAGE_STATS, ctx.packageManager.getApplicationInfo(ctx.packageName, 0).uid, ctx.packageName
             )
         } else {
