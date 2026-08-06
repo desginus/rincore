@@ -204,12 +204,13 @@ class GenerationHandler(
                     addAll(frameworkTools.filter { it.name != "memory_tool" })
                     // invoke_tools 元工具 — 操作 allDomainTools (含MCP), 模型按需加载
                     add(toolRouter.createInvokeToolsTool(allDomainTools, loadedDomains))
-                    // 已加载域的工具 (含MCP工具, 通过分类归入域)
-                    for (domain in loadedDomains) {
-                        addAll(toolRouter.getDomainTools(domain, allDomainTools))
-                    }
+                    // 全部可用工具静态注入 — 配置决定, 跨请求逐字节一致 (缓存前缀稳定)。
+                    // 此前 loadedDomains 动态注入: 工具轮加载新域 → tools 数组变化 →
+                    // 请求体前缀断裂 → 缓存阶梯化 (9.7K→30K→90K 跳跃)。
+                    // 工具描述在 tools 数组 (API 参数), system 仍只注入框架工具瘦身 (v3.5.1 成果)。
+                    addAll(allDomainTools)
                 }.distinctBy { it.name }
-                    .sortedBy { it.name }  // 确定性排序 → 五家前缀匹配缓存稳定
+                    .sortedBy { it.name }  // 确定性排序 → 前缀匹配缓存稳定
                     .also { built ->
                         val mcpCount = built.count { it.name.startsWith("mcp__") }
                         val frameworkCount = built.count { it.name in FRAMEWORK_TOOL_SET }
