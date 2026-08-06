@@ -63,6 +63,22 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 - **铁律**：请求体零改动原则——任何想改 system 提示/tools 数组/域概览/消息结构的改动，必须先评估缓存影响；缓存优先于功能优化；P1-2/P3-1 类优化需以不影响请求体的方式实现
 - **正确参照**：3.5.11（SystemPromptBuilder stable/volatile 分区）是缓存正常化的基准版本
 
+### B23. 缓存阶梯化反复出现 — 最终决策回滚 3.5.17（v3.5.24）
+- **现象链**：3.5.18 起缓存阶梯化（10K 卡住→跳 20K→倒退 3K）、冷启动 100K/36K 反复
+- **错误尝试**：3.5.18-beta2 全量注入（100K 回归）→ 3.5.19 skill 直注（36K）→ 3.5.22 layer1 数量统计（用户批评"不是服务端机制"）
+- **用户决策**：缓存机制彻底回滚到 3.5.17（520b4cb0）——WorkspaceReminderTransformer/McpManager/GenerationPrompts 对齐；功能改动保留
+- **教训**：3.5.17 是缓存稳定基准，任何缓存机制性改动必须先对照 bug-record"缓存反复被改坏的经验"（请求体零改动原则）
+
+### B24. get_location 固定返回上海缓存（v3.5.24 修复）
+- **现象**：FUSED 模式不触发系统定位请求，固定返回上海坐标（31.1959831, 121.4234426）
+- **根因**：quick cache（<=5min）优先于真实定位，缓存命中直接返回
+- **修复**：重排为真实定位优先（FusedLocation → Network → GPS），缓存仅最终兜底并标注 age
+
+### B25. 思考链计时器中断后一直计数（v3.5.24 修复）
+- **现象**：对话中断后"思考了多少秒"计时器不停
+- **根因**：中断后 onCompletion 收尾（NonCancellable saveConversation 落盘）耗时期间，消息 finishedAt 未更新，UI 计时循环继续
+- **修复**：stopGeneration 中断时立即 finishReasoning + 更新 flow 停表；join 3s 超时（UI 立即响应，收尾后台继续）；onCompletion finishReasoning 幂等不冲突
+
 ### B17. 冷启动注入 70K tokens（v3.5.1 修复）
 - **现象**：回滚 3.2.2 后每次对话起始冷启动注入 70K+ tokens
 - **根因**：GenerationHandler system 构建——`layer1Prompt` 无任何调用方传入（全项目 grep 确认），恒走 `else` 分支 `tools.forEach` 全量注入 264 工具 systemPrompt；3.2.2 时代工具池小（几十个）无感，工具池膨胀后（264 tools）暴露

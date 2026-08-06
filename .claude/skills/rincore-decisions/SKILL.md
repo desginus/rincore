@@ -38,6 +38,12 @@ description: "[中优先级·RinCore决策对照] RinCore 关键方案对比迭�
 - **缓存 6K 断点**：system 的 volatile 部分（memory 变化）或 tools 变化（工具轮加载新域，分层固有）；memory 已限 30 条；tools 变化是分层铁律的固有代价（模型加载新域一次性断，加载后保持）
 - **memory 限制**：注入上限 30 条（v3.5.20），超出由 memory_tool 按需读取
 
+## D7 终版. 缓存机制回滚 3.5.17（v3.5.24，用户最终决策）
+- **决策**：缓存机制与消息注入彻底回滚到 3.5.17（520b4cb0）——三个文件对齐（WorkspaceReminderTransformer/McpManager/GenerationPrompts）
+- **背景**：3.5.18 起缓存阶梯化反复出现，3.5.18-beta2 全量注入/3.5.19 skill 直注/3.5.22 layer1 数量统计均为错误方向（用户严厉批评）
+- **教训**：3.5.17 是缓存稳定基准；任何缓存/注入机制改动前必读 bug-record"缓存反复被改坏的经验"与 decisions D2
+- **保留**：功能改动（show/search_domains/skill 直用/UI/激活路径）不受影响
+
 ## D1. 传输层回滚到 3.2.2（v3.5.0，用户决策）
 - **背景**：DeepSeek V4 Flash 连接中断反复出现（SETTINGS/reasoning/空流），v3.4.5-v3.4.10 连续补丁无法根治，用户判定"补丁式修改已没救"
 - **决策**：传输层整体 checkout 3.2.2（原版 RikkaHub 2.4.5 移植前基线）

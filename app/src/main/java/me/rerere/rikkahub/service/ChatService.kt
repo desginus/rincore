@@ -21,6 +21,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -1358,7 +1359,20 @@ class ChatService(
     suspend fun stopGeneration(conversationId: Uuid) {
         val job = sessions[conversationId]?.getJob() ?: return
         job.cancel()
-        runCatching { job.join() }
+        // 立即停表: 直接 finishReasoning + 更新 flow, 不等 onCompletion 收尾落盘
+        // (收尾的 saveConversation 大对话耗时, 期间 UI finishedAt 未更新 → 思考链
+        // 计时器一直计数)。onCompletion 的 finishReasoning 幂等 (非 null 不覆盖)。
+        val current = getConversationFlow(conversationId).value
+        val stopped = current.copy(
+            messageNodes = current.messageNodes.map { node ->
+                node.copy(messages = node.messages.map { it.finishReasoning() })
+            },
+            updateAt = Instant.now()
+        )
+        updateConversation(conversationId, stopped)
+        // join 等待取消完成 — 但收尾 (NonCancellable saveConversation 落盘) 可能
+        // 耗时 (大对话 DB 写入), 限制等待 3s: UI 立即响应中断, 收尾在后台继续。
+        runCatching { withTimeoutOrNull(3_000L) { job.join() } }
         finishInterruptedPendingTools(conversationId)
         // 显式收尾: 取消灵动岛 (不依赖 onCompletion — 取消态可能跳过)
         appEventBus.tryEmit(AppEvent.ChatGenerationEnded(conversationId, "assistant", null))

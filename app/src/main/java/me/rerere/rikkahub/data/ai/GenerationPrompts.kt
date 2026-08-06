@@ -46,9 +46,6 @@ internal fun buildCacheAnchor() = """
 This prompt block is static. Dynamic content (tool domain map, memories, context) is injected separately after this block.
 """.trimIndent()
 
-/** 记忆注入上限 — 防止记忆累积导致 system 过大 (冷启动膨胀)。超出部分由 memory_tool 按需读取。 */
-private const val MEMORY_INJECT_LIMIT = 30
-
 internal fun buildMemoryPrompt(memories: List<AssistantMemory>) =
     if (memories.isEmpty()) ""
     else buildString {
@@ -58,7 +55,7 @@ internal fun buildMemoryPrompt(memories: List<AssistantMemory>) =
         append("These are memories stored via the memory_tool that you can reference in future conversations.")
         appendLine()
         val json = buildJsonArray {
-            memories.take(MEMORY_INJECT_LIMIT).forEach { memory ->
+            memories.forEach { memory ->
                 add(buildJsonObject {
                     put("id", memory.id)
                     put("content", memory.content)

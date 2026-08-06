@@ -178,7 +178,7 @@ private suspend fun requestLocationFromProviders(
 
 fun locationTool(context: Context): Tool = Tool(
     name = "get_location",
-    description = "获取设备当前实时位置。优先 Network 定位(蜂窝/WiFi),不可用时降级 GPS。失败则返回缓存。",
+    description = "获取设备当前实时位置。实时定位优先: FusedLocation → Network → GPS, 全部失败才返回缓存(标注 age)。",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
@@ -227,59 +227,50 @@ fun locationTool(context: Context): Tool = Tool(
                                 .isGooglePlayServicesAvailable(context) == ConnectionResult.SUCCESS
                         } catch (t: Throwable) { Log.w(TAG_LOC, "GMS check failed", t); false }
 
-                        // Step 0: quick cache (<=5min, skip hardware)
-                        val quickCache = getAnyLastLocation(lm, gmsAvailable, context)
-                        if (quickCache != null && System.currentTimeMillis() - quickCache.time < 300_000L) {
-                            Log.i(TAG_LOC, "quick cache hit age=${System.currentTimeMillis() - quickCache.time}ms")
-                            buildJsonObject {
-                                putLocation(quickCache, quickCache.provider ?: "cached")
-                                put("cached", true)
-                                put("age_ms", System.currentTimeMillis() - quickCache.time)
+                        // 真实定位优先 — 缓存仅作最终兜底 (修复: quick cache 优先导致
+                        // 固定返回陈旧缓存, 不触发系统定位请求)
+                        // Step 1: FusedLocation (GMS devices) — 真实请求
+                        var fresh: Location? = null
+                        if (gmsAvailable) {
+                            Log.i(TAG_LOC, "trying FusedLocation priority=$accuracyStr timeout=${timeoutMs}ms")
+                            fresh = try {
+                                val client = LocationServices.getFusedLocationProviderClient(context)
+                                withTimeoutOrNull(timeoutMs.toLong()) {
+                                    client.getCurrentLocation(priority, null).await()
+                                }
+                            } catch (t: Throwable) {
+                                Log.w(TAG_LOC, "FusedLocation failed", t); null
                             }
+                        }
+
+                        // Step 2: LocationManager (Network -> GPS with proper cleanup)
+                        if (fresh == null) {
+                            Log.i(TAG_LOC, "trying LocationManager multi-provider timeout=${timeoutMs}ms")
+                            fresh = requestLocationFromProviders(lm, timeoutMs.toLong())
+                        }
+
+                        if (fresh != null) {
+                            Log.i(TAG_LOC, "fresh fix via ${fresh.provider}")
+                            buildJsonObject { putLocation(fresh, fresh.provider ?: "unknown") }
                         } else {
-                            // Step 1: FusedLocation (GMS devices)
-                            var fresh: Location? = null
-                            if (gmsAvailable) {
-                                Log.i(TAG_LOC, "trying FusedLocation priority=$accuracyStr timeout=${timeoutMs}ms")
-                                fresh = try {
-                                    val client = LocationServices.getFusedLocationProviderClient(context)
-                                    withTimeoutOrNull(timeoutMs.toLong()) {
-                                        client.getCurrentLocation(priority, null).await()
-                                    }
-                                } catch (t: Throwable) {
-                                    Log.w(TAG_LOC, "FusedLocation failed", t); null
+                            // Step 3: 缓存兜底 (标注 age, 仅全部真实方法失败时使用)
+                            Log.w(TAG_LOC, "all fresh methods failed, trying any cache")
+                            val cached = getAnyLastLocation(lm, gmsAvailable, context)
+                            if (cached != null) {
+                                val ageMs = System.currentTimeMillis() - cached.time
+                                buildJsonObject {
+                                    putLocation(cached, cached.provider ?: "cached")
+                                    put("cached", true)
+                                    put("age_ms", ageMs)
+                                    put("note", "all fresh fix methods timed out; returning last known location")
                                 }
-                            }
-
-                            // Step 2: LocationManager (Network -> GPS with proper cleanup)
-                            if (fresh == null) {
-                                Log.i(TAG_LOC, "trying LocationManager multi-provider timeout=${timeoutMs}ms")
-                                fresh = requestLocationFromProviders(lm, timeoutMs.toLong())
-                            }
-
-                            if (fresh != null) {
-                                Log.i(TAG_LOC, "fresh fix via ${fresh.provider}")
-                                buildJsonObject { putLocation(fresh, fresh.provider ?: "unknown") }
                             } else {
-                                // Step 3: any cached location
-                                Log.w(TAG_LOC, "all fresh methods failed, trying any cache")
-                                val cached = getAnyLastLocation(lm, gmsAvailable, context)
-                                if (cached != null) {
-                                    val ageMs = System.currentTimeMillis() - cached.time
-                                    buildJsonObject {
-                                        putLocation(cached, cached.provider ?: "cached")
-                                        put("cached", true)
-                                        put("age_ms", ageMs)
-                                        put("note", "all fresh fix methods timed out; returning last known location")
-                                    }
-                                } else {
-                                    errorPayload("no fix available",
-                                        "All location methods failed (FusedLocation + Network + GPS). " +
-                                        "No cached location on device. " +
-                                        "Try: 1) Open Google Maps to trigger first fix. " +
-                                        "2) Settings -> Location -> toggle off/on. " +
-                                        "3) Settings -> Apps -> RinCore -> Permissions -> Location -> Allow all the time.")
-                                }
+                                errorPayload("no fix available",
+                                    "All location methods failed (FusedLocation + Network + GPS). " +
+                                    "No cached location on device. " +
+                                    "Try: 1) Open Google Maps to trigger first fix. " +
+                                    "2) Settings -> Location -> toggle off/on. " +
+                                    "3) Settings -> Apps -> RinCore -> Permissions -> Location -> Allow all the time.")
                             }
                         }
                     }
