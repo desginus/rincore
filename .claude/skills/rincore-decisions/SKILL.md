@@ -5,6 +5,13 @@ description: "[中优先级·RinCore决策对照] RinCore 关键方案对比迭�
 
 # RinCore 方案决策记录
 
+## D6. 写入与展示解耦（v3.5.18，用户决策）
+- **背景**：workspace_write_file/edit_file 执行后自动显示在对话下附胶囊窗，完全不可控
+- **决策**：新增 workspace_show_file 工具，胶囊窗仅认 show 工具；写入/编辑不再触发显示
+- **语义**：show 工具校验文件存在（rootfsFileSize 抛异常即失败），成功则 Tool part 留在消息中，EditedFilesList 提取 path 渲染胶囊
+- **缓存代价**：请求体 tools 数组 + system 提示（WorkspaceReminderTransformer）变化 → 单次缓存前缀重建，新前缀稳定后恢复。与 3.5.16 反复改动不同，此为一次性
+- **风险**：模型可能忘记显式调用 show 导致文件不显示，靠工具描述引导
+
 ## D1. 传输层回滚到 3.2.2（v3.5.0，用户决策）
 - **背景**：DeepSeek V4 Flash 连接中断反复出现（SETTINGS/reasoning/空流），v3.4.5-v3.4.10 连续补丁无法根治，用户判定"补丁式修改已没救"
 - **决策**：传输层整体 checkout 3.2.2（原版 RikkaHub 2.4.5 移植前基线）
