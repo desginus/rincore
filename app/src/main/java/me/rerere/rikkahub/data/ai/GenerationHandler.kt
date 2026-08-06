@@ -211,8 +211,9 @@ class GenerationHandler(
                     for (domain in loadedDomains) {
                         addAll(toolRouter.getDomainTools(domain, allDomainTools))
                     }
-                    // skill 工具始终注入 — 直接可用 (D8), 数量 = 已启用 skill
-                    addAll(tools.filter { it.name.startsWith("skill_") })
+                    // skill 工具不分层直注 — 全量加载禁止 (用户铁律)。
+                    // skill_<name> 工具经 invoke_tools("技能") 加载后直接可用 (D8),
+                    // 加载一次对话内保持, 无需 use_skill 两步。
                 }.distinctBy { it.name }
                     .sortedBy { it.name }  // 确定性排序 → 前缀匹配缓存稳定
                     .also { built ->
