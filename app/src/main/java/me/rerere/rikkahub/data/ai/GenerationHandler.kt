@@ -205,15 +205,12 @@ class GenerationHandler(
                     addAll(frameworkTools.filter { it.name != "memory_tool" })
                     // invoke_tools 元工具 — 操作 allDomainTools (含MCP), 模型按需加载
                     add(toolRouter.createInvokeToolsTool(allDomainTools, loadedDomains))
-                    // 已加载域的工具 (含MCP工具, 通过分类归入域) — 请求体只带
-                    // 框架工具 + 已加载域, 冷启动小 (v3.5.1 瘦身成果)。
-                    // 注意: 不可全量注入 allDomainTools — 264 工具描述 ≈ 90K tokens,
-                    // 冷启动 100K+ 且挤占缓存空间 (3.5.18 回归教训)。
-                    for (domain in loadedDomains) {
-                        addAll(toolRouter.getDomainTools(domain, allDomainTools))
-                    }
-                    // skill 工具始终注入 — 直接可用 (D8), 数量 = 已启用 skill, 可控
-                    addAll(tools.filter { it.name.startsWith("skill_") })
+                    // 全量静态注入 (用户决策 2026-08-06, D7 修正) — tools 数组 = 全部
+                    // 可用工具 (内置+域+MCP+Skill), 配置决定, 跨请求逐字节一致。
+                    // 动态注入 (loadedDomains) 使 tools 数组随对话变化 → 前缀断裂 →
+                    // 缓存阶梯化。全量注入虽使冷启动变大 (静态前缀, 一次成本),
+                    // 但后续每轮前缀完全命中, 缓存稳定优先于冷启动体积。
+                    addAll(allDomainTools)
                 }.distinctBy { it.name }
                     .sortedBy { it.name }  // 确定性排序 → 前缀匹配缓存稳定
                     .also { built ->
