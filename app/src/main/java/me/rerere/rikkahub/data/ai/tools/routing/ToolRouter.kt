@@ -9,6 +9,7 @@
 package me.rerere.rikkahub.data.ai.tools.routing
 
 import android.util.Log
+import me.rerere.rikkahub.data.ai.tools.sanitizeSkillToolName
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -379,7 +380,7 @@ class ToolRouter(
                                                 appendLine("  （当前没有已启用的 skill）")
                                             } else {
                                                 for ((sname, sdesc) in skills) {
-                                                    appendLine("- `skill_$sname`: ${sdesc.take(120).replace("\n", " ")}")
+                                                    appendLine("- `skill_${sanitizeSkillToolName(sname)}`: ${sdesc.take(120).replace("\n", " ")}")
                                                 }
                                             }
                                         }

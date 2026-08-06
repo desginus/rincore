@@ -46,7 +46,7 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Code
 import me.rerere.hugeicons.stroke.AiEditing
 import me.rerere.hugeicons.stroke.AiMagic
-import me.rerere.hugeicons.stroke.Alert01
+import me.rerere.hugeicons.stroke.Clock02
 import me.rerere.hugeicons.stroke.Book01
 import me.rerere.hugeicons.stroke.Puzzle
 import me.rerere.hugeicons.stroke.Book03
@@ -248,12 +248,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         headlineContent = { Text(stringResource(R.string.setting_page_domain_management)) },
                     )
                     item(
-                        onClick = { navController.navigate(Screen.SettingSkillsEcosystem) },
-                        leadingContent = { Icon(HugeIcons.Package, null) },
-                        supportingContent = { Text("OpenClaw 技能 + 生态指令（合并管理）") },
-                        headlineContent = { Text("技能与生态") },
-                    )
-                    item(
                         onClick = { navController.navigate(Screen.Skills) },
                         leadingContent = { Icon(HugeIcons.Puzzle, null) },
                         supportingContent = { Text("Agent Skills 能力模块（原在扩展管理中）") },
@@ -283,7 +277,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                 ) {
                     item(
                         onClick = { navController.navigate(Screen.SettingAlarms) },
-                        leadingContent = { Icon(HugeIcons.Alert01, null) },
+                        leadingContent = { Icon(HugeIcons.Clock02, null) },
                         supportingContent = { Text("设备闹钟") },
                         headlineContent = { Text("闹钟") },
                     )

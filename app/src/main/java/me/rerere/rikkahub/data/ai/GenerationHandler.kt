@@ -435,15 +435,10 @@ class GenerationHandler(
                         // Auto or Approved - execute the tool
                         TraceLogger.log("ToolExec", "${tool.toolName}")
                             runCatching {
-                            val toolDef = toolsInternal.find { toolDef -> toolDef.name == tool.toolName }
+                            val toolDef = tools.find { toolDef -> toolDef.name == tool.toolName }
+                                ?: toolsInternal.find { toolDef -> toolDef.name == tool.toolName }
                             if (toolDef == null) {
-                                // 分层模式下工具必须先通过 invoke_tools 加载，禁止自动加载其他域工具
-                                val msg = if (useLayered) {
-                                    "工具 ${tool.toolName} 未加载。请先调用 invoke_tools(\"域名称\") 加载对应域。"
-                                } else {
-                                    "工具 ${tool.toolName} 未找到"
-                                }
-                                error(msg)
+                                error("工具 ${tool.toolName} 未找到")
                             }
                             val args = runCatching {
                                 json.parseToJsonElement(tool.input.ifBlank { "{}" })
