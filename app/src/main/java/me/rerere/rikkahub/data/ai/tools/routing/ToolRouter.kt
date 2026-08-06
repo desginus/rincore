@@ -203,7 +203,7 @@ class ToolRouter(
             appendLine()
             appendLine("你拥有一个工具总域 `工具`，按功能场景树状组织。每个域含：显示名称、触发描述、触发条件。")
             appendLine()
-            appendLine("**使用**：所有工具已直接可用，无需加载。`invoke_tools(\"场景名\")` 查看子域与工具详情；`search_domains(关键词)` 按关键词反查工具位置；`invoke_tools(\"帮助\")` 查看全部。")
+            appendLine("**使用**：工具跨轮保持可用，无需重复加载。`invoke_tools(\"场景名\")` 获取该域工具（获取后直接调用，跨轮保留）；Skill 工具 `skill_*` 始终可用；`search_domains(关键词)` 反查工具位置；`invoke_tools(\"帮助\")` 查看全部。")
             appendLine()
             appendLine("### 可用场景域")
             appendLine()
@@ -214,7 +214,7 @@ class ToolRouter(
                 }
             }
             appendLine()
-            appendLine("工具调用跨请求保持可用，无需重新加载。不确定工具在哪个域时，用 `search_domains(关键词)` 反查，或调 `invoke_tools(\"帮助\")` 查看全部。")
+            appendLine("不确定工具在哪个域时，用 `search_domains(关键词)` 反查，或调 `invoke_tools(\"帮助\")` 查看全部。已获取的工具跨轮可用，不会丢失。")
         }
     }
 
