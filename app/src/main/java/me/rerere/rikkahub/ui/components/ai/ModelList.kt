@@ -1,5 +1,5 @@
-package me.rerere.rikkahub.ui.components.ai
 @file:OptIn(FlowPreview::class)
+package me.rerere.rikkahub.ui.components.ai
 
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.combinedClickable

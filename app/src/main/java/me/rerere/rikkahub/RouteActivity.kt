@@ -1,3 +1,4 @@
+@file:OptIn(ExperimentalCoilApi::class)
 /**
  * 路由 Activity + 导航注册中心 — 模块: F. UI 层
  *
@@ -8,7 +9,6 @@
  */
 package me.rerere.rikkahub
 @file:Suppress("DEPRECATION") // getParcelableExtra 平台 API
-@file:OptIn(ExperimentalCoilApi::class)
 
 import android.annotation.SuppressLint
 import android.content.Intent

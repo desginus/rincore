@@ -1,3 +1,4 @@
+@file:Suppress("DEPRECATION") // ToolCall/ToolResult 序列化兼容保留
 /**
  * 消息模型 — 模块: A. 传输链 / ai (核心数据结构)
  *
@@ -10,7 +11,6 @@
  * 问题定位: 消息结构/序列化/part 类型问题 → 查本文件
  */
 package me.rerere.ai.ui
-@file:Suppress("DEPRECATION") // ToolCall/ToolResult 序列化兼容保留
 
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone

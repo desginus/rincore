@@ -1,3 +1,4 @@
+@file:OptIn(DelicateCoroutinesApi::class)
 /**
  * ChatCompletions API 传输 — 模块: A. 传输链 / ai
  *
@@ -7,7 +8,6 @@
  * 问题定位: 序列化错误/SSE 异常/工具格式问题 → 查本文件
  */
 package me.rerere.ai.provider.providers.openai
-@file:OptIn(DelicateCoroutinesApi::class)
 
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
