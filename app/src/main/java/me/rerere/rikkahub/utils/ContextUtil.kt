@@ -7,6 +7,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
+import android.media.MediaScannerConnection
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 
@@ -82,6 +83,7 @@ fun Context.writeClipboardText(text: String) {
 fun Context.hasUsageStatsPermission(): Boolean {
     val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
     val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        @Suppress("DEPRECATION") // AppOps 查询无公开替代 API
         appOps.unsafeCheckOpNoThrow(
             AppOpsManager.OPSTR_GET_USAGE_STATS,
             Process.myUid(),
@@ -191,10 +193,8 @@ fun Context.exportImage(
             outputStream = FileOutputStream(image)
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
 
-            // 通知图库更新
-            val mediaScanIntent = Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE)
-            mediaScanIntent.data = Uri.fromFile(image)
-            sendBroadcast(mediaScanIntent)
+            // 通知图库更新 (MediaScannerConnection — ACTION_MEDIA_SCANNER 已弃用)
+            MediaScannerConnection.scanFile(this, arrayOf(image.absolutePath), null, null)
         }
         Log.i(TAG, "Image saved successfully: $fileName")
     } catch (e: Exception) {
@@ -244,10 +244,8 @@ fun Context.exportImageFile(
             val image = File(imagesDir, fileName)
             file.copyTo(image, overwrite = true)
 
-            // 通知图库更新
-            val mediaScanIntent = Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE)
-            mediaScanIntent.data = Uri.fromFile(image)
-            sendBroadcast(mediaScanIntent)
+            // 通知图库更新 (MediaScannerConnection — ACTION_MEDIA_SCANNER 已弃用)
+            MediaScannerConnection.scanFile(this, arrayOf(image.absolutePath), null, null)
         }
         Log.i(TAG, "Image file saved successfully: $fileName")
     } catch (e: Exception) {

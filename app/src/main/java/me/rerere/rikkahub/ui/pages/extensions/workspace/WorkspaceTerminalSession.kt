@@ -252,7 +252,7 @@ internal class WorkspaceTerminalViewClient(
         val inputMethodManager = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         view.post {
             view.requestFocus()
-            inputMethodManager.showSoftInput(view, InputMethodManager.SHOW_IMPLICIT)
+            inputMethodManager.showSoftInput(view, 0) // SHOW_IMPLICIT 已弃用, 0 等同隐式
         }
     }
 

@@ -1,7 +1,8 @@
 package me.rerere.rikkahub.web
 
 import android.content.Context
-import android.net.wifi.WifiManager
+import android.net.ConnectivityManager
+import java.net.Inet4Address
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -112,21 +113,14 @@ class NsdServiceRegistrar(
     }
 
     private fun getLocalIpAddress(): InetAddress? {
+        // WifiInfo.ipAddress 已弃用 — 改用 ConnectivityManager LinkProperties
         return try {
-            val wifiManager = context.applicationContext
-                .getSystemService(Context.WIFI_SERVICE) as? WifiManager
-            val wifiInfo = wifiManager?.connectionInfo
-            val ipInt = wifiInfo?.ipAddress ?: return null
-
-            if (ipInt == 0) return null
-
-            val ipBytes = byteArrayOf(
-                (ipInt and 0xff).toByte(),
-                (ipInt shr 8 and 0xff).toByte(),
-                (ipInt shr 16 and 0xff).toByte(),
-                (ipInt shr 24 and 0xff).toByte()
-            )
-            InetAddress.getByAddress(ipBytes)
+            val cm = context.applicationContext
+                .getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val network = cm.activeNetwork ?: return null
+            val linkProps = cm.getLinkProperties(network) ?: return null
+            val ipv4 = linkProps.linkAddresses.firstOrNull { it.address is Inet4Address }?.address
+            ipv4 ?: linkProps.linkAddresses.firstOrNull()?.address
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get local IP address", e)
             null

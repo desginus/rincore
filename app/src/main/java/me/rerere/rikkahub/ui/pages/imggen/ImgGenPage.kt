@@ -67,7 +67,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalClipboardManager
+import android.content.ClipData
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.text.input.ClipEntry
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -520,7 +522,7 @@ private fun ImageGalleryScreen(
     val generatedImages = vm.generatedImages.collectAsLazyPagingItems()
     val context = LocalContext.current
     val filesManager: FilesManager = koinInject()
-    val clipboardManager = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val pullToRefreshState = rememberPullToRefreshState()
@@ -607,7 +609,9 @@ private fun ImageGalleryScreen(
                                     Row {
                                         IconButton(
                                             onClick = {
-                                                clipboardManager.setText(AnnotatedString(it.prompt))
+                                                scope.launch {
+                                                        clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(null, it.prompt)))
+                                                    }
                                                 toaster.show(
                                                     message = "Prompt copied to clipboard",
                                                     type = ToastType.Success

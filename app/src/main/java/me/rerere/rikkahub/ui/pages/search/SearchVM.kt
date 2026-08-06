@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
@@ -18,6 +19,7 @@ import me.rerere.rikkahub.ui.hooks.writeStringPreference
 
 private const val SORT_ORDER_PREF_KEY = "search_page_sort_order"
 
+@OptIn(FlowPreview::class)
 class SearchVM(
     private val context: Application,
     private val conversationRepo: ConversationRepository,

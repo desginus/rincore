@@ -21,6 +21,7 @@ import kotlin.coroutines.resumeWithException
 private const val TAG = "SystemTTSProvider"
 
 class SystemTTSProvider : TTSProvider<TTSProviderSetting.SystemTTS> {
+    @Suppress("OVERRIDE_DEPRECATION") // 基类/接口标记 deprecated, 本实现仍需提供
     override fun generateSpeech(
         context: Context,
         providerSetting: TTSProviderSetting.SystemTTS,

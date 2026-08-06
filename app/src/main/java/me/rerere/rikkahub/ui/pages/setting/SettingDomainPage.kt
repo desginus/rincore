@@ -122,7 +122,7 @@ private fun buildNestedDomains(
         if (!notRemoved(cd.name)) continue
         if (cd.parent == null) {
             allTopLevel.add(cd.name)
-        } else if (notRemoved(cd.parent!!)) {
+        } else if (notRemoved(cd.parent)) {
             domainChildren.getOrPut(cd.parent) { linkedSetOf() }.add(cd.name)
         }
     }
@@ -261,7 +261,6 @@ fun SettingDomainPage(
                 val isHidden = domain in settings.hiddenDomains
                 val isCustom = domain in settings.customDomains.map { it.name }
                 val desc = settings.customDomainDescriptions[domain] ?: router.getTriggerDescription(domain)
-                val hasSubs = subs != null
                 var expanded by remember { mutableStateOf(false) }
 
                 Card(Modifier.fillMaxWidth(),
@@ -270,8 +269,8 @@ fun SettingDomainPage(
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text("[${displayName}]", fontWeight = FontWeight.Bold, color = if (isCustom) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-                                if (hasSubs) {
-                                    val subCount = subs!!.size
+                                if (subs != null) {
+                                    val subCount = subs.size
                                     val toolCount = subs.values.sumOf { it.size } + (flatDomainMap[domain]?.size ?: 0)
                                     Text(" (${subCount}子域/${toolCount}工具)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                                 } else {
@@ -307,9 +306,9 @@ fun SettingDomainPage(
 
                         AnimatedVisibility(expanded) {
                             Column(Modifier.padding(top = 8.dp)) {
-                                if (hasSubs) {
+                                if (subs != null) {
                                     Text("子域:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                                    subs!!.forEach { (sub, subTools) ->
+                                    subs.forEach { (sub, subTools) ->
                                         val subDisplay = settings.domainNameOverrides[sub] ?: sub.substringAfterLast("/")
                                         val subDesc = settings.customDomainDescriptions[sub] ?: router.getTriggerDescription(sub)
                                         Card(Modifier.fillMaxWidth().padding(vertical = 2.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
@@ -655,8 +654,7 @@ fun SettingDomainPage(
                 is me.rerere.ai.provider.ProviderSetting.OpenAI -> "openai"
                 is me.rerere.ai.provider.ProviderSetting.Google -> "google"
                 is me.rerere.ai.provider.ProviderSetting.Claude -> "claude"
-                else -> error("不支持的提供商类型")
-            }
+            } // sealed 全分支, else 冗余已删
             @Suppress("UNCHECKED_CAST")
             val provider = providerManager.getProvider(providerName) as Provider<ProviderSetting>
             ToolClassifier.classify(toolList, model, provider, providerSetting, settings.classifierPrompt)

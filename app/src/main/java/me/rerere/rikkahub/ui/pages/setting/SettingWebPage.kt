@@ -40,7 +40,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalClipboardManager
+import android.content.ClipData
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.text.input.ClipEntry
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.res.stringResource
@@ -76,7 +78,7 @@ fun SettingWebPage() {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val clipboardManager = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
     val toaster = LocalToaster.current
     val copiedText = stringResource(R.string.copied)
     var portText by remember(settings.webServerPort) {
@@ -123,7 +125,9 @@ fun SettingWebPage() {
     }
 
     fun copyUrl(url: String) {
-        clipboardManager.setText(AnnotatedString(url))
+        scope.launch {
+            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(null, url)))
+        }
         toaster.show(copiedText)
     }
 
