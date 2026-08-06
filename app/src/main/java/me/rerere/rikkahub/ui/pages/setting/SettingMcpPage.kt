@@ -87,6 +87,7 @@ import me.rerere.hugeicons.stroke.McpServer
 import me.rerere.hugeicons.stroke.MessageBlocked
 import me.rerere.hugeicons.stroke.Settings03
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.ai.mcp.McpCommonOptions
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
@@ -111,9 +112,16 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val mcpConfigs = settings.mcpServers
     val creationState = useEditState<McpServerConfig> {
+        // 新服务器同时绑定当前默认助手 — 否则 getAllAvailableTools 按
+        // assistant.mcpServers 白名单过滤, 模型与域管理页都看不到
+        val currentAssistant = settings.getCurrentAssistant()
         vm.updateSettings(
             settings.copy(
-                mcpServers = mcpConfigs + it
+                mcpServers = mcpConfigs + it,
+                assistants = settings.assistants.map { a ->
+                    if (a.id != currentAssistant.id) a
+                    else a.copy(mcpServers = a.mcpServers + it.id)
+                }
             )
         )
     }
@@ -231,7 +239,16 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
             onImport = { newConfigs ->
                 val existingIds = mcpConfigs.map { it.commonOptions.name }.toSet()
                 val toAdd = newConfigs.filter { it.commonOptions.name.isNotBlank() && it.commonOptions.name !in existingIds }
-                vm.updateSettings(settings.copy(mcpServers = mcpConfigs + toAdd))
+                val currentAssistant = settings.getCurrentAssistant()
+                vm.updateSettings(
+                    settings.copy(
+                        mcpServers = mcpConfigs + toAdd,
+                        assistants = settings.assistants.map { a ->
+                            if (a.id != currentAssistant.id) a
+                            else a.copy(mcpServers = a.mcpServers + toAdd.map { it.id })
+                        }
+                    )
+                )
                 showImportDialog = false
             }
         )

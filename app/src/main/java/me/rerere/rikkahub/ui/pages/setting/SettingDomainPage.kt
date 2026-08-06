@@ -80,6 +80,8 @@ fun buildPreviewTools(
     list.add(ToolPreview("workspace_show_file", "Present an existing workspace file to the user as an attached file chip."))
     list.add(ToolPreview("use_skill", "Load and apply a skill to get specialized instructions or capabilities. 可用 skill 列表由 invoke_tools(\"技能\") 返回。"))
     list.add(ToolPreview("manage_domain", "创建或删除工具域/子域。操作后场景地图自动同步。"))
+    list.add(ToolPreview("invoke_tools", "按类别加载工具。有子域时返回子域列表，无子域时直接返回工具列表。"))
+    list.add(ToolPreview("search_domains", "按关键词或标签反向查询工具域位置。匹配域的名称、触发描述、触发条件。支持类别过滤（MCP、Skill）。"))
     list.add(ToolPreview("list_domains", "列出所有可用域及其工具数量"))
     list.add(ToolPreview("move_tool_to_domain", "将工具移动到指定域"))
     list.add(ToolPreview("mcp_connect", "Connect to an MCP server at runtime."))

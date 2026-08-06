@@ -68,6 +68,19 @@ class SkillsVM(
     fun saveSkill(name: String, content: String, onResult: (Boolean) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             val result = skillManager.saveSkill(name, content)
+            if (result != null) {
+                // 新增 Skill 默认开启 — 加入当前默认助手 enabledSkills (激活路径对齐)
+                val settings = settingsStore.settingsFlow.value
+                val current = settings.getCurrentAssistant()
+                if (name !in current.enabledSkills) {
+                    settingsStore.update { old ->
+                        old.copy(assistants = old.assistants.map { a ->
+                            if (a.id != current.id) a
+                            else a.copy(enabledSkills = a.enabledSkills + name)
+                        })
+                    }
+                }
+            }
             _skills.value = skillManager.listSkills()
             withContext(Dispatchers.Main) {
                 onResult(result != null)
