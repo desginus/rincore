@@ -52,7 +52,9 @@ import me.rerere.hugeicons.stroke.Book01
 import me.rerere.hugeicons.stroke.Puzzle
 import me.rerere.hugeicons.stroke.Book03
 import me.rerere.hugeicons.stroke.Bookshelf01
+import me.rerere.hugeicons.stroke.BookOpen01
 import me.rerere.hugeicons.stroke.Brain02
+import me.rerere.hugeicons.stroke.Message02
 import me.rerere.hugeicons.stroke.Clapping01
 import me.rerere.hugeicons.stroke.Database02
 import me.rerere.hugeicons.stroke.GlobalSearch
@@ -70,6 +72,7 @@ import me.rerere.hugeicons.stroke.Sun01
 import me.rerere.hugeicons.stroke.WavingHand01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.isNotConfigured
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -179,6 +182,32 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         leadingContent = { Icon(HugeIcons.LookTop, null) },
                         supportingContent = { Text(stringResource(R.string.setting_page_assistant_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_assistant)) },
+                    )
+                    // 当前默认助手快捷设置 — 直接编辑默认助手的基础设定/提示词/记忆/本地工具
+                    val defaultAssistant = settings.getCurrentAssistant()
+                    item(
+                        onClick = { navController.navigate(Screen.AssistantBasic(defaultAssistant.id.toString())) },
+                        leadingContent = { Icon(HugeIcons.Settings03, null) },
+                        supportingContent = { Text("当前默认：${defaultAssistant.name}") },
+                        headlineContent = { Text("基础设定") },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.AssistantPrompt(defaultAssistant.id.toString())) },
+                        leadingContent = { Icon(HugeIcons.Message02, null) },
+                        supportingContent = { Text("当前默认：${defaultAssistant.name}") },
+                        headlineContent = { Text("提示词") },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.AssistantMemory(defaultAssistant.id.toString())) },
+                        leadingContent = { Icon(HugeIcons.Brain02, null) },
+                        supportingContent = { Text("当前默认：${defaultAssistant.name}") },
+                        headlineContent = { Text("记忆") },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.AssistantLocalTool(defaultAssistant.id.toString())) },
+                        leadingContent = { Icon(HugeIcons.BookOpen01, null) },
+                        supportingContent = { Text("当前默认：${defaultAssistant.name}") },
+                        headlineContent = { Text("本地工具") },
                     )
                     item(
                         onClick = { navController.navigate(Screen.SettingPermissions) },

@@ -58,12 +58,10 @@ object PermissionInventory {
         rows += exactAlarmRow(context)
         rows += batteryOptimizationRow(context)
         rows += notificationRow(context)
-        rows += usageStatsRow(context)
         // 深度权限: 后台定位 (工作流地理围栏/位置工具后台使用)
         rows += backgroundLocationRow(context)
         // 其他特殊权限
         rows += overlayRow(context)
-        rows += writeSettingsRow(context)
         rows += allFilesRow(context)
         // 声明权限扫描 (运行时权限自动发现)
         for (perm in readDeclaredPermissions(context)) {
@@ -98,12 +96,6 @@ object PermissionInventory {
         Group.Runtime, GrantAction.Runtime(Manifest.permission.POST_NOTIFICATIONS)
     )
 
-    private fun usageStatsRow(context: Context) = row(
-        "usage_stats", "使用情况访问", "屏幕使用时间等工具依赖",
-        PermissionHelper.hasUsageStatsAccess(context), Group.SpecialAccess,
-        GrantAction.SystemSettings(PermissionHelper.usageAccessIntent(context))
-    )
-
     private fun backgroundLocationRow(context: Context): Row {
         val granted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) ==
@@ -127,14 +119,6 @@ object PermissionInventory {
         Settings.canDrawOverlays(context), Group.SpecialAccess,
         GrantAction.SystemSettings(
             Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}"))
-        )
-    )
-
-    private fun writeSettingsRow(context: Context) = row(
-        Manifest.permission.WRITE_SETTINGS, "修改系统设置", "亮度调节等系统工具",
-        Settings.System.canWrite(context), Group.SpecialAccess,
-        GrantAction.SystemSettings(
-            Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${context.packageName}"))
         )
     )
 
@@ -167,6 +151,7 @@ object PermissionInventory {
         if (perm in listOf(
                 Manifest.permission.SYSTEM_ALERT_WINDOW,
                 Manifest.permission.WRITE_SETTINGS,
+                Manifest.permission.ACCESS_LOCAL_NETWORK,
                 Manifest.permission.MANAGE_EXTERNAL_STORAGE,
                 Manifest.permission.POST_NOTIFICATIONS,
                 Manifest.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,

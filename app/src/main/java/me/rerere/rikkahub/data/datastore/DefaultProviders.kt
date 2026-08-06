@@ -36,57 +36,6 @@ val DEFAULT_PROVIDERS = listOf(
     ),
     ProviderSetting.OpenAI(
         id = Uuid.parse("1b1395ed-b702-4aeb-8bc1-b681c4456953"),
-        name = "AiHubMix",
-        baseUrl = "https://aihubmix.com/v1",
-        apiKey = "",
-        enabled = true,
-        builtIn = true,
-        description = {
-            Text(
-                text = buildAnnotatedString {
-                    append("提供 OpenAI、Claude、Google Gemini 等主流模型的高并发和稳定服务")
-                    appendLine()
-                    append("官网：")
-                    withLink(LinkAnnotation.Url("https://aihubmix.com")) {
-                        withStyle(SpanStyle(MaterialTheme.colorScheme.primary)) {
-                            append("https://aihubmix.com")
-                        }
-                    }
-                    appendLine()
-                    append("充值: ")
-                    withLink(LinkAnnotation.Url("https://console.aihubmix.com/topup")) {
-                        withStyle(SpanStyle(MaterialTheme.colorScheme.primary)) {
-                            append("https://console.aihubmix.com/topup")
-                        }
-                    }
-                }
-            )
-        },
-        shortDescription = {
-            Text(
-                text = "支持gpt, claude, gemini等200+模型"
-            )
-        },
-    ),
-    ProviderSetting.OpenAI(
-        id = Uuid.parse("56a94d29-c88b-41c5-8e09-38a7612d6cf8"),
-        name = "硅基流动",
-        baseUrl = "https://api.siliconflow.cn/v1",
-        apiKey = "",
-        builtIn = true,
-        description = {
-            MarkdownBlock(
-                content = """
-                    ${stringResource(R.string.silicon_flow_description)}
-                    ${stringResource(R.string.silicon_flow_website)}
-                """.trimIndent()
-            )
-        },
-        balanceOption = BalanceOption(
-            enabled = true,
-            apiPath = "/user/info",
-            resultPath = "data.totalBalance",
-        ),
     ),
     ProviderSetting.OpenAI(
         id = Uuid.parse("f099ad5b-ef03-446d-8e78-7e36787f780b"),
@@ -114,33 +63,8 @@ val DEFAULT_PROVIDERS = listOf(
     ),
     ProviderSetting.OpenAI(
         id = Uuid.parse("386e0f29-8228-4512-affe-8fd8add82d88"),
-        name = "Vercel AI Gateway",
-        baseUrl = "https://ai-gateway.vercel.sh/v1",
-        apiKey = "",
-        enabled = false,
-        builtIn = true,
-        balanceOption = BalanceOption(
-            enabled = true,
-            apiPath = "/credits",
-            resultPath = "balance",
-        )
-    ),
     ProviderSetting.OpenAI(
         id = Uuid.parse("da020a90-f7b3-4c29-b90e-c511a0630630"),
-        name = "小马算力",
-        baseUrl = "https://api.tokenpony.cn/v1",
-        apiKey = "",
-        enabled = false,
-        builtIn = true,
-        description = {
-            MarkdownBlock(
-                content = """
-                    小马算力是一家提供国产模型的API网关服务，使用统一接口接入多种模型
-                    官网: [tokenpony.cn](https://www.tokenpony.cn)
-                """.trimIndent()
-            )
-        }
-    ),
     ProviderSetting.OpenAI(
         id = Uuid.parse("f76cae46-069a-4334-ab8e-224e4979e58c"),
         name = "阿里云百炼",
@@ -188,24 +112,6 @@ val DEFAULT_PROVIDERS = listOf(
     ),
     ProviderSetting.OpenAI(
         id = Uuid.parse("da93779f-3956-48cc-82ef-67bb482eaaf7"),
-        name = "302.AI",
-        baseUrl = "https://api.302.ai/v1",
-        apiKey = "",
-        enabled = false,
-        builtIn = true,
-        description = {
-            Text(
-                text = buildAnnotatedString {
-                    append("企业级AI服务, 官网：")
-                    withLink(LinkAnnotation.Url("https://302.ai/")) {
-                        withStyle(SpanStyle(MaterialTheme.colorScheme.primary)) {
-                            append("https://302.ai/")
-                        }
-                    }
-                }
-            )
-        }
-    ),
     ProviderSetting.OpenAI(
         id = Uuid.parse("ef5d149b-8e34-404b-818c-6ec242e5c3c5"),
         name = "腾讯Hunyuan",
@@ -225,30 +131,6 @@ val DEFAULT_PROVIDERS = listOf(
     ),
     ProviderSetting.OpenAI(
         id = Uuid.parse("aecf04fd-cb5c-4582-aed2-e8bf393923fd"),
-        name = "随想AI网关",
-        baseUrl = "https://sui-xiang.com/v1",
-        apiKey = "",
-        enabled = false,
-        builtIn = true,
-        description = {
-            Text(
-                text = buildAnnotatedString {
-                    append("可靠高效的 API 中继服务，提供 Claude、Codex、Gemini 等中继服务。注重隐私·无数据倒卖·无模型掺水，充值额度 1:1，按量付费。多线路冗余、跨区域容灾、自动故障切换，长链路 SSE 不中断。\n")
-                    append("官网：")
-                    withLink(LinkAnnotation.Url("https://sui-xiang.com")) {
-                        withStyle(SpanStyle(MaterialTheme.colorScheme.primary)) {
-                            append("https://sui-xiang.com")
-                        }
-                    }
-                }
-            )
-        },
-        shortDescription = {
-            Text(
-                text = "Claude、Codex、Gemini 等中继服务，1:1 充值"
-            )
-        },
-    ),
     ProviderSetting.OpenAI(
         id = Uuid.parse("a2bafe83-eaf8-47bf-a8c7-3dd82d89f637"),
         name = "MIMO",
@@ -259,27 +141,6 @@ val DEFAULT_PROVIDERS = listOf(
     ),
     ProviderSetting.OpenAI(
         id = Uuid.parse("53027b08-1b58-43d5-90ed-29173203e3d8"),
-        name = "AckAI",
-        baseUrl = "https://ackai.fun/v1",
-        apiKey = "",
-        enabled = false,
-        builtIn = true,
-        description = {
-            Text(
-                text = buildAnnotatedString {
-                    append(
-                        "所有AI大模型全都可以用！无需翻墙！价格是官方5折！\n" +
-                            "官网："
-                    )
-                    withLink(LinkAnnotation.Url("https://ackai.fun")) {
-                        withStyle(SpanStyle(MaterialTheme.colorScheme.primary)) {
-                            append("https://ackai.fun")
-                        }
-                    }
-                }
-            )
-        }
-    ),
     ProviderSetting.OpenAI(
         id = Uuid.parse("a1b2c3d4-e5f6-7890-abcd-ef1234567890"),
         name = "MiniMax",
