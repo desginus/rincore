@@ -35,9 +35,6 @@ val DEFAULT_PROVIDERS = listOf(
         builtIn = true
     ),
     ProviderSetting.OpenAI(
-        id = Uuid.parse("1b1395ed-b702-4aeb-8bc1-b681c4456953"),
-    ),
-    ProviderSetting.OpenAI(
         id = Uuid.parse("f099ad5b-ef03-446d-8e78-7e36787f780b"),
         name = "DeepSeek",
         baseUrl = "https://api.deepseek.com/v1",
