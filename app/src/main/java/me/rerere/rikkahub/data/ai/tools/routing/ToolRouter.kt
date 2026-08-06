@@ -37,7 +37,7 @@ class ToolRouter(
             .toSet()
 
     /** invoke_tools 自身不参与分类 */
-    private val metaToolNames = setOf("invoke_tools")
+    private val metaToolNames = setOf("invoke_tools", "search_domains")
 
     /** 单个域注入的最大关键词数量, 超出显示 "等N个" */
     private val MAX_KEYWORDS_INJECT = 8
@@ -203,7 +203,7 @@ class ToolRouter(
             appendLine()
             appendLine("你拥有一个工具总域 `工具`，按功能场景树状组织。每个域含：显示名称、触发描述、触发条件。")
             appendLine()
-            appendLine("**加载**：`invoke_tools(\"场景名\")` 查看子域；`invoke_tools(\"场景/子域\")` 加载工具。调 `invoke_tools(\"帮助\")` 查看全部。")
+            appendLine("**使用**：所有工具已直接可用，无需加载。`invoke_tools(\"场景名\")` 查看子域与工具详情；`search_domains(关键词)` 按关键词反查工具位置；`invoke_tools(\"帮助\")` 查看全部。")
             appendLine()
             appendLine("### 可用场景域")
             appendLine()
@@ -214,9 +214,7 @@ class ToolRouter(
                 }
             }
             appendLine()
-            appendLine("加载域后其工具保持可用，跨请求不会丢失。若任务需要多个域的工具，请一次加载齐所需域（每次加载新域会使一次请求的缓存失效，加载齐后保持稳定）。")
-            appendLine()
-            appendLine("调 `invoke_tools(\"域名称\")` 加载。不确定时调 `invoke_tools(\"帮助\")`。")
+            appendLine("工具调用跨请求保持可用，无需重新加载。不确定工具在哪个域时，用 `search_domains(关键词)` 反查，或调 `invoke_tools(\"帮助\")` 查看全部。")
         }
     }
 
@@ -257,7 +255,7 @@ class ToolRouter(
         val router = this
         return Tool(
             name = "invoke_tools",
-            description = "按类别加载工具。有子域时返回子域列表(需再调用加载子域)，无子域时直接返回工具列表。",
+            description = "按类别查看工具与子域。有子域时返回子域列表(需再调用查看子域)，无子域时直接返回工具列表。所有工具均可直接调用，无需加载。",
             parameters = {
                 InputSchema.Obj(
                     properties = buildJsonObject {
@@ -342,7 +340,7 @@ class ToolRouter(
                                         append(subInfo)
                                     }
                                     appendLine()
-                                    appendLine("子域标注了触发描述与触发条件(关键词)，据此判断是否加载。调 `invoke_tools(\\\"子域完整路径\\\")` 加载具体工具。")
+                                    appendLine("子域标注了触发描述与触发条件(关键词)，据此判断工具位置。调 `invoke_tools(\"子域完整路径\")` 查看该域工具；所有工具均可直接调用。")
                                 }
                                 listOf(UIMessagePart.Text(summary))
                             } else {
@@ -363,27 +361,25 @@ class ToolRouter(
 
                                 val summary = buildString {
                                     if (rootOnly.isEmpty()) {
-                                        appendLine("已加载「$resolvedName」，但该域当前无可用工具。")
+                                        appendLine("「$resolvedName」当前无可用工具。")
                                         appendLine("可尝试 `invoke_tools(\"帮助\")` 查看其他域。")
                                     } else {
-                                        appendLine("已加载「$resolvedName」。可用工具：")
+                                        appendLine("「$resolvedName」可用工具（均可直接调用）：")
                                         for (t in rootOnly.sortedBy { it.name }) {
                                             val desc = t.description.take(80).replace("\n", " ")
                                             appendLine("- `${t.name}`: $desc")
                                         }
-                                        // 技能域: 附加已启用 skill 列表 (由 invoke_tools 返回, 模型通过 use_skill 调用)
+                                        // 技能域: 附加已启用 skill 列表 (skill_<name> 工具已直接可用)
                                         if (rootOnly.any { it.name == "use_skill" }) {
                                             appendLine()
-                                            appendLine("可用 Skills（通过 `use_skill` 加载其指令后调用）:")
+                                            appendLine("可用 Skills（`skill_<name>` 工具已直接可用，无需加载）:")
                                             if (skills.isEmpty()) {
                                                 appendLine("  （当前没有已启用的 skill）")
                                             } else {
                                                 for ((sname, sdesc) in skills) {
-                                                    appendLine("- `$sname`: ${sdesc.take(120).replace("\n", " ")}")
+                                                    appendLine("- `skill_$sname`: ${sdesc.take(120).replace("\n", " ")}")
                                                 }
                                             }
-                                            appendLine()
-                                            appendLine("调 `use_skill(name=\"skill名\")` 加载 skill 的 SKILL.md 指令。")
                                         }
                                     }
                                     // 无条件输出 skill 挂载 (修复: 纯技能域(无 MCP 工具)也渲染挂载的 Skills)
@@ -392,7 +388,7 @@ class ToolRouter(
                                         .map { it.key.removePrefix("skill:") }
                                     if (mountedSkills.isNotEmpty()) {
                                         appendLine()
-                                        appendLine("挂载到本域的 Skills（通过 `use_skill` 加载其指令后调用）:")
+                                        appendLine("挂载到本域的 Skills（`skill_<name>` 工具已直接可用）:")
                                         for (sname in mountedSkills.sorted()) {
                                             val sdesc = skills.find { it.first == sname }?.second ?: ""
                                             appendLine("- `$sname`: ${sdesc.take(100).replace("\n", " ")}")
@@ -419,7 +415,7 @@ class ToolRouter(
                 }
             }
             appendLine()
-            appendLine("调 `invoke_tools(\"域名称\")` 加载。")
+            appendLine("调 `invoke_tools(\"域名称\")` 查看该域工具；所有工具均可直接调用。")
         }
     }
 

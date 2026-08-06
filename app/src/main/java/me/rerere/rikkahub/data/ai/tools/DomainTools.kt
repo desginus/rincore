@@ -40,8 +40,111 @@ fun createDomainTools(
         createDomainTool(settingsStore),
         deleteDomainTool(settingsStore),
         listDomainsTool(settingsStore, knownToolNames, knownSkillNames),
+        createSearchDomainsTool(settingsStore, knownToolNames),
     )
 }
+
+/**
+ * 按关键词/标签反向查询工具域位置 — 匹配域的名称、触发描述、触发条件。
+ * 支持类别过滤 (mcp/skill), 返回全部匹配结果无上限。
+ */
+private fun createSearchDomainsTool(
+    settingsStore: SettingsStore,
+    knownToolNames: () -> Set<String>,
+) = Tool(
+    name = "search_domains",
+    description = "按关键词或标签反向查询工具域位置。匹配域的名称、触发描述、触发条件（如：比价、定时、MCP、Skill）。返回全部匹配结果，无数量上限。不确定工具在哪个域时使用。",
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                put("query", buildJsonObject {
+                    put("type", "string")
+                    put("description", "关键词或标签，如：比价、定时、MCP、Skill")
+                })
+                put("type", buildJsonObject {
+                    put("type", "string")
+                    put("description", "可选。类别过滤：mcp（含 MCP 工具的域）/ skill（含 Skill 工具的域）")
+                })
+            },
+            required = listOf("query")
+        )
+    },
+    needsApproval = { false },
+    execute = { input ->
+        val query = input.jsonObject["query"]?.jsonPrimitive?.content?.trim() ?: error("query is required")
+        val typeFilter = input.jsonObject["type"]?.jsonPrimitive?.content?.trim()?.lowercase()
+
+        val settings = settingsStore.settingsFlow.value
+        val router = me.rerere.rikkahub.data.ai.tools.routing.ToolRouter(
+            overrides = settings.toolDomainOverrides,
+            customDescriptions = settings.customDomainDescriptions,
+            customDomains = settings.customDomains,
+            customKeywords = settings.customDomainKeywords,
+            domainNameOverrides = settings.domainNameOverrides,
+            hiddenDomains = settings.hiddenDomains,
+            removedBuiltinDomains = settings.removedBuiltinDomains,
+        )
+        val tools = knownToolNames()
+
+        // 可见性判断 (与 move 工具一致: 根域级联)
+        fun visible(domain: String): Boolean {
+            val root = domain.split("/").first()
+            return domain !in settings.hiddenDomains && domain !in settings.removedBuiltinDomains &&
+                root !in settings.hiddenDomains && root !in settings.removedBuiltinDomains
+        }
+
+        // 全部可见域 (内置枚举 + 自定义域, 含子域路径)
+        val allDomains = (me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.map { it.label }
+            + settings.customDomains.map { it.name })
+            .filter { visible(it) }
+
+        // 域内工具名 (按 classifyByName)
+        fun domainToolsOf(domain: String): Set<String> =
+            tools.filter { router.classifyByName(it, "") == domain }.toSet()
+
+        val q = query.lowercase()
+        val matched = allDomains.filter { domain ->
+            val desc = router.getTriggerDescription(domain)
+            val kws = router.getKeywords(domain)
+            val display = router.displayName(domain)
+            val haystack = "$domain $display $desc ${kws.joinToString(" ")}".lowercase()
+            haystack.contains(q)
+        }.filter { domain ->
+            when (typeFilter) {
+                "mcp" -> domainToolsOf(domain).any { it.startsWith("mcp__") }
+                "skill" -> domainToolsOf(domain).any { it.startsWith("skill_") || it == "use_skill" }
+                else -> true
+            }
+        }
+
+        if (matched.isEmpty()) {
+            val hint = if (typeFilter != null) " (过滤: $typeFilter)" else ""
+            listOf(UIMessagePart.Text(
+                "未找到匹配 '$query'$hint 的域。调 `invoke_tools(\"帮助\")` 查看全部域。"
+            ))
+        } else {
+            val lines = matched.sorted().map { domain ->
+                val display = router.displayName(domain)
+                val nameText = if (display == domain) "`$domain`" else "`$domain`（显示名: $display）"
+                val desc = router.getTriggerDescription(domain)
+                val kws = router.getKeywords(domain)
+                val dTools = domainToolsOf(domain)
+                val tags = buildList {
+                    if (dTools.any { it.startsWith("mcp__") }) add("MCP")
+                    if (dTools.any { it.startsWith("skill_") || it == "use_skill" }) add("Skill")
+                }
+                val tagText = if (tags.isEmpty()) "" else " [${tags.joinToString("/")}]"
+                val kwText = if (kws.isEmpty()) "" else " [触发: ${kws.joinToString("、")}]"
+                "- $nameText — $desc$kwText$tagText"
+            }
+            listOf(UIMessagePart.Text(
+                "匹配 '$query' 的域 (${lines.size} 个):
+" + lines.joinToString("
+")
+            ))
+        }
+    },
+)
 
 private fun createDomainTool(settingsStore: SettingsStore) = Tool(
     name = "manage_domain",
@@ -155,7 +258,7 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
                             customDomainKeywords = cleanedKeywords,
                             domainNameOverrides = cleanedNames,
                         )
-                        updated to "已删除内置域 '$name'。域内工具覆盖已保留/迁移，不会被打散。若此前已加载该域，请重新 invoke_tools(\"帮助\") 刷新场景地图。"
+                        updated to "已删除内置域 '$name'。域内工具覆盖已保留/迁移，不会被打散。请重新 invoke_tools(\"帮助\") 查看最新场景地图。"
                     } else {
                         val updated = settings.copy(
                             customDomains = settings.customDomains.filter { it.name != name && it.parent != name },

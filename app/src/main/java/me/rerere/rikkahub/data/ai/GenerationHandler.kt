@@ -79,6 +79,7 @@ private const val TAG = "GenerationHandler"
 /** 框架层工具名 — 不参与域分类, 分层模式下直接注入 */
 private val FRAMEWORK_TOOL_SET = setOf(
     "invoke_tools",
+    "search_domains",
     "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file", "workspace_show_file",
     "manage_domain", "list_domains", "move_tool_to_domain",
     "mcp_connect", "clawhub_install", "clawhub_search", "plugin_install", "skills_lock",
