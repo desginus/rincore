@@ -82,7 +82,6 @@ class StepTTSProvider : TTSProvider<TTSProviderSetting.Step> {
         }
 
         val audioBytes = response.body.bytes()
-            ?: throw Exception("Step TTS returned empty body")
 
         if (audioBytes.isEmpty()) {
             throw Exception("Step TTS returned 0 bytes")

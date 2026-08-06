@@ -679,7 +679,7 @@ class GenerationHandler(
                     is UIMessagePart.Text -> p.text.hashCode().toString()
                     is UIMessagePart.Reasoning -> p.reasoning.hashCode().toString()
                     is UIMessagePart.Tool -> (p.toolName + p.output.hashCode()).hashCode().toString()
-                    is UIMessagePart.ToolCall -> p.toolCallId.hashCode().toString()
+                    is UIMessagePart.ToolCall -> p.toolCallId.hashCode().toString() // DEPRECATION: 兼容必需
                     else -> "0"
                 }
             }.hashCode()

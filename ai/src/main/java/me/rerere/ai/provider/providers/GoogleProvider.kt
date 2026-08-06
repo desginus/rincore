@@ -128,7 +128,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
             )
             val response = client.newCall(request).await()
             if (response.isSuccessful) {
-                val body = response.body.string() ?: error("empty body")
+                val body = response.body.string()
                 Log.d(TAG, "listModels: $body")
                 val bodyObject = json.parseToJsonElement(body).jsonObject
                 val models = bodyObject["models"]?.jsonArray ?: return@withContext emptyList()
