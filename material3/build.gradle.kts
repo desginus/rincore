@@ -22,7 +22,7 @@ android {
     }
     sourceSets {
         named("main") {
-            kotlin.srcDir("material-color-utilities/kotlin")
+            kotlin.directories += file("material-color-utilities/kotlin")
         }
     }
 }
