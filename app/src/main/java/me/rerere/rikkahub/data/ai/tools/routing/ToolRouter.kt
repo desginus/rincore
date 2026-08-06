@@ -190,20 +190,22 @@ class ToolRouter(
     /**
      * 域地图 — 缓存稳定版。
      *
-     * 输出只依赖静态配置（域树/显示名/触发描述/触发条件），**不包含工具数**：
-     * 工具数依赖运行时工具池（MCP 连接状态），嵌入 system 会导致 MCP 任何波动
-     * 都改变 system 文本 → 国内模型（DeepSeek/Qwen）前缀缓存整体失效。
-     * 工具数由 invoke_tools 返回（消息层，不影响缓存）。
+     * 输出依赖静态配置（域树/显示名/触发描述/触发条件）+ 工具池数量。
+     * 工具池数量可安全注入：MCP 工具声明已静态化（v3.5.18，Error 不删工具），
+     * 工具池完全由配置决定 → 数量跨请求一致，不破坏缓存。
      */
     fun buildLayer1(tools: List<Tool>): String {
         val treeNodes = buildDomainTree()
+        // 工具池数量统计 — 配置决定 (MCP 静态化后不随连接状态波动), 可安全注入 system。
+        // 模型据此知晓工具池全貌 (总数 + 域分布), 工具定义仍按域分层加载。
+        val domainCounts = classifyAll(tools).mapValues { it.value.size }
 
         return buildString {
             appendLine("## 工具调度")
             appendLine()
             appendLine("你拥有一个工具总域 `工具`，按功能场景树状组织。每个域含：显示名称、触发描述、触发条件。")
             appendLine()
-            appendLine("**使用**：所有工具已直接可用，无需加载。`invoke_tools(\"场景名\")` 查看子域与工具详情；`search_domains(关键词)` 反查工具位置；`invoke_tools(\"帮助\")` 查看全部。")
+            appendLine("**使用**：工具池共 ${tools.size} 个工具，分布在 ${domainCounts.size} 个域。`invoke_tools(\"场景名\")` 加载该域工具（加载后直接调用，跨轮保持）；Skill 工具 `skill_*` 始终可用；`search_domains(关键词)` 反查工具位置；`invoke_tools(\"帮助\")` 查看全部。")
             appendLine()
             appendLine("### 可用场景域")
             appendLine()
@@ -406,17 +408,23 @@ class ToolRouter(
 
     private fun buildHelpText(tools: List<Tool>): String {
         val treeNodes = buildDomainTree()
+        val domainCounts = classifyAll(tools).mapValues { it.value.size }
         return buildString {
-            appendLine("全部类别:")
+            appendLine("工具池共 ${tools.size} 个工具（${domainCounts.size} 个域）：")
             for ((root, subs) in treeNodes) {
-                appendLine(domainInfo(root))
+                appendLine(domainInfo(root) + countSuffix(root, domainCounts))
                 for (sub in subs.sorted()) {
-                    appendLine(domainInfo(sub, "  "))
+                    appendLine(domainInfo(sub, "  ") + countSuffix(sub, domainCounts))
                 }
             }
             appendLine()
-            appendLine("调 `invoke_tools(\"域名称\")` 查看该域工具；所有工具均可直接调用。")
+            appendLine("调 `invoke_tools(\"域名称\")` 加载该域工具；工具加载后直接调用，跨轮保持。")
         }
+    }
+
+    private fun countSuffix(domain: String, counts: Map<String, Int>): String {
+        val n = counts[domain] ?: 0
+        return if (n > 0) " [${n}个工具]" else ""
     }
 
     /**
