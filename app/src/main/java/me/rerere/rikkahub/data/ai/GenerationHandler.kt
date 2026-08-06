@@ -148,6 +148,9 @@ class GenerationHandler(
 
         // Skill 已拆分为独立工具 (skill_<name>)，无需集中提取 skillListText
 
+        // G3 平台空流重试计数 (每次生成仅重试一次)
+        var emptyRetryCount = 0
+
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
             CallTracer.event("STEP", "step_$stepIndex", "Step $stepIndex begin, ${tools.size} tools loaded, messages=${messages.size}")
@@ -311,6 +314,20 @@ class GenerationHandler(
                         .toLocalDateTime(TimeZone.currentSystemDefault())
                 )
                 emit(GenerationChunk.Messages(messages))
+
+                // G3 平台空流重试: 流式正常结束但模型未产出任何内容
+                // (无文本/无思考/无工具调用) — 平台偶发空流, 重试一次
+                val lastMsg = messages.lastOrNull()
+                val emptyResponse = lastMsg != null && lastMsg.role == MessageRole.ASSISTANT &&
+                    lastMsg.parts.none {
+                        it is UIMessagePart.Text || it is UIMessagePart.Reasoning || it is UIMessagePart.Tool
+                    }
+                if (emptyResponse && emptyRetryCount < 1) {
+                    emptyRetryCount++
+                    CallTracer.event("RETRY", "empty_stream", "Empty assistant response, retrying once (step=$stepIndex)")
+                    messages = messages.dropLast(1)
+                    continue
+                }
 
                 val tools = messages.last().getTools().filter { !it.isExecuted }
                 if (tools.isEmpty()) {
