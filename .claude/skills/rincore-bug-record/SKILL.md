@@ -34,6 +34,13 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 - **修复**：onCompletion 收尾包 withContext(NonCancellable)；stopGeneration 显式 tryEmit ChatGenerationEnded
 - **注意**：ChatMessageReasoning 计时实时累计依赖 finishedAt 被收尾设置
 
+### G3. 平台空流（v3.5.17 实现重试）
+- **现象**：流式正常结束但模型未产出任何内容（无文本/无思考/无工具调用）
+- **实现**：GenerationHandler 空响应检测 + 重试一次（emptyRetryCount < 1）
+- **判定**：assistant 消息 parts 无 Text/Reasoning/Tool；工具轮后 user 消息不触发；thinking-only 不算空流
+- **缓存**：重试请求消息相同，缓存命中无破坏
+- **传输层缺口现状**：G1（BEFORE_SYSTEM_PROMPT 已合并 system）、G2（孤立 tool_call 已有清洗）、G3（本项）、G4（msg_fp 已有）——全部关闭
+
 ### B18. 流式中断静默恢复（根因版本 v3.1.0 — 已根治 2026-08-05）
 - **现象**：工具轮后请求返回空/回复缺失，无任何报错，用户感知莫名中断；运行日志 SEND→RECV 正常、FINISH 正常、messages 无新增
 - **根因链**：
