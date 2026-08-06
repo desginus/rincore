@@ -240,7 +240,6 @@ private fun ConversationItem(
             trailingContent = {
                 IconButton(
                     onClick = onTogglePin
-               ,
                ) {
                    Icon(
                    if (conversation.isPinned) HugeIcons.PinOff else HugeIcons.Pin,
@@ -250,8 +249,7 @@ private fun ConversationItem(
                    )
                }
             },
-
-            ) {
+) {
 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),

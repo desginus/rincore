@@ -376,8 +376,7 @@ private fun SkillImportSheetItem(
         modifier = Modifier
             .clip(MaterialTheme.shapes.large)
             .clickable(onClick = onClick),
-           ,
-           ) {
+) {
                Text(text)
            }
 }

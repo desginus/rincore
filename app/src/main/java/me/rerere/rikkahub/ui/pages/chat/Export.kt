@@ -156,7 +156,6 @@ fun ChatExportSheet(
                             Icon(HugeIcons.File02, contentDescription = null)
                         },
 
-                       ,
                        ) {
                            Text(stringResource(id = R.string.chat_page_export_markdown))
                        }
@@ -183,7 +182,6 @@ fun ChatExportSheet(
                             Icon(HugeIcons.File02, contentDescription = null)
                         },
 
-                       ,
                        ) {
                            Text(stringResource(id = R.string.chat_page_export_copy))
                        }
@@ -208,7 +206,6 @@ fun ChatExportSheet(
                             Icon(HugeIcons.File02, contentDescription = null)
                         },
 
-                       ,
                        ) {
                            Text(stringResource(id = R.string.chat_page_export_plain_text))
                        }
@@ -226,7 +223,6 @@ fun ChatExportSheet(
                                 Icon(HugeIcons.Image02, contentDescription = null)
                             },
 
-                           ,
                            ) {
                                Text(stringResource(id = R.string.chat_page_export_image))
                            }
@@ -243,7 +239,6 @@ fun ChatExportSheet(
                                 )
                             },
 
-                           ,
                            ) {
                                Text(stringResource(R.string.chat_page_export_image_expand_reasoning))
                            }

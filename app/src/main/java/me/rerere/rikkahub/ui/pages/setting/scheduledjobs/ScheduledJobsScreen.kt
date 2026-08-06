@@ -148,8 +148,7 @@ private fun ScheduledJobRow(
         trailingContent = {
             Switch(checked = job.enabled, onCheckedChange = onToggle)
         },
-
-        ) {
+) {
 Text(job.name)
                                                         }
     HorizontalDivider()

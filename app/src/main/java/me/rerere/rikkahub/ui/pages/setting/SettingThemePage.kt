@@ -329,7 +329,6 @@ private fun CustomThemeItem(
                     modifier = Modifier
                         .clip(CircleShape)
                         .size(40.dp)
-               ,
                ) {
                    drawRect(color = scheme.primaryContainer, size = size)
                    drawRect(
