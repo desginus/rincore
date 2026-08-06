@@ -82,7 +82,7 @@ android {
         buildConfig = true
     }
     sourceSets {
-        getByName("androidTest").assets.directories += file("$projectDir/schemas")
+        getByName("androidTest").assets.srcDirs("$projectDir/schemas")
     }
     androidResources {
         generateLocaleConfig = true
