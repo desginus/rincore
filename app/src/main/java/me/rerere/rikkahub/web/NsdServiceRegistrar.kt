@@ -2,6 +2,7 @@ package me.rerere.rikkahub.web
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.wifi.WifiManager
 import java.net.Inet4Address
 import android.util.Log
 import kotlinx.coroutines.Dispatchers

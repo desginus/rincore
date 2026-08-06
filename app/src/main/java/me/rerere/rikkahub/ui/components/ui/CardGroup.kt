@@ -114,8 +114,9 @@ private fun CardGroupListItem(
         animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
     )
 
+    @Suppress("DEPRECATION") // material3 1.5: lambda 变量不匹配尾随 overload, 保留命名参数
     ListItem(
-        headlineContent = item.headlineContent,
+        headlineContent = { item.headlineContent() },
         modifier = item.modifier
             .fillMaxWidth()
             .clip(
@@ -140,9 +141,7 @@ private fun CardGroupListItem(
         leadingContent = item.leadingContent,
         trailingContent = item.trailingContent,
         colors = item.colors ?: CustomColors.listItemColors,
-    ) {
-        item.headlineContent()
-    }
+    )
 }
 
 @Composable

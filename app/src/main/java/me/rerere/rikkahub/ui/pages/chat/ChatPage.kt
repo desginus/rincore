@@ -32,7 +32,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.DpSize
-import androidx.compose.ui.unit.toDp
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
@@ -138,9 +138,10 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
 
     val windowInfo = LocalWindowInfo.current
     val windowDensity = LocalDensity.current
-    val windowAdaptiveInfo = with(windowDensity) {
-        DpSize(windowInfo.containerSize.width.toDp(), windowInfo.containerSize.height.toDp())
-    }
+    val windowAdaptiveInfo = DpSize(
+        (windowInfo.containerSize.width / windowDensity.density).dp,
+        (windowInfo.containerSize.height / windowDensity.density).dp
+    )
     val isBigScreen =
         windowAdaptiveInfo.width > windowAdaptiveInfo.height && windowAdaptiveInfo.width >= 1100.dp
 
