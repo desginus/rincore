@@ -149,16 +149,17 @@ fun ChatExportSheet(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     ListItem(
-                        headlineContent = {
-                            Text(stringResource(id = R.string.chat_page_export_markdown))
-                        },
                         supportingContent = {
                             Text(stringResource(id = R.string.chat_page_export_markdown_desc))
                         },
                         leadingContent = {
                             Icon(HugeIcons.File02, contentDescription = null)
-                        }
-                    )
+                        },
+
+                       ,
+                       ) {
+                           Text(stringResource(id = R.string.chat_page_export_markdown))
+                       }
                 }
 
                 val imageSuccessMessage =
@@ -175,16 +176,17 @@ fun ChatExportSheet(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     ListItem(
-                        headlineContent = {
-                            Text(stringResource(id = R.string.chat_page_export_copy))
-                        },
                         supportingContent = {
                             Text(stringResource(id = R.string.chat_page_export_copy_desc))
                         },
                         leadingContent = {
                             Icon(HugeIcons.File02, contentDescription = null)
-                        }
-                    )
+                        },
+
+                       ,
+                       ) {
+                           Text(stringResource(id = R.string.chat_page_export_copy))
+                       }
                 }
 
                 OutlinedCard(
@@ -199,16 +201,17 @@ fun ChatExportSheet(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     ListItem(
-                        headlineContent = {
-                            Text(stringResource(id = R.string.chat_page_export_plain_text))
-                        },
                         supportingContent = {
                             Text(stringResource(id = R.string.chat_page_export_plain_text_desc))
                         },
                         leadingContent = {
                             Icon(HugeIcons.File02, contentDescription = null)
-                        }
-                    )
+                        },
+
+                       ,
+                       ) {
+                           Text(stringResource(id = R.string.chat_page_export_plain_text))
+                       }
                 }
 
                 OutlinedCard(
@@ -216,21 +219,21 @@ fun ChatExportSheet(
                 ) {
                     Column {
                         ListItem(
-                            headlineContent = {
-                                Text(stringResource(id = R.string.chat_page_export_image))
-                            },
                             supportingContent = {
                                 Text(stringResource(id = R.string.chat_page_export_image_desc))
                             },
                             leadingContent = {
                                 Icon(HugeIcons.Image02, contentDescription = null)
-                            }
-                        )
+                            },
+
+                           ,
+                           ) {
+                               Text(stringResource(id = R.string.chat_page_export_image))
+                           }
 
                         HorizontalDivider()
 
                         ListItem(
-                            headlineContent = { Text(stringResource(R.string.chat_page_export_image_expand_reasoning)) },
                             trailingContent = {
                                 Switch(
                                     checked = imageExportOptions.expandReasoning,
@@ -238,8 +241,12 @@ fun ChatExportSheet(
                                         imageExportOptions = imageExportOptions.copy(expandReasoning = it)
                                     }
                                 )
-                            }
-                        )
+                            },
+
+                           ,
+                           ) {
+                               Text(stringResource(R.string.chat_page_export_image_expand_reasoning))
+                           }
 
                         Row(
                             modifier = Modifier

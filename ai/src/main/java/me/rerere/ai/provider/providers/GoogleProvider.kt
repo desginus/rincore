@@ -128,7 +128,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
             )
             val response = client.newCall(request).await()
             if (response.isSuccessful) {
-                val body = response.body?.string() ?: error("empty body")
+                val body = response.body.string() ?: error("empty body")
                 Log.d(TAG, "listModels: $body")
                 val bodyObject = json.parseToJsonElement(body).jsonObject
                 val models = bodyObject["models"]?.jsonArray ?: return@withContext emptyList()
@@ -185,10 +185,10 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
 
         val response = client.newCall(request).await()
         if (!response.isSuccessful) {
-            throw Exception("Failed to get response: ${response.code} ${response.body?.string()}")
+            throw Exception("Failed to get response: ${response.code} ${response.body.string()}")
         }
 
-        val bodyStr = response.body?.string() ?: ""
+        val bodyStr = response.body.string() ?: ""
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
 
         val candidates = bodyJson["candidates"]!!.jsonArray
@@ -297,7 +297,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                     hasData = true
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    println("[onEvent] 解析错误: $data")
+                    Log.w(TAG, "onEvent parse error: $data")
                 }
             }
 
@@ -309,7 +309,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                 var exception = t
 
                 t?.printStackTrace()
-                println("[onFailure] 发生错误: ${t?.message}")
+                Log.w(TAG, "onFailure: ${t?.message}")
 
                 // 流式传输中断恢复: 如果已有部分数据则保留
                 if (t is java.io.IOException &&
@@ -333,7 +333,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                         val bodyStr = response.body.stringSafe()
                         if (!bodyStr.isNullOrEmpty()) {
                             val bodyElement = json.parseToJsonElement(bodyStr)
-                            println(bodyElement)
+                            Log.w(TAG, "body: $bodyElement")
                             if (bodyElement is JsonObject) {
                                 exception = Exception(
                                     bodyElement["error"]?.jsonObject?.get("message")?.jsonPrimitive?.content
@@ -354,7 +354,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
             }
 
             override fun onClosed(eventSource: EventSource) {
-                println("[onClosed] 连接已关闭")
+                Log.d(TAG, "onClosed")
                 close()
             }
         }
@@ -363,7 +363,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                 .newEventSource(request, listener)
 
         awaitClose {
-            println("[awaitClose] 关闭eventSource")
+            Log.d(TAG, "awaitClose: cancelling eventSource")
             eventSource.cancel()
         }
         // trySend 在缓冲满时会静默丢弃 delta，导致回复中间缺字 (#1295)，因此缓冲必须无界

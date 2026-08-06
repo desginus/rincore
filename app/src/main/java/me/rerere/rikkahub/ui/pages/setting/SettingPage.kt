@@ -376,9 +376,6 @@ private fun ProviderConfigWarningCard(navController: Navigator) {
             horizontalAlignment = Alignment.End
         ) {
             ListItem(
-                headlineContent = {
-                    Text(stringResource(R.string.setting_page_config_api_title))
-                },
                 supportingContent = {
                     Text(stringResource(R.string.setting_page_config_api_desc))
                 },
@@ -387,8 +384,11 @@ private fun ProviderConfigWarningCard(navController: Navigator) {
                 },
                 colors = ListItemDefaults.colors(
                     containerColor = Color.Transparent
-                )
-            )
+                ),
+               ,
+               ) {
+                   Text(stringResource(R.string.setting_page_config_api_title))
+               }
 
             TextButton(
                 onClick = {

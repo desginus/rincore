@@ -106,10 +106,10 @@ class ChatCompletionsAPI(
 
         val response = client.newCall(request).await()
         if (!response.isSuccessful) {
-            throw Exception("Failed to get response: ${response.code} ${response.body?.string()}")
+            throw Exception("Failed to get response: ${response.code} ${response.body.string()}")
         }
 
-        val bodyStr = response.body?.string() ?: ""
+        val bodyStr = response.body.string() ?: ""
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
 
         // 从 JsonObject 中提取必要的信息
@@ -199,7 +199,7 @@ class ChatCompletionsAPI(
                 data: String
             ) {
                 if (data == "[DONE]") {
-                    println("[onEvent] (done) 结束流: $data")
+                    Log.d(TAG, "onEvent: [DONE]")
                     close()
                     return
                 }
@@ -298,7 +298,7 @@ class ChatCompletionsAPI(
         connect()
 
         awaitClose {
-            println("[awaitClose] 关闭eventSource ")
+            Log.d(TAG, "awaitClose: cancelling eventSource")
             watchdog.cancel()
             currentEventSource?.cancel()
         }

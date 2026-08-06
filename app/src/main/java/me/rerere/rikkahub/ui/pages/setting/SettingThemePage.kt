@@ -323,31 +323,31 @@ private fun CustomThemeItem(
             .padding(horizontal = 8.dp)
             .clip(RoundedCornerShape(16.dp))
             .clickable { onSelect() },
-        headlineContent = { Text(theme.name.ifEmpty { "Unnamed" }) },
         leadingContent = {
             Box(contentAlignment = Alignment.Center) {
                 Canvas(
                     modifier = Modifier
                         .clip(CircleShape)
                         .size(40.dp)
-                ) {
-                    drawRect(color = scheme.primaryContainer, size = size)
-                    drawRect(
-                        color = scheme.secondaryContainer,
-                        size = size,
-                        topLeft = Offset(x = size.width / 2, y = 0f)
-                    )
-                    drawRect(
-                        color = scheme.tertiaryContainer,
-                        size = size,
-                        topLeft = Offset(x = size.width / 2, y = size.height / 2)
-                    )
-                    drawCircle(
-                        color = scheme.primary,
-                        radius = if (isSelected) 10.dp.toPx() else 6.dp.toPx(),
-                        center = Offset(x = size.width / 2, y = size.height / 2)
-                    )
-                }
+               ,
+               ) {
+                   drawRect(color = scheme.primaryContainer, size = size)
+                   drawRect(
+                   color = scheme.secondaryContainer,
+                   size = size,
+                   topLeft = Offset(x = size.width / 2, y = 0f)
+                   )
+                   drawRect(
+                   color = scheme.tertiaryContainer,
+                   size = size,
+                   topLeft = Offset(x = size.width / 2, y = size.height / 2)
+                   )
+                   drawCircle(
+                   color = scheme.primary,
+                   radius = if (isSelected) 10.dp.toPx() else 6.dp.toPx(),
+                   center = Offset(x = size.width / 2, y = size.height / 2)
+                   )
+               }
                 if (isSelected) {
                     Icon(
                         HugeIcons.Tick01,
@@ -375,8 +375,9 @@ private fun CustomThemeItem(
                 }
             }
         },
-        colors = CustomColors.listItemColors,
-    )
+        colors = CustomColors.listItemColors ) {
+Text(theme.name.ifEmpty { "Unnamed" })
+                                                                                                                                        }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

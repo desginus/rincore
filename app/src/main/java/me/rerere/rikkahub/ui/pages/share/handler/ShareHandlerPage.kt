@@ -95,16 +95,14 @@ fun ShareHandlerPage(text: String, image: String?) {
                     tonalElevation = 4.dp,
                     shape = MaterialTheme.shapes.medium
                 ) {
-                    ListItem(
-                        headlineContent = {
-                            Text(
+                    ListItem( ) {
+Text(
                                 text = assistant.name.ifEmpty {
                                     stringResource(R.string.assistant_page_default_assistant)
                                 },
                                 maxLines = 1
                             )
-                        },
-                    )
+                                      }
                 }
             }
         }

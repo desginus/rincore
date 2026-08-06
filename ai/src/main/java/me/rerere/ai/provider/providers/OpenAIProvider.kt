@@ -68,10 +68,10 @@ class OpenAIProvider(
 
             val response = client.newCall(request).await()
             if (!response.isSuccessful) {
-                error("Failed to get models: ${response.code} ${response.body?.string()}")
+                error("Failed to get models: ${response.code} ${response.body.string()}")
             }
 
-            val bodyStr = response.body?.string() ?: ""
+            val bodyStr = response.body.string() ?: ""
             val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
             val data = bodyJson["data"]?.jsonArray ?: return@withContext emptyList()
 
@@ -100,7 +100,7 @@ class OpenAIProvider(
             .build()
         val response = client.newCall(request).await()
         if (!response.isSuccessful) {
-            error("Failed to get balance: ${response.code} ${response.body?.string()}")
+            error("Failed to get balance: ${response.code} ${response.body.string()}")
         }
 
         val bodyStr = response.body.string()
@@ -192,10 +192,10 @@ class OpenAIProvider(
 
         val response = client.newCall(request).await()
         if (!response.isSuccessful) {
-            error("Failed to generate embedding: ${response.code} ${response.body?.string()}")
+            error("Failed to generate embedding: ${response.code} ${response.body.string()}")
         }
 
-        val bodyStr = response.body?.string() ?: ""
+        val bodyStr = response.body.string() ?: ""
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
         val data = bodyJson["data"]?.jsonArray ?: error("No data in response")
         val model = bodyJson["model"]?.jsonPrimitive?.contentOrNull ?: params.model.modelId
@@ -248,7 +248,7 @@ class OpenAIProvider(
         val items = withContext(Dispatchers.IO) {
             val response = client.newCall(request).await()
             if (!response.isSuccessful) {
-                error("Failed to generate image: ${response.code} ${response.body?.string()}")
+                error("Failed to generate image: ${response.code} ${response.body.string()}")
             }
             parseImageResponse(response.body.string())
         }
@@ -312,7 +312,7 @@ class OpenAIProvider(
         val items = withContext(Dispatchers.IO) {
             val response = client.newCall(request).await()
             if (!response.isSuccessful) {
-                error("Failed to edit image: ${response.code} ${response.body?.string()}")
+                error("Failed to edit image: ${response.code} ${response.body.string()}")
             }
             parseImageResponse(response.body.string())
         }

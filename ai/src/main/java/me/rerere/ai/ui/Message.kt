@@ -430,15 +430,6 @@ sealed class UIMessagePart {
         val approvalState: ToolApprovalState = ToolApprovalState.Auto,
         override var metadata: JsonObject? = null
     ) : UIMessagePart() {
-        fun merge(other: ToolCall): ToolCall {
-            return ToolCall(
-                toolCallId = toolCallId,
-                toolName = toolName + other.toolName,
-                arguments = arguments + other.arguments,
-                approvalState = approvalState,
-                metadata = if (other.metadata != null) other.metadata else metadata,
-            )
-        }
     }
 
     @Deprecated("Use UIMessagePart.Tool instead")

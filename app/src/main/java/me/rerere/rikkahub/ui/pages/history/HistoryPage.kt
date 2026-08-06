@@ -234,8 +234,25 @@ private fun ConversationItem(
         modifier = modifier
     ) {
         ListItem(
-            headlineContent = {
-                Row(
+            supportingContent = {
+                Text(conversation.createAt.toLocalDateTime())
+            },
+            trailingContent = {
+                IconButton(
+                    onClick = onTogglePin
+               ,
+               ) {
+                   Icon(
+                   if (conversation.isPinned) HugeIcons.PinOff else HugeIcons.Pin,
+                   contentDescription = if (conversation.isPinned) stringResource(R.string.history_page_unpin) else stringResource(
+                   R.string.history_page_pin
+                   )
+                   )
+               }
+            },
+
+            ) {
+Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
@@ -255,22 +272,6 @@ private fun ConversationItem(
                         style = MaterialTheme.typography.titleMedium,
                     )
                 }
-            },
-            supportingContent = {
-                Text(conversation.createAt.toLocalDateTime())
-            },
-            trailingContent = {
-                IconButton(
-                    onClick = onTogglePin
-                ) {
-                    Icon(
-                        if (conversation.isPinned) HugeIcons.PinOff else HugeIcons.Pin,
-                        contentDescription = if (conversation.isPinned) stringResource(R.string.history_page_unpin) else stringResource(
-                            R.string.history_page_pin
-                        )
-                    )
-                }
-            }
-        )
+                                                                                        }
     }
 }

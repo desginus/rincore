@@ -520,7 +520,6 @@ private fun AssistantActionSheet(
 
             // 克隆选项
             ListItem(
-                headlineContent = { Text(stringResource(R.string.assistant_page_clone)) },
                 leadingContent = {
                     Icon(
                         imageVector = HugeIcons.Copy01,
@@ -529,18 +528,14 @@ private fun AssistantActionSheet(
                     )
                 },
                 modifier = Modifier.onClick { onCopy() },
-                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-            )
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                ) {
+                    Text(stringResource(R.string.assistant_page_clone))
+                }
 
             // 删除选项（仅非默认助手显示）
             if (assistant.id !in DEFAULT_ASSISTANTS_IDS) {
                 ListItem(
-                    headlineContent = {
-                        Text(
-                            stringResource(R.string.assistant_page_delete),
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    },
                     leadingContent = {
                         Icon(
                             imageVector = HugeIcons.Delete01,
@@ -549,8 +544,13 @@ private fun AssistantActionSheet(
                         )
                     },
                     modifier = Modifier.onClick { showDeleteDialog = true },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                )
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    ) {
+                        Text(
+                        stringResource(R.string.assistant_page_delete),
+                        color = MaterialTheme.colorScheme.error
+                        )
+                    }
             }
         }
     }

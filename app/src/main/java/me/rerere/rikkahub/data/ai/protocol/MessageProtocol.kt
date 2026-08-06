@@ -57,7 +57,8 @@ object MessageProtocol {
             changed = false
             guard++
 
-            val callIds = mutableSetOf<String>()
+            @Suppress("DEPRECATION") // ToolCall/ToolResult 序列化兼容必需 (旧数据 tool_call)
+        val callIds = mutableSetOf<String>()
             val resultIds = mutableSetOf<String>()
             current.forEach { msg ->
                 msg.parts.forEach { part ->

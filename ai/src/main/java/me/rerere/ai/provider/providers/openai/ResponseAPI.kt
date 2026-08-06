@@ -183,7 +183,7 @@ class ResponseAPI(
                 var exception = t
 
                 t?.printStackTrace()
-                println("[onFailure] 发生错误: ${t?.javaClass?.name} ${t?.message} / $response")
+                Log.w(TAG, "onFailure: ${t?.javaClass?.name} ${t?.message} / $response")
 
                 // 流式传输中断恢复: 已有部分数据则保留, 避免整个响应丢失
                 // (与 ChatCompletionsAPI 对齐 — stream reset/protocol error/timeout 等)
@@ -197,7 +197,7 @@ class ResponseAPI(
                 try {
                     if (!bodyRaw.isNullOrBlank()) {
                         val bodyElement = Json.parseToJsonElement(bodyRaw)
-                        println(bodyElement)
+                        Log.w(TAG, "body: $bodyElement")
                         exception = bodyElement.parseErrorDetail()
                         Log.i(TAG, "onFailure: $exception")
                     }
@@ -219,7 +219,7 @@ class ResponseAPI(
             .newEventSource(request, listener)
 
         awaitClose {
-            println("[awaitClose] 关闭eventSource ")
+            Log.d(TAG, "awaitClose: cancelling eventSource")
             watchdog.cancel()
             eventSource.cancel()
         }
@@ -747,7 +747,7 @@ class ResponseAPI(
     }
 
     private fun parseResponseOutput(jsonObject: JsonObject): MessageChunk {
-        println(jsonObject)
+        
         val outputs = jsonObject["output"]?.jsonArray ?: error("output not found")
         val parts = arrayListOf<UIMessagePart>()
 

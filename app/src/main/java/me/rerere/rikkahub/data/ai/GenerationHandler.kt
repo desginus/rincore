@@ -652,7 +652,7 @@ class GenerationHandler(
                     is UIMessagePart.Reasoning -> "r"
                     is UIMessagePart.Tool -> "tl"
                     is UIMessagePart.Image -> "i"
-                    is UIMessagePart.ToolCall -> "tc"
+                    is UIMessagePart.ToolCall -> "tc" // DEPRECATION: 序列化兼容必需
                     else -> "?"
                 }
             }

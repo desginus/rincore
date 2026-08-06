@@ -138,7 +138,6 @@ private fun ScheduledJobRow(
             .fillMaxWidth()
             .clickable { onTap() }
             .padding(horizontal = 8.dp),
-        headlineContent = { Text(job.name) },
         supportingContent = {
             Text(
                 text = "${stringResource(R.string.setting_page_scheduled_jobs_subtitle_when, schedule)}\n$statusLine",
@@ -149,7 +148,10 @@ private fun ScheduledJobRow(
         trailingContent = {
             Switch(checked = job.enabled, onCheckedChange = onToggle)
         },
-    )
+
+        ) {
+Text(job.name)
+                                                        }
     HorizontalDivider()
 }
 
