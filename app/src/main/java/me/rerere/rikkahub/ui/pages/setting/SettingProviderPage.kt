@@ -223,7 +223,6 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
 }
 
 @Composable
-@Composable
 private fun ImportProviderButton(
     onAdd: (ProviderSetting) -> Unit
 ) {

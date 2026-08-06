@@ -104,7 +104,6 @@ val DEFAULT_PROVIDERS = listOf(
         builtIn = true
     ),
     ProviderSetting.OpenAI(
-        id = Uuid.parse("da93779f-3956-48cc-82ef-67bb482eaaf7"),
     ProviderSetting.OpenAI(
         id = Uuid.parse("ef5d149b-8e34-404b-818c-6ec242e5c3c5"),
         name = "腾讯Hunyuan",
@@ -123,7 +122,6 @@ val DEFAULT_PROVIDERS = listOf(
         useResponseApi = true,
     ),
     ProviderSetting.OpenAI(
-        id = Uuid.parse("aecf04fd-cb5c-4582-aed2-e8bf393923fd"),
     ProviderSetting.OpenAI(
         id = Uuid.parse("a2bafe83-eaf8-47bf-a8c7-3dd82d89f637"),
         name = "MIMO",
@@ -133,7 +131,6 @@ val DEFAULT_PROVIDERS = listOf(
         builtIn = true,
     ),
     ProviderSetting.OpenAI(
-        id = Uuid.parse("53027b08-1b58-43d5-90ed-29173203e3d8"),
     ProviderSetting.OpenAI(
         id = Uuid.parse("a1b2c3d4-e5f6-7890-abcd-ef1234567890"),
         name = "MiniMax",
