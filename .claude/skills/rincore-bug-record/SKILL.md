@@ -16,6 +16,24 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 ## 已修复 Bug 明细（按时间倒序）
 
 
+### B22. unexpected end of stream（v3.5.17 根治）
+- **现象**：工具执行 60s+ 后继续生成的请求报 java.io.IOException unexpected end of stream（Http1ExchangeCodec.readResponseHeaders，Caused by EOFException \n not found: limit=0）
+- **根因**：连接池复用陈旧连接——服务端空闲关闭连接后客户端 keepalive 5min 仍保留，复用即 EOF；工具执行 60s+ 使连接空闲超服务端关闭时间，必触发
+- **修复**：ConnectionPool(12, 60s) keepalive 低于服务端空闲关闭时间；writeTimeout 120s 对齐 v2.9.8；SSE 重试 3→5 次（31s 窗口）
+- **对比**：v2.9.8 稳定连接配置 writeTimeout 120s / ConnectionPool(12,10min) / pingInterval 30s，v3.1.0 改动三处
+
+### B21. stream was reset: PROTOCOL_ERROR（v3.5.17 根治）
+- **现象**：流式生成报 okhttp3.internal.http2.StreamResetException: stream was reset: PROTOCOL_ERROR（ALPN 协商 h2 后）
+- **根因**：DeepSeek 服务端 HTTP/2 连接异常。protocols(HTTP_1_1, HTTP_2) 顺序不影响 ALPN——服务端支持 h2 必选 h2
+- **修复**：protocols 只留 HTTP_1_1，完全禁用 HTTP/2
+- **验证证据**：2026-08-05 20:06:23 Trace c003249a 堆栈 Http2Stream$FramingSource.read
+
+### B20. 思考链计时持续 / 灵动岛不停（v3.5.17 根治）
+- **现象**：对话中断后思考链持续显示思考秒数，灵动岛一直显示思考中（近几版出现）
+- **根因**：停止生成 job.cancel() 后 onCompletion 在取消态执行，挂起调用（saveConversation/appEventBus.emit）直接跳过——ChatGenerationEnded 未发出灵动岛不取消，落盘未执行
+- **修复**：onCompletion 收尾包 withContext(NonCancellable)；stopGeneration 显式 tryEmit ChatGenerationEnded
+- **注意**：ChatMessageReasoning 计时实时累计依赖 finishedAt 被收尾设置
+
 ### B18. 流式中断静默恢复（根因版本 v3.1.0 — 已根治 2026-08-05）
 - **现象**：工具轮后请求返回空/回复缺失，无任何报错，用户感知莫名中断；运行日志 SEND→RECV 正常、FINISH 正常、messages 无新增
 - **根因链**：

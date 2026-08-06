@@ -13,6 +13,15 @@ description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日�
 - **缓存"卡-跳-线性"**：DeepSeek 服务端磁盘缓存机制（构建延迟秒级+固定间隔切分+SWA 独立单元）——客户端不可控，已入库 decisions D2
 
 ## v3.5.x（传输层回滚期 → 当前）
+- **v3.5.17**（520b4cb0 完成，2026-08-05 连接根治系列）：整体根治中断与缓存问题
+  - 缓存回滚（1784ba75）：use_skill 移出框架工具集 + UNCLASSIFIED 域移除——3.5.16 请求体改动导致缓存率暴跌，请求体恢复稳定
+  - 静默恢复移除（1f9d350e/60389917）：三 Provider hasData→close 全部删除——v3.1.0 引入的中断被吞根因
+  - v2.9.8 SSE 重试移植（98f5d7d6）：未收到数据自动重试 5 次指数退避——2.x 稳定机制，3.5.0 回滚丢失
+  - HTTP/2 完全禁用（b27253cd）：protocols 只留 HTTP_1_1——DeepSeek ALPN 协商 h2 后 PROTOCOL_ERROR 根治
+  - 连接配置对齐 v2.9.8（75c8e595）：ConnectionPool(12,60s) 防陈旧连接 EOF；writeTimeout 120s；pingInterval 30s
+  - 收尾完整（f9ea683a）：onCompletion NonCancellable + stopGeneration 显式收尾——计时器/灵动岛不停根治
+  - MCP 状态撕裂修复（7ecda960）：getTransport 包 runCatching + Error 状态工具过滤 + 报错明确化
+  - 经验文档固化（7ecda960）：B18/B19/B20/B21/B22 + 缓存教训写入 bug-record
 - **v3.5.14**（a4b73fc0 起）：连接稳定性加固 + MCP STDIO + effort 映射
   - ResponseAPI 断线恢复（对齐 ChatCompletionsAPI：stream reset/timeout 等保留部分数据）
   - SSE 无数据看门狗 120s（两个 API）——挂起快速失败，不再无限等
