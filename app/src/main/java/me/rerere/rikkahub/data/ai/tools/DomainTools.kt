@@ -138,9 +138,7 @@ private fun createSearchDomainsTool(
                 "- $nameText — $desc$kwText$tagText"
             }
             listOf(UIMessagePart.Text(
-                "匹配 '$query' 的域 (${lines.size} 个):
-" + lines.joinToString("
-")
+                "匹配 '$query' 的域 (${lines.size} 个):\n" + lines.joinToString("\n")
             ))
         }
     },

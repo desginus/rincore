@@ -46,11 +46,11 @@ fun createSkillTools(
                     ?: error("Skill '${skill.name}' is not available. Available skills: ${liveAvailable.joinToString { it.name }}")
                 if (path.isNullOrBlank()) {
                     require(live.skillFile.exists()) { "Skill '${skill.name}' not found" }
-                    SkillFrontmatterParser.extractBody(live.skillFile.readText())
+                    listOf(UIMessagePart.Text(SkillFrontmatterParser.extractBody(live.skillFile.readText())))
                 } else {
                     val target = SkillPaths.resolveSkillFile(live.skillDir, path)
                         ?: error("Path '$path' is outside the skill directory")
-                    target.readText()
+                    listOf(UIMessagePart.Text(target.readText()))
                 }
             },
         )
