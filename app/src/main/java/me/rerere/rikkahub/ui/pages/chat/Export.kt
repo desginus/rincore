@@ -489,7 +489,7 @@ private fun shareAsText(
 
     val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
         type = "text/plain"
-        putExtra(android.content.Intent.EXTRA_TEXT, sb.toString().trim())
+        putExtra(android.content.Intent.EXTRA_TEXT, sb.trim())
     }
     val chooser = android.content.Intent.createChooser(intent, null)
         .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
