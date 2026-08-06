@@ -33,6 +33,7 @@ import me.rerere.highlight.CodeHighlightText
 import androidx.compose.ui.res.stringResource
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ComputerTerminal01
+import me.rerere.hugeicons.stroke.File02
 import me.rerere.hugeicons.stroke.FileAdd
 import me.rerere.hugeicons.stroke.FileEdit
 import me.rerere.hugeicons.stroke.FileView
@@ -229,6 +230,21 @@ object WriteFileToolUI : ToolUIRenderer {
             return
         }
         FileContentPreview(path = context.arguments.getStringContent("path"), code = text)
+    }
+}
+
+/**
+ * 工作空间展示文件: 向用户递交文件, 锚定胶囊窗显示
+ */
+object ShowFileToolUI : ToolUIRenderer {
+    override val toolName: String = "workspace_show_file"
+
+    override fun icon(context: ToolUIContext): ImageVector = HugeIcons.File02
+
+    @Composable
+    override fun title(context: ToolUIContext): String {
+        val path = context.arguments.getStringContent("path")
+        return if (path != null) stringResource(R.string.tool_ui_show_file, path) else stringResource(R.string.tool_ui_show_file_default)
     }
 }
 

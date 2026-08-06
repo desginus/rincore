@@ -47,6 +47,7 @@ private fun buildWorkspacePrompt(workspace: WorkspaceEntity, cwd: String? = null
     appendLine("- Available tools:")
     appendLine("  - `workspace_read_file`: read file contents.")
     appendLine("  - `workspace_write_file` / `workspace_edit_file`: create files, or make precise edits to existing files.")
+    appendLine("  - `workspace_show_file`: present an existing workspace file to the user as an attached file chip. Use it when you need to hand over or display a file. Writing a file does NOT show it automatically.")
     appendLine("  - `workspace_shell`: run shell commands (the files area is mounted at /workspace).")
     appendLine("- Prefer `workspace_shell` for tasks that standard Unix tools handle well, and prefer `workspace_edit_file` for targeted edits over rewriting whole files.")
     appendLine("- The skills directory is mounted at `/skills`. Each skill is a subdirectory `/skills/<skill-name>/` containing a `SKILL.md` (with `name` and `description` frontmatter) plus any supporting files. Read a skill's `SKILL.md` before using it, and follow its instructions.")

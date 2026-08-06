@@ -27,6 +27,7 @@ val WorkspaceToolDefaultApprovals: Map<String, Boolean> = mapOf(
     "workspace_read_file" to false,
     "workspace_write_file" to false,
     "workspace_edit_file" to false,
+    "workspace_show_file" to false,
     "workspace_shell" to true,
 )
 
@@ -48,6 +49,7 @@ suspend fun createWorkspaceTools(
         createReadFileTool(workspaceId, ::needsApproval, workspaceRepository),
         createWriteFileTool(workspaceId, ::needsApproval, workspaceRepository),
         createEditFileTool(workspaceId, ::needsApproval, workspaceRepository),
+        createShowFileTool(workspaceId, ::needsApproval, workspaceRepository),
         createShellTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
     )
 }
@@ -195,6 +197,45 @@ private fun createEditFileTool(
                 }.toString(),
                 // diff 存入 metadata 供 UI 渲染 diff view, 不会随工具结果发送给 API
                 metadata = diff?.let { d -> DiffMetadata(diff = d).toMetadata() },
+            )
+        )
+    },
+)
+
+/**
+ * 将工作区文件呈现在对话下附的胶囊窗中, 供用户查看/导出/分享。
+ * 仅负责展示锚定 — 写入文件不会自动显示, 需要向用户递交文件时显式调用本工具。
+ */
+private fun createShowFileTool(
+    workspaceId: String,
+    needsApproval: (String) -> Boolean,
+    workspaceRepository: WorkspaceRepository,
+) = Tool(
+    name = "workspace_show_file",
+    description = """
+        Present an existing workspace file to the user as a file chip attached to the conversation.
+        Use this when you need to hand over or display a file to the user (e.g. a generated document, report, image).
+        The file must already exist — writing a file does NOT show it automatically; call this tool explicitly.
+    """.trimIndent().replace("\n", " "),
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                putPathProperty(required = true)
+            },
+            required = listOf("path"),
+        )
+    },
+    needsApproval = { needsApproval("workspace_show_file") },
+    execute = {
+        val path = it.jsonObject.absolutePath("path")
+        val size = workspaceRepository.rootfsFileSize(workspaceId, path) // 不存在则抛异常
+        listOf(
+            UIMessagePart.Text(
+                buildJsonObject {
+                    put("path", path)
+                    put("size", size)
+                    put("status", "shown")
+                }.toString()
             )
         )
     },

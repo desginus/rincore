@@ -77,6 +77,7 @@ fun buildPreviewTools(
     list.add(ToolPreview("workspace_read_file", "Read a file using the assistant's bound workspace Rootfs."))
     list.add(ToolPreview("workspace_write_file", "Write a UTF-8 text file using the assistant's bound workspace Rootfs."))
     list.add(ToolPreview("workspace_edit_file", "Edit a UTF-8 text file using the assistant's bound workspace Rootfs."))
+    list.add(ToolPreview("workspace_show_file", "Present an existing workspace file to the user as an attached file chip."))
     list.add(ToolPreview("use_skill", "Load and apply a skill to get specialized instructions or capabilities. 可用 skill 列表由 invoke_tools(\"技能\") 返回。"))
     list.add(ToolPreview("manage_domain", "创建或删除工具域/子域。操作后场景地图自动同步。"))
     list.add(ToolPreview("list_domains", "列出所有可用域及其工具数量"))
