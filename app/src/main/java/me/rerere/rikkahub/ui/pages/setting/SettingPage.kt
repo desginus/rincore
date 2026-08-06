@@ -46,6 +46,7 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Code
 import me.rerere.hugeicons.stroke.AiEditing
 import me.rerere.hugeicons.stroke.AiMagic
+import me.rerere.hugeicons.stroke.Alert01
 import me.rerere.hugeicons.stroke.Clock02
 import me.rerere.hugeicons.stroke.Book01
 import me.rerere.hugeicons.stroke.Puzzle
