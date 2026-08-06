@@ -12,6 +12,19 @@ description: "[中优先级·RinCore决策对照] RinCore 关键方案对比迭�
 - **缓存代价**：请求体 tools 数组 + system 提示（WorkspaceReminderTransformer）变化 → 单次缓存前缀重建，新前缀稳定后恢复。与 3.5.16 反复改动不同，此为一次性
 - **风险**：模型可能忘记显式调用 show 导致文件不显示，靠工具描述引导
 
+## D7. 工具加载机制取消 + 缓存定值化（v3.5.18，用户决策）
+- **背景**：模型被引导"invoke_tools 加载域→工具可用"，跨轮需重新加载浪费轮次；loadedDomains 动态注入 tools 数组导致缓存阶梯化
+- **决策**：
+  1. tools 数组定值化 — loadedDomains 动态注入 → 全量静态注入（配置决定，跨请求逐字节一致）
+  2. MCP 工具声明静态化 — Error 状态不删工具，调用时明确报错
+  3. 加载引导文本全部移除 — 所有工具直接可用，无需加载
+- **效果**：缓存前缀只随 messages 线性增长；模型直接调用任意工具
+- **行为变化**：失败 MCP 服务器工具保留在列表（可见但调用报错）；skill 通过 skill_<name> 直接可用
+
+## D8. Skill 直接使用 + 域反查（v3.5.18，用户决策）
+- **Skill**：每个已启用 skill 生成 skill_<清洗名> 独立工具（描述取自 frontmatter），模型 tools 数组直接可见，无需 invoke_tools→use_skill 两步。use_skill 保留兼容
+- **search_domains**：按关键词/标签反查域位置（名称/触发描述/触发条件），支持 mcp/skill 类别过滤，无返回上限
+
 ## D1. 传输层回滚到 3.2.2（v3.5.0，用户决策）
 - **背景**：DeepSeek V4 Flash 连接中断反复出现（SETTINGS/reasoning/空流），v3.4.5-v3.4.10 连续补丁无法根治，用户判定"补丁式修改已没救"
 - **决策**：传输层整体 checkout 3.2.2（原版 RikkaHub 2.4.5 移植前基线）

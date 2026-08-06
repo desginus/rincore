@@ -13,6 +13,13 @@ description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日�
 - **缓存"卡-跳-线性"**：DeepSeek 服务端磁盘缓存机制（构建延迟秒级+固定间隔切分+SWA 独立单元）——客户端不可控，已入库 decisions D2
 
 ## v3.5.x（传输层回滚期 → 当前）
+- **v3.5.18**（7937d962，2026-08-06 正式版）：工具体系重构
+  - workspace_show_file：写入与展示解耦（胶囊窗仅认 show）
+  - search_domains：关键词/标签反查域位置，mcp/skill 类别过滤
+  - skill_<清洗名> 独立工具：Skill 直接可用（decisions D8）
+  - 工具加载机制取消：所有工具直接可用，无加载/缓存引导
+  - 缓存阶梯化根治：tools 定值化 + MCP 声明静态化（decisions D7）
+  - 注意：请求体/system 变化，缓存单次重建后稳定
 - **v3.5.18-beta1**（9e73b04d，2026-08-06）：workspace_show_file 展示解耦
   - 胶囊窗仅认 show 工具，写入/编辑不再自动显示（用户决策，decisions D6）
   - 工具风格对齐 workspace 族：校验存在、默认免审批、入 FILE 域与框架集
