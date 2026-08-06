@@ -104,7 +104,6 @@ val DEFAULT_PROVIDERS = listOf(
         builtIn = true
     ),
     ProviderSetting.OpenAI(
-    ProviderSetting.OpenAI(
         id = Uuid.parse("ef5d149b-8e34-404b-818c-6ec242e5c3c5"),
         name = "腾讯Hunyuan",
         baseUrl = "https://api.hunyuan.cloud.tencent.com/v1",
@@ -122,7 +121,6 @@ val DEFAULT_PROVIDERS = listOf(
         useResponseApi = true,
     ),
     ProviderSetting.OpenAI(
-    ProviderSetting.OpenAI(
         id = Uuid.parse("a2bafe83-eaf8-47bf-a8c7-3dd82d89f637"),
         name = "MIMO",
         baseUrl = "https://api.xiaomimimo.com/v1",
@@ -130,7 +128,6 @@ val DEFAULT_PROVIDERS = listOf(
         enabled = false,
         builtIn = true,
     ),
-    ProviderSetting.OpenAI(
     ProviderSetting.OpenAI(
         id = Uuid.parse("a1b2c3d4-e5f6-7890-abcd-ef1234567890"),
         name = "MiniMax",
