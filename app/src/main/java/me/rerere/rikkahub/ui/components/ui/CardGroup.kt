@@ -141,7 +141,7 @@ private fun CardGroupListItem(
         trailingContent = item.trailingContent,
         colors = item.colors ?: CustomColors.listItemColors,
     ) {
-        item.headlineContent
+        item.headlineContent()
     }
 }
 
