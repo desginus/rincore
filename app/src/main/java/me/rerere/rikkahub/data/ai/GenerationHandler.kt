@@ -675,6 +675,7 @@ class GenerationHandler(
                 }
             }
             val hash = m.parts.joinToString("|") { p ->
+                @Suppress("DEPRECATION") // 序列化兼容必需
                 when (p) {
                     is UIMessagePart.Text -> p.text.hashCode().toString()
                     is UIMessagePart.Reasoning -> p.reasoning.hashCode().toString()
