@@ -75,6 +75,11 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 - **修复**：单独恢复静态化——仅移除 Error 过滤（工具声明由配置决定），callTool 调用时显式报错。不带全量注入/skill 直注/数量统计等 3.5.18 错误改动
 - **教训**：3.5.18-beta2 的静态化方向正确但被错误改动拖累；回滚要精准，不能连带回滚正确的修复
 
+### B27. 工具域分类体系重构（v3.5.26）
+- **问题**：AI 分类调模型不稳定；Skill/MCP 层级不对齐（skill_ 单字段 vs mcp__服务器__工具）；空壳域/残留空壳；孤儿注册数据（skill 删除后 overrides 残留）；search_domains 域路径解析失败（技能子域不在域列表）；工具池域数与域内计数不一致
+- **修复**：自动分类改本地名称结构化分类（第一字段类别/第二字段分类字段）；Skill 工具 skill__ 命名 + 归「技能/<名>」；buildDomainTree(tools) 技能子域派生（与 classifyByName 同源）；空壳域过滤（UI+帮助一致）；SkillManager.deleteSkill 清 overrides 孤儿；search_domains 域列表同源
+- **教训**：域分类必须单一事实源（classifyByName 与域树同源），UI/模型/帮助三处一致
+
 ### B26. 助手删除限制取消（v3.5.25）
 - **改动**：DEFAULT_ASSISTANTS_IDS 限制移除，所有助手可删除；仅剩最后一个助手时禁止（避免无助手可用）
 
