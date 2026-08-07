@@ -307,6 +307,16 @@ class WorkspaceRepository(
         }
     }
 
+    /**
+     * 启动常驻进程 (不等待) — MCP stdio 桥接: 在 workspace 沙箱内启动
+     * Python/Node MCP 服务器, 进程流由调用方接管 (McpManager StdioClientTransport)。
+     */
+    suspend fun launchProcess(id: String, command: String, cwd: String = ""): Process? = withContext(Dispatchers.IO) {
+        val workspace = dao.getById(id) ?: return@withContext null
+        manager.ensureWorkspace(workspace.root)
+        manager.launchProcess(workspace.root, command, cwd)
+    }
+
     suspend fun delete(id: String): Boolean {
         val workspace = dao.getById(id) ?: return false
         dao.deleteById(id)

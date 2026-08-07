@@ -16,34 +16,27 @@ class ProotShellRunner(
     private val patcher: RootfsPatcher = RootfsPatcher(),
 ) : WorkspaceShellRunner {
     override fun execute(context: WorkspaceShellContext): WorkspaceCommandResult {
-        if (!context.linuxDir.hasUsableRootfs()) {
-            return WorkspaceCommandResult(
+        val process = launchProcess(context)
+            ?: return WorkspaceCommandResult(
                 exitCode = 127,
                 stdout = "",
-                stderr = "Rootfs is not installed",
+                stderr = "proot executable not found: ${File(nativeLibraryDir, PROOT_EXEC).absolutePath}",
             )
-        }
+        return process.readResult(context.timeoutMillis, context.stdin)
+    }
+
+    /** 启动 proot 常驻进程 (不等待) — 供 MCP stdio 桥接: workspace 内有 Python/Node 运行时 */
+    override fun launchProcess(context: WorkspaceShellContext): Process? {
+        if (!context.linuxDir.hasUsableRootfs()) return null
 
         val proot = File(nativeLibraryDir, PROOT_EXEC)
         val loader = File(nativeLibraryDir, PROOT_LOADER)
-        if (!proot.isFile) {
-            return WorkspaceCommandResult(
-                exitCode = 127,
-                stdout = "",
-                stderr = "proot executable not found: ${proot.absolutePath}",
-            )
-        }
-        if (!loader.isFile) {
-            return WorkspaceCommandResult(
-                exitCode = 127,
-                stdout = "",
-                stderr = "proot loader not found: ${loader.absolutePath}",
-            )
-        }
+        if (!proot.isFile) return null
+        if (!loader.isFile) return null
 
         context.tempDir.mkdirs()
         patcher.patch(context.linuxDir)
-        val process = ProcessBuilder(buildCommand(context, proot))
+        return ProcessBuilder(buildCommand(context, proot))
             .directory(context.filesDir)
             .redirectErrorStream(false)
             .apply {
@@ -52,8 +45,6 @@ class ProotShellRunner(
                 environment()["TMPDIR"] = context.tempDir.absolutePath
             }
             .start()
-
-        return process.readResult(context.timeoutMillis, context.stdin)
     }
 
     private fun buildCommand(

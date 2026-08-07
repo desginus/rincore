@@ -205,6 +205,33 @@ class WorkspaceManager(
         )
     }
 
+    /** 启动常驻进程 (不等待) — MCP stdio 桥接: workspace 内启动 Python/Node MCP 服务器 */
+    fun launchProcess(
+        root: String,
+        command: String,
+        cwd: String = "",
+    ): Process? {
+        require(command.isNotBlank()) { "Command is required" }
+        val workingDir = fileSystem.resolve(filesDir(root), cwd)
+        require(workingDir.exists()) { "Working directory does not exist: $cwd" }
+        require(workingDir.isDirectory) { "Working path is not a directory: $cwd" }
+
+        return shellRunner.launchProcess(
+            WorkspaceShellContext(
+                root = root,
+                command = command,
+                cwd = cwd,
+                filesDir = filesDir(root),
+                linuxDir = linuxDir(root),
+                tempDir = tempDir(root),
+                workingDir = workingDir,
+                timeoutMillis = DEFAULT_COMMAND_TIMEOUT_MS,
+                stdin = null,
+                bindMounts = bindMounts,
+            )
+        )
+    }
+
     private fun requireValidRoot(root: String) {
         require(root.matches(ROOT_NAME_REGEX)) {
             "Invalid workspace root name: $root"

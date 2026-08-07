@@ -100,6 +100,8 @@ sealed class McpServerConfig {
         val command: String = "",   // e.g. "python3 /path/to/server.py"
         val args: List<String> = emptyList(),
         val url: String = "",       // 可选: stdio server 暴露的 HTTP 地址
+        val viaWorkspace: Boolean = false, // 通过 workspace 沙箱启动 (沙箱内有 Python/Node 运行时)
+        val workspaceId: String = "",      // 目标 workspace id (viaWorkspace=true 时必填)
     ) : McpServerConfig() {
         override fun clone(id: Uuid, commonOptions: McpCommonOptions): McpServerConfig {
             return copy(id = id, commonOptions = commonOptions)

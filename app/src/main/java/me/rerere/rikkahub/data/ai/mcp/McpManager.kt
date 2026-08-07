@@ -75,6 +75,7 @@ class McpManager(
     private val appScope: AppScope,
     private val filesManager: FilesManager,
     private val appEventBus: AppEventBus,
+    private val workspaceRepository: me.rerere.rikkahub.data.repository.WorkspaceRepository? = null,
 ) {
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(3, TimeUnit.MINUTES)
@@ -259,7 +260,22 @@ class McpManager(
             // 启动子进程, stdin/stdout 走 JSON-RPC, stderr 按严重级别转发
             // command 按空白拆分 (支持 'python3 /path/server.py' 单字段写法)
             val cmdParts = config.command.split(Regex("\\s+")).filter { it.isNotBlank() }
-            val process = ProcessBuilder(cmdParts + config.args).start()
+            val process = if (config.viaWorkspace) {
+                // 通过 workspace 沙箱启动 — 沙箱内有 Python/Node 运行时,
+                // 进程的 stdin/stdout 由本 Transport 接管 (proot 由 Android 侧启动, 流可桥接)
+                val repo = workspaceRepository
+                    ?: throw IllegalStateException("viaWorkspace stdio requires WorkspaceRepository")
+                val p = runCatching {
+                    repo.launchProcess(config.workspaceId, config.command, "")
+                }.getOrElse { e ->
+                    Log.e(TAG, "viaWorkspace launch failed: ${e.message}")
+                    throw IllegalStateException("workspace 启动 MCP 服务器失败: ${e.message}", e)
+                }
+                if (p == null) throw IllegalStateException("workspace 启动失败: workspace 不存在或 proot 不可用")
+                p
+            } else {
+                ProcessBuilder(cmdParts + config.args).start()
+            }
             stdioProcesses[config.id] = process
             StdioClientTransport(
                 input = process.inputStream.asSource().buffered(),

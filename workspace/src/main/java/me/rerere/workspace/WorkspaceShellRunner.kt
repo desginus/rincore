@@ -7,6 +7,13 @@ import java.util.concurrent.TimeUnit
 
 interface WorkspaceShellRunner {
     fun execute(context: WorkspaceShellContext): WorkspaceCommandResult
+
+    /**
+     * 启动常驻进程 (不等待结束) — 供 MCP stdio 桥接使用。
+     * 进程的 stdin/stdout/stderr 由调用方接管, 生命周期由调用方管理。
+     * 默认不支持 (返回 null), 由各 Runner 实现。
+     */
+    fun launchProcess(context: WorkspaceShellContext): Process? = null
 }
 
 data class WorkspaceShellContext(
@@ -29,6 +36,14 @@ class HostShellRunner : WorkspaceShellRunner {
             .redirectErrorStream(false)
             .start()
         return process.readResult(context.timeoutMillis, context.stdin)
+    }
+
+    override fun launchProcess(context: WorkspaceShellContext): Process? {
+        require(context.command.isNotBlank()) { "Command is required" }
+        return ProcessBuilder(defaultShell(), "-c", context.command)
+            .directory(context.workingDir)
+            .redirectErrorStream(false)
+            .start()
     }
 
     private fun defaultShell(): String =

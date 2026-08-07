@@ -729,6 +729,33 @@ private fun McpCommonOptionsConfigure(
             )
         }
 
+        // Stdio 工作区启动: 沙箱内有 Python/Node 运行时, 服务器代码跑在 workspace 内
+        if (config is McpServerConfig.StdioTransportServer) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "通过工作区启动（沙箱内有 Python/Node）",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Switch(
+                    checked = config.viaWorkspace,
+                    onCheckedChange = { checked -> update(config.copy(viaWorkspace = checked)) }
+                )
+            }
+            if (config.viaWorkspace) {
+                OutlinedTextField(
+                    value = config.workspaceId,
+                    onValueChange = { id -> update(config.copy(workspaceId = id)) },
+                    label = { Text("Workspace ID") },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("工作区 ID（工作区管理中查看）") }
+                )
+            }
+        }
+
         HorizontalDivider()
 
         // 请求头配置
