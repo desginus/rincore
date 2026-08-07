@@ -46,9 +46,15 @@ class AssistantVM(
             cleanupAssistantFiles(assistant)
 
             val settings = settings.value
+            val remaining = settings.assistants.filter { it.id != assistant.id }
+            // 删除的是当前默认助手时, 指向剩余第一个 (避免 assistantId 脏值)
+            val newAssistantId = if (settings.assistantId == assistant.id) {
+                remaining.firstOrNull()?.id ?: settings.assistantId
+            } else settings.assistantId
             settingsStore.update(
                 settings.copy(
-                    assistants = settings.assistants.filter { it.id != assistant.id }
+                    assistants = remaining,
+                    assistantId = newAssistantId
                 )
             )
             memoryRepository.deleteMemoriesOfAssistant(assistant.id.toString())

@@ -45,6 +45,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.activity.ComponentActivity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -110,6 +111,8 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
     val filesManager: FilesManager = koinInject()
     val navController = LocalNavController.current
     val scope = rememberCoroutineScope()
+    // 抽屉共享 VM — 新建对话时读取当前焦点文件夹 (抽屉里实时选择的)
+    val drawerVm: ChatDrawerVM = koinViewModel(viewModelStoreOwner = LocalContext.current as ComponentActivity)
 
     val setting by vm.settings.collectAsStateWithLifecycle()
     val conversation by vm.conversation.collectAsStateWithLifecycle()
@@ -329,8 +332,9 @@ private fun ChatPageContent(
                     drawerState = drawerState,
                     previewMode = previewMode,
                     onNewChat = {
-                        // 新建对话继承当前文件夹 — 从文件夹 B 进入后新建仍归 B
-                        navigateToChatPage(navController, folderId = folderId)
+                        // 深度修复: 新建对话归属 = 抽屉实时焦点文件夹 (不是进入本页时的路由参数)
+                        // 用户在抽屉里选择文件夹 B 后点新建, 必须归 B
+                        navigateToChatPage(navController, folderId = drawerVm.selectedFolderId.value)
                     },
                     onClickMenu = {
                         previewMode = !previewMode
