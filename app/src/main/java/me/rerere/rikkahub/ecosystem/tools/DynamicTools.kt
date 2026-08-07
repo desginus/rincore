@@ -16,6 +16,8 @@ import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.ai.mcp.McpCommonOptions
 import me.rerere.rikkahub.data.ai.mcp.McpManager
+import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.ecosystem.EcosystemManager
 import me.rerere.rikkahub.ecosystem.plugin.ClaudePluginParser
@@ -31,13 +33,15 @@ import kotlin.uuid.Uuid
 object DynamicTools {
     private const val TAG = "DynamicTools"
     private var mcpManager: McpManager? = null
+    private var settingsStore: me.rerere.rikkahub.data.datastore.SettingsStore? = null
     private var ecosystemWorkspaceRoot: String = ""
     // ClawHub 安装的 skill 落此目录 — 与 Agent Skills(SkillManager.getSkillsDir) 同一目录,
     // 修复: 此前落 ecosystem 私有目录, proot/use_skill 不可见
     private var skillsRoot: String = ""
 
-    fun initialize(mcp: McpManager, workspaceRoot: String, skillsRoot: String = "") {
+    fun initialize(mcp: McpManager, workspaceRoot: String, skillsRoot: String = "", settingsStore: me.rerere.rikkahub.data.datastore.SettingsStore? = null) {
         mcpManager = mcp
+        this.settingsStore = settingsStore
         ecosystemWorkspaceRoot = workspaceRoot
         this.skillsRoot = skillsRoot.ifEmpty { File(workspaceRoot, "skills").absolutePath }
     }
@@ -108,10 +112,11 @@ object DynamicTools {
                             command = command,
                         )
                         mcp.addClient(config)
+                        persistServer(config)
                         listOf(UIMessagePart.Text(
                             "MCP server (stdio) spawned: $name\n" +
                             "Command: $command\n" +
-                            "Process managed by RinCore. Tools available next step."
+                            "已持久化并绑定当前助手 — MCP 客户端列表可见, 重启保留。工具下一步可用。"
                         ))
                     }
                     else -> {
@@ -130,8 +135,9 @@ object DynamicTools {
                             )
                         }
                         mcp.addClient(config)
+                        persistServer(config)
                         listOf(UIMessagePart.Text(
-                            "MCP server added: $name ($transport)\n$url\nConnecting..."
+                            "MCP server added: $name ($transport)\n$url\n已持久化并绑定当前助手。"
                         ))
                     }
                 }
@@ -140,6 +146,26 @@ object DynamicTools {
             }
         },
     )
+
+    /**
+     * 持久化 mcp_connect 注册的服务器到配置并绑定当前助手 —
+     * 对齐 UI 新建路径 (settings.mcpServers): 客户端列表可见 + 重启保留 + 工具进池。
+     * 此前仅 addClient (会话级运行时) → UI 不可见/重启丢失/工具不绑定助手。
+     */
+    private suspend fun persistServer(config: McpServerConfig) {
+        val store = settingsStore ?: return
+        val settings = store.settingsFlow.value
+        val assistant = settings.getCurrentAssistant()
+        store.update(
+            settings.copy(
+                mcpServers = settings.mcpServers.filter { it.commonOptions.name != config.commonOptions.name } + config,
+                assistants = settings.assistants.map { a ->
+                    if (a.id == assistant.id) a.copy(mcpServers = a.mcpServers + config.id) else a
+                }
+            )
+        )
+        Log.i(TAG, "persistServer: ${config.commonOptions.name} persisted + bound to assistant")
+    }
 
     // ═══ clawhub_install — P1 技能安装 + .mcp.json 自动连接 ═══
 

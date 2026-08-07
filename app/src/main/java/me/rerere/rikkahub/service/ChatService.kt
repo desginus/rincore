@@ -172,6 +172,7 @@ class ChatService(
         me.rerere.rikkahub.ecosystem.tools.DynamicTools.initialize(
             mcp = mcpManager,
             workspaceRoot = context.filesDir.resolve("ecosystem").absolutePath,
+            settingsStore = settingsStore,
         )
     }
 
@@ -1176,29 +1177,23 @@ class ChatService(
         val processedParts = preprocessUserInputParts(parts, assistant)
         var edited = false
 
-        // 编辑语义: 替换目标消息 (保留原 id) + 截断该消息之后的全部内容
-        // (不再追加第二条消息 — 编辑后直接触发重新生成, 见 ChatVM.handleMessageEdit)
-        val targetNodeIndex = currentConversation.messageNodes.indexOfFirst { node ->
-            node.messages.any { it.id == messageId }
-        }
-        if (targetNodeIndex == -1) return
-
-        val updatedNodes = currentConversation.messageNodes.mapIndexed { nodeIndex, node ->
-            if (nodeIndex > targetNodeIndex) return@mapIndexed null // 截断后续节点
-            if (!node.messages.any { it.id == messageId }) return@mapIndexed node
+        // 编辑语义: 在目标节点追加新版本 (不替换) — 旧版本保留,
+        // 界面下方 123 按钮可切换查看之前的消息。截断与重新生成
+        // 由 regenerateAtMessage 完成 (ChatVM.handleMessageEdit 已接)。
+        val updatedNodes = currentConversation.messageNodes.map { node ->
+            if (!node.messages.any { it.id == messageId }) {
+                return@map node
+            }
             edited = true
-            val idx = node.messages.indexOfFirst { it.id == messageId }
-            val original = node.messages[idx]
+
             node.copy(
-                messages = node.messages.subList(0, idx) + UIMessage(
-                    id = messageId,          // 保留原 id — 编辑语义
+                messages = node.messages + UIMessage(
                     role = node.role,
                     parts = processedParts,
-                    createdAt = original.createdAt, // 保留原时间
                 ),
-                selectIndex = idx  // 指向替换后的消息 (size = idx+1, 合法范围 0..idx)
+                selectIndex = node.messages.size // 指向新版本 (size = old+1, 指向最后一条)
             )
-        }.filterNotNull()
+        }
 
         if (!edited) return
 
