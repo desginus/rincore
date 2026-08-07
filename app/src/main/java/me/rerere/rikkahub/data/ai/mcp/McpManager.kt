@@ -226,7 +226,7 @@ class McpManager(
         return UIMessagePart.Image(url = uri.toString())
     }
 
-    private fun getTransport(config: McpServerConfig): AbstractTransport = when (config) {
+    private suspend fun getTransport(config: McpServerConfig): AbstractTransport = when (config) {
         is McpServerConfig.SseTransportServer -> {
             SseClientTransport(
                 urlString = config.url,
@@ -309,9 +309,11 @@ class McpManager(
         reconnectAttempts[config.id] = 0
 
         // getTransport 可能抛异常 (stdio command 非法/进程启动失败) — 必须在
-        // runCatching 内, 否则 removeClient 后中途退出 → clients 缺失而配置里
+        // 错误处理内, 否则 removeClient 后中途退出 → clients 缺失而配置里
         // 工具仍在 → 调用报 'no such mcp client' (状态撕裂)
-        val transport = runCatching { getTransport(config) }.getOrElse { e ->
+        val transport = try {
+            getTransport(config)
+        } catch (e: Exception) {
             Log.e(TAG, "addClient: getTransport failed for ${config.commonOptions.name}: ${e.message}", e)
             setStatus(config = config, status = McpStatus.Error(e.message ?: e.javaClass.name))
             return@withContext
