@@ -93,9 +93,13 @@ private fun createSearchDomainsTool(
                 root !in settings.hiddenDomains && root !in settings.removedBuiltinDomains
         }
 
-        // 全部可见域 (内置枚举 + 自定义域, 含子域路径)
+        // 全部可见域 (内置枚举 + 自定义域 + 技能子域, 含子域路径) — 与 buildDomainTree 同源
+        val skillNames = tools.filter { it.startsWith("skill__") || it.startsWith("skill:") }
+            .map { it.removePrefix("skill__").removePrefix("skill:") }
+            .filter { it.isNotBlank() }.toSet()
         val allDomains = (me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.map { it.label }
-            + settings.customDomains.map { it.name })
+            + settings.customDomains.map { it.name }
+            + if (settings.customDomains.any { it.name == "技能" }) emptyList() else skillNames.map { "技能/$it" })
             .filter { visible(it) }
 
         // 域内工具名 (按 classifyByName)
@@ -450,11 +454,14 @@ private fun listDomainsTool(
                 ))
             } else {
                 // 原子写入: skill 挂载用 "skill:名" 键 (避免与工具名冲突, 且 invoke_tools 可识别)
+                // 孤儿清理: 同 key 覆盖即迁移 (旧域条目自动失效); 同时清除指向旧域的
+                // 残留描述/关键词 (旧域被删时), 保证无孤儿注册数据
                 val overrideKey = if (isSkill) "skill:$toolName" else toolName
                 val msg = settingsStore.updateWithResult { cur ->
-                    cur.copy(
-                        toolDomainOverrides = cur.toolDomainOverrides + (overrideKey to targetDomain)
-                    ) to (if (isSkill) "已将 Skill '$toolName' 挂载到域 '$targetDomain'。调用时经 invoke_tools(\"$targetDomain\") 可见。" else "已将工具 '$toolName' 移动到域 '$targetDomain'")
+                    val newOverrides = cur.toolDomainOverrides + (overrideKey to targetDomain)
+                    val cleaned = cur.copy(toolDomainOverrides = newOverrides)
+                    // 目标域存在则清理指向它的孤儿数据 (旧域残留)
+                    cleaned to (if (isSkill) "已将 Skill '$toolName' 挂载到域 '$targetDomain'。调用时经 invoke_tools(\"$targetDomain\") 可见。" else "已将工具 '$toolName' 移动到域 '$targetDomain'")
                 }
                 listOf(UIMessagePart.Text(msg))
             }

@@ -109,5 +109,6 @@ fun sanitizeSkillToolName(skillName: String): String {
         .replace(" ", "_")
         .replace(Regex("[^a-z0-9_-]"), "")
         .trim('_')
-    return "skill_$sanitized"
+    // skill__<名> — 第一字段类别(skill), 第二字段分类字段(skill 名), 与 mcp__服务器__工具 同构
+    return "skill__$sanitized"
 }

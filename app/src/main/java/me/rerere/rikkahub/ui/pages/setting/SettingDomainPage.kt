@@ -24,10 +24,6 @@ import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.plus
 import org.koin.compose.koinInject
-import me.rerere.ai.provider.ProviderManager
-import me.rerere.ai.provider.Provider
-import me.rerere.ai.provider.ProviderSetting
-import me.rerere.rikkahub.data.ai.tools.routing.ToolClassifier
 import androidx.compose.foundation.layout.heightIn
 
 data class ToolPreview(val name: String, val description: String)
@@ -143,14 +139,18 @@ private fun buildNestedDomains(
             childDomains.forEach { child ->
                 subMap[child] = (flatMap[child] ?: emptyList()).toMutableList()
             }
-            // 只过滤掉完全没有工具的空子域显示项 — 自定义空子域仍保留
-            if (subMap.isNotEmpty()) {
-                result.add(parent to subMap)
+            // 空壳域过滤: 无任何工具的子域不显示 (内置/自定义一致, 抹平区别)
+            val nonEmpty = subMap.filterValues { it.isNotEmpty() }
+            if (nonEmpty.isNotEmpty()) {
+                result.add(parent to nonEmpty.toMutableMap())
             } else {
                 result.add(parent to null)
             }
         } else {
-            result.add(parent to null)
+            // 空壳过滤: 顶级域无任何工具 → 不显示 (内置/自定义一致)
+            if (myTools.isNotEmpty()) {
+                result.add(parent to null)
+            }
         }
     }
     return result
@@ -163,16 +163,13 @@ fun SettingDomainPage(
     onBack: () -> Unit,
 ) {
     val skillManager: SkillManager = koinInject()
-    val providerManager: ProviderManager = koinInject()
     val localTools: me.rerere.rikkahub.data.ai.tools.local.LocalTools = koinInject()
     val mcpManager: me.rerere.rikkahub.data.ai.mcp.McpManager = koinInject()
 
     var deleteConfirm by remember { mutableStateOf<String?>(null) }
     var isClassifying by remember { mutableStateOf(false) }
     var classifyLog by remember { mutableStateOf("") }
-    var showClassifierPrompt by remember { mutableStateOf(false) }
     var revision by remember { mutableStateOf(0) }
-    var editClassifierPrompt by remember(settings.classifierPrompt) { mutableStateOf(settings.classifierPrompt.ifBlank { ToolClassifier.DEFAULT_PROMPT }) }
 
     var showNewDomain by remember { mutableStateOf(false) }
     var showToolList by remember { mutableStateOf(false) }
@@ -230,9 +227,9 @@ fun SettingDomainPage(
                     }) { Icon(HugeIcons.Refresh01, "同步") }
                     TextButton(onClick = { isClassifying = true },
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
-                        Icon(HugeIcons.AiMagic, "AI分类", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                        Icon(HugeIcons.AiMagic, "名称分类", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.width(4.dp))
-                        Text("AI分类", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        Text("名称分类", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                     }
                     IconButton(onClick = { showToolList = true }) { Icon(HugeIcons.View, "工具列表") }
                     IconButton(onClick = { showNewDomain = true }) { Icon(HugeIcons.Add01, "新建") }
@@ -253,9 +250,7 @@ fun SettingDomainPage(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("${nestedDomains.size}个域 · ${previewTools.size}个工具 · ${mcpLarge}个MCP工具集 · ${customSubCount}个自定义子域",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    TextButton(onClick = { showClassifierPrompt = true }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
-                        Text("⚙️ 提示词", style = MaterialTheme.typography.labelSmall)
-                    }
+
                 }
             }
 
@@ -642,67 +637,33 @@ fun SettingDomainPage(
     // AI 分类逻辑
     LaunchedEffect(isClassifying) {
         if (!isClassifying) return@LaunchedEffect
-        classifyLog = "正在调用 AI 分类..."
+        classifyLog = "正在按名称分类..."
         try {
-            val toolList = previewTools.map { it.name to (settings.toolDescriptionOverrides[it.name] ?: it.description) }
-            val modelId = settings.routingModelId ?: settings.chatModelId
-            val providerSetting = settings.providers.find { p -> p.models.any { m -> m.id == modelId } }
-            val model = providerSetting?.models?.find { it.id == modelId }
-            if (providerSetting == null || model == null) {
-                classifyLog = "错误: 未找到分类模型或提供商"
-                isClassifying = false
-                return@LaunchedEffect
+            // 本地名称规则分类 (替代模型调用): 工具名第一字段为类别(MCP/Skill/其他),
+            // 第二字段为分类字段 — Skill 归「技能/<名>」, MCP 保持映射+关键词, 本地按前缀/关键词
+            val valid = router.validDomainLabels
+            val m = settings.toolDomainOverrides.toMutableMap()
+            var classified = 0
+            var skipped = 0
+            for (tp in previewTools) {
+                val domain = router.classifyPreview(
+                    tp.name,
+                    settings.toolDescriptionOverrides[tp.name] ?: tp.description
+                )
+                if (domain in valid) {
+                    m[tp.name] = domain
+                    classified++
+                } else {
+                    skipped++
+                }
             }
-            val providerName = when (providerSetting) {
-                is me.rerere.ai.provider.ProviderSetting.OpenAI -> "openai"
-                is me.rerere.ai.provider.ProviderSetting.Google -> "google"
-                is me.rerere.ai.provider.ProviderSetting.Claude -> "claude"
-            } // sealed 全分支, else 冗余已删
-            @Suppress("UNCHECKED_CAST")
-            val provider = providerManager.getProvider(providerName) as Provider<ProviderSetting>
-            ToolClassifier.classify(toolList, model, provider, providerSetting, settings.classifierPrompt)
-                .onSuccess { result ->
-                    val valid = router.validDomainLabels
-                    val filtered = result.filterValues { it in valid }
-                    val m = settings.toolDomainOverrides.toMutableMap()
-                    filtered.forEach { (tool, domain) -> m[tool] = domain }
-                    vm.updateSettings(settings.copy(toolDomainOverrides = m))
-                    val skipped = result.size - filtered.size
-                    classifyLog = "分类完成: ${filtered.size}个工具已归类" + if (skipped > 0) " · 跳过${skipped}个无效域名" else ""
-                }
-                .onFailure { e ->
-                    classifyLog = "分类失败: ${e.message?.take(200) ?: "未知错误"}"
-                }
+            vm.updateSettings(settings.copy(toolDomainOverrides = m))
+            classifyLog = "名称分类完成: ${classified}个工具已归类" +
+                if (skipped > 0) " · 跳过${skipped}个" else ""
         } catch (e: Exception) {
             classifyLog = "异常: ${e.message?.take(200) ?: ""}"
         }
         isClassifying = false
     }
 
-    // 分类提示词编辑
-    if (showClassifierPrompt) {
-        AlertDialog(onDismissRequest = { showClassifierPrompt = false }, title = { Text("AI 分类提示词") },
-            text = {
-                Column(Modifier.fillMaxWidth().heightIn(max = 400.dp)) {
-                    Text("提示词发送给 AI 模型，用于自动将工具分配到场景。场景列表已自动同步当前域架构。", style = MaterialTheme.typography.bodySmall)
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(editClassifierPrompt, { editClassifierPrompt = it }, modifier = Modifier.fillMaxWidth().weight(1f), maxLines = 20)
-                }
-            },
-            confirmButton = { TextButton(onClick = {
-                vm.updateSettings(settings.copy(classifierPrompt = editClassifierPrompt))
-                showClassifierPrompt = false
-                isClassifying = true
-            }) { Text("保存并分类") } },
-            dismissButton = {
-                Row {
-                    TextButton(onClick = {
-                        editClassifierPrompt = ToolClassifier.DEFAULT_PROMPT
-                        vm.updateSettings(settings.copy(classifierPrompt = ""))
-                    }) { Text("恢复默认") }
-                    TextButton(onClick = { showClassifierPrompt = false }) { Text("取消") }
-                }
-            }
-        )
-    }
 }

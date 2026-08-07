@@ -91,8 +91,14 @@ class ToolRouter(
         if (name in metaToolNames) return "system"
         // 1. 手动覆盖 — 仅指向有效域，否则 fall through
         overrides[name]?.let { if (it in validDomainLabels && isValidDomain(it)) return it }
-        // 2. Skill 工具归入「技能」域 (use_skill 是 skill 体系的统一入口; skill: 前缀 = skill 挂载条目)
-        if (name == "use_skill" || name.startsWith("skill_") || name.startsWith("skill:")) {
+        // 2. Skill 工具 — 按名称结构化分类: 第一字段类别(skill), 第二字段分类字段(skill 名)
+        //    归「技能/<skill名>」子域 (与 MCP 服务器域同层级, 抹平 MCP/Skill 区别)
+        if (name.startsWith("skill__") || name.startsWith("skill_") || name.startsWith("skill:")) {
+            val skillName = name.removePrefix("skill__").removePrefix("skill_").removePrefix("skill:")
+            if (skillName.isNotBlank() && isValidDomain("技能")) return "技能/$skillName"
+            return if (isValidDomain("技能")) "技能" else "方法域"
+        }
+        if (name == "use_skill") {
             return if (isValidDomain("技能")) "技能" else "方法域"
         }
         // 3. 系统级工具 — 按名称前缀精确匹配, 优先于关键词避免误分类
@@ -198,7 +204,7 @@ class ToolRouter(
      * v3.5.11 正常化基准）。工具数由 invoke_tools 帮助返回（消息层，不影响缓存）。
      */
     fun buildLayer1(tools: List<Tool>): String {
-        val treeNodes = buildDomainTree()
+        val treeNodes = buildDomainTree(tools)
 
         return buildString {
             appendLine("## 工具调度")
@@ -220,8 +226,8 @@ class ToolRouter(
         }
     }
 
-    /** 构建声明式域树: ToolDomain枚举 + customDomains, 过滤 hiddenDomains + removedBuiltinDomains (含子域级) */
-    private fun buildDomainTree(): Map<String, List<String>> {
+    /** 构建声明式域树: ToolDomain枚举 + customDomains + 技能子域(工具名派生), 过滤 hiddenDomains + removedBuiltinDomains (含子域级) */
+    private fun buildDomainTree(tools: List<Tool>? = null): Map<String, List<String>> {
         val result = mutableMapOf<String, MutableList<String>>()
 
         // 内置域 (ToolDomain枚举)
@@ -234,7 +240,7 @@ class ToolRouter(
             if (parts.size > 1) result[root]!!.add(label)
         }
 
-        // 自定义域
+        // 自定义域 — 与内置域完全对齐 (父级/独立域同一规则)
         for (cd in customDomains) {
             if (!isValidDomain(cd.name)) continue
             if (cd.parent != null) {
@@ -243,6 +249,22 @@ class ToolRouter(
                 }
             } else {
                 result.getOrPut(cd.name) { mutableListOf() }
+            }
+        }
+
+        // 技能子域 — 从工具名结构化派生 (skill__名), 与 classifyByName 同源,
+        // 抹平 MCP/Skill 层级: Skill 归「技能/<名>」, 与 MCP 服务器域同等次
+        if (tools != null) {
+            val skillNames = tools.mapNotNull { t ->
+                when {
+                    t.name.startsWith("skill__") -> t.name.removePrefix("skill__")
+                    t.name.startsWith("skill:") -> t.name.removePrefix("skill:")
+                    else -> null
+                }
+            }.filter { it.isNotBlank() }.distinct().sorted()
+            if (skillNames.isNotEmpty() && isValidDomain("技能")) {
+                result.getOrPut("技能") { mutableListOf() }
+                for (s in skillNames) result["技能"]!!.add("技能/$s")
             }
         }
 
@@ -276,7 +298,7 @@ class ToolRouter(
                         listOf(UIMessagePart.Text(router.buildHelpText(allTools)))
                     else -> {
                         val classified = router.classifyAll(allTools)
-                        val treeNodes = router.buildDomainTree()
+                        val treeNodes = router.buildDomainTree(allTools)
 
                         // 显示名 → 路径名 反查: 模型可能直接复制帮助地图上的显示名调用
                         // (domainNameOverrides 配置了显示名覆盖时, 加载仍按路径名解析)
@@ -407,13 +429,16 @@ class ToolRouter(
     }
 
     private fun buildHelpText(tools: List<Tool>): String {
-        val treeNodes = buildDomainTree()
+        val treeNodes = buildDomainTree(tools)
         val domainCounts = classifyAll(tools).mapValues { it.value.size }
         return buildString {
             appendLine("工具池共 ${tools.size} 个工具（${domainCounts.size} 个域）：")
             for ((root, subs) in treeNodes) {
+                // 空壳过滤: 无工具的子域不显示, 顶级域无工具无子域不显示 — 域数/计数对齐
+                val nonEmptySubs = subs.sorted().filter { (domainCounts[it] ?: 0) > 0 }
+                if ((domainCounts[root] ?: 0) == 0 && nonEmptySubs.isEmpty()) continue
                 appendLine(domainInfo(root) + countSuffix(root, domainCounts))
-                for (sub in subs.sorted()) {
+                for (sub in nonEmptySubs) {
                     appendLine(domainInfo(sub, "  ") + countSuffix(sub, domainCounts))
                 }
             }

@@ -67,7 +67,9 @@ class SkillManager(
                         } else {
                             assistant
                         }
-                    }
+                    },
+                    // 孤儿清理: skill 删除后, toolDomainOverrides 中 skill:名 挂载条目一并清除
+                    toolDomainOverrides = settings.toolDomainOverrides.filterKeys { it != "skill:$name" }
                 )
             }
         }

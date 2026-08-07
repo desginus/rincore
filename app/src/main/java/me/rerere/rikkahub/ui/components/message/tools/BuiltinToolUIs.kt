@@ -345,7 +345,7 @@ object UseSkillToolUI : ToolUIRenderer {
 
     @Composable
     override fun title(context: ToolUIContext): String {
-        val skillName = context.tool.toolName.removePrefix("skill_")
+        val skillName = context.tool.toolName.removePrefix("skill__").removePrefix("skill_")
         val path = context.arguments.getStringContent("path")
         return if (path != null) "Skill: $skillName / $path" else "Skill: $skillName"
     }
