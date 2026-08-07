@@ -106,17 +106,29 @@ object DynamicTools {
                     "stdio" -> {
                         val command = obj["command"]?.jsonPrimitive?.content
                             ?: return@Tool listOf(UIMessagePart.Text("stdio mode requires: command"))
+                        // Android 侧无 python3 (error=2) — 默认经 workspace 沙箱启动
+                        // (沙箱内有 Python/Node 运行时), workspaceId 取当前助手配置
+                        val workspaceId = settingsStore?.settingsFlow?.value
+                            ?.getCurrentAssistant()?.workspaceId
+                        if (workspaceId == null) {
+                            return@Tool listOf(UIMessagePart.Text(
+                                "stdio 模式需要 workspace: 当前助手未设置工作区。\n" +
+                                "请在助手设置中选择工作区, 或改用 UI 新建 STDIO 服务器并填写 Workspace ID。"
+                            ))
+                        }
                         val config = McpServerConfig.StdioTransportServer(
                             id = Uuid.random(),
                             commonOptions = McpCommonOptions(name = name),
                             command = command,
+                            viaWorkspace = true,
+                            workspaceId = workspaceId.toString(),
                         )
                         mcp.addClient(config)
                         persistServer(config)
                         listOf(UIMessagePart.Text(
                             "MCP server (stdio) spawned: $name\n" +
                             "Command: $command\n" +
-                            "已持久化并绑定当前助手 — MCP 客户端列表可见, 重启保留。工具下一步可用。"
+                            "已通过工作区(${workspaceId.toString().take(8)})启动并绑定当前助手 — 工具下一步可用。"
                         ))
                     }
                     else -> {

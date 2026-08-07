@@ -185,10 +185,14 @@ class ChatVM(
         analytics.logEvent("ai_edit_message", null)
 
         viewModelScope.launch {
-            // 1. 替换消息内容并截断其后 (不再追加第二条消息)
+            // 1. 追加新版本 (旧版本保留, 123 按钮可切换)
             chatService.editMessage(_conversationId, messageId, parts)
-            // 2. 直接触发重新生成 — 编辑完成即开始, 无需再点重新生成
-            val edited = conversation.value.currentMessages.find { it.id == messageId } ?: return@launch
+            // 2. 直接触发重新生成 — 编辑完成即开始, 无需再点重新生成。
+            //    编辑后追加的新版本 id 与 messageId 不同, 须在全量消息中定位
+            //    (currentMessages 只含每节点当前选中消息, 找不到旧 id)
+            val edited = conversation.value.messageNodes
+                .flatMap { it.messages }
+                .find { it.id == messageId } ?: return@launch
             chatService.regenerateAtMessage(_conversationId, edited)
         }
     }
