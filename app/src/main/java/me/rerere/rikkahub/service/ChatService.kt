@@ -302,7 +302,7 @@ class ChatService(
 
     // ---- 初始化对话 ----
 
-    suspend fun initializeConversation(conversationId: Uuid) {
+    suspend fun initializeConversation(conversationId: Uuid, folderId: Uuid? = null) {
         val session = getOrCreateSession(conversationId)
         // 若 session 已有数据 (已从 DB 加载过, 或正在生成中),
         // 不再用 DB 覆盖内存态, 防止切出切回时丢失未落库的回复。
@@ -319,7 +319,8 @@ class ChatService(
             val newConversation = Conversation.ofId(
                 id = conversationId,
                 assistantId = assistant.id,
-                newConversation = true
+                newConversation = true,
+                folderId = folderId,  // 当前焦点文件夹 → 新对话默认存储位置
             ).updateCurrentMessages(assistant.presetMessages)
             updateConversation(conversationId, newConversation)
         }
@@ -1175,20 +1176,29 @@ class ChatService(
         val processedParts = preprocessUserInputParts(parts, assistant)
         var edited = false
 
-        val updatedNodes = currentConversation.messageNodes.map { node ->
-            if (!node.messages.any { it.id == messageId }) {
-                return@map node
-            }
-            edited = true
+        // 编辑语义: 替换目标消息 (保留原 id) + 截断该消息之后的全部内容
+        // (不再追加第二条消息 — 编辑后直接触发重新生成, 见 ChatVM.handleMessageEdit)
+        val targetNodeIndex = currentConversation.messageNodes.indexOfFirst { node ->
+            node.messages.any { it.id == messageId }
+        }
+        if (targetNodeIndex == -1) return
 
+        val updatedNodes = currentConversation.messageNodes.mapIndexed { nodeIndex, node ->
+            if (nodeIndex > targetNodeIndex) return@mapIndexed null // 截断后续节点
+            if (!node.messages.any { it.id == messageId }) return@mapIndexed node
+            edited = true
+            val idx = node.messages.indexOfFirst { it.id == messageId }
+            val original = node.messages[idx]
             node.copy(
-                messages = node.messages + UIMessage(
+                messages = node.messages.subList(0, idx) + UIMessage(
+                    id = messageId,          // 保留原 id — 编辑语义
                     role = node.role,
                     parts = processedParts,
+                    createdAt = original.createdAt, // 保留原时间
                 ),
-                selectIndex = node.messages.size
+                selectIndex = idx + 1
             )
-        }
+        }.filterNotNull()
 
         if (!edited) return
 

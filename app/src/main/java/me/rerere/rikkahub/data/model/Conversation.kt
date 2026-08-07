@@ -109,12 +109,14 @@ data class Conversation(
             id: Uuid,
             assistantId: Uuid = DEFAULT_ASSISTANT_ID,
             messages: List<MessageNode> = emptyList(),
-            newConversation: Boolean = false
+            newConversation: Boolean = false,
+            folderId: Uuid? = null,
         ) = Conversation(
             id = id,
             assistantId = assistantId,
             messageNodes = messages,
             newConversation = newConversation,
+            folderId = folderId,
         )
     }
 }

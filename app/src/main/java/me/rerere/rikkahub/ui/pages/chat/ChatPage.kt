@@ -101,10 +101,10 @@ import java.io.File
 import kotlin.uuid.Uuid
 
 @Composable
-fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
+fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, folderId: Uuid? = null) {
     val vm: ChatVM = koinViewModel(
         parameters = {
-            parametersOf(id.toString())
+            parametersOf(id.toString(), folderId)
         }
     )
     val filesManager: FilesManager = koinInject()

@@ -264,7 +264,7 @@ fun ChatDrawerContent(
                         vm.deleteConversation(it).join()
                         conversations.refresh()
                         if (it.id == current.id) {
-                            navigateToChatPage(navController)
+                            navigateToChatPage(navController, folderId = selectedFolderId)
                         }
                     }
                 },

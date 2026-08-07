@@ -48,6 +48,7 @@ private const val TAG = "ChatVM"
 
 class ChatVM(
     id: String,
+    folderId: Uuid?,
     private val context: Application,
     private val settingsStore: SettingsStore,
     private val conversationRepo: ConversationRepository,
@@ -84,7 +85,7 @@ class ChatVM(
 
         // 初始化对话
         viewModelScope.launch {
-            chatService.initializeConversation(_conversationId)
+            chatService.initializeConversation(_conversationId, folderId)
         }
 
         // 记住对话ID, 方便下次启动恢复
@@ -184,7 +185,11 @@ class ChatVM(
         analytics.logEvent("ai_edit_message", null)
 
         viewModelScope.launch {
+            // 1. 替换消息内容并截断其后 (不再追加第二条消息)
             chatService.editMessage(_conversationId, messageId, parts)
+            // 2. 直接触发重新生成 — 编辑完成即开始, 无需再点重新生成
+            val edited = conversation.value.currentMessages.find { it.id == messageId } ?: return@launch
+            chatService.regenerateAtMessage(_conversationId, edited)
         }
     }
 
