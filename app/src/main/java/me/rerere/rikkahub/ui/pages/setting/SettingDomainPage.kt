@@ -51,11 +51,15 @@ fun buildPreviewTools(
             .filter { it.key.startsWith("skill:") }
             .map { it.key.removePrefix("skill:") to it.value }
         val mountedNames = skillMounts.map { it.first }.toSet()
+        // 描述取自 SKILL.md frontmatter — 只显示名字无法区分 skill 用途
+        val skillDesc: (String) -> String = { n ->
+            allSkills.find { it.name == n }?.description ?: "Skill 能力模块"
+        }
         skillMounts.forEach { (sname, _) ->
-            list.add(ToolPreview("skill:$sname", "Skill 能力模块（通过 use_skill 加载其指令后调用）"))
+            list.add(ToolPreview("skill:$sname", skillDesc(sname)))
         }
         allSkills.filter { it.name !in mountedNames }.forEach { s ->
-            list.add(ToolPreview("skill:${s.name}", "Skill 能力模块（通过 use_skill 加载其指令后调用）"))
+            list.add(ToolPreview("skill:${s.name}", s.description))
         }
     } catch (_: Exception) {}
     try {

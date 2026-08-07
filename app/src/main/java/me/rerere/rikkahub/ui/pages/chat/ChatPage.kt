@@ -329,7 +329,8 @@ private fun ChatPageContent(
                     drawerState = drawerState,
                     previewMode = previewMode,
                     onNewChat = {
-                        navigateToChatPage(navController)
+                        // 新建对话继承当前文件夹 — 从文件夹 B 进入后新建仍归 B
+                        navigateToChatPage(navController, folderId = folderId)
                     },
                     onClickMenu = {
                         previewMode = !previewMode

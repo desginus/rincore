@@ -1196,7 +1196,7 @@ class ChatService(
                     parts = processedParts,
                     createdAt = original.createdAt, // 保留原时间
                 ),
-                selectIndex = idx + 1
+                selectIndex = idx  // 指向替换后的消息 (size = idx+1, 合法范围 0..idx)
             )
         }.filterNotNull()
 

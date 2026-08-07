@@ -308,12 +308,9 @@ class SettingsStore(
                     )
                 } else provider
             }.toMutableList()
+            // 仅当完全为空时兜底默认助手 (数据异常保护); 不再自动补回缺失的默认助手 —
+            // 用户可删除任意助手 (含默认), UI 层保证仅剩最后 1 个时禁止删除
             val assistants = it.assistants.ifEmpty { DEFAULT_ASSISTANTS }.toMutableList()
-            DEFAULT_ASSISTANTS.forEach { defaultAssistant ->
-                if (assistants.none { it.id == defaultAssistant.id }) {
-                    assistants.add(defaultAssistant.copy())
-                }
-            }
             val ttsProviders = it.ttsProviders.ifEmpty { DEFAULT_TTS_PROVIDERS }.toMutableList()
             DEFAULT_TTS_PROVIDERS.forEach { defaultTTSProvider ->
                 if (ttsProviders.none { provider -> provider.id == defaultTTSProvider.id }) {
