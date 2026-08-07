@@ -90,12 +90,19 @@ class ToolRouter(
         // 0. invoke_tools 自身不分类
         if (name in metaToolNames) return "system"
         // 1. 手动覆盖 — 仅指向有效域，否则 fall through
-        overrides[name]?.let { if (it in validDomainLabels && isValidDomain(it)) return it }
+        //    技能子域(技能/名)为动态域, 不在 validDomainLabels — root(技能)有效即放行
+        overrides[name]?.let {
+            val ok = it in validDomainLabels ||
+                (it.startsWith("技能/") && isValidDomain("技能"))
+            if (ok && isValidDomain(it)) return it
+        }
         // 2. Skill 工具 — 按名称结构化分类: 第一字段类别(skill), 第二字段分类字段(skill 名)
         //    归「技能/<skill名>」子域 (与 MCP 服务器域同层级, 抹平 MCP/Skill 区别)
         if (name.startsWith("skill__") || name.startsWith("skill_") || name.startsWith("skill:")) {
             val skillName = name.removePrefix("skill__").removePrefix("skill_").removePrefix("skill:")
-            if (skillName.isNotBlank() && isValidDomain("技能")) return "技能/$skillName"
+            // 子域被删除/隐藏时归技能根域 — 与 buildDomainTree 过滤对齐 (计数/显示一致)
+            val sub = "技能/$skillName"
+            if (skillName.isNotBlank() && isValidDomain(sub)) return sub
             return if (isValidDomain("技能")) "技能" else "方法域"
         }
         if (name == "use_skill") {
@@ -253,7 +260,8 @@ class ToolRouter(
         }
 
         // 技能子域 — 从工具名结构化派生 (skill__名), 与 classifyByName 同源,
-        // 抹平 MCP/Skill 层级: Skill 归「技能/<名>」, 与 MCP 服务器域同等次
+        // 抹平 MCP/Skill 层级: Skill 归「技能/<名>」, 与 MCP 服务器域同等次。
+        // 过滤已删除/隐藏的技能子域 (删除后不被动态重建)。
         if (tools != null) {
             val skillNames = tools.mapNotNull { t ->
                 when {
@@ -264,7 +272,10 @@ class ToolRouter(
             }.filter { it.isNotBlank() }.distinct().sorted()
             if (skillNames.isNotEmpty() && isValidDomain("技能")) {
                 result.getOrPut("技能") { mutableListOf() }
-                for (s in skillNames) result["技能"]!!.add("技能/$s")
+                for (s in skillNames) {
+                    val sub = "技能/$s"
+                    if (isValidDomain(sub)) result["技能"]!!.add(sub)
+                }
             }
         }
 

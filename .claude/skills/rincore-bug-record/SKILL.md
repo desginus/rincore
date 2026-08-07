@@ -75,6 +75,15 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 - **修复**：单独恢复静态化——仅移除 Error 过滤（工具声明由配置决定），callTool 调用时显式报错。不带全量注入/skill 直注/数量统计等 3.5.18 错误改动
 - **教训**：3.5.18-beta2 的静态化方向正确但被错误改动拖累；回滚要精准，不能连带回滚正确的修复
 
+### B28. 技能子域体系六处断裂（v3.5.34 稳定版梳理）
+- **override 校验**：validDomainLabels 不含技能子域（动态）→ 挂载到"技能/名"失效 → root 有效即放行
+- **UI 域树**：buildNestedDomains 只遍历枚举+customDomains → 技能子域管理页不可见 → 从分类结果派生
+- **move 目标**：allValid 不含技能子域 → 无法移动到技能/<名> → 补 knownSkillNames 派生
+- **子域删除**：buildDomainTree 无条件重建技能子域 → 删除无效 → 过滤 removed/hidden
+- **分类一致性**：classifyByName 不查子域删除 → 删除后仍归"技能/名"（与域树错位）→ 归技能根域
+- **挂载键**：skill__名/skill:名/原始名 三套 key 混用 → move 规范化统一 skill:原始名
+- **教训**：动态域（技能/<名>）必须全链路一致——分类/域树/UI/移动/删除 同源校验
+
 ### B27. 工具域分类体系重构（v3.5.26）
 - **问题**：AI 分类调模型不稳定；Skill/MCP 层级不对齐（skill_ 单字段 vs mcp__服务器__工具）；空壳域/残留空壳；孤儿注册数据（skill 删除后 overrides 残留）；search_domains 域路径解析失败（技能子域不在域列表）；工具池域数与域内计数不一致
 - **修复**：自动分类改本地名称结构化分类（第一字段类别/第二字段分类字段）；Skill 工具 skill__ 命名 + 归「技能/<名>」；buildDomainTree(tools) 技能子域派生（与 classifyByName 同源）；空壳域过滤（UI+帮助一致）；SkillManager.deleteSkill 清 overrides 孤儿；search_domains 域列表同源

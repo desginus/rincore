@@ -13,6 +13,12 @@ description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日�
 - **缓存"卡-跳-线性"**：DeepSeek 服务端磁盘缓存机制（构建延迟秒级+固定间隔切分+SWA 独立单元）——客户端不可控，已入库 decisions D2
 
 ## v3.5.x（传输层回滚期 → 当前）
+- **v3.5.34**（稳定版，2026-08-07）：域分类深层梳理 6 bug（技能子域 override/UI/move/删除/规范化）
+- **v3.5.33**（583607cf）：STDIO 启动自动回退 workspace + 名称可修改
+- **v3.5.32**（eebfc04c）：编辑重生成恢复 + mcp_connect stdio workspace 启动
+- **v3.5.31**（e15b84d8）：编辑版本切换恢复 + STDIO 全链路对齐（持久化+绑定）+ 崩溃加固
+- **v3.5.30**（484b728b）：文件夹实时焦点 + assistantId 脏值
+- **v3.5.29**（ade4fbcd）：编辑崩溃/默认助手补回/Skill 描述
 - **v3.5.28**（6d7793b0，2026-08-07）：编辑消息发送即重新生成 + 对话默认存储文件夹（焦点文件夹）
 - **v3.5.27**（cbc4fd44，2026-08-07）：MCP STDIO workspace 桥接（launchProcess 常驻 + viaWorkspace 配置）
 - **v3.5.26**（ac889337，2026-08-07）：工具域分类体系重构

@@ -433,8 +433,10 @@ private fun listDomainsTool(
             return domain !in settings.hiddenDomains && domain !in settings.removedBuiltinDomains &&
                 root !in settings.hiddenDomains && root !in settings.removedBuiltinDomains
         }
+        val skillSubNames = knownSkillNames().map { "技能/$it" }
         val allValid = (me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.map { it.label }.toSet()
-            + settings.customDomains.map { it.name }.toSet())
+            + settings.customDomains.map { it.name }.toSet()
+            + if (settings.customDomains.any { it.name == "技能" }) emptySet() else skillSubNames.toSet())
             .filter { visible(it) }
             .toSet()
         if (targetDomain !in allValid) {
@@ -456,7 +458,10 @@ private fun listDomainsTool(
                 // 原子写入: skill 挂载用 "skill:名" 键 (避免与工具名冲突, 且 invoke_tools 可识别)
                 // 孤儿清理: 同 key 覆盖即迁移 (旧域条目自动失效); 同时清除指向旧域的
                 // 残留描述/关键词 (旧域被删时), 保证无孤儿注册数据
-                val overrideKey = if (isSkill) "skill:$toolName" else toolName
+                // 规范化: 用户传 skill__名 / skill:名 / 原始名 统一为 skill:原始名
+                val skillRawName = toolName
+                    .removePrefix("skill__").removePrefix("skill_").removePrefix("skill:")
+                val overrideKey = if (isSkill || toolName.startsWith("skill")) "skill:$skillRawName" else toolName
                 val msg = settingsStore.updateWithResult { cur ->
                     val newOverrides = cur.toolDomainOverrides + (overrideKey to targetDomain)
                     val cleaned = cur.copy(toolDomainOverrides = newOverrides)

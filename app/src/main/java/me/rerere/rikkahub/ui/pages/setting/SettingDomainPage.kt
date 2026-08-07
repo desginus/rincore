@@ -129,6 +129,12 @@ private fun buildNestedDomains(
             domainChildren.getOrPut(cd.parent) { linkedSetOf() }.add(cd.name)
         }
     }
+    // 技能子域 (动态, 从分类结果派生) — 域管理 UI 可见/可管理, 与模型侧一致
+    val skillSubs = flatMap.keys.filter { it.startsWith("技能/") }
+    if (skillSubs.isNotEmpty() && notRemoved("技能")) {
+        allTopLevel.add("技能")
+        skillSubs.sorted().forEach { domainChildren.getOrPut("技能") { linkedSetOf() }.add(it) }
+    }
 
     val visibleTopLevel = allTopLevel.filter { notRemoved(it) }
 
