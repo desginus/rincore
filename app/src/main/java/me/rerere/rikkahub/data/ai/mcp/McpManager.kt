@@ -274,7 +274,30 @@ class McpManager(
                 if (p == null) throw IllegalStateException("workspace 启动失败: workspace 不存在或 proot 不可用")
                 p
             } else {
-                ProcessBuilder(cmdParts + config.args).start()
+                // 直接启动 (Android 原生可执行 / Java 服务器)。失败时 (如 python3
+                // error=2 不存在) 自动回退 workspace 沙箱启动 — 沙箱内有运行时。
+                val process2 = try {
+                    ProcessBuilder(cmdParts + config.args).start()
+                } catch (e: java.io.IOException) {
+                    Log.w(TAG, "direct stdio launch failed: ${e.message}, falling back to workspace")
+                    val workspaceId = settingsStore.settingsFlow.value
+                        .getCurrentAssistant().workspaceId
+                    if (workspaceId == null) throw e  // 无 workspace 可回退
+                    val wp = workspaceRepository?.launchProcess(workspaceId.toString(), config.command, "")
+                        ?: throw e
+                    // 回退成功后持久化 viaWorkspace — 后续启动直接走 workspace, 不再先失败一次
+                    runCatching {
+                        settingsStore.update { cur ->
+                            cur.copy(mcpServers = cur.mcpServers.map { s ->
+                                if (s.id == config.id && s is McpServerConfig.StdioTransportServer) {
+                                    s.copy(viaWorkspace = true, workspaceId = workspaceId.toString())
+                                } else s
+                            })
+                        }
+                    }
+                    wp
+                }
+                process2
             }
             stdioProcesses[config.id] = process
             StdioClientTransport(

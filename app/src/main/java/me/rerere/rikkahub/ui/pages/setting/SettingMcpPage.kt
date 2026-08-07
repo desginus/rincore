@@ -597,7 +597,9 @@ private fun McpCommonOptionsConfigure(
                             is McpServerConfig.StreamableHTTPServer -> config.copy(
                                 commonOptions = config.commonOptions.copy(name = name)
                             )
-                        is McpServerConfig.StdioTransportServer -> config.copy(commonOptions = config.commonOptions)                        }
+                        is McpServerConfig.StdioTransportServer -> config.copy(
+                            commonOptions = config.commonOptions.copy(name = name)
+                        )                        }
                     )
                 },
                 label = { Text(stringResource(R.string.setting_mcp_page_name)) },
