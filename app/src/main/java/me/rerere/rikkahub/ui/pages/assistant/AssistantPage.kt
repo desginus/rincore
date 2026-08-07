@@ -60,7 +60,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.hugeicons.stroke.MoreVertical
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
-import me.rerere.rikkahub.data.datastore.DEFAULT_ASSISTANTS_IDS
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
@@ -243,6 +242,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
     actionSheetAssistant?.let { assistant ->
         AssistantActionSheet(
             assistant = assistant,
+            assistantCount = settings.assistants.size,
             onDismiss = { actionSheetAssistant = null },
             onCopy = {
                 vm.copyAssistant(assistant)
@@ -483,6 +483,7 @@ private fun AssistantItem(
 @Composable
 private fun AssistantActionSheet(
     assistant: Assistant,
+    assistantCount: Int,
     onDismiss: () -> Unit,
     onCopy: () -> Unit,
     onDelete: () -> Unit
@@ -533,8 +534,8 @@ private fun AssistantActionSheet(
                     Text(stringResource(R.string.assistant_page_clone))
                 }
 
-            // 删除选项（仅非默认助手显示）
-            if (assistant.id !in DEFAULT_ASSISTANTS_IDS) {
+            // 删除选项 — 所有助手均可删除; 仅剩最后一个助手时禁止 (避免无助手可用)
+            if (assistantCount > 1) {
                 ListItem(
                     leadingContent = {
                         Icon(

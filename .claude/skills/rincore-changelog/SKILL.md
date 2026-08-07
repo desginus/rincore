@@ -13,6 +13,10 @@ description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日�
 - **缓存"卡-跳-线性"**：DeepSeek 服务端磁盘缓存机制（构建延迟秒级+固定间隔切分+SWA 独立单元）——客户端不可控，已入库 decisions D2
 
 ## v3.5.x（传输层回滚期 → 当前）
+- **v3.5.25**（2026-08-07）：缓存根因修复 + 助手删除放开
+  - MCP 静态化恢复（仅 Error 过滤移除）：tools 数组配置决定，服务器波动不断缓存
+  - 助手删除：DEFAULT_ASSISTANTS_IDS 限制取消，仅剩最后一个时禁止删除
+  - 注意：请求体无变化（工具声明静态化不改变请求体内容）
 - **v3.5.24**（a2b2ac5d，2026-08-06）：缓存机制回滚 3.5.17
   - WorkspaceReminderTransformer/McpManager/GenerationPrompts 对齐 520b4cb0
   - get_location 真实定位优先（缓存仅兜底）

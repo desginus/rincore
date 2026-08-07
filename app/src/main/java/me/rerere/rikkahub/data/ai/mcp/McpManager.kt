@@ -144,10 +144,13 @@ class McpManager(
     fun getAllAvailableTools(): List<Triple<Uuid, String, McpTool>> {
         val settings = settingsStore.settingsFlow.value
         val assistant = settings.getCurrentAssistant()
+        // 工具声明静态化 — 仅由配置决定 (enable + assistant 绑定), 不受连接状态影响。
+        // 根因: 服务器连接波动 → Error → 工具从数组消失 → tools 数组每轮变化 →
+        // 请求体前缀断裂 → 缓存阶梯化 (用户环境 MCP 工具多且波动频繁)。
+        // 失败在 callTool 时显式报错 (可见化保留)。
         return settings.mcpServers
             .filter {
-                it.commonOptions.enable && it.id in assistant.mcpServers &&
-                    syncingStatus.value[it.id] !is McpStatus.Error // 连接失败的服务器工具不可见
+                it.commonOptions.enable && it.id in assistant.mcpServers
             }
             .flatMap { server ->
                 server.commonOptions.tools
@@ -157,6 +160,15 @@ class McpManager(
     }
 
     suspend fun callTool(serverId: Uuid, toolName: String, args: JsonObject): List<UIMessagePart> {
+        // 工具声明已静态化, 连接状态在调用时检查 — 失败在此明确报错
+        val status = syncingStatus.value[serverId]
+        if (status is McpStatus.Error) {
+            return listOf(
+                UIMessagePart.Text(
+                    "工具执行失败: MCP 服务器连接异常 (${status.message})。请检查服务器状态后重试。"
+                )
+            )
+        }
         val entry = clients.entries.find { it.key.id == serverId }
         var client = entry?.value
             ?: return listOf(
