@@ -40,19 +40,19 @@ fun SettingToolHubPage(
             CardGroup(title = { Text("工具管理") }) {
                 item(
                     onClick = onOpenMcp,
-                    leadingContent = { Icon(HugeIcons.ServerStack01, null) },
+                    leadingContent = { Icon(HugeIcons.Settings03, null) },
                     supportingContent = { Text("MCP 服务器连接与管理（SSE / StreamableHTTP / STDIO）") },
                     headlineContent = { Text("MCP 服务器") },
                 )
                 item(
                     onClick = onOpenCompare,
-                    leadingContent = { Icon(HugeIcons.Brain02, null) },
+                    leadingContent = { Icon(HugeIcons.Settings03, null) },
                     supportingContent = { Text("系统工具地图 / List Domains / Invoke Tools 三信源对照") },
                     headlineContent = { Text("工具对照（开发者）") },
                 )
                 item(
                     onClick = onOpenAbout,
-                    leadingContent = { Icon(HugeIcons.Alert01, null) },
+                    leadingContent = { Icon(HugeIcons.Settings03, null) },
                     supportingContent = { Text("版本信息 / 分享 / 关于") },
                     headlineContent = { Text("关于和分享") },
                 )
