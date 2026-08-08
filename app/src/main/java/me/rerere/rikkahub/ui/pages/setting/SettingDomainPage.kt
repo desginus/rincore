@@ -194,10 +194,10 @@ fun SettingDomainPage(
                 item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
             }
             item {
-                val mcpLarge = previewTools.filter { it.name.startsWith("mcp__") }.groupBy { it.name.removePrefix("mcp__").split("__").first() }.count { it.value.size >= 8 }
-                val customSubCount = settings.customDomains.count { it.parent != null }
+                val mcpLarge = 0
+                val customSubCount = 0
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("${nestedDomains.size}个域 · ${previewTools.size}个工具 · ${mcpLarge}个MCP工具集 · ${customSubCount}个自定义子域",
+                    Text("${nestedDomains.size}个域 · ${previewTools.size}个工具 · 内置/Skill/MCP 同层位统一计数",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                 }

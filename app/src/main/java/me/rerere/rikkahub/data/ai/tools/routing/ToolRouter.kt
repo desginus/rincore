@@ -88,41 +88,14 @@ class ToolRouter(
             )
         }
 
-        // 自定义域已移除 (用户决策 v3.5.40) — 不再进入域体系。
-        // 旧配置数据忽略 (无害残留), 未分类工具统一落入「未分类」父域。
-
-        // 技能子域 — 由工具名结构化派生 (与 classifyByName 同源)
-        // 由 buildDomainTree(tools) 注入 (需要工具池), 此处仅确保技能根域存在
+        // 自定义域已移除 (用户决策 v3.5.40); 技能归根域 (v3.5.47 缓存根治)
         return result.sortedBy { it.path }
     }
 
-    /** 域树 (父 → 子列表) — 视图层唯一来源, 全部视图从这里派生 */
+    /** 域树 (父 → 子列表) — 视图层唯一来源, 全部视图从这里派生。
+     *  技能归根域 (v3.5.47): 不派生技能/名 子域 — layer1 恒定, 缓存稳定 */
     private fun buildDomainTree(tools: List<Tool>? = null): Map<String, List<String>> {
         val infos = domainSource().toMutableList()
-
-        // 技能子域: 从工具名派生 (skill__名 → 技能/名)
-        if (tools != null) {
-            val skillNames = tools.mapNotNull { t ->
-                when {
-                    t.name.startsWith("skill__") -> t.name.removePrefix("skill__")
-                    t.name.startsWith("skill:") -> t.name.removePrefix("skill:")
-                    else -> null
-                }
-            }.filter { it.isNotBlank() }.distinct().sorted()
-            for (s in skillNames) {
-                val sub = "技能/$s"
-                if (isValidDomain(sub) && infos.none { it.path == sub }) {
-                    infos += DomainInfo(
-                        path = sub,
-                        parent = "技能",
-                        displayName = s,
-                        description = "Skill 能力模块",
-                        keywords = emptyList(),
-                        builtin = false,
-                    )
-                }
-            }
-        }
 
         val result = mutableMapOf<String, MutableList<String>>()
         val knownPaths = infos.map { it.path }.toSet()
@@ -192,16 +165,24 @@ class ToolRouter(
         val valid = validDomainLabels
 
         // 1. 手动覆盖 — 指向有效域 (含技能子域: root 有效即放行)
-        overrides[name]?.let {
+        //    skill 挂载键兼容: 工具名 skill__名 / skill_名 → overrides["skill:名"]
+        //    (move 挂载统一写入 skill:名 键 — 工具名与挂载键不同, 需双向解析)
+        fun resolveOverride(n: String): String? = overrides[n]?.let {
             val ok = it in valid || (it.startsWith("技能/") && isValidDomain("技能"))
-            if (ok && isValidDomain(it)) return it
+            if (ok && isValidDomain(it)) it else null
+        }
+        resolveOverride(name)?.let { return it }
+        if (name.startsWith("skill")) {
+            val skillKey = "skill:" + name
+                .removePrefix("skill__").removePrefix("skill_").removePrefix("skill:")
+            resolveOverride(skillKey)?.let { return it }
         }
 
-        // 2. Skill 工具 — 名称结构化: 第一字段类别(skill), 第二字段分类字段(skill 名)
+        // 2. Skill 工具 — 统一归「技能」根域 (v3.5.47 缓存根治):
+        //    技能/名 子域从工具池动态派生 → layer1 随技能增删变化 → 缓存断裂。
+        //    归根域后 layer1 恒定为「技能」条目 — 技能工具经 invoke_tools("技能")
+        //    列出; 挂载的技能经 override 优先归挂载域 (第 1 步已处理)。
         if (name.startsWith("skill__") || name.startsWith("skill_") || name.startsWith("skill:")) {
-            val skillName = name.removePrefix("skill__").removePrefix("skill_").removePrefix("skill:")
-            val sub = "技能/$skillName"
-            if (skillName.isNotBlank() && isValidDomain(sub)) return sub
             return if (isValidDomain("技能")) "技能" else "方法域"
         }
         if (name == "use_skill") {
