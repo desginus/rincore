@@ -150,6 +150,8 @@ class GenerationHandler(
 
         // G3 平台空流重试计数 (每次生成仅重试一次)
         var emptyRetryCount = 0
+        // 断流重试计数 (切后台/NAT/平台断连 — IOException 自动恢复, 每次生成最多 2 次)
+        var streamRetryCount = 0
 
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
@@ -707,6 +709,11 @@ class GenerationHandler(
             }
         )
         if (stream) {
+            // 断流自动恢复 (v3.5.46 根治): 输出中连接中断 (切后台网络切换/
+            // NAT 超时/平台断流 — IOException) → 回滚本次已输出内容 → 自动重试。
+            // 用户核心诉求: 一直保持连接, 不自己中断。重试请求消息相同 → 缓存命中。
+            val preStreamMessages = messages
+            try {
             providerImpl.streamText(
                 providerSetting = provider,
                 messages = internalMessages,
@@ -734,6 +741,19 @@ class GenerationHandler(
                     }
                 }
                 onUpdateMessages(messages)
+            }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e  // 用户主动停止 — 不重试
+            } catch (e: java.io.IOException) {
+                // 断流 (切后台/网络切换/NAT/平台): 回滚半截输出 → 自动重试 (最多 2 次)
+                if (streamRetryCount < 2) {
+                    streamRetryCount++
+                    Log.w(TAG, "stream interrupted (${e.message}), rolling back & retry $streamRetryCount/2")
+                    messages = preStreamMessages  // 丢弃本次生成的半截内容
+                    onUpdateMessages(messages)    // UI 同步回滚
+                    continue  // 重试 (maxSteps 内, 消息相同缓存命中)
+                }
+                throw e
             }
         } else {
             val chunk = providerImpl.generateText(
