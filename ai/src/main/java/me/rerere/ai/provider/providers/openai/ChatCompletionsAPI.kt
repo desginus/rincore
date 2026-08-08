@@ -168,21 +168,20 @@ class ChatCompletionsAPI(
         // just for debugging response body
         // println(client.newCall(request).await().body?.string())
 
-        // SSE 有效数据看门狗: 60s 无有效数据 → 主动断开。
-        // v3.5.14 教训: 主动断开曾引入长思考中断 — 但当时无有效数据过滤,
-        // 且推理链为静默。当前: lastEventAt 仅在有效数据 (reasoning/text chunk)
-        // 时刷新, 推理期间持续有数据 → 不误断; 真挂起 (服务器保活空行/平台卡死)
-        // → 60s 内断开 → 触发生成收尾 → 计时器停 + 中断可见 (不再无限等待)。
+        // SSE 有效数据看门狗: 120s 无有效数据 → 主动断开 (触发收尾+断流重试)。
+        // 教训链: v3.5.14 主动断开误杀长思考 → 改只日志; v3.5.45 缩短到 25s 后
+        // 用户实测误杀 (Trace 95098f39: 平台存在 >25s 静默期, 非断流) —
+        // 25s 假设"推理期间持续有 reasoning chunk"在用户环境不成立。
+        // 120s 折中: 平台静默 (思考/回复间隙) 不误杀; 真断流/卡死 120s 后
+        // 断开 → 断流重试恢复 (GenerationHandler) — 维持连接优先。
         val lastEventAt = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
         val watchdog = launch {
             while (true) {
-                delay(10_000)
+                delay(30_000)
                 val idleMs = System.currentTimeMillis() - lastEventAt.get()
-                // 25s 无有效数据 → 断开 (推理期间 reasoning chunk 持续刷新, 不误断;
-                // 输出忽然停止 → 25s 内收尾停表, 不再让计时器空转)
-                if (idleMs > 25_000) {
+                if (idleMs > 120_000) {
                     Log.w(TAG, "SSE idle ${idleMs / 1000}s — no valid data, closing stream")
-                    close(java.io.IOException("生成无有效数据超时 (25s): 平台断流或卡死"))
+                    close(java.io.IOException("生成无有效数据超时 (120s): 平台断流或卡死"))
                     break
                 }
             }
