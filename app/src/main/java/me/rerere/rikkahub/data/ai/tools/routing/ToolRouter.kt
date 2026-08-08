@@ -495,7 +495,14 @@ class ToolRouter(
      * 获取指定域下的工具 — 使用 classifyAll 确保与 createInvokeToolsTool 一致。
      */
     fun getDomainTools(domainName: String, allTools: List<Tool>): List<Tool> {
-        return classifyAll(allTools)[domainName].orEmpty().distinctBy { it.name }
+        val classified = classifyAll(allTools)
+        // 短名兼容: 旧会话 loadedDomains 可能存短名 (统一完整路径前) —
+        // 未命中时按最后一段反查完整路径, 否则该域工具不加载 → 模型反复
+        // invoke_tools → tools 数组每轮变化 → 缓存阶梯化
+        val resolved = classified.keys.firstOrNull { it == domainName }
+            ?: classified.keys.firstOrNull { it.substringAfterLast("/") == domainName }
+            ?: domainName
+        return classified[resolved].orEmpty().distinctBy { it.name }
     }
 
     /**
