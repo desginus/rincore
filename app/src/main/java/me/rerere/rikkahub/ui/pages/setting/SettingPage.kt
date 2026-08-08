@@ -95,6 +95,15 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val filesManager: FilesManager = koinInject()
     var showDomainPage by remember { mutableStateOf(false) }
+    var showToolComparePage by remember { mutableStateOf(false) }
+
+    if (showToolComparePage) {
+        SettingToolComparePage(
+            settings = settings,
+            onBack = { showToolComparePage = false },
+        )
+        return
+    }
 
     if (showDomainPage) {
         SettingDomainPage(
@@ -276,6 +285,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         leadingContent = { Icon(HugeIcons.Settings03, null) },
                         supportingContent = { Text(stringResource(R.string.setting_page_domain_management_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_domain_management)) },
+                    )
+                    item(
+                        onClick = { showToolComparePage = true },
+                        leadingContent = { Icon(HugeIcons.View, null) },
+                        supportingContent = { Text("系统工具地图 / List Domains / Invoke Tools 三信源对照（同源验证）") },
+                        headlineContent = { Text("工具对照（开发者）") },
                     )
                     item(
                         onClick = { navController.navigate(Screen.Skills) },

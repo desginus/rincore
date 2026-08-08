@@ -503,7 +503,7 @@ class ToolRouter(
         )
     }
 
-    private fun buildHelpText(tools: List<Tool>): String {
+    fun buildHelpText(tools: List<Tool>): String {
         // 统一视图 — 与 layer1/Invoke Tools/UI 完全同源
         val view = unifiedDomainView(tools)
         return buildString {

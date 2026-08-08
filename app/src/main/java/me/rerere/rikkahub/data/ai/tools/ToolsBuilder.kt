@@ -63,9 +63,23 @@ fun buildAssistantToolPool(
             )
         )
     }
-    // AI 域管理工具
+    // AI 域管理工具 — 单一源头: list/search/move 的 execute 实时构建
+    // 与模型侧完全同源的完整工具池 (此前 knownToolNames 默认空集 → List
+    // Domains 返回 0 / Search Domains 分类空 — v3.5.43 根治)
     if (assistant.useLayeredTools) {
-        addAll(createDomainTools(settingsStore))
+        addAll(createDomainTools(settingsStore) {
+            val s = settingsStore.settingsFlow.value
+            val a = s.getCurrentAssistant()
+            buildAssistantToolPool(
+                settings = s,
+                assistant = a,
+                localTools = localTools,
+                skillManager = skillManager,
+                conversationRepo = conversationRepo,
+                mcpManager = mcpManager,
+                settingsStore = settingsStore,
+            )
+        })
     }
     // MCP 工具 (静态化声明 — 配置决定)
     addAll(me.rerere.rikkahub.ecosystem.tools.DynamicTools.getMcpTools())

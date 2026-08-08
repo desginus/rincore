@@ -34,14 +34,13 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
  */
 fun createDomainTools(
     settingsStore: SettingsStore,
-    knownToolNames: () -> Set<String> = { emptySet() }, // 全量工具名(含 MCP/动态), move 校验用
-    knownSkillNames: () -> Set<String> = { emptySet() }, // 已启用 skill 名, move 挂载用
+    toolPoolProvider: () -> List<Tool> = { emptyList() }, // 完整工具池 (与模型侧同源, execute 时实时构建)
 ): List<Tool> {
     return listOf(
         createDomainTool(settingsStore),
-        deleteDomainTool(settingsStore, knownToolNames),
-        listDomainsTool(settingsStore, knownToolNames, knownSkillNames),
-        createSearchDomainsTool(settingsStore, knownToolNames),
+        deleteDomainTool(settingsStore, toolPoolProvider),
+        listDomainsTool(settingsStore, toolPoolProvider),
+        createSearchDomainsTool(settingsStore, toolPoolProvider),
     )
 }
 
@@ -51,7 +50,7 @@ fun createDomainTools(
  */
 private fun createSearchDomainsTool(
     settingsStore: SettingsStore,
-    knownToolNames: () -> Set<String>,
+    toolPoolProvider: () -> List<Tool>,
 ) = Tool(
     name = "search_domains",
     description = "按关键词或标签反向查询工具域位置。匹配域的名称、触发描述、触发条件（如：比价、定时、MCP、Skill）。返回全部匹配结果，无数量上限。不确定工具在哪个域时使用。",
@@ -85,7 +84,7 @@ private fun createSearchDomainsTool(
             hiddenDomains = settings.hiddenDomains,
             removedBuiltinDomains = settings.removedBuiltinDomains,
         )
-        val tools = knownToolNames()
+        val tools = toolPoolProvider()
 
         // 可见性判断 (与 move 工具一致: 根域级联)
         fun visible(domain: String): Boolean {
@@ -365,7 +364,7 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
 
 private fun deleteDomainTool(
     settingsStore: SettingsStore,
-    knownToolNames: () -> Set<String>,
+    toolPoolProvider: () -> List<Tool>,
 ) = Tool(
     name = "list_domains",
     description = "列出所有可用域及其工具数量 (与系统提示/Invoke Tools/域管理完全同源)",
@@ -377,7 +376,7 @@ private fun deleteDomainTool(
     },
     execute = {
         val settings = settingsStore.settingsFlow.value
-        // 统一视图: 与 layer1/Invoke Tools/UI 完全同源 (v3.5.42 信源统一重写)
+        // 单一源头: 完整工具池 (与模型侧 buildAssistantToolPool 同源, 含描述 → 分类一致)
         val router = me.rerere.rikkahub.data.ai.tools.routing.ToolRouter(
             overrides = settings.toolDomainOverrides,
             customDescriptions = settings.customDomainDescriptions,
@@ -387,15 +386,7 @@ private fun deleteDomainTool(
             hiddenDomains = settings.hiddenDomains,
             removedBuiltinDomains = settings.removedBuiltinDomains,
         )
-        // 工具池: knownToolNames 与模型侧同源 (name 构建, 计数一致)
-        val tools = knownToolNames().map { name ->
-            me.rerere.ai.core.Tool(
-                name = name,
-                description = "",
-                parameters = { InputSchema.Obj(buildJsonObject {}) },
-                execute = { listOf(UIMessagePart.Text("")) },
-            )
-        }
+        val tools = toolPoolProvider()
         val view = router.unifiedDomainView(tools)
 
         val result = buildString {
@@ -421,8 +412,7 @@ private fun deleteDomainTool(
 
 private fun listDomainsTool(
     settingsStore: SettingsStore,
-    knownToolNames: () -> Set<String>,
-    knownSkillNames: () -> Set<String>,
+    toolPoolProvider: () -> List<Tool>,
 ) = Tool(
     name = "move_tool_to_domain",
     description = "将工具或 Skill 移动到指定域。移动后该工具/技能在目标域内可见，调用时经 invoke_tools 加载该域即可。",
@@ -452,7 +442,10 @@ private fun listDomainsTool(
             return domain !in settings.hiddenDomains && domain !in settings.removedBuiltinDomains &&
                 root !in settings.hiddenDomains && root !in settings.removedBuiltinDomains
         }
-        val skillSubNames = knownSkillNames().map { "技能/$it" }
+        val poolTools = toolPoolProvider()
+        val skillSubNames = poolTools.filter { it.name.startsWith("skill__") }
+            .map { it.name.removePrefix("skill__") }.toSet()
+            .map { "技能/$it" }
         val allValid = (me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.map { it.label }.toSet()
             + settings.customDomains.map { it.normalizedFullPath() }.toSet()
             + if (settings.customDomains.any { it.name == "技能" }) emptySet() else skillSubNames.toSet())
@@ -464,8 +457,9 @@ private fun listDomainsTool(
                 "该域可能已被删除或隐藏。可用域: ${allValid.sorted().joinToString("、")}"
             ))
         } else {
-            val skills = knownSkillNames()
-            val tools = knownToolNames()
+            val skills = poolTools.filter { it.name.startsWith("skill__") }
+                .map { it.name.removePrefix("skill__") }.toSet()
+            val tools = poolTools.map { it.name }.toSet()
             // 修复: move 校验存在性 — 不存在返回失败而非假成功
             val isSkill = toolName in skills
             if (!isSkill && toolName !in tools && !toolName.startsWith("skill_") && toolName != "use_skill") {
