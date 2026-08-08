@@ -36,6 +36,7 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.data.repository.ConversationRepository
+import me.rerere.hugeicons.HugeIcons
 import me.rerere.rikkahub.ui.theme.CustomColors
 import org.koin.compose.koinInject
 
@@ -85,7 +86,7 @@ fun SettingToolComparePage(
                 title = { Text("工具对照（开发者）") },
                 navigationIcon = {
                     androidx.compose.material3.IconButton(onClick = onBack) {
-                        androidx.compose.material3.Icon(com.simform.ss_icon_pack.HugeIcons.ArrowLeft01, "返回")
+                        androidx.compose.material3.Icon(me.rerere.hugeicons.HugeIcons.ArrowLeft01, "返回")
                     }
                 },
                 colors = CustomColors.topBarColors,
