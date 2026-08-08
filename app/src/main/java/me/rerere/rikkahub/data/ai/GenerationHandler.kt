@@ -104,6 +104,8 @@ class GenerationHandler(
     private val memoryRepo: MemoryRepository,
     private val settingsStore: SettingsStore,
 ) {
+    /** 断流重试计数 (v3.5.46): 类成员 — 切后台/NAT/平台断流自动恢复, 每次生成最多 2 次 */
+    private var streamRetryCount = 0
     companion object {
         /** 工具执行超时 (ms): 工具挂起时返回超时错误, 不阻塞整个生成流程 */
         private const val TOOL_EXECUTION_TIMEOUT_MS = 60_000L
@@ -151,7 +153,8 @@ class GenerationHandler(
         // G3 平台空流重试计数 (每次生成仅重试一次)
         var emptyRetryCount = 0
         // 断流重试计数 (切后台/NAT/平台断连 — IOException 自动恢复, 每次生成最多 2 次)
-        var streamRetryCount = 0
+        // 类成员 (局部声明曾被编译器解析为块外不可见 — 提升为成员彻底规避)
+        streamRetryCount = 0
 
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
