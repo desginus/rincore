@@ -393,6 +393,7 @@ private fun deleteDomainTool(
                 name = name,
                 description = "",
                 parameters = { InputSchema.Obj(buildJsonObject {}) },
+                execute = { listOf(UIMessagePart.Text("")) },
             )
         }
         val view = router.unifiedDomainView(tools)

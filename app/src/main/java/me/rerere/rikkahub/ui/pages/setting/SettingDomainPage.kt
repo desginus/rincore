@@ -139,6 +139,7 @@ fun SettingDomainPage(
             name = it.name,
             description = it.description,
             parameters = { me.rerere.ai.core.InputSchema.Obj(kotlinx.serialization.json.buildJsonObject {}) },
+            execute = { listOf(me.rerere.ai.ui.UIMessagePart.Text("")) },
         )
     }
     val unifiedView = remember(previewToolsAsTools, settings.toolDomainOverrides, settings.customDomainKeywords, revision) {
@@ -274,7 +275,7 @@ fun SettingDomainPage(
                                         }
                                     }
                                 } else {
-                                    val domainTools = unifiedView.classified[domain].orEmpty()
+                                    val domainTools = unifiedView.classified[domain].orEmpty().map { ToolPreview(it.name, it.description) }
                                     val kws = router.getKeywords(domain)
                                     if (kws.isNotEmpty()) {
                                         Text("触发条件:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
@@ -324,7 +325,7 @@ fun SettingDomainPage(
         val builtinSubs = ToolDomain.entries.filter { it.parent == parentDomain }.map { it.label }.filter { notRemoved(it) }
         val customSubs = settings.customDomains.filter { it.parent == parentDomain }.map { it.name }.filter { notRemoved(it) }
         val allSubs = (builtinSubs + customSubs).sorted()
-        val parentTools = flatDomainMap[parentDomain].orEmpty()
+        val parentTools = unifiedView.classified[parentDomain].orEmpty().map { ToolPreview(it.name, it.description) }
         AlertDialog(
             onDismissRequest = { subdomainParent = null },
             title = { Text("管理子域: $parentDomain") },
@@ -341,7 +342,7 @@ fun SettingDomainPage(
                         val subShort = subFull.substringAfterLast("/")
                         val isCustom = subFull in customSubs
                         val isSubHidden = subFull in settings.hiddenDomains
-                        val subTools = flatDomainMap[subFull].orEmpty()
+                        val subTools = unifiedView.classified[subFull].orEmpty().map { ToolPreview(it.name, it.description) }
                         val subDesc = settings.customDomainDescriptions[subFull] ?: router.getTriggerDescription(subFull)
                         Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = if (isSubHidden) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surfaceVariant)) {
                             Column(Modifier.padding(8.dp).fillMaxWidth()) {
@@ -416,7 +417,7 @@ fun SettingDomainPage(
         val subFull = managingSubdomain!!
         val parentDomain = subFull.substringBefore("/")
         val subShort = subFull.substringAfterLast("/")
-        val subTools = flatDomainMap[subFull].orEmpty()
+        val subTools = unifiedView.classified[subFull].orEmpty().map { ToolPreview(it.name, it.description) }
         // 可移动目标：父域 + 该父域下所有其他子域
         val moveTargets = (listOf(parentDomain) + (ToolDomain.entries.filter { it.parent == parentDomain }.map { it.label } + settings.customDomains.filter { it.parent == parentDomain }.map { it.name }).filter { it != subFull }).sorted()
         AlertDialog(
