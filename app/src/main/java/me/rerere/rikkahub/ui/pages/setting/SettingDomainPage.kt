@@ -213,10 +213,10 @@ fun SettingDomainPage(
                                 Text("[${displayName}]", fontWeight = FontWeight.Bold, color = if (isCustom) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                                 if (subs != null) {
                                     val subCount = subs.size
-                                    val toolCount = subs.values.sumOf { it.size } + (flatDomainMap[domain]?.size ?: 0)
+                                    val toolCount = subs.values.sumOf { it.size } + (unifiedView.classified[domain]?.size ?: 0)
                                     Text(" (${subCount}子域/${toolCount}工具)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                                 } else {
-                                    val toolCount = flatDomainMap[domain]?.size ?: 0
+                                    val toolCount = unifiedView.classified[domain]?.size ?: 0
                                     if (toolCount > 0) Text(" (${toolCount}工具)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 if (isHidden) Text(" [已隐藏]", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
@@ -274,7 +274,7 @@ fun SettingDomainPage(
                                         }
                                     }
                                 } else {
-                                    val domainTools = flatDomainMap[domain].orEmpty()
+                                    val domainTools = unifiedView.classified[domain].orEmpty()
                                     val kws = router.getKeywords(domain)
                                     if (kws.isNotEmpty()) {
                                         Text("触发条件:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
