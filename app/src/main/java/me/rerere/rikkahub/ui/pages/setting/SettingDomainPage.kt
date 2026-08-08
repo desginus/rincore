@@ -128,6 +128,8 @@ fun SettingDomainPage(
     val skillManager: SkillManager = koinInject()
     val localTools: me.rerere.rikkahub.data.ai.tools.local.LocalTools = koinInject()
     val mcpManager: me.rerere.rikkahub.data.ai.mcp.McpManager = koinInject()
+    val conversationRepo: me.rerere.rikkahub.data.repository.ConversationRepository = koinInject()
+    val settingsStore: SettingsStore = koinInject()
 
     var deleteConfirm by remember { mutableStateOf<String?>(null) }
     var isClassifying by remember { mutableStateOf(false) }
@@ -159,8 +161,8 @@ fun SettingDomainPage(
     val previewTools: List<ToolPreview> = remember(settings, revision) {
         buildPreviewTools(
             settings, localTools, skillManager, mcpManager,
-            conversationRepo = koinInject(),
-            settingsStore = koinInject(),
+            conversationRepo = conversationRepo,
+            settingsStore = settingsStore,
         )
     }
 

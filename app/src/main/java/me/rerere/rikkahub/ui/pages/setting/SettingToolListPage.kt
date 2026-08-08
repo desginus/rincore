@@ -22,6 +22,8 @@ import me.rerere.rikkahub.data.ai.tools.local.LocalTools
 import me.rerere.rikkahub.data.ai.tools.routing.ToolDomain
 import me.rerere.rikkahub.data.ai.tools.routing.normalizedFullPath
 import me.rerere.rikkahub.data.ai.tools.routing.ToolRouter
+import me.rerere.rikkahub.data.repository.ConversationRepository
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.files.SkillManager
@@ -38,6 +40,8 @@ fun SettingToolListPage(
     val skillManager: SkillManager = koinInject()
     val localTools: LocalTools = koinInject()
     val mcpManager: McpManager = koinInject()
+    val conversationRepo: ConversationRepository = koinInject()
+    val settingsStore: SettingsStore = koinInject()
     var searchQuery by remember { mutableStateOf("") }
     var filterDomain by remember { mutableStateOf("全部") }
     var selectedTool by remember { mutableStateOf<ToolPreview?>(null) }
@@ -50,7 +54,11 @@ fun SettingToolListPage(
 
     // 完整工具清单——与实际对话注入一致
     val allTools: List<ToolPreview> = remember(settings) {
-        buildPreviewTools(settings, localTools, skillManager, mcpManager)
+        buildPreviewTools(
+            settings, localTools, skillManager, mcpManager,
+            conversationRepo = conversationRepo,
+            settingsStore = settingsStore,
+        )
     }
 
     val allDomainNames = remember(settings) {
