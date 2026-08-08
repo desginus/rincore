@@ -16,10 +16,12 @@ import androidx.compose.ui.unit.dp
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.*
 import me.rerere.rikkahub.data.ai.tools.routing.ToolDomain
+import me.rerere.rikkahub.data.ai.tools.buildAssistantToolPool
 import me.rerere.rikkahub.data.ai.tools.routing.ToolRouter
 import me.rerere.rikkahub.data.ai.tools.routing.normalizedFullPath
 import me.rerere.rikkahub.data.datastore.CustomDomain
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.ui.theme.CustomColors
@@ -34,70 +36,26 @@ fun buildPreviewTools(
     localTools: me.rerere.rikkahub.data.ai.tools.local.LocalTools,
     skillManager: SkillManager,
     mcpManager: me.rerere.rikkahub.data.ai.mcp.McpManager,
+    conversationRepo: me.rerere.rikkahub.data.repository.ConversationRepository,
+    settingsStore: SettingsStore,
 ): List<ToolPreview> {
-    val list = mutableListOf<ToolPreview>()
+    // 全信源统一: 与模型侧完全同源 (buildAssistantToolPool) —
+    // 域管理页计数/分区/工具列表 与 模型工具池 完全一致 (用户要求 v3.5.41)
     val assistant = settings.getCurrentAssistant()
-    try {
-        localTools.getTools(assistant.localTools).forEach { t ->
-            list.add(ToolPreview(t.name, t.description))
-        }
-    } catch (_: Exception) {}
-    // Skill 条目 — Skill 与 MCP 同等次(一个 Skill = 一个工具):
-    //   - 已挂载的 skill (toolDomainOverrides["skill:名"]=域) → 挂载目标域 (overrides 覆盖优先分类)
-    //   - 未挂载的已启用 skill → 技能域 (与 invoke_tools("技能") 语义一致)
-    // 条目命名 "skill:名" — classifyByName 识别 skill: 前缀归技能域; 挂载的经 overrides 命中目标域
-    try {
-        val allSkills = skillManager.listSkills().filter { it.name in assistant.enabledSkills }
-        val skillMounts = settings.toolDomainOverrides.entries
-            .filter { it.key.startsWith("skill:") }
-            .map { it.key.removePrefix("skill:") to it.value }
-        val mountedNames = skillMounts.map { it.first }.toSet()
-        // 描述取自 SKILL.md frontmatter — 只显示名字无法区分 skill 用途
-        val skillDesc: (String) -> String = { n ->
-            allSkills.find { it.name == n }?.description ?: "Skill 能力模块"
-        }
-        skillMounts.forEach { (sname, _) ->
-            list.add(ToolPreview("skill:$sname", skillDesc(sname)))
-        }
-        allSkills.filter { it.name !in mountedNames }.forEach { s ->
-            list.add(ToolPreview("skill:${s.name}", s.description))
-        }
-    } catch (_: Exception) {}
-    try {
-        mcpManager.getAllAvailableTools().forEach { (_, serverName, tool) ->
-            list.add(ToolPreview("mcp__${serverName}__${tool.name}", tool.description ?: ""))
-        }
-    } catch (_: Exception) {}
-    // 内置框架工具 — 参与域分类与显示
-    list.add(ToolPreview("search_web", "Search the web for up-to-date information, news, facts. Generate focused keywords."))
-    list.add(ToolPreview("scrape_web", "Scrape a URL for detailed page content when search snippets are insufficient."))
-    list.add(ToolPreview("memory_tool", "Store, retrieve, update, and delete long-term memories across conversations."))
-    list.add(ToolPreview("conversation_search", "Full-text search across past conversations to recall specific information."))
-    list.add(ToolPreview("recent_chats", "List recent conversation titles and dates for context awareness."))
-    list.add(ToolPreview("workspace_shell", "Run a shell command in the assistant's bound workspace Rootfs."))
-    list.add(ToolPreview("workspace_read_file", "Read a file using the assistant's bound workspace Rootfs."))
-    list.add(ToolPreview("workspace_write_file", "Write a UTF-8 text file using the assistant's bound workspace Rootfs."))
-    list.add(ToolPreview("workspace_edit_file", "Edit a UTF-8 text file using the assistant's bound workspace Rootfs."))
-    list.add(ToolPreview("workspace_show_file", "Present an existing workspace file to the user as an attached file chip."))
-    list.add(ToolPreview("use_skill", "Load and apply a skill to get specialized instructions or capabilities. 可用 skill 列表由 invoke_tools(\"技能\") 返回。"))
-    list.add(ToolPreview("manage_domain", "创建或删除工具域/子域。操作后场景地图自动同步。"))
-    list.add(ToolPreview("invoke_tools", "按类别加载工具。有子域时返回子域列表，无子域时直接返回工具列表。"))
-    list.add(ToolPreview("search_domains", "按关键词或标签反向查询工具域位置。匹配域的名称、触发描述、触发条件。支持类别过滤（MCP、Skill）。"))
-    list.add(ToolPreview("list_domains", "列出所有可用域及其工具数量"))
-    list.add(ToolPreview("move_tool_to_domain", "将工具移动到指定域"))
-    list.add(ToolPreview("mcp_connect", "Connect to an MCP server at runtime."))
-    list.add(ToolPreview("clawhub_install", "Install a tool from ClawHub marketplace."))
-    list.add(ToolPreview("clawhub_search", "Search ClawHub marketplace for tools."))
-    list.add(ToolPreview("plugin_install", "Install a Claude plugin from a URL."))
-    list.add(ToolPreview("skills_lock", "Lock skill versions for reproducibility."))
-    list.add(ToolPreview("list_ecosystem_tools", "List all available ecosystem tools and their status."))
-    // 生态指令工具 (与 ChatService buildTools 的 EcosystemManager.getEnabledTools 对齐)
-    try {
-        me.rerere.rikkahub.ecosystem.EcosystemManager.getEnabledTools().forEach { t ->
-            list.add(ToolPreview(t.name, t.description))
-        }
-    } catch (_: Exception) {}
-    return list
+    val pool = try {
+        buildAssistantToolPool(
+            settings = settings,
+            assistant = assistant,
+            localTools = localTools,
+            skillManager = skillManager,
+            conversationRepo = conversationRepo,
+            mcpManager = mcpManager,
+            settingsStore = settingsStore,
+        )
+    } catch (_: Exception) {
+        emptyList()
+    }
+    return pool.map { ToolPreview(it.name, it.description) }
 }
 
 private fun buildNestedDomains(
@@ -199,7 +157,11 @@ fun SettingDomainPage(
     }
 
     val previewTools: List<ToolPreview> = remember(settings, revision) {
-        buildPreviewTools(settings, localTools, skillManager, mcpManager)
+        buildPreviewTools(
+            settings, localTools, skillManager, mcpManager,
+            conversationRepo = koinInject(),
+            settingsStore = koinInject(),
+        )
     }
 
     val flatDomainMap: Map<String, List<ToolPreview>> = remember(previewTools, settings.toolDescriptionOverrides, settings.toolDomainOverrides, settings.customDomainKeywords, revision) {

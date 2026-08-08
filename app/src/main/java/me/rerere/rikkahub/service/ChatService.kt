@@ -67,6 +67,7 @@ import me.rerere.rikkahub.data.ai.tools.ToolInvocationContext
 import me.rerere.rikkahub.data.ai.tools.createConversationTools
 import me.rerere.rikkahub.data.ai.tools.createDomainTools
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
+import me.rerere.rikkahub.data.ai.tools.buildAssistantToolPool
 import me.rerere.rikkahub.data.ai.tools.createSearchTools
 import me.rerere.rikkahub.data.ai.tools.createSkillTools
 import me.rerere.rikkahub.data.ai.tools.createWorkspaceTools
@@ -581,71 +582,39 @@ class ChatService(
                     add(me.rerere.rikkahub.ecosystem.tools.SlashCommandRouter)
                 },
                 outputTransformers = outputTransformers,
-                tools = buildList {
-                    if (settings.enableWebSearch) {
-                        addAll(createSearchTools(settings))
-                    }
-                    addAll(localTools.getTools(
-                        assistant.localTools,
-                        ToolInvocationContext(
-                            callerAssistantId = assistant.id.toString(),
-                            callerConversationId = conversationId.toString(),
-                            isHeadless = HeadlessConversations.isHeadless(conversationId),
-                        ),
-                    ))
-                    if (assistant.enableRecentChatsReference) {
-                        addAll(createConversationTools(conversationRepo, assistant.id))
-                    }
-                    addAll(createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), conversation.workspaceCwd))
-                    // 多生态系统指令工具
-                    addAll(me.rerere.rikkahub.ecosystem.EcosystemManager.getEnabledTools())
-                    // 动态工具 (MCP 连接 / Marketplace 安装)
-                    val dynTools = me.rerere.rikkahub.ecosystem.tools.DynamicTools.all()
-                    addAll(dynTools)
-                    Log.i("ChatService", "buildTools: ${dynTools.size} dynamic tools added")
-                    if (assistant.enabledSkills.isNotEmpty()) {
-                        addAll(
-                            createSkillTools(
-                                enabledSkills = assistant.enabledSkills,
-                                allSkills = skillManager.listSkills(),
-                            )
+                tools = buildAssistantToolPool(
+                    settings = settings,
+                    assistant = assistant,
+                    localTools = localTools,
+                    skillManager = skillManager,
+                    conversationRepo = conversationRepo,
+                    mcpManager = mcpManager,
+                    settingsStore = settingsStore,
+                    workspaceTools = createWorkspaceToolsIfReady(
+                        assistant.workspaceId?.toString(),
+                        conversation.workspaceCwd,
+                    ),
+                    conversationId = conversationId.toString(),
+                    workspaceCwd = conversation.workspaceCwd,
+                ).also { pool ->
+                    // MCP 服务器名合法性检查 (对齐原逻辑 — 无效名直接报错)
+                    val invalidNames = mcpManager.getAllAvailableTools()
+                        .map { it.second }
+                        .distinct()
+                        .filter { name -> name.isEmpty() || !name.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' } }
+                    if (invalidNames.isNotEmpty()) {
+                        addError(
+                            error = IllegalStateException(
+                                context.getString(
+                                    R.string.error_mcp_invalid_server_name,
+                                    invalidNames.joinToString(", ")
+                                )
+                            ),
+                            conversationId = conversationId,
                         )
                     }
-                    // Feature #2: AI 域管理工具
-                    if (assistant.useLayeredTools) {
-                        addAll(createDomainTools(settingsStore))
-                    }
-                    mcpManager.getAllAvailableTools().also { allTools ->
-                        val invalidNames = allTools
-                            .map { it.second }
-                            .distinct()
-                            .filter { name -> name.isEmpty() || !name.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' } }
-                        if (invalidNames.isNotEmpty()) {
-                            addError(
-                                error = IllegalStateException(
-                                    context.getString(
-                                        R.string.error_mcp_invalid_server_name,
-                                        invalidNames.joinToString(", ")
-                                    )
-                                ),
-                                conversationId = conversationId,
-                            )
-                            return
-                        }
-                    }.forEach { (serverId, serverName, tool) ->
-                        add(
-                            Tool(
-                                name = "mcp__${sanitizeMcpName(serverName)}__${sanitizeMcpName(tool.name)}",
-                                description = tool.description ?: "",
-                                parameters = { tool.inputSchema },
-                                needsApproval = { tool.needsApproval },
-                                execute = {
-                                    mcpManager.callTool(serverId, tool.name, it.jsonObject)
-                                },
-                            )
-                        )
-                    }
-                }.map { tool ->
+                }
+                                .map { tool ->
                     settings.toolDescriptionOverrides[tool.name]?.let { tool.copy(description = it) } ?: tool
                 }.sortedBy { it.name },
             ).onCompletion {
