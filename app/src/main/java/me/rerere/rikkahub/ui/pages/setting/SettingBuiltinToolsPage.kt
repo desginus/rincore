@@ -66,7 +66,7 @@ fun SettingBuiltinToolsPage(
             title = { Text("内置工具") },
             navigationIcon = {
                 androidx.compose.material3.IconButton(onClick = onBack) {
-                    Icon(me.rerere.rikkahub.hugeicons.HugeIcons.ArrowLeft01, "返回")
+                    Icon(me.rerere.hugeicons.HugeIcons.ArrowLeft01, "返回")
                 }
             },
         )

@@ -95,6 +95,41 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val filesManager: FilesManager = koinInject()
     var showDomainPage by remember { mutableStateOf(false) }
+    var showToolHubPage by remember { mutableStateOf(false) }
+    var showToolComparePage by remember { mutableStateOf(false) }
+    var showBuiltinToolsPage by remember { mutableStateOf(false) }
+
+    if (showToolHubPage) {
+        SettingToolHubPage(
+            onOpenMcp = {
+                showToolHubPage = false
+                navController.navigate(Screen.SettingMcp)
+            },
+            onOpenCompare = {
+                showToolHubPage = false
+                showToolComparePage = true
+            },
+            onOpenAbout = {
+                showToolHubPage = false
+                navController.navigate(Screen.SettingAbout)
+            },
+            onBack = { showToolHubPage = false },
+        )
+        return
+    }
+
+    if (showToolComparePage) {
+        SettingToolComparePage(
+            settings = settings,
+            onBack = { showToolComparePage = false },
+        )
+        return
+    }
+
+    if (showBuiltinToolsPage) {
+        SettingBuiltinToolsPage(onBack = { showBuiltinToolsPage = false })
+        return
+    }
 
     if (showDomainPage) {
         SettingDomainPage(
@@ -266,13 +301,13 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         headlineContent = { Text(stringResource(R.string.setting_page_extensions)) },
                     )
                     item(
-                        onClick = { navController.navigate(Screen.SettingToolHub) },
+                        onClick = { showToolHubPage = true },
                         leadingContent = { Icon(HugeIcons.ServerStack01, null) },
                         supportingContent = { Text("工具对照 / MCP 服务器 / 关于和分享（统一收口）") },
                         headlineContent = { Text("工具管理") },
                     )
                     item(
-                        onClick = { navController.navigate(Screen.SettingBuiltinTools) },
+                        onClick = { showBuiltinToolsPage = true },
                         leadingContent = { Icon(HugeIcons.Settings03, null) },
                         supportingContent = { Text("精确到工具 ID 与数量的全量清单（核对工具总数）") },
                         headlineContent = { Text("内置工具") },
