@@ -259,11 +259,14 @@ class ToolRouter(
 
     // ═══════════ 3. 统一视图 — 全部视图 (layer1/help/invoke_tools/list_domains/UI) 唯一数据源 ═══════════
 
-    /** 统一域视图 — 工具分类结果 + 域树 单一组合, 所有消费者只认这一个结构 */
+    /** 统一域视图 — 工具分类结果 + 域树 单一组合, 所有消费者只认这一个结构。
+     *  counts = 域直接工具数 (与下钻一致, 不含子树); subtreeCounts = 根域子树全部。
+     *  三口径统一: UI/帮助/List Domains 全部消费本视图, 计数之和 = 工具池总数 */
     data class UnifiedDomainView(
         val tree: Map<String, List<String>>,   // 根 → 可见子域 (空壳已过滤)
-        val counts: Map<String, Int>,          // 域路径 → 工具数
-        val classified: Map<String, List<Tool>>, // 域路径 → 工具列表
+        val counts: Map<String, Int>,          // 域 → 直接工具数 (下钻一致)
+        val classified: Map<String, List<Tool>>, // 域 → 直接工具列表
+        val subtreeCounts: Map<String, Int> = emptyMap(), // 根 → 子树全部 (含直接+子域)
     )
 
     /** 构建统一视图 — 唯一实现, 四处视图 (系统提示/Invoke Tools/List Domains/UI) 全部消费 */
@@ -293,7 +296,11 @@ class ToolRouter(
         }.filter { (root, subs) ->
             (counts[root] ?: 0) > 0 || subs.isNotEmpty()
         }.toSortedMap()
-        return UnifiedDomainView(filteredTree, counts, classified)
+        // 子树计数: 根 → 直接工具 + 全部子域直接工具 (供 UI/帮助标注, 与下钻口径分离)
+        val subtreeCounts = filteredTree.mapValues { (root, subs) ->
+            (counts[root] ?: 0) + subs.sumOf { counts[it] ?: 0 }
+        }
+        return UnifiedDomainView(filteredTree, counts, classified, subtreeCounts)
     }
 
 
@@ -443,18 +450,10 @@ class ToolRouter(
                                 }
                                 listOf(UIMessagePart.Text(summary))
                             } else {
-                                // 叶子域: 直接返回工具列表
-                                val parentRoot = finalName.split("/").first()
-                                val allInParent = classified.entries
-                                    .filter { it.key == parentRoot || it.key.startsWith("$parentRoot/") }
-                                    .flatMap { it.value }
-                                    .toSet()
-                                    .let { parentTools ->
-                                        val subDomainsInParent = treeNodes[parentRoot] ?: emptyList()
-                                        val subTools = subDomainsInParent.flatMap { classified[it].orEmpty() }.toSet()
-                                        parentTools - subTools
-                                    }
-                                val rootOnly = if (finalName == parentRoot) allInParent else directTools
+                                // 叶子域: 直接返回该域直接工具 (v3.5.48 统一语义:
+                                // 计数与下钻完全一致 — 根域含子域时走上方子域分支,
+                                // 此处只处理无子域的叶子域; 移除 allInParent 减法 (幻影来源))
+                                val rootOnly = directTools
 
                                 val summary = buildString {
                                     if (rootOnly.isEmpty()) {

@@ -90,6 +90,7 @@ fun buildAssistantToolPool(
                 conversationRepo = conversationRepo,
                 mcpManager = mcpManager,
                 settingsStore = settingsStore,
+                workspaceRepository = workspaceRepository,
             )
         })
     }

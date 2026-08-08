@@ -95,13 +95,10 @@ private fun createSearchDomainsTool(
         }
 
         // 全部可见域 (内置枚举 + 自定义域 + 技能子域, 含子域路径) — 与 buildDomainTree 同源
-        val skillNames = tools.filter { it.startsWith("skill__") || it.startsWith("skill:") }
-            .map { it.removePrefix("skill__").removePrefix("skill:") }
-            .filter { it.isNotBlank() }.toSet()
-        val allDomains = (me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.map { it.label }
-            + settings.customDomains.map { it.normalizedFullPath() }
-            + if (settings.customDomains.any { it.name == "技能" }) emptyList() else skillNames.map { "技能/$it" })
-            .filter { visible(it) }
+        // v3.5.48 信源统一: 搜索范围 = 统一视图的真实域 (树 + 直接计数),
+        // 不再手工枚举 (此前残留 customDomains/技能子域 → 幻影域)
+        val view = router.unifiedDomainView(toolList)
+        val allDomains = (view.tree.keys + view.tree.values.flatten()).filter { visible(it) }
 
         // 域内工具名 (按 classifyByName — 用完整工具含描述, 与模型侧分类一致)
         fun domainToolsOf(domain: String): Set<String> =
