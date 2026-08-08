@@ -88,25 +88,8 @@ class ToolRouter(
             )
         }
 
-        // 自定义域 — 规范化完整路径 (name 取最后段, 防双重叠加)
-        val existingPaths = result.map { it.path }.toMutableSet()
-        for (cd in customDomains) {
-            val full = cd.normalizedFullPath()
-            if (!isValidDomain(full)) continue
-            // 防幽灵: 子域父级必须真实存在
-            if (cd.parent != null && cd.parent !in existingPaths) continue
-            if (full !in existingPaths) {
-                result += DomainInfo(
-                    path = full,
-                    parent = cd.parent,
-                    displayName = domainNameOverrides[full] ?: full.substringAfterLast("/"),
-                    description = customDescriptions[full] ?: cd.description.ifBlank { full.substringAfterLast("/") },
-                    keywords = customKeywords[full] ?: cd.keywords,
-                    builtin = false,
-                )
-                existingPaths += full
-            }
-        }
+        // 自定义域已移除 (用户决策 v3.5.40) — 不再进入域体系。
+        // 旧配置数据忽略 (无害残留), 未分类工具统一落入「未分类」父域。
 
         // 技能子域 — 由工具名结构化派生 (与 classifyByName 同源)
         // 由 buildDomainTree(tools) 注入 (需要工具池), 此处仅确保技能根域存在
@@ -241,14 +224,8 @@ class ToolRouter(
             mcpServerDomainDefaults[server]?.let { if (isValidDomain(it)) return it }
         }
 
-        // 5. 关键词匹配 (自定义域 → 自定义关键词覆盖 → 内置域)
+        // 5. 关键词匹配 (自定义域已移除 — 用户决策 v3.5.40; 仅内置域关键词)
         val text = "${name} ${description}".lowercase()
-        for (cd in customDomains) {
-            if (cd.keywords.any { text.contains(it) }) return cd.normalizedFullPath()
-        }
-        for ((domain, keywords) in customKeywords) {
-            if (domain in valid && keywords.any { text.contains(it) }) return domain
-        }
 
         // 6. 内置域关键词兜底 (根域级联过滤)
         val excluded = removedBuiltinDomains + hiddenDomains
@@ -259,7 +236,8 @@ class ToolRouter(
                 dom.label !in excluded && root !in excluded &&
                     dom.matchKeywords.any { text.contains(it) }
             }?.label
-        return result ?: "方法域"
+        // 未成功分类的工具 → 统一落入「未分类」父域 (用户决策 v3.5.40)
+        return result ?: if (isValidDomain("未分类")) "未分类" else "方法域"
     }
 
     fun classifyAll(tools: List<Tool>): Map<String, List<Tool>> {
