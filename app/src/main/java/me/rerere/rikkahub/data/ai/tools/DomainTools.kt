@@ -84,7 +84,8 @@ private fun createSearchDomainsTool(
             hiddenDomains = settings.hiddenDomains,
             removedBuiltinDomains = settings.removedBuiltinDomains,
         )
-        val tools = toolPoolProvider()
+        val toolList = toolPoolProvider()
+        val tools = toolList.map { it.name }.toSet()
 
         // 可见性判断 (与 move 工具一致: 根域级联)
         fun visible(domain: String): Boolean {
@@ -102,9 +103,10 @@ private fun createSearchDomainsTool(
             + if (settings.customDomains.any { it.name == "技能" }) emptyList() else skillNames.map { "技能/$it" })
             .filter { visible(it) }
 
-        // 域内工具名 (按 classifyByName)
+        // 域内工具名 (按 classifyByName — 用完整工具含描述, 与模型侧分类一致)
         fun domainToolsOf(domain: String): Set<String> =
-            tools.filter { router.classifyByName(it, "") == domain }.toSet()
+            toolList.filter { router.classifyByName(it.name, it.description) == domain }
+                .map { it.name }.toSet()
 
         val q = query.lowercase()
         val matched = allDomains.filter { domain ->

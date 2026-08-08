@@ -288,7 +288,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     )
                     item(
                         onClick = { showToolComparePage = true },
-                        leadingContent = { Icon(HugeIcons.View, null) },
+                        leadingContent = { Icon(HugeIcons.Puzzle, null) },
                         supportingContent = { Text("系统工具地图 / List Domains / Invoke Tools 三信源对照（同源验证）") },
                         headlineContent = { Text("工具对照（开发者）") },
                     )
