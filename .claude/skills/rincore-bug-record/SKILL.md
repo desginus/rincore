@@ -75,6 +75,11 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 - **修复**：单独恢复静态化——仅移除 Error 过滤（工具声明由配置决定），callTool 调用时显式报错。不带全量注入/skill 直注/数量统计等 3.5.18 错误改动
 - **教训**：3.5.18-beta2 的静态化方向正确但被错误改动拖累；回滚要精准，不能连带回滚正确的修复
 
+### B29. SSE 静默中断（v3.5.38 修复）— 消息莫名其妙中断
+- **根因**：SSE onClosed 无条件 close() — 服务器未发 [DONE] 直接关连接被当正常结束 → 消息不完整且无报错（静默中断）
+- **修复**：completed 标记 — onClosed 未收到 [DONE] → close(IOException) 可见化（对齐 B18 可见化原则）
+- **教训**：流结束必须校验终止信号（[DONE]），不能只依赖连接关闭事件
+
 ### B28. 技能子域体系六处断裂（v3.5.34 稳定版梳理）
 - **override 校验**：validDomainLabels 不含技能子域（动态）→ 挂载到"技能/名"失效 → root 有效即放行
 - **UI 域树**：buildNestedDomains 只遍历枚举+customDomains → 技能子域管理页不可见 → 从分类结果派生
