@@ -129,6 +129,9 @@ import me.rerere.rikkahub.workflow.ui.WorkflowsScreen
 import me.rerere.rikkahub.ui.pages.setting.SettingCallTracePage
 import me.rerere.rikkahub.ui.pages.setting.SettingSkillsEcosystemPage
 import me.rerere.rikkahub.ui.pages.setting.SettingMcpPage
+import me.rerere.rikkahub.ui.pages.setting.SettingToolHubPage
+import me.rerere.rikkahub.ui.pages.setting.SettingToolComparePage
+import me.rerere.rikkahub.ui.pages.setting.SettingBuiltinToolsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingModelPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPage
 import me.rerere.rikkahub.ui.pages.setting.SettingProviderDetailPage
@@ -609,6 +612,23 @@ class RouteActivity : ComponentActivity() {
                             entry<Screen.SettingMcp> {
                                 SettingMcpPage()
                             }
+                            entry<Screen.SettingToolHub> {
+                                SettingToolHubPage(
+                                    navController = navController,
+                                    onBack = { navController.popBackStack() },
+                                )
+                            }
+                            entry<Screen.SettingToolCompare> {
+                                val vm: me.rerere.rikkahub.ui.pages.setting.SettingVM = koinViewModel()
+                                val s by vm.settings.collectAsStateWithLifecycle()
+                                SettingToolComparePage(
+                                    settings = s,
+                                    onBack = { navController.popBackStack() },
+                                )
+                            }
+                            entry<Screen.SettingBuiltinTools> {
+                                SettingBuiltinToolsPage(onBack = { navController.popBackStack() })
+                            }
 
 
                             entry<Screen.SettingFiles> {
@@ -841,6 +861,15 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object SettingMcp : Screen
+
+    @Serializable
+    data object SettingToolHub : Screen
+
+    @Serializable
+    data object SettingToolCompare : Screen
+
+    @Serializable
+    data object SettingBuiltinTools : Screen
 
     @Serializable
     data object SettingFiles : Screen

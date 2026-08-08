@@ -95,15 +95,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val filesManager: FilesManager = koinInject()
     var showDomainPage by remember { mutableStateOf(false) }
-    var showToolComparePage by remember { mutableStateOf(false) }
-
-    if (showToolComparePage) {
-        SettingToolComparePage(
-            settings = settings,
-            onBack = { showToolComparePage = false },
-        )
-        return
-    }
 
     if (showDomainPage) {
         SettingDomainPage(
@@ -275,10 +266,16 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         headlineContent = { Text(stringResource(R.string.setting_page_extensions)) },
                     )
                     item(
-                        onClick = { navController.navigate(Screen.SettingMcp) },
-                        leadingContent = { Icon(HugeIcons.McpServer, null) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_mcp_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_mcp)) },
+                        onClick = { navController.navigate(Screen.SettingToolHub) },
+                        leadingContent = { Icon(HugeIcons.ServerStack01, null) },
+                        supportingContent = { Text("工具对照 / MCP 服务器 / 关于和分享（统一收口）") },
+                        headlineContent = { Text("工具管理") },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingBuiltinTools) },
+                        leadingContent = { Icon(HugeIcons.Settings03, null) },
+                        supportingContent = { Text("精确到工具 ID 与数量的全量清单（核对工具总数）") },
+                        headlineContent = { Text("内置工具") },
                     )
                     item(
                         onClick = { showDomainPage = true },
@@ -287,15 +284,9 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         headlineContent = { Text(stringResource(R.string.setting_page_domain_management)) },
                     )
                     item(
-                        onClick = { showToolComparePage = true },
-                        leadingContent = { Icon(HugeIcons.Puzzle, null) },
-                        supportingContent = { Text("系统工具地图 / List Domains / Invoke Tools 三信源对照（同源验证）") },
-                        headlineContent = { Text("工具对照（开发者）") },
-                    )
-                    item(
                         onClick = { navController.navigate(Screen.Skills) },
                         leadingContent = { Icon(HugeIcons.Puzzle, null) },
-                        supportingContent = { Text("Agent Skills 能力模块（原在扩展管理中）") },
+                        supportingContent = { Text("Agent Skills 能力模块（与 MCP 同等次，一个 Skill 一个工具）") },
                         headlineContent = { Text("Agent Skills") },
                     )
                     item(
@@ -367,12 +358,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     modifier = Modifier.padding(horizontal = 8.dp),
                     title = { Text(stringResource(R.string.setting_page_about)) },
                 ) {
-                    item(
-                        onClick = { navController.navigate(Screen.SettingAbout) },
-                        leadingContent = { Icon(HugeIcons.Clapping01, null) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_about_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_about)) },
-                    )
                     item(
                         onClick = { navController.navigate(Screen.Log) },
                         leadingContent = { Icon(HugeIcons.Bookshelf01, null) },

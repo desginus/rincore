@@ -126,7 +126,7 @@ class ToolRouter(
     /** 系统级工具名称前缀 — 精确匹配, 避免被关键词误分类 */
     private val SYSTEM_TOOL_PREFIXES = listOf(
         "manage_domain", "list_domains", "move_tool_to_domain",
-        "mcp_connect", "clawhub_", "plugin_install", "skills_lock", "list_ecosystem_tools",
+        "mcp_connect", "clawhub_", "plugin_install",
         "get_battery_status",
     )
 
@@ -496,7 +496,12 @@ class ToolRouter(
         return buildString {
             appendLine("工具池共 ${tools.size} 个工具（${view.classified.size} 个域）：")
             for ((root, subs) in view.tree) {
-                appendLine(domainInfo(root) + countSuffix(root, view.counts))
+                // 口径标注: 直接 X 个; 根域含子域时标注含子域共 Y 个
+                val subTotal = view.subtreeCounts[root] ?: (view.counts[root] ?: 0)
+                val subNote = if (subs.isNotEmpty() && subTotal != (view.counts[root] ?: 0)) {
+                    "（含子域共 $subTotal 个）"
+                } else ""
+                appendLine(domainInfo(root) + countSuffix(root, view.counts) + subNote)
                 for (sub in subs) {
                     appendLine(domainInfo(sub, "  ") + countSuffix(sub, view.counts))
                 }

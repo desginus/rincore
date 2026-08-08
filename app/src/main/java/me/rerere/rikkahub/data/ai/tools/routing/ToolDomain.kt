@@ -171,7 +171,6 @@ enum class ToolDomain(
     UNCLASSIFIED("未分类", "进入分类系统但未成功分类的工具", listOf("未分类", "uncategorized"), null),
     SYSTEM("系统", "域管理、MCP连接、插件安装等系统级工具", listOf(
         "manage_domain", "list_domains", "move_tool", "mcp_connect", "clawhub", "plugin_install",
-        "skills_lock", "list_ecosystem", "ecosystem"
     ), null),
     ;
 
