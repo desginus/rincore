@@ -9,12 +9,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import me.rerere.hugeicons.HugeIcons
-import me.rerere.rikkahub.ui.components.settings.CardGroup
+import me.rerere.rikkahub.ui.components.ui.CardGroup
 
 /** 工具管理上层入口 — 收口 工具对照 / MCP 服务器 / 关于和分享 */
 @Composable
@@ -28,9 +28,7 @@ fun SettingToolHubPage(
         TopAppBar(
             title = { Text("工具管理") },
             navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(HugeIcons.ArrowLeft01, "返回")
-                }
+                TextButton(onClick = onBack) { Text("返回") }
             },
         )
         Column(

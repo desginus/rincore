@@ -65,9 +65,7 @@ fun SettingBuiltinToolsPage(
         androidx.compose.material3.TopAppBar(
             title = { Text("内置工具") },
             navigationIcon = {
-                androidx.compose.material3.IconButton(onClick = onBack) {
-                    Icon(me.rerere.hugeicons.HugeIcons.ArrowLeft01, "返回")
-                }
+                androidx.compose.material3.TextButton(onClick = onBack) { Text("返回") }
             },
         )
         Text(
