@@ -20,12 +20,12 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
-import me.rerere.rikkahub.data.ai.tools.local.ToolInvocationContext
+import me.rerere.rikkahub.data.ai.tools.ToolInvocationContext
 
 /** 全量工具池 — 模型侧与 UI 侧唯一数据源 (配置驱动, 无运行时状态) */
 fun buildAssistantToolPool(
     settings: Settings,
-    assistant: me.rerere.rikkahub.data.datastore.Assistant,
+    assistant: me.rerere.rikkahub.data.model.Assistant,
     localTools: LocalTools,
     skillManager: SkillManager,
     conversationRepo: ConversationRepository,
