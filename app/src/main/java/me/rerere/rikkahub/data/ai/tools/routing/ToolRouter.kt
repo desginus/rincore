@@ -275,7 +275,29 @@ class ToolRouter(
         return ToolDomain.entries.find { it.label == domain }?.matchKeywords ?: emptyList()
     }
 
-    // ═══════════ 3. 视图 — 全部从 domainSource/buildDomainTree 派生 ═══════════
+    // ═══════════ 3. 统一视图 — 全部视图 (layer1/help/invoke_tools/list_domains/UI) 唯一数据源 ═══════════
+
+    /** 统一域视图 — 工具分类结果 + 域树 单一组合, 所有消费者只认这一个结构 */
+    data class UnifiedDomainView(
+        val tree: Map<String, List<String>>,   // 根 → 可见子域 (空壳已过滤)
+        val counts: Map<String, Int>,          // 域路径 → 工具数
+        val classified: Map<String, List<Tool>>, // 域路径 → 工具列表
+    )
+
+    /** 构建统一视图 — 唯一实现, 四处视图 (系统提示/Invoke Tools/List Domains/UI) 全部消费 */
+    fun unifiedDomainView(tools: List<Tool>): UnifiedDomainView {
+        val classified = classifyAll(tools)
+        val counts = classified.mapValues { it.value.size }
+        val tree = buildDomainTree(tools)
+        // 空壳过滤: 子域无工具不显示; 根域无工具且无非空子域不显示
+        val filteredTree = tree.mapValues { (_, subs) ->
+            subs.filter { (counts[it] ?: 0) > 0 }
+        }.filter { (root, subs) ->
+            (counts[root] ?: 0) > 0 || subs.isNotEmpty()
+        }.toSortedMap()
+        return UnifiedDomainView(filteredTree, counts, classified)
+    }
+
 
     /** 域基本信息注入格式: 显示名 + 触发描述 + 触发条件(关键词) */
     private fun domainInfo(domain: String, indent: String = ""): String {
@@ -299,7 +321,8 @@ class ToolRouter(
      * 不含任何运行时数据 (工具数/状态 → invoke_tools 帮助, 消息层)。
      */
     fun buildLayer1(tools: List<Tool>): String {
-        val treeNodes = buildDomainTree(tools)
+        // 统一视图 — 与 Invoke Tools/List Domains/UI 完全同源
+        val view = unifiedDomainView(tools)
 
         return buildString {
             appendLine("## 工具调度")
@@ -310,9 +333,9 @@ class ToolRouter(
             appendLine()
             appendLine("### 可用场景域")
             appendLine()
-            for ((root, subs) in treeNodes) {
+            for ((root, subs) in view.tree) {
                 appendLine(domainInfo(root))
-                for (sub in subs.sorted()) {
+                for (sub in subs) {
                     appendLine(domainInfo(sub, "  "))
                 }
             }
@@ -347,8 +370,10 @@ class ToolRouter(
                     rawName == "帮助" || rawName.equals("help", ignoreCase = true) ->
                         listOf(UIMessagePart.Text(router.buildHelpText(allTools)))
                     else -> {
-                        val classified = router.classifyAll(allTools)
-                        val treeNodes = router.buildDomainTree(allTools)
+                        // 统一视图 — 与 layer1/List Domains/UI 完全同源
+                        val view = router.unifiedDomainView(allTools)
+                        val classified = view.classified
+                        val treeNodes = view.tree
 
                         // 统一寻址: 完整路径/短名/显示名/双叠路径 → 规范化路径
                         val finalName = router.resolveDomain(rawName) ?: rawName
@@ -479,17 +504,14 @@ class ToolRouter(
     }
 
     private fun buildHelpText(tools: List<Tool>): String {
-        val treeNodes = buildDomainTree(tools)
-        val domainCounts = classifyAll(tools).mapValues { it.value.size }
+        // 统一视图 — 与 layer1/Invoke Tools/UI 完全同源
+        val view = unifiedDomainView(tools)
         return buildString {
-            appendLine("工具池共 ${tools.size} 个工具（${domainCounts.size} 个域）：")
-            for ((root, subs) in treeNodes) {
-                // 空壳过滤: 无工具的子域不显示, 顶级域无工具无子域不显示 — 域数/计数对齐
-                val nonEmptySubs = subs.sorted().filter { (domainCounts[it] ?: 0) > 0 }
-                if ((domainCounts[root] ?: 0) == 0 && nonEmptySubs.isEmpty()) continue
-                appendLine(domainInfo(root) + countSuffix(root, domainCounts))
-                for (sub in nonEmptySubs) {
-                    appendLine(domainInfo(sub, "  ") + countSuffix(sub, domainCounts))
+            appendLine("工具池共 ${tools.size} 个工具（${view.classified.size} 个域）：")
+            for ((root, subs) in view.tree) {
+                appendLine(domainInfo(root) + countSuffix(root, view.counts))
+                for (sub in subs) {
+                    appendLine(domainInfo(sub, "  ") + countSuffix(sub, view.counts))
                 }
             }
             appendLine()

@@ -59,58 +59,25 @@ fun buildPreviewTools(
 }
 
 private fun buildNestedDomains(
-    flatMap: Map<String, List<ToolPreview>>,
+    view: ToolRouter.UnifiedDomainView,
     router: ToolRouter,
 ): List<Pair<String, Map<String, MutableList<ToolPreview>>?>> {
-    val domainChildren = mutableMapOf<String, LinkedHashSet<String>>()
-    val allTopLevel = linkedSetOf<String>()
-
-    // 管理页可见性: 真删除(removed)的域不显示(不可恢复); 隐藏(hidden)的域保留显示+标记(可恢复)
-    fun notRemoved(domain: String): Boolean {
-        val root = domain.split("/").first()
-        return domain !in router.removedBuiltinDomains && root !in router.removedBuiltinDomains
-    }
-
-    // 单一数据源: 全部域经 ToolRouter.domainSource() 派生 (枚举 + 规范化自定义域),
-    // 与系统提示/Invoke Tools/List Domains 同源 — 杜绝三套视图分裂
-    val knownPaths = router.domainSource().map { it.path }.toSet()
-    for (info in router.domainSource()) {
-        if (!notRemoved(info.path)) continue
-        if (info.parent == null) {
-            allTopLevel.add(info.path)
-        } else if (info.parent in knownPaths && notRemoved(info.parent)) {
-            domainChildren.getOrPut(info.parent) { linkedSetOf() }.add(info.path)
-        }
-    }
-    // 技能子域 (动态, 从分类结果派生 — 工具池在 UI 层)
-    val skillSubs = flatMap.keys.filter { it.startsWith("技能/") }
-    if (skillSubs.isNotEmpty() && notRemoved("技能")) {
-        allTopLevel.add("技能")
-        skillSubs.sorted().forEach { domainChildren.getOrPut("技能") { linkedSetOf() }.add(it) }
-    }
-
-    val visibleTopLevel = allTopLevel.filter { notRemoved(it) }
-
     val result = mutableListOf<Pair<String, Map<String, MutableList<ToolPreview>>?>>()
-    for (parent in visibleTopLevel) {
-        val myTools = flatMap[parent].orEmpty()
-        val childDomains = domainChildren[parent].orEmpty()
-
-        if (childDomains.isNotEmpty()) {
+    for ((parent, subs) in view.tree) {
+        val myTools = view.classified[parent].orEmpty()
+        if (subs.isNotEmpty()) {
             val subMap = mutableMapOf<String, MutableList<ToolPreview>>()
-            if (myTools.isNotEmpty()) subMap[parent] = myTools.toMutableList()
-            childDomains.forEach { child ->
-                subMap[child] = (flatMap[child] ?: emptyList()).toMutableList()
+            if (myTools.isNotEmpty()) {
+                subMap[parent] = myTools.map { ToolPreview(it.name, it.description) }.toMutableList()
             }
-            // 空壳域过滤: 无任何工具的子域不显示 (内置/自定义一致, 抹平区别)
-            val nonEmpty = subMap.filterValues { it.isNotEmpty() }
-            if (nonEmpty.isNotEmpty()) {
-                result.add(parent to nonEmpty.toMutableMap())
-            } else {
-                result.add(parent to null)
+            for (child in subs) {
+                subMap[child] = view.classified[child].orEmpty()
+                    .map { ToolPreview(it.name, it.description) }
+                    .toMutableList()
             }
+            result.add(parent to subMap)
         } else {
-            // 空壳过滤: 顶级域无任何工具 → 不显示 (内置/自定义一致)
+            // 空壳过滤: 顶级域无任何工具 → 不显示
             if (myTools.isNotEmpty()) {
                 result.add(parent to null)
             }
@@ -166,11 +133,19 @@ fun SettingDomainPage(
         )
     }
 
-    val flatDomainMap: Map<String, List<ToolPreview>> = remember(previewTools, settings.toolDescriptionOverrides, settings.toolDomainOverrides, settings.customDomainKeywords, revision) {
-        previewTools.groupBy { router.classifyPreview(it.name, settings.toolDescriptionOverrides[it.name] ?: it.description) }
+    // 统一视图 (v3.5.42 信源统一): 与 layer1/Invoke Tools/List Domains 完全同源
+    val previewToolsAsTools = previewTools.map {
+        me.rerere.ai.core.Tool(
+            name = it.name,
+            description = it.description,
+            parameters = { me.rerere.ai.core.InputSchema.Obj(kotlinx.serialization.json.buildJsonObject {}) },
+        )
     }
-    val nestedDomains = remember(flatDomainMap, settings.hiddenDomains, settings.removedBuiltinDomains, settings.customDomains, revision) {
-        buildNestedDomains(flatDomainMap, router)
+    val unifiedView = remember(previewToolsAsTools, settings.toolDomainOverrides, settings.customDomainKeywords, revision) {
+        router.unifiedDomainView(previewToolsAsTools)
+    }
+    val nestedDomains = remember(unifiedView, revision) {
+        buildNestedDomains(unifiedView, router)
     }
 
     Scaffold(

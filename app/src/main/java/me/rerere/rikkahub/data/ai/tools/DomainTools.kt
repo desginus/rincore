@@ -39,7 +39,7 @@ fun createDomainTools(
 ): List<Tool> {
     return listOf(
         createDomainTool(settingsStore),
-        deleteDomainTool(settingsStore),
+        deleteDomainTool(settingsStore, knownToolNames),
         listDomainsTool(settingsStore, knownToolNames, knownSkillNames),
         createSearchDomainsTool(settingsStore, knownToolNames),
     )
@@ -363,9 +363,12 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
     }
 )
 
-private fun deleteDomainTool(settingsStore: SettingsStore) = Tool(
+private fun deleteDomainTool(
+    settingsStore: SettingsStore,
+    knownToolNames: () -> Set<String>,
+) = Tool(
     name = "list_domains",
-    description = "列出所有可用域及其触发信息",
+    description = "列出所有可用域及其工具数量 (与系统提示/Invoke Tools/域管理完全同源)",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {},
@@ -374,42 +377,42 @@ private fun deleteDomainTool(settingsStore: SettingsStore) = Tool(
     },
     execute = {
         val settings = settingsStore.settingsFlow.value
-        val removedSet = settings.removedBuiltinDomains
-        val hiddenSet = settings.hiddenDomains
-        // 与 ToolRouter.isValidDomain 过滤一致: 完整路径 + 根域级联 (支持子域级删除/隐藏)
-        fun visible(domain: String): Boolean {
-            val root = domain.split("/").first()
-            return domain !in removedSet && domain !in hiddenSet &&
-                root !in removedSet && root !in hiddenSet
+        // 统一视图: 与 layer1/Invoke Tools/UI 完全同源 (v3.5.42 信源统一重写)
+        val router = me.rerere.rikkahub.data.ai.tools.routing.ToolRouter(
+            overrides = settings.toolDomainOverrides,
+            customDescriptions = settings.customDomainDescriptions,
+            customDomains = settings.customDomains,
+            customKeywords = settings.customDomainKeywords,
+            domainNameOverrides = settings.domainNameOverrides,
+            hiddenDomains = settings.hiddenDomains,
+            removedBuiltinDomains = settings.removedBuiltinDomains,
+        )
+        // 工具池: knownToolNames 与模型侧同源 (name 构建, 计数一致)
+        val tools = knownToolNames().map { name ->
+            me.rerere.ai.core.Tool(
+                name = name,
+                description = "",
+                parameters = { InputSchema.Obj(buildJsonObject {}) },
+            )
         }
-        val domains = settings.customDomains
-            .filter { visible(it.normalizedFullPath()) && (it.parent == null || visible(it.parent)) }
-        val builtin = me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.map { it.label }.filter { visible(it) }
+        val view = router.unifiedDomainView(tools)
 
         val result = buildString {
-            appendLine("内置域 (${builtin.size}个):")
-            builtin.forEach { d ->
-                val builtinEntry = me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.find { it.label == d }
-                if (builtinEntry != null) {
-                    val kwText = if (builtinEntry.matchKeywords.isEmpty()) "" else
-                        " [触发: ${builtinEntry.matchKeywords.take(8).joinToString("、")}" +
-                        (if (builtinEntry.matchKeywords.size > 8) " 等${builtinEntry.matchKeywords.size}个" else "") + "]"
-                    appendLine("- $d: ${builtinEntry.triggerDescription}$kwText")
-                } else {
-                    appendLine("- $d")
+            appendLine("可用域 (${view.tree.size}个根域):")
+            for ((root, subs) in view.tree) {
+                val rootCount = view.counts[root] ?: 0
+                val rootKw = router.getKeywords(root)
+                val kwText = if (rootKw.isEmpty()) "" else " [触发: ${rootKw.take(8).joinToString("、")}]"
+                appendLine("- $root [${rootCount}个工具]$kwText")
+                for (sub in subs) {
+                    val subCount = view.counts[sub] ?: 0
+                    val subKw = router.getKeywords(sub)
+                    val subKwText = if (subKw.isEmpty()) "" else " [触发: ${subKw.take(8).joinToString("、")}]"
+                    appendLine("  - $sub [${subCount}个工具]$subKwText")
                 }
             }
             appendLine()
-            appendLine("自定义域 (${domains.size}个):")
-            domains.forEach { d ->
-                val full = d.normalizedFullPath()
-                val parentInfo = d.parent?.let { " (父: $it)" } ?: ""
-                appendLine("- $full$parentInfo: ${d.description}")
-                if (d.keywords.isNotEmpty()) {
-                    appendLine("  触发: ${d.keywords.take(8).joinToString("、")}" +
-                        (if (d.keywords.size > 8) " 等${d.keywords.size}个" else ""))
-                }
-            }
+            appendLine("调 invoke_tools(\"域名称\") 查看域内工具；所有工具均可直接调用。")
         }
         listOf(UIMessagePart.Text(result))
     }
