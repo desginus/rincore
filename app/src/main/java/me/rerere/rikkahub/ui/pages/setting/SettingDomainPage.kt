@@ -218,8 +218,8 @@ fun SettingDomainPage(
                                 Text("[${displayName}]", fontWeight = FontWeight.Bold, color = if (isCustom) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                                 if (subs != null) {
                                     val subCount = subs.size
-                                    val toolCount = subs.values.sumOf { it.size } + (unifiedView.classified[domain]?.size ?: 0)
-                                    Text(" (${subCount}子域/${directCount}工具)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                    val toolCount = unifiedView.classified[domain]?.size ?: 0
+                                    Text(" (${subCount}子域/${toolCount}工具)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                                 } else {
                                     val toolCount = unifiedView.classified[domain]?.size ?: 0
                                     if (toolCount > 0) Text(" (${toolCount}工具)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
