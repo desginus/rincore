@@ -219,7 +219,7 @@ fun SettingDomainPage(
                                 if (subs != null) {
                                     val subCount = subs.size
                                     val toolCount = subs.values.sumOf { it.size } + (unifiedView.classified[domain]?.size ?: 0)
-                                    Text(" (${subCount}子域/${toolCount}工具)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                    Text(" (${subCount}子域/${directCount}工具)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                                 } else {
                                     val toolCount = unifiedView.classified[domain]?.size ?: 0
                                     if (toolCount > 0) Text(" (${toolCount}工具)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

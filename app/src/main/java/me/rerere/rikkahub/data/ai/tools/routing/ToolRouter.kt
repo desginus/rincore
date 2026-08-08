@@ -160,7 +160,9 @@ class ToolRouter(
      */
     fun classifyByName(name: String, description: String): String {
         // 0. 元工具不分类
-        if (name in metaToolNames) return "system"
+        if (name in metaToolNames) {
+            return if (isValidDomain("系统")) "系统" else "方法域"
+        }
 
         val valid = validDomainLabels
 
