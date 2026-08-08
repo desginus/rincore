@@ -1,10 +1,18 @@
 /**
  * 工具域路由 — 模块: A. 传输链 / tools/routing
  *
- * 职责: 域树构建/工具分类/层1概览生成/invoke_tools 元工具/按域加载工具。
+ * 职责: 域模型构建/工具分类/层1概览生成/invoke_tools 元工具/按域加载工具。
  * 三位一体: UI 域管理 / list_domains / Prompt 概览 同源于本类 (每步从 settings 重建)。
  *
- * 问题定位: 工具不显示/域混乱/invoke_tools 行为异常 → 查本文件 + ToolDomain
+ * 架构 (v3.5.39 重写 — 告别补丁石山):
+ * 1. 单一事实源: domainSource() 产出全部域 (内置枚举 + 规范化自定义域 + 技能子域),
+ *    所有视图 (layer1/help/invoke_tools/list_domains/UI/搜索) 一律从它派生。
+ * 2. 域标识唯一化: normalizedFullPath() — name 永远取最后段, 杜绝双重叠加;
+ *    旧数据 (name 含父路径) 由 SettingsStore 迁移拆分。
+ * 3. 统一寻址: resolveDomain() 兼容完整路径/短名/显示名/双叠路径 — 寻址不断链。
+ * 4. 防幽灵: 子域父级必须真实存在于 domainSource, 不存在则丢弃。
+ * 5. 缓存安全: layer1 只依赖静态配置 (配置决定, 无运行时数据);
+ *    tools 数组稳定 (invoke_tools 子树一次性加载)。
  */
 package me.rerere.rikkahub.data.ai.tools.routing
 
@@ -31,41 +39,135 @@ class ToolRouter(
     internal val removedBuiltinDomains: Set<String> = emptySet(),
 ) {
 
-    /** 合法域标签集合（ToolDomain 全部标签 + 自定义域名含完整路径 - 已删除/隐藏）。
-     *  域标识统一完整路径 (父/子) — 自定义子域为 parent/name, 与内置域一致。 */
-    val validDomainLabels: Set<String>
-        get() {
-            val builtin = ToolDomain.entries.map { it.label }.toSet()
-            val custom = customDomains.map { it.fullPath() }.toSet()
-            return (builtin + custom)
-                .filter { isValidDomain(it) }
-                .toSet()
-        }
+    // ═══════════ 1. 域模型 — 单一事实源 ═══════════
 
-    /** 自定义域完整路径 — 全链路唯一域标识 (所有视图共用此单一数据源)。
-     *  规范化: 旧数据 name 可能已含 parent 前缀 (create 允许传 '搜索/自定义子域'),
-     *  直接拼接会双重叠加 (搜索/搜索/自定义子域) → 取最后段。 */
-    internal fun CustomDomain.fullPath(): String = normalizedFullPath()
-
-    /** 路径规范化 — 兼容双重叠加/前缀冗余: 反复去父前缀直到稳定 */
-    internal fun normalizePath(path: String): String {
-        var result = path
-        for (cd in customDomains) {
-            cd.parent?.let { p ->
-                val redundant = "$p/$p/"
-                if (result.startsWith(redundant)) result = result.replace(redundant, "$p/")
-            }
-        }
-        return result
+    /** 域描述 — path 为全链路唯一域标识 (规范化完整路径, 如 搜索/搜索引擎) */
+    data class DomainInfo(
+        val path: String,
+        val parent: String?,
+        val displayName: String,
+        val description: String,
+        val keywords: List<String>,
+        val builtin: Boolean,
+    ) {
+        val shortName: String get() = path.substringAfterLast("/")
     }
 
-    /** invoke_tools 自身不参与分类 */
+    /** 任意输入 → 规范化域路径: 完整路径 / 短名 / 显示名 / 双叠路径 全部兼容 */
+    fun resolveDomain(input: String): String? {
+        if (input.isBlank()) return null
+        val all = domainSource()
+        // 1. 精确完整路径
+        all.firstOrNull { it.path == input }?.let { return it.path }
+        // 2. 短名 (最后一段)
+        all.firstOrNull { it.shortName == input }?.let { return it.path }
+        // 3. 显示名覆盖
+        all.firstOrNull { it.displayName == input }?.let { return it.path }
+        // 4. 双叠路径规范化 (历史遗留: 搜索/搜索/搜索引擎 → 搜索/搜索引擎)
+        all.firstOrNull { d ->
+            d.path.split("/").lastOrNull() == input.substringAfterLast("/") &&
+                input.split("/").distinct().size == d.path.split("/").distinct().size
+        }?.let { return it.path }
+        return null
+    }
+
+    /** 全部可见域 — 单一事实源 (内置枚举 + 规范化自定义 + 技能子域派生) */
+    fun domainSource(): List<DomainInfo> {
+        val result = mutableListOf<DomainInfo>()
+
+        // 内置域 (ToolDomain 枚举)
+        for (td in ToolDomain.entries) {
+            if (!isValidDomain(td.label)) continue
+            result += DomainInfo(
+                path = td.label,
+                parent = td.parent,
+                displayName = domainNameOverrides[td.label] ?: td.label,
+                description = td.triggerDescription,
+                keywords = td.matchKeywords,
+                builtin = true,
+            )
+        }
+
+        // 自定义域 — 规范化完整路径 (name 取最后段, 防双重叠加)
+        val existingPaths = result.map { it.path }.toMutableSet()
+        for (cd in customDomains) {
+            val full = cd.normalizedFullPath()
+            if (!isValidDomain(full)) continue
+            // 防幽灵: 子域父级必须真实存在
+            if (cd.parent != null && cd.parent !in existingPaths) continue
+            if (full !in existingPaths) {
+                result += DomainInfo(
+                    path = full,
+                    parent = cd.parent,
+                    displayName = domainNameOverrides[full] ?: full.substringAfterLast("/"),
+                    description = customDescriptions[full] ?: cd.description.ifBlank { full.substringAfterLast("/") },
+                    keywords = customKeywords[full] ?: cd.keywords,
+                    builtin = false,
+                )
+                existingPaths += full
+            }
+        }
+
+        // 技能子域 — 由工具名结构化派生 (与 classifyByName 同源)
+        // 由 buildDomainTree(tools) 注入 (需要工具池), 此处仅确保技能根域存在
+        return result.sortedBy { it.path }
+    }
+
+    /** 域树 (父 → 子列表) — 视图层唯一来源, 全部视图从这里派生 */
+    private fun buildDomainTree(tools: List<Tool>? = null): Map<String, List<String>> {
+        val infos = domainSource().toMutableList()
+
+        // 技能子域: 从工具名派生 (skill__名 → 技能/名)
+        if (tools != null) {
+            val skillNames = tools.mapNotNull { t ->
+                when {
+                    t.name.startsWith("skill__") -> t.name.removePrefix("skill__")
+                    t.name.startsWith("skill:") -> t.name.removePrefix("skill:")
+                    else -> null
+                }
+            }.filter { it.isNotBlank() }.distinct().sorted()
+            for (s in skillNames) {
+                val sub = "技能/$s"
+                if (isValidDomain(sub) && infos.none { it.path == sub }) {
+                    infos += DomainInfo(
+                        path = sub,
+                        parent = "技能",
+                        displayName = s,
+                        description = "Skill 能力模块",
+                        keywords = emptyList(),
+                        builtin = false,
+                    )
+                }
+            }
+        }
+
+        val result = mutableMapOf<String, MutableList<String>>()
+        val knownPaths = infos.map { it.path }.toSet()
+        for (info in infos) {
+            if (info.parent == null) {
+                result.getOrPut(info.path) { mutableListOf() }
+            } else if (info.parent in knownPaths) {
+                val subs = result.getOrPut(info.parent) { mutableListOf() }
+                if (info.path !in subs) subs.add(info.path)
+            }
+        }
+        return result.toSortedMap()
+    }
+
+    /** 合法域标签集合 — override 校验用 */
+    val validDomainLabels: Set<String>
+        get() = domainSource().map { it.path }
+            .filter { isValidDomain(it) }
+            .toSet()
+
+    // ═══════════ 2. 分类 ═══════════
+
     private val metaToolNames = setOf("invoke_tools", "search_domains")
 
     /** 单个域注入的最大关键词数量, 超出显示 "等N个" */
     private val MAX_KEYWORDS_INJECT = 8
 
-    /** 系统级工具名称前缀 — 精确匹配, 避免被关键词误分类 (如 clawhub_search → 系统, 而非 搜索) */
+    /** 系统级工具名称前缀 — 精确匹配, 避免被关键词误分类 */
     private val SYSTEM_TOOL_PREFIXES = listOf(
         "manage_domain", "list_domains", "move_tool_to_domain",
         "mcp_connect", "clawhub_", "plugin_install", "skills_lock", "list_ecosystem_tools",
@@ -74,7 +176,6 @@ class ToolRouter(
 
     /** MCP 服务器名 → 默认域快速映射 (避免关键词误匹配) */
     private val mcpServerDomainDefaults = mapOf(
-        // 爬虫/搜索类 MCP (常见误分: firecrawl/exa 曾被内置域关键词拉到编程/用户交互)
         "firecrawl" to "搜索",
         "exa" to "搜索",
         "tavily" to "搜索",
@@ -82,23 +183,15 @@ class ToolRouter(
         "duckduckgo" to "搜索",
         "serper" to "搜索",
         "serpapi" to "搜索",
-        // 物理引擎
         "physicsengine" to "物理引擎",
-        // 图表
         "charting" to "生成部署/图表",
-        // 二维码
         "qrcode" to "生成部署/二维码",
-        // 网页部署
         "edgeone" to "生成部署/网页部署",
         "webpagegeneration" to "生成部署/网页部署",
-        // 搜索/商品
         "productinquiry" to "搜索/商品搜索",
-        // 搜索/搜索引擎
         "searchoptimization" to "搜索/搜索引擎",
         "wikipedia" to "搜索/搜索引擎",
-        // 搜索/政策搜索
         "trustedsearch" to "搜索/政策搜索",
-        // 辅助推理
         "thinkingmethodology" to "辅助推理/方法论",
         "sequentialthinking" to "辅助推理/序列思考",
     )
@@ -106,23 +199,24 @@ class ToolRouter(
     fun classifyTool(tool: Tool): String = classifyByName(tool.name, tool.description)
 
     /**
-     * 统一分类逻辑 (UI 与模型侧共用) — 名称+描述, 避免 UI(classifyPreview)与模型(classifyTool)分叉
+     * 统一分类逻辑 (UI 与模型侧共用) — 名称结构化 + 手动覆盖 + 关键词兜底。
+     * 分类结果一律为规范化完整路径 (与 domainSource 同源)。
      */
     fun classifyByName(name: String, description: String): String {
-        // 0. invoke_tools 自身不分类
+        // 0. 元工具不分类
         if (name in metaToolNames) return "system"
-        // 1. 手动覆盖 — 仅指向有效域，否则 fall through
-        //    技能子域(技能/名)为动态域, 不在 validDomainLabels — root(技能)有效即放行
+
+        val valid = validDomainLabels
+
+        // 1. 手动覆盖 — 指向有效域 (含技能子域: root 有效即放行)
         overrides[name]?.let {
-            val ok = it in validDomainLabels ||
-                (it.startsWith("技能/") && isValidDomain("技能"))
+            val ok = it in valid || (it.startsWith("技能/") && isValidDomain("技能"))
             if (ok && isValidDomain(it)) return it
         }
-        // 2. Skill 工具 — 按名称结构化分类: 第一字段类别(skill), 第二字段分类字段(skill 名)
-        //    归「技能/<skill名>」子域 (与 MCP 服务器域同层级, 抹平 MCP/Skill 区别)
+
+        // 2. Skill 工具 — 名称结构化: 第一字段类别(skill), 第二字段分类字段(skill 名)
         if (name.startsWith("skill__") || name.startsWith("skill_") || name.startsWith("skill:")) {
             val skillName = name.removePrefix("skill__").removePrefix("skill_").removePrefix("skill:")
-            // 子域被删除/隐藏时归技能根域 — 与 buildDomainTree 过滤对齐 (计数/显示一致)
             val sub = "技能/$skillName"
             if (skillName.isNotBlank() && isValidDomain(sub)) return sub
             return if (isValidDomain("技能")) "技能" else "方法域"
@@ -130,31 +224,33 @@ class ToolRouter(
         if (name == "use_skill") {
             return if (isValidDomain("技能")) "技能" else "方法域"
         }
-        // 3. 系统级工具 — 按名称前缀精确匹配, 优先于关键词避免误分类
-        //    (如 clawhub_search 不应被 "search" 关键词拉入「搜索」域)
+
+        // 3. 系统级工具 — 前缀精确匹配
         if (SYSTEM_TOOL_PREFIXES.any { name.startsWith(it) }) {
             return if (isValidDomain("系统")) "系统" else "方法域"
         }
-        // 3.5 Memory 工具 — 归「对话工具/记忆」域 (不受 enableMemory 开关影响分类)
+
+        // 3.5 Memory 工具
         if (name == "memory_tool") {
             return if (isValidDomain("对话工具/记忆")) "对话工具/记忆" else "方法域"
         }
 
-        // 4. MCP 工具 — 服务器名映射 → 关键词 → AI兜底
+        // 4. MCP 工具 — 服务器名映射 → 关键词兜底 (名称分类作辅助)
         if (name.startsWith("mcp__")) {
             val server = extractMcpServerName(name)
             mcpServerDomainDefaults[server]?.let { if (isValidDomain(it)) return it }
         }
 
         // 5. 关键词匹配 (自定义域 → 自定义关键词覆盖 → 内置域)
-        //    自定义域返回完整路径 (统一域标识; 此前返回短名 → 分类与域树错位)
         val text = "${name} ${description}".lowercase()
-        for (cd in customDomains) { if (cd.keywords.any { text.contains(it) }) return cd.fullPath() }
+        for (cd in customDomains) {
+            if (cd.keywords.any { text.contains(it) }) return cd.normalizedFullPath()
+        }
         for ((domain, keywords) in customKeywords) {
-            if (domain in validDomainLabels && keywords.any { text.contains(it) }) return domain
+            if (domain in valid && keywords.any { text.contains(it) }) return domain
         }
 
-        // 6. 内置域关键词兜底 (根域级联过滤: 根域已删/隐藏 → 子域不可用)
+        // 6. 内置域关键词兜底 (根域级联过滤)
         val excluded = removedBuiltinDomains + hiddenDomains
         val result = ToolDomain.entries
             .sortedByDescending { it.label.count { c -> c == '/' } }
@@ -173,40 +269,37 @@ class ToolRouter(
 
     private fun extractMcpServerName(toolName: String): String {
         val parts = toolName.removePrefix("mcp__").split("__")
-        return if (parts.size >= 1) parts[0].lowercase() else "unknown"
+        return if (parts.isNotEmpty()) parts[0].lowercase() else "unknown"
     }
 
-    fun displayName(domain: String): String = domainNameOverrides[domain] ?: domain
+    fun displayName(domain: String): String = domainNameOverrides[domain] ?: domain.substringAfterLast("/")
 
-    /** 检查域是否有效（未被删除/隐藏） — 支持子域级删除/隐藏 (完整路径 + 根域级联) */
+    /** 检查域是否有效（未被删除/隐藏）— 支持子域级删除/隐藏 (完整路径 + 根域级联) */
     private fun isValidDomain(domain: String): Boolean {
         val root = domain.split("/").first()
-        // 子域级: 完整路径在 removed/hidden 中 → 不可见
         if (domain in removedBuiltinDomains || domain in hiddenDomains) return false
-        // 根域级: 根被删除/隐藏 → 级联其全部子域
         return root !in removedBuiltinDomains && root !in hiddenDomains
     }
 
-    /** 公开可见性判断 — 供 UI/管理工具使用 (与 isValidDomain 同一逻辑) */
+    /** 公开可见性判断 */
     fun isDomainVisible(domain: String): Boolean = isValidDomain(domain)
 
     fun getTriggerDescription(domain: String): String {
         customDescriptions[domain]?.let { return it }
         ToolDomain.entries.find { it.label == domain }?.triggerDescription?.let { return it }
-        customDomains.find { it.fullPath() == domain }?.description?.let { return it }
+        customDomains.find { it.normalizedFullPath() == domain }?.description?.let { return it }
         return domain.substringAfterLast("/")
     }
 
     fun getKeywords(domain: String): List<String> {
         customKeywords[domain]?.let { return it }
-        customDomains.find { it.fullPath() == domain }?.keywords?.let { return it }
+        customDomains.find { it.normalizedFullPath() == domain }?.keywords?.let { return it }
         return ToolDomain.entries.find { it.label == domain }?.matchKeywords ?: emptyList()
     }
 
-    /**
-     * 域基本信息注入格式：显示名称 + 触发描述 + 触发条件(关键词)
-     * 关键词超过 MAX_KEYWORDS_INJECT 时取前几个 + 计数，避免膨胀
-     */
+    // ═══════════ 3. 视图 — 全部从 domainSource/buildDomainTree 派生 ═══════════
+
+    /** 域基本信息注入格式: 显示名 + 触发描述 + 触发条件(关键词) */
     private fun domainInfo(domain: String, indent: String = ""): String {
         val display = displayName(domain)
         val desc = getTriggerDescription(domain)
@@ -219,19 +312,13 @@ class ToolRouter(
             val suffix = if (rest > 0) " 等${keywords.size}个" else ""
             " [触发: ${shown.joinToString("、")}$suffix]"
         }
-        // 路径名为主键（可直接用于 invoke_tools 加载），显示名不同时附注
-        val nameText = if (display == domain) "`$domain`" else "`$domain`（显示名: $display）"
+        val nameText = if (display == domain.substringAfterLast("/")) "`$domain`" else "`$domain`（显示名: $display）"
         return "$indent**$nameText** — $desc$kwText"
     }
 
     /**
-     * 域地图 — 缓存稳定版。
-     *
-     * 输出依赖静态配置（域树/显示名/触发描述/触发条件）+ 工具池数量。
-     * 工具池数量可安全注入：MCP 工具声明已静态化（v3.5.18，Error 不删工具），
-     * 输出只依赖静态配置（域树/显示名/触发描述/触发条件），不含任何运行时数据：
-     * 工具数/状态嵌入 system 会导致请求体变化 → 前缀缓存整体失效（3.5.16 教训，
-     * v3.5.11 正常化基准）。工具数由 invoke_tools 帮助返回（消息层，不影响缓存）。
+     * 层1概览 — 缓存稳定版。输出只依赖静态配置 (域树/显示名/触发描述/触发条件),
+     * 不含任何运行时数据 (工具数/状态 → invoke_tools 帮助, 消息层)。
      */
     fun buildLayer1(tools: List<Tool>): String {
         val treeNodes = buildDomainTree(tools)
@@ -256,62 +343,6 @@ class ToolRouter(
         }
     }
 
-    /** 构建声明式域树: ToolDomain枚举 + customDomains + 技能子域(工具名派生), 过滤 hiddenDomains + removedBuiltinDomains (含子域级) */
-    private fun buildDomainTree(tools: List<Tool>? = null): Map<String, List<String>> {
-        val result = mutableMapOf<String, MutableList<String>>()
-
-        // 内置域 (ToolDomain枚举)
-        for (entry in ToolDomain.entries) {
-            val label = entry.label
-            if (!isValidDomain(label)) continue  // 根域或子域被删除/隐藏都跳过
-            val parts = label.split("/")
-            val root = parts.first()
-            result.getOrPut(root) { mutableListOf() }
-            if (parts.size > 1) result[root]!!.add(label)
-        }
-
-        // 自定义域 — 与内置域完全对齐 (父级/独立域同一规则)。
-        // 域标识统一完整路径: 子域 = parent/name (此前加入短名导致两种命名共存,
-        // 寻址断链 + 幽灵父域)。parent 必须真实存在 (枚举/自定义/技能根域) 才挂载。
-        // parent 存在性: 枚举全部标签 + 自定义完整路径 + 技能根域 (支持嵌套子域)
-        val existingParents = ToolDomain.entries.map { it.label }.toSet() +
-            customDomains.map { it.fullPath() }.toSet() + "技能"
-        for (cd in customDomains) {
-            val full = cd.fullPath()
-            if (!isValidDomain(full)) continue
-            if (cd.parent != null) {
-                if (cd.parent in existingParents && isValidDomain(cd.parent)) {
-                    val subs = result.getOrPut(cd.parent) { mutableListOf() }
-                    if (full !in subs) subs.add(full)  // 去重
-                }
-            } else {
-                result.getOrPut(full) { mutableListOf() }
-            }
-        }
-
-        // 技能子域 — 从工具名结构化派生 (skill__名), 与 classifyByName 同源,
-        // 抹平 MCP/Skill 层级: Skill 归「技能/<名>」, 与 MCP 服务器域同等次。
-        // 过滤已删除/隐藏的技能子域 (删除后不被动态重建)。
-        if (tools != null) {
-            val skillNames = tools.mapNotNull { t ->
-                when {
-                    t.name.startsWith("skill__") -> t.name.removePrefix("skill__")
-                    t.name.startsWith("skill:") -> t.name.removePrefix("skill:")
-                    else -> null
-                }
-            }.filter { it.isNotBlank() }.distinct().sorted()
-            if (skillNames.isNotEmpty() && isValidDomain("技能")) {
-                result.getOrPut("技能") { mutableListOf() }
-                for (s in skillNames) {
-                    val sub = "技能/$s"
-                    if (isValidDomain(sub)) result["技能"]!!.add(sub)
-                }
-            }
-        }
-
-        return result.toSortedMap()
-    }
-
     fun createInvokeToolsTool(
         allTools: List<Tool>,
         loadedDomains: MutableSet<String>,
@@ -326,7 +357,7 @@ class ToolRouter(
                     properties = buildJsonObject {
                         put("name", buildJsonObject {
                             put("type", "string")
-                            put("description", "类别或子域完整路径（如 搜索/搜索引擎），显示名也可。留空或传\"帮助\"查看全部类别。")
+                            put("description", "类别或子域完整路径（如 搜索/搜索引擎），显示名或短名也可。留空或传\"帮助\"查看全部类别。")
                         })
                     },
                     required = listOf<String>() // name 可选
@@ -341,25 +372,10 @@ class ToolRouter(
                         val classified = router.classifyAll(allTools)
                         val treeNodes = router.buildDomainTree(allTools)
 
-                        // 显示名 → 路径名 反查: 模型可能直接复制帮助地图上的显示名调用
-                        // (domainNameOverrides 配置了显示名覆盖时, 加载仍按路径名解析)
-                        val resolvedName = router.domainNameOverrides.entries
-                            .firstOrNull { it.value == rawName }
-                            ?.key ?: rawName
+                        // 统一寻址: 完整路径/短名/显示名/双叠路径 → 规范化路径
+                        val finalName = router.resolveDomain(rawName) ?: rawName
 
-                        // 短名 → 完整路径 反查: 统一完整路径后, 兼容模型传子域短名
-                        // (如 "搜索引擎" → "搜索/搜索引擎")
-                        val finalName = if (treeNodes.containsKey(resolvedName) ||
-                            treeNodes.values.flatten().any { it == resolvedName }
-                        ) {
-                            resolvedName
-                        } else {
-                            treeNodes.values.flatten()
-                                .firstOrNull { it.substringAfterLast("/") == resolvedName }
-                                ?: resolvedName
-                        }
-
-                        // 用声明式域树检查域名是否存在 + 获取子域列表
+                        // 用声明式域树检查域名是否存在
                         val domainExists = treeNodes.containsKey(finalName) ||
                             treeNodes.values.flatten().any { it == finalName }
 
@@ -367,8 +383,7 @@ class ToolRouter(
                             val avail = treeNodes.keys.toList()
                             listOf(UIMessagePart.Text("未知: '$rawName'。可用顶级域: ${avail.joinToString("、")}。调 `invoke_tools(\"帮助\")` 查看详情。"))
                         } else {
-                            // 已加载也返回最新完整摘要 (loadedDomains.add 幂等, tools 不变 → 缓存稳定;
-                            //  挂载/工具变更后 invoke_tools 同域即可刷新, 无需新会话)
+                            // 已加载也返回最新完整摘要 (loadedDomains.add 幂等, tools 不变 → 缓存稳定)
                             loadedDomains.add(finalName)
 
                             // 子域列表从声明式域树获取
@@ -376,7 +391,7 @@ class ToolRouter(
                                 treeNodes.containsKey(finalName) -> treeNodes[finalName]!!
                                 else -> treeNodes.entries
                                     .find { it.value.contains(finalName) }
-                                    ?.let { (parent, subs) ->
+                                    ?.let { (_, subs) ->
                                         subs.filter { it.startsWith("$finalName/") }
                                     } ?: emptyList()
                             }
@@ -386,8 +401,8 @@ class ToolRouter(
                             if (childKeys.isNotEmpty()) {
                                 // 深度缓存优化: 有子域时一次性加载父域 + 全部子域工具。
                                 // 此前模型需逐个子域 invoke_tools → tools 数组每轮变化 →
-                                // 请求体前缀持续断裂 → 前期缓存阶梯化。一次加载到位后
-                                // 整棵子树工具直接可用, 后续轮次 tools 数组稳定。
+                                // 请求体前缀持续断裂 → 前期缓存阶梯化。一次到位后整棵子树
+                                // 工具直接可用, 后续轮次 tools 数组稳定。
                                 loadedDomains.add(finalName)
                                 childKeys.forEach { loadedDomains.add(it) }
                                 // 有子域: 显示子域列表 (已全部自动加载)
@@ -396,7 +411,7 @@ class ToolRouter(
                                         for (ck in childKeys.sorted()) {
                                             val short = ck.substringAfterLast("/")
                                             val display = router.displayName(ck)
-                                            val nameText = if (display == ck) ck else "$ck（$display）"
+                                            val nameText = if (display == short) ck else "$ck（$display）"
                                             val desc = router.getTriggerDescription(ck)
                                             val keywords = router.getKeywords(ck)
                                             val kwText = if (keywords.isEmpty()) "" else {
@@ -418,12 +433,12 @@ class ToolRouter(
                                             appendLine("- `${t.name}`: ${t.description.take(60).replace("\\n", " ")}")
                                         }
                                     } else {
-                                        appendLine("「$finalName」含${childKeys.size}个子域：")
+                                        appendLine("「$finalName」含${childKeys.size}个子域（已全部加载，可直接调用）：")
                                         appendLine()
                                         append(subInfo)
                                     }
                                     appendLine()
-                                    appendLine("子域标注了触发描述与触发条件(关键词)，据此判断工具位置。调 `invoke_tools(\"子域完整路径\")` 查看该域工具；所有工具均可直接调用。")
+                                    appendLine("子域标注了触发描述与触发条件(关键词)，据此判断工具位置。所有工具均可直接调用。")
                                 }
                                 listOf(UIMessagePart.Text(summary))
                             } else {
@@ -434,12 +449,10 @@ class ToolRouter(
                                     .flatMap { it.value }
                                     .toSet()
                                     .let { parentTools ->
-                                        // 去重：子域有 → 从父级移走；父级直接挂的保留
                                         val subDomainsInParent = treeNodes[parentRoot] ?: emptyList()
                                         val subTools = subDomainsInParent.flatMap { classified[it].orEmpty() }.toSet()
                                         parentTools - subTools
                                     }
-                                // 不在这 parentRoot 的子域里的直接工具
                                 val rootOnly = if (finalName == parentRoot) allInParent else directTools
 
                                 val summary = buildString {
@@ -452,10 +465,10 @@ class ToolRouter(
                                             val desc = t.description.take(80).replace("\n", " ")
                                             appendLine("- `${t.name}`: $desc")
                                         }
-                                        // 技能域: 附加已启用 skill 列表 (skill_<name> 工具已直接可用)
+                                        // 技能域: 附加已启用 skill 列表 (skill__<name> 工具已直接可用)
                                         if (rootOnly.any { it.name == "use_skill" }) {
                                             appendLine()
-                                            appendLine("可用 Skills（`skill_<name>` 工具已直接可用，无需加载）:")
+                                            appendLine("可用 Skills（`skill__<name>` 工具已直接可用，无需加载）:")
                                             if (skills.isEmpty()) {
                                                 appendLine("  （当前没有已启用的 skill）")
                                             } else {
@@ -471,7 +484,7 @@ class ToolRouter(
                                         .map { it.key.removePrefix("skill:") }
                                     if (mountedSkills.isNotEmpty()) {
                                         appendLine()
-                                        appendLine("挂载到本域的 Skills（`skill_<name>` 工具已直接可用）:")
+                                        appendLine("挂载到本域的 Skills（`skill__<name>` 工具已直接可用）:")
                                         for (sname in mountedSkills.sorted()) {
                                             val sdesc = skills.find { it.first == sname }?.second ?: ""
                                             appendLine("- `$sname`: ${sdesc.take(100).replace("\n", " ")}")
@@ -513,33 +526,23 @@ class ToolRouter(
 
     /**
      * 获取指定域下的工具 — 使用 classifyAll 确保与 createInvokeToolsTool 一致。
+     * 短名/双叠路径兼容 (统一寻址)。
      */
     fun getDomainTools(domainName: String, allTools: List<Tool>): List<Tool> {
         val classified = classifyAll(allTools)
-        // 短名兼容: 旧会话 loadedDomains 可能存短名 (统一完整路径前) —
-        // 未命中时按最后一段反查完整路径, 否则该域工具不加载 → 模型反复
-        // invoke_tools → tools 数组每轮变化 → 缓存阶梯化
-        val resolved = classified.keys.firstOrNull { it == domainName }
-            ?: classified.keys.firstOrNull { it.substringAfterLast("/") == domainName }
-            ?: domainName
+        val resolved = resolveDomain(domainName) ?: domainName
         return classified[resolved].orEmpty().distinctBy { it.name }
     }
 
     /**
-     * UI 预览分类——用于域管理页面展示。
-     * 与 classifyTool 的区别：不处理 MCP 子域合并，直接返回域标签。
-     * 关键修复：
-     * 1. override 结果校验合法性（过滤指向已删除域的过期覆盖）
-     * 2. customKeywords 结果校验合法性（过滤指向旧域名的过期关键词）
-     * 3. ToolDomain 匹配按深度排序（子域优先，避免被父域关键词抢先匹配）
+     * UI 预览分类——用于域管理页面展示。与 classifyTool 一致 (统一分类逻辑)。
      */
     fun classifyPreview(name: String, description: String): String = classifyByName(name, description)
 }
 
-
 /** 自定义域完整路径 — 全模块统一数据源 (UI/系统提示/Invoke Tools/List Domains 同源)。
- *  规范化: name 永远取最后一段 (短名) — 旧数据可能含完整父路径,
- *  避免 parent + name 双重叠加。 */
+ *  规范化: name 永远取最后一段 (短名) — 旧数据可能含完整父路径 (create 允许传
+ *  '搜索/自定义子域'), 避免 parent + name 双重叠加。 */
 internal fun CustomDomain.normalizedFullPath(): String {
     val namePart = name.substringAfterLast("/")
     return parent?.let { "$it/$namePart" } ?: name

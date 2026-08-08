@@ -113,32 +113,18 @@ private fun buildNestedDomains(
         return domain !in router.removedBuiltinDomains && root !in router.removedBuiltinDomains
     }
 
-    for (td in ToolDomain.entries) {
-        if (!notRemoved(td.label)) continue
-        if (td.parent != null) {
-            domainChildren.getOrPut(td.parent) { linkedSetOf() }.add(td.label)
-        } else {
-            allTopLevel.add(td.label)
+    // 单一数据源: 全部域经 ToolRouter.domainSource() 派生 (枚举 + 规范化自定义域),
+    // 与系统提示/Invoke Tools/List Domains 同源 — 杜绝三套视图分裂
+    val knownPaths = router.domainSource().map { it.path }.toSet()
+    for (info in router.domainSource()) {
+        if (!notRemoved(info.path)) continue
+        if (info.parent == null) {
+            allTopLevel.add(info.path)
+        } else if (info.parent in knownPaths && notRemoved(info.parent)) {
+            domainChildren.getOrPut(info.parent) { linkedSetOf() }.add(info.path)
         }
     }
-    // 自定义域: parent=null → 顶级域; parent!=null → 子域 (完整路径 parent/name,
-    // 与内置域命名统一; 此前加入短名 → 同一区域下显示不一致)。
-    // parent 必须真实存在 (枚举/customDomains 顶级/技能) — 防幽灵父域。
-    val existingTopLevel = ToolDomain.entries.filter { it.parent == null }.map { it.label }.toSet()
-    for (cd in router.customDomains) {
-        val full = cd.normalizedFullPath()
-        if (!notRemoved(full)) continue
-        if (cd.parent == null) {
-            allTopLevel.add(full)
-        } else {
-            val parentExists = existingTopLevel.contains(cd.parent) ||
-                router.customDomains.any { it.name == cd.parent && it.parent == null }
-            if (parentExists && notRemoved(cd.parent)) {
-                domainChildren.getOrPut(cd.parent) { linkedSetOf() }.add(full)
-            }
-        }
-    }
-    // 技能子域 (动态, 从分类结果派生) — 域管理 UI 可见/可管理, 与模型侧一致
+    // 技能子域 (动态, 从分类结果派生 — 工具池在 UI 层)
     val skillSubs = flatMap.keys.filter { it.startsWith("技能/") }
     if (skillSubs.isNotEmpty() && notRemoved("技能")) {
         allTopLevel.add("技能")
