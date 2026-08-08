@@ -712,6 +712,7 @@ class GenerationHandler(
             // 断流自动恢复 (v3.5.46 根治): 输出中连接中断 (切后台网络切换/
             // NAT 超时/平台断流 — IOException) → 回滚本次已输出内容 → 自动重试。
             // 用户核心诉求: 一直保持连接, 不自己中断。重试请求消息相同 → 缓存命中。
+            streamLoop@ while (true) {
             val preStreamMessages = messages
             try {
             providerImpl.streamText(
@@ -742,6 +743,7 @@ class GenerationHandler(
                 }
                 onUpdateMessages(messages)
             }
+            break@streamLoop  // 流式成功完成, 退出重试循环
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e  // 用户主动停止 — 不重试
             } catch (e: java.io.IOException) {
@@ -751,9 +753,10 @@ class GenerationHandler(
                     Log.w(TAG, "stream interrupted (${e.message}), rolling back & retry $streamRetryCount/2")
                     messages = preStreamMessages  // 丢弃本次生成的半截内容
                     onUpdateMessages(messages)    // UI 同步回滚
-                    continue  // 重试 (maxSteps 内, 消息相同缓存命中)
+                    continue@streamLoop  // 重试 (maxSteps 内, 消息相同缓存命中)
                 }
                 throw e
+            }
             }
         } else {
             val chunk = providerImpl.generateText(
