@@ -370,7 +370,13 @@ class ToolRouter(
                             // 工具从分类结果获取
                             val directTools = classified[finalName].orEmpty()
                             if (childKeys.isNotEmpty()) {
-                                // 有子域: 显示子域列表
+                                // 深度缓存优化: 有子域时一次性加载父域 + 全部子域工具。
+                                // 此前模型需逐个子域 invoke_tools → tools 数组每轮变化 →
+                                // 请求体前缀持续断裂 → 前期缓存阶梯化。一次加载到位后
+                                // 整棵子树工具直接可用, 后续轮次 tools 数组稳定。
+                                loadedDomains.add(finalName)
+                                childKeys.forEach { loadedDomains.add(it) }
+                                // 有子域: 显示子域列表 (已全部自动加载)
                                 val summary = buildString {
                                     val subInfo = buildString {
                                         for (ck in childKeys.sorted()) {
@@ -389,7 +395,7 @@ class ToolRouter(
                                         }
                                     }
                                     if (directTools.isNotEmpty()) {
-                                        appendLine("「$finalName」含${childKeys.size}个子域及直接工具:")
+                                        appendLine("「$finalName」含${childKeys.size}个子域及直接工具（已全部加载，可直接调用）:")
                                         appendLine()
                                         append(subInfo)
                                         appendLine()
