@@ -379,7 +379,6 @@ private fun deleteDomainTool(settingsStore: SettingsStore) = Tool(
         }
         val domains = settings.customDomains
             .filter { visible(it.parent?.let { p -> "$p/${it.name}" } ?: it.name) && (it.parent == null || visible(it.parent)) }
-            .map { it.parent?.let { p -> "$p/${it.name}" } ?: it.name }
         val builtin = me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.map { it.label }.filter { visible(it) }
 
         val result = buildString {
@@ -398,8 +397,9 @@ private fun deleteDomainTool(settingsStore: SettingsStore) = Tool(
             appendLine()
             appendLine("自定义域 (${domains.size}个):")
             domains.forEach { d ->
+                val full = d.parent?.let { p -> "$p/${d.name}" } ?: d.name
                 val parentInfo = d.parent?.let { " (父: $it)" } ?: ""
-                appendLine("- ${d.name}$parentInfo: ${d.description}")
+                appendLine("- $full$parentInfo: ${d.description}")
                 if (d.keywords.isNotEmpty()) {
                     appendLine("  触发: ${d.keywords.take(8).joinToString("、")}" +
                         (if (d.keywords.size > 8) " 等${d.keywords.size}个" else ""))
