@@ -9,6 +9,7 @@
  */
 package me.rerere.ai.provider.providers.openai
 
+import java.io.IOException
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.DelicateCoroutinesApi
