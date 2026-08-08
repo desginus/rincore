@@ -317,10 +317,22 @@ class SettingsStore(
                     ttsProviders.add(defaultTTSProvider.copyProvider())
                 }
             }
+            // 旧数据迁移: customDomains 的 name 含 "/" 且 parent=null →
+            // 拆分 parent + 短名 (历史 create 允许传 '搜索/自定义子域' 完整路径,
+            // 不拆分会导致 fullPath 双重叠加/视图分裂)
+            val normalizedDomains = it.customDomains.map { cd ->
+                if (cd.parent == null && cd.name.contains("/")) {
+                    cd.copy(
+                        parent = cd.name.substringBeforeLast("/"),
+                        name = cd.name.substringAfterLast("/"),
+                    )
+                } else cd
+            }
             it.copy(
                 providers = providers,
                 assistants = assistants,
                 ttsProviders = ttsProviders,
+                customDomains = normalizedDomains,
             )
         }
         .map { settings ->

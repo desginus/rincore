@@ -17,6 +17,7 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.*
 import me.rerere.rikkahub.data.ai.tools.routing.ToolDomain
 import me.rerere.rikkahub.data.ai.tools.routing.ToolRouter
+import me.rerere.rikkahub.data.ai.tools.routing.normalizedFullPath
 import me.rerere.rikkahub.data.datastore.CustomDomain
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
@@ -125,7 +126,7 @@ private fun buildNestedDomains(
     // parent 必须真实存在 (枚举/customDomains 顶级/技能) — 防幽灵父域。
     val existingTopLevel = ToolDomain.entries.filter { it.parent == null }.map { it.label }.toSet()
     for (cd in router.customDomains) {
-        val full = cd.parent?.let { "$it/${cd.name}" } ?: cd.name
+        val full = cd.normalizedFullPath()
         if (!notRemoved(full)) continue
         if (cd.parent == null) {
             allTopLevel.add(full)
@@ -275,7 +276,7 @@ fun SettingDomainPage(
             itemsIndexed(nestedDomains) { _, (domain, subs) ->
                 val displayName = settings.domainNameOverrides[domain] ?: domain
                 val isHidden = domain in settings.hiddenDomains
-                val isCustom = domain in settings.customDomains.map { it.parent?.let { p -> "$p/${it.name}" } ?: it.name }
+                val isCustom = domain in settings.customDomains.map { it.normalizedFullPath() }
                 val desc = settings.customDomainDescriptions[domain] ?: router.getTriggerDescription(domain)
                 var expanded by remember { mutableStateOf(false) }
 
@@ -626,7 +627,7 @@ fun SettingDomainPage(
     // 删除确认对话框
     if (deleteConfirm != null) {
         val domain = deleteConfirm!!
-        val isCustom = domain in settings.customDomains.map { it.parent?.let { p -> "$p/${it.name}" } ?: it.name }
+        val isCustom = domain in settings.customDomains.map { it.normalizedFullPath() }
         AlertDialog(onDismissRequest = { deleteConfirm = null }, title = { Text("删除域") },
             text = { Text(if (isCustom) "删除自定义域「${domain}」？此操作不可恢复。子域和覆盖将一起清除。"
                      else "删除内置域「${domain}」？它将从场景地图中消失。可通过新建域恢复。") },

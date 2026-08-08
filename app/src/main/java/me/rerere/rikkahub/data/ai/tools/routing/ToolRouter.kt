@@ -42,8 +42,22 @@ class ToolRouter(
                 .toSet()
         }
 
-    /** 自定义域完整路径: 子域 = parent/name; 顶级域 = name — 全链路唯一域标识 */
-    private fun CustomDomain.fullPath(): String = parent?.let { "$it/${name}" } ?: name
+    /** 自定义域完整路径 — 全链路唯一域标识 (所有视图共用此单一数据源)。
+     *  规范化: 旧数据 name 可能已含 parent 前缀 (create 允许传 '搜索/自定义子域'),
+     *  直接拼接会双重叠加 (搜索/搜索/自定义子域) → 取最后段。 */
+    internal fun CustomDomain.fullPath(): String = normalizedFullPath()
+
+    /** 路径规范化 — 兼容双重叠加/前缀冗余: 反复去父前缀直到稳定 */
+    internal fun normalizePath(path: String): String {
+        var result = path
+        for (cd in customDomains) {
+            cd.parent?.let { p ->
+                val redundant = "$p/$p/"
+                if (result.startsWith(redundant)) result = result.replace(redundant, "$p/")
+            }
+        }
+        return result
+    }
 
     /** invoke_tools 自身不参与分类 */
     private val metaToolNames = setOf("invoke_tools", "search_domains")
@@ -520,4 +534,13 @@ class ToolRouter(
      * 3. ToolDomain 匹配按深度排序（子域优先，避免被父域关键词抢先匹配）
      */
     fun classifyPreview(name: String, description: String): String = classifyByName(name, description)
+}
+
+
+/** 自定义域完整路径 — 全模块统一数据源 (UI/系统提示/Invoke Tools/List Domains 同源)。
+ *  规范化: name 永远取最后一段 (短名) — 旧数据可能含完整父路径,
+ *  避免 parent + name 双重叠加。 */
+internal fun CustomDomain.normalizedFullPath(): String {
+    val namePart = name.substringAfterLast("/")
+    return parent?.let { "$it/$namePart" } ?: name
 }

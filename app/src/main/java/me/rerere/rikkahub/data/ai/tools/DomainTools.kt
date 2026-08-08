@@ -16,6 +16,7 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.data.ai.tools.routing.normalizedFullPath
 import me.rerere.rikkahub.data.datastore.CustomDomain
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -98,7 +99,7 @@ private fun createSearchDomainsTool(
             .map { it.removePrefix("skill__").removePrefix("skill:") }
             .filter { it.isNotBlank() }.toSet()
         val allDomains = (me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.map { it.label }
-            + settings.customDomains.map { it.parent?.let { p -> "$p/${it.name}" } ?: it.name }
+            + settings.customDomains.map { it.normalizedFullPath() }
             + if (settings.customDomains.any { it.name == "技能" }) emptyList() else skillNames.map { "技能/$it" })
             .filter { visible(it) }
 
@@ -201,7 +202,7 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
                 val msg = settingsStore.updateWithResult { settings ->
                     val builtinNames = me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.map { it.label }.toSet()
                     val existing = settings.customDomains.find {
-                        it.name == name || (it.parent?.let { p -> "$p/${it.name}" } == name)
+                        it.name == name || it.normalizedFullPath() == name
                     }
                     when {
                         // 内置域名: 复活 (移除 removedBuiltinDomains) + 清理 customDomains 同名冲突
@@ -220,9 +221,13 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
                             ) to "已复活内置域 '$name'（原已删除，现恢复）。场景地图已同步。"
                         }
                         else -> {
+                            // name 传完整路径时自动拆分 (如 '搜索/自定义子域' → parent+短名),
+                            // 防再次存含父路径的 name → fullPath 双重叠加
+                            val splitParent = parent ?: name.substringBeforeLast("/").takeIf { "/" in name }
+                            val splitName = name.substringAfterLast("/")
                             val newDomain = CustomDomain(
-                                name = name,
-                                parent = parent,
+                                name = splitName,
+                                parent = splitParent,
                                 description = description,
                                 keywords = keywords,
                             )
@@ -237,7 +242,7 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
                 val msg = settingsStore.updateWithResult { settings ->
                     // 兼容短名/完整路径: name 可能是 "搜索引擎" 或 "搜索/搜索引擎"
                     val existing = settings.customDomains.find {
-                        it.name == name || (it.parent?.let { p -> "$p/${it.name}" } == name)
+                        it.name == name || it.normalizedFullPath() == name
                     }
                     // 子域一并处理 (parent == name)
                     val childDomains = settings.customDomains.filter { it.parent == name }
@@ -286,7 +291,7 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
                 val msg = settingsStore.updateWithResult { settings ->
                     if (newName.isNullOrBlank()) return@updateWithResult settings to "rename 需要 new_name 参数"
                     val existing = settings.customDomains.find {
-                        it.name == name || (it.parent?.let { p -> "$p/${it.name}" } == name)
+                        it.name == name || it.normalizedFullPath() == name
                     } ?: return@updateWithResult settings to "自定义域 '$name' 不存在。内置域不支持重命名。"
                     if (settings.customDomains.any { it.name == newName }) {
                         return@updateWithResult settings to "域 '$newName' 已存在"
@@ -325,7 +330,7 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
                 // 修复: 描述/触发词/显示名可改 — 无需重建域 (重建曾触发工具打散)
                 val msg = settingsStore.updateWithResult { settings ->
                     val existing = settings.customDomains.find {
-                        it.name == name || (it.parent?.let { p -> "$p/${it.name}" } == name)
+                        it.name == name || it.normalizedFullPath() == name
                     }
                     if (existing == null) {
                         return@updateWithResult settings to "自定义域 '$name' 不存在。内置域的描述/关键词由系统定义，可用 domainNameOverrides 修改显示名。"
@@ -378,7 +383,7 @@ private fun deleteDomainTool(settingsStore: SettingsStore) = Tool(
                 root !in removedSet && root !in hiddenSet
         }
         val domains = settings.customDomains
-            .filter { visible(it.parent?.let { p -> "$p/${it.name}" } ?: it.name) && (it.parent == null || visible(it.parent)) }
+            .filter { visible(it.normalizedFullPath()) && (it.parent == null || visible(it.parent)) }
         val builtin = me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.map { it.label }.filter { visible(it) }
 
         val result = buildString {
@@ -397,7 +402,7 @@ private fun deleteDomainTool(settingsStore: SettingsStore) = Tool(
             appendLine()
             appendLine("自定义域 (${domains.size}个):")
             domains.forEach { d ->
-                val full = d.parent?.let { p -> "$p/${d.name}" } ?: d.name
+                val full = d.normalizedFullPath()
                 val parentInfo = d.parent?.let { " (父: $it)" } ?: ""
                 appendLine("- $full$parentInfo: ${d.description}")
                 if (d.keywords.isNotEmpty()) {
@@ -445,7 +450,7 @@ private fun listDomainsTool(
         }
         val skillSubNames = knownSkillNames().map { "技能/$it" }
         val allValid = (me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.map { it.label }.toSet()
-            + settings.customDomains.map { it.parent?.let { p -> "$p/${it.name}" } ?: it.name }.toSet()
+            + settings.customDomains.map { it.normalizedFullPath() }.toSet()
             + if (settings.customDomains.any { it.name == "技能" }) emptySet() else skillSubNames.toSet())
             .filter { visible(it) }
             .toSet()

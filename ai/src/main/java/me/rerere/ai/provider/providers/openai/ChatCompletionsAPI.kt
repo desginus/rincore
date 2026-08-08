@@ -186,6 +186,7 @@ class ChatCompletionsAPI(
 
         // SSE 连接优化: 首次数据到达前断连时自动重试, 指数退避 (移植 v2.9.8 稳定行为)
         val hasReceivedData = java.util.concurrent.atomic.AtomicBoolean(false)
+        val completed = java.util.concurrent.atomic.AtomicBoolean(false)  // [DONE] 正常完成标记
         val retryCount = java.util.concurrent.atomic.AtomicInteger(0)
         val maxRetries = 5 // 指数退避 1+2+4+8+16=31s 窗口, 覆盖瞬时网络波动
         var currentEventSource: EventSource? = null
@@ -202,6 +203,7 @@ class ChatCompletionsAPI(
             ) {
                 if (data == "[DONE]") {
                     Log.d(TAG, "onEvent: [DONE]")
+                    completed.set(true)  // 正常完成标记 — onClosed 据此区分静默中断
                     close()
                     return
                 }
@@ -289,8 +291,15 @@ class ChatCompletionsAPI(
             }
 
             override fun onClosed(eventSource: EventSource) {
-                TraceLogger.log("SSE", "stream closed by server")
-                close()
+                // 服务器主动关闭连接: 已收到 [DONE] → 正常完成; 否则静默中断
+                // (消息不完整且无报错 → 用户感知"莫名其妙中断" — 可见化修复)
+                if (!completed.get()) {
+                    Log.w(TAG, "onClosed: stream closed before [DONE] — unexpected interruption")
+                    close(IOException("SSE 流在完成前被服务器关闭 (未收到 [DONE])"))
+                } else {
+                    TraceLogger.log("SSE", "stream closed by server")
+                    close()
+                }
             }
             }
 
