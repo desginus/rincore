@@ -86,7 +86,7 @@ fun SettingToolComparePage(
                 title = { Text("工具对照（开发者）") },
                 navigationIcon = {
                     androidx.compose.material3.IconButton(onClick = onBack) {
-                        androidx.compose.material3.Icon(HugeIcons.ArrowLeft01, "返回")
+                        androidx.compose.material3.Icon(HugeIcons.ArrowDown01, "返回")
                     }
                 },
                 colors = CustomColors.topBarColors,
