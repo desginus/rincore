@@ -98,7 +98,7 @@ private fun createSearchDomainsTool(
             .map { it.removePrefix("skill__").removePrefix("skill:") }
             .filter { it.isNotBlank() }.toSet()
         val allDomains = (me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.map { it.label }
-            + settings.customDomains.map { it.name }
+            + settings.customDomains.map { it.parent?.let { p -> "$p/${it.name}" } ?: it.name }
             + if (settings.customDomains.any { it.name == "技能" }) emptyList() else skillNames.map { "技能/$it" })
             .filter { visible(it) }
 
@@ -200,7 +200,9 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
             "create" -> {
                 val msg = settingsStore.updateWithResult { settings ->
                     val builtinNames = me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.map { it.label }.toSet()
-                    val existing = settings.customDomains.find { it.name == name }
+                    val existing = settings.customDomains.find {
+                        it.name == name || (it.parent?.let { p -> "$p/${it.name}" } == name)
+                    }
                     when {
                         // 内置域名: 复活 (移除 removedBuiltinDomains) + 清理 customDomains 同名冲突
                         // 修复: 「技能」等内置域删除后"半存在"(配置层有/工具树无) — create 幂等复活
@@ -233,7 +235,10 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
             }
             "delete" -> {
                 val msg = settingsStore.updateWithResult { settings ->
-                    val existing = settings.customDomains.find { it.name == name }
+                    // 兼容短名/完整路径: name 可能是 "搜索引擎" 或 "搜索/搜索引擎"
+                    val existing = settings.customDomains.find {
+                        it.name == name || (it.parent?.let { p -> "$p/${it.name}" } == name)
+                    }
                     // 子域一并处理 (parent == name)
                     val childDomains = settings.customDomains.filter { it.parent == name }
                     // 工具覆盖: 不清理 — 子域删除时迁移到父域, 顶级域删除时保留(分类时目标无效回退前缀规则)
@@ -280,8 +285,9 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
             "rename" -> {
                 val msg = settingsStore.updateWithResult { settings ->
                     if (newName.isNullOrBlank()) return@updateWithResult settings to "rename 需要 new_name 参数"
-                    val existing = settings.customDomains.find { it.name == name }
-                        ?: return@updateWithResult settings to "自定义域 '$name' 不存在。内置域不支持重命名。"
+                    val existing = settings.customDomains.find {
+                        it.name == name || (it.parent?.let { p -> "$p/${it.name}" } == name)
+                    } ?: return@updateWithResult settings to "自定义域 '$name' 不存在。内置域不支持重命名。"
                     if (settings.customDomains.any { it.name == newName }) {
                         return@updateWithResult settings to "域 '$newName' 已存在"
                     }
@@ -318,7 +324,9 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
             "update" -> {
                 // 修复: 描述/触发词/显示名可改 — 无需重建域 (重建曾触发工具打散)
                 val msg = settingsStore.updateWithResult { settings ->
-                    val existing = settings.customDomains.find { it.name == name }
+                    val existing = settings.customDomains.find {
+                        it.name == name || (it.parent?.let { p -> "$p/${it.name}" } == name)
+                    }
                     if (existing == null) {
                         return@updateWithResult settings to "自定义域 '$name' 不存在。内置域的描述/关键词由系统定义，可用 domainNameOverrides 修改显示名。"
                     }
@@ -369,7 +377,9 @@ private fun deleteDomainTool(settingsStore: SettingsStore) = Tool(
             return domain !in removedSet && domain !in hiddenSet &&
                 root !in removedSet && root !in hiddenSet
         }
-        val domains = settings.customDomains.filter { visible(it.name) && (it.parent == null || visible(it.parent)) }
+        val domains = settings.customDomains
+            .filter { visible(it.parent?.let { p -> "$p/${it.name}" } ?: it.name) && (it.parent == null || visible(it.parent)) }
+            .map { it.parent?.let { p -> "$p/${it.name}" } ?: it.name }
         val builtin = me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.map { it.label }.filter { visible(it) }
 
         val result = buildString {
@@ -435,7 +445,7 @@ private fun listDomainsTool(
         }
         val skillSubNames = knownSkillNames().map { "技能/$it" }
         val allValid = (me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.map { it.label }.toSet()
-            + settings.customDomains.map { it.name }.toSet()
+            + settings.customDomains.map { it.parent?.let { p -> "$p/${it.name}" } ?: it.name }.toSet()
             + if (settings.customDomains.any { it.name == "技能" }) emptySet() else skillSubNames.toSet())
             .filter { visible(it) }
             .toSet()

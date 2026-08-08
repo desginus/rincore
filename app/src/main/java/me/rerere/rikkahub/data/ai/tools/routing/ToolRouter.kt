@@ -31,11 +31,19 @@ class ToolRouter(
     internal val removedBuiltinDomains: Set<String> = emptySet(),
 ) {
 
-    /** 合法域标签集合（ToolDomain 全部标签 + 自定义域名 - 已删除/隐藏） */
+    /** 合法域标签集合（ToolDomain 全部标签 + 自定义域名含完整路径 - 已删除/隐藏）。
+     *  域标识统一完整路径 (父/子) — 自定义子域为 parent/name, 与内置域一致。 */
     val validDomainLabels: Set<String>
-        get() = (ToolDomain.entries.map { it.label }.toSet() + customDomains.map { it.name }.toSet())
-            .filter { isValidDomain(it) }
-            .toSet()
+        get() {
+            val builtin = ToolDomain.entries.map { it.label }.toSet()
+            val custom = customDomains.map { it.fullPath() }.toSet()
+            return (builtin + custom)
+                .filter { isValidDomain(it) }
+                .toSet()
+        }
+
+    /** 自定义域完整路径: 子域 = parent/name; 顶级域 = name — 全链路唯一域标识 */
+    private fun CustomDomain.fullPath(): String = parent?.let { "$it/${name}" } ?: name
 
     /** invoke_tools 自身不参与分类 */
     private val metaToolNames = setOf("invoke_tools", "search_domains")
@@ -125,8 +133,9 @@ class ToolRouter(
         }
 
         // 5. 关键词匹配 (自定义域 → 自定义关键词覆盖 → 内置域)
+        //    自定义域返回完整路径 (统一域标识; 此前返回短名 → 分类与域树错位)
         val text = "${name} ${description}".lowercase()
-        for (cd in customDomains) { if (cd.keywords.any { text.contains(it) }) return cd.name }
+        for (cd in customDomains) { if (cd.keywords.any { text.contains(it) }) return cd.fullPath() }
         for ((domain, keywords) in customKeywords) {
             if (domain in validDomainLabels && keywords.any { text.contains(it) }) return domain
         }
@@ -170,13 +179,13 @@ class ToolRouter(
     fun getTriggerDescription(domain: String): String {
         customDescriptions[domain]?.let { return it }
         ToolDomain.entries.find { it.label == domain }?.triggerDescription?.let { return it }
-        customDomains.find { it.name == domain }?.description?.let { return it }
+        customDomains.find { it.fullPath() == domain }?.description?.let { return it }
         return domain.substringAfterLast("/")
     }
 
     fun getKeywords(domain: String): List<String> {
         customKeywords[domain]?.let { return it }
-        customDomains.find { it.name == domain }?.keywords?.let { return it }
+        customDomains.find { it.fullPath() == domain }?.keywords?.let { return it }
         return ToolDomain.entries.find { it.label == domain }?.matchKeywords ?: emptyList()
     }
 
@@ -247,15 +256,22 @@ class ToolRouter(
             if (parts.size > 1) result[root]!!.add(label)
         }
 
-        // 自定义域 — 与内置域完全对齐 (父级/独立域同一规则)
+        // 自定义域 — 与内置域完全对齐 (父级/独立域同一规则)。
+        // 域标识统一完整路径: 子域 = parent/name (此前加入短名导致两种命名共存,
+        // 寻址断链 + 幽灵父域)。parent 必须真实存在 (枚举/自定义/技能根域) 才挂载。
+        // parent 存在性: 枚举全部标签 + 自定义完整路径 + 技能根域 (支持嵌套子域)
+        val existingParents = ToolDomain.entries.map { it.label }.toSet() +
+            customDomains.map { it.fullPath() }.toSet() + "技能"
         for (cd in customDomains) {
-            if (!isValidDomain(cd.name)) continue
+            val full = cd.fullPath()
+            if (!isValidDomain(full)) continue
             if (cd.parent != null) {
-                if (isValidDomain(cd.parent)) {
-                    result.getOrPut(cd.parent) { mutableListOf() }.add(cd.name)
+                if (cd.parent in existingParents && isValidDomain(cd.parent)) {
+                    val subs = result.getOrPut(cd.parent) { mutableListOf() }
+                    if (full !in subs) subs.add(full)  // 去重
                 }
             } else {
-                result.getOrPut(cd.name) { mutableListOf() }
+                result.getOrPut(full) { mutableListOf() }
             }
         }
 
@@ -317,9 +333,21 @@ class ToolRouter(
                             .firstOrNull { it.value == rawName }
                             ?.key ?: rawName
 
-                        // 用声明式域树检查域名是否存在 + 获取子域列表
-                        val domainExists = treeNodes.containsKey(resolvedName) ||
+                        // 短名 → 完整路径 反查: 统一完整路径后, 兼容模型传子域短名
+                        // (如 "搜索引擎" → "搜索/搜索引擎")
+                        val finalName = if (treeNodes.containsKey(resolvedName) ||
                             treeNodes.values.flatten().any { it == resolvedName }
+                        ) {
+                            resolvedName
+                        } else {
+                            treeNodes.values.flatten()
+                                .firstOrNull { it.substringAfterLast("/") == resolvedName }
+                                ?: resolvedName
+                        }
+
+                        // 用声明式域树检查域名是否存在 + 获取子域列表
+                        val domainExists = treeNodes.containsKey(finalName) ||
+                            treeNodes.values.flatten().any { it == finalName }
 
                         if (!domainExists) {
                             val avail = treeNodes.keys.toList()
@@ -327,20 +355,20 @@ class ToolRouter(
                         } else {
                             // 已加载也返回最新完整摘要 (loadedDomains.add 幂等, tools 不变 → 缓存稳定;
                             //  挂载/工具变更后 invoke_tools 同域即可刷新, 无需新会话)
-                            loadedDomains.add(resolvedName)
+                            loadedDomains.add(finalName)
 
                             // 子域列表从声明式域树获取
                             val childKeys = when {
-                                treeNodes.containsKey(resolvedName) -> treeNodes[resolvedName]!!
+                                treeNodes.containsKey(finalName) -> treeNodes[finalName]!!
                                 else -> treeNodes.entries
-                                    .find { it.value.contains(resolvedName) }
+                                    .find { it.value.contains(finalName) }
                                     ?.let { (parent, subs) ->
-                                        subs.filter { it.startsWith("$resolvedName/") }
+                                        subs.filter { it.startsWith("$finalName/") }
                                     } ?: emptyList()
                             }
 
                             // 工具从分类结果获取
-                            val directTools = classified[resolvedName].orEmpty()
+                            val directTools = classified[finalName].orEmpty()
                             if (childKeys.isNotEmpty()) {
                                 // 有子域: 显示子域列表
                                 val summary = buildString {
@@ -361,7 +389,7 @@ class ToolRouter(
                                         }
                                     }
                                     if (directTools.isNotEmpty()) {
-                                        appendLine("「$resolvedName」含${childKeys.size}个子域及直接工具:")
+                                        appendLine("「$finalName」含${childKeys.size}个子域及直接工具:")
                                         appendLine()
                                         append(subInfo)
                                         appendLine()
@@ -370,7 +398,7 @@ class ToolRouter(
                                             appendLine("- `${t.name}`: ${t.description.take(60).replace("\\n", " ")}")
                                         }
                                     } else {
-                                        appendLine("「$resolvedName」含${childKeys.size}个子域：")
+                                        appendLine("「$finalName」含${childKeys.size}个子域：")
                                         appendLine()
                                         append(subInfo)
                                     }
@@ -380,7 +408,7 @@ class ToolRouter(
                                 listOf(UIMessagePart.Text(summary))
                             } else {
                                 // 叶子域: 直接返回工具列表
-                                val parentRoot = resolvedName.split("/").first()
+                                val parentRoot = finalName.split("/").first()
                                 val allInParent = classified.entries
                                     .filter { it.key == parentRoot || it.key.startsWith("$parentRoot/") }
                                     .flatMap { it.value }
@@ -392,14 +420,14 @@ class ToolRouter(
                                         parentTools - subTools
                                     }
                                 // 不在这 parentRoot 的子域里的直接工具
-                                val rootOnly = if (resolvedName == parentRoot) allInParent else directTools
+                                val rootOnly = if (finalName == parentRoot) allInParent else directTools
 
                                 val summary = buildString {
                                     if (rootOnly.isEmpty()) {
-                                        appendLine("「$resolvedName」当前无可用工具。")
+                                        appendLine("「$finalName」当前无可用工具。")
                                         appendLine("可尝试 `invoke_tools(\"帮助\")` 查看其他域。")
                                     } else {
-                                        appendLine("「$resolvedName」可用工具（均可直接调用）：")
+                                        appendLine("「$finalName」可用工具（均可直接调用）：")
                                         for (t in rootOnly.sortedBy { it.name }) {
                                             val desc = t.description.take(80).replace("\n", " ")
                                             appendLine("- `${t.name}`: $desc")
@@ -419,7 +447,7 @@ class ToolRouter(
                                     }
                                     // 无条件输出 skill 挂载 (修复: 纯技能域(无 MCP 工具)也渲染挂载的 Skills)
                                     val mountedSkills = overrides.entries
-                                        .filter { it.key.startsWith("skill:") && it.value == resolvedName }
+                                        .filter { it.key.startsWith("skill:") && it.value == finalName }
                                         .map { it.key.removePrefix("skill:") }
                                     if (mountedSkills.isNotEmpty()) {
                                         appendLine()

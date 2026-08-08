@@ -60,7 +60,7 @@ fun SettingToolListPage(
             return domain !in settings.removedBuiltinDomains && domain !in settings.hiddenDomains &&
                 root !in settings.removedBuiltinDomains && root !in settings.hiddenDomains
         }
-        (ToolDomain.entries.map { it.label } + settings.customDomains.map { it.name })
+        (ToolDomain.entries.map { it.label } + settings.customDomains.map { it.parent?.let { p -> "$p/${it.name}" } ?: it.name })
             .distinct()
             .filter { visible(it) }
             .filter { d ->

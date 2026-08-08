@@ -120,13 +120,21 @@ private fun buildNestedDomains(
             allTopLevel.add(td.label)
         }
     }
-    // 自定义域: parent=null → 顶级域; parent!=null → 子域 (去重) — 过滤真删除
+    // 自定义域: parent=null → 顶级域; parent!=null → 子域 (完整路径 parent/name,
+    // 与内置域命名统一; 此前加入短名 → 同一区域下显示不一致)。
+    // parent 必须真实存在 (枚举/customDomains 顶级/技能) — 防幽灵父域。
+    val existingTopLevel = ToolDomain.entries.filter { it.parent == null }.map { it.label }.toSet()
     for (cd in router.customDomains) {
-        if (!notRemoved(cd.name)) continue
+        val full = cd.parent?.let { "$it/${cd.name}" } ?: cd.name
+        if (!notRemoved(full)) continue
         if (cd.parent == null) {
-            allTopLevel.add(cd.name)
-        } else if (notRemoved(cd.parent)) {
-            domainChildren.getOrPut(cd.parent) { linkedSetOf() }.add(cd.name)
+            allTopLevel.add(full)
+        } else {
+            val parentExists = existingTopLevel.contains(cd.parent) ||
+                router.customDomains.any { it.name == cd.parent && it.parent == null }
+            if (parentExists && notRemoved(cd.parent)) {
+                domainChildren.getOrPut(cd.parent) { linkedSetOf() }.add(full)
+            }
         }
     }
     // 技能子域 (动态, 从分类结果派生) — 域管理 UI 可见/可管理, 与模型侧一致
@@ -267,7 +275,7 @@ fun SettingDomainPage(
             itemsIndexed(nestedDomains) { _, (domain, subs) ->
                 val displayName = settings.domainNameOverrides[domain] ?: domain
                 val isHidden = domain in settings.hiddenDomains
-                val isCustom = domain in settings.customDomains.map { it.name }
+                val isCustom = domain in settings.customDomains.map { it.parent?.let { p -> "$p/${it.name}" } ?: it.name }
                 val desc = settings.customDomainDescriptions[domain] ?: router.getTriggerDescription(domain)
                 var expanded by remember { mutableStateOf(false) }
 
@@ -618,7 +626,7 @@ fun SettingDomainPage(
     // 删除确认对话框
     if (deleteConfirm != null) {
         val domain = deleteConfirm!!
-        val isCustom = domain in settings.customDomains.map { it.name }
+        val isCustom = domain in settings.customDomains.map { it.parent?.let { p -> "$p/${it.name}" } ?: it.name }
         AlertDialog(onDismissRequest = { deleteConfirm = null }, title = { Text("删除域") },
             text = { Text(if (isCustom) "删除自定义域「${domain}」？此操作不可恢复。子域和覆盖将一起清除。"
                      else "删除内置域「${domain}」？它将从场景地图中消失。可通过新建域恢复。") },
