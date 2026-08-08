@@ -176,11 +176,13 @@ class ChatCompletionsAPI(
         val lastEventAt = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
         val watchdog = launch {
             while (true) {
-                delay(15_000)
+                delay(10_000)
                 val idleMs = System.currentTimeMillis() - lastEventAt.get()
-                if (idleMs > 60_000) {
+                // 25s 无有效数据 → 断开 (推理期间 reasoning chunk 持续刷新, 不误断;
+                // 输出忽然停止 → 25s 内收尾停表, 不再让计时器空转)
+                if (idleMs > 25_000) {
                     Log.w(TAG, "SSE idle ${idleMs / 1000}s — no valid data, closing stream")
-                    close(java.io.IOException("生成无有效数据超时 (60s): 平台断流或卡死"))
+                    close(java.io.IOException("生成无有效数据超时 (25s): 平台断流或卡死"))
                     break
                 }
             }

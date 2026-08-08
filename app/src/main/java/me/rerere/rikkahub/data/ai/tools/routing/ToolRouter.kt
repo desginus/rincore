@@ -219,6 +219,7 @@ class ToolRouter(
         }
 
         // 4. MCP 工具 — 服务器名映射 → 关键词兜底 (名称分类作辅助)
+        //    映射域必须有效 (未删/未隐藏), 否则落入关键词/未分类 — 工具不丢失
         if (name.startsWith("mcp__")) {
             val server = extractMcpServerName(name)
             mcpServerDomainDefaults[server]?.let { if (isValidDomain(it)) return it }
@@ -288,7 +289,22 @@ class ToolRouter(
     fun unifiedDomainView(tools: List<Tool>): UnifiedDomainView {
         val classified = classifyAll(tools)
         val counts = classified.mapValues { it.value.size }
-        val tree = buildDomainTree(tools)
+        val tree = buildDomainTree(tools).toMutableMap()
+        // 容错 (v3.5.45): classified 的域不在树 → 补入 (分类结果绝不丢失)。
+        // 此前缺失域的工具直接消失 (如 133 个工具丢失)。
+        val treePaths = tree.keys.toMutableSet().apply { addAll(tree.values.flatten()) }
+        for (domain in classified.keys) {
+            if (domain !in treePaths) {
+                val root = domain.split("/").first()
+                if (domain.contains("/")) {
+                    if (root !in tree) tree[root] = mutableListOf()
+                    val subs = tree[root]!!
+                    if (domain !in subs) subs.add(domain)
+                } else {
+                    if (domain !in tree) tree[domain] = mutableListOf()
+                }
+            }
+        }
         // 空壳过滤: 子域无工具不显示; 根域无工具且无非空子域不显示
         val filteredTree = tree.mapValues { (_, subs) ->
             subs.filter { (counts[it] ?: 0) > 0 }

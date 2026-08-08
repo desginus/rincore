@@ -699,6 +699,22 @@ class ChatService(
                 generateSuggestion(conversationId, finalConversation)
             }
         }
+        // 强制停表 (顽固 bug 根治): 无论成功/失败/取消, 生成结束即停 reasoning 计时。
+        // onCompletion 已停表但存在缝隙 (挂起路径), 此处兜底 — finishReasoning 幂等。
+        runCatching {
+            val conv = getConversationFlow(conversationId).value
+            val needsStop = conv.messageNodes.any { node ->
+                node.messages.any { it.reasoning != null && it.reasoning.finishedAt == null }
+            }
+            if (needsStop) {
+                val updated = conv.copy(
+                    messageNodes = conv.messageNodes.map { node ->
+                        node.copy(messages = node.messages.map { it.finishReasoning() })
+                    }
+                )
+                updateConversation(conversationId, updated)
+            }
+        }
     }
 
     private suspend fun createWorkspaceToolsIfReady(workspaceId: String?, cwd: String? = null): List<Tool> {

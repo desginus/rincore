@@ -82,8 +82,7 @@ private val FRAMEWORK_TOOL_SET = setOf(
     "search_domains",
     "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file", "workspace_show_file",
     "manage_domain", "list_domains", "move_tool_to_domain",
-    "mcp_connect", "clawhub_install", "clawhub_search", "plugin_install", "skills_lock",
-    "list_ecosystem_tools",
+    "mcp_connect", "clawhub_install", "clawhub_search", "plugin_install",
 )
 private const val MAX_TOOL_OUTPUT_CHARS = 32 * 1024
 private const val TOOL_OUTPUT_PREVIEW_CHARS = 4 * 1024
@@ -170,7 +169,9 @@ class GenerationHandler(
             // 每步刷新 MCP 工具 (支持 mcp_connect 运行时添加) — 合并到域池走懒加载,
             // 不直接注入函数定义 (813af56d 移植: Token 65K → ~6K)
             val currentMcpTools = DynamicTools.getMcpTools()
-            val allDomainTools = (domainTools + currentMcpTools).distinctBy { it.name }
+            // 视图全量 (v3.5.45): 含框架工具 — 帮助/层1 的计数与 域管理/对照页 完全一致
+            // (此前过滤框架 → 帮助 398 vs 对照 413, 15 个框架工具消失)
+            val allDomainTools = (domainTools + frameworkTools + currentMcpTools).distinctBy { it.name }
 
             val layer1Prompt = if (useLayered) {
                 toolRouter.buildLayer1(allDomainTools)

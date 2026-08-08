@@ -52,7 +52,6 @@ object DynamicTools {
             createClawhubInstallTool(),
             createClawhubSearchTool(),
             createPluginInstallTool(),
-            createSkillsLockTool(),
         )
         Log.i(TAG, "DynamicTools.all() → ${tools.size} tools: ${tools.joinToString { it.name }}")
         return tools

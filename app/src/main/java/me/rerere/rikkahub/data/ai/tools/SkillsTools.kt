@@ -16,7 +16,10 @@ fun createSkillTools(
     allSkills: List<SkillMetadata>,
     skillProvider: () -> List<SkillMetadata> = { allSkills }, // 实时查询(可选) — 修复列表快照滞后: 新增 Skill 无需重启
 ): List<Tool> {
-    val available = allSkills.filter { it.name in enabledSkills }
+    // 信源统一 (v3.5.45): 全部已安装 Skill 生成独立工具 — 不按 enabledSkills 过滤。
+    // 此前仅启用的生成 → Invoke Tools 技能域空 / Skills Lock 全量 / 挂载 4 个 三套口径。
+    // 技能工具经 invoke_tools("技能") 分层加载, 不增加冷启动体积。
+    val available = skillProvider().ifEmpty { allSkills }
     if (available.isEmpty()) return emptyList()
 
     // 每个已启用 Skill 生成独立工具 skill_<name> — 直接可用, 无需先 invoke_tools 查列表

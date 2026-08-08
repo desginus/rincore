@@ -62,13 +62,18 @@ fun buildAssistantToolPool(
     addAll(me.rerere.rikkahub.ecosystem.EcosystemManager.getEnabledTools())
     // 动态工具 (MCP 连接 / Marketplace 安装)
     addAll(extraDynamicTools ?: me.rerere.rikkahub.ecosystem.tools.DynamicTools.all())
-    if (assistant.enabledSkills.isNotEmpty()) {
-        addAll(
-            createSkillTools(
-                enabledSkills = assistant.enabledSkills,
-                allSkills = skillManager.listSkills(),
+    // 技能全量 (v3.5.45): 全部已安装 Skill 生成独立工具 — 不按 enabledSkills 过滤,
+    // 技能域/挂载域/帮助/对照 口径完全一致
+    runCatching {
+        val allSkills = skillManager.listSkills()
+        if (allSkills.isNotEmpty()) {
+            addAll(
+                createSkillTools(
+                    enabledSkills = assistant.enabledSkills,
+                    allSkills = allSkills,
+                )
             )
-        )
+        }
     }
     // AI 域管理工具 — 单一源头: list/search/move 的 execute 实时构建
     // 与模型侧完全同源的完整工具池 (此前 knownToolNames 默认空集 → List

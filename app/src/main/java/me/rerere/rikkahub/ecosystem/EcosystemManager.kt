@@ -93,10 +93,9 @@ object EcosystemManager {
      */
     fun getEnabledTools(): List<Tool> {
         val enabledInstrs = _instructions.value.filter { isEnabled(idOf(it)) }
-        val tools = enabledInstrs.map { EcosystemBridge.toTool(it) }
-
-        // 追加发现工具
-        return tools + EcosystemBridge.createDiscoveryTool(enabledInstrs)
+        // 生态指令工具 (v3.5.45): 移除 list_ecosystem_tools 发现入口 —
+        // 工具系统单一入口统一 (List Domains/Invoke Tools 已覆盖全量)
+        return enabledInstrs.map { EcosystemBridge.toTool(it) }
     }
 
     /**
