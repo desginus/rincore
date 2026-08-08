@@ -352,7 +352,6 @@ class ToolRouter(
     fun createInvokeToolsTool(
         allTools: List<Tool>,
         loadedDomains: MutableSet<String>,
-        skills: List<Pair<String, String>> = emptyList(), // skill 名 to 描述 (由 invoke_tools 返回, 不进 system/tools)
     ): Tool {
         val router = this
         return Tool(
@@ -465,20 +464,10 @@ class ToolRouter(
                                             val desc = t.description.take(80).replace("\n", " ")
                                             appendLine("- `${t.name}`: $desc")
                                         }
-                                        // 技能域: 附加已启用 skill 列表 (skill__<name> 工具已直接可用)
-                                        if (rootOnly.any { it.name == "use_skill" }) {
-                                            appendLine()
-                                            appendLine("可用 Skills（`skill__<name>` 工具已直接可用，无需加载）:")
-                                            if (skills.isEmpty()) {
-                                                appendLine("  （当前没有已启用的 skill）")
-                                            } else {
-                                                for ((sname, sdesc) in skills) {
-                                                    appendLine("- `skill_${sanitizeSkillToolName(sname)}`: ${sdesc.take(120).replace("\n", " ")}")
-                                                }
-                                            }
-                                        }
+                                        // 技能域: 全部 skill__ 工具已在 rootOnly 直接列出 (v3.5.49 统一 —
+                                        // 移除独立 skills 参数: 技能信息只来自工具池, 无自相矛盾)
                                     }
-                                    // 无条件输出 skill 挂载 (修复: 纯技能域(无 MCP 工具)也渲染挂载的 Skills)
+                                    // 挂载到本域的 Skills (overrides 派生 — 与工具一致)
                                     val mountedSkills = overrides.entries
                                         .filter { it.key.startsWith("skill:") && it.value == finalName }
                                         .map { it.key.removePrefix("skill:") }
@@ -486,8 +475,7 @@ class ToolRouter(
                                         appendLine()
                                         appendLine("挂载到本域的 Skills（`skill__<name>` 工具已直接可用）:")
                                         for (sname in mountedSkills.sorted()) {
-                                            val sdesc = skills.find { it.first == sname }?.second ?: ""
-                                            appendLine("- `$sname`: ${sdesc.take(100).replace("\n", " ")}")
+                                            appendLine("- `$sname`")
                                         }
                                     }
                                 }
