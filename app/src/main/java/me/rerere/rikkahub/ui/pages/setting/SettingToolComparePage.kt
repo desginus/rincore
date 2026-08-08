@@ -36,6 +36,7 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.data.repository.ConversationRepository
+import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.ui.theme.CustomColors
 import org.koin.compose.koinInject
 
@@ -49,6 +50,7 @@ fun SettingToolComparePage(
     val mcpManager: me.rerere.rikkahub.data.ai.mcp.McpManager = koinInject()
     val conversationRepo: ConversationRepository = koinInject()
     val settingsStore: SettingsStore = koinInject()
+    val workspaceRepository: WorkspaceRepository = koinInject()
 
     val assistant = settings.getCurrentAssistant()
     // 单一源头: 与模型侧完全同源的工具池 + 统一视图
@@ -62,6 +64,7 @@ fun SettingToolComparePage(
                 conversationRepo = conversationRepo,
                 mcpManager = mcpManager,
                 settingsStore = settingsStore,
+                workspaceRepository = workspaceRepository,
             )
         }.getOrDefault(emptyList())
     }

@@ -41,6 +41,28 @@ suspend fun createWorkspaceTools(
 ): List<Tool> {
     if (workspaceId.isNullOrBlank()) return emptyList()
     val approvalOverrides = workspaceRepository.getById(workspaceId)?.toolApprovalOverrides().orEmpty()
+    return createWorkspaceToolsWithApprovals(workspaceId, cwd, approvalOverrides, workspaceRepository)
+}
+
+/** 静态版 — 配置驱动 (workspaceId 非空即注入), 非 suspend, UI 与模型侧共用。
+ *  信源统一: 工具总数/列表与模型侧完全一致 (v3.5.44)。
+ *  approval 用默认 (不查 getById); 需要精确 approval 时用 suspend 版。 */
+fun createWorkspaceToolsStatic(
+    workspaceId: String?,
+    cwd: String? = null,
+    workspaceRepository: WorkspaceRepository? = null,
+): List<Tool> {
+    if (workspaceId.isNullOrBlank()) return emptyList()
+    val repo = workspaceRepository ?: return emptyList()
+    return createWorkspaceToolsWithApprovals(workspaceId, cwd, emptyMap(), repo)
+}
+
+private fun createWorkspaceToolsWithApprovals(
+    workspaceId: String,
+    cwd: String?,
+    approvalOverrides: Map<String, Boolean>,
+    workspaceRepository: WorkspaceRepository,
+): List<Tool> {
     fun needsApproval(name: String) = resolveWorkspaceToolApproval(name, approvalOverrides)
 
     val shellCwd = cwd?.removePrefix("/workspace/")?.removePrefix("/workspace")

@@ -590,12 +590,9 @@ class ChatService(
                     conversationRepo = conversationRepo,
                     mcpManager = mcpManager,
                     settingsStore = settingsStore,
-                    workspaceTools = createWorkspaceToolsIfReady(
-                        assistant.workspaceId?.toString(),
-                        conversation.workspaceCwd,
-                    ),
                     conversationId = conversationId.toString(),
                     workspaceCwd = conversation.workspaceCwd,
+                    workspaceRepository = workspaceRepository,
                 ).also { pool ->
                     // MCP 服务器名合法性检查 (对齐原逻辑 — 无效名直接报错)
                     val invalidNames = mcpManager.getAllAvailableTools()

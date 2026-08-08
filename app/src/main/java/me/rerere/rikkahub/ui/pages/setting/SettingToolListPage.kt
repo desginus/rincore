@@ -58,6 +58,7 @@ fun SettingToolListPage(
             settings, localTools, skillManager, mcpManager,
             conversationRepo = conversationRepo,
             settingsStore = settingsStore,
+            workspaceRepository = koinInject(),
         )
     }
 

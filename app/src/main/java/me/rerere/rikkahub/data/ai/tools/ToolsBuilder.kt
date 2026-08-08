@@ -36,6 +36,7 @@ fun buildAssistantToolPool(
     extraDynamicTools: List<Tool>? = null,          // null = 默认 DynamicTools.all()
     conversationId: String = "",
     workspaceCwd: String? = null,
+    workspaceRepository: me.rerere.rikkahub.data.repository.WorkspaceRepository? = null,
 ): List<Tool> = buildList {
     if (settings.enableWebSearch) {
         addAll(createSearchTools(settings))
@@ -50,6 +51,11 @@ fun buildAssistantToolPool(
     ))
     if (assistant.enableRecentChatsReference) {
         addAll(createConversationTools(conversationRepo, assistant.id))
+    }
+    // workspace 工具: 配置驱动 (workspaceId 非空即注入) — 模型侧与 UI 侧
+    // 完全一致 (v3.5.44 信源统一补漏: 此前由调用方注入, UI 侧缺失 → 总数差)
+    if (assistant.workspaceId != null && workspaceRepository != null) {
+        addAll(createWorkspaceToolsStatic(assistant.workspaceId.toString(), workspaceCwd, workspaceRepository))
     }
     addAll(workspaceTools)
     // 多生态系统指令工具
