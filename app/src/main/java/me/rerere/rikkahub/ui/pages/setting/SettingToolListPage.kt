@@ -23,6 +23,7 @@ import me.rerere.rikkahub.data.ai.tools.routing.ToolDomain
 import me.rerere.rikkahub.data.ai.tools.routing.normalizedFullPath
 import me.rerere.rikkahub.data.ai.tools.routing.ToolRouter
 import me.rerere.rikkahub.data.repository.ConversationRepository
+import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
@@ -42,6 +43,7 @@ fun SettingToolListPage(
     val mcpManager: McpManager = koinInject()
     val conversationRepo: ConversationRepository = koinInject()
     val settingsStore: SettingsStore = koinInject()
+    val workspaceRepository: WorkspaceRepository = koinInject()
     var searchQuery by remember { mutableStateOf("") }
     var filterDomain by remember { mutableStateOf("全部") }
     var selectedTool by remember { mutableStateOf<ToolPreview?>(null) }
@@ -58,7 +60,7 @@ fun SettingToolListPage(
             settings, localTools, skillManager, mcpManager,
             conversationRepo = conversationRepo,
             settingsStore = settingsStore,
-            workspaceRepository = koinInject(),
+            workspaceRepository = workspaceRepository,
         )
     }
 
