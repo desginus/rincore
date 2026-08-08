@@ -289,7 +289,7 @@ class ToolRouter(
     fun unifiedDomainView(tools: List<Tool>): UnifiedDomainView {
         val classified = classifyAll(tools)
         val counts = classified.mapValues { it.value.size }
-        val tree = buildDomainTree(tools).toMutableMap()
+        val tree: MutableMap<String, MutableList<String>> = buildDomainTree(tools).toMutableMap()
         // 容错 (v3.5.45): classified 的域不在树 → 补入 (分类结果绝不丢失)。
         // 此前缺失域的工具直接消失 (如 133 个工具丢失)。
         val treePaths = tree.keys.toMutableSet().apply { addAll(tree.values.flatten()) }

@@ -704,7 +704,9 @@ class ChatService(
         runCatching {
             val conv = getConversationFlow(conversationId).value
             val needsStop = conv.messageNodes.any { node ->
-                node.messages.any { it.reasoning != null && it.reasoning.finishedAt == null }
+                node.messages.any { msg ->
+                    msg.parts.filterIsInstance<UIMessagePart.Reasoning>().any { it.finishedAt == null }
+                }
             }
             if (needsStop) {
                 val updated = conv.copy(
