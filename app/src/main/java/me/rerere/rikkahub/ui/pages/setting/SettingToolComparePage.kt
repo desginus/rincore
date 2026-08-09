@@ -65,7 +65,7 @@ fun SettingToolComparePage(
                 mcpManager = mcpManager,
                 settingsStore = settingsStore,
                 workspaceRepository = workspaceRepository,
-            ))
+            )
         }.getOrDefault(emptyList())
     }
     val router = remember(settings) {

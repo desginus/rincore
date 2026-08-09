@@ -54,7 +54,7 @@ fun buildPreviewTools(
             mcpManager = mcpManager,
             settingsStore = settingsStore,
             workspaceRepository = workspaceRepository,
-        ))
+        )
     } catch (_: Exception) {
         emptyList()
     }
