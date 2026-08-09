@@ -17,6 +17,7 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.*
 import me.rerere.rikkahub.data.ai.tools.routing.ToolDomain
 import me.rerere.rikkahub.data.ai.tools.buildAssistantToolPool
+import me.rerere.rikkahub.data.ai.tools.viewPoolOf
 import me.rerere.rikkahub.data.ai.tools.routing.ToolRouter
 import me.rerere.rikkahub.data.ai.tools.routing.normalizedFullPath
 import me.rerere.rikkahub.data.datastore.CustomDomain
@@ -44,7 +45,8 @@ fun buildPreviewTools(
     // 域管理页计数/分区/工具列表 与 模型工具池 完全一致 (用户要求 v3.5.41)
     val assistant = settings.getCurrentAssistant()
     val pool = try {
-        buildAssistantToolPool(
+        // 视图口径 (v3.5.52): 排除框架工具 — 与模型侧帮助/List Domains 完全一致
+        viewPoolOf(buildAssistantToolPool(
             settings = settings,
             assistant = assistant,
             localTools = localTools,
@@ -53,7 +55,7 @@ fun buildPreviewTools(
             mcpManager = mcpManager,
             settingsStore = settingsStore,
             workspaceRepository = workspaceRepository,
-        )
+        ))
     } catch (_: Exception) {
         emptyList()
     }
@@ -204,7 +206,8 @@ fun SettingDomainPage(
             }
 
             itemsIndexed(nestedDomains) { _, (domain, subs) ->
-                val displayName = settings.domainNameOverrides[domain] ?: domain
+                // 统一域标签 (v3.5.52): 与系统提示/List Domains/invoke_tools 同格式
+                val displayName = router.formatDomainLabel(domain)
                 val isHidden = domain in settings.hiddenDomains
                 val isCustom = domain in settings.customDomains.map { it.normalizedFullPath() }
                 val desc = settings.customDomainDescriptions[domain] ?: router.getTriggerDescription(domain)

@@ -236,6 +236,14 @@ class ToolRouter(
 
     fun displayName(domain: String): String = domainNameOverrides[domain] ?: domain.substringAfterLast("/")
 
+    /** 统一域标签 — 所有信息源 (layer1/帮助/List Domains/invoke_tools/UI) 同格式:
+     *  有显示名(≠短名)时显示 路径（显示名）, 否则仅路径 */
+    fun formatDomainLabel(domain: String): String {
+        val display = displayName(domain)
+        val short = domain.substringAfterLast("/")
+        return if (display != short && display.isNotBlank()) "$domain（$display）" else domain
+    }
+
     /** 检查域是否有效（未被删除/隐藏）— 支持子域级删除/隐藏 (完整路径 + 根域级联) */
     private fun isValidDomain(domain: String): Boolean {
         val root = domain.split("/").first()
@@ -319,7 +327,8 @@ class ToolRouter(
             val suffix = if (rest > 0) " 等${keywords.size}个" else ""
             " [触发: ${shown.joinToString("、")}$suffix]"
         }
-        val nameText = if (display == domain.substringAfterLast("/")) "`$domain`" else "`$domain`（显示名: $display）"
+        // 统一域标签格式 (v3.5.52): 路径（显示名）— 与 UI/List Domains/invoke_tools 同格式
+        val nameText = "`${formatDomainLabel(domain)}`"
         return "$indent**$nameText** — $desc$kwText"
     }
 
@@ -418,9 +427,8 @@ class ToolRouter(
                                 val summary = buildString {
                                     val subInfo = buildString {
                                         for (ck in childKeys.sorted()) {
-                                            val short = ck.substringAfterLast("/")
-                                            val display = router.displayName(ck)
-                                            val nameText = if (display == short) ck else "$ck（$display）"
+                                            // 统一域标签 (v3.5.52): 与 layer1/List Domains/UI 同格式
+                                            val nameText = router.formatDomainLabel(ck)
                                             val desc = router.getTriggerDescription(ck)
                                             val keywords = router.getKeywords(ck)
                                             val kwText = if (keywords.isEmpty()) "" else {

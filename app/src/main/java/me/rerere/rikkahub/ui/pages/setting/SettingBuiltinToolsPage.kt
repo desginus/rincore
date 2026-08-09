@@ -13,6 +13,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.data.ai.tools.buildAssistantToolPool
+import me.rerere.rikkahub.data.ai.tools.viewPoolOf
 import me.rerere.rikkahub.data.ai.tools.routing.ToolRouter
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
@@ -39,7 +40,7 @@ fun SettingBuiltinToolsPage(
     val assistant = settings.getCurrentAssistant()
     val pool = remember(settings) {
         runCatching {
-            buildAssistantToolPool(
+            viewPoolOf(buildAssistantToolPool(
                 settings = settings,
                 assistant = assistant,
                 localTools = localTools,
@@ -48,7 +49,7 @@ fun SettingBuiltinToolsPage(
                 mcpManager = mcpManager,
                 settingsStore = settingsStore,
                 workspaceRepository = workspaceRepository,
-            )
+            ))
         }.getOrDefault(emptyList())
     }
     val router = remember(settings) {

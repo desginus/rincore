@@ -110,7 +110,10 @@ private fun createSearchDomainsTool(
             val desc = router.getTriggerDescription(domain)
             val kws = router.getKeywords(domain)
             val display = router.displayName(domain)
-            val haystack = "$domain $display $desc ${kws.joinToString(" ")}".lowercase()
+            // 真实工具匹配 (v3.5.52): 域内工具名/描述纳入搜索 — 名不副实根治
+            val toolsInDomain = domainToolsOf(domain)
+            val toolNames = toolsInDomain.joinToString(" ")
+            val haystack = "$domain $display $desc ${kws.joinToString(" ")} $toolNames".lowercase()
             haystack.contains(q)
         }.filter { domain ->
             when (typeFilter) {
@@ -396,12 +399,12 @@ private fun deleteDomainTool(
                 val subNote = if (subs.isNotEmpty() && subTotal != rootCount) "（含子域共 $subTotal 个）" else ""
                 val rootKw = router.getKeywords(root)
                 val kwText = if (rootKw.isEmpty()) "" else " [触发: ${rootKw.take(8).joinToString("、")}]"
-                appendLine("- $root [${rootCount}个工具]$subNote$kwText")
+                appendLine("- ${router.formatDomainLabel(root)} [${rootCount}个工具]$subNote$kwText")
                 for (sub in subs) {
                     val subCount = view.counts[sub] ?: 0
                     val subKw = router.getKeywords(sub)
                     val subKwText = if (subKw.isEmpty()) "" else " [触发: ${subKw.take(8).joinToString("、")}]"
-                    appendLine("  - $sub [${subCount}个工具]$subKwText")
+                    appendLine("  - ${router.formatDomainLabel(sub)} [${subCount}个工具]$subKwText")
                 }
             }
             appendLine()

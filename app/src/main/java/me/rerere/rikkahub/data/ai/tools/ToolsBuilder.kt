@@ -23,6 +23,20 @@ import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
 import me.rerere.rikkahub.data.ai.tools.ToolInvocationContext
 
+/** 框架工具集 — 注入请求体但不参与视图计数/分类 (对齐 v3.5.34 稳定版缓存口径)。
+ *  框架工具 (invoke_tools/search_domains/workspace 等) 由分层注入独立携带,
+ *  视图统计只反映用户域工具 — 帮助/List Domains/UI 全链路同口径 */
+val FRAMEWORK_TOOL_SET = setOf(
+    "invoke_tools",
+    "search_domains",
+    "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file", "workspace_show_file",
+    "manage_domain", "list_domains", "move_tool_to_domain",
+    "mcp_connect", "clawhub_install", "clawhub_search", "plugin_install",
+)
+
+/** 视图工具池 — 全量池排除框架工具 (统一口径: 帮助/List Domains/UI 同源) */
+fun viewPoolOf(pool: List<Tool>): List<Tool> = pool.filter { it.name !in FRAMEWORK_TOOL_SET }
+
 /** 全量工具池 — 模型侧与 UI 侧唯一数据源 (配置驱动, 无运行时状态) */
 fun buildAssistantToolPool(
     settings: Settings,
