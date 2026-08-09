@@ -553,6 +553,8 @@ class ChatService(
 
             // start generating
             val session = getOrCreateSession(conversationId)
+            // v3.5.59 落盘节流计时 (流式期间每 2s 一次全量写)
+            var lastStreamPersistMs = 0L
             generationHandler.generateText(
                 settings = settings,
                 model = model,
@@ -647,9 +649,15 @@ class ChatService(
                             .updateCurrentMessages(chunk.messages)
                         updateConversation(conversationId, updatedConversation)
 
-                        // 流式增量落盘 (每步 1 次): 生成中切后台/进程被杀时
-                        // 已生成的 assistant 内容不丢 (v3.4.6 保留)
-                        saveConversation(conversationId, updatedConversation)
+                        // v3.5.59 落盘节流: 此前每 chunk 全量序列化写库 (高频 IO →
+                        // 生成期明显发热)。UI 内存更新保持每 chunk (显示流畅),
+                        // 落盘降为每 2s 一次 — IO 降 95%+, 丢失窗口 ≤2s。
+                        // 权衡: 切出/进程被杀最多丢 2s 内容 (v3.4.6 落盘保留)。
+                        val now = System.currentTimeMillis()
+                        if (now - lastStreamPersistMs > 2_000) {
+                            saveConversation(conversationId, updatedConversation)
+                            lastStreamPersistMs = now
+                        }
 
                         // 通知等边缘副作用由 ChatNotificationManager 消费；
                         // tryEmit 不挂起，事件丢失只影响单次通知更新，不能反压生成链

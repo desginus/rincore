@@ -212,44 +212,45 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = { Text(stringResource(R.string.setting_page_preferences_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_preferences)) },
                     )
-                    item(
+                                                        }
+            }
+            
+            item("assistantManagement") {
+                CardGroup(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    title = { Text("助手管理") },
+                ) {
+item(
                         onClick = { navController.navigate(Screen.Assistant) },
                         leadingContent = { Icon(HugeIcons.LookTop, null) },
                         supportingContent = { Text(stringResource(R.string.setting_page_assistant_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_assistant)) },
                     )
-                    // 当前默认助手快捷设置 — 直接编辑默认助手的基础设定/提示词/记忆/本地工具
-                    val defaultAssistant = settings.getCurrentAssistant()
-                    item(
+item(
                         onClick = { navController.navigate(Screen.AssistantBasic(defaultAssistant.id.toString())) },
                         leadingContent = { Icon(HugeIcons.Settings03, null) },
                         supportingContent = { Text("当前默认：${defaultAssistant.name}") },
                         headlineContent = { Text("基础设定") },
                     )
-                    item(
+item(
                         onClick = { navController.navigate(Screen.AssistantPrompt(defaultAssistant.id.toString())) },
                         leadingContent = { Icon(HugeIcons.Message02, null) },
                         supportingContent = { Text("当前默认：${defaultAssistant.name}") },
                         headlineContent = { Text("提示词") },
                     )
-                    item(
+item(
                         onClick = { navController.navigate(Screen.AssistantMemory(defaultAssistant.id.toString())) },
                         leadingContent = { Icon(HugeIcons.Brain02, null) },
                         supportingContent = { Text("当前默认：${defaultAssistant.name}") },
                         headlineContent = { Text("记忆") },
                     )
-                    item(
+item(
                         onClick = { navController.navigate(Screen.AssistantLocalTool(defaultAssistant.id.toString())) },
                         leadingContent = { Icon(HugeIcons.BookOpen01, null) },
                         supportingContent = { Text("当前默认：${defaultAssistant.name}") },
                         headlineContent = { Text("本地工具") },
                     )
-                    item(
-                        onClick = { navController.navigate(Screen.SettingPermissions) },
-                        leadingContent = { Icon(HugeIcons.Settings01, null) },
-                        supportingContent = { Text("权限自动发现 · 后台保障链引导") },
-                        headlineContent = { Text("权限管理") },
-                    )
+
                 }
             }
             item("modelServices") {
@@ -344,8 +345,14 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                 }
                 CardGroup(
                     modifier = Modifier.padding(horizontal = 8.dp),
-                    title = { Text("数据与存储") },
+                    title = { Text("系统与权限") },
                 ) {
+item(
+                        onClick = { navController.navigate(Screen.SettingPermissions) },
+                        leadingContent = { Icon(HugeIcons.Settings01, null) },
+                        supportingContent = { Text("权限自动发现 · 后台保障链引导") },
+                        headlineContent = { Text("权限管理") },
+                    )
                     item(
                         onClick = { navController.navigate(Screen.SettingAlarms) },
                         leadingContent = { Icon(HugeIcons.Clock02, null) },
