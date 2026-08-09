@@ -220,6 +220,8 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     modifier = Modifier.padding(horizontal = 8.dp),
                     title = { Text("助手管理") },
                 ) {
+                    // 当前默认助手快捷设置 — 直接编辑默认助手的基础设定/提示词/记忆/本地工具
+                    val defaultAssistant = settings.getCurrentAssistant()
 item(
                         onClick = { navController.navigate(Screen.Assistant) },
                         leadingContent = { Icon(HugeIcons.LookTop, null) },
