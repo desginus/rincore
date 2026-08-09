@@ -54,6 +54,7 @@ fun SettingToolComparePage(
 
     val assistant = settings.getCurrentAssistant()
     // 单一源头: 与模型侧完全同源的工具池 + 统一视图
+    // v3.6.4: 排除框架工具 — 对照/域管理/帮助/List Domains 全 398 统一
     val pool = remember(settings) {
         runCatching {
             buildAssistantToolPool(
@@ -65,7 +66,7 @@ fun SettingToolComparePage(
                 mcpManager = mcpManager,
                 settingsStore = settingsStore,
                 workspaceRepository = workspaceRepository,
-            )
+            ).filter { it.name !in me.rerere.rikkahub.data.ai.tools.FRAMEWORK_TOOL_SET }
         }.getOrDefault(emptyList())
     }
     val router = remember(settings) {

@@ -285,6 +285,12 @@ item(
                         headlineContent = { Text("MCP 服务器") },
                     )
 item(
+                        onClick = { navController.navigate(Screen.Skills) },
+                        leadingContent = { Icon(HugeIcons.Puzzle, null) },
+                        supportingContent = { Text("Agent Skills 能力模块（与 MCP 同等次，一个 Skill 一个工具）") },
+                        headlineContent = { Text("Agent Skills") },
+                    )
+item(
                         onClick = { showBuiltinToolsPage = true },
                         leadingContent = { Icon(HugeIcons.Settings03, null) },
                         supportingContent = { Text("精确到工具 ID 与数量的全量清单（核对工具总数）") },
@@ -309,13 +315,7 @@ item(
                         supportingContent = { Text(stringResource(R.string.setting_page_domain_management_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_domain_management)) },
                     )
-                    item(
-                        onClick = { navController.navigate(Screen.Skills) },
-                        leadingContent = { Icon(HugeIcons.Puzzle, null) },
-                        supportingContent = { Text("Agent Skills 能力模块（与 MCP 同等次，一个 Skill 一个工具）") },
-                        headlineContent = { Text("Agent Skills") },
-                    )
-                    item(
+                                        item(
                         onClick = { navController.navigate(Screen.Workflows) },
                         leadingContent = { Icon(HugeIcons.AiEditing, null) },
                         supportingContent = { Text("触发器 + 条件 + 动作序列") },
