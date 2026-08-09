@@ -173,7 +173,7 @@ fun SettingDomainPage(
                             domainNameOverrides = cleanedNames,
                         ))
                         revision++
-                        classifyLog = "${previewTools.size}个工具 · ${nestedDomains.size}个域"
+                        classifyLog = "${previewTools.count { it.name !in me.rerere.rikkahub.data.ai.tools.FRAMEWORK_TOOL_SET }}个工具 · ${nestedDomains.size}个域"
                     }) { Icon(HugeIcons.Refresh01, "同步") }
                     TextButton(onClick = { isClassifying = true },
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
@@ -198,7 +198,7 @@ fun SettingDomainPage(
                 val mcpLarge = 0
                 val customSubCount = 0
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("${nestedDomains.size}个域 · ${previewTools.size}个工具 · 内置/Skill/MCP 同层位统一计数",
+                    Text("${nestedDomains.size}个域 · ${previewTools.count { it.name !in me.rerere.rikkahub.data.ai.tools.FRAMEWORK_TOOL_SET }}个工具 · 内置/Skill/MCP 同层位统一计数",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                 }

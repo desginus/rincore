@@ -95,24 +95,8 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val filesManager: FilesManager = koinInject()
     var showDomainPage by remember { mutableStateOf(false) }
-    var showToolHubPage by remember { mutableStateOf(false) }
     var showToolComparePage by remember { mutableStateOf(false) }
     var showBuiltinToolsPage by remember { mutableStateOf(false) }
-
-    if (showToolHubPage) {
-        SettingToolHubPage(
-            onOpenCompare = {
-                showToolHubPage = false
-                showToolComparePage = true
-            },
-            onOpenAbout = {
-                showToolHubPage = false
-                navController.navigate(Screen.SettingAbout)
-            },
-            onBack = { showToolHubPage = false },
-        )
-        return
-    }
 
     if (showToolComparePage) {
         SettingToolComparePage(
@@ -315,12 +299,6 @@ item(
                         headlineContent = { Text(stringResource(R.string.setting_page_extensions)) },
                     )
                     item(
-                        onClick = { showToolHubPage = true },
-                        leadingContent = { Icon(HugeIcons.ServerStack01, null) },
-                        supportingContent = { Text("工具对照 / MCP 服务器 / 关于和分享（统一收口）") },
-                        headlineContent = { Text("工具管理") },
-                    )
-                    item(
                         onClick = { showBuiltinToolsPage = true },
                         leadingContent = { Icon(HugeIcons.Settings03, null) },
                         supportingContent = { Text("精确到工具 ID 与数量的全量清单（核对工具总数）") },
@@ -413,6 +391,18 @@ item(
                     modifier = Modifier.padding(horizontal = 8.dp),
                     title = { Text(stringResource(R.string.setting_page_about)) },
                 ) {
+                    item(
+                        onClick = { navController.navigate(Screen.SettingAbout) },
+                        leadingContent = { Icon(HugeIcons.Settings03, null) },
+                        supportingContent = { Text("版本信息 / 分享 / 关于") },
+                        headlineContent = { Text("关于和分享") },
+                    )
+                    item(
+                        onClick = { showToolComparePage = true },
+                        leadingContent = { Icon(HugeIcons.Settings03, null) },
+                        supportingContent = { Text("系统工具地图 / List Domains / Invoke Tools 三信源对照") },
+                        headlineContent = { Text("工具对照（开发者）") },
+                    )
                     item(
                         onClick = { navController.navigate(Screen.Log) },
                         leadingContent = { Icon(HugeIcons.Bookshelf01, null) },
