@@ -232,6 +232,7 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
                         }
                     }
                 }
+                me.rerere.rikkahub.data.ai.CallTracer.event("OK", "manage_domain", "create $name (parent=$parent) → $msg")
                 listOf(UIMessagePart.Text(msg))
             }
             "delete" -> {
@@ -281,6 +282,7 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
                         updated to "已删除域 '$name'$childInfo。域内工具覆盖已${parentDomain?.let { "迁移到父域 '$it'" } ?: "保留"}，不会被打散。若此前已加载该域，请重新 invoke_tools(\"帮助\") 刷新场景地图。"
                     }
                 }
+                me.rerere.rikkahub.data.ai.CallTracer.event("OK", "manage_domain", "delete $name → $msg")
                 listOf(UIMessagePart.Text(msg))
             }
             "rename" -> {
@@ -320,6 +322,7 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
                         domainNameOverrides = newNames,
                     ) to "已重命名域 '$name' → '$newName'。挂载映射、描述、关键词、子域父级均已迁移。"
                 }
+                me.rerere.rikkahub.data.ai.CallTracer.event("OK", "manage_domain", "rename $name → $newName: $msg")
                 listOf(UIMessagePart.Text(msg))
             }
             "update" -> {
@@ -352,9 +355,13 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
                     }
                     updated to "已更新域 '$name'：${if (description.isNotEmpty()) "描述, " else ""}${if (keywords.isNotEmpty()) "关键词, " else ""}${if (displayName != null) "显示名" else ""}。"
                 }
+                me.rerere.rikkahub.data.ai.CallTracer.event("OK", "manage_domain", "update $name → $msg")
                 listOf(UIMessagePart.Text(msg))
             }
-            else -> listOf(UIMessagePart.Text("未知操作: $action。支持: create, delete, rename, update"))
+            else -> {
+                me.rerere.rikkahub.data.ai.CallTracer.event("WARN", "manage_domain", "未知操作: $action")
+                listOf(UIMessagePart.Text("未知操作: $action。支持: create, delete, rename, update"))
+            }
         }
     }
 )
@@ -453,6 +460,7 @@ private fun listDomainsTool(
             .filter { visible(it) }
             .toSet()
         if (targetDomain !in allValid) {
+            me.rerere.rikkahub.data.ai.CallTracer.event("WARN", "move_tool_to_domain", "无效目标域 $targetDomain (工具 $toolName)")
             listOf(UIMessagePart.Text(
                 "无效目标域 '$targetDomain'。" +
                 "该域可能已被删除或隐藏。可用域: ${allValid.sorted().joinToString("、")}"
@@ -464,6 +472,7 @@ private fun listDomainsTool(
             // 修复: move 校验存在性 — 不存在返回失败而非假成功
             val isSkill = toolName in skills
             if (!isSkill && toolName !in tools && !toolName.startsWith("skill_") && toolName != "use_skill") {
+                me.rerere.rikkahub.data.ai.CallTracer.event("WARN", "move_tool_to_domain", "工具不存在: $toolName")
                 listOf(UIMessagePart.Text(
                     "工具 '$toolName' 不存在。可用工具: ${tools.sorted().take(30).joinToString("、")}${if (tools.size > 30) " 等${tools.size}个" else ""}。" +
                     "若为 Skill，请确认其已启用: ${skills.sorted().take(20).joinToString("、")}"
@@ -482,6 +491,7 @@ private fun listDomainsTool(
                     // 目标域存在则清理指向它的孤儿数据 (旧域残留)
                     cleaned to (if (isSkill) "已将 Skill '$toolName' 挂载到域 '$targetDomain'。调用时经 invoke_tools(\"$targetDomain\") 可见。" else "已将工具 '$toolName' 移动到域 '$targetDomain'")
                 }
+                me.rerere.rikkahub.data.ai.CallTracer.event("OK", "move_tool_to_domain", "$toolName → $targetDomain")
                 listOf(UIMessagePart.Text(msg))
             }
         }
