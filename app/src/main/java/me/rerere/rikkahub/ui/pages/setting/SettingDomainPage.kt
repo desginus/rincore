@@ -106,6 +106,8 @@ fun SettingDomainPage(
     var isClassifying by remember { mutableStateOf(false) }
     var classifyLog by remember { mutableStateOf("") }
     var revision by remember { mutableStateOf(0) }
+    // v3.6.7: 全局写版本号 — 任何写 (工具/设置页) 后强制重建, 防界面停留旧快照
+    val globalRevision by settingsStore.settingsRevision.collectAsState()
 
     var showNewDomain by remember { mutableStateOf(false) }
     var showToolList by remember { mutableStateOf(false) }
@@ -129,7 +131,7 @@ fun SettingDomainPage(
         )
     }
 
-    val previewTools: List<ToolPreview> = remember(settings, revision) {
+    val previewTools: List<ToolPreview> = remember(settings, revision, globalRevision) {
         buildPreviewTools(
             settings, localTools, skillManager, mcpManager,
             conversationRepo = conversationRepo,

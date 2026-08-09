@@ -399,12 +399,17 @@ class SettingsStore(
         .distinctUntilChanged()
         .toMutableStateFlow(scope, Settings.dummy())
 
+    // v3.6.7: 写版本号 — 每次 update 递增, UI 订阅后强制重建 (防 StateFlow
+    // 值去重导致写后界面不刷新; 工具写入/设置页修改均触发)
+    val settingsRevision = kotlinx.coroutines.flow.MutableStateFlow(0)
+
     suspend fun update(settings: Settings) {
         if(settings.init) {
             Log.w(TAG, "Cannot update dummy settings")
             return
         }
         settingsFlow.value = settings
+        settingsRevision.value = settingsRevision.value + 1
         dataStore.edit { preferences ->
             preferences[DYNAMIC_COLOR] = settings.dynamicColor
             preferences[THEME_ID] = settings.themeId

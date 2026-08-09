@@ -55,7 +55,9 @@ fun SettingToolComparePage(
     val assistant = settings.getCurrentAssistant()
     // 单一源头: 与模型侧完全同源的工具池 + 统一视图
     // v3.6.4: 排除框架工具 — 对照/域管理/帮助/List Domains 全 398 统一
-    val pool = remember(settings) {
+    // v3.6.7: 全局写版本号 — 写后强制重建
+    val globalRevision by settingsStore.settingsRevision.collectAsState()
+    val pool = remember(settings, globalRevision) {
         runCatching {
             buildAssistantToolPool(
                 settings = settings,
