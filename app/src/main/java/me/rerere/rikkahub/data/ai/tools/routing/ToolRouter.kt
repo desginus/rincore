@@ -306,7 +306,12 @@ class ToolRouter(
     /** 构建统一视图 — 唯一实现, 四处视图 (系统提示/Invoke Tools/List Domains/UI) 全部消费 */
     fun unifiedDomainView(tools: List<Tool>): UnifiedDomainView {
         val classified = classifyAll(tools)
-        val counts = classified.mapValues { it.value.size }
+        // v3.6.1: 计数排除框架工具 (invoke_tools/workspace 等 13 个系统框架 —
+        // 框架注入请求体但不占用户域计数; 用户域总数稳定 398)。
+        // 框架工具仍 classified 在系统域 → 下钻可见 (系统域特例: 计数≠下钻)。
+        val counts = classified.mapValues { (_, tools) ->
+            tools.count { it.name !in me.rerere.rikkahub.data.ai.tools.FRAMEWORK_TOOL_SET }
+        }
         val tree: MutableMap<String, MutableList<String>> = buildDomainTree(tools)
             .mapValues { it.value.toMutableList() }.toMutableMap()
         // 容错 (v3.5.45): classified 的域不在树 → 补入 (分类结果绝不丢失)。
@@ -324,13 +329,14 @@ class ToolRouter(
                 }
             }
         }
-        // 空壳过滤: 子域无工具不显示; 根域无工具且无非空子域不显示
+        // 空壳过滤: 子域无工具不显示; 根域无工具且无非空子域不显示。
+        // 系统域特例恒保留 (框架工具下钻可见, 计数为 0 时不消失)
         val filteredTree = tree.mapValues { (_, subs) ->
             subs.filter { (counts[it] ?: 0) > 0 }
         }.filter { (root, subs) ->
-            (counts[root] ?: 0) > 0 || subs.isNotEmpty()
+            (counts[root] ?: 0) > 0 || subs.isNotEmpty() || root == "系统"
         }.toSortedMap()
-        // 子树计数: 根 → 直接工具 + 全部子域直接工具 (供 UI/帮助标注, 与下钻口径分离)
+        // 子树计数: 根 → 直接工具 + 全部子域直接工具 (排除框架, 与 counts 同口径)
         val subtreeCounts = filteredTree.mapValues { (root, subs) ->
             (counts[root] ?: 0) + subs.sumOf { counts[it] ?: 0 }
         }
@@ -517,7 +523,9 @@ class ToolRouter(
         // 统一视图 — 与 layer1/Invoke Tools/UI 完全同源
         val view = unifiedDomainView(tools)
         return buildString {
-            appendLine("工具池共 ${tools.size} 个工具（${view.classified.size} 个域）：")
+            // v3.6.1: 池总数排除框架 (用户域计数 398, 框架工具不计)
+            val userToolCount = tools.count { it.name !in me.rerere.rikkahub.data.ai.tools.FRAMEWORK_TOOL_SET }
+            appendLine("工具池共 $userToolCount 个工具（${view.classified.size} 个域）：")
             for ((root, subs) in view.tree) {
                 // 口径标注: 直接 X 个; 根域含子域时标注含子域共 Y 个
                 val subTotal = view.subtreeCounts[root] ?: (view.counts[root] ?: 0)
