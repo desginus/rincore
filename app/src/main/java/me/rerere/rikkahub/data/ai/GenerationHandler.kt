@@ -796,9 +796,8 @@ class GenerationHandler(
                     }
                 }
             } ?: run {
-                // v3.6.9 流式实时估算: 平台只在最后发 usage 时, 中途无更新 —
-                // 按增量文本估算 completion tokens (结束被真实 usage 覆盖)。
-                // 输入 token 无法估算 (需完整请求 — 首个 usage 或结束提供)。
+                // v3.6.9 流式实时估算: 平台只在最后发 usage 时中途无更新 —
+                // 按增量文本估算 completion tokens (结束被真实 usage 覆盖)
                 val textLen = messages.lastOrNull()?.toText()?.length ?: 0
                 val delta = (textLen - lastStreamTextLen).coerceAtLeast(0)
                 lastStreamTextLen = textLen
