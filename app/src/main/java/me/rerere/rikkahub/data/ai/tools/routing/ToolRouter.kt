@@ -343,14 +343,10 @@ class ToolRouter(
         val display = displayName(domain)
         val desc = getTriggerDescription(domain)
         val keywords = getKeywords(domain)
-        val kwText = if (keywords.isEmpty()) {
-            ""
-        } else {
-            val shown = keywords.take(MAX_KEYWORDS_INJECT)
-            val rest = keywords.size - shown.size
-            val suffix = if (rest > 0) " 等${keywords.size}个" else ""
-            " [触发: ${shown.joinToString("、")}$suffix]"
-        }
+        // v3.5.57: 关键词完整展示, 不截断 (此前 8+等N个 与 search_domains 反查
+        // 不一致 — 静态声明与动态数据必须完全同步)
+        val kwText = if (keywords.isEmpty()) "" else " [触发: ${keywords.joinToString("、")}]"
+
         // 统一域标签格式 (v3.5.52): 路径（显示名）— 与 UI/List Domains/invoke_tools 同格式
         val nameText = "`${formatDomainLabel(domain)}`"
         return "$indent**$nameText** — $desc$kwText"
@@ -455,26 +451,21 @@ class ToolRouter(
                                             val nameText = router.formatDomainLabel(ck)
                                             val desc = router.getTriggerDescription(ck)
                                             val keywords = router.getKeywords(ck)
-                                            val kwText = if (keywords.isEmpty()) "" else {
-                                                val shown = keywords.take(8)
-                                                val rest = keywords.size - shown.size
-                                                val suffix = if (rest > 0) " 等${keywords.size}个" else ""
-                                                " [触发: ${shown.joinToString("、")}$suffix]"
-                                            }
+                                            val kwText = if (keywords.isEmpty()) "" else " [触发: ${keywords.joinToString("、")}]"
                                             appendLine("- **`$nameText`**: $desc$kwText")
                                         }
                                     }
                                     if (directTools.isNotEmpty()) {
-                                        appendLine("「$finalName」含${childKeys.size}个子域及直接工具（已全部加载，可直接调用）:")
+                                        appendLine("「${router.formatDomainLabel(finalName)}」含${childKeys.size}个子域及直接工具（已全部加载，可直接调用）:")
                                         appendLine()
                                         append(subInfo)
                                         appendLine()
                                         appendLine("直接工具：")
-                                        for (t in directTools.sortedBy { it.name }.take(8)) {
+                                        for (t in directTools.sortedBy { it.name }) {
                                             appendLine("- `${t.name}`: ${t.description.take(60).replace("\\n", " ")}")
                                         }
                                     } else {
-                                        appendLine("「$finalName」含${childKeys.size}个子域（已全部加载，可直接调用）：")
+                                        appendLine("「${router.formatDomainLabel(finalName)}」含${childKeys.size}个子域（已全部加载，可直接调用）：")
                                         appendLine()
                                         append(subInfo)
                                     }
@@ -490,10 +481,10 @@ class ToolRouter(
 
                                 val summary = buildString {
                                     if (rootOnly.isEmpty()) {
-                                        appendLine("「$finalName」当前无可用工具。")
+                                        appendLine("「${router.formatDomainLabel(finalName)}」当前无可用工具。")
                                         appendLine("可尝试 `invoke_tools(\"帮助\")` 查看其他域。")
                                     } else {
-                                        appendLine("「$finalName」可用工具（均可直接调用）：")
+                                        appendLine("「${router.formatDomainLabel(finalName)}」可用工具（均可直接调用）：")
                                         for (t in rootOnly.sortedBy { it.name }) {
                                             val desc = t.description.take(80).replace("\n", " ")
                                             appendLine("- `${t.name}`: $desc")

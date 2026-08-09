@@ -395,12 +395,12 @@ private fun deleteDomainTool(
                 val subTotal = view.subtreeCounts[root] ?: rootCount
                 val subNote = if (subs.isNotEmpty() && subTotal != rootCount) "（含子域共 $subTotal 个）" else ""
                 val rootKw = router.getKeywords(root)
-                val kwText = if (rootKw.isEmpty()) "" else " [触发: ${rootKw.take(8).joinToString("、")}${if (rootKw.size > 8) " 等${rootKw.size}个" else ""}]"
+                val kwText = if (rootKw.isEmpty()) "" else " [触发: ${rootKw.joinToString("、")}]"
                 appendLine("- ${router.formatDomainLabel(root)} [${rootCount}个工具]$subNote$kwText")
                 for (sub in subs) {
                     val subCount = view.counts[sub] ?: 0
                     val subKw = router.getKeywords(sub)
-                    val subKwText = if (subKw.isEmpty()) "" else " [触发: ${subKw.take(8).joinToString("、")}${if (subKw.size > 8) " 等${subKw.size}个" else ""}]"
+                    val subKwText = if (subKw.isEmpty()) "" else " [触发: ${subKw.joinToString("、")}]"
                     appendLine("  - ${router.formatDomainLabel(sub)} [${subCount}个工具]$subKwText")
                 }
             }
