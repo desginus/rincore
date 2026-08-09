@@ -220,10 +220,11 @@ fun SettingDomainPage(
                                 Text("[${displayName}]", fontWeight = FontWeight.Bold, color = if (isCustom) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                                 if (subs != null) {
                                     val subCount = subs.size
-                                    val toolCount = unifiedView.classified[domain]?.size ?: 0
+                                    // v3.6.3: 计数统一 counts (排除框架工具 — 各域之和 = 398)
+                                    val toolCount = unifiedView.counts[domain] ?: 0
                                     Text(" (${subCount}子域/${toolCount}工具)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                                 } else {
-                                    val toolCount = unifiedView.classified[domain]?.size ?: 0
+                                    val toolCount = unifiedView.counts[domain] ?: 0
                                     if (toolCount > 0) Text(" (${toolCount}工具)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 if (isHidden) Text(" [已隐藏]", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)

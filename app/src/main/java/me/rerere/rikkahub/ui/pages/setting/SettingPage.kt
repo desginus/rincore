@@ -284,7 +284,12 @@ item(
                         supportingContent = { Text("MCP 服务器连接与管理（SSE / StreamableHTTP / STDIO）") },
                         headlineContent = { Text("MCP 服务器") },
                     )
-
+item(
+                        onClick = { showBuiltinToolsPage = true },
+                        leadingContent = { Icon(HugeIcons.Settings03, null) },
+                        supportingContent = { Text("精确到工具 ID 与数量的全量清单（核对工具总数）") },
+                        headlineContent = { Text("内置工具") },
+                    )
                 }
             }
             item("extensionsTools") {
@@ -297,12 +302,6 @@ item(
                         leadingContent = { Icon(HugeIcons.Package, null) },
                         supportingContent = { Text(stringResource(R.string.setting_page_extensions_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_extensions)) },
-                    )
-                    item(
-                        onClick = { showBuiltinToolsPage = true },
-                        leadingContent = { Icon(HugeIcons.Settings03, null) },
-                        supportingContent = { Text("精确到工具 ID 与数量的全量清单（核对工具总数）") },
-                        headlineContent = { Text("内置工具") },
                     )
                     item(
                         onClick = { showDomainPage = true },

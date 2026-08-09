@@ -55,6 +55,7 @@ fun SettingBuiltinToolsPage(
                 Text(
                     "  ${tool.name}",
                     style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface, // v3.6.3: 深色模式可见性
                     modifier = Modifier.padding(vertical = 2.dp),
                 )
             }
