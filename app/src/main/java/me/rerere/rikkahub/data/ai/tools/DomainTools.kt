@@ -131,8 +131,8 @@ private fun createSearchDomainsTool(
             ))
         } else {
             val lines = matched.sorted().map { domain ->
-                val display = router.displayName(domain)
-                val nameText = if (display == domain) "`$domain`" else "`$domain`（显示名: $display）"
+                // v3.5.55 统一: 与帮助/List Domains 同格式 (路径（显示名）), resolveDomain 已兼容括号
+                val nameText = "`${router.formatDomainLabel(domain)}`"
                 val desc = router.getTriggerDescription(domain)
                 val kws = router.getKeywords(domain)
                 val kwText = if (kws.isEmpty()) "" else " [触发: ${kws.joinToString("、")}]"

@@ -56,18 +56,26 @@ class ToolRouter(
     /** 任意输入 → 规范化域路径: 完整路径 / 短名 / 显示名 / 双叠路径 全部兼容 */
     fun resolveDomain(input: String): String? {
         if (input.isBlank()) return null
+        // 剥离展示格式后缀 (v3.5.55): 帮助页显示 路径（显示名）, 模型复制
+        // 后带括号 → 此前匹配失败报未知。剥离括号/空格后按纯路径解析。
+        val cleaned = input
+            .substringBefore("（").substringBefore("(").substringBefore("[")
+            .trim()
+        if (cleaned.isBlank()) return null
         val all = domainSource()
         // 1. 精确完整路径
-        all.firstOrNull { it.path == input }?.let { return it.path }
+        all.firstOrNull { it.path == cleaned }?.let { return it.path }
         // 2. 短名 (最后一段)
-        all.firstOrNull { it.shortName == input }?.let { return it.path }
+        all.firstOrNull { it.shortName == cleaned }?.let { return it.path }
         // 3. 显示名覆盖
-        all.firstOrNull { it.displayName == input }?.let { return it.path }
+        all.firstOrNull { it.displayName == cleaned }?.let { return it.path }
         // 4. 双叠路径规范化 (历史遗留: 搜索/搜索/搜索引擎 → 搜索/搜索引擎)
         all.firstOrNull { d ->
-            d.path.split("/").lastOrNull() == input.substringAfterLast("/") &&
-                input.split("/").distinct().size == d.path.split("/").distinct().size
+            d.path.split("/").lastOrNull() == cleaned.substringAfterLast("/") &&
+                cleaned.split("/").distinct().size == d.path.split("/").distinct().size
         }?.let { return it.path }
+        // 5. 末段短名模糊匹配 (路径可能含多余前缀)
+        all.firstOrNull { cleaned.endsWith("/" + it.shortName) }?.let { return it.path }
         return null
     }
 
@@ -201,11 +209,23 @@ class ToolRouter(
             return if (isValidDomain("对话工具/记忆")) "对话工具/记忆" else "方法域"
         }
 
-        // 4. MCP 工具 — 服务器名映射 → 关键词兜底 (名称分类作辅助)
-        //    映射域必须有效 (未删/未隐藏), 否则落入关键词/未分类 — 工具不丢失
+        // 4. MCP 工具 — 按服务器整体归类 (v3.5.55): 同服务器工具同域, 不拆散。
+        //    服务器名映射 → 默认域; 无映射 → 服务器名整体关键词匹配内置域;
+        //    未命中 → 未分类 (整体)。此前按单工具关键词分类 → 同一服务器工具
+        //    被分散到多个域 (Thinkingmethodology 拆 3 处等)。
         if (name.startsWith("mcp__")) {
             val server = extractMcpServerName(name)
             mcpServerDomainDefaults[server]?.let { if (isValidDomain(it)) return it }
+            val serverText = server.lowercase()
+            val excluded = removedBuiltinDomains + hiddenDomains
+            val serverDomain = ToolDomain.entries
+                .sortedByDescending { it.label.count { c -> c == '/' } }
+                .firstOrNull { dom ->
+                    val root = dom.label.split("/").first()
+                    dom.label !in excluded && root !in excluded &&
+                        dom.matchKeywords.any { serverText.contains(it) }
+                }?.label
+            return serverDomain ?: if (isValidDomain("未分类")) "未分类" else "方法域"
         }
 
         // 5. 关键词匹配 (自定义域已移除 — 用户决策 v3.5.40; 仅内置域关键词)
@@ -225,7 +245,9 @@ class ToolRouter(
     }
 
     fun classifyAll(tools: List<Tool>): Map<String, List<Tool>> {
-        return tools.groupBy { classifyTool(it) }
+        // v3.5.55: 按工具名去重 — 同名工具 (MCP 多服务器重名/本地冲突) 不再
+        // 重复注册到多个域 (此前 groupBy 不去重 → find_files 双域)
+        return tools.distinctBy { it.name }.groupBy { classifyTool(it) }
             .filterValues { it.isNotEmpty() }
     }
 
