@@ -175,6 +175,7 @@ class ChatCompletionsAPI(
         // v3.6.5 分阶段 watchdog: 首包前 60s 断 (连接无数据 → 快速失败进入
         // 断流重试, 收敛中断后"正在输出"挂起时长 — 用户实测中断后长时间不结束);
         // 首包后 120s (平台思考/回复间隙静默不误杀)。
+        val hasReceivedData = java.util.concurrent.atomic.AtomicBoolean(false)  // 前置声明 (watchdog 引用)
         val lastEventAt = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
         val watchdog = launch {
             while (true) {
@@ -190,7 +191,6 @@ class ChatCompletionsAPI(
         }
 
         // SSE 连接优化: 首次数据到达前断连时自动重试, 指数退避 (移植 v2.9.8 稳定行为)
-        val hasReceivedData = java.util.concurrent.atomic.AtomicBoolean(false)
         val completed = java.util.concurrent.atomic.AtomicBoolean(false)  // [DONE] 正常完成标记
         val retryCount = java.util.concurrent.atomic.AtomicInteger(0)
         val maxRetries = 5 // 指数退避 1+2+4+8+16=31s 窗口, 覆盖瞬时网络波动
