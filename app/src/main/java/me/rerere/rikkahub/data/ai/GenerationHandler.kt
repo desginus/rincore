@@ -755,6 +755,30 @@ class GenerationHandler(
                             message
                         }
                     }
+                } ?: run {
+                    // v3.6.9 流式实时估算: 平台只在最后发 usage 时中途无更新 —
+                    // 按增量文本估算 completion tokens (结束被真实 usage 覆盖)
+                    val textLen = messages.lastOrNull()?.toText()?.length ?: 0
+                    val delta = (textLen - lastStreamTextLen).coerceAtLeast(0)
+                    lastStreamTextLen = textLen
+                    if (delta > 0) {
+                        estimatedCompletionTokens += delta / 4
+                        messages = messages.mapIndexed { index, message ->
+                            if (index == messages.lastIndex) {
+                                val cur = message.usage
+                                if (cur != null && cur.completionTokens >= estimatedCompletionTokens) {
+                                    message
+                                } else {
+                                    message.copy(
+                                        usage = (cur ?: me.rerere.ai.core.TokenUsage())
+                                            .copy(completionTokens = estimatedCompletionTokens)
+                                    )
+                                }
+                            } else {
+                                message
+                            }
+                        }
+                    }
                 }
                 onUpdateMessages(messages)
             }
