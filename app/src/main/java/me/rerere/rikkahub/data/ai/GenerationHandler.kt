@@ -101,6 +101,9 @@ class GenerationHandler(
 ) {
     /** 断流重试计数 (v3.5.46): 类成员 — 切后台/NAT/平台断流自动恢复, 每次生成最多 5 次 (v3.5.59) */
     private var streamRetryCount = 0
+    // v3.6.9: 流式 token 估算计数器 — 类成员 (局部声明曾致 collect lambda 解析失败)
+    private var lastStreamTextLen = 0
+    private var estimatedCompletionTokens = 0
     companion object {
         /** 工具执行超时 (ms): 工具挂起时返回超时错误, 不阻塞整个生成流程 */
         private const val TOOL_EXECUTION_TIMEOUT_MS = 60_000L
@@ -148,9 +151,11 @@ class GenerationHandler(
 
         // G3 平台空流重试计数 (每次生成仅重试一次)
         var emptyRetryCount = 0
-        // 断流重试计数 (切后台/NAT/平台断连 — IOException 自动恢复, 每次生成最多 2 次)
+        // 断流重试计数 (切后台/NAT/平台断连 — IOException 自动恢复, 每次生成最多 5 次)
         // 类成员 (局部声明曾被编译器解析为块外不可见 — 提升为成员彻底规避)
         streamRetryCount = 0
+        lastStreamTextLen = 0
+        estimatedCompletionTokens = 0
 
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
@@ -724,9 +729,6 @@ class GenerationHandler(
             // 断流自动恢复 (v3.5.46 根治): 输出中连接中断 (切后台网络切换/
             // NAT 超时/平台断流 — IOException) → 回滚本次已输出内容 → 自动重试。
             // 用户核心诉求: 一直保持连接, 不自己中断。重试请求消息相同 → 缓存命中。
-            // v3.6.9 流式 token 实时估算计数器 (增量 O(1), 结束被真实 usage 覆盖)
-            var lastStreamTextLen = 0
-            var estimatedCompletionTokens = 0
             streamLoop@ while (true) {
             val preStreamMessages = messages
             try {
