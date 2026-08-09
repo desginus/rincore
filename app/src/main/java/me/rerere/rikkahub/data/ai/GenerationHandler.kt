@@ -720,6 +720,9 @@ class GenerationHandler(
             // 断流自动恢复 (v3.5.46 根治): 输出中连接中断 (切后台网络切换/
             // NAT 超时/平台断流 — IOException) → 回滚本次已输出内容 → 自动重试。
             // 用户核心诉求: 一直保持连接, 不自己中断。重试请求消息相同 → 缓存命中。
+            // v3.6.9 流式 token 实时估算计数器 (增量 O(1), 结束被真实 usage 覆盖)
+            var lastStreamTextLen = 0
+            var estimatedCompletionTokens = 0
             streamLoop@ while (true) {
             val preStreamMessages = messages
             try {
@@ -764,6 +767,8 @@ class GenerationHandler(
                     Log.w(TAG, "stream interrupted (${e.message}), rolling back & retry $streamRetryCount/5")
                     messages = preStreamMessages  // 丢弃本次生成的半截内容
                     onUpdateMessages(messages)    // UI 同步回滚
+                    lastStreamTextLen = 0         // v3.6.9: 回滚后计数器重置 (重新累计)
+                    estimatedCompletionTokens = 0
                     continue@streamLoop  // 重试 (maxSteps 内, 消息相同缓存命中)
                 }
                 throw e
@@ -784,6 +789,31 @@ class GenerationHandler(
                         )
                     } else {
                         message
+                    }
+                }
+            } ?: run {
+                // v3.6.9 流式实时估算: 平台只在最后发 usage 时, 中途无更新 —
+                // 按增量文本估算 completion tokens (结束被真实 usage 覆盖)。
+                // 输入 token 无法估算 (需完整请求 — 首个 usage 或结束提供)。
+                val textLen = messages.lastOrNull()?.toText()?.length ?: 0
+                val delta = (textLen - lastStreamTextLen).coerceAtLeast(0)
+                lastStreamTextLen = textLen
+                if (delta > 0) {
+                    estimatedCompletionTokens += delta / 4
+                    messages = messages.mapIndexed { index, message ->
+                        if (index == messages.lastIndex) {
+                            val cur = message.usage
+                            if (cur != null && cur.completionTokens >= estimatedCompletionTokens) {
+                                message
+                            } else {
+                                message.copy(
+                                    usage = (cur ?: me.rerere.ai.core.TokenUsage())
+                                        .copy(completionTokens = estimatedCompletionTokens)
+                                )
+                            }
+                        } else {
+                            message
+                        }
                     }
                 }
             }

@@ -222,11 +222,13 @@ fun SettingDomainPage(
                                 Text("[${displayName}]", fontWeight = FontWeight.Bold, color = if (isCustom) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                                 if (subs != null) {
                                     val subCount = subs.size
-                                    // v3.6.3: 计数统一 counts (排除框架工具 — 各域之和 = 398)
-                                    val toolCount = unifiedView.counts[domain] ?: 0
+                                    // v3.6.9: 根域计数 = 直接 + 子域合计 (subtreeCounts) —
+                                    // 子域里的工具必须计入根域统计 (用户: 子域工具合计要显示)
+                                    val toolCount = unifiedView.subtreeCounts[domain] ?: 0
                                     Text(" (${subCount}子域/${toolCount}工具)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                                 } else {
-                                    val toolCount = unifiedView.counts[domain] ?: 0
+                                    // v3.6.9: 子域计数含更深层子域 (subtreeCounts)
+                                    val toolCount = unifiedView.subtreeCounts[domain] ?: 0
                                     if (toolCount > 0) Text(" (${toolCount}工具)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 if (isHidden) Text(" [已隐藏]", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)

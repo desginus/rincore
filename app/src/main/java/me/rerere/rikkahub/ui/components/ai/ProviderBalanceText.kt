@@ -25,7 +25,7 @@ import org.koin.compose.koinInject
 import java.util.concurrent.TimeUnit
 
 private val cache = SimpleCache.builder<String, String>()
-    .expireAfterWrite(2, TimeUnit.MINUTES)
+    .expireAfterWrite(10, TimeUnit.MINUTES) // v3.6.9: 2min→10min 减少脉冲式刷新
     .build()
 
 @Composable
@@ -55,10 +55,9 @@ fun ProviderBalanceText(
                 cache.put("${providerSetting.id},${providerSetting.balanceOption.hashCode()}", balance)
                 value = balance
             }.onFailure {
-                // Handle error
-                val errorMsg = "Error: ${it.message}"
-                // Don't cache error messages
-                value = errorMsg
+                // v3.6.9: 失败保留旧值 (不闪 Error — 静默; 下次进入再拉)
+                val cached = cache.getIfPresent("${providerSetting.id},${providerSetting.balanceOption.hashCode()}")
+                if (cached != null) value = cached else value = "~"
             }
         }
     }
