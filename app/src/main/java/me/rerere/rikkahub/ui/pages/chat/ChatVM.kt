@@ -193,7 +193,10 @@ class ChatVM(
             val edited = conversation.value.messageNodes
                 .flatMap { it.messages }
                 .find { it.id == messageId } ?: return@launch
-            chatService.regenerateAtMessage(_conversationId, edited)
+            // v3.5.53: 仅编辑 user 消息触发重新生成 — assistant 回复编辑只保存
+            if (edited.role == me.rerere.ai.core.MessageRole.USER) {
+                chatService.regenerateAtMessage(_conversationId, edited)
+            }
         }
     }
 
