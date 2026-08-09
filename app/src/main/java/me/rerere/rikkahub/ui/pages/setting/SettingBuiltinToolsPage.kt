@@ -30,7 +30,8 @@ fun SettingBuiltinToolsPage(
     val assistant = settings.getCurrentAssistant()
     // 本地工具实际 ID (与模型侧注入同源) — 精确核对
     val enabledLocalTools = remember(settings) {
-        runCatching { localTools.getTools(assistant.localTools) }.getOrDefault(emptyList())
+        // v3.5.60: distinctBy name — getTools 可能返回同名工具 (重复 key 崩溃)
+        runCatching { localTools.getTools(assistant.localTools).distinctBy { it.name } }.getOrDefault(emptyList())
     }
 
     Column(Modifier.fillMaxSize()) {

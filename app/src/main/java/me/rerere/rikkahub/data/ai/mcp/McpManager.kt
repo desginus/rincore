@@ -201,7 +201,7 @@ class McpManager(
                     arguments = args,
                 ),
             ),
-            options = RequestOptions(timeout = 120.seconds),
+            options = RequestOptions(timeout = 180.seconds), // v3.5.60: 120s→180s 用户要求 MCP 充分连接时间
         )
         return result.content.map {
             when(it) {

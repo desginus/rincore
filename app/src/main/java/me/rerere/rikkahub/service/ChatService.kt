@@ -649,12 +649,11 @@ class ChatService(
                             .updateCurrentMessages(chunk.messages)
                         updateConversation(conversationId, updatedConversation)
 
-                        // v3.5.59 落盘节流: 此前每 chunk 全量序列化写库 (高频 IO →
-                        // 生成期明显发热)。UI 内存更新保持每 chunk (显示流畅),
-                        // 落盘降为每 2s 一次 — IO 降 95%+, 丢失窗口 ≤2s。
-                        // 权衡: 切出/进程被杀最多丢 2s 内容 (v3.4.6 落盘保留)。
+                        // v3.5.60 落盘节流 (1s): 每 chunk 全量写 → 每 1s 一次。
+                        // 发热与落盘权衡: 丢失窗口 ≤1s (用户: 消息丢失是灾难性),
+                        // IO 降 90%+, 收尾仍全量落盘。
                         val now = System.currentTimeMillis()
-                        if (now - lastStreamPersistMs > 2_000) {
+                        if (now - lastStreamPersistMs > 1_000) {
                             saveConversation(conversationId, updatedConversation)
                             lastStreamPersistMs = now
                         }
