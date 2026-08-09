@@ -594,8 +594,9 @@ class GenerationHandler(
                 }
             // stable 部分: 缓存锚点 (静态规则块 ~870c) + 系统提示 + Layer1 域概览
             val stablePrompt = buildString {
-                // 缓存锚点 — 静态规则块, 满足缓存阈值, 跨请求前缀完全一致
-                append(buildCacheAnchor())
+                // 缓存锚点 — 静态规则块 + 当前模型名 (v3.6.6: 模型配置是缓存键一部分,
+                // 模型切换 → Prompt 同步变化 → 缓存按模型隔离, 同模型前缀稳定)
+                append(buildCacheAnchor(model.displayName))
                 if (effectiveSystemPrompt.isNotBlank()) {
                     appendLine()
                     append(effectiveSystemPrompt)

@@ -10,7 +10,11 @@ import me.rerere.rikkahub.utils.JsonInstantPretty
  * 缓存锚点 — 最小化静态规则块。
  * 不含任何工具名/技能名 — 工具调度由 ToolRouter.buildLayer1() 动态生成。
  */
-internal fun buildCacheAnchor() = """
+internal fun buildCacheAnchor(modelName: String) = """
+## Current Model
+- Model: $modelName
+- Settings and tool system reflect the LATEST configuration on every request.
+
 ## Core Principles
 
 1. **Tool-First**: Default to using tools. Speculation is a last resort.
