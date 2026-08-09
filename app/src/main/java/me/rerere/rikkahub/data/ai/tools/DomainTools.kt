@@ -135,14 +135,8 @@ private fun createSearchDomainsTool(
                 val nameText = if (display == domain) "`$domain`" else "`$domain`（显示名: $display）"
                 val desc = router.getTriggerDescription(domain)
                 val kws = router.getKeywords(domain)
-                val dTools = domainToolsOf(domain)
-                val tags = buildList {
-                    if (dTools.any { it.startsWith("mcp__") }) add("MCP")
-                    if (dTools.any { it.startsWith("skill_") || it == "use_skill" }) add("Skill")
-                }
-                val tagText = if (tags.isEmpty()) "" else " [${tags.joinToString("/")}]"
                 val kwText = if (kws.isEmpty()) "" else " [触发: ${kws.joinToString("、")}]"
-                "- $nameText — $desc$kwText$tagText"
+                "- $nameText — $desc$kwText"
             }
             listOf(UIMessagePart.Text(
                 "匹配 '$query' 的域 (${lines.size} 个):\n" + lines.joinToString("\n")
@@ -394,18 +388,19 @@ private fun deleteDomainTool(
         val view = router.unifiedDomainView(tools)
 
         val result = buildString {
-            appendLine("可用域 (${view.tree.size}个根域):")
+            val totalDomains = view.tree.keys.size + view.tree.values.flatten().size
+            appendLine("可用域 (共 $totalDomains 个域, ${view.tree.size} 个根域):")
             for ((root, subs) in view.tree) {
                 val rootCount = view.counts[root] ?: 0
                 val subTotal = view.subtreeCounts[root] ?: rootCount
                 val subNote = if (subs.isNotEmpty() && subTotal != rootCount) "（含子域共 $subTotal 个）" else ""
                 val rootKw = router.getKeywords(root)
-                val kwText = if (rootKw.isEmpty()) "" else " [触发: ${rootKw.take(8).joinToString("、")}]"
+                val kwText = if (rootKw.isEmpty()) "" else " [触发: ${rootKw.take(8).joinToString("、")}${if (rootKw.size > 8) " 等${rootKw.size}个" else ""}]"
                 appendLine("- ${router.formatDomainLabel(root)} [${rootCount}个工具]$subNote$kwText")
                 for (sub in subs) {
                     val subCount = view.counts[sub] ?: 0
                     val subKw = router.getKeywords(sub)
-                    val subKwText = if (subKw.isEmpty()) "" else " [触发: ${subKw.take(8).joinToString("、")}]"
+                    val subKwText = if (subKw.isEmpty()) "" else " [触发: ${subKw.take(8).joinToString("、")}${if (subKw.size > 8) " 等${subKw.size}个" else ""}]"
                     appendLine("  - ${router.formatDomainLabel(sub)} [${subCount}个工具]$subKwText")
                 }
             }

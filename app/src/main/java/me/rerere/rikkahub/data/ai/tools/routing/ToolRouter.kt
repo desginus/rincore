@@ -345,7 +345,7 @@ class ToolRouter(
             appendLine()
             appendLine("你拥有一个工具总域 `工具`，按功能场景树状组织。每个域含：显示名称、触发描述、触发条件。")
             appendLine()
-            appendLine("**使用**：所有工具已直接可用，无需加载。`invoke_tools(\"场景名\")` 查看子域与工具详情；`search_domains(关键词)` 反查工具位置；`invoke_tools(\"帮助\")` 查看全部。")
+            appendLine("**使用**：工具经 `invoke_tools(\"场景名\")` 加载后直接调用，加载一次跨轮保持；`search_domains(关键词)` 反查工具位置；`invoke_tools(\"帮助\")` 查看全部域与工具。")
             appendLine()
             appendLine("### 可用场景域")
             appendLine()
@@ -367,7 +367,7 @@ class ToolRouter(
         val router = this
         return Tool(
             name = "invoke_tools",
-            description = "按类别查看工具与子域。有子域时返回子域列表(需再调用查看子域)，无子域时直接返回工具列表。所有工具均可直接调用，无需加载。",
+            description = "按类别查看工具与子域。有子域时返回子域列表(需再调用查看子域)，无子域时直接返回工具列表。加载的域工具可直接调用且跨轮保持。",
             parameters = {
                 InputSchema.Obj(
                     properties = buildJsonObject {
