@@ -85,7 +85,7 @@ private fun createSearchDomainsTool(
             removedBuiltinDomains = settings.removedBuiltinDomains,
         )
         // 视图口径统一 (v3.5.53): 过滤框架工具 — 与帮助/UI 完全一致
-        val toolList = me.rerere.rikkahub.data.ai.tools.viewPoolOf(toolPoolProvider())
+        val toolList = toolPoolProvider()
         val tools = toolList.map { it.name }.toSet()
 
         // 可见性判断 (与 move 工具一致: 根域级联)
@@ -384,7 +384,7 @@ private fun deleteDomainTool(
             removedBuiltinDomains = settings.removedBuiltinDomains,
         )
         // 视图口径统一 (v3.5.53): 过滤框架工具 — 与帮助/UI 完全一致
-        val tools = me.rerere.rikkahub.data.ai.tools.viewPoolOf(toolPoolProvider())
+        val tools = toolPoolProvider()
         val view = router.unifiedDomainView(tools)
 
         val result = buildString {
@@ -443,7 +443,7 @@ private fun listDomainsTool(
             return domain !in settings.hiddenDomains && domain !in settings.removedBuiltinDomains &&
                 root !in settings.hiddenDomains && root !in settings.removedBuiltinDomains
         }
-        val poolTools = me.rerere.rikkahub.data.ai.tools.viewPoolOf(toolPoolProvider())
+        val poolTools = toolPoolProvider()
         val skillSubNames = poolTools.filter { it.name.startsWith("skill__") }
             .map { it.name.removePrefix("skill__") }.toSet()
             .map { "技能/$it" }

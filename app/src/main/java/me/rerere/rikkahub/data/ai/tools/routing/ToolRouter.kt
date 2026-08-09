@@ -136,6 +136,7 @@ class ToolRouter(
         "manage_domain", "list_domains", "move_tool_to_domain",
         "mcp_connect", "clawhub_", "plugin_install",
         "get_battery_status",
+        "workspace_", // v3.5.56: workspace 工具归系统域 — 不再落入未分类失踪
     )
 
     /** MCP 服务器名 → 默认域快速映射 (避免关键词误匹配) */
@@ -228,8 +229,9 @@ class ToolRouter(
             return serverDomain ?: if (isValidDomain("未分类")) "未分类" else "方法域"
         }
 
-        // 5. 关键词匹配 (自定义域已移除 — 用户决策 v3.5.40; 仅内置域关键词)
-        val text = "${name} ${description}".lowercase()
+        // 5. 关键词匹配 (v3.5.56 收紧): 仅工具名称参与 — 描述里的 search/query/
+        //    find 等词曾把 get_media_status/calendar_query/open_file 误归搜索域
+        val text = name.lowercase()
 
         // 6. 内置域关键词兜底 (根域级联过滤)
         val excluded = removedBuiltinDomains + hiddenDomains

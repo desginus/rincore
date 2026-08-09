@@ -16,11 +16,11 @@ enum class ToolDomain(
     // ============================================================
     // 1. 搜索
     // ============================================================
-    SEARCH("搜索", "搜索网页、查资料、查新闻", listOf("搜索", "查找", "搜", "查", "查询"), null),
+    SEARCH("搜索", "搜索网页、查资料、查新闻", listOf("搜索", "查找", "搜"), null),
 
     SEARCH_ENGINE("搜索/搜索引擎", "通用网页搜索引擎", listOf(
         "search", "搜一下", "搜狗", "夸克", "维基", "wikipedia", "webSearch", "scrape",
-        "scrape_web", "搜素引擎", "查查", "网上找", "网页搜索", "网页", "search_web", "web_search", "query", "Quark"
+        "scrape_web", "搜素引擎", "查查", "网上找", "网页搜索", "网页", "search_web", "web_search"
     ), "搜索"),
 
     SEARCH_SHOP("搜索/商品搜索", "商品搜索、比价", listOf(

@@ -169,9 +169,10 @@ class GenerationHandler(
             // 每步刷新 MCP 工具 (支持 mcp_connect 运行时添加) — 合并到域池走懒加载,
             // 不直接注入函数定义 (813af56d 移植: Token 65K → ~6K)
             val currentMcpTools = DynamicTools.getMcpTools()
-            // 对齐 v3.5.34 稳定版: 视图池不含框架工具 (框架独立注入请求体,
-            // 不参与分类/计数 — 帮助/List Domains/UI 同口径, 缓存前缀稳定)
-            val allDomainTools = (domainTools + currentMcpTools).distinctBy { it.name }
+            // v3.5.56 回归全量: 含框架工具 — 系统域/workspace 等必须可见可下钻
+            // (v3.5.52 过滤框架 → 触发词指向的系统域展开为空 + workspace 5 工具
+            // 失踪 — 用户实测 Bug; 全量池不影响 layer1 静态性, 缓存前缀稳定)
+            val allDomainTools = (domainTools + frameworkTools + currentMcpTools).distinctBy { it.name }
 
             val layer1Prompt = if (useLayered) {
                 toolRouter.buildLayer1(allDomainTools)

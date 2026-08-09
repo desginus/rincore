@@ -17,7 +17,6 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.*
 import me.rerere.rikkahub.data.ai.tools.routing.ToolDomain
 import me.rerere.rikkahub.data.ai.tools.buildAssistantToolPool
-import me.rerere.rikkahub.data.ai.tools.viewPoolOf
 import me.rerere.rikkahub.data.ai.tools.routing.ToolRouter
 import me.rerere.rikkahub.data.ai.tools.routing.normalizedFullPath
 import me.rerere.rikkahub.data.datastore.CustomDomain
@@ -46,7 +45,7 @@ fun buildPreviewTools(
     val assistant = settings.getCurrentAssistant()
     val pool = try {
         // 视图口径 (v3.5.52): 排除框架工具 — 与模型侧帮助/List Domains 完全一致
-        viewPoolOf(buildAssistantToolPool(
+        buildAssistantToolPool(
             settings = settings,
             assistant = assistant,
             localTools = localTools,
