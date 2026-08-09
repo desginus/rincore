@@ -437,7 +437,7 @@ class ToolRouter(
                                                 val suffix = if (rest > 0) " 等${keywords.size}个" else ""
                                                 " [触发: ${shown.joinToString("、")}$suffix]"
                                             }
-                                            appendLine("- **`$nameText`** ($short): $desc$kwText")
+                                            appendLine("- **`$nameText`**: $desc$kwText")
                                         }
                                     }
                                     if (directTools.isNotEmpty()) {
