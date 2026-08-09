@@ -101,9 +101,6 @@ class GenerationHandler(
 ) {
     /** 断流重试计数 (v3.5.46): 类成员 — 切后台/NAT/平台断流自动恢复, 每次生成最多 5 次 (v3.5.59) */
     private var streamRetryCount = 0
-    // v3.6.9: 流式 token 估算计数器 — 类成员 (局部声明曾致 collect lambda 解析失败)
-    private var lastStreamTextLen = 0
-    private var estimatedCompletionTokens = 0
     companion object {
         /** 工具执行超时 (ms): 工具挂起时返回超时错误, 不阻塞整个生成流程 */
         private const val TOOL_EXECUTION_TIMEOUT_MS = 60_000L
@@ -154,8 +151,6 @@ class GenerationHandler(
         // 断流重试计数 (切后台/NAT/平台断连 — IOException 自动恢复, 每次生成最多 5 次)
         // 类成员 (局部声明曾被编译器解析为块外不可见 — 提升为成员彻底规避)
         streamRetryCount = 0
-        lastStreamTextLen = 0
-        estimatedCompletionTokens = 0
 
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
@@ -757,30 +752,6 @@ class GenerationHandler(
                             message
                         }
                     }
-                } ?: run {
-                    // v3.6.9 流式实时估算: 平台只在最后发 usage 时中途无更新 —
-                    // 按增量文本估算 completion tokens (结束被真实 usage 覆盖)
-                    val textLen = messages.lastOrNull()?.toText()?.length ?: 0
-                    val delta = (textLen - lastStreamTextLen).coerceAtLeast(0)
-                    lastStreamTextLen = textLen
-                    if (delta > 0) {
-                        estimatedCompletionTokens += delta / 4
-                        messages = messages.mapIndexed { index, message ->
-                            if (index == messages.lastIndex) {
-                                val cur = message.usage
-                                if (cur != null && cur.completionTokens >= estimatedCompletionTokens) {
-                                    message
-                                } else {
-                                    message.copy(
-                                        usage = (cur ?: me.rerere.ai.core.TokenUsage())
-                                            .copy(completionTokens = estimatedCompletionTokens)
-                                    )
-                                }
-                            } else {
-                                message
-                            }
-                        }
-                    }
                 }
                 onUpdateMessages(messages)
             }
@@ -797,8 +768,6 @@ class GenerationHandler(
                     Log.w(TAG, "stream interrupted (${e.message}), rolling back & retry $streamRetryCount/5")
                     messages = preStreamMessages  // 丢弃本次生成的半截内容
                     onUpdateMessages(messages)    // UI 同步回滚
-                    lastStreamTextLen = 0         // v3.6.9: 回滚后计数器重置 (重新累计)
-                    estimatedCompletionTokens = 0
                     continue@streamLoop  // 重试 (maxSteps 内, 消息相同缓存命中)
                 }
                 throw e
@@ -819,30 +788,6 @@ class GenerationHandler(
                         )
                     } else {
                         message
-                    }
-                }
-            } ?: run {
-                // v3.6.9 流式实时估算: 平台只在最后发 usage 时中途无更新 —
-                // 按增量文本估算 completion tokens (结束被真实 usage 覆盖)
-                val textLen = messages.lastOrNull()?.toText()?.length ?: 0
-                val delta = (textLen - lastStreamTextLen).coerceAtLeast(0)
-                lastStreamTextLen = textLen
-                if (delta > 0) {
-                    estimatedCompletionTokens += delta / 4
-                    messages = messages.mapIndexed { index, message ->
-                        if (index == messages.lastIndex) {
-                            val cur = message.usage
-                            if (cur != null && cur.completionTokens >= estimatedCompletionTokens) {
-                                message
-                            } else {
-                                message.copy(
-                                    usage = (cur ?: me.rerere.ai.core.TokenUsage())
-                                        .copy(completionTokens = estimatedCompletionTokens)
-                                )
-                            }
-                        } else {
-                            message
-                        }
                     }
                 }
             }
