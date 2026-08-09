@@ -39,7 +39,8 @@ data class Conversation(
     val folderId: Uuid? = null,
     // 已加载的工具域（用于跨对话持久化，仅在内存中）
     @Transient
-    val loadedDomains: Set<String> = emptySet(),
+    // v3.6.10: Set → List 保序 (加载顺序持久化 — tools 数组按加载顺序追加,
+    // 前缀稳定缓存命中; Set 迭代顺序不定曾致跨轮前缀断裂)
     @Transient
     val newConversation: Boolean = false
 ) {

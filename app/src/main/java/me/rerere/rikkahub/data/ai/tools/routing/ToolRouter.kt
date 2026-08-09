@@ -465,7 +465,15 @@ class ToolRouter(
                             }
 
                             // 工具从分类结果获取
-                            val directTools = classified[finalName].orEmpty()
+                            // v3.6.10: 与计数同口径 — 输出过滤框架工具 (帮助 subtree
+                            // 已排除框架), 框架工具附注列出 (系统域可见性保留)
+                            val allDirectTools = classified[finalName].orEmpty()
+                            val directTools = allDirectTools.filter { it.name !in me.rerere.rikkahub.data.ai.tools.FRAMEWORK_TOOL_SET }
+                            val frameworkToolsInDomain = allDirectTools.filter { it.name in me.rerere.rikkahub.data.ai.tools.FRAMEWORK_TOOL_SET }
+                            val frameworkNote = if (frameworkToolsInDomain.isNotEmpty()) {
+                                "\n另有系统框架工具 ${frameworkToolsInDomain.size} 个（${frameworkToolsInDomain.joinToString("、") { it.name }}，始终可直接调用）。"
+                            } else ""
+                            val withFrameworkNote: (String) -> String = { s -> s + frameworkNote }
                             if (childKeys.isNotEmpty()) {
                                 // 深度缓存优化: 有子域时一次性加载父域 + 全部子域工具。
                                 // 此前模型需逐个子域 invoke_tools → tools 数组每轮变化 →
@@ -501,6 +509,7 @@ class ToolRouter(
                                     }
                                     appendLine()
                                     appendLine("子域标注了触发描述与触发条件(关键词)，据此判断工具位置。所有工具均可直接调用。")
+                                    appendLine(withFrameworkNote)
                                 }
                                 listOf(UIMessagePart.Text(summary))
                             } else {
@@ -510,9 +519,11 @@ class ToolRouter(
                                 val rootOnly = directTools
 
                                 val summary = buildString {
-                                    if (rootOnly.isEmpty()) {
+                                    if (rootOnly.isEmpty() && frameworkToolsInDomain.isEmpty()) {
                                         appendLine("「${router.formatDomainLabel(finalName)}」当前无可用工具。")
                                         appendLine("可尝试 `invoke_tools(\"帮助\")` 查看其他域。")
+                                    } else if (rootOnly.isEmpty()) {
+                                        appendLine("「${router.formatDomainLabel(finalName)}」无用户工具。$frameworkNote")
                                     } else {
                                         appendLine("「${router.formatDomainLabel(finalName)}」可用工具（均可直接调用）：")
                                         for (t in rootOnly.sortedBy { it.name }) {
@@ -521,6 +532,10 @@ class ToolRouter(
                                         }
                                         // 技能域: 全部 skill__ 工具已在 rootOnly 直接列出 (v3.5.49 统一 —
                                         // 移除独立 skills 参数: 技能信息只来自工具池, 无自相矛盾)
+                                    }
+                                    if (frameworkToolsInDomain.isNotEmpty()) {
+                                        appendLine()
+                                        appendLine(frameworkNote)
                                     }
                                     // 挂载到本域的 Skills (overrides 派生 — 与工具一致)
                                     val mountedSkills = overrides.entries
@@ -578,7 +593,8 @@ class ToolRouter(
     fun getDomainTools(domainName: String, allTools: List<Tool>): List<Tool> {
         val classified = classifyAll(allTools)
         val resolved = resolveDomain(domainName) ?: domainName
-        return classified[resolved].orEmpty().distinctBy { it.name }
+        // v3.6.10: 域内名字序 (确定性; 域间顺序由加载顺序决定 — 前缀稳定)
+        return classified[resolved].orEmpty().distinctBy { it.name }.sortedBy { it.name }
     }
 
     /**

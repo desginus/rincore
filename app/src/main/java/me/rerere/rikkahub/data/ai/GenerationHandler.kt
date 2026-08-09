@@ -88,7 +88,7 @@ sealed interface GenerationChunk {
         val messages: List<UIMessage>
     ) : GenerationChunk
     data class LoadedDomains(
-        val domains: Set<String>
+        val domains: List<String> // v3.6.10: 保序 (加载顺序 — tools 前缀稳定)
     ) : GenerationChunk
 }
 
@@ -133,7 +133,8 @@ class GenerationHandler(
         // === 分层路由状态 ===
         val useLayered = assistant.useLayeredTools && tools.isNotEmpty()
         // 从 Conversation 恢复已加载的域（Feature #4: 跨对话持久化）
-        val loadedDomains = mutableSetOf<String>().apply {
+        // v3.6.10: LinkedHashSet 保序去重 — 加载顺序 = tools 数组顺序 (前缀稳定)
+        val loadedDomains = java.util.LinkedHashSet<String>().apply {
             conversationLoadedDomains?.let { addAll(it) }
         }
 
@@ -210,15 +211,18 @@ class GenerationHandler(
                     // 已加载域的工具 (含MCP工具, 通过分类归入域) — 分层注入是底层逻辑,
                     // 请求体只带框架工具 + 已加载域 (冷启动小, v3.5.1 瘦身成果)。
                     // 工具总数由 layer1 数量统计告知模型 (配置决定, 静态)。
-                    // v3.5.58: 显式排序 — loadedDomains 为 Set, 迭代顺序确定性化
-                    for (domain in loadedDomains.sorted()) {
+                    // v3.6.10: 保持加载顺序 (LinkedHashSet) — 新域追加尾部,
+                    // 已加载前缀不变 → 缓存前缀稳定 (v3.5.58 sorted 曾致加载新域
+                    // 后全量重排, 前缀断裂, 上百K只缓存十几K)
+                    for (domain in loadedDomains) {
                         addAll(toolRouter.getDomainTools(domain, allDomainTools))
                     }
                     // skill 工具不分层直注 — 全量加载禁止 (用户铁律)。
                     // skill_<name> 工具经 invoke_tools("技能") 加载后直接可用 (D8),
                     // 加载一次对话内保持, 无需 use_skill 两步。
                 }.distinctBy { it.name }
-                    .sortedBy { it.name }  // 确定性排序 → 前缀匹配缓存稳定
+                    // v3.6.10: 不再整体重排 — 构建顺序 = 框架(固定) + invoke_tools +
+                    // 已加载域(加载顺序, 域内名字序) — 新域追加尾部前缀稳定 (缓存命中)
                     .also { built ->
                         val mcpCount = built.count { it.name.startsWith("mcp__") }
                         val frameworkCount = built.count { it.name in FRAMEWORK_TOOL_SET }
@@ -342,7 +346,7 @@ class GenerationHandler(
                 if (tools.isEmpty()) {
                     // no tool calls, break — emit loadedDomains for persistence
                     if (useLayered && loadedDomains.isNotEmpty()) {
-                        emit(GenerationChunk.LoadedDomains(loadedDomains.toSet()))
+                        emit(GenerationChunk.LoadedDomains(loadedDomains.toList()))
                     }
                     CallTracer.event("FINISH", "no_tools", "Conversation finished, no pending tools")
                     break

@@ -186,12 +186,25 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
     },
     execute = { input ->
         val action = input.jsonObject["action"]?.jsonPrimitive?.content ?: error("action required")
-        val name = input.jsonObject["name"]?.jsonPrimitive?.content ?: error("name required")
+        val rawName = input.jsonObject["name"]?.jsonPrimitive?.content ?: error("name required")
         val parent = input.jsonObject["parent"]?.jsonPrimitive?.content
         val description = input.jsonObject["description"]?.jsonPrimitive?.content ?: ""
         val keywords = input.jsonObject["keywords"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList()
         val newName = input.jsonObject["new_name"]?.jsonPrimitive?.content
         val displayName = input.jsonObject["display_name"]?.jsonPrimitive?.content
+
+        // v3.6.10: 域名规范化 — 模型从帮助复制「路径（显示名）」后直接操作,
+        // 此前 raw 名与枚举 label 不匹配 → 静默假成功 (删除无效/rename 无效)
+        fun normalizeDomain(raw: String): String {
+            val cleaned = raw.substringBefore("（").substringBefore("(").substringBefore("[").trim()
+            val allLabels = me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.map { it.label } +
+                settingsStore.settingsFlow.value.customDomains.map { it.normalizedFullPath() }
+            allLabels.firstOrNull { it == cleaned }?.let { return it }
+            allLabels.firstOrNull { it.substringAfterLast("/") == cleaned }?.let { return it }
+            allLabels.firstOrNull { settingsStore.settingsFlow.value.domainNameOverrides[it] == cleaned }?.let { return it }
+            return cleaned
+        }
+        val name = normalizeDomain(rawName)
 
         when (action.lowercase()) {
             "create" -> {
