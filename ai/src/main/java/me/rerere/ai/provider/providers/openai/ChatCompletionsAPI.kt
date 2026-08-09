@@ -172,16 +172,18 @@ class ChatCompletionsAPI(
         // 教训链: v3.5.14 主动断开误杀长思考 → 改只日志; v3.5.45 缩短到 25s 后
         // 用户实测误杀 (Trace 95098f39: 平台存在 >25s 静默期, 非断流) —
         // 25s 假设"推理期间持续有 reasoning chunk"在用户环境不成立。
-        // 120s 折中: 平台静默 (思考/回复间隙) 不误杀; 真断流/卡死 120s 后
-        // 断开 → 断流重试恢复 (GenerationHandler) — 维持连接优先。
+        // v3.6.5 分阶段 watchdog: 首包前 60s 断 (连接无数据 → 快速失败进入
+        // 断流重试, 收敛中断后"正在输出"挂起时长 — 用户实测中断后长时间不结束);
+        // 首包后 120s (平台思考/回复间隙静默不误杀)。
         val lastEventAt = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
         val watchdog = launch {
             while (true) {
-                delay(30_000)
+                delay(15_000)
                 val idleMs = System.currentTimeMillis() - lastEventAt.get()
-                if (idleMs > 120_000) {
-                    Log.w(TAG, "SSE idle ${idleMs / 1000}s — no valid data, closing stream")
-                    close(java.io.IOException("生成无有效数据超时 (120s): 平台断流或卡死"))
+                val limit = if (hasReceivedData.get()) 120_000L else 60_000L
+                if (idleMs > limit) {
+                    Log.w(TAG, "SSE idle ${idleMs / 1000}s (phase=${if (hasReceivedData.get()) "stream" else "first-byte"}) — closing stream")
+                    close(java.io.IOException("生成无有效数据超时 (${limit / 1000}s): 平台断流或卡死"))
                     break
                 }
             }
