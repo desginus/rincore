@@ -111,3 +111,4 @@ fun buildAssistantToolPool(
     // MCP 工具 (静态化声明 — 配置决定)
     addAll(me.rerere.rikkahub.ecosystem.tools.DynamicTools.getMcpTools())
 }.distinctBy { it.name }
+    .sortedBy { it.name } // v3.5.58: 确定性排序 — 池顺序稳定, 域内工具顺序稳定

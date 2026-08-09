@@ -210,7 +210,8 @@ class GenerationHandler(
                     // 已加载域的工具 (含MCP工具, 通过分类归入域) — 分层注入是底层逻辑,
                     // 请求体只带框架工具 + 已加载域 (冷启动小, v3.5.1 瘦身成果)。
                     // 工具总数由 layer1 数量统计告知模型 (配置决定, 静态)。
-                    for (domain in loadedDomains) {
+                    // v3.5.58: 显式排序 — loadedDomains 为 Set, 迭代顺序确定性化
+                    for (domain in loadedDomains.sorted()) {
                         addAll(toolRouter.getDomainTools(domain, allDomainTools))
                     }
                     // skill 工具不分层直注 — 全量加载禁止 (用户铁律)。
@@ -628,6 +629,13 @@ class GenerationHandler(
                 systemAddendum = null,
             )
             val system = listOf(stableSystem, volatileSystem).filter { it.isNotBlank() }.joinToString("\n")
+            // v3.5.58 缓存核验: 请求体前缀指纹 (system+tools 序列化稳定 → 前缀可命中)
+            try {
+                val fp = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest((system + tools.joinToString { it.name }).toByteArray())
+                    .take(8).joinToString("") { "%02x".format(it) }
+                Log.i(TAG, "cache-fp: $fp (system=${system.length}c tools=${tools.size})")
+            } catch (_: Exception) {}
             if (system.isNotBlank()) {
                 val estTokens = system.length / 2.5
                 Log.i(TAG, "System prompt breakdown: system=${sysPromptLen}c (~${(sysPromptLen/2.5).toInt()}t)" +
