@@ -96,7 +96,23 @@ class ToolRouter(
             )
         }
 
-        // 自定义域已移除 (用户决策 v3.5.40); 技能归根域 (v3.5.47 缓存根治)
+        // v3.6.8 恢复自定义域: v3.5.40 移除导致 manage_domain 新建域/UI 新建域
+        // 写 customDomains 成功但视图不读 → 任何入口不显示 (用户实测全无反应)。
+        // 自定义域是用户配置 — 创建/修改后 layer1 同步变化 (缓存随配置失效, 合理)。
+        // 技能归根域保持 (v3.5.47 缓存根治 — 技能子域不从工具池派生)。
+        for (cd in customDomains) {
+            val path = cd.normalizedFullPath()
+            if (path.isBlank()) continue
+            if (!isValidDomain(path)) continue
+            result += DomainInfo(
+                path = path,
+                parent = cd.parent,
+                displayName = domainNameOverrides[path] ?: cd.name,
+                description = cd.description,
+                keywords = cd.keywords,
+                builtin = false,
+            )
+        }
         return result.sortedBy { it.path }
     }
 
@@ -242,8 +258,16 @@ class ToolRouter(
                 dom.label !in excluded && root !in excluded &&
                     dom.matchKeywords.any { text.contains(it) }
             }?.label
+        // 7. 自定义域关键词兜底 (v3.6.8 恢复 — v3.5.40 移除导致新建域无分类能力)
+        val customResult = result ?: customDomains
+            .filter { cd ->
+                val p = cd.normalizedFullPath()
+                p !in excluded && p.split("/").first() !in excluded && cd.keywords.any { text.contains(it) }
+            }
+            .sortedByDescending { it.normalizedFullPath().count { c -> c == '/' } }
+            .firstOrNull()?.normalizedFullPath()
         // 未成功分类的工具 → 统一落入「未分类」父域 (用户决策 v3.5.40)
-        return result ?: if (isValidDomain("未分类")) "未分类" else "方法域"
+        return customResult ?: if (isValidDomain("未分类")) "未分类" else "方法域"
     }
 
     fun classifyAll(tools: List<Tool>): Map<String, List<Tool>> {
