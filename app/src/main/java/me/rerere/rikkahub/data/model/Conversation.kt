@@ -38,10 +38,10 @@ data class Conversation(
     // 所属文件夹（助手内分组），null 表示未归入任何文件夹
     val folderId: Uuid? = null,
     // 已加载的工具域（用于跨对话持久化，仅在内存中）
-    @Transient
     // v3.6.10: Set → List 保序 (加载顺序持久化 — tools 数组按加载顺序追加,
     // 前缀稳定缓存命中; Set 迭代顺序不定曾致跨轮前缀断裂)
     @Transient
+    val loadedDomains: List<String> = emptyList(),
     val newConversation: Boolean = false
 ) {
     val files: List<Uri>
