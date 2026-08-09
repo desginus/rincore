@@ -101,10 +101,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
 
     if (showToolHubPage) {
         SettingToolHubPage(
-            onOpenMcp = {
-                showToolHubPage = false
-                navController.navigate(Screen.SettingMcp)
-            },
             onOpenCompare = {
                 showToolHubPage = false
                 showToolComparePage = true
@@ -290,6 +286,21 @@ item(
                         supportingContent = { Text(stringResource(R.string.setting_page_web_server_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_web_server)) },
                     )
+                }
+            }
+
+            item("capabilityModules") {
+                CardGroup(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    title = { Text("能力模块") },
+                ) {
+                    item(
+                        onClick = { navController.navigate(Screen.SettingMcp) },
+                        leadingContent = { Icon(HugeIcons.McpServer, null) },
+                        supportingContent = { Text("MCP 服务器连接与管理（SSE / StreamableHTTP / STDIO）") },
+                        headlineContent = { Text("MCP 服务器") },
+                    )
+
                 }
             }
             item("extensionsTools") {

@@ -16,10 +16,9 @@ import androidx.compose.ui.unit.dp
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 
-/** 工具管理上层入口 — 收口 工具对照 / MCP 服务器 / 关于和分享 */
+/** 工具管理上层入口 — 收口 工具对照 / 关于和分享 (MCP 已独立到能力模块) */
 @Composable
 fun SettingToolHubPage(
-    onOpenMcp: () -> Unit,
     onOpenCompare: () -> Unit,
     onOpenAbout: () -> Unit,
     onBack: () -> Unit,
@@ -38,11 +37,6 @@ fun SettingToolHubPage(
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             CardGroup(title = { Text("工具管理") }) {
-                item(
-                    onClick = onOpenMcp,
-                    supportingContent = { Text("MCP 服务器连接与管理（SSE / StreamableHTTP / STDIO）") },
-                    headlineContent = { Text("MCP 服务器") },
-                )
                 item(
                     onClick = onOpenCompare,
                     supportingContent = { Text("系统工具地图 / List Domains / Invoke Tools 三信源对照") },

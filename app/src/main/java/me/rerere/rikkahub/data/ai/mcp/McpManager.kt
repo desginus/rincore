@@ -78,7 +78,7 @@ class McpManager(
     private val workspaceRepository: me.rerere.rikkahub.data.repository.WorkspaceRepository? = null,
 ) {
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(3, TimeUnit.MINUTES)
+        .connectTimeout(5, TimeUnit.MINUTES) // v3.6.0: 3min→5min 用户要求充分连接
         .readTimeout(10, TimeUnit.MINUTES)
         .writeTimeout(120, TimeUnit.SECONDS)
         .followSslRedirects(true)
@@ -201,7 +201,7 @@ class McpManager(
                     arguments = args,
                 ),
             ),
-            options = RequestOptions(timeout = 180.seconds), // v3.5.60: 120s→180s 用户要求 MCP 充分连接时间
+            options = RequestOptions(timeout = 300.seconds), // v3.6.0: 5 分钟 — MCP 充分连接
         )
         return result.content.map {
             when(it) {

@@ -99,7 +99,7 @@ class GenerationHandler(
     private val memoryRepo: MemoryRepository,
     private val settingsStore: SettingsStore,
 ) {
-    /** 断流重试计数 (v3.5.46): 类成员 — 切后台/NAT/平台断流自动恢复, 每次生成最多 2 次 */
+    /** 断流重试计数 (v3.5.46): 类成员 — 切后台/NAT/平台断流自动恢复, 每次生成最多 5 次 (v3.5.59) */
     private var streamRetryCount = 0
     companion object {
         /** 工具执行超时 (ms): 工具挂起时返回超时错误, 不阻塞整个生成流程 */
