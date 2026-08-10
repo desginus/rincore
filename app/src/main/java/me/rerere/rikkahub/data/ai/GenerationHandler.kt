@@ -760,12 +760,12 @@ class GenerationHandler(
                 throw e  // 用户主动停止 — 不重试
             } catch (e: java.io.IOException) {
                 // 断流 (切后台/网络切换/NAT/平台): 回滚半截输出 → 自动重试 (最多 5 次)
-                // v3.5.59: 2→5 (用户实测网络切换频繁, 2 次不够); v3.6.14: 退避修正
-                // 为指数 1/2/4/8/16s (此前 1s*count 线性 — 第5次仅5s, 平台限流风暴时
-                // 连续重试加剧; 指数总窗口 31s 覆盖网络切换恢复, 重试消息相同缓存命中)
+                // v3.5.59: 2→5 (用户实测网络切换频繁, 2 次不够)
+                // v3.6.15: 线性递增 1/2/3/4/5s (用户决策 — 后台网络切换时快速恢复,
+                // 5 次总等待 15s, 重试消息相同缓存命中)
                 if (streamRetryCount < 5) {
                     streamRetryCount++
-                    kotlinx.coroutines.delay(1_000L shl (streamRetryCount - 1))
+                    kotlinx.coroutines.delay(1_000L * streamRetryCount)
                     Log.w(TAG, "stream interrupted (${e.message}), rolling back & retry $streamRetryCount/5")
                     messages = preStreamMessages  // 丢弃本次生成的半截内容
                     onUpdateMessages(messages)    // UI 同步回滚

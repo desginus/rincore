@@ -507,6 +507,26 @@ class ChatService(
 
     // ---- 处理消息补全 ----
 
+    // v3.6.15: 生成时 PARTIAL WakeLock — 切后台/锁屏时 CPU 保持,
+    // 网络读不因 Doze 挂起 (SSE 流式稳定); 15min 超时兜底防泄漏
+    private fun acquireGenWakeLock(): android.os.PowerManager.WakeLock? {
+        return runCatching {
+            val pm = context.getSystemService(android.os.PowerManager::class.java) ?: return null
+            val wl = pm.newWakeLock(
+                android.os.PowerManager.PARTIAL_WAKE_LOCK,
+                "rincore:generation"
+            )
+            wl.setReferenceCounted(false)
+            wl.acquire(15 * 60 * 1000L)
+            wl
+        }.getOrNull()
+    }
+
+    private fun releaseGenWakeLock(wl: android.os.PowerManager.WakeLock?) {
+        if (wl == null) return
+        runCatching { if (wl.isHeld) wl.release() }
+    }
+
     private suspend fun handleMessageComplete(
         conversationId: Uuid,
         messageRange: ClosedRange<Int>? = null
@@ -516,6 +536,9 @@ class ChatService(
         val assistant = settings.getAssistantById(initialConversation.assistantId)
             ?: settings.getCurrentAssistant()
         val model = settings.findModelById(assistant.chatModelId ?: settings.chatModelId) ?: return
+
+        // v3.6.15: 生成保活 — 切后台时 CPU/网络读稳定 (onCompletion 释放)
+        val genWakeLock = acquireGenWakeLock()
 
         // 延迟连接预热: 与消息预处理(TCP+TLS ←→ 正则/模板)并行执行, 降低 TTFB
         val provider = model.findProvider(settings.providers)
@@ -631,6 +654,9 @@ class ChatService(
 
                     // 兜底落盘 (异常/流中断路径 — onSuccess 可能不执行)
                     saveConversation(conversationId, updatedConversation)
+
+                    // v3.6.15: 生成结束释放 WakeLock (NonCancellable 内 — 取消态也执行)
+                    releaseGenWakeLock(genWakeLock)
 
                     // 生成结束：取消 Live Update 通知，后台时发送完成通知
                     appEventBus.emit(
