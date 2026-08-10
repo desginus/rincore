@@ -58,7 +58,10 @@ fun buildPreviewTools(
     } catch (_: Exception) {
         emptyList()
     }
-    return pool.map { ToolPreview(it.name, it.description) }
+    // v3.6.12: 统一过滤框架工具 — 与对照页/顶部计数/帮助同口径
+    // (此前仅对照页过滤, 域管理/工具列表含框架 → 420 vs 398 不一致)
+    return pool.filter { it.name !in me.rerere.rikkahub.data.ai.tools.FRAMEWORK_TOOL_SET }
+        .map { ToolPreview(it.name, it.description) }
 }
 
 private fun buildNestedDomains(

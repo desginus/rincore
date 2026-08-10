@@ -21,16 +21,35 @@ class SkillManager(
         return dir
     }
 
+    // v3.6.12: 技能扫描加固 — 单文件解析失败只跳过该技能 (不全缺);
+    // 整体扫描失败 (IO) 用上次成功缓存 — 防止 tools 数组偶发缺技能 → 请求前缀断裂
+    private var cachedSkills: List<SkillMetadata>? = null
+
     fun listSkills(): List<SkillMetadata> {
-        val skillsDir = getSkillsDir()
-        return skillsDir.listFiles()
-            ?.filter { it.isDirectory }
-            ?.mapNotNull { dir ->
-                val skillFile = dir.resolve("SKILL.md")
-                if (!skillFile.exists()) return@mapNotNull null
-                parseSkillFile(skillFile, dir)
-            }
-            ?: emptyList()
+        return try {
+            val skillsDir = getSkillsDir()
+            val result = skillsDir.listFiles()
+                ?.filter { it.isDirectory }
+                ?.mapNotNull { dir ->
+                    try {
+                        val skillFile = dir.resolve("SKILL.md")
+                        if (!skillFile.exists()) null else parseSkillFile(skillFile, dir)
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
+                ?: emptyList()
+            cachedSkills = result
+            result
+        } catch (e: Exception) {
+            Log.w(TAG, "listSkills scan failed: ${e.message}, using cached ${cachedSkills?.size ?: 0}")
+            cachedSkills ?: emptyList()
+        }
+    }
+
+    /** 技能增删后清缓存 (安装/删除/导入时调用) */
+    fun invalidateSkillsCache() {
+        cachedSkills = null
     }
 
     fun readSkillBody(skillName: String): String? {
@@ -46,6 +65,7 @@ class SkillManager(
     }
 
     fun saveSkill(name: String, content: String): SkillMetadata? {
+        invalidateSkillsCache() // v3.6.12: 保存后清扫描缓存
         // 通过原子写入(staging + rename)落盘，避免直接 mkdirs 失败时
         // writeText 抛出 FileNotFoundException 导致崩溃
         if (!saveSkillFileBytesAtomically(name, mapOf("SKILL.md" to content.toByteArray()))) {
@@ -56,6 +76,7 @@ class SkillManager(
     }
 
     suspend fun deleteSkill(name: String): Boolean = withContext(Dispatchers.IO) {
+        invalidateSkillsCache() // v3.6.12: 增删后清扫描缓存
         val skillDir = resolveSkillDir(name) ?: return@withContext false
         val deleted = skillDir.deleteRecursively()
         if (deleted) {
@@ -104,6 +125,7 @@ class SkillManager(
     fun getSkillDir(skillName: String): File? = resolveSkillDir(skillName)
 
     fun saveSkillFile(skillName: String, relativePath: String, content: String): Boolean {
+        invalidateSkillsCache() // v3.6.12: 保存后清扫描缓存
         val skillDir = resolveSkillDir(skillName) ?: return false
         val target = SkillPaths.resolveSkillFile(skillDir, relativePath) ?: return false
         target.parentFile?.mkdirs()
@@ -112,6 +134,7 @@ class SkillManager(
     }
 
     fun saveSkillFilesAtomically(skillName: String, files: Map<String, String>): Boolean {
+        invalidateSkillsCache() // v3.6.12: 保存后清扫描缓存
         return saveSkillFileBytesAtomically(
             skillName = skillName,
             files = files.mapValues { it.value.toByteArray() },
