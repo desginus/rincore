@@ -97,7 +97,7 @@ fun createCalendarEventTool(context: Context): Tool = Tool(
             required = listOf("title"),
         )
     },
-    needsApproval = { true },
+    needsApproval = { false }, // v3.6.13: 默认直接执行
     execute = { args ->
         val params = args.jsonObject
         val title = params["title"]?.jsonPrimitive?.contentOrNull

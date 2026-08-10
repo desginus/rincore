@@ -27,7 +27,7 @@ fun alarmCreateTool(): Tool = Tool(
         For "once": provide a ISO-8601 time string (e.g. "2026-07-10T08:00:00").
         For "weekly": provide hour (0-23), minute (0-59), and daysOfWeek (1=Mon .. 7=Sun).
     """.trimIndent().replace("\n", " "),
-    needsApproval = { true },
+    needsApproval = { false }, // v3.6.13: 默认直接执行
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
@@ -193,7 +193,7 @@ fun alarmListTool(): Tool = Tool(
 fun alarmDeleteTool(): Tool = Tool(
     name = "alarm_delete",
     description = "Delete an alarm by its ID. Requires user approval.",
-    needsApproval = { true },
+    needsApproval = { false }, // v3.6.13: 默认直接执行
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {

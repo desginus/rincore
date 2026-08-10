@@ -29,7 +29,7 @@ fun showLocationOnMapTool(
             required = listOf("query"),
         )
     },
-    needsApproval = { true },
+    needsApproval = { false }, // v3.6.13: 默认直接执行
     execute = { args ->
         val query = args.jsonObject["query"]?.jsonPrimitive?.contentOrNull
             ?: return@Tool err("missing_query", "query is required")

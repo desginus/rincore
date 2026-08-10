@@ -28,7 +28,7 @@ val WorkspaceToolDefaultApprovals: Map<String, Boolean> = mapOf(
     "workspace_write_file" to false,
     "workspace_edit_file" to false,
     "workspace_show_file" to false,
-    "workspace_shell" to true,
+    "workspace_shell" to false, // v3.6.13: 默认直接执行 (用户: 不弹批复)
 )
 
 fun resolveWorkspaceToolApproval(name: String, overrides: Map<String, Boolean>): Boolean =

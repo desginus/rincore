@@ -25,6 +25,7 @@ import androidx.compose.material3.PermanentNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -324,6 +325,28 @@ private fun ChatPageContent(
         modifier = Modifier.fillMaxSize()
     ) {
         AssistantBackground(setting = setting, modifier = Modifier.hazeSource(hazeState))
+        // v3.6.13: 对话设置对话框 — 延迟自动回复开关
+        if (showChatSettings) {
+            AlertDialog(
+                onDismissRequest = { showChatSettings = false },
+                title = { Text("对话设置") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("延迟自动回复", fontWeight = FontWeight.SemiBold)
+                        Text("开启后，发消息不会立即触发模型回复，消息将排队等待。关闭开关后，再发消息即触发回复。适用于需要连续输入多条消息、不想被打断回复的场景。", style = MaterialTheme.typography.bodySmall)
+                        Switch(
+                            checked = setting.deferAutoReply,
+                            onCheckedChange = { checked ->
+                                vm.updateSettings(setting.copy(deferAutoReply = checked))
+                            }
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showChatSettings = false }) { Text("完成") }
+                }
+            )
+        }
         Scaffold(
             topBar = {
                 TopBar(
@@ -339,6 +362,9 @@ private fun ChatPageContent(
                     },
                     onClickMenu = {
                         previewMode = !previewMode
+                    },
+                    onOpenSettings = {
+                        showChatSettings = true
                     },
                     onUpdateTitle = {
                         vm.updateTitle(it)
@@ -738,6 +764,7 @@ private fun TopBar(
     previewMode: Boolean,
     onClickMenu: () -> Unit,
     onNewChat: () -> Unit,
+    onOpenSettings: () -> Unit,
     onUpdateTitle: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -796,6 +823,15 @@ private fun TopBar(
             }
         },
         actions = {
+            // v3.6.13: 对话设置 (扳手) — 从右往左第三个 (新对话/更多 左侧)
+            IconButton(
+                onClick = {
+                    onOpenSettings()
+                }
+            ) {
+                Icon(HugeIcons.Wrench01, "Chat Settings")
+            }
+
             IconButton(
                 onClick = {
                     onClickMenu()

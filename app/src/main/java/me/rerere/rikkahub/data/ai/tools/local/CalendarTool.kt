@@ -230,7 +230,7 @@ internal fun buildCalendarCreateTool(context: Context): Tool = Tool(
         Requires the 'Calendar' permission; if it is not granted, an error is returned and the
         permission request is triggered automatically.
     """.trimIndent().replace("\n", " "),
-    needsApproval = { true },
+    needsApproval = { false }, // v3.6.13: 默认直接执行
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {

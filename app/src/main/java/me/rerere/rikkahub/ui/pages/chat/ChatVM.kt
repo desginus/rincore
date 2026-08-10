@@ -177,7 +177,10 @@ class ChatVM(
         if (content.isEmptyInputMessage()) return
         analytics.logEvent("ai_send_message", null)
 
-        chatService.sendMessage(_conversationId, content, answer)
+        // v3.6.13: 延迟自动回复 — 开启时发送不触发模型回复 (消息排队,
+        // 关闭后发消息触发; 解决消息未发完模型打断回复)
+        val effectiveAnswer = if (settingsStore.settingsFlow.value.deferAutoReply) false else answer
+        chatService.sendMessage(_conversationId, content, effectiveAnswer)
     }
 
     fun handleMessageEdit(parts: List<UIMessagePart>, messageId: Uuid) {
