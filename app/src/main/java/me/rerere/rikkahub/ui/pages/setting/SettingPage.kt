@@ -57,15 +57,11 @@ import me.rerere.hugeicons.stroke.Brain02
 import me.rerere.hugeicons.stroke.Message02
 import me.rerere.hugeicons.stroke.Clapping01
 import me.rerere.hugeicons.stroke.Database02
-import me.rerere.hugeicons.stroke.GlobalSearch
+import me.rerere.hugeicons.stroke.Wrench01
 import me.rerere.hugeicons.stroke.ImageUpload
 import me.rerere.hugeicons.stroke.InLove
 import me.rerere.hugeicons.stroke.LookTop
 import me.rerere.hugeicons.stroke.McpServer
-import me.rerere.hugeicons.stroke.Megaphone01
-import me.rerere.hugeicons.stroke.Package
-import me.rerere.hugeicons.stroke.ServerStack01
-import me.rerere.hugeicons.stroke.Settings01
 import me.rerere.hugeicons.stroke.Settings03
 import me.rerere.hugeicons.stroke.Share04
 import me.rerere.hugeicons.stroke.Sun01
@@ -95,13 +91,15 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val filesManager: FilesManager = koinInject()
     var showDomainPage by remember { mutableStateOf(false) }
-    var showToolComparePage by remember { mutableStateOf(false) }
+    // v3.6.16: 高级功能统一入口 (搜索/语音/Web/扩展/权限/工具对照聚合)
+    var showAdvancedPage by remember { mutableStateOf(false) }
     var showBuiltinToolsPage by remember { mutableStateOf(false) }
 
-    if (showToolComparePage) {
-        SettingToolComparePage(
+    if (showAdvancedPage) {
+        SettingAdvancedPage(
             settings = settings,
-            onBack = { showToolComparePage = false },
+            navController = navController,
+            onBack = { showAdvancedPage = false },
         )
         return
     }
@@ -144,6 +142,20 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
             if (settings.isNotConfigured()) {
                 item {
                     ProviderConfigWarningCard(navController)
+                }
+            }
+
+            // ── 高级功能统一入口 (v3.6.16: 服务/扩展/权限/开发者聚合) ──
+            item("advanced") {
+                CardGroup(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                ) {
+                    item(
+                        onClick = { showAdvancedPage = true },
+                        leadingContent = { Icon(HugeIcons.Wrench01, null) },
+                        supportingContent = { Text("搜索 / 语音 / Web 服务器 / 扩展 / 权限 / 工具对照") },
+                        headlineContent = { Text("高级功能") },
+                    )
                 }
             }
 
@@ -238,7 +250,7 @@ item(
             item("modelServices") {
                 CardGroup(
                     modifier = Modifier.padding(horizontal = 8.dp),
-                    title = { Text("模型与服务") },
+                    title = { Text("模型") }, // v3.6.16: 服务已移入高级功能
                 ) {
                     item(
                         onClick = { navController.navigate(Screen.SettingModels) },
@@ -252,24 +264,7 @@ item(
                         supportingContent = { Text(stringResource(R.string.setting_page_providers_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_providers)) },
                     )
-                    item(
-                        onClick = { navController.navigate(Screen.SettingSearch) },
-                        leadingContent = { Icon(HugeIcons.GlobalSearch, null) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_search_service_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_search_service)) },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.SettingSpeech) },
-                        leadingContent = { Icon(HugeIcons.Megaphone01, null) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_tts_service_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_tts_service)) },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.SettingWeb) },
-                        leadingContent = { Icon(HugeIcons.ServerStack01, null) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_web_server_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_web_server)) },
-                    )
+                    // v3.6.16: 搜索/语音/Web 服务已移至「高级功能」统一入口
                 }
             }
 
@@ -303,12 +298,7 @@ item(
                     modifier = Modifier.padding(horizontal = 8.dp),
                     title = { Text("扩展与工具") },
                 ) {
-                    item(
-                        onClick = { navController.navigate(Screen.Extensions) },
-                        leadingContent = { Icon(HugeIcons.Package, null) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_extensions_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_extensions)) },
-                    )
+                    // v3.6.16: 扩展管理已移至「高级功能」统一入口
                     item(
                         onClick = { showDomainPage = true },
                         leadingContent = { Icon(HugeIcons.Settings03, null) },
@@ -335,14 +325,9 @@ item(
                 }
                 CardGroup(
                     modifier = Modifier.padding(horizontal = 8.dp),
-                    title = { Text("系统与权限") },
+                    title = { Text("系统") }, // v3.6.16: 权限已移入高级功能
                 ) {
-item(
-                        onClick = { navController.navigate(Screen.SettingPermissions) },
-                        leadingContent = { Icon(HugeIcons.Settings01, null) },
-                        supportingContent = { Text("权限自动发现 · 后台保障链引导") },
-                        headlineContent = { Text("权限管理") },
-                    )
+// v3.6.16: 权限管理已移至「高级功能」统一入口
                     item(
                         onClick = { navController.navigate(Screen.SettingAlarms) },
                         leadingContent = { Icon(HugeIcons.Clock02, null) },
@@ -396,12 +381,7 @@ item(
                         supportingContent = { Text("版本信息 / 分享 / 关于") },
                         headlineContent = { Text("关于和分享") },
                     )
-                    item(
-                        onClick = { showToolComparePage = true },
-                        leadingContent = { Icon(HugeIcons.Settings03, null) },
-                        supportingContent = { Text("系统工具地图 / List Domains / Invoke Tools 三信源对照") },
-                        headlineContent = { Text("工具对照（开发者）") },
-                    )
+                    // v3.6.16: 工具对照已移至「高级功能」统一入口
                     item(
                         onClick = { navController.navigate(Screen.Log) },
                         leadingContent = { Icon(HugeIcons.Bookshelf01, null) },
