@@ -270,11 +270,24 @@ class ToolRouter(
         return customResult ?: if (isValidDomain("未分类")) "未分类" else "方法域"
     }
 
+    // v3.6.18: 同一工具池实例复用分类结果 — getDomainTools 每域调用一次
+    // classifyAll (每域全量分类 400+ 工具 = O(N*M) 热点, 工具域多时明显)。
+    // 引用比较: 工具池每轮重建 → 新实例 → 自动重算; 同轮多域共享一次分类。
+    private var lastClassifyTools: List<Tool>? = null
+    private var lastClassified: Map<String, List<Tool>>? = null
+
     fun classifyAll(tools: List<Tool>): Map<String, List<Tool>> {
+        val cached = lastClassified
+        if (cached != null && lastClassifyTools === tools) {
+            return cached
+        }
         // v3.5.55: 按工具名去重 — 同名工具 (MCP 多服务器重名/本地冲突) 不再
         // 重复注册到多个域 (此前 groupBy 不去重 → find_files 双域)
-        return tools.distinctBy { it.name }.groupBy { classifyTool(it) }
+        val result = tools.distinctBy { it.name }.groupBy { classifyTool(it) }
             .filterValues { it.isNotEmpty() }
+        lastClassifyTools = tools
+        lastClassified = result
+        return result
     }
 
     private fun extractMcpServerName(toolName: String): String {
