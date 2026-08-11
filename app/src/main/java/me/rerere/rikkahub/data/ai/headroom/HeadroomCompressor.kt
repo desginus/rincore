@@ -45,6 +45,12 @@ object HeadroomCompressor {
     private const val MIN_ITEMS = 5          // JSON 数组少于 5 项不分析
     private const val MIN_CHARS = 200        // 工具输出少于 200 字符不压
     private const val TEXT_MIN_CHARS = 100   // 消息正文少于 100 字符不压
+    // 历史消息有损截断 (v3.6.25): 仅历史轮次, 当前轮完整 — 全上下文压缩
+    private const val TRUNCATE_THRESHOLD = 600   // 超过此长度才截断
+    private const val ASSISTANT_HEAD_RATIO = 0.50 // 助手历史: 保留开头 50%
+    private const val ASSISTANT_TAIL_RATIO = 0.15 // 助手历史: 保留结尾 15%
+    private const val USER_HEAD_RATIO = 0.60      // 用户历史: 保留开头 60% (更保守)
+    private const val USER_TAIL_RATIO = 0.20      // 用户历史: 保留结尾 20%
     private const val LOSSY_THRESHOLD = 30   // 数组超过 30 项才走有损采样
     private const val MAX_ITEMS = 15         // 有损后最多保留 15 项
     private const val FIRST_FRACTION = 0.30  // 头部保留比例
@@ -58,8 +64,13 @@ object HeadroomCompressor {
      */
     fun compress(messages: List<UIMessage>): List<UIMessage> {
         if (messages.isEmpty()) return messages
+        // 当前轮窗口: 最后一条 USER 消息及之后的消息不截断 (完整语义),
+        // 更早的历史轮次才做有损截断 (全上下文压缩, 信息首尾保留)
+        val currentWindowStart = messages.indexOfLast { it.role == me.rerere.ai.core.MessageRole.USER }
+            .let { if (it >= 0) it else messages.size }
         var changed = false
-        val result = messages.map { msg ->
+        val result = messages.mapIndexed { index, msg ->
+            val isCurrentWindow = index >= currentWindowStart
             var msgChanged = false
             val newParts = msg.parts.map { part ->
                 when (part) {
@@ -82,11 +93,19 @@ object HeadroomCompressor {
                             } else part
                         } else part
                     }
-                    // ── 消息正文 (用户/助手历史): 无损紧凑 ──
+                    // ── 消息正文: 无损紧凑 + 历史有损截断 (全上下文压缩) ──
                     is UIMessagePart.Text -> {
                         if (part.text.length >= TEXT_MIN_CHARS) {
                             val compacted = compactText(part.text)
-                            if (compacted != part.text) {
+                            val truncated = if (!isCurrentWindow) {
+                                truncateHistory(part.text, msg.role)
+                            } else {
+                                compacted
+                            }
+                            if (truncated != part.text) {
+                                msgChanged = true
+                                UIMessagePart.Text(truncated)
+                            } else if (compacted != part.text) {
                                 msgChanged = true
                                 UIMessagePart.Text(compacted)
                             } else part
@@ -101,9 +120,29 @@ object HeadroomCompressor {
             } else msg
         }
         if (changed) {
-            Log.i(TAG, "降维完成: ${messages.size} 条消息, 工具输出与长文本已压缩")
+            Log.i(TAG, "降维完成: ${messages.size} 条消息, 全上下文已压缩 (当前轮完整)")
         }
         return result
+    }
+
+    /**
+     * 历史消息有损截断 — 首尾保留 (信息密度), 中段省略并标记。
+     * 助手历史更激进 (50%+15%), 用户历史更保守 (60%+20%)。
+     * 确定性规则, 同输入同输出 (缓存稳定)。
+     */
+    private fun truncateHistory(content: String, role: me.rerere.ai.core.MessageRole): String {
+        // 幂等: 已截断 (带省略标记) 跳过 — 避免重复截断破坏前缀稳定
+        if (content.contains("Headroom 中段省略")) return content
+        if (content.length <= TRUNCATE_THRESHOLD) return content
+        val headRatio = if (role == me.rerere.ai.core.MessageRole.USER) USER_HEAD_RATIO else ASSISTANT_HEAD_RATIO
+        val tailRatio = if (role == me.rerere.ai.core.MessageRole.USER) USER_TAIL_RATIO else ASSISTANT_TAIL_RATIO
+        val headLen = (content.length * headRatio).toInt()
+        val tailLen = (content.length * tailRatio).toInt()
+        val omitted = content.length - headLen - tailLen
+        if (omitted <= 0) return content
+        val head = content.substring(0, headLen)
+        val tail = content.substring(content.length - tailLen)
+        return head + "\n…[Headroom 中段省略 " + omitted + " 字符，如需细节可追问]…\n" + tail
     }
 
     /**
