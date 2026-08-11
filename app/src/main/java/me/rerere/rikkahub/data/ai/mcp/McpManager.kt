@@ -28,6 +28,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.JobCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -194,15 +195,28 @@ class McpManager(
         Log.i(TAG, "callTool: $toolName / $args (server: ${config.commonOptions.name})")
 
         if (client.transport == null) client.connect(getTransport(config))
-        val result = client.callTool(
-            request = CallToolRequest(
-                params = CallToolRequestParams(
-                    name = toolName,
-                    arguments = args,
-                ),
+        val request = CallToolRequest(
+            params = CallToolRequestParams(
+                name = toolName,
+                arguments = args,
             ),
-            options = RequestOptions(timeout = 300.seconds), // v3.6.0: 5 分钟 — MCP 充分连接
         )
+        // v3.6.21: SSE 会话断开 → SDK doClose → handlerScope.cancel() →
+        // request 挂起抛 JobCancellationException ("Job was cancelled")。
+        // 场景: 百炼 SSE 流 (GET /sse) 在工具调用期间断开 (空闲/网关), 质朴 HTTP 无此问题。
+        // 处理: 用户停止 (不活跃) 传播; 生成活跃时重连 transport + 重试一次
+        // (搜索类工具幂等可安全重试; 重连失败则抛原异常)。
+        val result = try {
+            client.callTool(request, options = RequestOptions(timeout = 300.seconds))
+        } catch (e: JobCancellationException) {
+            if (!kotlin.coroutines.coroutineContext.isActive) throw e
+            Log.w(TAG, "callTool cancelled (SSE session dropped?), reconnecting & retry once: ${e.message}")
+            e.printStackTrace()
+            addClient(config) // 重连: removeClient + 新 Client + connect + sync
+            val retryEntry = clients.entries.find { it.key.id == serverId }
+                ?: throw e
+            retryEntry.value.callTool(request, options = RequestOptions(timeout = 300.seconds))
+        }
         return result.content.map {
             when(it) {
                 is TextContent -> UIMessagePart.Text(it.text)
