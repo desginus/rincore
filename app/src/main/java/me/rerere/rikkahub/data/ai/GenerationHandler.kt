@@ -490,31 +490,7 @@ class GenerationHandler(
                                 return@onFailure
                             }
                             // 取消必须向上传播，否则停止生成会被误报为工具执行错误
-                            if (it is CancellationException) {
-                                // v3.6.19: 区分用户取消 vs 工具内部取消。
-                                // 用户停止: 生成 job 不活跃 → 传播。
-                                // 工具内部取消 (生成仍活跃): 平台/SDK 内部行为
-                                // (如阿里云百炼 streamableHttp 偶发 JobCancellationException
-                                // "job was cancelled") — 转错误写回, 模型继续, 不误报中断。
-                                if (!coroutineContext.isActive) throw it
-                                Log.w(TAG, "tool ${tool.toolName} cancelled internally (generation active): ${it.message}")
-                                CallTracer.event("TOOL", "cancel_${tool.toolName}", "Internal cancellation: ${it.message}")
-                                executedTools += tool.copy(
-                                    output = listOf(
-                                        UIMessagePart.Text(
-                                            json.encodeToString(
-                                                buildJsonObject {
-                                                    put(
-                                                        "error",
-                                                        JsonPrimitive("工具执行被平台中断(${it.message})，可重试或换一种方式。")
-                                                    )
-                                                }
-                                            )
-                                        )
-                                    )
-                                )
-                                return@onFailure
-                            }
+                            if (it is CancellationException) throw it
                             it.printStackTrace()
                             executedTools += tool.copy(
                                 output = listOf(
