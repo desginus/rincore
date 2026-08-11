@@ -19,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import me.rerere.rikkahub.Screen
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.GlobalSearch
 import me.rerere.hugeicons.stroke.Megaphone01
@@ -27,8 +28,7 @@ import me.rerere.hugeicons.stroke.ServerStack01
 import me.rerere.hugeicons.stroke.Settings01
 import me.rerere.hugeicons.stroke.Settings03
 import me.rerere.rikkahub.data.datastore.Settings
-import me.rerere.rikkahub.ui.Screen
-import me.rerere.rikkahub.ui.components.nav.BackButton
+
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 
 /**
@@ -45,9 +45,9 @@ import me.rerere.rikkahub.ui.components.ui.CardGroup
 @Composable
 fun SettingAdvancedPage(
     settings: Settings,
-    navController: NavController,
     onBack: () -> Unit,
 ) {
+    val navController = me.rerere.rikkahub.ui.context.LocalNavController.current
     var showToolCompare by remember { mutableStateOf(false) }
 
     // 工具对照页 (内部状态 — 与设置页原行为一致)
@@ -63,7 +63,11 @@ fun SettingAdvancedPage(
         topBar = {
             TopAppBar(
                 title = { Text("高级功能") },
-                navigationIcon = { BackButton(onBack) },
+                navigationIcon = {
+                    androidx.compose.material3.IconButton(onClick = onBack) {
+                        androidx.compose.material3.Icon(me.rerere.hugeicons.stroke.ArrowLeft01, null)
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
                 ),

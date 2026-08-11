@@ -98,7 +98,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
     if (showAdvancedPage) {
         SettingAdvancedPage(
             settings = settings,
-            navController = navController,
             onBack = { showAdvancedPage = false },
         )
         return
