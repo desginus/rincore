@@ -18,9 +18,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavController
 import me.rerere.rikkahub.Screen
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.ArrowLeft01
 import me.rerere.hugeicons.stroke.GlobalSearch
 import me.rerere.hugeicons.stroke.Megaphone01
 import me.rerere.hugeicons.stroke.Package
@@ -65,7 +65,7 @@ fun SettingAdvancedPage(
                 title = { Text("高级功能") },
                 navigationIcon = {
                     androidx.compose.material3.IconButton(onClick = onBack) {
-                        androidx.compose.material3.Icon(me.rerere.hugeicons.stroke.ArrowLeft01, null)
+                        androidx.compose.material3.Icon(HugeIcons.ArrowLeft01, null)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
