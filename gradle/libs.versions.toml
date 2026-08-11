@@ -47,7 +47,8 @@ sonner = "0.4.0"
 leakcanary = "2.14"
 workmanager = "2.11.2"
 reorderable = "3.1.0"
-mcp = "0.15.0" // v3.6.20: 0.14 的 SseClientTransport 已知问题 (session 断连未关闭/取消传播) — 0.15 官方修复
+# v3.6.20: 0.14 的 SseClientTransport 已知问题, 0.15 官方修复
+mcp = "0.15.0"
 pebble = "4.1.1"
 browser = "1.10.0"
 appcompat = "1.7.1"
