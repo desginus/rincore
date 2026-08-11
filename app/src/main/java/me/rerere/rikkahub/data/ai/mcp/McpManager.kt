@@ -201,21 +201,41 @@ class McpManager(
                 arguments = args,
             ),
         )
-        // v3.6.21: SSE 会话断开 → SDK doClose → handlerScope.cancel() →
-        // request 挂起抛 JobCancellationException ("Job was cancelled")。
-        // 场景: 百炼 SSE 流 (GET /sse) 在工具调用期间断开 (空闲/网关), 质朴 HTTP 无此问题。
-        // 处理: 用户停止 (不活跃) 传播; 生成活跃时重连 transport + 重试一次
-        // (搜索类工具幂等可安全重试; 重连失败则抛原异常)。
+        // v3.6.21-22: SSE 会话断开 → SDK doClose → handlerScope.cancel() →
+        // request 挂起抛 CancellationException ("Job was cancelled")。
+        // 重连重试无效 (v3.6.21 实测) → 非偶发断流 → 百炼端点响应路径差异:
+        // SseClientTransport 只从 SSE 流收响应 (POST 响应体丢弃) —
+        // 若百炼把工具响应放 POST 响应体 (非标准 SSE), SDK 永远等不到 → 取消。
+        // 处理: 1) 重连重试 (SSE 断流); 2) StreamableHttp 兜底 (读 POST 响应体,
+        // 兼容两种响应路径 — 标准 MCP 现代传输, 百炼官方端点大概率支持)。
         val result = try {
             client.callTool(request, options = RequestOptions(timeout = 300.seconds))
         } catch (e: kotlinx.coroutines.CancellationException) {
             if (!kotlin.coroutines.coroutineContext.isActive) throw e
             Log.w(TAG, "callTool cancelled (SSE session dropped?), reconnecting & retry once: ${e.message}")
             e.printStackTrace()
-            addClient(config) // 重连: removeClient + 新 Client + connect + sync
-            val retryEntry = clients.entries.find { it.key.id == serverId }
-                ?: throw e
-            retryEntry.value.callTool(request, options = RequestOptions(timeout = 300.seconds))
+            // 1. 重连重试 (SSE 断流场景)
+            val retried = runCatching {
+                addClient(config)
+                val re = clients.entries.find { it.key.id == serverId } ?: throw e
+                re.value.callTool(request, options = RequestOptions(timeout = 300.seconds))
+            }.getOrNull()
+            if (retried != null) {
+                retried
+            } else if (config is McpServerConfig.SseTransportServer) {
+                // 2. Streamable HTTP 兜底 (百炼: 响应可能在 POST 体而非 SSE 流)
+                Log.w(TAG, "SSE retry failed, falling back to StreamableHttp for ${config.commonOptions.name}")
+                val streamableConfig = McpServerConfig.StreamableHTTPServer(
+                    id = config.id,
+                    commonOptions = config.commonOptions,
+                    url = config.url,
+                )
+                addClient(streamableConfig)
+                val fe = clients.entries.find { it.key.id == serverId } ?: throw e
+                fe.value.callTool(request, options = RequestOptions(timeout = 300.seconds))
+            } else {
+                throw e
+            }
         }
         return result.content.map {
             when(it) {
