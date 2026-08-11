@@ -32,6 +32,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
+import me.rerere.rikkahub.data.ai.headroom.HeadroomCompressor
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.Tool
 import me.rerere.ai.core.merge
@@ -129,6 +130,14 @@ class GenerationHandler(
         val providerImpl = providerManager.getProviderByType(provider)
 
         var messages: List<UIMessage> = messages
+
+        // v3.6.19: Headroom 上下文降维 — 开启时工具输出经确定性规则压缩。
+        // 纯规则同输入同输出, 压缩结果作为请求前缀稳定, 不破坏缓存率。
+        // 关闭 (默认) 时零干预, 完全原样发送。
+        if (settings.headroomCompression) {
+            messages = HeadroomCompressor.compress(messages)
+            Log.i(TAG, "Headroom 降维模式开启: 工具输出已压缩 (缓存保持前缀稳定)")
+        }
 
         // === 分层路由状态 ===
         val useLayered = assistant.useLayeredTools && tools.isNotEmpty()

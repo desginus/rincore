@@ -345,6 +345,15 @@ private fun ChatPageContent(
                                 vm.updateSettings(setting.copy(deferAutoReply = checked))
                             }
                         )
+                        // v3.6.19: Headroom 上下文降维 — 对话两种模式
+                        Text("上下文降维", fontWeight = FontWeight.SemiBold)
+                        Text("开启后对话进入降维模式：工具输出经确定性规则压缩（信息密度最大化，不破坏缓存率），巨量节省上下文。关闭（默认）为正常模式，不做任何压缩。", style = MaterialTheme.typography.bodySmall)
+                        Switch(
+                            checked = setting.headroomCompression,
+                            onCheckedChange = { checked ->
+                                vm.updateSettings(setting.copy(headroomCompression = checked))
+                            }
+                        )
                     }
                 },
                 confirmButton = {
