@@ -88,20 +88,20 @@ fun SettingAdvancedPage(
                 item(
                     onClick = { navController.navigate(Screen.SettingSearch) },
                     leadingContent = { Icon(HugeIcons.GlobalSearch, null) },
-                    supportingContent = { Text(me.rerere.rikkahub.R.string.setting_page_search_service_desc) },
-                    headlineContent = { Text(me.rerere.rikkahub.R.string.setting_page_search_service) },
+                    supportingContent = { Text(androidx.compose.ui.res.stringResource(me.rerere.rikkahub.R.string.setting_page_search_service_desc)) },
+                    headlineContent = { Text(androidx.compose.ui.res.stringResource(me.rerere.rikkahub.R.string.setting_page_search_service)) },
                 )
                 item(
                     onClick = { navController.navigate(Screen.SettingSpeech) },
                     leadingContent = { Icon(HugeIcons.Megaphone01, null) },
-                    supportingContent = { Text(me.rerere.rikkahub.R.string.setting_page_tts_service_desc) },
-                    headlineContent = { Text(me.rerere.rikkahub.R.string.setting_page_tts_service) },
+                    supportingContent = { Text(androidx.compose.ui.res.stringResource(me.rerere.rikkahub.R.string.setting_page_tts_service_desc)) },
+                    headlineContent = { Text(androidx.compose.ui.res.stringResource(me.rerere.rikkahub.R.string.setting_page_tts_service)) },
                 )
                 item(
                     onClick = { navController.navigate(Screen.SettingWeb) },
                     leadingContent = { Icon(HugeIcons.ServerStack01, null) },
-                    supportingContent = { Text(me.rerere.rikkahub.R.string.setting_page_web_server_desc) },
-                    headlineContent = { Text(me.rerere.rikkahub.R.string.setting_page_web_server) },
+                    supportingContent = { Text(androidx.compose.ui.res.stringResource(me.rerere.rikkahub.R.string.setting_page_web_server_desc)) },
+                    headlineContent = { Text(androidx.compose.ui.res.stringResource(me.rerere.rikkahub.R.string.setting_page_web_server)) },
                 )
             }
 
