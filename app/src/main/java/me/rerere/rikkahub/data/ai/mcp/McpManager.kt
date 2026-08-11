@@ -28,7 +28,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.JobCancellationException
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -209,7 +208,7 @@ class McpManager(
         // (搜索类工具幂等可安全重试; 重连失败则抛原异常)。
         val result = try {
             client.callTool(request, options = RequestOptions(timeout = 300.seconds))
-        } catch (e: JobCancellationException) {
+        } catch (e: kotlinx.coroutines.CancellationException) {
             if (!kotlin.coroutines.coroutineContext.isActive) throw e
             Log.w(TAG, "callTool cancelled (SSE session dropped?), reconnecting & retry once: ${e.message}")
             e.printStackTrace()
