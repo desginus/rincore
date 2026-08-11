@@ -118,11 +118,11 @@ object HeadroomCompressor {
         val items = array.filterIndexed { i, el -> array.indexOfFirst { it == el } == i }
         if (items.size < MIN_ITEMS) return null
 
-        // 2. 常量字段提取: 全项同值字段 → 头部声明 (信息保留, 无损)
+        // 2. 常量字段提取: 全项同值字段 → 头部声明 + 从项中删除 (信息保留, 去冗余)
         val constFields = extractConstantFields(items)
 
         // 3. 有损采样 (仅大数组): 首 30% + 尾 15% + 错误项, 最多 MAX_ITEMS
-        val selected: List<JsonElement>
+        var selected: List<JsonElement>
         if (items.size > LOSSY_THRESHOLD) {
             val keep = LinkedHashSet<Int>()
             val firstCount = maxOf(1, (items.size * FIRST_FRACTION).toInt())
@@ -147,7 +147,17 @@ object HeadroomCompressor {
             selected = items
         }
 
-        // 4. 组装: 常量声明 + 紧凑数组 + 压缩标记
+        // 4. 常量字段从项中删除 (信息已在头部声明) — 仅删声明过的顶层字段
+        if (constFields.isNotEmpty()) {
+            selected = selected.map { el ->
+                if (el is JsonObject) {
+                    val newObj = el.filterKeys { it !in constFields }
+                    if (newObj.size != el.size) JsonObject(newObj) else el
+                } else el
+            }
+        }
+
+        // 5. 组装: 常量声明 + 紧凑数组 + 压缩标记
         val builder = StringBuilder()
         if (constFields.isNotEmpty()) {
             builder.append("/* 全部项恒值: ")
@@ -181,32 +191,44 @@ object HeadroomCompressor {
         return ERROR_KEYWORDS.any { text.contains(it, ignoreCase = true) }
     }
 
-    // ── 非 JSON 无损紧凑 ──────────────────────────────────────────
+    // ── 非 JSON 无损紧凑 (日志/文本类工具输出) ────────────────────
 
     private fun compactText(content: String): String {
-        // 连续空行 → 单个, 行尾空白去除 — 无损
-        var changed = false
-        val lines = content.split("\n")
+        // 1. 完全重复行合并: "xxx" 连续出现 N 次 → "xxx (×N)" — 无损 (信息保留)
+        // 2. 连续空行 → 单个, 行尾空白去除 — 无损
+        val lines = content.split("\n").map { it.trimEnd() }
         val result = buildString {
+            var i = 0
             var blankPending = false
-            for (line in lines) {
-                val trimmed = line.trimEnd()
-                if (trimmed.isBlank()) {
+            while (i < lines.size) {
+                val line = lines[i]
+                if (line.isBlank()) {
                     blankPending = true
-                } else {
-                    if (blankPending && isNotEmpty()) {
-                        append('\n')
-                    }
-                    blankPending = false
-                    append(trimmed)
+                    i++
+                    continue
+                }
+                if (blankPending && isNotEmpty()) {
                     append('\n')
                 }
+                blankPending = false
+                // 统计连续相同行
+                var run = 1
+                while (i + run < lines.size && lines[i + run] == line) {
+                    run++
+                }
+                append(line)
+                if (run >= 4) {
+                    append(" (×")
+                    append(run)
+                    append(')')
+                }
+                append('\n')
+                i += run
             }
             if (isNotEmpty() && last() == '\n') {
                 setLength(length - 1)
             }
         }
-        changed = result.length < content.length
-        return if (changed) result else content
+        return if (result.length < content.length) result else content
     }
 }
