@@ -1,34 +1,36 @@
 package me.rerere.rikkahub.data.ai.headroom
 
+import android.util.Log
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
-import android.util.Log
 
 /**
- * Headroom 上下文降维 (v3.6.19)
+ * Headroom 上下文降维 (v3.6.24)
  *
- * 对话两种模式:
- *  - 默认模式: 消息原样发送, 不做任何压缩
- *  - 降维模式 (设置开关 headroomCompression): 工具输出经确定性规则压缩
+ * 对话两种模式, 通过右上角「上下文降维」开关隔离:
+ *  - 关闭 (默认): 本压缩器完全不介入, 消息原样发送 (零干预)
+ *  - 开启: 所有会发送向 API 的消息内容都经过压缩, 提高信息密度
  *
- * 铁律: 缓存率凌驾一切 — 本压缩器是纯规则、确定性实现 (同输入必同输出),
- * 压缩结果作为请求体前缀时与上一轮稳定一致, 不破坏 DeepSeek 前缀缓存。
+ * 铁律: 缓存率凌驾一切 — 纯规则、确定性实现 (同输入必同输出),
+ * 压缩结果作为请求前缀与上一轮稳定一致, 不破坏 DeepSeek 前缀缓存。
  *
- * 压缩策略 (信息留存第一, 压缩率第二):
- *  1. 只压缩工具输出 (Tool.output 的 Text) — 对话文本消息不动 (信息留存)
- *  2. JSON 数组: 无损层 (去重/常量字段提取/紧凑序列化) → 有损层
- *     (仅数组 >30 项才采样, 首 30% + 尾 15% + 错误项优先, 最多 15 项)
- *  3. 非 JSON 长文本: 无损紧凑 (连续空行/行尾空白)
- *  4. 幂等: 已压缩内容 (带标记) 跳过, 避免重复采样破坏前缀
+ * 压缩范围 (开启时):
+ *  1. 工具输出 (Tool.output 的 Text): 内容级压缩
+ *     - JSON 数组: 去重 / 常量字段提取(头部声明+删字段) / 大数组采样
+ *       (首 30% + 尾 15% + 错误项优先, 最多 15 项)
+ *     - 非 JSON 日志: 重复行合并 (相同行 ×N) + 空行归一
+ *  2. 消息正文 (用户/助手历史 Text): 无损紧凑 (空行归一/重复行合并)
  *
- * 规则参照 GitHub chopratejas/headroom (SmartCrusher) 的核心策略移植。
+ * 不压缩 (保证功能与缓存):
+ *  - system prompt (缓存前缀基础, 静态)
+ *  - 工具定义 tools 数组 (模型需要完整 schema, 工具调用正常)
+ *  - 工具调用参数 (模型需要读取)
+ *
+ * 规则参照 GitHub chopratejas/headroom (SmartCrusher) 核心策略移植。
  */
 object HeadroomCompressor {
     private const val TAG = "Headroom"
@@ -40,8 +42,9 @@ object HeadroomCompressor {
         "not found", "timeout", "unreachable", "错误", "异常", "失败", "拒绝", "超时"
     )
 
-    private const val MIN_ITEMS = 5          // 数组少于 5 项不分析
-    private const val MIN_CHARS = 200        // 内容少于 200 字符不压缩
+    private const val MIN_ITEMS = 5          // JSON 数组少于 5 项不分析
+    private const val MIN_CHARS = 200        // 工具输出少于 200 字符不压
+    private const val TEXT_MIN_CHARS = 100   // 消息正文少于 100 字符不压
     private const val LOSSY_THRESHOLD = 30   // 数组超过 30 项才走有损采样
     private const val MAX_ITEMS = 15         // 有损后最多保留 15 项
     private const val FIRST_FRACTION = 0.30  // 头部保留比例
@@ -50,48 +53,61 @@ object HeadroomCompressor {
     private val json = Json { prettyPrint = false }
 
     /**
-     * 压缩消息列表。只作用于已执行工具的输出 Text, 消息结构与角色不动。
+     * 压缩消息列表。只作用于消息正文 Text 与工具输出 Text,
+     * 消息结构/角色/工具定义不动。
      */
     fun compress(messages: List<UIMessage>): List<UIMessage> {
         if (messages.isEmpty()) return messages
         var changed = false
         val result = messages.map { msg ->
-            if (msg.parts.none { it is UIMessagePart.Tool && it.isExecuted }) {
-                msg
-            } else {
-                var msgChanged = false
-                val newParts = msg.parts.map { part ->
-                    if (part is UIMessagePart.Tool && part.isExecuted) {
-                        var toolChanged = false
-                        val newOutput = part.output.map { out ->
-                            if (out is UIMessagePart.Text && out.content.length >= MIN_CHARS) {
-                                val crushed = crush(out.content)
-                                if (crushed != out.content) {
-                                    toolChanged = true
-                                    UIMessagePart.Text(crushed)
+            var msgChanged = false
+            val newParts = msg.parts.map { part ->
+                when (part) {
+                    // ── 工具输出: 内容级压缩 (JSON 数组 / 日志) ──
+                    is UIMessagePart.Tool -> {
+                        if (part.isExecuted) {
+                            var toolChanged = false
+                            val newOutput = part.output.map { out ->
+                                if (out is UIMessagePart.Text && out.text.length >= MIN_CHARS) {
+                                    val crushed = crush(out.text)
+                                    if (crushed != out.text) {
+                                        toolChanged = true
+                                        UIMessagePart.Text(crushed)
+                                    } else out
                                 } else out
-                            } else out
-                        }
-                        if (toolChanged) {
-                            msgChanged = true
-                            part.copy(output = newOutput)
+                            }
+                            if (toolChanged) {
+                                msgChanged = true
+                                part.copy(output = newOutput)
+                            } else part
                         } else part
-                    } else part
+                    }
+                    // ── 消息正文 (用户/助手历史): 无损紧凑 ──
+                    is UIMessagePart.Text -> {
+                        if (part.text.length >= TEXT_MIN_CHARS) {
+                            val compacted = compactText(part.text)
+                            if (compacted != part.text) {
+                                msgChanged = true
+                                UIMessagePart.Text(compacted)
+                            } else part
+                        } else part
+                    }
+                    else -> part
                 }
-                if (msgChanged) {
-                    changed = true
-                    msg.copy(parts = newParts)
-                } else msg
             }
+            if (msgChanged) {
+                changed = true
+                msg.copy(parts = newParts)
+            } else msg
         }
         if (changed) {
-            Log.i(TAG, "压缩完成: ${messages.size} 条消息, 工具输出已降维")
+            Log.i(TAG, "降维完成: ${messages.size} 条消息, 工具输出与长文本已压缩")
         }
         return result
     }
 
     /**
-     * 压缩单段文本。确定性规则。
+     * 压缩单段内容 (工具输出用)。确定性规则。
      */
     fun crush(content: String): String {
         // 幂等: 已压缩内容跳过 (避免重复采样破坏前缀稳定)
@@ -102,12 +118,12 @@ object HeadroomCompressor {
         if (element is JsonArray && element.size >= MIN_ITEMS && content.length >= MIN_CHARS) {
             val crushed = crushArray(element)
             if (crushed != null && crushed.length < content.length) {
-                Log.d(TAG, "JSON 数组压缩: ${content.length} → ${crushed.length} 字符 (${element.size} 项)")
+                Log.d(TAG, "JSON 数组降维: ${content.length} → ${crushed.length} 字符 (${element.size} 项)")
                 return crushed
             }
         }
 
-        // 非 JSON 长文本: 无损紧凑 (连续空行 → 单空行, 行尾空白)
+        // 非 JSON 长文本: 无损紧凑 (重复行合并/空行归一)
         return compactText(content)
     }
 
@@ -138,8 +154,7 @@ object HeadroomCompressor {
                 val midRange = (firstCount until items.size - lastCount).toList()
                 midRange.forEach { i ->
                     if (keep.size >= MAX_ITEMS) return@forEach
-                    val prev = items[i - 1]
-                    if (items[i] != prev && i !in keep) keep.add(i)
+                    if (items[i] != items[i - 1] && i !in keep) keep.add(i)
                 }
             }
             selected = keep.sorted().map { items[it] }
@@ -191,7 +206,7 @@ object HeadroomCompressor {
         return ERROR_KEYWORDS.any { text.contains(it, ignoreCase = true) }
     }
 
-    // ── 非 JSON 无损紧凑 (日志/文本类工具输出) ────────────────────
+    // ── 非 JSON 无损紧凑 (日志/消息正文) ──────────────────────────
 
     private fun compactText(content: String): String {
         // 1. 完全重复行合并: "xxx" 连续出现 N 次 → "xxx (×N)" — 无损 (信息保留)

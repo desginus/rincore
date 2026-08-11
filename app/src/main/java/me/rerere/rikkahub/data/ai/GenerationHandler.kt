@@ -131,15 +131,9 @@ class GenerationHandler(
 
         var messages: List<UIMessage> = messages
 
-        // v3.6.19: Headroom 上下文降维 — 开启时工具输出经确定性规则压缩。
-        // 纯规则同输入同输出, 压缩结果作为请求前缀稳定, 不破坏缓存率。
-        // 关闭 (默认) 时零干预, 完全原样发送。
-        if (settings.headroomCompression) {
-            messages = HeadroomCompressor.compress(messages)
-            Log.i(TAG, "Headroom 降维模式开启: 工具输出已压缩 (缓存保持前缀稳定)")
-        }
-
         // === 分层路由状态 ===
+        // 注: Headroom 降维 (v3.6.24) 在每步发送点 generateInternal 统一执行 —
+        // 覆盖所有会发送向 API 的消息 (含 step 循环内累积的新工具输出)
         val useLayered = assistant.useLayeredTools && tools.isNotEmpty()
         // 从 Conversation 恢复已加载的域（Feature #4: 跨对话持久化）
         // v3.6.10: LinkedHashSet 保序去重 — 加载顺序 = tools 数组顺序 (前缀稳定)
@@ -589,6 +583,13 @@ class GenerationHandler(
         workspaceCwd: String? = null,
         layer1Prompt: String? = null,
     ) {
+        // v3.6.24: Headroom 降维 — 每步发送前统一压缩, 覆盖所有会发送向 API 的消息。
+        // 关闭 (默认) 时 zero-copy 原样; 开启时消息正文+工具输出确定性压缩 (缓存稳定)。
+        val effectiveMessages = if (settings.headroomCompression) {
+            HeadroomCompressor.compress(messages)
+        } else {
+            messages
+        }
         var internalMessages = buildList {
             val sysPromptLen: Int
             val memPromptLen: Int
@@ -627,7 +628,7 @@ class GenerationHandler(
             // 全量注入会导致工具池膨胀时冷启动 system 70K+ tokens)
             val toolPrompts = tools
                 .filter { it.name in FRAMEWORK_TOOL_SET && it.name != "invoke_tools" }
-                .map { tool -> tool.systemPrompt(model, messages) }
+                .map { tool -> tool.systemPrompt(model, effectiveMessages) }
                 .filter { it.isNotBlank() }
             toolsPromptLen = toolPrompts.sumOf { it.length }
 
@@ -659,7 +660,7 @@ class GenerationHandler(
                     " total=${system.length}c (~${estTokens.toInt()}t)")
                 add(UIMessage.system(prompt = system))
             }
-            addAll(messages)
+            addAll(effectiveMessages)
         }.transforms(
             transformers = transformers,
             context = context,
@@ -712,7 +713,7 @@ class GenerationHandler(
             "[$i:${m.role.name}:$types:$hash]"
         }.joinToString(" "))
 
-        var messages: List<UIMessage> = messages
+        var messages: List<UIMessage> = effectiveMessages
         val params = TextGenerationParams(
             model = model,
             temperature = assistant.temperature,

@@ -147,11 +147,11 @@ class HeadroomCompressorTest {
         )
         val result = HeadroomCompressor.compress(listOf(textMsg, toolMsg))
         val resultText = result[0].parts.first() as UIMessagePart.Text
-        assertEquals("用户文本消息不应被压缩", "这是重要的用户消息，不能被压缩", resultText.content)
+        assertEquals("用户文本消息不应被压缩", "这是重要的用户消息，不能被压缩", resultText.text)
         val toolPart = result[1].parts.filterIsInstance<UIMessagePart.Tool>().first()
         val outText = toolPart.output.first() as UIMessagePart.Text
-        assertNotEquals("工具输出未压缩", buildLargeJsonArray(40), outText.content)
-        assertTrue("工具输出未带压缩标记", outText.content.contains("[Headroom-压缩"))
+        assertNotEquals("工具输出未压缩", buildLargeJsonArray(40), outText.text)
+        assertTrue("工具输出未带压缩标记", outText.text.contains("[Headroom-压缩"))
     }
 
     // ── 辅助 ─────────────────────────────────────────────────
