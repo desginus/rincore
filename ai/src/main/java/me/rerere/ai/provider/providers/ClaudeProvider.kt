@@ -170,7 +170,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
             .configureReferHeaders(providerSetting.baseUrl)
             .build()
 
-        Log.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
+        Log.d(TAG, "streamText: ${json.encodeToString(requestBody)}") // v3.6.17: 降 d
 
         requestBody["messages"]!!.jsonArray.forEach {
             Log.i(TAG, "streamText: $it")

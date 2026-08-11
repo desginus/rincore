@@ -62,7 +62,7 @@ fun SettingAdvancedPage(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("高级功能") },
+                title = { Text("其他功能") },
                 navigationIcon = {
                     androidx.compose.material3.IconButton(onClick = onBack) {
                         androidx.compose.material3.Icon(HugeIcons.ArrowLeft01, null)

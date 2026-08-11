@@ -163,7 +163,8 @@ class ChatCompletionsAPI(
             .configureReferHeaders(providerSetting.baseUrl)
             .build()
 
-        Log.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
+        // v3.6.17: 降 d — release 裁剪 (每请求大 JSON 格式化是功耗热点, debug 保留诊断)
+        Log.d(TAG, "streamText: ${json.encodeToString(requestBody)}")
 
         // just for debugging response body
         // println(client.newCall(request).await().body?.string())

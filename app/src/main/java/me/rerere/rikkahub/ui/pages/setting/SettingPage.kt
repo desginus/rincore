@@ -144,20 +144,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                 }
             }
 
-            // ── 高级功能统一入口 (v3.6.16: 服务/扩展/权限/开发者聚合) ──
-            item("advanced") {
-                CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                ) {
-                    item(
-                        onClick = { showAdvancedPage = true },
-                        leadingContent = { Icon(HugeIcons.Wrench01, null) },
-                        supportingContent = { Text("搜索 / 语音 / Web 服务器 / 扩展 / 权限 / 工具对照") },
-                        headlineContent = { Text("高级功能") },
-                    )
-                }
-            }
-
             item("generalSettings") {
                 val context = LocalContext.current
                 var colorMode by rememberColorMode()
@@ -365,6 +351,20 @@ item(
                     )
                 }
             }
+            // ── 其他功能 (v3.6.17: 原「高级功能」— 挪至底部, 低调不显眼) ──
+            item("other") {
+                CardGroup(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                ) {
+                    item(
+                        onClick = { showAdvancedPage = true },
+                        leadingContent = { Icon(HugeIcons.Wrench01, null) },
+                        supportingContent = { Text("更多设置项") },
+                        headlineContent = { Text("其他功能") },
+                    )
+                }
+            }
+
             item("aboutSettings") {
                 val context = LocalContext.current
                 val shareText = stringResource(R.string.setting_page_share_text)

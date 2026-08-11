@@ -239,7 +239,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                 .build()
         )
 
-        Log.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
+        Log.d(TAG, "streamText: ${json.encodeToString(requestBody)}") // v3.6.17: 降 d
 
         var hasData = false
         val listener = object : EventSourceListener() {
