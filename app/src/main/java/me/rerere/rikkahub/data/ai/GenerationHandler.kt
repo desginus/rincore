@@ -458,7 +458,7 @@ class GenerationHandler(
                             // 超时返回错误结果让模型继续 (修复: ChatCompletions 工具调用后一直加载)
                             // v3.6.19: 捕获协程上下文 — onFailure 非挂起 lambda 无法取
                             // coroutineContext, 用于区分用户取消 (不活跃) vs 平台内部取消
-                            val toolExecCtx = kotlinx.coroutines.coroutineContext
+                            val toolExecCtx = kotlin.coroutines.coroutineContext
                             val result = withTimeout(TOOL_EXECUTION_TIMEOUT_MS) {
                                 toolDef.execute(args)
                             }
