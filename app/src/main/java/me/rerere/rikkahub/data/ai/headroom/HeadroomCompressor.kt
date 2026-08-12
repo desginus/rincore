@@ -162,7 +162,4 @@ object HeadroomCompressor {
             .map { it.trim() }.filter { it.isNotEmpty() }
         return (sentences.lastOrNull() ?: text).take(max)
     }
-
-    /**
-     * 压缩单段内容 (工具输出用)。确定性规则。
-     */
+}

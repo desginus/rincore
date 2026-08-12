@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.data.ai.compression
 
+/** 工具名搜索判定 (v3.6.42 精简: 仅保留 isSearchTool, GenerationHandler 在用) */
+object ToolOutputCompressor {
+
     fun isSearchTool(name: String): Boolean {
         val lower = name.lowercase()
         // ── 通用搜索关键词 ──
@@ -44,3 +47,4 @@ package me.rerere.rikkahub.data.ai.compression
         )
         return functional.any { it in lower }
     }
+}
