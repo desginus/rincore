@@ -32,6 +32,13 @@ import me.rerere.ai.ui.UIMessagePart
  *
  * 规则参照 GitHub chopratejas/headroom (SmartCrusher) 核心策略移植。
  */
+/**
+ * 压缩统计 — 发送后 UI 可见 (降维标签显示上轮压缩结果)
+ */
+object HeadroomStats {
+    val lastResult = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+}
+
 object HeadroomCompressor {
     private const val TAG = "Headroom"
     private const val MARKER = "[Headroom-压缩"
@@ -121,10 +128,17 @@ object HeadroomCompressor {
                 msg.copy(parts = newParts)
             } else msg
         }
+        val before = messages.sumOf { it.parts.filterIsInstance<UIMessagePart.Text>().sumOf { t -> t.text.length } }
+        val after = result.sumOf { it.parts.filterIsInstance<UIMessagePart.Text>().sumOf { t -> t.text.length } }
         if (changed) {
-            val before = messages.sumOf { it.parts.filterIsInstance<UIMessagePart.Text>().sumOf { t -> t.text.length } }
-            val after = result.sumOf { it.parts.filterIsInstance<UIMessagePart.Text>().sumOf { t -> t.text.length } }
             Log.i(TAG, "降维完成: ${messages.size} 条消息, 文本 ${before}c → ${after}c (省 ${before - after}c, ${if (before > 0) (100 * (before - after) / before) else 0}%), 当前轮完整")
+        } else {
+            Log.i(TAG, "降维执行: ${messages.size} 条消息无变化 (历史消息均为短句/单句或已在当前窗口)")
+        }
+        HeadroomStats.lastResult.value = if (changed) {
+            "发送前: ${before} → ${after} 字符 (省 ${before - after}, ${if (before > 0) (100 * (before - after) / before) else 0}%)"
+        } else {
+            "发送前: ${before} 字符, 无消息可压缩 (历史均为短句)"
         }
         return result
     }
