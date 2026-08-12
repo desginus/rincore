@@ -74,9 +74,10 @@ fun ChatMessageNerdLine(
                                 .collectAsStateWithLifecycle()
                             val targetId by me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastTargetMessageId
                                 .collectAsStateWithLifecycle()
-                            if (savedTokens != null && message.id.toString() == targetId) {
+                            val savedVal = savedTokens
+                            if (savedVal != null && message.id.toString() == targetId) {
                                 Text(
-                                    text = " 降维省 ${savedTokens.formatNumber()}",
+                                    text = " 降维省 ${savedVal.formatNumber()}",
                                     color = MaterialTheme.colorScheme.primary,
                                 )
                             }
