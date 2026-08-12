@@ -597,7 +597,7 @@ class GenerationHandler(
             if (history.isNotEmpty()) {
                 // v3.6.35: 收益判断 — 打包后膨胀 (负压缩) 则原样发送。
                 // 结构开销已精简 (短前缀), 长历史显著收益, 短历史不膨胀。
-                val packed = HeadroomCompressor.packHistory(history)
+                val packed = HeadroomCompressor.summarizeHistory(history)
                 // v3.6.39 核心修复: beforeC 必须与打包口径一致 — 含 Tool.output 的 Text。
                 // 此前只算消息级 Text, 工具输出 (上下文大头) 被忽略 → saved 为负 →
                 // 回退原样 → 压缩完全不生效 (用户实测 92K 只省 374, token 不变)。

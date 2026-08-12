@@ -39,7 +39,8 @@ fun ChatMessageNerdLine(
     message: UIMessage,
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f),
-) {
+
+    isLast: Boolean = false,) {
     val settings = LocalSettings.current.displaySetting
 
     ProvideTextStyle(MaterialTheme.typography.labelSmall.copy(color = color)) {
@@ -69,13 +70,11 @@ fun ChatMessageNerdLine(
                                     text = "(${message.usage?.cachedTokens?.formatNumber() ?: "0"} cached)"
                                 )
                             }
-                            // v3.6.38/39: 降维节省 — 只显示在目标消息 (修复所有消息都显示)
+                            // v3.6.40: 降维节省 — 只显示在最后一条消息 (isLast)
                             val savedTokens by me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastSavedTokens
                                 .collectAsStateWithLifecycle()
-                            val targetId by me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastTargetMessageId
-                                .collectAsStateWithLifecycle()
                             val savedVal = savedTokens
-                            if (savedVal != null && message.id.toString() == targetId) {
+                            if (savedVal != null && isLast) {
                                 Text(
                                     text = " 降维省 ${savedVal.formatNumber()}",
                                     color = MaterialTheme.colorScheme.primary,
