@@ -605,12 +605,14 @@ class GenerationHandler(
                     effectiveMessages = listOf(packed) + current
                     me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastResult.value =
                         "历史打包: ${beforeC} → ${afterC} 字符 (省 $saved, ${100 * saved / beforeC}%)"
+                    me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastSavedTokens.value = saved / 2
                     Log.i(TAG, "Headroom 历史打包: ${beforeC}c → ${afterC}c (省 $saved)")
                 } else {
                     // 历史过短, 打包会膨胀 — 原样发送 (不产生负压缩)
                     effectiveMessages = messages
                     me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastResult.value =
                         "历史过短 (${beforeC} 字符), 打包会膨胀, 原样发送"
+                    me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastSavedTokens.value = null
                     Log.i(TAG, "Headroom 历史过短: ${beforeC}c, 原样 (避免负压缩)")
                 }
             } else {
@@ -620,6 +622,7 @@ class GenerationHandler(
         } else {
             effectiveMessages = messages
             me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastResult.value = null
+            me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastSavedTokens.value = null
         }
         var internalMessages = buildList {
             val sysPromptLen: Int

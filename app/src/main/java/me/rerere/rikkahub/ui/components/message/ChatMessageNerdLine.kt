@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.components.message
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -64,6 +66,15 @@ fun ChatMessageNerdLine(
                             if (usage.cachedTokens > 0) {
                                 Text(
                                     text = "(${message.usage?.cachedTokens?.formatNumber() ?: "0"} cached)"
+                                )
+                            }
+                            // v3.6.38: 降维节省 (用户唯一观测手段 — 每轮直接可见)
+                            val savedTokens by me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastSavedTokens
+                                .collectAsStateWithLifecycle()
+                            savedTokens?.let {
+                                Text(
+                                    text = " 降维省 ${it.formatNumber()}",
+                                    color = MaterialTheme.colorScheme.primary,
                                 )
                             }
                         }

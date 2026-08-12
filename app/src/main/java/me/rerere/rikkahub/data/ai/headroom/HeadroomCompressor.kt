@@ -39,6 +39,8 @@ object HeadroomStats {
     val lastResult = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
     // v3.6.37: 上轮实际发送请求体的文本字符数 (验证压缩是否真正进入请求)
     val lastRequestChars = kotlinx.coroutines.flow.MutableStateFlow<Int?>(null)
+    // v3.6.38: 上轮压缩节省估算 token (字符差 / 2.5 — 消息统计行直接显示)
+    val lastSavedTokens = kotlinx.coroutines.flow.MutableStateFlow<Int?>(null)
 }
 
 object HeadroomCompressor {
