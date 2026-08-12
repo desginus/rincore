@@ -595,9 +595,37 @@ class GenerationHandler(
             val history = if (windowStart > 0) messages.subList(0, windowStart) else emptyList()
             val current = messages.subList(windowStart, messages.size)
             if (history.isNotEmpty()) {
-                // v3.6.35: 收益判断 — 打包后膨胀 (负压缩) 则原样发送。
-                // 结构开销已精简 (短前缀), 长历史显著收益, 短历史不膨胀。
-                val packed = HeadroomCompressor.summarizeHistory(history)
+                // v3.6.43 缓存修复: 追加式增量压缩包 (前缀稳定 → 缓存包含压缩包)
+                // 此前每轮整体重新总结 → 前缀全变 → 缓存断在 system+tools (13.8K)
+                val cacheKey = messages.firstOrNull()?.id?.toString() ?: "anon-${history.size}"
+                val state = me.rerere.rikkahub.data.ai.headroom.HeadroomCache.get(cacheKey)
+                val deltaMsgs = history.size - (state?.packedUntil ?: 0)
+                val packedText: String
+                if (state != null && deltaMsgs in 1..HeadroomCompressor.DELTA_MAX_MSGS) {
+                    // 增量追加: 前缀稳定 → 缓存命中压缩包
+                    val delta = history.subList(state.packedUntil, history.size)
+                        .mapNotNull { HeadroomCompressor.summarizeDelta(it) }
+                        .filter { it.isNotBlank() }
+                        .joinToString("\n")
+                    packedText = if (delta.isNotBlank()) state.packedText + "\n" + delta else state.packedText
+                } else {
+                    // 首次/状态失效/增量过大: 完整总结 (缓存 miss 一次, 可接受)
+                    packedText = HeadroomCompressor.summarizeHistory(history)
+                        .parts.filterIsInstance<UIMessagePart.Text>().joinToString(" ") { it.text }
+                }
+                // 增长控制: 压缩包超阈值 → 重新完整总结 (重建精简前缀)
+                val finalText = if (packedText.length > HeadroomCompressor.MAX_PACKED_CHARS) {
+                    HeadroomCompressor.summarizeHistory(history)
+                        .parts.filterIsInstance<UIMessagePart.Text>().joinToString(" ") { it.text }
+                } else packedText
+                me.rerere.rikkahub.data.ai.headroom.HeadroomCache.put(
+                    cacheKey,
+                    me.rerere.rikkahub.data.ai.headroom.HeadroomCache.State(finalText, history.size)
+                )
+                val packed = UIMessage(
+                    role = me.rerere.ai.core.MessageRole.USER,
+                    parts = listOf(UIMessagePart.Text(finalText)),
+                )
                 // v3.6.39 核心修复: beforeC 必须与打包口径一致 — 含 Tool.output 的 Text。
                 // 此前只算消息级 Text, 工具输出 (上下文大头) 被忽略 → saved 为负 →
                 // 回退原样 → 压缩完全不生效 (用户实测 92K 只省 374, token 不变)。

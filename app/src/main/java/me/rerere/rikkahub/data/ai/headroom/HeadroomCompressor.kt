@@ -45,8 +45,31 @@ object HeadroomStats {
     val lastDetail = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
 }
 
+/**
+ * 会话级压缩状态 (v3.6.43 缓存修复):
+ * 追加式增量压缩包 — 压缩包前缀稳定增长, 缓存可包含压缩包。
+ * 此前每次请求整体重新总结 → 前缀全变 → 缓存断在 system+tools (13.8K)。
+ */
+object HeadroomCache {
+    class State(val packedText: String, val packedUntil: Int)
+    private val states = HashMap<String, State>()
+
+    fun get(key: String): State? = states[key]
+    fun put(key: String, state: State) {
+        states[key] = state
+        if (states.size > 32) {
+            // 简易清理: 保留最近 16 个 (避免长期会话累积)
+            val oldest = states.keys.take(states.size - 16)
+            oldest.forEach { states.remove(it) }
+        }
+    }
+}
+
 object HeadroomCompressor {
     private const val TAG = "Headroom"
+    // v3.6.43: 增量追加上限 (消息数, 约 8 轮) 与压缩包增长阈值
+    private const val DELTA_MAX_MSGS = 24
+    private const val MAX_PACKED_CHARS = 8000
 
     private val json = Json { prettyPrint = false }
 
@@ -142,6 +165,29 @@ object HeadroomCompressor {
             role = me.rerere.ai.core.MessageRole.USER,
             parts = listOf(UIMessagePart.Text(summary)),
         )
+    }
+
+    /**
+     * 单轮增量行 (v3.6.43): 追加到压缩包尾部, 前缀稳定 → 缓存可命中。
+     * 每轮固定 3 行: 用户首句 / 助手末句 / 工具名+结果首部。
+     */
+    fun summarizeDelta(msg: UIMessage): String {
+        return when (msg.role) {
+            me.rerere.ai.core.MessageRole.USER ->
+                "用户: " + extractHead(msg, 80)
+            me.rerere.ai.core.MessageRole.ASSISTANT ->
+                "助手: " + extractTail(msg, 100)
+            else -> {
+                val tool = msg.parts.filterIsInstance<UIMessagePart.Tool>().firstOrNull()
+                if (tool != null) {
+                    val outHead = tool.output.filterIsInstance<UIMessagePart.Text>()
+                        .joinToString(" ") { it.text }.trim().take(60)
+                    "工具[${tool.toolName}]: $outHead"
+                } else {
+                    ""
+                }
+            }
+        }
     }
 
     /** 用户/助手: 首句 (≤max) */
