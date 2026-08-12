@@ -42,15 +42,16 @@ object HeadroomCompressor {
         "not found", "timeout", "unreachable", "错误", "异常", "失败", "拒绝", "超时"
     )
 
+    // v3.6.26: 阈值激进化 (用户反馈压缩无感知 — 600 字符阈值日常对话不触发)
     private const val MIN_ITEMS = 5          // JSON 数组少于 5 项不分析
-    private const val MIN_CHARS = 200        // 工具输出少于 200 字符不压
-    private const val TEXT_MIN_CHARS = 100   // 消息正文少于 100 字符不压
+    private const val MIN_CHARS = 150        // 工具输出少于 150 字符不压 (原 200)
+    private const val TEXT_MIN_CHARS = 50    // 消息正文少于 50 字符不压 (原 100)
     // 历史消息有损截断 (v3.6.25): 仅历史轮次, 当前轮完整 — 全上下文压缩
-    private const val TRUNCATE_THRESHOLD = 600   // 超过此长度才截断
-    private const val ASSISTANT_HEAD_RATIO = 0.50 // 助手历史: 保留开头 50%
-    private const val ASSISTANT_TAIL_RATIO = 0.15 // 助手历史: 保留结尾 15%
-    private const val USER_HEAD_RATIO = 0.60      // 用户历史: 保留开头 60% (更保守)
-    private const val USER_TAIL_RATIO = 0.20      // 用户历史: 保留结尾 20%
+    private const val TRUNCATE_THRESHOLD = 250   // 超过此长度才截断 (原 600)
+    private const val ASSISTANT_HEAD_RATIO = 0.40 // 助手历史: 保留开头 40% (原 50%)
+    private const val ASSISTANT_TAIL_RATIO = 0.10 // 助手历史: 保留结尾 10% (原 15%)
+    private const val USER_HEAD_RATIO = 0.50      // 用户历史: 保留开头 50% (原 60%)
+    private const val USER_TAIL_RATIO = 0.15      // 用户历史: 保留结尾 15% (原 20%)
     private const val LOSSY_THRESHOLD = 30   // 数组超过 30 项才走有损采样
     private const val MAX_ITEMS = 15         // 有损后最多保留 15 项
     private const val FIRST_FRACTION = 0.30  // 头部保留比例
