@@ -36,7 +36,7 @@ import me.rerere.ai.ui.UIMessagePart
  * 压缩统计 — 发送后 UI 可见 (降维标签显示上轮压缩结果)
  */
 object HeadroomStats {
-    val lastResult = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    // v3.6.42: lastResult 与 lastDetail 信息重叠, 已合并 (状态/统计统一进 lastDetail)
     // v3.6.37: 上轮实际发送请求体的文本字符数 (验证压缩是否真正进入请求)
     val lastRequestChars = kotlinx.coroutines.flow.MutableStateFlow<Int?>(null)
     // v3.6.38: 上轮压缩节省估算 token (字符差 / 2 — 消息统计行直接显示)
