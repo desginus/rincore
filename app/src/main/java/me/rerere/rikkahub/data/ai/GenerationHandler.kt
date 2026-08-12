@@ -818,6 +818,12 @@ class GenerationHandler(
             }
             }
         } else {
+            // v3.6.37: 发送前实际请求体字符统计 (验证压缩是否真正进入请求)
+            val sentChars = internalMessages.sumOf { m ->
+                m.parts.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }
+            }
+            me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastRequestChars.value = sentChars
+            Log.i(TAG, "Headroom 发送请求: ${internalMessages.size} 条消息, ${sentChars}c")
             val chunk = providerImpl.generateText(
                 providerSetting = provider,
                 messages = internalMessages,

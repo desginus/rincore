@@ -37,6 +37,8 @@ import me.rerere.ai.ui.UIMessagePart
  */
 object HeadroomStats {
     val lastResult = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    // v3.6.37: 上轮实际发送请求体的文本字符数 (验证压缩是否真正进入请求)
+    val lastRequestChars = kotlinx.coroutines.flow.MutableStateFlow<Int?>(null)
 }
 
 object HeadroomCompressor {
