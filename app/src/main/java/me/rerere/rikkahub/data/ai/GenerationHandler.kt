@@ -617,8 +617,6 @@ class GenerationHandler(
                     me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastResult.value =
                         "历史打包: ${beforeC} → ${afterC} 字符 (省 $saved, ${100 * saved / beforeC}%)"
                     me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastSavedTokens.value = saved / 2
-                    me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastTargetMessageId.value =
-                        messages.lastOrNull()?.id?.toString()
                     Log.i(TAG, "Headroom 历史打包: ${beforeC}c → ${afterC}c (省 $saved)")
                 } else {
                     // 历史过短, 打包会膨胀 — 原样发送 (不产生负压缩)
