@@ -50,9 +50,6 @@ object HeadroomCompressor {
 
     private val json = Json { prettyPrint = false }
 
-    /**
-     * 压缩消息列表。只作用于消息正文 Text 与工具输出 Text,
-     * 消息结构/角色/工具定义不动。
     fun summarizeHistory(history: List<UIMessage>): UIMessage {
         // ── 提取阶段 ──
         val userFocus = LinkedHashSet<String>()   // 用户关注点 (每轮 USER 首句)
