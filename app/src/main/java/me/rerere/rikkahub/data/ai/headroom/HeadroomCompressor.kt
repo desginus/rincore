@@ -68,8 +68,8 @@ object HeadroomCache {
 object HeadroomCompressor {
     private const val TAG = "Headroom"
     // v3.6.43: 增量追加上限 (消息数, 约 8 轮) 与压缩包增长阈值
-    private const val DELTA_MAX_MSGS = 24
-    private const val MAX_PACKED_CHARS = 8000
+    const val DELTA_MAX_MSGS = 24
+    const val MAX_PACKED_CHARS = 8000
 
     private val json = Json { prettyPrint = false }
 
