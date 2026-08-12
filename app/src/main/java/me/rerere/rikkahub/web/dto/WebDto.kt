@@ -249,11 +249,6 @@ data class ErrorResponse(
 
 // ========== SSE Event DTOs ==========
 
-@Serializable
-data class ConversationUpdateEvent(
-    val type: String = "update",
-    val conversation: ConversationDto
-)
 
 @Serializable
 data class ConversationSnapshotEvent(
@@ -276,11 +271,6 @@ data class ConversationNodeUpdateEvent(
     val serverTime: Long = System.currentTimeMillis()
 )
 
-@Serializable
-data class GenerationDoneEvent(
-    val type: String = "done",
-    val conversationId: String
-)
 
 @Serializable
 data class ErrorEvent(
