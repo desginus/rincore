@@ -595,15 +595,24 @@ class GenerationHandler(
             val history = if (windowStart > 0) messages.subList(0, windowStart) else emptyList()
             val current = messages.subList(windowStart, messages.size)
             if (history.isNotEmpty()) {
-                // v3.6.33: 凡过必压缩 — 历史无条件打包, 不做收益判断 (用户明确)
+                // v3.6.35: 收益判断 — 打包后膨胀 (负压缩) 则原样发送。
+                // 结构开销已精简 (短前缀), 长历史显著收益, 短历史不膨胀。
                 val packed = HeadroomCompressor.packHistory(history)
                 val beforeC = history.sumOf { it.parts.filterIsInstance<UIMessagePart.Text>().sumOf { t -> t.text.length } }
                 val afterC = packed.parts.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }
-                effectiveMessages = listOf(packed) + current
                 val saved = beforeC - afterC
-                me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastResult.value =
-                    "历史打包: ${beforeC} → ${afterC} 字符 (省 $saved, ${if (beforeC > 0) 100 * saved / beforeC else 0}%)"
-                Log.i(TAG, "Headroom 历史打包: ${beforeC}c → ${afterC}c (省 $saved)")
+                if (saved > 0) {
+                    effectiveMessages = listOf(packed) + current
+                    me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastResult.value =
+                        "历史打包: ${beforeC} → ${afterC} 字符 (省 $saved, ${100 * saved / beforeC}%)"
+                    Log.i(TAG, "Headroom 历史打包: ${beforeC}c → ${afterC}c (省 $saved)")
+                } else {
+                    // 历史过短, 打包会膨胀 — 原样发送 (不产生负压缩)
+                    effectiveMessages = messages
+                    me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastResult.value =
+                        "历史过短 (${beforeC} 字符), 打包会膨胀, 原样发送"
+                    Log.i(TAG, "Headroom 历史过短: ${beforeC}c, 原样 (避免负压缩)")
+                }
             } else {
                 effectiveMessages = messages
                 me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastResult.value = "无历史消息可打包 (新对话)"

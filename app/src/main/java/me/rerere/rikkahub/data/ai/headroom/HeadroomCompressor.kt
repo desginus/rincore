@@ -209,7 +209,7 @@ object HeadroomCompressor {
             role = me.rerere.ai.core.MessageRole.USER,
             parts = listOf(
                 UIMessagePart.Text(
-                    "[历史上下文压缩包] 共 ${history.size} 条消息, 原 ${before} 字符\n" + body
+                    "[历史包 ${history.size}条 原${before}c]\n" + body
                 )
             ),
         )
