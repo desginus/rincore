@@ -41,8 +41,8 @@ object HeadroomStats {
     val lastRequestChars = kotlinx.coroutines.flow.MutableStateFlow<Int?>(null)
     // v3.6.38: 上轮压缩节省估算 token (字符差 / 2 — 消息统计行直接显示)
     val lastSavedTokens = kotlinx.coroutines.flow.MutableStateFlow<Int?>(null)
-    // v3.6.39: 节省显示绑定目标消息 id (只显示在最新一条, 修复所有消息都显示)
-    val lastTargetMessageId = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    // v3.6.41: 压缩详情 (证明压缩发生 + 信息保留) — 原始/总结字符 + 总结预览
+    val lastDetail = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
 }
 
 object HeadroomCompressor {
@@ -231,7 +231,8 @@ object HeadroomCompressor {
                 .append("。")
         }
 
-        // ── 长度控制: 目标 ≤ 原始 30% (压缩率 ≥ 65%) ──
+        // ── 长度控制 (v3.6.41 修正): 压缩率上限 65%, 信息保留率 ≥35% ──
+        // 用户明确: 不是压得越狠越好, 要保留足够信息。压缩 ≤65% 即保留 ≥35%。
         val rawLen = history.sumOf { msg ->
             msg.parts.sumOf { part ->
                 when (part) {
@@ -242,11 +243,35 @@ object HeadroomCompressor {
             }
         }
         var summary = builder.toString().trimEnd()
-        val budget = maxOf(200, rawLen * 30 / 100)
-        if (summary.length > budget) {
-            // 超预算: 截断并保留结尾 (预算内尽量多保留结论)
-            summary = summary.take(budget) + "…"
+        val minKeep = rawLen * 35 / 100   // 至少保留 35% (压缩 ≤65%)
+        val maxKeep = rawLen * 50 / 100   // 最多保留 50% (压缩 ≥50%, 信息密度优先)
+        val budget = maxOf(minKeep, 200)
+        if (summary.length < budget && summary.length < maxKeep) {
+            // 总结内容不足预算: 补充最近一轮的完整内容 (信息保留)
+            val lastRound = history.takeLastWhile { it.role != me.rerere.ai.core.MessageRole.USER }
+                .let { tail ->
+                    val userIdx = history.lastIndex - tail.size
+                    if (userIdx >= 0) history[userIdx] else null
+                }
+            val lastText = lastRound?.parts?.filterIsInstance<UIMessagePart.Text>()
+                ?.joinToString(" ") { it.text }?.trim().orEmpty()
+            if (lastText.isNotBlank() && summary.length + lastText.length <= budget) {
+                summary += "\n最近一轮: $lastText"
+            } else if (lastText.isNotBlank()) {
+                val room = budget - summary.length
+                if (room > 50) summary += "\n最近一轮: " + lastText.take(room)
+            }
         }
+        if (summary.length > maxKeep) {
+            // 超上限: 截断 (保留结尾 — 最近信息)
+            summary = summary.take(maxKeep) + "…"
+        }
+
+        // 压缩详情 (v3.6.41): 证明压缩发生 + 信息保留
+        val ratio = if (rawLen > 0) (100 - 100 * summary.length / rawLen) else 0
+        me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastDetail.value =
+            "历史 ${rawLen} 字符 → 总结 ${summary.length} 字符 (压缩 ${ratio}%, 保留 ${100 - ratio}%)\n" +
+            "总结预览: " + summary.take(160)
 
         return UIMessage(
             role = me.rerere.ai.core.MessageRole.USER,

@@ -626,6 +626,7 @@ class GenerationHandler(
                     me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastResult.value =
                         "历史过短 (${beforeC} 字符), 打包会膨胀, 原样发送"
                     me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastSavedTokens.value = null
+                    me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastDetail.value = null
                     Log.i(TAG, "Headroom 历史过短: ${beforeC}c, 原样 (避免负压缩)")
                 }
             } else {
@@ -636,6 +637,7 @@ class GenerationHandler(
             effectiveMessages = messages
             me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastResult.value = null
             me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastSavedTokens.value = null
+            me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastDetail.value = null
         }
         var internalMessages = buildList {
             val sysPromptLen: Int

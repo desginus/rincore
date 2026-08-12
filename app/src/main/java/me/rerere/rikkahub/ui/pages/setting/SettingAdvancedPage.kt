@@ -140,6 +140,8 @@ fun SettingAdvancedPage(
                             .collectAsStateWithLifecycle()
                         val requestChars by me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastRequestChars
                             .collectAsStateWithLifecycle()
+                        val detail by me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastDetail
+                            .collectAsStateWithLifecycle()
                         Column {
                             Text(if (settings.headroomCompression) "已开启 · 历史发送时打包压缩（静默）" else "已关闭 · 默认模式（无压缩）")
                             headroomStat?.let {
@@ -152,6 +154,13 @@ fun SettingAdvancedPage(
                             requestChars?.let {
                                 Text(
                                     text = "上轮发送请求: $it 字符",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            detail?.let {
+                                Text(
+                                    text = it,
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
