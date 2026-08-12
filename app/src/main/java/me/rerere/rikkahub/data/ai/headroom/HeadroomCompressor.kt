@@ -42,16 +42,16 @@ object HeadroomCompressor {
         "not found", "timeout", "unreachable", "错误", "异常", "失败", "拒绝", "超时"
     )
 
-    // v3.6.26: 阈值激进化 (用户反馈压缩无感知 — 600 字符阈值日常对话不触发)
+    // v3.6.27: 历史骨架压缩 (用户选定方案 — 每轮压成首句+结论, 压缩明显)
     private const val MIN_ITEMS = 5          // JSON 数组少于 5 项不分析
-    private const val MIN_CHARS = 150        // 工具输出少于 150 字符不压 (原 200)
-    private const val TEXT_MIN_CHARS = 50    // 消息正文少于 50 字符不压 (原 100)
-    // 历史消息有损截断 (v3.6.25): 仅历史轮次, 当前轮完整 — 全上下文压缩
-    private const val TRUNCATE_THRESHOLD = 250   // 超过此长度才截断 (原 600)
-    private const val ASSISTANT_HEAD_RATIO = 0.40 // 助手历史: 保留开头 40% (原 50%)
-    private const val ASSISTANT_TAIL_RATIO = 0.10 // 助手历史: 保留结尾 10% (原 15%)
-    private const val USER_HEAD_RATIO = 0.50      // 用户历史: 保留开头 50% (原 60%)
-    private const val USER_TAIL_RATIO = 0.15      // 用户历史: 保留结尾 15% (原 20%)
+    private const val MIN_CHARS = 150        // 工具输出少于 150 字符不压
+    private const val TEXT_MIN_CHARS = 50    // 消息正文少于 50 字符不压
+    private const val SKELETON_USER_MIN = 120   // 用户历史超过此长度骨架化
+    private const val SKELETON_ASST_MIN = 150   // 助手历史超过此长度骨架化
+    private const val USER_HEAD_MAX = 80        // 用户骨架: 首句最长
+    private const val USER_TAIL_MAX = 60        // 用户骨架: 末句最长
+    private const val ASST_HEAD_MAX = 120       // 助手骨架: 首句最长
+    private const val ASST_TAIL_MAX = 100       // 助手骨架: 末句最长
     private const val LOSSY_THRESHOLD = 30   // 数组超过 30 项才走有损采样
     private const val MAX_ITEMS = 15         // 有损后最多保留 15 项
     private const val FIRST_FRACTION = 0.30  // 头部保留比例
@@ -99,7 +99,7 @@ object HeadroomCompressor {
                         if (part.text.length >= TEXT_MIN_CHARS) {
                             val compacted = compactText(part.text)
                             val truncated = if (!isCurrentWindow) {
-                                truncateHistory(part.text, msg.role)
+                                skeletonHistory(part.text, msg.role)
                             } else {
                                 compacted
                             }
@@ -127,23 +127,32 @@ object HeadroomCompressor {
     }
 
     /**
-     * 历史消息有损截断 — 首尾保留 (信息密度), 中段省略并标记。
-     * 助手历史更激进 (50%+15%), 用户历史更保守 (60%+20%)。
-     * 确定性规则, 同输入同输出 (缓存稳定)。
+     * 历史消息骨架压缩 (v3.6.27 用户选定方案):
+     * 每轮历史压成「首句 + 末句」骨架, 中段细节省略并标记。
+     * 首句=问题核心/结论开头, 末句=补充/总结 — 对话脉络完整保留。
+     * 确定性规则 (句子边界分割), 同输入同输出 (缓存稳定)。
      */
-    private fun truncateHistory(content: String, role: me.rerere.ai.core.MessageRole): String {
-        // 幂等: 已截断 (带省略标记) 跳过 — 避免重复截断破坏前缀稳定
+    private fun skeletonHistory(content: String, role: me.rerere.ai.core.MessageRole): String {
+        // 幂等: 已骨架化 (带省略标记) 跳过 — 避免重复压缩破坏前缀稳定
         if (content.contains("Headroom 中段省略")) return content
-        if (content.length <= TRUNCATE_THRESHOLD) return content
-        val headRatio = if (role == me.rerere.ai.core.MessageRole.USER) USER_HEAD_RATIO else ASSISTANT_HEAD_RATIO
-        val tailRatio = if (role == me.rerere.ai.core.MessageRole.USER) USER_TAIL_RATIO else ASSISTANT_TAIL_RATIO
-        val headLen = (content.length * headRatio).toInt()
-        val tailLen = (content.length * tailRatio).toInt()
-        val omitted = content.length - headLen - tailLen
+        val isUser = role == me.rerere.ai.core.MessageRole.USER
+        val minLen = if (isUser) SKELETON_USER_MIN else SKELETON_ASST_MIN
+        if (content.length <= minLen) return content
+        val headMax = if (isUser) USER_HEAD_MAX else ASST_HEAD_MAX
+        val tailMax = if (isUser) USER_TAIL_MAX else ASST_TAIL_MAX
+
+        // 句子边界: 中英文句号/问号/感叹号/换行
+        val sentences = content.split(Regex("(?<=[。！？!?\n])"))
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        if (sentences.size < 2) return content
+
+        val head = sentences.first().take(headMax)
+        val tail = sentences.last().take(tailMax)
+        if (sentences.first() == sentences.last() && sentences.size == 1) return content
+        val omitted = content.length - head.length - tail.length
         if (omitted <= 0) return content
-        val head = content.substring(0, headLen)
-        val tail = content.substring(content.length - tailLen)
-        return head + "\n…[Headroom 中段省略 " + omitted + " 字符，如需细节可追问]…\n" + tail
+        return head + "…[Headroom 中段省略 " + omitted + " 字符，如需细节可追问]…" + tail
     }
 
     /**
