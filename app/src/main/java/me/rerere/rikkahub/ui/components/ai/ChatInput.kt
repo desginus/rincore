@@ -205,32 +205,7 @@ fun ChatInput(
                 .padding(bottom = if (imeVisible) 0.dp else 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // v3.6.30: 降维模式标签 — 开关开启时输入栏可见 (确认压缩生效状态)
-            // v3.6.31: 标签下方显示上轮压缩统计 (HeadroomStats — 发送后可见)
-            if (settings.headroomCompression) {
-                val headroomStat by me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastResult
-                    .collectAsStateWithLifecycle()
-                androidx.compose.material3.Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
-                ) {
-                    Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
-                        Text(
-                            text = "降维模式已开启 · 历史消息发送前骨架化",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        headroomStat?.let {
-                            Text(
-                                text = it,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-            }
+            // v3.6.36: 页面完全静默 — 降维开启/关闭页面无差别 (状态与统计移至设置-其他功能)
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()

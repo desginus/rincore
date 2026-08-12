@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.Screen
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowLeft01
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.hugeicons.stroke.GlobalSearch
 import me.rerere.hugeicons.stroke.Megaphone01
 import me.rerere.hugeicons.stroke.Package
@@ -46,6 +47,7 @@ import me.rerere.rikkahub.ui.components.ui.CardGroup
 fun SettingAdvancedPage(
     settings: Settings,
     onBack: () -> Unit,
+    onToggleCompression: (Boolean) -> Unit = {},
 ) {
     val navController = me.rerere.rikkahub.ui.context.LocalNavController.current
     var showToolCompare by remember { mutableStateOf(false) }
@@ -129,6 +131,32 @@ fun SettingAdvancedPage(
                 modifier = Modifier.padding(horizontal = 8.dp),
                 title = { Text("开发者") },
             ) {
+                // v3.6.36: 上下文降维状态工具 (聊天页静默, 状态与统计在此查看)
+                item(
+                    onClick = {},
+                    leadingContent = { Icon(HugeIcons.Settings03, null) },
+                    supportingContent = {
+                        val headroomStat by me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastResult
+                            .collectAsStateWithLifecycle()
+                        Column {
+                            Text(if (settings.headroomCompression) "已开启 · 历史发送时打包压缩（静默）" else "已关闭 · 默认模式（无压缩）")
+                            headroomStat?.let {
+                                Text(
+                                    text = "最近一次: $it",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    },
+                    headlineContent = { Text("上下文降维") },
+                    trailingContent = {
+                        androidx.compose.material3.Switch(
+                            checked = settings.headroomCompression,
+                            onCheckedChange = { onToggleCompression(it) },
+                        )
+                    },
+                )
                 item(
                     onClick = { showToolCompare = true },
                     leadingContent = { Icon(HugeIcons.Settings03, null) },

@@ -307,10 +307,6 @@ private fun ChatPageContent(
     var previewMode by rememberSaveable { mutableStateOf(false) }
     // v3.6.13: 对话设置对话框 (延迟自动回复开关)
     var showChatSettings by remember { mutableStateOf(false) }
-    // v3.6.34: 切换对话清空压缩统计 (避免上轮对话的统计残留)
-    androidx.compose.runtime.LaunchedEffect(conversation.id) {
-        me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastResult.value = null
-    }
     val hazeState = rememberHazeState()
     val assistant = setting.getCurrentAssistant()
     var showFilesSheet by remember { mutableStateOf(false) }
