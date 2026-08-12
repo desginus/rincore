@@ -595,22 +595,15 @@ class GenerationHandler(
             val history = if (windowStart > 0) messages.subList(0, windowStart) else emptyList()
             val current = messages.subList(windowStart, messages.size)
             if (history.isNotEmpty()) {
+                // v3.6.33: 凡过必压缩 — 历史无条件打包, 不做收益判断 (用户明确)
                 val packed = HeadroomCompressor.packHistory(history)
                 val beforeC = history.sumOf { it.parts.filterIsInstance<UIMessagePart.Text>().sumOf { t -> t.text.length } }
                 val afterC = packed.parts.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }
+                effectiveMessages = listOf(packed) + current
                 val saved = beforeC - afterC
-                if (saved > 0) {
-                    effectiveMessages = listOf(packed) + current
-                    me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastResult.value =
-                        "历史打包: ${beforeC} → ${afterC} 字符 (省 $saved, ${100 * saved / beforeC}%)"
-                    Log.i(TAG, "Headroom 历史打包: ${beforeC}c → ${afterC}c (省 $saved)")
-                } else {
-                    // 打包无收益 (历史均短) — 原样发送
-                    effectiveMessages = messages
-                    me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastResult.value =
-                        "历史打包: ${beforeC} 字符, 打包无收益 (历史均短), 原样发送"
-                    Log.i(TAG, "Headroom 历史打包无收益: ${beforeC}c, 原样")
-                }
+                me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastResult.value =
+                    "历史打包: ${beforeC} → ${afterC} 字符 (省 $saved, ${if (beforeC > 0) 100 * saved / beforeC else 0}%)"
+                Log.i(TAG, "Headroom 历史打包: ${beforeC}c → ${afterC}c (省 $saved)")
             } else {
                 effectiveMessages = messages
                 me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastResult.value = "无历史消息可打包 (新对话)"
