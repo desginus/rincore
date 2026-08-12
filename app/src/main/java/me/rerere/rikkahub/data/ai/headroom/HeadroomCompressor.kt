@@ -46,8 +46,8 @@ object HeadroomCompressor {
     private const val MIN_ITEMS = 5          // JSON 数组少于 5 项不分析
     private const val MIN_CHARS = 150        // 工具输出少于 150 字符不压
     private const val TEXT_MIN_CHARS = 50    // 消息正文少于 50 字符不压
-    private const val SKELETON_USER_MIN = 120   // 用户历史超过此长度骨架化
-    private const val SKELETON_ASST_MIN = 150   // 助手历史超过此长度骨架化
+    private const val SKELETON_USER_MIN = 60    // 用户历史超过此长度骨架化 (v3.6.29 极限降低)
+    private const val SKELETON_ASST_MIN = 80    // 助手历史超过此长度骨架化 (v3.6.29 极限降低)
     private const val USER_HEAD_MAX = 80        // 用户骨架: 首句最长
     private const val USER_TAIL_MAX = 60        // 用户骨架: 末句最长
     private const val ASST_HEAD_MAX = 120       // 助手骨架: 首句最长
@@ -121,7 +121,9 @@ object HeadroomCompressor {
             } else msg
         }
         if (changed) {
-            Log.i(TAG, "降维完成: ${messages.size} 条消息, 全上下文已压缩 (当前轮完整)")
+            val before = messages.sumOf { it.parts.filterIsInstance<UIMessagePart.Text>().sumOf { t -> t.text.length } }
+            val after = result.sumOf { it.parts.filterIsInstance<UIMessagePart.Text>().sumOf { t -> t.text.length } }
+            Log.i(TAG, "降维完成: ${messages.size} 条消息, 文本 ${before}c → ${after}c (省 ${before - after}c, ${if (before > 0) (100 * (before - after) / before) else 0}%), 当前轮完整")
         }
         return result
     }
