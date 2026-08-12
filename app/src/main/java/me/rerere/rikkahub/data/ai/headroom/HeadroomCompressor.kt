@@ -173,6 +173,68 @@ object HeadroomCompressor {
     }
 
     /**
+     * 历史上下文打包压缩 (v3.6.32):
+     * 把当前窗口前的所有历史消息打包成一条压缩包消息 (每轮一行紧凑格式),
+     * 整体压低上下文体积 — 不是逐句骨架, 而是整体打包。
+     * 确定性规则 (同输入同输出), 缓存前缀稳定。
+     */
+    fun packHistory(history: List<UIMessage>): UIMessage {
+        val builder = StringBuilder()
+        var round = 0
+        history.forEach { msg ->
+            when (msg.role) {
+                me.rerere.ai.core.MessageRole.USER -> {
+                    round++
+                    builder.append(round).append(" U: ").append(extractHead(msg, USER_HEAD_MAX)).append('\n')
+                }
+                me.rerere.ai.core.MessageRole.ASSISTANT -> {
+                    builder.append(round).append(" A: ").append(extractHeadTail(msg, ASST_HEAD_MAX, ASST_TAIL_MAX)).append('\n')
+                }
+                else -> {
+                    // 工具轮次: 工具名 + 结果首部 (内容级压缩后取前 150 字符)
+                    val tool = msg.parts.filterIsInstance<UIMessagePart.Tool>().firstOrNull()
+                    if (tool != null) {
+                        val outText = tool.output.filterIsInstance<UIMessagePart.Text>()
+                            .joinToString(" ") { it.text }.trim()
+                        val compressed = if (outText.length >= MIN_CHARS) crush(outText) else outText
+                        builder.append(round).append(" [工具 ").append(tool.toolName).append("]: ")
+                            .append(compressed.take(150)).append('\n')
+                    }
+                }
+            }
+        }
+        val body = builder.toString().trimEnd()
+        val before = history.sumOf { it.parts.filterIsInstance<UIMessagePart.Text>().sumOf { t -> t.text.length } }
+        return UIMessage(
+            role = me.rerere.ai.core.MessageRole.USER,
+            parts = listOf(
+                UIMessagePart.Text(
+                    "[历史上下文压缩包] 共 ${history.size} 条消息, 原 ${before} 字符\n" + body
+                )
+            ),
+        )
+    }
+
+    /** 用户历史: 首句 (≤max) */
+    private fun extractHead(msg: UIMessage, max: Int): String {
+        val text = msg.parts.filterIsInstance<UIMessagePart.Text>().joinToString(" ") { it.text }.trim()
+        val sentences = text.split(Regex("(?<=[。！？!?\n])"))
+            .map { it.trim() }.filter { it.isNotEmpty() }
+        return (sentences.firstOrNull() ?: text).take(max)
+    }
+
+    /** 助手历史: 首句 + 末句 (紧凑一行) */
+    private fun extractHeadTail(msg: UIMessage, headMax: Int, tailMax: Int): String {
+        val text = msg.parts.filterIsInstance<UIMessagePart.Text>().joinToString(" ") { it.text }.trim()
+        val sentences = text.split(Regex("(?<=[。！？!?\n])"))
+            .map { it.trim() }.filter { it.isNotEmpty() }
+        if (sentences.size < 2) return text.take(headMax)
+        val head = sentences.first().take(headMax)
+        val tail = sentences.last().take(tailMax)
+        return if (tail.isNotEmpty() && tail != head) "$head … $tail" else head
+    }
+
+    /**
      * 压缩单段内容 (工具输出用)。确定性规则。
      */
     fun crush(content: String): String {

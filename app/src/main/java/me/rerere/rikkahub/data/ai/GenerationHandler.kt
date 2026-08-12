@@ -586,10 +586,38 @@ class GenerationHandler(
         // v3.6.24: Headroom 降维 — 每步发送前统一压缩, 覆盖所有会发送向 API 的消息。
         // 关闭 (默认) 时 zero-copy 原样; 开启时消息正文+工具输出确定性压缩 (缓存稳定)。
         Log.i(TAG, "Headroom 开关: ${settings.headroomCompression} (发送前)")
-        val effectiveMessages = if (settings.headroomCompression) {
-            HeadroomCompressor.compress(messages)
+        // v3.6.32: 历史打包压缩 — 当前窗口前的所有历史打包成一条压缩包,
+        // 当前窗口 (最后 USER 及之后) 完整保留。整体压低, 不是逐句骨架。
+        val effectiveMessages: List<UIMessage>
+        if (settings.headroomCompression) {
+            val windowStart = messages.indexOfLast { it.role == me.rerere.ai.core.MessageRole.USER }
+                .let { if (it >= 0) it else messages.size }
+            val history = if (windowStart > 0) messages.subList(0, windowStart) else emptyList()
+            val current = messages.subList(windowStart, messages.size)
+            if (history.isNotEmpty()) {
+                val packed = HeadroomCompressor.packHistory(history)
+                val beforeC = history.sumOf { it.parts.filterIsInstance<UIMessagePart.Text>().sumOf { t -> t.text.length } }
+                val afterC = packed.parts.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }
+                val saved = beforeC - afterC
+                if (saved > 0) {
+                    effectiveMessages = listOf(packed) + current
+                    me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastResult.value =
+                        "历史打包: ${beforeC} → ${afterC} 字符 (省 $saved, ${100 * saved / beforeC}%)"
+                    Log.i(TAG, "Headroom 历史打包: ${beforeC}c → ${afterC}c (省 $saved)")
+                } else {
+                    // 打包无收益 (历史均短) — 原样发送
+                    effectiveMessages = messages
+                    me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastResult.value =
+                        "历史打包: ${beforeC} 字符, 打包无收益 (历史均短), 原样发送"
+                    Log.i(TAG, "Headroom 历史打包无收益: ${beforeC}c, 原样")
+                }
+            } else {
+                effectiveMessages = messages
+                me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastResult.value = "无历史消息可打包 (新对话)"
+            }
         } else {
-            messages
+            effectiveMessages = messages
+            me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastResult.value = null
         }
         var internalMessages = buildList {
             val sysPromptLen: Int
