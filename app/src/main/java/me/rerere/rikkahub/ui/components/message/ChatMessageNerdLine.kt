@@ -69,12 +69,14 @@ fun ChatMessageNerdLine(
                                     text = "(${message.usage?.cachedTokens?.formatNumber() ?: "0"} cached)"
                                 )
                             }
-                            // v3.6.38: 降维节省 (用户唯一观测手段 — 每轮直接可见)
+                            // v3.6.38/39: 降维节省 — 只显示在目标消息 (修复所有消息都显示)
                             val savedTokens by me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastSavedTokens
                                 .collectAsStateWithLifecycle()
-                            savedTokens?.let {
+                            val targetId by me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastTargetMessageId
+                                .collectAsStateWithLifecycle()
+                            if (savedTokens != null && message.id.toString() == targetId) {
                                 Text(
-                                    text = " 降维省 ${it.formatNumber()}",
+                                    text = " 降维省 ${savedTokens.formatNumber()}",
                                     color = MaterialTheme.colorScheme.primary,
                                 )
                             }
