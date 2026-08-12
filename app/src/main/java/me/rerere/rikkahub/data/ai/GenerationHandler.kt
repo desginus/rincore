@@ -735,7 +735,9 @@ class GenerationHandler(
             "[$i:${m.role.name}:$types:$hash]"
         }.joinToString(" "))
 
-        var messages: List<UIMessage> = effectiveMessages
+        // v3.6.34: 流式基准 = 原始消息 (关键) — 压缩包只进请求 (internalMessages),
+        // 流式累积/onUpdateMessages 回写必须用原始消息, 否则 UI 消息被替换成压缩包
+        var messages: List<UIMessage> = messages
         val params = TextGenerationParams(
             model = model,
             temperature = assistant.temperature,
