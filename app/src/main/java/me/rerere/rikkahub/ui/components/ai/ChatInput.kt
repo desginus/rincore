@@ -203,6 +203,21 @@ fun ChatInput(
                 .padding(bottom = if (imeVisible) 0.dp else 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // v3.6.30: 降维模式标签 — 开关开启时输入栏可见 (确认压缩生效状态)
+            if (settings.headroomCompression) {
+                androidx.compose.material3.Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+                ) {
+                    Text(
+                        text = "降维模式已开启 · 历史消息发送前骨架化",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    )
+                }
+            }
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()

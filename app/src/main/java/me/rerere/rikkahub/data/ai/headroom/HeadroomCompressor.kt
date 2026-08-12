@@ -64,6 +64,7 @@ object HeadroomCompressor {
      * 消息结构/角色/工具定义不动。
      */
     fun compress(messages: List<UIMessage>): List<UIMessage> {
+        Log.i(TAG, "降维执行: ${messages.size} 条消息")
         if (messages.isEmpty()) return messages
         // 当前轮窗口: 最后一条 USER 消息及之后的消息不截断 (完整语义),
         // 更早的历史轮次才做有损截断 (全上下文压缩, 信息首尾保留)

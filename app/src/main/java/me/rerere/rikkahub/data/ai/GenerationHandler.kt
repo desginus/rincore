@@ -585,6 +585,7 @@ class GenerationHandler(
     ) {
         // v3.6.24: Headroom 降维 — 每步发送前统一压缩, 覆盖所有会发送向 API 的消息。
         // 关闭 (默认) 时 zero-copy 原样; 开启时消息正文+工具输出确定性压缩 (缓存稳定)。
+        Log.i(TAG, "Headroom 开关: ${settings.headroomCompression} (发送前)")
         val effectiveMessages = if (settings.headroomCompression) {
             HeadroomCompressor.compress(messages)
         } else {
