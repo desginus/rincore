@@ -213,7 +213,7 @@ fun ChatMessage(
         )
 
         ProvideTextStyle(textStyle) {
-            ChatMessageNerdLine(message = message, isLast = isLast)
+            ChatMessageNerdLine(message = message, isLast = lastMessage)
         }
 
     }
