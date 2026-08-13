@@ -377,9 +377,6 @@ private fun ChatPageContent(
                     onClickMenu = {
                         previewMode = !previewMode
                     },
-                    onOpenSettings = {
-                        showChatSettings = true
-                    },
                     onUpdateTitle = {
                         vm.updateTitle(it)
                     }
@@ -452,6 +449,9 @@ private fun ChatPageContent(
                     },
                     onMoreClick = {
                         showFilesSheet = true
+                    },
+                    onChatSettingsClick = {
+                        showChatSettings = true
                     },
                 )
             },
@@ -778,7 +778,6 @@ private fun TopBar(
     previewMode: Boolean,
     onClickMenu: () -> Unit,
     onNewChat: () -> Unit,
-    onOpenSettings: () -> Unit,
     onUpdateTitle: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -837,15 +836,6 @@ private fun TopBar(
             }
         },
         actions = {
-            // v3.6.13: 对话设置 (扳手) — 从右往左第三个 (新对话/更多 左侧)
-            IconButton(
-                onClick = {
-                    onOpenSettings()
-                }
-            ) {
-                Icon(HugeIcons.Wrench01, "Chat Settings")
-            }
-
             IconButton(
                 onClick = {
                     onClickMenu()

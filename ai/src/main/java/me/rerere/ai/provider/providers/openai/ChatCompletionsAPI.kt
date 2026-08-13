@@ -497,8 +497,12 @@ class ChatCompletionsAPI(
                     }
 
                     "opencode.ai" -> {
-                        if (level != ReasoningLevel.AUTO) {
-                            put("reasoning_effort", level.effort)
+                        // OpenCode Zen DeepSeek V4: 支持 low/medium/high/max (证据: OpenCode
+                        // transform.ts WIDELY_SUPPORTED_EFFORTS + max, 无 none/xhigh)。
+                        // xhigh → max 映射; OFF → 不发 (DeepSeek V4 推理常开, 用默认档)
+                        if (level != ReasoningLevel.AUTO && level != ReasoningLevel.OFF) {
+                            val effort = if (level == ReasoningLevel.XHIGH) "max" else level.effort
+                            put("reasoning_effort", effort)
                         }
                     }
 

@@ -32,6 +32,7 @@ import me.rerere.rikkahub.di.repositoryModule
 import me.rerere.rikkahub.di.viewModelModule
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.datastore.DEFAULT_PROVIDERS
+import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.service.WebServerService
 import me.rerere.rikkahub.service.ConnectionWarmer
@@ -65,6 +66,16 @@ class RikkaHubApp : Application() {
             workManagerFactory()
             modules(appModule, viewModelModule, dataSourceModule, repositoryModule)
         }
+        // v3.6.45: 异步预热用户自定义 provider host (含 OpenCode Zen) —
+        // 首次请求跳过 DNS+TCP, 降低首字延迟。DEFAULT_PROVIDERS 已在上面同步预热。
+        Thread({
+            runCatching {
+                val userUrls = get<SettingsStore>().settingsFlow.value.providers
+                    .filterIsInstance<ProviderSetting.OpenAI>()
+                    .mapNotNull { it.baseUrl.takeIf { u -> u.isNotEmpty() } }
+                ConnectionWarmer.warmConfiguredProviders(this@RikkaHubApp, userUrls)
+            }
+        }, "warmup-user-providers").start()
         this.createNotificationChannel()
 
         // set cursor window size to 32MB

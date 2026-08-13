@@ -128,6 +128,7 @@ fun ChatInput(
     onUpdateAssistant: (Assistant) -> Unit,
     onUpdateSearchService: (Int) -> Unit,
     onMoreClick: () -> Unit,
+    onChatSettingsClick: () -> Unit,
     onCancelClick: () -> Unit,
     onSendClick: () -> Unit,
     onLongSendClick: () -> Unit,
@@ -275,6 +276,17 @@ fun ChatInput(
                                         onUpdateAssistant(assistant.copy(reasoningLevel = it))
                                     },
                                     onlyIcon = true,
+                                )
+                            }
+
+                            // v3.6.45: 对话设置 (延迟自动回复 + 上下文降维) — 从右上角移到对话框
+                            IconButton(
+                                onClick = onChatSettingsClick,
+                            ) {
+                                Icon(
+                                    imageVector = HugeIcons.Wrench01,
+                                    contentDescription = "Chat Settings",
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
 

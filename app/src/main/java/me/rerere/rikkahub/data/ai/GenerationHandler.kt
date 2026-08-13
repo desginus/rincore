@@ -606,7 +606,11 @@ class GenerationHandler(
                 val state = me.rerere.rikkahub.data.ai.headroom.HeadroomCache.get(cacheKey)
                 val deltaMsgs = history.size - (state?.packedUntil ?: 0)
                 val packedText: String
-                if (state != null && deltaMsgs in 1..HeadroomCompressor.DELTA_MAX_MSGS) {
+                if (state != null && deltaMsgs == 0) {
+                    // v3.6.45: 工具循环中 history 不变 — 直接复用上次压缩包
+                    // (避免每 step 重复完整总结, 且前缀逐字节稳定)
+                    packedText = state.packedText
+                } else if (state != null && deltaMsgs in 1..HeadroomCompressor.DELTA_MAX_MSGS) {
                     // 增量追加: 前缀稳定 → 缓存命中压缩包
                     val delta = history.subList(state.packedUntil, history.size)
                         .mapNotNull { HeadroomCompressor.summarizeDelta(it) }
