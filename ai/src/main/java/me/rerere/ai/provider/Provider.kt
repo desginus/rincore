@@ -63,6 +63,7 @@ data class TextGenerationParams(
     val reasoningLevel: ReasoningLevel = ReasoningLevel.OFF,
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBody: List<CustomBody> = emptyList(),
+    val conversationId: String? = null, // v3.6.45: OpenCode Zen sticky session 用 (x-opencode-session header)
 )
 
 @Serializable

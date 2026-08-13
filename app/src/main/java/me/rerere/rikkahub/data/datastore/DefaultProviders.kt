@@ -47,6 +47,14 @@ val DEFAULT_PROVIDERS = listOf(
         )
     ),
     ProviderSetting.OpenAI(
+        id = Uuid.parse("e8a7f1c2-3b4d-5e6f-a7b8-c9d0e1f2a3b4"),
+        name = "OpenCode Zen",
+        baseUrl = "https://opencode.ai/zen/v1",
+        apiKey = "",
+        enabled = false,
+        builtIn = true, // v3.6.45: 启动时预热 opencode.ai host — 减少 DeepSeek V4 via Zen 首字延迟
+    ),
+    ProviderSetting.OpenAI(
         id = Uuid.parse("d5734028-d39b-4d41-9841-fd648d65440e"),
         name = "OpenRouter",
         baseUrl = "https://openrouter.ai/api/v1",

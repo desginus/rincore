@@ -20,15 +20,15 @@ import java.util.concurrent.ConcurrentHashMap
  */
 object ConnectionWarmer {
     private const val TAG = "ConnectionWarmer"
-    private var warmed = false
+    // v3.6.45: per-host warmed — 避免重复预热同一 host, 但支持多 host 预热
+    private val warmedHosts = ConcurrentHashMap.newKeySet<String>()
 
     /**
      * 异步预热指定主机。应在 Application.onCreate 或首个 Activity 中调用,
      * 不阻塞主线程。
      */
     fun warmHost(context: Context, host: String, port: Int = 443) {
-        if (warmed) return
-        warmed = true
+        if (!warmedHosts.add("$host:$port")) return // 已预热过则跳过
         Thread({
             try {
                 val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager

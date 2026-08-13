@@ -16,6 +16,7 @@ package me.rerere.rikkahub.data.ai
 
 import android.content.Context
 import android.util.Log
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
@@ -37,6 +38,7 @@ import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.Tool
 import me.rerere.ai.core.merge
 import me.rerere.ai.provider.CustomBody
+import me.rerere.ai.provider.CustomHeader
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderManager
@@ -122,7 +124,8 @@ class GenerationHandler(
         conversationModeInjectionIds: Set<Uuid> = emptySet(),
         conversationLorebookIds: Set<Uuid> = emptySet(),
         workspaceCwd: String? = null,
-        conversationLoadedDomains: List<String>? = null // v3.6.10: 保序 (Set 曾致跨轮顺序不定),
+        conversationLoadedDomains: List<String>? = null, // v3.6.10: 保序 (Set 曾致跨轮顺序不定),
+        conversationId: String? = null, // v3.6.45: OpenCode Zen sticky session 透传
     ): Flow<GenerationChunk> = flow {
         // Trace ID 每次生成唯一 — 之前用 model.id 导致所有 trace 同 ID (日志无法区分)
         CallTracer.startTrace(id = java.util.UUID.randomUUID().toString().take(8))
@@ -799,6 +802,14 @@ class GenerationHandler(
             customHeaders = buildList {
                 addAll(assistant.customHeaders)
                 addAll(model.customHeaders)
+                // v3.6.45 OpenCode Zen sticky session: 同一会话→同一上游 provider→提高缓存命中率
+                if (conversationId != null) {
+                    val host = (provider as? ProviderSetting.OpenAI)?.baseUrl
+                        ?.toHttpUrlOrNull()?.host
+                    if (host == "opencode.ai") {
+                        add(CustomHeader("x-opencode-session", conversationId))
+                    }
+                }
             },
             customBody = buildList {
                 addAll(assistant.customBodies)
