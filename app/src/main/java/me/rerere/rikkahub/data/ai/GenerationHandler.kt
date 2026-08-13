@@ -312,6 +312,7 @@ class GenerationHandler(
                     conversationLorebookIds = conversationLorebookIds,
                     workspaceCwd = workspaceCwd,
                     layer1Prompt = layer1Prompt,
+                    conversationId = conversationId,
                 )
                 CallTracer.event("RECV", "post_api", "generateInternal returned, messages=${messages.size}")
                 messages = messages.visualTransforms(
@@ -585,6 +586,7 @@ class GenerationHandler(
         conversationLorebookIds: Set<Uuid> = emptySet(),
         workspaceCwd: String? = null,
         layer1Prompt: String? = null,
+        conversationId: String? = null,
     ) {
         // v3.6.24: Headroom 降维 — 每步发送前统一压缩, 覆盖所有会发送向 API 的消息。
         // 关闭 (默认) 时 zero-copy 原样; 开启时消息正文+工具输出确定性压缩 (缓存稳定)。
