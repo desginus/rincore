@@ -113,7 +113,9 @@ private fun rememberReasoningState(reasoning: UIMessagePart.Reasoning): Pair<Rea
         if (loading) {
             while (isActive) {
                 state.duration = (reasoning.finishedAt ?: Clock.System.now()) - reasoning.createdAt
-                delay(50)
+                // v3.6.47: 50ms→500ms — 50ms 更新每秒触发 20 次 mutableState 重组,
+                // 思考链期间持续高 CPU → 帧率低/发热。0.5s 精度足够显示, 重组降 90%。
+                delay(500)
             }
         }
     }
