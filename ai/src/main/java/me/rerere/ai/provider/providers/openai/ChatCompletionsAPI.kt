@@ -178,11 +178,16 @@ class ChatCompletionsAPI(
         // 首包后 120s (平台思考/回复间隙静默不误杀)。
         val hasReceivedData = java.util.concurrent.atomic.AtomicBoolean(false)  // 前置声明 (watchdog 引用)
         val lastEventAt = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
+        // v3.6.44: opencode.ai 针对性适配 — 网关聚合转发 + 深度思考, 静默期更长,
+        // 放宽 watchdog 避免误杀长思考 (首包 120s / 流中 180s)
+        val isOpencode = providerSetting.baseUrl.toHttpUrl().host == "opencode.ai"
+        val firstByteLimit = if (isOpencode) 120_000L else 60_000L
+        val streamLimit = if (isOpencode) 180_000L else 120_000L
         val watchdog = launch {
             while (true) {
                 delay(15_000)
                 val idleMs = System.currentTimeMillis() - lastEventAt.get()
-                val limit = if (hasReceivedData.get()) 120_000L else 60_000L
+                val limit = if (hasReceivedData.get()) streamLimit else firstByteLimit
                 if (idleMs > limit) {
                     Log.w(TAG, "SSE idle ${idleMs / 1000}s (phase=${if (hasReceivedData.get()) "stream" else "first-byte"}) — closing stream")
                     close(java.io.IOException("生成无有效数据超时 (${limit / 1000}s): 平台断流或卡死"))
@@ -877,12 +882,23 @@ class ChatCompletionsAPI(
 
     private fun parseTokenUsage(jsonObject: JsonObject?): TokenUsage? {
         if (jsonObject == null) return null
+        // v3.6.44: 缓存命中字段统一解析 — DeepSeek 用顶层 prompt_cache_hit_tokens,
+        // OpenAI 用 prompt_tokens_details.cached_tokens (v3.3.12 回滚时丢失 → DeepSeek 缓存率恒为 0)
+        val promptTokens = jsonObject["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val completionTokens = jsonObject["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val cachedTokens = jsonObject["prompt_cache_hit_tokens"]?.jsonPrimitive?.intOrNull
+            ?: jsonObject["prompt_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
+            ?: 0
+        if (cachedTokens > 0) {
+            val hitRate = if (promptTokens > 0) cachedTokens * 100 / promptTokens else 0
+            Log.i(TAG, "Cache hit: $cachedTokens/$promptTokens tokens (${hitRate}%)")
+        }
         return TokenUsage(
-            promptTokens = jsonObject["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            completionTokens = jsonObject["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            cachedTokens = jsonObject["prompt_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
-                ?: 0
+            promptTokens = promptTokens,
+            completionTokens = completionTokens,
+            totalTokens = totalTokens,
+            cachedTokens = cachedTokens
         )
     }
 

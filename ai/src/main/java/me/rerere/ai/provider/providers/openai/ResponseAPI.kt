@@ -838,12 +838,22 @@ class ResponseAPI(
 
     private fun parseTokenUsage(jsonObject: JsonObject?): TokenUsage? {
         if (jsonObject == null) return null
+        // v3.6.44: 缓存命中字段统一解析 (DeepSeek 顶层 prompt_cache_hit_tokens + OpenAI input_tokens_details.cached_tokens)
+        val promptTokens = jsonObject["input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val completionTokens = jsonObject["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val cachedTokens = jsonObject["prompt_cache_hit_tokens"]?.jsonPrimitive?.intOrNull
+            ?: jsonObject["input_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
+            ?: 0
+        if (cachedTokens > 0) {
+            val hitRate = if (promptTokens > 0) cachedTokens * 100 / promptTokens else 0
+            Log.i(TAG, "Cache hit: $cachedTokens/$promptTokens tokens (${hitRate}%)")
+        }
         return TokenUsage(
-            promptTokens = jsonObject["input_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            completionTokens = jsonObject["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            cachedTokens = jsonObject["input_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
-                ?: 0
+            promptTokens = promptTokens,
+            completionTokens = completionTokens,
+            totalTokens = totalTokens,
+            cachedTokens = cachedTokens
         )
     }
 }
