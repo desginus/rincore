@@ -117,11 +117,13 @@ object HeadroomCompressor {
         }
         var summary = builder.toString().trimEnd()
 
-        // 整体长度控制: 保留 40% (首尾各 20%, 中段省略)
+        // 整体长度控制: 保留 40% (直接截断前 40% — 连续前缀, 缓存友好)
+        // v3.6.58 首尾采样 (前20%+后20%) 是负优化: 中段省略标记把前缀断开,
+        // 缓存只命中前 20% (14.1K), 后 20% 永远进不了缓存。直接截断前 40%
+        // 保持前缀连续, 缓存命中完整 40%。
         val target = maxOf(rawLen * 40 / 100, 200)
         if (summary.length > target) {
-            val half = target / 2
-            summary = summary.take(half) + "\n…[中段省略]…\n" + summary.takeLast(half)
+            summary = summary.take(target)
         }
 
         val ratio = if (rawLen > 0) (100 - 100 * summary.length / rawLen) else 0
