@@ -818,7 +818,7 @@ class GenerationHandler(
                 }
             }.hashCode()
             "[$i:${m.role.name}:$types:$hash]"
-        }.joinToString(" "))
+        }.joinToString(" ")
         me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastMsgFp.value = msgFpStr
         Log.i(TAG, "msg_fp: " + msgFpStr)
 
