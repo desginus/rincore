@@ -337,13 +337,6 @@ class ChatCompletionsAPI(
         stream: Boolean = false,
     ): JsonObject {
         val host = providerSetting.baseUrl.toHttpUrl().host
-        // v3.6.50: reasoning_content 回传只在 DeepSeek 系列 (官方 thinking_mode 规则)。
-        // 千问 (dashscope) 不回传 — Qwen-Agent 官方框架 format_as_text_message
-        // 丢弃 reasoning_content (注释: 'reasoning content is currently not useful'),
-        // 千问服务端会自行重算思考, 回传反而污染缓存前缀。
-        val passbackReasoningContent = host == "api.deepseek.com" ||
-            host == "opencode.ai" ||
-            host == "integrate.api.nvidia.com"
         return buildJsonObject {
             put("model", params.model.modelId)
             put(
@@ -352,7 +345,6 @@ class ChatCompletionsAPI(
                     messages = messages,
                     includeHistoryReasoning = providerSetting.includeHistoryReasoning,
                     supportInputModalities = params.model.inputModalities,
-                    passbackReasoningContent = passbackReasoningContent,
                 )
             )
 
@@ -556,7 +548,6 @@ class ChatCompletionsAPI(
         messages: List<UIMessage>,
         includeHistoryReasoning: Boolean = true,
         supportInputModalities: List<Modality> = listOf(Modality.TEXT, Modality.IMAGE),
-        passbackReasoningContent: Boolean = false,
     ) = buildJsonArray {
         val filteredMessages = messages.filter { it.isValidToUpload() }
 
@@ -566,7 +557,6 @@ class ChatCompletionsAPI(
                     message = message,
                     includeReasoning = includeHistoryReasoning,
                     supportInputModalities = supportInputModalities,
-                    passbackReasoningContent = passbackReasoningContent,
                 )
             } else {
                 addNonAssistantMessage(message)
@@ -578,7 +568,6 @@ class ChatCompletionsAPI(
         message: UIMessage,
         includeReasoning: Boolean,
         supportInputModalities: List<Modality>,
-        passbackReasoningContent: Boolean = false,
     ) {
         val groups = groupPartsByToolBoundary(message.parts)
         val contentBuffer = mutableListOf<UIMessagePart>()
@@ -603,8 +592,7 @@ class ChatCompletionsAPI(
                     buildAssistantMessageJson(
                         contentParts = contentBuffer,
                         tools = group.tools,
-                        reasoningPart = reasoningPart,
-                        passbackReasoningContent = passbackReasoningContent
+                        reasoningPart = reasoningPart
                     )?.let { assistantMessage ->
                         add(assistantMessage)
                     }
@@ -629,8 +617,7 @@ class ChatCompletionsAPI(
             buildAssistantMessageJson(
                 contentParts = contentBuffer,
                 tools = emptyList(),
-                reasoningPart = reasoningPart,
-                passbackReasoningContent = passbackReasoningContent
+                reasoningPart = reasoningPart
             )?.let { assistantMessage ->
                 add(assistantMessage)
             }
@@ -641,7 +628,6 @@ class ChatCompletionsAPI(
         contentParts: List<UIMessagePart>,
         tools: List<UIMessagePart.Tool>,
         reasoningPart: UIMessagePart.Reasoning?,
-        passbackReasoningContent: Boolean = false,
     ): JsonObject? {
         val hasUsableContent = contentParts.any { part ->
             when (part) {
@@ -657,10 +643,10 @@ class ChatCompletionsAPI(
         return buildJsonObject {
             put("role", "assistant")
 
-            // v3.6.49/50: reasoning_content 回传规则 — 仅 DeepSeek 系列在 tool-call 轮
-            // 回传 (官方 thinking_mode 规则)。千问/OpenAI 等不回传 (Qwen-Agent 丢弃
-            // reasoning_content, 服务端自行重算, 回传反而污染缓存前缀)。
-            if (passbackReasoningContent && hasReasoning && tools.isNotEmpty()) {
+            // v3.6.53: reasoning_content 回传完全对齐原版 RikkaHub — hasReasoning 就回传
+            // (所有模型、所有轮, 不区分 tool-call/plain)。原版超长对话缓存 99%+ 验证:
+            // reasoning_content 字段时有时无会破坏 token 序列前缀稳定性。
+            if (hasReasoning) {
                 put("reasoning_content", reasoningPart.reasoning)
             }
 
@@ -908,8 +894,11 @@ class ChatCompletionsAPI(
         val promptTokens = jsonObject["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0
         val completionTokens = jsonObject["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0
         val totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-        val cachedTokens = jsonObject["prompt_cache_hit_tokens"]?.jsonPrimitive?.intOrNull
-            ?: jsonObject["prompt_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
+        // v3.6.53: 各 provider 缓存命中字段形状不统一, 按方言兜底解析 (对齐原版 #1576):
+        // OpenAI 嵌套 -> Moonshot 顶层 cached_tokens -> DeepSeek prompt_cache_hit_tokens
+        val cachedTokens = jsonObject["prompt_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
+            ?: jsonObject["cached_tokens"]?.jsonPrimitive?.intOrNull
+            ?: jsonObject["prompt_cache_hit_tokens"]?.jsonPrimitive?.intOrNull
             ?: 0
         if (cachedTokens > 0) {
             val hitRate = if (promptTokens > 0) cachedTokens * 100 / promptTokens else 0
