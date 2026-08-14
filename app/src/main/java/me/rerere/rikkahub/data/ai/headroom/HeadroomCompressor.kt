@@ -74,23 +74,27 @@ object HeadroomCompressor {
     private val json = Json { prettyPrint = false }
 
     fun summarizeHistory(history: List<UIMessage>): UIMessage {
-        // v3.6.51: 一段连贯简练总结 (用户要求: 不再分层, 不说无效信息)。
-        // 提取用户诉求与助手结论, 拼成一段话; 确定性实现保证缓存前缀稳定。
+        // v3.6.54: 压缩包信息量提升 (从几百字符到几K级) — 关键修复。
+        // v3.6.51 简化时把压缩包压得太狠 (最近 4 轮 × 每句 60 字符 ≈ 几百字符),
+        // 导致增量追加每轮只涨 120 字符, 对缓存命中贡献微乎其微 → 缓存涨到
+        // stable+tools 后 (16.8K) 就停住, 压缩包增量永远进不了缓存。
+        // 修复: 保留最近 15 轮 × 每句 160 字符 ≈ 4.8K, 使压缩包与增量对缓存
+        // 命中都有实质贡献, 缓存随轮次持续增长。
         val queries = mutableListOf<String>()
         val answers = mutableListOf<String>()
         history.forEach { msg ->
             when (msg.role) {
                 me.rerere.ai.core.MessageRole.USER -> {
-                    extractHead(msg, 60).takeIf { it.isNotBlank() }?.let { queries.add(it) }
+                    extractHead(msg, 160).takeIf { it.isNotBlank() }?.let { queries.add(it) }
                 }
                 me.rerere.ai.core.MessageRole.ASSISTANT -> {
-                    extractTail(msg, 60).takeIf { it.isNotBlank() }?.let { answers.add(it) }
+                    extractTail(msg, 160).takeIf { it.isNotBlank() }?.let { answers.add(it) }
                 }
                 else -> {} // 工具结果不摘要 (无效信息)
             }
         }
-        val q = queries.takeLast(4).joinToString("；")
-        val a = answers.distinct().takeLast(4).joinToString("；")
+        val q = queries.takeLast(15).joinToString("；")
+        val a = answers.distinct().takeLast(15).joinToString("；")
         val summary = buildString {
             append("对话摘要：")
             if (q.isNotBlank()) append(q)
@@ -124,10 +128,11 @@ object HeadroomCompressor {
      * 每轮固定 3 行: 用户首句 / 助手末句 / 工具名+结果首部。
      */
     fun summarizeDelta(msg: UIMessage): String {
-        // v3.6.51: 简洁增量行 (无角色前缀, 工具结果略过)
+        // v3.6.54: 增量信息量提升 (与完整总结同口径 160 字符), 使增量对缓存命中
+        // 有实质贡献 — 每轮增量约 320 字符, 缓存随轮次持续增长。
         return when (msg.role) {
-            me.rerere.ai.core.MessageRole.USER -> extractHead(msg, 60)
-            me.rerere.ai.core.MessageRole.ASSISTANT -> extractTail(msg, 60)
+            me.rerere.ai.core.MessageRole.USER -> extractHead(msg, 160)
+            me.rerere.ai.core.MessageRole.ASSISTANT -> extractTail(msg, 160)
             else -> ""
         }
     }
