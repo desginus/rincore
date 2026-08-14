@@ -833,8 +833,10 @@ class ResponseAPI(
         val promptTokens = jsonObject["input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
         val completionTokens = jsonObject["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0
         val totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-        val cachedTokens = jsonObject["prompt_cache_hit_tokens"]?.jsonPrimitive?.intOrNull
-            ?: jsonObject["input_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
+        // v3.6.55: 方言兜底解析对齐 ChatCompletionsAPI — 加 Moonshot 顶层 cached_tokens
+        val cachedTokens = jsonObject["input_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
+            ?: jsonObject["cached_tokens"]?.jsonPrimitive?.intOrNull
+            ?: jsonObject["prompt_cache_hit_tokens"]?.jsonPrimitive?.intOrNull
             ?: 0
         if (cachedTokens > 0) {
             val hitRate = if (promptTokens > 0) cachedTokens * 100 / promptTokens else 0

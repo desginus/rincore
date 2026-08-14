@@ -622,11 +622,10 @@ class GenerationHandler(
                     packedText = HeadroomCompressor.summarizeHistory(history)
                         .parts.filterIsInstance<UIMessagePart.Text>().joinToString(" ") { it.text }
                 }
-                // 增长控制: 压缩包超阈值 → 重新完整总结 (重建精简前缀)
-                val finalText = if (packedText.length > HeadroomCompressor.MAX_PACKED_CHARS) {
-                    HeadroomCompressor.summarizeHistory(history)
-                        .parts.filterIsInstance<UIMessagePart.Text>().joinToString(" ") { it.text }
-                } else packedText
+                // v3.6.55: 凡有必存 — 去掉 MAX_PACKED_CHARS 重新总结。
+                // 压缩包"每轮一行"持续累积 (不丢弃轮次), 缓存逐 token 增长。
+                // 重新总结会重建压缩包, 即便内容一致也无必要, 且破坏"持续累积"语义。
+                val finalText = packedText
                 me.rerere.rikkahub.data.ai.headroom.HeadroomCache.put(
                     cacheKey,
                     me.rerere.rikkahub.data.ai.headroom.HeadroomCache.State(finalText, history.size)

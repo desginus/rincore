@@ -74,35 +74,37 @@ object HeadroomCompressor {
     private val json = Json { prettyPrint = false }
 
     fun summarizeHistory(history: List<UIMessage>): UIMessage {
-        // v3.6.54: 压缩包信息量提升 (从几百字符到几K级) — 关键修复。
-        // v3.6.51 简化时把压缩包压得太狠 (最近 4 轮 × 每句 60 字符 ≈ 几百字符),
-        // 导致增量追加每轮只涨 120 字符, 对缓存命中贡献微乎其微 → 缓存涨到
-        // stable+tools 后 (16.8K) 就停住, 压缩包增量永远进不了缓存。
-        // 修复: 保留最近 15 轮 × 每句 160 字符 ≈ 4.8K, 使压缩包与增量对缓存
-        // 命中都有实质贡献, 缓存随轮次持续增长。
-        val queries = mutableListOf<String>()
-        val answers = mutableListOf<String>()
+        // v3.6.55: 凡有必存 — 每轮保留一行, 不丢弃任何轮次 (去掉 takeLast 轮数限制)。
+        // 压缩包随轮次自然增长, 缓存逐 token 累积 (每轮新增一行 → 缓存命中增长)。
+        // 此前 takeLast(N) 只保留最近 N 轮, 丢弃更早轮次 → 缓存涨到 stable+tools
+        // 后 (16.8K) 就停住, 压缩包增量永远进不了缓存。
+        val builder = StringBuilder()
         history.forEach { msg ->
             when (msg.role) {
                 me.rerere.ai.core.MessageRole.USER -> {
-                    extractHead(msg, 160).takeIf { it.isNotBlank() }?.let { queries.add(it) }
+                    extractHead(msg, 120).takeIf { it.isNotBlank() }?.let {
+                        builder.append("U: ").append(it).append('\n')
+                    }
                 }
                 me.rerere.ai.core.MessageRole.ASSISTANT -> {
-                    extractTail(msg, 160).takeIf { it.isNotBlank() }?.let { answers.add(it) }
+                    extractTail(msg, 120).takeIf { it.isNotBlank() }?.let {
+                        builder.append("A: ").append(it).append('\n')
+                    }
                 }
-                else -> {} // 工具结果不摘要 (无效信息)
+                else -> {
+                    val tool = msg.parts.filterIsInstance<UIMessagePart.Tool>().firstOrNull()
+                    if (tool != null) {
+                        val outText = tool.output.filterIsInstance<UIMessagePart.Text>()
+                            .joinToString(" ") { it.text }.trim()
+                        if (outText.isNotBlank()) {
+                            builder.append("[工具 ").append(tool.toolName).append("]: ")
+                                .append(outText.take(150)).append('\n')
+                        }
+                    }
+                }
             }
         }
-        val q = queries.takeLast(15).joinToString("；")
-        val a = answers.distinct().takeLast(15).joinToString("；")
-        val summary = buildString {
-            append("对话摘要：")
-            if (q.isNotBlank()) append(q)
-            if (a.isNotBlank()) {
-                if (q.isNotBlank()) append("；")
-                append(a)
-            }
-        }
+        val summary = builder.toString().trimEnd()
 
         val rawLen = history.sumOf { msg ->
             msg.parts.sumOf { part ->
@@ -128,12 +130,21 @@ object HeadroomCompressor {
      * 每轮固定 3 行: 用户首句 / 助手末句 / 工具名+结果首部。
      */
     fun summarizeDelta(msg: UIMessage): String {
-        // v3.6.54: 增量信息量提升 (与完整总结同口径 160 字符), 使增量对缓存命中
-        // 有实质贡献 — 每轮增量约 320 字符, 缓存随轮次持续增长。
+        // v3.6.55: 凡有必存 — 每轮增量一行, 与完整总结同格式 (U:/A:/工具 标签),
+        // 使增量追加前缀与重新总结字节一致, 缓存逐 token 稳定累积。
         return when (msg.role) {
-            me.rerere.ai.core.MessageRole.USER -> extractHead(msg, 160)
-            me.rerere.ai.core.MessageRole.ASSISTANT -> extractTail(msg, 160)
-            else -> ""
+            me.rerere.ai.core.MessageRole.USER -> "U: " + extractHead(msg, 120)
+            me.rerere.ai.core.MessageRole.ASSISTANT -> "A: " + extractTail(msg, 120)
+            else -> {
+                val tool = msg.parts.filterIsInstance<UIMessagePart.Tool>().firstOrNull()
+                if (tool != null) {
+                    val outText = tool.output.filterIsInstance<UIMessagePart.Text>()
+                        .joinToString(" ") { it.text }.trim()
+                    "[工具 ${tool.toolName}]: " + outText.take(150)
+                } else {
+                    ""
+                }
+            }
         }
     }
 
