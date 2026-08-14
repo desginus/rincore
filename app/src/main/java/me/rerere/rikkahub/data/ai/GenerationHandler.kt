@@ -725,30 +725,49 @@ class GenerationHandler(
                 toolPrompts = toolPrompts,
                 systemAddendum = null,
             )
-            // v3.6.51: 记忆 (volatile) 从 system 拆出, 移到压缩包之后 — 记忆每轮变化
-            // 曾导致缓存断在 stable 末尾 (13.8K), 压缩包永远进不了缓存前缀。
-            // 现顺序: stable system → 压缩包/历史 → 记忆 → (当前轮在其中)。
-            // 记忆放最后, 变化只影响尾部, 压缩包前缀稳定 → 缓存包含压缩包。
+            // v3.6.51/52 记忆位置策略:
+            //  - 降维模式: 记忆放消息序列末尾 — 记忆变化不破坏压缩包缓存前缀
+            //    (否则压缩包永远进不了缓存, 只命中 stable 末尾 13.8K)。
+            //  - 非降维模式: 记忆放 stable 之后 (历史之前) — 记忆是稳定前缀一部分,
+            //    可命中。v3.6.51 一度统一放末尾, 非降维模式记忆从命中变 miss,
+            //    命中率掉约 5% (用户实测 90 出头) — 本版恢复非降维的命中率。
+            val cacheFpSystem = if (settings.headroomCompression) stableSystem else
+                listOf(stableSystem, volatileSystem).filter { it.isNotBlank() }.joinToString("\n")
             // v3.5.58 缓存核验: 请求体前缀指纹 (stable system+tools 序列化稳定)
             try {
                 val fp = java.security.MessageDigest.getInstance("SHA-256")
-                    .digest((stableSystem + tools.joinToString { it.name }).toByteArray())
+                    .digest((cacheFpSystem + tools.joinToString { it.name }).toByteArray())
                     .take(8).joinToString("") { "%02x".format(it) }
-                Log.i(TAG, "cache-fp: $fp (system=${stableSystem.length}c tools=${tools.size})")
+                Log.i(TAG, "cache-fp: $fp (system=${cacheFpSystem.length}c tools=${tools.size})")
             } catch (_: Exception) {}
-            if (stableSystem.isNotBlank()) {
-                val estTokens = stableSystem.length / 2.5
-                Log.i(TAG, "System prompt breakdown: system=${sysPromptLen}c (~${(sysPromptLen/2.5).toInt()}t)" +
-                    " layer1=${layer1Len}c (~${(layer1Len/2.5).toInt()}t)" +
-                    " tools=${toolsPromptLen}c (~${(toolsPromptLen/2.5).toInt()}t)" +
-                    " memory=${memPromptLen}c (~${(memPromptLen/2.5).toInt()}t)" +
-                    " total=${stableSystem.length}c (~${estTokens.toInt()}t)")
-                add(UIMessage.system(prompt = stableSystem))
-            }
-            addAll(effectiveMessages)
-            // 记忆 (volatile) 放到消息序列末尾 — 变化不破坏压缩包/历史的缓存前缀
-            if (volatileSystem.isNotBlank()) {
-                add(UIMessage.system(prompt = volatileSystem))
+            if (settings.headroomCompression) {
+                // 降维: stable → 压缩包/历史 → 记忆(末尾)
+                if (stableSystem.isNotBlank()) {
+                    val estTokens = stableSystem.length / 2.5
+                    Log.i(TAG, "System prompt breakdown: system=${sysPromptLen}c (~${(sysPromptLen/2.5).toInt()}t)" +
+                        " layer1=${layer1Len}c (~${(layer1Len/2.5).toInt()}t)" +
+                        " tools=${toolsPromptLen}c (~${(toolsPromptLen/2.5).toInt()}t)" +
+                        " memory=${memPromptLen}c (~${(memPromptLen/2.5).toInt()}t)" +
+                        " total=${stableSystem.length}c (~${estTokens.toInt()}t)")
+                    add(UIMessage.system(prompt = stableSystem))
+                }
+                addAll(effectiveMessages)
+                if (volatileSystem.isNotBlank()) {
+                    add(UIMessage.system(prompt = volatileSystem))
+                }
+            } else {
+                // 非降维: stable+记忆 → 历史/当前轮 (记忆在稳定前缀内, 可命中)
+                val fullSystem = listOf(stableSystem, volatileSystem).filter { it.isNotBlank() }.joinToString("\n")
+                if (fullSystem.isNotBlank()) {
+                    val estTokens = fullSystem.length / 2.5
+                    Log.i(TAG, "System prompt breakdown: system=${sysPromptLen}c (~${(sysPromptLen/2.5).toInt()}t)" +
+                        " layer1=${layer1Len}c (~${(layer1Len/2.5).toInt()}t)" +
+                        " tools=${toolsPromptLen}c (~${(toolsPromptLen/2.5).toInt()}t)" +
+                        " memory=${memPromptLen}c (~${(memPromptLen/2.5).toInt()}t)" +
+                        " total=${fullSystem.length}c (~${estTokens.toInt()}t)")
+                    add(UIMessage.system(prompt = fullSystem))
+                }
+                addAll(effectiveMessages)
             }
         }.transforms(
             transformers = transformers,
