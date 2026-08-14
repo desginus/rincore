@@ -337,6 +337,13 @@ class ChatCompletionsAPI(
         stream: Boolean = false,
     ): JsonObject {
         val host = providerSetting.baseUrl.toHttpUrl().host
+        // v3.6.50: reasoning_content 回传只在 DeepSeek 系列 (官方 thinking_mode 规则)。
+        // 千问 (dashscope) 不回传 — Qwen-Agent 官方框架 format_as_text_message
+        // 丢弃 reasoning_content (注释: 'reasoning content is currently not useful'),
+        // 千问服务端会自行重算思考, 回传反而污染缓存前缀。
+        val passbackReasoningContent = host == "api.deepseek.com" ||
+            host == "opencode.ai" ||
+            host == "integrate.api.nvidia.com"
         return buildJsonObject {
             put("model", params.model.modelId)
             put(
@@ -345,6 +352,7 @@ class ChatCompletionsAPI(
                     messages = messages,
                     includeHistoryReasoning = providerSetting.includeHistoryReasoning,
                     supportInputModalities = params.model.inputModalities,
+                    passbackReasoningContent = passbackReasoningContent,
                 )
             )
 
@@ -548,6 +556,7 @@ class ChatCompletionsAPI(
         messages: List<UIMessage>,
         includeHistoryReasoning: Boolean = true,
         supportInputModalities: List<Modality> = listOf(Modality.TEXT, Modality.IMAGE),
+        passbackReasoningContent: Boolean = false,
     ) = buildJsonArray {
         val filteredMessages = messages.filter { it.isValidToUpload() }
 
@@ -557,6 +566,7 @@ class ChatCompletionsAPI(
                     message = message,
                     includeReasoning = includeHistoryReasoning,
                     supportInputModalities = supportInputModalities,
+                    passbackReasoningContent = passbackReasoningContent,
                 )
             } else {
                 addNonAssistantMessage(message)
@@ -568,6 +578,7 @@ class ChatCompletionsAPI(
         message: UIMessage,
         includeReasoning: Boolean,
         supportInputModalities: List<Modality>,
+        passbackReasoningContent: Boolean = false,
     ) {
         val groups = groupPartsByToolBoundary(message.parts)
         val contentBuffer = mutableListOf<UIMessagePart>()
@@ -592,7 +603,8 @@ class ChatCompletionsAPI(
                     buildAssistantMessageJson(
                         contentParts = contentBuffer,
                         tools = group.tools,
-                        reasoningPart = reasoningPart
+                        reasoningPart = reasoningPart,
+                        passbackReasoningContent = passbackReasoningContent
                     )?.let { assistantMessage ->
                         add(assistantMessage)
                     }
@@ -617,7 +629,8 @@ class ChatCompletionsAPI(
             buildAssistantMessageJson(
                 contentParts = contentBuffer,
                 tools = emptyList(),
-                reasoningPart = reasoningPart
+                reasoningPart = reasoningPart,
+                passbackReasoningContent = passbackReasoningContent
             )?.let { assistantMessage ->
                 add(assistantMessage)
             }
@@ -628,6 +641,7 @@ class ChatCompletionsAPI(
         contentParts: List<UIMessagePart>,
         tools: List<UIMessagePart.Tool>,
         reasoningPart: UIMessagePart.Reasoning?,
+        passbackReasoningContent: Boolean = false,
     ): JsonObject? {
         val hasUsableContent = contentParts.any { part ->
             when (part) {
@@ -643,10 +657,10 @@ class ChatCompletionsAPI(
         return buildJsonObject {
             put("role", "assistant")
 
-            // v3.6.49: reasoning_content 只在 tool-call 轮回传 (对齐 DeepSeek Harness
-            // 官方 thinking_mode 规则: 普通轮 reasoning_content 被忽略, 不回传省 token;
-            // 且规则确定性 → 缓存前缀稳定)。纯文本轮不发 reasoning_content。
-            if (hasReasoning && tools.isNotEmpty()) {
+            // v3.6.49/50: reasoning_content 回传规则 — 仅 DeepSeek 系列在 tool-call 轮
+            // 回传 (官方 thinking_mode 规则)。千问/OpenAI 等不回传 (Qwen-Agent 丢弃
+            // reasoning_content, 服务端自行重算, 回传反而污染缓存前缀)。
+            if (passbackReasoningContent && hasReasoning && tools.isNotEmpty()) {
                 put("reasoning_content", reasoningPart.reasoning)
             }
 
