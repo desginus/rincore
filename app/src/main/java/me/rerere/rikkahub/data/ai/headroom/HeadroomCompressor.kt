@@ -148,19 +148,16 @@ object HeadroomCompressor {
         }
     }
 
-    /** 用户/助手: 首句 (≤max) */
+    /** 用户/助手: 前 max 字符 (v3.6.57 修复: 之前取'首句'导致首句很短时压缩包只有几十字符,
+     *  增大 max 完全无效 → 缓存始终 16K。改为取前 max 字符, 凡有必存) */
     private fun extractHead(msg: UIMessage, max: Int): String {
         val text = msg.parts.filterIsInstance<UIMessagePart.Text>().joinToString(" ") { it.text }.trim()
-        val sentences = text.split(Regex("(?<=[。！？!?\n])"))
-            .map { it.trim() }.filter { it.isNotEmpty() }
-        return (sentences.firstOrNull() ?: text).take(max)
+        return text.take(max)
     }
 
-    /** 助手: 末句 (结论, ≤max) */
+    /** 助手: 后 max 字符 (同上, 之前取'末句'有同样问题) */
     private fun extractTail(msg: UIMessage, max: Int): String {
         val text = msg.parts.filterIsInstance<UIMessagePart.Text>().joinToString(" ") { it.text }.trim()
-        val sentences = text.split(Regex("(?<=[。！？!?\n])"))
-            .map { it.trim() }.filter { it.isNotEmpty() }
-        return (sentences.lastOrNull() ?: text).take(max)
+        return text.takeLast(max)
     }
 }

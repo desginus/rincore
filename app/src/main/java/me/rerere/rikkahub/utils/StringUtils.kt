@@ -62,9 +62,26 @@ fun Long.fileSizeToString(): String {
 }
 
 fun Int.formatNumber(): String {
-    // v3.6.55: 精确显示 — 去掉 K/M 缩写, 缓存 token 逐点累积需精确可见
-    // (凡有必存, 有一点缓存一点)。千分位保可读性, 不丢失任何精度。
-    return "%,d".format(this)
+    val absValue = kotlin.math.abs(this)
+    val sign = if (this < 0) "-" else ""
+    return when {
+        absValue < 1000 -> this.toString()
+        absValue < 1000000 -> {
+            val value = absValue / 1000.0
+            if (value == value.toInt().toDouble()) "$sign${value.toInt()}K"
+            else "$sign${value.toFixed(1)}K"
+        }
+        absValue < 1000000000 -> {
+            val value = absValue / 1000000.0
+            if (value == value.toInt().toDouble()) "$sign${value.toInt()}M"
+            else "$sign${value.toFixed(1)}M"
+        }
+        else -> {
+            val value = absValue / 1000000000.0
+            if (value == value.toInt().toDouble()) "$sign${value.toInt()}B"
+            else "$sign${value.toFixed(1)}B"
+        }
+    }
 }
 fun Float.toFixed(digits: Int = 0) = "%.${digits}f".format(this)
 fun Double.toFixed(digits: Int = 0) = "%.${digits}f".format(this)
