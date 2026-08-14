@@ -74,53 +74,32 @@ object HeadroomCompressor {
     private val json = Json { prettyPrint = false }
 
     fun summarizeHistory(history: List<UIMessage>): UIMessage {
-        // ── 提取阶段 ──
-        val userFocus = LinkedHashSet<String>()   // 用户关注点 (每轮 USER 首句)
-        val conclusions = mutableListOf<String>()  // 助手结论 (每轮 ASSISTANT 末句)
-        val toolUsage = LinkedHashMap<String, Int>() // 工具名 → 次数
-        var roundCount = 0
-        var lastUser = ""
+        // v3.6.51: 一段连贯简练总结 (用户要求: 不再分层, 不说无效信息)。
+        // 提取用户诉求与助手结论, 拼成一段话; 确定性实现保证缓存前缀稳定。
+        val queries = mutableListOf<String>()
+        val answers = mutableListOf<String>()
         history.forEach { msg ->
             when (msg.role) {
                 me.rerere.ai.core.MessageRole.USER -> {
-                    val head = extractHead(msg, 80)
-                    if (head.isNotBlank()) {
-                        userFocus.add(head)
-                        lastUser = head
-                        roundCount++
-                    }
+                    extractHead(msg, 60).takeIf { it.isNotBlank() }?.let { queries.add(it) }
                 }
                 me.rerere.ai.core.MessageRole.ASSISTANT -> {
-                    val tail = extractTail(msg, 100)
-                    if (tail.isNotBlank()) conclusions.add(tail)
+                    extractTail(msg, 60).takeIf { it.isNotBlank() }?.let { answers.add(it) }
                 }
-                else -> {
-                    val tool = msg.parts.filterIsInstance<UIMessagePart.Tool>().firstOrNull()
-                    if (tool != null) {
-                        toolUsage[tool.toolName] = (toolUsage[tool.toolName] ?: 0) + 1
-                    }
-                }
+                else -> {} // 工具结果不摘要 (无效信息)
+            }
+        }
+        val q = queries.takeLast(4).joinToString("；")
+        val a = answers.distinct().takeLast(4).joinToString("；")
+        val summary = buildString {
+            append("对话摘要：")
+            if (q.isNotBlank()) append(q)
+            if (a.isNotBlank()) {
+                if (q.isNotBlank()) append("；")
+                append(a)
             }
         }
 
-        // ── 组装阶段 (一段连贯总结) ──
-        val builder = StringBuilder()
-        builder.append("[上下文总结] 共 ").append(roundCount).append(" 轮。")
-        if (userFocus.isNotEmpty()) {
-            builder.append("用户关注: ").append(userFocus.take(6).joinToString("；")).append("。")
-        }
-        if (conclusions.isNotEmpty()) {
-            // 去重: 重复结论合并 (多轮相同末句)
-            builder.append("助手结论: ").append(conclusions.distinct().take(8).joinToString("；")).append("。")
-        }
-        if (toolUsage.isNotEmpty()) {
-            builder.append("涉及工具: ")
-                .append(toolUsage.entries.take(6).joinToString("、") { "${it.key}×${it.value}" })
-                .append("。")
-        }
-
-        // ── 长度控制 (v3.6.41 修正): 压缩率上限 65%, 信息保留率 ≥35% ──
-        // 用户明确: 不是压得越狠越好, 要保留足够信息。压缩 ≤65% 即保留 ≥35%。
         val rawLen = history.sumOf { msg ->
             msg.parts.sumOf { part ->
                 when (part) {
@@ -130,36 +109,9 @@ object HeadroomCompressor {
                 }
             }
         }
-        var summary = builder.toString().trimEnd()
-        val minKeep = rawLen * 35 / 100   // 至少保留 35% (压缩 ≤65%)
-        val maxKeep = rawLen * 50 / 100   // 最多保留 50% (压缩 ≥50%, 信息密度优先)
-        val budget = maxOf(minKeep, 200)
-        if (summary.length < budget && summary.length < maxKeep) {
-            // 总结内容不足预算: 补充最近一轮的完整内容 (信息保留)
-            val lastRound = history.takeLastWhile { it.role != me.rerere.ai.core.MessageRole.USER }
-                .let { tail ->
-                    val userIdx = history.lastIndex - tail.size
-                    if (userIdx >= 0) history[userIdx] else null
-                }
-            val lastText = lastRound?.parts?.filterIsInstance<UIMessagePart.Text>()
-                ?.joinToString(" ") { it.text }?.trim().orEmpty()
-            if (lastText.isNotBlank() && summary.length + lastText.length <= budget) {
-                summary += "\n最近一轮: $lastText"
-            } else if (lastText.isNotBlank()) {
-                val room = budget - summary.length
-                if (room > 50) summary += "\n最近一轮: " + lastText.take(room)
-            }
-        }
-        if (summary.length > maxKeep) {
-            // 超上限: 截断 (保留结尾 — 最近信息)
-            summary = summary.take(maxKeep) + "…"
-        }
-
-        // 压缩详情 (v3.6.41): 证明压缩发生 + 信息保留
         val ratio = if (rawLen > 0) (100 - 100 * summary.length / rawLen) else 0
         me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastDetail.value =
-            "历史 ${rawLen} 字符 → 总结 ${summary.length} 字符 (压缩 ${ratio}%, 保留 ${100 - ratio}%)\n" +
-            "总结预览: " + summary.take(160)
+            "历史 ${rawLen} 字符 → 总结 ${summary.length} 字符 (压缩 ${ratio}%)\n总结预览: " + summary.take(160)
 
         return UIMessage(
             role = me.rerere.ai.core.MessageRole.USER,
@@ -172,21 +124,11 @@ object HeadroomCompressor {
      * 每轮固定 3 行: 用户首句 / 助手末句 / 工具名+结果首部。
      */
     fun summarizeDelta(msg: UIMessage): String {
+        // v3.6.51: 简洁增量行 (无角色前缀, 工具结果略过)
         return when (msg.role) {
-            me.rerere.ai.core.MessageRole.USER ->
-                "用户: " + extractHead(msg, 80)
-            me.rerere.ai.core.MessageRole.ASSISTANT ->
-                "助手: " + extractTail(msg, 100)
-            else -> {
-                val tool = msg.parts.filterIsInstance<UIMessagePart.Tool>().firstOrNull()
-                if (tool != null) {
-                    val outHead = tool.output.filterIsInstance<UIMessagePart.Text>()
-                        .joinToString(" ") { it.text }.trim().take(60)
-                    "工具[${tool.toolName}]: $outHead"
-                } else {
-                    ""
-                }
-            }
+            me.rerere.ai.core.MessageRole.USER -> extractHead(msg, 60)
+            me.rerere.ai.core.MessageRole.ASSISTANT -> extractTail(msg, 60)
+            else -> ""
         }
     }
 

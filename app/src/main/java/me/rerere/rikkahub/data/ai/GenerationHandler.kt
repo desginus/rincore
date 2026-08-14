@@ -725,24 +725,31 @@ class GenerationHandler(
                 toolPrompts = toolPrompts,
                 systemAddendum = null,
             )
-            val system = listOf(stableSystem, volatileSystem).filter { it.isNotBlank() }.joinToString("\n")
-            // v3.5.58 缓存核验: 请求体前缀指纹 (system+tools 序列化稳定 → 前缀可命中)
+            // v3.6.51: 记忆 (volatile) 从 system 拆出, 移到压缩包之后 — 记忆每轮变化
+            // 曾导致缓存断在 stable 末尾 (13.8K), 压缩包永远进不了缓存前缀。
+            // 现顺序: stable system → 压缩包/历史 → 记忆 → (当前轮在其中)。
+            // 记忆放最后, 变化只影响尾部, 压缩包前缀稳定 → 缓存包含压缩包。
+            // v3.5.58 缓存核验: 请求体前缀指纹 (stable system+tools 序列化稳定)
             try {
                 val fp = java.security.MessageDigest.getInstance("SHA-256")
-                    .digest((system + tools.joinToString { it.name }).toByteArray())
+                    .digest((stableSystem + tools.joinToString { it.name }).toByteArray())
                     .take(8).joinToString("") { "%02x".format(it) }
-                Log.i(TAG, "cache-fp: $fp (system=${system.length}c tools=${tools.size})")
+                Log.i(TAG, "cache-fp: $fp (system=${stableSystem.length}c tools=${tools.size})")
             } catch (_: Exception) {}
-            if (system.isNotBlank()) {
-                val estTokens = system.length / 2.5
+            if (stableSystem.isNotBlank()) {
+                val estTokens = stableSystem.length / 2.5
                 Log.i(TAG, "System prompt breakdown: system=${sysPromptLen}c (~${(sysPromptLen/2.5).toInt()}t)" +
                     " layer1=${layer1Len}c (~${(layer1Len/2.5).toInt()}t)" +
                     " tools=${toolsPromptLen}c (~${(toolsPromptLen/2.5).toInt()}t)" +
                     " memory=${memPromptLen}c (~${(memPromptLen/2.5).toInt()}t)" +
-                    " total=${system.length}c (~${estTokens.toInt()}t)")
-                add(UIMessage.system(prompt = system))
+                    " total=${stableSystem.length}c (~${estTokens.toInt()}t)")
+                add(UIMessage.system(prompt = stableSystem))
             }
             addAll(effectiveMessages)
+            // 记忆 (volatile) 放到消息序列末尾 — 变化不破坏压缩包/历史的缓存前缀
+            if (volatileSystem.isNotBlank()) {
+                add(UIMessage.system(prompt = volatileSystem))
+            }
         }.transforms(
             transformers = transformers,
             context = context,
