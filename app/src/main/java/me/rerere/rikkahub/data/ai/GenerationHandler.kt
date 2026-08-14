@@ -795,7 +795,7 @@ class GenerationHandler(
 
         // G4 缓存诊断增强: 消息指纹 — 跨请求对比定位缓存断点 (哪条消息每轮变化)
         // 复现缓存卡住时: adb logcat 抓相邻两轮 msg_fp, 指纹不同的消息即断点
-        Log.i(TAG, "msg_fp: " + internalMessages.mapIndexed { i, m ->
+        val msgFpStr = internalMessages.mapIndexed { i, m ->
             val types = m.parts.joinToString("+") { p ->
                 @Suppress("DEPRECATION") // 序列化兼容必需
                 when (p) {
@@ -819,6 +819,8 @@ class GenerationHandler(
             }.hashCode()
             "[$i:${m.role.name}:$types:$hash]"
         }.joinToString(" "))
+        me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastMsgFp.value = msgFpStr
+        Log.i(TAG, "msg_fp: " + msgFpStr)
 
         // v3.6.34: 流式基准 = 原始消息 (关键) — 压缩包只进请求 (internalMessages),
         // 流式累积/onUpdateMessages 回写必须用原始消息, 否则 UI 消息被替换成压缩包

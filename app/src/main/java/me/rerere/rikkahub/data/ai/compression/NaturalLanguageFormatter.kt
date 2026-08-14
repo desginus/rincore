@@ -73,26 +73,31 @@ object NaturalLanguageFormatter {
             }
         }
 
-        if (arrays.isNotEmpty()) {
+        // v3.6.60: 按键名排序 — 工具输出 JSON 键顺序可能非确定 (HashMap),
+        // 非确定顺序 → 压缩结果非确定 → 缓存断。排序保证逐字节确定性。
+        val sortedArrays = arrays.sortedBy { it.first }
+        val sortedPrimitives = primitives.sortedBy { it.first }
+
+        if (sortedArrays.isNotEmpty()) {
             val sb = StringBuilder()
-            if (primitives.isNotEmpty()) {
-                sb.appendLine(primitives.joinToString(" | ") { (k, v) ->
+            if (sortedPrimitives.isNotEmpty()) {
+                sb.appendLine(sortedPrimitives.joinToString(" | ") { (k, v) ->
                     "${human(k)}: ${v.content}"
                 })
                 sb.appendLine()
             }
-            arrays.forEach { (key, arr) ->
+            sortedArrays.forEach { (key, arr) ->
                 val items = arr.filterIsInstance<JsonObject>()
                 if (items.isEmpty()) return@forEach
-                if (arrays.size > 1) sb.appendLine("${human(key)}:")
+                if (sortedArrays.size > 1) sb.appendLine("${human(key)}:")
                 sb.append(buildResult(filterAds(items)))
                 sb.appendLine()
             }
             return sb.toString().trimEnd()
         }
 
-        if (primitives.isNotEmpty()) {
-            return primitives.take(20).joinToString("\n") { (k, v) ->
+        if (sortedPrimitives.isNotEmpty()) {
+            return sortedPrimitives.take(20).joinToString("\n") { (k, v) ->
                 "${human(k)}: ${v.content}"
             }
         }

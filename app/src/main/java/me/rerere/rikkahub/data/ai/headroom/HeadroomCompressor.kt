@@ -43,6 +43,8 @@ object HeadroomStats {
     val lastSavedTokens = kotlinx.coroutines.flow.MutableStateFlow<Int?>(null)
     // v3.6.41: 压缩详情 (证明压缩发生 + 信息保留) — 原始/总结字符 + 总结预览
     val lastDetail = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    // v3.6.60: 消息指纹 (诊断) — 定位缓存断点: 相邻两轮指纹变的那条消息即断点
+    val lastMsgFp = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
 }
 
 /**
