@@ -49,6 +49,13 @@ private fun buildWorkspacePrompt(workspace: WorkspaceEntity, cwd: String? = null
     appendLine("  - `workspace_write_file` / `workspace_edit_file`: create files, or make precise edits to existing files.")
     appendLine("  - `workspace_shell`: run shell commands (the files area is mounted at /workspace).")
     appendLine("- Prefer `workspace_shell` for tasks that standard Unix tools handle well, and prefer `workspace_edit_file` for targeted edits over rewriting whole files.")
+    appendLine("- Document / presentation generation tools are installed and ready:")
+    appendLine("  - `pandoc`: universal converter — `pandoc input.md -o output.docx` (also pdf/pptx/html/epub).")
+    appendLine("  - `python-pptx` (python3): build PowerPoint slides programmatically.")
+    appendLine("  - `python-docx` (python3): build Word documents programmatically.")
+    appendLine("  - `reportlab` (python3): build PDF documents programmatically.")
+    appendLine("  - `openpyxl` / `pandas` (python3): build Excel workbooks.")
+    appendLine("- When asked to produce a document, slides, or spreadsheet: write a short Python script and run it via `workspace_shell`, or use `pandoc` for direct conversion. Save the output under `/workspace` and report the resulting path.")
     appendLine("- The skills directory is mounted at `/skills`. Each skill is a subdirectory `/skills/<skill-name>/` containing a `SKILL.md` (with `name` and `description` frontmatter) plus any supporting files. Read a skill's `SKILL.md` before using it, and follow its instructions.")
     appendLine("- Files the user uploaded are mounted at `/upload`. Treat `/upload` as READ-ONLY: read uploaded files from `/upload/<file-name>`, but never modify, overwrite, or delete anything there. If you need to change an uploaded file, copy it into `/workspace` first and edit the copy.")
     if (!cwd.isNullOrBlank()) {

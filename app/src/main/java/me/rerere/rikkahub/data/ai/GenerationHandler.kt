@@ -828,6 +828,10 @@ class GenerationHandler(
             // 用户核心诉求: 一直保持连接, 不自己中断。重试请求消息相同 → 缓存命中。
             streamLoop@ while (true) {
             val preStreamMessages = messages
+            // v3.6.49: UI 更新节流 — 每 chunk 调 onUpdateMessages 触发整个 ChatPage
+            // 重组, 流式期间高频重组是卡顿/发热/120Hz 掉帧根因。改为 50ms 批处理,
+            // 重组频率从每 chunk (可达每秒几十次) 降到每秒最多 20 次。
+            var lastUiUpdateMs = 0L
             try {
             providerImpl.streamText(
                 providerSetting = provider,
@@ -855,8 +859,14 @@ class GenerationHandler(
                         }
                     }
                 }
-                onUpdateMessages(messages)
+                val now = System.currentTimeMillis()
+                if (now - lastUiUpdateMs >= 50) {
+                    onUpdateMessages(messages)
+                    lastUiUpdateMs = now
+                }
             }
+            // 流式成功完成 — 补一次 UI 更新, 确保节流期间的最后内容完整显示
+            onUpdateMessages(messages)
             break@streamLoop  // 流式成功完成, 退出重试循环
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e  // 用户主动停止 — 不重试

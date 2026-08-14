@@ -337,11 +337,6 @@ class ChatCompletionsAPI(
         stream: Boolean = false,
     ): JsonObject {
         val host = providerSetting.baseUrl.toHttpUrl().host
-        // v3.6.47: DeepSeek 系列 (官方/NVIDIA/OpenCode Zen) 要求所有 assistant 消息
-        // 带 reasoning_content — 对齐 OpenCode 客户端 (transform.ts 注释证实)
-        val alwaysIncludeReasoning = host == "api.deepseek.com" ||
-            host == "opencode.ai" ||
-            host == "integrate.api.nvidia.com"
         return buildJsonObject {
             put("model", params.model.modelId)
             put(
@@ -350,7 +345,6 @@ class ChatCompletionsAPI(
                     messages = messages,
                     includeHistoryReasoning = providerSetting.includeHistoryReasoning,
                     supportInputModalities = params.model.inputModalities,
-                    alwaysIncludeReasoning = alwaysIncludeReasoning,
                 )
             )
 
@@ -473,13 +467,15 @@ class ChatCompletionsAPI(
                             put("type", if (!level.isEnabled) "disabled" else "enabled")
                         })
                         if (level.isEnabled && level != ReasoningLevel.AUTO) {
-                            // DeepSeek 官方只支持 low/high/max —
-                            // medium/xhigh 不合法 → 服务端拒绝
-                            // (报错 'required settings preferences not received')
+                            // v3.6.49: DeepSeek 官方 reasoning_effort 只支持 high/max
+                            // (对齐 DeepSeek Harness llm-deepseek: off→thinking:disabled,
+                            //  high/max→reasoning_effort; low/medium 不支持直接报错)。
+                            // low/medium 映射到最低档 high, xhigh 映射 max
                             val effort = when (level) {
-                                ReasoningLevel.MEDIUM -> "high"  // medium 不支持, 映射官方默认 high
-                                ReasoningLevel.XHIGH -> "max"
-                                else -> level.effort
+                                ReasoningLevel.LOW -> "high"     // low 不支持 → 最低档 high
+                                ReasoningLevel.MEDIUM -> "high"  // medium 不支持 → high
+                                ReasoningLevel.XHIGH -> "max"    // xhigh → max
+                                else -> level.effort             // HIGH -> "high"
                             }
                             put("reasoning_effort", effort)
                         }
@@ -552,7 +548,6 @@ class ChatCompletionsAPI(
         messages: List<UIMessage>,
         includeHistoryReasoning: Boolean = true,
         supportInputModalities: List<Modality> = listOf(Modality.TEXT, Modality.IMAGE),
-        alwaysIncludeReasoning: Boolean = false,
     ) = buildJsonArray {
         val filteredMessages = messages.filter { it.isValidToUpload() }
 
@@ -562,7 +557,6 @@ class ChatCompletionsAPI(
                     message = message,
                     includeReasoning = includeHistoryReasoning,
                     supportInputModalities = supportInputModalities,
-                    alwaysIncludeReasoning = alwaysIncludeReasoning,
                 )
             } else {
                 addNonAssistantMessage(message)
@@ -574,7 +568,6 @@ class ChatCompletionsAPI(
         message: UIMessage,
         includeReasoning: Boolean,
         supportInputModalities: List<Modality>,
-        alwaysIncludeReasoning: Boolean = false,
     ) {
         val groups = groupPartsByToolBoundary(message.parts)
         val contentBuffer = mutableListOf<UIMessagePart>()
@@ -599,8 +592,7 @@ class ChatCompletionsAPI(
                     buildAssistantMessageJson(
                         contentParts = contentBuffer,
                         tools = group.tools,
-                        reasoningPart = reasoningPart,
-                        alwaysIncludeReasoning = alwaysIncludeReasoning
+                        reasoningPart = reasoningPart
                     )?.let { assistantMessage ->
                         add(assistantMessage)
                     }
@@ -625,8 +617,7 @@ class ChatCompletionsAPI(
             buildAssistantMessageJson(
                 contentParts = contentBuffer,
                 tools = emptyList(),
-                reasoningPart = reasoningPart,
-                alwaysIncludeReasoning = alwaysIncludeReasoning
+                reasoningPart = reasoningPart
             )?.let { assistantMessage ->
                 add(assistantMessage)
             }
@@ -637,7 +628,6 @@ class ChatCompletionsAPI(
         contentParts: List<UIMessagePart>,
         tools: List<UIMessagePart.Tool>,
         reasoningPart: UIMessagePart.Reasoning?,
-        alwaysIncludeReasoning: Boolean = false,
     ): JsonObject? {
         val hasUsableContent = contentParts.any { part ->
             when (part) {
@@ -650,16 +640,14 @@ class ChatCompletionsAPI(
         if (!hasUsableContent && !hasReasoning && tools.isEmpty()) {
             return null
         }
-        // v3.6.47: DeepSeek 要求所有 assistant 消息带 reasoning_content (即使空),
-        // 否则上游规范化导致 token 序列不稳定 → 缓存前缀破坏 (OpenCode 源码证实)
-        val emitReasoningField = hasReasoning || alwaysIncludeReasoning
-
         return buildJsonObject {
             put("role", "assistant")
 
-            // reasoning_content
-            if (emitReasoningField) {
-                put("reasoning_content", reasoningPart?.reasoning ?: "")
+            // v3.6.49: reasoning_content 只在 tool-call 轮回传 (对齐 DeepSeek Harness
+            // 官方 thinking_mode 规则: 普通轮 reasoning_content 被忽略, 不回传省 token;
+            // 且规则确定性 → 缓存前缀稳定)。纯文本轮不发 reasoning_content。
+            if (hasReasoning && tools.isNotEmpty()) {
+                put("reasoning_content", reasoningPart.reasoning)
             }
 
             // content
