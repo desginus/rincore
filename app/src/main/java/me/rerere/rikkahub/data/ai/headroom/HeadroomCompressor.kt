@@ -74,38 +74,11 @@ object HeadroomCompressor {
     private val json = Json { prettyPrint = false }
 
     fun summarizeHistory(history: List<UIMessage>): UIMessage {
-        // v3.6.55: 凡有必存 — 每轮保留一行, 不丢弃任何轮次 (去掉 takeLast 轮数限制)。
-        // 压缩包随轮次自然增长, 缓存逐 token 累积 (每轮新增一行 → 缓存命中增长)。
-        // 此前 takeLast(N) 只保留最近 N 轮, 丢弃更早轮次 → 缓存涨到 stable+tools
-        // 后 (16.8K) 就停住, 压缩包增量永远进不了缓存。
-        val builder = StringBuilder()
-        history.forEach { msg ->
-            when (msg.role) {
-                me.rerere.ai.core.MessageRole.USER -> {
-                    extractHead(msg, 350).takeIf { it.isNotBlank() }?.let {
-                        builder.append("U: ").append(it).append('\n')
-                    }
-                }
-                me.rerere.ai.core.MessageRole.ASSISTANT -> {
-                    extractTail(msg, 350).takeIf { it.isNotBlank() }?.let {
-                        builder.append("A: ").append(it).append('\n')
-                    }
-                }
-                else -> {
-                    val tool = msg.parts.filterIsInstance<UIMessagePart.Tool>().firstOrNull()
-                    if (tool != null) {
-                        val outText = tool.output.filterIsInstance<UIMessagePart.Text>()
-                            .joinToString(" ") { it.text }.trim()
-                        if (outText.isNotBlank()) {
-                            builder.append("[工具 ").append(tool.toolName).append("]: ")
-                                .append(outText.take(350)).append('\n')
-                        }
-                    }
-                }
-            }
-        }
-        val summary = builder.toString().trimEnd()
-
+        // v3.6.58: 根因修复 — 之前每行截断到固定字符 (120/350), 对超长消息压缩率
+        // 只有 0.6% (350/60000), 压缩包太小缓存永远上不去。改为:
+        // 1. 每轮完整内容 (不截断单条消息, 凡有必存)
+        // 2. 整体长度控制: 保留 40% (首尾各 20%, 中段省略)
+        // 压缩包 = rawLen 的 40%, 缓存命中随压缩包成比例增长。
         val rawLen = history.sumOf { msg ->
             msg.parts.sumOf { part ->
                 when (part) {
@@ -115,6 +88,42 @@ object HeadroomCompressor {
                 }
             }
         }
+
+        val builder = StringBuilder()
+        history.forEach { msg ->
+            when (msg.role) {
+                me.rerere.ai.core.MessageRole.USER -> {
+                    val t = msg.parts.filterIsInstance<UIMessagePart.Text>()
+                        .joinToString(" ") { it.text }.trim()
+                    if (t.isNotBlank()) builder.append("U: ").append(t).append('\n')
+                }
+                me.rerere.ai.core.MessageRole.ASSISTANT -> {
+                    val t = msg.parts.filterIsInstance<UIMessagePart.Text>()
+                        .joinToString(" ") { it.text }.trim()
+                    if (t.isNotBlank()) builder.append("A: ").append(t).append('\n')
+                }
+                else -> {
+                    val tool = msg.parts.filterIsInstance<UIMessagePart.Tool>().firstOrNull()
+                    if (tool != null) {
+                        val t = tool.output.filterIsInstance<UIMessagePart.Text>()
+                            .joinToString(" ") { it.text }.trim()
+                        if (t.isNotBlank()) {
+                            builder.append("[工具 ").append(tool.toolName).append("]: ")
+                                .append(t).append('\n')
+                        }
+                    }
+                }
+            }
+        }
+        var summary = builder.toString().trimEnd()
+
+        // 整体长度控制: 保留 40% (首尾各 20%, 中段省略)
+        val target = maxOf(rawLen * 40 / 100, 200)
+        if (summary.length > target) {
+            val half = target / 2
+            summary = summary.take(half) + "\n…[中段省略]…\n" + summary.takeLast(half)
+        }
+
         val ratio = if (rawLen > 0) (100 - 100 * summary.length / rawLen) else 0
         me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastDetail.value =
             "历史 ${rawLen} 字符 → 总结 ${summary.length} 字符 (压缩 ${ratio}%)\n总结预览: " + summary.take(160)
