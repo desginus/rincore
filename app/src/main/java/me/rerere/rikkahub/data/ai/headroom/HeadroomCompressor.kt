@@ -82,12 +82,12 @@ object HeadroomCompressor {
         history.forEach { msg ->
             when (msg.role) {
                 me.rerere.ai.core.MessageRole.USER -> {
-                    extractHead(msg, 120).takeIf { it.isNotBlank() }?.let {
+                    extractHead(msg, 350).takeIf { it.isNotBlank() }?.let {
                         builder.append("U: ").append(it).append('\n')
                     }
                 }
                 me.rerere.ai.core.MessageRole.ASSISTANT -> {
-                    extractTail(msg, 120).takeIf { it.isNotBlank() }?.let {
+                    extractTail(msg, 350).takeIf { it.isNotBlank() }?.let {
                         builder.append("A: ").append(it).append('\n')
                     }
                 }
@@ -98,7 +98,7 @@ object HeadroomCompressor {
                             .joinToString(" ") { it.text }.trim()
                         if (outText.isNotBlank()) {
                             builder.append("[工具 ").append(tool.toolName).append("]: ")
-                                .append(outText.take(150)).append('\n')
+                                .append(outText.take(350)).append('\n')
                         }
                     }
                 }
@@ -133,14 +133,14 @@ object HeadroomCompressor {
         // v3.6.55: 凡有必存 — 每轮增量一行, 与完整总结同格式 (U:/A:/工具 标签),
         // 使增量追加前缀与重新总结字节一致, 缓存逐 token 稳定累积。
         return when (msg.role) {
-            me.rerere.ai.core.MessageRole.USER -> "U: " + extractHead(msg, 120)
-            me.rerere.ai.core.MessageRole.ASSISTANT -> "A: " + extractTail(msg, 120)
+            me.rerere.ai.core.MessageRole.USER -> "U: " + extractHead(msg, 350)
+            me.rerere.ai.core.MessageRole.ASSISTANT -> "A: " + extractTail(msg, 350)
             else -> {
                 val tool = msg.parts.filterIsInstance<UIMessagePart.Tool>().firstOrNull()
                 if (tool != null) {
                     val outText = tool.output.filterIsInstance<UIMessagePart.Text>()
                         .joinToString(" ") { it.text }.trim()
-                    "[工具 ${tool.toolName}]: " + outText.take(150)
+                    "[工具 ${tool.toolName}]: " + outText.take(350)
                 } else {
                     ""
                 }
