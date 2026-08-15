@@ -109,7 +109,9 @@ class ChatCompletionsAPI(
 
         val response = client.newCall(request).await()
         if (!response.isSuccessful) {
-            throw Exception("Failed to get response: ${response.code} ${response.body.string()}")
+            // v3.6.78: 报错带请求体摘要 — 定位 400 触发字段 (grok 排查)
+            val reqSummary = json.encodeToString(requestBody).take(1500)
+            throw Exception("Failed to get response: ${response.code} ${response.body.string()} REQ=$reqSummary")
         }
 
         val bodyStr = response.body.string()
@@ -265,6 +267,12 @@ class ChatCompletionsAPI(
                             }
                         }
                         val usage = parseTokenUsage(it["usage"] as? JsonObject)
+                        // v3.6.78: grok 系 (OpenCode Zen) 不发 [DONE] 也不发
+                        // finish_reason=stop, 以 usage/cost 结尾行标记完成 —
+                        // usage 或 cost 收到即视为本轮完成信号
+                        if (usage != null || it["cost"] != null) {
+                            gotFinish.set(true)
+                        }
 
                         val messageChunk = MessageChunk(
                             id = id,
