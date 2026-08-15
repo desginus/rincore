@@ -36,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -154,46 +155,15 @@ fun ReasoningPicker(
                     if (reasoningLevel.isEnabled) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurface
                 )
-                // v3.6.70: 最高档灯泡闪烁 — MAX 时灯泡呼吸闪烁, 提示已达最大思考强度
-                val maxPulse = rememberInfiniteTransition(label = "reasoning_max_pulse")
-                val maxAlpha by maxPulse.animateFloat(
-                    initialValue = 1f,
-                    targetValue = 0.3f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(durationMillis = 650),
-                        repeatMode = RepeatMode.Reverse,
-                    ),
-                    label = "reasoning_max_alpha",
-                )
-                Icon(
-                    imageVector = when (reasoningLevel) {
-                        ReasoningLevel.OFF -> HugeIcons.Idea
-                        ReasoningLevel.AUTO -> HugeIcons.Idea01
-                        ReasoningLevel.LOW -> ReasoningLow
-                        ReasoningLevel.MEDIUM -> ReasoningMedium
-                        ReasoningLevel.HIGH -> ReasoningHigh
-                        ReasoningLevel.XHIGH -> ReasoningHigh
-                        ReasoningLevel.MAX -> ReasoningHigh
-                    },
-                    contentDescription = null,
-                    modifier = Modifier
-                        .size(32.dp)
-                        .graphicsLayer {
-                            alpha = if (reasoningLevel == ReasoningLevel.MAX) maxAlpha else 1f
-                        },
+                ReasoningIcon(
+                    level = reasoningLevel,
+                    modifier = Modifier.size(32.dp),
                     tint = iconColor,
                 )
                 Text(
                     text = reasoningLevel.label(),
                     style = MaterialTheme.typography.titleMedium,
                 )
-                if (reasoningLevel == ReasoningLevel.MAX) {
-                    Text(
-                        text = stringResource(R.string.reasoning_max_hint),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
             }
 
             Column(
@@ -306,15 +276,33 @@ private fun ReasoningScale(
 }
 
 @Composable
-private fun ReasoningIcon(level: ReasoningLevel) {
+private fun ReasoningIcon(
+    level: ReasoningLevel,
+    modifier: Modifier = Modifier,
+    tint: Color = Color.Unspecified,
+) {
+    // v3.6.71: MAX 档灯泡呼吸闪烁 — 全局统一 (输入栏按钮 + 深度选择器)
+    val maxPulse = rememberInfiniteTransition(label = "reasoning_max_pulse")
+    val maxAlpha by maxPulse.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.3f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 650),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "reasoning_max_alpha",
+    )
+    val iconModifier = modifier.graphicsLayer {
+        alpha = if (level == ReasoningLevel.MAX) maxAlpha else 1f
+    }
     when (level) {
-        ReasoningLevel.OFF -> Icon(HugeIcons.Idea, null)
-        ReasoningLevel.AUTO -> Icon(HugeIcons.Idea01, null)
-        ReasoningLevel.LOW -> Icon(ReasoningLow, null)
-        ReasoningLevel.MEDIUM -> Icon(ReasoningMedium, null)
-        ReasoningLevel.HIGH -> Icon(ReasoningHigh, null)
-        ReasoningLevel.XHIGH -> Icon(ReasoningHigh, null)
-        ReasoningLevel.MAX -> Icon(ReasoningHigh, null)
+        ReasoningLevel.OFF -> Icon(HugeIcons.Idea, null, modifier = iconModifier, tint = tint)
+        ReasoningLevel.AUTO -> Icon(HugeIcons.Idea01, null, modifier = iconModifier, tint = tint)
+        ReasoningLevel.LOW -> Icon(ReasoningLow, null, modifier = iconModifier, tint = tint)
+        ReasoningLevel.MEDIUM -> Icon(ReasoningMedium, null, modifier = iconModifier, tint = tint)
+        ReasoningLevel.HIGH -> Icon(ReasoningHigh, null, modifier = iconModifier, tint = tint)
+        ReasoningLevel.XHIGH -> Icon(ReasoningHigh, null, modifier = iconModifier, tint = tint)
+        ReasoningLevel.MAX -> Icon(ReasoningHigh, null, modifier = iconModifier, tint = tint)
     }
 }
 

@@ -541,7 +541,6 @@
   <string name="reasoning_picker_title">调整模型思考深度</string>
   <string name="reasoning_xhigh">高</string>
   <string name="reasoning_max">最高</string>
-  <string name="reasoning_max_hint">灯泡闪烁表示已达到最高思考强度</string>
   <string name="regenerate">重新生成</string>
   <string name="regenerate_confirm_message">确定要重新生成此消息吗？</string>
   <string name="render_with_webview">网页视图渲染</string>

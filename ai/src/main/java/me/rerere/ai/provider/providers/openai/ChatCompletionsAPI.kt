@@ -496,7 +496,12 @@ class ChatCompletionsAPI(
                             }
                         } else {
                             if (level != ReasoningLevel.AUTO) {
-                                put("reasoning_effort", if (level.effort == "none") "low" else level.effort)
+                                val effort = when {
+                                    level.effort == "none" -> "low"
+                                    level == ReasoningLevel.MAX -> "high"
+                                    else -> level.effort
+                                }
+                                put("reasoning_effort", effort)
                             }
                         }
                     }
@@ -515,7 +520,13 @@ class ChatCompletionsAPI(
                         // OpenAI 官方
                         // 文档中，completions API 只支持 "low", "medium", "high"
                         if (level != ReasoningLevel.AUTO) {
-                            put("reasoning_effort", if (level.effort == "none") "low" else level.effort)
+                            val effort = when {
+                                level.effort == "none" -> "low"
+                                // v3.6.71 锚定: MAX 的 effort="max" 官方不支持, 封顶 high
+                                level == ReasoningLevel.MAX -> "high"
+                                else -> level.effort
+                            }
+                            put("reasoning_effort", effort)
                         }
                     }
                 }
