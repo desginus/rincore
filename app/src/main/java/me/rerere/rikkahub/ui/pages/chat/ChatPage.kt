@@ -305,8 +305,6 @@ private fun ChatPageContent(
     val toaster = LocalToaster.current
     val workspaceRepository: WorkspaceRepository = koinInject()
     var previewMode by rememberSaveable { mutableStateOf(false) }
-    // v3.6.13: 对话设置对话框 (延迟自动回复开关)
-    var showChatSettings by remember { mutableStateOf(false) }
     val hazeState = rememberHazeState()
     val assistant = setting.getCurrentAssistant()
     var showFilesSheet by remember { mutableStateOf(false) }
@@ -331,36 +329,7 @@ private fun ChatPageContent(
     ) {
         AssistantBackground(setting = setting, modifier = Modifier.hazeSource(hazeState))
         // v3.6.13: 对话设置对话框 — 延迟自动回复开关
-        if (showChatSettings) {
-            AlertDialog(
-                onDismissRequest = { showChatSettings = false },
-                title = { Text("对话设置") },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("延迟自动回复", fontWeight = FontWeight.SemiBold)
-                        Text("开启后，发消息不会立即触发模型回复，消息将排队等待。关闭开关后，再发消息即触发回复。适用于需要连续输入多条消息、不想被打断回复的场景。", style = MaterialTheme.typography.bodySmall)
-                        Switch(
-                            checked = setting.deferAutoReply,
-                            onCheckedChange = { checked ->
-                                vm.updateSettings(setting.copy(deferAutoReply = checked))
-                            }
-                        )
-                        // v3.6.19: Headroom 节选最近对话 — 对话两种模式
-                        Text("节选最近对话", fontWeight = FontWeight.SemiBold)
-                        Text("开启后发送上下文时只保留最近 3 条消息，更早的历史不发送，大幅精简上下文。关闭（默认）为完整模式，所有消息原样发送，不做任何改动。", style = MaterialTheme.typography.bodySmall)
-                        Switch(
-                            checked = setting.headroomCompression,
-                            onCheckedChange = { checked ->
-                                vm.updateSettings(setting.copy(headroomCompression = checked))
-                            }
-                        )
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = { showChatSettings = false }) { Text("完成") }
-                }
-            )
-        }
+
         Scaffold(
             topBar = {
                 TopBar(
@@ -449,9 +418,6 @@ private fun ChatPageContent(
                     },
                     onMoreClick = {
                         showFilesSheet = true
-                    },
-                    onChatSettingsClick = {
-                        showChatSettings = true
                     },
                 )
             },
@@ -759,6 +725,10 @@ private fun ChatFilesPickerSheet(
             onShowInjectionSheetChange = { showInjectionSheet = it },
             showCompressDialog = showCompressDialog,
             onShowCompressDialogChange = { showCompressDialog = it },
+            deferAutoReply = setting.deferAutoReply,
+            onToggleDeferAutoReply = { checked ->
+                vm.updateSettings(setting.copy(deferAutoReply = checked))
+            },
             onDismiss = { dismissAll() },
             onTakePic = onLaunchCamera,
             onPickImage = { imagePickerLauncher.launch("image/*") },

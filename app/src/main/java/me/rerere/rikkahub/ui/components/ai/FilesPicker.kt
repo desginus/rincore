@@ -29,6 +29,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
@@ -56,6 +57,7 @@ import me.rerere.ai.provider.ProviderSetting
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.AiMagic
 import me.rerere.hugeicons.stroke.Camera01
+import me.rerere.hugeicons.stroke.Clock02
 import me.rerere.hugeicons.stroke.Codesandbox
 import me.rerere.hugeicons.stroke.ComputerTerminal01
 import me.rerere.hugeicons.stroke.Files02
@@ -108,6 +110,8 @@ internal fun FilesPicker(
     onShowInjectionSheetChange: (Boolean) -> Unit,
     showCompressDialog: Boolean,
     onShowCompressDialogChange: (Boolean) -> Unit,
+    deferAutoReply: Boolean,
+    onToggleDeferAutoReply: (Boolean) -> Unit,
     onDismiss: () -> Unit,
     onTakePic: () -> Unit,
     onPickImage: () -> Unit,
@@ -152,10 +156,11 @@ internal fun FilesPicker(
                 onUpdateAssistant = onUpdateAssistant,
                 modifier = Modifier.weight(1f),
             )
-            LocalToolsButton(onClick = {
-                onDismiss()
-                navController.navigate(Screen.AssistantLocalTool(assistant.id.toString()))
-            }, modifier = Modifier.weight(1f))
+            DeferAutoReplySwitch(
+                deferAutoReply = deferAutoReply,
+                onToggle = onToggleDeferAutoReply,
+                modifier = Modifier.weight(1f),
+            )
             WorkspaceFilePickButton(onClick = {
                 val wsId = assistant.workspaceId?.toString()
                 val firstWsId = workspaces.firstOrNull()?.id
@@ -508,14 +513,25 @@ fun WorkspaceFilePickButton(onClick: () -> Unit = {}, modifier: Modifier = Modif
     }
 }
 
+// v3.6.74: 本地工具入口移除, 该位置改为延时自动回复开关
 @Composable
-fun LocalToolsButton(onClick: () -> Unit = {}, modifier: Modifier = Modifier) {
+fun DeferAutoReplySwitch(
+    deferAutoReply: Boolean,
+    onToggle: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     BigIconTextButton(modifier = modifier, icon = {
-        Icon(HugeIcons.Settings02, null)
+        Icon(HugeIcons.Clock02, null)
     }, text = {
-        Text("本地工具")
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("延时自动回复")
+            Switch(
+                checked = deferAutoReply,
+                onCheckedChange = onToggle,
+            )
+        }
     }) {
-        onClick()
+        onToggle(!deferAutoReply)
     }
 }
 

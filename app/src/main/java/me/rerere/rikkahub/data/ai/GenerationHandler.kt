@@ -33,7 +33,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
-import me.rerere.rikkahub.data.ai.headroom.HeadroomCompressor
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.Tool
 import me.rerere.ai.core.merge
@@ -48,10 +47,8 @@ import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.ToolApprovalState
-import me.rerere.rikkahub.data.ai.compression.NaturalLanguageFormatter
 import me.rerere.rikkahub.data.ai.protocol.MessageProtocol
 import me.rerere.ai.util.TraceLogger
-import me.rerere.rikkahub.data.ai.compression.ToolOutputCompressor
 import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
@@ -135,7 +132,7 @@ class GenerationHandler(
         var messages: List<UIMessage> = messages
 
         // === 分层路由状态 ===
-        // 注: Headroom 降维 (v3.6.24) 在每步发送点 generateInternal 统一执行 —
+        // 注: 消息发送前统一组装, 各步共享同一构建路径 —
         // 覆盖所有会发送向 API 的消息 (含 step 循环内累积的新工具输出)
         val useLayered = assistant.useLayeredTools && tools.isNotEmpty()
         // 从 Conversation 恢复已加载的域（Feature #4: 跨对话持久化）
@@ -521,23 +518,8 @@ class GenerationHandler(
                 }
             }
 
-            // Headroom: compress tool outputs at source (before storing in conversation history)
-            CallTracer.event("TOOL", "compress_start", "Compressing ${executedTools.size} executed tool outputs")
-            val compressedTools = executedTools.map { tool ->
-                if (!ToolOutputCompressor.isSearchTool(tool.toolName)) return@map tool
-                if (tool.output.isEmpty()) return@map tool
-                val compressedOutput = tool.output.map { part ->
-                    if (part is UIMessagePart.Text && part.text.length > 200) {
-                        val formatted = NaturalLanguageFormatter.format(part.text)
-                        if (formatted.length < part.text.length) {
-                            TraceLogger.log("Compress", "${tool.toolName}: ${part.text.length}c -> ${formatted.length}c")
-                            Log.i(TAG, "compress: ${tool.toolName} ${part.text.length} -> ${formatted.length}c")
-                            UIMessagePart.Text(text = formatted.ifBlank { Log.w(TAG, "compress: empty output for ${tool.toolName}, keeping original"); part.text })
-                        } else part
-                    } else part
-                }
-                tool.copy(output = compressedOutput)
-            }
+            // v3.6.74: 上下文降维方向废弃 — 工具输出原样保留, 不做压缩
+            val compressedTools = executedTools
 
             if (executedTools.isEmpty()) {
                 // No results to add (all tools were pending)
@@ -588,47 +570,8 @@ class GenerationHandler(
         layer1Prompt: String? = null,
         conversationId: String? = null,
     ) {
-        // v3.6.24: Headroom 降维 — 每步发送前统一压缩, 覆盖所有会发送向 API 的消息。
-        // 关闭 (默认) 时 zero-copy 原样; 开启时消息正文+工具输出确定性压缩 (缓存稳定)。
-        Log.i(TAG, "Headroom 开关: ${settings.headroomCompression} (发送前)")
-        // v3.6.66: 纯滞回截断 (对齐原版 RikkaHub limitContext, 缓存 99%+)
-        // 保留最近 MAX_CONTEXT_MESSAGES 条消息, 更早的直接截断。
-        // 截断是确定性的 (同 size 同截断点) → 前缀逐轮稳定 → 缓存逐轮累积。
-        // 此前摘要压缩 (summarizeHistory 增量追加) 每轮前缀变化 → 缓存断。
-        val effectiveMessages: List<UIMessage>
-        if (settings.headroomCompression) {
-            val maxContextMessages = 3
-            if (messages.size > maxContextMessages) {
-                val cut = messages.size - maxContextMessages
-                // 截断点往前调整到 USER 消息边界, 避免拆开 tool 配对
-                var start = cut
-                while (start > 0 && messages[start].role != me.rerere.ai.core.MessageRole.USER) {
-                    start--
-                }
-                val beforeC = messages.subList(0, start).sumOf { msg ->
-                    msg.parts.sumOf { part ->
-                        when (part) {
-                            is UIMessagePart.Text -> part.text.length
-                            is UIMessagePart.Tool -> part.output.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }
-                            else -> 0
-                        }
-                    }
-                }
-                effectiveMessages = messages.subList(start, messages.size)
-                me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastSavedTokens.value = beforeC / 2
-                me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastDetail.value =
-                    "截断 ${messages.size} → ${effectiveMessages.size} 条 (省 ${beforeC}c)"
-                Log.i(TAG, "Headroom 截断: ${messages.size} → ${effectiveMessages.size} 条 (省 ${beforeC}c)")
-            } else {
-                effectiveMessages = messages
-                me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastSavedTokens.value = null
-                me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastDetail.value = null
-            }
-        } else {
-            effectiveMessages = messages
-            me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastSavedTokens.value = null
-            me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastDetail.value = null
-        }
+        // v3.6.74: 节选最近对话 (原上下文降维) 方向废弃 — 消息一律原样发送, 零改动
+        val effectiveMessages: List<UIMessage> = messages
         var internalMessages = buildList {
             val sysPromptLen: Int
             val memPromptLen: Int
@@ -682,14 +625,8 @@ class GenerationHandler(
                 toolPrompts = toolPrompts,
                 systemAddendum = null,
             )
-            // v3.6.51/52 记忆位置策略:
-            //  - 降维模式: 记忆放消息序列末尾 — 记忆变化不破坏压缩包缓存前缀
-            //    (否则压缩包永远进不了缓存, 只命中 stable 末尾 13.8K)。
-            //  - 非降维模式: 记忆放 stable 之后 (历史之前) — 记忆是稳定前缀一部分,
-            //    可命中。v3.6.51 一度统一放末尾, 非降维模式记忆从命中变 miss,
-            //    命中率掉约 5% (用户实测 90 出头) — 本版恢复非降维的命中率。
-            val cacheFpSystem = if (settings.headroomCompression) stableSystem else
-                listOf(stableSystem, volatileSystem).filter { it.isNotBlank() }.joinToString("\n")
+            // 记忆位置策略: 记忆放 stable 之后 (历史之前) — 记忆是稳定前缀一部分, 可命中
+            val cacheFpSystem = listOf(stableSystem, volatileSystem).filter { it.isNotBlank() }.joinToString("\n")
             // v3.5.58 缓存核验: 请求体前缀指纹 (stable system+tools 序列化稳定)
             try {
                 val fp = java.security.MessageDigest.getInstance("SHA-256")
@@ -697,35 +634,18 @@ class GenerationHandler(
                     .take(8).joinToString("") { "%02x".format(it) }
                 Log.i(TAG, "cache-fp: $fp (system=${cacheFpSystem.length}c tools=${tools.size})")
             } catch (_: Exception) {}
-            if (settings.headroomCompression) {
-                // 降维: stable → 压缩包/历史 → 记忆(末尾)
-                if (stableSystem.isNotBlank()) {
-                    val estTokens = stableSystem.length / 2.5
-                    Log.i(TAG, "System prompt breakdown: system=${sysPromptLen}c (~${(sysPromptLen/2.5).toInt()}t)" +
-                        " layer1=${layer1Len}c (~${(layer1Len/2.5).toInt()}t)" +
-                        " tools=${toolsPromptLen}c (~${(toolsPromptLen/2.5).toInt()}t)" +
-                        " memory=${memPromptLen}c (~${(memPromptLen/2.5).toInt()}t)" +
-                        " total=${stableSystem.length}c (~${estTokens.toInt()}t)")
-                    add(UIMessage.system(prompt = stableSystem))
-                }
-                addAll(effectiveMessages)
-                if (volatileSystem.isNotBlank()) {
-                    add(UIMessage.system(prompt = volatileSystem))
-                }
-            } else {
-                // 非降维: stable+记忆 → 历史/当前轮 (记忆在稳定前缀内, 可命中)
-                val fullSystem = listOf(stableSystem, volatileSystem).filter { it.isNotBlank() }.joinToString("\n")
-                if (fullSystem.isNotBlank()) {
-                    val estTokens = fullSystem.length / 2.5
-                    Log.i(TAG, "System prompt breakdown: system=${sysPromptLen}c (~${(sysPromptLen/2.5).toInt()}t)" +
-                        " layer1=${layer1Len}c (~${(layer1Len/2.5).toInt()}t)" +
-                        " tools=${toolsPromptLen}c (~${(toolsPromptLen/2.5).toInt()}t)" +
-                        " memory=${memPromptLen}c (~${(memPromptLen/2.5).toInt()}t)" +
-                        " total=${fullSystem.length}c (~${estTokens.toInt()}t)")
-                    add(UIMessage.system(prompt = fullSystem))
-                }
-                addAll(effectiveMessages)
+            // stable+记忆 → 历史/当前轮 (记忆在稳定前缀内, 可命中)
+            val fullSystem = listOf(stableSystem, volatileSystem).filter { it.isNotBlank() }.joinToString("\n")
+            if (fullSystem.isNotBlank()) {
+                val estTokens = fullSystem.length / 2.5
+                Log.i(TAG, "System prompt breakdown: system=${sysPromptLen}c (~${(sysPromptLen/2.5).toInt()}t)" +
+                    " layer1=${layer1Len}c (~${(layer1Len/2.5).toInt()}t)" +
+                    " tools=${toolsPromptLen}c (~${(toolsPromptLen/2.5).toInt()}t)" +
+                    " memory=${memPromptLen}c (~${(memPromptLen/2.5).toInt()}t)" +
+                    " total=${fullSystem.length}c (~${estTokens.toInt()}t)")
+                add(UIMessage.system(prompt = fullSystem))
             }
+            addAll(effectiveMessages)
         }.transforms(
             transformers = transformers,
             context = context,
@@ -843,12 +763,6 @@ class GenerationHandler(
             }
             }
         } else {
-            // v3.6.37: 发送前实际请求体字符统计 (验证压缩是否真正进入请求)
-            val sentChars = internalMessages.sumOf { m ->
-                m.parts.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }
-            }
-            me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastRequestChars.value = sentChars
-            Log.i(TAG, "Headroom 发送请求: ${internalMessages.size} 条消息, ${sentChars}c")
             val chunk = providerImpl.generateText(
                 providerSetting = provider,
                 messages = internalMessages,

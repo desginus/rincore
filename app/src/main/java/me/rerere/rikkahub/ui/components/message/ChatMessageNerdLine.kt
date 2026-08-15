@@ -71,16 +71,6 @@ fun ChatMessageNerdLine(
                                     text = "(${message.usage?.cachedTokens?.formatNumber() ?: "0"} cached)"
                                 )
                             }
-                            // v3.6.40: 降维节省 — 只显示在最后一条消息 (isLast)
-                            val savedTokens by me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastSavedTokens
-                                .collectAsStateWithLifecycle()
-                            val savedVal = savedTokens
-                            if (savedVal != null && isLast) {
-                                Text(
-                                    text = " 节选省 ${savedVal.formatNumber()}",
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                            }
                         }
                     )
                     // Output tokens

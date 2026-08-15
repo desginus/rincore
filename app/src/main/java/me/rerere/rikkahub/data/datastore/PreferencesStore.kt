@@ -108,8 +108,6 @@ class SettingsStore(
         // 模型选择
         val ENABLE_WEB_SEARCH = booleanPreferencesKey("enable_web_search")
         val DEFER_AUTO_REPLY = booleanPreferencesKey("defer_auto_reply")
-        // v3.6.19: Headroom 上下文降维 (对话压缩模式开关 — 默认关闭=正常模式)
-        val HEADROOM_COMPRESSION = booleanPreferencesKey("headroom_compression")
         val FAVORITE_MODELS = stringPreferencesKey("favorite_models")
         val SELECT_MODEL = stringPreferencesKey("chat_model")
         val FAST_MODEL = stringPreferencesKey("fast_model")
@@ -204,7 +202,6 @@ class SettingsStore(
             Settings(
                 enableWebSearch = preferences[ENABLE_WEB_SEARCH] == true,
                 deferAutoReply = preferences[DEFER_AUTO_REPLY] == true,
-                headroomCompression = preferences[HEADROOM_COMPRESSION] == true,
                 favoriteModels = preferences[FAVORITE_MODELS]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: emptyList(),
@@ -424,7 +421,6 @@ class SettingsStore(
 
             preferences[ENABLE_WEB_SEARCH] = settings.enableWebSearch
             preferences[DEFER_AUTO_REPLY] = settings.deferAutoReply
-            preferences[HEADROOM_COMPRESSION] = settings.headroomCompression
             preferences[FAVORITE_MODELS] = JsonInstant.encodeToString(settings.favoriteModels)
             preferences[SELECT_MODEL] = settings.chatModelId.toString()
             preferences[FAST_MODEL] = settings.fastModelId.toString()
@@ -595,9 +591,6 @@ data class Settings(
     // v3.6.13: 延迟自动回复 — 开启时发消息不触发模型回复 (消息排队,
     // 关闭后发消息触发; 解决消息未发完模型打断回复)
     val deferAutoReply: Boolean = false,
-    // v3.6.19: Headroom 上下文降维 — 开启后工具输出经确定性规则压缩 (缓存稳定),
-    // 关闭 = 默认模式 (不做任何压缩)
-    val headroomCompression: Boolean = false,
     val favoriteModels: List<Uuid> = emptyList(),
     val chatModelId: Uuid = Uuid.random(),
     val fastModelId: Uuid = Uuid.random(),

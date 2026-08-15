@@ -47,7 +47,6 @@ import me.rerere.rikkahub.ui.components.ui.CardGroup
 fun SettingAdvancedPage(
     settings: Settings,
     onBack: () -> Unit,
-    onToggleCompression: (Boolean) -> Unit = {},
 ) {
     val navController = me.rerere.rikkahub.ui.context.LocalNavController.current
     var showToolCompare by remember { mutableStateOf(false) }
@@ -131,41 +130,6 @@ fun SettingAdvancedPage(
                 modifier = Modifier.padding(horizontal = 8.dp),
                 title = { Text("开发者") },
             ) {
-                // v3.6.36: 上下文降维状态工具 (聊天页静默, 状态与统计在此查看)
-                item(
-                    onClick = {},
-                    leadingContent = { Icon(HugeIcons.Settings03, null) },
-                    supportingContent = {
-                        val requestChars by me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastRequestChars
-                            .collectAsStateWithLifecycle()
-                        val detail by me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastDetail
-                            .collectAsStateWithLifecycle()
-                        Column {
-                            Text(if (settings.headroomCompression) "已开启 · 只发送最近 3 条消息" else "已关闭 · 完整模式（消息原样发送）")
-                            requestChars?.let {
-                                Text(
-                                    text = "上轮发送请求: $it 字符",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            detail?.let {
-                                Text(
-                                    text = it,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    },
-                    headlineContent = { Text("节选最近对话") },
-                    trailingContent = {
-                        androidx.compose.material3.Switch(
-                            checked = settings.headroomCompression,
-                            onCheckedChange = { onToggleCompression(it) },
-                        )
-                    },
-                )
                 item(
                     onClick = { showToolCompare = true },
                     leadingContent = { Icon(HugeIcons.Settings03, null) },

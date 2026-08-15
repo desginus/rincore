@@ -99,9 +99,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
         SettingAdvancedPage(
             settings = settings,
             onBack = { showAdvancedPage = false },
-            onToggleCompression = { checked ->
-                vm.updateSettings(settings.copy(headroomCompression = checked))
-            },
         )
         return
     }
