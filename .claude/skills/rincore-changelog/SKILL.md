@@ -12,6 +12,34 @@ description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日�
 - **工具执行无超时**：3.5.9 withTimeout 60s 兜底——工具挂起不永久阻塞生成
 - **缓存"卡-跳-线性"**：DeepSeek 服务端磁盘缓存机制（构建延迟秒级+固定间隔切分+SWA 独立单元）——客户端不可控，已入库 decisions D2
 
+## v3.6.x（2026-08-15 起，grok 排查/性能/DSH 生态）
+
+- **v3.6.85**（cf6c93dc，2026-08-16）：DeepSeek Harness 插件生态兼容 + 深度清理
+  - SkillManager 额外技能根：扫描 workspace files 区 .dsh/skills 与 .agents/skills（DSH 官方发现根），技能名 dsh__ 前缀，只读保护（delete/save 拒绝 dsh__）
+  - WorkspaceRepository.refreshDshSkillRoots + App 启动刷新
+  - 清理 generateText conversationId 残留参数链 + MeshGradient 注释
+  - 注意：DSH 技能经 skill__dsh__xxx 工具加载，冷启动体积零增长
+- **v3.6.84**（ac45e1bc）：回滚 v3.6.81 Markdown 流式降级
+  - 用户明确不接受"输出完成后统一渲染"，恢复流式期间逐 chunk 实时解析渲染（mapLatest 后台解析保留）
+  - 注意：流式期间全文解析的 CPU 开销是该体验的固有代价
+- **v3.6.83**（63e672bb）：对齐原版依赖与构建配置（用户实测原版流畅）
+  - Compose BOM 2026.06.01 → 2026.08.00；appcompat 1.8.0/coil 3.5.0/firebase-bom 34.17.0/baselineprofile rc01
+  - release 移除 R8 混淆与资源收缩（原版不 minify，堆栈恢复可读）
+  - 注意：APK 体积增大（无混淆），诊断堆栈可读性提升
+- **v3.6.82**（6e336c8a）：静态卡顿根治
+  - MeshGradientBackground 4 个无限漂移动画静态化（固定相位）——此前每帧重绘全屏 Canvas + haze 重采样，静态也 GPU 满载
+  - 输入栏毛玻璃 8dp → 4dp
+- **v3.6.81**（2f9fae52）：渲染热点批次一
+  - rememberAvatarShape 非 loading 不再创建无限动画（静态头像每帧空转修复）
+  - MarkdownBlock 流式降级（live 参数）——v3.6.84 已回滚
+- **v3.6.80**（46323dfa）：对齐原版 grok 请求行为（原版 grok 正常）
+  - opencode.ai reasoning 分支删 grok 跳过与 xhigh 映射；else 分支删 MAX 封顶
+  - 删自研 x-opencode-session 头（原版无此头且 grok 正常，疑似 400 来源）
+- **v3.6.79**（75620e27）：400 报错 REQ 改完整请求体
+- **v3.6.78**（003b1849）：grok 流式完成判断（OpenCode Zen grok 不发 [DONE]/stop，只在结尾发 usage/cost 后关连接——此前误判断流）+ 报错带请求体
+- **v3.6.77**（4d9b906b）：grok-4.6 / grok-build-0.1 模型定义（OpenCode Zen）
+- **v3.6.76**（35e01a25）：延时自动回复改对话框交互
+
 ## v3.5.x（传输层回滚期 → 当前）
 - **v3.5.39**（a30993fe）：工具域系统整体重构重写（DomainInfo 单一数据源 + resolveDomain 统一寻址 + 防幽灵）；versionCode 锁定 200
 - **v3.5.38**（8f258c22）：域标识 normalizedFullPath 全视图统一 + onClosed 中断可见化
