@@ -279,9 +279,11 @@ private fun ReasoningScale(
 private fun ReasoningIcon(
     level: ReasoningLevel,
     modifier: Modifier = Modifier,
-    tint: Color = Color.Unspecified,
+    tint: Color? = null,
 ) {
     // v3.6.71: MAX 档灯泡呼吸闪烁 — 全局统一 (输入栏按钮 + 深度选择器)
+    // v3.6.72: tint 改为 nullable — 此前默认 Color.Unspecified 传入 Icon
+    // 导致图标渲染透明, 主页灯泡完全消失
     val maxPulse = rememberInfiniteTransition(label = "reasoning_max_pulse")
     val maxAlpha by maxPulse.animateFloat(
         initialValue = 1f,
@@ -295,14 +297,19 @@ private fun ReasoningIcon(
     val iconModifier = modifier.graphicsLayer {
         alpha = if (level == ReasoningLevel.MAX) maxAlpha else 1f
     }
-    when (level) {
-        ReasoningLevel.OFF -> Icon(HugeIcons.Idea, null, modifier = iconModifier, tint = tint)
-        ReasoningLevel.AUTO -> Icon(HugeIcons.Idea01, null, modifier = iconModifier, tint = tint)
-        ReasoningLevel.LOW -> Icon(ReasoningLow, null, modifier = iconModifier, tint = tint)
-        ReasoningLevel.MEDIUM -> Icon(ReasoningMedium, null, modifier = iconModifier, tint = tint)
-        ReasoningLevel.HIGH -> Icon(ReasoningHigh, null, modifier = iconModifier, tint = tint)
-        ReasoningLevel.XHIGH -> Icon(ReasoningHigh, null, modifier = iconModifier, tint = tint)
-        ReasoningLevel.MAX -> Icon(ReasoningHigh, null, modifier = iconModifier, tint = tint)
+    val image = when (level) {
+        ReasoningLevel.OFF -> HugeIcons.Idea
+        ReasoningLevel.AUTO -> HugeIcons.Idea01
+        ReasoningLevel.LOW -> ReasoningLow
+        ReasoningLevel.MEDIUM -> ReasoningMedium
+        ReasoningLevel.HIGH -> ReasoningHigh
+        ReasoningLevel.XHIGH -> ReasoningHigh
+        ReasoningLevel.MAX -> ReasoningHigh
+    }
+    if (tint != null) {
+        Icon(image, null, modifier = iconModifier, tint = tint)
+    } else {
+        Icon(image, null, modifier = iconModifier)
     }
 }
 

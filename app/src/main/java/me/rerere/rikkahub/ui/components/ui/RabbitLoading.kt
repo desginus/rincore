@@ -20,9 +20,9 @@ import me.rerere.rikkahub.ui.context.LocalSettings
 
 /**
  * v3.6.71: 原版兔子 AnimatedVectorDrawable 动画替换为 RinCore 图标线条动画 —
- * 节选 launcher 图标去除背景后的 R 线条 (drawable/rin_logo.xml),
- * 规律缓慢的 alpha 呼吸渐变闪烁 (1.4s 周期), 与原版"线条动画"逻辑同构,
- * 不整块糊图标, 只用线条。
+ * launcher 前景图标直接去除背景 (暗色背景透明, 保留亮色线条,
+ * drawable-nodpi/rin_logo_light.png), 规律缓慢的 alpha 呼吸渐变闪烁
+ * (1.4s 周期), 与原版"线条动画"逻辑同构, 不整块糊图标, 只用线条。
  */
 @Composable
 fun RabbitLoadingIndicator(modifier: Modifier = Modifier) {
@@ -41,7 +41,7 @@ fun RabbitLoadingIndicator(modifier: Modifier = Modifier) {
             label = "rin_logo_alpha",
         )
         Image(
-            painter = painterResource(R.drawable.rin_logo),
+            painter = painterResource(R.drawable.rin_logo_light),
             contentDescription = null,
             modifier = modifier.graphicsLayer { this.alpha = alpha },
             colorFilter = ColorFilter.tint(primaryColor),

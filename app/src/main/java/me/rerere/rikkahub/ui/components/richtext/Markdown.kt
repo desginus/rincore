@@ -255,7 +255,9 @@ fun MarkdownBlock(
 
     val parsed = data
     if (parsed == null) {
-        // 后台解析中 — 空占位, 不阻塞主线程
+        // v3.6.72: 后台解析中显示纯文本 — 此前空占位导致消息高度塌陷,
+        // 发送后消息短暂消失再出现 (3.6.69 异步化引入)
+        Text(text = content, style = style, modifier = modifier)
     } else if (parsed.hasHtml) {
         MarkdownNew(
             content = content,
