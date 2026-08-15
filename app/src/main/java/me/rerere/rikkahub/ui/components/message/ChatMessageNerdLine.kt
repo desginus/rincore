@@ -81,23 +81,6 @@ fun ChatMessageNerdLine(
                                     color = MaterialTheme.colorScheme.primary,
                                 )
                             }
-                            // v3.6.60: 消息指纹诊断 — 相邻两轮截图对比, 哈希变的那条即缓存断点
-                            val msgFp by me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastMsgFp
-                                .collectAsStateWithLifecycle()
-                            if (msgFp != null && isLast) {
-                                Text(
-                                    text = "指纹: $msgFp",
-                                    color = MaterialTheme.colorScheme.outline,
-                                )
-                            }
-                            val deltaInfo by me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastDeltaInfo
-                                .collectAsStateWithLifecycle()
-                            if (deltaInfo != null && isLast) {
-                                Text(
-                                    text = "增量: $deltaInfo",
-                                    color = MaterialTheme.colorScheme.outline,
-                                )
-                            }
                         }
                     )
                     // Output tokens

@@ -540,6 +540,7 @@
   <string name="reasoning_picker_hint">并非所有模型都支持深度调整。请参考模型和提供商文档。</string>
   <string name="reasoning_picker_title">调整模型思考深度</string>
   <string name="reasoning_xhigh">超高</string>
+  <string name="reasoning_max">最大</string>
   <string name="regenerate">重新生成</string>
   <string name="regenerate_confirm_message">确定要重新生成此消息吗？</string>
   <string name="render_with_webview">网页视图渲染</string>

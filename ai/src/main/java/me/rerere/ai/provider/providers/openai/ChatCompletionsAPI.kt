@@ -241,18 +241,21 @@ class ChatCompletionsAPI(
                                 val choice = choices[0].jsonObject
                                 val message =
                                     choice["delta"]?.jsonObject ?: choice["message"]?.jsonObject
-                                    ?: throw Exception("delta/message is null")
-                                val finishReason =
-                                    choice["finish_reason"]?.jsonPrimitive?.contentOrNull
-                                        ?: "unknown"
-                                add(
-                                    UIMessageChoice(
-                                        index = 0,
-                                        delta = parseMessage(message),
-                                        message = null,
-                                        finishReason = finishReason,
+                                // v3.6.67: 部分 OpenAI 兼容接口把 delta/message 显式写成
+                                // null, 强制解析会中断整轮生成。null 时跳过该 chunk。
+                                if (message != null) {
+                                    val finishReason =
+                                        choice["finish_reason"]?.jsonPrimitive?.contentOrNull
+                                            ?: "unknown"
+                                    add(
+                                        UIMessageChoice(
+                                            index = 0,
+                                            delta = parseMessage(message),
+                                            message = null,
+                                            finishReason = finishReason,
+                                        )
                                     )
-                                )
+                                }
                             }
                         }
                         val usage = parseTokenUsage(it["usage"] as? JsonObject)
@@ -474,7 +477,7 @@ class ChatCompletionsAPI(
                             val effort = when (level) {
                                 ReasoningLevel.LOW -> "high"     // low 不支持 → 最低档 high
                                 ReasoningLevel.MEDIUM -> "high"  // medium 不支持 → high
-                                ReasoningLevel.XHIGH -> "max"    // xhigh → max
+                                ReasoningLevel.XHIGH, ReasoningLevel.MAX -> "max"    // xhigh/max → max
                                 else -> level.effort             // HIGH -> "high"
                             }
                             put("reasoning_effort", effort)
@@ -485,7 +488,7 @@ class ChatCompletionsAPI(
                         if ("deepseek-v4" in params.model.modelId.lowercase()) {
                             if (level != ReasoningLevel.AUTO) {
                                 val effort = when (level) {
-                                    ReasoningLevel.XHIGH -> "max"
+                                    ReasoningLevel.XHIGH, ReasoningLevel.MAX -> "max"
                                     ReasoningLevel.OFF -> "none"
                                     else -> "high"
                                 }
