@@ -37,6 +37,14 @@ object TimeReminderTransformer : InputMessageTransformer {
 }
 
 internal fun applyTimeReminder(messages: List<UIMessage>): List<UIMessage> {
+    // v3.6.63: 幂等 — 已注入过时间提醒则直接返回, 不再重复插入。
+    // 根因: 工具循环每个 step 都重新执行本转换器, 之前每次对第一条 USER 重新插
+    // <time_reminder> USER 消息 → windowStart 每轮后移 2 → history 每轮 +2
+    // → 降维压缩包每轮增量追加 → 缓存断在压缩包 (16.9K 后停)。
+    val hasReminder = messages.any { msg ->
+        msg.role == MessageRole.USER && msg.toText().contains("<time_reminder>")
+    }
+    if (hasReminder) return messages
     val result = mutableListOf<UIMessage>()
     val tz = TimeZone.currentSystemDefault()
 
