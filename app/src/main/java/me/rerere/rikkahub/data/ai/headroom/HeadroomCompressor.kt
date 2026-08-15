@@ -140,9 +140,7 @@ object HeadroomCompressor {
         return UIMessage(
             role = me.rerere.ai.core.MessageRole.USER,
             parts = listOf(UIMessagePart.Text(summary)),
-            createdAt = history.firstOrNull()?.createdAt
-                ?: kotlinx.datetime.Clock.System.now()
-                    .toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault()),
+            createdAt = history.first().createdAt,
         )
     }
 
