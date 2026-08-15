@@ -595,7 +595,6 @@ class ChatService(
                 conversationLorebookIds = conversation.lorebookIds,
                 workspaceCwd = conversation.workspaceCwd,
                 conversationLoadedDomains = conversation.loadedDomains,
-                conversationId = conversationId.toString(),
                 memories = if (assistant.useGlobalMemory) {
                     memoryRepository.getGlobalMemories()
                 } else {

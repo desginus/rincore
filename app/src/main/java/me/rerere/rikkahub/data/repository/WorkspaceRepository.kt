@@ -30,6 +30,25 @@ class WorkspaceRepository(
 ) {
     fun listFlow(): Flow<List<WorkspaceEntity>> = dao.listFlow()
 
+    /**
+     * v3.6.85: DeepSeek Harness 插件生态兼容 — 刷新 DSH 技能根。
+     * 扫描所有 workspace files 区的 .dsh/skills 与 .agents/skills
+     * (DSH 官方技能发现根), 注入 SkillManager 作为只读技能源。
+     */
+    suspend fun refreshDshSkillRoots(skillManager: me.rerere.rikkahub.data.files.SkillManager) = withContext(Dispatchers.IO) {
+        runCatching {
+            val roots = dao.getAll().flatMap { ws ->
+                listOf(
+                    File(manager.filesDir(ws.root), ".dsh/skills"),
+                    File(manager.filesDir(ws.root), ".agents/skills"),
+                )
+            }
+            skillManager.setExtraSkillRoots(roots)
+        }.onFailure {
+            Log.w(TAG, "refreshDshSkillRoots failed: ${it.message}")
+        }
+    }
+
     suspend fun checkIntegrity() = withContext(Dispatchers.IO) {
         val workspaces = dao.getAll()
         for (workspace in workspaces) {

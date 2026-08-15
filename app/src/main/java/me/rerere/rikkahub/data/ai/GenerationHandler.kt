@@ -122,7 +122,6 @@ class GenerationHandler(
         conversationLorebookIds: Set<Uuid> = emptySet(),
         workspaceCwd: String? = null,
         conversationLoadedDomains: List<String>? = null, // v3.6.10: 保序 (Set 曾致跨轮顺序不定),
-        conversationId: String? = null, // v3.6.45: OpenCode Zen sticky session 透传
     ): Flow<GenerationChunk> = flow {
         // Trace ID 每次生成唯一 — 之前用 model.id 导致所有 trace 同 ID (日志无法区分)
         CallTracer.startTrace(id = java.util.UUID.randomUUID().toString().take(8))
@@ -309,7 +308,7 @@ class GenerationHandler(
                     conversationLorebookIds = conversationLorebookIds,
                     workspaceCwd = workspaceCwd,
                     layer1Prompt = layer1Prompt,
-                    conversationId = conversationId,
+                    // v3.6.85: conversationId 已随 x-opencode-session 头一并移除 (v3.6.80)
                 )
                 CallTracer.event("RECV", "post_api", "generateInternal returned, messages=${messages.size}")
                 messages = messages.visualTransforms(
@@ -568,7 +567,6 @@ class GenerationHandler(
         conversationLorebookIds: Set<Uuid> = emptySet(),
         workspaceCwd: String? = null,
         layer1Prompt: String? = null,
-        conversationId: String? = null,
     ) {
         // v3.6.74: 节选最近对话 (原上下文降维) 方向废弃 — 消息一律原样发送, 零改动
         val effectiveMessages: List<UIMessage> = messages

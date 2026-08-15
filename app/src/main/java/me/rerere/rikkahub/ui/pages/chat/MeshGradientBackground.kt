@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -18,12 +17,13 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * Gemini 风格动态渐变背景。
+ * Gemini 风格渐变背景。
  *
  * 原理:
  *  1. 底层一个线性渐变(顶部偏蓝、底部偏白)。
  *  2. 上面叠几个 radialGradient 光斑(中心有色 → 边缘透明),天生就是柔的。
- *  3. 每个光斑用一个独立周期的无限动画,沿正弦/余弦轨迹缓慢漂移。
+ *  3. 光斑位置为固定相位 (v3.6.82 静态化 — 此前无限漂移动画每帧重绘全屏
+ *     Canvas 且触发 haze 重采样, 是静态卡顿根源)。
  *
  * 不依赖 Modifier.blur,全 API 级别可用,性能也更好。
  */

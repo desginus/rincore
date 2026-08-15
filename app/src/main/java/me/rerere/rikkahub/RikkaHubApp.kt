@@ -142,6 +142,8 @@ class RikkaHubApp : Application() {
         get<AppScope>().launch(Dispatchers.IO) {
             runCatching {
                 get<WorkspaceRepository>().checkIntegrity()
+                // v3.6.85: DSH 插件生态 — 刷新 workspace 的 DSH 技能根
+                get<WorkspaceRepository>().refreshDshSkillRoots(get())
             }.onFailure {
                 Log.e(TAG, "checkWorkspaceIntegrity failed", it)
             }
