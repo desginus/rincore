@@ -109,8 +109,8 @@ class ChatCompletionsAPI(
 
         val response = client.newCall(request).await()
         if (!response.isSuccessful) {
-            // v3.6.78: 报错带请求体摘要 — 定位 400 触发字段 (grok 排查)
-            val reqSummary = json.encodeToString(requestBody).take(1500)
+            // v3.6.78: 报错带完整请求体 — 定位 400 触发字段 (grok 排查)
+            val reqSummary = json.encodeToString(requestBody)
             throw Exception("Failed to get response: ${response.code} ${response.body.string()} REQ=$reqSummary")
         }
 
