@@ -605,6 +605,8 @@ class GenerationHandler(
                 val cacheKey = messages.firstOrNull()?.id?.toString() ?: "anon-${history.size}"
                 val state = me.rerere.rikkahub.data.ai.headroom.HeadroomCache.get(cacheKey)
                 val deltaMsgs = history.size - (state?.packedUntil ?: 0)
+                me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastDeltaInfo.value =
+                    "deltaMsgs=$deltaMsgs history=${history.size} packedUntil=${state?.packedUntil ?: -1} cacheKey=${cacheKey.take(12)}"
                 val packedText: String
                 if (state != null && deltaMsgs == 0) {
                     // v3.6.45: 工具循环中 history 不变 — 直接复用上次压缩包

@@ -90,6 +90,14 @@ fun ChatMessageNerdLine(
                                     color = MaterialTheme.colorScheme.outline,
                                 )
                             }
+                            val deltaInfo by me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastDeltaInfo
+                                .collectAsStateWithLifecycle()
+                            if (deltaInfo != null && isLast) {
+                                Text(
+                                    text = "增量: $deltaInfo",
+                                    color = MaterialTheme.colorScheme.outline,
+                                )
+                            }
                         }
                     )
                     // Output tokens

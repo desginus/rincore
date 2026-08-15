@@ -45,6 +45,8 @@ object HeadroomStats {
     val lastDetail = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
     // v3.6.60: 消息指纹 (诊断) — 定位缓存断点: 相邻两轮指纹变的那条消息即断点
     val lastMsgFp = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    // v3.6.62: 增量诊断 — deltaMsgs/history/packedUntil, 定位压缩包为何每轮变化
+    val lastDeltaInfo = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
 }
 
 /**
