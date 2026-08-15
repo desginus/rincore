@@ -161,6 +161,11 @@ private fun preProcess(content: String): String {
         }
     }
 
+    // v3.6.73: 单个波浪号转义 — 与 MarkdownNew Bug #12 对齐。
+    // 20%~30% 中间的 ~ 会被 GFM 误判为删除线标记, 把直到下一个 ~ 的
+    // 内容全部划掉。只保留 ~~text~~ 双波浪号删除线语义。
+    result = result.replace(Regex("(?<!~)~(?!~)"), "\\~")
+
     return result
 }
 
