@@ -21,7 +21,7 @@ android {
         minSdk = 26
         targetSdk = 37
         versionCode = 200
-        versionName = "3.6.82"
+        versionName = "3.6.83"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -58,12 +58,9 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            // v3.6.83: 对齐原版 RikkaHub — 原版 release 不启用 R8 混淆/优化,
+            // 用户实测原版流畅。移除 minify 排除 R8 优化对 Compose 重组
+            // 的潜在影响, 且堆栈恢复可读 (此前 r8-map-id 混淆堆栈难以诊断)
             buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
         }
