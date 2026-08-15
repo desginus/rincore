@@ -1,10 +1,5 @@
 package me.rerere.rikkahub.ui.pages.chat
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -37,22 +32,13 @@ fun MeshGradientBackground(
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit = {},
 ) {
-    val transition = rememberInfiniteTransition(label = "aurora")
-
-    // 每个光斑一个相位(0..2π),不同时长 → 错落漂移,避免整齐划一
-    // 增加 loops 参数，按需放大目标值和总动画时长
-    @Composable
-    fun phase(durationMillis: Int, loops: Int, label: String) = transition.animateFloat(
-        initialValue = 0f,
-        targetValue = (2 * PI * loops).toFloat(),
-        animationSpec = infiniteRepeatable(tween(durationMillis * loops, easing = LinearEasing)),
-        label = label,
-    )
-    // 针对各自身上的乘数，传入消除小数所需的最小公倍数圈数
-    val p1 by phase(5_500, loops = 20, "p1") // 1.15 对应 20 圈 (总长 110秒)
-    val p2 by phase(7_000, loops = 1,  "p2") // 1.0  对应 1 圈
-    val p3 by phase(8_500, loops = 10, "p3") // 0.9  对应 10 圈 (总长 85秒)
-    val p4 by phase(6_200, loops = 10, "p4") // 1.1  对应 10 圈 (总长 62秒)
+    // v3.6.82: 静态化 — 此前 4 个无限漂移动画每帧驱动全屏 Canvas 重绘,
+    // 且作为 hazeSource 每帧触发输入栏重新模糊。120Hz 屏上即使页面静止也
+    // 持续 GPU 满载 → 静态卡顿根源之一。改为固定相位静态渐变, 零动画零重绘。
+    val p1 = PI.toFloat() * 0.85f
+    val p2 = PI.toFloat() * 0.55f
+    val p3 = PI.toFloat() * 0.3f
+    val p4 = PI.toFloat() * 1.05f
 
     val dark = LocalDarkMode.current
     val baseGradient = if (dark) {
