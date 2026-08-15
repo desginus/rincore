@@ -14,6 +14,10 @@ import kotlin.math.roundToInt
 
 @Composable
 fun rememberAvatarShape(loading: Boolean): Shape {
+    // v3.6.81: 非 loading 直接返回, 不再无条件创建无限动画。
+    // 此前每条消息头像即使静态也挂一个每帧驱动的 infiniteTransition,
+    // 列表内 N 个头像 × 每帧 invalidate 空转 → 间歇性卡顿来源。
+    if (!loading) return CircleShape
     val infiniteTransition = rememberInfiniteTransition()
     val rotateAngle = infiniteTransition.animateFloat(
         initialValue = 0f,
@@ -25,5 +29,5 @@ fun rememberAvatarShape(loading: Boolean): Shape {
             ),
         )
     )
-    return if (loading) MaterialShapes.Cookie6Sided.toShape(rotateAngle.value.roundToInt()) else CircleShape
+    return MaterialShapes.Cookie6Sided.toShape(rotateAngle.value.roundToInt())
 }
