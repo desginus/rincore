@@ -29,6 +29,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.SheetValue
@@ -513,25 +514,46 @@ fun WorkspaceFilePickButton(onClick: () -> Unit = {}, modifier: Modifier = Modif
     }
 }
 
-// v3.6.74: 本地工具入口移除, 该位置改为延时自动回复开关
+// v3.6.74: 本地工具入口移除, 该位置改为延时自动回复入口
+// v3.6.76: 开关不在面板直显, 点进去在对话框内交互 (整齐)
 @Composable
 fun DeferAutoReplySwitch(
     deferAutoReply: Boolean,
     onToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var showDialog by remember { mutableStateOf(false) }
     BigIconTextButton(modifier = modifier, icon = {
         Icon(HugeIcons.Clock02, null)
     }, text = {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("延时自动回复")
-            Switch(
-                checked = deferAutoReply,
-                onCheckedChange = onToggle,
-            )
-        }
+        Text("延时自动回复")
     }) {
-        onToggle(!deferAutoReply)
+        showDialog = true
+    }
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text("延时自动回复") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "开启后发送消息不会立即触发模型回复, 消息排队等待发送。",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("开启延时自动回复")
+                        Spacer(modifier = Modifier.weight(1f))
+                        Switch(
+                            checked = deferAutoReply,
+                            onCheckedChange = onToggle,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDialog = false }) { Text("完成") }
+            },
+        )
     }
 }
 
