@@ -591,55 +591,21 @@ class GenerationHandler(
         // v3.6.24: Headroom 降维 — 每步发送前统一压缩, 覆盖所有会发送向 API 的消息。
         // 关闭 (默认) 时 zero-copy 原样; 开启时消息正文+工具输出确定性压缩 (缓存稳定)。
         Log.i(TAG, "Headroom 开关: ${settings.headroomCompression} (发送前)")
-        // v3.6.32: 历史打包压缩 — 当前窗口前的所有历史打包成一条压缩包,
-        // 当前窗口 (最后 USER 及之后) 完整保留。整体压低, 不是逐句骨架。
+        // v3.6.66: 纯滞回截断 (对齐原版 RikkaHub limitContext, 缓存 99%+)
+        // 保留最近 MAX_CONTEXT_MESSAGES 条消息, 更早的直接截断。
+        // 截断是确定性的 (同 size 同截断点) → 前缀逐轮稳定 → 缓存逐轮累积。
+        // 此前摘要压缩 (summarizeHistory 增量追加) 每轮前缀变化 → 缓存断。
         val effectiveMessages: List<UIMessage>
         if (settings.headroomCompression) {
-            val windowStart = messages.indexOfLast { it.role == me.rerere.ai.core.MessageRole.USER }
-                .let { if (it >= 0) it else messages.size }
-            val history = if (windowStart > 0) messages.subList(0, windowStart) else emptyList()
-            val current = messages.subList(windowStart, messages.size)
-            if (history.isNotEmpty()) {
-                // v3.6.43 缓存修复: 追加式增量压缩包 (前缀稳定 → 缓存包含压缩包)
-                // 此前每轮整体重新总结 → 前缀全变 → 缓存断在 system+tools (13.8K)
-                val cacheKey = messages.firstOrNull()?.id?.toString() ?: "anon-${history.size}"
-                val state = me.rerere.rikkahub.data.ai.headroom.HeadroomCache.get(cacheKey)
-                val deltaMsgs = history.size - (state?.packedUntil ?: 0)
-                me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastDeltaInfo.value =
-                    "deltaMsgs=$deltaMsgs history=${history.size} packedUntil=${state?.packedUntil ?: -1} cacheKey=${cacheKey.take(12)}"
-                val packedText: String
-                if (state != null && deltaMsgs == 0) {
-                    // v3.6.45: 工具循环中 history 不变 — 直接复用上次压缩包
-                    // (避免每 step 重复完整总结, 且前缀逐字节稳定)
-                    packedText = state.packedText
-                } else if (state != null && deltaMsgs in 1..HeadroomCompressor.DELTA_MAX_MSGS) {
-                    // 增量追加: 前缀稳定 → 缓存命中压缩包
-                    val delta = history.subList(state.packedUntil, history.size)
-                        .mapNotNull { HeadroomCompressor.summarizeDelta(it) }
-                        .filter { it.isNotBlank() }
-                        .joinToString("\n")
-                    packedText = if (delta.isNotBlank()) state.packedText + "\n" + delta else state.packedText
-                } else {
-                    // 首次/状态失效/增量过大: 完整总结 (缓存 miss 一次, 可接受)
-                    packedText = HeadroomCompressor.summarizeHistory(history)
-                        .parts.filterIsInstance<UIMessagePart.Text>().joinToString(" ") { it.text }
+            val maxContextMessages = 30
+            if (messages.size > maxContextMessages) {
+                val cut = messages.size - maxContextMessages
+                // 截断点往前调整到 USER 消息边界, 避免拆开 tool 配对
+                var start = cut
+                while (start > 0 && messages[start].role != me.rerere.ai.core.MessageRole.USER) {
+                    start--
                 }
-                // v3.6.55: 凡有必存 — 去掉 MAX_PACKED_CHARS 重新总结。
-                // 压缩包"每轮一行"持续累积 (不丢弃轮次), 缓存逐 token 增长。
-                // 重新总结会重建压缩包, 即便内容一致也无必要, 且破坏"持续累积"语义。
-                val finalText = packedText
-                me.rerere.rikkahub.data.ai.headroom.HeadroomCache.put(
-                    cacheKey,
-                    me.rerere.rikkahub.data.ai.headroom.HeadroomCache.State(finalText, history.size)
-                )
-                val packed = UIMessage(
-                    role = me.rerere.ai.core.MessageRole.USER,
-                    parts = listOf(UIMessagePart.Text(finalText)),
-                )
-                // v3.6.39 核心修复: beforeC 必须与打包口径一致 — 含 Tool.output 的 Text。
-                // 此前只算消息级 Text, 工具输出 (上下文大头) 被忽略 → saved 为负 →
-                // 回退原样 → 压缩完全不生效 (用户实测 92K 只省 374, token 不变)。
-                val beforeC = history.sumOf { msg ->
+                val beforeC = messages.subList(0, start).sumOf { msg ->
                     msg.parts.sumOf { part ->
                         when (part) {
                             is UIMessagePart.Text -> part.text.length
@@ -648,25 +614,15 @@ class GenerationHandler(
                         }
                     }
                 }
-                val afterC = packed.parts.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }
-                val saved = beforeC - afterC
-                if (saved > 0) {
-                    effectiveMessages = listOf(packed) + current
-                    me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastDetail.value =
-                        "历史 ${beforeC} → ${afterC} 字符 (省 $saved, 压缩 ${100 * saved / beforeC}%)"
-                    me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastSavedTokens.value = saved / 2
-                    Log.i(TAG, "Headroom 历史打包: ${beforeC}c → ${afterC}c (省 $saved)")
-                } else {
-                    // 历史过短, 打包会膨胀 — 原样发送 (不产生负压缩)
-                    effectiveMessages = messages
-                    me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastDetail.value =
-                        "历史过短 (${beforeC} 字符), 打包会膨胀, 原样发送"
-                    me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastSavedTokens.value = null
-                    Log.i(TAG, "Headroom 历史过短: ${beforeC}c, 原样 (避免负压缩)")
-                }
+                effectiveMessages = messages.subList(start, messages.size)
+                me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastSavedTokens.value = beforeC / 2
+                me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastDetail.value =
+                    "截断 ${messages.size} → ${effectiveMessages.size} 条 (省 ${beforeC}c)"
+                Log.i(TAG, "Headroom 截断: ${messages.size} → ${effectiveMessages.size} 条 (省 ${beforeC}c)")
             } else {
                 effectiveMessages = messages
-                me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastDetail.value = "无历史消息可打包 (新对话)"
+                me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastSavedTokens.value = null
+                me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastDetail.value = null
             }
         } else {
             effectiveMessages = messages
