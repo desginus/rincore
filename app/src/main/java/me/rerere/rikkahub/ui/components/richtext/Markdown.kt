@@ -240,30 +240,28 @@ fun MarkdownBlock(
     content: String,
     modifier: Modifier = Modifier,
     style: TextStyle = LocalTextStyle.current,
-    onClickCitation: (String) -> Unit = {},
-    live: Boolean = false,
+    onClickCitation: (String) -> Unit = {}
 ) {
     // v3.6.69: 初次解析异步化 — 此前首帧同步 parseMarkdown 阻塞主线程,
     // LazyColumn 滑动回收重建条目时反复同步解析 → 滑动卡顿不跟手。
-    // v3.6.81: 流式生成期间 (live=true) 跳过解析直接渲染纯文本 —
-    // 此前每个 chunk 都触发全文 AST 解析 (O(n)), 长回复时后台线程
-    // 反复取消/重建解析, CPU 满载抢渲染线程 → 间歇性卡顿。完成后一次解析。
+    // v3.6.84: 回滚 v3.6.81 live 流式降级 — 用户要求输出一点渲染一点,
+    // 流式期间必须持续解析渲染, 不得攒到完成后统一渲染
     var (data, setData) = remember { mutableStateOf<MarkdownParseResult?>(null) }
 
     // 监听内容变化，重新解析AST树
     // 这里在后台线程解析AST树, 防止频繁更新的时候掉帧
     val updatedContent by rememberUpdatedState(content)
     LaunchedEffect(Unit) {
-        snapshotFlow { updatedContent to live }
+        snapshotFlow { updatedContent }
             .distinctUntilChanged()
-            .mapLatest { (content, live) -> if (live) null else parseMarkdown(content) }
+            .mapLatest { parseMarkdown(it) }
             .catch { exception -> exception.printStackTrace() }
             .flowOn(Dispatchers.Default)
             .collect { setData(it) }
     }
 
     val parsed = data
-    if (live || parsed == null) {
+    if (parsed == null) {
         // v3.6.72: 后台解析中显示纯文本 — 此前空占位导致消息高度塌陷,
         // 发送后消息短暂消失再出现 (3.6.69 异步化引入)
         Text(text = content, style = style, modifier = modifier)

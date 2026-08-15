@@ -391,7 +391,6 @@ private fun MessagePartsBlock(
                                                     visual = true,
                                                 ),
                                                 onClickCitation = handleClickCitation,
-                                                live = loading,
                                             )
                                         }
                                     }
@@ -403,7 +402,6 @@ private fun MessagePartsBlock(
                                             visual = true,
                                         ),
                                         onClickCitation = handleClickCitation,
-                                        live = loading,
                                         modifier = Modifier
                                             .animateContentSize()
                                     )
