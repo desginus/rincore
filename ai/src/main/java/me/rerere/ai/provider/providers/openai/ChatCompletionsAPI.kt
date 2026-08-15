@@ -510,27 +510,15 @@ class ChatCompletionsAPI(
                             }
                         } else {
                             if (level != ReasoningLevel.AUTO) {
-                                val effort = when {
-                                    level.effort == "none" -> "low"
-                                    level == ReasoningLevel.MAX -> "high"
-                                    else -> level.effort
-                                }
-                                put("reasoning_effort", effort)
+                                put("reasoning_effort", if (level.effort == "none") "low" else level.effort)
                             }
                         }
                     }
 
                     "opencode.ai" -> {
-                        // OpenCode Zen DeepSeek V4: 支持 low/medium/high/max (证据: OpenCode
-                        // transform.ts WIDELY_SUPPORTED_EFFORTS + max, 无 none/xhigh)。
-                        // xhigh → max 映射; OFF → 不发 (DeepSeek V4 推理常开, 用默认档)
-                        // v3.6.76: grok 系列 (grok-4.5 等) 在 OpenCode 网关不支持
-                        // reasoning_effort, 发了报 Endpoint is unavailable — 跳过
-                        if (level != ReasoningLevel.AUTO && level != ReasoningLevel.OFF &&
-                            "grok" !in params.model.modelId.lowercase()
-                        ) {
-                            val effort = if (level == ReasoningLevel.XHIGH) "max" else level.effort
-                            put("reasoning_effort", effort)
+                        // v3.6.80: 对齐原版 RikkaHub — 原版 grok 调用正常, 不做任何特判
+                        if (level != ReasoningLevel.AUTO) {
+                            put("reasoning_effort", level.effort)
                         }
                     }
 
@@ -538,13 +526,7 @@ class ChatCompletionsAPI(
                         // OpenAI 官方
                         // 文档中，completions API 只支持 "low", "medium", "high"
                         if (level != ReasoningLevel.AUTO) {
-                            val effort = when {
-                                level.effort == "none" -> "low"
-                                // v3.6.71 锚定: MAX 的 effort="max" 官方不支持, 封顶 high
-                                level == ReasoningLevel.MAX -> "high"
-                                else -> level.effort
-                            }
-                            put("reasoning_effort", effort)
+                            put("reasoning_effort", if (level.effort == "none") "low" else level.effort)
                         }
                     }
                 }

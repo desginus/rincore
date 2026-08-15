@@ -684,14 +684,8 @@ class GenerationHandler(
             customHeaders = buildList {
                 addAll(assistant.customHeaders)
                 addAll(model.customHeaders)
-                // v3.6.45 OpenCode Zen sticky session: 同一会话→同一上游 provider→提高缓存命中率
-                if (conversationId != null) {
-                    val host = (provider as? ProviderSetting.OpenAI)?.baseUrl
-                        ?.toHttpUrlOrNull()?.host
-                    if (host == "opencode.ai") {
-                        add(CustomHeader("x-opencode-session", conversationId))
-                    }
-                }
+                // v3.6.80: 删除自研 x-opencode-session 头 — 原版无此头且 grok 正常,
+                // 该头疑似触发 OpenCode grok 通道 400
             },
             customBody = buildList {
                 addAll(assistant.customBodies)
