@@ -237,7 +237,9 @@ fun MarkdownBlock(
     style: TextStyle = LocalTextStyle.current,
     onClickCitation: (String) -> Unit = {}
 ) {
-    var (data, setData) = remember { mutableStateOf(parseMarkdown(content)) }
+    // v3.6.69: 初次解析异步化 — 此前首帧同步 parseMarkdown 阻塞主线程,
+    // LazyColumn 滑动回收重建条目时反复同步解析 → 滑动卡顿不跟手。
+    var (data, setData) = remember { mutableStateOf<MarkdownParseResult?>(null) }
 
     // 监听内容变化，重新解析AST树
     // 这里在后台线程解析AST树, 防止频繁更新的时候掉帧
@@ -251,7 +253,10 @@ fun MarkdownBlock(
             .collect { setData(it) }
     }
 
-    if (data.hasHtml) {
+    val parsed = data
+    if (parsed == null) {
+        // 后台解析中 — 空占位, 不阻塞主线程
+    } else if (parsed.hasHtml) {
         MarkdownNew(
             content = content,
             modifier = modifier,
@@ -263,9 +268,9 @@ fun MarkdownBlock(
             Column(
                 modifier = modifier.padding(horizontal = 4.dp)
             ) {
-                data.astTree.children.fastForEach { child ->
+                parsed.astTree.children.fastForEach { child ->
                     MarkdownNode(
-                        node = child, content = data.preprocessed, onClickCitation = onClickCitation
+                        node = child, content = parsed.preprocessed, onClickCitation = onClickCitation
                     )
                 }
             }

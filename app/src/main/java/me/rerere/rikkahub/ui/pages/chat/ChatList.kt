@@ -315,6 +315,7 @@ private fun ChatListNormal(
             itemsIndexed(
                 items = conversation.messageNodes,
                 key = { index, item -> item.id },
+                contentType = { index, item -> item.currentMessage.role },
             ) { index, node ->
                 Column {
                     ListSelectableItem(

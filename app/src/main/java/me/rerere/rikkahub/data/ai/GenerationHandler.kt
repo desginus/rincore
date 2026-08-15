@@ -597,7 +597,7 @@ class GenerationHandler(
         // 此前摘要压缩 (summarizeHistory 增量追加) 每轮前缀变化 → 缓存断。
         val effectiveMessages: List<UIMessage>
         if (settings.headroomCompression) {
-            val maxContextMessages = 30
+            val maxContextMessages = 3
             if (messages.size > maxContextMessages) {
                 val cut = messages.size - maxContextMessages
                 // 截断点往前调整到 USER 消息边界, 避免拆开 tool 配对
@@ -785,8 +785,8 @@ class GenerationHandler(
             streamLoop@ while (true) {
             val preStreamMessages = messages
             // v3.6.49: UI 更新节流 — 每 chunk 调 onUpdateMessages 触发整个 ChatPage
-            // 重组, 流式期间高频重组是卡顿/发热/120Hz 掉帧根因。改为 50ms 批处理,
-            // 重组频率从每 chunk (可达每秒几十次) 降到每秒最多 20 次。
+            // 重组, 流式期间高频重组是卡顿/发热/120Hz 掉帧根因。v3.6.69 50ms→100ms,
+            // 重组频率降到每秒最多 10 次, 进一步降低流式期间掉帧与滑动卡顿。
             var lastUiUpdateMs = 0L
             try {
             providerImpl.streamText(
@@ -816,7 +816,7 @@ class GenerationHandler(
                     }
                 }
                 val now = System.currentTimeMillis()
-                if (now - lastUiUpdateMs >= 50) {
+                if (now - lastUiUpdateMs >= 100) {
                     onUpdateMessages(messages)
                     lastUiUpdateMs = now
                 }
