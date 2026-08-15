@@ -198,6 +198,9 @@ class ChatCompletionsAPI(
 
         // SSE 连接优化: 首次数据到达前断连时自动重试, 指数退避 (移植 v2.9.8 稳定行为)
         val completed = java.util.concurrent.atomic.AtomicBoolean(false)  // [DONE] 正常完成标记
+        // v3.6.75: finish_reason=stop/length 已收到即视为完成 — 部分中转 (VPN 代理/
+        // Go 订阅) 不发送 [DONE] 直接断开, 此前被误判为断流 → 回滚重试 → 多轮重复回复
+        val gotFinish = java.util.concurrent.atomic.AtomicBoolean(false)
         val retryCount = java.util.concurrent.atomic.AtomicInteger(0)
         val maxRetries = 5 // 指数退避 1+2+4+8+16=31s 窗口, 覆盖瞬时网络波动
         var currentEventSource: EventSource? = null
@@ -247,6 +250,9 @@ class ChatCompletionsAPI(
                                     val finishReason =
                                         choice["finish_reason"]?.jsonPrimitive?.contentOrNull
                                             ?: "unknown"
+                                    if (finishReason == "stop" || finishReason == "length") {
+                                        gotFinish.set(true)
+                                    }
                                     add(
                                         UIMessageChoice(
                                             index = 0,
@@ -307,11 +313,11 @@ class ChatCompletionsAPI(
             }
 
             override fun onClosed(eventSource: EventSource) {
-                // 服务器主动关闭连接: 已收到 [DONE] → 正常完成; 否则静默中断
-                // (消息不完整且无报错 → 用户感知"莫名其妙中断" — 可见化修复)
-                if (!completed.get()) {
-                    Log.w(TAG, "onClosed: stream closed before [DONE] — unexpected interruption")
-                    close(IOException("SSE 流在完成前被服务器关闭 (未收到 [DONE])"))
+                // 服务器主动关闭连接: [DONE] 或 finish_reason=stop 已收到 → 正常完成;
+                // 否则视为断流 (消息不完整且无报错 → 用户感知"莫名其妙中断")
+                if (!completed.get() && !gotFinish.get()) {
+                    Log.w(TAG, "onClosed: stream closed before completion — unexpected interruption")
+                    close(IOException("SSE 流在完成前被服务器关闭"))
                 } else {
                     TraceLogger.log("SSE", "stream closed by server")
                     close()
