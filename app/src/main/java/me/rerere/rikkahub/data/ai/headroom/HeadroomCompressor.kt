@@ -134,9 +134,15 @@ object HeadroomCompressor {
         me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastDetail.value =
             "历史 ${rawLen} 字符 → 总结 ${summary.length} 字符 (压缩 ${ratio}%)\n总结预览: " + summary.take(160)
 
+        // v3.6.64: createdAt 用历史首条消息的时间戳 (固定), 不用 UIMessage 默认的
+        // System.now()。根因: 压缩包 createdAt 动态 → TimeReminderTransformer 算
+        // gapSeconds 漂移 → 时间提醒数量每轮变 → internalMessages 每轮变 → 缓存断。
         return UIMessage(
             role = me.rerere.ai.core.MessageRole.USER,
             parts = listOf(UIMessagePart.Text(summary)),
+            createdAt = history.firstOrNull()?.createdAt
+                ?: kotlinx.datetime.Clock.System.now()
+                    .toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault()),
         )
     }
 

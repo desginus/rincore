@@ -11,6 +11,7 @@ package me.rerere.rikkahub.data.ai.transformers
 import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
+import kotlinx.datetime.toLocalDateTime
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.utils.toLocalDateTime
@@ -83,7 +84,13 @@ private fun buildTimeReminderMessage(gapSeconds: Long?, instant: Instant): UIMes
     } else {
         "<time_reminder>Current time: $dayOfWeek, $timeStr</time_reminder>"
     }
-    return UIMessage.user(content)
+    // v3.6.64: createdAt 用消息时间戳 (固定), 不用 UIMessage.user 默认的 System.now()。
+    // 根因: 工具循环每个 step 重复执行本转换器, createdAt 动态 → 下一条 USER 的
+    // gapSeconds 判断漂移 → 时间提醒数量/位置每轮变 → internalMessages 每轮变 →
+    // 缓存断在压缩包之后 (16.9K 后停)。
+    return UIMessage.user(content).copy(
+        createdAt = instant.toLocalDateTime(TimeZone.currentSystemDefault())
+    )
 }
 
 private fun formatGap(seconds: Long): String {
