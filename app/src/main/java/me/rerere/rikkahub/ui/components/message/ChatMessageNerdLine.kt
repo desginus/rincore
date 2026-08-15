@@ -77,7 +77,7 @@ fun ChatMessageNerdLine(
                             val savedVal = savedTokens
                             if (savedVal != null && isLast) {
                                 Text(
-                                    text = " 降维省 ${savedVal.formatNumber()}",
+                                    text = " 节选省 ${savedVal.formatNumber()}",
                                     color = MaterialTheme.colorScheme.primary,
                                 )
                             }

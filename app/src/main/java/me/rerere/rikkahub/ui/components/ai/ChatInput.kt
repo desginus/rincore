@@ -139,7 +139,8 @@ fun ChatInput(
     val assistant = settings.getCurrentAssistant()
     val hazeTintColor = MaterialTheme.colorScheme.surfaceContainerLow
     val inputHazeStyle = HazeBlurStyle.Material3 {
-        blurRadius(12.dp)
+        // v3.6.70: 12dp -> 8dp, 降低 120Hz 下 GPU 模糊采样开销 (每帧重采样减负)
+        blurRadius(8.dp)
     }
 
     val keyboardController = LocalSoftwareKeyboardController.current

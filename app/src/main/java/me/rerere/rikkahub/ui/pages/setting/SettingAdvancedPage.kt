@@ -141,7 +141,7 @@ fun SettingAdvancedPage(
                         val detail by me.rerere.rikkahub.data.ai.headroom.HeadroomStats.lastDetail
                             .collectAsStateWithLifecycle()
                         Column {
-                            Text(if (settings.headroomCompression) "已开启 · 历史发送时打包压缩（静默）" else "已关闭 · 默认模式（无压缩）")
+                            Text(if (settings.headroomCompression) "已开启 · 只发送最近 3 条消息" else "已关闭 · 完整模式（消息原样发送）")
                             requestChars?.let {
                                 Text(
                                     text = "上轮发送请求: $it 字符",
@@ -158,7 +158,7 @@ fun SettingAdvancedPage(
                             }
                         }
                     },
-                    headlineContent = { Text("上下文降维") },
+                    headlineContent = { Text("节选最近对话") },
                     trailingContent = {
                         androidx.compose.material3.Switch(
                             checked = settings.headroomCompression,

@@ -345,9 +345,9 @@ private fun ChatPageContent(
                                 vm.updateSettings(setting.copy(deferAutoReply = checked))
                             }
                         )
-                        // v3.6.19: Headroom 上下文降维 — 对话两种模式
-                        Text("上下文降维", fontWeight = FontWeight.SemiBold)
-                        Text("开启后对话进入降维模式：工具输出经确定性规则压缩（信息密度最大化，不破坏缓存率），巨量节省上下文。关闭（默认）为正常模式，不做任何压缩。", style = MaterialTheme.typography.bodySmall)
+                        // v3.6.19: Headroom 节选最近对话 — 对话两种模式
+                        Text("节选最近对话", fontWeight = FontWeight.SemiBold)
+                        Text("开启后发送上下文时只保留最近 3 条消息，更早的历史不发送，大幅精简上下文。关闭（默认）为完整模式，所有消息原样发送，不做任何改动。", style = MaterialTheme.typography.bodySmall)
                         Switch(
                             checked = setting.headroomCompression,
                             onCheckedChange = { checked ->

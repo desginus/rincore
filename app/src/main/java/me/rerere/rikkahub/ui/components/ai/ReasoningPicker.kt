@@ -1,6 +1,11 @@
 package me.rerere.rikkahub.ui.components.ai
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -48,10 +54,14 @@ import kotlin.math.roundToInt
 
 private val levels = ReasoningLevel.entries
 private val levelCount = levels.size
+// v3.6.70: 全部 7 档都显示标注 (关闭/自动/低/中等/较高/高/最高)
 private val labeledLevels = setOf(
     ReasoningLevel.OFF,
     ReasoningLevel.AUTO,
     ReasoningLevel.LOW,
+    ReasoningLevel.MEDIUM,
+    ReasoningLevel.HIGH,
+    ReasoningLevel.XHIGH,
     ReasoningLevel.MAX,
 )
 
@@ -144,6 +154,17 @@ fun ReasoningPicker(
                     if (reasoningLevel.isEnabled) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurface
                 )
+                // v3.6.70: 最高档灯泡闪烁 — MAX 时灯泡呼吸闪烁, 提示已达最大思考强度
+                val maxPulse = rememberInfiniteTransition(label = "reasoning_max_pulse")
+                val maxAlpha by maxPulse.animateFloat(
+                    initialValue = 1f,
+                    targetValue = 0.3f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(durationMillis = 650),
+                        repeatMode = RepeatMode.Reverse,
+                    ),
+                    label = "reasoning_max_alpha",
+                )
                 Icon(
                     imageVector = when (reasoningLevel) {
                         ReasoningLevel.OFF -> HugeIcons.Idea
@@ -155,13 +176,24 @@ fun ReasoningPicker(
                         ReasoningLevel.MAX -> ReasoningHigh
                     },
                     contentDescription = null,
-                    modifier = Modifier.size(32.dp),
+                    modifier = Modifier
+                        .size(32.dp)
+                        .graphicsLayer {
+                            alpha = if (reasoningLevel == ReasoningLevel.MAX) maxAlpha else 1f
+                        },
                     tint = iconColor,
                 )
                 Text(
                     text = reasoningLevel.label(),
                     style = MaterialTheme.typography.titleMedium,
                 )
+                if (reasoningLevel == ReasoningLevel.MAX) {
+                    Text(
+                        text = stringResource(R.string.reasoning_max_hint),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
 
             Column(
@@ -261,7 +293,7 @@ private fun ReasoningScale(
                                 .background(tickColor)
                         )
                         Text(
-                            text = if (level in labeledLevels) level.label() else "",
+                            text = level.label(),
                             style = MaterialTheme.typography.labelSmall,
                             textAlign = TextAlign.Center,
                             color = labelColor,
