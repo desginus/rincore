@@ -139,12 +139,13 @@ fun SettingPluginsPage(
                                         modifier = Modifier.weight(1f),
                                     )
                                     Switch(
-                                        checked = settings.forcedSkills.contains("plugin__${plugin.name}__skill"),
+                                        checked = settings.getCurrentAssistant().forcedSkills.contains("plugin__${plugin.name}__skill"),
                                         onCheckedChange = { checked ->
+                                            val cur = settings.getCurrentAssistant().forcedSkills
                                             val newSet = if (checked) {
-                                                settings.forcedSkills + "plugin__${plugin.name}__skill"
+                                                cur + "plugin__${plugin.name}__skill"
                                             } else {
-                                                settings.forcedSkills - "plugin__${plugin.name}__skill"
+                                                cur - "plugin__${plugin.name}__skill"
                                             }
                                             settingsStore.update { it.copy(
                                                 assistants = it.assistants.map { a ->
