@@ -192,13 +192,12 @@ class ChatService(
             skillsRoot = skillManager.getSkillsDir().absolutePath,
             settingsStore = settingsStore,
         )
-        // v3.6.110/112: 插件安装后立即刷新插件列表 + 注册桥接 (热生效, 不等重启)
+        // v3.6.110/120: 插件安装后立即刷新插件列表 (热生效, 不等重启)。
+        // v3.6.120 回滚: 不再自动 registerPluginBridges — 自动桥接在部分
+        // 环境破坏 MCP 连接 (用户实测大部分 MCP 无法连接), 插件 MCP 桥接
+        // 退回手动 mcp_connect (与普通 STDIO MCP 同通道)
         me.rerere.rikkahub.ecosystem.tools.DynamicTools.onSkillsChanged = {
             me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry.refresh()
-            appScope.launch {
-                me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry
-                    .registerPluginBridges(mcpManager, settingsStore)
-            }
         }
     }
 

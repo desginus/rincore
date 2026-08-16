@@ -158,9 +158,6 @@ class RikkaHubApp : Application() {
                     val skillManager = get<me.rerere.rikkahub.data.files.SkillManager>()
                     me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry
                         .migrateLegacySkills(skillManager.getSkillsDir())
-                    // 桥接注册: 插件 .mcp.json 的 command 经 workspace 启动 (STDIO MCP)
-                    me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry
-                        .registerPluginBridges(get(), get())
                 }.onFailure { Log.e(TAG, "claw plugin setup failed", it) }
                 // v3.6.86: 插件生态 — 扫描 .plugins 并注册桥接 (技能 + STDIO MCP)
                 get<me.rerere.rikkahub.data.plugin.PluginManager>().refresh()
