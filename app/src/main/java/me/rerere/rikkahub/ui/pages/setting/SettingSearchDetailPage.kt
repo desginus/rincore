@@ -415,7 +415,6 @@ internal fun ExaOptions(
 }
 
 @Composable
-@Composable
 internal fun DoubaoOptions(
     options: SearchServiceOptions.DoubaoOptions,
     onUpdateOptions: (SearchServiceOptions.DoubaoOptions) -> Unit

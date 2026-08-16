@@ -519,7 +519,7 @@ object DynamicTools {
         return installFromClawHub(slug)
     }
 
-    private fun installFromGitHub(repoPath: String): List<UIMessagePart> {
+    private suspend fun installFromGitHub(repoPath: String): List<UIMessagePart> {
         val parts = repoPath.split("/", limit = 4)
         val owner = parts.getOrNull(0) ?: return listOf(UIMessagePart.Text("Invalid GitHub path"))
         val repo = parts.getOrNull(1) ?: return listOf(UIMessagePart.Text("Invalid GitHub path"))
