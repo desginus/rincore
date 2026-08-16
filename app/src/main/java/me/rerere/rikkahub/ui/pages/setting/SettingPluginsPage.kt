@@ -47,7 +47,9 @@ fun SettingPluginsPage(
     var refreshTick by remember { mutableIntStateOf(0) }
 
     // 每次 refreshTick 变化重新取快照 (refresh 是 suspend, 完成后自增触发重组)
-    val plugins = remember(refreshTick) { pluginManager.pluginsUiSnapshot() }
+    // v3.6.110: claw 插件变化也触发刷新 (plugin_install 装完立即出现在列表)
+    val clawPluginsTick by me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry.plugins.collectAsState()
+    val plugins = remember(refreshTick, clawPluginsTick) { pluginManager.pluginsUiSnapshot() }
     val refreshing = remember { androidx.compose.runtime.mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {

@@ -64,6 +64,8 @@ object DynamicTools {
     // ClawHub 安装的 skill 落此目录 — 与 Agent Skills(SkillManager.getSkillsDir) 同一目录,
     // 修复: 此前落 ecosystem 私有目录, proot/use_skill 不可见
     private var skillsRoot: String = ""
+    /** v3.6.110: 技能落盘后回调 (Claw 插件技能根同步 — 安装后热生效) */
+    var onSkillsChanged: (() -> Unit)? = null
 
     fun initialize(mcp: McpManager, workspaceRoot: String, skillsRoot: String = "", settingsStore: me.rerere.rikkahub.data.datastore.SettingsStore? = null) {
         mcpManager = mcp
@@ -302,17 +304,16 @@ object DynamicTools {
                 val targetDir = File(ecosystemWorkspaceRoot, "plugins/$name")
                 targetDir.mkdirs()
 
-                // 安装 skills — v3.6.109: 直接落技能目录 (沙箱 /skills 挂载可见,
-                // 技能工具 skill__<插件名>__<技能> 下一轮自动生成), 不再只落
-                // ecosystem/plugins 私有目录 (沙箱不可见 = 装上看不到的根因)
-                val pluginBaseName = plugin.manifest.name.ifBlank { name }
-                    .replace(Regex("[^a-zA-Z0-9_-]"), "_")
+                // 安装 skills — v3.6.110: 落插件目录 (插件是插件, 技能分开存放),
+                // 注册走额外技能根 (前缀 <插件名>__), 技能工具名自动带前缀,
+                // 与其他 Skill 隔离 — 不混入 /skills
                 plugin.skills.forEach { skill ->
-                    val skillName = "${pluginBaseName}__${skill.name}"
-                    val skillDir = File(skillsRoot, skillName)
+                    val skillDir = File(targetDir, "skills/${skill.name}")
                     skillDir.mkdirs()
-                    File(skillDir, "SKILL.md").writeText(rewriteSkillFrontmatterName(skill.content, skillName))
+                    File(skillDir, "SKILL.md").writeText(skill.content)
                 }
+                // v3.6.110: 安装后立即同步技能根 (不等重启) — 注册链热生效
+                runCatching { onSkillsChanged?.invoke() }
 
                 // 安装 commands
                 plugin.commands.forEach { cmd ->

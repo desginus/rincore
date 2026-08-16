@@ -150,22 +150,14 @@ class RikkaHubApp : Application() {
                 get<WorkspaceRepository>().checkIntegrity()
                 // v3.6.85: DSH 插件生态 — 刷新 workspace 的 DSH 技能根
                 get<WorkspaceRepository>().refreshDshSkillRoots(get())
-                // v3.6.105: ClawHub plugin_install 安装的插件技能 — 注入技能系统
-                // (前缀 <插件名>__, 与其他 Skill 分开; 修复: 插件技能不进工具池)
+                // v3.6.110: ClawHub 插件技能根同步 (前缀 <插件名>__ 隔离) +
+                // 迁移 v3.6.109 误落 /skills 的插件技能回插件目录
                 runCatching {
                     val skillManager = get<me.rerere.rikkahub.data.files.SkillManager>()
-                    val clawRoots = me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry
-                        .getSkillRootsWithNames()
-                        .map { (pluginName, skillsDir) ->
-                            me.rerere.rikkahub.data.files.SkillManager.ExtraSkillRoot(
-                                prefix = "${pluginName.replace(Regex("[^a-zA-Z0-9_-]"), "_")}__",
-                                root = skillsDir,
-                            )
-                        }
-                    val others = skillManager.extraRootsSnapshot()
-                        .filter { root -> clawRoots.none { it.prefix == root.prefix } }
-                    skillManager.setExtraSkillRoots(others + clawRoots)
-                    Log.i(TAG, "claw plugin skill roots injected: ${clawRoots.size}")
+                    me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry
+                        .migrateLegacySkills(skillManager.getSkillsDir())
+                    me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry
+                        .syncSkillRoots(skillManager)
                 }.onFailure { Log.e(TAG, "claw skill roots failed", it) }
                 // v3.6.86: 插件生态 — 扫描 .plugins 并注册桥接 (技能 + STDIO MCP)
                 get<me.rerere.rikkahub.data.plugin.PluginManager>().refresh()

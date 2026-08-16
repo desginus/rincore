@@ -189,11 +189,14 @@ class ChatService(
         me.rerere.rikkahub.ecosystem.tools.DynamicTools.initialize(
             mcp = mcpManager,
             workspaceRoot = context.filesDir.resolve("ecosystem").absolutePath,
-            // v3.6.109: skillsRoot 对齐 SkillManager 目录 (= 沙箱 /skills bind mount) —
-            // ClawHub/plugin 安装的技能直接落技能目录, 沙箱可见 + 技能工具自动生成
             skillsRoot = skillManager.getSkillsDir().absolutePath,
             settingsStore = settingsStore,
         )
+        // v3.6.110: 插件技能落盘后立即同步技能根 (注册链热生效, 不等重启)
+        me.rerere.rikkahub.ecosystem.tools.DynamicTools.onSkillsChanged = {
+            me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry
+                .syncSkillRoots(skillManager)
+        }
     }
 
     private val workspaceReminderTransformer = WorkspaceReminderTransformer(workspaceRepository)

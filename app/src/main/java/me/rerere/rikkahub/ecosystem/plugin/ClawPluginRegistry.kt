@@ -45,7 +45,14 @@ object ClawPluginRegistry {
     }
 
     private fun readManifest(dir: File): PluginManifest? {
-        val candidates = listOf("plugin.json", "marketplace.json", "manifest.json")
+        // v3.6.110: 加 .claude-plugin/plugin.json — Claude Code 标准布局
+        // (此前不支持, 插件页看不到 plugin_install 装的插件)
+        val candidates = listOf(
+            "plugin.json",
+            ".claude-plugin/plugin.json",
+            "marketplace.json",
+            "manifest.json",
+        )
         for (name in candidates) {
             val file = File(dir, name)
             if (file.isFile) {
@@ -126,6 +133,41 @@ data class PluginInfo(
             "\"commands\":${parsed.commands.size},\"mcps\":${parsed.mcpServers.size}}"
         )
         refresh()
+    }
+
+    /** v3.6.110: 同步插件技能根到技能系统 (前缀 <插件名>__, 与其他 Skill 隔离) */
+    fun syncSkillRoots(skillManager: me.rerere.rikkahub.data.files.SkillManager) {
+        runCatching {
+            val clawRoots = getSkillRootsWithNames().map { (pluginName, skillsDir) ->
+                me.rerere.rikkahub.data.files.SkillManager.ExtraSkillRoot(
+                    prefix = "${pluginName.replace(Regex("[^a-zA-Z0-9_-]"), "_")}__",
+                    root = skillsDir,
+                )
+            }
+            val others = skillManager.extraRootsSnapshot()
+                .filter { root -> clawRoots.none { it.prefix == root.prefix } }
+            skillManager.setExtraSkillRoots(others + clawRoots)
+            Log.i(TAG, "claw plugin skill roots synced: ${clawRoots.size}")
+        }.onFailure { Log.e(TAG, "sync skill roots failed", it) }
+    }
+
+    /** v3.6.110: 迁移 v3.6.109 误落 /skills 的插件技能 (前缀目录移回插件目录) */
+    fun migrateLegacySkills(skillsDir: File) {
+        runCatching {
+            getSkillRootsWithNames().forEach { (pluginName, pluginSkillsRoot) ->
+                val prefix = "${pluginName.replace(Regex("[^a-zA-Z0-9_-]"), "_")}__"
+                skillsDir.listFiles()
+                    ?.filter { it.isDirectory && it.name.startsWith(prefix) }
+                    ?.forEach { legacy ->
+                        val target = File(pluginSkillsRoot, legacy.name.removePrefix(prefix))
+                        if (!target.exists()) {
+                            legacy.copyRecursively(target, overwrite = false)
+                            legacy.deleteRecursively()
+                            Log.i(TAG, "migrated legacy skill ${legacy.name} -> plugin dir")
+                        }
+                    }
+            }
+        }.onFailure { Log.e(TAG, "migrate legacy skills failed", it) }
     }
 
     fun getInstalledMcpServers(): List<ClaudePluginParser.McpServerDef> {
