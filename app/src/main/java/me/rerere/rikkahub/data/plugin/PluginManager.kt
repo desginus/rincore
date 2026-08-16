@@ -51,6 +51,10 @@ class PluginManager(
     @Volatile
     private var registeredBridges: Set<String> = emptySet()
 
+    /** 桥接 id 缓存 — 运行期内同插件同 id (重连状态稳定) */
+    @Volatile
+    private var bridgeIds: Map<String, Uuid> = emptyMap()
+
     /** 扫描并注册 workspace 插件 (启动时调用) */
     suspend fun refresh() = withContext(Dispatchers.IO) {
         runCatching {
@@ -104,8 +108,10 @@ class PluginManager(
     private suspend fun ensureBridge(plugin: PluginDef) {
         val bridgeKey = "${plugin.name}|${plugin.workspaceId}|${plugin.command}"
         if (bridgeKey in registeredBridges) return
-        // 稳定 id: 插件名 + workspace 的哈希 — 重启后同插件同 id (重连状态/去重稳定)
-        val serverId = stableUuid(bridgeKey)
+        // 运行期内稳定 id: 首次注册生成并缓存, 重复 refresh 复用
+        val serverId = bridgeIds[bridgeKey] ?: Uuid.random().also {
+            bridgeIds = bridgeIds + (bridgeKey to it)
+        }
         val config = McpServerConfig.StdioTransportServer(
             id = serverId,
             commonOptions = McpCommonOptions(name = "plugin__${plugin.name}", enable = true),
@@ -123,10 +129,4 @@ class PluginManager(
     }
 
     fun pluginsSnapshot(): List<PluginDef> = plugins
-
-    private fun stableUuid(key: String): Uuid {
-        val h = key.hashCode()
-        val hex = "%08x".format(h)
-        return Uuid.fromString("$hex-0000-4000-8000-000000000000")
-    }
 }
