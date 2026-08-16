@@ -12,12 +12,11 @@ import me.rerere.rikkahub.data.files.SkillMetadata
 import me.rerere.rikkahub.data.files.SkillPaths
 
 fun createSkillTools(
-    enabledSkills: Set<String>,
     allSkills: List<SkillMetadata>,
     skillProvider: () -> List<SkillMetadata> = { allSkills }, // 实时查询(可选) — 修复列表快照滞后: 新增 Skill 无需重启
 ): List<Tool> {
-    // 信源统一 (v3.5.45): 全部已安装 Skill 生成独立工具 — 不按 enabledSkills 过滤。
-    // 此前仅启用的生成 → Invoke Tools 技能域空 / Skills Lock 全量 / 挂载 4 个 三套口径。
+    // 信源统一 (v3.5.45): 全部已安装 Skill 生成独立工具 — 不按启用过滤。
+    // v3.6.92: enabledSkills 参数删除 — 生成/执行口径统一为"存在即可用"。
     // 技能工具经 invoke_tools("技能") 分层加载, 不增加冷启动体积。
     val available = skillProvider().ifEmpty { allSkills }
     if (available.isEmpty()) return emptyList()
@@ -44,7 +43,10 @@ fun createSkillTools(
             },
             execute = {
                 val path = it.jsonObject["path"]?.jsonPrimitive?.content
-                val liveAvailable = skillProvider().filter { s -> s.name in enabledSkills }
+                // v3.6.92: 去掉 enabledSkills 过滤 — 工具生成全量 (v3.5.45) 而执行按
+                // enabledSkills 过滤是矛盾遗留: 默认 enabledSkills 为空 → 所有技能
+                // (含系统预置) 报 not available。技能存在即可执行, 与生成口径一致。
+                val liveAvailable = skillProvider()
                 val live = liveAvailable.firstOrNull { s -> s.name == skill.name }
                     ?: error("Skill '${skill.name}' is not available. Available skills: ${liveAvailable.joinToString { it.name }}")
                 if (path.isNullOrBlank()) {
@@ -88,7 +90,8 @@ fun createSkillTools(
                 val name = it.jsonObject["name"]?.jsonPrimitive?.content
                     ?: error("name is required")
                 // 实时查询 (修复: 新增 Skill 无需重启, 立即可用)
-                val liveAvailable = skillProvider().filter { s -> s.name in enabledSkills }
+                // v3.6.92: 同样去掉 enabledSkills 过滤 — 存在即可用
+                val liveAvailable = skillProvider()
                 val skill = liveAvailable.firstOrNull { s -> s.name == name }
                     ?: error("Skill '$name' is not available. Available skills: ${liveAvailable.joinToString { it.name }}")
                 val path = it.jsonObject["path"]?.jsonPrimitive?.content

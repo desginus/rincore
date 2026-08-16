@@ -91,7 +91,6 @@ fun buildAssistantToolPool(
         if (allSkills.isNotEmpty()) {
             addAll(
                 createSkillTools(
-                    enabledSkills = assistant.enabledSkills,
                     allSkills = allSkills,
                 )
             )
