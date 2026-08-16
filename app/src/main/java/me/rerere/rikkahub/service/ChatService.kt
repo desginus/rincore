@@ -620,23 +620,22 @@ class ChatService(
                     workspaceCwd = conversation.workspaceCwd,
                     workspaceRepository = workspaceRepository,
                     pluginManager = pluginManager,
-                ).also { pool ->
-                    // MCP 服务器名合法性检查 (对齐原逻辑 — 无效名直接报错)
+                ).let { pool ->
+                    // MCP 服务器名合法性检查 (对齐原逻辑)
+                    // v3.6.96: 不弹窗阻塞 — 历史残留的非法名称服务器 (如测试遗留
+                    // 含连字符名) 此前每次消息处理都弹"无效服务器名"错误, 一条
+                    // 残留炸掉整个应用。改为: 非法名服务器的工具剔除 (不注入请求
+                    // 体, 避免 API 400) + 日志警告, 用户在 MCP 管理里改名/删除即可。
                     val invalidNames = mcpManager.getAllAvailableTools()
                         .map { it.second }
                         .distinct()
                         .filter { name -> name.isEmpty() || !name.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' } }
                     if (invalidNames.isNotEmpty()) {
-                        addError(
-                            error = IllegalStateException(
-                                context.getString(
-                                    R.string.error_mcp_invalid_server_name,
-                                    invalidNames.joinToString(", ")
-                                )
-                            ),
-                            conversationId = conversationId,
-                        )
-                    }
+                        Log.w(TAG, "invalid MCP server names ignored (tools excluded): $invalidNames")
+                        pool.filter { tool ->
+                            invalidNames.none { bad -> tool.name.startsWith("mcp__${bad}__") }
+                        }
+                    } else pool
                 }
                                 .map { tool ->
                     settings.toolDescriptionOverrides[tool.name]?.let { tool.copy(description = it) } ?: tool
