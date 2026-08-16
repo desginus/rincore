@@ -12,6 +12,13 @@ description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日�
 - **工具执行无超时**：3.5.9 withTimeout 60s 兜底——工具挂起不永久阻塞生成
 - **缓存"卡-跳-线性"**：DeepSeek 服务端磁盘缓存机制（构建延迟秒级+固定间隔切分+SWA 独立单元）——客户端不可控，已入库 decisions D2
 
+## v3.6.90-91（移出域管理 + 框架集收缩，2026-08-16）
+
+- **v3.6.91**（60969272）：clawhub_install/clawhub_search 移出 FRAMEWORK_TOOL_SET（8→6 实际常用）— 归系统域经 invoke_tools(系统) 加载，不再始终注入。注意：请求体 tools 数组 -2，缓存前缀一次性重建
+- **v3.6.90**（7fd365af）：
+  - 工具列表对话框新增「移出域管理」开关（Settings.exemptFromDomainTools）：开启后工具与框架工具同等（始终注入、不进域统计），全链路动态框架集 frameworkSetOf = FRAMEWORK_TOOL_SET + 豁免集（GenerationHandler 分层/ToolRouter 计数/DomainTools/各 UI 页口径统一）
+  - MCP 传输类型教堂窗对齐：Streamable HTTP 折两行 → 短标签 HTTP/SSE/Stdio 严格单行，描述补完整协议名
+
 ## v3.6.88-89（插件独立系统，2026-08-16）
 
 - **v3.6.89**（005f5e21）：SettingPluginsPage onBack 参数缺失编译修复
