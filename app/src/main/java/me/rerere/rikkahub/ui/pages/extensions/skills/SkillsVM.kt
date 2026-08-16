@@ -50,6 +50,25 @@ class SkillsVM(
         return skillName in assistant.enabledSkills
     }
 
+    /** v3.6.105: 对话开始时强制启动开关 */
+    fun toggleForcedSkill(skillName: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val settings = settingsStore.settingsFlow.value
+            val assistant = settings.getCurrentAssistant()
+            val newForced = if (skillName in assistant.forcedSkills) {
+                assistant.forcedSkills - skillName
+            } else {
+                assistant.forcedSkills + skillName
+            }
+            settingsStore.updateAssistant(assistant.copy(forcedSkills = newForced))
+        }
+    }
+
+    /** v3.6.105: 是否强制启动 */
+    fun isSkillForced(skillName: String): Boolean {
+        return skillName in settingsStore.settingsFlow.value.getCurrentAssistant().forcedSkills
+    }
+
     fun toggleSkill(skillName: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val settings = settingsStore.settingsFlow.value

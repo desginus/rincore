@@ -18,6 +18,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -39,6 +40,8 @@ fun SettingPluginsPage(
     onBack: () -> Unit,
 ) {
     val pluginManager: PluginManager = koinInject()
+    val settingsStore: me.rerere.rikkahub.data.datastore.SettingsStore = koinInject()
+    val settings = settingsStore.settingsFlow.value
     val scope = rememberCoroutineScope()
     var refreshTick by remember { mutableIntStateOf(0) }
 
@@ -127,6 +130,31 @@ fun SettingPluginsPage(
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary,
                             )
+                            // v3.6.105: 对话开始时强制启动 (技能正文注入 system)
+                            if (plugin.hasSkill) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        "对话开始时强制启动",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    Switch(
+                                        checked = settings.forcedSkills.contains("plugin__${plugin.name}__skill"),
+                                        onCheckedChange = { checked ->
+                                            val newSet = if (checked) {
+                                                settings.forcedSkills + "plugin__${plugin.name}__skill"
+                                            } else {
+                                                settings.forcedSkills - "plugin__${plugin.name}__skill"
+                                            }
+                                            settingsStore.update { it.copy(
+                                                assistants = it.assistants.map { a ->
+                                                    if (a.id == it.getCurrentAssistant().id) a.copy(forcedSkills = newSet) else a
+                                                }
+                                            ) }
+                                        },
+                                    )
+                                }
+                            }
                         }
                     }
                 }

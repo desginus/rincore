@@ -52,6 +52,7 @@ data class Assistant(
     val tokenBudgetHardCap: Int? = null,
     val lorebookIds: Set<Uuid> = emptySet(),            // 关联的 Lorebook ID
     val enabledSkills: Set<String> = emptySet(),        // 启用的 skill 名称列表
+    val forcedSkills: Set<String> = emptySet(),        // v3.6.105: 对话开始时强制启动的技能 (正文注入 system)
     val enableTimeReminder: Boolean = false,            // 时间间隔提醒注入
     val allowConversationSystemPrompt: Boolean = false, // 允许对话单独重写 system prompt
     val allowConversationPromptInjection: Boolean = false, // 允许对话单独绑定提示词注入

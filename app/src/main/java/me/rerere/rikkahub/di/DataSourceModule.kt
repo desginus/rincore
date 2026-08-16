@@ -172,7 +172,8 @@ val dataSourceModule = module {
             providerManager = get(),
             json = get(),
             memoryRepo = get(),
-            settingsStore = get()
+            settingsStore = get(),
+            skillManager = getOrNull()
         )
     }
 

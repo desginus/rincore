@@ -115,6 +115,7 @@ class GenerationHandler(
     private val json: Json,
     private val memoryRepo: MemoryRepository,
     private val settingsStore: SettingsStore,
+    private val skillManager: me.rerere.rikkahub.data.files.SkillManager? = null,
 ) {
     /** 断流重试计数 (v3.5.46): 类成员 — 切后台/NAT/平台断流自动恢复, 每次生成最多 5 次 (v3.5.59) */
     private var streamRetryCount = 0
@@ -635,12 +636,27 @@ class GenerationHandler(
             val memoryPrompt = if (assistant.enableMemory) buildMemoryPrompt(memories = memories) else ""
             memPromptLen = memoryPrompt.length
 
+            // v3.6.105: 强制启动技能 — 对话开始时把技能正文注入 system 尾部
+            // (模型每轮必读; 缓存前缀不含尾部追加, 不影响命中)
+            val forcedSkillAddendum = buildString {
+                for (skillName in assistant.forcedSkills) {
+                    val body = runCatching {
+                        skillManager?.readSkillBody(skillName)
+                    }.getOrNull()?.trim()
+                    if (!body.isNullOrBlank()) {
+                        if (isNotEmpty()) appendLine()
+                        appendLine("## Forced Skill: $skillName (对话开始时强制启动, 每轮必须遵守)")
+                        appendLine(body)
+                    }
+                }
+            }.ifBlank { null }
+
             val (stableSystem, volatileSystem) = SystemPromptBuilder().buildSections(
                 assistantPrompt = stablePrompt,
                 memoryPrompt = memoryPrompt,
                 recentChatsPrompt = "",   // 本项目未启用 recent chats 参考
                 toolPrompts = toolPrompts,
-                systemAddendum = null,
+                systemAddendum = forcedSkillAddendum,
             )
             // 记忆位置策略: 记忆放 stable 之后 (历史之前) — 记忆是稳定前缀一部分, 可命中
             val cacheFpSystem = listOf(stableSystem, volatileSystem).filter { it.isNotBlank() }.joinToString("\n")

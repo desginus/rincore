@@ -180,10 +180,13 @@ fun SkillsPage() {
 
             items(filteredSkills, key = { it.skillDir.absolutePath }) { skill ->
                 val enabled = vm.isSkillEnabled(skill.name)
+                val forced = vm.isSkillForced(skill.name)
                 SkillCard(
                     skill = skill,
                     enabled = enabled,
+                    forced = forced,
                     onToggle = { vm.toggleSkill(skill.name) },
+                    onToggleForced = { vm.toggleForcedSkill(skill.name) },
                     onClick = { navController.navigate(Screen.SkillDetail(skill.name)) },
                     onDelete = { deleteTarget = skill },
                 )
@@ -265,7 +268,9 @@ fun SkillsPage() {
 private fun SkillCard(
     skill: SkillMetadata,
     enabled: Boolean = true,
+    forced: Boolean = false,
     onToggle: () -> Unit = {},
+    onToggleForced: () -> Unit = {},
     onClick: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -331,6 +336,20 @@ private fun SkillCard(
                     expanded = menuExpanded,
                     onDismissRequest = { menuExpanded = false },
                 ) {
+                    // v3.6.105: 对话开始时强制启动
+                    DropdownMenuItem(
+                        text = { Text(if (forced) "取消对话开始时强制启动" else "对话开始时强制启动") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = if (forced) HugeIcons.Cancel01 else HugeIcons.Flash,
+                                contentDescription = null,
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onToggleForced()
+                        },
+                    )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) },
                         leadingIcon = {

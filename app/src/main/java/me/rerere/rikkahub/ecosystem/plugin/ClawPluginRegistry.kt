@@ -89,10 +89,18 @@ object ClawPluginRegistry {
     }
 
     fun getSkillRoots(): List<File> {
+        return getSkillRootsWithNames().map { it.second }
+    }
+
+    /** v3.6.105: 插件名 → skills 根 (技能名前缀用 manifest 名, 不用临时下载目录名) */
+    fun getSkillRootsWithNames(): List<Pair<String, File>> {
         val dir = pluginsDir ?: return emptyList()
         return dir.listFiles()
             ?.filter { it.isDirectory && File(it, "skills").isDirectory }
-            ?.map { File(it, "skills") }
+            ?.map { pluginDir ->
+                val manifestName = readManifest(pluginDir)?.name?.takeIf { it.isNotBlank() } ?: pluginDir.name
+                manifestName to File(pluginDir, "skills")
+            }
             ?: emptyList()
     }
 

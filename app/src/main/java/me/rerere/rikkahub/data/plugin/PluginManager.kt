@@ -151,7 +151,7 @@ class PluginManager(
     )
 
     fun pluginsUiSnapshot(): List<PluginUiInfo> {
-        return plugins.map { p ->
+        val ownPlugins = plugins.map { p ->
             val bridgeKey = "${p.name}|${p.workspaceId}|${p.command}"
             val status = if (p.command.isBlank()) {
                 "纯技能"
@@ -177,6 +177,20 @@ class PluginManager(
                 bridgeStatus = status,
             )
         }
+        // v3.6.105: 合并 ClawHub plugin_install 安装的插件 (ecosystem/plugins)
+        // — 修复: 安装成功但插件页看不到 (此前只扫 .plugins 格式)
+        val clawPlugins = runCatching {
+            me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry.plugins.value.map { info ->
+                PluginUiInfo(
+                    name = info.manifest.name.ifBlank { info.directory.name },
+                    description = info.manifest.description,
+                    hasSkill = java.io.File(info.directory, "skills").isDirectory,
+                    hasBridge = false,
+                    bridgeStatus = "已安装（ClawHub）",
+                )
+            }
+        }.getOrDefault(emptyList())
+        return (ownPlugins + clawPlugins).distinctBy { it.name }
     }
 
     /**
