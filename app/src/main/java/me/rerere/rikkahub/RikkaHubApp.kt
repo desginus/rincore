@@ -158,6 +158,20 @@ class RikkaHubApp : Application() {
                     val skillManager = get<me.rerere.rikkahub.data.files.SkillManager>()
                     me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry
                         .migrateLegacySkills(skillManager.getSkillsDir())
+                    // v3.6.121: 回滚收尾 — 移除 v3.6.112-119 自动注册的 plugin__ 服务器
+                    // 残留 (viaWorkspace STDIO 桥接), 清理后 MCP 连接恢复干净状态
+                    get<me.rerere.rikkahub.data.datastore.SettingsStore>().update { s ->
+                        val stale = s.mcpServers.filter { it.commonOptions.name.startsWith("plugin__") }
+                        if (stale.isEmpty()) return@update s
+                        val staleIds = stale.map { it.id }.toSet()
+                        Log.i(TAG, "cleanup stale plugin bridges: ${stale.map { it.commonOptions.name }}")
+                        s.copy(
+                            mcpServers = s.mcpServers.filter { it !in stale },
+                            assistants = s.assistants.map { a ->
+                                a.copy(mcpServers = a.mcpServers.filter { it !in staleIds })
+                            },
+                        )
+                    }
                 }.onFailure { Log.e(TAG, "claw plugin setup failed", it) }
                 // v3.6.86: 插件生态 — 扫描 .plugins 并注册桥接 (技能 + STDIO MCP)
                 get<me.rerere.rikkahub.data.plugin.PluginManager>().refresh()
