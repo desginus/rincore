@@ -124,7 +124,7 @@ object EcosystemScanner {
         }
 
         // 扫描插件 skills 目录
-        me.rerere.rikkahub.ecosystem.plugin.PluginManager.getSkillRoots().forEach { pluginSkillRoot ->
+        me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry.getSkillRoots().forEach { pluginSkillRoot ->
             scanSkillsDirectory(pluginSkillRoot, results)
         }
 

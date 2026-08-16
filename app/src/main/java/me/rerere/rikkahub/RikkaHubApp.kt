@@ -121,10 +121,10 @@ class RikkaHubApp : Application() {
         // 多生态系统兼容层
         me.rerere.rikkahub.ecosystem.EcosystemManager.initialize(this)
         // 插件管理器
-        me.rerere.rikkahub.ecosystem.plugin.PluginManager.initialize(this)
+        me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry.initialize(this)
         // Hooks 执行引擎
         me.rerere.rikkahub.ecosystem.plugin.HookEngine.refresh(
-            me.rerere.rikkahub.ecosystem.plugin.PluginManager.getSkillRoots().map { it.parentFile!! }
+            me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry.getSkillRoots().map { it.parentFile!! }
         )
         // Agent 注册表
         me.rerere.rikkahub.ecosystem.plugin.AgentRegistry.loadFromDir(

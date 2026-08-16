@@ -15,7 +15,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.util.zip.ZipInputStream
 
-object PluginManager {
+object ClawPluginRegistry {
     private const val TAG = "PluginManager"
     private var context: Context? = null
     private var pluginsDir: File? = null
