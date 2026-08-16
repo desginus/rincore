@@ -103,6 +103,7 @@ fun SettingPluginsPage(
                                 Text(
                                     plugin.name,
                                     style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.weight(1f),
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 Surface(
@@ -114,6 +115,17 @@ fun SettingPluginsPage(
                                         style = MaterialTheme.typography.labelSmall,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                                     )
+                                }
+                                // v3.6.117: ClawHub 插件可删除 (目录删除 + 桥接清理)
+                                if (plugin.bridgeStatus == "已安装（ClawHub）") {
+                                    TextButton(onClick = {
+                                        scope.launch {
+                                            me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry
+                                                .removePlugin(plugin.name, settingsStore)
+                                        }
+                                    }) {
+                                        Text("删除", color = MaterialTheme.colorScheme.error)
+                                    }
                                 }
                             }
                             if (plugin.description.isNotBlank()) {

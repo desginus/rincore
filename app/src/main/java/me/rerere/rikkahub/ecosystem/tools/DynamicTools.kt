@@ -301,7 +301,12 @@ object DynamicTools {
                 }
 
                 val (name, plugin) = parsed
-                val targetDir = File(ecosystemWorkspaceRoot, "plugins/$name")
+                // v3.6.117: 目录用真实插件名 (非下载临时时间戳名), 重复安装覆盖旧版
+                val realPluginName = plugin.manifest.name.ifBlank { name }
+                    .replace(Regex("[^a-zA-Z0-9_-]"), "_")
+                val targetDir = File(ecosystemWorkspaceRoot, "plugins/$realPluginName")
+                // 重复安装: 清旧内容 (覆盖安装语义)
+                if (targetDir.exists()) targetDir.deleteRecursively()
                 targetDir.mkdirs()
 
                 // 安装 skills — v3.6.110: 落插件目录 (插件是插件, 技能分开存放),

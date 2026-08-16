@@ -283,6 +283,32 @@ data class PluginInfo(
         }
     }
 
+    /** v3.6.117: 删除插件 (目录删除 + 桥接记录清理 + settings 服务器移除 + 刷新) */
+    suspend fun removePlugin(
+        pluginName: String,
+        settingsStore: me.rerere.rikkahub.data.datastore.SettingsStore,
+    ) {
+        val dir = pluginsDir ?: return
+        val pluginDir = dir.listFiles()?.find { pluginDir ->
+            val m = readManifest(pluginDir)
+            (m?.name?.ifBlank { null } ?: pluginDir.name) == pluginName
+        } ?: return
+        val safeName = pluginName.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+        // 桥接记录清理
+        registeredBridgeCommands.removeAll { it.startsWith("${safeName}|") }
+        // settings 里移除 plugin__ 前缀的服务器 (桥接残留)
+        settingsStore.update { s ->
+            s.copy(
+                mcpServers = s.mcpServers.filter { cfg ->
+                    !cfg.commonOptions.name.startsWith("plugin__${safeName}")
+                },
+            )
+        }
+        pluginDir.deleteRecursively()
+        refresh()
+        Log.i(TAG, "plugin removed: $pluginName")
+    }
+
     fun getInstalledMcpServers(): List<ClaudePluginParser.McpServerDef> {
         val dir = pluginsDir ?: return emptyList()
         return dir.listFiles()
