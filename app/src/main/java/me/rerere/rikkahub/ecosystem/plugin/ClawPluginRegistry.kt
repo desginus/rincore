@@ -57,6 +57,7 @@ object ClawPluginRegistry {
             ".claude-plugin/plugin.json",
             "marketplace.json",
             "manifest.json",
+            "_parsed.json",
         )
         for (name in candidates) {
             val file = File(dir, name)
@@ -132,11 +133,24 @@ data class PluginInfo(
 
     fun installFromParsed(pluginName: String, parsed: ClaudePluginParser.ParsedPlugin, targetDir: File) {
         targetDir.mkdirs()
-        // 写入解析后的信息
-        File(targetDir, "_parsed.json").writeText(
-            "{\"name\":\"${parsed.manifest.name}\",\"skills\":${parsed.skills.size}," +
-            "\"commands\":${parsed.commands.size},\"mcps\":${parsed.mcpServers.size}}"
-        )
+        // v3.6.116: 写真实 plugin.json (完整元数据) — 修复: 此前只写 _parsed.json
+        // (不含 name/description/version 的完整清单), readManifest 不认 → 插件
+        // 永远进不了列表 → 设置页插件列表空
+        runCatching {
+            File(targetDir, "plugin.json").writeText(
+                json.encodeToString(
+                    kotlinx.serialization.json.JsonObject.serializer(),
+                    kotlinx.serialization.json.buildJsonObject {
+                        put("name", parsed.manifest.name.ifBlank { pluginName })
+                        put("version", parsed.manifest.version.ifBlank { "0.0.0" })
+                        put("description", parsed.manifest.description)
+                        put("skillCount", parsed.skills.size)
+                        put("commandCount", parsed.commands.size)
+                        put("mcpCount", parsed.mcpServers.size)
+                    },
+                )
+            )
+        }
         refresh()
     }
 
