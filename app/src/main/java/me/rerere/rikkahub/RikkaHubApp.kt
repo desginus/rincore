@@ -168,7 +168,7 @@ class RikkaHubApp : Application() {
                         s.copy(
                             mcpServers = s.mcpServers.filter { it !in stale },
                             assistants = s.assistants.map { a ->
-                                a.copy(mcpServers = a.mcpServers.filter { it !in staleIds })
+                                a.copy(mcpServers = a.mcpServers.filter { it !in staleIds }.toSet())
                             },
                         )
                     }
