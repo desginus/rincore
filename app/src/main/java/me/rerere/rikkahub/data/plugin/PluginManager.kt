@@ -4,12 +4,16 @@ import android.util.Log
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlin.uuid.Uuid
+import me.rerere.ai.core.InputSchema
+import me.rerere.ai.core.Tool
+import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.ai.mcp.McpCommonOptions
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.files.SkillFrontmatterParser
-import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.workspace.WorkspaceManager
 
@@ -29,7 +33,6 @@ class PluginManager(
     private val workspaceRepository: WorkspaceRepository,
     private val workspaceManager: WorkspaceManager,
     private val mcpManager: McpManager,
-    private val skillManager: SkillManager,
 ) {
     companion object {
         private const val TAG = "PluginManager"
@@ -42,6 +45,7 @@ class PluginManager(
         val dir: File,
         val workspaceId: String,
         val command: String,
+        val hasSkill: Boolean,
     )
 
     @Volatile
@@ -63,12 +67,8 @@ class PluginManager(
                 scanPlugins(pluginsRoot, ws.id, ws.root)
             }
             plugins = found
-            // 技能根注入: plugin__ 前缀, 根为 .plugins (SkillManager 扫每个插件目录的 SKILL.md)
-            skillManager.setExtraSkillRoots(
-                skillManager.extraRootsSnapshot().filter { it.prefix != "plugin__" } +
-                    found.map { SkillManager.ExtraSkillRoot("plugin__", it.dir.parentFile ?: it.dir) }
-                    .distinct()
-            )
+            // v3.6.88: 插件技能独立系统 — 不再注入 Skill 技能根 (插件技能经
+            // plugin__<名>__skill 工具读取, 与 Skill 列表彻底分离)
             // 桥接注册: command 非空的插件经 workspace 启动 MCP
             for (plugin in found) {
                 if (plugin.command.isNotBlank()) ensureBridge(plugin)
@@ -101,7 +101,14 @@ class PluginManager(
                 SkillFrontmatterParser.parse(yamlFile.readText())["command"]
                     ?.takeIf { it.isNotBlank() } ?: ""
             } else ""
-            PluginDef(name = name, description = description, dir = dir, workspaceId = workspaceId, command = command)
+            PluginDef(
+                name = name,
+                description = description,
+                dir = dir,
+                workspaceId = workspaceId,
+                command = command,
+                hasSkill = dir.resolve("SKILL.md").exists(),
+            )
         }.getOrNull()
     }
 
@@ -129,4 +136,90 @@ class PluginManager(
     }
 
     fun pluginsSnapshot(): List<PluginDef> = plugins
+
+    /** 插件 UI 信息 (设置页插件列表用) */
+    data class PluginUiInfo(
+        val name: String,
+        val description: String,
+        val hasSkill: Boolean,
+        val hasBridge: Boolean,
+        val bridgeStatus: String,
+    )
+
+    fun pluginsUiSnapshot(): List<PluginUiInfo> {
+        return plugins.map { p ->
+            val bridgeKey = "${p.name}|${p.workspaceId}|${p.command}"
+            val status = if (p.command.isBlank()) {
+                "纯技能"
+            } else {
+                val id = bridgeIds[bridgeKey]
+                val st = if (id == null) null else mcpManager.syncingStatus.value[id]
+                when (st) {
+                    null -> "待注册"
+                    is me.rerere.rikkahub.data.ai.mcp.McpStatus.Idle -> "待连接"
+                    is me.rerere.rikkahub.data.ai.mcp.McpStatus.Connecting -> "连接中"
+                    is me.rerere.rikkahub.data.ai.mcp.McpStatus.Connected -> "已连接"
+                    is me.rerere.rikkahub.data.ai.mcp.McpStatus.Reconnecting -> "重连中"
+                    is me.rerere.rikkahub.data.ai.mcp.McpStatus.Error -> "错误"
+                    is me.rerere.rikkahub.data.ai.mcp.McpStatus.NeedsAuthorization -> "待授权"
+                    else -> "未知"
+                }
+            }
+            PluginUiInfo(
+                name = p.name,
+                description = p.description,
+                hasSkill = p.hasSkill,
+                hasBridge = p.command.isNotBlank(),
+                bridgeStatus = status,
+            )
+        }
+    }
+
+    /**
+     * 插件技能工具 (独立插件系统) — plugin__<名>__skill 读取插件 SKILL.md。
+     * 与 Skill 列表完全分离, 不并入技能域。
+     */
+    fun createPluginTools(): List<Tool> {
+        return plugins.filter { it.hasSkill }.map { plugin ->
+            Tool(
+                name = "plugin__${plugin.name}__skill",
+                description = buildString {
+                    append("Load the skill instructions of plugin '${plugin.name}'.")
+                    if (plugin.description.isNotBlank()) append(" ${plugin.description}")
+                },
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("path", buildJsonObject {
+                                put("type", "string")
+                                put(
+                                    "description",
+                                    "Optional relative path to a file inside the plugin directory. Omit to read the default SKILL.md instructions."
+                                )
+                            })
+                        },
+                        required = emptyList(),
+                    )
+                },
+                execute = { args ->
+                    val jsonObject = (args as? kotlinx.serialization.json.JsonObject) ?: kotlinx.serialization.json.buildJsonObject { }
+                    val path = jsonObject["path"]?.let {
+                        (it as? kotlinx.serialization.json.JsonPrimitive)?.content
+                    }?.takeIf { it.isNotBlank() }
+                    if (path == null) {
+                        val skillFile = plugin.dir.resolve("SKILL.md")
+                        require(skillFile.exists()) { "Plugin '${plugin.name}' has no SKILL.md" }
+                        listOf(UIMessagePart.Text(SkillFrontmatterParser.extractBody(skillFile.readText())))
+                    } else {
+                        val target = plugin.dir.resolve(path).canonicalFile
+                        require(target.path.startsWith(plugin.dir.canonicalFile.path + "/")) {
+                            "Path '$path' is outside the plugin directory"
+                        }
+                        require(target.exists()) { "File '$path' not found in plugin '${plugin.name}'" }
+                        listOf(UIMessagePart.Text(target.readText()))
+                    }
+                },
+            )
+        }
+    }
 }

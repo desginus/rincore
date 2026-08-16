@@ -129,6 +129,7 @@ import me.rerere.rikkahub.workflow.ui.WorkflowsScreen
 import me.rerere.rikkahub.ui.pages.setting.SettingCallTracePage
 import me.rerere.rikkahub.ui.pages.setting.SettingSkillsEcosystemPage
 import me.rerere.rikkahub.ui.pages.setting.SettingMcpPage
+import me.rerere.rikkahub.ui.pages.setting.SettingPluginsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingModelPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPage
 import me.rerere.rikkahub.ui.pages.setting.SettingProviderDetailPage
@@ -610,6 +611,10 @@ class RouteActivity : ComponentActivity() {
                                 SettingMcpPage()
                             }
 
+                            entry<Screen.SettingPlugins> {
+                                SettingPluginsPage()
+                            }
+
 
                             entry<Screen.SettingFiles> {
                                 SettingFilesPage()
@@ -841,6 +846,9 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object SettingMcp : Screen
+
+    @Serializable
+    data object SettingPlugins : Screen
 
     @Serializable
     data object SettingToolHub : Screen

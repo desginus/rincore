@@ -51,6 +51,7 @@ fun buildAssistantToolPool(
     conversationId: String = "",
     workspaceCwd: String? = null,
     workspaceRepository: me.rerere.rikkahub.data.repository.WorkspaceRepository? = null,
+    pluginManager: me.rerere.rikkahub.data.plugin.PluginManager? = null,
 ): List<Tool> = buildList {
     if (settings.enableWebSearch) {
         addAll(createSearchTools(settings))
@@ -88,6 +89,12 @@ fun buildAssistantToolPool(
                 )
             )
         }
+    }
+    // v3.6.88: 插件独立系统 — 插件技能工具 plugin__<名>__skill 全量注入
+    // (与 Skill 分离, 插件技能经独立工具读取, 插件桥接工具经 MCP 注入)
+    runCatching {
+        val pluginTools = pluginManager?.createPluginTools() ?: emptyList()
+        if (pluginTools.isNotEmpty()) addAll(pluginTools)
     }
     // AI 域管理工具 — 单一源头: list/search/move 的 execute 实时构建
     // 与模型侧完全同源的完整工具池 (此前 knownToolNames 默认空集 → List

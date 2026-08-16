@@ -90,7 +90,6 @@ val repositoryModule = module {
             workspaceRepository = get(),
             workspaceManager = get(),
             mcpManager = get(),
-            skillManager = get(),
         )
     }
 }

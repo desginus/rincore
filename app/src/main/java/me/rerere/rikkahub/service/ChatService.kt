@@ -168,6 +168,7 @@ class ChatService(
     private val skillManager: SkillManager,
     private val workspaceRepository: WorkspaceRepository,
     private val folderRepository: FolderRepository,
+    private val pluginManager: me.rerere.rikkahub.data.plugin.PluginManager? = null,
 ) {
     init {
         me.rerere.rikkahub.ecosystem.tools.DynamicTools.initialize(
@@ -618,6 +619,7 @@ class ChatService(
                     conversationId = conversationId.toString(),
                     workspaceCwd = conversation.workspaceCwd,
                     workspaceRepository = workspaceRepository,
+                    pluginManager = pluginManager,
                 ).also { pool ->
                     // MCP 服务器名合法性检查 (对齐原逻辑 — 无效名直接报错)
                     val invalidNames = mcpManager.getAllAvailableTools()

@@ -216,6 +216,12 @@ class ToolRouter(
             return if (isValidDomain("技能")) "技能" else "方法域"
         }
 
+        // 2.5 v3.6.88: 插件工具 — 统一归「插件」域 (独立插件系统)
+        //   plugin__<名>__skill 插件技能 / mcp__plugin__<名>__<工具> 桥接工具
+        if (name.startsWith("plugin__") || name.startsWith("mcp__plugin__")) {
+            return if (isValidDomain("插件")) "插件" else "方法域"
+        }
+
         // 3. 系统级工具 — 前缀精确匹配
         if (SYSTEM_TOOL_PREFIXES.any { name.startsWith(it) }) {
             return if (isValidDomain("系统")) "系统" else "方法域"
