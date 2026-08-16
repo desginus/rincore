@@ -620,6 +620,28 @@ class ChatService(
                 conversationLorebookIds = conversation.lorebookIds,
                 workspaceCwd = conversation.workspaceCwd,
                 conversationLoadedDomains = conversation.loadedDomains,
+                toolPoolProvider = {
+                    buildAssistantToolPool(
+                        settings = settingsStore.settingsFlow.value,
+                        assistant = settingsStore.settingsFlow.value.getCurrentAssistant(),
+                        localTools = localTools,
+                        skillManager = skillManager,
+                        conversationRepo = conversationRepo,
+                        mcpManager = mcpManager,
+                        settingsStore = settingsStore,
+                        conversationId = conversationId.toString(),
+                        workspaceCwd = conversation.workspaceCwd,
+                        workspaceRepository = workspaceRepository,
+                        pluginManager = pluginManager,
+                    ).let { pool ->
+                        // 与主构建同口径: 非法服务器名剔除
+                        val invalidNames = mcpManager.getAllAvailableTools()
+                            .map { it.second }.distinct()
+                            .filter { name -> name.isEmpty() || !name.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' } }
+                        if (invalidNames.isEmpty()) pool
+                        else pool.filter { tool -> invalidNames.none { bad -> tool.name.startsWith("mcp__${bad}__") } }
+                    }
+                },
                 memories = if (assistant.useGlobalMemory) {
                     memoryRepository.getGlobalMemories()
                 } else {

@@ -440,6 +440,7 @@ class ToolRouter(
     fun createInvokeToolsTool(
         allTools: List<Tool>,
         loadedDomains: MutableSet<String>,
+        freshToolsProvider: (() -> List<Tool>)? = null,
     ): Tool {
         val router = this
         return Tool(
@@ -458,12 +459,15 @@ class ToolRouter(
             },
             execute = { input ->
                 val rawName = input.jsonObject["name"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() } ?: "帮助"
+                // v3.6.118: 实时工具池 — 会话内新装插件/新连 MCP 立即出现在域列表
+                // (此前用消息开始时的快照, 安装后 invoke_tools 报"未知"直至重启)
+                val liveTools = freshToolsProvider?.invoke() ?: allTools
                 when {
                     rawName == "帮助" || rawName.equals("help", ignoreCase = true) ->
-                        listOf(UIMessagePart.Text(router.buildHelpText(allTools)))
+                        listOf(UIMessagePart.Text(router.buildHelpText(liveTools)))
                     else -> {
                         // 统一视图 — 与 layer1/List Domains/UI 完全同源
-                        val view = router.unifiedDomainView(allTools)
+                        val view = router.unifiedDomainView(liveTools)
                         val classified = view.classified
                         val treeNodes = view.tree
 

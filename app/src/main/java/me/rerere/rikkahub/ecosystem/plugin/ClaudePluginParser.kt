@@ -109,6 +109,9 @@ object ClaudePluginParser {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse plugin ZIP: ${e.message}")
             return null
+        } finally {
+            // v3.6.118: 清理临时解压目录 (此前每次安装残留 ~500 项)
+            runCatching { tempDir.deleteRecursively() }
         }
     }
 

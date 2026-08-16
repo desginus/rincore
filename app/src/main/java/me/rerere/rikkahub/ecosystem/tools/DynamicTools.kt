@@ -42,7 +42,7 @@ object DynamicTools {
     private val httpClient by lazy {
         val builder = OkHttpClient.Builder()
             .connectTimeout(java.time.Duration.ofSeconds(15))
-            .readTimeout(java.time.Duration.ofSeconds(30))
+            .readTimeout(java.time.Duration.ofSeconds(120)) // v3.6.118: 大 ZIP 下载不稳定 (原 30s)
             .followRedirects(true)
             .followSslRedirects(true)
         // v3.6.95: 显式代理 (fake-ip/VPN 环境) — 设置页 Ecosystem 配置 host:port
@@ -326,6 +326,10 @@ object DynamicTools {
                     cmdDir.mkdirs()
                     File(cmdDir, "${cmd.name}.md").writeText(cmd.content)
                 }
+                // v3.6.118: 写 plugin.json 元数据 + 刷新插件列表 — 修复: 此前
+                // installFromParsed 从未被调用, plugin.json 从未写入, 插件页恒空
+                me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry
+                    .installFromParsed(realPluginName, plugin, targetDir)
 
                 // 自动连接 .mcp.json 声明的 MCP 服务器
                 val mcpResults = mutableListOf<String>()
@@ -348,7 +352,7 @@ object DynamicTools {
                     }
                 }
 
-                writeLockEntry(name, "plugin:$name", plugin.manifest.version)
+                writeLockEntry(realPluginName, "plugin:$realPluginName", plugin.manifest.version)
 
                 val summary = buildString {
                     appendLine("Plugin installed: ${plugin.manifest.name} v${plugin.manifest.version}")
@@ -362,6 +366,8 @@ object DynamicTools {
                 }
 
                 EcosystemManager.refresh()
+                // v3.6.118: 清理下载临时文件 (url 通道的 _plugin_download_*.zip)
+                if (downloadUrl != null) runCatching { fileToParse.delete() }
                 listOf(UIMessagePart.Text(summary))
             } catch (e: Exception) {
                 listOf(UIMessagePart.Text("Plugin install failed: ${e.message}"))

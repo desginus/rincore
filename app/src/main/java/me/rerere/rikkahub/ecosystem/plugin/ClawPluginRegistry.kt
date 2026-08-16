@@ -225,6 +225,12 @@ data class PluginInfo(
                                 )
                             },
                             execute = { input ->
+                                // v3.6.118: 删除后工具表残留时友好提示 (不再 FileNotFound)
+                                if (!skillFile.exists()) {
+                                    return@Tool listOf(me.rerere.ai.ui.UIMessagePart.Text(
+                                        "插件技能已删除: $toolName (插件 $pluginName 已被移除)"
+                                    ))
+                                }
                                 val obj = input as? JsonObject
                                 val path = obj?.get("path")?.jsonPrimitive?.content
                                 val body = if (path.isNullOrBlank()) {

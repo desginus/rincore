@@ -140,6 +140,7 @@ class GenerationHandler(
         conversationLorebookIds: Set<Uuid> = emptySet(),
         workspaceCwd: String? = null,
         conversationLoadedDomains: List<String>? = null, // v3.6.10: 保序 (Set 曾致跨轮顺序不定),
+        toolPoolProvider: (() -> List<Tool>)? = null, // v3.6.118: invoke_tools 实时域列表
     ): Flow<GenerationChunk> = flow {
         // Trace ID 每次生成唯一 — 之前用 model.id 导致所有 trace 同 ID (日志无法区分)
         CallTracer.startTrace(id = java.util.UUID.randomUUID().toString().take(8))
@@ -229,7 +230,7 @@ class GenerationHandler(
                     // 其他框架工具 (search/conversation/workspace) — 始终注入
                     addAll(frameworkTools.filter { it.name != "memory_tool" })
                     // invoke_tools 元工具 — 操作 allDomainTools (含MCP), 模型按需加载
-                    add(toolRouter.createInvokeToolsTool(allDomainTools, loadedDomains))
+                    add(toolRouter.createInvokeToolsTool(allDomainTools, loadedDomains, toolPoolProvider))
                     // 已加载域的工具 (含MCP工具, 通过分类归入域) — 分层注入是底层逻辑,
                     // 请求体只带框架工具 + 已加载域 (冷启动小, v3.5.1 瘦身成果)。
                     // 工具总数由 layer1 数量统计告知模型 (配置决定, 静态)。
