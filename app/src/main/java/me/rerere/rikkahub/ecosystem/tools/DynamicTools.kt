@@ -480,13 +480,23 @@ object DynamicTools {
             if (owner != null) append("&ownerHandle=$owner")
         }
 
-        val result = fetchUrlAsBytes(apiUrl)
+        // v3.6.97: 直连失败自动探测常见本地代理端口 (fake-ip/VPN 环境)
+        var result = fetchUrlAsBytes(apiUrl)
+        if (result == null) {
+            for (port in listOf(7890, 1080, 8118, 10809, 7897)) {
+                val proxied = fetchUrlAsBytesWithProxy(apiUrl, "127.0.0.1", port)
+                if (proxied != null) {
+                    Log.i(TAG, "clawhub via proxy 127.0.0.1:$port")
+                    result = proxied
+                    break
+                }
+            }
+        }
         if (result == null) {
             return listOf(UIMessagePart.Text(
                 "ClawHub: network error for $skillSlug。\n" +
-                "环境提示: DNS 解析到 198.18.x (fake-ip 代理) 时连接失败, " +
-                "可在 设置 → 生态 配置 HTTP 代理 (host:port, 如 127.0.0.1:7890) 后重启。\n" +
-                "或改用 github:owner/repo 源 (GitHub 直连通畅)。"
+                "已尝试直连与常见本地代理端口 (7890/1080/8118/10809/7897) 均失败。\n" +
+                "可在 设置 → 生态 配置 HTTP 代理 (host:port) 后重启, 或改用 github:owner/repo 源。"
             ))
         }
 
@@ -519,12 +529,24 @@ object DynamicTools {
         val token = EcosystemManager.getGitHubToken()
         val hasToken = token.isNotEmpty()
 
+        // v3.6.97: 无 token 且无子路径时用 codeload ZIP 下载 (无需认证) —
+        // 此前走 search/code API 无 token 必 401/403, github 源实际不可用
+        if (!hasToken && subPath.isEmpty()) {
+            val zipUrl = "https://codeload.github.com/$owner/$repo/zip/refs/heads/$branch"
+            val zipResult = fetchUrlAsBytes(zipUrl)
+            if (zipResult == null) {
+                return listOf(UIMessagePart.Text(
+                    "GitHub: 下载失败 ($zipUrl)。\n" +
+                    "可先在 设置 → 生态 配置 GitHub token, 或改用 url: 参数直链安装。"
+                ))
+            }
+            return installZipContent(zipResult.first, repo)
+        }
+
         val apiUrl = if (subPath.isNotEmpty()) {
             "https://raw.githubusercontent.com/$owner/$repo/$branch/$subPath"
-        } else if (hasToken) {
-            "https://api.github.com/repos/$owner/$repo/contents/"
         } else {
-            "https://api.github.com/search/code?q=filename:SKILL.md+repo:$owner/$repo"
+            "https://api.github.com/repos/$owner/$repo/contents/"
         }
 
         val content = fetchUrl(apiUrl, token)
@@ -564,6 +586,29 @@ object DynamicTools {
                 .header("Accept", "application/zip, text/plain, application/json")
                 .build()
             httpClient.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful) return null
+                val bytes = resp.body?.bytes() ?: return null
+                val ct = resp.header("Content-Type") ?: ""
+                Pair(bytes, ct.contains("zip") || urlStr.contains("download"))
+            }
+        } catch (_: Exception) { null }
+    }
+
+    private fun fetchUrlAsBytesWithProxy(urlStr: String, host: String, port: Int): Pair<ByteArray, Boolean>? {
+        return try {
+            val proxyClient = OkHttpClient.Builder()
+                .connectTimeout(java.time.Duration.ofSeconds(10))
+                .readTimeout(java.time.Duration.ofSeconds(30))
+                .followRedirects(true)
+                .followSslRedirects(true)
+                .proxy(java.net.Proxy(java.net.Proxy.Type.HTTP, java.net.InetSocketAddress(host, port)))
+                .build()
+            val request = Request.Builder()
+                .url(urlStr)
+                .header("User-Agent", "RinCore/3.6")
+                .header("Accept", "application/zip, text/plain, application/json")
+                .build()
+            proxyClient.newCall(request).execute().use { resp ->
                 if (!resp.isSuccessful) return null
                 val bytes = resp.body?.bytes() ?: return null
                 val ct = resp.header("Content-Type") ?: ""

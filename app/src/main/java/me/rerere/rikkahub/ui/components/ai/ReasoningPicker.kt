@@ -55,17 +55,6 @@ import kotlin.math.roundToInt
 
 private val levels = ReasoningLevel.entries
 private val levelCount = levels.size
-// v3.6.70: 全部 7 档都显示标注 (关闭/自动/低/中等/较高/高/最高)
-private val labeledLevels = setOf(
-    ReasoningLevel.OFF,
-    ReasoningLevel.AUTO,
-    ReasoningLevel.LOW,
-    ReasoningLevel.MEDIUM,
-    ReasoningLevel.HIGH,
-    ReasoningLevel.XHIGH,
-    ReasoningLevel.MAX,
-)
-
 @Composable
 fun ReasoningButton(
     modifier: Modifier = Modifier,
@@ -166,111 +155,42 @@ fun ReasoningPicker(
                 )
             }
 
-            Column(
+            // v3.6.97 移植原版 d1e8effc: 移除底部刻度 (简化推理选择页面)
+            Slider(
+                value = sliderValue,
+                onValueChange = { sliderValue = it },
+                onValueChangeFinished = {
+                    val snappedIndex = sliderValue.roundToInt().coerceIn(0, levelCount - 1)
+                    sliderValue = snappedIndex.toFloat()
+                    onUpdateReasoningLevel(levels[snappedIndex])
+                },
+                valueRange = 0f..(levelCount - 1).toFloat(),
+                steps = levelCount - 2,
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Slider(
-                    value = sliderValue,
-                    onValueChange = { sliderValue = it },
-                    onValueChangeFinished = {
-                        val snappedIndex = sliderValue.roundToInt().coerceIn(0, levelCount - 1)
-                        sliderValue = snappedIndex.toFloat()
-                        onUpdateReasoningLevel(levels[snappedIndex])
-                    },
-                    valueRange = 0f..(levelCount - 1).toFloat(),
-                    steps = levelCount - 2,
-                    modifier = Modifier.fillMaxWidth(),
-                    thumb = {
-                        Box(
-                            modifier = Modifier
-                                .size(24.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(10.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.onPrimary)
-                            )
-                        }
-                    },
-                    track = { sliderState ->
-                        SliderDefaults.Track(
-                            sliderState = sliderState,
-                            drawStopIndicator = null,
-                            thumbTrackGapSize = 0.dp,
-                        )
-                    }
-                )
-
-                ReasoningScale(
-                    selectedLevel = reasoningLevel,
-                    onSelect = { level ->
-                        sliderValue = levels.indexOf(level).toFloat()
-                        onUpdateReasoningLevel(level)
-                    }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReasoningScale(
-    selectedLevel: ReasoningLevel,
-    onSelect: (ReasoningLevel) -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        levels.forEach { level ->
-            val selected = level == selectedLevel
-            val tickColor by animateColorAsState(
-                if (selected) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.outlineVariant
-            )
-            val labelColor by animateColorAsState(
-                if (selected) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Column(
-                modifier = Modifier.weight(1f),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                ToggleSurface(
-                    checked = selected,
-                    onClick = { onSelect(level) },
-                    modifier = Modifier,
-                ) {
-                    Column(
+                thumb = {
+                    Box(
                         modifier = Modifier
-                            .padding(horizontal = 8.dp, vertical = 10.dp)
-                            .fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary),
+                        contentAlignment = Alignment.Center,
                     ) {
                         Box(
                             modifier = Modifier
-                                .width(if (selected) 20.dp else 16.dp)
-                                .height(if (selected) 6.dp else 4.dp)
-                                .clip(RoundedCornerShape(999.dp))
-                                .background(tickColor)
-                        )
-                        Text(
-                            text = level.label(),
-                            style = MaterialTheme.typography.labelSmall,
-                            textAlign = TextAlign.Center,
-                            color = labelColor,
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.onPrimary)
                         )
                     }
+                },
+                track = { sliderState ->
+                    SliderDefaults.Track(
+                        sliderState = sliderState,
+                        drawStopIndicator = null,
+                        thumbTrackGapSize = 0.dp,
+                    )
                 }
-            }
+            )
         }
     }
 }

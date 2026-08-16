@@ -374,12 +374,19 @@ class ResponseAPI(
                                     } else {
                                         // DeepSeek 官方: 明文 content (reasoning_text) —
                                         // summary/encrypted_content 不支持
-                                        put("content", buildJsonArray {
-                                            add(buildJsonObject {
-                                                put("type", "reasoning_text")
-                                                put("text", part.reasoning)
+                                        // v3.6.97 移植原版 0c52b62b: 已有加密内容时不重复
+                                        // 发送明文 (修复部分模型连续对话重复发送推理内容)
+                                        if (reasoningMetadata?.encryptedContent == null) {
+                                            put("content", buildJsonArray {
+                                                add(buildJsonObject {
+                                                    put("type", "reasoning_text")
+                                                    put("text", part.reasoning)
+                                                })
                                             })
-                                        })
+                                        }
+                                        reasoningMetadata?.encryptedContent?.let {
+                                            put("encrypted_content", it)
+                                        }
                                     }
                                 })
                             }

@@ -540,7 +540,8 @@ private fun TextInputRow(
             },
             lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
             keyboardOptions = KeyboardOptions(
-                imeAction = if (settings.displaySetting.sendOnEnter) ImeAction.Send else ImeAction.Default
+                imeAction = if (settings.displaySetting.sendOnEnter) ImeAction.Send else ImeAction.Default,
+                capitalization = KeyboardCapitalization.Sentences, // v3.6.97 移植 2.4.10: 英文句首自动大写
             ),
             onKeyboardAction = {
                 if (settings.displaySetting.sendOnEnter && !state.isEmpty()) {
@@ -752,6 +753,9 @@ private fun FullScreenEditor(
                             .padding(bottom = 2.dp)
                             .fillMaxSize(),
                         shape = RoundedCornerShape(32.dp),
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences, // v3.6.97 移植 2.4.10
+                        ),
                         placeholder = {
                             Text(stringResource(R.string.chat_input_placeholder))
                         },
