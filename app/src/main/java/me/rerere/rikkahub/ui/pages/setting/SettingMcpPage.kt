@@ -899,6 +899,7 @@ private fun McpToolsConfigure(
 ) {
     val mcpManager = koinInject<McpManager>()
     val settingsStore = koinInject<me.rerere.rikkahub.data.datastore.SettingsStore>()
+    val scope = rememberCoroutineScope()
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -914,8 +915,10 @@ private fun McpToolsConfigure(
                 tool = tool,
                 onRename = { newName ->
                     // v3.6.102: 完整工具名 (mcp__服务器__工具) 的改名写入
-                    settingsStore.update { s ->
-                        s.copy(toolNameOverrides = s.toolNameOverrides + ("mcp__${config.commonOptions.name}__${tool.name}" to newName))
+                    scope.launch {
+                        settingsStore.update { s ->
+                            s.copy(toolNameOverrides = s.toolNameOverrides + ("mcp__${config.commonOptions.name}__${tool.name}" to newName))
+                        }
                     }
                 },
                 onEnableChange = { newVal ->
@@ -958,8 +961,36 @@ private fun McpToolCard(
     tool: McpTool,
     onEnableChange: (Boolean) -> Unit,
     onNeedsApprovalChange: (Boolean) -> Unit,
+    onRename: (String) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    // v3.6.102/105: 工具改名 — 汉语名工具改为英文 (模型识别)
+    var showRename by remember { mutableStateOf(false) }
+    var renameText by remember(tool) { mutableStateOf("") }
+    if (showRename) {
+        AlertDialog(
+            onDismissRequest = { showRename = false },
+            title = { Text("重命名工具: ${tool.name}") },
+            text = {
+                OutlinedTextField(
+                    value = renameText,
+                    onValueChange = { renameText = it },
+                    label = { Text("新工具名（仅字母/数字/_/-）") },
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val newName = renameText.trim()
+                    if (newName.isNotBlank() && newName.all { ch -> ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch == '_' || ch == '-' }) {
+                        onRename(newName)
+                        showRename = false
+                    }
+                }) { Text("保存") }
+            },
+            dismissButton = { TextButton(onClick = { showRename = false }) { Text("取消") } },
+        )
+    }
     Card(
         colors = CardDefaults.cardColors(
             containerColor = CustomColors.listItemColors.containerColor

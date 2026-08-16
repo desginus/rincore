@@ -60,7 +60,13 @@ class SkillsVM(
             } else {
                 assistant.forcedSkills + skillName
             }
-            settingsStore.updateAssistant(assistant.copy(forcedSkills = newForced))
+            val updatedAssistant = assistant.copy(forcedSkills = newForced)
+            val updatedSettings = settings.copy(
+                assistants = settings.assistants.map { a ->
+                    if (a.id == updatedAssistant.id) updatedAssistant else a
+                }
+            )
+            settingsStore.update(updatedSettings)
         }
     }
 
