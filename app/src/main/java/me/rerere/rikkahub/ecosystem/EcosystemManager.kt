@@ -138,5 +138,16 @@ object EcosystemManager {
         return context?.getSharedPreferences("eco_tokens", Context.MODE_PRIVATE)
             ?.getString("github_token", "") ?: ""
     }
+
+    // v3.6.95: clawhub 网络代理 (fake-ip/VPN 环境) — 格式 host:port (如 127.0.0.1:7890)
+    fun setClawhubProxy(proxy: String) {
+        context?.getSharedPreferences("eco_tokens", Context.MODE_PRIVATE)
+            ?.edit()?.putString("clawhub_proxy", proxy)?.apply()
+    }
+
+    fun getClawhubProxy(): String {
+        return context?.getSharedPreferences("eco_tokens", Context.MODE_PRIVATE)
+            ?.getString("clawhub_proxy", "") ?: ""
+    }
 }
 

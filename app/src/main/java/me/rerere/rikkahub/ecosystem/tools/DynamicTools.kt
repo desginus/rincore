@@ -36,12 +36,23 @@ object DynamicTools {
     // v3.6.94: OkHttp 走系统代理 (fake-ip 环境) — HttpURLConnection 不走
     // 系统代理导致 clawhub_install 直连失败 (用户实测 198.18.x 保留段)
     private val httpClient by lazy {
-        OkHttpClient.Builder()
+        val builder = OkHttpClient.Builder()
             .connectTimeout(java.time.Duration.ofSeconds(15))
             .readTimeout(java.time.Duration.ofSeconds(30))
             .followRedirects(true)
             .followSslRedirects(true)
-            .build()
+        // v3.6.95: 显式代理 (fake-ip/VPN 环境) — 设置页 Ecosystem 配置 host:port
+        val proxy = runCatching { me.rerere.rikkahub.ecosystem.EcosystemManager.getClawhubProxy() }.getOrDefault("")
+        if (proxy.isNotBlank()) {
+            runCatching {
+                val host = proxy.substringBefore(":").trim()
+                val port = proxy.substringAfter(":", "").trim().toIntOrNull() ?: 0
+                if (host.isNotEmpty() && port in 1..65535) {
+                    builder.proxy(java.net.Proxy(java.net.Proxy.Type.HTTP, java.net.InetSocketAddress(host, port)))
+                }
+            }
+        }
+        builder.build()
     }
     private var mcpManager: McpManager? = null
     private var settingsStore: me.rerere.rikkahub.data.datastore.SettingsStore? = null
@@ -472,9 +483,10 @@ object DynamicTools {
         val result = fetchUrlAsBytes(apiUrl)
         if (result == null) {
             return listOf(UIMessagePart.Text(
-                "ClawHub: network error for $skillSlug. " +
-                "Check DNS/proxy if 198.18.0.29 resolves. " +
-                "Use github:owner/repo as fallback."
+                "ClawHub: network error for $skillSlug。\n" +
+                "环境提示: DNS 解析到 198.18.x (fake-ip 代理) 时连接失败, " +
+                "可在 设置 → 生态 配置 HTTP 代理 (host:port, 如 127.0.0.1:7890) 后重启。\n" +
+                "或改用 github:owner/repo 源 (GitHub 直连通畅)。"
             ))
         }
 

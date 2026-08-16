@@ -108,6 +108,31 @@ fun EcosystemContent(innerPadding: PaddingValues = PaddingValues()) {
                         }
                     }
                 }
+                // ClawHub 代理配置 (v3.6.95: fake-ip/VPN 环境)
+                item {
+                    Card(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text("ClawHub 代理", style = MaterialTheme.typography.titleSmall)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            var proxy by remember { mutableStateOf(me.rerere.rikkahub.ecosystem.EcosystemManager.getClawhubProxy()) }
+                            OutlinedTextField(
+                                value = proxy,
+                                onValueChange = {
+                                    proxy = it
+                                    me.rerere.rikkahub.ecosystem.EcosystemManager.setClawhubProxy(it)
+                                },
+                                label = { Text("host:port（如 127.0.0.1:7890）") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Text(
+                                "fake-ip/VPN 环境 clawhub.ai 直连失败时填本地代理端口，重启后生效。留空走默认网络。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
                 grouped.forEach { (source, insts) ->
                     item {
                         Text(

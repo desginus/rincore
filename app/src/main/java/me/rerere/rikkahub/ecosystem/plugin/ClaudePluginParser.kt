@@ -51,12 +51,16 @@ object ClaudePluginParser {
      * 解析一个 .claude-plugin/ 或 plugins/<name>/ 目录。
      */
     fun parsePluginDir(dir: File): ParsedPlugin {
+        // v3.6.95: dir 可能是 .claude-plugin 子目录 (findPluginRoot 返回) —
+        // Claude Code 标准布局的 skills/commands/hooks 在插件根 (父目录),
+        // 解析时把父目录一并作为搜索根, 否则 Skills 恒为 0
+        val pluginRoot = dir.parentFile
         val manifest = readManifest(dir)
-        val skills = parseSkills(dir)
-        val commands = parseCommands(dir)
-        val hooks = parseHooks(dir)
-        val mcpServers = parseMcpJson(dir)
-        val agents = parseAgents(dir)
+        val skills = parseSkills(pluginRoot ?: dir)
+        val commands = parseCommands(pluginRoot ?: dir)
+        val hooks = parseHooks(pluginRoot ?: dir)
+        val mcpServers = parseMcpJson(pluginRoot ?: dir)
+        val agents = parseAgents(pluginRoot ?: dir)
 
         return ParsedPlugin(manifest, skills, commands, hooks, mcpServers, agents)
     }
