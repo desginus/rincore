@@ -177,7 +177,14 @@ class McpManager(
             }
     }
 
-    suspend fun callTool(serverId: Uuid, toolName: String, args: JsonObject): List<UIMessagePart> {
+    suspend fun callTool(serverId: Uuid, toolName: String, args: JsonObject): List<UIMessagePart> =
+        // v3.6.102: 内部 60s 兜底 — 生成链外层 withTimeout 之外的其他调用点
+        // (Web UI/AgentRun 等) 也保证工具调用不超过 60s (用户要求)
+        withTimeoutOrNull(60_000L) {
+            callToolInternal(serverId, toolName, args)
+        } ?: listOf(UIMessagePart.Text("工具执行超时(60s): $toolName — 请检查 MCP 服务器响应"))
+
+    private suspend fun callToolInternal(serverId: Uuid, toolName: String, args: JsonObject): List<UIMessagePart> {
         // 工具声明已静态化, 连接状态在调用时检查 — 失败在此明确报错
         val status = syncingStatus.value[serverId]
         if (status is McpStatus.Error) {

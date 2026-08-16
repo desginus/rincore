@@ -654,7 +654,14 @@ class ChatService(
                 }
                                 .map { tool ->
                     settings.toolDescriptionOverrides[tool.name]?.let { tool.copy(description = it) } ?: tool
-                }.sortedBy { it.name },
+                }
+                // v3.6.102: 工具改名 — 汉语名工具改为字母数字名 (模型识别 + API 合法性)
+                .map { tool ->
+                    val renamed = settings.toolNameOverrides[tool.name]
+                        ?.takeIf { it.isNotBlank() && it.all { ch -> ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch == '_' || ch == '-' } }
+                    if (renamed == null) tool else tool.copy(name = renamed)
+                }
+                .sortedBy { it.name },
             ).onCompletion {
                 // 可能被取消了，或者意外结束，兜底更新
                 // 关键: 取消态 (用户停止/切后台) 下挂起调用会跳过 — 必须 NonCancellable

@@ -898,6 +898,7 @@ private fun McpToolsConfigure(
     update: (McpServerConfig) -> Unit,
 ) {
     val mcpManager = koinInject<McpManager>()
+    val settingsStore = koinInject<me.rerere.rikkahub.data.datastore.SettingsStore>()
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -911,6 +912,12 @@ private fun McpToolsConfigure(
         items(config.commonOptions.tools) { tool ->
             McpToolCard(
                 tool = tool,
+                onRename = { newName ->
+                    // v3.6.102: 完整工具名 (mcp__服务器__工具) 的改名写入
+                    settingsStore.update { s ->
+                        s.copy(toolNameOverrides = s.toolNameOverrides + ("mcp__${config.commonOptions.name}__${tool.name}" to newName))
+                    }
+                },
                 onEnableChange = { newVal ->
                     update(
                         config.clone(
@@ -1007,6 +1014,10 @@ private fun McpToolCard(
                         onCheckedChange = onEnableChange,
                         size = SwitchSize.Small
                     )
+                }
+                // v3.6.102: 重命名按钮 (汉语名工具改英文)
+                TextButton(onClick = { showRename = true }) {
+                    Text("重命名", style = MaterialTheme.typography.labelSmall)
                 }
                 // 展开/收起按钮
                 IconButton(

@@ -649,6 +649,7 @@ data class Settings(
     val hiddenDomains: Set<String> = emptySet(), // 用户隐藏的域（内置域不删除但可隐藏）
     val removedBuiltinDomains: Set<String> = emptySet(), // 用户删除的内置域预设
     val exemptFromDomainTools: Set<String> = emptySet(), // 移出域管理的工具名集合 — 与框架工具一样始终注入请求体, 不并入域分类
+    val toolNameOverrides: Map<String, String> = emptyMap(), // v3.6.102: 工具改名 — 原工具名→新工具名 (汉语名工具改为字母数字, 模型才能识别)
     val classifierPrompt: String = "", // 工具自动分类提示词。空=使用默认
 ) {
     companion object {

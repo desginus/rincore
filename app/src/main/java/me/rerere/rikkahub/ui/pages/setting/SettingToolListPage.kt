@@ -166,6 +166,7 @@ fun SettingToolListPage(
         }
         var editDescText by remember(tool) { mutableStateOf(settings.toolDescriptionOverrides[tool.name] ?: tool.description) }
         var exemptChecked by remember(tool) { mutableStateOf(tool.name in settings.exemptFromDomainTools) }
+        var editNameText by remember(tool) { mutableStateOf(settings.toolNameOverrides[tool.name] ?: "") }
         AlertDialog(
             onDismissRequest = { selectedTool = null },
             title = { Text(tool.name) },
@@ -175,6 +176,14 @@ fun SettingToolListPage(
                     modifier = Modifier.verticalScroll(rememberScrollState())
                 ) {
                     Text("当前分类: ${moveTarget}", fontWeight = FontWeight.SemiBold)
+                    OutlinedTextField(
+                        value = editNameText,
+                        onValueChange = { editNameText = it },
+                        label = { Text("工具名称（改名）") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        supportingText = { Text("留空保持原名。仅允许字母、数字、下划线、连字符 — 汉语名工具模型难以识别，建议改为英文名。") },
+                    )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("移出域管理", fontWeight = FontWeight.SemiBold)
@@ -217,6 +226,15 @@ fun SettingToolListPage(
                     val em = s.exemptFromDomainTools.toMutableSet()
                     if (exemptChecked) em.add(tool.name) else em.remove(tool.name)
                     s = s.copy(exemptFromDomainTools = em)
+                    // v3.6.102: 工具改名 — 仅合法名写入 (非法输入静默忽略)
+                    val nm = s.toolNameOverrides.toMutableMap()
+                    val newName = editNameText.trim()
+                    if (newName.isNotBlank() && newName.all { ch -> ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch == '_' || ch == '-' }) {
+                        nm[tool.name] = newName
+                    } else if (newName.isBlank()) {
+                        nm.remove(tool.name)
+                    }
+                    s = s.copy(toolNameOverrides = nm)
                     vm.updateSettings(s)
                     selectedTool = null
                 }) { Text("保存") }
