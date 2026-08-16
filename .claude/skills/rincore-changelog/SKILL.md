@@ -12,6 +12,16 @@ description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日�
 - **工具执行无超时**：3.5.9 withTimeout 60s 兜底——工具挂起不永久阻塞生成
 - **缓存"卡-跳-线性"**：DeepSeek 服务端磁盘缓存机制（构建延迟秒级+固定间隔切分+SWA 独立单元）——客户端不可控，已入库 decisions D2
 
+## v3.6.86-87（插件格式，2026-08-16）
+
+- **v3.6.87**（572ee78a）：Uuid.fromString 不存在编译失败修复 — 桥接 id 改 Uuid.random + 运行期缓存（registeredBridges/bridgeIds 保证重复 refresh 不重启进程）
+- **v3.6.86**（b6de3f1e）：「插件」新格式 — 插件 = 技能 + 桥接合一
+  - 目录：workspace files 区 .plugins/<插件名>/，plugin.yaml（name/description/command）+ SKILL.md + 桥接脚本
+  - Skill 部分：skill__plugin__<名> 正常读取（SkillManager extraSkillRoots 泛化，前缀随根）
+  - 桥接部分：command 经 workspace launchProcess 常驻启动，STDIO 走 MCP JSON-RPC，工具注册 mcp__plugin__<名>__<工具>（McpManager.addClient viaWorkspace）
+  - PluginManager（data/plugin）+ App 启动刷新 + WorkspaceRepository.getAllWorkspaces
+  - dsh__ 技能源（v3.6.85）保留 — 纯技能层兼容，带工具的插件用插件格式
+
 ## v3.6.x（2026-08-15 起，grok 排查/性能/DSH 生态）
 
 - **v3.6.85**（cf6c93dc，2026-08-16）：DeepSeek Harness 插件生态兼容 + 深度清理
