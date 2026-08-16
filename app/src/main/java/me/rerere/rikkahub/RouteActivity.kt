@@ -612,7 +612,7 @@ class RouteActivity : ComponentActivity() {
                             }
 
                             entry<Screen.SettingPlugins> {
-                                SettingPluginsPage()
+                                SettingPluginsPage(onBack = { backStack.removeLastOrNull() })
                             }
 
 
