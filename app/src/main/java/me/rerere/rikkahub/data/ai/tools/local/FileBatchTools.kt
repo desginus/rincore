@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.ai.tools.local
 
+
+/* ───【自研】FileBatchTools.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject

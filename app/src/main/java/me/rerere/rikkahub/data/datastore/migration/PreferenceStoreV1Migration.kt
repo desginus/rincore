@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.data.datastore.migration
 
+
 import androidx.datastore.core.DataMigration
 import androidx.datastore.preferences.core.Preferences
 import kotlinx.serialization.json.JsonObject

@@ -1,5 +1,10 @@
 package me.rerere.search
 
+
+/* ───【原版对齐】ExaSearchService | 差异 +59 行
+ * 来源: 原版移植 + 自研 (Exa 搜索增强)
+ * 差异: 搜索参数/结果解析自研调整
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable

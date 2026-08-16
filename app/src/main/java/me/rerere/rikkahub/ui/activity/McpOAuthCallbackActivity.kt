@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.activity
 
+
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import kotlinx.coroutines.launch

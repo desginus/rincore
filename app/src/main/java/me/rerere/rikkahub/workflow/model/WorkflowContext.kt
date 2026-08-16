@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.workflow.model
 
+
+/* ───【自研】WorkflowContext.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 /**
  * Snapshot of device state at condition-evaluation time. Lazy fields (location, foreground app,
  * recent notifications) are filled only when at least one condition needs them — see

@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.utils
 
+
 sealed class UiState<out T> {
     object Idle : UiState<Nothing>()
     object Loading : UiState<Nothing>()

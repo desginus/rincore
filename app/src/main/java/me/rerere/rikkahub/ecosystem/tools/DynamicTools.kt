@@ -9,6 +9,10 @@
  */
 package me.rerere.rikkahub.ecosystem.tools
 
+
+/* ───【自研】DynamicTools.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive

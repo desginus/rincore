@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.browser
 
+
+/* ───【自研】BrowserToolDefaults.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 /**
  * Authoritative list of the 18 browser tools the LLM can drive, plus their default
  * enabled/disabled state. Read tools (cheap, don't touch the page) default ON;

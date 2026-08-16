@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.richtext
 
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Column

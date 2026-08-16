@@ -1,5 +1,11 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
+
+/* ───【原版对齐】AssistantLocalToolPage | 差异 +237 行
+ * 来源: 原版移植 + 自研 (本地工具选择扩展)
+ * 功能: 助手本地工具开关页
+ * 差异: 本地工具集合扩展 (自研工具清单)
+ * ───────────────────────────────────────────────────────────────*/
 import android.Manifest
 import android.os.Build
 import android.os.Environment

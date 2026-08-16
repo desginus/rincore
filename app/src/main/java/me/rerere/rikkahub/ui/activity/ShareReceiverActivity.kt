@@ -1,6 +1,10 @@
 @file:Suppress("DEPRECATION") // getParcelableExtra 平台 API 无替代
 package me.rerere.rikkahub.ui.activity
 
+
+/* ───【自研】ShareReceiverActivity.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle

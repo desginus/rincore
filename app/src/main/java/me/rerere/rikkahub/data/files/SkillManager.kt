@@ -1,5 +1,11 @@
 package me.rerere.rikkahub.data.files
 
+
+/* ───【原版对齐】SkillManager | 差异 +110 行
+ * 来源: 原版移植 + 自研 (技能管理增强)
+ * 差异: 额外技能根 (dsh__/plugin__ 只读源, v3.6.85-88)、扫描缓存
+ *       加固 (v3.6.12)、原子写入
+ * ───────────────────────────────────────────────────────────────*/
 import android.content.Context
 import android.util.Log
 import java.io.File

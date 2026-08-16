@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.activity
 
+
+/* ───【原版对齐】ShortcutHandlerActivity.kt | 差异 ±42 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import android.Manifest
 import android.content.Intent
 import android.net.Uri

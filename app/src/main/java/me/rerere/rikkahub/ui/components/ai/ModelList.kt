@@ -1,6 +1,10 @@
 @file:OptIn(FlowPreview::class)
 package me.rerere.rikkahub.ui.components.ai
 
+
+/* ───【原版对齐】ModelList.kt | 差异 ±2 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource

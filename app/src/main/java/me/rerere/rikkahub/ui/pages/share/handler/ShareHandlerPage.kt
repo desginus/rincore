@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.share.handler
 
+
+/* ───【原版对齐】ShareHandlerPage.kt | 差异 ±8 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column

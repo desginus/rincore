@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.data.ai.prompts
 
+
 val DEFAULT_OCR_PROMPT =
     """
     You are an OCR assistant.

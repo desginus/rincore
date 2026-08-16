@@ -1,5 +1,11 @@
 package me.rerere.rikkahub.ui.components.message
 
+
+/* ───【原版对齐】ChatMessageTools | 差异 +116 行
+ * 来源: 原版移植 + 自研 (工具卡渲染)
+ * 功能: 消息内工具卡 (审批/结果/状态)
+ * 差异: 工具审批交互与展示自研调整
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi

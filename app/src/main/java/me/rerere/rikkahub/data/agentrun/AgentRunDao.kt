@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.agentrun
 
+
+/* ───【自研】AgentRunDao.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy

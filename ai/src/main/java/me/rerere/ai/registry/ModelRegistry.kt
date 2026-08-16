@@ -1,5 +1,10 @@
 package me.rerere.ai.registry
 
+
+/* ───【原版对齐】ModelRegistry | 差异 +68 行
+ * 来源: 原版移植 + 自研 (模型注册扩展)
+ * 差异: grok-4.6 等自研模型定义与能力位
+ * ───────────────────────────────────────────────────────────────*/
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.ModelAbility
 

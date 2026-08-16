@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.components.message
 
+
+/* ───【原版对齐】ChatMessageCot.kt | 差异 ±12 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.ui.util.fastForEachIndexed
 import me.rerere.ai.ui.UIMessagePart
 

@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.data.db.migrations
 
+
 import android.database.sqlite.SQLiteBlobTooBigException
 import android.util.Log
 import androidx.room.migration.Migration

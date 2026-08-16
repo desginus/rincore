@@ -1,5 +1,9 @@
 package me.rerere.search
 
+
+/* ───【原版对齐】MetasoSearchService.kt | 差异 ±4 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.text.LinkAnnotation

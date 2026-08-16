@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.data.provider
 
+
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.os.CancellationSignal

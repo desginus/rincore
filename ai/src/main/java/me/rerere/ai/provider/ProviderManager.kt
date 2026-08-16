@@ -1,5 +1,9 @@
 package me.rerere.ai.provider
 
+
+/* ───【原版对齐】ProviderManager.kt | 差异 ±6 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import android.content.Context
 import me.rerere.ai.provider.providers.ClaudeProvider
 import me.rerere.ai.provider.providers.GoogleProvider

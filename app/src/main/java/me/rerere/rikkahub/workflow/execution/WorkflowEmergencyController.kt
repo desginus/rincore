@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.workflow.execution
 
+
+/* ───【自研】WorkflowEmergencyController.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Job

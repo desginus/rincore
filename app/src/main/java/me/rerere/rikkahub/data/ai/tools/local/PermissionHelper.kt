@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.ai.tools.local
 
+
+/* ───【自研】PermissionHelper.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import android.app.AlarmManager
 import android.app.AppOpsManager
 import android.content.Context

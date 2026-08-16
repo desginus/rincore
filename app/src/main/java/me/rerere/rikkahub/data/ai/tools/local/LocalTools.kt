@@ -9,6 +9,11 @@
  */
 package me.rerere.rikkahub.data.ai.tools.local
 
+
+/* ───【原版对齐】LocalTools | 差异 +171 行
+ * 来源: 原版移植 + 自研 (本地工具集合扩展)
+ * 差异: 自研本地工具 (定时任务/AgentRun 等)
+ * ───────────────────────────────────────────────────────────────*/
 import android.content.Context
 import me.rerere.ai.core.Tool
 import me.rerere.rikkahub.costguards.checkTokenUsageTool

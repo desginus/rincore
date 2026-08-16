@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+
+/* ───【自研】SettingPermissionsPage.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult

@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.data.model
 
+
 import java.time.Instant
 import kotlin.uuid.Uuid
 

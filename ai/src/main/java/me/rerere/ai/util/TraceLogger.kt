@@ -1,5 +1,9 @@
 package me.rerere.ai.util
 
+
+/* ───【自研】TraceLogger.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import android.util.Log
 import java.text.SimpleDateFormat
 import java.util.Date

@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.web.routes
 
+
 import kotlin.uuid.Uuid
 import me.rerere.rikkahub.web.BadRequestException
 

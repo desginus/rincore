@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.subagent
 
+
+/* ───【自研】SubAgentRun.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.Serializable
 import kotlin.uuid.Uuid
 

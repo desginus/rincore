@@ -1,5 +1,21 @@
 package me.rerere.rikkahub.data.ai.mcp
 
+
+/* ───【原版对齐】McpManager ───────────────────────────────────────────
+ * 原版: 有同文件 | RinCore 差异 +893 行
+ * 来源: 原版移植 + 自研强化 (v3.5.17 基准)
+ * 功能: MCP 服务器生命周期 — addClient/removeClient/重连/工具同步
+ * 特点: 1. STDIO workspace 桥接 (v3.5.27 launchProcess 常驻,
+ *         viaWorkspace 自动回退); 2. 工具声明静态化 (settings 配置
+ *         决定, 连接波动不删工具 — 缓存根治); 3. 指数退避重连
+ * 逻辑: getTransport 必须在 runCatching 内 (状态撕裂防护);
+ *        sync 幂等写回 tools 到 settings (避免无意义广播断缓存)
+ * 与原版主要差异:
+ *   1. viaWorkspace/workspaceId 的 STDIO 沙箱启动 (原版无)
+ *   2. 工具静态化与幂等同步 (原版按连接状态)
+ *   3. OAuth 授权状态机 (原版无)
+ * ────────────────────────────────────────────────────────────────────*/
+
 import android.content.Context
 import android.util.Log
 import androidx.core.net.toUri

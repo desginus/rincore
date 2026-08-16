@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.components.ui
 
+
+/* ───【原版对齐】CardGroup.kt | 差异 ±3 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable

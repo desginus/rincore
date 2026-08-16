@@ -1,5 +1,6 @@
 package me.rerere.ai.ui
 
+
 import kotlinx.serialization.Serializable
 
 @Serializable

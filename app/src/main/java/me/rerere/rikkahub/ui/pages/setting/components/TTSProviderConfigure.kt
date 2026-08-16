@@ -1,5 +1,11 @@
 package me.rerere.rikkahub.ui.pages.setting.components
 
+
+/* ───【原版对齐】TTSProviderConfigure | 差异 +777 行
+ * 来源: 原版移植 + 自研扩展 (多家 TTS 提供商配置)
+ * 功能: TTS 提供商配置页 (声音选择/参数)
+ * 差异: 自研提供商条目与参数项较多, 逻辑与 UI 均扩展
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth

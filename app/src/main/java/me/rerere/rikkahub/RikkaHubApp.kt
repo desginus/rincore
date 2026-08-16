@@ -1,5 +1,11 @@
 package me.rerere.rikkahub
 
+
+/* ───【原版对齐】RikkaHubApp | 差异 +71 行
+ * 来源: 原版移植 + 自研 (启动流程扩展)
+ * 差异: DSH 技能根刷新 + 插件扫描注册 (v3.6.85-86)、崩溃日志
+ *       持久化等自研启动步骤
+ * ───────────────────────────────────────────────────────────────*/
 import android.app.Application
 import android.content.Intent
 import android.content.pm.PackageManager

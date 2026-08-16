@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.components.ui
 
+
+/* ───【原版对齐】ErrorCard.kt | 差异 ±41 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import android.content.ClipData
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn

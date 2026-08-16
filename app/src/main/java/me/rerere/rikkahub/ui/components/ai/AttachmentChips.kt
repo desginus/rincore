@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.ai
 
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll

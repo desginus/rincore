@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+
+/* ───【自研】SettingBuiltinToolsPage.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding

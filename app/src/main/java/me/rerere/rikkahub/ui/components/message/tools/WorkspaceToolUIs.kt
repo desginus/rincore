@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.components.message.tools
 
+
+/* ───【原版对齐】WorkspaceToolUIs.kt | 差异 ±16 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box

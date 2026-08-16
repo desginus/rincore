@@ -11,6 +11,11 @@
  */
 package me.rerere.rikkahub.data.ai.transformers
 
+
+/* ───【原版对齐】PromptInjectionTransformer | 差异 +100 行
+ * 来源: 原版移植 + 自研 (注入策略调整)
+ * 差异: 注入位置/内容与缓存前缀适配自研调整
+ * ───────────────────────────────────────────────────────────────*/
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart

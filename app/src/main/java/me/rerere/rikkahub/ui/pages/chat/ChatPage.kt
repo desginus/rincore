@@ -1,5 +1,12 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+
+/* ───【原版对齐】ChatPage | 差异 +107 行
+ * 来源: 原版移植 + 自研 (haze/延时回复/插件等)
+ * 功能: 聊天主页面
+ * 差异: haze 毛玻璃 (背景静态化 v3.6.82)、延时自动回复、
+ *       SettingPlugins 导航等自研
+ * ───────────────────────────────────────────────────────────────*/
 import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.BackHandler

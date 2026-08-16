@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.db
 
+
+/* ───【原版对齐】AppDatabase.kt | 差异 ±32 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.RoomDatabase

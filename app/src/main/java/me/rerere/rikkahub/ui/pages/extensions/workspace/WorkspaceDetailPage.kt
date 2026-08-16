@@ -1,5 +1,11 @@
 package me.rerere.rikkahub.ui.pages.extensions.workspace
 
+
+/* ───【原版对齐】WorkspaceDetailPage | 差异 +269 行
+ * 来源: 原版移植 + 自研 (工作区管理增强)
+ * 功能: 工作区详情页 (文件/Shell/rootfs 安装)
+ * 差异: rootfs 安装进度/Shell 状态/文件操作自研扩展
+ * ───────────────────────────────────────────────────────────────*/
 import android.content.Intent
 import android.provider.OpenableColumns
 import androidx.activity.compose.BackHandler

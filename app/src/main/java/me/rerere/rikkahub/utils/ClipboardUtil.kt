@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.utils
 
+
 import android.content.ClipData
 
 fun ClipData.getText(): String {

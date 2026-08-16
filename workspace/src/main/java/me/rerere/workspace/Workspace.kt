@@ -1,5 +1,6 @@
 package me.rerere.workspace
 
+
 data class Workspace(
     val id: String,
     val name: String,

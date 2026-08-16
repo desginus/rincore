@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.setting.scheduledjobs
 
+
+/* ───【自研】ScheduledJobSummaries.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import me.rerere.rikkahub.data.db.entity.ScheduledJobEntity
 import java.text.SimpleDateFormat
 import java.util.Date

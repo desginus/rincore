@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.workflow.condition
 
+
+/* ───【自研】ConditionEvaluator.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import me.rerere.rikkahub.workflow.model.ConditionSpec
 import me.rerere.rikkahub.workflow.model.WorkflowContext
 import java.time.DayOfWeek

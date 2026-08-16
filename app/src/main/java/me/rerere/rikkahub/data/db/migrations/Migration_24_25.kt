@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.db.migrations
 
+
+/* ───【自研】Migration_24_25.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 

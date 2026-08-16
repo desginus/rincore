@@ -1,5 +1,11 @@
 package me.rerere.rikkahub.di
 
+
+/* ───【原版对齐】DataSourceModule | 差异 +97 行
+ * 来源: 原版移植 + 自研 (连接配置根治)
+ * 差异: HTTP/1.1 only (HTTP/2 禁用 PROTOCOL_ERROR 根治)、
+ *       ConnectionPool(12, 60s)、readTimeout 3min (v2.9.8 参照)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase

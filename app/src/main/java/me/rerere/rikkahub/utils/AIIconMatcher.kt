@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.utils
 
+
+/* ───【原版对齐】AIIconMatcher.kt | 差异 ±4 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 private val iconCache = mutableMapOf<String, String>()
 
 // https://lobehub.com/zh/icons

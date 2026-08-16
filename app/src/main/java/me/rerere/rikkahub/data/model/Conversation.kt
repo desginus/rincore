@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.model
 
+
+/* ───【原版对齐】Conversation.kt | 差异 ±33 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import android.net.Uri
 import androidx.core.net.toUri
 import kotlinx.serialization.Serializable

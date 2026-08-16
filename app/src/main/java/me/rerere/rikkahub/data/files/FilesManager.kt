@@ -1,5 +1,10 @@
 package me.rerere.rikkahub.data.files
 
+
+/* ───【原版对齐】FilesManager | 差异 +62 行
+ * 来源: 原版移植 + 自研 (文件管理增强)
+ * 差异: 会话附件生命周期自研处理
+ * ───────────────────────────────────────────────────────────────*/
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri

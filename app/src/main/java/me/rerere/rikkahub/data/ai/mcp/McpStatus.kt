@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.ai.mcp
 
+
+/* ───【原版对齐】McpStatus.kt | 差异 ±18 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 sealed class McpStatus {
     data object Idle : McpStatus()
     data object Connecting : McpStatus()

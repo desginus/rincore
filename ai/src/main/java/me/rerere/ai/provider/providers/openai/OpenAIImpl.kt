@@ -8,6 +8,10 @@
  */
 package me.rerere.ai.provider.providers.openai
 
+
+/* ───【原版对齐】OpenAIImpl.kt | 差异 ±15 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import kotlinx.coroutines.flow.Flow
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams

@@ -1,5 +1,11 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+
+/* ───【原版对齐】SettingPreferencesNotificationPage | 差异 +103 行
+ * 来源: 原版移植 + 自研 (通知/保活设置)
+ * 功能: 通知偏好设置页
+ * 差异: 灵动岛/保活相关自研开关
+ * ───────────────────────────────────────────────────────────────*/
 import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues

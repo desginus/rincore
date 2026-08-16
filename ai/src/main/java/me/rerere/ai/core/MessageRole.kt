@@ -1,5 +1,6 @@
 package me.rerere.ai.core
 
+
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 

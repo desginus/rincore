@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.service
 
+
+/* ───【自研】FloatingNotificationService.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import android.app.NotificationManager
 import android.app.Service
 import android.content.ClipData

@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.browser
 
+
+/* ───【自研】BrowserCacheSweeper.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import android.content.Context
 import android.util.Log
 import java.io.File

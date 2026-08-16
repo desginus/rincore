@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+
+/* ───【原版对齐】SettingProviderDetailPage.kt | 差异 ±11 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import me.rerere.rikkahub.data.datastore.cleanupDeletedModels
 
 import me.rerere.hugeicons.HugeIcons

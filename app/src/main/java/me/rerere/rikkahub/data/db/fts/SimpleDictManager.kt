@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.data.db.fts
 
+
 import android.content.Context
 import java.io.File
 

@@ -1,5 +1,11 @@
 package me.rerere.rikkahub.ui.components.ui
 
+
+/* ───【原版对齐】Select | 差异 +85 行
+ * 来源: 原版移植 + 自研 (选择器组件增强)
+ * 功能: 通用选择器组件
+ * 差异: 多选/搜索过滤等自研增强
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row

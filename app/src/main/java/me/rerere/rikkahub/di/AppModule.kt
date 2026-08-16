@@ -8,6 +8,11 @@
  */
 package me.rerere.rikkahub.di
 
+
+/* ───【原版对齐】AppModule | 差异 +116 行
+ * 来源: 原版移植 + 自研 (DI 注册扩展)
+ * 差异: ChatService/WebServer/PluginManager 等自研注入
+ * ───────────────────────────────────────────────────────────────*/
 import me.rerere.rikkahub.data.firebase.StubAnalytics
 import kotlinx.serialization.json.Json
 import me.rerere.rikkahub.AppScope

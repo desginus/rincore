@@ -8,6 +8,10 @@
  */
 package me.rerere.rikkahub.data.ai.transformers
 
+
+/* ───【原版对齐】TimeReminderTransformer.kt | 差异 ±25 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant

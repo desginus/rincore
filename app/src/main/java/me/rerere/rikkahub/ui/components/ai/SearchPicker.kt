@@ -1,5 +1,11 @@
 package me.rerere.rikkahub.ui.components.ai
 
+
+/* ───【原版对齐】SearchPicker | 差异 +497 行
+ * 来源: 原版移植 + 自研 (豆包搜索 2.4.10 移植 + 自研搜索源)
+ * 功能: 搜索源选择器
+ * 差异: 搜索源集合扩展 (自研源 + Doubao), 选择交互增强
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box

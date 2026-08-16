@@ -14,6 +14,23 @@
  */
 package me.rerere.rikkahub.data.ai
 
+
+/* ───【原版对齐】GenerationHandler ─────────────────────────────────────
+ * 原版: 有同文件 (545 行) | RinCore 差异 +462 行 (893 行)
+ * 来源: 原版移植 + 自研核心扩展
+ * 功能: 生成编排 — system 构建/工具分层注入/流式循环/重试
+ * 特点: 1. 分层动态注入 (框架工具 + 已加载域, 冷启动小 — 用户铁律);
+ *        2. 消息原样发送零改动 (v3.6.74 降维方向废弃);
+ *        3. 豁免工具机制 (v3.6.90 移出域管理 = 框架工具同级);
+ *        4. UI 节流 100ms; 5. 断流自动重试 5 次
+ * 逻辑: FRAMEWORK_TOOL_SET + exemptFromDomainTools 始终注入;
+ *       loadedDomains LinkedHashSet 保序 (缓存前缀稳定)
+ * 与原版主要差异:
+ *   1. 原版每 chunk 直发无节流 — RinCore 100ms 批处理
+ *   2. 原版无分层 — RinCore 域分层是核心自研
+ *   3. 原版无豁免工具/插件工具注入
+ * ────────────────────────────────────────────────────────────────────*/
+
 import android.content.Context
 import android.util.Log
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull

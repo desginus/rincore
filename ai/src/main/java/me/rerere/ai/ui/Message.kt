@@ -12,6 +12,20 @@
  */
 package me.rerere.ai.ui
 
+
+/* ───【原版对齐】Message ──────────────────────────────────────────────
+ * 原版: 有同文件 | RinCore 差异 +388 行
+ * 来源: 原版移植 + 自研 (多版本机制)
+ * 功能: 消息模型 — UIMessage/MessageNode/多版本/selectIndex
+ * 特点: 1. MessageNode.messages 多版本 (编辑追加新版本保留旧版,
+ *        123 按钮切换); 2. finishReasoning 收尾 (思考链计时停表)
+ * 逻辑: currentMessages 只含每节点选中消息; limitContext 函数在此
+ *       但禁用 (D5 — 启用即破坏缓存前缀)
+ * 与原版主要差异:
+ *   1. 多版本节点机制 (原版单版本)
+ *   2. 编辑语义 (原版替换, RinCore 追加)
+ * ────────────────────────────────────────────────────────────────────*/
+
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime

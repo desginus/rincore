@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.service
 
+
+/* ───【自研】EnvironmentOptimizer.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import android.content.Context
 import android.net.ConnectivityManager
 import android.util.Log

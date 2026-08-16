@@ -1,5 +1,11 @@
 package me.rerere.rikkahub.data.repository
 
+
+/* ───【原版对齐】WorkspaceRepository | 差异 +113 行
+ * 来源: 原版移植 + 自研 (工作区仓库增强)
+ * 差异: launchProcess 常驻 (v3.5.27)、refreshDshSkillRoots、
+ *       getAllWorkspaces、工具审批等自研
+ * ───────────────────────────────────────────────────────────────*/
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers

@@ -1,5 +1,11 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+
+/* ───【原版对齐】SettingProviderPage | 差异 +104 行
+ * 来源: 原版移植 + 自研 (grok/OpenCode 等模型条目)
+ * 功能: 模型提供商页
+ * 差异: 自研提供商条目与推理档位 UI
+ * ───────────────────────────────────────────────────────────────*/
 import android.net.Uri
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Camera01

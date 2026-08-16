@@ -1,5 +1,11 @@
 package me.rerere.rikkahub.data.ai.tools
 
+
+/* ───【原版对齐】SkillsTools | 差异 +86 行
+ * 来源: 原版移植 + 自研 (技能工具生成)
+ * 差异: 技能全量生成 (v3.5.45) 与执行去 enabledSkills 过滤
+ *       (v3.6.92 — 修复技能全灭)
+ * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive

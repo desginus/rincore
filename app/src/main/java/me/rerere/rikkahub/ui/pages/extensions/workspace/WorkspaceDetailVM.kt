@@ -1,5 +1,10 @@
 package me.rerere.rikkahub.ui.pages.extensions.workspace
 
+
+/* ───【原版对齐】WorkspaceDetailVM | 差异 +77 行
+ * 来源: 原版移植 + 自研 (工作区状态管理)
+ * 差异: rootfs 安装/Shell 状态自研状态机
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException

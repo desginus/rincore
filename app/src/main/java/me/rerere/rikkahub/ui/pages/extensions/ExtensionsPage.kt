@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.extensions
 
+
+/* ───【原版对齐】ExtensionsPage.kt | 差异 ±6 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize

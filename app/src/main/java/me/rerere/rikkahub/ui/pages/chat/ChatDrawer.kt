@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+
+/* ───【原版对齐】ChatDrawer.kt | 差异 ±21 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable

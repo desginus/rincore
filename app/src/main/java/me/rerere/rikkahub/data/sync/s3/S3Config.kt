@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.data.sync.s3
 
+
 import kotlinx.serialization.Serializable
 
 @Serializable

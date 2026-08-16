@@ -1,5 +1,9 @@
 package me.rerere.material3
 
+
+/* ───【原版对齐】DynamicSchemeExt.kt | 差异 ±0 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme

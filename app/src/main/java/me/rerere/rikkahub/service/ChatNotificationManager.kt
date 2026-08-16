@@ -1,5 +1,10 @@
 package me.rerere.rikkahub.service
 
+
+/* ───【原版对齐】ChatNotificationManager | 差异 +108 行
+ * 来源: 原版移植 + 自研 (灵动岛增强)
+ * 差异: Live Update 通知/灵动岛生命周期自研处理
+ * ───────────────────────────────────────────────────────────────*/
 import android.app.Activity
 import android.app.Application
 import android.app.PendingIntent

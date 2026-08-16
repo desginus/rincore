@@ -11,6 +11,12 @@
  */
 package me.rerere.rikkahub.data.datastore
 
+
+/* ───【原版对齐】PreferencesStore | 差异 +159 行
+ * 来源: 原版移植 + 自研 (SSOT 扩展)
+ * 功能: Settings 定义 + DataStore 读写 (SSOT: settingsFlow)
+ * 差异: exemptFromDomainTools (v3.6.90) 等自研字段
+ * ───────────────────────────────────────────────────────────────*/
 import android.content.Context
 import android.util.Log
 import androidx.datastore.core.IOException

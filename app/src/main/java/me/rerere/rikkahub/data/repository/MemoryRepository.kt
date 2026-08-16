@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.data.repository
 
+
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import me.rerere.rikkahub.data.db.dao.MemoryDAO

@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.di
 
+
+/* ───【原版对齐】RepositoryModule.kt | 差异 ±9 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import android.content.Context
 import me.rerere.rikkahub.data.files.FileFolders
 import me.rerere.rikkahub.data.files.FilesManager

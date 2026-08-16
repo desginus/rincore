@@ -1,5 +1,10 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
+
+/* ───【原版对齐】AssistantBasicPage | 差异 +56 行
+ * 来源: 原版移植 + 自研 (助手基础设置增强)
+ * 差异: 基础字段/交互自研调整
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues

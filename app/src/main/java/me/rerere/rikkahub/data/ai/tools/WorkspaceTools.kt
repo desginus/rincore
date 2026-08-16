@@ -1,5 +1,10 @@
 package me.rerere.rikkahub.data.ai.tools
 
+
+/* ───【原版对齐】WorkspaceTools | 差异 +65 行
+ * 来源: 原版移植 + 自研 (工作区工具增强)
+ * 差异: 工具审批默认值 (v3.6.13)、CWD 支持等自研
+ * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.JsonObjectBuilder

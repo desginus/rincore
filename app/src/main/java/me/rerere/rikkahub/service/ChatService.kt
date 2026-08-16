@@ -12,6 +12,21 @@
  */
 package me.rerere.rikkahub.service
 
+
+/* ───【原版对齐】ChatService ───────────────────────────────────────────
+ * 原版: 有同文件 | RinCore 差异 +339 行
+ * 来源: 原版移植 + 自研强化
+ * 功能: 会话编排 — 生成入口/流式收集/落盘/通知/错误
+ * 特点: 1. onCompletion 收尾必须 NonCancellable (取消态也落盘+通知);
+ *        2. 落盘节流 1s (每 chunk 全量写 → 每秒一次);
+ *        3. 中断 3s join (v3.5.24)
+ * 逻辑: updateConversation 纯内存 (StateFlow) + checkFilesDelete
+ * 与原版主要差异:
+ *   1. 落盘节流/兜底落盘 (原版每 chunk 写)
+ *   2. 错误上下文记录 (模型/档位/消息数/工具数)
+ *   3. 非法 MCP 名不弹窗只剔除 (v3.6.96)
+ * ────────────────────────────────────────────────────────────────────*/
+
 import android.app.Application
 import android.content.Context
 import android.util.Log

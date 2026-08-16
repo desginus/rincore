@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.ai.tools
 
+
+/* ───【原版对齐】SearchTools.kt | 差异 ±3 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive

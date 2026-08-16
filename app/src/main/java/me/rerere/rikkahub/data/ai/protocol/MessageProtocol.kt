@@ -1,6 +1,10 @@
 @file:Suppress("DEPRECATION") // ToolCall/ToolResult 序列化兼容必需
 package me.rerere.rikkahub.data.ai.protocol
 
+
+/* ───【自研】MessageProtocol.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import android.util.Log
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage

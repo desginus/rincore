@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.ai
 
+
+/* ───【自研】CallTracer.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

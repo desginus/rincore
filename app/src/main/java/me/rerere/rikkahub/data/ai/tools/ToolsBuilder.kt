@@ -13,6 +13,10 @@
  */
 package me.rerere.rikkahub.data.ai.tools
 
+
+/* ───【自研】ToolsBuilder.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import me.rerere.ai.core.Tool
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.datastore.Settings

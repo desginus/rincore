@@ -10,6 +10,19 @@
  */
 package me.rerere.rikkahub
 
+
+/* ───【原版对齐】RouteActivity ────────────────────────────────────────
+ * 原版: 有同文件 (路由入口) | RinCore 差异 +1651 行 (全仓最大)
+ * 来源: 原版移植 + 大量自研扩展
+ * 功能: 单 Activity 路由宿主 — Screen 密封接口定义 (60+ 页面) +
+ *       导航栈管理 + 深链/通知跳转
+ * 特点: 自研 Screen 定义 (SettingPlugins/插件页/域管理页等) 全在此
+ * 逻辑: NavBackStack 手工栈 + sealed interface Screen 按页注册
+ * 与原版主要差异:
+ *   1. Screen 集合大幅扩展 (插件/域管理/工作区/定时任务等自研页)
+ *   2. 通知深链/会话恢复逻辑自研扩展
+ * ────────────────────────────────────────────────────────────────────*/
+
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.os.Build

@@ -1,5 +1,11 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+
+/* ───【原版对齐】Export | 差异 +290 行
+ * 来源: 原版移植 + 自研 (导出格式扩展)
+ * 功能: 会话导出 (图片/文本/Markdown)
+ * 差异: 导出格式与样式自研调整
+ * ───────────────────────────────────────────────────────────────*/
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri

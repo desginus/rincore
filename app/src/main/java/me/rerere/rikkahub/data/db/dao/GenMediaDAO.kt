@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.data.db.dao
 
+
 import androidx.paging.PagingSource
 import androidx.room.Dao
 import androidx.room.Insert

@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.data.db.migrations
 
+
 import android.util.Log
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase

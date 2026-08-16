@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.ai.completion
 
+
 internal class WorkspaceIgnoreMatcher private constructor(
     private val rules: List<Rule> = DEFAULT_RULES,
 ) {

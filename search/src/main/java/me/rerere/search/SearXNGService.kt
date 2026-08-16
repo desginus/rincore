@@ -1,5 +1,9 @@
 package me.rerere.search
 
+
+/* ───【原版对齐】SearXNGService.kt | 差异 ±2 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import android.util.Log
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable

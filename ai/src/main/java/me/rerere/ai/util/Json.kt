@@ -1,5 +1,6 @@
 package me.rerere.ai.util
 
+
 import kotlinx.serialization.json.Json
 
 @PublishedApi

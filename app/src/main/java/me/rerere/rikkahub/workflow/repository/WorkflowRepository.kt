@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.workflow.repository
 
+
+/* ───【自研】WorkflowRepository.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import me.rerere.rikkahub.workflow.db.WorkflowDao

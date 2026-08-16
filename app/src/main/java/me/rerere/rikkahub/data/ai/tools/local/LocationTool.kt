@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.ai.tools.local
 
+
+/* ───【自研】LocationTool.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context

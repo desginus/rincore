@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.workflow.model
 
+
+/* ───【自研】TriggerSpec.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 

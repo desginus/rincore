@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.service
 
+
+/* ───【自研】MediaPlaybackService.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent

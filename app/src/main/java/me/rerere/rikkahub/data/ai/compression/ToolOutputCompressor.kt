@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.ai.compression
 
+
+/* ───【自研】ToolOutputCompressor.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 /** 工具名搜索判定 (v3.6.42 精简: 仅保留 isSearchTool, GenerationHandler 在用) */
 object ToolOutputCompressor {
 

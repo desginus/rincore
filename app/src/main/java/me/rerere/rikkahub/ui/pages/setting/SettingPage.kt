@@ -1,5 +1,11 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+
+/* ───【原版对齐】SettingPage | 差异 +315 行
+ * 来源: 原版移植 + 自研 (能力模块/插件入口/域管理等自研入口)
+ * 功能: 设置主页 (分组导航)
+ * 差异: 能力模块 (MCP/Skills/插件/内置工具)、域管理入口为自研
+ * ───────────────────────────────────────────────────────────────*/
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.widget.Toast

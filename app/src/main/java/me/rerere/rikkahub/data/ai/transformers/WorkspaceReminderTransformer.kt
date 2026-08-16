@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.ai.transformers
 
+
+/* ───【原版对齐】WorkspaceReminderTransformer.kt | 差异 ±7 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart

@@ -1,5 +1,11 @@
 package me.rerere.rikkahub.ui.components.ai
 
+
+/* ───【原版对齐】FilesPicker | 差异 +321 行
+ * 来源: 原版移植 + 自研 (工作区文件选择)
+ * 功能: 附件/文件选择器
+ * 差异: 工作区文件源接入, 选择与预览逻辑扩展
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource

@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.costguards
 
+
+/* ───【自研】TokenBudgetTracker.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import me.rerere.ai.core.TokenUsage
 import me.rerere.rikkahub.data.model.Conversation
 

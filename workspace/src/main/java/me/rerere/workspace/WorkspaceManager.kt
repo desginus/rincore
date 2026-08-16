@@ -1,5 +1,9 @@
 package me.rerere.workspace
 
+
+/* ───【原版对齐】WorkspaceManager.kt | 差异 ±27 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream

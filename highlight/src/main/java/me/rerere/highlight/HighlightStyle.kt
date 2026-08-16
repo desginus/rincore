@@ -1,5 +1,9 @@
 package me.rerere.highlight
 
+
+/* ───【原版对齐】HighlightStyle.kt | 差异 ±0 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle

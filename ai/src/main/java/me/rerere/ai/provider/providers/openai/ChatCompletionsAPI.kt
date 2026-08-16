@@ -9,6 +9,22 @@
  */
 package me.rerere.ai.provider.providers.openai
 
+
+/* ───【原版对齐】ChatCompletionsAPI ────────────────────────────────────
+ * 原版: 有同文件 | RinCore 差异 +338 行
+ * 来源: 原版移植 + v2.9.8 SSE 重试移植 + 自研
+ * 功能: Chat Completions 流式主通道 (DeepSeek/OpenAI/OpenCode 全走此)
+ * 特点: 1. SSE 未收数据自动重试 5 次指数退避 (v2.9.8 移植);
+ *        2. watchdog 只日志不动作; 3. buffer UNLIMITED (丢 delta
+ *        即缺字, #1295); 4. grok 流式完成判断 (usage/cost 行即完成,
+ *        v3.6.78 — OpenCode Zen grok 不发 [DONE]/stop)
+ * 逻辑: callbackFlow + okhttp3.sse EventSource; 请求体零改动原则
+ * 与原版主要差异:
+ *   1. SSE 重试/watchdog (原版无)
+ *   2. grok 通道完成判断 (原版只认 [DONE])
+ *   3. 报错带请求体摘要 (REQ=, v3.6.78)
+ * ────────────────────────────────────────────────────────────────────*/
+
 import java.io.IOException
 import android.util.Log
 import kotlinx.coroutines.Dispatchers

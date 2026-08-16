@@ -1,5 +1,6 @@
 package me.rerere.ai.registry
 
+
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.ModelAbility
 

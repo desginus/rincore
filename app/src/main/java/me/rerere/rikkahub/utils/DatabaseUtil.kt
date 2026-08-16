@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.utils
 
+
 import android.database.CursorWindow
 import android.util.Log
 

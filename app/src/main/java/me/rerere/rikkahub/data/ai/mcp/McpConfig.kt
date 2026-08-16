@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.ai.mcp
 
+
+/* ───【原版对齐】McpConfig.kt | 差异 ±17 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import me.rerere.ai.core.InputSchema

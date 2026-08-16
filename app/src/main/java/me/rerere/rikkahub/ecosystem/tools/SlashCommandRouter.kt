@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ecosystem.tools
 
+
+/* ───【自研】SlashCommandRouter.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart

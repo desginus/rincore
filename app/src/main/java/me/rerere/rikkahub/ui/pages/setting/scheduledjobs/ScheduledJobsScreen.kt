@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.setting.scheduledjobs
 
+
+/* ───【自研】ScheduledJobsScreen.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box

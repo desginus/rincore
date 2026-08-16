@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.data.ai.mcp
 
+
 import android.content.Context
 import android.content.Intent
 import androidx.browser.customtabs.CustomTabsIntent

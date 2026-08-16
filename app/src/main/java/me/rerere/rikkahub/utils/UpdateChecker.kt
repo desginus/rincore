@@ -1,5 +1,10 @@
 package me.rerere.rikkahub.utils
 
+
+/* ───【原版对齐】UpdateChecker | 差异 +68 行
+ * 来源: 原版移植 + 自研 (更新检测调整)
+ * 差异: 更新源与提示策略自研调整
+ * ───────────────────────────────────────────────────────────────*/
 import android.app.DownloadManager
 import android.content.Context
 import android.os.Environment

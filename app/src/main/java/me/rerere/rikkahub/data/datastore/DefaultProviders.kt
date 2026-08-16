@@ -1,5 +1,10 @@
 package me.rerere.rikkahub.data.datastore
 
+
+/* ───【原版对齐】DefaultProviders | 差异 +205 行
+ * 来源: 原版移植 + 自研 (提供商集合扩展)
+ * 差异: 自研提供商定义 (OpenCode Zen/grok 等) 与图标匹配
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.ui.res.stringResource

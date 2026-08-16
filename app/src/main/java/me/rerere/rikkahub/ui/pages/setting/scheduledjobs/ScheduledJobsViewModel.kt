@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.setting.scheduledjobs
 
+
+/* ───【自研】ScheduledJobsViewModel.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers

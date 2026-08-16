@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.components.ai
 
+
+/* ───【原版对齐】ChatInput.kt | 差异 ±45 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 import androidx.compose.animation.AnimatedVisibility

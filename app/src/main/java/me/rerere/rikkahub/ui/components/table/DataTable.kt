@@ -2,6 +2,7 @@
 
 package me.rerere.rikkahub.ui.components.table
 
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border

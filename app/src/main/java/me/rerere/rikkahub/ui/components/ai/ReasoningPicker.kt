@@ -1,5 +1,12 @@
 package me.rerere.rikkahub.ui.components.ai
 
+
+/* ───【原版对齐】ReasoningPicker | 差异 +68 行
+ * 来源: 原版移植 + 自研 (MAX 档 + 简化)
+ * 功能: 推理程度选择器
+ * 差异: 1. 自研 MAX 档灯泡呼吸闪烁 (v3.6.70-72);
+ *        2. 2.4.10 移植移除底部刻度 (v3.6.97 d1e8effc)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat

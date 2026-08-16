@@ -1,5 +1,11 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+
+/* ───【原版对齐】ChatVM | 差异 +56 行
+ * 来源: 原版移植 + 自研 (settings 投影)
+ * 功能: 聊天页 ViewModel
+ * 差异: enableWebSearch/currentChatModel 投影与自研状态
+ * ───────────────────────────────────────────────────────────────*/
 import android.app.Application
 import android.content.Context
 import androidx.compose.runtime.Composable

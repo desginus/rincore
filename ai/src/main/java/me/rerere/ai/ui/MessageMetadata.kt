@@ -1,5 +1,9 @@
 package me.rerere.ai.ui
 
+
+/* ───【原版对齐】MessageMetadata.kt | 差异 ±42 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject

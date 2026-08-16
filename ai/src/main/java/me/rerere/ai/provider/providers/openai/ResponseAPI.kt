@@ -1,5 +1,19 @@
 package me.rerere.ai.provider.providers.openai
 
+
+/* ───【原版对齐】ResponseAPI ──────────────────────────────────────────
+ * 原版: 有同文件 | RinCore 差异 +600 行
+ * 来源: 原版移植 + 自研 (DeepSeek 明文分支 + 加密推理去重)
+ * 功能: OpenAI Responses API 流式通道 (与 ChatCompletionsAPI 双通道)
+ * 特点: 1. DeepSeek 官方明文 content 分支 (reasoning_text —
+ *         summary/encrypted_content 不支持); 2. 加密推理存在时不重发
+ *         明文 (2.4.10 移植 0c52b62b); 3. SSE 重试机制 (v2.9.8 移植)
+ * 逻辑: 与 ChatCompletionsAPI 同步维护, 禁止两文件行为漂移
+ * 与原版主要差异:
+ *   1. supportsReasoningSummary 双分支 (原版仅 summary 单结构)
+ *   2. SSE 断流重试/watchdog (原版无)
+ * ────────────────────────────────────────────────────────────────────*/
+
 import android.util.Log
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch

@@ -1,5 +1,9 @@
 package me.rerere.ai.util
 
+
+/* ───【原版对齐】ErrorParser.kt | 差异 ±5 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement

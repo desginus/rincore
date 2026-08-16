@@ -1,5 +1,12 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+
+/* ───【原版对齐】SettingMcpPage | 差异 +198 行
+ * 来源: 原版移植 + 自研 (STDIO workspace 分支)
+ * 功能: MCP 服务器管理页 (SSE/StreamableHTTP/STDIO)
+ * 差异: STDIO 分支 (viaWorkspace 配置)、OAuth 状态、传输类型
+ *       教堂窗对齐 (v3.6.90 短标签)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
