@@ -269,9 +269,14 @@ data class PluginInfo(
                 val bridgeKey = "${safeName}|${mcpDef.command}"
                 if (bridgeKey in registeredBridgeCommands) return@forEach
                 val settings = settingsStore.settingsFlow.value
+                // v3.6.119: settings 已有同名插件服务器时复用 id — 修复: 此前
+                // 每次 App 启动 addClient 都用新随机 id, settings.mcpServers 与
+                // assistant 白名单持续增长, 请求体前缀逐次变化 → 缓存概率断裂
+                val existingId = settings.mcpServers
+                    .firstOrNull { it.commonOptions.name == "plugin__${safeName}" }?.id
                 val workspaceId = settings.getCurrentAssistant().workspaceId?.toString() ?: ""
                 val config = me.rerere.rikkahub.data.ai.mcp.McpServerConfig.StdioTransportServer(
-                    id = kotlin.uuid.Uuid.random(),
+                    id = existingId ?: kotlin.uuid.Uuid.random(),
                     commonOptions = me.rerere.rikkahub.data.ai.mcp.McpCommonOptions(
                         name = "plugin__${safeName}",
                         enable = true,

@@ -35,6 +35,7 @@ object ClaudePluginParser {
         val hooks: List<HookDef>,
         val mcpServers: List<McpServerDef>,
         val agents: List<AgentDef>,
+        val mcpJsonContent: String = "", // v3.6.119: .mcp.json 原文 (安装落盘用)
     )
 
     @Serializable
@@ -66,7 +67,14 @@ object ClaudePluginParser {
         val mcpServers = parseMcpJson(pluginRoot ?: dir)
         val agents = parseAgents(pluginRoot ?: dir)
 
-        return ParsedPlugin(manifest, skills, commands, hooks, mcpServers, agents)
+        val mcpJsonRaw = listOf(pluginRoot, dir)
+            .filterNotNull()
+            .mapNotNull { root ->
+                File(root, ".mcp.json").takeIf { it.isFile }?.readText()
+            }
+            .firstOrNull() ?: ""
+
+        return ParsedPlugin(manifest, skills, commands, hooks, mcpServers, agents, mcpJsonRaw)
     }
 
     /**

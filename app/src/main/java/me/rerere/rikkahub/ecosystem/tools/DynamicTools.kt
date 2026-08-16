@@ -326,6 +326,10 @@ object DynamicTools {
                     cmdDir.mkdirs()
                     File(cmdDir, "${cmd.name}.md").writeText(cmd.content)
                 }
+                // v3.6.119: .mcp.json 落盘 — 修复: 安装器此前丢弃插件的 MCP 配置
+                if (plugin.mcpJsonContent.isNotBlank()) {
+                    File(targetDir, ".mcp.json").writeText(plugin.mcpJsonContent)
+                }
                 // v3.6.118: 写 plugin.json 元数据 + 刷新插件列表 — 修复: 此前
                 // installFromParsed 从未被调用, plugin.json 从未写入, 插件页恒空
                 me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry
