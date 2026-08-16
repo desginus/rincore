@@ -170,6 +170,100 @@ data class PluginInfo(
         }.onFailure { Log.e(TAG, "migrate legacy skills failed", it) }
     }
 
+    // v3.6.112: 插件身份保留 — 插件技能经 plugin__<插件名>__<技能> 工具读取
+    // (插件域), 不再拆包成 skill__ 工具混入技能系统
+    private val pluginSkillToolsCache = mutableMapOf<String, List<me.rerere.ai.core.Tool>>()
+
+    fun createPluginSkillTools(): List<me.rerere.ai.core.Tool> {
+        val result = mutableListOf<me.rerere.ai.core.Tool>()
+        for ((pluginName, skillsRoot) in getSkillRootsWithNames()) {
+            val safePluginName = pluginName.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+            skillsRoot.listFiles()
+                ?.filter { it.isDirectory && File(it, "SKILL.md").isFile }
+                ?.forEach { skillDir ->
+                    val skillName = skillDir.name
+                    val toolName = "plugin__${safePluginName}__${skillName}"
+                    val skillFile = File(skillDir, "SKILL.md")
+                    result.add(
+                        me.rerere.ai.core.Tool(
+                            name = toolName,
+                            description = runCatching {
+                                me.rerere.rikkahub.data.files.SkillFrontmatterParser
+                                    .parse(skillFile.readText())["description"] ?: ""
+                            }.getOrDefault("插件技能: $skillName (来自插件 $pluginName)"),
+                            parameters = {
+                                me.rerere.ai.core.InputSchema.Obj(
+                                    properties = kotlinx.serialization.json.buildJsonObject {
+                                        put(
+                                            "path",
+                                            kotlinx.serialization.json.buildJsonObject {
+                                                put("type", "string")
+                                                put("description", "技能目录内的相对文件路径 (可选, 留空返回 SKILL.md 正文)")
+                                            },
+                                        )
+                                    },
+                                    required = emptyList(),
+                                )
+                            },
+                            execute = { input ->
+                                val obj = input as? kotlinx.serialization.json.JsonObject
+                                val path = obj?.get("path")?.kotlinx.serialization.json.jsonPrimitive?.content
+                                val body = if (path.isNullOrBlank()) {
+                                    me.rerere.rikkahub.data.files.SkillFrontmatterParser.extractBody(skillFile.readText())
+                                } else {
+                                    val target = me.rerere.rikkahub.data.files.SkillPaths.resolveSkillFile(skillDir, path)
+                                        ?: return@Tool listOf(me.rerere.ai.ui.UIMessagePart.Text("Path '$path' is outside the skill directory"))
+                                    target.readText()
+                                }
+                                listOf(me.rerere.ai.ui.UIMessagePart.Text(body))
+                            },
+                        )
+                    )
+                }
+        }
+        return result
+    }
+
+    /** v3.6.112: 插件桥接 — .mcp.json 的 command 经 workspace 沙箱启动 (STDIO MCP),
+     *  工具注册为 mcp__plugin__<插件名>__<工具>。模仿 .plugins 插件系统的
+     *  ensureBridge 机制, 运行期 id 稳定, 重复调用不重启进程。 */
+    private val registeredBridgeCommands = mutableSetOf<String>()
+
+    suspend fun registerPluginBridges(
+        mcpManager: me.rerere.rikkahub.data.ai.mcp.McpManager,
+        settingsStore: me.rerere.rikkahub.data.datastore.SettingsStore,
+    ) {
+        val dir = pluginsDir ?: return
+        dir.listFiles()?.filter { it.isDirectory }?.forEach { pluginDir ->
+            val pluginName = readManifest(pluginDir)?.name?.ifBlank { null } ?: pluginDir.name
+            val safeName = pluginName.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+            runCatching {
+                ClaudePluginParser.parseMcpJson(pluginDir)
+            }.getOrDefault(emptyList()).forEach { mcpDef ->
+                if (mcpDef.command.isBlank()) return@forEach
+                val bridgeKey = "${safeName}|${mcpDef.command}"
+                if (bridgeKey in registeredBridgeCommands) return@forEach
+                val settings = settingsStore.settingsFlow.value
+                val workspaceId = settings.getCurrentAssistant().workspaceId?.toString() ?: 
+                val config = me.rerere.rikkahub.data.ai.mcp.McpConfig.StdioTransportServer(
+                    id = kotlin.uuid.Uuid.random(),
+                    commonOptions = me.rerere.rikkahub.data.ai.mcp.McpCommonOptions(
+                        name = "plugin__${safeName}",
+                        enable = true,
+                    ),
+                    command = mcpDef.command,
+                    viaWorkspace = true,
+                    workspaceId = workspaceId,
+                )
+                runCatching {
+                    mcpManager.addClient(config)
+                    registeredBridgeCommands.add(bridgeKey)
+                    Log.i(TAG, "plugin bridge registered: $safeName — ${mcpDef.command}")
+                }.onFailure { Log.e(TAG, "bridge failed: $safeName: ${it.message}") }
+            }
+        }
+    }
+
     fun getInstalledMcpServers(): List<ClaudePluginParser.McpServerDef> {
         val dir = pluginsDir ?: return emptyList()
         return dir.listFiles()

@@ -150,15 +150,18 @@ class RikkaHubApp : Application() {
                 get<WorkspaceRepository>().checkIntegrity()
                 // v3.6.85: DSH 插件生态 — 刷新 workspace 的 DSH 技能根
                 get<WorkspaceRepository>().refreshDshSkillRoots(get())
-                // v3.6.110: ClawHub 插件技能根同步 (前缀 <插件名>__ 隔离) +
-                // 迁移 v3.6.109 误落 /skills 的插件技能回插件目录
+                // v3.6.112: 插件与技能彻底隔开 — 不再把插件 skills 拆包进技能系统。
+                // 插件技能经 plugin__<插件名>__<技能> 工具读取 (插件域), 桥接经
+                // STDIO MCP (mcp__plugin__<插件名>__<工具>)。仅迁移 v3.6.109 误落
+                // /skills 的历史残留回插件目录。
                 runCatching {
                     val skillManager = get<me.rerere.rikkahub.data.files.SkillManager>()
                     me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry
                         .migrateLegacySkills(skillManager.getSkillsDir())
+                    // 桥接注册: 插件 .mcp.json 的 command 经 workspace 启动 (STDIO MCP)
                     me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry
-                        .syncSkillRoots(skillManager)
-                }.onFailure { Log.e(TAG, "claw skill roots failed", it) }
+                        .registerPluginBridges(get(), get())
+                }.onFailure { Log.e(TAG, "claw plugin setup failed", it) }
                 // v3.6.86: 插件生态 — 扫描 .plugins 并注册桥接 (技能 + STDIO MCP)
                 get<me.rerere.rikkahub.data.plugin.PluginManager>().refresh()
             }.onFailure {

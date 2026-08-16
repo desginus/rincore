@@ -106,6 +106,12 @@ fun buildAssistantToolPool(
         val pluginTools = pluginManager?.createPluginTools() ?: emptyList()
         if (pluginTools.isNotEmpty()) addAll(pluginTools)
     }
+    // v3.6.112: ClawHub 插件 (ecosystem/plugins) — 插件技能工具
+    // plugin__<插件名>__<技能> 注入 (插件域, 不拆包进技能系统)
+    runCatching {
+        val clawTools = me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry.createPluginSkillTools()
+        if (clawTools.isNotEmpty()) addAll(clawTools)
+    }
     // AI 域管理工具 — 单一源头: list/search/move 的 execute 实时构建
     // 与模型侧完全同源的完整工具池 (此前 knownToolNames 默认空集 → List
     // Domains 返回 0 / Search Domains 分类空 — v3.5.43 根治)

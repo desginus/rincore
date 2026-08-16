@@ -192,10 +192,13 @@ class ChatService(
             skillsRoot = skillManager.getSkillsDir().absolutePath,
             settingsStore = settingsStore,
         )
-        // v3.6.110: 插件技能落盘后立即同步技能根 (注册链热生效, 不等重启)
+        // v3.6.110/112: 插件安装后立即刷新插件列表 + 注册桥接 (热生效, 不等重启)
         me.rerere.rikkahub.ecosystem.tools.DynamicTools.onSkillsChanged = {
-            me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry
-                .syncSkillRoots(skillManager)
+            me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry.refresh()
+            appScope.launch {
+                me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry
+                    .registerPluginBridges(mcpManager, settingsStore)
+            }
         }
     }
 
