@@ -255,7 +255,8 @@ object DynamicTools {
                     downloadUrl != null -> {
                         val bytes = fetchUrlAsBytes(downloadUrl)
                         if (bytes == null) return@Tool listOf(UIMessagePart.Text("Download failed"))
-                        val tmpFile = File(ecosystemWorkspaceRoot, "_plugin_download.zip")
+                        // v3.6.93: 唯一临时名 — 固定名会覆盖上次下载 (误装旧包)
+                        val tmpFile = File(ecosystemWorkspaceRoot, "_plugin_download_${System.currentTimeMillis()}.zip")
                         tmpFile.writeBytes(bytes.first)
                         tmpFile
                     }
@@ -264,7 +265,13 @@ object DynamicTools {
 
                 val parsed = ClaudePluginParser.parsePluginZip(fileToParse)
                 if (parsed == null) {
-                    return@Tool listOf(UIMessagePart.Text("Failed to parse plugin ZIP"))
+                    return@Tool listOf(
+                        UIMessagePart.Text(
+                            "Failed to parse plugin ZIP: 不是有效的插件包。" +
+                                "需要含 plugin.json / .claude-plugin/plugin.json 的 Claude Code 插件仓库 ZIP，" +
+                                "任意仓库源码 ZIP 不会被安装。"
+                        )
+                    )
                 }
 
                 val (name, plugin) = parsed

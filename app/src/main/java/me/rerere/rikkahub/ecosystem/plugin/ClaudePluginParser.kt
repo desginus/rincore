@@ -83,7 +83,13 @@ object ClaudePluginParser {
                 }
             }
             // 查找真正的插件根目录 (可能有嵌套)
-            val pluginDir = findPluginRoot(tempDir) ?: tempDir
+            // v3.6.93: 无 manifest 的 ZIP 明确判失败 — 此前退回解压根导致
+            // "假成功" (任意仓库 ZIP 都报安装成功, 内容恒为空)
+            val pluginDir = findPluginRoot(tempDir)
+            if (pluginDir == null) {
+                Log.e(TAG, "Not a valid plugin ZIP: no plugin.json/marketplace.json found in ${zipFile.name}")
+                return null
+            }
             val parsed = parsePluginDir(pluginDir)
             return Pair(pluginName, parsed)
         } catch (e: Exception) {
