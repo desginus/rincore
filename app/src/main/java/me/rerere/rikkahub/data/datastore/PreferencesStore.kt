@@ -642,6 +642,7 @@ data class Settings(
     val domainNameOverrides: Map<String, String> = emptyMap(), // 域名→自定义显示名称
     val hiddenDomains: Set<String> = emptySet(), // 用户隐藏的域（内置域不删除但可隐藏）
     val removedBuiltinDomains: Set<String> = emptySet(), // 用户删除的内置域预设
+    val exemptFromDomainTools: Set<String> = emptySet(), // 移出域管理的工具名集合 — 与框架工具一样始终注入请求体, 不并入域分类
     val classifierPrompt: String = "", // 工具自动分类提示词。空=使用默认
 ) {
     companion object {

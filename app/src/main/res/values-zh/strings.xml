@@ -763,7 +763,7 @@
   <string name="setting_mcp_page_tools">工具</string>
   <string name="setting_mcp_page_tools_unavailable_message">添加MCP Server时无法查看工具列表，请添加完后再来查看</string>
   <string name="setting_mcp_page_transport_type">传输类型</string>
-  <string name="setting_mcp_page_transport_type_desc">选择MCP服务器的传输协议类型</string>
+  <string name="setting_mcp_page_transport_type_desc">选择传输协议类型：HTTP（Streamable HTTP）、SSE、Stdio（本地进程桥接）</string>
   <string name="setting_mcp_page_url_label">URL</string>
   <string name="setting_model_page_chat_model">聊天模型</string>
   <string name="setting_model_page_chat_model_desc">全局默认的聊天模型</string>

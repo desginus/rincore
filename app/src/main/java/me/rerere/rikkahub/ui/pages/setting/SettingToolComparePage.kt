@@ -75,7 +75,8 @@ fun SettingToolComparePage(
     val router = remember(settings) {
         ToolRouter(
             settings.toolDomainOverrides, settings.customDomainDescriptions, settings.customDomains,
-            settings.customDomainKeywords, settings.domainNameOverrides, settings.hiddenDomains, settings.removedBuiltinDomains
+            settings.customDomainKeywords, settings.domainNameOverrides, settings.hiddenDomains, settings.removedBuiltinDomains,
+            exemptFromDomainTools = settings.exemptFromDomainTools,
         )
     }
     val view = remember(pool, settings) { router.unifiedDomainView(pool) }

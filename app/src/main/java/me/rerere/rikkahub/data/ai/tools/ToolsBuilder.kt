@@ -34,6 +34,11 @@ val FRAMEWORK_TOOL_SET = setOf(
     "mcp_connect", "clawhub_install", "clawhub_search", "plugin_install",
 )
 
+/** 动态框架集 — 静态框架工具 + 用户移出域管理的工具 (v3.6.90)。
+ *  豁免工具与框架工具同等行为: 始终注入请求体, 不并入域分类/统计。 */
+fun frameworkSetOf(settings: Settings): Set<String> =
+    FRAMEWORK_TOOL_SET + settings.exemptFromDomainTools
+
 /** 视图工具池 — 全量池排除框架工具 (统一口径: 帮助/List Domains/UI 同源) */
 fun viewPoolOf(pool: List<Tool>): List<Tool> = pool.filter { it.name !in FRAMEWORK_TOOL_SET }
 

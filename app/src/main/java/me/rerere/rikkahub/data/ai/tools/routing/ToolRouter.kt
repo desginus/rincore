@@ -37,7 +37,11 @@ class ToolRouter(
     private val domainNameOverrides: Map<String, String> = emptyMap(),
     internal val hiddenDomains: Set<String> = emptySet(),
     internal val removedBuiltinDomains: Set<String> = emptySet(),
+    internal val exemptFromDomainTools: Set<String> = emptySet(),
 ) {
+    /** 动态框架集 — 静态框架 + 用户移出域管理的工具 (v3.6.90) */
+    private fun frameworkSet(): Set<String> =
+        me.rerere.rikkahub.data.ai.tools.FRAMEWORK_TOOL_SET + exemptFromDomainTools
 
     // ═══════════ 1. 域模型 — 单一事实源 ═══════════
 
@@ -353,7 +357,7 @@ class ToolRouter(
         // 框架注入请求体但不占用户域计数; 用户域总数稳定 398)。
         // 框架工具仍 classified 在系统域 → 下钻可见 (系统域特例: 计数≠下钻)。
         val counts = classified.mapValues { (_, tools) ->
-            tools.count { it.name !in me.rerere.rikkahub.data.ai.tools.FRAMEWORK_TOOL_SET }
+            tools.count { it.name !in frameworkSet() }
         }
         val tree: MutableMap<String, MutableList<String>> = buildDomainTree(tools)
             .mapValues { it.value.toMutableList() }.toMutableMap()
@@ -487,8 +491,8 @@ class ToolRouter(
                             // v3.6.10: 与计数同口径 — 输出过滤框架工具 (帮助 subtree
                             // 已排除框架), 框架工具附注列出 (系统域可见性保留)
                             val allDirectTools = classified[finalName].orEmpty()
-                            val directTools = allDirectTools.filter { it.name !in me.rerere.rikkahub.data.ai.tools.FRAMEWORK_TOOL_SET }
-                            val frameworkToolsInDomain = allDirectTools.filter { it.name in me.rerere.rikkahub.data.ai.tools.FRAMEWORK_TOOL_SET }
+                            val directTools = allDirectTools.filter { it.name !in frameworkSet() }
+                            val frameworkToolsInDomain = allDirectTools.filter { it.name in frameworkSet() }
                             val frameworkNote = if (frameworkToolsInDomain.isNotEmpty()) {
                                 "\n另有系统框架工具 ${frameworkToolsInDomain.size} 个（${frameworkToolsInDomain.joinToString("、") { it.name }}，始终可直接调用）。"
                             } else ""
@@ -582,7 +586,7 @@ class ToolRouter(
         val view = unifiedDomainView(tools)
         return buildString {
             // v3.6.1: 池总数排除框架 (用户域计数 398, 框架工具不计)
-            val userToolCount = tools.count { it.name !in me.rerere.rikkahub.data.ai.tools.FRAMEWORK_TOOL_SET }
+            val userToolCount = tools.count { it.name !in frameworkSet() }
             appendLine("工具池共 $userToolCount 个工具（${view.classified.size} 个域）：")
             for ((root, subs) in view.tree) {
                 // 口径标注: 直接 X 个; 根域含子域时标注含子域共 Y 个

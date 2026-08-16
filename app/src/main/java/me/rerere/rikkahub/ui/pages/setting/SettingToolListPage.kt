@@ -51,7 +51,8 @@ fun SettingToolListPage(
     val router = remember(settings) {
         ToolRouter(settings.toolDomainOverrides, settings.customDomainDescriptions,
             settings.customDomains, settings.customDomainKeywords,
-            settings.domainNameOverrides, settings.hiddenDomains, settings.removedBuiltinDomains)
+            settings.domainNameOverrides, settings.hiddenDomains, settings.removedBuiltinDomains,
+            exemptFromDomainTools = settings.exemptFromDomainTools)
     }
 
     // 完整工具清单——与实际对话注入一致
@@ -135,6 +136,13 @@ fun SettingToolListPage(
                                         label = { Text(displayDomain, style = MaterialTheme.typography.labelSmall) },
                                         modifier = Modifier.height(24.dp)
                                     )
+                                    if (tool.name in settings.exemptFromDomainTools) {
+                                        AssistChip(
+                                            onClick = {},
+                                            label = { Text("已移出域管理", style = MaterialTheme.typography.labelSmall) },
+                                            modifier = Modifier.height(24.dp)
+                                        )
+                                    }
                                 }
                             }
                             Icon(HugeIcons.ArrowRight01, null, modifier = Modifier.size(16.dp))
@@ -153,6 +161,7 @@ fun SettingToolListPage(
             mutableStateOf(fullDomain)
         }
         var editDescText by remember(tool) { mutableStateOf(settings.toolDescriptionOverrides[tool.name] ?: tool.description) }
+        var exemptChecked by remember(tool) { mutableStateOf(tool.name in settings.exemptFromDomainTools) }
         AlertDialog(
             onDismissRequest = { selectedTool = null },
             title = { Text(tool.name) },
@@ -162,6 +171,18 @@ fun SettingToolListPage(
                     modifier = Modifier.verticalScroll(rememberScrollState())
                 ) {
                     Text("当前分类: ${moveTarget}", fontWeight = FontWeight.SemiBold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("移出域管理", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "开启后该工具不再并入工具域分类，与框架工具一样始终暴露在请求中，不参与域统计。",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(checked = exemptChecked, onCheckedChange = { exemptChecked = it })
+                    }
+                    HorizontalDivider()
                     OutlinedTextField(
                         value = editDescText,
                         onValueChange = { editDescText = it },
@@ -188,6 +209,10 @@ fun SettingToolListPage(
                     if (editDescText.isNotBlank() && editDescText != tool.description) dm[tool.name] = editDescText
                     else dm.remove(tool.name)
                     s = s.copy(toolDescriptionOverrides = dm)
+                    // v3.6.90: 移出域管理开关 — 豁免集增减
+                    val em = s.exemptFromDomainTools.toMutableSet()
+                    if (exemptChecked) em.add(tool.name) else em.remove(tool.name)
+                    s = s.copy(exemptFromDomainTools = em)
                     vm.updateSettings(s)
                     selectedTool = null
                 }) { Text("保存") }

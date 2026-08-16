@@ -623,8 +623,10 @@ private fun McpCommonOptionsConfigure(
                 Text(stringResource(R.string.setting_mcp_page_transport_type_desc))
             }
         ) {
+            // v3.6.90: 短标签 — "Streamable HTTP" 在教堂窗三段均分宽度下折成两行
+            // 导致三段不对齐, 改为 HTTP/SSE/Stdio 严格单行对齐
             val transportTypes = listOf(
-                "Streamable HTTP",
+                "HTTP",
                 "SSE",
                 "Stdio"
             )

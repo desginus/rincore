@@ -140,10 +140,11 @@ class GenerationHandler(
             conversationLoadedDomains?.let { addAll(it) }
         }
 
-        // 分离框架工具与用户域工具
-        val domainTools = tools.filter { it.name !in FRAMEWORK_TOOL_SET }
-        val frameworkTools = tools.filter { it.name in FRAMEWORK_TOOL_SET }
-        Log.i(TAG, "frameworkToolSet(${FRAMEWORK_TOOL_SET.size}): ${FRAMEWORK_TOOL_SET.sorted()}")
+        // 分离框架工具与用户域工具 (v3.6.90: 含用户移出域管理的豁免工具)
+        val exemptSet = settings.exemptFromDomainTools
+        val domainTools = tools.filter { it.name !in FRAMEWORK_TOOL_SET && it.name !in exemptSet }
+        val frameworkTools = tools.filter { it.name in FRAMEWORK_TOOL_SET || it.name in exemptSet }
+        Log.i(TAG, "frameworkToolSet(${FRAMEWORK_TOOL_SET.size}+${exemptSet.size}): ${(FRAMEWORK_TOOL_SET + exemptSet).sorted()}")
         Log.i(TAG, "frameworkTools found: ${frameworkTools.map { it.name }.sorted()}")
 
         // Skill 已拆分为独立工具 (skill_<name>)，无需集中提取 skillListText
@@ -168,6 +169,7 @@ class GenerationHandler(
                 domainNameOverrides = currentSettings.domainNameOverrides,
                 hiddenDomains = currentSettings.hiddenDomains,
                 removedBuiltinDomains = currentSettings.removedBuiltinDomains,
+                exemptFromDomainTools = currentSettings.exemptFromDomainTools,
             )
             // 每步刷新 MCP 工具 (支持 mcp_connect 运行时添加) — 合并到域池走懒加载,
             // 不直接注入函数定义 (813af56d 移植: Token 65K → ~6K)

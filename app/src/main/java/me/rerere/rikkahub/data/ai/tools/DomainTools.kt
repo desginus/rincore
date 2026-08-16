@@ -83,6 +83,7 @@ private fun createSearchDomainsTool(
             domainNameOverrides = settings.domainNameOverrides,
             hiddenDomains = settings.hiddenDomains,
             removedBuiltinDomains = settings.removedBuiltinDomains,
+            exemptFromDomainTools = settings.exemptFromDomainTools,
         )
         // 视图口径统一 (v3.5.53): 过滤框架工具 — 与帮助/UI 完全一致
         val toolList = toolPoolProvider()
@@ -402,6 +403,7 @@ private fun deleteDomainTool(
             domainNameOverrides = settings.domainNameOverrides,
             hiddenDomains = settings.hiddenDomains,
             removedBuiltinDomains = settings.removedBuiltinDomains,
+            exemptFromDomainTools = settings.exemptFromDomainTools,
         )
         // 视图口径统一 (v3.5.53): 过滤框架工具 — 与帮助/UI 完全一致
         val tools = toolPoolProvider()
