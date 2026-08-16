@@ -12,6 +12,16 @@ description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日�
 - **工具执行无超时**：3.5.9 withTimeout 60s 兜底——工具挂起不永久阻塞生成
 - **缓存"卡-跳-线性"**：DeepSeek 服务端磁盘缓存机制（构建延迟秒级+固定间隔切分+SWA 独立单元）——客户端不可控，已入库 decisions D2
 
+## v3.6.88-89（插件独立系统，2026-08-16）
+
+- **v3.6.89**（005f5e21）：SettingPluginsPage onBack 参数缺失编译修复
+- **v3.6.88**（f8665f20）：插件从 Skill 下单拎出来，独立系统
+  - 设置「能力模块」Agent Skills 之后、内置工具之前新增「插件」入口（SettingPluginsPage：列表/状态徽标/刷新/空状态说明）
+  - 插件技能脱离 Skill 列表：不再经 SkillManager 注入，独立工具 plugin__<名>__skill
+  - 工具域新增「插件」域：plugin__ / mcp__plugin__ 前缀统一归插件域
+  - PluginManager 扩展：hasSkill/pluginsUiSnapshot（McpStatus→中文映射）/createPluginTools 全量注入
+  - 注意：插件技能工具命名从 skill__plugin__ 改为 plugin__<名>__skill，tools 数组一次性重建缓存
+
 ## v3.6.86-87（插件格式，2026-08-16）
 
 - **v3.6.87**（572ee78a）：Uuid.fromString 不存在编译失败修复 — 桥接 id 改 Uuid.random + 运行期缓存（registeredBridges/bridgeIds 保证重复 refresh 不重启进程）
