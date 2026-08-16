@@ -86,6 +86,13 @@ fun SkillsPage() {
     var showAddDialog by rememberSaveable { mutableStateOf(false) }
     var showImportDialog by rememberSaveable { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<SkillMetadata?>(null) }
+    // v3.6.104: 技能搜索 — 快速查询特定 Skill
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    val filteredSkills = remember(skills, searchQuery) {
+        val q = searchQuery.trim().lowercase()
+        if (q.isEmpty()) skills
+        else skills.filter { it.name.lowercase().contains(q) || it.description.lowercase().contains(q) }
+    }
     val fileImportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -126,7 +133,23 @@ fun SkillsPage() {
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (skills.isEmpty()) {
+            // v3.6.104: 搜索框 (页面上方)
+            item {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("搜索技能（名称 / 描述）") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    leadingIcon = { Icon(HugeIcons.GlobalSearch, null, Modifier.size(16.dp)) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) { Icon(HugeIcons.Cancel01, null) }
+                        }
+                    },
+                )
+            }
+            if (filteredSkills.isEmpty()) {
                 item {
                     Column(
                         modifier = Modifier
@@ -155,7 +178,7 @@ fun SkillsPage() {
                 }
             }
 
-            items(skills, key = { it.skillDir.absolutePath }) { skill ->
+            items(filteredSkills, key = { it.skillDir.absolutePath }) { skill ->
                 val enabled = vm.isSkillEnabled(skill.name)
                 SkillCard(
                     skill = skill,

@@ -283,6 +283,12 @@ item(
                         headlineContent = { Text("插件") },
                     )
 item(
+                        onClick = { showDomainPage = true },
+                        leadingContent = { Icon(HugeIcons.Settings03, null) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_domain_management_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_domain_management)) },
+                    )
+item(
                         onClick = { showBuiltinToolsPage = true },
                         leadingContent = { Icon(HugeIcons.Settings03, null) },
                         supportingContent = { Text("精确到工具 ID 与数量的全量清单（核对工具总数）") },
@@ -290,19 +296,15 @@ item(
                     )
                 }
             }
-            item("extensionsTools") {
+            // v3.6.104: 设置页重排 — 原「扩展与工具」+「系统」+「其他功能」
+            // 重组为两个分区: 任务自动化 (工作流/定时任务/闹钟) +
+            // 数据与日志 (备份/聊天存储/运行日志/更多设置)
+            item("automation") {
                 CardGroup(
                     modifier = Modifier.padding(horizontal = 8.dp),
-                    title = { Text("扩展与工具") },
+                    title = { Text("任务自动化") },
                 ) {
-                    // v3.6.16: 扩展管理已移至「高级功能」统一入口
                     item(
-                        onClick = { showDomainPage = true },
-                        leadingContent = { Icon(HugeIcons.Settings03, null) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_domain_management_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_domain_management)) },
-                    )
-                                        item(
                         onClick = { navController.navigate(Screen.Workflows) },
                         leadingContent = { Icon(HugeIcons.AiEditing, null) },
                         supportingContent = { Text("触发器 + 条件 + 动作序列") },
@@ -314,23 +316,22 @@ item(
                         supportingContent = { Text(stringResource(R.string.setting_page_scheduled_jobs_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_scheduled_jobs)) },
                     )
-                }
-            }
-            item("dataSettings") {
-                val storageState by produceState(-1 to 0L) {
-                    value = filesManager.countChatFiles()
-                }
-                CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                    title = { Text("系统") }, // v3.6.16: 权限已移入高级功能
-                ) {
-// v3.6.16: 权限管理已移至「高级功能」统一入口
                     item(
                         onClick = { navController.navigate(Screen.SettingAlarms) },
                         leadingContent = { Icon(HugeIcons.Clock02, null) },
                         supportingContent = { Text("设备闹钟") },
                         headlineContent = { Text("闹钟") },
                     )
+                }
+            }
+            item("dataAndLogs") {
+                val storageState by produceState(-1 to 0L) {
+                    value = filesManager.countChatFiles()
+                }
+                CardGroup(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    title = { Text("数据与日志") },
+                ) {
                     item(
                         onClick = { navController.navigate(Screen.Backup) },
                         leadingContent = { Icon(HugeIcons.Database02, null) },
@@ -361,18 +362,11 @@ item(
                         supportingContent = { Text("查看最近一条消息的完整运行流程") },
                         headlineContent = { Text("运行日志") },
                     )
-                }
-            }
-            // ── 其他功能 (v3.6.17: 原「高级功能」— 挪至底部, 低调不显眼) ──
-            item("other") {
-                CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                ) {
                     item(
                         onClick = { showAdvancedPage = true },
                         leadingContent = { Icon(HugeIcons.Wrench01, null) },
                         supportingContent = { Text("更多设置项") },
-                        headlineContent = { Text("其他功能") },
+                        headlineContent = { Text("更多设置") },
                     )
                 }
             }

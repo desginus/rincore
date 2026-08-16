@@ -194,7 +194,7 @@ class ToolRouter(
     fun classifyByName(name: String, description: String): String {
         // 0. 元工具不分类
         if (name in metaToolNames) {
-            return if (isValidDomain("系统")) "系统" else "方法域"
+            return if (isValidDomain("系统")) "系统" else "未分类"
         }
 
         val valid = validDomainLabels
@@ -218,26 +218,26 @@ class ToolRouter(
         //    归根域后 layer1 恒定为「技能」条目 — 技能工具经 invoke_tools("技能")
         //    列出; 挂载的技能经 override 优先归挂载域 (第 1 步已处理)。
         if (name.startsWith("skill__") || name.startsWith("skill_") || name.startsWith("skill:")) {
-            return if (isValidDomain("技能")) "技能" else "方法域"
+            return if (isValidDomain("技能")) "技能" else "未分类"
         }
         if (name == "use_skill") {
-            return if (isValidDomain("技能")) "技能" else "方法域"
+            return if (isValidDomain("技能")) "技能" else "未分类"
         }
 
         // 2.5 v3.6.88: 插件工具 — 统一归「插件」域 (独立插件系统)
         //   plugin__<名>__skill 插件技能 / mcp__plugin__<名>__<工具> 桥接工具
         if (name.startsWith("plugin__") || name.startsWith("mcp__plugin__")) {
-            return if (isValidDomain("插件")) "插件" else "方法域"
+            return if (isValidDomain("插件")) "插件" else "未分类"
         }
 
         // 3. 系统级工具 — 前缀精确匹配
         if (SYSTEM_TOOL_PREFIXES.any { name.startsWith(it) }) {
-            return if (isValidDomain("系统")) "系统" else "方法域"
+            return if (isValidDomain("系统")) "系统" else "未分类"
         }
 
         // 3.5 Memory 工具
         if (name == "memory_tool") {
-            return if (isValidDomain("对话工具/记忆")) "对话工具/记忆" else "方法域"
+            return if (isValidDomain("对话工具/记忆")) "对话工具/记忆" else "未分类"
         }
 
         // 4. MCP 工具 — 按服务器整体归类 (v3.5.55): 同服务器工具同域, 不拆散。
@@ -256,7 +256,7 @@ class ToolRouter(
                     dom.label !in excluded && root !in excluded &&
                         dom.matchKeywords.any { serverText.contains(it) }
                 }?.label
-            return serverDomain ?: if (isValidDomain("未分类")) "未分类" else "方法域"
+            return serverDomain ?: if (isValidDomain("未分类")) "未分类" else "未分类"
         }
 
         // 5. 关键词匹配 (v3.5.56 收紧): 仅工具名称参与 — 描述里的 search/query/
@@ -281,7 +281,7 @@ class ToolRouter(
             .sortedByDescending { it.normalizedFullPath().count { c -> c == '/' } }
             .firstOrNull()?.normalizedFullPath()
         // 未成功分类的工具 → 统一落入「未分类」父域 (用户决策 v3.5.40)
-        return customResult ?: if (isValidDomain("未分类")) "未分类" else "方法域"
+        return customResult ?: if (isValidDomain("未分类")) "未分类" else "未分类"
     }
 
     // v3.6.18: 同一工具池实例复用分类结果 — getDomainTools 每域调用一次
@@ -605,6 +605,12 @@ class ToolRouter(
             }
             appendLine()
             appendLine("调 `invoke_tools(\"域名称\")` 加载该域工具；工具加载后直接调用，跨轮保持。")
+            // v3.6.104: 生态引导 — 插件/MCP/Skill 安装方向 (框架工具已有安装入口, 此处只做说明)
+            appendLine()
+            appendLine("生态能力安装引导：")
+            appendLine("- 插件: 用 plugin_install 工具安装 Claude Code 插件 (zipFile=设备 ZIP 路径, 或 url=可下载直链, 需含 plugin.json/.claude-plugin/plugin.json)。workspace 文件区 .plugins/<插件名>/ 目录格式的插件重启后自动注册。")
+            appendLine("- MCP: 用 mcp_connect 工具动态连接服务器 {name, transport: sse|streamable_http|stdio, url 或 command}; stdio 命令经 workspace 沙箱启动。")
+            appendLine("- Skill: 经 invoke_tools(\"技能\") 查看技能列表, skill__<名> 工具直接加载使用。")
         }
     }
 
