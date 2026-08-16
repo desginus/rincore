@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.plugin.PluginManager
 import org.koin.compose.koinInject
 
@@ -147,11 +148,16 @@ fun SettingPluginsPage(
                                             } else {
                                                 cur - "plugin__${plugin.name}__skill"
                                             }
-                                            settingsStore.update { it.copy(
-                                                assistants = it.assistants.map { a ->
-                                                    if (a.id == it.getCurrentAssistant().id) a.copy(forcedSkills = newSet) else a
+                                            scope.launch {
+                                                settingsStore.update { s ->
+                                                    val curAssistant = s.getCurrentAssistant()
+                                                    s.copy(
+                                                        assistants = s.assistants.map { a ->
+                                                            if (a.id == curAssistant.id) a.copy(forcedSkills = newSet) else a
+                                                        }
+                                                    )
                                                 }
-                                            ) }
+                                            }
                                         },
                                     )
                                 }
