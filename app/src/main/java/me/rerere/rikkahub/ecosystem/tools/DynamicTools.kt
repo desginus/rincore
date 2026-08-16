@@ -302,11 +302,16 @@ object DynamicTools {
                 val targetDir = File(ecosystemWorkspaceRoot, "plugins/$name")
                 targetDir.mkdirs()
 
-                // 安装 skills
+                // 安装 skills — v3.6.109: 直接落技能目录 (沙箱 /skills 挂载可见,
+                // 技能工具 skill__<插件名>__<技能> 下一轮自动生成), 不再只落
+                // ecosystem/plugins 私有目录 (沙箱不可见 = 装上看不到的根因)
+                val pluginBaseName = plugin.manifest.name.ifBlank { name }
+                    .replace(Regex("[^a-zA-Z0-9_-]"), "_")
                 plugin.skills.forEach { skill ->
-                    val skillDir = File(targetDir, "skills/${skill.name}")
+                    val skillName = "${pluginBaseName}__${skill.name}"
+                    val skillDir = File(skillsRoot, skillName)
                     skillDir.mkdirs()
-                    File(skillDir, "SKILL.md").writeText(skill.content)
+                    File(skillDir, "SKILL.md").writeText(rewriteSkillFrontmatterName(skill.content, skillName))
                 }
 
                 // 安装 commands
@@ -596,6 +601,28 @@ object DynamicTools {
                 Pair(bytes, ct.contains("zip") || urlStr.contains("download"))
             }
         } catch (_: Exception) { null }
+    }
+
+    /** v3.6.109: frontmatter name 改写为 <插件名>__<技能名> (与其他 Skill 分开) */
+    private fun rewriteSkillFrontmatterName(content: String, newName: String): String {
+        val lines = content.lines().toMutableList()
+        var inFrontmatter = false
+        for (i in lines.indices) {
+            val line = lines[i].trim()
+            if (line == "---") {
+                if (!inFrontmatter) { inFrontmatter = true; continue }
+                break
+            }
+            if (inFrontmatter && line.startsWith("name:")) {
+                lines[i] = lines[i].replaceRange(
+                    lines[i].indexOf("name:") + 5,
+                    lines[i].length,
+                    " $newName",
+                )
+                break
+            }
+        }
+        return lines.joinToString("\n")
     }
 
     private fun fetchUrlAsBytesWithProxy(urlStr: String, host: String, port: Int): Pair<ByteArray, Boolean>? {
