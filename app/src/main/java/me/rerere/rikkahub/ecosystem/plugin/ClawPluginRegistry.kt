@@ -249,6 +249,8 @@ data class PluginInfo(
         return result
     }
 
+    private val registeredBridgeCommands = mutableSetOf<String>()
+
     /** v3.6.117: 删除插件 (目录删除 + 桥接记录清理 + settings 服务器移除 + 刷新) */
     suspend fun removePlugin(
         pluginName: String,
