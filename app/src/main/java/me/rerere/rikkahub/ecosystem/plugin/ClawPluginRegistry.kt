@@ -11,9 +11,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import java.io.File
 import java.io.FileInputStream
 import java.util.zip.ZipInputStream
+import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 
 object ClawPluginRegistry {
     private const val TAG = "PluginManager"
@@ -193,10 +198,10 @@ data class PluginInfo(
                             }.getOrDefault("插件技能: $skillName (来自插件 $pluginName)"),
                             parameters = {
                                 me.rerere.ai.core.InputSchema.Obj(
-                                    properties = kotlinx.serialization.json.buildJsonObject {
+                                    properties = buildJsonObject {
                                         put(
                                             "path",
-                                            kotlinx.serialization.json.buildJsonObject {
+                                            buildJsonObject {
                                                 put("type", "string")
                                                 put("description", "技能目录内的相对文件路径 (可选, 留空返回 SKILL.md 正文)")
                                             },
@@ -206,8 +211,8 @@ data class PluginInfo(
                                 )
                             },
                             execute = { input ->
-                                val obj = input as? kotlinx.serialization.json.JsonObject
-                                val path = obj?.get("path")?.kotlinx.serialization.json.jsonPrimitive?.content
+                                val obj = input as? JsonObject
+                                val path = obj?.get("path")?.jsonPrimitive?.content
                                 val body = if (path.isNullOrBlank()) {
                                     me.rerere.rikkahub.data.files.SkillFrontmatterParser.extractBody(skillFile.readText())
                                 } else {
@@ -244,7 +249,7 @@ data class PluginInfo(
                 val bridgeKey = "${safeName}|${mcpDef.command}"
                 if (bridgeKey in registeredBridgeCommands) return@forEach
                 val settings = settingsStore.settingsFlow.value
-                val workspaceId = settings.getCurrentAssistant().workspaceId?.toString() ?: 
+                val workspaceId = settings.getCurrentAssistant().workspaceId?.toString() ?: ""
                 val config = me.rerere.rikkahub.data.ai.mcp.McpConfig.StdioTransportServer(
                     id = kotlin.uuid.Uuid.random(),
                     commonOptions = me.rerere.rikkahub.data.ai.mcp.McpCommonOptions(
