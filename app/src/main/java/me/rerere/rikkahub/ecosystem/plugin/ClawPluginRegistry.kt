@@ -250,7 +250,7 @@ data class PluginInfo(
                 if (bridgeKey in registeredBridgeCommands) return@forEach
                 val settings = settingsStore.settingsFlow.value
                 val workspaceId = settings.getCurrentAssistant().workspaceId?.toString() ?: ""
-                val config = me.rerere.rikkahub.data.ai.mcp.McpConfig.StdioTransportServer(
+                val config = me.rerere.rikkahub.data.ai.mcp.McpServerConfig.StdioTransportServer(
                     id = kotlin.uuid.Uuid.random(),
                     commonOptions = me.rerere.rikkahub.data.ai.mcp.McpCommonOptions(
                         name = "plugin__${safeName}",
