@@ -31,7 +31,9 @@ val FRAMEWORK_TOOL_SET = setOf(
     "search_domains",
     "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file", "workspace_show_file",
     "manage_domain", "list_domains", "move_tool_to_domain",
-    "mcp_connect", "clawhub_install", "clawhub_search", "plugin_install",
+    // v3.6.91: clawhub_install/clawhub_search 移出框架集 — 归系统域经
+    // invoke_tools(系统) 加载 (用户: 框架工具 8→6, 只保留实际常用的)
+    "mcp_connect", "plugin_install",
 )
 
 /** 动态框架集 — 静态框架工具 + 用户移出域管理的工具 (v3.6.90)。
