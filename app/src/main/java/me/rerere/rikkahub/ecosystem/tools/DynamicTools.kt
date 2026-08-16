@@ -23,7 +23,8 @@ import me.rerere.rikkahub.ecosystem.EcosystemManager
 import me.rerere.rikkahub.ecosystem.plugin.ClaudePluginParser
 import java.io.ByteArrayInputStream
 import java.io.File
-import java.net.HttpURLConnection
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.net.URL
 import java.util.zip.ZipInputStream
 import android.util.Log
@@ -32,6 +33,16 @@ import kotlin.uuid.Uuid
 
 object DynamicTools {
     private const val TAG = "DynamicTools"
+    // v3.6.94: OkHttp 走系统代理 (fake-ip 环境) — HttpURLConnection 不走
+    // 系统代理导致 clawhub_install 直连失败 (用户实测 198.18.x 保留段)
+    private val httpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(java.time.Duration.ofSeconds(15))
+            .readTimeout(java.time.Duration.ofSeconds(30))
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .build()
+    }
     private var mcpManager: McpManager? = null
     private var settingsStore: me.rerere.rikkahub.data.datastore.SettingsStore? = null
     private var ecosystemWorkspaceRoot: String = ""
@@ -263,15 +274,13 @@ object DynamicTools {
                     else -> return@Tool listOf(UIMessagePart.Text("Need zipFile or url"))
                 }
 
-                val parsed = ClaudePluginParser.parsePluginZip(fileToParse)
+                val parsed = try {
+                    ClaudePluginParser.parsePluginZip(fileToParse)
+                } catch (e: Exception) {
+                    return@Tool listOf(UIMessagePart.Text("Failed to parse plugin ZIP: ${e.message}"))
+                }
                 if (parsed == null) {
-                    return@Tool listOf(
-                        UIMessagePart.Text(
-                            "Failed to parse plugin ZIP: 不是有效的插件包。" +
-                                "需要含 plugin.json / .claude-plugin/plugin.json 的 Claude Code 插件仓库 ZIP，" +
-                                "任意仓库源码 ZIP 不会被安装。"
-                        )
-                    )
+                    return@Tool listOf(UIMessagePart.Text("Failed to parse plugin ZIP: 解析失败 (详见日志)"))
                 }
 
                 val (name, plugin) = parsed
@@ -537,32 +546,31 @@ object DynamicTools {
 
     private fun fetchUrlAsBytes(urlStr: String): Pair<ByteArray, Boolean>? {
         return try {
-            val conn = URL(urlStr).openConnection() as HttpURLConnection
-            conn.setRequestProperty("User-Agent", "RinCore/3.4")
-            conn.setRequestProperty("Accept", "application/zip, text/plain, application/json")
-            conn.instanceFollowRedirects = true
-            conn.connectTimeout = 15000
-            conn.readTimeout = 30000
-            conn.connect()
-            if (conn.responseCode in 200..299) {
-                val bytes = conn.inputStream.readBytes()
-                val ct = conn.contentType ?: ""
+            val request = Request.Builder()
+                .url(urlStr)
+                .header("User-Agent", "RinCore/3.6")
+                .header("Accept", "application/zip, text/plain, application/json")
+                .build()
+            httpClient.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful) return null
+                val bytes = resp.body?.bytes() ?: return null
+                val ct = resp.header("Content-Type") ?: ""
                 Pair(bytes, ct.contains("zip") || urlStr.contains("download"))
-            } else null
+            }
         } catch (_: Exception) { null }
     }
 
     private fun fetchUrl(urlStr: String, token: String = ""): String {
         return try {
-            val conn = URL(urlStr).openConnection() as HttpURLConnection
-            conn.setRequestProperty("User-Agent", "RinCore/3.4")
-            conn.setRequestProperty("Accept", "application/json, text/plain, application/vnd.github.v3+json")
-            if (token.isNotEmpty()) conn.setRequestProperty("Authorization", "Bearer $token")
-            conn.connectTimeout = 10000
-            conn.readTimeout = 15000
-            conn.connect()
-            if (conn.responseCode in 200..299) conn.inputStream.bufferedReader().readText()
-            else "ERROR: HTTP ${conn.responseCode}"
+            val builder = Request.Builder()
+                .url(urlStr)
+                .header("User-Agent", "RinCore/3.6")
+                .header("Accept", "application/json, text/plain, application/vnd.github.v3+json")
+            if (token.isNotEmpty()) builder.header("Authorization", "Bearer $token")
+            httpClient.newCall(builder.build()).execute().use { resp ->
+                if (resp.isSuccessful) resp.body?.string() ?: ""
+                else "ERROR: HTTP ${resp.code}"
+            }
         } catch (e: Exception) {
             "ERROR: ${e.message}"
         }

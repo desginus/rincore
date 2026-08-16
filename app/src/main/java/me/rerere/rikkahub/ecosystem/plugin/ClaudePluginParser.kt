@@ -65,6 +65,12 @@ object ClaudePluginParser {
      * 从 ZIP 文件解压并解析插件。
      */
     fun parsePluginZip(zipFile: File): Pair<String, ParsedPlugin>? {
+        // v3.6.94: 文件不存在单独报错 — 此前与"无 manifest"同一错误信息,
+        // 沙箱路径不通时被误判为"统一拒绝/未读取文件"
+        if (!zipFile.exists()) {
+            Log.e(TAG, "ZIP file not found: ${zipFile.absolutePath}")
+            throw IllegalStateException("ZIP 文件不存在: ${zipFile.absolutePath} (zipFile 参数须为设备文件系统路径, 沙箱/workspace 路径请改用 url 参数下载)")
+        }
         val pluginName = zipFile.nameWithoutExtension
         val tempDir = File(zipFile.parent, "_plugin_extract_$pluginName")
         tempDir.mkdirs()
@@ -88,7 +94,7 @@ object ClaudePluginParser {
             val pluginDir = findPluginRoot(tempDir)
             if (pluginDir == null) {
                 Log.e(TAG, "Not a valid plugin ZIP: no plugin.json/marketplace.json found in ${zipFile.name}")
-                return null
+                throw IllegalStateException("不是有效的插件包: ${zipFile.name} 内未找到 plugin.json / .claude-plugin/plugin.json / marketplace.json")
             }
             val parsed = parsePluginDir(pluginDir)
             return Pair(pluginName, parsed)
