@@ -83,4 +83,14 @@ val repositoryModule = module {
     single {
         SkillManager(get(), get())
     }
+
+    // v3.6.86: 插件管理器 (workspace 插件格式 — 技能 + STDIO MCP 桥接)
+    single {
+        me.rerere.rikkahub.data.plugin.PluginManager(
+            workspaceRepository = get(),
+            workspaceManager = get(),
+            mcpManager = get(),
+            skillManager = get(),
+        )
+    }
 }

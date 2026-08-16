@@ -38,13 +38,17 @@ class WorkspaceRepository(
      */
     suspend fun refreshDshSkillRoots(skillManager: me.rerere.rikkahub.data.files.SkillManager) = withContext(Dispatchers.IO) {
         runCatching {
-            val roots = dao.getAll().flatMap { ws ->
+            val dshRoots = dao.getAll().flatMap { ws ->
                 listOf(
                     File(manager.filesDir(ws.root), ".dsh/skills"),
                     File(manager.filesDir(ws.root), ".agents/skills"),
                 )
             }
-            skillManager.setExtraSkillRoots(roots)
+            // 仅更新 dsh__ 前缀根, 保留 plugin__ 根 (PluginManager 注入)
+            val others = skillManager.extraRootsSnapshot().filter { it.prefix != "dsh__" }
+            skillManager.setExtraSkillRoots(
+                others + dshRoots.map { me.rerere.rikkahub.data.files.SkillManager.ExtraSkillRoot("dsh__", it) }
+            )
         }.onFailure {
             Log.w(TAG, "refreshDshSkillRoots failed: ${it.message}")
         }
@@ -74,6 +78,9 @@ class WorkspaceRepository(
     }
 
     suspend fun getById(id: String): WorkspaceEntity? = dao.getById(id)
+
+    /** 全量 workspace 列表 (插件扫描等) */
+    suspend fun getAllWorkspaces(): List<WorkspaceEntity> = dao.getAll()
 
     suspend fun create(name: String): WorkspaceEntity {
         val id = Uuid.random().toString()

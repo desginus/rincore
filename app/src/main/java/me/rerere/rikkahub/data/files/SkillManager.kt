@@ -26,15 +26,24 @@ class SkillManager(
     private var cachedSkills: List<SkillMetadata>? = null
 
     // v3.6.85: DeepSeek Harness (DSH) 插件生态兼容 — 额外技能根
-    // (workspace 的 .dsh/skills 与 .agents/skills), DSH 技能名加 dsh__ 前缀
+    // (workspace 的 .dsh/skills 与 .agents/skills), 技能名加前缀
+    // v3.6.86: 泛化 — 前缀随根配置 (dsh__ 技能源 / plugin__ 插件目录)
     @Volatile
-    private var extraSkillRoots: List<File> = emptyList()
+    private var extraSkillRoots: List<ExtraSkillRoot> = emptyList()
 
-    /** 设置 DSH 技能根 (workspace 变化/启动时由 WorkspaceRepository 刷新) */
-    fun setExtraSkillRoots(roots: List<File>) {
+    /** 设置额外技能根 (workspace 变化/启动时由 WorkspaceRepository 刷新) */
+    fun setExtraSkillRoots(roots: List<ExtraSkillRoot>) {
         extraSkillRoots = roots.distinct()
         invalidateSkillsCache()
     }
+
+    data class ExtraSkillRoot(
+        val prefix: String,   // 技能名前缀, 如 dsh__ / plugin__
+        val root: File,       // 扫描根, 根下每个目录视为一个技能
+    )
+
+    /** 当前额外根快照 (PluginManager 合并注入用) */
+    fun extraRootsSnapshot(): List<ExtraSkillRoot> = extraSkillRoots
 
     fun listSkills(): List<SkillMetadata> {
         return try {
@@ -58,17 +67,17 @@ class SkillManager(
         }
     }
 
-    /** 扫描 DSH 技能 (bundle 格式: <root>/<name>/SKILL.md, 与 DSH 官方发现格式一致) */
+    /** 扫描额外根技能 (bundle 格式: <root>/<name>/SKILL.md, 与 DSH 官方发现格式一致) */
     private fun scanDshSkills(): List<SkillMetadata> {
         val skills = mutableListOf<SkillMetadata>()
-        for (root in extraSkillRoots) {
+        for ((prefix, root) in extraSkillRoots) {
             if (!root.isDirectory) continue
             root.listFiles()?.forEach { entry ->
                 try {
                     if (!entry.isDirectory) return@forEach
                     val skillFile = entry.resolve("SKILL.md")
                     if (!skillFile.exists()) return@forEach
-                    parseDshSkillFile(skillFile, entry.name)?.let { skills.add(it) }
+                    parseExtraSkillFile(skillFile, entry.name, prefix)?.let { skills.add(it) }
                 } catch (_: Exception) {
                     // 单插件失败只跳过该插件
                 }
@@ -77,14 +86,14 @@ class SkillManager(
         return skills
     }
 
-    private fun parseDshSkillFile(file: File, fallbackName: String): SkillMetadata? {
+    private fun parseExtraSkillFile(file: File, fallbackName: String, prefix: String): SkillMetadata? {
         return runCatching {
             val content = file.readText()
             val frontmatter = SkillFrontmatterParser.parse(content)
             val name = frontmatter["name"]?.takeIf { it.isNotBlank() } ?: fallbackName
             val description = frontmatter["description"]?.takeIf { it.isNotBlank() } ?: return null
             SkillMetadata(
-                name = "dsh__$name",
+                name = "$prefix$name",
                 description = description,
                 compatibility = frontmatter["compatibility"],
                 allowedTools = emptyList(),
@@ -112,8 +121,8 @@ class SkillManager(
 
     fun saveSkill(name: String, content: String): SkillMetadata? {
         invalidateSkillsCache() // v3.6.12: 保存后清扫描缓存
-        // v3.6.85: 禁止以 dsh__ 前缀创建技能 (该前缀保留给 DSH 只读源)
-        if (name.startsWith("dsh__")) return null
+        // v3.6.85/86: 禁止以额外源前缀创建技能 (保留给只读源)
+        if (extraSkillRoots.any { name.startsWith(it.prefix) }) return null
         // 通过原子写入(staging + rename)落盘，避免直接 mkdirs 失败时
         // writeText 抛出 FileNotFoundException 导致崩溃
         if (!saveSkillFileBytesAtomically(name, mapOf("SKILL.md" to content.toByteArray()))) {
@@ -125,8 +134,8 @@ class SkillManager(
 
     suspend fun deleteSkill(name: String): Boolean = withContext(Dispatchers.IO) {
         invalidateSkillsCache() // v3.6.12: 增删后清扫描缓存
-        // v3.6.85: DSH 技能为只读源 (workspace 插件目录), 禁止通过技能管理删除
-        if (name.startsWith("dsh__")) return@withContext false
+        // v3.6.85/86: 额外源技能 (dsh__/plugin__) 为只读, 禁止通过技能管理删除
+        if (extraSkillRoots.any { name.startsWith(it.prefix) }) return@withContext false
         val skillDir = resolveSkillDir(name) ?: return@withContext false
         val deleted = skillDir.deleteRecursively()
         if (deleted) {
@@ -248,13 +257,13 @@ class SkillManager(
     }
 
     private fun resolveSkillDir(skillName: String): File? {
-        if (skillName.startsWith("dsh__")) {
-            val rawName = skillName.removePrefix("dsh__")
-            for (root in extraSkillRoots) {
+        for ((prefix, root) in extraSkillRoots) {
+            if (skillName.startsWith(prefix)) {
+                val rawName = skillName.removePrefix(prefix)
                 val dir = root.resolve(rawName)
                 if (dir.isDirectory && dir.resolve("SKILL.md").exists()) return dir
+                return null
             }
-            return null
         }
         return SkillPaths.resolveSkillDir(getSkillsDir(), skillName)
     }

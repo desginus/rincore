@@ -144,6 +144,8 @@ class RikkaHubApp : Application() {
                 get<WorkspaceRepository>().checkIntegrity()
                 // v3.6.85: DSH 插件生态 — 刷新 workspace 的 DSH 技能根
                 get<WorkspaceRepository>().refreshDshSkillRoots(get())
+                // v3.6.86: 插件生态 — 扫描 .plugins 并注册桥接 (技能 + STDIO MCP)
+                get<me.rerere.rikkahub.data.plugin.PluginManager>().refresh()
             }.onFailure {
                 Log.e(TAG, "checkWorkspaceIntegrity failed", it)
             }
