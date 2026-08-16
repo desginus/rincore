@@ -619,28 +619,6 @@ object DynamicTools {
         } catch (_: Exception) { null }
     }
 
-    /** v3.6.109: frontmatter name 改写为 <插件名>__<技能名> (与其他 Skill 分开) */
-    private fun rewriteSkillFrontmatterName(content: String, newName: String): String {
-        val lines = content.lines().toMutableList()
-        var inFrontmatter = false
-        for (i in lines.indices) {
-            val line = lines[i].trim()
-            if (line == "---") {
-                if (!inFrontmatter) { inFrontmatter = true; continue }
-                break
-            }
-            if (inFrontmatter && line.startsWith("name:")) {
-                lines[i] = lines[i].replaceRange(
-                    lines[i].indexOf("name:") + 5,
-                    lines[i].length,
-                    " $newName",
-                )
-                break
-            }
-        }
-        return lines.joinToString("\n")
-    }
-
     private fun fetchUrlAsBytesWithProxy(urlStr: String, host: String, port: Int): Pair<ByteArray, Boolean>? {
         return try {
             val proxyClient = OkHttpClient.Builder()

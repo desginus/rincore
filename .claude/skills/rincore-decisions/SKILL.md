@@ -5,6 +5,13 @@ description: "[中优先级·RinCore决策对照] RinCore 关键方案对比迭�
 
 # RinCore 方案决策记录
 
+## D9. 插件 MCP 桥接：自动注册 vs 手动 mcp_connect（v3.6.120 回滚，用户决策）
+
+- 方案 A（v3.6.112 引入，已回滚）：插件 .mcp.json 的 command 由客户端自动经 workspace STDIO 注册（registerPluginBridges）
+- 方案 B（v3.6.120 定稿）：插件 MCP 服务器退回手动 mcp_connect，与普通 STDIO MCP 同通道
+- 回滚原因：自动注册破坏既有 MCP 连接（用户实测大部分 MCP 无法连接），且每次启动随机 id 新增条目导致 settings 增长
+- 结论：客户端不做任何启动路径的自动 MCP 注册。插件声明的 MCP 由用户显式连接，桥接能力复用 STDIO viaWorkspace 通道即可
+
 ## D6. 写入与展示解耦（v3.5.18，用户决策）
 - **背景**：workspace_write_file/edit_file 执行后自动显示在对话下附胶囊窗，完全不可控
 - **决策**：新增 workspace_show_file 工具，胶囊窗仅认 show 工具；写入/编辑不再触发显示

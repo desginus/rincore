@@ -12,6 +12,27 @@ description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日�
 - **工具执行无超时**：3.5.9 withTimeout 60s 兜底——工具挂起不永久阻塞生成
 - **缓存"卡-跳-线性"**：DeepSeek 服务端磁盘缓存机制（构建延迟秒级+固定间隔切分+SWA 独立单元）——客户端不可控，已入库 decisions D2
 
+## v3.6.101-123（对齐标注/工具改名/插件系统攻坚/MCP 回滚，2026-08-16 深夜）
+
+- **v3.6.123**：registeredBridgeCommands 字段恢复（编译修复）
+- **v3.6.121-122**：MCP 连接回滚收尾 — 启动时自动清理 settings 里 plugin__ 前缀服务器残留 + 助手白名单条目；registerPluginBridges 方法彻底删除
+- **v3.6.120**：MCP 连接回滚 — 插件自动桥接（v3.6.112 引入）两个调用点全部移除，用户实测该机制破坏大部分 MCP 连接（127.x 无法连接/连接关闭）
+- **v3.6.119**：.mcp.json 落盘 + 桥接 id 复用（后者随回滚失效）
+- **v3.6.118**：插件列表空的致命根因修复 — installFromParsed 从未被调用（死代码），plugin.json 从未写入；P0-P2 全项处理（readTimeout 120s/临时清理/锁文件真名/execute exists 检查/invoke_tools 实时域）
+- **v3.6.117**：插件真实名目录（重复安装覆盖）+ 删除能力（目录+桥接记录+settings 服务器+刷新四环节）
+- **v3.6.116**：plugin.json 元数据写入 + readManifest 加 _parsed.json 兜底
+- **v3.6.115**：McpServerConfig 类名修正（编译）
+- **v3.6.113-114**：json put import/workspaceId 断行/buildJsonObject 全限定（编译）
+- **v3.6.112**：插件与技能彻底隔开 — plugin__ 工具 + 插件桥接（后回滚）
+- **v3.6.111**：collectAsState import（编译）
+- **v3.6.110**：插件技能落回插件目录 + readManifest 支持 .claude-plugin + migrateLegacySkills
+- **v3.6.109**：插件技能落技能目录（沙箱 /skills 挂载可见）— 后被 3.6.110 纠正（用户要求插件技能分开）
+- **v3.6.108**：getCurrentAssistant import + scope.launch（编译）
+- **v3.6.105-107**：插件技能根注入 + 插件页合并 ClawHub 源 + 强制启动（技能/插件"对话开始时强制启动"开关）
+- **v3.6.104**：方法域改未分类 + Skills 搜索框 + invoke_tools 生态引导 + 设置页重排（任务自动化/数据与日志分区）
+- **v3.6.102-103**：工具改名能力（MCP 页+工具页）+ callTool 60s 兜底 + ClawPluginRegistry 重命名
+- **v3.6.101**：ReasoningPicker 残留 import 清理 + changelog 补录
+
 ## v3.6.92-100（技能修复/插件收尾/2.4.10 移植/全量对齐标注）
 
 - **v3.6.100**（8162620b）：全量原版对齐标注 — 对齐地图文档（767 文件四类清单）+ 核心链路 7 文件专项标注 + UI/数据层 33 文件专项标注 + 小差异/自研文件自动标注。纯注释零行为变化

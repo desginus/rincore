@@ -16,6 +16,20 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 ## 已修复 Bug 明细（按时间倒序）
 
 
+### B24. MCP 大部分无法连接（127.x 无法连接/连接关闭，v3.6.120 回滚根治）
+
+- 现象：v3.6.112-119 期间大部分 MCP 报"无法连接到 127.x:端口"、"连接关闭"
+- 根因：v3.6.112 引入插件自动桥接 registerPluginBridges，App 启动时对每个插件 command 自动 addClient（viaWorkspace STDIO），部分环境破坏 MCP 连接状态；且每次启动用随机 id 新增 settings 条目持续增长
+- 修复：v3.6.120 移除两个调用点；v3.6.121 启动时清理 plugin__ 残留服务器与白名单条目
+- 教训：新增自动 MCP 注册机制必须评估对既有连接的影响面，禁止在启动路径批量 addClient
+
+### B23. 插件列表恒空（installFromParsed 死代码，v3.6.118 根治）
+
+- 现象：plugin_install 报安装成功，设置页插件列表永远空
+- 根因：写 plugin.json 元数据的 ClawPluginRegistry.installFromParsed 从未被任何调用点调用（死代码），refresh() 的 readManifest 恒失败
+- 修复：v3.6.118 安装流显式调 installFromParsed
+- 教训：修复"写元数据"类 bug 时必须验证调用链存在，静态校验脚本加"方法被调用点存在性"检查
+
 ### B22. unexpected end of stream（v3.5.17 根治）
 - **现象**：工具执行 60s+ 后继续生成的请求报 java.io.IOException unexpected end of stream（Http1ExchangeCodec.readResponseHeaders，Caused by EOFException \n not found: limit=0）
 - **根因**：连接池复用陈旧连接——服务端空闲关闭连接后客户端 keepalive 5min 仍保留，复用即 EOF；工具执行 60s+ 使连接空闲超服务端关闭时间，必触发

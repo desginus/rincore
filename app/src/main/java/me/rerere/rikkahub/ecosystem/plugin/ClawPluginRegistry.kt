@@ -18,7 +18,6 @@ import kotlinx.serialization.json.put
 import java.io.File
 import java.io.FileInputStream
 import java.util.zip.ZipInputStream
-import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 
 object ClawPluginRegistry {
     private const val TAG = "PluginManager"
@@ -154,22 +153,6 @@ data class PluginInfo(
         refresh()
     }
 
-    /** v3.6.110: 同步插件技能根到技能系统 (前缀 <插件名>__, 与其他 Skill 隔离) */
-    fun syncSkillRoots(skillManager: me.rerere.rikkahub.data.files.SkillManager) {
-        runCatching {
-            val clawRoots = getSkillRootsWithNames().map { (pluginName, skillsDir) ->
-                me.rerere.rikkahub.data.files.SkillManager.ExtraSkillRoot(
-                    prefix = "${pluginName.replace(Regex("[^a-zA-Z0-9_-]"), "_")}__",
-                    root = skillsDir,
-                )
-            }
-            val others = skillManager.extraRootsSnapshot()
-                .filter { root -> clawRoots.none { it.prefix == root.prefix } }
-            skillManager.setExtraSkillRoots(others + clawRoots)
-            Log.i(TAG, "claw plugin skill roots synced: ${clawRoots.size}")
-        }.onFailure { Log.e(TAG, "sync skill roots failed", it) }
-    }
-
     /** v3.6.110: 迁移 v3.6.109 误落 /skills 的插件技能 (前缀目录移回插件目录) */
     fun migrateLegacySkills(skillsDir: File) {
         runCatching {
@@ -191,9 +174,15 @@ data class PluginInfo(
 
     // v3.6.112: 插件身份保留 — 插件技能经 plugin__<插件名>__<技能> 工具读取
     // (插件域), 不再拆包成 skill__ 工具混入技能系统
-    private val pluginSkillToolsCache = mutableMapOf<String, List<me.rerere.ai.core.Tool>>()
+    // v3.7.0: 工具缓存 — 插件列表变化才重建 (此前每轮消息构建工具池都
+    // 扫描插件目录 + 读全部 SKILL.md frontmatter)
+    private var cachedPluginSkillTools: Pair<List<PluginInfo>, List<me.rerere.ai.core.Tool>>? = null
 
     fun createPluginSkillTools(): List<me.rerere.ai.core.Tool> {
+        val currentPlugins = plugins.value
+        cachedPluginSkillTools?.let { (cachedPlugins, cachedTools) ->
+            if (cachedPlugins == currentPlugins) return cachedTools
+        }
         val result = mutableListOf<me.rerere.ai.core.Tool>()
         for ((pluginName, skillsRoot) in getSkillRootsWithNames()) {
             val safePluginName = pluginName.replace(Regex("[^a-zA-Z0-9_-]"), "_")
@@ -246,6 +235,7 @@ data class PluginInfo(
                     )
                 }
         }
+        cachedPluginSkillTools = currentPlugins to result
         return result
     }
 
