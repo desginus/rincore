@@ -1,13 +1,16 @@
 package me.rerere.rikkahub.ui.pages.usage
 
-/* ───【自研】UsagePage.kt — OpenCode 用量查询页 (v3.8.0)
+/* ───【自研】UsagePage.kt — OpenCode 用量查询页 (v3.8.2)
  * 4 个环形图: 滚动窗口(5h)/本周/本月/重置倒计时, 颜色取系统 UI 色
- * 右上角 API Key 入口, 进入自动查询 + 下拉刷新
+ * 单密钥: 竖列全屏; 多密钥: 卡片布局 (卡内 2x2 横排)
+ * 非焦点密钥仅在其 3 个用量均有空余 (percent<100) 时显示
+ * 右上角卡包: 密钥保存/切换/删除; 每次进入自动查询 + 下拉刷新
  * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,7 +21,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -59,16 +61,16 @@ import org.koin.compose.koinInject
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
 
 @Composable
 fun UsagePage(onBack: () -> Unit = {}) {
     val settingsStore = koinInject<SettingsStore>()
     val settings by settingsStore.settingsFlow.collectAsState()
     val apiKey = settings.opencodeApiKey
+    val savedKeys = settings.opencodeApiKeys
 
     val scope = rememberCoroutineScope()
-    var usage by remember { mutableStateOf<UsageApi.UsageResult?>(null) }
+    var usages by remember { mutableStateOf<Map<String, UsageApi.UsageResult?>>(emptyMap()) }
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     var showKeyDialog by remember { mutableStateOf(false) }
@@ -77,19 +79,35 @@ fun UsagePage(onBack: () -> Unit = {}) {
     suspend fun doQuery() {
         if (apiKey.isBlank()) {
             error = "未配置 Open Code API Key，点击右上角设置后自动查询"
-            usage = null
+            usages = emptyMap()
             return
         }
         loading = true
-        usage = UsageApi.fetchUsage(apiKey)
-        error = if (usage == null) "查询失败，请检查 API Key 或网络后下拉重试" else null
+        // 查询卡包内全部密钥 (焦点密钥 + 历史密钥), 供多密钥卡片展示
+        val keys = (listOf(apiKey) + savedKeys).distinct()
+        usages = keys.associateWith { UsageApi.fetchUsage(it) }
+        error = if (usages[apiKey] == null) {
+            "查询失败，请检查 API Key 或网络后下拉重试"
+        } else {
+            null
+        }
         loading = false
     }
 
-    // 进入页面自动查询一次; API Key 变化时重新查询 (实时动态)
-    LaunchedEffect(apiKey) { doQuery() }
+    // 进入页面自动查询一次; API Key 变化 (切换/删除) 时重新查询
+    LaunchedEffect(apiKey, savedKeys) { doQuery() }
 
     val pullState = rememberPullToRefreshState()
+
+    // 非焦点密钥: 3 个用量均有空余 (percent<100) 才显示; null 视为未满
+    val otherVisible = savedKeys
+        .filter { it != apiKey }
+        .mapNotNull { k -> usages[k]?.let { k to it } }
+        .filter { (_, u) ->
+            listOf(u.rolling.percent, u.weekly.percent, u.monthly.percent)
+                .all { p -> p == null || p < 100 }
+        }
+    val showCards = otherVisible.isNotEmpty()
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
@@ -103,7 +121,7 @@ fun UsagePage(onBack: () -> Unit = {}) {
                         keyInput = apiKey
                         showKeyDialog = true
                     }) {
-                        Icon(HugeIcons.Settings02, "API Key")
+                        Icon(HugeIcons.Settings02, "API Key 卡包")
                     }
                 },
             )
@@ -116,7 +134,7 @@ fun UsagePage(onBack: () -> Unit = {}) {
             ) {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                    contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     if (apiKey.isBlank()) {
@@ -133,7 +151,7 @@ fun UsagePage(onBack: () -> Unit = {}) {
                                 }
                             }
                         }
-                    } else if (usage == null && error != null) {
+                    } else if (error != null && usages[apiKey] == null) {
                         item {
                             Card(Modifier.fillMaxWidth()) {
                                 Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -141,45 +159,64 @@ fun UsagePage(onBack: () -> Unit = {}) {
                                 }
                             }
                         }
-                    } else if (usage != null) {
-                        val u = usage!!
-                        item {
-                            UsageRingCard(
-                                title = "滚动窗口",
-                                subtitle = "近 5 小时用量",
-                                percent = u.rolling.percent?.toFloat() ?: 0f,
-                                resetAt = u.rolling.resetsAt,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                        item {
-                            UsageRingCard(
-                                title = "本周",
-                                subtitle = "周限额用量",
-                                percent = u.weekly.percent?.toFloat() ?: 0f,
-                                resetAt = u.weekly.resetsAt,
-                                color = MaterialTheme.colorScheme.secondary,
-                            )
-                        }
-                        item {
-                            UsageRingCard(
-                                title = "本月",
-                                subtitle = "月限额用量",
-                                percent = u.monthly.percent?.toFloat() ?: 0f,
-                                resetAt = u.monthly.resetsAt,
-                                color = MaterialTheme.colorScheme.tertiary,
-                            )
-                        }
-                        item {
-                            val resetInfo = nearestReset(u)
-                            UsageRingCard(
-                                title = "重置倒计时",
-                                subtitle = "最近窗口重置",
-                                percent = resetInfo.elapsedPercent,
-                                centerText = resetInfo.remainingText,
-                                resetAt = null,
-                                color = MaterialTheme.colorScheme.error,
-                            )
+                    } else if (usages[apiKey] != null) {
+                        val activeUsage = usages[apiKey]!!
+
+                        if (showCards) {
+                            // ── 多密钥: 每密钥一张卡, 卡内 4 用量 2x2 横排 ──
+                            item {
+                                KeyUsageCard(
+                                    key = apiKey,
+                                    usage = activeUsage,
+                                    isActive = true,
+                                )
+                            }
+                            items(otherVisible, key = { it.first }) { (k, u) ->
+                                KeyUsageCard(
+                                    key = k,
+                                    usage = u,
+                                    isActive = false,
+                                )
+                            }
+                        } else {
+                            // ── 单密钥: 竖列全屏 ──
+                            item {
+                                UsageRingCard(
+                                    title = "滚动窗口",
+                                    subtitle = "近 5 小时用量",
+                                    percent = activeUsage.rolling.percent?.toFloat() ?: 0f,
+                                    resetAt = activeUsage.rolling.resetsAt,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                            item {
+                                UsageRingCard(
+                                    title = "本周",
+                                    subtitle = "周限额用量",
+                                    percent = activeUsage.weekly.percent?.toFloat() ?: 0f,
+                                    resetAt = activeUsage.weekly.resetsAt,
+                                    color = MaterialTheme.colorScheme.secondary,
+                                )
+                            }
+                            item {
+                                UsageRingCard(
+                                    title = "本月",
+                                    subtitle = "月限额用量",
+                                    percent = activeUsage.monthly.percent?.toFloat() ?: 0f,
+                                    resetAt = activeUsage.monthly.resetsAt,
+                                    color = MaterialTheme.colorScheme.tertiary,
+                                )
+                            }
+                            item {
+                                val resetInfo = nearestReset(activeUsage)
+                                UsageRingCard(
+                                    title = "重置倒计时",
+                                    subtitle = "最近窗口重置",
+                                    percent = resetInfo.elapsedPercent,
+                                    bottomText = resetInfo.remainingText,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
                         }
                     } else {
                         item {
@@ -197,101 +234,110 @@ fun UsagePage(onBack: () -> Unit = {}) {
     }
 
     if (showKeyDialog) {
-        AlertDialog(
-            onDismissRequest = { showKeyDialog = false },
-            title = { Text("Open Code API Key 卡包") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = keyInput,
-                        onValueChange = { keyInput = it },
-                        placeholder = { Text("输入新密钥 sk-...") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Text(
-                        "已存密钥：点击卡片切换，删除后不再保留",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    settings.opencodeApiKeys.forEach { savedKey ->
-                        val isActive = savedKey == apiKey
-                        Card(
-                            onClick = {
-                                if (!isActive) {
-                                    scope.launch {
-                                        settingsStore.update { it.copy(opencodeApiKey = savedKey) }
-                                    }
-                                }
-                            },
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isActive) {
-                                    MaterialTheme.colorScheme.primaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceContainerHigh
-                                },
-                            ),
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Row(
-                                Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(
-                                        maskKey(savedKey),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                    )
-                                    if (isActive) {
-                                        Text(
-                                            "使用中",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.primary,
-                                        )
-                                    }
-                                }
-                                TextButton(onClick = {
-                                    scope.launch {
-                                        settingsStore.update {
-                                            it.copy(
-                                                opencodeApiKeys = it.opencodeApiKeys - savedKey,
-                                                opencodeApiKey = if (savedKey == it.opencodeApiKey) "" else it.opencodeApiKey,
-                                            )
-                                        }
-                                    }
-                                }) {
-                                    Text("删除", color = MaterialTheme.colorScheme.error)
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val newKey = keyInput.trim()
-                    if (newKey.isNotEmpty()) {
-                        showKeyDialog = false
-                        scope.launch {
-                            // v3.8.1: 保存到卡包 (去重置顶) + 设为当前
-                            settingsStore.update {
-                                it.copy(
-                                    opencodeApiKey = newKey,
-                                    opencodeApiKeys = (listOf(newKey) + it.opencodeApiKeys).distinct(),
-                                )
-                            }
-                        }
-                    }
-                }) { Text("保存") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showKeyDialog = false }) { Text("取消") }
-            },
+        KeyCardDialog(
+            settingsStore = settingsStore,
+            currentKey = apiKey,
+            savedKeys = savedKeys,
+            initialInput = keyInput,
+            onDismiss = { showKeyDialog = false },
         )
     }
 }
 
+// ── 多密钥卡片 (2x2 横排 4 用量) ──
+@Composable
+private fun KeyUsageCard(
+    key: String,
+    usage: UsageApi.UsageResult,
+    isActive: Boolean,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isActive) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHigh
+            },
+        ),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    maskKey(key),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                )
+                if (isActive) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "使用中",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                MiniRing(usage.rolling.percent ?: 0, "5h", MaterialTheme.colorScheme.primary)
+                MiniRing(usage.weekly.percent ?: 0, "周", MaterialTheme.colorScheme.secondary)
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                MiniRing(usage.monthly.percent ?: 0, "月", MaterialTheme.colorScheme.tertiary)
+                val resetInfo = nearestReset(usage)
+                MiniRing(resetInfo.elapsedPercent.toInt(), "重置", MaterialTheme.colorScheme.error)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MiniRing(percent: Int, label: String, color: Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(48.dp)) {
+            Canvas(Modifier.size(48.dp)) {
+                val stroke = 5.dp.toPx()
+                val inset = stroke / 2
+                val arcSize = Size(size.width - stroke, size.height - stroke)
+                drawArc(
+                    color = color.copy(alpha = 0.15f),
+                    startAngle = -90f,
+                    sweepAngle = 360f,
+                    useCenter = false,
+                    topLeft = Offset(inset, inset),
+                    size = arcSize,
+                    style = Stroke(stroke, cap = StrokeCap.Round),
+                )
+                if (percent > 0) {
+                    drawArc(
+                        color = color,
+                        startAngle = -90f,
+                        sweepAngle = percent.coerceIn(0, 100) * 3.6f,
+                        useCenter = false,
+                        topLeft = Offset(inset, inset),
+                        size = arcSize,
+                        style = Stroke(stroke, cap = StrokeCap.Round),
+                    )
+                }
+            }
+            Text(
+                "$percent%",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = color,
+            )
+        }
+        Spacer(Modifier.height(2.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+// ── 单密钥竖列卡片 ──
 @Composable
 private fun UsageRingCard(
     title: String,
@@ -299,7 +345,7 @@ private fun UsageRingCard(
     percent: Float,
     color: Color,
     resetAt: String? = null,
-    centerText: String? = null,
+    bottomText: String? = null,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -322,17 +368,15 @@ private fun UsageRingCard(
             UsageRing(
                 percent = percent.coerceIn(0f, 100f),
                 color = color,
-                centerTop = centerText ?: "${percent.toInt()}%",
-                centerBottom = if (centerText != null) "已消耗" else "已使用",
+                centerText = "${percent.toInt()}%",
             )
-            if (resetAt != null) {
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    "重置于 ${formatResetAt(resetAt)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                bottomText ?: resetAt?.let { "重置于 ${formatResetAt(it)}" } ?: "",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }
@@ -341,10 +385,8 @@ private fun UsageRingCard(
 private fun UsageRing(
     percent: Float,
     color: Color,
-    centerTop: String,
-    centerBottom: String,
+    centerText: String,
 ) {
-    // v3.8.1: 环形图缩小到原尺寸 40%
     Box(contentAlignment = Alignment.Center, modifier = Modifier.size(64.dp)) {
         Canvas(Modifier.size(64.dp)) {
             val stroke = 6.dp.toPx()
@@ -371,20 +413,118 @@ private fun UsageRing(
                 )
             }
         }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                centerTop,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Bold,
-                color = color,
-            )
-            Text(
-                centerBottom,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        Text(
+            centerText,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Bold,
+            color = color,
+        )
     }
+}
+
+// ── 卡包弹窗 (输入/列表/切换/删除) ──
+@Composable
+private fun KeyCardDialog(
+    settingsStore: SettingsStore,
+    currentKey: String,
+    savedKeys: List<String>,
+    initialInput: String,
+    onDismiss: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var keyInput by remember { mutableStateOf(initialInput) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Open Code API Key 卡包") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = keyInput,
+                    onValueChange = { keyInput = it },
+                    placeholder = { Text("输入新密钥 sk-...") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "已存密钥：点击卡片切换，删除后不再保留",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                savedKeys.forEach { savedKey ->
+                    val isActive = savedKey == currentKey
+                    Card(
+                        onClick = {
+                            if (!isActive) {
+                                scope.launch {
+                                    settingsStore.update { it.copy(opencodeApiKey = savedKey) }
+                                }
+                            }
+                        },
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isActive) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHigh
+                            },
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    maskKey(savedKey),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                )
+                                if (isActive) {
+                                    Text(
+                                        "使用中",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            }
+                            TextButton(onClick = {
+                                scope.launch {
+                                    settingsStore.update {
+                                        it.copy(
+                                            opencodeApiKeys = it.opencodeApiKeys - savedKey,
+                                            opencodeApiKey = if (savedKey == it.opencodeApiKey) "" else it.opencodeApiKey,
+                                        )
+                                    }
+                                }
+                            }) {
+                                Text("删除", color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val newKey = keyInput.trim()
+                if (newKey.isNotEmpty()) {
+                    onDismiss()
+                    scope.launch {
+                        settingsStore.update {
+                            it.copy(
+                                opencodeApiKey = newKey,
+                                opencodeApiKeys = (listOf(newKey) + it.opencodeApiKeys).distinct(),
+                            )
+                        }
+                    }
+                }
+            }) { Text("保存") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        },
+    )
 }
 
 // ── 重置倒计时计算 ──
@@ -400,7 +540,6 @@ private fun nearestReset(u: UsageApi.UsageResult): ResetInfo {
         W("monthly", u.monthly.resetsAt, 30 * 24 * 60 * 60 * 1000L),
     )
 
-    // 取最近的未来重置点
     val nearest = windows
         .mapNotNull { w ->
             val ts = w.resetsAt?.let { parseEpochMs(it) } ?: return@mapNotNull null
@@ -414,8 +553,7 @@ private fun nearestReset(u: UsageApi.UsageResult): ResetInfo {
     val (w, resetTs) = nearest
     val windowStart = resetTs - w.windowMs
     val elapsed = (now - windowStart).coerceAtLeast(0L).toFloat()
-    val total = w.windowMs.toFloat()
-    val elapsedPercent = (elapsed / total * 100f).coerceIn(0f, 100f)
+    val elapsedPercent = (elapsed / w.windowMs.toFloat() * 100f).coerceIn(0f, 100f)
 
     val remainMs = (resetTs - now).coerceAtLeast(0L)
     val hours = remainMs / 3_600_000
@@ -438,7 +576,7 @@ private fun formatResetAt(iso: String): String = runCatching {
     formatter.format(Instant.parse(iso))
 }.getOrElse { iso }
 
-// v3.8.1: 密钥脱敏显示 (sk-abc...xyz)
+// 密钥脱敏显示 (sk-abc...xyz)
 private fun maskKey(key: String): String {
     if (key.length <= 8) return key
     return key.take(6) + "..." + key.takeLast(4)
