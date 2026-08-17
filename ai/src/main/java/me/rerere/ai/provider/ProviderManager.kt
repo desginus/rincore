@@ -63,10 +63,10 @@ class ProviderManager(client: OkHttpClient, context: Context) {
             is ProviderSetting.Claude -> getProvider("claude")
         } as Provider<T>
     }
-}
 
     companion object {
         /** v3.7.1: Claude/Anthropic 独立连接池 (keepalive 300s), DataSourceModule 注入 */
         @Volatile
         var claudeClient: OkHttpClient? = null
     }
+}
