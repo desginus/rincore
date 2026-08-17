@@ -102,6 +102,8 @@ private fun rememberReasoningState(reasoning: UIMessagePart.Reasoning): Pair<Rea
         if (loading) {
             if (!state.expandState.expanded && settings.displaySetting.showThinkingContent)
                 state.expandState = ReasoningCardState.Preview
+            // v3.7.1: 滚动防抖 — 思考链 delta 高频触发时不再每帧滚动 (卡顿源)
+            delay(100)
             scrollState.animateScrollTo(scrollState.maxValue)
         } else {
             if (state.expandState.expanded) {
