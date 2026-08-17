@@ -125,7 +125,6 @@ import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceDetailPage
 import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceTerminalPage
 import me.rerere.rikkahub.ui.pages.favorite.FavoritePage
 import me.rerere.rikkahub.ui.pages.history.HistoryPage
-import me.rerere.rikkahub.ui.pages.imggen.ImageGenPage
 import me.rerere.rikkahub.ui.pages.log.LogPage
 import me.rerere.rikkahub.ui.pages.search.SearchPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAboutPage
@@ -155,7 +154,6 @@ import me.rerere.rikkahub.ui.pages.setting.scheduledjobs.ScheduledJobsScreen
 import me.rerere.rikkahub.ui.pages.setting.scheduledjobs.ScheduledJobDetailScreen
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerPage
 import me.rerere.rikkahub.ui.pages.stats.StatsPage
-import me.rerere.rikkahub.ui.pages.translator.TranslatorPage
 import me.rerere.rikkahub.ui.pages.webview.WebViewPage
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.theme.RikkahubTheme
@@ -546,8 +544,8 @@ class RouteActivity : ComponentActivity() {
                                 AssistantExtensionsPage(key.id)
                             }
 
-                            entry<Screen.Translator> {
-                                TranslatorPage()
+                            entry<Screen.Usage> {
+                                me.rerere.rikkahub.ui.pages.usage.UsagePage()
                             }
 
                             entry<Screen.Setting> {
@@ -556,10 +554,6 @@ class RouteActivity : ComponentActivity() {
 
                             entry<Screen.Backup> {
                                 BackupPage()
-                            }
-
-                            entry<Screen.ImageGen> {
-                                ImageGenPage()
                             }
 
                             entry<Screen.WebView> { key ->
@@ -804,16 +798,13 @@ sealed interface Screen : NavKey {
     data class AssistantInjections(val id: String) : Screen
 
     @Serializable
-    data object Translator : Screen
+    data object Usage : Screen
 
     @Serializable
     data object Setting : Screen
 
     @Serializable
     data object Backup : Screen
-
-    @Serializable
-    data object ImageGen : Screen
 
     @Serializable
     data class WebView(val url: String = "", val contentId: String = "") : Screen
