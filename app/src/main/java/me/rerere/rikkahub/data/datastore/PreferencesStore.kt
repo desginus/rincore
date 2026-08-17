@@ -588,7 +588,8 @@ class SettingsStore(
 data class Settings(
     @Transient
     val init: Boolean = false,
-    val opencodeApiKey: String = "", // v3.8.0: OpenCode 用量查询 API Key
+    val opencodeApiKey: String = "", // v3.8.0: OpenCode 用量查询 API Key (当前选中/最后使用)
+    val opencodeApiKeys: List<String> = emptyList(), // v3.8.1: 密钥卡包 (历史密钥列表)
     val dynamicColor: Boolean = true,
     val themeId: String = PresetThemes[0].id,
     val customThemes: List<CustomTheme> = emptyList(),

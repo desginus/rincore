@@ -199,21 +199,89 @@ fun UsagePage(onBack: () -> Unit = {}) {
     if (showKeyDialog) {
         AlertDialog(
             onDismissRequest = { showKeyDialog = false },
-            title = { Text("Open Code API Key") },
+            title = { Text("Open Code API Key 卡包") },
             text = {
-                OutlinedTextField(
-                    value = keyInput,
-                    onValueChange = { keyInput = it },
-                    placeholder = { Text("sk-...") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = keyInput,
+                        onValueChange = { keyInput = it },
+                        placeholder = { Text("输入新密钥 sk-...") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        "已存密钥：点击卡片切换，删除后不再保留",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    settings.opencodeApiKeys.forEach { savedKey ->
+                        val isActive = savedKey == apiKey
+                        Card(
+                            onClick = {
+                                if (!isActive) {
+                                    scope.launch {
+                                        settingsStore.update { it.copy(opencodeApiKey = savedKey) }
+                                    }
+                                }
+                            },
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isActive) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceContainerHigh
+                                },
+                            ),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Row(
+                                Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        maskKey(savedKey),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    if (isActive) {
+                                        Text(
+                                            "使用中",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                }
+                                TextButton(onClick = {
+                                    scope.launch {
+                                        settingsStore.update {
+                                            it.copy(
+                                                opencodeApiKeys = it.opencodeApiKeys - savedKey,
+                                                opencodeApiKey = if (savedKey == it.opencodeApiKey) "" else it.opencodeApiKey,
+                                            )
+                                        }
+                                    }
+                                }) {
+                                    Text("删除", color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    showKeyDialog = false
-                    scope.launch {
-                        settingsStore.update { it.copy(opencodeApiKey = keyInput.trim()) }
+                    val newKey = keyInput.trim()
+                    if (newKey.isNotEmpty()) {
+                        showKeyDialog = false
+                        scope.launch {
+                            // v3.8.1: 保存到卡包 (去重置顶) + 设为当前
+                            settingsStore.update {
+                                it.copy(
+                                    opencodeApiKey = newKey,
+                                    opencodeApiKeys = (listOf(newKey) + it.opencodeApiKeys).distinct(),
+                                )
+                            }
+                        }
                     }
                 }) { Text("保存") }
             },
@@ -240,17 +308,17 @@ private fun UsageRingCard(
         ),
     ) {
         Column(
-            Modifier.fillMaxWidth().padding(vertical = 20.dp),
+            Modifier.fillMaxWidth().padding(vertical = 14.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(title, style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(2.dp))
             Text(
                 subtitle,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(10.dp))
             UsageRing(
                 percent = percent.coerceIn(0f, 100f),
                 color = color,
@@ -276,9 +344,10 @@ private fun UsageRing(
     centerTop: String,
     centerBottom: String,
 ) {
-    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(160.dp)) {
-        Canvas(Modifier.size(160.dp)) {
-            val stroke = 14.dp.toPx()
+    // v3.8.1: 环形图缩小到原尺寸 40%
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(64.dp)) {
+        Canvas(Modifier.size(64.dp)) {
+            val stroke = 6.dp.toPx()
             val inset = stroke / 2
             val arcSize = Size(size.width - stroke, size.height - stroke)
             drawArc(
@@ -305,7 +374,7 @@ private fun UsageRing(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 centerTop,
-                style = MaterialTheme.typography.headlineSmall,
+                style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Bold,
                 color = color,
             )
@@ -368,3 +437,9 @@ private fun formatResetAt(iso: String): String = runCatching {
         .withZone(ZoneId.systemDefault())
     formatter.format(Instant.parse(iso))
 }.getOrElse { iso }
+
+// v3.8.1: 密钥脱敏显示 (sk-abc...xyz)
+private fun maskKey(key: String): String {
+    if (key.length <= 8) return key
+    return key.take(6) + "..." + key.takeLast(4)
+}
