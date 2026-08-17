@@ -266,8 +266,7 @@ val dataSourceModule = module {
             .followRedirects(true)
             .retryOnConnectionFailure(true)
             .build()
-    }.also {
-        me.rerere.ai.provider.ProviderManager.claudeClient = it
+            .also { me.rerere.ai.provider.ProviderManager.claudeClient = it }
     }
 
     single {
