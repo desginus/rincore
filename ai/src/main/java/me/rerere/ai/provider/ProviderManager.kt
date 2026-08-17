@@ -21,12 +21,7 @@ class ProviderManager(client: OkHttpClient, context: Context) {
         // 注册默认Provider
         registerProvider("openai", OpenAIProvider(client, context))
         registerProvider("google", GoogleProvider(client, context))
-        registerProvider("claude", ClaudeProvider(
-            // v3.7.1: 独立连接池 (keepalive 300s) — 中转接口 TTFT 稳定
-            // claudeClient 由 DataSourceModule 注入 (companion, 避免循环依赖)
-            claudeClient ?: client,
-            context,
-        ))
+        registerProvider("claude", ClaudeProvider(claudeClient ?: client, context))
     }
 
     /**

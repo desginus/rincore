@@ -49,6 +49,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.logging.HttpLoggingInterceptor
+import org.koin.core.qualifier.named
 import org.koin.dsl.module
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
@@ -252,7 +253,7 @@ val dataSourceModule = module {
     // v3.7.1: Claude/Anthropic 中转 (OpenCode Zen) 独立连接池 —
     // 中转环境空闲关闭比 DeepSeek 慢, keepalive 300s 减少连接重建,
     // 稳定首字延迟 (TTFT)。DeepSeek 的 60s 不变 (避免陈旧连接复发)。
-    single<OkHttpClient>("claude") {
+    single<OkHttpClient>(named("claude")) {
         OkHttpClient.Builder()
             .protocols(listOf(Protocol.HTTP_1_1))
             .connectTimeout(30, TimeUnit.SECONDS)
@@ -260,12 +261,10 @@ val dataSourceModule = module {
             .writeTimeout(120, TimeUnit.SECONDS)
             .pingInterval(30, TimeUnit.SECONDS)
             .connectionPool(ConnectionPool(12, 300, TimeUnit.SECONDS))
-            .dispatcher(dispatcher)
             .socketFactory(BufferedSocketFactory)
             .followSslRedirects(true)
             .followRedirects(true)
             .retryOnConnectionFailure(true)
-            .cache(dnsCache)
             .build()
     }.also {
         me.rerere.ai.provider.ProviderManager.claudeClient = it
