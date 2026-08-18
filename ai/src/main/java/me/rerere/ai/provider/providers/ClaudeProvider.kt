@@ -183,6 +183,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
         }
 
         val hasData = java.util.concurrent.atomic.AtomicBoolean(false)
+        val streamStartMs = System.currentTimeMillis()
         // v3.8.5: 完成标记 — Anthropic 协议 message_stop 是唯一正常收尾,
         // 连接关闭时若未收到 message_stop 视为断流 (输出中途静默中断当
         // 正常完成保存半截回复的根因修复)。对照 ChatCompletionsAPI
@@ -201,6 +202,12 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
         val firstByteLimit = if (isOpencode) 120_000L else 60_000L
         val streamLimit = if (isOpencode) 180_000L else 120_000L
         val lastEventAt = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
+
+        // v3.8.6: SSE 诊断统计 — 输出中途中断/半截时在运行日志页可抓取全部现场
+        val eventCount = java.util.concurrent.atomic.AtomicInteger(0)
+        val dataChars = java.util.concurrent.atomic.AtomicLong(0)
+        TraceLogger.log("SSE", "start: model=${params.model.modelId}, isOpencode=$isOpencode, firstByteLimit=${firstByteLimit / 1000}s, streamLimit=${streamLimit / 1000}s, maxTokens=${params.maxTokens ?: 64000}")
+
         val watchdog = launch {
             while (true) {
                 kotlinx.coroutines.delay(15_000)
@@ -208,6 +215,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
                 val limit = if (hasData.get()) streamLimit else firstByteLimit
                 if (idleMs > limit) {
                     Log.w(TAG, "Claude SSE idle ${idleMs / 1000}s (phase=${if (hasData.get()) "stream" else "first-byte"}) — closing")
+                    TraceLogger.log("SSE", "watchdog timeout: idle=${idleMs / 1000}s, limit=${limit / 1000}s, events=${eventCount.get()}, dataChars=${dataChars.get()}")
                     close(java.io.IOException("生成无有效数据超时 (${limit / 1000}s): 平台断流或卡死"))
                     break
                 }
@@ -226,6 +234,15 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
                     return
                 }
                 if (data.isNotBlank()) lastEventAt.set(System.currentTimeMillis())
+
+                // v3.8.6: 诊断计数 (每事件累加, 成本可忽略)
+                val seq = eventCount.incrementAndGet()
+                dataChars.addAndGet(data.length.toLong())
+                if (seq == 1) {
+                    TraceLogger.log("SSE", "first event after ${System.currentTimeMillis() - streamStartMs}ms, type=$type, len=${data.length}")
+                } else if (seq % 50 == 1) {
+                    TraceLogger.log("SSE", "progress: events=$seq, dataChars=${dataChars.get()}, lastType=$type")
+                }
 
                 val dataJson = json.parseToJsonElement(data).jsonObject
                 val deltaMessage = parseMessage(buildJsonArray {
@@ -262,6 +279,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
                     "message_stop" -> {
                         Log.d(TAG, "Stream ended")
                         completed.set(true)
+                        TraceLogger.log("SSE", "message_stop: events=${eventCount.get()}, dataChars=${dataChars.get()}, usage=$tokenUsage")
                         close()
                     }
 
@@ -278,6 +296,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
 
                 t?.printStackTrace()
                 Log.e(TAG, "onFailure: ${t?.javaClass?.name} ${t?.message} / $response")
+                TraceLogger.log("SSE", "onFailure: ${t?.javaClass?.name} ${t?.message} / http=${response?.code}, events=${eventCount.get()}, dataChars=${dataChars.get()}")
 
                 // 流式传输中断恢复: 如果已有部分数据则保留
                 if (t is java.io.IOException &&
@@ -316,9 +335,11 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
                 // v3.8.5: 无 message_stop 的连接关闭 = 输出中途静默中断
                 // (中转断流/网关切换), 必须走断流重试而非保存半截回复
                 if (completed.get()) {
+                    TraceLogger.log("SSE", "closed: completed=true, events=${eventCount.get()}, dataChars=${dataChars.get()}")
                     close()
                 } else {
                     Log.w(TAG, "Claude SSE closed without message_stop — treating as stream interruption")
+                    TraceLogger.log("SSE", "closed WITHOUT message_stop: events=${eventCount.get()}, dataChars=${dataChars.get()} — treating as stream interruption")
                     close(java.io.IOException("流未正常结束 (无 message_stop): 平台中断输出"))
                 }
             }

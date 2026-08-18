@@ -331,7 +331,11 @@ class GenerationHandler(
                     layer1Prompt = layer1Prompt,
                     // v3.6.85: conversationId 已随 x-opencode-session 头一并移除 (v3.6.80)
                 )
-                CallTracer.event("RECV", "post_api", "generateInternal returned, messages=${messages.size}")
+                CallTracer.event(
+                    "RECV", "post_api",
+                    "generateInternal returned, messages=${messages.size}",
+                    metrics = sseDiagMetrics()
+                )
                 messages = messages.visualTransforms(
                     transformers = outputTransformers,
                     context = context,
@@ -570,6 +574,13 @@ class GenerationHandler(
 
     }.flowOn(Dispatchers.IO)
 
+    // v3.8.6: 抓取 SSE 诊断现场 (TraceLogger 中 tag=SSE 的最近条目),
+    // 挂到 CallTracer 事件的 metrics, 运行日志页直接可见
+    private fun sseDiagMetrics(): Map<String, String> {
+        val lines = me.rerere.ai.util.TraceLogger.takeTagged("SSE", 12)
+        return if (lines.isEmpty()) emptyMap() else mapOf("sse_diag" to lines.joinToString(" | "))
+    }
+
     private suspend fun generateInternal(
         assistant: Assistant,
         settings: Settings,
@@ -734,10 +745,9 @@ class GenerationHandler(
             val preStreamMessages = messages
             // v3.6.49: UI 更新节流 — 每 chunk 调 onUpdateMessages 触发整个 ChatPage
             // 重组, 流式期间高频重组是卡顿/发热/120Hz 掉帧根因。
-            // v3.8.3: 100ms→50ms — OpenCode 中转 (Anthropic 接口千问) 实测输出
-            // 一顿一顿 (chunk 稀疏且大块), 100ms 批处理把大块再压住最多 100ms
-            // 加重顿感; 50ms 对齐 v3.6.68 以前行为, DeepSeek 密集 chunk 20fps
-            // 仍平滑, 掉帧风险可控。
+            // v3.8.6: 50ms→5ms 用户实测 — 5ms 窗口几乎等于逐 chunk 直发
+            // (原版行为), 顿挫感进一步消失; 重组成本由 Compose 重组范围
+            // 控制兜底, 若出现掉帧回归再回调。
             var lastUiUpdateMs = 0L
             try {
             providerImpl.streamText(
@@ -767,7 +777,7 @@ class GenerationHandler(
                     }
                 }
                 val now = System.currentTimeMillis()
-                if (now - lastUiUpdateMs >= 50) {
+                if (now - lastUiUpdateMs >= 5) {
                     onUpdateMessages(messages)
                     lastUiUpdateMs = now
                 }
@@ -786,6 +796,7 @@ class GenerationHandler(
                     streamRetryCount++
                     kotlinx.coroutines.delay(1_000L * streamRetryCount)
                     Log.w(TAG, "stream interrupted (${e.message}), rolling back & retry $streamRetryCount/5")
+                    CallTracer.event("RETRY", "stream_interrupted", "interrupted: ${e.message}, rollback & retry $streamRetryCount/5", metrics = sseDiagMetrics())
                     messages = preStreamMessages  // 丢弃本次生成的半截内容
                     onUpdateMessages(messages)    // UI 同步回滚
                     continue@streamLoop  // 重试 (maxSteps 内, 消息相同缓存命中)

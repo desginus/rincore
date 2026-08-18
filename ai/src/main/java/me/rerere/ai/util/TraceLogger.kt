@@ -90,4 +90,23 @@ object TraceLogger {
     fun clear() {
         buffer.clear()
     }
+
+    /**
+     * 提取指定 tag 的最近条目 (诊断用, 供运行日志页抓取 SSE 现场)。
+     * 返回带时间戳的文本行, 最新的在前。
+     */
+    fun takeTagged(tag: String, maxLines: Int = 15): List<String> {
+        val result = mutableListOf<String>()
+        val it = buffer.iterator()
+        var count = 0
+        while (it.hasNext() && count < maxLines) {
+            val entry = it.next()
+            if (entry.tag == tag) {
+                val timeStr = formatter.format(Date(entry.timestamp))
+                result.add("[$timeStr][${entry.thread}] ${entry.message}")
+                count++
+            }
+        }
+        return result
+    }
 }
