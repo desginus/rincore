@@ -183,6 +183,11 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
         }
 
         val hasData = java.util.concurrent.atomic.AtomicBoolean(false)
+        // v3.8.5: 完成标记 — Anthropic 协议 message_stop 是唯一正常收尾,
+        // 连接关闭时若未收到 message_stop 视为断流 (输出中途静默中断当
+        // 正常完成保存半截回复的根因修复)。对照 ChatCompletionsAPI
+        // completed/gotFinish 机制 (v3.6.75 双向: 有收尾标记才视为完成)。
+        val completed = java.util.concurrent.atomic.AtomicBoolean(false)
 
         // v3.8.3: OpenCode 适配 — 对齐 ChatCompletionsAPI v3.6.44 (该通道已有
         // opencode.ai 判定放宽 watchdog): OpenCode Zen 中转聚合转发 + 深度思考,
@@ -256,6 +261,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
                 when (type) {
                     "message_stop" -> {
                         Log.d(TAG, "Stream ended")
+                        completed.set(true)
                         close()
                     }
 
@@ -307,7 +313,14 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
             }
 
             override fun onClosed(eventSource: EventSource) {
-                close()
+                // v3.8.5: 无 message_stop 的连接关闭 = 输出中途静默中断
+                // (中转断流/网关切换), 必须走断流重试而非保存半截回复
+                if (completed.get()) {
+                    close()
+                } else {
+                    Log.w(TAG, "Claude SSE closed without message_stop — treating as stream interruption")
+                    close(java.io.IOException("流未正常结束 (无 message_stop): 平台中断输出"))
+                }
             }
         }
 
