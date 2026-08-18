@@ -733,8 +733,11 @@ class GenerationHandler(
             streamLoop@ while (true) {
             val preStreamMessages = messages
             // v3.6.49: UI 更新节流 — 每 chunk 调 onUpdateMessages 触发整个 ChatPage
-            // 重组, 流式期间高频重组是卡顿/发热/120Hz 掉帧根因。v3.6.69 50ms→100ms,
-            // 重组频率降到每秒最多 10 次, 进一步降低流式期间掉帧与滑动卡顿。
+            // 重组, 流式期间高频重组是卡顿/发热/120Hz 掉帧根因。
+            // v3.8.3: 100ms→50ms — OpenCode 中转 (Anthropic 接口千问) 实测输出
+            // 一顿一顿 (chunk 稀疏且大块), 100ms 批处理把大块再压住最多 100ms
+            // 加重顿感; 50ms 对齐 v3.6.68 以前行为, DeepSeek 密集 chunk 20fps
+            // 仍平滑, 掉帧风险可控。
             var lastUiUpdateMs = 0L
             try {
             providerImpl.streamText(
@@ -764,7 +767,7 @@ class GenerationHandler(
                     }
                 }
                 val now = System.currentTimeMillis()
-                if (now - lastUiUpdateMs >= 100) {
+                if (now - lastUiUpdateMs >= 50) {
                     onUpdateMessages(messages)
                     lastUiUpdateMs = now
                 }

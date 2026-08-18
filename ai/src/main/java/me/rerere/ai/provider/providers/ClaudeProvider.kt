@@ -180,7 +180,33 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
             Log.i(TAG, "streamText: $it")
         }
 
-        var hasData = false
+        val hasData = java.util.concurrent.atomic.AtomicBoolean(false)
+
+        // v3.8.3: OpenCode 适配 — 对齐 ChatCompletionsAPI v3.6.44 (该通道已有
+        // opencode.ai 判定放宽 watchdog): OpenCode Zen 中转聚合转发 + 深度思考,
+        // 静默期长且可能不逐 token 转发。无 watchdog 时中转静默会无限挂起直到
+        // readTimeout (3min), 用户感知首字延迟极久。分阶段 watchdog:
+        // 首包前 120s 断开 (opencode) / 60s (其他); 首包后 180s (opencode) /
+        // 120s (其他)。断开抛 IOException → GenerationHandler 断流重试, 收敛挂起。
+        val isOpencode = runCatching {
+            providerSetting.baseUrl.toHttpUrl().host == "opencode.ai"
+        }.getOrDefault(false)
+        val firstByteLimit = if (isOpencode) 120_000L else 60_000L
+        val streamLimit = if (isOpencode) 180_000L else 120_000L
+        val lastEventAt = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
+        val watchdog = kotlinx.coroutines.launch {
+            while (true) {
+                kotlinx.coroutines.delay(15_000)
+                val idleMs = System.currentTimeMillis() - lastEventAt.get()
+                val limit = if (hasData.get()) streamLimit else firstByteLimit
+                if (idleMs > limit) {
+                    Log.w(TAG, "Claude SSE idle ${idleMs / 1000}s (phase=${if (hasData.get()) "stream" else "first-byte"}) — closing")
+                    close(java.io.IOException("生成无有效数据超时 (${limit / 1000}s): 平台断流或卡死"))
+                    break
+                }
+            }
+        }
+
         val listener = object : EventSourceListener() {
             override fun onEvent(
                 eventSource: EventSource,
@@ -192,6 +218,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
                 if (data == "[DONE]") {
                     return
                 }
+                if (data.isNotBlank()) lastEventAt.set(System.currentTimeMillis())
 
                 val dataJson = json.parseToJsonElement(data).jsonObject
                 val deltaMessage = parseMessage(buildJsonArray {
@@ -222,7 +249,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
                 trySend(messageChunk).onFailure { e ->
                     Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
                 }
-                hasData = true
+                hasData.set(true)
 
                 when (type) {
                     "message_stop" -> {
@@ -258,7 +285,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
                 ) {
                     // 移除静默恢复 (v3.1.0 引入) — 曾致回复缺失无报错感知中断
                     // 中断传播异常, 用户可见明确错误
-                    Log.w(TAG, "onFailure: recoverable stream error (will propagate): ${t.message} hasData=$hasData")
+                    Log.w(TAG, "onFailure: recoverable stream error (will propagate): ${t.message} hasData=${hasData.get()}")
                 }
 
                 val bodyRaw = response?.body?.stringSafe()
@@ -286,6 +313,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
             .newEventSource(request, listener)
 
         awaitClose {
+            runCatching { watchdog.cancel() }
             Log.d(TAG, "Closing eventSource")
             eventSource.cancel()
         }
