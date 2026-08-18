@@ -745,9 +745,10 @@ class GenerationHandler(
             val preStreamMessages = messages
             // v3.6.49: UI 更新节流 — 每 chunk 调 onUpdateMessages 触发整个 ChatPage
             // 重组, 流式期间高频重组是卡顿/发热/120Hz 掉帧根因。
-            // v3.8.6: 50ms→5ms 用户实测 — 5ms 窗口几乎等于逐 chunk 直发
-            // (原版行为), 顿挫感进一步消失; 重组成本由 Compose 重组范围
-            // 控制兜底, 若出现掉帧回归再回调。
+            // v3.8.6: 50ms→5ms 用户实测 — 顿挫感反而极严重: 5ms 下每个 chunk
+            // 都触发重组, UI 线程被重组任务淹没, 渲染帧率被拖低形成掉帧式
+            // 顿挫 (与预热期 60Hz vsync 不匹配)。v3.8.7 回 50ms: OpenCode 大块
+            // chunk 间隔本就大于 50ms, 节流不产生额外延迟, 密集时批处理保帧率。
             var lastUiUpdateMs = 0L
             try {
             providerImpl.streamText(
@@ -777,7 +778,7 @@ class GenerationHandler(
                     }
                 }
                 val now = System.currentTimeMillis()
-                if (now - lastUiUpdateMs >= 5) {
+                if (now - lastUiUpdateMs >= 50) {
                     onUpdateMessages(messages)
                     lastUiUpdateMs = now
                 }
