@@ -6,6 +6,7 @@ package me.rerere.ai.provider.providers
  * ───────────────────────────────────────────────────────────────*/
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
@@ -58,6 +59,7 @@ import me.rerere.ai.util.stringSafe
 import me.rerere.ai.util.toHeaders
 import me.rerere.common.http.await
 import me.rerere.common.http.jsonPrimitiveOrNull
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -194,7 +196,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
         val firstByteLimit = if (isOpencode) 120_000L else 60_000L
         val streamLimit = if (isOpencode) 180_000L else 120_000L
         val lastEventAt = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
-        val watchdog = kotlinx.coroutines.launch {
+        val watchdog = launch {
             while (true) {
                 kotlinx.coroutines.delay(15_000)
                 val idleMs = System.currentTimeMillis() - lastEventAt.get()
