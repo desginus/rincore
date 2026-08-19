@@ -210,7 +210,7 @@ fun ChatMessage(
             exit = slideOutVertically { it / 2 } + fadeOut()
         ) {
             Column(
-                modifier = Modifier.let { if (loading) it else it.animateContentSize() }
+                modifier = Modifier.contentSizeAnimated(loading)
             ) {
                 ChatMessageActionButtons(
                     message = message,
@@ -422,7 +422,7 @@ private fun MessagePartsBlock(
                                         ),
                                         onClickCitation = handleClickCitation,
                                         modifier = Modifier
-                                            .let { if (loading) it else it.animateContentSize() }
+                                            .contentSizeAnimated(loading)
                                     )
                                 }
                             }
