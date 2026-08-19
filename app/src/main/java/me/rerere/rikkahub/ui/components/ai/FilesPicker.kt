@@ -86,6 +86,7 @@ import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.ai.core.UIMessagePart
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.ui.components.ui.ExtensionSelector
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionCamera
@@ -722,7 +723,7 @@ private fun RetentionDetailDialog(nodes: List<MessageNode>, onDismiss: () -> Uni
     val text = remember(nodes) {
         nodes.joinToString("\n\n---\n\n") { node ->
             runCatching { node.currentMessage }.getOrNull()?.parts
-                ?.filterIsInstance<me.rerere.ai.core.UIMessagePart.Text>()
+                ?.filterIsInstance<UIMessagePart.Text>()
                 ?.joinToString("\n") { it.text }
                 ?: ""
         }

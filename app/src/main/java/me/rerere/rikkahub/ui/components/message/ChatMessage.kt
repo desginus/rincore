@@ -7,8 +7,8 @@ package me.rerere.rikkahub.ui.components.message
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.SpringSpec
+import androidx.compose.animation.core.TweenSpec
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -111,8 +111,8 @@ import kotlin.time.Duration.Companion.milliseconds
 // 动画 → 页面上下抽动。改回原版 always animateContentSize 形态, 动画
 // 速度参数化: 流式时 tween(0) 瞬跳 (保留流式防抖收益), 完成时 spring
 // (原版行为)。修饰符链不再在 loading 翻转时变化。
-private val streamingContentSizeSpec = tween<IntSize>(durationMillis = 0)
-private val settledContentSizeSpec = spring<IntSize>()
+private val streamingContentSizeSpec = TweenSpec<IntSize>(durationMillis = 0)
+private val settledContentSizeSpec = SpringSpec<IntSize>()
 
 private fun Modifier.contentSizeAnimated(loading: Boolean): Modifier =
     animateContentSize(animationSpec = if (loading) streamingContentSizeSpec else settledContentSizeSpec)
