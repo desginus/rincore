@@ -85,6 +85,7 @@ import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.ui.components.ui.ExtensionSelector
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionCamera
@@ -102,6 +103,11 @@ import me.rerere.workspace.WorkspaceFileEntry
 import me.rerere.workspace.WorkspaceStorageArea
 import me.rerere.hugeicons.stroke.ArrowTurnBackward
 import me.rerere.hugeicons.stroke.File01
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.background
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 
 @Composable
 internal fun FilesPicker(
@@ -110,7 +116,7 @@ internal fun FilesPicker(
     state: ChatInputState,
     mcpManager: McpManager,
     onCompressContext: (additionalPrompt: String, targetTokens: Int, keepRecentMessages: Int) -> Job,
-    onUndoCompress: () -> Unit = {},
+    onRestoreCompressAt: (Int) -> Unit = {},
     onUpdateAssistant: (Assistant) -> Unit,
     onUpdateConversation: (Conversation) -> Unit,
     showInjectionSheet: Boolean,
@@ -184,10 +190,13 @@ internal fun FilesPicker(
             }, modifier = Modifier.weight(1f))
         }
 
-        // 撤销压缩 — 压缩后显示，独立一行
-        if (conversation.compressedContext != null) {
+        // v3.8.13: 压缩留存管理 — 压缩后显示, 点击弹出留存位点列表
+        // (查看原文 / 从此位点恢复, 级联撤销其后的压缩)
+        val retentions = conversation.compressRetentions
+        if (retentions.isNotEmpty() || conversation.compressedContext != null) {
+            var showRetentionDialog by remember { mutableStateOf(false) }
             Surface(
-                onClick = onUndoCompress,
+                onClick = { showRetentionDialog = true },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp),
                 color = MaterialTheme.colorScheme.errorContainer,
@@ -205,11 +214,23 @@ internal fun FilesPicker(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "撤销压缩 · 恢复完整对话",
+                        "撤销压缩 · 管理留存位点",
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
+            }
+            if (showRetentionDialog) {
+                CompressRetentionDialog(
+                    retentions = retentions,
+                    hasLegacy = conversation.compressedContext != null && retentions.isEmpty(),
+                    legacyNodes = conversation.compressedContext?.savedMessageNodes,
+                    onRestore = { index ->
+                        onRestoreCompressAt(index)
+                        showRetentionDialog = false
+                    },
+                    onDismiss = { showRetentionDialog = false },
+                )
             }
         }
         val boundWorkspace = remember(workspaces, assistant.workspaceId) {
@@ -612,4 +633,113 @@ private fun CompressButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     }) {
         onClick()
     }
+}
+
+
+// v3.8.13: 压缩留存位点弹窗 — 列出最近 1~3 次压缩, 每项: 查看相关信息 / 从此点恢复
+@Composable
+private fun CompressRetentionDialog(
+    retentions: List<me.rerere.rikkahub.data.model.CompressRetention>,
+    hasLegacy: Boolean,
+    legacyNodes: List<MessageNode>? = null,
+    onRestore: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var viewNodes by remember { mutableStateOf<List<MessageNode>?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("撤销压缩") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "恢复某个位点将一并撤销其之后的所有压缩",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (retentions.isEmpty() && hasLegacy) {
+                    RetentionItem(
+                        label = "旧版压缩记录",
+                        note = "完整对话已被压缩",
+                        onView = { viewNodes = legacyNodes },
+                        onRestore = { onRestore(0) },
+                    )
+                }
+                retentions.forEachIndexed { index, r ->
+                    RetentionItem(
+                        label = r.retentionLabel.ifBlank { "压缩留存" },
+                        note = if (index > 0) "恢复将同时撤销其后的 $index 个压缩" else "恢复到此点状态",
+                        onView = { viewNodes = r.savedMessageNodes },
+                        onRestore = { onRestore(index) },
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("关闭") }
+        },
+    )
+
+    viewNodes?.let { nodes ->
+        RetentionDetailDialog(nodes = nodes) { viewNodes = null }
+    }
+}
+
+@Composable
+private fun RetentionItem(
+    label: String,
+    note: String,
+    onView: () -> Unit,
+    onRestore: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(label, style = MaterialTheme.typography.titleSmall)
+        Text(
+            note,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onView, modifier = Modifier.weight(1f)) {
+                Text("查看相关信息")
+            }
+            Button(onClick = onRestore, modifier = Modifier.weight(1f)) {
+                Text("从此点恢复")
+            }
+        }
+    }
+}
+
+@Composable
+private fun RetentionDetailDialog(nodes: List<MessageNode>, onDismiss: () -> Unit) {
+    val text = remember(nodes) {
+        nodes.joinToString("\n\n---\n\n") { node ->
+            runCatching { node.currentMessage }.getOrNull()?.parts
+                ?.filterIsInstance<me.rerere.ai.core.UIMessagePart.Text>()
+                ?.joinToString("\n") { it.text }
+                ?: ""
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("压缩留存原文") },
+        text = {
+            Text(
+                text.takeIf { it.isNotBlank() } ?: "(无文本内容)",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp)
+                    .verticalScroll(rememberScrollState()),
+            )
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
+    )
 }

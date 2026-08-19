@@ -223,11 +223,13 @@ class ChatVM(
         }
     }
 
-    fun undoCompressContext() {
+    // v3.8.13: 从留存位点恢复 (旧单次撤销改为位点管理)
+    fun restoreCompressAt(index: Int) {
         viewModelScope.launch {
             val conv = conversation.value
-            if (conv.compressedContext != null) {
-                chatService.saveConversation(_conversationId, conv.undoCompress())
+            if (conv.compressRetentions.isNotEmpty() || conv.compressedContext != null) {
+                val migrated = if (conv.compressRetentions.isEmpty()) conv.migrateLegacyCompress() else conv
+                chatService.saveConversation(_conversationId, migrated.restoreCompressAt(index))
             }
         }
     }

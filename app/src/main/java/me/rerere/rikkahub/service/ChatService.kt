@@ -1079,11 +1079,8 @@ class ChatService(
         }
         val newConversation = conversation.copy(
             messageNodes = newMessageNodes,
-            compressedContext = me.rerere.rikkahub.data.model.CompressedContext(
-                savedMessageNodes = savedNodes,
-            ),
             chatSuggestions = emptyList(),
-        )
+        ).addCompressRetention(savedNodes)
 
         saveConversation(conversationId, newConversation)
     }
