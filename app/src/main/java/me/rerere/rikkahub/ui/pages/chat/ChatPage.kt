@@ -353,9 +353,21 @@ private fun ChatPageContent(
         color = MaterialTheme.colorScheme.background,
         modifier = Modifier.fillMaxSize()
     ) {
-        key(hazeRebuildTick) {
-            AssistantBackground(setting = setting, modifier = Modifier.hazeSource(hazeState))
-        }
+        // v3.8.20: 返回前台强制重绘重建模糊纹理 — 不销毁 hazeSource 节点。
+        // v3.8.9 曾用 key(hazeRebuildTick) 重建背景, 销毁重建 hazeSource
+        // 节点导致模糊源永久失效 (首次进入 ON_RESUME 即触发, 全场景
+        // 液态玻璃变普通背景)。改为 draw 阶段读取状态: tick 递增仅触发
+        // 重绘 (draw 订阅), 节点保留, 模糊纹理随重绘重建。
+        AssistantBackground(
+            setting = setting,
+            modifier = Modifier
+                .hazeSource(hazeState)
+                .drawWithContent {
+                    @Suppress("UNUSED_EXPRESSION")
+                    hazeRebuildTick
+                    drawContent()
+                }
+        )
         // v3.6.13: 对话设置对话框 — 延迟自动回复开关
 
         Scaffold(
