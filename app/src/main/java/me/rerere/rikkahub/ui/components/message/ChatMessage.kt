@@ -7,6 +7,8 @@ package me.rerere.rikkahub.ui.components.message
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -55,6 +57,7 @@ import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastAll
 import androidx.compose.ui.util.fastForEach
@@ -102,6 +105,18 @@ import java.util.Locale
 import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
+// v3.8.12: 内容动画参数化 — 修复输出完成瞬间整条消息抽动。
+// v3.7.x 条件化 [loading 时无 animateContentSize] 在 loading 翻转瞬间
+// 改变修饰符链 → 强制重组合 + 动画从无到有 → Markdown 重渲染 + 高度
+// 动画 → 页面上下抽动。改回原版 always animateContentSize 形态, 动画
+// 速度参数化: 流式时 tween(0) 瞬跳 (保留流式防抖收益), 完成时 spring
+// (原版行为)。修饰符链不再在 loading 翻转时变化。
+private val streamingContentSizeSpec = tween<IntSize>(durationMillis = 0)
+private val settledContentSizeSpec = spring<IntSize>()
+
+private fun Modifier.contentSizeAnimated(loading: Boolean): Modifier =
+    animateContentSize(animationSpec = if (loading) streamingContentSizeSpec else settledContentSizeSpec)
+
 fun ChatMessage(
     node: MessageNode,
     modifier: Modifier = Modifier,
@@ -324,7 +339,7 @@ private fun MessagePartsBlock(
                 if (block.steps.isNotEmpty()) {
                     val isReasoningOnlyBlock = block.steps.fastAll { it is ThinkingStep.ReasoningStep }
                     ChainOfThought(
-                        modifier = Modifier.let { if (loading) it else it.animateContentSize() },
+                        modifier = Modifier.contentSizeAnimated(loading),
                         steps = block.steps,
                         collapsedAdaptiveWidth = isReasoningOnlyBlock,
                         cardColors = CardDefaults.cardColors(
@@ -364,7 +379,7 @@ private fun MessagePartsBlock(
                         val textContent = @Composable {
                             if (role == MessageRole.USER) {
                                 Surface(
-                                    modifier = Modifier.let { if (loading) it else it.animateContentSize() },
+                                    modifier = Modifier.contentSizeAnimated(loading),
                                     shape = RoundedCornerShape(16.dp),
                                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = settings.displaySetting.bubbleOpacity),
                                     onClick = { onUserMessageClick?.invoke() },
@@ -383,7 +398,7 @@ private fun MessagePartsBlock(
                             } else {
                                 if (settings.displaySetting.showAssistantBubble) {
                                     Surface(
-                                        modifier = Modifier.let { if (loading) it else it.animateContentSize() },
+                                        modifier = Modifier.contentSizeAnimated(loading),
                                         shape = RoundedCornerShape(16.dp),
                                         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = settings.displaySetting.bubbleOpacity),
                                     ) {
@@ -577,7 +592,7 @@ private fun MessagePartsBlock(
     // Annotations (always rendered at the end)
     if (annotations.isNotEmpty()) {
         Column(
-            modifier = Modifier.let { if (loading) it else it.animateContentSize() },
+            modifier = Modifier.contentSizeAnimated(loading),
         ) {
             var expand by remember { mutableStateOf(false) }
             if (expand) {
