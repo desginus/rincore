@@ -5,6 +5,29 @@ description: "[中优先级·RinCore决策对照] RinCore 关键方案对比迭�
 
 # RinCore 方案决策记录
 
+## D10. 压缩机制：单留存 vs 多留存位点（v3.8.14 重做，用户决策）
+- **旧方案（v3.8.13 前）**：compressedContext 单值——只留最近一次压缩的原文，撤销=整体还原
+- **问题**：多次压缩后只能撤销最后一次；恢复困难、容易出各种状态 bug
+- **新方案（v3.8.14 定稿）**：compressRetentions 列表（最多 3 个，最新在前，超出覆盖最旧）
+  - 每个位点：时间戳（年/月/日 时:分 星期几）+ savedMessageNodes（原文，恢复用）+ summaryMessageNodes（摘要，查看用）
+  - 恢复索引 k：还原位点 k 的原文，k 之后（更新）的位点级联撤销，更早的保留
+  - compressedContext 旧字段保留兼容，读取时惰性迁移（migrateLegacyCompress）
+- **UI**：更多页"上下文压缩管理"按钮 → 弹窗列出最近 1~3 个位点（条状窄 UI，每项查看/恢复）
+
+## D11. OpenCode 中转流式优化（v3.8.3-8.8，用户实测迭代）
+- **问题**：首字延迟久（中转静默期无限挂起）+ 输出一节一节顿挫 + 输出中途静默中断
+- **决策链**：
+  1. UI 节流 100→50ms（v3.8.3）→ 5ms（v3.8.6 用户指令，实测掉帧式顿挫）→ 回 50ms（v3.8.7）——50ms 为终值
+  2. ClaudeProvider 补 watchdog（v3.8.3）：opencode.ai 首包 120s/流中 180s，其他 60s/120s；无 message_stop 的连接关闭视为断流（v3.8.5，Anthropic 协议 message_stop 为强制收尾）
+  3. 断流重试 5→7 次、5 秒内完成（v3.8.8）：前 3 次指数 200/400/800ms，第 4 次起固定 900ms x4，总 5000ms（旧线性 15s 太慢）
+- **教训**：节流不是越小越流畅——低于渲染帧率阈值（~16ms）时重组请求堆积导致掉帧式顿挫
+
+## D12. 输出完成抽动：animateContentSize 条件化 vs 参数化（v3.8.12，对照原版）
+- **旧方案（v3.7.x）**：`if (loading) 无动画 else animateContentSize`——流式防抖
+- **问题**：loading 翻转瞬间修饰符链变化 → 强制重组合 + 动画从无到有 → 完成消息 Markdown 重渲染 + 高度动画 → 页面抽动
+- **新方案（v3.8.12 定稿）**：always animateContentSize（对齐原版），动画速度参数化——流式 TweenSpec(0) 瞬跳（保留防抖），完成 SpringSpec
+- **教训**：tween()/spring() 是 @Composable 函数，不能用于顶层属性初始化——用 TweenSpec/SpringSpec 类构造
+
 ## D9. 插件 MCP 桥接：自动注册 vs 手动 mcp_connect（v3.6.120 回滚，用户决策）
 
 - 方案 A（v3.6.112 引入，已回滚）：插件 .mcp.json 的 command 由客户端自动经 workspace STDIO 注册（registerPluginBridges）

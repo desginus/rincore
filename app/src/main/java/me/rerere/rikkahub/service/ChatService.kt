@@ -1069,18 +1069,17 @@ class ChatService(
                 .awaitAll()
         }
 
-        // 存档原始消息 → 然后替换 messageNodes (与旧版压缩逻辑完全相同)
+        // 存档原始消息与压缩摘要 → 然后替换 messageNodes
         val savedNodes = conversation.messageNodes
+        val summaryNodes = compressedSummaries.map { UIMessage.user(it).toMessageNode() }
         val newMessageNodes = buildList {
-            compressedSummaries.forEach { summary ->
-                add(UIMessage.user(summary).toMessageNode())
-            }
+            addAll(summaryNodes)
             addAll(messagesToKeep.map { it.toMessageNode() })
         }
         val newConversation = conversation.copy(
             messageNodes = newMessageNodes,
             chatSuggestions = emptyList(),
-        ).addCompressRetention(savedNodes)
+        ).addCompressRetention(savedNodes, summaryNodes)
 
         saveConversation(conversationId, newConversation)
     }

@@ -12,7 +12,29 @@ description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日�
 - **工具执行无超时**：3.5.9 withTimeout 60s 兜底——工具挂起不永久阻塞生成
 - **缓存"卡-跳-线性"**：DeepSeek 服务端磁盘缓存机制（构建延迟秒级+固定间隔切分+SWA 独立单元）——客户端不可控，已入库 decisions D2
 
+## v3.8.12-19（渲染抽动/压缩重做/抽屉块状/清理功能，2026-08-19）
+
+- **v3.8.19**：压缩位点条状窄 UI + 去红色（改基础色）+ 改名"上下文压缩管理" + 查看显示压缩摘要（不再累计原文）；收尾文档与 tag
+- **v3.8.15-18**：抽屉块状三入口（搜索/查询/清理）+ 清理聊天内容（3 个月/1 个月/1 周前，置顶或含收藏跳过，DAO getCleanupCandidates）——期间三次 CI 编译修复（SpringSpec/TweenSpec 顶层属性、@Composable 归位、UIMessagePart 包名 me.rerere.ai.ui、RoundedCornerShape import）
+- **v3.8.14**：压缩机制重做——CompressRetention 留存位点（最多 3 个，时间戳 + 原文 + 摘要），restoreCompressAt 级联撤销，旧 compressedContext 兼容迁移
+- **v3.8.12-13**：输出完成抽动修复——animateContentSize 参数化（TweenSpec(0)/SpringSpec），loading 翻转不再改修饰符链
+- **v3.8.9-11**：用量页精确时间（12 小时制 + 8 时段标注）+ 液态玻璃分享后恢复（ON_RESUME 重建背景纹理）；v3.8.11 曾漏改 versionName（净版本跳号）
+- **v3.8.8**：断流重试 7 次 5 秒内（前 3 次指数 200/400/800ms + 后 4 次固定 900ms）+ 用量页剩余时间进位（天/周）
+- **v3.8.5-7**：Anthropic message_stop 断流检测（无 message_stop 关闭=断流重试）+ SSE 诊断日志（TraceLogger takeTagged + sse_diag metrics into 运行日志页）+ 节流回 50ms（5ms 实测掉帧式顿挫）
+- **v3.8.3-4**：OpenCode 中转优化——UI 节流 50ms + ClaudeProvider watchdog（opencode 首包 120s/流中 180s）
+
+## v3.7.1-7.6（渲染稳定 + 连接池，2026-08-18）
+
+- **v3.7.6**：animateContentSize 流式期间禁用（生成完成恢复）+ 思考链滚动防抖 100ms；Claude/Anthropic 独立连接池（keepalive 300s + pingInterval 30s）
+- **v3.7.1-7.5**：渲染批量稳定（流式顿挫修复链起点）+ Claude 连接池细化
+
+## v3.7.0（插件系统定稿，2026-08-17）
+
+- 插件装 dock 目录（plugin.json + skills + .mcp.json），工具 plugin__ 前缀，MCP 手动 connect；清理 v3.6.112 自动桥接残留
+- 死代码清理（ClawPluginRegistry）+ createPluginSkillTools 缓存
+
 ## v3.6.101-123（对齐标注/工具改名/插件系统攻坚/MCP 回滚，2026-08-16 深夜）
+
 
 - **v3.6.123**：registeredBridgeCommands 字段恢复（编译修复）
 - **v3.6.121-122**：MCP 连接回滚收尾 — 启动时自动清理 settings 里 plugin__ 前缀服务器残留 + 助手白名单条目；registerPluginBridges 方法彻底删除

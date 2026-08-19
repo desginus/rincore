@@ -200,7 +200,7 @@ internal fun FilesPicker(
                 onClick = { showRetentionDialog = true },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colorScheme.errorContainer,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -210,13 +210,13 @@ internal fun FilesPicker(
                     Icon(
                         HugeIcons.ArrowTurnBackward,
                         null,
-                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp),
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "撤销压缩 · 管理留存位点",
-                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        "上下文压缩管理",
+                        color = MaterialTheme.colorScheme.onSurface,
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -649,7 +649,7 @@ private fun CompressRetentionDialog(
     var viewNodes by remember { mutableStateOf<List<MessageNode>?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("撤销压缩") },
+        title = { Text("上下文压缩管理") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
@@ -669,7 +669,7 @@ private fun CompressRetentionDialog(
                     RetentionItem(
                         label = r.retentionLabel.ifBlank { "压缩留存" },
                         note = if (index > 0) "恢复将同时撤销其后的 $index 个压缩" else "恢复到此点状态",
-                        onView = { viewNodes = r.savedMessageNodes },
+                        onView = { viewNodes = r.summaryMessageNodes.ifEmpty { r.savedMessageNodes } },
                         onRestore = { onRestore(index) },
                     )
                 }
@@ -686,6 +686,7 @@ private fun CompressRetentionDialog(
     }
 }
 
+// v3.8.19: 位点条目改条状窄 UI — 单行横排, 时间戳可收缩, 操作按钮紧凑
 @Composable
 private fun RetentionItem(
     label: String,
@@ -693,31 +694,50 @@ private fun RetentionItem(
     onView: () -> Unit,
     onRestore: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
-        Text(label, style = MaterialTheme.typography.titleSmall)
-        Text(
-            note,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onView, modifier = Modifier.weight(1f)) {
-                Text("查看相关信息")
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (note.isNotBlank()) {
+                    Text(
+                        note,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
-            Button(onClick = onRestore, modifier = Modifier.weight(1f)) {
-                Text("从此点恢复")
+            TextButton(
+                onClick = onView,
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+            ) {
+                Text("查看", style = MaterialTheme.typography.labelSmall)
+            }
+            TextButton(
+                onClick = onRestore,
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+            ) {
+                Text("恢复", style = MaterialTheme.typography.labelSmall)
             }
         }
     }
 }
 
+// v3.8.19: 查看显示本次压缩得到的摘要 (不再累积原文)
 @Composable
 private fun RetentionDetailDialog(nodes: List<MessageNode>, onDismiss: () -> Unit) {
     val text = remember(nodes) {
@@ -730,7 +750,7 @@ private fun RetentionDetailDialog(nodes: List<MessageNode>, onDismiss: () -> Uni
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("压缩留存原文") },
+        title = { Text("压缩摘要") },
         text = {
             Text(
                 text.takeIf { it.isNotBlank() } ?: "(无文本内容)",

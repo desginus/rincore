@@ -28,7 +28,8 @@ data class CompressRetention(
     val id: Uuid = Uuid.random(),
     val savedAtEpochMs: Long = System.currentTimeMillis(),
     val retentionLabel: String = "",  // 预格式化时间戳, 如 "2026年8月19日 19时30分 星期三"
-    val savedMessageNodes: List<MessageNode>,
+    val savedMessageNodes: List<MessageNode>,   // 压缩前存档的原始消息 (恢复用)
+    val summaryMessageNodes: List<MessageNode> = emptyList(),  // v3.8.19: 压缩得到的摘要 (查看用)
 )
 
 private fun formatCompressTimestamp(epochMs: Long): String {
@@ -121,12 +122,16 @@ data class Conversation(
 
     // v3.8.13: 压缩留存重做 — 由单次撤销改为多留存位点 (最多 3) 管理
 
-    /** 压缩存档: 记录压缩前的原始消息, 最多保留 3 个位点, 超出覆盖最旧 */
-    fun addCompressRetention(savedNodes: List<MessageNode>): Conversation {
+    /** 压缩存档: 记录压缩前的原始消息与压缩摘要, 最多保留 3 个位点, 超出覆盖最旧 */
+    fun addCompressRetention(
+        savedNodes: List<MessageNode>,
+        summaryNodes: List<MessageNode> = emptyList(),
+    ): Conversation {
         val retention = CompressRetention(
             savedAtEpochMs = System.currentTimeMillis(),
             retentionLabel = formatCompressTimestamp(System.currentTimeMillis()),
             savedMessageNodes = savedNodes,
+            summaryMessageNodes = summaryNodes,
         )
         return copy(
             compressRetentions = (listOf(retention) + compressRetentions).take(3),

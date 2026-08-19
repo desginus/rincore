@@ -16,6 +16,24 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 ## 已修复 Bug 明细（按时间倒序）
 
 
+### B32. 液态玻璃分享后失效成黑框（v3.8.9 根治）
+- **现象**：分享消息后返回软件，液态玻璃模糊丢失变普通黑框；进设置再返回恢复
+- **根因**：Haze 模糊纹理依赖背景渲染，分享面板是外部 Activity，返回不触发任何重组，模糊纹理失效
+- **修复**：ChatPage ON_RESUME 递增 hazeRebuildTick，key 包裹 AssistantBackground 强制重建纹理
+- **教训**：外部 Activity 返回 ≠ 导航返回——系统 UI 覆盖不会触发 Compose 重组
+
+### B31. Anthropic 接口输出中途静默中断（v3.8.5 根治）
+- **现象**：千问 3.7 Plus（OpenCode 中转 /v1/messages）输出中途莫名中断，客户端日志显示正常完成（FINISH/no_tools，无异常无重试），半截回复被保存
+- **根因**：ClaudeProvider 把连接关闭一律当正常结束（onClosed=close()）。Anthropic 协议 message_stop 是唯一强制收尾，中转断流/网关切换直接关连接（不发 message_stop）→ 客户端保存半截
+- **修复**：completed 标记——message_stop 到达才视为完成；onClosed 无 message_stop → close(IOException) → 既有断流重试链路（回滚+重试）
+- **依据**：对照 ChatCompletionsAPI 的 completed/gotFinish（v3.6.75 双向教训）；Anthropic 协议 message_stop 为强制（与 OpenAI 的 [DONE] 约定强度不同）
+
+### B30. 输出完成瞬间整条消息抽动（v3.8.12 根治，v3.7.x 引入）
+- **现象**：消息输出完成时整条消息 Markdown 重渲染一遍，页面上下抽动
+- **根因**：v3.7.x 把 animateContentSize 条件化（loading 时无动画）——loading 翻转瞬间修饰符链变化 → 强制重组合 + 动画从无到有 → 重渲染 + 高度动画
+- **修复**：改回原版 always animateContentSize，动画速度参数化（流式 TweenSpec(0) 瞬跳 / 完成 SpringSpec）
+- **教训**：修饰符链的变化会强制整棵子树重组合——条件化 Modifier 比想象中重
+
 ### B24. MCP 大部分无法连接（127.x 无法连接/连接关闭，v3.6.120 回滚根治）
 
 - 现象：v3.6.112-119 期间大部分 MCP 报"无法连接到 127.x:端口"、"连接关闭"
