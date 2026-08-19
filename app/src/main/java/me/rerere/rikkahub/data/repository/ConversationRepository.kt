@@ -268,6 +268,12 @@ class ConversationRepository(
             }
         }
 
+    // v3.8.15: 清理聊天内容候选 (非置顶 + 早于 cutoff) — 完整转换供删除
+    suspend fun getConversationsEligibleForCleanup(cutoffEpochMs: Long): List<Conversation> {
+        return conversationDAO.getCleanupCandidates(cutoffEpochMs)
+            .map { conversationEntityToConversation(it, emptyList()) }
+    }
+
     suspend fun getConversationById(uuid: Uuid): Conversation? {
         val entity = conversationDAO.getConversationById(uuid.toString())
         return if (entity != null) {

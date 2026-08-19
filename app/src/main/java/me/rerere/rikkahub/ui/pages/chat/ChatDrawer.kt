@@ -235,7 +235,25 @@ fun ChatDrawerContent(
                 }
             }
 
-            DrawerActions(navController = navController)
+            var showCleanupDialog by remember { mutableStateOf(false) }
+            DrawerActions(
+                navController = navController,
+                onCleanupClick = { showCleanupDialog = true },
+            )
+            if (showCleanupDialog) {
+                CleanupChatDialog(
+                    onCleanup = { cutoffEpochMs ->
+                        showCleanupDialog = false
+                        drawerVm.cleanupConversations(cutoffEpochMs) { removed, skipped ->
+                            toaster.show(
+                                if (skipped > 0) "已清理 $removed 个对话，跳过 $skipped 个（置顶或含收藏）"
+                                else "已清理 $removed 个对话"
+                            )
+                        }
+                    },
+                    onDismiss = { showCleanupDialog = false },
+                )
+            }
 
             FolderBar(
                 folders = folders,
@@ -653,67 +671,76 @@ fun ChatDrawerContent(
     }
 }
 
+// v3.8.15: 块状三入口 — 搜索 / 查询(历史) / 清理, 最上行为"聊天历史"标题
 @Composable
-private fun DrawerActions(navController: Navigator) {
+private fun DrawerActions(navController: Navigator, onCleanupClick: () -> Unit) {
     Column {
-        // 搜索入口
-        Surface(
-            onClick = { navController.navigate(Screen.MessageSearch) },
+        Text(
+            text = stringResource(R.string.chat_page_history),
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+        )
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 4.dp),
-            shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Icon(
-                    imageVector = HugeIcons.Search01,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = stringResource(R.string.chat_page_search_chats),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
+            DrawerActionBlock(
+                label = stringResource(R.string.chat_page_search_chats),
+                icon = HugeIcons.Search01,
+                onClick = { navController.navigate(Screen.MessageSearch) },
+                modifier = Modifier.weight(1f),
+            )
+            DrawerActionBlock(
+                label = "查询",
+                icon = HugeIcons.TransactionHistory,
+                onClick = { navController.navigate(Screen.History) },
+                modifier = Modifier.weight(1f),
+            )
+            DrawerActionBlock(
+                label = "清理",
+                icon = HugeIcons.Delete01,
+                onClick = onCleanupClick,
+                modifier = Modifier.weight(1f),
+            )
         }
+    }
+}
 
-        // 历史记录入口
-        Surface(
-            onClick = { navController.navigate(Screen.History) },
+@Composable
+private fun DrawerActionBlock(
+    label: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 4.dp),
-            shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                .padding(vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Icon(
-                    imageVector = HugeIcons.TransactionHistory,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = stringResource(R.string.chat_page_history),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+            )
         }
     }
 }
@@ -904,6 +931,71 @@ private fun AssistantItem(
                     )
                 }
             }
+        }
+    }
+}
+
+
+// v3.8.15: 清理聊天内容对话框 — 三档时间选项, 置顶/含收藏对话自动跳过
+@Composable
+private fun CleanupChatDialog(
+    onCleanup: (cutoffEpochMs: Long) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val now = System.currentTimeMillis()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("清理聊天内容") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "选择清理时间范围，置顶对话或含收藏内容的对话将自动跳过",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                CleanupOption(
+                    label = "清理最近 3 个月之前的聊天内容",
+                    onClick = { onCleanup(now - 90L * 24 * 3600 * 1000) },
+                )
+                CleanupOption(
+                    label = "清理最近 1 个月之前的聊天内容",
+                    onClick = { onCleanup(now - 30L * 24 * 3600 * 1000) },
+                )
+                CleanupOption(
+                    label = "清理最近 1 周之前的聊天内容",
+                    onClick = { onCleanup(now - 7L * 24 * 3600 * 1000) },
+                )
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("关闭") }
+        },
+    )
+}
+
+@Composable
+private fun CleanupOption(label: String, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = HugeIcons.Delete01,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.error,
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(label, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

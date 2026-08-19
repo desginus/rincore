@@ -49,6 +49,10 @@ interface ConversationDAO {
     @Query("SELECT * FROM conversationentity WHERE id = :id")
     fun getConversationFlowById(id: String): Flow<ConversationEntity?>
 
+    // v3.8.15: 清理聊天内容 — 非置顶且最后活动早于 cutoff 的对话候选
+    @Query("SELECT * FROM conversationentity WHERE is_pinned = 0 AND update_at < :cutoffEpochMs")
+    suspend fun getCleanupCandidates(cutoffEpochMs: Long): List<ConversationEntity>
+
     @Query("SELECT id FROM conversationentity")
     suspend fun getAllIds(): List<String>
 

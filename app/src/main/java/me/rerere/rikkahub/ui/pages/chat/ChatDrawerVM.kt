@@ -36,11 +36,34 @@ import kotlin.uuid.Uuid
 class ChatDrawerVM(
     private val context: Application,
     private val settingsStore: SettingsStore,
-    conversationRepo: ConversationRepository,
+    private val conversationRepo: ConversationRepository,
     private val folderRepo: FolderRepository,
     private val chatService: ChatService,
+    private val favoriteDAO: me.rerere.rikkahub.data.db.dao.FavoriteDAO,
     private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
+
+    // v3.8.15: 清理聊天内容 — 删除早于 cutoff 的非置顶无收藏对话
+    fun cleanupConversations(cutoffEpochMs: Long, onDone: (removed: Int, skipped: Int) -> Unit) {
+        viewModelScope.launch {
+            val candidates = conversationRepo.getConversationsEligibleForCleanup(cutoffEpochMs)
+            var removed = 0
+            var skipped = 0
+            candidates.forEach { conv ->
+                val hasFavorite = runCatching {
+                    favoriteDAO.getFavoriteNodeIdsOfConversation(conv.id.toString()).isNotEmpty()
+                }.getOrDefault(false)
+                if (hasFavorite) {
+                    skipped++
+                    return@forEach
+                }
+                runCatching { conversationRepo.deleteConversation(conv) }
+                    .onSuccess { removed++ }
+                    .onFailure { skipped++ }
+            }
+            onDone(removed, skipped)
+        }
+    }
 
     private val assistantIdFlow = settingsStore.settingsFlow
         .map { it.assistantId }
