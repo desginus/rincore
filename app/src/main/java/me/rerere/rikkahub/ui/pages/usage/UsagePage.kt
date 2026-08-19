@@ -372,7 +372,7 @@ private fun UsageRingCard(
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                bottomText ?: resetAt?.let { "重置于 ${formatResetAt(it)}" } ?: "",
+                bottomText ?: resetAt?.let { formatRemaining(it) } ?: "",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -570,10 +570,18 @@ private fun parseEpochMs(iso: String): Long? = runCatching {
     Instant.parse(iso).toEpochMilli()
 }.getOrNull()
 
-private fun formatResetAt(iso: String): String = runCatching {
-    val formatter = DateTimeFormatter.ofPattern("MM-dd HH:mm")
-        .withZone(ZoneId.systemDefault())
-    formatter.format(Instant.parse(iso))
+// v3.8.8: 重置时间显示从绝对时间改为剩余时间
+// (用户: 由"重置于几月几日几点几分"变为"重置于几小时几分钟后重置")
+private fun formatRemaining(iso: String): String = runCatching {
+    val resetTs = Instant.parse(iso).toEpochMilli()
+    val remainMs = (resetTs - System.currentTimeMillis()).coerceAtLeast(0L)
+    val hours = remainMs / 3_600_000
+    val mins = (remainMs % 3_600_000) / 60_000
+    when {
+        hours > 0 -> "${hours}小时 ${mins}分钟 后重置"
+        mins > 0 -> "${mins}分钟 后重置"
+        else -> "即将重置"
+    }
 }.getOrElse { iso }
 
 // 密钥脱敏显示 (sk-abc...xyz)

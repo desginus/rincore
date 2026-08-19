@@ -793,11 +793,19 @@ class GenerationHandler(
                 // v3.5.59: 2→5 (用户实测网络切换频繁, 2 次不够)
                 // v3.6.15: 线性递增 1/2/3/4/5s (用户决策 — 后台网络切换时快速恢复,
                 // 5 次总等待 15s, 重试消息相同缓存命中)
-                if (streamRetryCount < 5) {
+                if (streamRetryCount < 7) {
                     streamRetryCount++
-                    kotlinx.coroutines.delay(1_000L * streamRetryCount)
-                    Log.w(TAG, "stream interrupted (${e.message}), rolling back & retry $streamRetryCount/5")
-                    CallTracer.event("RETRY", "stream_interrupted", "interrupted: ${e.message}, rollback & retry $streamRetryCount/5", metrics = sseDiagMetrics())
+                    // v3.8.8: 重试节奏 — 7 次 5 秒内全部尝试完毕:
+                    // 前 3 次密集按指数 (200/400/800ms 急退先试), 第 4 次起
+                    // 固定节奏 (900ms x4), 总 200+400+800+3600 = 5000ms。
+                    // 快速失败快速再试, 覆盖瞬时断流 (前 3 次), 持续断流
+                    // 也不再拖长等待 (旧线性 1+2+3+4+5=15s 太慢性)。
+                    val retryDelayMs =
+                        if (streamRetryCount <= 3) 200L * (1L shl (streamRetryCount - 1))
+                        else 900L
+                    kotlinx.coroutines.delay(retryDelayMs)
+                    Log.w(TAG, "stream interrupted (${e.message}), rolling back & retry $streamRetryCount/7 (delay=${retryDelayMs}ms)")
+                    CallTracer.event("RETRY", "stream_interrupted", "interrupted: ${e.message}, rollback & retry $streamRetryCount/7", metrics = sseDiagMetrics())
                     messages = preStreamMessages  // 丢弃本次生成的半截内容
                     onUpdateMessages(messages)    // UI 同步回滚
                     continue@streamLoop  // 重试 (maxSteps 内, 消息相同缓存命中)
