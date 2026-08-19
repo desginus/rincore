@@ -555,15 +555,35 @@ private fun nearestReset(u: UsageApi.UsageResult): ResetInfo {
     val elapsed = (now - windowStart).coerceAtLeast(0L).toFloat()
     val elapsedPercent = (elapsed / w.windowMs.toFloat() * 100f).coerceIn(0f, 100f)
 
+    // v3.8.9: 重置倒计时卡时间注释改为精确时间 — 12 小时制 + 时段标注
+    // (用户: 中午 11-14点 / 下午 14-17:30 / 傍晚 17:30-19 / 夜晚 19-23:30 /
+    // 深夜 23:30-次日3点 / 凌晨 3-6点 / 清晨 6-8点 / 早晨 8-11:30)
     val remainMs = (resetTs - now).coerceAtLeast(0L)
-    val hours = remainMs / 3_600_000
-    val mins = (remainMs % 3_600_000) / 60_000
-    val remainingText = when {
-        hours > 0 -> "${hours}h ${mins}m 后重置"
-        mins > 0 -> "${mins}m 后重置"
-        else -> "即将重置"
-    }
+    val zdt = java.time.ZonedDateTime.ofInstant(
+        java.time.Instant.ofEpochMilli(resetTs), java.time.ZoneId.systemDefault()
+    )
+    val h = zdt.hour
+    val m = zdt.minute
+    val h12 = h % 12
+    val h12d = if (h12 == 0) 12 else h12
+    val minutePad = m.toString().padStart(2, '0')
+    val remainingText = "${periodOf(h, m)} ${h12d}:${minutePad} 重置"
     return ResetInfo(elapsedPercent, remainingText)
+}
+
+// 时段划分 (分钟粒度, 边界右开左闭: 11:00 起算中午, 14:00 起下午...)
+private fun periodOf(hour: Int, minute: Int): String {
+    val t = hour * 60 + minute
+    return when {
+        t >= 11 * 60 && t < 14 * 60 -> "中午"
+        t >= 14 * 60 && t < 17 * 60 + 30 -> "下午"
+        t >= 17 * 60 + 30 && t < 19 * 60 -> "傍晚"
+        t >= 19 * 60 && t < 23 * 60 + 30 -> "夜晚"
+        t >= 23 * 60 + 30 || t < 3 * 60 -> "深夜"
+        t < 6 * 60 -> "凌晨"
+        t < 8 * 60 -> "清晨"
+        else -> "早晨"
+    }
 }
 
 private fun parseEpochMs(iso: String): Long? = runCatching {
@@ -571,13 +591,20 @@ private fun parseEpochMs(iso: String): Long? = runCatching {
 }.getOrNull()
 
 // v3.8.8: 重置时间显示从绝对时间改为剩余时间
-// (用户: 由"重置于几月几日几点几分"变为"重置于几小时几分钟后重置")
+// v3.8.9: 超出常见小时的额度正常进位 — 超 24 小时记天, 超 7 天记周
 private fun formatRemaining(iso: String): String = runCatching {
     val resetTs = Instant.parse(iso).toEpochMilli()
     val remainMs = (resetTs - System.currentTimeMillis()).coerceAtLeast(0L)
-    val hours = remainMs / 3_600_000
+    val days = remainMs / 86_400_000
+    val hours = (remainMs % 86_400_000) / 3_600_000
     val mins = (remainMs % 3_600_000) / 60_000
     when {
+        days >= 7 -> {
+            val weeks = days / 7
+            val remainDays = days % 7
+            if (remainDays > 0) "${weeks}周 ${remainDays}天 后重置" else "${weeks}周 后重置"
+        }
+        days > 0 -> "${days}天 ${hours}小时 后重置"
         hours > 0 -> "${hours}小时 ${mins}分钟 后重置"
         mins > 0 -> "${mins}分钟 后重置"
         else -> "即将重置"
