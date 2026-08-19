@@ -104,19 +104,20 @@ import me.rerere.rikkahub.utils.urlDecode
 import java.util.Locale
 import kotlin.time.Duration.Companion.milliseconds
 
-@Composable
 // v3.8.12: 内容动画参数化 — 修复输出完成瞬间整条消息抽动。
 // v3.7.x 条件化 [loading 时无 animateContentSize] 在 loading 翻转瞬间
 // 改变修饰符链 → 强制重组合 + 动画从无到有 → Markdown 重渲染 + 高度
 // 动画 → 页面上下抽动。改回原版 always animateContentSize 形态, 动画
-// 速度参数化: 流式时 tween(0) 瞬跳 (保留流式防抖收益), 完成时 spring
-// (原版行为)。修饰符链不再在 loading 翻转时变化。
+// 速度参数化: 流式时 TweenSpec(0) 瞬跳 (保留流式防抖收益), 完成时
+// SpringSpec (原版行为)。修饰符链不再在 loading 翻转时变化。
 private val streamingContentSizeSpec = TweenSpec<IntSize>(durationMillis = 0)
 private val settledContentSizeSpec = SpringSpec<IntSize>()
 
+@Composable
 private fun Modifier.contentSizeAnimated(loading: Boolean): Modifier =
     animateContentSize(animationSpec = if (loading) streamingContentSizeSpec else settledContentSizeSpec)
 
+@Composable
 fun ChatMessage(
     node: MessageNode,
     modifier: Modifier = Modifier,
