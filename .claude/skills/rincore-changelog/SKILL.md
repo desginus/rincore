@@ -12,6 +12,11 @@ description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日�
 - **工具执行无超时**：3.5.9 withTimeout 60s 兜底——工具挂起不永久阻塞生成
 - **缓存"卡-跳-线性"**：DeepSeek 服务端磁盘缓存机制（构建延迟秒级+固定间隔切分+SWA 独立单元）——客户端不可控，已入库 decisions D2
 
+## v3.8.24（工具域目标列表统一信息源头 + 卡顿根治，2026-08-20）
+- 移动工具目标列表/筛选 chips 全部改用 unifiedDomainView.tree 同一上游（与域分类管理页/layer1/invoke_tools/list_domains 同源），废除自拼 ToolDomain.entries + customDomains
+- 点击卡顿根治：预构建工具名→域映射一次（原每 chip 点击对 400+ 工具重复分类）
+- 删除的域经 isValidDomain 全源过滤永久消失
+
 ## v3.8.22-23（压缩位点持久化/抽屉删助手/工具域系统修复，2026-08-20）
 
 - **v3.8.23**：工具域系统修复 — 对照页真校验（域内合计 vs 池总数，完全一致/请对照bug）；exemptFromDomainTools 持久化缺失根治（移出域管理重启失效）；自定义空域保留进域树（invoke_tools 可找到新建域）；移动工具目标列表路径字典序排序（前缀聚合）+ 内置空壳幽灵域剔除
