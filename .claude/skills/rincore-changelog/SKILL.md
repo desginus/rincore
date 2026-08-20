@@ -12,6 +12,11 @@ description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日�
 - **工具执行无超时**：3.5.9 withTimeout 60s 兜底——工具挂起不永久阻塞生成
 - **缓存"卡-跳-线性"**：DeepSeek 服务端磁盘缓存机制（构建延迟秒级+固定间隔切分+SWA 独立单元）——客户端不可控，已入库 decisions D2
 
+## v3.8.29（MCP 参数类型恢复 / 记忆 ID 时间戳 / 锁定最新消息，2026-08-20）
+- MCP 图表工具 -32602 根治：按 inputSchema 类型恢复字符串化参数（array/object 解析回结构化、number/boolean 转原生），递归 properties/items
+- 记忆 ID 改创建时间戳 YYMMDDHHMMSS（Int 自增 → Long 时间戳，Long 防溢出），同秒冲突顺延
+- 进入对话锁定最新一条消息（原超界索引 clamp 顶部对齐导致长消息显示开头；改 scrollOffset=Int.MAX_VALUE 底部对齐）
+
 ## v3.8.28（上下文压缩边界智能判定，2026-08-20）
 - 新增 ContextCompressor：按对话轮 + token 60% 定位保留边界（非固定条数），从最新轮往旧累计切片，四舍五入到最近整轮
 - 轮粒度保证：始终保留最近至少一轮（绝不压缩刚发内容）、始终压缩至少一轮（压缩必真实发生）；轮数少时直接保留一轮不依赖 token

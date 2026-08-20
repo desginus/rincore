@@ -5,6 +5,11 @@ description: "[中优先级·RinCore决策对照] RinCore 关键方案对比迭�
 
 # RinCore 方案决策记录
 
+## D17. MCP 参数必须按 schema 类型清洗（v3.8.29，用户决策）
+- **问题**：模型生成嵌套参数常字符串化（"[{...}]"），MCP 服务端 -32602
+- **规则**：callTool 前按 inputSchema 声明的类型恢复字符串值（array/object 解析、number/boolean 转换），递归 properties/items；schema 缺失不动作
+- **依赖**：工具 inputSchema 必须从服务端 tools/list 完整保留（McpTool.inputSchema）
+
 ## D16. 压缩保留边界：对话轮 + token 混合判定（v3.8.28，用户决策）
 - **问题**：按固定条数（60%）压缩遇消息长短不均，token 效果高度不稳
 - **规则**：保留边界以轮（user+assistant，含工具消息）为粒度；token 60% 定位 + 四舍五入到最近整轮；始终保留最近至少一轮、始终压缩至少一轮；轮数少（如两轮）直接保留一轮不依赖 token

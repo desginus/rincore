@@ -21,6 +21,12 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 - **根因**：conversationToConversationEntity 未映射 compressRetentions，ConversationEntity 无对应列——位点写入即丢，重启读空
 - **修复**：ConversationEntity 加 compress_retentions 列；Room v27→v28 Migration_27_28 (ALTER TABLE ADD COLUMN)；写入 JSON 序列化、读取 runCatching 解码回退空；存量数据无损
 
+### B37. MCP 图表工具 -32602 Invalid parameters（v3.8.29 根治）
+- **现象**：mcp__charting__* 调用返回 -32602，data/style/width/height 类型全错（array→string 等）
+- **根因**：模型对深嵌套 schema 生成 JSON 字符串字面量（data 为 "[{...}]" 字符串），服务端类型校验失败；首调成功属模型生成偶然正确
+- **修复**：McpManager.callTool 按 inputSchema 递归类型恢复（array/object 解析回结构化、number/boolean 转原生），schema 缺失不污染
+- **教训**：客户端到 MCP 的参数必须按 schema 类型清洗，不能盲信模型生成的参数类型
+
 ### B36. Skill 跳脱 invoke_tools 暴露请求顶层（v3.8.27 加固）
 - **现象**：数个 Skill 工具未经 invoke_tools 加载即出现在请求 tools 数组顶层（框架工具之外）
 - **风险评估**：分层构建逻辑本身干净（skill 仅经 loadedDomains 技能域注入）；泄漏多来自对话 loadedDomains 持久化或非分层兜底
