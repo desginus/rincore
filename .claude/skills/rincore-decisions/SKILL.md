@@ -5,6 +5,11 @@ description: "[中优先级·RinCore决策对照] RinCore 关键方案对比迭�
 
 # RinCore 方案决策记录
 
+## D16. 压缩保留边界：对话轮 + token 混合判定（v3.8.28，用户决策）
+- **问题**：按固定条数（60%）压缩遇消息长短不均，token 效果高度不稳
+- **规则**：保留边界以轮（user+assistant，含工具消息）为粒度；token 60% 定位 + 四舍五入到最近整轮；始终保留最近至少一轮、始终压缩至少一轮；轮数少（如两轮）直接保留一轮不依赖 token
+- **UI**：保留最近消息数量仍按条数显示，默认值 = 智能推荐，可手动微调
+
 ## D15. 请求 tools 顶层白名单（v3.8.27，用户决策）
 - **规则**：请求 tools 数组只允许 批准框架集(FRAMEWORK_TOOL_SET) + 豁免集(exemptFromDomainTools) + 引擎工具(memory_tool/invoke_tools) + 已加载域(loadedDomains) 工具
 - **其余一律**强制归入 invoke_tools 池内（invoke_tools 加载后才进请求），Skill 不得跳脱暴露顶层
