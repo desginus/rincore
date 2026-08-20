@@ -284,8 +284,15 @@ internal fun FilesPicker(
 
     // Compress Context Dialog
     if (showCompressDialog) {
+        // v3.8.28: 默认保留条数 = ContextCompressor 智能推荐
+        // (按对话轮 + token 60% 定位, 始终保留最新轮, 保证真实压缩),
+        // 用户仍可在输入框手动微调条数
+        val recommendedKeep = remember(conversation.messageNodes) {
+            me.rerere.rikkahub.service.ContextCompressor.recommendedKeepMessages(conversation.currentMessages)
+        }
         CompressContextDialog(
             totalMessages = conversation.currentMessages.size,
+            defaultKeep = recommendedKeep,
             onDismiss = {
             onShowCompressDialogChange(false)
             onDismiss()

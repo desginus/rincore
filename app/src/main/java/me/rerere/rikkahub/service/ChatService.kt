@@ -1026,12 +1026,10 @@ class ChatService(
         if (keepRecentMessages > 0 && allMessages.size > keepRecentMessages) {
             messagesToCompress = allMessages.dropLast(keepRecentMessages)
             messagesToKeep = allMessages.takeLast(keepRecentMessages)
-        } else if (keepRecentMessages > 0) {
-            // Not enough messages to compress while keeping recent ones
-            throw IllegalStateException(context.getString(R.string.chat_page_compress_not_enough_messages))
         } else {
-            messagesToCompress = allMessages
-            messagesToKeep = emptyList()
+            // v3.8.28: keep<=0 禁止全压缩 — 压缩必须至少保留最近内容
+            // (绝不压缩刚发出的消息), 无可压缩空间时直接报不足
+            throw IllegalStateException(context.getString(R.string.chat_page_compress_not_enough_messages))
         }
 
         fun splitMessages(messages: List<UIMessage>): List<List<UIMessage>> {

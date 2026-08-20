@@ -39,13 +39,15 @@ import me.rerere.rikkahub.ui.components.ui.RabbitLoadingIndicator
 fun CompressContextDialog(
     onDismiss: () -> Unit,
     totalMessages: Int = 0,
+    defaultKeep: Int = 0,
     onConfirm: (additionalPrompt: String, targetTokens: Int, keepRecentMessages: Int) -> Job
 ) {
     var additionalPrompt by remember { mutableStateOf("") }
     var selectedTokens by remember { mutableIntStateOf(4000) }
-    // 默认保留当前对话消息数量的60%, 四舍五入, 至少1条
-    val defaultKeep = kotlin.math.max(1, ((totalMessages * 0.6) + 0.5).toInt())
+    // v3.8.28: 默认保留条数由 ContextCompressor 按对话轮 + token 60% 智能推荐,
+    // 用户仍可按条数手动微调; 0 = 无可压缩空间 (不足一轮对话), 禁用确认
     var keepRecentMessages by remember { mutableIntStateOf(defaultKeep) }
+    val canCompress = defaultKeep > 0
     val tokenOptions = listOf(500, 1000, 2000, 4000)
     var currentJob by remember { mutableStateOf<Job?>(null) }
     val isLoading = currentJob?.isActive == true
@@ -111,12 +113,20 @@ fun CompressContextDialog(
                     }
 
                     // Keep recent messages input
-                    OutlinedNumberInput(
-                        value = keepRecentMessages,
-                        onValueChange = { keepRecentMessages = it },
-                        label = stringResource(R.string.chat_page_compress_keep_recent),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    if (!canCompress) {
+                        Text(
+                            text = stringResource(R.string.chat_page_compress_not_enough_messages),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    } else {
+                        OutlinedNumberInput(
+                            value = keepRecentMessages,
+                            onValueChange = { keepRecentMessages = it },
+                            label = stringResource(R.string.chat_page_compress_keep_recent),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
 
                     // Additional context input
                     OutlinedTextField(
@@ -150,9 +160,12 @@ fun CompressContextDialog(
                     Text(stringResource(R.string.cancel))
                 }
             } else {
-                TextButton(onClick = {
-                    currentJob = onConfirm(additionalPrompt, selectedTokens, keepRecentMessages)
-                }) {
+                TextButton(
+                    enabled = canCompress,
+                    onClick = {
+                        currentJob = onConfirm(additionalPrompt, selectedTokens, keepRecentMessages)
+                    }
+                ) {
                     Text(stringResource(R.string.confirm))
                 }
             }
