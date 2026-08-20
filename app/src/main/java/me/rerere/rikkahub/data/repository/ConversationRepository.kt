@@ -364,6 +364,7 @@ class ConversationRepository(
             assistantId = conversation.assistantId.toString(),
             chatSuggestions = JsonInstant.encodeToString(conversation.chatSuggestions),
             isPinned = conversation.isPinned,
+            compressRetentions = JsonInstant.encodeToString(conversation.compressRetentions),
             customSystemPrompt = conversation.customSystemPrompt ?: "",
             modeInjectionIds = JsonInstant.encodeToString(conversation.modeInjectionIds),
             lorebookIds = JsonInstant.encodeToString(conversation.lorebookIds),
@@ -385,6 +386,11 @@ class ConversationRepository(
             assistantId = Uuid.parse(conversationEntity.assistantId),
             chatSuggestions = JsonInstant.decodeFromString(conversationEntity.chatSuggestions),
             isPinned = conversationEntity.isPinned,
+            compressRetentions = runCatching {
+                JsonInstant.decodeFromString<List<me.rerere.rikkahub.data.model.CompressRetention>>(
+                    conversationEntity.compressRetentions
+                )
+            }.getOrDefault(emptyList()),
             customSystemPrompt = conversationEntity.customSystemPrompt.ifEmpty { null },
             modeInjectionIds = JsonInstant.decodeFromString(conversationEntity.modeInjectionIds),
             lorebookIds = JsonInstant.decodeFromString(conversationEntity.lorebookIds),

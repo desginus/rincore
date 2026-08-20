@@ -333,21 +333,8 @@ fun ChatDrawerContent(
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp)
             ) {
-                DrawerAction(
-                    icon = {
-                        Icon(
-                            imageVector = HugeIcons.LookTop,
-                            contentDescription = stringResource(R.string.assistant_page_title)
-                        )
-                    },
-                    label = {
-                        Text(stringResource(R.string.assistant_page_title))
-                    },
-                    onClick = {
-                        navController.navigate(Screen.Assistant)
-                    },
-                )
 
+                // v3.8.22: 删除"助手"入口 — 用量/收藏/热力顺位替补, 设置不动
                 // v3.8.0: 交互选项 (翻译/图像生成) → 用量查询
                 DrawerAction(
                     icon = {
