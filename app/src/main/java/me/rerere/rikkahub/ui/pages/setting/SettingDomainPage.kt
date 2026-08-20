@@ -438,7 +438,13 @@ fun SettingDomainPage(
         val subShort = subFull.substringAfterLast("/")
         val subTools = unifiedView.classified[subFull].orEmpty().map { ToolPreview(it.name, it.description) }
         // 可移动目标：父域 + 该父域下所有其他子域
-        val moveTargets = (listOf(parentDomain) + (ToolDomain.entries.filter { it.parent == parentDomain }.map { it.label } + settings.customDomains.filter { it.parent == parentDomain }.map { it.name }).filter { it != subFull }).sorted()
+        // v3.8.24: 统一信息源头 — 移动目标 = 域分类管理页同款 unifiedView.tree
+        // 的该父域子域列表 (已过滤删/藏/内置空壳, 保留自定义空域, 排序),
+        // 不再自拼 ToolDomain.entries + customDomains (会翻出历史幽灵域)
+        val moveTargets = (listOf(parentDomain) + unifiedView.tree[parentDomain].orEmpty())
+            .filter { it != subFull }
+            .distinct()
+            .sorted()
         AlertDialog(
             onDismissRequest = { managingSubdomain = null },
             title = { Text("管理工具: $subShort") },

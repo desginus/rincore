@@ -69,43 +69,42 @@ fun SettingToolListPage(
         )
     }
 
-    val allDomainNames = remember(settings) {
-        // v3.8.23: 移动目标列表修复 —
-        // 1. 排序: 路径字典序 → 相同前缀天然聚合 (父域在前子域随后), 不再杂乱随机
-        // 2. 幽灵清理: 过滤已删(removed)/隐藏(hidden); 内置空壳域 (无工具且非
-        //    用户自定义) 从列表剔除 — 此前历史遗留空壳/废弃域占用大量位置
-        // 3. 自定义域无论空壳与否保留 — 用户显式创建, 需可移动/可新建后使用
-        fun visible(domain: String): Boolean {
-            val root = domain.split("/").first()
-            return domain !in settings.removedBuiltinDomains && domain !in settings.hiddenDomains &&
-                root !in settings.removedBuiltinDomains && root !in settings.hiddenDomains
+    // v3.8.24: 统一信息源头 — 移动目标列表/筛选 chips 与域分类管理页完全同源
+    // (unifiedDomainView.tree, 即 layer1/invoke_tools/list_domains 同一上游)。
+    // 不再自拼 ToolDomain.entries + customDomains (会翻出历史遗留/空壳幽灵域)。
+    // tree 已含: 已删/隐藏域过滤(isValidDomain) + 内置空壳剔除 + 自定义空域
+    // 保留 + 路径排序。下游老老实实用上游最新信息。
+    val allToolsAsTools = remember(allTools) {
+        allTools.map {
+            me.rerere.ai.core.Tool(
+                name = it.name,
+                description = it.description,
+                parameters = { me.rerere.ai.core.InputSchema.Obj(kotlinx.serialization.json.buildJsonObject {}) },
+                execute = { listOf(me.rerere.ai.ui.UIMessagePart.Text("")) },
+            )
         }
-        val customPaths = settings.customDomains.map { it.normalizedFullPath() }.toSet()
-        (ToolDomain.entries.map { it.label } + customPaths)
-            .distinct()
-            .filter { visible(it) }
-            .filter { d ->
-                // 子域: 父域也必须可见
-                val parent = d.substringBeforeLast("/")
-                parent == d || visible(parent)
+    }
+    val unifiedView = remember(allToolsAsTools, settings) { router.unifiedDomainView(allToolsAsTools) }
+    // 根域 + 子域 (tree 已排序: 前缀聚合, 根在前子域随后)
+    val allDomainNames = remember(unifiedView) {
+        buildList {
+            for ((root, subs) in unifiedView.tree) {
+                add(root)
+                if (subs.isNotEmpty()) addAll(subs.sorted())
             }
-            .filter { d ->
-                // 内置空壳剔除 (括号列表只含内置): 无工具且无工具子域且非自定义
-                val count = allTools.count {
-                    val dd = router.classifyPreview(it.name, settings.toolDescriptionOverrides[it.name] ?: it.description)
-                    dd == d || dd.startsWith("$d/")
-                }
-                count > 0 || d in customPaths
-            }
-            .sorted()
+        }
+    }
+    // 预计算 工具名→域 一次 (unifiedView.classified 同源), 点击筛选零重分类 → 无卡顿
+    val toolDomainMap: Map<String, String> = remember(unifiedView) {
+        unifiedView.classified.flatMap { (domain, ts) -> ts.map { it.name to domain } }.toMap()
     }
 
-    val filtered = remember(allTools, searchQuery, filterDomain) {
+    val filtered = remember(allTools, searchQuery, filterDomain, toolDomainMap) {
         allTools.filter { t ->
             val q = searchQuery.lowercase()
             if (q.isNotEmpty() && !t.name.lowercase().contains(q) && !t.description.lowercase().contains(q)) return@filter false
             if (filterDomain == "全部") return@filter true
-            val d = router.classifyPreview(t.name, settings.toolDescriptionOverrides[t.name] ?: t.description)
+            val d = toolDomainMap[t.name] ?: return@filter true
             d == filterDomain || d.startsWith("$filterDomain/")
         }
     }
@@ -127,10 +126,7 @@ fun SettingToolListPage(
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         item { FilterChip(selected = filterDomain == "全部", onClick = { filterDomain = "全部" }, label = { Text("全部(${allTools.size})") }) }
                         items(allDomainNames) { dn ->
-                            val count = allTools.count {
-                                val d = router.classifyPreview(it.name, settings.toolDescriptionOverrides[it.name] ?: it.description)
-                                d == dn || d.startsWith("$dn/")
-                            }
+                            val count = toolDomainMap.count { (name, d) -> d == dn || d.startsWith("$dn/") }
                             FilterChip(selected = filterDomain == dn, onClick = { filterDomain = dn }, label = { Text("${router.displayName(dn)}($count)") })
                         }
                     }
@@ -138,7 +134,7 @@ fun SettingToolListPage(
                 item { Text("${filtered.size}个工具", style = MaterialTheme.typography.bodySmall) }
 
                 items(filtered) { tool ->
-                    val domain = router.classifyPreview(tool.name, settings.toolDescriptionOverrides[tool.name] ?: tool.description)
+                    val domain = toolDomainMap[tool.name] ?: router.classifyPreview(tool.name, settings.toolDescriptionOverrides[tool.name] ?: tool.description)
                     val displayDomain = domain.substringBefore("/")
                     Card(Modifier.fillMaxWidth().clickable {
                         selectedTool = tool
@@ -174,7 +170,7 @@ fun SettingToolListPage(
     if (selectedTool != null) {
         val tool = selectedTool!!
         var moveTarget by remember(tool) {
-            val fullDomain = settings.toolDomainOverrides[tool.name] ?: router.classifyPreview(tool.name, settings.toolDescriptionOverrides[tool.name] ?: tool.description)
+            val fullDomain = settings.toolDomainOverrides[tool.name] ?: (toolDomainMap[tool.name] ?: tool.name)
             mutableStateOf(fullDomain)
         }
         var editDescText by remember(tool) { mutableStateOf(settings.toolDescriptionOverrides[tool.name] ?: tool.description) }
