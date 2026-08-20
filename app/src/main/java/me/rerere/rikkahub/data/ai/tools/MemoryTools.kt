@@ -23,7 +23,7 @@ fun buildMemoryTools(
     json: Json,
     onCreation: suspend (String) -> AssistantMemory,
     onUpdate: suspend (Long, String) -> AssistantMemory,
-    onDelete: suspend (Int) -> Unit
+    onDelete: suspend (Long) -> Unit
 ): List<Tool> = listOf(
     Tool(
         name = "memory_tool",
