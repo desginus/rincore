@@ -8,7 +8,7 @@ import androidx.room.PrimaryKey
 @Entity
 data class MemoryEntity(
     @PrimaryKey(true)
-    val id: Int = 0,
+    val id: Long = 0,
     @ColumnInfo("assistant_id")
     val assistantId: String,
     @ColumnInfo("content")

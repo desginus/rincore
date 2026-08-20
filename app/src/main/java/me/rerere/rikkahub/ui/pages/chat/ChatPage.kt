@@ -218,7 +218,15 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
                     chatListState.scrollToItem(index)
                 }
             } else {
-                chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
+                // v3.8.29: 锁定最新一条消息 (与发送者无关) 并滚动到底部对齐。
+                // 原因: 原 currentMessages.size+5 超界索引被 clamp 到最后一条
+                // 顶部对齐 — 最后一条为长消息(模型大段回复)时, 视口显示的是
+                // 该消息开头而非对话真正末尾, 表现为"锁定到模型最后回复"。
+                // scrollOffset=Int.MAX_VALUE 强制底部对齐, 真正显示最新内容。
+                val last = conversation.messageNodes.lastIndex
+                if (last >= 0) {
+                    chatListState.scrollToItem(last, Int.MAX_VALUE)
+                }
             }
             vm.chatListInitialized = true
         }

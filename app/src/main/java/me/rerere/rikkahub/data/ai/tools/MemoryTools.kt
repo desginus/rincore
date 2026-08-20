@@ -22,7 +22,7 @@ import me.rerere.rikkahub.data.model.AssistantMemory
 fun buildMemoryTools(
     json: Json,
     onCreation: suspend (String) -> AssistantMemory,
-    onUpdate: suspend (Int, String) -> AssistantMemory,
+    onUpdate: suspend (Long, String) -> AssistantMemory,
     onDelete: suspend (Int) -> Unit
 ): List<Tool> = listOf(
     Tool(

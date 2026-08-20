@@ -131,7 +131,7 @@ object MemoryToolUI : ToolUIRenderer {
     override fun Preview(context: ToolUIContext, onDismissRequest: () -> Unit) {
         val memoryRepo: MemoryRepository = koinInject()
         val scope = rememberCoroutineScope()
-        val memoryId = (context.content as? JsonObject)?.get("id")?.jsonPrimitiveOrNull?.intOrNull
+        val memoryId = (context.content as? JsonObject)?.get("id")?.jsonPrimitiveOrNull?.longOrNull
         DefaultToolPreview(
             context = context,
             headerActions = if (action(context) in listOf(ACTION_CREATE, ACTION_EDIT) && memoryId != null) {

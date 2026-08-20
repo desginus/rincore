@@ -38,7 +38,7 @@ class MemoryRepository(private val memoryDAO: MemoryDAO) {
         memoryDAO.deleteMemoriesOfAssistant(assistantId)
     }
 
-    suspend fun updateContent(id: Int, content: String): AssistantMemory {
+    suspend fun updateContent(id: Long, content: String): AssistantMemory {
         val old = memoryDAO.getMemoryById(id) ?: error("Memory record #$id not found")
         val newMemory = old.copy(
             content = content
@@ -51,22 +51,28 @@ class MemoryRepository(private val memoryDAO: MemoryDAO) {
     }
 
     suspend fun addMemory(assistantId: String, content: String): AssistantMemory {
+        // v3.8.29: 记忆 ID 改为创建时间戳 YYMMDDHHMMSS (如 260820213001),
+        // 不再自增 1,2,3。同秒冲突顺延 (id+1) 保证唯一。
+        var id: Long = java.text.SimpleDateFormat("yyMMddHHmmss", java.util.Locale.US)
+            .format(java.util.Date()).toLong()
+        while (memoryDAO.getMemoryById(id) != null) {
+            id++
+        }
         val memory = AssistantMemory(
-            id = 0,
+            id = id,
             content = content,
         )
-        val newMemory = memory.copy(
-            id = memoryDAO.insertMemory(
-                MemoryEntity(
-                    assistantId = assistantId,
-                    content = memory.content
-                )
-            ).toInt()
+        memoryDAO.insertMemory(
+            MemoryEntity(
+                id = memory.id,
+                assistantId = assistantId,
+                content = memory.content
+            )
         )
-        return newMemory
+        return memory
     }
 
-    suspend fun deleteMemory(id: Int) {
+    suspend fun deleteMemory(id: Long) {
         memoryDAO.deleteMemory(id)
     }
 }

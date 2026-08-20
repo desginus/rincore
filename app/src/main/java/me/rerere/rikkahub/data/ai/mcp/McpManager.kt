@@ -215,13 +215,20 @@ class McpManager(
             config = newEntry.key
         }
 
-        Log.i(TAG, "callTool: $toolName / $args (server: ${config.commonOptions.name})")
+        // v3.8.29: 参数类型恢复 — 模型对深嵌套 schema (数组/对象/数字/布尔)
+        // 常生成 JSON 字符串字面量 (如 data 为 "[{...}]" 而非数组), MCP 服务端
+        // 校验类型失败报 -32602 Invalid parameters。按工具声明的 inputSchema
+        // 类型, 将字符串值恢复为对应 JSON 原生类型后发送。schema 缺失时保持原样。
+        val toolSchemaProps = (config.commonOptions.tools
+            .firstOrNull { it.name == toolName }?.inputSchema as? InputSchema.Obj)?.properties
+        val cleanArgs = if (toolSchemaProps != null) restoreTypesBySchema(toolSchemaProps, args) else args
+        Log.i(TAG, "callTool: $toolName / $cleanArgs (server: ${config.commonOptions.name})")
 
         if (client.transport == null) client.connect(getTransport(config))
         val request = CallToolRequest(
             params = CallToolRequestParams(
                 name = toolName,
-                arguments = args,
+                arguments = cleanArgs,
             ),
         )
         // v3.6.21-22: SSE 会话断开 → SDK doClose → handlerScope.cancel() →
@@ -938,6 +945,52 @@ class McpManager(
             message.contains("invalid_token") ||
             message.contains("invalid access token") ||
             message.contains("missing or invalid")
+    }
+}
+
+// v3.8.29: 按 inputSchema 递归类型恢复 (字符串值 → JSON 原生类型),
+// 仅当 schema 声明目标类型时转换, 不污染语义 (纯文本字符串不动)。
+private fun restoreTypesBySchema(properties: JsonObject?, args: JsonObject): JsonObject {
+    if (properties == null) return args
+    return buildJsonObject {
+        for ((k, v) in args) {
+            val prop = properties[k] as? JsonObject
+            put(k, restoreElementBySchema(prop, v))
+        }
+    }
+}
+
+private fun restoreElementBySchema(schema: JsonObject?, value: JsonElement): JsonElement {
+    if (value !is JsonPrimitive || !value.isString) {
+        // 已是结构化值: 对象按 properties 递归, 数组按 items 递归
+        return when (value) {
+            is JsonObject -> restoreTypesBySchema(schema?.get("properties") as? JsonObject, value)
+            is JsonArray -> {
+                val items = schema?.get("items") as? JsonObject
+                buildJsonArray {
+                    for (e in value) add(restoreElementBySchema(items, e))
+                }
+            }
+            else -> value
+        }
+    }
+    val str = value.content.trim()
+    if (str.isEmpty()) return value
+    return when (schema?.get("type")?.jsonPrimitive?.contentOrNull) {
+        "object", "array" -> {
+            val looksJson = (str.startsWith("{") && str.endsWith("}")) ||
+                (str.startsWith("[") && str.endsWith("]"))
+            if (looksJson) runCatching { kotlinx.serialization.json.Json.parseToJsonElement(str) }.getOrElse { value }
+            else value
+        }
+        "number", "integer" -> runCatching { JsonPrimitive(str.removeSuffix(".0").toLong()) }
+            .getOrElse { runCatching { JsonPrimitive(str.toDouble()) }.getOrElse { value } }
+        "boolean" -> when (str.lowercase()) {
+            "true" -> JsonPrimitive(true)
+            "false" -> JsonPrimitive(false)
+            else -> value
+        }
+        else -> value
     }
 }
 

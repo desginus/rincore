@@ -26,7 +26,7 @@ interface MemoryDAO {
     suspend fun getAllMemories(): List<MemoryEntity>
 
     @Query("SELECT * FROM memoryentity WHERE id = :id")
-    suspend fun getMemoryById(id: Int): MemoryEntity?
+    suspend fun getMemoryById(id: Long): MemoryEntity?
 
     @Insert
     suspend fun insertMemory(memory: MemoryEntity): Long
@@ -35,7 +35,7 @@ interface MemoryDAO {
     suspend fun updateMemory(memory: MemoryEntity)
 
     @Query("DELETE FROM memoryentity WHERE id = :id")
-    suspend fun deleteMemory(id: Int)
+    suspend fun deleteMemory(id: Long)
 
     @Query("DELETE FROM memoryentity WHERE assistant_id = :assistantId")
     suspend fun deleteMemoriesOfAssistant(assistantId: String)
