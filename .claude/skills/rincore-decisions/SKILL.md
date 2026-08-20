@@ -5,6 +5,10 @@ description: "[中优先级·RinCore决策对照] RinCore 关键方案对比迭�
 
 # RinCore 方案决策记录
 
+## D14. 域标识统一性：normalizedFullPath 铁律（v3.8.25，用户决策）
+- **教训**：域展示/操作必须用完整路径（normalizedFullPath / unifiedView.tree），任何 CustomDomain.name 短名自拼都会与 classified 完整路径 key 断裂（B35：管理子域全 0）
+- **同源**：子域列表一律 unifiedView.tree[parentDomain]，禁用 entries+customDomains 自拼（幽灵风险 + 路径不一致）
+
 ## D13. 工具域系统三修：持久化/幽灵清理/顺序（v3.8.23，用户决策）
 - **持久化**：Settings 新字段必须同步 PreferencesStore 读写段——exemptFromDomainTools 缺失 key 导致重启失效（B33），补后根治
 - **幽灵/僵尸域**：已删(removed)/隐藏(hidden)由 isValidDomain 过滤；空壳内置域从移动目标与域树剔除；自定义空域保留（用户显式创建，invoke_tools 需可寻址）

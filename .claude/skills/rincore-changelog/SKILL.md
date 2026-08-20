@@ -12,6 +12,10 @@ description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日�
 - **工具执行无超时**：3.5.9 withTimeout 60s 兜底——工具挂起不永久阻塞生成
 - **缓存"卡-跳-线性"**：DeepSeek 服务端磁盘缓存机制（构建延迟秒级+固定间隔切分+SWA 独立单元）——客户端不可控，已入库 decisions D2
 
+## v3.8.25（管理子域数量 0 修复，2026-08-20）
+- 管理子域页面所有子域显示 0 工具根因：customSubs 取 CustomDomain.name 短名（非 normalizedFullPath）→ classified 完整路径查表落空；同轮删除匹配失效
+- allSubs 改用 unifiedView.tree[parentDomain] 统一信息源头（防幽灵/完整路径/同源），isCustom/删除匹配改 normalizedFullPath
+
 ## v3.8.24（工具域目标列表统一信息源头 + 卡顿根治，2026-08-20）
 - 移动工具目标列表/筛选 chips 全部改用 unifiedDomainView.tree 同一上游（与域分类管理页/layer1/invoke_tools/list_domains 同源），废除自拼 ToolDomain.entries + customDomains
 - 点击卡顿根治：预构建工具名→域映射一次（原每 chip 点击对 400+ 工具重复分类）
