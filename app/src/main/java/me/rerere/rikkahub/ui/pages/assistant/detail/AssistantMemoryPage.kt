@@ -105,7 +105,7 @@ private fun AssistantMemoryContent(
     onDeleteMemory: (AssistantMemory) -> Unit,
 ) {
     val memoryDialogState = useEditState<AssistantMemory> {
-        if (it.id == 0) {
+        if (it.id == 0L) {
             onAddMemory(it)
         } else {
             onUpdateMemory(it)

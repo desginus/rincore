@@ -81,13 +81,13 @@ fun buildMemoryTools(
                 }
 
                 "edit" -> {
-                    val id = params["id"]?.jsonPrimitive?.intOrNull ?: error("id is required")
+                    val id = params["id"]?.jsonPrimitive?.longOrNull ?: error("id is required")
                     val content = params["content"]?.jsonPrimitive?.contentOrNull ?: error("content is required")
                     json.encodeToJsonElement(AssistantMemory.serializer(), onUpdate(id, content))
                 }
 
                 "delete" -> {
-                    val id = params["id"]?.jsonPrimitive?.intOrNull ?: error("id is required")
+                    val id = params["id"]?.jsonPrimitive?.longOrNull ?: error("id is required")
                     onDelete(id)
                     buildJsonObject {
                         put("success", true)
