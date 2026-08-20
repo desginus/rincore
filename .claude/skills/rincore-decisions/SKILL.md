@@ -5,6 +5,11 @@ description: "[中优先级·RinCore决策对照] RinCore 关键方案对比迭�
 
 # RinCore 方案决策记录
 
+## D15. 请求 tools 顶层白名单（v3.8.27，用户决策）
+- **规则**：请求 tools 数组只允许 批准框架集(FRAMEWORK_TOOL_SET) + 豁免集(exemptFromDomainTools) + 引擎工具(memory_tool/invoke_tools) + 已加载域(loadedDomains) 工具
+- **其余一律**强制归入 invoke_tools 池内（invoke_tools 加载后才进请求），Skill 不得跳脱暴露顶层
+- **实现**：toolsInternal 构建后白名单硬过滤 + 泄漏 Log.e（回归自曝），loadedDomainToolNames 预计算避免重复分类
+
 ## D14. 域标识统一性：normalizedFullPath 铁律（v3.8.25，用户决策）
 - **教训**：域展示/操作必须用完整路径（normalizedFullPath / unifiedView.tree），任何 CustomDomain.name 短名自拼都会与 classified 完整路径 key 断裂（B35：管理子域全 0）
 - **同源**：子域列表一律 unifiedView.tree[parentDomain]，禁用 entries+customDomains 自拼（幽灵风险 + 路径不一致）

@@ -21,6 +21,12 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 - **根因**：conversationToConversationEntity 未映射 compressRetentions，ConversationEntity 无对应列——位点写入即丢，重启读空
 - **修复**：ConversationEntity 加 compress_retentions 列；Room v27→v28 Migration_27_28 (ALTER TABLE ADD COLUMN)；写入 JSON 序列化、读取 runCatching 解码回退空；存量数据无损
 
+### B36. Skill 跳脱 invoke_tools 暴露请求顶层（v3.8.27 加固）
+- **现象**：数个 Skill 工具未经 invoke_tools 加载即出现在请求 tools 数组顶层（框架工具之外）
+- **风险评估**：分层构建逻辑本身干净（skill 仅经 loadedDomains 技能域注入）；泄漏多来自对话 loadedDomains 持久化或非分层兜底
+- **加固**：toolsInternal 构建后白名单硬过滤（框架+豁免+引擎+已加载域），泄漏工具剔除并 Log.e，回归自曝
+- **规则（用户）**：请求顶层只允许批准框架 + 豁免 + 已加载域工具，其余一律归 invoke_tools 内部
+
 ### B35. 管理子域页面所有子域显示 0 个工具（v3.8.25 根治）
 - **现象**：工具域分类管理→点根域→设置→管理子域，所有子域显示 0 个工具
 - **根因**：管理子域对话框自拼子域列表：customSubs 取 CustomDomain.name（短名"引擎"）而非 normalizedFullPath（完整路径"搜索/引擎"），unifiedView.classified 的 key 是完整路径 → 查表落空 → 0；自定义子域删除按 it.name 匹配与完整路径不符 → 删除无效
