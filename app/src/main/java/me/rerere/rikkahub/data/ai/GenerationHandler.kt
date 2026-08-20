@@ -204,6 +204,14 @@ class GenerationHandler(
                 null
             }
 
+            // v3.8.27: 顶层白名单 — 已加载域工具的合法名集合 (域内工具),
+            // 顶层 tools 只放行: 批准框架 + 豁免 + 引擎工具 + 本集合成员
+            // 技能/插件等任何工具未经 invoke_tools 加载绝不暴露在请求顶层
+            val loadedDomainToolNames: Set<String> = if (useLayered) {
+                loadedDomains.flatMap { toolRouter.getDomainTools(it, allDomainTools) }
+                    .map { it.name }.toSet()
+            } else emptySet()
+
             val toolsInternal = if (useLayered) {
                 buildList {
                     Log.i(TAG, "generateInternal: build tools (layered)($assistant)")
@@ -244,6 +252,23 @@ class GenerationHandler(
                     // skill_<name> 工具经 invoke_tools("技能") 加载后直接可用 (D8),
                     // 加载一次对话内保持, 无需 use_skill 两步。
                 }.distinctBy { it.name }
+                    // v3.8.27: 顶层白名单硬过滤 — 除批准框架 + 豁免 + 引擎工具
+                    // (memory_tool/invoke_tools) + 已加载域工具外, 任何工具
+                    // (如泄漏的 skill__/plugin__) 一律剔除并记错, 绝不暴露
+                    // 在请求 tools 顶层 (用户: 一律强制归入 invoke_tools 内部)
+                    .also { built ->
+                        val approved = FRAMEWORK_TOOL_SET + exemptSet +
+                            setOf("memory_tool", "invoke_tools")
+                        val leaked = built.filter { it.name !in approved && it.name !in loadedDomainToolNames }
+                        if (leaked.isNotEmpty()) {
+                            Log.e(TAG, "顶层泄漏工具被剔除: ${leaked.map { it.name }.sorted()}")
+                        }
+                    }
+                    .filter {
+                        it.name in FRAMEWORK_TOOL_SET || it.name in exemptSet ||
+                            it.name == "memory_tool" || it.name == "invoke_tools" ||
+                            it.name in loadedDomainToolNames
+                    }
                     // v3.6.10: 不再整体重排 — 构建顺序 = 框架(固定) + invoke_tools +
                     // 已加载域(加载顺序, 域内名字序) — 新域追加尾部前缀稳定 (缓存命中)
                     .also { built ->
