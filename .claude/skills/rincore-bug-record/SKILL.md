@@ -16,6 +16,17 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 ## 已修复 Bug 明细（按时间倒序）
 
 
+### B34. 压缩留存位点重启全消失（v3.8.22 根治）
+- **现象**：压缩功能正常，重启 App 后 compressRetentions 全部为空
+- **根因**：conversationToConversationEntity 未映射 compressRetentions，ConversationEntity 无对应列——位点写入即丢，重启读空
+- **修复**：ConversationEntity 加 compress_retentions 列；Room v27→v28 Migration_27_28 (ALTER TABLE ADD COLUMN)；写入 JSON 序列化、读取 runCatching 解码回退空；存量数据无损
+
+### B33. 移出域管理重启失效（v3.8.23 根治）
+- **现象**：工具设置里开启"移出域管理"（exemptFromDomainTools），重启后该操作完全失效（工具重新并入域分类）
+- **根因**：Settings 数据类有 exemptFromDomainTools 字段，但 PreferencesStore 无对应 PreferencesKey——读段取默认空集、写段不落盘，仅存活于当次运行内存
+- **修复**：补 EXEMPT_FROM_DOMAIN_TOOLS key + 读写段（与 v3.8.2 密钥持久化同类根因）
+- **教训**：Settings 加新字段必须同步 PreferencesStore 读写段——遗漏即"重启消失"类 bug
+
 ### B32. 液态玻璃分享后失效成黑框（v3.8.9 根治）
 - **现象**：分享消息后返回软件，液态玻璃模糊丢失变普通黑框；进设置再返回恢复
 - **根因**：Haze 模糊纹理依赖背景渲染，分享面板是外部 Activity，返回不触发任何重组，模糊纹理失效
