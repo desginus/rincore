@@ -341,9 +341,16 @@ fun SettingDomainPage(
             val root = domain.split("/").first()
             return domain !in settings.removedBuiltinDomains && root !in settings.removedBuiltinDomains
         }
-        val builtinSubs = ToolDomain.entries.filter { it.parent == parentDomain }.map { it.label }.filter { notRemoved(it) }
-        val customSubs = settings.customDomains.filter { it.parent == parentDomain }.map { it.name }.filter { notRemoved(it) }
-        val allSubs = (builtinSubs + customSubs).sorted()
+        // v3.8.25: 统一信息源头 — 子域列表 = unifiedView.tree[parentDomain]
+        // (与主列表/layer1/invoke_tools 同源)。此前自拼 ToolDomain.entries +
+        // customDomains 且 customSubs 取 it.name 短名 (非 normalizedFullPath)
+        // → 自定义子域 subFull("引擎") ≠ classified key("搜索/引擎")
+        // → 所有(自定义)子域显示 0 个工具。统一源后完整路径完全匹配, 且
+        // 自动过滤删/藏/内置空壳, 保留自定义空域。
+        val allSubs = unifiedView.tree[parentDomain].orEmpty()
+            .filter { it != parentDomain }
+            .filter { notRemoved(it) }
+            .sorted()
         val parentTools = unifiedView.classified[parentDomain].orEmpty().map { ToolPreview(it.name, it.description) }
         AlertDialog(
             onDismissRequest = { subdomainParent = null },
@@ -359,7 +366,7 @@ fun SettingDomainPage(
                     }
                     itemsIndexed(allSubs) { _, subFull ->
                         val subShort = subFull.substringAfterLast("/")
-                        val isCustom = subFull in customSubs
+                        val isCustom = settings.customDomains.any { it.normalizedFullPath() == subFull }
                         val isSubHidden = subFull in settings.hiddenDomains
                         val subTools = unifiedView.classified[subFull].orEmpty().map { ToolPreview(it.name, it.description) }
                         val subDesc = settings.customDomainDescriptions[subFull] ?: router.getTriggerDescription(subFull)
@@ -393,7 +400,7 @@ fun SettingDomainPage(
                                                     if (v == subFull) parentDomain else v
                                                 }
                                                 vm.updateSettings(settings.copy(
-                                                    customDomains = settings.customDomains.filter { it.name != subFull },
+                                                    customDomains = settings.customDomains.filter { it.normalizedFullPath() != subFull },
                                                     toolDomainOverrides = newOverrides,
                                                 ))
                                             } else {
