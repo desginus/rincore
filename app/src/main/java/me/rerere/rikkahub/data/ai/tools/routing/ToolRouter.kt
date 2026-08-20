@@ -380,12 +380,15 @@ class ToolRouter(
                 }
             }
         }
-        // 空壳过滤: 子域无工具不显示; 根域无工具且无非空子域不显示。
-        // 系统域特例恒保留 (框架工具下钻可见, 计数为 0 时不消失)
+        // 空壳过滤: 内置空壳 (无工具) 不显示; 系统域特例恒保留 (框架工具
+        // 下钻可见); 用户显式创建的自定义域即使空壳也保留 — 否则新建的
+        // 空自定义域从 tree 消失, invoke_tools 报"未知" (用户: 新建域显示
+        // 但无法找到)。v3.8.23 修正。
+        val customPaths = customDomains.map { it.normalizedFullPath() }.toSet()
         val filteredTree = tree.mapValues { (_, subs) ->
-            subs.filter { (counts[it] ?: 0) > 0 }
+            subs.filter { (counts[it] ?: 0) > 0 || it in customPaths }
         }.filter { (root, subs) ->
-            (counts[root] ?: 0) > 0 || subs.isNotEmpty() || root == "系统"
+            (counts[root] ?: 0) > 0 || subs.isNotEmpty() || root == "系统" || root in customPaths
         }.toSortedMap()
         // 子树计数: 根 → 直接工具 + 全部子域直接工具 (排除框架, 与 counts 同口径)
         val subtreeCounts = filteredTree.mapValues { (root, subs) ->

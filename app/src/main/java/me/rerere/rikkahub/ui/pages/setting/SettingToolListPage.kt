@@ -70,14 +70,18 @@ fun SettingToolListPage(
     }
 
     val allDomainNames = remember(settings) {
-        // 所有可用域路径：顶级 + 子域（内置 + 自定义）— 过滤已删除(removed)/隐藏(hidden)的幽灵域
-        // 过滤规则与 ToolRouter.isValidDomain 一致: 完整路径 + 根域级联
+        // v3.8.23: 移动目标列表修复 —
+        // 1. 排序: 路径字典序 → 相同前缀天然聚合 (父域在前子域随后), 不再杂乱随机
+        // 2. 幽灵清理: 过滤已删(removed)/隐藏(hidden); 内置空壳域 (无工具且非
+        //    用户自定义) 从列表剔除 — 此前历史遗留空壳/废弃域占用大量位置
+        // 3. 自定义域无论空壳与否保留 — 用户显式创建, 需可移动/可新建后使用
         fun visible(domain: String): Boolean {
             val root = domain.split("/").first()
             return domain !in settings.removedBuiltinDomains && domain !in settings.hiddenDomains &&
                 root !in settings.removedBuiltinDomains && root !in settings.hiddenDomains
         }
-        (ToolDomain.entries.map { it.label } + settings.customDomains.map { it.normalizedFullPath() })
+        val customPaths = settings.customDomains.map { it.normalizedFullPath() }.toSet()
+        (ToolDomain.entries.map { it.label } + customPaths)
             .distinct()
             .filter { visible(it) }
             .filter { d ->
@@ -85,6 +89,15 @@ fun SettingToolListPage(
                 val parent = d.substringBeforeLast("/")
                 parent == d || visible(parent)
             }
+            .filter { d ->
+                // 内置空壳剔除 (括号列表只含内置): 无工具且无工具子域且非自定义
+                val count = allTools.count {
+                    val dd = router.classifyPreview(it.name, settings.toolDescriptionOverrides[it.name] ?: it.description)
+                    dd == d || dd.startsWith("$d/")
+                }
+                count > 0 || d in customPaths
+            }
+            .sorted()
     }
 
     val filtered = remember(allTools, searchQuery, filterDomain) {

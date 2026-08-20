@@ -194,6 +194,7 @@ class SettingsStore(
         val DOMAIN_NAME_OVERRIDES = stringPreferencesKey("domain_name_overrides")
         val HIDDEN_DOMAINS = stringPreferencesKey("hidden_domains")
         val REMOVED_BUILTIN_DOMAINS = stringPreferencesKey("removed_builtin_domains")
+        val EXEMPT_FROM_DOMAIN_TOOLS = stringPreferencesKey("exempt_from_domain_tools")
         val CLASSIFIER_PROMPT = stringPreferencesKey("classifier_prompt")
     }
 
@@ -302,6 +303,7 @@ class SettingsStore(
                 domainNameOverrides = preferences[DOMAIN_NAME_OVERRIDES]?.let { JsonInstant.decodeFromString(it) } ?: emptyMap(),
                 hiddenDomains = preferences[HIDDEN_DOMAINS]?.let { JsonInstant.decodeFromString(it) } ?: emptySet(),
                 removedBuiltinDomains = preferences[REMOVED_BUILTIN_DOMAINS]?.let { JsonInstant.decodeFromString(it) } ?: emptySet(),
+                exemptFromDomainTools = preferences[EXEMPT_FROM_DOMAIN_TOOLS]?.let { JsonInstant.decodeFromString(it) } ?: emptySet(),
                 classifierPrompt = preferences[CLASSIFIER_PROMPT] ?: "",
             )
         }
@@ -499,6 +501,7 @@ class SettingsStore(
             preferences[DOMAIN_NAME_OVERRIDES] = JsonInstant.encodeToString(settings.domainNameOverrides)
             preferences[HIDDEN_DOMAINS] = JsonInstant.encodeToString(settings.hiddenDomains)
             preferences[REMOVED_BUILTIN_DOMAINS] = JsonInstant.encodeToString(settings.removedBuiltinDomains)
+            preferences[EXEMPT_FROM_DOMAIN_TOOLS] = JsonInstant.encodeToString(settings.exemptFromDomainTools)
             preferences[CLASSIFIER_PROMPT] = settings.classifierPrompt
         }
     }

@@ -90,6 +90,10 @@ fun SettingToolComparePage(
     val helpText = remember(view) { router.buildHelpText(pool) }
 
     var tab by remember { mutableIntStateOf(0) }
+    // v3.8.23: 顶部对照由固定文案改为真实校验: 各域直接工具数合计 vs 工具池
+    // 总数, 一致输出"完全一致", 否则输出"请对照bug" (域内漏算/重复/未归类)
+    val domainToolTotal = view.counts.values.sum()
+    val comparedOk = domainToolTotal == pool.size
 
     Scaffold(
         topBar = {
@@ -106,7 +110,7 @@ fun SettingToolComparePage(
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad)) {
             Text(
-                "统一视图: ${view.classified.size}个域 · ${pool.size}个工具 — 三 Tab 应完全一致（同源）",
+                "统一视图: ${view.classified.size}个域 · ${pool.size}个工具 · 域内合计 ${domainToolTotal} 个 — ${if (comparedOk) "完全一致" else "请对照bug"}",
                 style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
