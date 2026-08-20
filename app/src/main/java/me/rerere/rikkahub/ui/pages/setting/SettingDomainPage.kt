@@ -68,6 +68,18 @@ fun buildPreviewTools(
         .map { ToolPreview(it.name, it.description) }
 }
 
+// v3.8.26: 统一寻址查询域下直接工具 — resolveDomain 兜底任何路径格式,
+// 与 classified 完整路径 key 永远对齐 (管理子域/父域直接工具/下钻共用)
+private fun toolsOf(
+    view: me.rerere.rikkahub.data.ai.tools.routing.ToolRouter.UnifiedDomainView,
+    router: me.rerere.rikkahub.data.ai.tools.routing.ToolRouter,
+    domain: String,
+): List<ToolPreview> {
+    val resolved = router.resolveDomain(domain) ?: domain
+    return view.classified[resolved].orEmpty()
+        .map { ToolPreview(it.name, it.description) }
+}
+
 private fun buildNestedDomains(
     view: ToolRouter.UnifiedDomainView,
     router: ToolRouter,
@@ -351,7 +363,9 @@ fun SettingDomainPage(
             .filter { it != parentDomain }
             .filter { notRemoved(it) }
             .sorted()
-        val parentTools = unifiedView.classified[parentDomain].orEmpty().map { ToolPreview(it.name, it.description) }
+        // v3.8.26: 统一寻址兜底 — resolveDomain 兼容完整路径/短名/显示名,
+        // 任何路径格式都能查到位 (管理子域此前被报告全 0, 双保险)
+        val parentTools = toolsOf(unifiedView, router, parentDomain)
         AlertDialog(
             onDismissRequest = { subdomainParent = null },
             title = { Text("管理子域: $parentDomain") },
@@ -368,7 +382,7 @@ fun SettingDomainPage(
                         val subShort = subFull.substringAfterLast("/")
                         val isCustom = settings.customDomains.any { it.normalizedFullPath() == subFull }
                         val isSubHidden = subFull in settings.hiddenDomains
-                        val subTools = unifiedView.classified[subFull].orEmpty().map { ToolPreview(it.name, it.description) }
+                        val subTools = toolsOf(unifiedView, router, subFull)
                         val subDesc = settings.customDomainDescriptions[subFull] ?: router.getTriggerDescription(subFull)
                         Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = if (isSubHidden) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surfaceVariant)) {
                             Column(Modifier.padding(8.dp).fillMaxWidth()) {
@@ -443,7 +457,7 @@ fun SettingDomainPage(
         val subFull = managingSubdomain!!
         val parentDomain = subFull.substringBefore("/")
         val subShort = subFull.substringAfterLast("/")
-        val subTools = unifiedView.classified[subFull].orEmpty().map { ToolPreview(it.name, it.description) }
+        val subTools = toolsOf(unifiedView, router, subFull)
         // 可移动目标：父域 + 该父域下所有其他子域
         // v3.8.24: 统一信息源头 — 移动目标 = 域分类管理页同款 unifiedView.tree
         // 的该父域子域列表 (已过滤删/藏/内置空壳, 保留自定义空域, 排序),
