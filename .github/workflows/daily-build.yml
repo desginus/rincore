@@ -78,9 +78,15 @@ jobs:
 
       - name: Prepare build files
         run: |
-          # 与 build.yml 一致 — 使用仓库内 app/release.jks, 不依赖 secrets
-          # (修复: secrets 未配置导致 validateSigningRelease 失败)
-          printf 'storeFile=../app/release.jks\nstorePassword=release123\nkeyAlias=rincore\nkeyPassword=release123\n' > local.properties
+          # 与 build.yml 一致 — v3.8.30 起签名密钥从 GitHub Secrets 注入
+          # (仓库内不再存放 jks; secrets 未配置时跳过签名构建)
+          if [ -z "${{ secrets.KEYSTORE_BASE64 }}" ] || [ -z "${{ secrets.KEYSTORE_PASSWORD }}" ]; then
+            echo "::warning::KEYSTORE secrets 未配置, 跳过 release 签名"
+            printf 'storeFile=\nstorePassword=\nkeyAlias=\nkeyPassword=\n' > local.properties
+          else
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release-key.jks
+            printf 'storeFile=../app/release-key.jks\nstorePassword=%s\nkeyAlias=rincore\nkeyPassword=%s\n' "${{ secrets.KEYSTORE_PASSWORD }}" "${{ secrets.KEYSTORE_PASSWORD }}" > local.properties
+          fi
 
       - name: Gradle Build
         run: |
