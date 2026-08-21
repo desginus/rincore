@@ -1,94 +1,121 @@
 <div align="center">
-  <img src="docs/icon.png" alt="App Icon" width="100" />
-  <h1>RikkaHub</h1>
+  <h1>RinCore</h1>
 
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/rikkahub/rikkahub)
-[![Ask DeepWiki](https://img.shields.io/badge/zread.ai-blue?style=flat&logo=readthedocs)](https://zread.ai/rikkahub/rikkahub)
+[![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=build&logo=github)](https://github.com/desginus/rincore/actions)
+[![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
+[![Version](https://img.shields.io/badge/version-v3.8.29-blue)](https://github.com/desginus/rincore/releases)
+[![License](https://img.shields.io/badge/license-segmented_dual-cyan)](LICENSE)
 
-A native Android LLM chat client that supports switching between different providers for
-conversations 🤖💬
+A deep-modified build of the Rikka-line native Android LLM client. Built for low token cost,
+high controllability, and real extensibility — not just another skin on top of the original.
 
-Click to join our Discord server 👉 [【RikkaHub】](https://discord.gg/9weBqxe5c4)
+> RinCore is maintained as a standalone fork of [RikkaHub](https://github.com/re-ovo/rikkahub).
+> It inherits the original philosophy (native Android, Material You, multi-provider), then goes
+> further: rebuilding the architecture, fixing systemic bugs, and adding a fully layered tool
+> domain system, MCP STDIO, a plugin system, and smart compression.
 
 [简体中文](README_ZH_CN.md) | [繁體中文](README_ZH_TW.md) | English
-</div>
 
-<div align="center">
-  <img src="docs/img/chat.png" alt="Chat Interface" width="150" />
-  <img src="docs/img/desktop.png" alt="Models Picker" width="450" />
 </div>
 
 ## 🚀 Download
 
-🔗 [Download from Website](https://rikka-ai.com/download) (Recommended)
+RinCore builds on every push. Two ways to get the latest APK:
 
-🔗 [Download from Google Play](https://play.google.com/store/apps/details?id=me.rerere.rikkahub)
+1. **GitHub Releases (recommended)** — the `nightly` prerelease is re-published daily and always
+   points to the latest daily build:
 
-## 💖 Sponsors
+   🔗 <https://github.com/desginus/rincore/releases>
 
-|                                         Sponsor                                         | Description                                                                                                                                                                                                                                         |
-|:---------------------------------------------------------------------------------------:|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| <img src="docs/sponsors/aihubmix.png" alt="Aihubmix" width="50" /><br /><b>Aihubmix</b> | Thanks to <a href="https://aihubmix.com?aff=pG7r">aihubmix.com</a> for their financial support. We recommend using aihubmix as a one-stop shop for mainstream models worldwide. (OpenAI, Claude, Google Gemini, DeepSeek, Qwen, and hundreds more). |
-| <img src="docs/sponsors/suixiang.jpg" alt="随想AI中转" width="50" /><br /><b>随想AI中转</b> | 感谢随想AI中转对本项目的赞助！随想AI中转 是一家可靠高效的 API 中继服务提供商，提供 Claude、Codex、Gemini 等的中继服务。注重隐私的中转站·无数据倒卖·无模型掺水，隐私，透明，极速售后。新账户注册每日签到就送 0.5 元测试额度，充值额度 1:1，无需订阅，按量付费。多线路冗余、跨区域容灾、自动故障切换，长链路 SSE 不中断。99.9% 可用性，关键调用从不掉队。 |
+2. **GitHub Actions artifacts** — every green build produces an instant APK. Open the latest
+   workflow run, expand the `rincore-release` artifact, and download the APK directly:
 
-## ✨ Features
+   🔗 <https://github.com/desginus/rincore/actions>
 
-- 🎨 Material You Design and 🌙 Dark mode
-- 📦 Workspace: a proot-based Linux agent environment
-- 🔄 Multiple AI Provider Support: custom API / URL / models (all OpenAI, Google, Anthropic compatible api)
-- 🖼️ Multimodal input support (Image, Text Documentation, PDF, Docx)
-- 🖥️ Web access for multi-platform use
-- 🛠️ MCP support
-- 📝 Markdown Rendering (with code highlighting, Latex formulas, tables, Mermaid)
-- 🪾 Message Branching
-- 🔍 Search capabilities (Exa, Tavily, Zhipu, LinkUp, Brave, Perplexity, etc.)
-- 🧩 Prompt variables (model name, time, etc.)
-- 🤳 QR code export and import for providers
-- 🤖 Agent customization
-- 🧠 ChatGPT-like memory feature
-- 📝 AI Translation
-- 🌐 Custom HTTP request headers and request bodies
-- 💌 Silly Tavern character card import
+   Direct artifact link (available right after a green build):
+   `https://github.com/desginus/rincore/actions/runs/<run-id>/artifacts/<artifact-id>`
 
-## ✨ Contributing
+Install the APK directly; no extra store is required.
 
-This project is developed using [Android Studio](https://developer.android.com/studio). PRs are
-welcome!
+## ✨ Why RinCore
 
-Technology stack documentation:
+What makes RinCore different from the upstream:
 
-- [Kotlin](https://kotlinlang.org/) (Development language)
-- [Koin](https://insert-koin.io/) (Dependency Injection)
-- [Jetpack Compose](https://developer.android.com/jetpack/compose) (UI framework)
-- [DataStore](https://developer.android.com/topic/libraries/architecture/datastore) (Preference data
-  storage)
-- [Room](https://developer.android.com/training/data-storage/room) (Database)
-- [Coil](https://coil-kt.github.io/coil/) (Image loading)
-- [Material You](https://m3.material.io/) (UI design)
-- [Navigation 3](https://developer.android.com/guide/navigation/navigation-3) (Navigation)
-- [Okhttp](https://square.github.io/okhttp/) (HTTP client)
-- [kotlinx.serialization](https://github.com/Kotlin/kotlinx.serialization) (JSON serialization)
+- **Architecture rework** — modules are refactored and responsibilities are separated; one
+  single source of truth (SSOT) drives the UI, the domain list, tool injection, and prompts, so
+  every view reads the same data and nothing drifts out of sync.
+
+- **A huge number of bug fixes** — streaming interruptions, silent failures, cold-start
+  regressions, settings not persisting, UI glitches… fixed at the root, not patched.
+
+- **Full MCP support, including STDIO** — STDIO servers launch in the sandboxed workspace (no
+  Python dependency on-device); MCP tool declarations are static and connection-state visible;
+  OAuth token refresh is handled transparently.
+
+- **Plugin system** — install/uninstall plugins from `ecosystem/plugins`, with plugin skills and
+  manual MCP bridging kept cleanly separated.
+
+- **Tool domain classification & layered injection** — tools are grouped into domains and
+  delivered on demand through `invoke_tools`, instead of dumping everything into every request.
+  Cold-start token cost dropped from 100K+ (full injection) to ~6K, dramatically cutting API
+  spend while improving prompt-cache hit rate.
+
+- **Smarter context compression** — compression no longer cuts a fixed number of messages.
+  The boundary is located by conversation rounds and token count (60%), rounded to the nearest
+  whole round. It never compresses the just-sent content and always really compresses something.
+
+- **Deferred auto-reply** — switch on `deferAutoReply` and sending a message queues it without
+  immediately triggering the model, so you can finish typing faster than the reply and the model
+  never interrupts mid-thought.
+
+- **Many small refinements** — usage quota dashboard with per-key cards and reset countdown,
+  SSE auto-retry with fast fail, TCP+TLS connection pre-warm to cut TTFB, compress retention
+  points (up to 3, view/resume), tool-consistency checker, timestamp-based memory IDs, OAuth
+  refresh, multi-version message editing, liquid-glass input blur, crash log persistence.
+
+## 🎨 Core features (inherited & kept)
+
+- Material You design with dark mode
+- Multiple provider support: custom API / base URL / models (OpenAI, Google, Anthropic compatible)
+- Multimodal input: image, text, PDF, DOCX (and more)
+- Workspace: a proot-based Linux agent environment
+- Web access for multi-platform use
+- MCP support (HTTP / SSE / STDIO)
+- Markdown rendering with code highlight, LaTeX, tables, and Mermaid
+- Message branching
+- Search providers (Exa, Tavily, Zhipu, LinkUp, Brave, Perplexity, …)
+- Prompt variables & AI translation
+- QR-code export/import for providers
+- Agent customization & ChatGPT-like memory
+- Custom HTTP headers and request bodies
+- Silly Tavern character card import
+
+## 🛠️ Building
+
+Developed with [Android Studio](https://developer.android.com/studio).
+
+Technology stack:
+
+- [Kotlin](https://kotlinlang.org/) — language
+- [Jetpack Compose](https://developer.android.com/jetpack/compose) — UI
+- [Koin](https://insert-koin.io/) — dependency injection
+- [DataStore](https://developer.android.com/topic/libraries/architecture/datastore) — settings
+- [Room](https://developer.android.com/training/data-storage/room) — database
+- [Coil](https://coil-kt.github.io/coil/) — image loading
+- [Material You](https://m3.material.io/) — design
+- [OkHttp](https://square.github.io/okhttp/) — networking
+- [kotlinx.serialization](https://github.com/Kotlin/kotlinx.serialization) — JSON
 
 > [!TIP]
-> You need a `google-services.json` file at `app` folder to build the app.
+> You need a `google-services.json` file at the `app` folder to build the app.
 
-> [!IMPORTANT]  
-> The following PRs will be rejected:
-> 1. Translation related changes, such as adding new languages or updating existing translations
-> 2. Adding new features, this project is opinionated and will not accept pull requests for new features
-> 3. Large-scale refactoring and changes generated by AI
+## 🙋 Contributing
 
-## 💰 Donate
+RinCore is an independent open-source project. Issues and PRs are welcome. If you want to make a
+major change, please open an issue first to discuss the design.
 
-* [Patreon](https://patreon.com/rikkahub)
-* [爱发电](https://afdian.com/a/reovo)
+## 📄 License & credits
 
-## ⭐ Star History
-
-If you like this project, please give it a star ⭐
-
-[![Star History Chart](https://api.star-history.com/svg?repos=re-ovo/rikkahub&type=Date)](https://star-history.com/#re-ovo/rikkahub&Date)
-
-## 📄 License
-
-[License](LICENSE)
+- [License](LICENSE)
+- Based on [RikkaHub](https://github.com/re-ovo/rikkahub) by re-ovo & contributors. We are
+  grateful for the original Rika-series client this project is built on.
