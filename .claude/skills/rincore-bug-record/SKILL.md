@@ -252,6 +252,18 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 - **排查起点**：ChatCompletionsAPI.kt onClosed / onEvent finish_reason 判定
 - **注意**：ResponseAPI onClosed 为宽松语义（直接 close），无此问题，无需同步
 
+### B39. MCP 启动即主动连接服务器（v3.8.41 修复）
+- **现象**：每次重启应用 MCP 都尝试连接非正常网络地址；原版无此行为（用户强制诉求，不接受启动发起网络请求）
+- **根因**：McpManager.init 收集 settingsFlow 首 emit 即对所有启用服务器 addClient → 立即 getTransport + 网络连接（上游原版 reconcile 同样行为，判定不可沿用）
+- **修复**：懒连接——启动/配置变更只登记 pendingConfigs，首次 MCP 工具调用（callTool）才 addClient；工具声明已静态化不受连接影响；断线重连/OAuth 刷新/mcp_connect 手动路径语义不变
+- **验证**：重启应用无任何 MCP 网络请求；日志 callTool: lazy-connecting 后才建连
+- **注意**：currentConfigs 对比须含 pending（List<McpServerConfig> 保持, eq 泛型参考）
+
+### B40. 思考链判成正文（v3.8.42 修复）
+- **现象**：ox-alpha-free 思考链经常出现在正文区（v3.8.40 无条件提升 reasoning_content 为正文的副作用，ox 流同时含 content 与 reasoning 时思考混入正文）
+- **修复**：运行时自适应——流中 reasoning_content 保持思考链实时显示（parseMessage 原生 Reasoning part），仅流结束确认无 content 且存在思考缓冲时才整段正文化补发（对齐 opencode）
+- **经验**：按模型名一刀切必出副作用；运行期按实际流内容自适应才是终态
+
 ## 排查方法论（用户约定）
 1. 排查顺序：先确定相关代码 → 对照 → 理清逻辑 → 想清楚再改 → 验证
 2. 无价值信息绝不允许破坏缓存
