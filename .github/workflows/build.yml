@@ -52,18 +52,18 @@ jobs:
         run: |
           # v3.8.45: 双产品线 — assembleRelease 构建 rincore + waterhub 两个 flavor
           ./gradlew assembleRelease --no-daemon --stacktrace
-          ls -la app/build/outputs/apk/release/
+          ls -la app/build/outputs/apk/
 
       - name: Upload RinCore APK (A 类主线)
         uses: actions/upload-artifact@v6
         with:
           name: rincore-release
-          path: app/build/outputs/apk/release/*rincore*release*.apk
+          path: app/build/outputs/apk/rincore/release/*.apk
           retention-days: 7
 
       - name: Upload WaterHub APK (B 类产品线)
         uses: actions/upload-artifact@v6
         with:
           name: waterhub-release
-          path: app/build/outputs/apk/release/*waterhub*release*.apk
+          path: app/build/outputs/apk/waterhub/release/*.apk
           retention-days: 7
