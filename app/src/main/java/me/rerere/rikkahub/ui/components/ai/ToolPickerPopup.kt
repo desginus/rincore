@@ -60,7 +60,7 @@ fun ToolPickerPopup(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    text = "在对话中说"把…设为工具"即可注册",
+                    text = "在对话中说「把…设为工具」即可注册",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

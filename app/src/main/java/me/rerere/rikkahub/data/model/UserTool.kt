@@ -12,8 +12,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class UserTool(
-    val id: String = kotlinx.datetime.Clock.System.now()
-        .toEpochMilliseconds().toString() + "-" + kotlin.random.Random.nextInt(1000, 9999),
+    val id: String = java.util.UUID.randomUUID().toString(),
     val name: String,
     val path: String,
     val description: String = "",
