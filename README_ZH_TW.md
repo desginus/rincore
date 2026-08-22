@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=構建&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/版本-v3.8.29-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/版本-v3.9.2-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/許可-segmented_dual-cyan)](LICENSE)
 
 **手機上一個真正全面的 AI 助手。** 不是套殼，是一台重新打造過的引擎——背後是六週的高強度實測迭代與 400+ 個版本。

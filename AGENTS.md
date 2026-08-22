@@ -38,14 +38,18 @@
 - **app**: Main application module with UI, ViewModels, and core logic
 - **ai**: AI SDK abstraction layer for different providers (OpenAI, Google, Anthropic)
 - **common**: Common utilities and extensions
+- **search**: Search functionality SDK for multiple providers (Exa, Tavily, Zhipu, Bing, Brave, SearXNG, and others)
+- **speech**: Speech module for TTS and ASR implementations
 - **document**: Document parsing module for handling PDF, DOCX, PPTX, and EPUB files
 - **highlight**: Code syntax highlighting implementation
 - **material3**: Material color utility extensions used by the app UI
-- **search**: Search functionality SDK for multiple providers (Exa, Tavily, Zhipu, Bing, Brave, SearXNG, and others)
-- **speech**: Speech module for TTS and ASR implementations
-- **web**: Embedded web server module that provides Ktor server startup function and hosts static frontend build files (
-  built from web-ui/ React project)
-- **workspace**: Sandboxed per-workspace file system and shell execution environment exposed to the AI as tools.
+- **web**: Embedded web server module that provides Ktor server startup function and hosts static frontend build files (built from web-ui/ React project)
+- **workspace**: Sandboxed per-workspace file system and shell execution environment exposed to the AI as tools
+- **web-ui**: Web management interface (TypeScript)
+
+RinCore 当前版本 v3.9.2，单产品线（包名 me.rincore.app）。任何代码修改前加载
+`.claude/skills/rincore-project-brief/SKILL.md` 与 `rincore-dev-process`；历史知识见
+`docs/ecosystem/`。B 线 WaterHub 已废弃移除，不再涉及。
 
 ## Concepts
 
