@@ -260,23 +260,23 @@ class ChatCompletionsAPI(
                         val choiceList = buildList {
                             if (choices.isNotEmpty()) {
                                 val choice = choices[0].jsonObject
+                                // v3.8.31: finish_reason 判定提到 choice 层 —
+                                // 结尾 chunk 常为 delta:null + finish_reason:"stop",
+                                // 原判定写在 message!=null 分支内会漏判 → 误判断流
+                                val finishReason =
+                                    choice["finish_reason"]?.jsonPrimitive?.contentOrNull
+                                if (finishReason == "stop" || finishReason == "length") {
+                                    gotFinish.set(true)
+                                }
                                 val message =
                                     choice["delta"]?.jsonObject ?: choice["message"]?.jsonObject
-                                // v3.6.67: 部分 OpenAI 兼容接口把 delta/message 显式写成
-                                // null, 强制解析会中断整轮生成。null 时跳过该 chunk。
                                 if (message != null) {
-                                    val finishReason =
-                                        choice["finish_reason"]?.jsonPrimitive?.contentOrNull
-                                            ?: "unknown"
-                                    if (finishReason == "stop" || finishReason == "length") {
-                                        gotFinish.set(true)
-                                    }
                                     add(
                                         UIMessageChoice(
                                             index = 0,
                                             delta = parseMessage(message),
                                             message = null,
-                                            finishReason = finishReason,
+                                            finishReason = finishReason ?: "unknown",
                                         )
                                     )
                                 }
@@ -339,11 +339,21 @@ class ChatCompletionsAPI(
             override fun onClosed(eventSource: EventSource) {
                 // 服务器主动关闭连接: [DONE] 或 finish_reason=stop 已收到 → 正常完成;
                 // 否则视为断流 (消息不完整且无报错 → 用户感知"莫名其妙中断")
-                if (!completed.get() && !gotFinish.get()) {
-                    Log.w(TAG, "onClosed: stream closed before completion — unexpected interruption")
+                // v3.8.31: OpenCode Zen (opencode.ai) 网关对部分模型 (grok 系/ox 系
+                // 免费模型) 完成时不发 [DONE]/stop/usage 直接关闭连接 —
+                // 已收到过数据即视为正常完结 (与 v3.6.78 grok 特判同网关行为);
+                // 未收到任何数据仍按断流重试, 真断流不受影响
+                val zenNoSignalClose = isOpencode && hasReceivedData.get()
+                if (!completed.get() && !gotFinish.get() && !zenNoSignalClose) {
+                    Log.w(TAG, "onClosed: stream closed before completion — unexpected interruption" +
+                            " (completed=${completed.get()} gotFinish=${gotFinish.get()} hasData=${hasReceivedData.get()} opencode=$isOpencode)")
                     close(IOException("SSE 流在完成前被服务器关闭"))
                 } else {
-                    TraceLogger.log("SSE", "stream closed by server")
+                    if (zenNoSignalClose) {
+                        TraceLogger.log("SSE", "opencode.ai closed after data — treated as complete (no [DONE]/stop)")
+                    } else {
+                        TraceLogger.log("SSE", "stream closed by server")
+                    }
                     close()
                 }
             }
