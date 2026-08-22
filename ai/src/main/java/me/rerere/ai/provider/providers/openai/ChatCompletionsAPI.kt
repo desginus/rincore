@@ -254,6 +254,8 @@ class ChatCompletionsAPI(
         // 必须可见报错而非静默"完成"
         var hasTextContent = false
         var reasoningTail = ""
+        // v3.8.42: 思考缓冲 — ox 系无 content 时结束后正文化; 流中思考保持思考链
+        val reasoningBuffer = StringBuilder()
         // v3.8.38: 最后一条"delta 非空"块原文 + 字段名 — 定位 Zen 网关内容块
         // 真实结构 (用户实测 287 events tail 仍为空: 网关文本不走 content 字段)
         var lastDeltaRaw = ""
@@ -368,9 +370,10 @@ class ChatCompletionsAPI(
                                     ?.get("reasoning_content")?.jsonPrimitiveOrNull?.contentOrNull
                                     ?: message?.get("reasoning_content")?.jsonPrimitiveOrNull?.contentOrNull
                                 if (reasoningAsBody) {
+                                    // v3.8.42: 流中思考保持思考链实时显示 (不再提升为正文);
+                                    // 缓冲全文, 仅当流结束仍无 content 时才正文化补发
                                     reasoningRaw?.takeIf { it.isNotBlank() }?.let {
-                                        hasTextContent = true
-                                        textTail = if (it.length > 80) it.takeLast(80) else it
+                                        reasoningBuffer.append(it)
                                     }
                                 } else {
                                     reasoningRaw?.takeIf { it.isNotBlank() }?.let {
@@ -378,18 +381,9 @@ class ChatCompletionsAPI(
                                     }
                                 }
                                 if (message != null) {
-                                    var delta = parseMessage(message)
-                                    if (reasoningAsBody) {
-                                        // ox 系: reasoning_content 即正文 — 从思考链提升为正文
-                                        val r = message["reasoning_content"]
-                                            ?.jsonPrimitiveOrNull?.contentOrNull
-                                        if (!r.isNullOrBlank()) {
-                                            delta = delta.copy(
-                                                parts = delta.parts.filterNot { it is UIMessagePart.Reasoning } +
-                                                    UIMessagePart.Text(r)
-                                            )
-                                        }
-                                    }
+                                    val delta = parseMessage(message)
+                                    // v3.8.42: 思考链经 parseMessage 自然成为 Reasoning part,
+                                    // 正文经 content 提取 — 两者不再混淆
                                     add(
                                         UIMessageChoice(
                                             index = 0,
@@ -477,23 +471,49 @@ class ChatCompletionsAPI(
                 //   按物理层的事实判定, 不再猜测模型行为。
                 if (!completed.get() && !gotFinish.get()) {
                     if (isOpencode && hasReceivedData.get()) {
-                        // v3.8.39: 无正文场景 (实证: ox-alpha-free 只发 reasoning_content
-                        // 不发 content) — 思考完即关流, 必须报错而非静默完成
-                        val reasoningOnly = !hasTextContent && reasoningTail.isNotBlank()
-                        val truncated = !lastEventParsed || looksTruncated(textTail) || reasoningOnly
+                        // v3.8.42: 运行时自适应 —
+                        //   行完整 + 有 content => 正常完成 (思考链与正文泾渭分明);
+                        //   行完整 + 无 content + 有思考缓冲 => 思考正文化补发为正文
+                        //   (ox 系纯思考输出场景, 对齐 opencode 客户端行为);
+                        //   行残缺 / 尾部强截断特征 => 保留内容 + 明确报错。
+                        val truncated = !lastEventParsed || looksTruncated(textTail)
                         if (truncated) {
-                            val why = when {
-                                reasoningOnly -> "reasoning-only stream, no content produced (reasoningTail=\"${reasoningTail.take(40)}\")"
-                                !lastEventParsed -> "mid-event truncation"
-                                else -> "content ends truncated (tail=\"${textTail.take(40)}\")"
-                            }
+                            val why = if (!lastEventParsed) "mid-event truncation"
+                            else "content ends truncated (tail=\"${textTail.take(40)}\")"
                             Log.w(TAG, "onClosed: opencode.ai truncated ($why, model=${params.model.modelId} events=$eventCount) — keep partial content, notify user\nlast: ${dumpLastEvents()}")
                             TraceLogger.log("SSE", "zen truncated close — keep data, notify user (events=$eventCount $why)")
-                            close(OpenCodeStreamUnconfirmedException(
-                                if (reasoningOnly)
-                                    "模型仅输出了思考内容，未产出正式回复（已保留思考过程）"
-                                else "OpenCode 输出被截断，已保留已生成内容"
-                            ))
+                            close(OpenCodeStreamUnconfirmedException("OpenCode 输出被截断，已保留已生成内容"))
+                        } else if (!hasTextContent && reasoningBuffer.isNotBlank()) {
+                            // 无 content: 缓冲思考提升为正文补发 (思考链已实时显示过,
+                            // 补发使正文区完整 — 与 opencode 将 reasoning_content 当正文一致)
+                            val bodyText = reasoningBuffer.toString()
+                            val bodyTail = if (bodyText.length > 80) bodyText.takeLast(80) else bodyText
+                            if (looksTruncated(bodyTail)) {
+                                Log.w(TAG, "onClosed: opencode.ai reasoning-only truncated (tail=\"${bodyTail.take(40)}\") — keep data, notify")
+                                TraceLogger.log("SSE", "zen reasoning-only truncated — keep data, notify user")
+                                close(OpenCodeStreamUnconfirmedException("OpenCode 输出被截断，已保留已生成内容"))
+                            } else {
+                                TraceLogger.log("SSE", "opencode.ai closed after complete data (events=$eventCount) — no content, promoted reasoning as body (chars=${bodyText.length} tail=\"${bodyTail.take(40)}\")")
+                                trySend(
+                                    MessageChunk(
+                                        id = "",
+                                        model = params.model.modelId,
+                                        choices = listOf(
+                                            UIMessageChoice(
+                                                index = 0,
+                                                delta = UIMessage(
+                                                    role = MessageRole.ASSISTANT,
+                                                    parts = listOf(UIMessagePart.Text(bodyText)),
+                                                ),
+                                                message = null,
+                                                finishReason = "stop",
+                                            )
+                                        ),
+                                        usage = null,
+                                    )
+                                ).onFailure { e -> Log.w(TAG, "onClosed: body promotion chunk dropped (${e?.message})") }
+                                close()
+                            }
                         } else {
                             TraceLogger.log("SSE", "opencode.ai closed after complete data (events=$eventCount) — treated as complete, no completion signal needed (tail=\"${textTail.take(40)}\" deltaKeys=\"$lastDeltaKeys\" delta=\"${lastDeltaRaw.take(260)}\")")
                             close()
