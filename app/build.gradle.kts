@@ -39,18 +39,12 @@ android {
     productFlavors {
         create("rincore") {
             dimension = "product"
-            resValue("string", "app_name", "RinCore")
-            resValue("string", "setting_page_share_text", "RinCore - Personal AI Assistant")
-            resValue("string", "setting_page_web_server_desc", "Allow you access RinCore via Web")
         }
         create("waterhub") {
             dimension = "product"
             applicationId = "com.waterhub.app"
             versionCode = 1
             versionName = "0.0.1-beta"
-            resValue("string", "app_name", "WaterHub")
-            resValue("string", "setting_page_share_text", "WaterHub - Water Engineering AI Agent")
-            resValue("string", "setting_page_web_server_desc", "Allow you access WaterHub via Web")
         }
     }
 
