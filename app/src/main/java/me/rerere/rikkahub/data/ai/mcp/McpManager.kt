@@ -125,6 +125,10 @@ class McpManager(
     private val oauthClient = McpOAuthClient(okHttpClient)
 
     private val clients: MutableMap<McpServerConfig, Client> = mutableMapOf()
+    // v3.8.41: 懒连接 — 启动/配置变更只登记待连接服务器, 首次工具调用时才真正
+    // 建立网络连接。根治"每次重启应用都主动连接 MCP 地址"(用户: 原版无此行为,
+    // 启动不应发起网络请求; 工具声明已静态化, 连接与否不影响工具注入与缓存)
+    private val pendingConfigs: MutableMap<Uuid, McpServerConfig> = mutableMapOf()
     private val stdioProcesses = mutableMapOf<Uuid, Process>()
     private val reconnectJobs: MutableMap<Uuid, Job> = mutableMapOf()
     private val reconnectAttempts: MutableMap<Uuid, Int> = mutableMapOf()
@@ -139,20 +143,19 @@ class McpManager(
                     runCatching {
                         Log.i(TAG, "update configs: $mcpServerConfigs")
                         val newConfigs = mcpServerConfigs.filter { it.commonOptions.enable && it.commonOptions.name.isNotBlank() }
-                        val currentConfigs = clients.keys.toList()
+                        val currentConfigs = clients.keys.map { it.id } + pendingConfigs.keys
                         val (toAdd, toRemove) = currentConfigs.checkDifferent(
                             other = newConfigs,
                             eq = { a, b -> a.id == b.id }
                         )
                         Log.i(TAG, "to_add: $toAdd")
                         Log.i(TAG, "to_remove: $toRemove")
+                        // v3.8.41: 懒连接 — 只登记不发网络请求; 首次工具调用时连接
                         toAdd.forEach { cfg ->
-                            appScope.launch {
-                                runCatching { addClient(cfg) }
-                                    .onFailure { it.printStackTrace() }
-                            }
+                            pendingConfigs[cfg.id] = cfg
                         }
                         toRemove.forEach { cfg ->
+                            pendingConfigs.remove(cfg.id)
                             appScope.launch { removeClient(cfg) }
                         }
                     }.onFailure {
@@ -203,13 +206,28 @@ class McpManager(
         }
         val entry = clients.entries.find { it.key.id == serverId }
         var client = entry?.value
-            ?: return listOf(
-                UIMessagePart.Text(
-                    "工具执行失败: MCP 服务器未连接或连接已断开 (serverId=$serverId)。" +
-                        "请检查 MCP 服务器状态后重试。"
+        if (client == null) {
+            // v3.8.41: 懒连接 — 启动未连接, 首次工具调用时才建立连接
+            val config = settingsStore.settingsFlow.value.mcpServers.firstOrNull { it.id == serverId }
+            if (config == null) {
+                return listOf(
+                    UIMessagePart.Text(
+                        "工具执行失败: MCP 服务器不存在 (serverId=$serverId)。请检查 MCP 服务器配置。"
+                    )
                 )
-            )
-        var config = entry.key
+            }
+            Log.i(TAG, "callTool: lazy-connecting ${config.commonOptions.name} (${config.id})")
+            pendingConfigs.remove(config.id)
+            addClient(config)
+            val newEntry = clients.entries.find { it.key.id == serverId }
+                ?: return listOf(
+                    UIMessagePart.Text(
+                        "工具执行失败: MCP 服务器连接失败 (${config.commonOptions.name})。请检查服务器地址与状态后重试。"
+                    )
+                )
+            client = newEntry.value
+        }
+        var config = (entry?.key ?: clients.entries.find { it.key.id == serverId }!!.key)
 
         // 调用前确保 OAuth 令牌新鲜。若发生刷新，已连接的 transport 仍携带过期令牌
         val freshConfig = ensureFreshToken(config)
