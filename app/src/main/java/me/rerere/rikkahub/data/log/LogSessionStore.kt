@@ -164,6 +164,38 @@ object LogSessionStore {
         mutex.withLock { return sessions[id] }
     }
 
+    /** 单个会话导出为 Markdown */
+    suspend fun exportSessionMarkdown(id: String): String? {
+        val session = getSession(id) ?: return null
+        val list = listOf(session)
+        return buildString {
+            append("# RinCore 运行日志\n\n")
+            append("- 导出时间: ${sessionIdFormatter().format(Date())}\n")
+            append("- 会话轮次: ${session.id}\n\n")
+            append("---\n\n")
+            append("## ${session.id}\n\n")
+            append("- 状态: ${if (session.isActive) "记录中" else "已完成"}\n")
+            append("- 开始: ${sessionIdFormatter().format(Date(session.startedAt))}\n")
+            session.finishedAt?.let { append("- 结束: ${sessionIdFormatter().format(Date(it))}\n") }
+            append("- 时长: ${session.durationMs}ms\n")
+            append("- 事件: ${session.events.size} 条\n\n")
+            if (session.events.isEmpty()) {
+                append("（无事件）\n\n")
+            } else {
+                append("| 耗时 | 阶段/步骤 | 详情 | 指标 |\n")
+                append("|---|---|---|---|\n")
+                session.events.forEach { e ->
+                    val detail = e.detail.replace("|", "\\|").replace("\n", " ")
+                    val metrics = if (e.metrics.isEmpty()) "-" else
+                        e.metrics.entries.joinToString(" ") { "${it.key}=${it.value}" }
+                            .replace("|", "\\|")
+                    append("| +${e.ts - session.startedAt}ms | ${e.phase}/${e.step} | ${detail} | ${metrics} |\n")
+                }
+                append("\n")
+            }
+        }
+    }
+
     /** 全部会话导出为 Markdown (新在前) */
     suspend fun exportMarkdown(): String {
         val list = listSessions()

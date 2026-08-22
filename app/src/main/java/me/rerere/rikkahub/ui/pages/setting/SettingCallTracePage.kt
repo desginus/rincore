@@ -63,28 +63,31 @@ import java.util.Locale
 private fun formatTs(ts: Long): String =
     SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date(ts))
 
-/** 导出全部会话为 Markdown 文件, 返回可分享的 content:// Uri */
-private fun exportSessionsMarkdown(context: Context): Uri? {
-    val md = runBlocking { LogSessionStore.exportMarkdown() }
+/** 导出 Markdown 文件, 返回可分享的 content:// Uri; sessionId=null 导出全部, 否则导出该轮 */
+private fun exportSessionsMarkdown(context: Context, sessionId: String? = null): Uri? {
+    val md = if (sessionId == null) {
+        runBlocking { LogSessionStore.exportMarkdown() }
+    } else {
+        runBlocking { LogSessionStore.exportSessionMarkdown(sessionId) } ?: return null
+    }
     return runCatching {
         val dir = File(context.filesDir, "exports").apply { mkdirs() }
-        val file = File(
-            dir,
-            "rincore-log-" +
-                SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date()) + ".md"
-        )
+        val name = if (sessionId == null)
+            "rincore-log-" + SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date()) + ".md"
+        else "rincore-log-$sessionId.md"
+        val file = File(dir, name)
         file.writeText(md)
         FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
     }.getOrNull()
 }
 
-/** 导出为分享 Intent (chooser 内可选 保存/发送) */
-private fun shareMarkdown(context: Context) {
-    val uri = exportSessionsMarkdown(context) ?: return
+/** 导出为分享 Intent (chooser 内可选 保存/发送); sessionId=null 导出全部 */
+private fun shareMarkdown(context: Context, sessionId: String? = null) {
+    val uri = exportSessionsMarkdown(context, sessionId) ?: return
     val send = Intent(Intent.ACTION_SEND).apply {
         type = "text/markdown"
         putExtra(Intent.EXTRA_STREAM, uri)
-        putExtra(Intent.EXTRA_SUBJECT, "RinCore 运行日志")
+        putExtra(Intent.EXTRA_SUBJECT, if (sessionId == null) "RinCore 运行日志" else "RinCore 轮次报告 $sessionId")
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
     context.startActivity(Intent.createChooser(send, "导出运行日志"))
@@ -117,13 +120,19 @@ fun SettingCallTracePage() {
                 },
                 actions = {
                     if (selectedSessionId == null) {
+                        // 列表页: 导出全部轮次 + 清空
                         IconButton(onClick = { shareMarkdown(context) }) {
-                            Icon(HugeIcons.Upload01, "导出日志")
+                            Icon(HugeIcons.Upload01, "导出全部日志")
                         }
                         IconButton(onClick = {
                             scope.launch { LogSessionStore.deleteAll() }
                         }) {
                             Icon(HugeIcons.Delete01, null)
+                        }
+                    } else {
+                        // 详情页: 只分享当前轮次
+                        IconButton(onClick = { shareMarkdown(context, selectedSessionId) }) {
+                            Icon(HugeIcons.Upload01, "分享本轮报告")
                         }
                     }
                 },

@@ -317,11 +317,20 @@ class ChatCompletionsAPI(
                                 }
                                 val message =
                                     choice["delta"]?.jsonObject ?: choice["message"]?.jsonObject
-                                // v3.8.36: 记录文本尾部 (截断启发用) — 直接读原始 content
-                                (choice["delta"] as? JsonObject)
-                                    ?.get("content")?.jsonPrimitive?.contentOrNull
-                                    ?.takeIf { it.isNotBlank() }
-                                    ?.let { textTail = if (it.length > 80) it.takeLast(80) else it }
+                                // v3.8.37: 记录文本尾部 (截断启发用) — 兼容三种 chunk 形态:
+                                // string content (OpenAI 标准) / content 数组 (Claude 风格
+                                // 网关: [{"type":"text","text":"..."}]) / thinking 文本
+                                (choice["delta"] as? JsonObject)?.get("content")?.let { raw ->
+                                    val text = when (raw) {
+                                        is JsonPrimitive -> raw.contentOrNull
+                                        is JsonArray -> raw.mapNotNull {
+                                            (it as? JsonObject)?.get("text")?.jsonPrimitive?.contentOrNull
+                                        }.joinToString("")
+                                        else -> null
+                                    }
+                                    text?.takeIf { it.isNotBlank() }
+                                        ?.let { textTail = if (it.length > 80) it.takeLast(80) else it }
+                                }
                                 if (message != null) {
                                     add(
                                         UIMessageChoice(
@@ -417,7 +426,7 @@ class ChatCompletionsAPI(
                             TraceLogger.log("SSE", "zen truncated close — keep data, notify user (events=$eventCount tail=\"${textTail.take(40)}\")")
                             close(OpenCodeStreamUnconfirmedException("OpenCode 输出被截断，已保留已生成内容"))
                         } else {
-                            TraceLogger.log("SSE", "opencode.ai closed after complete data (events=$eventCount) — treated as complete, no completion signal needed (tail=\"${textTail.take(40)}\")")
+                            TraceLogger.log("SSE", "opencode.ai closed after complete data (events=$eventCount) — treated as complete, no completion signal needed (tail=\"${textTail.take(40)}\" last1=\"${lastEvents.lastOrNull()?.take(200)}\")")
                             close()
                         }
                     } else {
