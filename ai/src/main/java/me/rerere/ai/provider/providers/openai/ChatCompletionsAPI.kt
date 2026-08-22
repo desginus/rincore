@@ -1111,15 +1111,18 @@ class ChatCompletionsAPI(
             ?: jsonObject["cached_tokens"]?.jsonPrimitive?.intOrNull
             ?: jsonObject["prompt_cache_hit_tokens"]?.jsonPrimitive?.intOrNull
             ?: 0
+        // v3.8.43: 缓存命中钳制 — cached 不得超过本轮 prompt (中转/网关偶发
+        // 将历史累计命中打包, 显示上出现 cached>prompt 违背直觉的脏数据)
+        val cachedTokensClamped = if (promptTokens > 0) minOf(cachedTokens, promptTokens) else 0
         if (cachedTokens > 0) {
-            val hitRate = if (promptTokens > 0) cachedTokens * 100 / promptTokens else 0
-            Log.i(TAG, "Cache hit: $cachedTokens/$promptTokens tokens (${hitRate}%)")
+            val hitRate = if (promptTokens > 0) cachedTokensClamped * 100 / promptTokens else 0
+            Log.i(TAG, "Cache hit: $cachedTokensClamped/$promptTokens tokens (${hitRate}%)")
         }
         return TokenUsage(
             promptTokens = promptTokens,
             completionTokens = completionTokens,
             totalTokens = totalTokens,
-            cachedTokens = cachedTokens
+            cachedTokens = cachedTokensClamped
         )
     }
 

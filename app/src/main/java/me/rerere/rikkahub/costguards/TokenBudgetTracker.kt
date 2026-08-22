@@ -43,17 +43,27 @@ object TokenBudgetTracker {
         var total = 0L
         var perMax = 0L
         var count = 0
+        // v3.8.43: 口径修正 — 每条 assistant 的 usage.promptTokens 都是"该轮完整
+        // 上下文"而非增量, 逐条求和会数倍虚高 (用户实测: 实际十几K 显示六十几K)。
+        // 正确语义: input = 最近一轮 promptTokens (当前上下文真实大小);
+        // output = 全部轮次 completionTokens 累计 (真实生成量); total = input + output。
+        var lastInput = 0L
+        var lastCached = 0L
         for (node in conversation.messageNodes) {
             val msg = node.messages.getOrNull(node.selectIndex) ?: continue
             val usage = msg.usage ?: continue
-            input += usage.promptTokens.toLong()
+            if (usage.promptTokens > 0) {
+                lastInput = usage.promptTokens.toLong()
+                lastCached = usage.cachedTokens.toLong()
+            }
             output += usage.completionTokens.toLong()
             val totalThis = (usage.totalTokens.takeIf { it > 0 }
                 ?: (usage.promptTokens + usage.completionTokens)).toLong()
-            total += totalThis
             if (totalThis > perMax) perMax = totalThis
             count++
         }
+        input = lastInput
+        total = input + output
         return Totals(
             inputTokens = input,
             outputTokens = output,
