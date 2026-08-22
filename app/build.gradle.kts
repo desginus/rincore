@@ -99,7 +99,7 @@ android {
         buildConfig = true
     }
     sourceSets {
-        getByName("androidTest").assets.srcDirs("$projectDir/schemas")
+        getByName("androidTest").assets.srcDir("$projectDir/schemas")
     }
     androidResources {
         generateLocaleConfig = true
@@ -137,11 +137,11 @@ androidComponents {
         variant.outputs.forEach { output ->
             val vn = output.versionName ?: ""
             val vc = output.versionCode?.toString() ?: ""
-            variant.buildConfigFields.put(
+            variant.buildConfigFields?.put(
                 "VERSION_NAME",
                 BuildConfigField("String", "\"$vn\"", "VERSION_NAME"),
             )
-            variant.buildConfigFields.put(
+            variant.buildConfigFields?.put(
                 "VERSION_CODE",
                 BuildConfigField("String", "\"$vc\"", "VERSION_CODE"),
             )
