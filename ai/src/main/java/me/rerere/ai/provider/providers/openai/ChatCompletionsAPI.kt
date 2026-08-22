@@ -241,12 +241,27 @@ class ChatCompletionsAPI(
         // v3.8.36: 文本尾部跟踪 — 服务端"行完整但内容截断"场景 (无完成信号的
         // 模型输出被平台截短仍按完整行发送), 需内容形态启发辅助判定
         var textTail = ""
+        // v3.8.38: 最后一条"delta 非空"块原文 + 字段名 — 定位 Zen 网关内容块
+        // 真实结构 (用户实测 287 events tail 仍为空: 网关文本不走 content 字段)
+        var lastDeltaRaw = ""
+        var lastDeltaKeys = ""
         val lastEvents = ArrayDeque<String>()
         fun recordEvent(data: String) {
             val lines = data.trim().split("\n").filter { it.isNotBlank() }
             for (line in lines) {
                 lastEventParsed =
                     runCatching { json.parseToJsonElement(line); true }.getOrDefault(false)
+                // 记录最后一条含非空 delta 的 chunk (结构取证)
+                runCatching {
+                    val obj = json.parseToJsonElement(line).jsonObject
+                    val choices = obj["choices"] as? JsonArray
+                    val delta = choices?.firstOrNull()
+                        ?.let { (it as JsonObject)["delta"] as? JsonObject }
+                    if (delta != null && delta.keys.isNotEmpty()) {
+                        lastDeltaKeys = delta.keys.joinToString(",")
+                        lastDeltaRaw = line.take(300)
+                    }
+                }
             }
             eventCount++
             val preview = data.trim().replace("\n", " ")
@@ -426,7 +441,7 @@ class ChatCompletionsAPI(
                             TraceLogger.log("SSE", "zen truncated close — keep data, notify user (events=$eventCount tail=\"${textTail.take(40)}\")")
                             close(OpenCodeStreamUnconfirmedException("OpenCode 输出被截断，已保留已生成内容"))
                         } else {
-                            TraceLogger.log("SSE", "opencode.ai closed after complete data (events=$eventCount) — treated as complete, no completion signal needed (tail=\"${textTail.take(40)}\" last1=\"${lastEvents.lastOrNull()?.take(200)}\")")
+                            TraceLogger.log("SSE", "opencode.ai closed after complete data (events=$eventCount) — treated as complete, no completion signal needed (tail=\"${textTail.take(40)}\" deltaKeys=\"$lastDeltaKeys\" delta=\"${lastDeltaRaw.take(260)}\")")
                             close()
                         }
                     } else {
