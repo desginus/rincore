@@ -335,9 +335,21 @@ class ChatCompletionsAPI(
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
                 var exception = t
                 t?.printStackTrace()
-                Log.w(TAG, "onFailure: ${t?.javaClass?.name} ${t?.message} / $response")
+                // v3.8.35: 流式失败诊断补齐 — 400/500 平台拒绝时响应体常为空,
+                // 请求体结构摘要是定位唯一线索 (模型/消息数/工具数/maxTokens)
+                val reqSummary = runCatching {
+                    buildString {
+                        append("model=").append(requestBody["model"])
+                        append(", messages=").append((requestBody["messages"] as? JsonArray)?.size)
+                        append(", tools=").append((requestBody["tools"] as? JsonArray)?.size)
+                        append(", maxTokens=").append(requestBody["max_tokens"])
+                        append(", stream=").append(requestBody["stream"])
+                    }
+                }.getOrDefault("?")
+                Log.w(TAG, "onFailure: ${t?.javaClass?.name} ${t?.message} / http=${response?.code} events=$eventCount REQ=$reqSummary")
 
                 val bodyRaw = response?.body?.stringSafe()
+                Log.w(TAG, "onFailure RESP: ${if (bodyRaw.isNullOrBlank()) "<empty>" else bodyRaw.take(600)}")
                 try {
                     if (!bodyRaw.isNullOrBlank()) {
                         val bodyElement = Json.parseToJsonElement(bodyRaw)
