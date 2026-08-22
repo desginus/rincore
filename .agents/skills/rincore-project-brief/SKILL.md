@@ -9,10 +9,11 @@ description: "[高优先级·RinCore开发必加载] RinCore 项目总览与工�
 安卓个人助手（AI Agent）。当前主线：缓存稳定性/协调性、RikkaHub fork 三功能移植、稳定性加固。
 
 ## 版本链
-- 当前版本：v3.5.1（提交 10a62b5d，vc 162，CI ✅）
-- 关键节点：v3.2.2 `7bcc022b`（传输层回滚基线）→ v3.3.12 `5ff81bde`（缓存逻辑回滚）→ v3.4.1 `8d48889` → v3.5.0 `5dacddfd`（传输层整体回滚到 3.2.2）→ v3.5.1 `10a62b5d`（70K 瘦身）
-- 版本号规则：小修改/小 bug 修复升第三位；versionCode 每次 +1（当前 162 起步递增）
-- fork 基线：AAAelina/rikkahub-agent（master，2.3.1 旧基线 vc 184）——不能 merge，只能选择性手动移植
+- 当前版本：v3.5.17（提交 520b4cb0，CI ✅，2026-08-05 连接根治系列）
+- 关键节点：v3.2.2 `7bcc022b`（传输层回滚基线）→ v3.3.12 `5ff81bde`（缓存逻辑回滚）→ v3.5.0 `5dacddfd`（传输层整体回滚到 3.2.2）→ v3.5.1 `10a62b5d`（70K 瘦身）→ v3.5.11 `fbd5e11e`（缓存正常化基准）→ v3.5.17 `520b4cb0`（连接根治：HTTP/2 禁用/重试机制/keepalive 60s/收尾完整）
+- 版本号规则：前两位锁定，小修改/小 bug 修复升第三位；versionCode 每次 +1
+- fork 基线：原版 rikkahub/rikkahub 2.4.5（upstream-try/master 8349ef25）；二改版 ExTV/rikkahub-agent（参考移植，不能 merge，手动适配）
+- 完整版本链见 docs/ecosystem/03-修改全记录/修改全记录.md
 
 ## 核心模型
 DeepSeek V4 系列、千问 3.7 系列（按国内模型前缀自动缓存理解）
@@ -26,13 +27,25 @@ DeepSeek V4 系列、千问 3.7 系列（按国内模型前缀自动缓存理解
 
 **验证路径**：更新环境后，UI 统计行与 `invoke_tools` 返回的工具数应完全一致。
 
-## 传输层状态（v3.5.x）
+## 传输层状态（v3.5.17）
 - 基线：3.2.2（原版 RikkaHub 2.4.5 移植前的稳定逻辑）
+- 连接配置：HTTP/1.1 only（HTTP/2 完全禁用——PROTOCOL_ERROR 根治）；ConnectionPool(12, 60s)（防陈旧连接 EOF）；readTimeout 3min（用户确认）；writeTimeout 120s；SSE 重试 5 次指数退避（v2.9.8 移植）
+- 中断处理：三 Provider 静默恢复已全部移除，中断必须可见或自动重试
+- 收尾：onCompletion NonCancellable（取消态也落盘+通知），stopGeneration 显式收尾
 - 回滚保留：流式增量落盘（v3.4.6）、FGS dataSync 类型（v3.4.4）、AlarmScheduler DI（v3.4.2）、MCP 管理/域分类/工具路由、保活/权限/闹钟/工作流
-- 关键认知：v3.4.5-v3.4.10 的传输层补丁（SETTINGS 合并/空流重试/reasoning 回传/流式诊断）已全部移除——回滚后若再遇中断需重新诊断，勿直接照搬旧补丁
+- 关键认知：连接层正确参照是 v2.9.8（SSE 重试），不是原版 fork-ref
 
 ## 工具池
 264 tools（MCP 动态 + 域扩展 + 搜索 + 闹钟 + 电池 + Skill）。system 内只注入 7 个框架工具 systemPrompt（v2.9.4 瘦身——v3.5.1 移植到 else 分支），其余工具描述在请求 tools 数组。
+
+## 开发生态（完整档案在 docs/ecosystem/）
+- README.md：生态总览 + 快速查找入口 + 核心铁律（改动前必读）
+- 02-模块地图：模块化 + AI 修改入口标注（改代码前必读）
+- 03-修改全记录：所有版本所有修改完整标注
+- 04-错误对照表：全部 bug 根因/修复/监控项（遇到问题先查）
+- 05-迭代框架：开发流程 + 版本管理 + AI 协作规范
+- 06-原版兼容：上游更新合并策略 + 禁止跟随清单
+- 01-来源归档：原版 2.4.5 / 二改版 agent / RinCore 三来源代码归档
 
 ## 用户元指令与工作约定（关键约束）
 1. 对话开头的"对话摘要"是讲给另一个模型听的；当前模型拥有对项目的至高无上第一权利

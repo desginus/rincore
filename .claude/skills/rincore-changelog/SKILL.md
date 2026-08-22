@@ -12,6 +12,12 @@ description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日�
 - **工具执行无超时**：3.5.9 withTimeout 60s 兜底——工具挂起不永久阻塞生成
 - **缓存"卡-跳-线性"**：DeepSeek 服务端磁盘缓存机制（构建延迟秒级+固定间隔切分+SWA 独立单元）——客户端不可控，已入库 decisions D2
 
+## v3.8.31（OpenCode Zen 无信号关流误判断流修复，2026-08-22）
+- 用户报告 ox-alpha-free（opencode.ai/zen/go/v1）SSE 流在完成前被服务器关闭，rollback & retry 7 次全败后 generation_failed（10 分钟耗尽）
+- 根因：Zen 网关完成时无任何完成信号直接关连接（v3.6.78 grok 特判靠 usage/cost 行识别，ox 系连 usage/cost 都不发）；onClosed 误判断流 → 每轮重试服务端重新生成。另修独立缺陷：finish_reason 判定在 message!=null 分支内，delta:null + finish_reason 结尾漏判
+- 修复：isOpencode && hasReceivedData → 关闭即完成（真断流无数据仍重试）；finish_reason 上移 choice 层；onClosed 诊断增强
+- 注意：ResponseAPI onClosed 为宽松语义无需同步；DeepSeek 严格判定不受影响
+
 ## v3.8.29（MCP 参数类型恢复 / 记忆 ID 时间戳 / 锁定最新消息，2026-08-20）
 - MCP 图表工具 -32602 根治：按 inputSchema 类型恢复字符串化参数（array/object 解析回结构化、number/boolean 转原生），递归 properties/items
 - 记忆 ID 改创建时间戳 YYMMDDHHMMSS（Int 自增 → Long 时间戳，Long 防溢出），同秒冲突顺延

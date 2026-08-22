@@ -15,6 +15,159 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 
 ## 已修复 Bug 明细（按时间倒序）
 
+
+### B34. 压缩留存位点重启全消失（v3.8.22 根治）
+- **现象**：压缩功能正常，重启 App 后 compressRetentions 全部为空
+- **根因**：conversationToConversationEntity 未映射 compressRetentions，ConversationEntity 无对应列——位点写入即丢，重启读空
+- **修复**：ConversationEntity 加 compress_retentions 列；Room v27→v28 Migration_27_28 (ALTER TABLE ADD COLUMN)；写入 JSON 序列化、读取 runCatching 解码回退空；存量数据无损
+
+### B37. MCP 图表工具 -32602 Invalid parameters（v3.8.29 根治）
+- **现象**：mcp__charting__* 调用返回 -32602，data/style/width/height 类型全错（array→string 等）
+- **根因**：模型对深嵌套 schema 生成 JSON 字符串字面量（data 为 "[{...}]" 字符串），服务端类型校验失败；首调成功属模型生成偶然正确
+- **修复**：McpManager.callTool 按 inputSchema 递归类型恢复（array/object 解析回结构化、number/boolean 转原生），schema 缺失不污染
+- **教训**：客户端到 MCP 的参数必须按 schema 类型清洗，不能盲信模型生成的参数类型
+
+### B36. Skill 跳脱 invoke_tools 暴露请求顶层（v3.8.27 加固）
+- **现象**：数个 Skill 工具未经 invoke_tools 加载即出现在请求 tools 数组顶层（框架工具之外）
+- **风险评估**：分层构建逻辑本身干净（skill 仅经 loadedDomains 技能域注入）；泄漏多来自对话 loadedDomains 持久化或非分层兜底
+- **加固**：toolsInternal 构建后白名单硬过滤（框架+豁免+引擎+已加载域），泄漏工具剔除并 Log.e，回归自曝
+- **规则（用户）**：请求顶层只允许批准框架 + 豁免 + 已加载域工具，其余一律归 invoke_tools 内部
+
+### B35. 管理子域页面所有子域显示 0 个工具（v3.8.25 根治）
+- **现象**：工具域分类管理→点根域→设置→管理子域，所有子域显示 0 个工具
+- **根因**：管理子域对话框自拼子域列表：customSubs 取 CustomDomain.name（短名"引擎"）而非 normalizedFullPath（完整路径"搜索/引擎"），unifiedView.classified 的 key 是完整路径 → 查表落空 → 0；自定义子域删除按 it.name 匹配与完整路径不符 → 删除无效
+- **修复**：allSubs 改用 unifiedView.tree[parentDomain] 统一信息源头；isCustom 判断与删除匹配改 normalizedFullPath
+- **教训**：同源铁律——任何以"域"为单位的展示/操作必须用 normalizedFullPath/统一视图，不得用 name 短名自拼
+
+### B33. 移出域管理重启失效（v3.8.23 根治）
+- **现象**：工具设置里开启"移出域管理"（exemptFromDomainTools），重启后该操作完全失效（工具重新并入域分类）
+- **根因**：Settings 数据类有 exemptFromDomainTools 字段，但 PreferencesStore 无对应 PreferencesKey——读段取默认空集、写段不落盘，仅存活于当次运行内存
+- **修复**：补 EXEMPT_FROM_DOMAIN_TOOLS key + 读写段（与 v3.8.2 密钥持久化同类根因）
+- **教训**：Settings 加新字段必须同步 PreferencesStore 读写段——遗漏即"重启消失"类 bug
+
+### B32. 液态玻璃分享后失效成黑框（v3.8.9 根治）
+- **现象**：分享消息后返回软件，液态玻璃模糊丢失变普通黑框；进设置再返回恢复
+- **根因**：Haze 模糊纹理依赖背景渲染，分享面板是外部 Activity，返回不触发任何重组，模糊纹理失效
+- **修复**：ChatPage ON_RESUME 递增 hazeRebuildTick，key 包裹 AssistantBackground 强制重建纹理
+- **教训**：外部 Activity 返回 ≠ 导航返回——系统 UI 覆盖不会触发 Compose 重组
+
+### B31. Anthropic 接口输出中途静默中断（v3.8.5 根治）
+- **现象**：千问 3.7 Plus（OpenCode 中转 /v1/messages）输出中途莫名中断，客户端日志显示正常完成（FINISH/no_tools，无异常无重试），半截回复被保存
+- **根因**：ClaudeProvider 把连接关闭一律当正常结束（onClosed=close()）。Anthropic 协议 message_stop 是唯一强制收尾，中转断流/网关切换直接关连接（不发 message_stop）→ 客户端保存半截
+- **修复**：completed 标记——message_stop 到达才视为完成；onClosed 无 message_stop → close(IOException) → 既有断流重试链路（回滚+重试）
+- **依据**：对照 ChatCompletionsAPI 的 completed/gotFinish（v3.6.75 双向教训）；Anthropic 协议 message_stop 为强制（与 OpenAI 的 [DONE] 约定强度不同）
+
+### B30. 输出完成瞬间整条消息抽动（v3.8.12 根治，v3.7.x 引入）
+- **现象**：消息输出完成时整条消息 Markdown 重渲染一遍，页面上下抽动
+- **根因**：v3.7.x 把 animateContentSize 条件化（loading 时无动画）——loading 翻转瞬间修饰符链变化 → 强制重组合 + 动画从无到有 → 重渲染 + 高度动画
+- **修复**：改回原版 always animateContentSize，动画速度参数化（流式 TweenSpec(0) 瞬跳 / 完成 SpringSpec）
+- **教训**：修饰符链的变化会强制整棵子树重组合——条件化 Modifier 比想象中重
+
+### B24. MCP 大部分无法连接（127.x 无法连接/连接关闭，v3.6.120 回滚根治）
+
+- 现象：v3.6.112-119 期间大部分 MCP 报"无法连接到 127.x:端口"、"连接关闭"
+- 根因：v3.6.112 引入插件自动桥接 registerPluginBridges，App 启动时对每个插件 command 自动 addClient（viaWorkspace STDIO），部分环境破坏 MCP 连接状态；且每次启动用随机 id 新增 settings 条目持续增长
+- 修复：v3.6.120 移除两个调用点；v3.6.121 启动时清理 plugin__ 残留服务器与白名单条目
+- 教训：新增自动 MCP 注册机制必须评估对既有连接的影响面，禁止在启动路径批量 addClient
+
+### B23. 插件列表恒空（installFromParsed 死代码，v3.6.118 根治）
+
+- 现象：plugin_install 报安装成功，设置页插件列表永远空
+- 根因：写 plugin.json 元数据的 ClawPluginRegistry.installFromParsed 从未被任何调用点调用（死代码），refresh() 的 readManifest 恒失败
+- 修复：v3.6.118 安装流显式调 installFromParsed
+- 教训：修复"写元数据"类 bug 时必须验证调用链存在，静态校验脚本加"方法被调用点存在性"检查
+
+### B22. unexpected end of stream（v3.5.17 根治）
+- **现象**：工具执行 60s+ 后继续生成的请求报 java.io.IOException unexpected end of stream（Http1ExchangeCodec.readResponseHeaders，Caused by EOFException \n not found: limit=0）
+- **根因**：连接池复用陈旧连接——服务端空闲关闭连接后客户端 keepalive 5min 仍保留，复用即 EOF；工具执行 60s+ 使连接空闲超服务端关闭时间，必触发
+- **修复**：ConnectionPool(12, 60s) keepalive 低于服务端空闲关闭时间；writeTimeout 120s 对齐 v2.9.8；SSE 重试 3→5 次（31s 窗口）
+- **对比**：v2.9.8 稳定连接配置 writeTimeout 120s / ConnectionPool(12,10min) / pingInterval 30s，v3.1.0 改动三处
+
+### B21. stream was reset: PROTOCOL_ERROR（v3.5.17 根治）
+- **现象**：流式生成报 okhttp3.internal.http2.StreamResetException: stream was reset: PROTOCOL_ERROR（ALPN 协商 h2 后）
+- **根因**：DeepSeek 服务端 HTTP/2 连接异常。protocols(HTTP_1_1, HTTP_2) 顺序不影响 ALPN——服务端支持 h2 必选 h2
+- **修复**：protocols 只留 HTTP_1_1，完全禁用 HTTP/2
+- **验证证据**：2026-08-05 20:06:23 Trace c003249a 堆栈 Http2Stream$FramingSource.read
+
+### B20. 思考链计时持续 / 灵动岛不停（v3.5.17 根治）
+- **现象**：对话中断后思考链持续显示思考秒数，灵动岛一直显示思考中（近几版出现）
+- **根因**：停止生成 job.cancel() 后 onCompletion 在取消态执行，挂起调用（saveConversation/appEventBus.emit）直接跳过——ChatGenerationEnded 未发出灵动岛不取消，落盘未执行
+- **修复**：onCompletion 收尾包 withContext(NonCancellable)；stopGeneration 显式 tryEmit ChatGenerationEnded
+- **注意**：ChatMessageReasoning 计时实时累计依赖 finishedAt 被收尾设置
+
+### G3. 平台空流（v3.5.17 实现重试）
+- **现象**：流式正常结束但模型未产出任何内容（无文本/无思考/无工具调用）
+- **实现**：GenerationHandler 空响应检测 + 重试一次（emptyRetryCount < 1）
+- **判定**：assistant 消息 parts 无 Text/Reasoning/Tool；工具轮后 user 消息不触发；thinking-only 不算空流
+- **缓存**：重试请求消息相同，缓存命中无破坏
+- **传输层缺口现状**：G1（BEFORE_SYSTEM_PROMPT 已合并 system）、G2（孤立 tool_call 已有清洗）、G3（本项）、G4（msg_fp 已有）——全部关闭
+
+### B18. 流式中断静默恢复（根因版本 v3.1.0 — 已根治 2026-08-05）
+- **现象**：工具轮后请求返回空/回复缺失，无任何报错，用户感知莫名中断；运行日志 SEND→RECV 正常、FINISH 正常、messages 无新增
+- **根因链**：
+  - v3.1.0 (583a38c1) 在三个 Provider（ChatCompletionsAPI/Claude/Google）同时引入静默恢复：onFailure 时若 hasData=true 直接 close() 结束，中断被吞
+  - v2.9.8 (c0280099) 有正确机制：未收到任何数据时自动重试（指数退避 3 次），收到数据后中断才传播异常
+  - v3.5.0 回滚到 3.2.2 基线时丢失 v2.9.8 重试；3.5.14 又重复引入静默恢复（hasData→close），问题复现且更隐蔽
+- **修复**：ChatCompletionsAPI 移植 v2.9.8 完整重试机制（hasReceivedData/retryCount/maxRetries=3/currentEventSource/connect()）；三 Provider 静默恢复全部移除，中断统一传播异常可见
+- **铁律**：连接层改动的正确参照是 v2.9.8（自己 2.x 稳定版），不是原版 fork-ref；禁止任何"静默吞错"逻辑；中断必须可见或自动重试
+- **对比法**：查问题首次引入版本 = git log 连接相关关键词 → 对比该版本与上一版本
+
+### B19. MCP 状态撕裂 — no such mcp client（2026-08-05 修复）
+- **现象**：分层调用工具时报 Failed to execute tool, because no such mcp client for the tool
+- **根因**：addClient 中 getTransport 在 runCatching 外——stdio 分支 check(command 非空)/ProcessBuilder.start() 失败时，removeClient 已执行但新 client 未注册，clients 缺失；而配置里 commonOptions.tools 仍持久化，getAllAvailableTools 显示工具 → 调用撕裂
+- **修复**：getTransport 包 runCatching（失败 setStatus Error 并明确显示原因）；getAllAvailableTools 过滤 Error 状态服务器；callTool 报错明确化（区分未连接/不存在）
+- **教训**：任何资源创建（进程/连接）必须在错误处理内，失败要状态一致；配置持久化的工具可见性必须与连接状态联动
+
+### 缓存反复被改坏的经验（2026-08-05 三次教训）
+- **事实**：缓存键 = 请求体前缀（system + 早期消息 + tools 数组）；请求体任何变化都导致缓存失效
+- **已犯错误**：3.5.16 把 use_skill 加入框架工具集（tools 数组变化）+ 新增 UNCLASSIFIED 域（layer1 域概览变化）→ 缓存率暴跌
+- **铁律**：请求体零改动原则——任何想改 system 提示/tools 数组/域概览/消息结构的改动，必须先评估缓存影响；缓存优先于功能优化；P1-2/P3-1 类优化需以不影响请求体的方式实现
+- **正确参照**：3.5.11（SystemPromptBuilder stable/volatile 分区）是缓存正常化的基准版本
+
+### B23. 缓存阶梯化反复出现 — 最终决策回滚 3.5.17（v3.5.24）
+- **现象链**：3.5.18 起缓存阶梯化（10K 卡住→跳 20K→倒退 3K）、冷启动 100K/36K 反复
+- **错误尝试**：3.5.18-beta2 全量注入（100K 回归）→ 3.5.19 skill 直注（36K）→ 3.5.22 layer1 数量统计（用户批评"不是服务端机制"）
+- **用户决策**：缓存机制彻底回滚到 3.5.17（520b4cb0）——WorkspaceReminderTransformer/McpManager/GenerationPrompts 对齐；功能改动保留
+- **教训**：3.5.17 是缓存稳定基准，任何缓存机制性改动必须先对照 bug-record"缓存反复被改坏的经验"（请求体零改动原则）
+
+### B23 修正. 缓存阶梯化最终根因确认（v3.5.25）
+- **根因确认**：MCP 服务器连接波动 → Error → getAllAvailableTools 过滤（3.5.17 行为）→ 工具从数组消失 → tools 数组每轮变化 → 请求体前缀断裂 → 缓存阶梯化/倒退。用户环境 MCP 工具多（数百）且波动频繁，此机制必断缓存——非平台正常现象
+- **v3.5.24 回滚 3.5.17 后问题仍在**（Error 过滤是 3.5.17 固有行为），确认此根因
+- **修复**：单独恢复静态化——仅移除 Error 过滤（工具声明由配置决定），callTool 调用时显式报错。不带全量注入/skill 直注/数量统计等 3.5.18 错误改动
+- **教训**：3.5.18-beta2 的静态化方向正确但被错误改动拖累；回滚要精准，不能连带回滚正确的修复
+
+### B29. SSE 静默中断（v3.5.38 修复）— 消息莫名其妙中断
+- **根因**：SSE onClosed 无条件 close() — 服务器未发 [DONE] 直接关连接被当正常结束 → 消息不完整且无报错（静默中断）
+- **修复**：completed 标记 — onClosed 未收到 [DONE] → close(IOException) 可见化（对齐 B18 可见化原则）
+- **教训**：流结束必须校验终止信号（[DONE]），不能只依赖连接关闭事件
+
+### B28. 技能子域体系六处断裂（v3.5.34 稳定版梳理）
+- **override 校验**：validDomainLabels 不含技能子域（动态）→ 挂载到"技能/名"失效 → root 有效即放行
+- **UI 域树**：buildNestedDomains 只遍历枚举+customDomains → 技能子域管理页不可见 → 从分类结果派生
+- **move 目标**：allValid 不含技能子域 → 无法移动到技能/<名> → 补 knownSkillNames 派生
+- **子域删除**：buildDomainTree 无条件重建技能子域 → 删除无效 → 过滤 removed/hidden
+- **分类一致性**：classifyByName 不查子域删除 → 删除后仍归"技能/名"（与域树错位）→ 归技能根域
+- **挂载键**：skill__名/skill:名/原始名 三套 key 混用 → move 规范化统一 skill:原始名
+- **教训**：动态域（技能/<名>）必须全链路一致——分类/域树/UI/移动/删除 同源校验
+
+### B27. 工具域分类体系重构（v3.5.26）
+- **问题**：AI 分类调模型不稳定；Skill/MCP 层级不对齐（skill_ 单字段 vs mcp__服务器__工具）；空壳域/残留空壳；孤儿注册数据（skill 删除后 overrides 残留）；search_domains 域路径解析失败（技能子域不在域列表）；工具池域数与域内计数不一致
+- **修复**：自动分类改本地名称结构化分类（第一字段类别/第二字段分类字段）；Skill 工具 skill__ 命名 + 归「技能/<名>」；buildDomainTree(tools) 技能子域派生（与 classifyByName 同源）；空壳域过滤（UI+帮助一致）；SkillManager.deleteSkill 清 overrides 孤儿；search_domains 域列表同源
+- **教训**：域分类必须单一事实源（classifyByName 与域树同源），UI/模型/帮助三处一致
+
+### B26. 助手删除限制取消（v3.5.25）
+- **改动**：DEFAULT_ASSISTANTS_IDS 限制移除，所有助手可删除；仅剩最后一个助手时禁止（避免无助手可用）
+
+### B24. get_location 固定返回上海缓存（v3.5.24 修复）
+- **现象**：FUSED 模式不触发系统定位请求，固定返回上海坐标（31.1959831, 121.4234426）
+- **根因**：quick cache（<=5min）优先于真实定位，缓存命中直接返回
+- **修复**：重排为真实定位优先（FusedLocation → Network → GPS），缓存仅最终兜底并标注 age
+
+### B25. 思考链计时器中断后一直计数（v3.5.24 修复）
+- **现象**：对话中断后"思考了多少秒"计时器不停
+- **根因**：中断后 onCompletion 收尾（NonCancellable saveConversation 落盘）耗时期间，消息 finishedAt 未更新，UI 计时循环继续
+- **修复**：stopGeneration 中断时立即 finishReasoning + 更新 flow 停表；join 3s 超时（UI 立即响应，收尾后台继续）；onCompletion finishReasoning 幂等不冲突
+
 ### B17. 冷启动注入 70K tokens（v3.5.1 修复）
 - **现象**：回滚 3.2.2 后每次对话起始冷启动注入 70K+ tokens
 - **根因**：GenerationHandler system 构建——`layer1Prompt` 无任何调用方传入（全项目 grep 确认），恒走 `else` 分支 `tools.forEach` 全量注入 264 工具 systemPrompt；3.2.2 时代工具池小（几十个）无感，工具池膨胀后（264 tools）暴露
@@ -92,9 +245,10 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 ### B38. OpenCode Zen 无信号关流误判断流（v3.8.31 修复）
 - **现象**：ox-alpha-free（opencode.ai/zen/go/v1）SSE 在完成前被服务器关闭；rollback & retry 7 次全败，10 分钟耗尽后 generation_failed；每轮重试间隔 40-60s
 - **根因**：Zen 网关对部分模型（grok 系/ox 系免费模型）完成时不发 [DONE]/finish_reason=stop/usage，直接关闭连接；onClosed 视为断流 → 上层 rollback 重试 → 每次重试服务端重新生成 → 7 次叠加超长失败。另发现独立缺陷：finish_reason 判定写在 message!=null 分支内，delta:null + finish_reason:"stop" 结尾 chunk 漏判
-- **修复**：isOpencode && 已收到数据 => 关闭即正常完结（与 v3.6.78 grok 特判同网关行为），未收到数据仍按断流重试；finish_reason 上移到 choice 层
+- **修复**：isOpencode && 已收到数据 => 关闭即正常完结（与 v3.6.78 grok 特判同网关行为），未收到数据仍按断流重试；finish_reason 上移到 choice 层；onClosed 诊断增强（打印 completed/gotFinish/hasData/opencode）
 - **验证**：ox-alpha-free 不再误报 SSE 中断；DeepSeek 真断流（无数据关闭）重试路径不变
-- **排查起点**：ChatCompletionsAPI.kt onClosed（协调点 +344 行）/ onEvent finish_reason 判定
+- **排查起点**：ChatCompletionsAPI.kt onClosed / onEvent finish_reason 判定
+- **注意**：ResponseAPI onClosed 为宽松语义（直接 close），无此问题，无需同步
 
 ## 排查方法论（用户约定）
 1. 排查顺序：先确定相关代码 → 对照 → 理清逻辑 → 想清楚再改 → 验证
