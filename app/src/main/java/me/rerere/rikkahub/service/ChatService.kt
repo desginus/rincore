@@ -77,7 +77,6 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.GenerationChunk
 import me.rerere.rikkahub.data.ai.CallTracer
 import me.rerere.rikkahub.data.ai.GenerationHandler
-import me.rerere.rikkahub.data.files.ConversationAttachmentManager
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.tools.HeadlessConversations
 import me.rerere.rikkahub.data.ai.tools.ToolInvocationContext

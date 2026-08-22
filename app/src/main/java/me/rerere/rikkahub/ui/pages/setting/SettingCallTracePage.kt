@@ -48,6 +48,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.ArrowLeft01
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Upload01
 import me.rerere.rikkahub.R
@@ -86,7 +87,7 @@ private fun shareMarkdown(context: Context) {
         putExtra(Intent.EXTRA_SUBJECT, "RinCore 运行日志")
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
-    context.startActivity(Intent.createChooser(send, context.getString(R.string.setting_call_trace_export)))
+    context.startActivity(Intent.createChooser(send, "导出运行日志"))
 }
 
 @Composable
@@ -96,11 +97,24 @@ fun SettingCallTracePage() {
     val sessions by LogSessionStore.sessionsFlow.collectAsStateWithLifecycle()
     var selectedSessionId by remember { mutableStateOf<String?>(null) }
 
+    // 系统返回键: 详情态先退回列表
+    androidx.activity.compose.BackHandler(enabled = selectedSessionId != null) {
+        selectedSessionId = null
+    }
+
     Scaffold(
         topBar = {
             LargeFlexibleTopAppBar(
                 title = { Text(if (selectedSessionId == null) "运行日志" else "轮次报告") },
-                navigationIcon = { BackButton(onClick = { if (selectedSessionId != null) selectedSessionId = null }) },
+                navigationIcon = {
+                    if (selectedSessionId == null) {
+                        BackButton()
+                    } else {
+                        IconButton(onClick = { selectedSessionId = null }) {
+                            Icon(HugeIcons.ArrowLeft01, "返回列表")
+                        }
+                    }
+                },
                 actions = {
                     if (selectedSessionId == null) {
                         IconButton(onClick = { shareMarkdown(context) }) {
