@@ -12,6 +12,13 @@ description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日�
 - **工具执行无超时**：3.5.9 withTimeout 60s 兜底——工具挂起不永久阻塞生成
 - **缓存"卡-跳-线性"**：DeepSeek 服务端磁盘缓存机制（构建延迟秒级+固定间隔切分+SWA 独立单元）——客户端不可控，已入库 decisions D2
 
+## v3.8.32（Zen 无信号关流可见化分流 — 杜绝静默截断，2026-08-22）
+- 用户反馈 v3.8.31 特判过宽：isOpencode&&hasReceivedData=>完成 把 ox 系免费模型的中途掐断也吞成正常完成，输出途中忽然断且无任何报错（静默截断）
+- 根因：信号层面无法区分 Zen"正常完结"与"服务端中途掐断"（均无完成信号）
+- 修复（按模型分流）：grok 系（有 usage/cost 生态、实测稳定）已收数据关流=>完成；ox 系免费模型等=>OpenCodeStreamUnconfirmedException，已生成内容随 chunk 流保留、不回滚不重试、上层明确报错"服务未发送完成信号即关闭连接，已保留已生成内容"；DeepSeek 等严格路径不变
+- 诊断：事件计数 + 最近 5 条原始数据缓冲，关流/失败时打印
+- CI 两次编译失败修正：异常类误插 import 区（imports only allowed in beginning of file）；本地无 SDK 增量缓存假象，验证以 CI 为准
+
 ## v3.8.31（OpenCode Zen 无信号关流误判断流修复，2026-08-22）
 - 用户报告 ox-alpha-free（opencode.ai/zen/go/v1）SSE 流在完成前被服务器关闭，rollback & retry 7 次全败后 generation_failed（10 分钟耗尽）
 - 根因：Zen 网关完成时无任何完成信号直接关连接（v3.6.78 grok 特判靠 usage/cost 行识别，ox 系连 usage/cost 都不发）；onClosed 误判断流 → 每轮重试服务端重新生成。另修独立缺陷：finish_reason 判定在 message!=null 分支内，delta:null + finish_reason 结尾漏判
