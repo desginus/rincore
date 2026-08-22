@@ -89,6 +89,13 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 - 澎湃 OS"强制停止"后任何机制无法唤醒（系统限制，需诚实说明）
 - 小米澎湃 3 白名单引导未自建（fork 没有——需自建：自启动 AppOps AUTO_START / 省电策略无限制 / 后台弹出界面 / ADB appops set RUN_IN_BACKGROUND allow）
 
+### B38. OpenCode Zen 无信号关流误判断流（v3.8.31 修复）
+- **现象**：ox-alpha-free（opencode.ai/zen/go/v1）SSE 在完成前被服务器关闭；rollback & retry 7 次全败，10 分钟耗尽后 generation_failed；每轮重试间隔 40-60s
+- **根因**：Zen 网关对部分模型（grok 系/ox 系免费模型）完成时不发 [DONE]/finish_reason=stop/usage，直接关闭连接；onClosed 视为断流 → 上层 rollback 重试 → 每次重试服务端重新生成 → 7 次叠加超长失败。另发现独立缺陷：finish_reason 判定写在 message!=null 分支内，delta:null + finish_reason:"stop" 结尾 chunk 漏判
+- **修复**：isOpencode && 已收到数据 => 关闭即正常完结（与 v3.6.78 grok 特判同网关行为），未收到数据仍按断流重试；finish_reason 上移到 choice 层
+- **验证**：ox-alpha-free 不再误报 SSE 中断；DeepSeek 真断流（无数据关闭）重试路径不变
+- **排查起点**：ChatCompletionsAPI.kt onClosed（协调点 +344 行）/ onEvent finish_reason 判定
+
 ## 排查方法论（用户约定）
 1. 排查顺序：先确定相关代码 → 对照 → 理清逻辑 → 想清楚再改 → 验证
 2. 无价值信息绝不允许破坏缓存
