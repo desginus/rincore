@@ -13,9 +13,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -41,9 +38,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.net.toUri
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Cancel01
+import me.rerere.hugeicons.stroke.Pause
+import me.rerere.hugeicons.stroke.Play
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import java.io.File
@@ -81,7 +79,7 @@ fun ImageRenderDialog(
             contentAlignment = Alignment.Center,
         ) {
             ZoomableAsyncImage(
-                model = imageFile,
+                model = imageFile.toUri().toString(),
                 contentDescription = fileName,
                 modifier = Modifier.fillMaxSize(),
             )
@@ -145,7 +143,6 @@ fun AudioRenderDialog(
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val player = remember {
         MediaPlayer().apply {
             setDataSource(context, audioFile.toUri())
@@ -213,7 +210,7 @@ fun AudioRenderDialog(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Slider(
-                value = position.coerceIn(0, duration.coerceAtLeast(1)),
+                value = position.coerceIn(0, duration.coerceAtLeast(1)).toFloat(),
                 valueRange = 0f..duration.coerceAtLeast(1).toFloat(),
                 onValueChange = { newPos ->
                     position = newPos.toLong()
@@ -233,7 +230,7 @@ fun AudioRenderDialog(
                 modifier = Modifier.size(64.dp),
             ) {
                 Icon(
-                    imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    imageVector = if (isPlaying) HugeIcons.Pause else HugeIcons.Play,
                     contentDescription = null,
                     modifier = Modifier.size(48.dp),
                 )
