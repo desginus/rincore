@@ -3,14 +3,25 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v2.9.4 → v3.5.14）
+# RinCore 更新日志（v2.9.4 → v3.9.2）
 
 ## 历史教训（防重踩——每次改动前必读）
+- **产品线**：v3.8.44-45 曾建 WaterHub B 类产品线（flavor 拆分），用户 3.9.1 令废弃回滚——只保留 A 线 RinCore 单产品构建。教训：未与用户对齐的产品线扩张立即废弃，勿自行推进
+- **功能界线**：用户只要求移植的功能就只移植，不自作主张附带其他功能（v3.8.44 附带工具入口/漂浮字幕被要求全量回滚）
 - **limitContext 滞回策略 ↔ 缓存**：v3.3.0 引入（2.4.5 适配）→ v3.3.5 回滚（**缓存机制报废**）→ v3.3.12 确认回滚。函数仍在 Message.kt 但未启用（无 contextMessageSize 字段）——**勿重新启用**，启用即破坏缓存前缀
 - **缓存锚点/注入隔离**：v2.9.5 注入隔离（BEFORE_SYSTEM_PROMPT 变独立 user 消息）引入 SETTINGS 协议违规 → v3.4.5 修复——**协议合规 > 缓存边际收益**
 - **DeepSeek Responses reasoning**：3.5.4~3.5.6 猜测性修复全废（服务端格式不成熟）→ 3.5.7 按官方协议（明文 content）→ 3.5.8 工具轮相邻 assistant 消息 → 3.5.9 起搁置（等官方更新）
 - **工具执行无超时**：3.5.9 withTimeout 60s 兜底——工具挂起不永久阻塞生成
 - **缓存"卡-跳-线性"**：DeepSeek 服务端磁盘缓存机制（构建延迟秒级+固定间隔切分+SWA 独立单元）——客户端不可控，已入库 decisions D2
+
+## v3.8.43-45 / v3.9.0-3.9.2（token 统计修正 + 产品线废弃回滚 + 全文档渲染，2026-08-22~23）
+- v3.8.43: token 统计口径修正 — TokenBudgetTracker 逐轮 prompt 求和虚高改最近轮真实口径; cachedTokens 钳制 min(cached, prompt)
+- v3.8.44: WaterHub 功能批次（空对话漂浮字幕/工具入口/UserTool 体系/胶囊窗渲染）— 后被用户要求全量回滚（见 3.9.1）
+- v3.8.45: 产品线拆分（flavor 双线 rincore/waterhub + 双 artifact）— 后被废弃
+- v3.9.0: 主线 3.9.0（flavor 拆分产物）
+- v3.9.1: 按用户指令回滚 v3.8.44 非渲染功能（漂浮字幕/工具入口/UserTool 全删）; 渲染扩展为全文档类型（HTML WebView 动态交互 / PDF PdfRenderer 逐页 / DOCX 段落提取 / XLSX 表格 / CSV 表格 / 文本 pre）
+- v3.9.2: 整体清理 — B 线 waterhub 废弃移除（flavor/资源/文档全删，恢复单线构建单 artifact），知识库重写，README 徽章同步
+- 经验: 用户功能界线 = 只做被点名的功能; 产品线不经用户确认不建; 每个版本归档当日完成
 
 ## v3.8.35-42（Zen 通道定稿 + MCP 懒连接 + 运行日志修复，2026-08-22）
 - v3.8.35: 流式 onFailure 诊断补齐（请求体摘要 REQ + 响应体 RESP 600 字符）— 400/500 拒绝可直接定位触发字段

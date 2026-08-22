@@ -3,14 +3,55 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v2.9.4 → v3.5.14）
+# RinCore 更新日志（v2.9.4 → v3.9.2）
 
 ## 历史教训（防重踩——每次改动前必读）
+- **产品线**：v3.8.44-45 曾建 WaterHub B 类产品线（flavor 拆分），用户 3.9.1 令废弃回滚——只保留 A 线 RinCore 单产品构建。教训：未与用户对齐的产品线扩张立即废弃，勿自行推进
+- **功能界线**：用户只要求移植的功能就只移植，不自作主张附带其他功能（v3.8.44 附带工具入口/漂浮字幕被要求全量回滚）
 - **limitContext 滞回策略 ↔ 缓存**：v3.3.0 引入（2.4.5 适配）→ v3.3.5 回滚（**缓存机制报废**）→ v3.3.12 确认回滚。函数仍在 Message.kt 但未启用（无 contextMessageSize 字段）——**勿重新启用**，启用即破坏缓存前缀
 - **缓存锚点/注入隔离**：v2.9.5 注入隔离（BEFORE_SYSTEM_PROMPT 变独立 user 消息）引入 SETTINGS 协议违规 → v3.4.5 修复——**协议合规 > 缓存边际收益**
 - **DeepSeek Responses reasoning**：3.5.4~3.5.6 猜测性修复全废（服务端格式不成熟）→ 3.5.7 按官方协议（明文 content）→ 3.5.8 工具轮相邻 assistant 消息 → 3.5.9 起搁置（等官方更新）
 - **工具执行无超时**：3.5.9 withTimeout 60s 兜底——工具挂起不永久阻塞生成
 - **缓存"卡-跳-线性"**：DeepSeek 服务端磁盘缓存机制（构建延迟秒级+固定间隔切分+SWA 独立单元）——客户端不可控，已入库 decisions D2
+
+## v3.8.43-45 / v3.9.0-3.9.2（token 统计修正 + 产品线废弃回滚 + 全文档渲染，2026-08-22~23）
+- v3.8.43: token 统计口径修正 — TokenBudgetTracker 逐轮 prompt 求和虚高改最近轮真实口径; cachedTokens 钳制 min(cached, prompt)
+- v3.8.44: WaterHub 功能批次（空对话漂浮字幕/工具入口/UserTool 体系/胶囊窗渲染）— 后被用户要求全量回滚（见 3.9.1）
+- v3.8.45: 产品线拆分（flavor 双线 rincore/waterhub + 双 artifact）— 后被废弃
+- v3.9.0: 主线 3.9.0（flavor 拆分产物）
+- v3.9.1: 按用户指令回滚 v3.8.44 非渲染功能（漂浮字幕/工具入口/UserTool 全删）; 渲染扩展为全文档类型（HTML WebView 动态交互 / PDF PdfRenderer 逐页 / DOCX 段落提取 / XLSX 表格 / CSV 表格 / 文本 pre）
+- v3.9.2: 整体清理 — B 线 waterhub 废弃移除（flavor/资源/文档全删，恢复单线构建单 artifact），知识库重写，README 徽章同步
+- 经验: 用户功能界线 = 只做被点名的功能; 产品线不经用户确认不建; 每个版本归档当日完成
+
+## v3.8.35-42（Zen 通道定稿 + MCP 懒连接 + 运行日志修复，2026-08-22）
+- v3.8.35: 流式 onFailure 诊断补齐（请求体摘要 REQ + 响应体 RESP 600 字符）— 400/500 拒绝可直接定位触发字段
+- v3.8.36: 内容级截断检测（textTail 强截断特征: 未闭合代码块/逗号分号顿号冒号破折号收尾/连接词收尾）
+- v3.8.37: textTail 兼容 content 数组形态（Zen 网关 chunk 结构）；分享逻辑重写 — 列表页导出全部、详情页单轮分享（文件名带轮次时间戳 ID）
+- v3.8.38: Zen chunk 结构取证诊断（deltaKeys + delta 原文）— 实证 ox 文本走 reasoning_content 字段
+- v3.8.39: 无正文场景可见化（仅思考无正文时报错保留思考）
+- v3.8.40: ox 系（displayName/modelId 含 ox/x-preview）reasoning_content 提升为正文，对齐 opencode 客户端行为
+- v3.8.41: MCP 懒连接 — 启动/配置变更只登记待连接，首次工具调用才建连（根治重启即主动连接服务器；原版同样启动连接但用户强制要求，自行斟酌）
+- v3.8.42: 思考链/正文自适应修正 — 流中思考保持思考链实时显示，仅流结束无 content 时缓冲思考正文化补发；删除一刀切提升（v3.8.40 副作用: 思考混入正文）
+- 经验: Zen 无完成信号模型的行为按连接层事实判定（行完整性）+ 内容层运行期自适应，不按模型名猜；补丁式修复在三轮内收敛为运行时自适应
+
+## v3.8.33-34（Zen 关流物理判据 + 运行日志持久化重写，2026-08-22）
+- v3.8.33: SSE 行完整性物理判据 — v3.8.32 的"一律未确认"对 ox 系每轮弹错; 改为最后一行 JSON 解析成功=服务端完整发完(正常完结, 不弹错), 残缺=真断流(保留内容+报错)。对照原版: 原版只认 [DONE] 无 Zen 适配, 不可对齐, 自行斟酌。
+- v3.8.34: 运行日志持久化重写 (整段重写不打补丁) — 旧实现只存最近一条且纯内存重启丢失; 新增 LogSessionStore (每轮对话=一个会话, ID=精确时间戳 yyyyMMdd-HHmmss-SSS, 最多保留 10 轮, 文件快照持久化); 运行日志页改为两级: 轮次列表→点击进该轮报告; 新增全量 Markdown 导出 (FileProvider 分享); CallTracer 时间戳 ID + finishTraceIfActive 兜底 (onCompletion 全路径收尾); 清空按钮保留
+- 验证路径: 多轮对话后重启, 运行日志保留最近 10 轮; 点轮次看报告; 导出 md 可分享
+- 注意: 导出文件走 filesDir/exports (已有 file_paths 覆盖); 系统返回键在详情态先回列表
+
+## v3.8.33-34（Zen 关流物理判据 + 运行日志持久化重写，2026-08-22）
+- v3.8.33: SSE 行完整性物理判据 — v3.8.32 的"一律未确认"对 ox 系每轮弹错; 改为最后一行 JSON 解析成功=服务端完整发完(正常完结, 不弹错), 残缺=真断流(保留内容+报错)。对照原版: 原版只认 [DONE] 无 Zen 适配, 不可对齐, 自行斟酌。
+- v3.8.34: 运行日志持久化重写 (整段重写不打补丁) — 旧实现只存最近一条且纯内存重启丢失; 新增 LogSessionStore (每轮对话=一个会话, ID=精确时间戳 yyyyMMdd-HHmmss-SSS, 最多保留 10 轮, 文件快照持久化); 运行日志页改为两级: 轮次列表→点击进该轮报告; 新增全量 Markdown 导出 (FileProvider 分享); CallTracer 时间戳 ID + finishTraceIfActive 兜底 (onCompletion 全路径收尾); 清空按钮保留
+- 验证路径: 多轮对话后重启, 运行日志保留最近 10 轮; 点轮次看报告; 导出 md 可分享
+- 注意: 导出文件走 filesDir/exports (已有 file_paths 覆盖); 系统返回键在详情态先回列表
+
+## v3.8.32（Zen 无信号关流可见化分流 — 杜绝静默截断，2026-08-22）
+- 用户反馈 v3.8.31 特判过宽：isOpencode&&hasReceivedData=>完成 把 ox 系免费模型的中途掐断也吞成正常完成，输出途中忽然断且无任何报错（静默截断）
+- 根因：信号层面无法区分 Zen"正常完结"与"服务端中途掐断"（均无完成信号）
+- 修复（按模型分流）：grok 系（有 usage/cost 生态、实测稳定）已收数据关流=>完成；ox 系免费模型等=>OpenCodeStreamUnconfirmedException，已生成内容随 chunk 流保留、不回滚不重试、上层明确报错"服务未发送完成信号即关闭连接，已保留已生成内容"；DeepSeek 等严格路径不变
+- 诊断：事件计数 + 最近 5 条原始数据缓冲，关流/失败时打印
+- CI 两次编译失败修正：异常类误插 import 区（imports only allowed in beginning of file）；本地无 SDK 增量缓存假象，验证以 CI 为准
 
 ## v3.8.31（OpenCode Zen 无信号关流误判断流修复，2026-08-22）
 - 用户报告 ox-alpha-free（opencode.ai/zen/go/v1）SSE 流在完成前被服务器关闭，rollback & retry 7 次全败后 generation_failed（10 分钟耗尽）

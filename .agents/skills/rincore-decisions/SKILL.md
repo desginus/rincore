@@ -5,6 +5,12 @@ description: "[中优先级·RinCore决策对照] RinCore 关键方案对比迭�
 
 # RinCore 方案决策记录
 
+## D18. 产品线拆分废弃：只保留 A 线单产品构建（v3.9.2，用户决策）
+- 背景：v3.8.44 建 WaterHub 方向功能（工具入口/漂浮字幕），v3.8.45 拆 flavor 双线
+- 用户反馈：只要求渲染功能，其余全量回滚；B 线整体废弃，"相当于从来没有过"
+- 决策：移除 waterhub flavor/资源/文档，恢复单线构建单 artifact；git 历史不重写（风险大于收益，代码+文档清理已达成"废弃"语义）
+- 经验：产品线扩张必须用户明确确认；功能边界=只做被点名的
+
 ## D17. MCP 参数必须按 schema 类型清洗（v3.8.29，用户决策）
 - **问题**：模型生成嵌套参数常字符串化（"[{...}]"），MCP 服务端 -32602
 - **规则**：callTool 前按 inputSchema 声明的类型恢复字符串值（array/object 解析、number/boolean 转换），递归 properties/items；schema 缺失不动作

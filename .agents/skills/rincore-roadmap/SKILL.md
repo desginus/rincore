@@ -5,24 +5,26 @@ description: "[中优先级·RinCore路线对照] RinCore 更新路线与待办�
 
 # RinCore 更新路线
 
-## 当前状态（v3.5.14）
-传输层 3.2.2 基线 + 连接稳定性加固（断线恢复/看门狗/超时）+ MCP STDIO + 缓存正常（SystemPromptBuilder 移植）。CI 绿。
-
-## 版本管理状态（2026-08-05 建立）
-版本控制体系已建立：rincore-changelog 补全至 3.5.14 + 历史教训区 + docs/version-management.md 规范。
-教训：limitContext 滞回策略（v3.3.0→v3.3.5 回滚，缓存报废）曾被我再次"发现"——版本记录不完整的代价，已固化防重踩。
-
-## 主线任务
-1. **缓存稳定性/协调性**（✅ 已关闭 2026-08-04：v3.5.11 移植原版 SystemPromptBuilder 后正常；跨步不稳定为 DeepSeek 服务端机制，客户端不可控，停止优化——见 rincore-decisions D2）
-2. **RikkaHub fork 三功能移植**（保活 ✅ / 权限 ✅ / 工作流 ⚠️）
-3. **稳定性加固**（不出现 bug、权限深度、保活性）
+## 当前状态（v3.9.2）
+单产品线 RinCore 3.9.x（me.rincore.app），含全文档类型渲染。水工程 WaterHub B 线已废弃移除。CI 绿。
 
 ## 待续事项（按优先级）
 
-### P0：回滚后验证（当前最紧急）
-- [ ] **连接稳定性复测**：DeepSeek V4 Flash 长对话 + 工具调用链（3.2.2 基线是否消除中断——若仍中断，从基线重新诊断，勿照搬旧补丁）
-- [ ] **冷启动 token 验证**：确认 system 从 70K 降到 ~10K（看 `System prompt breakdown` 日志行）
-- [x] **缓存命中验证**：✅（v3.5.11 移植 SystemPromptBuilder stable/volatile 分区后缓存正常，公共前缀命中；跨步不稳定为服务端单元制限制，关闭）
+### P0：验证待用户反馈
+- [ ] v3.9.1 全文档渲染装包验证：胶囊窗渲染分发文稿（HTML 交互/PDF 翻页/Word 提取/Excel 表格）
+- [ ] v3.9.2 单线构建验证：已装包覆盖升级正常
+
+### P1：持续维护
+- [ ] 渲染扩展：doc/xls 老二进制格式提取（当前尽力而为，失败提示）
+- [ ] README 版本徽章随发版同步（当前 v3.9.2）
+- [ ] 每版本当日归档（changelog/bug-record/decisions/修改全记录）
+
+## 已关闭
+- 缓存稳定性（D2 服务端机制不可控，停止优化）
+- Zen 通道完成信号（v3.8.33 物理判据定稿）
+- 运行日志持久化（v3.8.34）
+- token 统计口径（v3.8.43）
+- 产品线拆分（v3.9.2 废弃 B 线，D18）
 
 ### P1：工作流阶段 3（fork 三功能最后一环）
 - [ ] WorkflowEngine 执行层重写（对齐 ToolExecutionContext/ToolCallOrigin）

@@ -15,6 +15,30 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 
 ## 已修复 Bug 明细（按时间倒序）
 
+### B41. token 统计虚高与缓存越界（v3.8.43 修复）
+- **现象**：会话 token 统计与实际严重不符，出现共计十几 K 缓存六十几 K 的荒谬组合
+- **根因**：自研 TokenBudgetTracker 把每条消息 usage.promptTokens（该轮完整上下文）逐条求和致数倍虚高；cached 无钳制，中转将历史累计命中打包显示越界
+- **修复**：aggregate 改为 input=最近轮 prompt，output=全部 completion 累计；cachedTokens=min(cached, prompt)
+- **验证**：会话统计显示当前上下文真实大小，cached 永不越界
+
+### B40. 思考链判成正文（v3.8.42 修复）
+- **现象**：ox-alpha-free 思考链出现在正文区（v3.8.40 无条件提升 reasoning_content 副作用）
+- **修复**：运行时自适应 — 流中思考保持思考链，仅流结束无 content 时缓冲正文化补发
+- **经验**：按模型名一刀切必出副作用，运行期按实际流内容自适应才是终态
+
+### B39. MCP 启动即主动连接服务器（v3.8.41 修复）
+- **现象**：每次重启应用 MCP 都尝试连接非正常网络地址（用户强制：启动不得发起网络请求）
+- **修复**：懒连接 — 启动只登记 pendingConfigs，首次工具调用才 addClient；工具声明已静态化不受影响
+- **验证**：重启无任何 MCP 网络请求；日志 callTool: lazy-connecting 后才建连
+
+### B38. OpenCode Zen 完成信号缺失被误判为断流（v3.8.31-33 修复链）
+- **现象**：Zen 网关对 ox 系模型完成时不发 [DONE]/finish_reason，直接关闭连接，重试轰炸
+- **修复链**：v3.8.31 已收数据即完成 → v3.8.32 模型名单分流 → v3.8.33 SSE 物理判据（最后一行 JSON 完整性）= 最终形态
+- **v3.8.36 补充**：内容级截断检测（tail 形态启发）解决"行完整但内容被裁"
+- **v3.8.42 补充**：正文/思考运行时自适应（见 B40）
+
+### F 系列（早期）
+
 
 ### B34. 压缩留存位点重启全消失（v3.8.22 根治）
 - **现象**：压缩功能正常，重启 App 后 compressRetentions 全部为空
@@ -245,10 +269,24 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 ### B38. OpenCode Zen 无信号关流误判断流（v3.8.31 修复）
 - **现象**：ox-alpha-free（opencode.ai/zen/go/v1）SSE 在完成前被服务器关闭；rollback & retry 7 次全败，10 分钟耗尽后 generation_failed；每轮重试间隔 40-60s
 - **根因**：Zen 网关对部分模型（grok 系/ox 系免费模型）完成时不发 [DONE]/finish_reason=stop/usage，直接关闭连接；onClosed 视为断流 → 上层 rollback 重试 → 每次重试服务端重新生成 → 7 次叠加超长失败。另发现独立缺陷：finish_reason 判定写在 message!=null 分支内，delta:null + finish_reason:"stop" 结尾 chunk 漏判
-- **修复**：isOpencode && 已收到数据 => 关闭即正常完结（与 v3.6.78 grok 特判同网关行为），未收到数据仍按断流重试；finish_reason 上移到 choice 层；onClosed 诊断增强（打印 completed/gotFinish/hasData/opencode）
+- **修复（v3.8.31）**：isOpencode && 已收到数据 => 关闭即正常完结，未收到数据仍按断流重试；finish_reason 上移到 choice 层
+- **修正（v3.8.32）**：v3.8.31 特判过宽把服务端中途掐断也吞成完成（静默截断，用户不接受）。改为按模型分流：grok 系维持"已收数据=>完成"；ox 系等=>OpenCodeStreamUnconfirmedException 保留内容+明确报错不回滚不重试；诊断加事件数+最近 5 条原始数据缓冲
+- **定稿（v3.8.33）**：分流仍误报（ox 每轮都弹错，服务端完整发完但也无完成信号）。弃用模型名单猜测，改物理判据：SSE 最后一行 JSON 解析成功=完整发完（正常完结不打扰），残缺=真断流（保留内容+报错）。对照原版不可对齐（原版只认 [DONE] 且无 Zen 适配），自行斟酌定稿。附：openCode близнец ox-alpha-free 网关行为=完整行后无信号关流
 - **验证**：ox-alpha-free 不再误报 SSE 中断；DeepSeek 真断流（无数据关闭）重试路径不变
 - **排查起点**：ChatCompletionsAPI.kt onClosed / onEvent finish_reason 判定
 - **注意**：ResponseAPI onClosed 为宽松语义（直接 close），无此问题，无需同步
+
+### B39. MCP 启动即主动连接服务器（v3.8.41 修复）
+- **现象**：每次重启应用 MCP 都尝试连接非正常网络地址；原版无此行为（用户强制诉求，不接受启动发起网络请求）
+- **根因**：McpManager.init 收集 settingsFlow 首 emit 即对所有启用服务器 addClient → 立即 getTransport + 网络连接（上游原版 reconcile 同样行为，判定不可沿用）
+- **修复**：懒连接——启动/配置变更只登记 pendingConfigs，首次 MCP 工具调用（callTool）才 addClient；工具声明已静态化不受连接影响；断线重连/OAuth 刷新/mcp_connect 手动路径语义不变
+- **验证**：重启应用无任何 MCP 网络请求；日志 callTool: lazy-connecting 后才建连
+- **注意**：currentConfigs 对比须含 pending（List<McpServerConfig> 保持, eq 泛型参考）
+
+### B40. 思考链判成正文（v3.8.42 修复）
+- **现象**：ox-alpha-free 思考链经常出现在正文区（v3.8.40 无条件提升 reasoning_content 为正文的副作用，ox 流同时含 content 与 reasoning 时思考混入正文）
+- **修复**：运行时自适应——流中 reasoning_content 保持思考链实时显示（parseMessage 原生 Reasoning part），仅流结束确认无 content 且存在思考缓冲时才整段正文化补发（对齐 opencode）
+- **经验**：按模型名一刀切必出副作用；运行期按实际流内容自适应才是终态
 
 ## 排查方法论（用户约定）
 1. 排查顺序：先确定相关代码 → 对照 → 理清逻辑 → 想清楚再改 → 验证
