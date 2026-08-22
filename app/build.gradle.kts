@@ -1,4 +1,5 @@
 import com.android.build.api.dsl.Packaging
+import com.android.build.api.variant.BuildConfigField
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import java.io.FileInputStream
@@ -20,13 +21,36 @@ android {
         applicationId = "me.rincore.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 201
-        versionName = "3.8.44"
+        versionCode = 202
+        versionName = "3.9.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
+        }
+    }
+
+    // v3.8.45: 产品线拆分 — A 类主线 RinCore 与 B 类 WaterHub 同源双线
+    // A 类: rincore 包名 me.rincore.app (保持已装用户可覆盖升级) v3.9.0
+    // B 类: waterhub 包名 com.waterhub.app (独立软件, 数据与主线完全隔离)
+    // B 类版本号体系独立: 0.0.1-beta 起步, 正常推送不必读取
+    flavorDimensions += "product"
+    productFlavors {
+        create("rincore") {
+            dimension = "product"
+            resValue("string", "app_name", "RinCore")
+            resValue("string", "setting_page_share_text", "RinCore - Personal AI Assistant")
+            resValue("string", "setting_page_web_server_desc", "Allow you access RinCore via Web")
+        }
+        create("waterhub") {
+            dimension = "product"
+            applicationId = "com.waterhub.app"
+            versionCode = 1
+            versionName = "0.0.1-beta"
+            resValue("string", "app_name", "WaterHub")
+            resValue("string", "setting_page_share_text", "WaterHub - Water Engineering AI Agent")
+            resValue("string", "setting_page_web_server_desc", "Allow you access WaterHub via Web")
         }
     }
 
@@ -61,13 +85,9 @@ android {
             // v3.6.83: 对齐原版 RikkaHub — 原版 release 不启用 R8 混淆/优化,
             // 用户实测原版流畅。移除 minify 排除 R8 优化对 Compose 重组
             // 的潜在影响, 且堆栈恢复可读 (此前 r8-map-id 混淆堆栈难以诊断)
-            buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
-            buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
         }
         debug {
             applicationIdSuffix = ".debug"
-            buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
-            buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
         }
     }
     compileOptions {
@@ -109,6 +129,24 @@ composeCompiler {
     stabilityConfigurationFiles.add(
         project.layout.projectDirectory.file("compose_compiler_config.conf")
     )
+}
+
+// v3.8.45: 双产品线版本字段 — 按变体输出各自的 VERSION_NAME/VERSION_CODE
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        variant.outputs.forEach { output ->
+            val vn = output.versionName ?: ""
+            val vc = output.versionCode?.toString() ?: ""
+            variant.buildConfigFields.put(
+                "VERSION_NAME",
+                BuildConfigField("String", "\"$vn\"", "VERSION_NAME"),
+            )
+            variant.buildConfigFields.put(
+                "VERSION_CODE",
+                BuildConfigField("String", "\"$vc\"", "VERSION_CODE"),
+            )
+        }
+    }
 }
 
 tasks.register("buildAll") {

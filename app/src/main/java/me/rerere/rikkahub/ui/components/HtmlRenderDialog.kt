@@ -67,7 +67,18 @@ fun HtmlRenderDialog(
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
                         settings.allowFileAccess = true
-                        webViewClient = WebViewClient()
+                        settings.allowContentAccess = true
+                        // v3.8.45: 动态交互 — 允许混合内容与媒体自动播放,
+                        // 页面内 JS 交互 (按钮/表单/图表/请求) 完整可用
+                        settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                        settings.mediaPlaybackRequiresUserGesture = false
+                        webViewClient = object : WebViewClient() {
+                            // 链接与页面内导航在 WebView 内打开, 不跳外部浏览器
+                            override fun shouldOverrideUrlLoading(
+                                view: WebView?,
+                                request: android.webkit.WebResourceRequest?,
+                            ): Boolean = false
+                        }
                         loadDataWithBaseURL(null, htmlContent, "text/html", "UTF-8", null)
                     }
                 },

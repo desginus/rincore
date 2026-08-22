@@ -7,7 +7,6 @@
   <string name="about_page_version">버전</string>
   <string name="about_page_website">웹사이트</string>
   <string name="add">추가</string>
-  <string name="app_name">WaterHub</string>
   <string name="asr_button_content_description">음성 인식</string>
   <string name="asr_button_stop">중지</string>
   <string name="assistant_detail_basic_desc">이름, 아바타, 모델 및 매개변수 구성</string>
@@ -810,7 +809,6 @@
   <string name="setting_page_search_title">검색 서비스</string>
   <string name="setting_page_share">공유</string>
   <string name="setting_page_share_desc">앱을 친구들과 공유하기</string>
-  <string name="setting_page_share_text">WaterHub - Water Engineering AI Agent</string>
   <string name="setting_page_theme_setting">테마</string>
   <string name="setting_page_theme_setting_desc">앱 색상 구성 사용자 지정</string>
   <string name="setting_theme_page_preset_themes">프리셋 테마</string>
@@ -834,7 +832,6 @@
   <string name="setting_page_web_server_address_note_desc">LAN 주소: 기기의 WiFi IP를 사용하며, 같은 네트워크에 연결된 다른 기기에서 접근할 수 있습니다. 모바일 데이터에서는 사용할 수 없습니다.
 로컬 주소: localhost를 사용하며, 이 기기에서만 접근할 수 있습니다.
 mDNS 주소: .local 호스트네임을 사용하며, IP를 몰라도 같은 네트워크의 다른 기기에서 이름으로 접근할 수 있습니다.</string>
-  <string name="setting_page_web_server_desc">웹을 통해 WaterHub에 접근할 수 있도록 허용</string>
   <string name="setting_page_web_server_error">오류</string>
   <string name="setting_page_web_server_jwt_enable">인증 활성화</string>
   <string name="setting_page_web_server_jwt_enable_desc">웹 인터페이스에 접근할 때 비밀번호 인증이 필요합니다</string>
