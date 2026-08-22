@@ -208,6 +208,14 @@ class ChatCompletionsAPI(
         // v3.6.44: opencode.ai 针对性适配 — 网关聚合转发 + 深度思考, 静默期更长,
         // 放宽 watchdog 避免误杀长思考 (首包 120s / 流中 180s)
         val isOpencode = providerSetting.baseUrl.toHttpUrl().host == "opencode.ai"
+        // v3.8.40: ox 系模型正文走 reasoning_content (社区实锤: opencode 客户端
+        // 将其直接当正文显示, 无独立 content 输出)。开启后 reasoning_content
+        // 提升为正文, 不再作为思考链单独显示 — 与 opencode 行为对齐。
+        val reasoningAsBody = isOpencode && (
+            params.model.displayName.contains("ox", ignoreCase = true) ||
+                params.model.displayName.contains("x-preview", ignoreCase = true) ||
+                params.model.modelId.contains("x-preview", ignoreCase = true)
+            )
         val firstByteLimit = if (isOpencode) 120_000L else 60_000L
         val streamLimit = if (isOpencode) 180_000L else 120_000L
         val watchdog = launch {
@@ -353,16 +361,39 @@ class ChatCompletionsAPI(
                                         textTail = if (it.length > 80) it.takeLast(80) else it
                                     }
                                 }
-                                // v3.8.39: 思考内容尾部跟踪 (无正文场景判定用)
-                                (choice["delta"] as? JsonObject)
-                                    ?.get("reasoning_content")?.jsonPrimitive?.contentOrNull
-                                    ?.takeIf { it.isNotBlank() }
-                                    ?.let { reasoningTail = if (it.length > 80) it.takeLast(80) else it }
+                                // v3.8.39/40: 思考内容跟踪 — 非 ox 模型记录思考尾部
+                                // (无正文场景判定); ox 模型 (reasoningAsBody) 思考即正文,
+                                // 直接提升为正文尾部并视为有正文
+                                val reasoningRaw = (choice["delta"] as? JsonObject)
+                                    ?.get("reasoning_content")?.jsonPrimitiveOrNull?.contentOrNull
+                                    ?: message?.get("reasoning_content")?.jsonPrimitiveOrNull?.contentOrNull
+                                if (reasoningAsBody) {
+                                    reasoningRaw?.takeIf { it.isNotBlank() }?.let {
+                                        hasTextContent = true
+                                        textTail = if (it.length > 80) it.takeLast(80) else it
+                                    }
+                                } else {
+                                    reasoningRaw?.takeIf { it.isNotBlank() }?.let {
+                                        reasoningTail = if (it.length > 80) it.takeLast(80) else it
+                                    }
+                                }
                                 if (message != null) {
+                                    var delta = parseMessage(message)
+                                    if (reasoningAsBody) {
+                                        // ox 系: reasoning_content 即正文 — 从思考链提升为正文
+                                        val r = message["reasoning_content"]
+                                            ?.jsonPrimitiveOrNull?.contentOrNull
+                                        if (!r.isNullOrBlank()) {
+                                            delta = delta.copy(
+                                                parts = delta.parts.filterNot { it is UIMessagePart.Reasoning } +
+                                                    UIMessagePart.Text(r)
+                                            )
+                                        }
+                                    }
                                     add(
                                         UIMessageChoice(
                                             index = 0,
-                                            delta = parseMessage(message),
+                                            delta = delta,
                                             message = null,
                                             finishReason = finishReason ?: "unknown",
                                         )
