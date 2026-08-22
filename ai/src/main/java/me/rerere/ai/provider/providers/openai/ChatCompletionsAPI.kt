@@ -241,6 +241,11 @@ class ChatCompletionsAPI(
         // v3.8.36: 文本尾部跟踪 — 服务端"行完整但内容截断"场景 (无完成信号的
         // 模型输出被平台截短仍按完整行发送), 需内容形态启发辅助判定
         var textTail = ""
+        // v3.8.39: 正文/思考分离跟踪 — 已实证 ox-alpha-free 流式只发
+        // reasoning_content (思考) 不发 content (正文): 仅思考无正文时
+        // 必须可见报错而非静默"完成"
+        var hasTextContent = false
+        var reasoningTail = ""
         // v3.8.38: 最后一条"delta 非空"块原文 + 字段名 — 定位 Zen 网关内容块
         // 真实结构 (用户实测 287 events tail 仍为空: 网关文本不走 content 字段)
         var lastDeltaRaw = ""
@@ -343,9 +348,16 @@ class ChatCompletionsAPI(
                                         }.joinToString("")
                                         else -> null
                                     }
-                                    text?.takeIf { it.isNotBlank() }
-                                        ?.let { textTail = if (it.length > 80) it.takeLast(80) else it }
+                                    text?.takeIf { it.isNotBlank() }?.let {
+                                        hasTextContent = true
+                                        textTail = if (it.length > 80) it.takeLast(80) else it
+                                    }
                                 }
+                                // v3.8.39: 思考内容尾部跟踪 (无正文场景判定用)
+                                (choice["delta"] as? JsonObject)
+                                    ?.get("reasoning_content")?.jsonPrimitive?.contentOrNull
+                                    ?.takeIf { it.isNotBlank() }
+                                    ?.let { reasoningTail = if (it.length > 80) it.takeLast(80) else it }
                                 if (message != null) {
                                     add(
                                         UIMessageChoice(
@@ -434,12 +446,23 @@ class ChatCompletionsAPI(
                 //   按物理层的事实判定, 不再猜测模型行为。
                 if (!completed.get() && !gotFinish.get()) {
                     if (isOpencode && hasReceivedData.get()) {
-                        val truncated = !lastEventParsed || looksTruncated(textTail)
+                        // v3.8.39: 无正文场景 (实证: ox-alpha-free 只发 reasoning_content
+                        // 不发 content) — 思考完即关流, 必须报错而非静默完成
+                        val reasoningOnly = !hasTextContent && reasoningTail.isNotBlank()
+                        val truncated = !lastEventParsed || looksTruncated(textTail) || reasoningOnly
                         if (truncated) {
-                            val why = if (!lastEventParsed) "mid-event truncation" else "content ends truncated (tail=\"${textTail.take(40)}\")"
+                            val why = when {
+                                reasoningOnly -> "reasoning-only stream, no content produced (reasoningTail=\"${reasoningTail.take(40)}\")"
+                                !lastEventParsed -> "mid-event truncation"
+                                else -> "content ends truncated (tail=\"${textTail.take(40)}\")"
+                            }
                             Log.w(TAG, "onClosed: opencode.ai truncated ($why, model=${params.model.modelId} events=$eventCount) — keep partial content, notify user\nlast: ${dumpLastEvents()}")
-                            TraceLogger.log("SSE", "zen truncated close — keep data, notify user (events=$eventCount tail=\"${textTail.take(40)}\")")
-                            close(OpenCodeStreamUnconfirmedException("OpenCode 输出被截断，已保留已生成内容"))
+                            TraceLogger.log("SSE", "zen truncated close — keep data, notify user (events=$eventCount $why)")
+                            close(OpenCodeStreamUnconfirmedException(
+                                if (reasoningOnly)
+                                    "模型仅输出了思考内容，未产出正式回复（已保留思考过程）"
+                                else "OpenCode 输出被截断，已保留已生成内容"
+                            ))
                         } else {
                             TraceLogger.log("SSE", "opencode.ai closed after complete data (events=$eventCount) — treated as complete, no completion signal needed (tail=\"${textTail.take(40)}\" deltaKeys=\"$lastDeltaKeys\" delta=\"${lastDeltaRaw.take(260)}\")")
                             close()
