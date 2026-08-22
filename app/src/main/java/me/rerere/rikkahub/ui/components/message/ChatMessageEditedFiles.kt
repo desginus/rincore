@@ -54,7 +54,14 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.ui.components.HtmlRenderDialog
-import me.rerere.rikkahub.ui.components.isRenderableFormat
+import me.rerere.rikkahub.ui.components.PdfRenderDialog
+import me.rerere.rikkahub.ui.components.RenderKind
+import me.rerere.rikkahub.ui.components.csvToHtml
+import me.rerere.rikkahub.ui.components.detectRenderKind
+import me.rerere.rikkahub.ui.components.escapeHtml
+import me.rerere.rikkahub.ui.components.extractDocxHtml
+import me.rerere.rikkahub.ui.components.extractXlsxHtml
+import me.rerere.rikkahub.ui.components.wrapHtml
 import me.rerere.workspace.WorkspaceStorageArea
 import org.koin.compose.koinInject
 import java.io.File
@@ -88,6 +95,7 @@ internal fun EditedFilesList(
     var expanded by remember { mutableStateOf(false) }
     var renderHtml by remember { mutableStateOf<String?>(null) }
     var renderFileName by remember { mutableStateOf("") }
+    var renderPdfFile by remember { mutableStateOf<java.io.File?>(null) }
     val visibleFiles = if (expanded) editedFiles else editedFiles.take(DEFAULT_VISIBLE_COUNT)
     val hasMore = editedFiles.size > DEFAULT_VISIBLE_COUNT
 
@@ -246,18 +254,49 @@ internal fun EditedFilesList(
                         )
                     }
                 }
-                // v3.8.44: 渲染选项 — 检测格式, 浏览器可打开格式在应用内渲染
-                if (isRenderableFormat(fileName)) {
+                // v3.9.1: 渲染选项 — 全文档类型 (HTML/SVG/PDF/DOCX/XLSX/CSV/文本),
+                // 按格式分发: WebView / PdfRenderer / 提取转 HTML
+                if (detectRenderKind(fileName) != RenderKind.NONE) {
                     Card(
                         onClick = {
                             val p = selectedPath ?: return@Card
                             selectedPath = null
+                            val kind = detectRenderKind(fileName)
                             scope.launch {
                                 runCatching {
                                     val (area, relativePath) = resolveWorkspacePath(p)
-                                    val content = workspaceRepository.readText(workspaceId, relativePath)
                                     renderFileName = p.substringAfterLast('/')
-                                    renderHtml = content
+                                    when (kind) {
+                                        RenderKind.PDF -> {
+                                            val dir = File(context.cacheDir, "workspace_render").apply { mkdirs() }
+                                            val file = File(dir, renderFileName)
+                                            file.outputStream().use { output ->
+                                                workspaceRepository.exportFile(workspaceId, area, relativePath, output)
+                                            }
+                                            renderPdfFile = file
+                                        }
+                                        RenderKind.DOC -> {
+                                            val bytes = readBytes(workspaceRepository, workspaceId, area, relativePath, p)
+                                            renderHtml = extractDocxHtml(bytes)
+                                        }
+                                        RenderKind.SHEET -> {
+                                            if (renderFileName.substringAfterLast('.', "").lowercase() == "csv") {
+                                                val text = workspaceRepository.readText(workspaceId, relativePath)
+                                                renderHtml = csvToHtml(text)
+                                            } else {
+                                                val bytes = readBytes(workspaceRepository, workspaceId, area, relativePath, p)
+                                                renderHtml = extractXlsxHtml(bytes)
+                                            }
+                                        }
+                                        RenderKind.TEXT -> {
+                                            val text = workspaceRepository.readText(workspaceId, relativePath)
+                                            renderHtml = wrapHtml("<pre style='font-family:monospace;white-space:pre-wrap;font-size:13px'>${escapeHtml(text)}</pre>")
+                                        }
+                                        else -> {
+                                            val text = workspaceRepository.readText(workspaceId, relativePath)
+                                            renderHtml = text
+                                        }
+                                    }
                                 }.onFailure {
                                     toaster.show("读取文件失败: ${it.message}", type = ToastType.Error)
                                 }
@@ -302,6 +341,32 @@ internal fun EditedFilesList(
             )
         }
     }
+    if (renderPdfFile != null) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { renderPdfFile = null },
+            properties = androidx.compose.ui.window.DialogProperties(
+                usePlatformDefaultWidth = false,
+            ),
+        ) {
+            PdfRenderDialog(
+                pdfFile = renderPdfFile!!,
+                fileName = renderFileName,
+                onDismiss = { renderPdfFile = null },
+            )
+        }
+    }
+}
+
+private suspend fun readBytes(
+    repository: WorkspaceRepository,
+    workspaceId: String,
+    area: me.rerere.workspace.WorkspaceStorageArea,
+    relativePath: String,
+    displayPath: String,
+): ByteArray {
+    val bos = java.io.ByteArrayOutputStream()
+    repository.exportFile(workspaceId, area, relativePath, bos)
+    return bos.toByteArray()
 }
 
 private fun resolveWorkspacePath(path: String): Pair<WorkspaceStorageArea, String> {

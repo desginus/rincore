@@ -97,7 +97,6 @@ import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.ui.components.ai.ChatInput
 import me.rerere.rikkahub.ui.components.ai.FilesPicker
-import me.rerere.rikkahub.ui.components.ai.completion.UserToolCompletionProvider
 import me.rerere.rikkahub.ui.components.ai.completion.WorkspaceCompletionProvider
 import me.rerere.rikkahub.ui.components.ai.useCropLauncher
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionCamera
@@ -345,8 +344,8 @@ private fun ChatPageContent(
     val assistant = setting.getCurrentAssistant()
     var showFilesSheet by remember { mutableStateOf(false) }
 
-    val completionProviders = remember(assistant.workspaceId, conversation.workspaceCwd, workspaceRepository, setting.userTools) {
-        val workspaceProviders = assistant.workspaceId?.let { workspaceId ->
+    val completionProviders = remember(assistant.workspaceId, conversation.workspaceCwd, workspaceRepository) {
+        assistant.workspaceId?.let { workspaceId ->
             listOf(
                 WorkspaceCompletionProvider(
                     workspaceId = workspaceId.toString(),
@@ -355,11 +354,6 @@ private fun ChatPageContent(
                 )
             )
         }.orEmpty()
-        // v3.8.44: 用户自定义工具 @ 引用补全
-        val toolProviders = if (setting.userTools.isNotEmpty()) {
-            listOf(UserToolCompletionProvider(setting.userTools))
-        } else emptyList()
-        workspaceProviders + toolProviders
     }
 
     TTSAutoPlay(vm = vm, setting = setting, conversation = conversation)
@@ -413,7 +407,6 @@ private fun ChatPageContent(
                     settings = setting,
                     hazeState = hazeState,
                     completionProviders = completionProviders,
-                    userTools = setting.userTools,
                     onCancelClick = {
                         vm.stopGeneration()
                     },

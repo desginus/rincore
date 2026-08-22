@@ -48,7 +48,6 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -96,7 +95,6 @@ import me.rerere.asr.ASRStatus
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.ArrowUp02
-import me.rerere.hugeicons.stroke.Book02
 import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.FullScreen
 import me.rerere.hugeicons.stroke.Wrench01
@@ -108,7 +106,6 @@ import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.data.datastore.getQuickMessagesOfAssistant
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.UserTool
 import me.rerere.rikkahub.data.model.QuickMessage
 import me.rerere.rikkahub.ui.components.ai.completion.ChatCompletionContext
 import me.rerere.rikkahub.ui.components.ai.completion.ChatCompletionItem
@@ -134,7 +131,6 @@ fun ChatInput(
     hazeState: HazeState,
     modifier: Modifier = Modifier,
     completionProviders: List<ChatCompletionProvider> = emptyList(),
-    userTools: List<UserTool> = emptyList(),
     onUpdateChatModel: (Model) -> Unit,
     onUpdateAssistant: (Assistant) -> Unit,
     onUpdateSearchService: (Int) -> Unit,
@@ -145,7 +141,6 @@ fun ChatInput(
 ) {
     val toaster = LocalToaster.current
     val assistant = settings.getCurrentAssistant()
-    var showToolPicker by remember { mutableStateOf(false) }
     val hazeTintColor = MaterialTheme.colorScheme.surfaceContainerLow
     val inputHazeStyle = HazeBlurStyle.Material3 {
         // v3.6.82: 8dp -> 4dp, 进一步降低 120Hz 下 GPU 模糊采样开销
@@ -288,60 +283,6 @@ fun ChatInput(
                                     },
                                     onlyIcon = true,
                                 )
-                            }
-
-                            // 工具入口 (v3.8.44): 用户自定义工具 — 独立于 MCP/Skill/插件
-                            // 点击弹出已注册工具列表，选择后在输入框插入 @path 引用
-                            Box {
-                                ActionIconButton(
-                                    onClick = { showToolPicker = true }
-                                ) {
-                                    Icon(
-                                        imageVector = HugeIcons.Book02,
-                                        contentDescription = "工具"
-                                    )
-                                }
-                                DropdownMenu(
-                                    expanded = showToolPicker,
-                                    onDismissRequest = { showToolPicker = false },
-                                ) {
-                                    if (userTools.isEmpty()) {
-                                        DropdownMenuItem(
-                                            text = { Text("暂无已注册的工具") },
-                                            onClick = { showToolPicker = false },
-                                            enabled = false,
-                                        )
-                                    } else {
-                                        userTools.forEach { tool ->
-                                            DropdownMenuItem(
-                                                text = {
-                                                    Column {
-                                                        Text(
-                                                            text = tool.name,
-                                                            style = MaterialTheme.typography.bodyMedium,
-                                                        )
-                                                        if (tool.description.isNotBlank()) {
-                                                            Text(
-                                                                text = tool.description,
-                                                                style = MaterialTheme.typography.labelSmall,
-                                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                            )
-                                                        }
-                                                    }
-                                                },
-                                                onClick = {
-                                                    val insertText = "@${tool.path} "
-                                                    state.textContent.edit {
-                                                        val cursor = state.textContent.selection.max
-                                                        replace(cursor, cursor, insertText)
-                                                        selection = TextRange(cursor + insertText.length)
-                                                    }
-                                                    showToolPicker = false
-                                                },
-                                            )
-                                        }
-                                    }
-                                }
                             }
 
                         }
