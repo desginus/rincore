@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Icon
@@ -20,7 +21,11 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -42,15 +47,39 @@ fun PdfRenderDialog(
     fileName: String,
     onDismiss: () -> Unit,
 ) {
-    val descriptor = remember(pdfFile) { ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY) }
-    val renderer = remember(descriptor) { PdfRenderer(descriptor) }
+    var openError by remember { mutableStateOf<String?>(null) }
+    val descriptor = remember(pdfFile) {
+        runCatching { ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY) }.getOrNull()
+    }
+    val renderer = remember(descriptor) {
+        if (descriptor == null) null else runCatching { PdfRenderer(descriptor) }.getOrNull()
+    }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            runCatching {
-                renderer.close()
-                descriptor.close()
+    if (renderer == null) {
+        // 打开失败: 明确可见报错, 不崩溃
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(HugeIcons.FileView, null, modifier = Modifier.size(40.dp))
+                Text(
+                    text = openError ?: "无法打开此 PDF（文件可能损坏或受密码保护）",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(16.dp),
+                )
+                IconButton(onClick = onDismiss) {
+                    Icon(HugeIcons.Cancel01, stringResource(R.string.cancel))
+                }
             }
+        }
+        return
+    }
+
+    DisposableEffect(renderer) {
+        onDispose {
+            runCatching { renderer.close() }
+            runCatching { descriptor?.close() }
         }
     }
 

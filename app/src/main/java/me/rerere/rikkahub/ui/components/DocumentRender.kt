@@ -13,24 +13,89 @@ import java.util.zip.ZipInputStream
  * - 文本类: 全屏等宽文本视图
  * 读取能力有限的老二进制格式 (doc/xls) 尽力而为, 失败给出明确提示。
  */
-enum class RenderKind { HTML, PDF, DOC, SHEET, TEXT, NONE }
+enum class RenderKind { HTML, PDF, DOC, SHEET, SLIDES, IMAGE, VIDEO, AUDIO, TEXT, NONE }
 
 fun detectRenderKind(fileName: String): RenderKind {
     val ext = fileName.substringAfterLast('.', "").lowercase()
     return when (ext) {
         "html", "htm", "svg" -> RenderKind.HTML
         "pdf" -> RenderKind.PDF
-        "docx", "doc" -> RenderKind.DOC
-        "xlsx", "xls", "csv" -> RenderKind.SHEET
+        "docx" -> RenderKind.DOC
+        "xlsx", "csv" -> RenderKind.SHEET
+        "pptx" -> RenderKind.SLIDES
+        "png", "jpg", "jpeg", "gif", "webp", "bmp", "heic", "heif", "ico" -> RenderKind.IMAGE
+        "mp4", "mkv", "webm", "3gp", "mov", "avi" -> RenderKind.VIDEO
+        "mp3", "wav", "flac", "aac", "m4a", "ogg", "oga", "opus" -> RenderKind.AUDIO
         "txt", "md", "json", "log", "xml", "yaml", "yml", "toml", "ini",
         "py", "js", "kt", "java", "c", "cpp", "h", "sh", "sql", "css", "ts", "jsx" -> RenderKind.TEXT
         else -> RenderKind.NONE
     }
 }
 
+/** PPTX: 读取全部 slideN.xml, 每页文本转 HTML 分页 (a:t 文本 + 页分隔) */
+fun extractPptxHtml(bytes: ByteArray): String {
+    val sb = StringBuilder()
+    val entries = listZipEntries(bytes)
+    val slideFiles = entries
+        .filter { it.startsWith("ppt/slides/slide") && it.endsWith(".xml") }
+        .sortedBy { it.filter { c -> c.isDigit() }.toIntOrNull() ?: Int.MAX_VALUE }
+    if (slideFiles.isEmpty()) return "<p>未找到幻灯片内容</p>"
+
+    sb.append("<style> .slide { page-break-after: always; margin-bottom: 24px; border-bottom: 1px solid #ddd; padding-bottom: 16px; } .slide:last-child { page-break-after: auto; border-bottom: none; } </style>")
+    slideFiles.forEachIndexed { index, entry ->
+        val xml = extractZipEntry(bytes, entry) ?: return@forEachIndexed
+        sb.append("<div class='slide'><h3>第 ${index + 1} 页</h3>")
+        try {
+            val factory = XmlPullParserFactory.newInstance()
+            factory.isNamespaceAware = false
+            val parser = factory.newPullParser()
+            parser.setInput(xml.reader())
+            var eventType = parser.eventType
+            while (eventType != XmlPullParser.END_DOCUMENT) {
+                if (eventType == XmlPullParser.START_TAG && parser.name == "t") {
+                    val text = parser.nextText()
+                    if (text.isNotBlank()) {
+                        sb.append("<p>").append(escapeHtml(text)).append("</p>")
+                    }
+                }
+                eventType = parser.next()
+            }
+        } catch (_: Exception) {
+            sb.append("<p>本页解析失败</p>")
+        }
+        sb.append("</div>")
+    }
+    return wrapHtml(sb.toString())
+}
+
+private fun listZipEntries(bytes: ByteArray): List<String> {
+    val names = mutableListOf<String>()
+    val zip = ZipInputStream(bytes.inputStream())
+    try {
+        var entry = zip.nextEntry
+        while (entry != null) {
+            names.add(entry.name)
+            zip.closeEntry()
+            entry = zip.nextEntry
+        }
+    } finally {
+        zip.close()
+    }
+    return names
+}
+
 /** DOCX: 解压 word/document.xml, 提取段落结构转 HTML (标题/段落/列表近似还原) */
 fun extractDocxHtml(bytes: ByteArray): String {
     val documentXml = extractZipEntry(bytes, "word/document.xml") ?: return "<p>无法解析此文档</p>"
+    return runCatching {
+        buildDocxHtml(documentXml)
+    }.getOrElse {
+        // 降级: 直接提取全部文本节点 (不保留结构)
+        extractDocxPlainText(documentXml)
+    }
+}
+
+private fun buildDocxHtml(documentXml: String): String {
     val sb = StringBuilder()
     val factory = XmlPullParserFactory.newInstance()
     factory.isNamespaceAware = false
@@ -108,6 +173,32 @@ fun extractDocxHtml(bytes: ByteArray): String {
         eventType = parser.next()
     }
     flush()
+    return wrapHtml(sb.toString())
+}
+
+/** 降级: 不保留结构, 提取 document.xml 全部文本节点 */
+private fun extractDocxPlainText(documentXml: String): String {
+    val sb = StringBuilder("<pre style='font-family:monospace;white-space:pre-wrap;font-size:13px'>")
+    try {
+        val factory = XmlPullParserFactory.newInstance()
+        factory.isNamespaceAware = false
+        val parser = factory.newPullParser()
+        parser.setInput(documentXml.reader())
+        var eventType = parser.eventType
+        while (eventType != XmlPullParser.END_DOCUMENT) {
+            if (eventType == XmlPullParser.START_TAG && parser.name == "t") {
+                val text = parser.nextText()
+                if (text.isNotBlank()) sb.append(escapeHtml(text))
+            }
+            if (eventType == XmlPullParser.END_TAG && parser.name == "p") {
+                sb.append("\n")
+            }
+            eventType = parser.next()
+        }
+    } catch (_: Exception) {
+        return "<p>无法解析此 Word 文档（格式可能为旧版二进制 doc）</p>"
+    }
+    sb.append("</pre>")
     return wrapHtml(sb.toString())
 }
 

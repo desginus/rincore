@@ -54,12 +54,16 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.ui.components.HtmlRenderDialog
+import me.rerere.rikkahub.ui.components.ImageRenderDialog
 import me.rerere.rikkahub.ui.components.PdfRenderDialog
 import me.rerere.rikkahub.ui.components.RenderKind
+import me.rerere.rikkahub.ui.components.VideoRenderDialog
+import me.rerere.rikkahub.ui.components.AudioRenderDialog
 import me.rerere.rikkahub.ui.components.csvToHtml
 import me.rerere.rikkahub.ui.components.detectRenderKind
 import me.rerere.rikkahub.ui.components.escapeHtml
 import me.rerere.rikkahub.ui.components.extractDocxHtml
+import me.rerere.rikkahub.ui.components.extractPptxHtml
 import me.rerere.rikkahub.ui.components.extractXlsxHtml
 import me.rerere.rikkahub.ui.components.wrapHtml
 import me.rerere.workspace.WorkspaceStorageArea
@@ -96,6 +100,8 @@ internal fun EditedFilesList(
     var renderHtml by remember { mutableStateOf<String?>(null) }
     var renderFileName by remember { mutableStateOf("") }
     var renderPdfFile by remember { mutableStateOf<java.io.File?>(null) }
+    var renderMediaFile by remember { mutableStateOf<java.io.File?>(null) }
+    var renderMediaKind by remember { mutableStateOf(RenderKind.NONE) }
     val visibleFiles = if (expanded) editedFiles else editedFiles.take(DEFAULT_VISIBLE_COUNT)
     val hasMore = editedFiles.size > DEFAULT_VISIBLE_COUNT
 
@@ -275,6 +281,15 @@ internal fun EditedFilesList(
                                             }
                                             renderPdfFile = file
                                         }
+                                        RenderKind.IMAGE, RenderKind.VIDEO, RenderKind.AUDIO -> {
+                                            val dir = File(context.cacheDir, "workspace_render").apply { mkdirs() }
+                                            val file = File(dir, renderFileName)
+                                            file.outputStream().use { output ->
+                                                workspaceRepository.exportFile(workspaceId, area, relativePath, output)
+                                            }
+                                            renderMediaFile = file
+                                            renderMediaKind = kind
+                                        }
                                         RenderKind.DOC -> {
                                             val bytes = readBytes(workspaceRepository, workspaceId, area, relativePath, p)
                                             renderHtml = extractDocxHtml(bytes)
@@ -287,6 +302,10 @@ internal fun EditedFilesList(
                                                 val bytes = readBytes(workspaceRepository, workspaceId, area, relativePath, p)
                                                 renderHtml = extractXlsxHtml(bytes)
                                             }
+                                        }
+                                        RenderKind.SLIDES -> {
+                                            val bytes = readBytes(workspaceRepository, workspaceId, area, relativePath, p)
+                                            renderHtml = extractPptxHtml(bytes)
                                         }
                                         RenderKind.TEXT -> {
                                             val text = workspaceRepository.readText(workspaceId, relativePath)
@@ -353,6 +372,34 @@ internal fun EditedFilesList(
                 fileName = renderFileName,
                 onDismiss = { renderPdfFile = null },
             )
+        }
+    }
+    if (renderMediaFile != null) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { renderMediaFile = null },
+            properties = androidx.compose.ui.window.DialogProperties(
+                usePlatformDefaultWidth = false,
+            ),
+        ) {
+            val mediaFile = renderMediaFile!!
+            val mediaName = renderFileName
+            when (renderMediaKind) {
+                RenderKind.VIDEO -> VideoRenderDialog(
+                    videoFile = mediaFile,
+                    fileName = mediaName,
+                    onDismiss = { renderMediaFile = null },
+                )
+                RenderKind.AUDIO -> AudioRenderDialog(
+                    audioFile = mediaFile,
+                    fileName = mediaName,
+                    onDismiss = { renderMediaFile = null },
+                )
+                else -> ImageRenderDialog(
+                    imageFile = mediaFile,
+                    fileName = mediaName,
+                    onDismiss = { renderMediaFile = null },
+                )
+            }
         }
     }
 }
