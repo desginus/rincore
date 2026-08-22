@@ -247,6 +247,7 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 - **根因**：Zen 网关对部分模型（grok 系/ox 系免费模型）完成时不发 [DONE]/finish_reason=stop/usage，直接关闭连接；onClosed 视为断流 → 上层 rollback 重试 → 每次重试服务端重新生成 → 7 次叠加超长失败。另发现独立缺陷：finish_reason 判定写在 message!=null 分支内，delta:null + finish_reason:"stop" 结尾 chunk 漏判
 - **修复（v3.8.31）**：isOpencode && 已收到数据 => 关闭即正常完结，未收到数据仍按断流重试；finish_reason 上移到 choice 层
 - **修正（v3.8.32）**：v3.8.31 特判过宽把服务端中途掐断也吞成完成（静默截断，用户不接受）。改为按模型分流：grok 系维持"已收数据=>完成"；ox 系等=>OpenCodeStreamUnconfirmedException 保留内容+明确报错不回滚不重试；诊断加事件数+最近 5 条原始数据缓冲
+- **定稿（v3.8.33）**：分流仍误报（ox 每轮都弹错，服务端完整发完但也无完成信号）。弃用模型名单猜测，改物理判据：SSE 最后一行 JSON 解析成功=完整发完（正常完结不打扰），残缺=真断流（保留内容+报错）。对照原版不可对齐（原版只认 [DONE] 且无 Zen 适配），自行斟酌定稿。附：openCode близнец ox-alpha-free 网关行为=完整行后无信号关流
 - **验证**：ox-alpha-free 不再误报 SSE 中断；DeepSeek 真断流（无数据关闭）重试路径不变
 - **排查起点**：ChatCompletionsAPI.kt onClosed / onEvent finish_reason 判定
 - **注意**：ResponseAPI onClosed 为宽松语义（直接 close），无此问题，无需同步
