@@ -143,7 +143,7 @@ class McpManager(
                     runCatching {
                         Log.i(TAG, "update configs: $mcpServerConfigs")
                         val newConfigs = mcpServerConfigs.filter { it.commonOptions.enable && it.commonOptions.name.isNotBlank() }
-                        val currentConfigs = clients.keys.map { it.id } + pendingConfigs.keys
+                        val currentConfigs = clients.keys.toList() + pendingConfigs.values
                         val (toAdd, toRemove) = currentConfigs.checkDifferent(
                             other = newConfigs,
                             eq = { a, b -> a.id == b.id }
