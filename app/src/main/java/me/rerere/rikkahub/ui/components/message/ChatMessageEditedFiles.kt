@@ -46,10 +46,15 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.File02
 import me.rerere.hugeicons.stroke.FileImport
+import me.rerere.hugeicons.stroke.FileView
 import me.rerere.hugeicons.stroke.Share08
+import com.dokar.sonner.ToastType
+import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
+import me.rerere.rikkahub.ui.components.HtmlRenderDialog
+import me.rerere.rikkahub.ui.components.isRenderableFormat
 import me.rerere.workspace.WorkspaceStorageArea
 import org.koin.compose.koinInject
 import java.io.File
@@ -76,10 +81,13 @@ internal fun EditedFilesList(
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val toaster = LocalToaster.current
     val workspaceRepository: WorkspaceRepository = koinInject()
 
     var selectedPath by remember { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf(false) }
+    var renderHtml by remember { mutableStateOf<String?>(null) }
+    var renderFileName by remember { mutableStateOf("") }
     val visibleFiles = if (expanded) editedFiles else editedFiles.take(DEFAULT_VISIBLE_COUNT)
     val hasMore = editedFiles.size > DEFAULT_VISIBLE_COUNT
 
@@ -238,7 +246,60 @@ internal fun EditedFilesList(
                         )
                     }
                 }
+                // v3.8.44: 渲染选项 — 检测格式, 浏览器可打开格式在应用内渲染
+                if (isRenderableFormat(fileName)) {
+                    Card(
+                        onClick = {
+                            val p = selectedPath ?: return@Card
+                            selectedPath = null
+                            scope.launch {
+                                runCatching {
+                                    val (area, relativePath) = resolveWorkspacePath(p)
+                                    val content = workspaceRepository.readText(workspaceId, relativePath)
+                                    renderFileName = p.substringAfterLast('/')
+                                    renderHtml = content
+                                }.onFailure {
+                                    toaster.show("读取文件失败: ${it.message}", type = ToastType.Error)
+                                }
+                            }
+                        },
+                        shape = MaterialTheme.shapes.medium,
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            modifier = Modifier
+                                .padding(16.dp)
+                                .fillMaxWidth(),
+                        ) {
+                            Icon(
+                                imageVector = HugeIcons.FileView,
+                                contentDescription = null,
+                                modifier = Modifier.padding(4.dp),
+                            )
+                            Text(
+                                text = "渲染",
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                        }
+                    }
+                }
             }
+        }
+    }
+
+    if (renderHtml != null) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { renderHtml = null },
+            properties = androidx.compose.ui.window.DialogProperties(
+                usePlatformDefaultWidth = false,
+            ),
+        ) {
+            HtmlRenderDialog(
+                htmlContent = renderHtml!!,
+                fileName = renderFileName,
+                onDismiss = { renderHtml = null },
+            )
         }
     }
 }

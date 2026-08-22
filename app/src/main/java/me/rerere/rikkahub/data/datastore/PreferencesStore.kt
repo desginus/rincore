@@ -58,6 +58,7 @@ import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.InjectionPosition
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.PromptInjection
+import me.rerere.rikkahub.data.model.UserTool
 import me.rerere.rikkahub.data.model.QuickMessage
 import me.rerere.rikkahub.data.model.Tag
 import me.rerere.rikkahub.data.sync.s3.S3Config
@@ -190,6 +191,7 @@ class SettingsStore(
         val CUSTOM_DOMAIN_DESCRIPTIONS = stringPreferencesKey("custom_domain_descriptions")
         val CUSTOM_DOMAINS = stringPreferencesKey("custom_domains")
         val CUSTOM_DOMAIN_KEYWORDS = stringPreferencesKey("custom_domain_keywords")
+        val USER_TOOLS = stringPreferencesKey("user_tools")
         val TOOL_DESCRIPTION_OVERRIDES = stringPreferencesKey("tool_description_overrides")
         val DOMAIN_NAME_OVERRIDES = stringPreferencesKey("domain_name_overrides")
         val HIDDEN_DOMAINS = stringPreferencesKey("hidden_domains")
@@ -305,6 +307,7 @@ class SettingsStore(
                 removedBuiltinDomains = preferences[REMOVED_BUILTIN_DOMAINS]?.let { JsonInstant.decodeFromString(it) } ?: emptySet(),
                 exemptFromDomainTools = preferences[EXEMPT_FROM_DOMAIN_TOOLS]?.let { JsonInstant.decodeFromString(it) } ?: emptySet(),
                 classifierPrompt = preferences[CLASSIFIER_PROMPT] ?: "",
+                userTools = preferences[USER_TOOLS]?.let { JsonInstant.decodeFromString(it) } ?: emptyList(),
             )
         }
         .map {
@@ -503,6 +506,7 @@ class SettingsStore(
             preferences[REMOVED_BUILTIN_DOMAINS] = JsonInstant.encodeToString(settings.removedBuiltinDomains)
             preferences[EXEMPT_FROM_DOMAIN_TOOLS] = JsonInstant.encodeToString(settings.exemptFromDomainTools)
             preferences[CLASSIFIER_PROMPT] = settings.classifierPrompt
+            preferences[USER_TOOLS] = JsonInstant.encodeToString(settings.userTools)
         }
     }
 
@@ -664,6 +668,7 @@ data class Settings(
     val exemptFromDomainTools: Set<String> = emptySet(), // 移出域管理的工具名集合 — 与框架工具一样始终注入请求体, 不并入域分类
     val toolNameOverrides: Map<String, String> = emptyMap(), // v3.6.102: 工具改名 — 原工具名→新工具名 (汉语名工具改为字母数字, 模型才能识别)
     val classifierPrompt: String = "", // 工具自动分类提示词。空=使用默认
+    val userTools: List<UserTool> = emptyList(), // 用户自定义工具，独立于 MCP/Skill/插件，可通过 @ 引用
 ) {
     companion object {
         // 构造一个用于初始化的settings, 但它不能用于保存，防止使用初始值存储

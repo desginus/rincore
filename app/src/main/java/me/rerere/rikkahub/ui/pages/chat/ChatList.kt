@@ -416,6 +416,21 @@ private fun ChatListNormal(
             }
         }
 
+        // v3.8.44: 空对话悬浮提示 — 仅在无消息时显示, 用户发送任一消息后消失
+        if (conversation.messageNodes.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "提供目的与数据并通过此中控台开始工作",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+            }
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()

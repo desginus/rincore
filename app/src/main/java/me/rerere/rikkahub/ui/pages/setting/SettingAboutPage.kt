@@ -120,7 +120,7 @@ fun SettingAboutPage() {
                         )
 
                         Text(
-                            text = "RinCore",
+                            text = "WaterHub",
                             style = MaterialTheme.typography.displaySmall,
                         )
                     }
