@@ -24,6 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import me.rerere.rikkahub.data.agentrun.AgentRunBootRecovery
 import me.rerere.rikkahub.data.ai.tools.local.AgentWorkspace
 import me.rerere.rikkahub.data.files.FileFolders
+import me.rerere.rikkahub.data.log.LogSessionStore
 import java.io.File
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -61,6 +62,8 @@ const val WEB_SERVER_NOTIFICATION_CHANNEL_ID = "web_server"
 class RikkaHubApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        // v3.8.34: 运行日志持久化存储初始化 (轮次会话, 最多 10 轮)
+        LogSessionStore.init(this)
         // 连接预热: 冷启动后预解析 DNS + 预建 TCP 到 API 端点, 首次请求延迟降低 200-500ms
         val warmUrls = DEFAULT_PROVIDERS
             .filterIsInstance<me.rerere.ai.provider.ProviderSetting.OpenAI>()

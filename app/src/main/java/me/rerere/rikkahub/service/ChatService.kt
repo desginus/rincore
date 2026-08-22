@@ -75,7 +75,9 @@ import me.rerere.common.android.Logging
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.GenerationChunk
+import me.rerere.rikkahub.data.ai.CallTracer
 import me.rerere.rikkahub.data.ai.GenerationHandler
+import me.rerere.rikkahub.data.files.ConversationAttachmentManager
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.tools.HeadlessConversations
 import me.rerere.rikkahub.data.ai.tools.ToolInvocationContext
@@ -697,6 +699,8 @@ class ChatService(
                 // 关键: 取消态 (用户停止/切后台) 下挂起调用会跳过 — 必须 NonCancellable
                 // 否则 saveConversation/emit Ended 不执行 → 灵动岛不消失, 计时器不停
                 withContext(NonCancellable) {
+                    // v3.8.34: 兜底收尾运行日志轮次 (异常/中断路径也会结束会话并落盘)
+                    CallTracer.finishTraceIfActive()
                     val updatedConversation = getConversationFlow(conversationId).value.copy(
                         messageNodes = getConversationFlow(conversationId).value.messageNodes.map { node ->
                             node.copy(messages = node.messages.map { it.finishReasoning() })
