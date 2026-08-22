@@ -238,6 +238,9 @@ class ChatCompletionsAPI(
         // 事件数与最近 5 条原始数据缓冲, 关流/失败时输出核对服务端收尾形态。
         var eventCount = 0
         var lastEventParsed = false
+        // v3.8.36: 文本尾部跟踪 — 服务端"行完整但内容截断"场景 (无完成信号的
+        // 模型输出被平台截短仍按完整行发送), 需内容形态启发辅助判定
+        var textTail = ""
         val lastEvents = ArrayDeque<String>()
         fun recordEvent(data: String) {
             val lines = data.trim().split("\n").filter { it.isNotBlank() }
@@ -251,6 +254,21 @@ class ChatCompletionsAPI(
             while (lastEvents.size > 5) lastEvents.removeFirst()
         }
         fun dumpLastEvents(): String = lastEvents.joinToString(" | ") { it.replace("\n", " ") }
+        // v3.8.36: 内容级截断启发 (仅辅助无完成信号模型, DeepSeek 等有官方
+        // finish_reason 信号不启用)。强特征才报, 防误报:
+        // 未闭合代码块 / 以逗号分号顿号冒号破折号收尾 / 以连接词收尾
+        fun looksTruncated(tail: String): Boolean {
+            if (tail.isBlank()) return false
+            if (tail.count { it == '`' } % 2 != 0) return true
+            val last = tail.lastOrNull() ?: return false
+            if (last in ",;，；、:：|_—–".toList()) return true
+            val lower = tail.lowercase()
+            return lower.endsWith(" and") || lower.endsWith(" because") ||
+                lower.endsWith(" but") || lower.endsWith(" the") ||
+                tail.endsWith("但是") || tail.endsWith("因为") ||
+                tail.endsWith("然后") || tail.endsWith("以及") ||
+                tail.endsWith("所以") || tail.endsWith("总之") || tail.endsWith("因此")
+        }
         lateinit var listener: EventSourceListener
 
         fun connect() {
@@ -299,6 +317,11 @@ class ChatCompletionsAPI(
                                 }
                                 val message =
                                     choice["delta"]?.jsonObject ?: choice["message"]?.jsonObject
+                                // v3.8.36: 记录文本尾部 (截断启发用) — 直接读原始 content
+                                (choice["delta"] as? JsonObject)
+                                    ?.get("content")?.jsonPrimitive?.contentOrNull
+                                    ?.takeIf { it.isNotBlank() }
+                                    ?.let { textTail = if (it.length > 80) it.takeLast(80) else it }
                                 if (message != null) {
                                     add(
                                         UIMessageChoice(
@@ -387,13 +410,15 @@ class ChatCompletionsAPI(
                 //   按物理层的事实判定, 不再猜测模型行为。
                 if (!completed.get() && !gotFinish.get()) {
                     if (isOpencode && hasReceivedData.get()) {
-                        if (lastEventParsed) {
-                            TraceLogger.log("SSE", "opencode.ai closed after complete data (events=$eventCount) — treated as complete, no completion signal needed")
-                            close()
+                        val truncated = !lastEventParsed || looksTruncated(textTail)
+                        if (truncated) {
+                            val why = if (!lastEventParsed) "mid-event truncation" else "content ends truncated (tail=\"${textTail.take(40)}\")"
+                            Log.w(TAG, "onClosed: opencode.ai truncated ($why, model=${params.model.modelId} events=$eventCount) — keep partial content, notify user\nlast: ${dumpLastEvents()}")
+                            TraceLogger.log("SSE", "zen truncated close — keep data, notify user (events=$eventCount tail=\"${textTail.take(40)}\")")
+                            close(OpenCodeStreamUnconfirmedException("OpenCode 输出被截断，已保留已生成内容"))
                         } else {
-                            Log.w(TAG, "onClosed: opencode.ai truncated mid-event (model=${params.model.modelId} events=$eventCount) — keep partial content, notify user\nlast: ${dumpLastEvents()}")
-                            TraceLogger.log("SSE", "zen truncated close — keep data, notify user (events=$eventCount)")
-                            close(OpenCodeStreamUnconfirmedException("OpenCode 服务输出被截断，已保留已生成内容"))
+                            TraceLogger.log("SSE", "opencode.ai closed after complete data (events=$eventCount) — treated as complete, no completion signal needed (tail=\"${textTail.take(40)}\")")
+                            close()
                         }
                     } else {
                         Log.w(TAG, "onClosed: stream closed before completion — unexpected interruption" +
