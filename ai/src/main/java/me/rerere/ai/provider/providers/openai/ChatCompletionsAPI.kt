@@ -68,6 +68,15 @@ import me.rerere.ai.provider.providers.groupPartsByToolBoundary
 import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.UIMessage
+
+/**
+ * v3.8.32: OpenCode Zen 无完成信号关流的"未确认完成"异常。
+ *
+ * Zen 网关对部分模型 (ox 系免费模型等) 完成时不发 [DONE]/finish_reason/usage,
+ * 直接关闭连接 — 与"服务端中途掐断"在信号层面无法区分。此时保留已生成内容,
+ * 由上层明确提示用户 (不静默吞掉, 也不回滚重试轰炸)。
+ */
+class OpenCodeStreamUnconfirmedException(message: String) : IOException(message)
 import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessageChoice
 import me.rerere.ai.ui.UIMessagePart
@@ -223,6 +232,16 @@ class ChatCompletionsAPI(
         val maxRetries = 5 // 指数退避 1+2+4+8+16=31s 窗口, 覆盖瞬时网络波动
         var currentEventSource: EventSource? = null
         val scope = this@callbackFlow
+        // v3.8.32: 完成信号诊断 — 记录事件数与最近 5 条原始数据,
+        // 关流/失败时输出, 用于核对 Zen 网关的收尾形态
+        var eventCount = 0
+        val lastEvents = ArrayDeque<String>()
+        fun recordEvent(data: String) {
+            eventCount++
+            lastEvents.addLast(if (data.length > 160) data.take(160) + "…" else data)
+            while (lastEvents.size > 5) lastEvents.removeFirst()
+        }
+        fun dumpLastEvents(): String = lastEvents.joinToString(" | ") { it.replace("\n", " ") }
         lateinit var listener: EventSourceListener
 
         fun connect() {
@@ -242,6 +261,7 @@ class ChatCompletionsAPI(
                 // 仅有效数据刷新空闲标记 — 空行 (keep-alive) 不刷新,
                 // 否则服务器保活会使看门狗永远无法检测真挂起
                 if (data.isNotBlank()) lastEventAt.set(System.currentTimeMillis())
+                recordEvent(data)
                 Log.d(TAG, "onEvent: $data")
                 data
                     .trim()
@@ -339,21 +359,29 @@ class ChatCompletionsAPI(
             override fun onClosed(eventSource: EventSource) {
                 // 服务器主动关闭连接: [DONE] 或 finish_reason=stop 已收到 → 正常完成;
                 // 否则视为断流 (消息不完整且无报错 → 用户感知"莫名其妙中断")
-                // v3.8.31: OpenCode Zen (opencode.ai) 网关对部分模型 (grok 系/ox 系
-                // 免费模型) 完成时不发 [DONE]/stop/usage 直接关闭连接 —
-                // 已收到过数据即视为正常完结 (与 v3.6.78 grok 特判同网关行为);
-                // 未收到任何数据仍按断流重试, 真断流不受影响
-                val zenNoSignalClose = isOpencode && hasReceivedData.get()
-                if (!completed.get() && !gotFinish.get() && !zenNoSignalClose) {
-                    Log.w(TAG, "onClosed: stream closed before completion — unexpected interruption" +
-                            " (completed=${completed.get()} gotFinish=${gotFinish.get()} hasData=${hasReceivedData.get()} opencode=$isOpencode)")
-                    close(IOException("SSE 流在完成前被服务器关闭"))
-                } else {
-                    if (zenNoSignalClose) {
+                // v3.8.31: OpenCode Zen 网关对部分模型完成时不发完成信号直接关闭。
+                // v3.8.32 修正: 按模型分流 —
+                //   grok 系 (有 usage/cost 结尾生态, 实测稳定): 已收到数据即视为完成;
+                //   ox 系免费模型等 (已被实测会中途被服务端掐断): 无法区分"正常完结"
+                //   与"中途掐断", 保留已生成内容 + 明确报错 (不静默, 不回滚, 不重试轰炸)。
+                val modelId = params.model.modelId
+                val isKnownNoSignalZenModel =
+                    isOpencode && modelId.contains("grok", ignoreCase = true)
+                if (!completed.get() && !gotFinish.get()) {
+                    if (isOpencode && hasReceivedData.get() && !isKnownNoSignalZenModel) {
+                        Log.w(TAG, "onClosed: opencode.ai unconfirmed close (model=$modelId events=$eventCount) — keep partial content, notify user\nlast: ${dumpLastEvents()}")
+                        TraceLogger.log("SSE", "zen unconfirmed close — keep data, notify user")
+                        close(OpenCodeStreamUnconfirmedException("OpenCode 服务未发送完成信号即关闭连接，已保留已生成内容"))
+                    } else if (isKnownNoSignalZenModel && hasReceivedData.get()) {
                         TraceLogger.log("SSE", "opencode.ai closed after data — treated as complete (no [DONE]/stop)")
+                        close()
                     } else {
-                        TraceLogger.log("SSE", "stream closed by server")
+                        Log.w(TAG, "onClosed: stream closed before completion — unexpected interruption" +
+                                " (completed=${completed.get()} gotFinish=${gotFinish.get()} hasData=${hasReceivedData.get()} opencode=$isOpencode model=$modelId events=$eventCount)\nlast: ${dumpLastEvents()}")
+                        close(IOException("SSE 流在完成前被服务器关闭"))
                     }
+                } else {
+                    TraceLogger.log("SSE", "stream closed by server")
                     close()
                 }
             }

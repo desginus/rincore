@@ -813,6 +813,13 @@ class GenerationHandler(
             break@streamLoop  // 流式成功完成, 退出重试循环
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e  // 用户主动停止 — 不重试
+            } catch (e: me.rerere.ai.provider.providers.openai.OpenCodeStreamUnconfirmedException) {
+                // v3.8.32: OpenCode Zen 无完成信号关流 (ox 系等) — 服务端已完成或
+                // 中途掐断在信号层面无法区分。保留已生成内容 (已随 chunk 流入
+                // messages), 不回滚不重试, 交上层明确报错 — 杜绝静默截断。
+                Log.w(TAG, "stream unconfirmed (${e.message}) — keep partial content, no retry")
+                onUpdateMessages(messages)
+                throw e
             } catch (e: java.io.IOException) {
                 // 断流 (切后台/网络切换/NAT/平台): 回滚半截输出 → 自动重试 (最多 5 次)
                 // v3.5.59: 2→5 (用户实测网络切换频繁, 2 次不够)
