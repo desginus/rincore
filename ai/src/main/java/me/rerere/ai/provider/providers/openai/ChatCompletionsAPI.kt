@@ -232,13 +232,22 @@ class ChatCompletionsAPI(
         val maxRetries = 5 // 指数退避 1+2+4+8+16=31s 窗口, 覆盖瞬时网络波动
         var currentEventSource: EventSource? = null
         val scope = this@callbackFlow
-        // v3.8.32: 完成信号诊断 — 记录事件数与最近 5 条原始数据,
-        // 关流/失败时输出, 用于核对 Zen 网关的收尾形态
+        // v3.8.33: 完成信号诊断 + 物理判据 —
+        // SSE 每行 data 必须是完整 JSON; 服务端正常发完关流 = 所有行完整;
+        // 中途掐断 = 最后一行残缺 (parse 失败)。
+        // 事件数与最近 5 条原始数据缓冲, 关流/失败时输出核对服务端收尾形态。
         var eventCount = 0
+        var lastEventParsed = false
         val lastEvents = ArrayDeque<String>()
         fun recordEvent(data: String) {
+            val lines = data.trim().split("\n").filter { it.isNotBlank() }
+            for (line in lines) {
+                lastEventParsed =
+                    runCatching { json.parseToJsonElement(line); true }.getOrDefault(false)
+            }
             eventCount++
-            lastEvents.addLast(if (data.length > 160) data.take(160) + "…" else data)
+            val preview = data.trim().replace("\n", " ")
+            lastEvents.addLast(if (preview.length > 160) preview.take(160) + "…" else preview)
             while (lastEvents.size > 5) lastEvents.removeFirst()
         }
         fun dumpLastEvents(): String = lastEvents.joinToString(" | ") { it.replace("\n", " ") }
@@ -359,25 +368,24 @@ class ChatCompletionsAPI(
             override fun onClosed(eventSource: EventSource) {
                 // 服务器主动关闭连接: [DONE] 或 finish_reason=stop 已收到 → 正常完成;
                 // 否则视为断流 (消息不完整且无报错 → 用户感知"莫名其妙中断")
-                // v3.8.31: OpenCode Zen 网关对部分模型完成时不发完成信号直接关闭。
-                // v3.8.32 修正: 按模型分流 —
-                //   grok 系 (有 usage/cost 结尾生态, 实测稳定): 已收到数据即视为完成;
-                //   ox 系免费模型等 (已被实测会中途被服务端掐断): 无法区分"正常完结"
-                //   与"中途掐断", 保留已生成内容 + 明确报错 (不静默, 不回滚, 不重试轰炸)。
-                val modelId = params.model.modelId
-                val isKnownNoSignalZenModel =
-                    isOpencode && modelId.contains("grok", ignoreCase = true)
+                // v3.8.33 物理判据 (替代 v3.8.31/32 的模型名单分流与一律未确认):
+                //   SSE 每行必须是完整 JSON。最后一行解析成功 = 服务端把本段数据
+                //   完整发完 (正常完结, 即使无 [DONE]/stop/usage — Zen 网关常态);
+                //   最后一行残缺 = 服务端中途掐断 (真断流)。
+                //   按物理层的事实判定, 不再猜测模型行为。
                 if (!completed.get() && !gotFinish.get()) {
-                    if (isOpencode && hasReceivedData.get() && !isKnownNoSignalZenModel) {
-                        Log.w(TAG, "onClosed: opencode.ai unconfirmed close (model=$modelId events=$eventCount) — keep partial content, notify user\nlast: ${dumpLastEvents()}")
-                        TraceLogger.log("SSE", "zen unconfirmed close — keep data, notify user")
-                        close(OpenCodeStreamUnconfirmedException("OpenCode 服务未发送完成信号即关闭连接，已保留已生成内容"))
-                    } else if (isKnownNoSignalZenModel && hasReceivedData.get()) {
-                        TraceLogger.log("SSE", "opencode.ai closed after data — treated as complete (no [DONE]/stop)")
-                        close()
+                    if (isOpencode && hasReceivedData.get()) {
+                        if (lastEventParsed) {
+                            TraceLogger.log("SSE", "opencode.ai closed after complete data (events=$eventCount) — treated as complete, no completion signal needed")
+                            close()
+                        } else {
+                            Log.w(TAG, "onClosed: opencode.ai truncated mid-event (model=${params.model.modelId} events=$eventCount) — keep partial content, notify user\nlast: ${dumpLastEvents()}")
+                            TraceLogger.log("SSE", "zen truncated close — keep data, notify user (events=$eventCount)")
+                            close(OpenCodeStreamUnconfirmedException("OpenCode 服务输出被截断，已保留已生成内容"))
+                        }
                     } else {
                         Log.w(TAG, "onClosed: stream closed before completion — unexpected interruption" +
-                                " (completed=${completed.get()} gotFinish=${gotFinish.get()} hasData=${hasReceivedData.get()} opencode=$isOpencode model=$modelId events=$eventCount)\nlast: ${dumpLastEvents()}")
+                                " (completed=${completed.get()} gotFinish=${gotFinish.get()} hasData=${hasReceivedData.get()} opencode=$isOpencode model=${params.model.modelId} events=$eventCount lastParsed=$lastEventParsed)\nlast: ${dumpLastEvents()}")
                         close(IOException("SSE 流在完成前被服务器关闭"))
                     }
                 } else {
