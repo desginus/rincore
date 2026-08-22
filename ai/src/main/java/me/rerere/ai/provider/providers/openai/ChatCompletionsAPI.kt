@@ -68,15 +68,6 @@ import me.rerere.ai.provider.providers.groupPartsByToolBoundary
 import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.UIMessage
-
-/**
- * v3.8.32: OpenCode Zen 无完成信号关流的"未确认完成"异常。
- *
- * Zen 网关对部分模型 (ox 系免费模型等) 完成时不发 [DONE]/finish_reason/usage,
- * 直接关闭连接 — 与"服务端中途掐断"在信号层面无法区分。此时保留已生成内容,
- * 由上层明确提示用户 (不静默吞掉, 也不回滚重试轰炸)。
- */
-class OpenCodeStreamUnconfirmedException(message: String) : IOException(message)
 import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessageChoice
 import me.rerere.ai.ui.UIMessagePart
@@ -103,6 +94,15 @@ import okhttp3.sse.EventSource
 import okhttp3.sse.EventSourceListener
 import okhttp3.sse.EventSources
 import kotlin.time.Clock
+
+/**
+ * v3.8.32: OpenCode Zen 无完成信号关流的"未确认完成"异常。
+ *
+ * Zen 网关对部分模型 (ox 系免费模型等) 完成时不发 [DONE]/finish_reason/usage,
+ * 直接关闭连接 — 与"服务端中途掐断"在信号层面无法区分。此时保留已生成内容,
+ * 由上层明确提示用户 (不静默吞掉, 也不回滚重试轰炸)。
+ */
+class OpenCodeStreamUnconfirmedException(message: String) : IOException(message)
 
 private const val TAG = "ChatCompletionsAPI"
 
