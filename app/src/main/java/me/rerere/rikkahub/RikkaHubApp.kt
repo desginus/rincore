@@ -64,6 +64,11 @@ class RikkaHubApp : Application() {
         super.onCreate()
         // v3.8.34: 运行日志持久化存储初始化 (轮次会话, 最多 10 轮)
         LogSessionStore.init(this)
+        // v3.9.14: 设备环境检测日志 — 澎湃 OS4 / 骁龙 8 Elite 适配诊断铺垫。
+        // 记录: Android API / 系统版本 / 页大小(16KB 设备) / SoC / ABI 列表。
+        // 用于发行后线上问题追溯: 若 16KB 页设备上出现 native 崩溃,
+        // 通过本条日志即可确认设备页大小与镜像版本。
+        logDeviceEnvironment()
         // 连接预热: 冷启动后预解析 DNS + 预建 TCP 到 API 端点, 首次请求延迟降低 200-500ms
         val warmUrls = DEFAULT_PROVIDERS
             .filterIsInstance<me.rerere.ai.provider.ProviderSetting.OpenAI>()
@@ -135,6 +140,31 @@ class RikkaHubApp : Application() {
         )
 
         // Composer.setDiagnosticStackTraceMode(ComposeStackTraceMode.Auto)
+    }
+
+
+    /**
+     * v3.9.14: 设备环境检测日志。
+     * 澎湃 OS4 (HyperOS, Android 17 底层) 与骁龙 8 Elite (8 Gen 4) 适配铺垫:
+     * Android 平台 API / 系统版本 / 页大小 / SoC / ABI 全量落运行日志,
+     * 16KB 页设备如在发行后出现 native 加载问题可立即定位镜像版本。
+     */
+    private fun logDeviceEnvironment() {
+        runCatching {
+            val abi = Build.SUPPORTED_ABIS.joinToString(",")
+            val pageSizeKb = try {
+                // sysconf(_SC_PAGESIZE) — 16KB 页设备返回 16384
+                android.system.Os.sysconf(android.system.OsConstants._SC_PAGESIZE) / 1024
+            } catch (_: Throwable) { 4 }
+            android.util.Log.i(
+                "RinCoreEnv",
+                "api=${Build.VERSION.SDK_INT} release=${Build.VERSION.RELEASE} " +
+                    "manufacturer=${Build.MANUFACTURER} model=${Build.MODEL} " +
+                    "soc=${if (Build.VERSION.SDK_INT >= 31) Build.SOC_MODEL else Build.HARDWARE} " +
+                    "pageSize=${pageSizeKb}KB abi=$abi " +
+                    "miuiVersion=${Build.VERSION.INCREMENTAL ?: ""}"
+            )
+        }
     }
 
     private fun cleanupWorkspaceTempDirs() {
