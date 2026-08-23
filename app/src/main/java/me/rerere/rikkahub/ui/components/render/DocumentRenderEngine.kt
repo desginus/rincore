@@ -75,7 +75,7 @@ object RenderEngine {
             )
             else -> return RenderResult.Unsupported(title, "暂不支持 ${ext.uppercase()} 格式")
         }
-        val pageCount = runCatching { extractor.extract(input, workDir) }.getOrElse {
+        val pageCount = runCatching { extractor?.extract(input, workDir) ?: 1 }.getOrElse {
             writeFile(File(workDir, "page1.html"), buildPage("提取失败", "<p>此文件无法解析：${it.message}</p>"))
             1
         }
