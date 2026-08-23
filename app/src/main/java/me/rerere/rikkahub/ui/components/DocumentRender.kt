@@ -143,7 +143,7 @@ private fun parseRelMap(relsXml: String?): Map<String, String> {
     if (relsXml == null) return map
     val pattern = Regex("<Relationship[^>]*\\bId=\"([^\"]+)\"[^>]*\\bTarget=\"([^\"]+)\"")
     pattern.findAll(relsXml).forEach { m ->
-        map[m.group(1) ?: ""] = m.group(2) ?: ""
+        map[m.groupValues.getOrNull(1) ?: ""] = m.groupValues.getOrNull(2) ?: ""
     }
     return map
 }
