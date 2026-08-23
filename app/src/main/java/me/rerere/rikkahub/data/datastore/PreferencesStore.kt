@@ -112,6 +112,7 @@ class SettingsStore(
         val DEVELOPER_MODE = booleanPreferencesKey("developer_mode")
         val OPENCODE_API_KEY = stringPreferencesKey("opencode_api_key")
         val OPENCODE_API_KEYS = stringPreferencesKey("opencode_api_keys")
+        val USAGE_VIEW_MODE = stringPreferencesKey("usage_view_mode")
 
         // 模型选择
         val ENABLE_WEB_SEARCH = booleanPreferencesKey("enable_web_search")

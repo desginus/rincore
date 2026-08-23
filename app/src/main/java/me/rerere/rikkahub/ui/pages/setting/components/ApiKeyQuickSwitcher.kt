@@ -21,10 +21,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import me.rerere.ai.provider.SavedApiKey
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Delete01
@@ -38,14 +40,14 @@ import me.rerere.hugeicons.stroke.PencilEdit01
  */
 @Composable
 fun ApiKeyQuickSwitcher(
+    currentKey: String,
+    savedKeys: List<SavedApiKey>,
     provider: me.rerere.ai.provider.ProviderSetting,
     onKeysChange: (List<SavedApiKey>) -> Unit,
     onSelectKey: (String) -> Unit,
 ) {
     val settingsStore = org.koin.compose.koinInject<me.rerere.rikkahub.data.datastore.SettingsStore>()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    val savedKeys = provider.savedKeys
-    val currentKey = provider.apiKey
 
     // 删除/编辑/新增立即持久化到 Settings (不经页面保存按钮), 重进不复活
     fun persist(keys: List<SavedApiKey>) {
