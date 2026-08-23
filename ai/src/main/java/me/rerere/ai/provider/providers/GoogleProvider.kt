@@ -30,6 +30,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import me.rerere.ai.provider.ProxyRoute
+import me.rerere.ai.provider.resolveProxy
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.TokenUsage
@@ -135,7 +137,7 @@ class GoogleProvider(
                     .get()
                     .build()
             )
-            val response = client.resolveProxy(proxyRoute, params.model.modelId).newCall(request).await()
+            val response = client.newCall(request).await()
             if (response.isSuccessful) {
                 val body = response.body.string()
                 Log.d(TAG, "listModels: $body")
