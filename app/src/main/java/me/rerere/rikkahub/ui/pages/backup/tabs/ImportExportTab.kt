@@ -12,6 +12,11 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MultiChoiceSegmentedButtonRow
+import me.rerere.rikkahub.data.datastore.WebDavConfig
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -192,14 +197,14 @@ fun ImportExportTab(
                 item(
                     headlineContent = { Text(stringResource(R.string.backup_page_backup_items)) },
                     supportingContent = {
-                        androidx.compose.material3.MultiChoiceSegmentedButtonRow(
+                        MultiChoiceSegmentedButtonRow(
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            me.rerere.rikkahub.data.datastore.WebDavConfig.BackupItem.entries.forEachIndexed { index, item ->
-                                androidx.compose.material3.SegmentedButton(
-                                    shape = androidx.compose.material3.SegmentedButtonDefaults.itemShape(
+                            WebDavConfig.BackupItem.entries.forEachIndexed { index, item ->
+                                SegmentedButton(
+                                    shape = SegmentedButtonDefaults.itemShape(
                                         index = index,
-                                        count = me.rerere.rikkahub.data.datastore.WebDavConfig.BackupItem.entries.size
+                                        count = WebDavConfig.BackupItem.entries.size
                                     ),
                                     onCheckedChange = { checked ->
                                         val newItems = if (checked) {
@@ -213,8 +218,8 @@ fun ImportExportTab(
                                 ) {
                                     Text(
                                         when (item) {
-                                            me.rerere.rikkahub.data.datastore.WebDavConfig.BackupItem.DATABASE -> stringResource(R.string.backup_page_chat_records)
-                                            me.rerere.rikkahub.data.datastore.WebDavConfig.BackupItem.FILES -> stringResource(R.string.backup_page_files)
+                                            WebDavConfig.BackupItem.DATABASE -> stringResource(R.string.backup_page_chat_records)
+                                            WebDavConfig.BackupItem.FILES -> stringResource(R.string.backup_page_files)
                                         }
                                     )
                                 }
@@ -326,12 +331,12 @@ fun ImportExportTab(
 
     // v3.9.12 (2.4.11 移植): 本地备份导入前确认覆盖弹窗
     if (showImportConfirmDialog) {
-        androidx.compose.material3.AlertDialog(
+        AlertDialog(
             onDismissRequest = { showImportConfirmDialog = false },
             title = { Text(stringResource(R.string.backup_page_local_backup_import)) },
             text = { Text(stringResource(R.string.backup_page_import_overwrite_confirm)) },
             confirmButton = {
-                androidx.compose.material3.TextButton(
+                TextButton(
                     onClick = {
                         showImportConfirmDialog = false
                         importType = "local"
@@ -342,7 +347,7 @@ fun ImportExportTab(
                 }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showImportConfirmDialog = false }) {
+                TextButton(onClick = { showImportConfirmDialog = false }) {
                     Text(stringResource(R.string.cancel))
                 }
             },
