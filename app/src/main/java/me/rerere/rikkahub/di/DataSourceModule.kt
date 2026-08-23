@@ -337,6 +337,7 @@ val dataSourceModule = module {
                         else HttpLoggingInterceptor.Level.NONE
             })
             .build()
+        proxyClient
     }
 
     // v3.9.15: 按模型代理路由 — 读 Settings.networkSetting 三个开关状态
