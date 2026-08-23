@@ -231,8 +231,7 @@ private fun ProviderConfigureOpenAI(
     )
 
     ApiKeyQuickSwitcher(
-        currentKey = provider.apiKey,
-        savedKeys = provider.savedKeys,
+        provider = provider,
         onKeysChange = { onEdit(provider.copy(savedKeys = it)) },
         onSelectKey = { onEdit(provider.copy(apiKey = it)) },
     )
@@ -329,8 +328,7 @@ private fun ProviderConfigureClaude(
     )
 
     ApiKeyQuickSwitcher(
-        currentKey = provider.apiKey,
-        savedKeys = provider.savedKeys,
+        provider = provider,
         onKeysChange = { onEdit(provider.copy(savedKeys = it)) },
         onSelectKey = { onEdit(provider.copy(apiKey = it)) },
     )
@@ -448,8 +446,7 @@ private fun ProviderConfigureGoogle(
         )
 
         ApiKeyQuickSwitcher(
-            currentKey = provider.apiKey,
-            savedKeys = provider.savedKeys,
+            provider = provider,
             onKeysChange = { onEdit(provider.copy(savedKeys = it)) },
             onSelectKey = { onEdit(provider.copy(apiKey = it)) },
         )

@@ -519,6 +519,23 @@ private const val EMU_PER_PX = 9525.0
 
 private fun emuToPx(emu: Long): Int = (emu / EMU_PER_PX).toInt()
 
+/** Office 默认主题色映射 (schemeClr) — 多数 PPT 未改主题 */
+private fun schemeToHex(scheme: String): String? = when (scheme.lowercase()) {
+    "accent1" -> "#4472C4"
+    "accent2" -> "#ED7D31"
+    "accent3" -> "#A5A5A5"
+    "accent4" -> "#FFC000"
+    "accent5" -> "#5B9BD5"
+    "accent6" -> "#70AD47"
+    "dk1", "tx1" -> "#000000"
+    "lt1", "bg1" -> "#FFFFFF"
+    "dk2" -> "#44546A"
+    "lt2" -> "#E7E6E6"
+    "hlink" -> "#0563C1"
+    "folHlink" -> "#954F72"
+    else -> null
+}
+
 /** srgbClr 16 进制转 #rrggbb */
 private fun argbToHex(v: String): String = if (v.length >= 6) "#" + v.take(6) else "#FFFFFF"
 
@@ -605,16 +622,25 @@ internal fun buildSlideHtml(
                                 shapeFill = null
                             }
                         }
-                        parser.isTag("srgbClr") -> {
-                            val hex = argbToHex(parser.attr("val") ?: "")
-                            if (inRotPr) {
-                                if (bgColor != null && !inSpPr) { } // 背景内不允许文本层
+                        parser.isTag("srgbClr") || parser.isTag("schemeClr") -> {
+                            val hex = if (parser.isTag("srgbClr")) {
+                                argbToHex(parser.attr("val") ?: "")
+                            } else {
+                                schemeToHex(parser.attr("val") ?: "") ?: ""
+                            }
+                            if (hex.isEmpty()) {
+                                // 未知主题色: 不设置
+                            } else if (inRotPr) {
                                 runColor = hex
                             } else if (inSpPr) {
                                 shapeFill = hex
                             } else {
                                 bgColor = hex
                             }
+                        }
+                        parser.isTag("gradFill") -> {
+                            // 渐变填充: 不解析渐变, 保持原填充色 (首色由 gsLst 提供, 简化跳过)
+                            shapeFill = null
                         }
                         parser.isTag("rPr") -> {
                             inRotPr = true
@@ -874,6 +900,9 @@ internal fun buildDocxHtml(
     val headingLevel = StringBuilder()
     var inCellText = false
     var inTable = false
+    var paraAlign = ""
+    var paraIndent = 0.0
+    var paraLineSpacing = 0.0
 
     fun flush() {
         if (pendingTag != "p") return
@@ -885,13 +914,28 @@ internal fun buildDocxHtml(
                     val lvl = h.filter { it.isDigit() }.firstOrNull()?.digitToInt()?.coerceIn(1, 6) ?: 1
                     sb.append("<h$lvl>").append(escapeHtml(text)).append("</h$lvl>")
                 }
-                else -> sb.append("<p>").append(escapeHtml(text)).append("</p>")
+                else -> {
+                    // v3.9.10 原生排版: 对齐/缩进/行距还原
+                    val style = StringBuilder()
+                    when (paraAlign) {
+                        "center" -> style.append("text-align:center;")
+                        "right" -> style.append("text-align:right;")
+                        "both", "distribute" -> style.append("text-align:justify;")
+                    }
+                    if (paraIndent > 0) style.append("margin-left:${(paraIndent / 567.0).coerceAtLeast(0.2)}em;")
+                    if (paraLineSpacing > 240) style.append("line-height:${paraLineSpacing / 240.0};")
+                    val styleAttr = if (style.isNotEmpty()) " style='$style'" else ""
+                    sb.append("<p$styleAttr>").append(escapeHtml(text)).append("</p>")
+                }
             }
         }
         paragraphText.setLength(0)
         headingLevel.setLength(0)
         pendingTag = ""
         inParagraph = false
+        paraAlign = ""
+        paraIndent = 0.0
+        paraLineSpacing = 0.0
     }
 
     var eventType = parser.eventType
@@ -924,6 +968,16 @@ internal fun buildDocxHtml(
                         if (v.lowercase().contains("heading") || v.contains("标题")) {
                             headingLevel.append(v)
                         }
+                    }
+                    parser.isTag("jc") -> {
+                        paraAlign = parser.getAttributeValue(null, "val") ?: ""
+                    }
+                    parser.isTag("ind") -> {
+                        val l = parser.getAttributeValue(null, "left") ?: "0"
+                        paraIndent = l.toDoubleOrNull() ?: 0.0
+                    }
+                    parser.isTag("spacing") -> {
+                        paraLineSpacing = parser.getAttributeValue(null, "line")?.toDoubleOrNull() ?: 0.0
                     }
                     parser.isTag("tab") -> if (inParagraph) paragraphText.append("&emsp;")
                     parser.isTag("br") -> if (inParagraph) paragraphText.append("<br/>")

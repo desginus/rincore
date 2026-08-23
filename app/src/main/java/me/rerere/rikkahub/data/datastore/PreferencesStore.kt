@@ -246,6 +246,7 @@ class SettingsStore(
                 } ?: emptyList(),
                 developerMode = preferences[DEVELOPER_MODE] == true,
                 opencodeApiKey = preferences[OPENCODE_API_KEY] ?: "",
+                usageViewMode = preferences[USAGE_VIEW_MODE] ?: "cards",
                 opencodeApiKeys = preferences[OPENCODE_API_KEYS]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: emptyList(),
@@ -432,6 +433,7 @@ class SettingsStore(
             preferences[CUSTOM_THEMES] = JsonInstant.encodeToString(settings.customThemes)
             preferences[DEVELOPER_MODE] = settings.developerMode
             preferences[OPENCODE_API_KEY] = settings.opencodeApiKey
+            preferences[USAGE_VIEW_MODE] = settings.usageViewMode
             preferences[OPENCODE_API_KEYS] = JsonInstant.encodeToString(settings.opencodeApiKeys)
             preferences[DISPLAY_SETTING] = JsonInstant.encodeToString(settings.displaySetting)
 
@@ -601,6 +603,7 @@ data class Settings(
     val init: Boolean = false,
     val opencodeApiKey: String = "", // v3.8.0: OpenCode 用量查询 API Key (当前选中/最后使用)
     val opencodeApiKeys: List<String> = emptyList(), // v3.8.1: 密钥卡包 (历史密钥列表)
+    val usageViewMode: String = "cards", // v3.9.10: 用量查询视图 cards=多卡片 focus=焦点单卡, 持久化
     val dynamicColor: Boolean = true,
     val themeId: String = PresetThemes[0].id,
     val customThemes: List<CustomTheme> = emptyList(),

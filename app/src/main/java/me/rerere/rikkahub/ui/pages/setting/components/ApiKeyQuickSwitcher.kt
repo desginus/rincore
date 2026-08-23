@@ -38,11 +38,27 @@ import me.rerere.hugeicons.stroke.PencilEdit01
  */
 @Composable
 fun ApiKeyQuickSwitcher(
-    currentKey: String,
-    savedKeys: List<SavedApiKey>,
+    provider: me.rerere.ai.provider.ProviderSetting,
     onKeysChange: (List<SavedApiKey>) -> Unit,
     onSelectKey: (String) -> Unit,
 ) {
+    val settingsStore = org.koin.compose.koinInject<me.rerere.rikkahub.data.datastore.SettingsStore>()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val savedKeys = provider.savedKeys
+    val currentKey = provider.apiKey
+
+    // 删除/编辑/新增立即持久化到 Settings (不经页面保存按钮), 重进不复活
+    fun persist(keys: List<SavedApiKey>) {
+        onKeysChange(keys)
+        scope.launch {
+            settingsStore.update { s ->
+                s.copy(providers = s.providers.map { p ->
+                    if (p.id == provider.id) p.copyProvider(savedKeys = keys) else p
+                })
+            }
+        }
+    }
+
     var showDialog by remember { mutableStateOf(false) }
     val title = "密钥快捷切换 (${savedKeys.size})"
     OutlinedButton(
@@ -57,7 +73,7 @@ fun ApiKeyQuickSwitcher(
         ApiKeySwitcherDialog(
             currentKey = currentKey,
             savedKeys = savedKeys,
-            onKeysChange = onKeysChange,
+            onKeysChange = { persist(it) },
             onSelectKey = onSelectKey,
             onDismiss = { showDialog = false },
         )

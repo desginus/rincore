@@ -24,7 +24,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -52,7 +51,7 @@ import kotlin.math.roundToInt
  * 单指滑动被每页手势吃掉导致 LazyColumn 无法滚动。
  * 修复: 自实现双指捏合缩放 (仅两指时计算距离比并回调),
  * 单指事件不消费, 滚动全部放行给 LazyColumn。
- * 位图渲染在 IO 协程 (produceState), 主线程不阻塞。
+ * 位图渲染在 IO 协程, 主线程不阻塞; 双缓冲消除缩放闪烁。
  */
 @Composable
 fun PdfRenderView(
@@ -99,63 +98,61 @@ fun PdfRenderView(
         modifier = Modifier.fillMaxSize(),
     ) {
         items((0 until pageCount).toList()) { pageIndex ->
-            var loaded by remember { mutableStateOf(false) }
-            val bitmap by produceState<Bitmap?>(null, renderer, pageIndex, zoom) {
-                loaded = false
-                value = withContext(Dispatchers.IO) {
+            // v3.9.10 双缓冲: bitmap 不随 zoom 变化清空, 缩放时旧图继续显示
+            // (拉伸), 后台重渲染新分辨率位图完成后替换 — 消除放大闪烁
+            var bitmap by remember(renderer, pageIndex) {
+                mutableStateOf<Bitmap?>(null)
+            }
+            androidx.compose.runtime.LaunchedEffect(renderer, pageIndex, zoom) {
+                val newBmp = withContext(Dispatchers.IO) {
                     renderPage(renderer, pageIndex, zoom)
                 }
-                loaded = true
+                if (newBmp != null) bitmap = newBmp
             }
-            if (!loaded) {
+            val bmp = bitmap
+            if (bmp == null) {
                 Box(Modifier.fillMaxWidth().padding(24.dp)) { Text("页面渲染中...", color = Color.Gray) }
             } else {
-                val bmp = bitmap
-                if (bmp == null) {
-                    Box(Modifier.fillMaxWidth().padding(24.dp)) { Text("页面渲染失败") }
-                } else {
-                    val pageWidthPx = (screenWidth * zoom).dp
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
-                            .padding(vertical = 4.dp)
-                            .pointerInput(Unit) {
-                                // 仅双指捏合缩放, 单指事件完全放行给滚动
-                                var prevDist = 0f
-                                awaitEachGesture {
-                                    awaitFirstDown(requireUnconsumed = false)
-                                    prevDist = 0f
-                                    do {
-                                        val event = awaitPointerEvent()
-                                        val pressed = event.changes.filter { it.pressed }
-                                        if (pressed.size >= 2) {
-                                            val dist = pressed[0].position.distanceTo(pressed[1].position)
-                                            if (prevDist > 0f) {
-                                                val change = dist / prevDist
-                                                if (abs(change - 1f) > 0.02f) {
-                                                    onZoomChange(change)
-                                                }
+                val pageWidthPx = (screenWidth * zoom).dp
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(vertical = 4.dp)
+                        .pointerInput(Unit) {
+                            // 仅双指捏合缩放, 单指事件完全放行给滚动
+                            var prevDist = 0f
+                            awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = false)
+                                prevDist = 0f
+                                do {
+                                    val event = awaitPointerEvent()
+                                    val pressed = event.changes.filter { it.pressed }
+                                    if (pressed.size >= 2) {
+                                        val dist = pressed[0].position.distanceTo(pressed[1].position)
+                                        if (prevDist > 0f) {
+                                            val change = dist / prevDist
+                                            if (abs(change - 1f) > 0.02f) {
+                                                onZoomChange(change)
                                             }
-                                            prevDist = dist
-                                        } else {
-                                            prevDist = 0f
                                         }
-                                    } while (event.changes.any { it.pressed })
-                                }
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        val pageBitmap = bmp
-                        Image(
-                            bitmap = pageBitmap.asImageBitmap(),
-                            contentDescription = null,
-                            contentScale = ContentScale.FillWidth,
-                            modifier = Modifier
-                                .width(pageWidthPx)
-                                .background(Color.White),
-                        )
-                    }
+                                        prevDist = dist
+                                    } else {
+                                        prevDist = 0f
+                                    }
+                                } while (event.changes.any { it.pressed })
+                            }
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Image(
+                        bitmap = bmp.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = ContentScale.FillWidth,
+                        modifier = Modifier
+                            .width(pageWidthPx)
+                            .background(Color.White),
+                    )
                 }
             }
         }

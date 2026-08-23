@@ -107,7 +107,8 @@ fun UsagePage(onBack: () -> Unit = {}) {
             listOf(u.rolling.percent, u.weekly.percent, u.monthly.percent)
                 .all { p -> p == null || p < 100 }
         }
-    val showCards = otherVisible.isNotEmpty()
+    val showCards = settings.usageViewMode == "cards" && otherVisible.isNotEmpty()
+    val focusMode = settings.usageViewMode == "focus"
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
@@ -117,6 +118,14 @@ fun UsagePage(onBack: () -> Unit = {}) {
                     TextButton(onClick = onBack) { Text("返回") }
                 },
                 actions = {
+                    TextButton(onClick = {
+                        val next = if (settings.usageViewMode == "cards") "focus" else "cards"
+                        scope.launch {
+                            settingsStore.update { it.copy(usageViewMode = next) }
+                        }
+                    }) {
+                        Text(if (settings.usageViewMode == "cards") "焦点视图" else "多卡片")
+                    }
                     IconButton(onClick = {
                         keyInput = apiKey
                         showKeyDialog = true
@@ -162,8 +171,9 @@ fun UsagePage(onBack: () -> Unit = {}) {
                     } else if (usages[apiKey] != null) {
                         val activeUsage = usages[apiKey]!!
 
-                        if (showCards) {
-                            // ── 多密钥: 每密钥一张卡, 卡内 4 用量 2x2 横排 ──
+                        if (showCards || focusMode) {
+                            // ── 多卡片视图: 焦点卡 + 其他密钥卡 ──
+                            // ── 焦点视图: 仅焦点密钥单卡 (与\"一张卡展示一毛一样\") ──
                             item {
                                 KeyUsageCard(
                                     key = apiKey,
@@ -171,12 +181,14 @@ fun UsagePage(onBack: () -> Unit = {}) {
                                     isActive = true,
                                 )
                             }
-                            items(otherVisible, key = { it.first }) { (k, u) ->
-                                KeyUsageCard(
-                                    key = k,
-                                    usage = u,
-                                    isActive = false,
-                                )
+                            if (showCards) {
+                                items(otherVisible, key = { it.first }) { (k, u) ->
+                                    KeyUsageCard(
+                                        key = k,
+                                        usage = u,
+                                        isActive = false,
+                                    )
+                                }
                             }
                         } else {
                             // ── 单密钥: 竖列全屏 ──

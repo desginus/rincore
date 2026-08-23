@@ -315,7 +315,7 @@ private fun McpServerItem(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 when (status) {
-                    McpStatus.Idle -> Icon(HugeIcons.MessageBlocked, null)
+                    McpStatus.Idle -> Icon(HugeIcons.Clock02, "已配置待连接")
                     McpStatus.Connecting -> CircularProgressIndicator(
                         modifier = Modifier.size(
                             24.dp
