@@ -43,10 +43,6 @@ import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.FileView
 import me.rerere.hugeicons.stroke.Moon02
 import me.rerere.hugeicons.stroke.Sun01
-import me.rerere.hugeicons.stroke.ZoomIn
-import me.rerere.hugeicons.stroke.ZoomOut
-import me.rerere.hugeicons.stroke.ZoomIn
-import me.rerere.hugeicons.stroke.ZoomOut
 import me.rerere.rikkahub.R
 import java.io.File
 import kotlin.math.max
@@ -134,12 +130,12 @@ fun PdfRenderDialog(
                     IconButton(
                         onClick = { zoom = (zoom - 0.25f).coerceAtLeast(0.5f) },
                     ) {
-                        Icon(HugeIcons.ZoomOut, "缩小")
+                        Text("−", style = MaterialTheme.typography.titleLarge)
                     }
                     IconButton(
                         onClick = { zoom = (zoom + 0.25f).coerceAtMost(3f) },
                     ) {
-                        Icon(HugeIcons.ZoomIn, "放大")
+                        Text("+", style = MaterialTheme.typography.titleLarge)
                     }
                     IconButton(
                         onClick = { isDark = !isDark },
