@@ -142,7 +142,7 @@ private fun zipText(map: Map<String, ByteArray>, name: String): String? =
 private fun parseRelMap(relsXml: String?): Map<String, String> {
     val map = HashMap<String, String>()
     if (relsXml == null) return map
-    val pattern = Regex("""<Relationship[^>]*\bId="([^"]+)"[^>]*\bTarget="([^"]+)"""")
+    val pattern = Regex("<Relationship[^>]*\\bId=\"([^\"]+)\"[^>]*\\bTarget=\"([^\"]+)\"")
     pattern.findAll(relsXml).forEach { m ->
         map[m.group(1) ?: ""] = m.group(2) ?: ""
     }
@@ -488,3 +488,66 @@ fun escapeHtml(text: String): String = text
     .replace("<", "&lt;")
     .replace(">", "&gt;")
     .replace("\"", "&quot;")
+
+/** CSV: 转 HTML 表格 (支持简单引号包裹单元格) */
+fun csvToHtml(text: String): String {
+    val sb = StringBuilder("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>")
+    text.lineSequence().filter { it.isNotBlank() }.forEach { line ->
+        sb.append("<tr>")
+        parseCsvLine(line).forEach { cell ->
+            sb.append("<td style='border:1px solid #ccc;padding:6px'>").append(escapeHtml(cell)).append("</td>")
+        }
+        sb.append("</tr>")
+    }
+    sb.append("</table>")
+    return wrapHtml(sb.toString())
+}
+
+private fun parseCsvLine(line: String): List<String> {
+    val result = mutableListOf<String>()
+    val cur = StringBuilder()
+    var inQuotes = false
+    var i = 0
+    while (i < line.length) {
+        val ch = line[i]
+        when {
+            ch == '"' -> {
+                if (inQuotes && i + 1 < line.length && line[i + 1] == '"') {
+                    cur.append('"'); i++
+                } else inQuotes = !inQuotes
+            }
+            ch == ',' && !inQuotes -> { result.add(cur.toString().trim()); cur.setLength(0) }
+            else -> cur.append(ch)
+        }
+        i++
+    }
+    result.add(cur.toString().trim())
+    return result
+}
+
+/** XLSX sharedStrings: 富文本 si 内多 t 拼接 */
+private fun parseSharedStrings(xml: String): List<String> {
+    val result = mutableListOf<String>()
+    try {
+        val factory = XmlPullParserFactory.newInstance()
+        factory.isNamespaceAware = false
+        val parser = factory.newPullParser()
+        parser.setInput(xml.reader())
+        var current = StringBuilder()
+        var eventType = parser.eventType
+        while (eventType != XmlPullParser.END_DOCUMENT) {
+            if (eventType == XmlPullParser.START_TAG && parser.isTag("t")) {
+                val text = runCatching { parser.nextText() }.getOrDefault("")
+                current.append(text)
+            }
+            if (eventType == XmlPullParser.END_TAG && parser.isTag("si")) {
+                result.add(current.toString())
+                current = StringBuilder()
+            }
+            eventType = parser.next()
+        }
+    } catch (_: Exception) {
+        // 解析失败返回空
+    }
+    return result
+}
