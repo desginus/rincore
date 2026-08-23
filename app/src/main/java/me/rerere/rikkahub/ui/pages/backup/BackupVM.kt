@@ -39,10 +39,17 @@ class BackupVM(
 
     val webDavBackupItems = MutableStateFlow<UiState<List<WebDavBackupItem>>>(UiState.Idle)
     val s3BackupItems = MutableStateFlow<UiState<List<S3BackupItem>>>(UiState.Idle)
+    // v3.9.12 (2.4.11 移植): 本地备份导入内容选择 — 默认勾选全部条目
+    val localBackupItems = MutableStateFlow(WebDavConfig.BackupItem.entries.toList())
 
     init {
         loadBackupFileItems()
         loadS3BackupFileItems()
+    }
+
+    // v3.9.12 (2.4.11 移植)
+    fun updateLocalBackupItems(items: List<WebDavConfig.BackupItem>) {
+        localBackupItems.value = items
     }
 
     fun updateSettings(settings: Settings) {
@@ -86,13 +93,20 @@ class BackupVM(
     }
 
     suspend fun exportToFile(): File {
-        val file = webDavSync.prepareBackupFile(settings.value.webDavConfig.copy())
+        // v3.9.12 (2.4.11 移植): 按用户选择内容打包 (webDavConfig.items 复用为本地选择集)
+        val file = webDavSync.prepareBackupFile(
+            settings.value.webDavConfig.copy(items = localBackupItems.value)
+        )
         recordBackupTime()
         return file
     }
 
     suspend fun restoreFromLocalFile(file: File) {
-        webDavSync.restoreFromLocalFile(file, settings.value.webDavConfig)
+        // v3.9.12 (2.4.11 移植): 按用户选择内容导入 (覆盖前已在 UI 弹窗确认)
+        webDavSync.restoreFromLocalFile(
+            file,
+            settings.value.webDavConfig.copy(items = localBackupItems.value),
+        )
     }
 
     suspend fun restoreFromChatBox(file: File): ChatboxRestoreResult {

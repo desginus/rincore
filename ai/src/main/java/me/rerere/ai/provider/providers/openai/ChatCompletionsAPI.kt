@@ -670,6 +670,14 @@ class ChatCompletionsAPI(
                         })
                     }
 
+                    "api.xiaomimimo.com", "token-plan-cn.xiaomimimo.com" -> {
+                        // v3.9.12 (2.4.11 移植): 小米 MiMo
+                        // https://mimo.mi.com/docs/zh-CN/api/chat/openai-api
+                        put("thinking", buildJsonObject {
+                            put("type", if (!level.isEnabled) "disabled" else "enabled")
+                        })
+                    }
+
                     "api.moonshot.cn" -> {
                         put("thinking", buildJsonObject {
                             put("type", if (!level.isEnabled) "disabled" else "enabled")

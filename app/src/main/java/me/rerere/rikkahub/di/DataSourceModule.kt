@@ -41,6 +41,9 @@ import me.rerere.rikkahub.data.db.migrations.Migration_25_26
 import me.rerere.rikkahub.data.db.migrations.Migration_26_27
 import me.rerere.rikkahub.data.db.migrations.Migration_27_28
 import me.rerere.rikkahub.data.ai.mcp.McpManager
+import me.rerere.rikkahub.data.network.SettingsProxySelector
+import me.rerere.rikkahub.data.network.SettingsProxyAuthenticator
+import me.rerere.rikkahub.data.network.SettingsSocks5Authenticator
 import me.rerere.rikkahub.data.sync.webdav.WebDavSync
 import me.rerere.search.SearchService
 import me.rerere.rikkahub.data.sync.S3Sync
@@ -57,6 +60,7 @@ import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.net.Socket
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import javax.net.SocketFactory
 
 val dataSourceModule = module {
@@ -180,6 +184,7 @@ val dataSourceModule = module {
     }
 
     single<OkHttpClient> {
+        val settingsStore: SettingsStore = get()
         val acceptLang = AcceptLanguageBuilder.fromAndroid(get())
             .build()
         // DNS 缓存: 中国网络环境下 DNS 解析频繁抖动的缓冲
@@ -190,7 +195,22 @@ val dataSourceModule = module {
         val dispatcher = Dispatcher().apply {
             maxRequestsPerHost = 8
         }
-        OkHttpClient.Builder()
+        // v3.9.12 (2.4.11 移植): SOCKS5 全局鉴权
+        java.net.Authenticator.setDefault(SettingsSocks5Authenticator(settingsStore))
+        // v3.9.12 (2.4.11 移植): 跟踪代理配置变化以便热重连 (复用相同 OkHttpClient)
+        val initialNetworkSetting = settingsStore.settingsFlow.value.networkSetting
+        val appliedProxySetting = AtomicReference(
+            Triple(
+                initialNetworkSetting.proxyUrl,
+                initialNetworkSetting.proxyUsername,
+                initialNetworkSetting.proxyPassword,
+            )
+        )
+        lateinit var client: OkHttpClient
+        client = OkHttpClient.Builder()
+            // v3.9.12 (2.4.11 移植): 全局 ProxySelector + ProxyAuthenticator
+            .proxySelector(SettingsProxySelector(settingsStore))
+            .proxyAuthenticator(SettingsProxyAuthenticator(settingsStore))
             // 完全禁用 HTTP/2 — 实测证据 (2026-08-05 20:06): DeepSeek 服务端
             // ALPN 协商到 h2 后报 stream was reset: PROTOCOL_ERROR
             // (okhttp3.internal.http2.StreamResetException)。
@@ -214,12 +234,27 @@ val dataSourceModule = module {
             .retryOnConnectionFailure(true)
             .cache(dnsCache)
             .addInterceptor { chain ->
+                // v3.9.12 (2.4.11 移植): 代理参数变更 → 驱逐全部连接, 让新连接走新代理
+                val networkSetting = settingsStore.settingsFlow.value.networkSetting
+                val currentProxySetting = Triple(
+                    networkSetting.proxyUrl,
+                    networkSetting.proxyUsername,
+                    networkSetting.proxyPassword,
+                )
+                if (appliedProxySetting.getAndSet(currentProxySetting) != currentProxySetting) {
+                    client.connectionPool.evictAll()
+                }
+
                 val orig = chain.request()
                 val req = orig.newBuilder()
                     .addHeader(HttpHeaders.AcceptLanguage, acceptLang)
                     .apply {
                         if (orig.header(HttpHeaders.UserAgent) == null) {
-                            addHeader(HttpHeaders.UserAgent, "RikkaHub-Android/${BuildConfig.VERSION_NAME}")
+                            // v3.9.12 (2.4.11 移植): 自定义 User-Agent, 空则用默认
+                            val userAgent = settingsStore.settingsFlow.value.networkSetting.userAgent
+                                .trim()
+                                .ifEmpty { "RikkaHub-Android/${BuildConfig.VERSION_NAME}" }
+                            addHeader(HttpHeaders.UserAgent, userAgent)
                         }
                     }
                     .build()
@@ -245,10 +280,12 @@ val dataSourceModule = module {
             .addNetworkInterceptor(RequestLoggingInterceptor())
             .addInterceptor(AIRequestInterceptor())
             .addInterceptor(HttpLoggingInterceptor().apply {
+                redactHeader("Proxy-Authorization")
                 level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.HEADERS
                         else HttpLoggingInterceptor.Level.NONE
             })
-            .build().also { SearchService.init(it, get()) }
+            .build()
+        client.also { SearchService.init(it, get()) }
     }
 
     // v3.7.1: Claude/Anthropic 中转 (OpenCode Zen) 独立连接池 —

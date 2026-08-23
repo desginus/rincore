@@ -78,6 +78,12 @@ fun SettingPreferencesPage() {
                         supportingContent = { Text(stringResource(R.string.setting_page_preferences_general_desc)) },
                     )
                     item(
+                        onClick = { navController.navigate(Screen.SettingPreferencesNetwork) },
+                        leadingContent = { Icon(HugeIcons.Settings03, null) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_preferences_network)) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_preferences_network_desc)) },
+                    )
+                    item(
                         onClick = { navController.navigate(Screen.SettingPreferencesUI) },
                         leadingContent = { Icon(HugeIcons.PaintBoard, null) },
                         headlineContent = { Text(stringResource(R.string.setting_page_preferences_ui)) },

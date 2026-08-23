@@ -278,11 +278,21 @@ object ModelRegistry {
     private val DEEPSEEK_V4_FLASH = defineModel {
         tokens("deepseek", "v", "4", "flash")
         toolReasoningAbility()
+        contextLength(1.m)
+    }
+
+    // v3.9.12 (2.4.11 移植): DeepSeek V4 Flash Vision 实验版 (视觉)
+    private val DEEPSEEK_V4_FLASH_VISION_EXP = defineModel {
+        tokens("deepseek", "v", "4", "flash", "vision", "exp")
+        visionInput()
+        toolReasoningAbility()
+        contextLength(1.m)
     }
 
     private val DEEPSEEK_V4_PRO = defineModel {
         tokens("deepseek", "v", "4", "pro")
         toolReasoningAbility()
+        contextLength(1.m)
     }
 
     private val DEEPSEEK_R1 = defineGroup {
@@ -564,6 +574,7 @@ object ModelRegistry {
         DEEPSEEK_R1_MODEL,
         DEEPSEEK_REASONER,
         DEEPSEEK_V4_FLASH,
+        DEEPSEEK_V4_FLASH_VISION_EXP,
         DEEPSEEK_V4_PRO,
         DEEPSEEK_V3_1,
         DEEPSEEK_V3_2,
@@ -628,6 +639,11 @@ object ModelRegistry {
         }
     }
 
+    // v3.9.12 (2.4.11 移植): 模型上下文长度查询 (按 ModelId 匹配, 取首个)
+    val MODEL_CONTEXT_LENGTH = ModelData { modelId ->
+        resolveModels(modelId).firstNotNullOfOrNull { it.contextLength }
+    }
+
     private fun resolveModels(modelId: String): List<ModelDefinition> {
         var bestScore: Int? = null
         val matches = mutableListOf<ModelDefinition>()
@@ -679,4 +695,8 @@ object ModelRegistry {
     private fun ModelDefinitionBuilder.toolReasoningAbility() {
         ability(ModelAbility.TOOL, ModelAbility.REASONING)
     }
+
+    // v3.9.12 (2.4.11 移植): 模型上下文长度 DSL 表达 (k = 千, m = 百万)
+    private val Int.k: Int get() = this * 1_000
+    private val Int.m: Int get() = this * 1_000_000
 }

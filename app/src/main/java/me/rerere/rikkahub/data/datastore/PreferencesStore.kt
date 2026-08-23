@@ -109,6 +109,7 @@ class SettingsStore(
         val THEME_ID = stringPreferencesKey("theme_id")
         val CUSTOM_THEMES = stringPreferencesKey("custom_themes")
         val DISPLAY_SETTING = stringPreferencesKey("display_setting")
+        val NETWORK_SETTING = stringPreferencesKey("network_setting")
         val DEVELOPER_MODE = booleanPreferencesKey("developer_mode")
         val OPENCODE_API_KEY = stringPreferencesKey("opencode_api_key")
         val OPENCODE_API_KEYS = stringPreferencesKey("opencode_api_keys")
@@ -252,6 +253,7 @@ class SettingsStore(
                     JsonInstant.decodeFromString(it)
                 } ?: emptyList(),
                 displaySetting = JsonInstant.decodeFromString(preferences[DISPLAY_SETTING] ?: "{}"),
+                networkSetting = JsonInstant.decodeFromString(preferences[NETWORK_SETTING] ?: "{}"),
                 searchServices = preferences[SEARCH_SERVICES]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: listOf(SearchServiceOptions.DEFAULT),
@@ -437,6 +439,7 @@ class SettingsStore(
             preferences[USAGE_VIEW_MODE] = settings.usageViewMode
             preferences[OPENCODE_API_KEYS] = JsonInstant.encodeToString(settings.opencodeApiKeys)
             preferences[DISPLAY_SETTING] = JsonInstant.encodeToString(settings.displaySetting)
+            preferences[NETWORK_SETTING] = JsonInstant.encodeToString(settings.networkSetting)
 
             preferences[ENABLE_WEB_SEARCH] = settings.enableWebSearch
             preferences[DEFER_AUTO_REPLY] = settings.deferAutoReply
@@ -610,6 +613,7 @@ data class Settings(
     val customThemes: List<CustomTheme> = emptyList(),
     val developerMode: Boolean = false,
     val displaySetting: DisplaySetting = DisplaySetting(),
+    val networkSetting: NetworkSetting = NetworkSetting(),
     val enableWebSearch: Boolean = false,
     // v3.6.13: 延迟自动回复 — 开启时发消息不触发模型回复 (消息排队,
     // 关闭后发消息触发; 解决消息未发完模型打断回复)
@@ -674,6 +678,14 @@ data class Settings(
         fun dummy() = Settings(init = true)
     }
 }
+
+@Serializable
+data class NetworkSetting(
+    val userAgent: String = "",
+    val proxyUrl: String = "",
+    val proxyUsername: String = "",
+    val proxyPassword: String = "",
+)
 
 @Serializable
 enum class ChatFontFamily {
