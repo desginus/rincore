@@ -19,6 +19,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,6 +56,7 @@ fun RenderViewDialog(
     onDismiss: () -> Unit,
 ) {
     var isDark by remember { mutableStateOf(false) }
+    var zoom by remember { mutableFloatStateOf(1f) }
     var pageIndex by remember { mutableIntStateOf(0) }
 
     val pageCount = when (result) {
@@ -139,7 +141,10 @@ fun RenderViewDialog(
                 )
                 is RenderResult.PdfView -> PdfRenderView(
                     pdfFile = result.pdfFile,
-                    onPageChange = { _, _ -> },
+                    zoom = zoom,
+                    onZoomChange = { change ->
+                        zoom = (zoom * change).coerceIn(0.5f, 4f)
+                    },
                 )
                 is RenderResult.ImageView -> ImageRenderView(
                     imageFile = result.imageFile,
