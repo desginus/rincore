@@ -685,6 +685,12 @@ data class NetworkSetting(
     val proxyUrl: String = "",
     val proxyUsername: String = "",
     val proxyPassword: String = "",
+    // v3.9.15: 代理开关 — false = 完全不走代理 (即使配了代理地址)
+    val proxyEnabled: Boolean = false,
+    // v3.9.15: 部分开启 — true = 仅勾选模型的请求走代理; false = 全局走代理
+    val proxyPartialEnabled: Boolean = false,
+    // v3.9.15: 勾选走代理的模型 id (modelId 字符串) 列表
+    val proxyModelIds: List<String> = emptyList(),
 )
 
 @Serializable

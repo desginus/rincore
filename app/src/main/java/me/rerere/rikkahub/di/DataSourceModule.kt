@@ -195,23 +195,9 @@ val dataSourceModule = module {
         val dispatcher = Dispatcher().apply {
             maxRequestsPerHost = 8
         }
-        // v3.9.12 (2.4.11 移植): SOCKS5 全局鉴权
-        java.net.Authenticator.setDefault(SettingsSocks5Authenticator(settingsStore))
-        // v3.9.12 (2.4.11 移植): 跟踪代理配置变化以便热重连 (复用相同 OkHttpClient)
-        val initialNetworkSetting = settingsStore.settingsFlow.value.networkSetting
-        val appliedProxySetting = AtomicReference(
-            Triple(
-                initialNetworkSetting.proxyUrl,
-                initialNetworkSetting.proxyUsername,
-                initialNetworkSetting.proxyPassword,
-            )
-        )
-        lateinit var client: OkHttpClient
-        client = OkHttpClient.Builder()
-            // v3.9.12 (2.4.11 移植): 全局 ProxySelector + ProxyAuthenticator
-            .proxySelector(SettingsProxySelector(settingsStore))
-            .proxyAuthenticator(SettingsProxyAuthenticator(settingsStore))
-            // 完全禁用 HTTP/2 — 实测证据 (2026-08-05 20:06): DeepSeek 服务端
+        // v3.9.15: 默认 client 不挂代理 — 代理仅由 named("proxy") client 承接,
+        // 按 ProxyRoute 判定是否走代理 (全局开关 / 部分开启 / 模型勾选)
+        OkHttpClient.Builder()
             // ALPN 协商到 h2 后报 stream was reset: PROTOCOL_ERROR
             // (okhttp3.internal.http2.StreamResetException)。
             // protocols(HTTP_1_1, HTTP_2) 顺序不影响 ALPN — 服务端支持 h2 必选 h2,
@@ -234,17 +220,6 @@ val dataSourceModule = module {
             .retryOnConnectionFailure(true)
             .cache(dnsCache)
             .addInterceptor { chain ->
-                // v3.9.12 (2.4.11 移植): 代理参数变更 → 驱逐全部连接, 让新连接走新代理
-                val networkSetting = settingsStore.settingsFlow.value.networkSetting
-                val currentProxySetting = Triple(
-                    networkSetting.proxyUrl,
-                    networkSetting.proxyUsername,
-                    networkSetting.proxyPassword,
-                )
-                if (appliedProxySetting.getAndSet(currentProxySetting) != currentProxySetting) {
-                    client.connectionPool.evictAll()
-                }
-
                 val orig = chain.request()
                 val req = orig.newBuilder()
                     .addHeader(HttpHeaders.AcceptLanguage, acceptLang)
@@ -286,7 +261,95 @@ val dataSourceModule = module {
                         else HttpLoggingInterceptor.Level.NONE
             })
             .build()
-        client.also { SearchService.init(it, get()) }
+            .also { SearchService.init(it, get()) }
+    }
+
+    // v3.9.15: 代理 client — 与默认 client 同配置, 额外挂 ProxySelector/
+    // ProxyAuthenticator/SOCKS5 鉴权 + 代理参数热变更 evictAll。
+    // 仅在 ProxyRoute 判定命中 (开关 + 模型勾选) 时被 AI 请求选用。
+    single<OkHttpClient>(named("proxy")) {
+        val settingsStore: SettingsStore = get()
+        val acceptLang = AcceptLanguageBuilder.fromAndroid(get())
+            .build()
+        val dnsCache = okhttp3.Cache(
+            directory = java.io.File(get<android.content.Context>().cacheDir, "okhttp-dns-proxy"),
+            maxSize = 4L * 1024 * 1024 // 4MB
+        )
+        val dispatcher = Dispatcher().apply {
+            maxRequestsPerHost = 8
+        }
+        java.net.Authenticator.setDefault(SettingsSocks5Authenticator(settingsStore))
+        val initialNetworkSetting = settingsStore.settingsFlow.value.networkSetting
+        val appliedProxySetting = AtomicReference(
+            Triple(
+                initialNetworkSetting.proxyUrl,
+                initialNetworkSetting.proxyUsername,
+                initialNetworkSetting.proxyPassword,
+            )
+        )
+        lateinit var proxyClient: OkHttpClient
+        proxyClient = OkHttpClient.Builder()
+            .proxySelector(SettingsProxySelector(settingsStore))
+            .proxyAuthenticator(SettingsProxyAuthenticator(settingsStore))
+            .protocols(listOf(Protocol.HTTP_1_1))
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(3, TimeUnit.MINUTES)
+            .writeTimeout(120, TimeUnit.SECONDS)
+            .pingInterval(30, TimeUnit.SECONDS)
+            .connectionPool(ConnectionPool(12, 60, TimeUnit.SECONDS))
+            .dispatcher(dispatcher)
+            .socketFactory(BufferedSocketFactory)
+            .followSslRedirects(true)
+            .followRedirects(true)
+            .retryOnConnectionFailure(true)
+            .cache(dnsCache)
+            .addInterceptor { chain ->
+                // 代理参数变更 → 驱逐全部连接, 让新连接走新代理
+                val networkSetting = settingsStore.settingsFlow.value.networkSetting
+                val currentProxySetting = Triple(
+                    networkSetting.proxyUrl,
+                    networkSetting.proxyUsername,
+                    networkSetting.proxyPassword,
+                )
+                if (appliedProxySetting.getAndSet(currentProxySetting) != currentProxySetting) {
+                    proxyClient.connectionPool.evictAll()
+                }
+                val orig = chain.request()
+                chain.proceed(
+                    orig.newBuilder()
+                        .addHeader(HttpHeaders.AcceptLanguage, acceptLang)
+                        .apply {
+                            if (orig.header(HttpHeaders.UserAgent) == null) {
+                                val userAgent = settingsStore.settingsFlow.value.networkSetting.userAgent.trim()
+                                if (userAgent.isNotEmpty()) {
+                                    addHeader(HttpHeaders.UserAgent, userAgent)
+                                }
+                            }
+                        }
+                        .build()
+                )
+            }
+            .addNetworkInterceptor(RequestLoggingInterceptor())
+            .addInterceptor(AIRequestInterceptor())
+            .addInterceptor(HttpLoggingInterceptor().apply {
+                redactHeader("Proxy-Authorization")
+                level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.HEADERS
+                        else HttpLoggingInterceptor.Level.NONE
+            })
+            .build()
+    }
+
+    // v3.9.15: 按模型代理路由 — 读 Settings.networkSetting 三个开关状态
+    single<me.rerere.ai.provider.ProxyRoute> {
+        val settingsStore: SettingsStore = get()
+        val defaultClient: OkHttpClient = get()
+        val proxyClient: OkHttpClient = get(named("proxy"))
+        me.rerere.ai.provider.ProxyRoute { default, modelId ->
+            val ns = settingsStore.settingsFlow.value.networkSetting
+            val proxyOn = ns.proxyEnabled && ns.proxyUrl.isNotBlank() &&
+                (!ns.proxyPartialEnabled || modelId in ns.proxyModelIds)
+            if (proxyOn && default === defaultClient) proxyClient else default
+        }
     }
 
     // v3.7.1: Claude/Anthropic 中转 (OpenCode Zen) 独立连接池 —
@@ -313,7 +376,11 @@ val dataSourceModule = module {
     }
 
     single {
-        ProviderManager(client = get(), context = get())
+        ProviderManager(
+            client = get(),
+            context = get(),
+            proxyRoute = getOrNull(),
+        )
     }
 
     single {

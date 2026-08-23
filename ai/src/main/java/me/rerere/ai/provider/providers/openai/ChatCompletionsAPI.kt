@@ -108,7 +108,8 @@ private const val TAG = "ChatCompletionsAPI"
 
 class ChatCompletionsAPI(
     private val client: OkHttpClient,
-    private val keyRoulette: KeyRoulette
+    private val keyRoulette: KeyRoulette,
+    private val proxyRoute: ProxyRoute? = null,
 ) : OpenAIImpl {
     override suspend fun generateText(
         providerSetting: ProviderSetting.OpenAI,
@@ -132,7 +133,7 @@ class ChatCompletionsAPI(
 
         Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
 
-        val response = client.newCall(request).await()
+        val response = client.resolveProxy(proxyRoute, params.model.modelId).newCall(request).await()
         if (!response.isSuccessful) {
             // v3.6.78: 报错带完整请求体 — 定位 400 触发字段 (grok 排查)
             val reqSummary = json.encodeToString(requestBody)
@@ -530,7 +531,9 @@ class ChatCompletionsAPI(
             }
             }
 
-            currentEventSource = EventSources.createFactory(client).newEventSource(request, listener)
+            currentEventSource = EventSources.createFactory(
+                client.resolveProxy(proxyRoute, params.model.modelId)
+            ).newEventSource(request, listener)
         }
 
         connect()

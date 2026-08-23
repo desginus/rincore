@@ -13,15 +13,20 @@ import okhttp3.OkHttpClient
 /**
  * Provider管理器，负责注册和获取Provider实例
  */
-class ProviderManager(client: OkHttpClient, context: Context) {
+class ProviderManager(
+    client: OkHttpClient,
+    context: Context,
+    // v3.9.15: 按模型代理路由 (app 层注入), null = 不启用代理路由
+    proxyRoute: ProxyRoute? = null,
+) {
     // 存储已注册的Provider实例
     private val providers = mutableMapOf<String, Provider<*>>()
 
     init {
         // 注册默认Provider
-        registerProvider("openai", OpenAIProvider(client, context))
-        registerProvider("google", GoogleProvider(client, context))
-        registerProvider("claude", ClaudeProvider(claudeClient ?: client, context))
+        registerProvider("openai", OpenAIProvider(client, context, proxyRoute))
+        registerProvider("google", GoogleProvider(client, context, proxyRoute))
+        registerProvider("claude", ClaudeProvider(claudeClient ?: client, context, proxyRoute))
     }
 
     /**

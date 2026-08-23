@@ -7,8 +7,10 @@ package me.rerere.rikkahub.ui.pages.setting
  * 改动: 直接移植原版, 包名一致, 标识 RinCore 用法不变
  * ───────────────────────────────────────────────────────────────*/
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,7 +27,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -96,6 +101,8 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
     var proxyTesting by remember { mutableStateOf(false) }
+    // v3.9.15: 部分开启 — 模型勾选弹窗
+    var modelPickerVisible by remember { mutableStateOf(false) }
 
     fun updateUserAgent(value: String) {
         userAgent = value
@@ -326,6 +333,65 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
                     },
                 ) {
                     item(
+                        headlineContent = {
+                            Text(stringResource(R.string.setting_page_preferences_network_proxy_enable))
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = settings.networkSetting.proxyEnabled,
+                                onCheckedChange = { checked ->
+                                    vm.updateSettings(
+                                        settings.copy(
+                                            networkSetting = settings.networkSetting.copy(proxyEnabled = checked)
+                                        )
+                                    )
+                                }
+                            )
+                        },
+                    )
+                    if (settings.networkSetting.proxyEnabled) {
+                        item(
+                            headlineContent = {
+                                Text(stringResource(R.string.setting_page_preferences_network_proxy_partial))
+                            },
+                            supportingContent = {
+                                Text(stringResource(R.string.setting_page_preferences_network_proxy_partial_desc))
+                            },
+                            trailingContent = {
+                                Switch(
+                                    checked = settings.networkSetting.proxyPartialEnabled,
+                                    onCheckedChange = { checked ->
+                                        vm.updateSettings(
+                                            settings.copy(
+                                                networkSetting = settings.networkSetting.copy(proxyPartialEnabled = checked)
+                                            )
+                                        )
+                                    }
+                                )
+                            },
+                        )
+                        if (settings.networkSetting.proxyPartialEnabled) {
+                            item(
+                                onClick = { modelPickerVisible = true },
+                                headlineContent = {
+                                    Text(stringResource(R.string.setting_page_preferences_network_proxy_models))
+                                },
+                                supportingContent = {
+                                    Text(
+                                        if (settings.networkSetting.proxyModelIds.isEmpty()) {
+                                            stringResource(R.string.setting_page_preferences_network_proxy_models_empty)
+                                        } else {
+                                            stringResource(R.string.setting_page_preferences_network_proxy_models_count, settings.networkSetting.proxyModelIds.size)
+                                        }
+                                    )
+                                },
+                                trailingContent = {
+                                    Icon(HugeIcons.ArrowRight01, contentDescription = null)
+                                },
+                            )
+                        }
+                    }
+                    item(
                         onClick = {
                             proxyUrlDraft = proxyUrl
                             proxyUsernameDraft = proxyUsername
@@ -358,7 +424,7 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
                         trailingContent = {
                             TextButton(
                                 onClick = ::testProxy,
-                                enabled = proxyUrl.toProxyOrNull() != null && !proxyTesting,
+                                enabled = settings.networkSetting.proxyEnabled && proxyUrl.toProxyOrNull() != null && !proxyTesting,
                             ) {
                                 if (proxyTesting) {
                                     CircularProgressIndicator(
@@ -374,5 +440,69 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
                 }
             }
         }
+    }
+}
+
+    // v3.9.15: 部分开启 — 提供商模型多选弹窗
+    if (modelPickerVisible) {
+        val providers = settings.providers.filter { it.models.isNotEmpty() }
+        AlertDialog(
+            onDismissRequest = { modelPickerVisible = false },
+            title = { Text(stringResource(R.string.setting_page_preferences_network_proxy_models)) },
+            text = {
+                androidx.compose.foundation.layout.Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    if (providers.isEmpty()) {
+                        Text(stringResource(R.string.setting_page_preferences_network_proxy_models_none))
+                    } else {
+                        providers.forEach { provider ->
+                            Text(
+                                provider.name,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            provider.models.forEach { model ->
+                                val checked = model.modelId in settings.networkSetting.proxyModelIds
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            val newList = if (checked) {
+                                                settings.networkSetting.proxyModelIds - model.modelId
+                                            } else {
+                                                settings.networkSetting.proxyModelIds + model.modelId
+                                            }
+                                            vm.updateSettings(
+                                                settings.copy(
+                                                    networkSetting = settings.networkSetting.copy(proxyModelIds = newList)
+                                                )
+                                            )
+                                        }
+                                        .padding(vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    androidx.compose.material3.Checkbox(
+                                        checked = checked,
+                                        onCheckedChange = null,
+                                    )
+                                    androidx.compose.foundation.layout.Spacer(Modifier.padding(horizontal = 4.dp))
+                                    Text(
+                                        if (model.displayName.isNotBlank()) model.displayName else model.modelId,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { modelPickerVisible = false }) {
+                    Text(stringResource(R.string.common_confirm))
+                }
+            },
+        )
     }
 }

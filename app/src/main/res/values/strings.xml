@@ -860,6 +860,13 @@
   <string name="setting_page_preferences_network_user_agent_placeholder">Custom User-Agent, e.g. Mozilla/5.0 ...</string>
   <string name="setting_page_preferences_network_user_agent_desc">Customize the User-Agent request header. Leave empty to not send a custom one</string>
   <string name="setting_page_preferences_network_proxy">Proxy</string>
+  <string name="setting_page_preferences_network_proxy_enable">Enable Proxy</string>
+  <string name="setting_page_preferences_network_proxy_partial">Partial</string>
+  <string name="setting_page_preferences_network_proxy_partial_desc">Only proxy requests for selected models</string>
+  <string name="setting_page_preferences_network_proxy_models">Selected Models</string>
+  <string name="setting_page_preferences_network_proxy_models_empty">None selected — proxy disabled</string>
+  <string name="setting_page_preferences_network_proxy_models_count">%d model(s) selected</string>
+  <string name="setting_page_preferences_network_proxy_models_none">No models configured in providers</string>
   <string name="setting_page_preferences_network_proxy_desc">Supports http/https/socks5. E.g. http://127.0.0.1:7890</string>
   <string name="setting_page_preferences_network_proxy_invalid">Invalid proxy URL format</string>
   <string name="backup_page_import_overwrite_confirm">Importing will overwrite current data. Continue?</string>

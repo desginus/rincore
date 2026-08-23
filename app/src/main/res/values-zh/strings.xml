@@ -1124,6 +1124,13 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_page_preferences_network_user_agent_placeholder">自定义 UA, 例如 Mozilla/5.0 ...</string>
   <string name="setting_page_preferences_network_user_agent_desc">自定义 User-Agent 请求头。留空则不发送自定义 UA</string>
   <string name="setting_page_preferences_network_proxy">代理</string>
+  <string name="setting_page_preferences_network_proxy_enable">启用代理</string>
+  <string name="setting_page_preferences_network_proxy_partial">部分开启</string>
+  <string name="setting_page_preferences_network_proxy_partial_desc">仅对勾选的模型走代理</string>
+  <string name="setting_page_preferences_network_proxy_models">选择模型</string>
+  <string name="setting_page_preferences_network_proxy_models_empty">未勾选任何模型 — 代理不生效</string>
+  <string name="setting_page_preferences_network_proxy_models_count">已勾选 %d 个模型</string>
+  <string name="setting_page_preferences_network_proxy_models_none">提供商中暂无可用模型</string>
   <string name="setting_page_preferences_network_proxy_desc">支持 http/https/socks5。例如 http://127.0.0.1:7890</string>
   <string name="setting_page_preferences_network_proxy_invalid">代理地址格式无效</string>
   <string name="backup_page_import_overwrite_confirm">导入将覆盖当前数据，是否继续？</string>
