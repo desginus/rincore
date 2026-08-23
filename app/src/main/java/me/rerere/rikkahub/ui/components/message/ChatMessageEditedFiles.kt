@@ -53,19 +53,13 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
-import me.rerere.rikkahub.ui.components.HtmlRenderDialog
-import me.rerere.rikkahub.ui.components.ImageRenderDialog
-import me.rerere.rikkahub.ui.components.PdfRenderDialog
 import me.rerere.rikkahub.ui.components.RenderKind
-import me.rerere.rikkahub.ui.components.VideoRenderDialog
-import me.rerere.rikkahub.ui.components.AudioRenderDialog
-import me.rerere.rikkahub.ui.components.csvToHtml
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import me.rerere.rikkahub.ui.components.render.RenderEngine
+import me.rerere.rikkahub.ui.components.render.RenderResult
+import me.rerere.rikkahub.ui.components.render.RenderViewDialog
 import me.rerere.rikkahub.ui.components.detectRenderKind
-import me.rerere.rikkahub.ui.components.escapeHtml
-import me.rerere.rikkahub.ui.components.extractDocxHtml
-import me.rerere.rikkahub.ui.components.extractPptxHtml
-import me.rerere.rikkahub.ui.components.extractXlsxHtml
-import me.rerere.rikkahub.ui.components.wrapHtml
 import me.rerere.workspace.WorkspaceStorageArea
 import org.koin.compose.koinInject
 import java.io.File
@@ -92,16 +86,13 @@ internal fun EditedFilesList(
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val toaster = LocalToaster.current
     val workspaceRepository: WorkspaceRepository = koinInject()
 
     var selectedPath by remember { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf(false) }
-    var renderHtml by remember { mutableStateOf<String?>(null) }
+    var renderResult by remember { mutableStateOf<RenderResult?>(null) }
     var renderFileName by remember { mutableStateOf("") }
-    var renderPdfFile by remember { mutableStateOf<java.io.File?>(null) }
-    var renderMediaFile by remember { mutableStateOf<java.io.File?>(null) }
-    var renderMediaKind by remember { mutableStateOf(RenderKind.NONE) }
+    var renderLoading by remember { mutableStateOf(false) }
     val visibleFiles = if (expanded) editedFiles else editedFiles.take(DEFAULT_VISIBLE_COUNT)
     val hasMore = editedFiles.size > DEFAULT_VISIBLE_COUNT
 
@@ -260,64 +251,32 @@ internal fun EditedFilesList(
                         )
                     }
                 }
-                // v3.9.1: 渲染选项 — 全文档类型 (HTML/SVG/PDF/DOCX/XLSX/CSV/文本),
-                // 按格式分发: WebView / PdfRenderer / 提取转 HTML
+                // v3.9.6: 渲染机统一入口 — 导出缓存文件 → RenderEngine.render
                 if (detectRenderKind(fileName) != RenderKind.NONE) {
                     Card(
                         onClick = {
                             val p = selectedPath ?: return@Card
                             selectedPath = null
-                            val kind = detectRenderKind(fileName)
                             scope.launch {
-                                runCatching {
-                                    val (area, relativePath) = resolveWorkspacePath(p)
-                                    renderFileName = p.substringAfterLast('/')
-                                    when (kind) {
-                                        RenderKind.PDF -> {
-                                            val dir = File(context.cacheDir, "workspace_render").apply { mkdirs() }
-                                            val file = File(dir, renderFileName)
-                                            file.outputStream().use { output ->
-                                                workspaceRepository.exportFile(workspaceId, area, relativePath, output)
-                                            }
-                                            renderPdfFile = file
+                                withContext(Dispatchers.IO) {
+                                    runCatching {
+                                        val (area, relativePath) = resolveWorkspacePath(p)
+                                        renderFileName = p.substringAfterLast('/')
+                                        val dir = File(context.cacheDir, "workspace_render")
+                                        dir.deleteRecursively()
+                                        dir.mkdirs()
+                                        val file = File(dir, renderFileName + ".cache")
+                                        file.outputStream().use { output ->
+                                            workspaceRepository.exportFile(workspaceId, area, relativePath, output)
                                         }
-                                        RenderKind.IMAGE, RenderKind.VIDEO, RenderKind.AUDIO -> {
-                                            val dir = File(context.cacheDir, "workspace_render").apply { mkdirs() }
-                                            val file = File(dir, renderFileName)
-                                            file.outputStream().use { output ->
-                                                workspaceRepository.exportFile(workspaceId, area, relativePath, output)
-                                            }
-                                            renderMediaFile = file
-                                            renderMediaKind = kind
-                                        }
-                                        RenderKind.DOC -> {
-                                            val bytes = readBytes(workspaceRepository, workspaceId, area, relativePath, p)
-                                            renderHtml = extractDocxHtml(bytes)
-                                        }
-                                        RenderKind.SHEET -> {
-                                            if (renderFileName.substringAfterLast('.', "").lowercase() == "csv") {
-                                                val text = workspaceRepository.readText(workspaceId, relativePath)
-                                                renderHtml = csvToHtml(text)
-                                            } else {
-                                                val bytes = readBytes(workspaceRepository, workspaceId, area, relativePath, p)
-                                                renderHtml = extractXlsxHtml(bytes)
-                                            }
-                                        }
-                                        RenderKind.SLIDES -> {
-                                            val bytes = readBytes(workspaceRepository, workspaceId, area, relativePath, p)
-                                            renderHtml = extractPptxHtml(bytes)
-                                        }
-                                        RenderKind.TEXT -> {
-                                            val text = workspaceRepository.readText(workspaceId, relativePath)
-                                            renderHtml = wrapHtml("<pre style='font-family:monospace;white-space:pre-wrap;font-size:13px'>${escapeHtml(text)}</pre>")
-                                        }
-                                        else -> {
-                                            val text = workspaceRepository.readText(workspaceId, relativePath)
-                                            renderHtml = text
-                                        }
+                                        val taskDir = File(dir, "task")
+                                        renderResult = RenderEngine.render(file, taskDir, renderFileName)
+                                    }.onFailure {
+                                        renderResult = RenderResult.Unsupported(
+                                            renderFileName,
+                                            "读取文件失败: ${it.message}",
+                                        )
                                     }
-                                }.onFailure {
-                                    toaster.show("读取文件失败: ${it.message}", type = ToastType.Error)
                                 }
                             }
                         },
@@ -346,60 +305,17 @@ internal fun EditedFilesList(
         }
     }
 
-    if (renderHtml != null) {
+    if (renderResult != null) {
         androidx.compose.ui.window.Dialog(
-            onDismissRequest = { renderHtml = null },
+            onDismissRequest = { renderResult = null },
             properties = androidx.compose.ui.window.DialogProperties(
                 usePlatformDefaultWidth = false,
             ),
         ) {
-            HtmlRenderDialog(
-                htmlContent = renderHtml!!,
-                fileName = renderFileName,
-                onDismiss = { renderHtml = null },
+            RenderViewDialog(
+                result = renderResult!!,
+                onDismiss = { renderResult = null },
             )
-        }
-    }
-    if (renderPdfFile != null) {
-        androidx.compose.ui.window.Dialog(
-            onDismissRequest = { renderPdfFile = null },
-            properties = androidx.compose.ui.window.DialogProperties(
-                usePlatformDefaultWidth = false,
-            ),
-        ) {
-            PdfRenderDialog(
-                pdfFile = renderPdfFile!!,
-                fileName = renderFileName,
-                onDismiss = { renderPdfFile = null },
-            )
-        }
-    }
-    if (renderMediaFile != null) {
-        androidx.compose.ui.window.Dialog(
-            onDismissRequest = { renderMediaFile = null },
-            properties = androidx.compose.ui.window.DialogProperties(
-                usePlatformDefaultWidth = false,
-            ),
-        ) {
-            val mediaFile = renderMediaFile!!
-            val mediaName = renderFileName
-            when (renderMediaKind) {
-                RenderKind.VIDEO -> VideoRenderDialog(
-                    videoFile = mediaFile,
-                    fileName = mediaName,
-                    onDismiss = { renderMediaFile = null },
-                )
-                RenderKind.AUDIO -> AudioRenderDialog(
-                    audioFile = mediaFile,
-                    fileName = mediaName,
-                    onDismiss = { renderMediaFile = null },
-                )
-                else -> ImageRenderDialog(
-                    imageFile = mediaFile,
-                    fileName = mediaName,
-                    onDismiss = { renderMediaFile = null },
-                )
-            }
         }
     }
 }
