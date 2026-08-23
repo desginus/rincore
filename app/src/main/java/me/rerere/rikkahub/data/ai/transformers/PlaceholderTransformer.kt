@@ -10,10 +10,12 @@ import android.os.Build
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
+import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.R
+import kotlinx.datetime.toInstant
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.model.Assistant
@@ -33,6 +35,11 @@ data class PlaceholderCtx(
     val settingsStore: SettingsStore,
     val model: Model,
     val assistant: Assistant,
+    // v3.10.1: 会话时间基准 (首条用户消息 createdAt) — 时间占位符按此渲染,
+    // 跨轮字节稳定, 不破坏 prompt 缓存前缀 (原 now() 每轮变化 → 缓存必断)
+    val baseDate: LocalDate,
+    val baseTime: LocalTime,
+    val baseDateTime: LocalDateTime,
 )
 
 interface PlaceholderProvider {
@@ -65,15 +72,15 @@ fun buildPlaceholders(block: PlaceholderBuilder.() -> Unit): Map<String, Placeho
 object DefaultPlaceholderProvider : PlaceholderProvider {
     override val placeholders: Map<String, PlaceholderInfo> = buildPlaceholders {
         placeholder("cur_date", { Text(stringResource(R.string.placeholder_current_date)) }) {
-            LocalDate.now().toDateString()
+            it.baseDate.toDateString()
         }
 
         placeholder("cur_time", { Text(stringResource(R.string.placeholder_current_time)) }) {
-            LocalTime.now().toTimeString()
+            it.baseTime.toTimeString()
         }
 
         placeholder("cur_datetime", { Text(stringResource(R.string.placeholder_current_datetime)) }) {
-            LocalDateTime.now().toDateTimeString()
+            it.baseDateTime.toDateTimeString()
         }
 
         placeholder("model_id", { Text(stringResource(R.string.placeholder_model_id)) }) {
@@ -146,12 +153,35 @@ object PlaceholderTransformer : InputMessageTransformer, KoinComponent {
         messages: List<UIMessage>,
     ): List<UIMessage> {
         val settingsStore = get<SettingsStore>()
+        // v3.10.1: 会话时间基准 = 首条用户消息的 createdAt。
+        // 根因: 原实现 now() 实时求值 — system/历史消息含 {{cur_time}} 等
+        // 占位符时每轮渲染不同 → 请求体前缀逐轮漂移 → DeepSeek 缓存断。
+        // 现在同会话所有占位符渲染为同一基准 (发第一条消息的时刻), 跨轮稳定。
+        // kotlinx.datetime: LocalDateTime.toInstant 需 kotlinx TimeZone
+        val baseLdt = messages.firstOrNull { it.role == MessageRole.USER }
+            ?.createdAt
+            ?.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault())
+            ?.toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault())
+            ?: kotlinx.datetime.Clock.System.now()
+                .toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault())
+        val baseDate = java.time.LocalDate.of(baseLdt.year, baseLdt.monthNumber, baseLdt.dayOfMonth)
+        val baseTime = java.time.LocalTime.of(baseLdt.hour, baseLdt.minute, baseLdt.second)
+        val baseDateTime = java.time.LocalDateTime.of(baseDate, baseTime)
+        val baseCtx = PlaceholderCtx(
+            context = ctx.context,
+            settingsStore = settingsStore,
+            model = ctx.model,
+            assistant = ctx.assistant,
+            baseDate = baseDate,
+            baseTime = baseTime,
+            baseDateTime = baseDateTime,
+        )
         return messages.map {
             it.copy(
                 parts = it.parts.map { part ->
                     if (part is UIMessagePart.Text) {
                         part.copy(
-                            text = replacePlaceholders(text = part.text, ctx = ctx, settingsStore = settingsStore)
+                            text = replacePlaceholders(text = part.text, ctx = ctx, settingsStore = settingsStore, baseCtx = baseCtx)
                         )
                     } else {
                         part
@@ -164,18 +194,13 @@ object PlaceholderTransformer : InputMessageTransformer, KoinComponent {
     private fun replacePlaceholders(
         text: String,
         ctx: TransformerContext,
-        settingsStore: SettingsStore
+        settingsStore: SettingsStore,
+        baseCtx: PlaceholderCtx
     ): String {
         var result = text
 
-        val ctx = PlaceholderCtx(
-            context = ctx.context,
-            settingsStore = settingsStore,
-            model = ctx.model,
-            assistant = ctx.assistant
-        )
         defaultProvider.placeholders.forEach { (key, placeholderInfo) ->
-            val value = placeholderInfo.resolver(ctx)
+            val value = placeholderInfo.resolver(baseCtx)
             result = result
                 .replace(oldValue = "{{$key}}", newValue = value, ignoreCase = true)
                 .replace(oldValue = "{$key}", newValue = value, ignoreCase = true)
