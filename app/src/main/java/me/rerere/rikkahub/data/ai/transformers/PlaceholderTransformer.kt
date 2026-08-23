@@ -163,7 +163,7 @@ object PlaceholderTransformer : InputMessageTransformer, KoinComponent {
             ?.createdAt
             ?.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault())
             ?.toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault())
-            ?: kotlinx.datetime.Clock.System.now()
+            ?: Clock.System.now()
                 .toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault())
         val baseDate = java.time.LocalDate.of(baseLdt.year, baseLdt.monthNumber, baseLdt.dayOfMonth)
         val baseTime = java.time.LocalTime.of(baseLdt.hour, baseLdt.minute, baseLdt.second)
