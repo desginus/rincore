@@ -45,6 +45,8 @@ import me.rerere.hugeicons.stroke.Moon02
 import me.rerere.hugeicons.stroke.Sun01
 import me.rerere.hugeicons.stroke.ZoomIn
 import me.rerere.hugeicons.stroke.ZoomOut
+import me.rerere.hugeicons.stroke.ZoomIn
+import me.rerere.hugeicons.stroke.ZoomOut
 import me.rerere.rikkahub.R
 import java.io.File
 import kotlin.math.max
