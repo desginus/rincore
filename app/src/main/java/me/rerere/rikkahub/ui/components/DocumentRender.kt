@@ -10,6 +10,17 @@ enum class RenderKind { HTML, PDF, DOC, SHEET, SLIDES, IMAGE, VIDEO, AUDIO, TEXT
 private fun XmlPullParser.isTag(localName: String): Boolean =
     name == localName || name.endsWith(":$localName")
 
+/** 通用: 读取元素属性 (含前缀属性如 r:embed) */
+private fun XmlPullParser.attr(vararg names: String): String? {
+    for (i in 0 until attributeCount) {
+        val n = getAttributeName(i)
+        if (names.any { n == it || n.endsWith(":$it") }) {
+            return getAttributeValue(i)
+        }
+    }
+    return null
+}
+
 fun detectRenderKind(fileName: String): RenderKind {
     val ext = fileName.substringAfterLast('.', "").lowercase()
     return when (ext) {
