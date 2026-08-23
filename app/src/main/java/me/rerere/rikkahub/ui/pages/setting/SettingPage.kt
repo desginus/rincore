@@ -54,6 +54,7 @@ import me.rerere.hugeicons.stroke.AiEditing
 import me.rerere.hugeicons.stroke.AiMagic
 import me.rerere.hugeicons.stroke.Alert01
 import me.rerere.hugeicons.stroke.Clock02
+import me.rerere.hugeicons.stroke.Settings02
 import me.rerere.hugeicons.stroke.Book01
 import me.rerere.hugeicons.stroke.Puzzle
 import me.rerere.hugeicons.stroke.Book03
@@ -361,6 +362,14 @@ item(
                         leadingContent = { Icon(HugeIcons.Code, null) },
                         supportingContent = { Text("查看最近一条消息的完整运行流程") },
                         headlineContent = { Text("运行日志") },
+                    )
+                    item(
+                        // v3.9.13: 网络设置直达入口 — 自定义 UA/代理/连接测试
+                        // (原入口在 偏好设置→网络 层级过深, 用户找不到)
+                        onClick = { navController.navigate(Screen.SettingPreferencesNetwork) },
+                        leadingContent = { Icon(HugeIcons.Settings02, null) },
+                        supportingContent = { Text("自定义 User-Agent / 代理 / 连接测试") },
+                        headlineContent = { Text("网络设置") },
                     )
                     item(
                         onClick = { showAdvancedPage = true },
