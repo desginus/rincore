@@ -168,7 +168,8 @@ internal class DocxExtractor : DocumentExtractor {
             }
         val rels = parseRelMap(map["word/_rels/document.xml.rels"]?.toString(Charsets.UTF_8))
         val assets = File(outDir, "assets").apply { mkdirs() }
-        val html = buildDocxHtml(documentXml, rels, map, assets)
+        val stylesXml = map["word/styles.xml"]?.toString(Charsets.UTF_8)
+        val html = buildDocxHtml(documentXml, rels, map, assets, stylesXml)
         writeFile(File(outDir, "page1.html"), buildPage(input.name, html))
         return 1
     }
@@ -753,10 +754,14 @@ internal fun buildSlideHtml(
     }
     sb.append("</div>")
     if (!found) sb.append("<p style='color:#888'>本页无文本或图片内容</p>")
+    // v3.9.11: PPT 容器固定 1280x720px, 在手机 360px viewport 下看不到内容
+    //   加横向滚动包装层让用户左右滑动 + WebView 双指缩放看清细节
     val container = StringBuilder()
+    container.append("<div style='width:100%;overflow:auto;-webkit-overflow-scrolling:touch'>")
     container.append("<div style='position:relative;width:${emuToPx(slideW)}px;height:${emuToPx(slideH)}px;")
     if (bgColor != null) container.append("background-color:$bgColor;")
     container.append("'>").append(sb)
+    container.append("</div></div>")
     return container.toString()
 }
 
@@ -883,39 +888,97 @@ internal fun escapeHtml(text: String): String = text
 
 /** ===== DOCX 结构提取 ===== */
 
+private data class DocxDefaults(
+    val fontSize: Int = 22, // 半 pt, 默认 11pt
+    val fontName: String = "",
+    val spacingAfter: Int = 200, // 默认 10pt
+    val lineSpacing: Int = 276, // 默认 1.15x
+    val lineRule: String = "auto",
+)
+
+private fun parseDocxDefaults(stylesXml: String?): DocxDefaults {
+    if (stylesXml.isNullOrBlank()) return DocxDefaults()
+    return try {
+        val factory = XmlPullParserFactory.newInstance()
+        factory.isNamespaceAware = false
+        val p = factory.newPullParser()
+        p.setInput(stylesXml.reader())
+        var inDefaults = false; var inRPrDef = false; var inPPrDef = false
+        var sz = 22; var font = ""; var after = 200; var line = 276; var rule = "auto"
+        var ev = p.eventType
+        while (ev != XmlPullParser.END_DOCUMENT) {
+            when (ev) {
+                XmlPullParser.START_TAG -> when {
+                    p.isTag("docDefaults") -> inDefaults = true
+                    p.isTag("rPrDefault") && inDefaults -> inRPrDef = true
+                    p.isTag("pPrDefault") && inDefaults -> inPPrDef = true
+                    p.isTag("sz") && inRPrDef -> sz = p.attr("val")?.toIntOrNull() ?: sz
+                    p.isTag("rFonts") && inRPrDef -> font = p.attr("ascii") ?: font
+                    p.isTag("spacing") && inPPrDef -> {
+                        after = p.attr("after")?.toIntOrNull() ?: after
+                        line = p.attr("line")?.toIntOrNull() ?: line
+                        rule = p.attr("lineRule") ?: rule
+                    }
+                }
+                XmlPullParser.END_TAG -> when {
+                    p.isTag("docDefaults") -> inDefaults = false
+                    p.isTag("rPrDefault") -> inRPrDef = false
+                    p.isTag("pPrDefault") -> inPPrDef = false
+                }
+            }
+            ev = p.next()
+        }
+        DocxDefaults(sz, font, after, line, rule)
+    } catch (_: Exception) { DocxDefaults() }
+}
+
 internal fun buildDocxHtml(
     documentXml: String,
     rels: Map<String, String>,
     map: Map<String, ByteArray>,
     assetsDir: File,
+    stylesXml: String? = null,
 ): String {
     val sb = StringBuilder()
     val factory = XmlPullParserFactory.newInstance()
     factory.isNamespaceAware = false
     val parser = factory.newPullParser()
     parser.setInput(documentXml.reader())
+    val defaults = parseDocxDefaults(stylesXml)
     var inParagraph = false
     var pendingTag = ""
-    val paragraphText = StringBuilder()
+    val paragraphContent = StringBuilder() // 累积 HTML (含 span 包裹的 run)
     val headingLevel = StringBuilder()
     var inCellText = false
     var inTable = false
+    var inRun = false
+    var inRPr = false
+    // run rPr 字段
+    var runSize: Int? = null
+    var runFont: String? = null
+    var runColor: String? = null
+    var runBold = false
+    var runItalic = false
+    // 段落字段
     var paraAlign = ""
     var paraIndent = 0.0
-    var paraLineSpacing = 0.0
+    var paraSpacingAfter: Int? = null
+    var paraSpacingBefore: Int? = null
+    var paraLineSpacing: Int? = null
+    var paraLineRule = ""
 
     fun flush() {
         if (pendingTag != "p") return
-        val text = paragraphText.toString()
+        val content = paragraphContent.toString()
         val h = headingLevel.toString()
-        if (text.isNotBlank() || h.isNotEmpty()) {
+        if (content.isNotBlank() || h.isNotEmpty()) {
             when {
                 h.lowercase().contains("heading") || h.contains("标题") -> {
                     val lvl = h.filter { it.isDigit() }.firstOrNull()?.digitToInt()?.coerceIn(1, 6) ?: 1
-                    sb.append("<h$lvl>").append(escapeHtml(text)).append("</h$lvl>")
+                    sb.append("<h$lvl>").append(content).append("</h$lvl>")
                 }
                 else -> {
-                    // v3.9.10 原生排版: 对齐/缩进/行距还原
+                    // v3.9.11 原生排版: 对齐/缩进/段前段后间距/行距 (按 lineRule 换算)
                     val style = StringBuilder()
                     when (paraAlign) {
                         "center" -> style.append("text-align:center;")
@@ -923,19 +986,33 @@ internal fun buildDocxHtml(
                         "both", "distribute" -> style.append("text-align:justify;")
                     }
                     if (paraIndent > 0) style.append("margin-left:${(paraIndent / 567.0).coerceAtLeast(0.2)}em;")
-                    if (paraLineSpacing > 240) style.append("line-height:${paraLineSpacing / 240.0};")
+                    val after = paraSpacingAfter ?: defaults.spacingAfter
+                    if (after > 0) style.append("margin-bottom:${after / 20.0}pt;")
+                    val before = paraSpacingBefore ?: 0
+                    if (before > 0) style.append("margin-top:${before / 20.0}pt;")
+                    val line = paraLineSpacing ?: defaults.lineSpacing
+                    val rule = if (paraLineRule.isNotEmpty()) paraLineRule else defaults.lineRule
+                    if (line > 0) {
+                        when (rule) {
+                            "exact", "atLeast" -> style.append("line-height:${line / 20.0}pt;")
+                            else -> style.append("line-height:${(line / 240.0 * 100).toInt() / 100.0};")
+                        }
+                    }
                     val styleAttr = if (style.isNotEmpty()) " style='$style'" else ""
-                    sb.append("<p$styleAttr>").append(escapeHtml(text)).append("</p>")
+                    sb.append("<p$styleAttr>").append(content).append("</p>")
                 }
             }
         }
-        paragraphText.setLength(0)
+        paragraphContent.setLength(0)
         headingLevel.setLength(0)
         pendingTag = ""
         inParagraph = false
         paraAlign = ""
         paraIndent = 0.0
-        paraLineSpacing = 0.0
+        paraSpacingAfter = null
+        paraSpacingBefore = null
+        paraLineSpacing = null
+        paraLineRule = ""
     }
 
     var eventType = parser.eventType
@@ -958,10 +1035,36 @@ internal fun buildDocxHtml(
                         sb.append("<td>")
                         inCellText = true
                     }
+                    parser.isTag("r") -> {
+                        inRun = true
+                        runSize = null; runFont = null; runColor = null
+                        runBold = false; runItalic = false
+                    }
+                    parser.isTag("rPr") -> inRPr = true
+                    parser.isTag("rFonts") -> {
+                        if (inRPr) runFont = parser.attr("ascii")
+                    }
+                    parser.isTag("b") -> { if (inRPr) runBold = true }
+                    parser.isTag("i") -> { if (inRPr) runItalic = true }
+                    parser.isTag("color") -> {
+                        if (inRPr) runColor = parser.attr("val")?.let { "#${it.take(6)}" }
+                    }
+                    parser.isTag("sz") -> {
+                        if (inRPr) runSize = parser.attr("val")?.toIntOrNull()
+                    }
                     parser.isTag("t") -> {
                         val text = runCatching { parser.nextText() }.getOrDefault("")
-                        if (inParagraph) paragraphText.append(text)
-                        else sb.append(escapeHtml(text))
+                        if (inParagraph) {
+                            // v3.9.11 run 级 span 包裹 (字号/字体/颜色/粗细/斜体)
+                            val style = StringBuilder()
+                            val szPt = (runSize ?: defaults.fontSize) / 2.0
+                            style.append("font-size:${szPt}pt;")
+                            if (runFont != null) style.append("font-family:'${runFont}',sans-serif;")
+                            if (runColor != null) style.append("color:${runColor};")
+                            if (runBold) style.append("font-weight:bold;")
+                            if (runItalic) style.append("font-style:italic;")
+                            paragraphContent.append("<span style='$style'>").append(escapeHtml(text)).append("</span>")
+                        } else sb.append(escapeHtml(text))
                     }
                     parser.isTag("pStyle") -> {
                         val v = parser.getAttributeValue(null, "val") ?: ""
@@ -977,10 +1080,13 @@ internal fun buildDocxHtml(
                         paraIndent = l.toDoubleOrNull() ?: 0.0
                     }
                     parser.isTag("spacing") -> {
-                        paraLineSpacing = parser.getAttributeValue(null, "line")?.toDoubleOrNull() ?: 0.0
+                        paraLineSpacing = parser.getAttributeValue(null, "line")?.toIntOrNull()
+                        paraLineRule = parser.getAttributeValue(null, "lineRule") ?: ""
+                        paraSpacingAfter = parser.getAttributeValue(null, "after")?.toIntOrNull()
+                        paraSpacingBefore = parser.getAttributeValue(null, "before")?.toIntOrNull()
                     }
-                    parser.isTag("tab") -> if (inParagraph) paragraphText.append("&emsp;")
-                    parser.isTag("br") -> if (inParagraph) paragraphText.append("<br/>")
+                    parser.isTag("tab") -> if (inParagraph) paragraphContent.append("&emsp;")
+                    parser.isTag("br") -> if (inParagraph) paragraphContent.append("<br/>")
                     parser.isTag("blip") -> {
                         val rid = parser.attr("embed")
                         val target = rid?.let { rels[it] }
@@ -989,7 +1095,7 @@ internal fun buildDocxHtml(
                             val ref = saveMedia(map, mediaPath, assetsDir)
                             if (ref != null) {
                                 val img = "<img src='$ref' alt='image'/>"
-                                if (inParagraph) paragraphText.append(img)
+                                if (inParagraph) paragraphContent.append(img)
                                 else sb.append(img)
                             }
                         }
@@ -999,6 +1105,8 @@ internal fun buildDocxHtml(
             XmlPullParser.END_TAG -> {
                 when {
                     parser.isTag("p") -> flush()
+                    parser.isTag("r") -> inRun = false
+                    parser.isTag("rPr") -> inRPr = false
                     parser.isTag("tbl") -> {
                         sb.append("</table>")
                         inTable = false

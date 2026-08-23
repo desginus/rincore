@@ -54,7 +54,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.FileView
 import me.rerere.hugeicons.stroke.Settings02
+import me.rerere.hugeicons.stroke.View
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.usage.UsageApi
 import org.koin.compose.koinInject
@@ -109,6 +111,8 @@ fun UsagePage(onBack: () -> Unit = {}) {
         }
     val showCards = settings.usageViewMode == "cards" && otherVisible.isNotEmpty()
     val focusMode = settings.usageViewMode == "focus"
+    // 焦点视图 = 单密钥大窗展示形式 (UsageRingCard 竖列), 与单卡一毛一样
+    // 多卡片视图 = KeyUsageCard 小窗 (焦点卡 + 其他卡)
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
@@ -118,13 +122,17 @@ fun UsagePage(onBack: () -> Unit = {}) {
                     TextButton(onClick = onBack) { Text("返回") }
                 },
                 actions = {
-                    TextButton(onClick = {
+                    IconButton(onClick = {
                         val next = if (settings.usageViewMode == "cards") "focus" else "cards"
                         scope.launch {
                             settingsStore.update { it.copy(usageViewMode = next) }
                         }
                     }) {
-                        Text(if (settings.usageViewMode == "cards") "焦点视图" else "多卡片")
+                        // 图标即当前模式: 多卡片=FileView(多视图), 焦点=View(单一视图)
+                        Icon(
+                            imageVector = if (settings.usageViewMode == "cards") HugeIcons.FileView else HugeIcons.View,
+                            contentDescription = "切换多卡片/焦点视图",
+                        )
                     }
                     IconButton(onClick = {
                         keyInput = apiKey

@@ -7,9 +7,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -21,41 +21,66 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.SavedApiKey
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Key01
 import me.rerere.hugeicons.stroke.PencilEdit01
+import me.rerere.rikkahub.data.datastore.SettingsStore
+import org.koin.compose.koinInject
 
 /**
- * 密钥快捷切换 (v3.9.8):
- * 点击打开弹窗, 展示已保存密钥 (备注+本体), 点击行即切换到该密钥,
- * 可保存当前密钥 (带备注), 可编辑备注, 可删除。
+ * 密钥快捷切换 (v3.9.11 重写自管理持久化):
+ * 组件自身持有 SettingsStore 引用, 任何操作 (保存/切换/删除/改备注) 都直接
+ * scope.launch settingsStore.update 把对应 provider 的 savedKeys 与当前 apiKey
+ * 写入 settings.providers 对应项, 立即落盘. 不再走 onEdit 中转链, 不依赖页面
+ * 保存按钮. 重启后从 PreferencesStore 序列化恢复, 不会丢失.
+ *
+ * UI 反向同步: apiKey/savedKeys 来自调用方传入的 provider 实例, 调用方应订阅
+ * settingsStore.settingsFlow 让 provider 跟随 Settings 变化, 形成单向数据流.
  */
 @Composable
 fun ApiKeyQuickSwitcher(
     currentKey: String,
     savedKeys: List<SavedApiKey>,
-    provider: me.rerere.ai.provider.ProviderSetting,
+    provider: ProviderSetting,
     onKeysChange: (List<SavedApiKey>) -> Unit,
     onSelectKey: (String) -> Unit,
 ) {
-    val settingsStore = org.koin.compose.koinInject<me.rerere.rikkahub.data.datastore.SettingsStore>()
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val settingsStore = koinInject<SettingsStore>()
+    val scope = rememberCoroutineScope()
 
-    // 删除/编辑/新增立即持久化到 Settings (不经页面保存按钮), 重进不复活
-    fun persist(keys: List<SavedApiKey>) {
-        onKeysChange(keys)
+    // 任何对 savedKeys 的改动直接落盘: 同时更新 settings.providers 中对应 provider
+    fun persistKeys(keys: List<SavedApiKey>) {
+        onKeysChange(keys) // 同步 UI 内存 (页面 internalProvider)
         scope.launch {
             settingsStore.update { s ->
                 s.copy(providers = s.providers.map { p ->
                     if (p.id == provider.id) p.copyProvider(savedKeys = keys) else p
+                })
+            }
+        }
+    }
+
+    // 切换当前 apiKey: 立即落盘, 不依赖页面保存
+    fun persistApiKey(newKey: String) {
+        onSelectKey(newKey) // 同步 UI 内存 (页面 internalProvider)
+        scope.launch {
+            settingsStore.update { s ->
+                s.copy(providers = s.providers.map { p ->
+                    if (p.id != provider.id) p
+                    else when (p) {
+                        is ProviderSetting.OpenAI -> p.copy(apiKey = newKey)
+                        is ProviderSetting.Google -> p.copy(apiKey = newKey)
+                        is ProviderSetting.Claude -> p.copy(apiKey = newKey)
+                    }
                 })
             }
         }
@@ -75,8 +100,8 @@ fun ApiKeyQuickSwitcher(
         ApiKeySwitcherDialog(
             currentKey = currentKey,
             savedKeys = savedKeys,
-            onKeysChange = { persist(it) },
-            onSelectKey = onSelectKey,
+            onPersistKeys = { persistKeys(it) },
+            onSelectKey = { persistApiKey(it) },
             onDismiss = { showDialog = false },
         )
     }
@@ -86,7 +111,7 @@ fun ApiKeyQuickSwitcher(
 private fun ApiKeySwitcherDialog(
     currentKey: String,
     savedKeys: List<SavedApiKey>,
-    onKeysChange: (List<SavedApiKey>) -> Unit,
+    onPersistKeys: (List<SavedApiKey>) -> Unit,
     onSelectKey: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -118,7 +143,7 @@ private fun ApiKeySwitcherDialog(
                                     if (idx >= 0) set(idx, SavedApiKey(note = noteInput.trim(), key = key))
                                     else add(SavedApiKey(note = noteInput.trim(), key = key))
                                 }
-                                onKeysChange(updated)
+                                onPersistKeys(updated)
                                 noteInput = ""
                             }
                         },
@@ -176,7 +201,7 @@ private fun ApiKeySwitcherDialog(
                                             val updated = savedKeys.toMutableList().apply {
                                                 set(index, item.copy(note = editingNote.trim()))
                                             }
-                                            onKeysChange(updated)
+                                            onPersistKeys(updated)
                                             editingIndex = -1
                                         },
                                     ) {
@@ -194,7 +219,7 @@ private fun ApiKeySwitcherDialog(
                                 }
                                 IconButton(
                                     onClick = {
-                                        onKeysChange(savedKeys.toMutableList().apply { removeAt(index) })
+                                        onPersistKeys(savedKeys.toMutableList().apply { removeAt(index) })
                                     },
                                 ) {
                                     Icon(HugeIcons.Delete01, "删除")
