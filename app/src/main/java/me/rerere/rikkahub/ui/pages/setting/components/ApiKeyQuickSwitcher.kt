@@ -29,8 +29,7 @@ import me.rerere.ai.provider.SavedApiKey
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Key01
-import me.rerere.hugeicons.stroke.PenNew01
-import me.rerere.hugeicons.stroke.Checkmark01
+import me.rerere.hugeicons.stroke.PencilEdit01
 
 /**
  * 密钥快捷切换 (v3.9.8):
@@ -163,7 +162,7 @@ private fun ApiKeySwitcherDialog(
                                             editingIndex = -1
                                         },
                                     ) {
-                                        Icon(HugeIcons.Checkmark01, "保存备注")
+                                        Text("✓", style = MaterialTheme.typography.titleMedium)
                                     }
                                 } else {
                                     IconButton(
@@ -172,7 +171,7 @@ private fun ApiKeySwitcherDialog(
                                             editingNote = item.note
                                         },
                                     ) {
-                                        Icon(HugeIcons.PenNew01, "编辑备注")
+                                        Icon(HugeIcons.PencilEdit01, "编辑备注")
                                     }
                                 }
                                 IconButton(
