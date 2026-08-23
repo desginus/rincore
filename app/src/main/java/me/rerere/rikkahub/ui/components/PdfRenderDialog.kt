@@ -5,6 +5,7 @@ import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
@@ -128,16 +130,6 @@ fun PdfRenderDialog(
                 },
                 actions = {
                     IconButton(
-                        onClick = { zoom = (zoom - 0.25f).coerceAtLeast(0.5f) },
-                    ) {
-                        Text("−", style = MaterialTheme.typography.titleLarge)
-                    }
-                    IconButton(
-                        onClick = { zoom = (zoom + 0.25f).coerceAtMost(3f) },
-                    ) {
-                        Text("+", style = MaterialTheme.typography.titleLarge)
-                    }
-                    IconButton(
                         onClick = { isDark = !isDark },
                     ) {
                         Icon(
@@ -174,6 +166,9 @@ fun PdfRenderDialog(
                     zoom = zoom,
                     screenWidth = screenWidth,
                     isDark = isDark,
+                    onZoomChange = { change ->
+                        zoom = (zoom * change).coerceIn(0.5f, 4f)
+                    },
                 )
             }
         }
@@ -186,6 +181,7 @@ private fun PdfPageImage(
     zoom: Float,
     screenWidth: Int,
     isDark: Boolean,
+    onZoomChange: (Float) -> Unit,
 ) {
     if (pageBitmap == null) {
         Box(
@@ -199,17 +195,21 @@ private fun PdfPageImage(
         modifier = Modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState())
-            .padding(vertical = 4.dp),
+            .padding(vertical = 4.dp)
+            .pointerInput(Unit) {
+                detectTransformGestures { _, _, zoomChange, _ ->
+                    onZoomChange(zoomChange)
+                }
+            },
         contentAlignment = Alignment.Center,
     ) {
-        val pageBg = if (isDark) androidx.compose.ui.graphics.Color.White else androidx.compose.ui.graphics.Color.White
         Image(
             bitmap = pageBitmap.asImageBitmap(),
             contentDescription = null,
             contentScale = ContentScale.FillWidth,
             modifier = Modifier
                 .width((screenWidth * zoom).dp)
-                .background(pageBg),
+                .background(androidx.compose.ui.graphics.Color.White),
         )
     }
 }

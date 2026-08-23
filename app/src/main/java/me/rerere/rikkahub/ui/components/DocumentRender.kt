@@ -37,32 +37,72 @@ fun detectRenderKind(fileName: String): RenderKind {
     }
 }
 
-/** PPTX: 读取全部 slideN.xml, 每页文本转 HTML 分页 (a:t 文本 + 页分隔) */
+/** PPTX: 每页渲染 — 文本段落 + 表格结构 + 嵌入图片 (a:t / a:tbl / a:blip) */
 fun extractPptxHtml(bytes: ByteArray): String {
-    val sb = StringBuilder()
-    val entries = listZipEntries(bytes)
-    val slideFiles = entries
+    val map = readZipMap(bytes)
+    val slideFiles = map.keys
         .filter { it.startsWith("ppt/slides/slide") && it.endsWith(".xml") }
         .sortedBy { it.filter { c -> c.isDigit() }.toIntOrNull() ?: Int.MAX_VALUE }
     if (slideFiles.isEmpty()) return "<p>未找到幻灯片内容</p>"
 
-    sb.append("<style> .slide { page-break-after: always; margin-bottom: 24px; border-bottom: 1px solid #ddd; padding-bottom: 16px; } .slide:last-child { page-break-after: auto; border-bottom: none; } </style>")
+    val sb = StringBuilder()
+    sb.append("<style> .slide { page-break-after: always; margin-bottom: 24px; padding-bottom: 16px; } .slide:last-child { page-break-after: auto; } .slide-table { border-collapse: collapse; width: 100%; margin: 8px 0; } .slide-td { border: 1px solid #999; padding: 6px; vertical-align: top; } </style>")
     slideFiles.forEachIndexed { index, entry ->
-        val xml = extractZipEntry(bytes, entry) ?: return@forEachIndexed
+        val slideXml = zipText(map, entry) ?: return@forEachIndexed
+        val rels = parseRelMap(zipText(map, "ppt/slides/_rels/${entry.substringAfterLast('/')}.rels"))
         sb.append("<div class='slide'><h3>第 ${index + 1} 页</h3>")
         var found = false
         try {
             val factory = XmlPullParserFactory.newInstance()
             factory.isNamespaceAware = false
             val parser = factory.newPullParser()
-            parser.setInput(xml.reader())
+            parser.setInput(slideXml.reader())
+            var inCell = false
+            var cellText = StringBuilder()
             var eventType = parser.eventType
             while (eventType != XmlPullParser.END_DOCUMENT) {
-                if (eventType == XmlPullParser.START_TAG && parser.isTag("t")) {
-                    val text = runCatching { parser.nextText() }.getOrDefault("")
-                    if (text.isNotBlank()) {
-                        sb.append("<p>").append(escapeHtml(text)).append("</p>")
-                        found = true
+                when (eventType) {
+                    XmlPullParser.START_TAG -> {
+                        when {
+                            parser.isTag("tbl") -> sb.append("<table class='slide-table'>")
+                            parser.isTag("tr") -> sb.append("<tr>")
+                            parser.isTag("tc") -> {
+                                sb.append("<td class='slide-td'>")
+                                inCell = true
+                                cellText.setLength(0)
+                            }
+                            parser.isTag("t") -> {
+                                val text = runCatching { parser.nextText() }.getOrDefault("")
+                                if (inCell) cellText.append(escapeHtml(text))
+                                else if (text.isNotBlank()) {
+                                    sb.append("<p>").append(escapeHtml(text)).append("</p>")
+                                    found = true
+                                }
+                            }
+                            parser.isTag("blip") -> {
+                                val rid = parser.attr("embed")
+                                val target = rid?.let { rels[it] }
+                                if (target != null) {
+                                    val mediaPath = normalizeRelPath("ppt/slides", target)
+                                    val dataUri = mediaToDataUri(map, mediaPath)
+                                    if (dataUri != null) {
+                                        sb.append("<img src='$dataUri' style='max-width:100%;display:block;margin:4px 0'/>")
+                                        found = true
+                                    }
+                                }
+                            }
+                            parser.isTag("br") -> if (inCell) cellText.append("<br/>")
+                        }
+                    }
+                    XmlPullParser.END_TAG -> {
+                        when {
+                            parser.isTag("tc") -> {
+                                sb.append(cellText).append("</td>")
+                                inCell = false
+                            }
+                            parser.isTag("tr") -> sb.append("</tr>\n")
+                            parser.isTag("tbl") -> sb.append("</table>")
+                        }
                     }
                 }
                 eventType = parser.next()
@@ -70,40 +110,105 @@ fun extractPptxHtml(bytes: ByteArray): String {
         } catch (_: Exception) {
             sb.append("<p>本页解析失败</p>")
         }
-        if (!found) sb.append("<p style='color:#888'>本页无文本内容（可能为纯图形页）</p>")
+        if (!found) sb.append("<p style='color:#888'>本页无文本或图片内容（可能为纯图形页）</p>")
         sb.append("</div>")
     }
     return wrapHtml(sb.toString())
 }
 
-private fun listZipEntries(bytes: ByteArray): List<String> {
-    val names = mutableListOf<String>()
+/** 通用: 一次解压全部条目, 避免多次扫描 zip */
+private fun readZipMap(bytes: ByteArray): Map<String, ByteArray> {
+    val map = HashMap<String, ByteArray>()
     val zip = ZipInputStream(bytes.inputStream())
     try {
         var entry = zip.nextEntry
         while (entry != null) {
-            names.add(entry.name)
+            if (!entry.isDirectory) {
+                map[entry.name] = zip.readBytes()
+            }
             zip.closeEntry()
             entry = zip.nextEntry
         }
     } finally {
         zip.close()
     }
-    return names
+    return map
 }
 
-/** DOCX: 解压 word/document.xml, 提取段落结构转 HTML (标题/段落/列表近似还原) */
+private fun zipText(map: Map<String, ByteArray>, name: String): String? =
+    map[name]?.toString(Charsets.UTF_8)
+
+/** 通用: 解析 .rels 中 Id→Target 映射 */
+private fun parseRelMap(relsXml: String?): Map<String, String> {
+    val map = HashMap<String, String>()
+    if (relsXml == null) return map
+    val pattern = Regex("""<Relationship[^>]*\bId="([^"]+)"[^>]*\bTarget="([^"]+)"""")
+    pattern.findAll(relsXml).forEach { m ->
+        map[m.group(1) ?: ""] = m.group(2) ?: ""
+    }
+    return map
+}
+
+/** 通用: 相对路径规范化 (ppt/slides/ + ../media/x.png → ppt/media/x.png) */
+private fun normalizeRelPath(baseDir: String, target: String): String {
+    if (target.startsWith("/")) return target.trimStart('/')
+    val parts = (baseDir.split('/').filter { it.isNotBlank() } + target.split('/'))
+    val stack = ArrayDeque<String>()
+    parts.forEach { part ->
+        when (part) {
+            "", "." -> {}
+            ".." -> if (stack.isNotEmpty()) stack.removeLast()
+            else -> stack.addLast(part)
+        }
+    }
+    return stack.joinToString("/")
+}
+
+/** 通用: 读取镜像条目并转 base64 data URI */
+private fun mediaToDataUri(map: Map<String, ByteArray>, mediaPath: String): String? {
+    val bytes = map[mediaPath] ?: return null
+    val ext = mediaPath.substringAfterLast('.', "png").lowercase()
+    val mime = when (ext) {
+        "png" -> "image/png"
+        "jpg", "jpeg" -> "image/jpeg"
+        "gif" -> "image/gif"
+        "bmp" -> "image/bmp"
+        "webp" -> "image/webp"
+        "svg" -> "image/svg+xml"
+        "wmf" -> "image/x-wmf"
+        else -> "image/$ext"
+    }
+    return "data:$mime;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+}
+
+/** 通用: 读取元素属性 (含前缀属性如 r:embed) */
+private fun XmlPullParser.attr(vararg names: String): String? {
+    for (i in 0 until attributeCount) {
+        val n = getAttributeName(i)
+        if (names.any { n == it || n.endsWith(":$it") }) {
+            return getAttributeValue(i)
+        }
+    }
+    return null
+}
+
+/** DOCX: 段落/标题/表格 + 嵌入图片原位渲染 (word/media/* via r:embed) */
 fun extractDocxHtml(bytes: ByteArray): String {
-    val documentXml = extractZipEntry(bytes, "word/document.xml") ?: return "<p>无法解析此文档</p>"
+    val map = readZipMap(bytes)
+    val documentXml = zipText(map, "word/document.xml") ?: return "<p>无法解析此文档</p>"
+    val rels = parseRelMap(zipText(map, "word/_rels/document.xml.rels"))
     return runCatching {
-        buildDocxHtml(documentXml)
+        buildDocxHtml(documentXml, rels, map)
     }.getOrElse {
-        // 降级: 直接提取全部文本节点 (不保留结构)
-        extractDocxPlainText(documentXml)
+        extractDocxPlainText(map)
     }
 }
 
-private fun buildDocxHtml(documentXml: String): String {
+private fun buildDocxHtml(
+    documentXml: String,
+    rels: Map<String, String>,
+    map: Map<String, ByteArray>,
+): String {
     val sb = StringBuilder()
     val factory = XmlPullParserFactory.newInstance()
     factory.isNamespaceAware = false
@@ -112,28 +217,29 @@ private fun buildDocxHtml(documentXml: String): String {
     var inParagraph = false
     var pendingTag = ""
     val paragraphText = StringBuilder()
-    val headingLevel = StringBuilder() // 记录当前段落标题级别
+    val headingLevel = StringBuilder()
     var inCellText = false
+    var inTable = false
 
     fun flush() {
-        if (!inParagraph && pendingTag.isEmpty()) return
-        if (pendingTag == "p") {
-            val text = paragraphText.toString()
-            val h = headingLevel.toString()
-            if (text.isNotBlank() || h.isNotEmpty()) {
-                when {
-                    h.startsWith("Heading") || h.startsWith("标题") || h.contains("heading") -> {
-                        val lvl = h.filter { it.isDigit() }.firstOrNull()?.digitToInt()?.coerceIn(1, 6) ?: 1
-                        sb.append("<h$lvl>").append(escapeHtml(text)).append("</h$lvl>\n")
-                    }
-                    else -> sb.append("<p>").append(escapeHtml(text)).append("</p>\n")
+        if (pendingTag != "p") return
+        val text = paragraphText.toString()
+        val h = headingLevel.toString()
+        if (text.isNotBlank() || h.isNotEmpty()) {
+            when {
+                h.lowercase().contains("heading") || h.contains("标题") -> {
+                    val lvl = h.filter { it.isDigit() }.firstOrNull()?.digitToInt()?.coerceIn(1, 6) ?: 1
+                    sb.append("<h$lvl>").append(escapeHtml(text)).append("</h$lvl>\n")
                 }
+                else -> sb.append("<p>").append(escapeHtml(text)).append("</p>\n")
             }
-            paragraphText.setLength(0)
-            headingLevel.setLength(0)
-            pendingTag = ""
-            inParagraph = false
+        } else if (sb.isEmpty() || !sb.toString().endsWith("<p></p>")) {
+            // 空段落不输出
         }
+        paragraphText.setLength(0)
+        headingLevel.setLength(0)
+        pendingTag = ""
+        inParagraph = false
     }
 
     var eventType = parser.eventType
@@ -142,21 +248,28 @@ private fun buildDocxHtml(documentXml: String): String {
             XmlPullParser.START_TAG -> {
                 when {
                     parser.isTag("p") -> {
-                        flush()
+                        // 表格内的段落不中断表格
+                        if (inTable && inCellText) {
+                            // 单元格内段落文本继续收集 (保留换行)
+                            paragraphText.append(inParagraph.takeIf { it }?.let { "" } ?: "")
+                        } else {
+                            flush()
+                        }
                         inParagraph = true
                         pendingTag = "p"
                     }
                     parser.isTag("tbl") -> {
                         flush()
-                        sb.append("<table border='1' cellpadding='4' style='border-collapse:collapse'>")
+                        inTable = true
+                        sb.append("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>")
                     }
                     parser.isTag("tr") -> sb.append("<tr>")
                     parser.isTag("tc") -> {
-                        sb.append("<td>")
+                        sb.append("<td style='border:1px solid #ccc;padding:6px;vertical-align:top'>")
                         inCellText = true
                     }
                     parser.isTag("t") -> {
-                        val text = parser.nextText()
+                        val text = runCatching { parser.nextText() }.getOrDefault("")
                         if (inParagraph) paragraphText.append(text)
                         else if (inCellText) sb.append(escapeHtml(text))
                         else sb.append(escapeHtml(text))
@@ -167,14 +280,31 @@ private fun buildDocxHtml(documentXml: String): String {
                             headingLevel.append(v)
                         }
                     }
-                    parser.isTag("tab") -> if (inParagraph) paragraphText.append(" ")
-                    parser.isTag("br") -> if (inParagraph) paragraphText.append(" ")
+                    parser.isTag("tab") -> if (inParagraph) paragraphText.append("&emsp;")
+                    parser.isTag("br") -> if (inParagraph) paragraphText.append("<br/>")
+                    parser.isTag("blip") -> {
+                        // 嵌入图片: r:embed → rels → media → base64
+                        val rid = parser.attr("embed")
+                        val target = rid?.let { rels[it] }
+                        if (target != null) {
+                            val mediaPath = normalizeRelPath("word", target)
+                            val dataUri = mediaToDataUri(map, mediaPath)
+                            if (dataUri != null) {
+                                val img = "<img src='$dataUri' style='max-width:100%;display:block;margin:4px 0'/>"
+                                if (inParagraph) paragraphText.append(img)
+                                else sb.append(img)
+                            }
+                        }
+                    }
                 }
             }
             XmlPullParser.END_TAG -> {
                 when {
                     parser.isTag("p") -> flush()
-                    parser.isTag("tbl") -> sb.append("</table>\n")
+                    parser.isTag("tbl") -> {
+                        sb.append("</table>\n")
+                        inTable = false
+                    }
                     parser.isTag("tr") -> sb.append("</tr>\n")
                     parser.isTag("tc") -> {
                         sb.append("</td>")
@@ -189,8 +319,9 @@ private fun buildDocxHtml(documentXml: String): String {
     return wrapHtml(sb.toString())
 }
 
-/** 降级: 不保留结构, 提取 document.xml 全部文本节点 */
-private fun extractDocxPlainText(documentXml: String): String {
+/** 降级: 不保留结构, 提取全部文本节点 */
+private fun extractDocxPlainText(map: Map<String, ByteArray>): String {
+    val documentXml = zipText(map, "word/document.xml") ?: return "<p>无法解析此 Word 文档</p>"
     val sb = StringBuilder("<pre style='font-family:monospace;white-space:pre-wrap;font-size:13px'>")
     try {
         val factory = XmlPullParserFactory.newInstance()
@@ -200,7 +331,7 @@ private fun extractDocxPlainText(documentXml: String): String {
         var eventType = parser.eventType
         while (eventType != XmlPullParser.END_DOCUMENT) {
             if (eventType == XmlPullParser.START_TAG && parser.isTag("t")) {
-                val text = parser.nextText()
+                val text = runCatching { parser.nextText() }.getOrDefault("")
                 if (text.isNotBlank()) sb.append(escapeHtml(text))
             }
             if (eventType == XmlPullParser.END_TAG && parser.isTag("p")) {
@@ -217,19 +348,19 @@ private fun extractDocxPlainText(documentXml: String): String {
 
 /** XLSX: 全部工作表 + sharedStrings 富文本拼接 + inlineStr/str 类型支持, 转 HTML 表格 */
 fun extractXlsxHtml(bytes: ByteArray): String {
-    val entries = listZipEntries(bytes)
-    val shared = extractZipEntry(bytes, "xl/sharedStrings.xml")?.let { parseSharedStrings(it) }
+    val map = readZipMap(bytes)
+    val shared = zipText(map, "xl/sharedStrings.xml")?.let { parseSharedStrings(it) }
         ?: emptyList()
-    val sheetFiles = entries
+    val sheetFiles = map.keys
         .filter { it.startsWith("xl/worksheets/sheet") && it.endsWith(".xml") }
         .sortedBy { it.filter { c -> c.isDigit() }.toIntOrNull() ?: Int.MAX_VALUE }
     if (sheetFiles.isEmpty()) return "<p>未找到工作表内容</p>"
 
     val sb = StringBuilder()
     sheetFiles.forEachIndexed { sheetIndex, entry ->
-        val sheetXml = extractZipEntry(bytes, entry) ?: return@forEachIndexed
+        val sheetXml = zipText(map, entry) ?: return@forEachIndexed
         sb.append("<h3>Sheet ${sheetIndex + 1}</h3>")
-        sb.append("<table border='1' cellpadding='4' style='border-collapse:collapse'>")
+        sb.append("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>")
         try {
             val factory = XmlPullParserFactory.newInstance()
             factory.isNamespaceAware = false
@@ -247,7 +378,7 @@ fun extractXlsxHtml(bytes: ByteArray): String {
                                 cellType = parser.getAttributeValue(null, "t") ?: ""
                                 cellText.setLength(0)
                             }
-                            // t=inlineStr 时 <is><t>内联文本</t></is>; t=空白时 <v>数值</v>
+                            // t=inlineStr 时 <is><t>内联文本</t></is>; 数值在 <v>
                             parser.isTag("t") || parser.isTag("v") -> {
                                 val text = runCatching { parser.nextText() }.getOrDefault("")
                                 cellText.append(text)
@@ -263,7 +394,7 @@ fun extractXlsxHtml(bytes: ByteArray): String {
                                     raw.isBlank() -> "&nbsp;"
                                     else -> escapeHtml(raw)
                                 }
-                                sb.append("<td>").append(value).append("</td>")
+                                sb.append("<td style='border:1px solid #ccc;padding:6px'>").append(value).append("</td>")
                             }
                             parser.isTag("row") -> sb.append("</tr>\n")
                         }
@@ -313,23 +444,6 @@ private fun parseCsvLine(line: String): List<String> {
     }
     result.add(cur.toString().trim())
     return result
-}
-
-private fun extractZipEntry(bytes: ByteArray, entryName: String): String? {
-    val zip = ZipInputStream(bytes.inputStream())
-    try {
-        var entry = zip.nextEntry
-        while (entry != null) {
-            if (entry.name == entryName) {
-                return zip.readBytes().toString(Charsets.UTF_8)
-            }
-            zip.closeEntry()
-            entry = zip.nextEntry
-        }
-    } finally {
-        zip.close()
-    }
-    return null
 }
 
 private fun parseSharedStrings(xml: String): List<String> {
