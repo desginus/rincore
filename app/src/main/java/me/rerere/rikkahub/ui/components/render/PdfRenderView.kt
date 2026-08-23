@@ -23,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +37,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.FileView
 import java.io.File
@@ -91,10 +94,17 @@ fun PdfRenderView(
         modifier = Modifier.fillMaxSize(),
     ) {
         items((0 until pageCount).toList()) { pageIndex ->
-            val bitmap = remember(renderer, pageIndex, zoom) {
-                renderPage(renderer, pageIndex, zoom)
+            var loaded by remember { mutableStateOf(false) }
+            val bitmap by produceState<Bitmap?>(null, renderer, pageIndex, zoom) {
+                loaded = false
+                value = withContext(Dispatchers.IO) {
+                    renderPage(renderer, pageIndex, zoom)
+                }
+                loaded = true
             }
-            if (bitmap == null) {
+            if (!loaded) {
+                Box(Modifier.fillMaxWidth().padding(24.dp)) { Text("页面渲染中...") }
+            } else if (bitmap == null) {
                 Box(Modifier.fillMaxWidth().padding(24.dp)) { Text("页面渲染失败") }
             } else {
                 Box(

@@ -265,7 +265,7 @@ internal fun EditedFilesList(
                                         val dir = File(context.cacheDir, "workspace_render")
                                         dir.deleteRecursively()
                                         dir.mkdirs()
-                                        val file = File(dir, renderFileName + ".cache")
+                                        val file = File(dir, renderFileName)
                                         file.outputStream().use { output ->
                                             workspaceRepository.exportFile(workspaceId, area, relativePath, output)
                                         }

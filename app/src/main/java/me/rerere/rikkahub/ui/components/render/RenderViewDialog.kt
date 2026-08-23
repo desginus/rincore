@@ -199,6 +199,6 @@ private fun HtmlPagesContent(
 
     LaunchedEffect(webView, workDir, pageIndex) {
         val pageFile = File(workDir, "page${pageIndex + 1}.html")
-        webView?.loadUrl("file://" + pageFile.absolutePath)
+        webView?.loadUrl(androidx.core.net.Uri.fromFile(pageFile).toString())
     }
 }
