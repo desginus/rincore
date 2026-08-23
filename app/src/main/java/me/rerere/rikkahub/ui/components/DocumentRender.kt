@@ -192,7 +192,7 @@ private fun XmlPullParser.attr(vararg names: String): String? {
     return null
 }
 
-/** DOCX: 段落/标题/表格 + 嵌入图片原位渲染 (word/media/* via r:embed) */
+/** DOCX: 段落/标题/表格 + 嵌入图片原位渲染 (word/media/ 图片 via r:embed) */
 fun extractDocxHtml(bytes: ByteArray): String {
     val map = readZipMap(bytes)
     val documentXml = zipText(map, "word/document.xml") ?: return "<p>无法解析此文档</p>"
