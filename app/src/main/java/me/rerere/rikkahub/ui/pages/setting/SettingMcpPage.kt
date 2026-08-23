@@ -380,9 +380,11 @@ private fun McpServerItem(
                     }
                     if (status == McpStatus.Idle) {
                         Text(
-                            text = "未连接 — 配置已加载，连接建立后工具自动注册。查看位置: 工具与分类管理页 / 对话中 invoke_tools(\"MCP 域\")",
+                            text = "已配置 — 首次调用工具时自动连接（懒加载）。工具已按配置注册，查看位置: 工具与分类管理页 / 对话中 invoke_tools(\"MCP 域\")",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                     if (status == McpStatus.Connected) {

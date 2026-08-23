@@ -8,6 +8,12 @@ import kotlinx.serialization.Transient
 import kotlin.uuid.Uuid
 
 @Serializable
+data class SavedApiKey(
+    val note: String = "",
+    val key: String = "",
+)
+
+@Serializable
 data class BalanceOption(
     val enabled: Boolean = false, // 是否开启余额获取功能
     val apiPath: String = "/credits", // 余额获取API路径
@@ -45,6 +51,7 @@ sealed class ProviderSetting {
         name: String = this.name,
         models: List<Model> = this.models,
         balanceOption: BalanceOption = this.balanceOption,
+        savedKeys: List<SavedApiKey> = this.savedKeys,
         builtIn: Boolean = this.builtIn,
         description: @Composable (() -> Unit) = this.description,
         shortDescription: @Composable (() -> Unit) = this.shortDescription,
@@ -66,6 +73,7 @@ sealed class ProviderSetting {
         var chatCompletionsPath: String = "/chat/completions",
         var useResponseApi: Boolean = false,
         var includeHistoryReasoning: Boolean = true,
+        var savedKeys: List<SavedApiKey> = emptyList(),
     ) : ProviderSetting() {
         override fun addModel(model: Model): ProviderSetting {
             return copy(models = models + model)
@@ -107,7 +115,8 @@ sealed class ProviderSetting {
                 builtIn = builtIn,
                 description = description,
                 balanceOption = balanceOption,
-                shortDescription = shortDescription
+                shortDescription = shortDescription,
+                savedKeys = savedKeys
             )
         }
     }
@@ -131,6 +140,7 @@ sealed class ProviderSetting {
         var serviceAccountEmail: String = "", // only for vertex AI service account
         var location: String = "us-central1", // only for vertex AI service account
         var projectId: String = "", // only for vertex AI service account
+        var savedKeys: List<SavedApiKey> = emptyList(),
     ) : ProviderSetting() {
         override fun addModel(model: Model): ProviderSetting {
             return copy(models = models + model)
@@ -172,7 +182,8 @@ sealed class ProviderSetting {
                 builtIn = builtIn,
                 description = description,
                 shortDescription = shortDescription,
-                balanceOption = balanceOption
+                balanceOption = balanceOption,
+                savedKeys = savedKeys
             )
         }
     }
@@ -192,6 +203,7 @@ sealed class ProviderSetting {
         var baseUrl: String = "https://api.anthropic.com/v1",
         var promptCaching: Boolean = false,
         var promptCacheTtl: ClaudePromptCacheTtl = ClaudePromptCacheTtl.FIVE_MINUTES,
+        var savedKeys: List<SavedApiKey> = emptyList(),
     ) : ProviderSetting() {
         override fun addModel(model: Model): ProviderSetting {
             return copy(models = models + model)
@@ -234,6 +246,7 @@ sealed class ProviderSetting {
                 builtIn = builtIn,
                 description = description,
                 shortDescription = shortDescription,
+                savedKeys = savedKeys,
             )
         }
     }

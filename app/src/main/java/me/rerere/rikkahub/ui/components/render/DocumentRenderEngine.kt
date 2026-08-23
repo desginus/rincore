@@ -409,7 +409,8 @@ internal fun colToNum(col: String): Int {
 }
 
 internal fun buildSheetHtml(sheetXml: String, shared: List<String>, cellFills: List<String?>): String {
-    val sb = StringBuilder("<table style='table-layout:fixed'>")
+    // v3.9.8: 表格按内容宽度 (max-content), 窄表满宽, 超宽横向滚动, 不再强压竖屏
+    val sb = StringBuilder("<table style='table-layout:auto;width:max-content;min-width:100%;white-space:nowrap;border-collapse:collapse'>")
     val (merged, mergeStarts) = parseMergeRanges(sheetXml)
     try {
         val factory = XmlPullParserFactory.newInstance()
@@ -564,6 +565,9 @@ internal fun buildSlideHtml(
         var shapeStackDepth = 0
         var inSpPr = false
         var inPPr = false
+        var defSize = 1800.0
+        var defBold = false
+        var defColor: String? = null
 
         var eventType = parser.eventType
         while (eventType != XmlPullParser.END_DOCUMENT) {
@@ -614,8 +618,8 @@ internal fun buildSlideHtml(
                         }
                         parser.isTag("rPr") -> {
                             inRotPr = true
-                            runSize = (parser.attr("sz")?.toDoubleOrNull() ?: 1800.0)
-                            runBold = parser.attr("b") == "1"
+                            runSize = (parser.attr("sz")?.toDoubleOrNull() ?: defSize)
+                            runBold = parser.attr("b") == "1" || defBold
                             runColor = null
                         }
                         parser.isTag("txBody") -> {
@@ -624,6 +628,11 @@ internal fun buildSlideHtml(
                             paraAlign = ""
                         }
                         parser.isTag("pPr") -> inPPr = true
+                        parser.isTag("defRPr") -> {
+                            defSize = parser.attr("sz")?.toDoubleOrNull() ?: 1800.0
+                            defBold = parser.attr("b") == "1"
+                            defColor = null
+                        }
                         parser.isTag("t") -> {
                             // 文本: 可能出现在 run 或单元格
                             val text = runCatching { parser.nextText() }.getOrDefault("")
@@ -667,38 +676,42 @@ internal fun buildSlideHtml(
                         parser.isTag("bg") -> {}
                         parser.isTag("bgPr") -> {}
                         parser.isTag("spPr") -> inSpPr = false
-                        parser.isTag("pPr") -> {
-                            if (inPPr) {
-                                val algn = parser.attr("algn") ?: ""
-                                if (algn.isNotEmpty()) paraAlign = algn
-                                inPPr = false
-                            }
-                        }
+                        parser.isTag("pPr") -> if (inPPr) inPPr = false
                         parser.isTag("rPr") -> inRotPr = false
                         parser.isTag("txBody") -> {
                             if (inText && !inCell) {
                                 // 仅形状的 txBody 输出; 表格单元格内由 td 承载
                                 val fill = shapeFill
-                                val textColor = runColor ?: contrastColor(fill ?: bgColor)
-                                val fontSizePx = (runSize / 100.0 * 4.0 / 3.0).toInt().coerceAtLeast(8)
-                                val bold = if (runBold) "font-weight:bold;" else ""
+                                val textColor = runColor ?: defColor ?: contrastColor(fill ?: bgColor)
+                                val sizeUsed = if (runColor == null && defColor != null) defSize else runSize
+                                val boldUsed = runBold || (runColor == null && defBold)
+                                val fontSizePx = (sizeUsed / 100.0 * 4.0 / 3.0).toInt().coerceAtLeast(8)
+                                val bold = if (boldUsed) "font-weight:bold;" else ""
                                 val alignStyle = when (paraAlign) {
                                     "ctr" -> "text-align:center;"
                                     "r" -> "text-align:right;"
                                     else -> ""
                                 }
+                                val hasSize = curW > 0 && curH > 0
+                                val posStyle = if (hasSize) {
+                                    "position:absolute;left:${emuToPx(curX)}px;top:${emuToPx(curY)}px;" +
+                                        "width:${emuToPx(curW)}px;height:${emuToPx(curH)}px;"
+                                } else {
+                                    "width:100%;margin:4px 0;"
+                                }
+                                val overflowStyle = if (hasSize) "overflow:hidden;" else ""
                                 sb.append(
-                                    "<div style='position:absolute;left:${emuToPx(curX)}px;top:${emuToPx(curY)}px;" +
-                                        "width:${emuToPx(curW)}px;height:${emuToPx(curH)}px;" +
+                                    "<div style='$posStyle$overflowStyle" +
                                         (if (fill != null) "background-color:$fill;" else "") +
                                         "color:$textColor;font-size:${fontSizePx}px;$bold$alignStyle" +
-                                        "overflow:hidden;word-wrap:break-word;padding:4px;box-sizing:border-box'>" +
+                                        "word-wrap:break-word;padding:4px;box-sizing:border-box'>" +
                                         runs + "</div>"
                                 )
                                 runs.setLength(0)
                                 inText = false
                                 shapeFill = null
                                 runColor = null
+                                defColor = null
                             }
                         }
                         parser.isTag("tbl") -> { inTbl = false; sb.append("</table></div>") }

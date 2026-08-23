@@ -230,6 +230,13 @@ private fun ProviderConfigureOpenAI(
         },
     )
 
+    ApiKeyQuickSwitcher(
+        currentKey = provider.apiKey,
+        savedKeys = provider.savedKeys,
+        onKeysChange = { onEdit(provider.copy(savedKeys = it)) },
+        onSelectKey = { onEdit(provider.copy(apiKey = it)) },
+    )
+
     OutlinedTextField(
         value = provider.baseUrl,
         onValueChange = { onEdit(provider.copy(baseUrl = it.trim())) },
@@ -319,6 +326,13 @@ private fun ProviderConfigureClaude(
                 Icon(if (keyVisible) HugeIcons.ViewOff else HugeIcons.View, contentDescription = null)
             }
         },
+    )
+
+    ApiKeyQuickSwitcher(
+        currentKey = provider.apiKey,
+        savedKeys = provider.savedKeys,
+        onKeysChange = { onEdit(provider.copy(savedKeys = it)) },
+        onSelectKey = { onEdit(provider.copy(apiKey = it)) },
     )
 
     OutlinedTextField(
@@ -431,6 +445,13 @@ private fun ProviderConfigureGoogle(
                     Icon(if (keyVisible) HugeIcons.ViewOff else HugeIcons.View, contentDescription = null)
                 }
             },
+        )
+
+        ApiKeyQuickSwitcher(
+            currentKey = provider.apiKey,
+            savedKeys = provider.savedKeys,
+            onKeysChange = { onEdit(provider.copy(savedKeys = it)) },
+            onSelectKey = { onEdit(provider.copy(apiKey = it)) },
         )
     }
 
