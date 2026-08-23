@@ -15,6 +15,7 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.R
+import kotlin.time.Clock
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import me.rerere.rikkahub.data.datastore.SettingsStore
