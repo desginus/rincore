@@ -15,6 +15,11 @@ import java.util.zip.ZipInputStream
  */
 enum class RenderKind { HTML, PDF, DOC, SHEET, SLIDES, IMAGE, VIDEO, AUDIO, TEXT, NONE }
 
+/** v3.9.4: XmlPullParser 非 namespace 模式下 getName 返回带前缀 qName (w:t/a:t),
+ * 统一用 localName 匹配 — 此前 name == "t" 全失配导致 docx/pptx 白屏 */
+private fun XmlPullParser.isTag(localName: String): Boolean =
+    name == localName || name.endsWith(":$localName")
+
 fun detectRenderKind(fileName: String): RenderKind {
     val ext = fileName.substringAfterLast('.', "").lowercase()
     return when (ext) {
@@ -45,6 +50,7 @@ fun extractPptxHtml(bytes: ByteArray): String {
     slideFiles.forEachIndexed { index, entry ->
         val xml = extractZipEntry(bytes, entry) ?: return@forEachIndexed
         sb.append("<div class='slide'><h3>第 ${index + 1} 页</h3>")
+        var found = false
         try {
             val factory = XmlPullParserFactory.newInstance()
             factory.isNamespaceAware = false
@@ -52,10 +58,11 @@ fun extractPptxHtml(bytes: ByteArray): String {
             parser.setInput(xml.reader())
             var eventType = parser.eventType
             while (eventType != XmlPullParser.END_DOCUMENT) {
-                if (eventType == XmlPullParser.START_TAG && parser.name == "t") {
-                    val text = parser.nextText()
+                if (eventType == XmlPullParser.START_TAG && parser.isTag("t")) {
+                    val text = runCatching { parser.nextText() }.getOrDefault("")
                     if (text.isNotBlank()) {
                         sb.append("<p>").append(escapeHtml(text)).append("</p>")
+                        found = true
                     }
                 }
                 eventType = parser.next()
@@ -63,6 +70,7 @@ fun extractPptxHtml(bytes: ByteArray): String {
         } catch (_: Exception) {
             sb.append("<p>本页解析失败</p>")
         }
+        if (!found) sb.append("<p style='color:#888'>本页无文本内容（可能为纯图形页）</p>")
         sb.append("</div>")
     }
     return wrapHtml(sb.toString())
@@ -105,6 +113,7 @@ private fun buildDocxHtml(documentXml: String): String {
     var pendingTag = ""
     val paragraphText = StringBuilder()
     val headingLevel = StringBuilder() // 记录当前段落标题级别
+    var inCellText = false
 
     fun flush() {
         if (!inParagraph && pendingTag.isEmpty()) return
@@ -113,7 +122,7 @@ private fun buildDocxHtml(documentXml: String): String {
             val h = headingLevel.toString()
             if (text.isNotBlank() || h.isNotEmpty()) {
                 when {
-                    h.startsWith("Heading") || h.startsWith("标题") -> {
+                    h.startsWith("Heading") || h.startsWith("标题") || h.contains("heading") -> {
                         val lvl = h.filter { it.isDigit() }.firstOrNull()?.digitToInt()?.coerceIn(1, 6) ?: 1
                         sb.append("<h$lvl>").append(escapeHtml(text)).append("</h$lvl>\n")
                     }
@@ -123,6 +132,7 @@ private fun buildDocxHtml(documentXml: String): String {
             paragraphText.setLength(0)
             headingLevel.setLength(0)
             pendingTag = ""
+            inParagraph = false
         }
     }
 
@@ -130,43 +140,46 @@ private fun buildDocxHtml(documentXml: String): String {
     while (eventType != XmlPullParser.END_DOCUMENT) {
         when (eventType) {
             XmlPullParser.START_TAG -> {
-                val name = parser.name
                 when {
-                    name == "p" -> {
+                    parser.isTag("p") -> {
                         flush()
                         inParagraph = true
                         pendingTag = "p"
                     }
-                    name == "tbl" -> {
+                    parser.isTag("tbl") -> {
                         flush()
                         sb.append("<table border='1' cellpadding='4' style='border-collapse:collapse'>")
                     }
-                    name == "tr" -> sb.append("<tr>")
-                    name == "tc" -> sb.append("<td>")
-                    name == "t" -> {
+                    parser.isTag("tr") -> sb.append("<tr>")
+                    parser.isTag("tc") -> {
+                        sb.append("<td>")
+                        inCellText = true
+                    }
+                    parser.isTag("t") -> {
                         val text = parser.nextText()
                         if (inParagraph) paragraphText.append(text)
+                        else if (inCellText) sb.append(escapeHtml(text))
                         else sb.append(escapeHtml(text))
                     }
-                    name == "pStyle" -> {
+                    parser.isTag("pStyle") -> {
                         val v = parser.getAttributeValue(null, "val") ?: ""
                         if (v.lowercase().contains("heading") || v.contains("标题")) {
                             headingLevel.append(v)
                         }
                     }
-                    name == "tab" -> if (inParagraph) paragraphText.append(" ")
-                    name == "br" -> if (inParagraph) paragraphText.append(" ")
+                    parser.isTag("tab") -> if (inParagraph) paragraphText.append(" ")
+                    parser.isTag("br") -> if (inParagraph) paragraphText.append(" ")
                 }
             }
             XmlPullParser.END_TAG -> {
-                when (parser.name) {
-                    "p" -> {
-                        flush()
-                        inParagraph = false
+                when {
+                    parser.isTag("p") -> flush()
+                    parser.isTag("tbl") -> sb.append("</table>\n")
+                    parser.isTag("tr") -> sb.append("</tr>\n")
+                    parser.isTag("tc") -> {
+                        sb.append("</td>")
+                        inCellText = false
                     }
-                    "tbl" -> sb.append("</table>\n")
-                    "tr" -> sb.append("</tr>\n")
-                    "tc" -> sb.append("</td>")
                 }
             }
         }
@@ -186,11 +199,11 @@ private fun extractDocxPlainText(documentXml: String): String {
         parser.setInput(documentXml.reader())
         var eventType = parser.eventType
         while (eventType != XmlPullParser.END_DOCUMENT) {
-            if (eventType == XmlPullParser.START_TAG && parser.name == "t") {
+            if (eventType == XmlPullParser.START_TAG && parser.isTag("t")) {
                 val text = parser.nextText()
                 if (text.isNotBlank()) sb.append(escapeHtml(text))
             }
-            if (eventType == XmlPullParser.END_TAG && parser.name == "p") {
+            if (eventType == XmlPullParser.END_TAG && parser.isTag("p")) {
                 sb.append("\n")
             }
             eventType = parser.next()
@@ -202,49 +215,67 @@ private fun extractDocxPlainText(documentXml: String): String {
     return wrapHtml(sb.toString())
 }
 
-/** XLSX: 读取 sharedStrings + 第一个工作表, 转 HTML 表格 */
+/** XLSX: 全部工作表 + sharedStrings 富文本拼接 + inlineStr/str 类型支持, 转 HTML 表格 */
 fun extractXlsxHtml(bytes: ByteArray): String {
+    val entries = listZipEntries(bytes)
     val shared = extractZipEntry(bytes, "xl/sharedStrings.xml")?.let { parseSharedStrings(it) }
         ?: emptyList()
-    val sheetXml = extractZipEntry(bytes, "xl/worksheets/sheet1.xml") ?: return "<p>无法解析此表格</p>"
-    val sb = StringBuilder("<table border='1' cellpadding='4' style='border-collapse:collapse'>")
-    val factory = XmlPullParserFactory.newInstance()
-    factory.isNamespaceAware = false
-    val parser = factory.newPullParser()
-    parser.setInput(sheetXml.reader())
-    var cellText = StringBuilder()
-    var cellType = ""
-    var eventType = parser.eventType
-    while (eventType != XmlPullParser.END_DOCUMENT) {
-        when (eventType) {
-            XmlPullParser.START_TAG -> {
-                when (parser.name) {
-                    "row" -> sb.append("<tr>")
-                    "c" -> {
-                        cellType = parser.getAttributeValue(null, "t") ?: ""
-                        cellText.setLength(0)
-                    }
-                    "v" -> cellText.append(parser.nextText())
-                }
-            }
-            XmlPullParser.END_TAG -> {
-                when (parser.name) {
-                    "c" -> {
-                        val raw = cellText.toString()
-                        val value = when {
-                            cellType == "s" -> shared.getOrNull(raw.toIntOrNull() ?: -1) ?: raw
-                            raw.isBlank() -> "&nbsp;"
-                            else -> escapeHtml(raw)
+    val sheetFiles = entries
+        .filter { it.startsWith("xl/worksheets/sheet") && it.endsWith(".xml") }
+        .sortedBy { it.filter { c -> c.isDigit() }.toIntOrNull() ?: Int.MAX_VALUE }
+    if (sheetFiles.isEmpty()) return "<p>未找到工作表内容</p>"
+
+    val sb = StringBuilder()
+    sheetFiles.forEachIndexed { sheetIndex, entry ->
+        val sheetXml = extractZipEntry(bytes, entry) ?: return@forEachIndexed
+        sb.append("<h3>Sheet ${sheetIndex + 1}</h3>")
+        sb.append("<table border='1' cellpadding='4' style='border-collapse:collapse'>")
+        try {
+            val factory = XmlPullParserFactory.newInstance()
+            factory.isNamespaceAware = false
+            val parser = factory.newPullParser()
+            parser.setInput(sheetXml.reader())
+            var cellText = StringBuilder()
+            var cellType = ""
+            var eventType = parser.eventType
+            while (eventType != XmlPullParser.END_DOCUMENT) {
+                when (eventType) {
+                    XmlPullParser.START_TAG -> {
+                        when {
+                            parser.isTag("row") -> sb.append("<tr>")
+                            parser.isTag("c") -> {
+                                cellType = parser.getAttributeValue(null, "t") ?: ""
+                                cellText.setLength(0)
+                            }
+                            // t=inlineStr 时 <is><t>内联文本</t></is>; t=空白时 <v>数值</v>
+                            parser.isTag("t") || parser.isTag("v") -> {
+                                val text = runCatching { parser.nextText() }.getOrDefault("")
+                                cellText.append(text)
+                            }
                         }
-                        sb.append("<td>").append(value).append("</td>")
                     }
-                    "row" -> sb.append("</tr>\n")
+                    XmlPullParser.END_TAG -> {
+                        when {
+                            parser.isTag("c") -> {
+                                val raw = cellText.toString()
+                                val value = when {
+                                    cellType == "s" -> shared.getOrNull(raw.toIntOrNull() ?: -1) ?: raw
+                                    raw.isBlank() -> "&nbsp;"
+                                    else -> escapeHtml(raw)
+                                }
+                                sb.append("<td>").append(value).append("</td>")
+                            }
+                            parser.isTag("row") -> sb.append("</tr>\n")
+                        }
+                    }
                 }
+                eventType = parser.next()
             }
+        } catch (_: Exception) {
+            sb.append("<tr><td>本表解析失败</td></tr>")
         }
-        eventType = parser.next()
+        sb.append("</table>")
     }
-    sb.append("</table>")
     return wrapHtml(sb.toString())
 }
 
@@ -308,10 +339,16 @@ private fun parseSharedStrings(xml: String): List<String> {
         factory.isNamespaceAware = false
         val parser = factory.newPullParser()
         parser.setInput(xml.reader())
+        var current = StringBuilder()
         var eventType = parser.eventType
         while (eventType != XmlPullParser.END_DOCUMENT) {
-            if (eventType == XmlPullParser.START_TAG && parser.name == "t") {
-                result.add(parser.nextText())
+            if (eventType == XmlPullParser.START_TAG && parser.isTag("t")) {
+                val text = runCatching { parser.nextText() }.getOrDefault("")
+                current.append(text)
+            }
+            if (eventType == XmlPullParser.END_TAG && parser.isTag("si")) {
+                result.add(current.toString())
+                current = StringBuilder()
             }
             eventType = parser.next()
         }
