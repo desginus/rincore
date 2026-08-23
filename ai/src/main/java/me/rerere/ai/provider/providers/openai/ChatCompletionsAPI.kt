@@ -1035,13 +1035,21 @@ class ChatCompletionsAPI(
             }?.joinToString("") ?: ""
         val reasoning = jsonObject["reasoning_content"]?.jsonPrimitiveOrNull?.contentOrNull
             ?: jsonObject["reasoning"]?.jsonPrimitiveOrNull?.contentOrNull
-            ?: jsonObject["content"]?.takeIf { it is JsonArray }?.let { arr ->
-                // Mistral接口
-                // {"id":"","object":"chat.completion.chunk","created":1772351733,"model":"magistral-medium-2509","choices":[{"index":0,"delta":{"content":[{"type":"thinking","thinking":[{"type":"text","text":"好的"}]}]},"finish_reason":null}]}
-                arr.jsonArrayOrNull?.getOrNull(0)?.jsonObject?.get("thinking")?.jsonArrayOrNull?.getOrNull(0)?.jsonObjectOrNull?.get(
-                    "text"
-                )?.jsonPrimitiveOrNull?.contentOrNull
-            }
+            ?: (contentElement as? JsonArray)?.mapNotNull { block ->
+                // v3.10.2: content 数组 thinking 块泛化提取 — 兼容多种网关形态,
+                // 修复 GPT-5.6-Luna (Opencode 订阅) 思考链完全丢失:
+                // 原实现只取第一块 thinking 的嵌套 thinking[0].text (Mistral 形态),
+                // 网关发 thinking 直接带 text / thinking 字符串 / 多块时全部丢失。
+                // 参考: Mistral {"content":[{"type":"thinking","thinking":[{"type":"text","text":"..."}]}]}
+                val obj = block.jsonObjectOrNull ?: return@mapNotNull null
+                if (obj["type"]?.jsonPrimitiveOrNull?.contentOrNull != "thinking") return@mapNotNull null
+                obj["text"]?.jsonPrimitiveOrNull?.contentOrNull
+                    ?: (obj["thinking"] as? JsonArray)?.mapNotNull { t ->
+                        t.jsonObjectOrNull?.get("text")?.jsonPrimitiveOrNull?.contentOrNull
+                            ?: t.jsonObjectOrNull?.toString()?.takeIf { it.isNotBlank() }
+                    }?.joinToString("")
+                    ?: obj["thinking"]?.jsonPrimitiveOrNull?.contentOrNull
+            }?.filter { !it.isNullOrBlank() }?.joinToString("\n")?.takeIf { it.isNotBlank() }
         val toolCalls = jsonObject["tool_calls"] as? JsonArray ?: JsonArray(emptyList())
         val images = jsonObject["images"] as? JsonArray ?: JsonArray(emptyList())
 
