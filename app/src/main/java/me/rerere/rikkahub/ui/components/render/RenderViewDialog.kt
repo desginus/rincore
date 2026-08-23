@@ -19,7 +19,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,12 +55,10 @@ fun RenderViewDialog(
     onDismiss: () -> Unit,
 ) {
     var isDark by remember { mutableStateOf(false) }
-    var zoom by remember { mutableFloatStateOf(1f) }
     var pageIndex by remember { mutableIntStateOf(0) }
 
     val pageCount = when (result) {
         is RenderResult.HtmlPages -> result.pageCount
-        is RenderResult.PdfView -> 0
         else -> 0
     }
 
@@ -109,8 +106,8 @@ fun RenderViewDialog(
                             Icon(HugeIcons.ArrowRight01, "下一页")
                         }
                     }
-                    when (result) {
-                        is RenderResult.HtmlPages, is RenderResult.PdfView -> {
+                    when {
+                        result is RenderResult.HtmlPages && result.canDark -> {
                             IconButton(onClick = { isDark = !isDark }) {
                                 Icon(
                                     imageVector = if (isDark) HugeIcons.Sun01 else HugeIcons.Moon02,
@@ -142,10 +139,7 @@ fun RenderViewDialog(
                 )
                 is RenderResult.PdfView -> PdfRenderView(
                     pdfFile = result.pdfFile,
-                    zoom = zoom,
-                    onZoomChange = { change ->
-                        zoom = (zoom * change).coerceIn(0.5f, 4f)
-                    },
+                    onPageChange = { _, _ -> },
                 )
                 is RenderResult.ImageView -> ImageRenderView(
                     imageFile = result.imageFile,

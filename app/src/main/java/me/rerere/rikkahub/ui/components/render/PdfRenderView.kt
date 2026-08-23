@@ -1,154 +1,56 @@
 package me.rerere.rikkahub.ui.components.render
 
-import android.graphics.Bitmap
-import android.graphics.pdf.PdfRenderer
-import android.os.ParcelFileDescriptor
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.horizontalScroll
+import android.content.Context
+import android.view.ViewGroup
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.FileView
+import androidx.compose.ui.viewinterop.AndroidView
+import com.github.barteksc.pdfviewer.PDFView
+import com.github.barteksc.pdfviewer.listener.OnPageChangeListener
 import java.io.File
-import kotlin.math.roundToInt
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * PDF 内容视图: 原生 PdfRenderer 逐页高清渲染
- * - 手势捏合缩放 0.5x~4x
- * - 页面位图按缩放重渲染, 深色只影响外壳由调用方控制
+ * PDF 内容视图 (v3.9.8): 基于 AndroidPdfViewer (barteksc, GitHub 成熟库)
+ * - 双指缩放 / 双击缩放 / 滑动翻页 / 页码显示 全部由库原生支持
+ * - 高分辨率渲染, 无手动位图管线
  */
 @Composable
 fun PdfRenderView(
     pdfFile: File,
-    zoom: Float,
-    onZoomChange: (Float) -> Unit,
+    onPageChange: (Int, Int) -> Unit,
 ) {
-    var openError by remember { mutableStateOf<String?>(null) }
-    val descriptor = remember(pdfFile) {
-        runCatching { ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY) }.getOrNull()
-    }
-    val renderer = remember(descriptor) {
-        if (descriptor == null) null else runCatching { PdfRenderer(descriptor) }.getOrNull()
-    }
+    val pageCountRef = remember { AtomicInteger(0) }
 
-    if (renderer == null) {
-        Box(
+    Box(modifier = Modifier.fillMaxSize()) {
+        AndroidView(
+            factory = { context ->
+                PDFView(context, null).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                    )
+                    fromFile(pdfFile)
+                        .enableSwipe(true)
+                        .swipeVertical(false)
+                        .enableDoubletap(true)
+                        .defaultPage(0)
+                        .showPageNumber(false)
+                        .enableAnnotationRendering(false)
+                        .spacing(8)
+                        .onPageChange(object : OnPageChangeListener {
+                            override fun onPageChanged(page: Int, pageCount: Int) {
+                                pageCountRef.set(pageCount)
+                                onPageChange(page + 1, pageCount)
+                            }
+                        })
+                        .load()
+                }
+            },
             modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center,
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(HugeIcons.FileView, null, modifier = Modifier.size(40.dp))
-                Text(
-                    text = openError ?: "无法打开此 PDF（文件可能损坏或受密码保护）",
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(16.dp),
-                )
-            }
-        }
-        return
+        )
     }
-
-    DisposableEffect(renderer) {
-        onDispose {
-            runCatching { renderer.close() }
-            runCatching { descriptor?.close() }
-        }
-    }
-
-    val pageCount = renderer.pageCount
-    val screenWidth = LocalConfiguration.current.screenWidthDp
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        items((0 until pageCount).toList()) { pageIndex ->
-            var loaded by remember { mutableStateOf(false) }
-            val bitmap by produceState<Bitmap?>(null, renderer, pageIndex, zoom) {
-                loaded = false
-                value = withContext(Dispatchers.IO) {
-                    renderPage(renderer, pageIndex, zoom)
-                }
-                loaded = true
-            }
-            if (!loaded) {
-                Box(Modifier.fillMaxWidth().padding(24.dp)) { Text("页面渲染中...") }
-            } else {
-                val bmp = bitmap
-                if (bmp == null) {
-                    Box(Modifier.fillMaxWidth().padding(24.dp)) { Text("页面渲染失败") }
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
-                            .padding(vertical = 4.dp)
-                            .pointerInput(Unit) {
-                                detectTransformGestures { _, _, zoomChange, _ ->
-                                    onZoomChange(zoomChange)
-                                }
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Image(
-                            bitmap = bmp.asImageBitmap(),
-                            contentDescription = null,
-                            contentScale = ContentScale.FillWidth,
-                            modifier = Modifier
-                                .width((screenWidth * zoom).dp)
-                                .background(Color.White),
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-private fun renderPage(renderer: PdfRenderer, pageIndex: Int, zoom: Float): Bitmap? {
-    return runCatching {
-        val page = renderer.openPage(pageIndex)
-        try {
-            val scale = 1.5f * zoom
-            val width = (page.width * scale).roundToInt().coerceAtLeast(1)
-            val height = (page.height * scale).roundToInt().coerceAtLeast(1)
-            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            bitmap.eraseColor(android.graphics.Color.WHITE)
-            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-            bitmap
-        } finally {
-            runCatching { page.close() }
-        }
-    }.getOrNull()
 }

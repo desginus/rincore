@@ -59,7 +59,7 @@ fun ImageRenderView(
     }
 }
 
-/** 视频内容: VideoView 播放 */
+/** 视频内容: VideoView + MediaController 系统控制条 (播放/暂停/进度/音量) */
 @Composable
 fun VideoRenderView(videoFile: File) {
     Box(
@@ -75,6 +75,9 @@ fun VideoRenderView(videoFile: File) {
                         ViewGroup.LayoutParams.MATCH_PARENT,
                     )
                     setVideoURI(videoFile.toUri())
+                    val controller = android.widget.MediaController(context)
+                    setMediaController(controller)
+                    controller.setAnchorView(this)
                     setOnPreparedListener { start() }
                 }
             },

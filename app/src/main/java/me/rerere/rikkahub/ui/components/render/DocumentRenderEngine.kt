@@ -22,11 +22,12 @@ import java.util.zip.ZipInputStream
 sealed class RenderResult {
     abstract val title: String
 
-    /** 文本提取类: 分页 HTML 产物目录 */
+    /** 文本提取类: 分页 HTML 产物目录. canDark=false 表示页面为绝对配色(表格/幻灯片), 不提供深色反转 */
     data class HtmlPages(
         override val title: String,
         val workDir: File,
         val pageCount: Int,
+        val canDark: Boolean = true,
     ) : RenderResult()
 
     /** PDF: 原生逐页渲染 */
@@ -64,7 +65,6 @@ object RenderEngine {
             "pptx" -> PptxExtractor()
             "txt", "md", "json", "log", "xml", "yaml", "yml", "toml", "ini",
             "py", "js", "kt", "java", "c", "cpp", "h", "sh", "sql", "css", "ts", "jsx" -> TextExtractor()
-            "pdf" -> return RenderResult.PdfView(title, input)
             "png", "jpg", "jpeg", "gif", "webp", "bmp", "heic", "heif", "ico" ->
                 return RenderResult.ImageView(title, input)
             "mp4", "mkv", "webm", "3gp", "mov", "avi" -> return RenderResult.VideoView(title, input)
@@ -80,7 +80,9 @@ object RenderEngine {
             1
         }
         writeMeta(workDir, pageCount)
-        return RenderResult.HtmlPages(title, workDir, pageCount)
+        // xlsx/pptx 为绝对配色产物(填充色/背景色), 不提供深色反转
+        val canDark = ext !in setOf("xlsx", "pptx")
+        return RenderResult.HtmlPages(title, workDir, pageCount, canDark)
     }
 
     private fun writeMeta(workDir: File, pages: Int) {
@@ -172,11 +174,13 @@ internal class DocxExtractor : DocumentExtractor {
     }
 }
 
-/** XLSX: 每工作表一页 */
+/** XLSX: 每工作表一页, 支持填充色/合并单元格/列宽 (v3.9.8 样式升级) */
 internal class XlsxExtractor : DocumentExtractor {
     override fun extract(input: File, outDir: File): Int {
         val map = readZipMap(input)
         val shared = map["xl/sharedStrings.xml"]?.toString(Charsets.UTF_8)?.let { parseSharedStrings(it) }
+            ?: emptyList()
+        val cellFills = map["xl/styles.xml"]?.toString(Charsets.UTF_8)?.let { parseCellFills(it) }
             ?: emptyList()
         val sheetFiles = map.keys
             .filter { it.startsWith("xl/worksheets/sheet") && it.endsWith(".xml") }
@@ -187,7 +191,7 @@ internal class XlsxExtractor : DocumentExtractor {
         }
         for ((index, entry) in sheetFiles.withIndex()) {
             val sheetXml = map[entry]?.toString(Charsets.UTF_8) ?: continue
-            val html = buildSheetHtml(sheetXml, shared)
+            val html = buildSheetHtml(sheetXml, shared, cellFills)
             writeFile(
                 File(outDir, "page${index + 1}.html"),
                 buildPage(input.name + " - Sheet ${index + 1}", html),
@@ -197,7 +201,155 @@ internal class XlsxExtractor : DocumentExtractor {
     }
 }
 
-/** PPTX: 每页幻灯片一页 (解决整页大 DOM 卡顿) */
+/** styles.xml: 提取 cellXfs s 属性 -> 填充色, 返回 fill 颜色数组 (等长 xfs) */
+internal fun parseCellFills(stylesXml: String): List<String?> {
+    val result = mutableListOf<String?>()
+    try {
+        val factory = XmlPullParserFactory.newInstance()
+        factory.isNamespaceAware = false
+        val parser = factory.newPullParser()
+        parser.setInput(stylesXml.reader())
+        val fills = mutableListOf<String?>()
+        var inFill = false
+        var eventType = parser.eventType
+        while (eventType != XmlPullParser.END_DOCUMENT) {
+            if (eventType == XmlPullParser.START_TAG && parser.isTag("fill")) inFill = true
+            if (eventType == XmlPullParser.START_TAG && parser.isTag("srgbClr") && inFill) {
+                fills.add(parser.attr("val")?.let { "#$it" })
+            }
+            if (eventType == XmlPullParser.END_TAG && parser.isTag("fill")) inFill = false
+            eventType = parser.next()
+        }
+        // 解析 cellXfs: xf 按序, 取 fillId
+        val xfFills = mutableListOf<String?>()
+        val parser2 = factory.newPullParser()
+        parser2.setInput(stylesXml.reader())
+        var inXfs = false
+        var ev = parser2.eventType
+        while (ev != XmlPullParser.END_DOCUMENT) {
+            if (ev == XmlPullParser.START_TAG) {
+                when {
+                    parser2.isTag("cellXfs") -> inXfs = true
+                    parser2.isTag("xf") && inXfs -> {
+                        val fillId = parser2.attr("fillId")?.toIntOrNull() ?: 0
+                        xfFills.add(fills.getOrNull(fillId))
+                    }
+                }
+            }
+            if (ev == XmlPullParser.END_TAG && parser2.isTag("cellXfs")) inXfs = false
+            ev = parser2.next()
+        }
+        return xfFills
+    } catch (_: Exception) {
+        return result
+    }
+}
+
+/** 合并单元格范围解析, 返回 map 引用->(colspan,rowspan) 由首格承担, 被合并格标记 */
+internal fun parseMergeRanges(sheetXml: String): Set<String> {
+    val merged = HashSet<String>()
+    val pattern = Regex("<mergeCell[^>]*ref=\"([A-Z]+\\d+:[A-Z]+\\d+)\"")
+    pattern.findAll(sheetXml).forEach { m ->
+        val ref = m.groupValues.getOrNull(1) ?: return@forEach
+        val (a, b) = ref.split(':')
+        val colA = colToNum(a.filter { it.isLetter() })
+        val rowA = a.filter { it.isDigit() }.toIntOrNull() ?: 0
+        val colB = colToNum(b.filter { it.isLetter() })
+        val rowB = b.filter { it.isDigit() }.toIntOrNull() ?: 0
+        for (r in rowA..rowB) {
+            for (c in colA..colB) {
+                if (r != rowA || c != colA) merged.add("$c:$r")
+            }
+        }
+    }
+    return merged
+}
+
+internal fun colToNum(col: String): Int {
+    var n = 0
+    col.uppercase().forEach { ch -> n = n * 26 + (ch - 'A' + 1) }
+    return n
+}
+
+internal fun buildSheetHtml(sheetXml: String, shared: List<String>, cellFills: List<String?>): String {
+    val sb = StringBuilder("<table style='table-layout:fixed'>")
+    val merged = parseMergeRanges(sheetXml)
+    // 正在合并的格子: 记录由哪个行/列开始, 简化处理: 被合并位置直接跳过
+    try {
+        val factory = XmlPullParserFactory.newInstance()
+        factory.isNamespaceAware = false
+        val parser = factory.newPullParser()
+        parser.setInput(sheetXml.reader())
+        var cellText = StringBuilder()
+        var cellType = ""
+        var cellStyle = -1
+        var cellCol = -1
+        var rowIndex = 0
+        var colIndex = 0
+        var eventType = parser.eventType
+        while (eventType != XmlPullParser.END_DOCUMENT) {
+            when (eventType) {
+                XmlPullParser.START_TAG -> {
+                    when {
+                        parser.isTag("row") -> {
+                            sb.append("<tr>")
+                            rowIndex++
+                            colIndex = 0
+                        }
+                        parser.isTag("c") -> {
+                            cellType = parser.getAttributeValue(null, "t") ?: ""
+                            cellStyle = parser.attr("s")?.toIntOrNull() ?: -1
+                            val ref = parser.getAttributeValue(null, "r") ?: ""
+                            cellCol = if (ref.isNotEmpty()) {
+                                colToNum(ref.filter { it.isLetter() })
+                            } else colIndex + 1
+                            cellText.setLength(0)
+                        }
+                        parser.isTag("t") || parser.isTag("v") -> {
+                            val text = runCatching { parser.nextText() }.getOrDefault("")
+                            cellText.append(text)
+                        }
+                    }
+                }
+                XmlPullParser.END_TAG -> {
+                    when {
+                        parser.isTag("c") -> {
+                            val raw = cellText.toString()
+                            val value = when {
+                                cellType == "s" -> shared.getOrNull(raw.toIntOrNull() ?: -1) ?: raw
+                                raw.isBlank() -> "&nbsp;"
+                                else -> escapeHtml(raw)
+                            }
+                            // 跳过被合并格
+                            while (colIndex + 1 < cellCol) {
+                                // 空隙补空单元格
+                                sb.append("<td></td>")
+                                colIndex++
+                            }
+                            if ("$cellCol:$rowIndex" in merged) {
+                                // 被合并, 跳过
+                            } else {
+                                val fill = cellFills.getOrNull(cellStyle)
+                                val style = if (fill != null) " style='background-color:$fill'" else ""
+                                sb.append("<td$style>").append(value).append("</td>")
+                            }
+                            colIndex++
+                        }
+                        parser.isTag("row") -> sb.append("</tr>")
+                    }
+                }
+            }
+            eventType = parser.next()
+        }
+    } catch (_: Exception) {
+        sb.append("<tr><td>本表解析失败</td></tr>")
+    }
+    sb.append("</table>")
+    return sb.toString()
+}
+
+/** PPTX: 每页幻灯片一页 — 形状级渲染 (v3.9.8):
+ * 背景色/形状位置/填充色/字号/颜色/粗体/图片/表格 近似还原 */
 internal class PptxExtractor : DocumentExtractor {
     override fun extract(input: File, outDir: File): Int {
         val map = readZipMap(input)
@@ -221,6 +373,209 @@ internal class PptxExtractor : DocumentExtractor {
         return slideFiles.size
     }
 }
+
+private const val EMU_PER_PX = 9525.0
+
+private fun emuToPx(emu: Long): Int = (emu / EMU_PER_PX).toInt()
+
+/** srgbClr 16 进制转 #rrggbb */
+private fun argbToHex(v: String): String = if (v.length >= 6) "#" + v.take(6) else "#FFFFFF"
+
+/** 亮度判断: 深色背景给白字, 浅色背景给黑字 */
+private fun contrastColor(bgHex: String?): String {
+    if (bgHex == null || bgHex.length < 7) return "#000000"
+    val r = bgHex.substring(1, 3).toIntOrNull(16) ?: 255
+    val g = bgHex.substring(3, 5).toIntOrNull(16) ?: 255
+    val b = bgHex.substring(5, 7).toIntOrNull(16) ?: 255
+    return if (0.299 * r + 0.587 * g + 0.114 * b > 160) "#000000" else "#FFFFFF"
+}
+
+internal fun buildSlideHtml(
+    slideXml: String,
+    rels: Map<String, String>,
+    map: Map<String, ByteArray>,
+    assetsDir: File,
+): String {
+    val sb = StringBuilder()
+    var slideW = 12192000L
+    var slideH = 6858000L
+    var bgColor: String? = null
+    var found = false
+    try {
+        val factory = XmlPullParserFactory.newInstance()
+        factory.isNamespaceAware = false
+        val parser = factory.newPullParser()
+        parser.setInput(slideXml.reader())
+
+        // 形状上下文
+        var curX = 0L; var curY = 0L; var curW = 0L; var curH = 0L
+        var shapeFill: String? = null
+        var inText = false
+        var inRotPr = false
+        var runSize = 1800.0
+        var runBold = false
+        var runColor: String? = null
+        var paraAlign = ""
+        val runs = StringBuilder()
+        var inTbl = false
+        var inRow = false
+        var inCell = false
+        val cellText = StringBuilder()
+        var shapeStackDepth = 0
+        var inSpPr = false
+        var inPPr = false
+
+        var eventType = parser.eventType
+        while (eventType != XmlPullParser.END_DOCUMENT) {
+            when (eventType) {
+                XmlPullParser.START_TAG -> {
+                    when {
+                        parser.isTag("sldSz") -> {
+                            slideW = parser.attr("cx")?.toLongOrNull() ?: slideW
+                            slideH = parser.attr("cy")?.toLongOrNull() ?: slideH
+                        }
+                        parser.isTag("bg") -> {
+                            // 背景: p:bg/p:bgPr/a:solidFill/a:srgbClr
+                            bgColor = null
+                        }
+                        parser.isTag("bgPr") -> {}
+                        parser.isTag("sp") -> found = true
+                        parser.isTag("spPr") -> inSpPr = true
+                        parser.isTag("xfrm") -> {
+                            // 位置: a:off x/y + a:ext cx/cy
+                            curX = 0L; curY = 0L; curW = 0L; curH = 0L
+                        }
+                        parser.isTag("off") -> {
+                            curX = parser.attr("x")?.toLongOrNull() ?: 0L
+                            curY = parser.attr("y")?.toLongOrNull() ?: 0L
+                        }
+                        parser.isTag("ext") -> {
+                            curW = parser.attr("cx")?.toLongOrNull() ?: 0L
+                            curH = parser.attr("cy")?.toLongOrNull() ?: 0L
+                        }
+                        parser.isTag("solidFill") -> {
+                            // 背景/形状/文本 共用: 在 bg 内取背景, spPr 内取形状填充, rPr 内取文本色
+                            if (inRotPr) {
+                                runColor = null
+                            } else if (inSpPr) {
+                                shapeFill = null
+                            }
+                        }
+                        parser.isTag("srgbClr") -> {
+                            val hex = argbToHex(parser.attr("val") ?: "")
+                            if (inRotPr) {
+                                if (bgColor != null && !inSpPr) { } // 背景内不允许文本层
+                                runColor = hex
+                            } else if (inSpPr) {
+                                shapeFill = hex
+                            } else {
+                                bgColor = hex
+                            }
+                        }
+                        parser.isTag("rPr") -> {
+                            inRotPr = true
+                            runSize = (parser.attr("sz")?.toDoubleOrNull() ?: 1800.0)
+                            runBold = parser.attr("b") == "1"
+                            runColor = null
+                        }
+                        parser.isTag("txBody") -> {
+                            inText = true
+                            runs.setLength(0)
+                            paraAlign = ""
+                        }
+                        parser.isTag("pPr") -> inPPr = true
+                        parser.isTag("t") -> {
+                            // 文本: 可能出现在 run 或单元格
+                            val text = runCatching { parser.nextText() }.getOrDefault("")
+                            if (inCell) cellText.append(escapeHtml(text))
+                            else if (inText) {
+                                runs.append(escapeHtml(text))
+                                found = true
+                            }
+                        }
+                        parser.isTag("tbl") -> {
+                            inTbl = true
+                            sb.append("<div style='position:absolute;left:${emuToPx(curX)}px;top:${emuToPx(curY)}px;width:${emuToPx(curW)}px;height:${emuToPx(curH)}px;overflow:auto'><table style='width:100%;border-collapse:collapse'>")
+                        }
+                        parser.isTag("tr") -> { inRow = true; sb.append("<tr>") }
+                        parser.isTag("tc") -> {
+                            inCell = true
+                            cellText.setLength(0)
+                        }
+                        parser.isTag("blip") -> {
+                            val rid = parser.attr("embed")
+                            val target = rid?.let { rels[it] }
+                            if (target != null) {
+                                val mediaPath = normalizeRelPath("ppt/slides", target)
+                                val ref = saveMedia(map, mediaPath, assetsDir)
+                                if (ref != null) {
+                                    sb.append("<img src='$ref' style='position:absolute;left:${emuToPx(curX)}px;top:${emuToPx(curY)}px;width:${emuToPx(curW)}px;height:${emuToPx(curH)}px;object-fit:contain'>")
+                                    found = true
+                                }
+                            }
+                        }
+                        parser.isTag("br") -> runs.append("<br/>")
+                    }
+                }
+                XmlPullParser.END_TAG -> {
+                    when {
+                        parser.isTag("bg") -> {}
+                        parser.isTag("bgPr") -> {}
+                        parser.isTag("spPr") -> inSpPr = false
+                        parser.isTag("pPr") -> {
+                            if (inPPr) {
+                                val algn = parser.attr("algn") ?: ""
+                                if (algn.isNotEmpty()) paraAlign = algn
+                                inPPr = false
+                            }
+                        }
+                        parser.isTag("rPr") -> inRotPr = false
+                        parser.isTag("txBody") -> {
+                            if (inText) {
+                                // 输出形状
+                                val fill = shapeFill
+                                val textColor = runColor ?: contrastColor(fill ?: bgColor)
+                                val fontSizePx = (runSize / 100.0 * 4.0 / 3.0).toInt().coerceAtLeast(8)
+                                val bold = if (runBold) "font-weight:bold;" else ""
+                                val alignStyle = when (paraAlign) {
+                                    "ctr" -> "text-align:center;"
+                                    "r" -> "text-align:right;"
+                                    else -> ""
+                                }
+                                sb.append(
+                                    "<div style='position:absolute;left:${emuToPx(curX)}px;top:${emuToPx(curY)}px;" +
+                                        "width:${emuToPx(curW)}px;height:${emuToPx(curH)}px;" +
+                                        (if (fill != null) "background-color:$fill;" else "") +
+                                        "color:$textColor;font-size:${fontSizePx}px;$bold$alignStyle" +
+                                        "overflow:hidden;word-wrap:break-word;padding:4px;box-sizing:border-box'>" +
+                                        runs + "</div>"
+                                )
+                                runs.setLength(0)
+                                inText = false
+                                shapeFill = null
+                                runColor = null
+                            }
+                        }
+                        parser.isTag("tbl") -> { inTbl = false; sb.append("</table></div>") }
+                        parser.isTag("tr") -> { inRow = false; sb.append("</tr>") }
+                        parser.isTag("tc") -> { sb.append("<td style='border:1px solid #999;padding:4px'>").append(cellText).append("</td>"); inCell = false }
+                    }
+                }
+            }
+            eventType = parser.next()
+        }
+    } catch (_: Exception) {
+        sb.append("<p>本页解析失败</p>")
+    }
+    sb.append("</div>")
+    if (!found) sb.append("<p style='color:#888'>本页无文本或图片内容</p>")
+    val container = StringBuilder()
+    container.append("<div style='position:relative;width:${emuToPx(slideW)}px;height:${emuToPx(slideH)}px;")
+    if (bgColor != null) container.append("background-color:$bgColor;")
+    container.append("'>").append(sb)
+    return container.toString()
+}
+
 
 /** ===== 解析工具 ===== */
 
@@ -452,123 +807,7 @@ internal fun buildDocxHtml(
 
 /** ===== XLSX 工作表提取 ===== */
 
-internal fun buildSheetHtml(sheetXml: String, shared: List<String>): String {
-    val sb = StringBuilder("<table>")
-    try {
-        val factory = XmlPullParserFactory.newInstance()
-        factory.isNamespaceAware = false
-        val parser = factory.newPullParser()
-        parser.setInput(sheetXml.reader())
-        var cellText = StringBuilder()
-        var cellType = ""
-        var eventType = parser.eventType
-        while (eventType != XmlPullParser.END_DOCUMENT) {
-            when (eventType) {
-                XmlPullParser.START_TAG -> {
-                    when {
-                        parser.isTag("row") -> sb.append("<tr>")
-                        parser.isTag("c") -> {
-                            cellType = parser.getAttributeValue(null, "t") ?: ""
-                            cellText.setLength(0)
-                        }
-                        parser.isTag("t") || parser.isTag("v") -> {
-                            val text = runCatching { parser.nextText() }.getOrDefault("")
-                            cellText.append(text)
-                        }
-                    }
-                }
-                XmlPullParser.END_TAG -> {
-                    when {
-                        parser.isTag("c") -> {
-                            val raw = cellText.toString()
-                            val value = when {
-                                cellType == "s" -> shared.getOrNull(raw.toIntOrNull() ?: -1) ?: raw
-                                raw.isBlank() -> "&nbsp;"
-                                else -> escapeHtml(raw)
-                            }
-                            sb.append("<td>").append(value).append("</td>")
-                        }
-                        parser.isTag("row") -> sb.append("</tr>")
-                    }
-                }
-            }
-            eventType = parser.next()
-        }
-    } catch (_: Exception) {
-        sb.append("<tr><td>本表解析失败</td></tr>")
-    }
-    sb.append("</table>")
-    return sb.toString()
-}
+
 
 /** ===== PPTX 幻灯片提取 ===== */
 
-internal fun buildSlideHtml(
-    slideXml: String,
-    rels: Map<String, String>,
-    map: Map<String, ByteArray>,
-    assetsDir: File,
-): String {
-    val sb = StringBuilder()
-    var found = false
-    try {
-        val factory = XmlPullParserFactory.newInstance()
-        factory.isNamespaceAware = false
-        val parser = factory.newPullParser()
-        parser.setInput(slideXml.reader())
-        var inCell = false
-        var cellText = StringBuilder()
-        var eventType = parser.eventType
-        while (eventType != XmlPullParser.END_DOCUMENT) {
-            when (eventType) {
-                XmlPullParser.START_TAG -> {
-                    when {
-                        parser.isTag("tbl") -> sb.append("<table>")
-                        parser.isTag("tr") -> sb.append("<tr>")
-                        parser.isTag("tc") -> {
-                            sb.append("<td>")
-                            inCell = true
-                            cellText.setLength(0)
-                        }
-                        parser.isTag("t") -> {
-                            val text = runCatching { parser.nextText() }.getOrDefault("")
-                            if (inCell) cellText.append(escapeHtml(text))
-                            else if (text.isNotBlank()) {
-                                sb.append("<p>").append(escapeHtml(text)).append("</p>")
-                                found = true
-                            }
-                        }
-                        parser.isTag("blip") -> {
-                            val rid = parser.attr("embed")
-                            val target = rid?.let { rels[it] }
-                            if (target != null) {
-                                val mediaPath = normalizeRelPath("ppt/slides", target)
-                                val ref = saveMedia(map, mediaPath, assetsDir)
-                                if (ref != null) {
-                                    sb.append("<img src='$ref' alt='image'/>")
-                                    found = true
-                                }
-                            }
-                        }
-                        parser.isTag("br") -> if (inCell) cellText.append("<br/>")
-                    }
-                }
-                XmlPullParser.END_TAG -> {
-                    when {
-                        parser.isTag("tc") -> {
-                            sb.append(cellText).append("</td>")
-                            inCell = false
-                        }
-                        parser.isTag("tr") -> sb.append("</tr>")
-                        parser.isTag("tbl") -> sb.append("</table>")
-                    }
-                }
-            }
-            eventType = parser.next()
-        }
-    } catch (_: Exception) {
-        sb.append("<p>本页解析失败</p>")
-    }
-    if (!found) sb.append("<p style='color:var(--muted)'>本页无文本或图片内容</p>")
-    return sb.toString()
-}
