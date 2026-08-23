@@ -1,22 +1,8 @@
 package me.rerere.rikkahub.ui.components
 
-import org.xmlpull.v1.XmlPullParser
-import org.xmlpull.v1.XmlPullParserFactory
-import java.util.zip.ZipInputStream
-
-/**
- * 全文档类型渲染支持 (v3.9.1)：
- * - HTML/SVG: WebView 直接渲染（保留 JS/表单/图表交互）
- * - PDF: PdfRenderer 逐页渲染
- * - DOCX/DOC: zip+XML 提取段落文本, 转 HTML 排版渲染
- * - XLSX/XLS/CSV: 提取单元格转 HTML 表格渲染
- * - 文本类: 全屏等宽文本视图
- * 读取能力有限的老二进制格式 (doc/xls) 尽力而为, 失败给出明确提示。
- */
 enum class RenderKind { HTML, PDF, DOC, SHEET, SLIDES, IMAGE, VIDEO, AUDIO, TEXT, NONE }
 
-/** v3.9.4: XmlPullParser 非 namespace 模式下 getName 返回带前缀 qName (w:t/a:t),
- * 统一用 localName 匹配 — 此前 name == "t" 全失配导致 docx/pptx 白屏 */
+
 private fun XmlPullParser.isTag(localName: String): Boolean =
     name == localName || name.endsWith(":$localName")
 
@@ -37,7 +23,6 @@ fun detectRenderKind(fileName: String): RenderKind {
     }
 }
 
-/** PPTX: 每页渲染 — 文本段落 + 表格结构 + 嵌入图片 (a:t / a:tbl / a:blip) */
 fun extractPptxHtml(bytes: ByteArray): String {
     val map = readZipMap(bytes)
     val slideFiles = map.keys
@@ -116,7 +101,6 @@ fun extractPptxHtml(bytes: ByteArray): String {
     return wrapHtml(sb.toString())
 }
 
-/** 通用: 一次解压全部条目, 避免多次扫描 zip */
 private fun readZipMap(bytes: ByteArray): Map<String, ByteArray> {
     val map = HashMap<String, ByteArray>()
     val zip = ZipInputStream(bytes.inputStream())
@@ -149,7 +133,6 @@ private fun parseRelMap(relsXml: String?): Map<String, String> {
     return map
 }
 
-/** 通用: 相对路径规范化 (ppt/slides/ + ../media/x.png → ppt/media/x.png) */
 private fun normalizeRelPath(baseDir: String, target: String): String {
     if (target.startsWith("/")) return target.trimStart('/')
     val parts = (baseDir.split('/').filter { it.isNotBlank() } + target.split('/'))
@@ -164,7 +147,6 @@ private fun normalizeRelPath(baseDir: String, target: String): String {
     return stack.joinToString("/")
 }
 
-/** 通用: 读取镜像条目并转 base64 data URI */
 private fun mediaToDataUri(map: Map<String, ByteArray>, mediaPath: String): String? {
     val bytes = map[mediaPath] ?: return null
     val ext = mediaPath.substringAfterLast('.', "png").lowercase()
@@ -181,18 +163,6 @@ private fun mediaToDataUri(map: Map<String, ByteArray>, mediaPath: String): Stri
     return "data:$mime;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
 }
 
-/** 通用: 读取元素属性 (含前缀属性如 r:embed) */
-private fun XmlPullParser.attr(vararg names: String): String? {
-    for (i in 0 until attributeCount) {
-        val n = getAttributeName(i)
-        if (names.any { n == it || n.endsWith(":$it") }) {
-            return getAttributeValue(i)
-        }
-    }
-    return null
-}
-
-/** DOCX: 段落/标题/表格 + 嵌入图片原位渲染 (word/media/ 图片 via r:embed) */
 fun extractDocxHtml(bytes: ByteArray): String {
     val map = readZipMap(bytes)
     val documentXml = zipText(map, "word/document.xml") ?: return "<p>无法解析此文档</p>"
@@ -319,7 +289,6 @@ private fun buildDocxHtml(
     return wrapHtml(sb.toString())
 }
 
-/** 降级: 不保留结构, 提取全部文本节点 */
 private fun extractDocxPlainText(map: Map<String, ByteArray>): String {
     val documentXml = zipText(map, "word/document.xml") ?: return "<p>无法解析此 Word 文档</p>"
     val sb = StringBuilder("<pre style='font-family:monospace;white-space:pre-wrap;font-size:13px'>")
@@ -346,7 +315,6 @@ private fun extractDocxPlainText(map: Map<String, ByteArray>): String {
     return wrapHtml(sb.toString())
 }
 
-/** XLSX: 全部工作表 + sharedStrings 富文本拼接 + inlineStr/str 类型支持, 转 HTML 表格 */
 fun extractXlsxHtml(bytes: ByteArray): String {
     val map = readZipMap(bytes)
     val shared = zipText(map, "xl/sharedStrings.xml")?.let { parseSharedStrings(it) }
@@ -410,7 +378,6 @@ fun extractXlsxHtml(bytes: ByteArray): String {
     return wrapHtml(sb.toString())
 }
 
-/** CSV: 转 HTML 表格 (支持简单引号包裹单元格) */
 fun csvToHtml(text: String): String {
     val sb = StringBuilder("<table border='1' cellpadding='4' style='border-collapse:collapse'>")
     text.lineSequence().filter { it.isNotBlank() }.forEach { line ->
@@ -488,66 +455,3 @@ fun escapeHtml(text: String): String = text
     .replace("<", "&lt;")
     .replace(">", "&gt;")
     .replace("\"", "&quot;")
-
-/** CSV: 转 HTML 表格 (支持简单引号包裹单元格) */
-fun csvToHtml(text: String): String {
-    val sb = StringBuilder("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;width:100%'>")
-    text.lineSequence().filter { it.isNotBlank() }.forEach { line ->
-        sb.append("<tr>")
-        parseCsvLine(line).forEach { cell ->
-            sb.append("<td style='border:1px solid #ccc;padding:6px'>").append(escapeHtml(cell)).append("</td>")
-        }
-        sb.append("</tr>")
-    }
-    sb.append("</table>")
-    return wrapHtml(sb.toString())
-}
-
-private fun parseCsvLine(line: String): List<String> {
-    val result = mutableListOf<String>()
-    val cur = StringBuilder()
-    var inQuotes = false
-    var i = 0
-    while (i < line.length) {
-        val ch = line[i]
-        when {
-            ch == '"' -> {
-                if (inQuotes && i + 1 < line.length && line[i + 1] == '"') {
-                    cur.append('"'); i++
-                } else inQuotes = !inQuotes
-            }
-            ch == ',' && !inQuotes -> { result.add(cur.toString().trim()); cur.setLength(0) }
-            else -> cur.append(ch)
-        }
-        i++
-    }
-    result.add(cur.toString().trim())
-    return result
-}
-
-/** XLSX sharedStrings: 富文本 si 内多 t 拼接 */
-private fun parseSharedStrings(xml: String): List<String> {
-    val result = mutableListOf<String>()
-    try {
-        val factory = XmlPullParserFactory.newInstance()
-        factory.isNamespaceAware = false
-        val parser = factory.newPullParser()
-        parser.setInput(xml.reader())
-        var current = StringBuilder()
-        var eventType = parser.eventType
-        while (eventType != XmlPullParser.END_DOCUMENT) {
-            if (eventType == XmlPullParser.START_TAG && parser.isTag("t")) {
-                val text = runCatching { parser.nextText() }.getOrDefault("")
-                current.append(text)
-            }
-            if (eventType == XmlPullParser.END_TAG && parser.isTag("si")) {
-                result.add(current.toString())
-                current = StringBuilder()
-            }
-            eventType = parser.next()
-        }
-    } catch (_: Exception) {
-        // 解析失败返回空
-    }
-    return result
-}
