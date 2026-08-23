@@ -441,8 +441,6 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
             }
         }
     }
-}
-
     // v3.9.15: 部分开启 — 提供商模型多选弹窗
     if (modelPickerVisible) {
         val providers = settings.providers.filter { it.models.isNotEmpty() }
@@ -505,4 +503,5 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
             },
         )
     }
+
 }
