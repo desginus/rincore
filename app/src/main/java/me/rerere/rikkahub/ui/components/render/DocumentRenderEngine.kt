@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.components.render
 
-import android.util.Base64
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
 import java.io.File
@@ -65,6 +64,7 @@ object RenderEngine {
             "pptx" -> PptxExtractor()
             "txt", "md", "json", "log", "xml", "yaml", "yml", "toml", "ini",
             "py", "js", "kt", "java", "c", "cpp", "h", "sh", "sql", "css", "ts", "jsx" -> TextExtractor()
+            "pdf" -> return RenderResult.PdfView(title, input)
             "png", "jpg", "jpeg", "gif", "webp", "bmp", "heic", "heif", "ico" ->
                 return RenderResult.ImageView(title, input)
             "mp4", "mkv", "webm", "3gp", "mov", "avi" -> return RenderResult.VideoView(title, input)
@@ -213,9 +213,23 @@ internal fun parseCellFills(stylesXml: String): List<String?> {
         var inFill = false
         var eventType = parser.eventType
         while (eventType != XmlPullParser.END_DOCUMENT) {
-            if (eventType == XmlPullParser.START_TAG && parser.isTag("fill")) inFill = true
-            if (eventType == XmlPullParser.START_TAG && parser.isTag("srgbClr") && inFill) {
-                fills.add(parser.attr("val")?.let { "#$it" })
+            if (eventType == XmlPullParser.START_TAG && parser.isTag("fill")) {
+                inFill = true
+                fills.add(null) // 占位: 每个 fill 保索引, 无颜色的系统默认位保持 null
+            }
+            if (eventType == XmlPullParser.START_TAG && inFill) {
+                val color = when {
+                    parser.isTag("fgColor") -> {
+                        val rgb = parser.attr("rgb")
+                        val indexed = parser.attr("indexed")
+                        if (rgb != null && rgb.length >= 6) "#" + rgb.takeLast(6)
+                        else if (indexed != null) indexedToHex(indexed.toIntOrNull() ?: 0)
+                        else null
+                    }
+                    parser.isTag("srgbClr") -> parser.attr("val")?.let { "#$it" }
+                    else -> null
+                }
+                if (color != null && fills.isNotEmpty()) fills[fills.size - 1] = color
             }
             if (eventType == XmlPullParser.END_TAG && parser.isTag("fill")) inFill = false
             eventType = parser.next()
@@ -232,7 +246,9 @@ internal fun parseCellFills(stylesXml: String): List<String?> {
                     parser2.isTag("cellXfs") -> inXfs = true
                     parser2.isTag("xf") && inXfs -> {
                         val fillId = parser2.attr("fillId")?.toIntOrNull() ?: 0
-                        xfFills.add(fills.getOrNull(fillId))
+                        // Excel fills 前两个为系统默认 (none/gray125), 无颜色定义
+                        val color = fills.getOrNull(fillId)
+                        xfFills.add(color)
                     }
                 }
             }
@@ -245,9 +261,129 @@ internal fun parseCellFills(stylesXml: String): List<String?> {
     }
 }
 
-/** 合并单元格范围解析, 返回 map 引用->(colspan,rowspan) 由首格承担, 被合并格标记 */
-internal fun parseMergeRanges(sheetXml: String): Set<String> {
+/** Excel indexed 调色板常用色 */
+private fun indexedToHex(index: Int): String? = when (index) {
+    0 -> "#000000"
+    1 -> "#FFFFFF"
+    2 -> "#FF0000"
+    3 -> "#00FF00"
+    4 -> "#0000FF"
+    5 -> "#FFFF00"
+    6 -> "#FF00FF"
+    7 -> "#00FFFF"
+    8 -> "#000000"
+    9 -> "#FFFFFF"
+    10 -> "#FF0000"
+    11 -> "#00FF00"
+    12 -> "#0000FF"
+    13 -> "#FFFF00"
+    14 -> "#FF00FF"
+    15 -> "#00FFFF"
+    16 -> "#800000"
+    17 -> "#008000"
+    18 -> "#000080"
+    19 -> "#808000"
+    20 -> "#800080"
+    21 -> "#008080"
+    22 -> "#C0C0C0"
+    23 -> "#808080"
+    24 -> "#9999FF"
+    25 -> "#993366"
+    26 -> "#FFFFCC"
+    27 -> "#CCFFFF"
+    28 -> "#660066"
+    29 -> "#FF8080"
+    30 -> "#0066CC"
+    31 -> "#CCCCFF"
+    32 -> "#000080"
+    33 -> "#FF00FF"
+    34 -> "#FFFF00"
+    35 -> "#00FFFF"
+    36 -> "#800080"
+    37 -> "#800000"
+    38 -> "#008080"
+    39 -> "#0000FF"
+    40 -> "#00CCFF"
+    41 -> "#CCFFFF"
+    42 -> "#CCFFCC"
+    43 -> "#FFFF99"
+    44 -> "#99CCFF"
+    45 -> "#FF99CC"
+    46 -> "#CC99FF"
+    47 -> "#FFCC99"
+    48 -> "#3366FF"
+    49 -> "#33CCCC"
+    50 -> "#99CC00"
+    51 -> "#FFCC00"
+    52 -> "#FF9900"
+    53 -> "#FF6600"
+    54 -> "#666699"
+    55 -> "#969696"
+    56 -> "#003366"
+    57 -> "#339966"
+    58 -> "#003300"
+    59 -> "#333300"
+    60 -> "#993300"
+    61 -> "#993366"
+    62 -> "#333399"
+    63 -> "#333333"
+    64 -> "#FFFFFF"
+    65 -> "#000000"
+    66 -> "#C0C0C0"
+    67 -> "#FF0000"
+    68 -> "#FFFF00"
+    69 -> "#00FF00"
+    70 -> "#00FFFF"
+    71 -> "#FF00FF"
+    72 -> "#0000FF"
+    73 -> "#000000"
+    74 -> "#FFFFFF"
+    75 -> "#00008B"
+    76 -> "#008B8B"
+    77 -> "#A9A9A9"
+    78 -> "#006400"
+    79 -> "#BDB76B"
+    80 -> "#8B008B"
+    81 -> "#556B2F"
+    82 -> "#FF8C00"
+    83 -> "#9932CC"
+    84 -> "#8B0000"
+    85 -> "#E9967A"
+    86 -> "#9400D3"
+    87 -> "#FF00FF"
+    88 -> "#FFD700"
+    89 -> "#008000"
+    90 -> "#4B0082"
+    91 -> "#F0E68C"
+    92 -> "#ADD8E6"
+    93 -> "#E0FFFF"
+    94 -> "#90EE90"
+    95 -> "#D3D3D3"
+    96 -> "#FFB6C1"
+    97 -> "#FFA07A"
+    98 -> "#20B2AA"
+    99 -> "#87CEFA"
+    100 -> "#778899"
+    101 -> "#B0C4DE"
+    102 -> "#FFFFE0"
+    103 -> "#00FF00"
+    104 -> "#32CD32"
+    105 -> "#FAF0E6"
+    106 -> "#FF00FF"
+    107 -> "#800000"
+    108 -> "#000080"
+    109 -> "#808000"
+    110 -> "#800080"
+    111 -> "#008080"
+    112 -> "#C0C0C0"
+    113 -> "#000000"
+    else -> null
+}
+
+/** 合并单元格解析: 返回 (被合并格集合, 首格范围 map: "c:r" -> (colspan, rowspan)) */
+internal fun parseMergeRanges(sheetXml: String): Pair<Set<String>, Map<String, Pair<Int, Int>>> {
     val merged = HashSet<String>()
+    val starts = HashMap<String, Pair<Int, Int>>()
     val pattern = Regex("<mergeCell[^>]*ref=\"([A-Z]+\\d+:[A-Z]+\\d+)\"")
     pattern.findAll(sheetXml).forEach { m ->
         val ref = m.groupValues.getOrNull(1) ?: return@forEach
@@ -256,13 +392,14 @@ internal fun parseMergeRanges(sheetXml: String): Set<String> {
         val rowA = a.filter { it.isDigit() }.toIntOrNull() ?: 0
         val colB = colToNum(b.filter { it.isLetter() })
         val rowB = b.filter { it.isDigit() }.toIntOrNull() ?: 0
+        starts["$colA:$rowA"] = (colB - colA + 1) to (rowB - rowA + 1)
         for (r in rowA..rowB) {
             for (c in colA..colB) {
                 if (r != rowA || c != colA) merged.add("$c:$r")
             }
         }
     }
-    return merged
+    return merged to starts
 }
 
 internal fun colToNum(col: String): Int {
@@ -273,8 +410,7 @@ internal fun colToNum(col: String): Int {
 
 internal fun buildSheetHtml(sheetXml: String, shared: List<String>, cellFills: List<String?>): String {
     val sb = StringBuilder("<table style='table-layout:fixed'>")
-    val merged = parseMergeRanges(sheetXml)
-    // 正在合并的格子: 记录由哪个行/列开始, 简化处理: 被合并位置直接跳过
+    val (merged, mergeStarts) = parseMergeRanges(sheetXml)
     try {
         val factory = XmlPullParserFactory.newInstance()
         factory.isNamespaceAware = false
@@ -320,18 +456,22 @@ internal fun buildSheetHtml(sheetXml: String, shared: List<String>, cellFills: L
                                 raw.isBlank() -> "&nbsp;"
                                 else -> escapeHtml(raw)
                             }
-                            // 跳过被合并格
                             while (colIndex + 1 < cellCol) {
-                                // 空隙补空单元格
+                                // 行首跳跃/空隙: 补空单元格保列位
                                 sb.append("<td></td>")
                                 colIndex++
                             }
                             if ("$cellCol:$rowIndex" in merged) {
-                                // 被合并, 跳过
+                                // 被合并格, 跳过
                             } else {
                                 val fill = cellFills.getOrNull(cellStyle)
                                 val style = if (fill != null) " style='background-color:$fill'" else ""
-                                sb.append("<td$style>").append(value).append("</td>")
+                                val span = mergeStarts["$cellCol:$rowIndex"]
+                                val spanAttr = if (span != null) {
+                                    val (cs, rs) = span
+                                    " colspan='$cs' rowspan='$rs'"
+                                } else ""
+                                sb.append("<td$spanAttr$style>").append(value).append("</td>")
                             }
                             colIndex++
                         }
@@ -519,6 +659,11 @@ internal fun buildSlideHtml(
                 }
                 XmlPullParser.END_TAG -> {
                     when {
+                        parser.isTag("p") -> {
+                            // 段落结束: 文本换行 (形状内用 br, 单元格内用换行)
+                            if (inCell) cellText.append("<br/>")
+                            else if (inText) runs.append("<br/>")
+                        }
                         parser.isTag("bg") -> {}
                         parser.isTag("bgPr") -> {}
                         parser.isTag("spPr") -> inSpPr = false
@@ -531,8 +676,8 @@ internal fun buildSlideHtml(
                         }
                         parser.isTag("rPr") -> inRotPr = false
                         parser.isTag("txBody") -> {
-                            if (inText) {
-                                // 输出形状
+                            if (inText && !inCell) {
+                                // 仅形状的 txBody 输出; 表格单元格内由 td 承载
                                 val fill = shapeFill
                                 val textColor = runColor ?: contrastColor(fill ?: bgColor)
                                 val fontSizePx = (runSize / 100.0 * 4.0 / 3.0).toInt().coerceAtLeast(8)
