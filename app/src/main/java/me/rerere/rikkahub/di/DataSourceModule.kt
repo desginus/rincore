@@ -250,11 +250,12 @@ val dataSourceModule = module {
                     .addHeader(HttpHeaders.AcceptLanguage, acceptLang)
                     .apply {
                         if (orig.header(HttpHeaders.UserAgent) == null) {
-                            // v3.9.12 (2.4.11 移植): 自定义 User-Agent, 空则用默认
-                            val userAgent = settingsStore.settingsFlow.value.networkSetting.userAgent
-                                .trim()
-                                .ifEmpty { "RikkaHub-Android/${BuildConfig.VERSION_NAME}" }
-                            addHeader(HttpHeaders.UserAgent, userAgent)
+                            // v3.9.13: 只发用户显式自定义的 UA; 留空不发送,
+                            // 避免暴露客户端标识 (不污染请求头/上下文)
+                            val userAgent = settingsStore.settingsFlow.value.networkSetting.userAgent.trim()
+                            if (userAgent.isNotEmpty()) {
+                                addHeader(HttpHeaders.UserAgent, userAgent)
+                            }
                         }
                     }
                     .build()

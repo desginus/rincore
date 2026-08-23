@@ -2,7 +2,7 @@ package me.rerere.rikkahub.ui.pages.setting
 
 
 /* ───【2.4.11 移植】SettingPreferencesNetworkPage | v3.9.12 新增
- * 来源: 原版 RikkaHub 2.4.11 (SettingPreferencesNetworkPage.kt, 378 行)
+ * 来源: 原版 2.4.11 移植 (SettingPreferencesNetworkPage)
  * 功能: 网络设置 — 自定义 User-Agent / 代理 URL / 鉴权 + 连接测试
  * 改动: 直接移植原版, 包名一致, 标识 RinCore 用法不变
  * ───────────────────────────────────────────────────────────────*/
@@ -53,7 +53,6 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowRight01
 import me.rerere.hugeicons.stroke.View
 import me.rerere.hugeicons.stroke.ViewOff
-import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.network.toProxyOrNull
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -91,7 +90,6 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
     var proxyPasswordDraft by remember { mutableStateOf("") }
     var proxyPasswordVisible by remember { mutableStateOf(false) }
     var proxyDialogVisible by remember { mutableStateOf(false) }
-    val defaultUserAgent = "RikkaHub-Android/${BuildConfig.VERSION_NAME}"
     val proxyUrlInvalid = proxyUrlDraft.isNotBlank() && proxyUrlDraft.toProxyOrNull() == null
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val scope = rememberCoroutineScope()
@@ -303,14 +301,9 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
                                     label = {
                                         Text(stringResource(R.string.setting_page_preferences_network_user_agent))
                                     },
-                                    placeholder = { Text(defaultUserAgent) },
+                                    placeholder = { Text(stringResource(R.string.setting_page_preferences_network_user_agent_placeholder)) },
                                     supportingText = {
-                                        Text(
-                                            stringResource(
-                                                R.string.setting_page_preferences_network_user_agent_desc,
-                                                defaultUserAgent,
-                                            )
-                                        )
+                                        Text(stringResource(R.string.setting_page_preferences_network_user_agent_desc))
                                     },
                                     singleLine = true,
                                 )

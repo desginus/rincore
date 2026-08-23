@@ -857,7 +857,8 @@
   <string name="setting_page_preferences_network">Network</string>
   <string name="setting_page_preferences_network_desc">Custom client identification, proxy, connection test</string>
   <string name="setting_page_preferences_network_user_agent">User-Agent</string>
-  <string name="setting_page_preferences_network_user_agent_desc">Customize the User-Agent header. Empty uses default (%s)</string>
+  <string name="setting_page_preferences_network_user_agent_placeholder">Custom User-Agent, e.g. Mozilla/5.0 ...</string>
+  <string name="setting_page_preferences_network_user_agent_desc">Customize the User-Agent request header. Leave empty to not send a custom one</string>
   <string name="setting_page_preferences_network_proxy">Proxy</string>
   <string name="setting_page_preferences_network_proxy_desc">Supports http/https/socks5. E.g. http://127.0.0.1:7890</string>
   <string name="setting_page_preferences_network_proxy_invalid">Invalid proxy URL format</string>
