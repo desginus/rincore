@@ -36,6 +36,7 @@ sealed class ProviderSetting {
     abstract val name: String
     abstract val models: List<Model>
     abstract val balanceOption: BalanceOption
+    abstract val savedKeys: List<SavedApiKey>
 
     abstract val builtIn: Boolean
     abstract val description: @Composable() () -> Unit
