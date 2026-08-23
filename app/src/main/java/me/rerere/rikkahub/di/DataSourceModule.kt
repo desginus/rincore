@@ -343,13 +343,14 @@ val dataSourceModule = module {
     // v3.9.15: 按模型代理路由 — 读 Settings.networkSetting 三个开关状态
     single<me.rerere.ai.provider.ProxyRoute> {
         val settingsStore: SettingsStore = get()
-        val defaultClient: OkHttpClient = get()
         val proxyClient: OkHttpClient = get(named("proxy"))
         me.rerere.ai.provider.ProxyRoute { default, modelId ->
             val ns = settingsStore.settingsFlow.value.networkSetting
             val proxyOn = ns.proxyEnabled && ns.proxyUrl.isNotBlank() &&
                 (!ns.proxyPartialEnabled || modelId in ns.proxyModelIds)
-            if (proxyOn && default === defaultClient) proxyClient else default
+            // 注意: 不做 default === defaultClient 判定, Claude 独立连接池 (claudeClient)
+            // 的请求同样需要能走代理 — 勾选模型即代理, 与来源 client 无关
+            if (proxyOn) proxyClient else default
         }
     }
 

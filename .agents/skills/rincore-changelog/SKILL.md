@@ -3,7 +3,19 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v2.9.4 → v3.9.2）
+# RinCore 更新日志（v2.9.4 → v3.10.0）
+
+## v3.9.9 ~ v3.10.0（媒体/渲染/网络/代理路由系列，2026-08-23）
+- v3.9.9: MCP 待命文案修正 + 密钥快捷切换（备注/掩码列表）+ Excel 横向浏览 + PPT 流式占位符
+- v3.9.10: PDF 双缓冲缩放 + DOCX 排版还原 + PPT schemeClr 主题色 + 用量视图切换持久化 + 密钥管理落盘
+- v3.9.11: MCP 图标回 MessageBlocked + PPT 滚动容器 + DOCX rPr 字号字体还原 + ApiKeyQuickSwitcher 文件持久化
+- v3.9.12: 原版 2.4.11 全量移植 — 网络设置（UA/代理/SOCKS5/连接测试）+ 备份选择覆盖确认 + V4 Flash Vision + contextLength + MiMo
+- v3.9.13: UA 纯净（撤 RikkaHub 标识，留空不发自定义 UA）
+- v3.9.14: 澎湃 OS4/骁龙 8E 设备环境检测日志（pageSize/SOC/ABI），16KB 对齐全量核查达标
+- v3.9.15: 代理开关 + 部分开启按模型勾选（ProxyRoute 路由，默认 client 剥离代理，named("proxy") 独立）
+- v3.10.0: 稳定版 — 勾选弹窗滚动修复 + Claude 连接池代理路由修正 + 版本号里程碑 3.10
+
+## 历史教训（防重踩——每次改动前必读）
 
 ## 历史教训（防重踩——每次改动前必读）
 - **产品线**：v3.8.44-45 曾建 WaterHub B 类产品线（flavor 拆分），用户 3.9.1 令废弃回滚——只保留 A 线 RinCore 单产品构建。教训：未与用户对齐的产品线扩张立即废弃，勿自行推进
