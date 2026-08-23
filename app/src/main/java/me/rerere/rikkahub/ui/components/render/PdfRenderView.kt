@@ -104,29 +104,32 @@ fun PdfRenderView(
             }
             if (!loaded) {
                 Box(Modifier.fillMaxWidth().padding(24.dp)) { Text("页面渲染中...") }
-            } else if (bitmap == null) {
-                Box(Modifier.fillMaxWidth().padding(24.dp)) { Text("页面渲染失败") }
             } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(vertical = 4.dp)
-                        .pointerInput(Unit) {
-                            detectTransformGestures { _, _, zoomChange, _ ->
-                                onZoomChange(zoomChange)
-                            }
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Image(
-                        bitmap = bitmap.asImageBitmap(),
-                        contentDescription = null,
-                        contentScale = ContentScale.FillWidth,
+                val bmp = bitmap
+                if (bmp == null) {
+                    Box(Modifier.fillMaxWidth().padding(24.dp)) { Text("页面渲染失败") }
+                } else {
+                    Box(
                         modifier = Modifier
-                            .width((screenWidth * zoom).dp)
-                            .background(Color.White),
-                    )
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(vertical = 4.dp)
+                            .pointerInput(Unit) {
+                                detectTransformGestures { _, _, zoomChange, _ ->
+                                    onZoomChange(zoomChange)
+                                }
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Image(
+                            bitmap = bmp.asImageBitmap(),
+                            contentDescription = null,
+                            contentScale = ContentScale.FillWidth,
+                            modifier = Modifier
+                                .width((screenWidth * zoom).dp)
+                                .background(Color.White),
+                        )
+                    }
                 }
             }
         }
