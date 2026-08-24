@@ -67,12 +67,16 @@ object ConnectionWarmer {
     // 裸 socket 预热 (warmHost) 只暖 DNS 缓存, 不进池 — TTFT 专项升级。
     // 注意: 必须使用与主请求相同的 OkHttpClient 实例, 否则连接池独立无复用。
     // 401/404 亦可 (连接已建立进池); 全部静默, 不影响主链路。
-    fun warmWithOkHttp(client: OkHttpClient, baseUrl: String) {
+    fun warmWithOkHttp(client: OkHttpClient, baseUrl: String, opencodeClient: OkHttpClient? = null) {
         val safe = runCatching { baseUrl.trimEnd('/') + "/models" }.getOrNull() ?: return
+        // v3.10.7: 按 host 选池 — opencode.ai 主请求走长保活池 (opencodeClient),
+        // 预热必须进同一个池否则白做 (v3.10.5 疏漏: 预热只进默认池)
+        val isOpencode = runCatching { java.net.URI(baseUrl).host == "opencode.ai" }.getOrDefault(false)
+        val eff = if (isOpencode) (opencodeClient ?: client) else client
         Thread({
             runCatching {
                 val req = okhttp3.Request.Builder().url(safe).get().build()
-                client.newCall(req).execute().use { }
+                eff.newCall(req).execute().use { }
             }.onFailure {
                 Log.w(TAG, "OkHttp 预热失败: $safe — ${it.message}")
             }

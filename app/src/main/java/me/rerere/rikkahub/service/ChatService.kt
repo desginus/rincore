@@ -572,7 +572,9 @@ class ChatService(
         // v3.10.5: OkHttp 级 — 预热请求与组装并发, 主请求发送时连接已就绪进池
         val provider = model.findProvider(settings.providers)
         if (provider is ProviderSetting.OpenAI && provider.baseUrl.isNotBlank()) {
-            ConnectionWarmer.warmWithOkHttp(httpClient, provider.baseUrl)
+            // v3.10.7: opencode.ai 预热进长保活池 (ProviderManager.opencodeClient),
+            // 与主请求同池 — 修复 v3.10.5 预热池错配
+            ConnectionWarmer.warmWithOkHttp(httpClient, provider.baseUrl, me.rerere.ai.provider.ProviderManager.opencodeClient)
             runCatching { java.net.URI(provider.baseUrl).host }
                 .getOrNull()
                 ?.let { host -> ConnectionWarmer.warmHostOnce(context, host) }

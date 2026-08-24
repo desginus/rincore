@@ -91,7 +91,8 @@ class RikkaHubApp : Application() {
                 // v3.10.5: OkHttp 级预热 — 连接真实进池 (默认池 60s / opencode 池 300s),
                 // 跳过 DNS+TCP+TLS 缩短 TTFT; 裸 socket 预热保留作 DNS 兜底
                 val httpClient = get<OkHttpClient>()
-                userUrls.forEach { url -> ConnectionWarmer.warmWithOkHttp(httpClient, url) }
+                val opencodeClient = me.rerere.ai.provider.ProviderManager.opencodeClient
+                userUrls.forEach { url -> ConnectionWarmer.warmWithOkHttp(httpClient, url, opencodeClient) }
                 ConnectionWarmer.warmConfiguredProviders(this@RikkaHubApp, userUrls)
             }
         }, "warmup-user-providers").start()

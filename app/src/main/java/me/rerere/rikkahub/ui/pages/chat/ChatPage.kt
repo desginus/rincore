@@ -114,6 +114,11 @@ import me.rerere.rikkahub.utils.isAllowedFileType
 import me.rerere.rikkahub.utils.navigateToChatPage
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
+import kotlinx.coroutines.delay
+import okhttp3.OkHttpClient
+import me.rerere.ai.provider.ProviderManager
+import me.rerere.ai.provider.ProviderSetting
+import me.rerere.rikkahub.service.ConnectionWarmer
 import org.koin.core.parameter.parametersOf
 import java.io.File
 import kotlin.uuid.Uuid
@@ -172,6 +177,24 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
     }
 
     val inputState = vm.inputState
+
+    // v3.10.7: 打字防抖预热 — 输入停顿 1.5s 且未生成时预建连接
+    // 比发送时预热更提前 (覆盖组装窗口不足), 进一步压缩 TTFT
+    val httpClient: OkHttpClient = koinInject()
+    LaunchedEffect(inputState.textContent.text) {
+        val text = inputState.textContent.text
+        if (text.isNotBlank() && loadingJob == null) {
+            delay(1_500)
+            val s = setting
+            val p = s.getCurrentChatModel()?.findProvider(s.providers)
+            if (p is ProviderSetting.OpenAI && p.baseUrl.isNotBlank()) {
+                ConnectionWarmer.warmWithOkHttp(
+                    httpClient, p.baseUrl,
+                    ProviderManager.opencodeClient
+                )
+            }
+        }
+    }
 
     // 初始化输入状态（处理传入的 files 和 text 参数）
     LaunchedEffect(files, text) {
