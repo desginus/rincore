@@ -19,12 +19,18 @@ import me.rerere.rikkahub.data.files.SkillPaths
 
 fun createSkillTools(
     allSkills: List<SkillMetadata>,
+    enabledSkills: Set<String>? = null, // v3.10.4: 恢复助手级过滤 — null=全量(存量兼容), 非null=按名单
     skillProvider: () -> List<SkillMetadata> = { allSkills }, // 实时查询(可选) — 修复列表快照滞后: 新增 Skill 无需重启
 ): List<Tool> {
     // 信源统一 (v3.5.45): 全部已安装 Skill 生成独立工具 — 不按启用过滤。
-    // v3.6.92: enabledSkills 参数删除 — 生成/执行口径统一为"存在即可用"。
+    // v3.6.92: enabledSkills 参数删除 — 生成/执行口径统一为"存在即可用"
+    //   (默认 enabledSkills 为空 → 所有技能报 not available 的矛盾遗留)。
+    // v3.10.4: 恢复过滤 — 由调用方 (ToolsBuilder) 按助手 filterSkills 决定:
+    //   新助手 (filterSkills=true) 传 enabledSkills → 未勾选技能不生成工具;
+    //   存量助手 (filterSkills=false) 传 null → 全量兼容, 不破坏现有可用性。
     // 技能工具经 invoke_tools("技能") 分层加载, 不增加冷启动体积。
-    val available = skillProvider().ifEmpty { allSkills }
+    val base = skillProvider().ifEmpty { allSkills }
+    val available = if (enabledSkills != null) base.filter { it.name in enabledSkills } else base
     if (available.isEmpty()) return emptyList()
 
     // 每个已启用 Skill 生成独立工具 skill_<name> — 直接可用, 无需先 invoke_tools 查列表

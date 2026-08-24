@@ -42,6 +42,9 @@ data class Assistant(
     val customBodies: List<CustomBody> = emptyList(),
     val mcpServers: Set<Uuid> = emptySet(),
     val localTools: List<LocalToolOption> = listOf(LocalToolOption.TimeInfo),
+    // v3.10.4: 技能过滤开关 — true=按 enabledSkills 过滤 (新助手默认, 空=无技能工具);
+    // false=全量兼容 (存量助手, v3.6.92 前语义: 存在即可用)
+    val filterSkills: Boolean = false,
     val workspaceId: Uuid? = null,
     val background: String? = null, // 聊天页背景图地址(本地文件 URI 或网络 URL), 为 null 时无背景
     val backgroundOpacity: Float = 1.0f, // 背景图不透明度(0~1)

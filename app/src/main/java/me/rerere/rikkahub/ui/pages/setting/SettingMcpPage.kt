@@ -92,7 +92,6 @@ import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.FileImport
 import me.rerere.hugeicons.stroke.McpServer
-import me.rerere.hugeicons.stroke.MessageBlocked
 import me.rerere.hugeicons.stroke.Settings03
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
@@ -315,7 +314,9 @@ private fun McpServerItem(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 when (status) {
-                    McpStatus.Idle -> Icon(HugeIcons.MessageBlocked, null)
+                    // v3.10.4: Idle (懒加载已配置未连接) 不再显示划掉气泡 — 语义错配,
+                    // 配置在即显示折线连接图标, 与 Connected 同款; 状态文案行区分
+                    McpStatus.Idle -> Icon(HugeIcons.McpServer, null)
                     McpStatus.Connecting -> CircularProgressIndicator(
                         modifier = Modifier.size(
                             24.dp

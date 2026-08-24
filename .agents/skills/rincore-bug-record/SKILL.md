@@ -300,3 +300,10 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 - **根因**: v3.5.16 为满足 DeepSeek 首条 system 插入空字符串 system; Opencode 网关对 content:"" 的 system 消息返回 500
 - **修复**: 空 system 全部改最小非空前言 FALLBACK_SYSTEM_PROMPT; MessageProtocol + OpenAIProvider 两处
 - **教训**: 协议兜底不能发"结构合规但语义为空"的内容; 网关对空字段容忍度不同
+
+### B100. 新助手默认全开技能 + MCP 状态图标语义错配 (v3.10.4)
+- **现象**: 1) 新建助手所有 Skill 直接可用 (默认全开); 2) MCP 服务器行永远显示划掉气泡图标 (MessageBlocked)
+- **根因1**: v3.6.92 为消除"默认 enabledSkills 空 → 技能报 not available"矛盾, 删除生成/执行过滤, 技能全量注入 — 助手级开关失效
+- **根因2**: 懒加载设计 (启动不预连) → syncingStatus 无条目 → Idle → MessageBlocked (关闭语义) 与"已配置待连"实际语义错配; 原版预连接故显示 Connected 折线图标
+- **修复**: 1) Assistant 新增 filterSkills 字段 (false=存量全量兼容, true=新助手过滤), 新助手创建处显式 true, ToolsBuilder 按 filterSkills 传 enabledSkills 恢复过滤; 2) SettingMcpPage Idle 图标 MessageBlocked → McpServer (折线), 文案行已有懒加载说明区分
+- **验证**: 新建助手 → 技能工具不注入 (invoke_tools 技能域为空); 存量助手技能不受影响; 设置页 MCP 行无划掉气泡

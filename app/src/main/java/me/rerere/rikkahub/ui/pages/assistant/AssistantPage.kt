@@ -125,7 +125,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                 actions = {
                     IconButton(
                         onClick = {
-                            createState.open(Assistant())
+                            createState.open(Assistant(filterSkills = true)) // v3.10.4: 新助手默认技能过滤 (不自动全开)
                         }) {
                         Icon(HugeIcons.Add01, stringResource(R.string.assistant_page_add))
                     }

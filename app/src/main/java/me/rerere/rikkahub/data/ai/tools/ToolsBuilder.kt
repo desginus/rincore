@@ -96,6 +96,9 @@ fun buildAssistantToolPool(
             addAll(
                 createSkillTools(
                     allSkills = allSkills,
+                    // v3.10.4: 新助手按 enabledSkills 过滤 (默认空=不加载技能工具);
+                    // 存量助手 (filterSkills=false) 全量兼容, 不破坏现有可用性
+                    enabledSkills = if (assistant.filterSkills) assistant.enabledSkills else null,
                 )
             )
         }
