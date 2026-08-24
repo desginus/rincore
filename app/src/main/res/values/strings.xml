@@ -1287,6 +1287,10 @@
   <string name="workspace_terminal_not_installed">Please install Rootfs first</string>
   <string name="workspace_terminal_loading">Loading workspace…</string>
   <string name="workspace_terminal_exited">Terminal exited</string>
+  <string name="workspace_terminal_tab">Terminal %1$d</string>
+  <string name="workspace_terminal_new_tab">New terminal tab</string>
+  <string name="workspace_terminal_close_tab">Close terminal %1$d</string>
+  <string name="workspace_terminal_no_tabs">No open terminal tabs</string>
   <string name="extensions_page_workspace">Workspace</string>
   <string name="extensions_page_workspace_desc">Manage local working directories accessible by Agent</string>
   <string name="workspace_select">Select Workspace</string>
@@ -1410,4 +1414,3 @@
     <string name="setting_page_share_text">RinCore - Personal AI Assistant</string>
     <string name="setting_page_web_server_desc">Allow you access RinCore via Web</string>
 </resources>
-

@@ -37,6 +37,7 @@ import me.rerere.rikkahub.service.ChatNotificationManager
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.service.CronJobScheduler
 import me.rerere.rikkahub.service.DirectModeActionRunner
+import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceTerminalSessionManager
 import me.rerere.rikkahub.utils.EmojiData
 import me.rerere.rikkahub.utils.EmojiUtils
 import me.rerere.rikkahub.utils.JsonInstant
@@ -153,6 +154,10 @@ val appModule = module {
 
     single {
         SoundEffectPlayer(get())
+    }
+
+    single {
+        WorkspaceTerminalSessionManager(get(), get())
     }
 
     // 生成通知与业务解耦：ChatService 只发事件，通知由这里消费；
