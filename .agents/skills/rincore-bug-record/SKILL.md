@@ -294,3 +294,9 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 3. 修改要有全局意识，主动发现并修复用户未察觉的 bug
 4. 数值计算必须用代码执行，禁止心算
 5. 单次修改小步提交，CI 验证后继续
+
+### B99. Opencode 各套餐 HTTP 500 — 空 system 兜底 (v3.10.3)
+- **现象**: 经 OpenCode 的模型后台子任务 (标题/建议/压缩) 稳定 500, 存在很久, 原版正常
+- **根因**: v3.5.16 为满足 DeepSeek 首条 system 插入空字符串 system; Opencode 网关对 content:"" 的 system 消息返回 500
+- **修复**: 空 system 全部改最小非空前言 FALLBACK_SYSTEM_PROMPT; MessageProtocol + OpenAIProvider 两处
+- **教训**: 协议兜底不能发"结构合规但语义为空"的内容; 网关对空字段容忍度不同
