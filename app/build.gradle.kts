@@ -20,8 +20,8 @@ android {
             applicationId = "me.rincore.app"
             minSdk = 26
             targetSdk = 37
-            versionCode = 225
-            versionName = "3.10.7"
+            versionCode = 226
+            versionName = "3.10.8"
 
             testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -174,6 +174,7 @@ dependencies {
 
     // jetbrains markdown parser
     implementation(libs.jetbrains.markdown)
+    implementation(libs.mikepenz.markdown.m3)
 
     // okhttp
     implementation(libs.okhttp)
