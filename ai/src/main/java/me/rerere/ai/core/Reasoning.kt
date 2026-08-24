@@ -1,9 +1,5 @@
 package me.rerere.ai.core
 
-
-/* ───【原版对齐】Reasoning.kt | 差异 ±11 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -14,14 +10,19 @@ enum class ReasoningLevel(
 ) {
     @SerialName("off")
     OFF(0, "none"),
+
     @SerialName("auto")
     AUTO(-1, "auto"),
+
     @SerialName("low")
     LOW(1_000, "low"),
+
     @SerialName("medium")
     MEDIUM(2_000, "medium"),
+
     @SerialName("high")
     HIGH(8_000, "high"),
+
     @SerialName("xhigh")
     XHIGH(16_000, "xhigh"),
 
@@ -33,7 +34,11 @@ enum class ReasoningLevel(
 
     companion object {
         fun fromBudgetTokens(budgetTokens: Int?): ReasoningLevel {
-            return entries.minByOrNull { kotlin.math.abs(it.budgetTokens - (budgetTokens ?: AUTO.budgetTokens)) } ?: AUTO
+            return entries.minByOrNull {
+                kotlin.math.abs(
+                    it.budgetTokens - (budgetTokens ?: AUTO.budgetTokens)
+                )
+            } ?: AUTO
         }
     }
 }

@@ -1,9 +1,5 @@
 package me.rerere.rikkahub.ui.components.message
 
-
-/* ───【原版对齐】ChatMessageTranslation.kt | 差异 ±4 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.LinearEasing
@@ -73,7 +69,7 @@ fun LanguageSelectionDialog(
             Locale.KOREAN,
             Locale.FRENCH,
             Locale.GERMAN,
-            Locale.forLanguageTag("es-ES"),
+            Locale("es", "ES"),
             Locale.ITALIAN,
         )
     }
@@ -90,7 +86,7 @@ fun LanguageSelectionDialog(
             Locale.FRENCH -> stringResource(R.string.language_french)
             Locale.GERMAN -> stringResource(R.string.language_german)
             Locale.ITALIAN -> stringResource(R.string.language_italian)
-            Locale.forLanguageTag("es-ES") -> stringResource(R.string.language_spanish)
+            Locale("es", "ES") -> stringResource(R.string.language_spanish)
             else -> locale.getDisplayLanguage(Locale.getDefault())
         }
     }

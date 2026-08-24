@@ -1,14 +1,10 @@
 package me.rerere.rikkahub.ui.components.message
 
-
-/* ───【原版对齐】ChatMessageCot.kt | 差异 ±12 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.ui.util.fastForEachIndexed
 import me.rerere.ai.ui.UIMessagePart
 
 /**
- * 思考步骤类型，用于分组 Reasoning 和 Tool
+ * 思考步骤类型，用于分组 Reasoning、客户端 Tool 和 ServerTool
  */
 sealed interface ThinkingStep {
     data class ReasoningStep(
@@ -17,6 +13,10 @@ sealed interface ThinkingStep {
 
     data class ToolStep(
         val tool: UIMessagePart.Tool,
+    ) : ThinkingStep
+
+    data class ServerToolStep(
+        val tool: UIMessagePart.ServerTool,
     ) : ThinkingStep
 }
 
@@ -30,7 +30,7 @@ sealed interface MessagePartBlock {
 
 /**
  * 将 parts 分组成 ThinkingBlock 和 ContentBlock
- * 连续的 Reasoning 和 Tool 会被分组到一个 ThinkingBlock 中
+ * 连续的 Reasoning、客户端 Tool 和 ServerTool 会被分组到一个 ThinkingBlock 中
  */
 fun List<UIMessagePart>.groupMessageParts(): List<MessagePartBlock> {
     val result = mutableListOf<MessagePartBlock>()
@@ -51,6 +51,10 @@ fun List<UIMessagePart>.groupMessageParts(): List<MessagePartBlock> {
 
             is UIMessagePart.Tool -> {
                 currentThinkingSteps.add(ThinkingStep.ToolStep(part))
+            }
+
+            is UIMessagePart.ServerTool -> {
+                currentThinkingSteps.add(ThinkingStep.ServerToolStep(part))
             }
 
             else -> {

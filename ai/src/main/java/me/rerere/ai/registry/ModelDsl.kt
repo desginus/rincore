@@ -1,6 +1,5 @@
 package me.rerere.ai.registry
 
-
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.ModelAbility
 
@@ -13,7 +12,7 @@ class ModelDefinition(
     val inputModalities: Set<Modality>,
     val outputModalities: Set<Modality>,
     val abilities: Set<ModelAbility>,
-    val contextLength: Int? = null,
+    val contextLength: Int? = null
 ) : ModelSelector {
     override fun match(modelId: String): Boolean {
         val tokens = tokenize(modelId)
@@ -99,7 +98,7 @@ class ModelDefinitionBuilder {
             inputModalities = inputModalities.toSet(),
             outputModalities = outputModalities.toSet(),
             abilities = abilities.toSet(),
-            contextLength = contextLength,
+            contextLength = contextLength
         )
     }
 }

@@ -1,9 +1,5 @@
 package me.rerere.rikkahub.ui.components.ui
 
-
-/* ───【原版对齐】UpdateCard.kt | 差异 ±12 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -167,6 +163,11 @@ fun UpdateCard(vm: ChatVM) {
                             },
                         ) {
                             ListItem(
+                                headlineContent = {
+                                    Text(
+                                        text = downloadItem.name,
+                                    )
+                                },
                                 supportingContent = {
                                     Text(
                                         text = downloadItem.size
@@ -177,11 +178,8 @@ fun UpdateCard(vm: ChatVM) {
                                         imageVector = HugeIcons.Download01,
                                         contentDescription = null
                                     )
-                                } ) {
-Text(
-                                        text = downloadItem.name,
-                                    )
-}
+                                }
+                            )
                         }
                     }
                 }

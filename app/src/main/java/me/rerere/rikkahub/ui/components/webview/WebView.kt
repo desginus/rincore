@@ -1,9 +1,5 @@
 package me.rerere.rikkahub.ui.components.webview
 
-
-/* ───【原版对齐】WebView.kt | 差异 ±10 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.util.Log
@@ -91,6 +87,14 @@ private fun WebView.resetState(
     }
 }
 
+private fun WebView.release(interfaces: Map<String, Any>) {
+    resetState(interfaces, clearClients = true)
+    loadUrl("about:blank")
+    clearHistory()
+    removeAllViews()
+    destroy()
+}
+
 @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
 @Composable
 fun WebView(
@@ -138,10 +142,10 @@ fun WebView(
                 Log.d(TAG, "AndroidView: Resetting WebView")
             },
             onRelease = {
-                it.resetState(state.interfaces, clearClients = true)
                 if (state.webView === it) {
                     state.webView = null
                 }
+                it.release(state.interfaces)
                 Log.d(TAG, "AndroidView: Releasing WebView")
             },
             update = { webView ->
