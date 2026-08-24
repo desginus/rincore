@@ -6,6 +6,9 @@ plugins {
 android {
     namespace = "me.rerere.videogen"
     compileSdk = 37  // rincore 共用 sdk
+    defaultConfig {
+        minSdk = 26
+    }
 }
 
 dependencies {
