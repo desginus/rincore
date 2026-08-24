@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.data.files
 
-
 import java.io.File
 
 internal object SkillPaths {

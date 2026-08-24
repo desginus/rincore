@@ -1,6 +1,5 @@
 package me.rerere.ai.util
 
-
 import android.media.ExifInterface
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory

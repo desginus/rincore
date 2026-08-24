@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.data.api
 
-
 import me.rerere.rikkahub.data.model.Sponsor
 import me.rerere.rikkahub.utils.JsonInstant
 import okhttp3.MediaType.Companion.toMediaType

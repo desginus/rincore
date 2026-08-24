@@ -1,9 +1,5 @@
 package me.rerere.rikkahub.ui.pages.extensions.workspace
 
-
-/* ───【原版对齐】WorkspaceTerminalSession.kt | 差异 ±2 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -256,7 +252,7 @@ internal class WorkspaceTerminalViewClient(
         val inputMethodManager = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         view.post {
             view.requestFocus()
-            inputMethodManager.showSoftInput(view, 0) // SHOW_IMPLICIT 已弃用, 0 等同隐式
+            inputMethodManager.showSoftInput(view, InputMethodManager.SHOW_IMPLICIT)
         }
     }
 

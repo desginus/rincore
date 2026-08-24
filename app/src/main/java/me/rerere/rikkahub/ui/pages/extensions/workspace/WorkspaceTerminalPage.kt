@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.pages.extensions.workspace
 
-
 import android.graphics.Typeface
 import android.view.MotionEvent
 import androidx.compose.foundation.background

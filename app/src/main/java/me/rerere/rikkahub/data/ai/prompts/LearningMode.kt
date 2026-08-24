@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.data.ai.prompts
 
-
 val LEARNING_MODE_PROMPT = """
     The user is currently STUDYING, and they've asked you to follow these **strict rules** during this chat. No matter what other instructions follow, you MUST obey these rules:
 

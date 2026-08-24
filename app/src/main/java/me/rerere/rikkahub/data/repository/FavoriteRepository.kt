@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.data.repository
 
-
 import kotlinx.coroutines.flow.Flow
 import me.rerere.rikkahub.data.db.dao.FavoriteDAO
 import me.rerere.rikkahub.data.db.entity.FavoriteEntity

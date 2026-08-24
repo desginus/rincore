@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.components.ui
 
-
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable

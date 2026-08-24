@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
-
 import android.util.Log
 import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel

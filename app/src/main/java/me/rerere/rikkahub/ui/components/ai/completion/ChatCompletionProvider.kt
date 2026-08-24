@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.components.ai.completion
 
-
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextRange
 

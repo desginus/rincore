@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.data.files
 
-
 object SkillFrontmatterParser {
     private val frontmatterEndRegex = Regex("""\r?\n---(?:\r?\n|$)""")
 

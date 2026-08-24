@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.components.ui.permission
 
-
 import androidx.compose.runtime.Composable
 
 /**

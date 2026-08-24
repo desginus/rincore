@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.utils
 
-
 fun <E> Collection<E>.checkDifferent(
     other: Collection<E>,
     eq: (E, E) -> Boolean,

@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.pages.webview
 
-
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowRight01
 import me.rerere.hugeicons.stroke.Bug01

@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.pages.setting
 
-
 import android.content.Context
 import android.graphics.Typeface
 import android.net.Uri

@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.utils
 
-
 import com.github.difflib.DiffUtils
 import com.github.difflib.UnifiedDiffUtils
 

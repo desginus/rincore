@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.pages.setting.components
 
-
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable

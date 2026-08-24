@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.pages.translator
 
-
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job

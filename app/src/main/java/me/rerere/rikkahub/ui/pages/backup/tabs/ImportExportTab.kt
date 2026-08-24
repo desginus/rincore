@@ -1,24 +1,22 @@
 package me.rerere.rikkahub.ui.pages.backup.tabs
 
-
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.File01
 import me.rerere.hugeicons.stroke.FileImport
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.MultiChoiceSegmentedButtonRow
-import me.rerere.rikkahub.data.datastore.WebDavConfig
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MultiChoiceSegmentedButtonRow
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -35,6 +33,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dokar.sonner.ToastType
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.datastore.WebDavConfig
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.components.ui.StickyHeader
 import me.rerere.rikkahub.ui.context.LocalToaster
@@ -53,11 +52,9 @@ fun ImportExportTab(
     val toaster = LocalToaster.current
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    // v3.9.12 (2.4.11 移植): 本地备份内容选择
     val selectedBackupItems by vm.localBackupItems.collectAsStateWithLifecycle()
     var isExporting by remember { mutableStateOf(false) }
     var isRestoring by remember { mutableStateOf(false) }
-    // v3.9.12 (2.4.11 移植): 导入前覆盖确认弹窗
     var showImportConfirmDialog by remember { mutableStateOf(false) }
 
     // 导入类型：local 为本地备份，chatbox 为 Chatbox 导入，cherry 为 Cherry Studio 导入
@@ -194,7 +191,6 @@ fun ImportExportTab(
 
         item {
             CardGroup {
-                // v3.9.12 (2.4.11 移植): 选择导出/导入内容 (聊天记录 / 文件)
                 item(
                     headlineContent = { Text(stringResource(R.string.backup_page_backup_items)) },
                     supportingContent = {
@@ -258,7 +254,6 @@ fun ImportExportTab(
                 item(
                     onClick = if (!isRestoring) {
                         {
-                            // v3.9.12 (2.4.11 移植): 先弹覆盖确认, 用户确认后再选文件
                             showImportConfirmDialog = true
                         }
                     } else null,
@@ -330,7 +325,6 @@ fun ImportExportTab(
         }
     }
 
-    // v3.9.12 (2.4.11 移植): 本地备份导入前确认覆盖弹窗
     if (showImportConfirmDialog) {
         AlertDialog(
             onDismissRequest = { showImportConfirmDialog = false },

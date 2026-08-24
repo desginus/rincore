@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.components.ai.completion
 
-
 import androidx.compose.ui.text.TextRange
 import kotlinx.coroutines.CancellationException
 import me.rerere.hugeicons.HugeIcons

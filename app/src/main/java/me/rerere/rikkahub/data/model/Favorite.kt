@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.data.model
 
-
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import me.rerere.ai.core.MessageRole

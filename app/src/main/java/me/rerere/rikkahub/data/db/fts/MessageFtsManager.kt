@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.data.db.fts
 
-
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

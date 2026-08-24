@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.data.sync.webdav
 
-
 import android.content.Context
 import android.util.Log
 import io.ktor.client.HttpClient

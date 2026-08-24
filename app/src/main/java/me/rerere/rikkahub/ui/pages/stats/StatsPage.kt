@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.pages.stats
 
-
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ChartColumn
 import me.rerere.hugeicons.stroke.Cpu

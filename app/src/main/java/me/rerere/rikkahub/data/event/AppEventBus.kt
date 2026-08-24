@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.data.event
 
-
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow

@@ -1,9 +1,5 @@
 package me.rerere.rikkahub.data.db.migrations
 
-
-/* ───【原版对齐】MigrationUtils.kt | 差异 ±2 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -86,7 +82,7 @@ internal fun migratePartsArray(partsElement: JsonArray): JsonArray {
                 })
             }
 
-            val updatedObject = updatedPart // 编译器智能转换: 两分支均为 JsonObject
+            val updatedObject = updatedPart as? JsonObject ?: return@map updatedPart
             val outputElement = updatedObject["output"] as? JsonArray ?: return@map updatedPart
             val migratedOutput = migratePartsArray(outputElement)
             if (migratedOutput == outputElement) {

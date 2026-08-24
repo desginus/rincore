@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.components.ui
 
-
 import android.app.Activity
 import android.graphics.Bitmap
 import android.os.Handler

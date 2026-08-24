@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.components.richtext
 
-
 import android.graphics.Rect
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size

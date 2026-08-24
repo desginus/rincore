@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.pages.setting
 
-
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row

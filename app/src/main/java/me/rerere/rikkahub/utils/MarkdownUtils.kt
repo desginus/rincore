@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.utils
 
-
 /**
  * 移除字符串中的Markdown格式
  * @return 移除Markdown格式后的纯文本

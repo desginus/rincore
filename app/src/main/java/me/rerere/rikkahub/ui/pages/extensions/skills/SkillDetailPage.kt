@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.pages.extensions.skills
 
-
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut

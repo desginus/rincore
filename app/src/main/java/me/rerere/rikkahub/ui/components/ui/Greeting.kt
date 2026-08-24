@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.components.ui
 
-
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable

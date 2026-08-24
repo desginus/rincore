@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
-
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth

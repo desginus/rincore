@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.pages.chat
 
-
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Folder01
 import me.rerere.hugeicons.stroke.Forward02

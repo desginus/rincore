@@ -1,9 +1,5 @@
 package me.rerere.rikkahub.data.ai.mcp
 
-
-/* ───【原版对齐】McpOAuthClient.kt | 差异 ±2 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -327,7 +323,7 @@ class McpOAuthClient(
 
     private suspend fun execute(request: Request): String {
         executeRaw(request).use { response ->
-            val body = response.body.string()
+            val body = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
                 throw IOException("HTTP ${response.code} for ${request.url}: ${body.take(300)}")
             }

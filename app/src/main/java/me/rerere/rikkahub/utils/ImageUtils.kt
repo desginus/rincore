@@ -2,7 +2,6 @@
 
 package me.rerere.rikkahub.utils
 
-
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory

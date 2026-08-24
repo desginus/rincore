@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.data.sync.importer
 
-
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull

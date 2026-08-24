@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.components.ai
 
-
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState

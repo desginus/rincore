@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.components.richtext
 
-
 import android.graphics.BitmapFactory
 import android.util.Base64
 import android.webkit.JavascriptInterface

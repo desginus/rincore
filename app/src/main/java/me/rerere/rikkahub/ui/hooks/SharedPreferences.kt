@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.hooks
 
-
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.compose.runtime.Composable

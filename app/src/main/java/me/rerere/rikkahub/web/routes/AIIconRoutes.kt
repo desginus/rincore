@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.web.routes
 
-
 import android.content.Context
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders

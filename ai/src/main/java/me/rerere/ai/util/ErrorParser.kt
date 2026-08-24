@@ -1,9 +1,5 @@
 package me.rerere.ai.util
 
-
-/* ───【原版对齐】ErrorParser.kt | 差异 ±5 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -47,6 +43,9 @@ fun JsonElement.parseErrorDetail(): HttpException {
             HttpException(this.jsonPrimitive.content)
         }
 
-        // else 冗余已删 — JsonElement 全分支覆盖
+        else -> {
+            // 其他情况，序列化整个元素
+            HttpException(Json.encodeToString(JsonElement.serializer(), this))
+        }
     }
 }

@@ -1,9 +1,5 @@
 package me.rerere.rikkahub.ui.components.ui
 
-
-/* ───【原版对齐】ViewText.kt | 差异 ±2 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.text.LineBreaker
@@ -191,7 +187,7 @@ private fun TextView.setComposeTextStyle(
                 // extra = desired_line_height - font_metrics_height
                 val fontMetrics = paint.fontMetricsInt
                 val extraSpacing = lineHeightPx - (fontMetrics.descent - fontMetrics.ascent)
-                setLineSpacing(extraSpacing, 1.0f)
+                setLineSpacing(extraSpacing.toFloat(), 1.0f)
             }
         }
 

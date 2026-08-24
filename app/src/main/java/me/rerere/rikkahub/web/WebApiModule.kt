@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.web
 
-
 import android.content.Context
 import com.auth0.jwt.JWT
 import com.auth0.jwt.JWTVerifier

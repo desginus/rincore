@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.data.ai.tools.local
 
-
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context

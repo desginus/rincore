@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.data.ai.tools
 
-
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull

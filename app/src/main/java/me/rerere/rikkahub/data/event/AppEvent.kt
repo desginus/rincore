@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.data.event
 
-
 import me.rerere.ai.ui.UIMessage
 import kotlin.uuid.Uuid
 

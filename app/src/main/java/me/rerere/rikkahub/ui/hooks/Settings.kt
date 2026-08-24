@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.hooks
 
-
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.lifecycle.compose.collectAsStateWithLifecycle

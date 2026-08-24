@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.pages.search
 
-
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Refresh01
 import me.rerere.hugeicons.stroke.Sorting01

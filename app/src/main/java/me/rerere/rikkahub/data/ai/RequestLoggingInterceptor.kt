@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.data.ai
 
-
 import me.rerere.common.android.LogEntry
 import me.rerere.common.android.Logging
 import okhttp3.Interceptor
@@ -65,7 +64,6 @@ class RequestLoggingInterceptor : Interceptor {
 
     private fun okhttp3.Headers.toMap(): Map<String, String> {
         return names().associateWith { name ->
-            // v3.9.12 (2.4.11 移植): 代理鉴权头脱敏 — 避免 Proxy-Authorization 明文落日志
             if (name.equals("Proxy-Authorization", ignoreCase = true)) {
                 "██"
             } else {

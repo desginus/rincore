@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.theme
 
-
 import androidx.compose.ui.graphics.Color
 import me.rerere.highlight.HighlightTextColorPalette
 
