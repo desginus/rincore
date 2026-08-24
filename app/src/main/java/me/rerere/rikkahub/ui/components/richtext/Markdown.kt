@@ -246,12 +246,6 @@ fun MarkdownBlock(
     style: TextStyle = LocalTextStyle.current,
     onClickCitation: (String) -> Unit = {}
 ) {
-    // v3.10.8: 新渲染内核 (mikepenz, GFM 全覆盖) — 普通 markdown 直接走新内核,
-    // LaTeX/Mermaid/graphviz 等扩展特征回旧内核 (能力未迁移前保证不丢功能)
-    if (MarkdownKernel.ENABLED && !MarkdownKernel.needsLegacyKernel(content)) {
-        MarkdownKernel(content = content, modifier = modifier)
-        return
-    }
     // v3.6.69: 初次解析异步化 — 此前首帧同步 parseMarkdown 阻塞主线程,
     // LazyColumn 滑动回收重建条目时反复同步解析 → 滑动卡顿不跟手。
     // v3.6.84: 回滚 v3.6.81 live 流式降级 — 用户要求输出一点渲染一点,

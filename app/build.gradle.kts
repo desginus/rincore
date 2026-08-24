@@ -25,7 +25,10 @@ android {
 // 递增 code 会禁止降级 (INSTALL_FAILED_VERSION_DOWNGRADE)。
 // versionName 照常递增用于显示与归档; 发版只改 versionName。
 versionCode = 2500
-            versionName = "3.10.11"
+            // v3.10.11 用户要求: versionName 锁死 3.10.6 — 不再上涨任何数字。
+// versionCode 同锁 2500 (任意替换安装, 升/降/同级均可)。
+// 发版只改代码, 版本号永不变化。
+versionName = "3.10.6"
 
             testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -178,7 +181,6 @@ dependencies {
 
     // jetbrains markdown parser
     implementation(libs.jetbrains.markdown)
-    implementation(libs.mikepenz.markdown.m3)
 
     // okhttp
     implementation(libs.okhttp)
