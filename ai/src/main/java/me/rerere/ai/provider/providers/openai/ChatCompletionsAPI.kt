@@ -227,6 +227,9 @@ class ChatCompletionsAPI(
                 params.model.displayName.contains("x-preview", ignoreCase = true) ||
                 params.model.modelId.contains("x-preview", ignoreCase = true)
             )
+        // v3.10.5: TTFT 可观测 — 首字延迟 = 发送完成 → 首个有效 data 事件 (onEvent 插桩)
+        val sentAtMs = System.currentTimeMillis()
+        val firstDataAtMs = java.util.concurrent.atomic.AtomicLong(0)
         val firstByteLimit = if (isOpencode) 120_000L else 60_000L
         val streamLimit = if (isOpencode) 180_000L else 120_000L
         val watchdog = launch {
@@ -552,10 +555,6 @@ class ChatCompletionsAPI(
                 effClient(providerSetting).resolveProxy(proxyRoute, params.model.modelId)
             ).newEventSource(request, listener)
         }
-
-        // v3.10.5: TTFT 可观测 — 首字延迟 = 发送完成 → 首个有效 data 事件 (onEvent 插桩)
-        val sentAtMs = System.currentTimeMillis()
-        val firstDataAtMs = java.util.concurrent.atomic.AtomicLong(0)
 
         connect()
 
