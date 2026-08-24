@@ -367,3 +367,12 @@ description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日�
 - **硬重置**：07-30 13:16 v3.8.0→v3.2.0（版本号复用）
 - **唯一可靠标识：versionCode**（全程递增，当前 164）——此后版本对照一律以 versionCode 为准
 - 分支：backup-bad-merge（第一轮存档）/ desk（Desk 面板）/ upstream-try（上游 2.4.5 适配试验）
+
+## v3.11.0 / v3.11.1 (2026-08-24/25)
+- v3.11.0: v3.10.4 内容原样 + versionCode 统一锁定 9999 (任意替换安装)
+- v3.11.1: Console Go 400 根因闭合 — 千问历史无签名 thinking 块丢弃;
+  非官方 host 私有字段 gating (v3.10.14); BOM strip + max_tokens 8192
+  兜底 + REQ_META (v3.10.15); 推送格式恢复 (Release 带 changelog)
+- 对照包: v3.10.16 (自研深修线) / v3.10.17 (原版对齐线) / v3.10.15-base
+- 300+ 补丁期 (v3.10.4→v3.10.17) 收敛: 400 根因=千问 thinking, 
+  修复已入 v3.11.1 main

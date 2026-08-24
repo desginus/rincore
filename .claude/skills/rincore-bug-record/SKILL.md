@@ -339,3 +339,12 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
   空 text 块 (system/正文/图片失败兜底) 全部过滤;
   全空消息整体丢弃; isOfficialAnthropic 统一判定
 - **验证**: 若再 400, 查 Log.i streamText 逐消息日志与 Error response body
+
+### B104. Console Go 400 (2013) 最终根因 — 千问历史无签名 thinking 块 (2026-08-25)
+- **现象**: 新窗口 Minimax 正常; 旧窗口千问历史→Minimax 400; DeepSeek 历史→正常
+- **根因链**: 千问走 Anthropic 通道返回 thinking 块不自签 → 历史 Reasoning part
+  无签名 → v3.10.4 原码无条件回发 thinking → Minimax 严格校验 400。
+  DeepSeek 走 OpenAI 通道 reasoning_content 为空 → 无 thinking → 正常。
+- **修复**: v3.10.12 起无签名 thinking 丢弃 (有签名官方保留); v3.11.1 全链打包
+- **排查教训**: 场景差量实验 (千问 vs DeepSeek vs 新窗口) 直接锁定;
+  之前多轮请求体猜测全部无关
