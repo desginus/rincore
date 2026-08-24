@@ -220,7 +220,7 @@ fun McpPickerListItem(
 }
 
 @Composable
-private fun McpPickerSheet(
+internal fun McpPickerSheet(
     assistant: Assistant,
     servers: List<McpServerConfig>,
     loading: Boolean,
