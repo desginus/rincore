@@ -1,5 +1,11 @@
 package me.rerere.rikkahub.ui.components.ai
 
+
+/* ───【原版对齐】ChatInput.kt | 差异 ±45 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -19,11 +25,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -33,8 +41,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -67,7 +77,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
@@ -87,7 +96,8 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.ArrowUp02
 import me.rerere.hugeicons.stroke.Cancel01
-import me.rerere.hugeicons.stroke.Fullscreen
+import me.rerere.hugeicons.stroke.FullScreen
+import me.rerere.hugeicons.stroke.Wrench01
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
@@ -119,8 +129,6 @@ fun ChatInput(
     loading: Boolean,
     settings: Settings,
     hazeState: HazeState,
-    enableSearch: Boolean,
-    onUpdateSearchMode: (SearchMode) -> Unit,
     modifier: Modifier = Modifier,
     completionProviders: List<ChatCompletionProvider> = emptyList(),
     onUpdateChatModel: (Model) -> Unit,
@@ -135,13 +143,23 @@ fun ChatInput(
     val assistant = settings.getCurrentAssistant()
     val hazeTintColor = MaterialTheme.colorScheme.surfaceContainerLow
     val inputHazeStyle = HazeBlurStyle.Material3 {
-        blurRadius(12.dp)
+        // v3.6.82: 8dp -> 4dp, 进一步降低 120Hz 下 GPU 模糊采样开销
+        blurRadius(4.dp)
     }
 
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
 
-    val containerShape = MaterialTheme.shapes.largeIncreased
+    // 键盘弹出时让底部两角变直角，贴合 IME
+    val imeVisible = WindowInsets.isImeVisible
+    val containerShape = if (imeVisible) {
+        MaterialTheme.shapes.largeIncreased.copy(
+            bottomStart = CornerSize(0.dp),
+            bottomEnd = CornerSize(0.dp),
+        )
+    } else {
+        MaterialTheme.shapes.largeIncreased
+    }
 
     fun sendMessage() {
         focusManager.clearFocus(force = true)
@@ -194,9 +212,10 @@ fun ChatInput(
                 .imePadding()
                 .navigationBarsPadding()
                 .padding(horizontal = 8.dp)
-                .padding(bottom = 8.dp),
+                .padding(bottom = if (imeVisible) 0.dp else 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // v3.6.36: 页面完全静默 — 降维开启/关闭页面无差别 (状态与统计移至设置-其他功能)
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -252,29 +271,7 @@ fun ChatInput(
                                 modifier = Modifier,
                             )
 
-                            // Search
-                            val enableSearchMsg = stringResource(R.string.web_search_enabled)
-                            val disableSearchMsg = stringResource(R.string.web_search_disabled)
-                            val chatModel = settings.getCurrentChatModel()
-                            SearchPickerButton(
-                                enableSearch = enableSearch,
-                                settings = settings,
-                                onUpdateSearchMode = { mode ->
-                                    onUpdateSearchMode(mode)
-                                    val enabled = mode != SearchMode.OFF
-                                    toaster.show(
-                                        message = if (enabled) enableSearchMsg else disableSearchMsg,
-                                        duration = 1.seconds,
-                                        type = if (enabled) {
-                                            ToastType.Success
-                                        } else {
-                                            ToastType.Normal
-                                        }
-                                    )
-                                },
-                                onUpdateSearchService = onUpdateSearchService,
-                                model = chatModel,
-                            )
+                            // v3.6.9: 联网图标已删除 (UI 更整齐; enableWebSearch 由设置页控制)
 
                             // Reasoning
                             val model = settings.getCurrentChatModel()
@@ -548,8 +545,8 @@ private fun TextInputRow(
             },
             lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
             keyboardOptions = KeyboardOptions(
-                capitalization = KeyboardCapitalization.Sentences,
-                imeAction = if (settings.displaySetting.sendOnEnter) ImeAction.Send else ImeAction.Default
+                imeAction = if (settings.displaySetting.sendOnEnter) ImeAction.Send else ImeAction.Default,
+                capitalization = KeyboardCapitalization.Sentences, // v3.6.97 移植 2.4.10: 英文句首自动大写
             ),
             onKeyboardAction = {
                 if (settings.displaySetting.sendOnEnter && !state.isEmpty()) {
@@ -568,7 +565,7 @@ private fun TextInputRow(
                         onClick = {
                             isFullScreen = !isFullScreen
                         }) {
-                        Icon(HugeIcons.Fullscreen, null)
+                        Icon(HugeIcons.FullScreen, null)
                     }
                 }
             },
@@ -761,12 +758,12 @@ private fun FullScreenEditor(
                             .padding(bottom = 2.dp)
                             .fillMaxSize(),
                         shape = RoundedCornerShape(32.dp),
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences, // v3.6.97 移植 2.4.10
+                        ),
                         placeholder = {
                             Text(stringResource(R.string.chat_input_placeholder))
                         },
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Sentences,
-                        ),
                         colors = TextFieldDefaults.colors().copy(
                             unfocusedIndicatorColor = Color.Transparent,
                             focusedIndicatorColor = Color.Transparent,
