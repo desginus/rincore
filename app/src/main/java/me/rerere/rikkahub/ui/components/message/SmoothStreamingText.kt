@@ -42,7 +42,21 @@ fun SmoothStreamingText(
     modifier: Modifier = Modifier,
     style: TextStyle = LocalTextStyle.current,
     onClickCitation: (String) -> Unit = {},
+    // v3.10.9: 生成中闸门 — true=流式平滑; false=直接全文显示
+    // (历史消息/消息完成/编辑/版本切换不得重放节奏)
+    loading: Boolean = false,
 ) {
+    // 非生成中: 直接走 MarkdownBlock 原生路由 (含 v3.10.8 新内核特征路由),
+    // 平滑状态机不参与 — 零影响
+    if (!loading) {
+        MarkdownBlock(
+            content = target,
+            modifier = modifier,
+            style = style,
+            onClickCitation = onClickCitation,
+        )
+        return
+    }
     // 已平滑输出的字符数 — 初始 = 全文 (历史消息直接显示, 零影响)
     var displayedLen by remember { mutableIntStateOf(target.length) }
     // 输出速率 (当前, 平滑逼近 rateTarget)
@@ -100,6 +114,8 @@ fun SmoothStreamingText(
         }
     }
 
+    // 平滑期间走 MarkdownBlock (旧内核, snapshotFlow 异步解析不卡主线程) —
+    // 新内核 (mikepenz) 同步解析, 30Hz 节拍下会卡 UI, 完成后再切换 (见上)
     MarkdownBlock(
         content = target.take(displayedLen),
         modifier = modifier,

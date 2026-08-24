@@ -405,7 +405,8 @@ private fun MessagePartsBlock(
                                         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = settings.displaySetting.bubbleOpacity),
                                     ) {
                                         Column(modifier = Modifier.padding(8.dp)) {
-                                            // v3.10.9: 流式平滑输出 — 逐字节奏对齐服务端速度
+                                            // v3.10.9: 流式平滑输出 — 逐字节奏对齐服务端速度;
+                                            // 生成中平滑, 完成/历史直接全文
                                             SmoothStreamingText(
                                                 target = part.text.replaceRegexes(
                                                     assistant = assistant,
@@ -413,6 +414,7 @@ private fun MessagePartsBlock(
                                                     visual = true,
                                                 ),
                                                 onClickCitation = handleClickCitation,
+                                                loading = loading,
                                             )
                                         }
                                     }
@@ -425,7 +427,8 @@ private fun MessagePartsBlock(
                                         ),
                                         onClickCitation = handleClickCitation,
                                         modifier = Modifier
-                                            .contentSizeAnimated(loading)
+                                            .contentSizeAnimated(loading),
+                                        loading = loading,
                                     )
                                 }
                             }

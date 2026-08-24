@@ -7,11 +7,9 @@ package me.rerere.rikkahub.ui.components.richtext
  *       替换渲染内核。LaTeX/Mermaid 等扩展在旧内核 (Markdown.kt), 由
  *       MarkdownBlock 按内容特征路由。
  * ───────────────────────────────────────────────────────────────*/
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.mikepenz.markdown.m3.Markdown
-import com.mikepenz.markdown.m3.MarkdownColors
 
 object MarkdownKernel {
     /** 新内核总开关 — 出现渲染回归可在此一键回旧 */
@@ -37,19 +35,13 @@ fun MarkdownKernel(
     content: String,
     modifier: Modifier = Modifier,
 ) {
-    // v3.10.8 初版: 全量 Markdown 渲染; StreamingMarkdownState 增量
-    // 解析优化随流式接入下一轮跟进 (静态消息场景无压力)
+    // v3.10.9: 初版用默认主题 (MarkdownColors 构造参数 API 跨版本不稳,
+    // 主题适配后续轮次按需定制); StreamingMarkdownState 增量解析随后跟进。
+    // 注意: 解析在主线程 (mikepenz 设计) — 仅用于已完成的静态文本,
+    // 流式增量仍走旧内核 (MarkdownBlock 异步解析, 见 SmoothStreamingText)
     Markdown(
         content = content,
         modifier = modifier,
-        colors = MarkdownColors(
-            text = MaterialTheme.colorScheme.onSurface,
-            background = MaterialTheme.colorScheme.surface,
-            codeText = MaterialTheme.colorScheme.onPrimaryContainer,
-            codeBackground = MaterialTheme.colorScheme.primaryContainer,
-            codeBlockText = MaterialTheme.colorScheme.onSurfaceVariant,
-            codeBlockBackground = MaterialTheme.colorScheme.surfaceVariant,
-        ),
     )
 }
 
