@@ -71,8 +71,8 @@ fun SmoothStreamingText(
     // 观察器: 估算服务端速率, 首字立即输出, 启动输出循环
     LaunchedEffect(target) {
         val t = target.length
+        val now = System.currentTimeMillis()
         if (t > lastLen) {
-            val now = System.currentTimeMillis()
             // 服务端新增字符的瞬时速率 (字符/秒)
             val instant = if (lastUpdateMs == 0L) {
                 MAX_CPS
