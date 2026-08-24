@@ -46,6 +46,10 @@ internal fun applyTimeReminder(messages: List<UIMessage>): List<UIMessage> {
     // 根因: 工具循环每个 step 都重新执行本转换器, 之前每次对第一条 USER 重新插
     // <time_reminder> USER 消息 → windowStart 每轮后移 2 → history 每轮 +2
     // → 降维压缩包每轮增量追加 → 缓存断在压缩包 (16.9K 后停)。
+    // v3.10.13: 合并模式 (根治 Console Go 400) — 之前插入独立 <time_reminder>
+    // USER 消息 → 消息序列出现连续 user → Anthropic 角色交替硬校验 →
+    // invalid params 400 (2013)。reminder 文本合并进目标 USER 消息文本开头,
+    // 消息数量/角色序列不变; 原版无此 transformer 故从未触发。
     val hasReminder = messages.any { msg ->
         msg.role == MessageRole.USER && msg.toText().contains("<time_reminder>")
     }
@@ -60,41 +64,55 @@ internal fun applyTimeReminder(messages: List<UIMessage>): List<UIMessage> {
             val currInstant = current.createdAt.toInstant(tz)
             if (!firstUserFound) {
                 firstUserFound = true
-                result.add(buildTimeReminderMessage(null, currInstant))
+                result.add(mergeTimeReminder(current, null, currInstant))
             } else {
                 val previous = messages[i - 1]
                 val prevInstant = previous.createdAt.toInstant(tz)
                 val gapSeconds = (currInstant - prevInstant).inWholeSeconds
 
                 if (gapSeconds > TIME_GAP_THRESHOLD_SECONDS) {
-                    result.add(buildTimeReminderMessage(gapSeconds, currInstant))
+                    result.add(mergeTimeReminder(current, gapSeconds, currInstant))
+                } else {
+                    result.add(current)
                 }
             }
+        } else {
+            result.add(current)
         }
-        result.add(current)
     }
 
     return result
 }
 
-private fun buildTimeReminderMessage(gapSeconds: Long?, instant: Instant): UIMessage {
+/** v3.10.13: reminder 文本合并进消息第一个 Text part (无 Text part 则前插) */
+private fun mergeTimeReminder(
+    message: UIMessage,
+    gapSeconds: Long?,
+    instant: Instant,
+): UIMessage {
+    val reminder = buildTimeReminderContent(gapSeconds, instant)
+    val parts = message.parts
+    val textIdx = parts.indexOfFirst { it is me.rerere.ai.ui.UIMessagePart.Text }
+    val newParts = if (textIdx >= 0) {
+        val t = parts[textIdx] as me.rerere.ai.ui.UIMessagePart.Text
+        parts.toMutableList().apply { this[textIdx] = t.copy(text = reminder + t.text) }
+    } else {
+        listOf(me.rerere.ai.ui.UIMessagePart.Text(reminder)) + parts
+    }
+    return message.copy(parts = newParts)
+}
+
+private fun buildTimeReminderContent(gapSeconds: Long?, instant: Instant): String {
     val javaInstant = instant.toJavaInstant()
     val dayOfWeek = javaInstant.atZone(ZoneId.systemDefault()).dayOfWeek
         .getDisplayName(TextStyle.FULL, Locale.getDefault())
     val timeStr = javaInstant.toLocalDateTime()
-    val content = if (gapSeconds != null) {
+    return if (gapSeconds != null) {
         val gapText = formatGap(gapSeconds)
         "<time_reminder>Current time: $dayOfWeek, $timeStr ($gapText since last message)</time_reminder>"
     } else {
         "<time_reminder>Current time: $dayOfWeek, $timeStr</time_reminder>"
     }
-    // v3.6.64: createdAt 用消息时间戳 (固定), 不用 UIMessage.user 默认的 System.now()。
-    // 根因: 工具循环每个 step 重复执行本转换器, createdAt 动态 → 下一条 USER 的
-    // gapSeconds 判断漂移 → 时间提醒数量/位置每轮变 → internalMessages 每轮变 →
-    // 缓存断在压缩包之后 (16.9K 后停)。
-    return UIMessage.user(content).copy(
-        createdAt = instant.toLocalDateTime(TimeZone.currentSystemDefault())
-    )
 }
 
 private fun formatGap(seconds: Long): String {

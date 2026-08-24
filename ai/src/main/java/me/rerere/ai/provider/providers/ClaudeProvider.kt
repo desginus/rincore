@@ -30,6 +30,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.ProxyRoute
 import me.rerere.ai.provider.resolveProxy
 import me.rerere.ai.core.MessageRole
@@ -328,6 +329,21 @@ class ClaudeProvider(
                         val bodyElement = Json.parseToJsonElement(bodyRaw)
                         Log.i(TAG, "Error response: $bodyElement")
                         exception = bodyElement.parseErrorDetail()
+                        // v3.10.15: 元数据诊断 — 不泄露 system/messages 内容
+                        // (用户警告: 错误详情泄露系统提示词). 只显示结构摘要
+                        val meta = buildString {
+                            append("\nREQ_META: model=").append(requestBody["model"])
+                            val msgs = requestBody["messages"]?.jsonArray
+                            append(" msgCount=").append(msgs?.size ?: 0)
+                            msgs?.forEachIndexed { i, m ->
+                                append(" [").append(i).append("]=").append(m.jsonObject["role"])
+                            }
+                            append(" maxTokens=").append(requestBody["max_tokens"] ?: "?")
+                            append(" keys=").append(requestBody.keys.joinToString(","))
+                        }
+                        exception = me.rerere.ai.util.HttpException(
+                            "${exception.message}$meta"
+                        )
                     }
                 } catch (e: Throwable) {
                     Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
@@ -370,16 +386,27 @@ class ClaudeProvider(
         params: TextGenerationParams,
         stream: Boolean = false
     ): JsonObject {
+        // v3.10.14: 非官方 host (Console Go/Minimax/千问/其他 Anthropic 兼容
+        // 网关) 拒收 Anthropic 私有元字段 (thinking/cache_control/output_config)
+        // → invalid params 400 (2013)。只有官方 api.anthropic.com 发送,
+        // 兼容网关走最小标准 Anthropic 协议子集。
+        val isOfficialAnthropic =
+            runCatching { providerSetting.baseUrl.toHttpUrl().host }.getOrNull() == "api.anthropic.com"
+        val effectivePromptCaching =
+            providerSetting.promptCaching && isOfficialAnthropic
         return buildJsonObject {
             put("model", params.model.modelId)
             put(
                 "messages",
-                buildMessages(messages, providerSetting.promptCaching, providerSetting.promptCacheTtl)
+                buildMessages(messages, effectivePromptCaching, providerSetting.promptCacheTtl)
             )
-            put("max_tokens", params.maxTokens ?: 64_000)
+            // v3.10.15: max_tokens 兜底按 host 区分 — 非官方兼容层对大值敏感,
+            // MiniMax 等会把 64000 当 context budget 解析触发 2013. 8192 实测安全.
+            val maxTokensFallback = if (isOfficialAnthropic) 64_000 else 8_192
+            put("max_tokens", params.maxTokens ?: maxTokensFallback)
 
-            // 顶层 cache_control: 让 Anthropic 自动管理缓存断点
-            if (providerSetting.promptCaching) {
+            // 顶层 cache_control: 仅官方 Anthropic (兼容网关拒收)
+            if (effectivePromptCaching) {
                 put("cache_control", cacheControlEphemeral(providerSetting.promptCacheTtl))
             }
 
@@ -399,8 +426,8 @@ class ClaudeProvider(
                     systemTextParts.forEachIndexed { index, part ->
                         add(buildJsonObject {
                             put("type", "text")
-                            put("text", part.text)
-                            if (providerSetting.promptCaching && index == systemTextParts.lastIndex) {
+                            put("text", part.text.trimStart(CHAR_BOM).replace(CHAR_BOM.toString(), ""))
+                            if (effectivePromptCaching && index == systemTextParts.lastIndex) {
                                 put("cache_control", cacheControlEphemeral(providerSetting.promptCacheTtl))
                             }
                         })
@@ -408,10 +435,10 @@ class ClaudeProvider(
                 })
             }
 
-            // 处理 thinking
-            // Anthropic 新 API: adaptive 模式 + output_config.effort 控制强度
-            // 旧的 type=enabled + budget_tokens 在 Opus 4.7+ 上已不支持
-            if (params.model.abilities.contains(ModelAbility.REASONING)) {
+            // 处理 thinking — 非官方 Anthropic host (兼容网关) 不发 thinking/
+            // output_config 字段 (Minimax 等严格校验拒收 → 2013)
+            // 官方 api.anthropic.com 走原版完整 adaptive 协议
+            if (isOfficialAnthropic && params.model.abilities.contains(ModelAbility.REASONING)) {
                 when (params.reasoningLevel) {
                     ReasoningLevel.OFF -> {
                         put("thinking", buildJsonObject { put("type", "disabled") })
@@ -437,17 +464,42 @@ class ClaudeProvider(
             }
 
             // 处理工具
-            if (params.model.abilities.contains(ModelAbility.TOOL) && params.tools.isNotEmpty()) {
-                putJsonArray("tools") {
-                    params.tools.forEachIndexed { index, tool ->
+            val useFunctionTools =
+                params.model.abilities.contains(ModelAbility.TOOL) && params.tools.isNotEmpty()
+            val toolDefinitions = buildList {
+                if (useFunctionTools) {
+                    params.tools.forEach { tool ->
                         add(buildJsonObject {
                             put("name", tool.name)
                             put("description", tool.description)
                             put("input_schema", json.encodeToJsonElement(tool.parameters()))
-                            if (providerSetting.promptCaching && index == params.tools.lastIndex) {
-                                put("cache_control", cacheControlEphemeral(providerSetting.promptCacheTtl))
-                            }
                         })
+                    }
+                }
+                params.model.tools.forEach { builtInTool ->
+                    when (builtInTool) {
+                        BuiltInTools.Search -> add(buildJsonObject {
+                            put("type", "web_search_20250305")
+                            put("name", "web_search")
+                        })
+                        BuiltInTools.UrlContext,
+                        BuiltInTools.ImageGeneration,
+                            -> Unit
+                    }
+                }
+            }
+            if (toolDefinitions.isNotEmpty()) {
+                putJsonArray("tools") {
+                    toolDefinitions.forEachIndexed { index, definition ->
+                        if (effectivePromptCaching && index == toolDefinitions.lastIndex) {
+                            add(JsonObject(
+                                definition + mapOf(
+                                    "cache_control" to cacheControlEphemeral(providerSetting.promptCacheTtl)
+                                )
+                            ))
+                        } else {
+                            add(definition)
+                        }
                     }
                 }
             }
@@ -464,15 +516,29 @@ class ClaudeProvider(
         promptCaching: Boolean,
         promptCacheTtl: ClaudePromptCacheTtl
     ) = buildJsonArray {
-        messages
+        // v3.10.13: 防御链 — Anthropic 消息硬性规则: 首条 user + 角色交替。
+        // 1) 过滤 SYSTEM/跳过无效; 2) 丢弃前导非 user; 3) 合并连续同角色
+        // (自研 transformer 曾以独立 user 消息注入 time_reminder → 连续 user
+        // → Console Go/Minimax 严格校验 400 (2013), 铁证 REQ_MESSAGES)
+        val clean = messages
             .filter { it.isValidToUpload() && it.role != MessageRole.SYSTEM }
-            .forEach { message ->
-                if (message.role == MessageRole.ASSISTANT) {
-                    addAssistantMessage(message)
-                } else {
-                    addUserMessage(message)
-                }
+            .dropWhile { it.role != MessageRole.USER }
+        val merged = mutableListOf<UIMessage>()
+        for (m in clean) {
+            val last = merged.lastOrNull()
+            if (last != null && last.role == m.role) {
+                merged[merged.size - 1] = last.copy(parts = last.parts + m.parts)
+            } else {
+                merged.add(m)
             }
+        }
+        merged.forEach { message ->
+            if (message.role == MessageRole.ASSISTANT) {
+                addAssistantMessage(message)
+            } else {
+                addUserMessage(message)
+            }
+        }
     }.let { messagesArray ->
         if (!promptCaching) return@let messagesArray
         insertMessagesCacheControl(messagesArray, promptCacheTtl)
@@ -526,7 +592,7 @@ class ClaudeProvider(
         for (group in groups) {
             when (group) {
                 is PartGroup.Content -> {
-                    group.parts.mapNotNull { it.toContentBlock() }.forEach { contentBuffer.add(it) }
+                    group.parts.toContentBlocks().forEach { contentBuffer.add(it) }
                 }
 
                 is PartGroup.Tools -> {
@@ -564,15 +630,40 @@ class ClaudeProvider(
         add(buildJsonObject {
             put("role", message.role.name.lowercase())
             putJsonArray("content") {
-                message.parts.mapNotNull { it.toContentBlock() }.forEach { add(it) }
+                message.parts.flatMap { it.toContentBlocks() }
+                    .map { stripBom(it) }.forEach { add(it) }
             }
         })
     }
 
+    /** v3.10.15: strip BOM (U+FEFF) 等不可见控制符 — 严格网关 JSON parser
+     * 可能拒收. 应用于所有 text 块内容. */
+    private fun stripBom(obj: JsonObject): JsonObject {
+        val text = obj["text"]?.takeIf { it is JsonPrimitive }?.jsonPrimitive?.contentOrNull
+        if (text == null) return obj
+        val cleaned = text.trimStart(CHAR_BOM).replace(CHAR_BOM.toString(), "")
+        if (cleaned == text) return obj
+        return JsonObject(obj.toMutableMap().apply { put("text", JsonPrimitive(cleaned)) })
+    }
+
+    // 原版对应函数含 UIMessagePart.ServerTool 分支 (serverToolContentBlocks) —
+    // 我们未移植 ServerTool part 机制, 仅保留通用分支
+    private fun UIMessagePart.toContentBlocks(): List<JsonObject> =
+        listOfNotNull(toContentBlock())
+
+    // 原版 List 重载 (server tool 按原始 content block index 排序回放);
+    // 我们无 server tool, 顺序转换等价
+    private fun List<UIMessagePart>.toContentBlocks(): List<JsonObject> =
+        flatMap { it.toContentBlocks() }
+
     private fun UIMessagePart.toContentBlock(): JsonObject? = when (this) {
-        is UIMessagePart.Text -> buildJsonObject {
-            put("type", "text")
-            put("text", text)
+        is UIMessagePart.Text -> {
+            // v3.10.12 防御: 空 text 块被严格网关 (Minimax 等) 拒绝
+            if (text.isBlank()) null
+            else buildJsonObject {
+                put("type", "text")
+                put("text", text)
+            }
         }
 
         is UIMessagePart.Image -> buildJsonObject {
@@ -590,10 +681,18 @@ class ClaudeProvider(
             }
         }
 
-        is UIMessagePart.Reasoning -> buildJsonObject {
-            put("type", "thinking")
-            put("thinking", reasoning)
-            metadataAs<ClaudeReasoningMetadata>()?.signature?.let { put("signature", it) }
+        is UIMessagePart.Reasoning -> {
+            // v3.10.12 防御: 无 signature 的 thinking 块 — 兼容网关 (千问等)
+            // 不返回签名, Minimax 等严格校验上游要求历史 thinking 带签名 → 400
+            // (2013)。有签名 (官方 Claude) 保留, 无签名丢弃。
+            val sig = metadataAs<ClaudeReasoningMetadata>()?.signature
+            if (sig != null) {
+                buildJsonObject {
+                    put("type", "thinking")
+                    put("thinking", reasoning)
+                    put("signature", sig)
+                }
+            } else null
         }
 
         else -> null
@@ -704,3 +803,5 @@ class ClaudeProvider(
         )
     }
 }
+
+private const val CHAR_BOM = '\uFEFF'

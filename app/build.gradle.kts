@@ -22,7 +22,7 @@ android {
             targetSdk = 37
             // v3.10.15 锁定: versionCode 固定常量 (任意替换安装), versionName 正常递增
 versionCode = 2500
-            versionName = "3.10.15"
+            versionName = "3.10.16"
 
             testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
