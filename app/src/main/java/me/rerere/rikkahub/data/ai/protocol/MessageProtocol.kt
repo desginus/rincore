@@ -23,6 +23,13 @@ import me.rerere.ai.ui.UIMessagePart
 object MessageProtocol {
     private const val TAG = "MessageProtocol"
 
+    // v3.10.3: 空 system 兜底改最小非空前言 —
+    // 根因: v3.5.16 为满足 DeepSeek "首条须 system" 插入空字符串 system,
+    // DeepSeek 只认角色存在不查内容; 但 Opencode 网关对
+    // {"role":"system","content":""} 返回 HTTP 500 (标题/建议/压缩等子请求
+    // 首条为 user 全部触发)。原版无此兜底故一直正常。
+    const val FALLBACK_SYSTEM_PROMPT = "You are a helpful assistant."
+
     /** 发送前协议强制 — 管线最后一环（幂等） */
     fun enforce(messages: List<UIMessage>): List<UIMessage> {
         var result = messages
@@ -33,7 +40,7 @@ object MessageProtocol {
 
     /** 首条必须 system — 无 system 时创建空 system；首条非 system 时合并文本并前置 */
     fun ensureSystemFirst(messages: List<UIMessage>): List<UIMessage> {
-        if (messages.isEmpty()) return listOf(UIMessage.system(""))
+        if (messages.isEmpty()) return listOf(UIMessage.system(FALLBACK_SYSTEM_PROMPT))
         if (messages.first().role == MessageRole.SYSTEM) return messages
 
         // 首条非 system（transforms/注入异常产物）— 结构性修复: 文本并入 system, 非文本 parts 保留在原消息
@@ -43,8 +50,8 @@ object MessageProtocol {
             .joinToString("\n") { it.text }
         val nonTextParts = first.parts.filterNot { it is UIMessagePart.Text }
         val system = when {
-            systemText.isBlank() && nonTextParts.isEmpty() -> UIMessage.system("")
-            systemText.isBlank() -> UIMessage.system("").copy(parts = nonTextParts)
+            systemText.isBlank() && nonTextParts.isEmpty() -> UIMessage.system(FALLBACK_SYSTEM_PROMPT)
+            systemText.isBlank() -> UIMessage.system(FALLBACK_SYSTEM_PROMPT).copy(parts = nonTextParts)
             else -> UIMessage.system(systemText).copy(
                 parts = listOf(UIMessagePart.Text(systemText)) + nonTextParts
             )

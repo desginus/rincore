@@ -148,8 +148,10 @@ class OpenAIProvider(
         // 子请求 (标题生成/建议/背景文本/工具分类) 常直接传 user 消息,
         // 缺 system 前缀 → 服务端报 'Required SETTINGS preface not received'
         // 主请求已由 MessageProtocol.enforce 保证, 此处为全请求统一兜底 (幂等)
+        // v3.10.3: 兜底 system 改最小非空前言 — 空 content 的 system 消息
+        // 会被 Opencode 网关拒 (HTTP 500), 见 MessageProtocol.FALLBACK_SYSTEM_PROMPT
         val normalized = if (messages.firstOrNull()?.role != MessageRole.SYSTEM) {
-            listOf(UIMessage.system("")) + messages
+            listOf(UIMessage.system("You are a helpful assistant.")) + messages
         } else {
             messages
         }
