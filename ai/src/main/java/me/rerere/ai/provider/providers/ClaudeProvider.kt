@@ -411,20 +411,25 @@ class ClaudeProvider(
             // 处理 thinking
             // Anthropic 新 API: adaptive 模式 + output_config.effort 控制强度
             // 旧的 type=enabled + budget_tokens 在 Opus 4.7+ 上已不支持
+            // v3.10.6: 兼容网关 (非 api.anthropic.com — Console Go/千问/MiMo/
+            // Minimax 等 Anthropic 兼容层) 不认识 adaptive/output_config →
+            // invalid params 400。官方 host 保持 adaptive, 兼容 host 保守化:
+            // OFF→disabled, 其余一律不发 (模型默认思考行为, 最兼容)。
+            val isOfficialAnthropic = providerSetting.baseUrl.toHttpUrl().host == "api.anthropic.com"
             if (params.model.abilities.contains(ModelAbility.REASONING)) {
-                when (params.reasoningLevel) {
-                    ReasoningLevel.OFF -> {
+                when {
+                    ReasoningLevel.OFF == params.reasoningLevel -> {
                         put("thinking", buildJsonObject { put("type", "disabled") })
                     }
 
-                    ReasoningLevel.AUTO -> {
+                    isOfficialAnthropic && ReasoningLevel.AUTO == params.reasoningLevel -> {
                         put("thinking", buildJsonObject {
                             put("type", "adaptive")
                             put("display", "summarized")
                         })
                     }
 
-                    else -> {
+                    isOfficialAnthropic -> {
                         put("thinking", buildJsonObject {
                             put("type", "adaptive")
                             put("display", "summarized")
@@ -433,6 +438,7 @@ class ClaudeProvider(
                             put("effort", params.reasoningLevel.effort)
                         })
                     }
+                    // 兼容网关 + 非 OFF: 不发 thinking 字段, 依赖模型默认行为
                 }
             }
 
@@ -590,10 +596,20 @@ class ClaudeProvider(
             }
         }
 
-        is UIMessagePart.Reasoning -> buildJsonObject {
-            put("type", "thinking")
-            put("thinking", reasoning)
-            metadataAs<ClaudeReasoningMetadata>()?.signature?.let { put("signature", it) }
+        is UIMessagePart.Reasoning -> {
+            // v3.10.6: 无 signature 的 thinking 块必须丢弃 — 400 (2013) 根因:
+            // Anthropic 校验器要求历史(非末条) assistant 消息的 thinking 块带
+            // signature, 否则 invalid_request_error。兼容网关 (Console Go/千问/
+            // Minimax 等) 不返回签名 → 跨模型继续对话时历史思考块被拒。
+            // 有签名 (官方 Claude) 保留, 无签名丢弃 (思考链为过程信息, 无害)。
+            val sig = metadataAs<ClaudeReasoningMetadata>()?.signature
+            if (sig != null) {
+                buildJsonObject {
+                    put("type", "thinking")
+                    put("thinking", reasoning)
+                    put("signature", sig)
+                }
+            } else null
         }
 
         else -> null

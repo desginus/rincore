@@ -307,3 +307,16 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 - **根因2**: 懒加载设计 (启动不预连) → syncingStatus 无条目 → Idle → MessageBlocked (关闭语义) 与"已配置待连"实际语义错配; 原版预连接故显示 Connected 折线图标
 - **修复**: 1) Assistant 新增 filterSkills 字段 (false=存量全量兼容, true=新助手过滤), 新助手创建处显式 true, ToolsBuilder 按 filterSkills 传 enabledSkills 恢复过滤; 2) SettingMcpPage Idle 图标 MessageBlocked → McpServer (折线), 文案行已有懒加载说明区分
 - **验证**: 新建助手 → 技能工具不注入 (invoke_tools 技能域为空); 存量助手技能不受影响; 设置页 MCP 行无划掉气泡
+
+### B101. 跨模型继续对话 HTTP 400 (2013) — 无签名 thinking 块 (v3.10.6)
+- **现象**: 千问 3.7 Plus 解决问题后切 Minimax M3 继续, Console Go 网关报
+  invalid params 400 (2013); 均走 Anthropic 接口流式
+- **根因**: 千问等兼容网关不返回 thinking signature → 历史 assistant 消息
+  thinking 块无签名; Anthropic 校验器要求历史 thinking 块带 signature,
+  Minimax 严格校验 → 400
+- **修复**: ClaudeProvider 历史序列化时无签名 thinking 块丢弃 (有签名保留);
+  请求级 thinking 参数: 非官方 host (非 api.anthropic.com) 不再发
+  adaptive/output_config (兼容层不认识), OFF→disabled, 其余不发
+- **教训**: Anthropic 兼容层参差不齐, 官方新参数 (adaptive) 不可盲发;
+  跨模型继续 = 历史消息经不同严格度网关, 以最严格者为准
+- **验证**: 千问→Minimax 继续对话不再 400; 官方 Claude 多轮思考正常
