@@ -370,20 +370,13 @@ class ClaudeProvider(
         params: TextGenerationParams,
         stream: Boolean = false
     ): JsonObject {
-        val isOfficialAnthropic =
-            providerSetting.baseUrl.toHttpUrl().host == "api.anthropic.com"
         return buildJsonObject {
             put("model", params.model.modelId)
             put(
                 "messages",
                 buildMessages(messages, providerSetting.promptCaching, providerSetting.promptCacheTtl)
             )
-            // v3.10.10: max_tokens 兜底按 host 区分 — 官方 Anthropic 64K;
-            // 兼容网关 (Console Go/Minimax/千问) 输出上限普遍 32K,
-            // 64000 兜底会让严格校验层直接 400 (2013) — 用户实测跨模型继续
-            val maxTokensCompat = if (params.maxTokens != null) params.maxTokens
-            else if (isOfficialAnthropic) 64_000 else 32_000
-            put("max_tokens", maxTokensCompat)
+            put("max_tokens", params.maxTokens ?: 64_000)
 
             // 顶层 cache_control: 让 Anthropic 自动管理缓存断点
             if (providerSetting.promptCaching) {
@@ -400,10 +393,7 @@ class ClaudeProvider(
 
             // system prompt
             val systemMessage = messages.firstOrNull { it.role == MessageRole.SYSTEM }
-            val systemTextParts = systemMessage?.parts
-                ?.filterIsInstance<UIMessagePart.Text>()
-                ?.filter { it.text.isNotBlank() }  // v3.10.10: 空文本块会被严格网关 400
-                .orEmpty()
+            val systemTextParts = systemMessage?.parts?.filterIsInstance<UIMessagePart.Text>().orEmpty()
             if (systemTextParts.isNotEmpty()) {
                 put("system", buildJsonArray {
                     systemTextParts.forEachIndexed { index, part ->
@@ -421,24 +411,20 @@ class ClaudeProvider(
             // 处理 thinking
             // Anthropic 新 API: adaptive 模式 + output_config.effort 控制强度
             // 旧的 type=enabled + budget_tokens 在 Opus 4.7+ 上已不支持
-            // v3.10.6: 兼容网关 (非 api.anthropic.com — Console Go/千问/MiMo/
-            // Minimax 等 Anthropic 兼容层) 不认识 adaptive/output_config →
-            // invalid params 400。官方 host 保持 adaptive, 兼容 host 保守化:
-            // OFF→disabled, 其余一律不发 (模型默认思考行为, 最兼容)。
             if (params.model.abilities.contains(ModelAbility.REASONING)) {
-                when {
-                    ReasoningLevel.OFF == params.reasoningLevel -> {
+                when (params.reasoningLevel) {
+                    ReasoningLevel.OFF -> {
                         put("thinking", buildJsonObject { put("type", "disabled") })
                     }
 
-                    isOfficialAnthropic && ReasoningLevel.AUTO == params.reasoningLevel -> {
+                    ReasoningLevel.AUTO -> {
                         put("thinking", buildJsonObject {
                             put("type", "adaptive")
                             put("display", "summarized")
                         })
                     }
 
-                    isOfficialAnthropic -> {
+                    else -> {
                         put("thinking", buildJsonObject {
                             put("type", "adaptive")
                             put("display", "summarized")
@@ -447,22 +433,46 @@ class ClaudeProvider(
                             put("effort", params.reasoningLevel.effort)
                         })
                     }
-                    // 兼容网关 + 非 OFF: 不发 thinking 字段, 依赖模型默认行为
                 }
             }
 
             // 处理工具
-            if (params.model.abilities.contains(ModelAbility.TOOL) && params.tools.isNotEmpty()) {
-                putJsonArray("tools") {
-                    params.tools.forEachIndexed { index, tool ->
+            val useFunctionTools =
+                params.model.abilities.contains(ModelAbility.TOOL) && params.tools.isNotEmpty()
+            val toolDefinitions = buildList {
+                if (useFunctionTools) {
+                    params.tools.forEach { tool ->
                         add(buildJsonObject {
                             put("name", tool.name)
                             put("description", tool.description)
                             put("input_schema", json.encodeToJsonElement(tool.parameters()))
-                            if (providerSetting.promptCaching && index == params.tools.lastIndex) {
-                                put("cache_control", cacheControlEphemeral(providerSetting.promptCacheTtl))
-                            }
                         })
+                    }
+                }
+                params.model.tools.forEach { builtInTool ->
+                    when (builtInTool) {
+                        BuiltInTools.Search -> add(buildJsonObject {
+                            put("type", "web_search_20250305")
+                            put("name", "web_search")
+                        })
+                        BuiltInTools.UrlContext,
+                        BuiltInTools.ImageGeneration,
+                            -> Unit
+                    }
+                }
+            }
+            if (toolDefinitions.isNotEmpty()) {
+                putJsonArray("tools") {
+                    toolDefinitions.forEachIndexed { index, definition ->
+                        if (providerSetting.promptCaching && index == toolDefinitions.lastIndex) {
+                            add(JsonObject(
+                                definition + mapOf(
+                                    "cache_control" to cacheControlEphemeral(providerSetting.promptCacheTtl)
+                                )
+                            ))
+                        } else {
+                            add(definition)
+                        }
                     }
                 }
             }
@@ -541,7 +551,7 @@ class ClaudeProvider(
         for (group in groups) {
             when (group) {
                 is PartGroup.Content -> {
-                    group.parts.mapNotNull { it.toContentBlock() }.forEach { contentBuffer.add(it) }
+                    group.parts.toContentBlocks().forEach { contentBuffer.add(it) }
                 }
 
                 is PartGroup.Tools -> {
@@ -576,25 +586,23 @@ class ClaudeProvider(
     }
 
     private fun JsonArrayBuilder.addUserMessage(message: UIMessage) {
-        // v3.10.10: 全空消息 (所有块被空文本过滤丢弃/tool_result 空) →
-        // content 空数组会被严格网关 400; 整条丢弃 (消息序列无内容即无意义)
-        val blocks = message.parts.mapNotNull { it.toContentBlock() }
-        if (blocks.isEmpty()) return
         add(buildJsonObject {
             put("role", message.role.name.lowercase())
-            putJsonArray("content") { blocks.forEach { add(it) } }
+            putJsonArray("content") {
+                message.parts.flatMap { it.toContentBlocks() }.forEach { add(it) }
+            }
         })
     }
 
+    // 原版对应函数含 UIMessagePart.ServerTool 分支 (serverToolContentBlocks) —
+    // 我们未移植 ServerTool part 机制, 仅保留通用分支
+    private fun UIMessagePart.toContentBlocks(): List<JsonObject> =
+        listOfNotNull(toContentBlock())
+
     private fun UIMessagePart.toContentBlock(): JsonObject? = when (this) {
-        is UIMessagePart.Text -> {
-            // v3.10.10: 空 text 块 (图片编码失败兜底/空正文) → Anthropic 校验
-            // "text blocks must be non-empty" → 400 (2013); 直接丢弃
-            if (text.isBlank()) null
-            else buildJsonObject {
-                put("type", "text")
-                put("text", text)
-            }
+        is UIMessagePart.Text -> buildJsonObject {
+            put("type", "text")
+            put("text", text)
         }
 
         is UIMessagePart.Image -> buildJsonObject {
@@ -612,20 +620,10 @@ class ClaudeProvider(
             }
         }
 
-        is UIMessagePart.Reasoning -> {
-            // v3.10.6: 无 signature 的 thinking 块必须丢弃 — 400 (2013) 根因:
-            // Anthropic 校验器要求历史(非末条) assistant 消息的 thinking 块带
-            // signature, 否则 invalid_request_error。兼容网关 (Console Go/千问/
-            // Minimax 等) 不返回签名 → 跨模型继续对话时历史思考块被拒。
-            // 有签名 (官方 Claude) 保留, 无签名丢弃 (思考链为过程信息, 无害)。
-            val sig = metadataAs<ClaudeReasoningMetadata>()?.signature
-            if (sig != null) {
-                buildJsonObject {
-                    put("type", "thinking")
-                    put("thinking", reasoning)
-                    put("signature", sig)
-                }
-            } else null
+        is UIMessagePart.Reasoning -> buildJsonObject {
+            put("type", "thinking")
+            put("thinking", reasoning)
+            metadataAs<ClaudeReasoningMetadata>()?.signature?.let { put("signature", it) }
         }
 
         else -> null
