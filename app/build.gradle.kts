@@ -20,8 +20,8 @@ android {
             applicationId = "me.rincore.app"
             minSdk = 26
             targetSdk = 37
-            // v3.10.15 锁定: versionCode 固定常量 (任意替换安装), versionName 正常递增
-versionCode = 2500
+            // VS号全局统一锁定 9999 (与 3.11.0 一致): 任意替换安装, 永不再改
+versionCode = 9999
             versionName = "3.10.16"
 
             testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
