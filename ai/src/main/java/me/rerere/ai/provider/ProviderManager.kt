@@ -18,13 +18,15 @@ class ProviderManager(
     context: Context,
     // v3.9.15: 按模型代理路由 (app 层注入), null = 不启用代理路由
     proxyRoute: ProxyRoute? = null,
+    // v3.10.5: OpenCode 网关独立长保活池 (opencode.ai 直连场景), null = 回落默认池
+    opencodeClient: OkHttpClient? = null,
 ) {
     // 存储已注册的Provider实例
     private val providers = mutableMapOf<String, Provider<*>>()
 
     init {
         // 注册默认Provider
-        registerProvider("openai", OpenAIProvider(client, context, proxyRoute))
+        registerProvider("openai", OpenAIProvider(client, context, proxyRoute, opencodeClient))
         registerProvider("google", GoogleProvider(client, context, proxyRoute))
         registerProvider("claude", ClaudeProvider(claudeClient ?: client, context, proxyRoute))
     }
@@ -68,5 +70,9 @@ class ProviderManager(
         /** v3.7.1: Claude/Anthropic 独立连接池 (keepalive 300s), DataSourceModule 注入 */
         @Volatile
         var claudeClient: OkHttpClient? = null
+
+        /** v3.10.5: OpenCode 网关独立连接池 (keepalive 300s), DataSourceModule 注入 */
+        @Volatile
+        var opencodeClient: OkHttpClient? = null
     }
 }

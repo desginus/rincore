@@ -87,7 +87,15 @@ class ResponseAPI(
     private val client: OkHttpClient,
     private val keyRoulette: KeyRoulette = KeyRoulette.default(),
     private val proxyRoute: ProxyRoute? = null,
+    // v3.10.5: OpenCode 网关独立长保活池 — 请求侧按 host 切换 (TTFT 专项)
+    private val opencodeClient: OkHttpClient? = null,
 ) : OpenAIImpl {
+    // v3.10.5: opencode.ai 直连场景走长保活池, 其余回落默认池
+    private fun effClient(providerSetting: ProviderSetting.OpenAI): OkHttpClient {
+        val host = providerSetting.baseUrl.toHttpUrl().host
+        return if (host == "opencode.ai") (opencodeClient ?: client) else client
+    }
+
     override suspend fun generateText(
         providerSetting: ProviderSetting.OpenAI,
         messages: List<UIMessage>,
@@ -114,7 +122,7 @@ class ResponseAPI(
 
         Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
 
-        val response = client.resolveProxy(proxyRoute, params.model.modelId).newCall(request).await()
+        val response = effClient(providerSetting).resolveProxy(proxyRoute, params.model.modelId).newCall(request).await()
         if (!response.isSuccessful) {
             throw Exception("Failed to get response: ${response.code} ${response.body.string()}")
         }

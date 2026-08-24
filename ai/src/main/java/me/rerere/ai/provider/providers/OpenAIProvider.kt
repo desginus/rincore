@@ -57,11 +57,14 @@ class OpenAIProvider(
     context: Context? = null,
     // v3.9.15: 按模型代理路由
     private val proxyRoute: ProxyRoute? = null,
+    // v3.10.5: OpenCode 网关独立长保活池 (opencode.ai 直连), null = 回落默认池
+    private val opencodeClient: OkHttpClient? = null,
 ) : Provider<ProviderSetting.OpenAI> {
     private val keyRoulette = if (context != null) KeyRoulette.lru(context) else KeyRoulette.default()
 
-    private val chatCompletionsAPI = ChatCompletionsAPI(client = client, keyRoulette = keyRoulette, proxyRoute = proxyRoute)
-    private val responseAPI = ResponseAPI(client = client, keyRoulette = keyRoulette, proxyRoute = proxyRoute)
+    // v3.10.5: 请求侧按 host 选择连接池 — opencode.ai 走长保活池 (TTFT 专项)
+    private val chatCompletionsAPI = ChatCompletionsAPI(client = client, keyRoulette = keyRoulette, proxyRoute = proxyRoute, opencodeClient = opencodeClient)
+    private val responseAPI = ResponseAPI(client = client, keyRoulette = keyRoulette, proxyRoute = proxyRoute, opencodeClient = opencodeClient)
 
 
     override suspend fun listModels(providerSetting: ProviderSetting.OpenAI): List<Model> =

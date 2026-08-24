@@ -11,6 +11,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
+import okhttp3.OkHttpClient
 import androidx.compose.foundation.ComposeFoundationFlags
 import androidx.compose.runtime.Composer
 import androidx.compose.runtime.tooling.ComposeStackTraceMode
@@ -87,6 +88,10 @@ class RikkaHubApp : Application() {
                 val userUrls = get<SettingsStore>().settingsFlow.value.providers
                     .filterIsInstance<ProviderSetting.OpenAI>()
                     .mapNotNull { it.baseUrl.takeIf { u -> u.isNotEmpty() } }
+                // v3.10.5: OkHttp 级预热 — 连接真实进池 (默认池 60s / opencode 池 300s),
+                // 跳过 DNS+TCP+TLS 缩短 TTFT; 裸 socket 预热保留作 DNS 兜底
+                val httpClient = get<OkHttpClient>()
+                userUrls.forEach { url -> ConnectionWarmer.warmWithOkHttp(httpClient, url) }
                 ConnectionWarmer.warmConfiguredProviders(this@RikkaHubApp, userUrls)
             }
         }, "warmup-user-providers").start()

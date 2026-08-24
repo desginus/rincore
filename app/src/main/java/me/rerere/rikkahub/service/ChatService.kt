@@ -28,6 +28,7 @@ package me.rerere.rikkahub.service
  * ────────────────────────────────────────────────────────────────────*/
 
 import android.app.Application
+import okhttp3.OkHttpClient
 import android.content.Context
 import android.util.Log
 import androidx.core.net.toUri
@@ -170,6 +171,8 @@ private val outputTransformers by lazy {
 
 class ChatService(
     private val context: Application,
+    // v3.10.5: 发送前 OkHttp 级连接预热 (TTFT 专项)
+    private val httpClient: OkHttpClient,
     private val appScope: AppScope,
     private val appEventBus: AppEventBus,
     private val settingsStore: SettingsStore,
@@ -565,9 +568,11 @@ class ChatService(
         // v3.6.15: 生成保活 — 切后台时 CPU/网络读稳定 (onCompletion 释放)
         val genWakeLock = acquireGenWakeLock()
 
-        // 延迟连接预热: 与消息预处理(TCP+TLS ←→ 正则/模板)并行执行, 降低 TTFB
+        // 延迟连接预热: 与消息预处理(正则/模板/组装)并行执行, 降低 TTFB
+        // v3.10.5: OkHttp 级 — 预热请求与组装并发, 主请求发送时连接已就绪进池
         val provider = model.findProvider(settings.providers)
         if (provider is ProviderSetting.OpenAI && provider.baseUrl.isNotBlank()) {
+            ConnectionWarmer.warmWithOkHttp(httpClient, provider.baseUrl)
             runCatching { java.net.URI(provider.baseUrl).host }
                 .getOrNull()
                 ?.let { host -> ConnectionWarmer.warmHostOnce(context, host) }

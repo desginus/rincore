@@ -112,7 +112,15 @@ class ChatCompletionsAPI(
     private val client: OkHttpClient,
     private val keyRoulette: KeyRoulette,
     private val proxyRoute: ProxyRoute? = null,
+    // v3.10.5: OpenCode 网关独立长保活池 — 请求侧按 host 切换 (TTFT 专项)
+    private val opencodeClient: OkHttpClient? = null,
 ) : OpenAIImpl {
+    // v3.10.5: opencode.ai 直连场景走长保活池, 其余回落默认池 (代理路由在 resolveProxy 后生效)
+    private fun effClient(providerSetting: ProviderSetting.OpenAI): OkHttpClient {
+        val host = providerSetting.baseUrl.toHttpUrl().host
+        return if (host == "opencode.ai") (opencodeClient ?: client) else client
+    }
+
     override suspend fun generateText(
         providerSetting: ProviderSetting.OpenAI,
         messages: List<UIMessage>,
@@ -135,7 +143,7 @@ class ChatCompletionsAPI(
 
         Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
 
-        val response = client.resolveProxy(proxyRoute, params.model.modelId).newCall(request).await()
+        val response = effClient(providerSetting).resolveProxy(proxyRoute, params.model.modelId).newCall(request).await()
         if (!response.isSuccessful) {
             // v3.6.78: 报错带完整请求体 — 定位 400 触发字段 (grok 排查)
             val reqSummary = json.encodeToString(requestBody)
@@ -320,7 +328,14 @@ class ChatCompletionsAPI(
                 }
                 // 仅有效数据刷新空闲标记 — 空行 (keep-alive) 不刷新,
                 // 否则服务器保活会使看门狗永远无法检测真挂起
-                if (data.isNotBlank()) lastEventAt.set(System.currentTimeMillis())
+                if (data.isNotBlank()) {
+                    lastEventAt.set(System.currentTimeMillis())
+                    // v3.10.5: TTFT 插桩 — 首个有效 data 事件(含网关转换);
+                    // 与 sentAtMs 差即首字延迟, 连接复用/缓存命中场景应显著下降
+                    if (firstDataAtMs.compareAndSet(0, System.currentTimeMillis())) {
+                        Log.i(TAG, "TTFT ${firstDataAtMs.get() - sentAtMs}ms host=${providerSetting.baseUrl.toHttpUrl().host}")
+                    }
+                }
                 recordEvent(data)
                 Log.d(TAG, "onEvent: $data")
                 data
@@ -534,9 +549,13 @@ class ChatCompletionsAPI(
             }
 
             currentEventSource = EventSources.createFactory(
-                client.resolveProxy(proxyRoute, params.model.modelId)
+                effClient(providerSetting).resolveProxy(proxyRoute, params.model.modelId)
             ).newEventSource(request, listener)
         }
+
+        // v3.10.5: TTFT 可观测 — 首字延迟 = 发送完成 → 首个有效 data 事件 (onEvent 插桩)
+        val sentAtMs = System.currentTimeMillis()
+        val firstDataAtMs = java.util.concurrent.atomic.AtomicLong(0)
 
         connect()
 

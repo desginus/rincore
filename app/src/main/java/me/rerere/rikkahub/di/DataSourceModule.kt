@@ -357,6 +357,25 @@ val dataSourceModule = module {
     // v3.7.1: Claude/Anthropic 中转 (OpenCode Zen) 独立连接池 —
     // 中转环境空闲关闭比 DeepSeek 慢, keepalive 300s 减少连接重建,
     // 稳定首字延迟 (TTFT)。DeepSeek 的 60s 不变 (避免陈旧连接复发)。
+    // v3.10.5: OpenCode 网关独立长保活池 — 核心场景 (OpenCode Anthropic
+    // 流式 Chat Completions): 中转环境空闲关闭慢, keepalive 300s + ping 30s
+    // 显著减少连接重建, 稳定 TTFT。DeepSeek 的 60s 不变 (避免陈旧连接复发)。
+    single<OkHttpClient>(named("opencode")) {
+        OkHttpClient.Builder()
+            .protocols(listOf(Protocol.HTTP_1_1))
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(3, TimeUnit.MINUTES)
+            .writeTimeout(120, TimeUnit.SECONDS)
+            .pingInterval(30, TimeUnit.SECONDS)
+            .connectionPool(ConnectionPool(12, 300, TimeUnit.SECONDS))
+            .socketFactory(BufferedSocketFactory)
+            .followSslRedirects(true)
+            .followRedirects(true)
+            .retryOnConnectionFailure(true)
+            .build()
+            .also { me.rerere.ai.provider.ProviderManager.opencodeClient = it }
+    }
+
     single<OkHttpClient>(named("claude")) {
         OkHttpClient.Builder()
             .protocols(listOf(Protocol.HTTP_1_1))
@@ -382,6 +401,7 @@ val dataSourceModule = module {
             client = get(),
             context = get(),
             proxyRoute = getOrNull(),
+            opencodeClient = getOrNull(named("opencode")),
         )
     }
 

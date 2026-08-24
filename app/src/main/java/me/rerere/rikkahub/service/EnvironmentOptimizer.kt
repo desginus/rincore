@@ -7,6 +7,7 @@ package me.rerere.rikkahub.service
 import android.content.Context
 import android.net.ConnectivityManager
 import android.util.Log
+import okhttp3.OkHttpClient
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -59,6 +60,23 @@ object ConnectionWarmer {
         for (host in hosts) {
             warmHost(context, host)
         }
+    }
+
+    // v3.10.5: OkHttp 级预热 — 用实际请求 (GET <base>/models) 建立连接并进入
+    // OkHttp 连接池, 主请求直接复用已就绪连接, 跳过 DNS+TCP+TLS (200-500ms)。
+    // 裸 socket 预热 (warmHost) 只暖 DNS 缓存, 不进池 — TTFT 专项升级。
+    // 注意: 必须使用与主请求相同的 OkHttpClient 实例, 否则连接池独立无复用。
+    // 401/404 亦可 (连接已建立进池); 全部静默, 不影响主链路。
+    fun warmWithOkHttp(client: OkHttpClient, baseUrl: String) {
+        val safe = runCatching { baseUrl.trimEnd('/') + "/models" }.getOrNull() ?: return
+        Thread({
+            runCatching {
+                val req = okhttp3.Request.Builder().url(safe).get().build()
+                client.newCall(req).execute().use { }
+            }.onFailure {
+                Log.w(TAG, "OkHttp 预热失败: $safe — ${it.message}")
+            }
+        }, "warmup-okhttp").start()
     }
 
     /**
