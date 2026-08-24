@@ -584,6 +584,8 @@ class ChatCompletionsAPI(
 
             // open router适配
             if(host == "openrouter.ai") {
+                // v2.4.12: OpenRouter session_id 请求体字段 (between requests so they can be linked in rankings/analytics)
+                params.sessionId?.let { put("session_id", it) }
                 if(params.model.outputModalities.contains(Modality.IMAGE)) {
                     put("modalities", buildJsonArray {
                         add("image")
@@ -765,7 +767,13 @@ class ChatCompletionsAPI(
     }
 
     private fun isModelAllowTemperature(model: Model): Boolean {
-        return !ModelRegistry.OPENAI_O_MODELS.match(model.modelId) && !ModelRegistry.GPT_5.match(model.modelId)
+        val isMoonshotRestricted = ModelRegistry.KIMI_K2_5.match(model.modelId) ||
+                ModelRegistry.KIMI_K2_6.match(model.modelId) ||
+                ModelRegistry.KIMI_K3.match(model.modelId) ||
+                ModelRegistry.KIMI_K3_ALIAS.match(model.modelId)
+        return !ModelRegistry.OPENAI_O_MODELS.match(model.modelId) &&
+               !ModelRegistry.GPT_5.match(model.modelId) &&
+               !isMoonshotRestricted
     }
 
     private fun buildMessages(

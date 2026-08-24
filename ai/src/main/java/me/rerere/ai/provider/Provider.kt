@@ -68,6 +68,7 @@ data class TextGenerationParams(
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBody: List<CustomBody> = emptyList(),
     val conversationId: String? = null, // v3.6.45: OpenCode Zen sticky session 用 (x-opencode-session header)
+    val sessionId: String? = null,      // v2.4.12: OpenRouter session_id request body field
 )
 
 @Serializable
