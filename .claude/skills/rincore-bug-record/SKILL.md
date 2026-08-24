@@ -320,3 +320,22 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 - **教训**: Anthropic 兼容层参差不齐, 官方新参数 (adaptive) 不可盲发;
   跨模型继续 = 历史消息经不同严格度网关, 以最严格者为准
 - **验证**: 千问→Minimax 继续对话不再 400; 官方 Claude 多轮思考正常
+
+### B102. 平滑输出抽帧跳变 — LaunchedEffect 闭包捕获旧 target (v3.10.10)
+- **现象**: 平滑输出期间字符抽帧/跳变/丢节, 用户实测反作用
+- **根因**: LaunchedEffect(smoothing) 输出循环捕获组合时的 target 引用;
+  新块到达 → 循环追平旧文本即退出 (smoothing=false), 新块残余字符
+  要等下个块才补 → 连续丢节抽帧。经典 Compose 闭包陷阱。
+- **修复**: rememberUpdatedState(target), 循环内读最新值; 观察器首字
+  路径改为 lastLen+1 立即显示
+- **教训**: LaunchedEffect 内部协程访问参数必须 rememberUpdatedState,
+  除非 key 每次变化都重启协程
+
+### B103. Console Go 400 (2013) 复发 — max_tokens 兜底超上限 (v3.10.10)
+- **现象**: v3.10.6 修复后再次 400; 千问正常 Minimax 400 (跨模型继续)
+- **根因**: ClaudeProvider max_tokens 兜底 64000 — Minimax 等兼容网关
+  输出上限普遍 32K → 严格校验 400
+- **修复**: 官方 Anthropic 保持 64K; 非官方 host 兜底 32K;
+  空 text 块 (system/正文/图片失败兜底) 全部过滤;
+  全空消息整体丢弃; isOfficialAnthropic 统一判定
+- **验证**: 若再 400, 查 Log.i streamText 逐消息日志与 Error response body

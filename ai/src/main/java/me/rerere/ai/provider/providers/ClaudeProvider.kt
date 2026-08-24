@@ -370,13 +370,20 @@ class ClaudeProvider(
         params: TextGenerationParams,
         stream: Boolean = false
     ): JsonObject {
+        val isOfficialAnthropic =
+            providerSetting.baseUrl.toHttpUrl().host == "api.anthropic.com"
         return buildJsonObject {
             put("model", params.model.modelId)
             put(
                 "messages",
                 buildMessages(messages, providerSetting.promptCaching, providerSetting.promptCacheTtl)
             )
-            put("max_tokens", params.maxTokens ?: 64_000)
+            // v3.10.10: max_tokens 兜底按 host 区分 — 官方 Anthropic 64K;
+            // 兼容网关 (Console Go/Minimax/千问) 输出上限普遍 32K,
+            // 64000 兜底会让严格校验层直接 400 (2013) — 用户实测跨模型继续
+            val maxTokensCompat = if (params.maxTokens != null) params.maxTokens
+            else if (isOfficialAnthropic) 64_000 else 32_000
+            put("max_tokens", maxTokensCompat)
 
             // 顶层 cache_control: 让 Anthropic 自动管理缓存断点
             if (providerSetting.promptCaching) {
@@ -393,7 +400,10 @@ class ClaudeProvider(
 
             // system prompt
             val systemMessage = messages.firstOrNull { it.role == MessageRole.SYSTEM }
-            val systemTextParts = systemMessage?.parts?.filterIsInstance<UIMessagePart.Text>().orEmpty()
+            val systemTextParts = systemMessage?.parts
+                ?.filterIsInstance<UIMessagePart.Text>()
+                ?.filter { it.text.isNotBlank() }  // v3.10.10: 空文本块会被严格网关 400
+                .orEmpty()
             if (systemTextParts.isNotEmpty()) {
                 put("system", buildJsonArray {
                     systemTextParts.forEachIndexed { index, part ->
@@ -415,7 +425,6 @@ class ClaudeProvider(
             // Minimax 等 Anthropic 兼容层) 不认识 adaptive/output_config →
             // invalid params 400。官方 host 保持 adaptive, 兼容 host 保守化:
             // OFF→disabled, 其余一律不发 (模型默认思考行为, 最兼容)。
-            val isOfficialAnthropic = providerSetting.baseUrl.toHttpUrl().host == "api.anthropic.com"
             if (params.model.abilities.contains(ModelAbility.REASONING)) {
                 when {
                     ReasoningLevel.OFF == params.reasoningLevel -> {
@@ -567,18 +576,25 @@ class ClaudeProvider(
     }
 
     private fun JsonArrayBuilder.addUserMessage(message: UIMessage) {
+        // v3.10.10: 全空消息 (所有块被空文本过滤丢弃/tool_result 空) →
+        // content 空数组会被严格网关 400; 整条丢弃 (消息序列无内容即无意义)
+        val blocks = message.parts.mapNotNull { it.toContentBlock() }
+        if (blocks.isEmpty()) return
         add(buildJsonObject {
             put("role", message.role.name.lowercase())
-            putJsonArray("content") {
-                message.parts.mapNotNull { it.toContentBlock() }.forEach { add(it) }
-            }
+            putJsonArray("content") { blocks.forEach { add(it) } }
         })
     }
 
     private fun UIMessagePart.toContentBlock(): JsonObject? = when (this) {
-        is UIMessagePart.Text -> buildJsonObject {
-            put("type", "text")
-            put("text", text)
+        is UIMessagePart.Text -> {
+            // v3.10.10: 空 text 块 (图片编码失败兜底/空正文) → Anthropic 校验
+            // "text blocks must be non-empty" → 400 (2013); 直接丢弃
+            if (text.isBlank()) null
+            else buildJsonObject {
+                put("type", "text")
+                put("text", text)
+            }
         }
 
         is UIMessagePart.Image -> buildJsonObject {

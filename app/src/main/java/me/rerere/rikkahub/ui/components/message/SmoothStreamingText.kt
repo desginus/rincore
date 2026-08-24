@@ -24,6 +24,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
@@ -85,8 +86,8 @@ fun SmoothStreamingText(
             lastLen = t
             lastUpdateMs = now
             if (!smoothing) {
-                // 首字零延迟: 立即显示第一个新字符
-                displayedLen = (displayedLen + 1).coerceAtMost(t)
+                // 首字零延迟: 立即显示新块第一个字符 (从上一块末尾 +1)
+                displayedLen = (lastLen + 1).coerceAtMost(t)
                 smoothing = true
             }
         } else if (t < lastLen) {
@@ -97,11 +98,17 @@ fun SmoothStreamingText(
         }
     }
 
+    // v3.10.10: 闭包修复 — 循环必须读最新 target (rememberUpdatedState),
+    // 否则 LaunchedEffect(smoothing) 捕获旧引用: 新块到达时循环追平旧文本即
+    // 退出, 新块残余字符卡住直到下一块 → 抽帧跳变/丢字符 (用户实测)
+    val currentTarget by rememberUpdatedState(target)
+
     // 输出循环: 33ms/拍, 速率渐变逼近服务端速度
     LaunchedEffect(smoothing) {
         if (!smoothing) return@LaunchedEffect
         while (true) {
-            val remain = target.length - displayedLen
+            val t = currentTarget.length
+            val remain = t - displayedLen
             if (remain <= 0) {
                 smoothing = false
                 break
@@ -109,7 +116,7 @@ fun SmoothStreamingText(
             // 输出速率向服务端速率渐变 (0.85/0.15 一阶低通 — 速度变化呈平滑曲线)
             rateCurrent = rateCurrent * 0.85f + rateTarget * 0.15f
             val perTick = (rateCurrent / (1000f / TICK_MS)).toInt().coerceAtLeast(1)
-            displayedLen = minOf(target.length, displayedLen + perTick)
+            displayedLen = minOf(t, displayedLen + perTick)
             delay(TICK_MS)
         }
     }
