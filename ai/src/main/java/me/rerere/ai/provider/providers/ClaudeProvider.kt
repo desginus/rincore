@@ -329,6 +329,11 @@ class ClaudeProvider(
                         val bodyElement = Json.parseToJsonElement(bodyRaw)
                         Log.i(TAG, "Error response: $bodyElement")
                         exception = bodyElement.parseErrorDetail()
+                        // v3.10.12: 请求体消息摘要附进错误 — 错误弹窗复制详情即见
+                        val reqMsg = runCatching { requestBody["messages"] }.getOrNull()
+                        exception = me.rerere.ai.util.HttpException(
+                            "${exception.message}\nREQ_MESSAGES: ${reqMsg ?: "?"}"
+                        )
                     }
                 } catch (e: Throwable) {
                     Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
@@ -492,6 +497,9 @@ class ClaudeProvider(
     ) = buildJsonArray {
         messages
             .filter { it.isValidToUpload() && it.role != MessageRole.SYSTEM }
+            // v3.10.12 防御: Anthropic 严格要求 messages 首条为 user —
+            // 丢弃前导非 user 消息 (多版本/编辑残留), 否则严格网关 400
+            .dropWhile { it.role != MessageRole.USER }
             .forEach { message ->
                 if (message.role == MessageRole.ASSISTANT) {
                     addAssistantMessage(message)
@@ -606,9 +614,13 @@ class ClaudeProvider(
         flatMap { it.toContentBlocks() }
 
     private fun UIMessagePart.toContentBlock(): JsonObject? = when (this) {
-        is UIMessagePart.Text -> buildJsonObject {
-            put("type", "text")
-            put("text", text)
+        is UIMessagePart.Text -> {
+            // v3.10.12 防御: 空 text 块被严格网关 (Minimax 等) 拒绝
+            if (text.isBlank()) null
+            else buildJsonObject {
+                put("type", "text")
+                put("text", text)
+            }
         }
 
         is UIMessagePart.Image -> buildJsonObject {
@@ -626,10 +638,18 @@ class ClaudeProvider(
             }
         }
 
-        is UIMessagePart.Reasoning -> buildJsonObject {
-            put("type", "thinking")
-            put("thinking", reasoning)
-            metadataAs<ClaudeReasoningMetadata>()?.signature?.let { put("signature", it) }
+        is UIMessagePart.Reasoning -> {
+            // v3.10.12 防御: 无 signature 的 thinking 块 — 兼容网关 (千问等)
+            // 不返回签名, Minimax 等严格校验上游要求历史 thinking 带签名 → 400
+            // (2013)。有签名 (官方 Claude) 保留, 无签名丢弃。
+            val sig = metadataAs<ClaudeReasoningMetadata>()?.signature
+            if (sig != null) {
+                buildJsonObject {
+                    put("type", "thinking")
+                    put("thinking", reasoning)
+                    put("signature", sig)
+                }
+            } else null
         }
 
         else -> null

@@ -25,10 +25,9 @@ android {
 // 递增 code 会禁止降级 (INSTALL_FAILED_VERSION_DOWNGRADE)。
 // versionName 照常递增用于显示与归档; 发版只改 versionName。
 versionCode = 2500
-            // v3.10.11 用户要求: versionName 锁死 3.10.6 — 不再上涨任何数字。
-// versionCode 同锁 2500 (任意替换安装, 升/降/同级均可)。
-// 发版只改代码, 版本号永不变化。
-versionName = "3.10.6"
+            // v3.10.12: versionName 正常递增 (用户要求 — 锁死的是 versionCode);
+// versionCode 固定 2500 永不更改。
+versionName = "3.10.12"
 
             testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
