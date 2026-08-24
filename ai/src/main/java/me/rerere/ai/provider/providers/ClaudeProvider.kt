@@ -329,10 +329,9 @@ class ClaudeProvider(
                         val bodyElement = Json.parseToJsonElement(bodyRaw)
                         Log.i(TAG, "Error response: $bodyElement")
                         exception = bodyElement.parseErrorDetail()
-                        // v3.10.12: 请求体消息摘要附进错误 — 错误弹窗复制详情即见
-                        val reqMsg = runCatching { requestBody["messages"] }.getOrNull()
+                        // v3.10.14: 完整请求体附进错误 — 顶层字段也可见, 精确定位
                         exception = me.rerere.ai.util.HttpException(
-                            "${exception.message}\nREQ_MESSAGES: ${reqMsg ?: "?"}"
+                            "${exception.message}\nREQ_BODY: ${json.encodeToString(requestBody)}"
                         )
                     }
                 } catch (e: Throwable) {
@@ -376,16 +375,24 @@ class ClaudeProvider(
         params: TextGenerationParams,
         stream: Boolean = false
     ): JsonObject {
+        // v3.10.14: 非官方 host (Console Go/Minimax/千问/其他 Anthropic 兼容
+        // 网关) 拒收 Anthropic 私有元字段 (thinking/cache_control/output_config)
+        // → invalid params 400 (2013)。只有官方 api.anthropic.com 发送,
+        // 兼容网关走最小标准 Anthropic 协议子集。
+        val isOfficialAnthropic =
+            runCatching { providerSetting.baseUrl.toHttpUrl().host }.getOrNull() == "api.anthropic.com"
+        val effectivePromptCaching =
+            providerSetting.promptCaching && isOfficialAnthropic
         return buildJsonObject {
             put("model", params.model.modelId)
             put(
                 "messages",
-                buildMessages(messages, providerSetting.promptCaching, providerSetting.promptCacheTtl)
+                buildMessages(messages, effectivePromptCaching, providerSetting.promptCacheTtl)
             )
             put("max_tokens", params.maxTokens ?: 64_000)
 
-            // 顶层 cache_control: 让 Anthropic 自动管理缓存断点
-            if (providerSetting.promptCaching) {
+            // 顶层 cache_control: 仅官方 Anthropic (兼容网关拒收)
+            if (effectivePromptCaching) {
                 put("cache_control", cacheControlEphemeral(providerSetting.promptCacheTtl))
             }
 
@@ -406,7 +413,7 @@ class ClaudeProvider(
                         add(buildJsonObject {
                             put("type", "text")
                             put("text", part.text)
-                            if (providerSetting.promptCaching && index == systemTextParts.lastIndex) {
+                            if (effectivePromptCaching && index == systemTextParts.lastIndex) {
                                 put("cache_control", cacheControlEphemeral(providerSetting.promptCacheTtl))
                             }
                         })
@@ -414,10 +421,10 @@ class ClaudeProvider(
                 })
             }
 
-            // 处理 thinking
-            // Anthropic 新 API: adaptive 模式 + output_config.effort 控制强度
-            // 旧的 type=enabled + budget_tokens 在 Opus 4.7+ 上已不支持
-            if (params.model.abilities.contains(ModelAbility.REASONING)) {
+            // 处理 thinking — 非官方 Anthropic host (兼容网关) 不发 thinking/
+            // output_config 字段 (Minimax 等严格校验拒收 → 2013)
+            // 官方 api.anthropic.com 走原版完整 adaptive 协议
+            if (isOfficialAnthropic && params.model.abilities.contains(ModelAbility.REASONING)) {
                 when (params.reasoningLevel) {
                     ReasoningLevel.OFF -> {
                         put("thinking", buildJsonObject { put("type", "disabled") })
@@ -470,7 +477,7 @@ class ClaudeProvider(
             if (toolDefinitions.isNotEmpty()) {
                 putJsonArray("tools") {
                     toolDefinitions.forEachIndexed { index, definition ->
-                        if (providerSetting.promptCaching && index == toolDefinitions.lastIndex) {
+                        if (effectivePromptCaching && index == toolDefinitions.lastIndex) {
                             add(JsonObject(
                                 definition + mapOf(
                                     "cache_control" to cacheControlEphemeral(providerSetting.promptCacheTtl)
