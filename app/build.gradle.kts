@@ -20,14 +20,11 @@ android {
             applicationId = "me.rincore.app"
             minSdk = 26
             targetSdk = 37
-            // v3.10.11: versionCode 固定常量 — 所有版本随意替换安装 (升/降/同级)。
-// Android 安装器按 versionCode 比较: 相同 code + 相同签名 = 视为更新可覆盖;
-// 递增 code 会禁止降级 (INSTALL_FAILED_VERSION_DOWNGRADE)。
-// versionName 照常递增用于显示与归档; 发版只改 versionName。
-versionCode = 2500
-            // v3.10.12: versionName 正常递增 (用户要求 — 锁死的是 versionCode);
-// versionCode 固定 2500 永不更改。
-versionName = "3.10.14"
+            // VS号全局统一锁定 9999 (v3.11.0 起): Android 安装器按 versionCode
+// 比较 — 相同 code + 相同签名 = 任意替换安装 (升/降/同级均可)。
+// versionName 正常递增用于显示与归档; 发版只改 versionName。
+versionCode = 9999
+versionName = "3.11.1"
 
             testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

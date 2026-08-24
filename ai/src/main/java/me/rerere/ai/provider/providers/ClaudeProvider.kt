@@ -329,9 +329,20 @@ class ClaudeProvider(
                         val bodyElement = Json.parseToJsonElement(bodyRaw)
                         Log.i(TAG, "Error response: $bodyElement")
                         exception = bodyElement.parseErrorDetail()
-                        // v3.10.14: 完整请求体附进错误 — 顶层字段也可见, 精确定位
+                        // v3.10.15: 元数据诊断 — 不泄露 system/messages 内容
+                        // (用户警告: 错误详情泄露系统提示词). 只显示结构摘要
+                        val meta = buildString {
+                            append("\nREQ_META: model=").append(requestBody["model"])
+                            val msgs = requestBody["messages"]?.jsonArray
+                            append(" msgCount=").append(msgs?.size ?: 0)
+                            msgs?.forEachIndexed { i, m ->
+                                append(" [").append(i).append("]=").append(m.jsonObject["role"])
+                            }
+                            append(" maxTokens=").append(requestBody["max_tokens"] ?: "?")
+                            append(" keys=").append(requestBody.keys.joinToString(","))
+                        }
                         exception = me.rerere.ai.util.HttpException(
-                            "${exception.message}\nREQ_BODY: ${json.encodeToString(requestBody)}"
+                            "${exception.message}$meta"
                         )
                     }
                 } catch (e: Throwable) {
@@ -389,7 +400,10 @@ class ClaudeProvider(
                 "messages",
                 buildMessages(messages, effectivePromptCaching, providerSetting.promptCacheTtl)
             )
-            put("max_tokens", params.maxTokens ?: 64_000)
+            // v3.10.15: max_tokens 兜底按 host 区分 — 非官方兼容层对大值敏感,
+            // MiniMax 等会把 64000 当 context budget 解析触发 2013. 8192 实测安全.
+            val maxTokensFallback = if (isOfficialAnthropic) 64_000 else 8_192
+            put("max_tokens", params.maxTokens ?: maxTokensFallback)
 
             // 顶层 cache_control: 仅官方 Anthropic (兼容网关拒收)
             if (effectivePromptCaching) {
@@ -412,7 +426,7 @@ class ClaudeProvider(
                     systemTextParts.forEachIndexed { index, part ->
                         add(buildJsonObject {
                             put("type", "text")
-                            put("text", part.text)
+                            put("text", part.text.trimStart(CHAR_BOM).replace(CHAR_BOM.toString(), ""))
                             if (effectivePromptCaching && index == systemTextParts.lastIndex) {
                                 put("cache_control", cacheControlEphemeral(providerSetting.promptCacheTtl))
                             }
@@ -616,9 +630,20 @@ class ClaudeProvider(
         add(buildJsonObject {
             put("role", message.role.name.lowercase())
             putJsonArray("content") {
-                message.parts.flatMap { it.toContentBlocks() }.forEach { add(it) }
+                message.parts.flatMap { it.toContentBlocks() }
+                    .map { stripBom(it) }.forEach { add(it) }
             }
         })
+    }
+
+    /** v3.10.15: strip BOM (U+FEFF) 等不可见控制符 — 严格网关 JSON parser
+     * 可能拒收. 应用于所有 text 块内容. */
+    private fun stripBom(obj: JsonObject): JsonObject {
+        val text = obj["text"]?.takeIf { it is JsonPrimitive }?.jsonPrimitive?.contentOrNull
+        if (text == null) return obj
+        val cleaned = text.trimStart(CHAR_BOM).replace(CHAR_BOM.toString(), "")
+        if (cleaned == text) return obj
+        return JsonObject(obj.toMutableMap().apply { put("text", JsonPrimitive(cleaned)) })
     }
 
     // 原版对应函数含 UIMessagePart.ServerTool 分支 (serverToolContentBlocks) —
@@ -778,3 +803,5 @@ class ClaudeProvider(
         )
     }
 }
+
+private const val CHAR_BOM = '\uFEFF'

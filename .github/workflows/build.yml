@@ -8,8 +8,12 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # 发布 Release 需要写权限
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # 生成 changelog 需要完整历史
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -57,3 +61,32 @@ jobs:
           name: rincore-release
           path: app/build/outputs/apk/release/*.apk
           retention-days: 7
+
+      # v3.11.1: 恢复有内容的推送格式 — 每次构建发布 Release 附本次变更说明
+      - name: Compute version and changelog
+        id: ver
+        run: |
+          VN=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
+          HEAD=$(git log -1 --pretty=%s)
+          COMMITS=$(git log --oneline -10 | sed 's/^/- /')
+          {
+            echo "VN=$VN"
+            echo "HEAD=$HEAD"
+            echo "BODY<<EOF"
+            echo "## $HEAD"
+            echo ""
+            echo "$COMMITS"
+            echo ""
+            echo "> 自动构建 Release，APK 见下方 Assets，CI artifact 与 nightly 同源可用。"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+
+      - name: Publish Release with changelog
+        uses: softprops/action-gh-release@v2
+        if: success()
+        with:
+          tag_name: v${{ env.VN }}
+          name: RinCore v${{ env.VN }}
+          body: ${{ env.BODY }}
+          files: app/build/outputs/apk/release/*.apk
+          prerelease: true
