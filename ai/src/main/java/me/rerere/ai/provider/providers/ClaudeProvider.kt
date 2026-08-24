@@ -495,18 +495,29 @@ class ClaudeProvider(
         promptCaching: Boolean,
         promptCacheTtl: ClaudePromptCacheTtl
     ) = buildJsonArray {
-        messages
+        // v3.10.13: 防御链 — Anthropic 消息硬性规则: 首条 user + 角色交替。
+        // 1) 过滤 SYSTEM/跳过无效; 2) 丢弃前导非 user; 3) 合并连续同角色
+        // (自研 transformer 曾以独立 user 消息注入 time_reminder → 连续 user
+        // → Console Go/Minimax 严格校验 400 (2013), 铁证 REQ_MESSAGES)
+        val clean = messages
             .filter { it.isValidToUpload() && it.role != MessageRole.SYSTEM }
-            // v3.10.12 防御: Anthropic 严格要求 messages 首条为 user —
-            // 丢弃前导非 user 消息 (多版本/编辑残留), 否则严格网关 400
             .dropWhile { it.role != MessageRole.USER }
-            .forEach { message ->
-                if (message.role == MessageRole.ASSISTANT) {
-                    addAssistantMessage(message)
-                } else {
-                    addUserMessage(message)
-                }
+        val merged = mutableListOf<UIMessage>()
+        for (m in clean) {
+            val last = merged.lastOrNull()
+            if (last != null && last.role == m.role) {
+                merged[merged.size - 1] = last.copy(parts = last.parts + m.parts)
+            } else {
+                merged.add(m)
             }
+        }
+        merged.forEach { message ->
+            if (message.role == MessageRole.ASSISTANT) {
+                addAssistantMessage(message)
+            } else {
+                addUserMessage(message)
+            }
+        }
     }.let { messagesArray ->
         if (!promptCaching) return@let messagesArray
         insertMessagesCacheControl(messagesArray, promptCacheTtl)

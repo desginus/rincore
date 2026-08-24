@@ -27,7 +27,7 @@ android {
 versionCode = 2500
             // v3.10.12: versionName 正常递增 (用户要求 — 锁死的是 versionCode);
 // versionCode 固定 2500 永不更改。
-versionName = "3.10.12"
+versionName = "3.10.13"
 
             testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
