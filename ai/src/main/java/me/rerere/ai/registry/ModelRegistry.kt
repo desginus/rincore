@@ -232,6 +232,22 @@ object ModelRegistry {
         toolReasoningAbility()
     }
 
+    private val CLAUDE_SONNET_5 = defineModel {
+        tokens("claude", "sonnet", "5")
+        notTokens("claude", "sonnet", "4")
+        visionInput()
+        toolReasoningAbility()
+        contextLength(1.m)
+    }
+
+    private val CLAUDE_OPUS_5 = defineModel {
+        tokens("claude", "opus", "5")
+        notTokens("claude", "opus", "4")
+        visionInput()
+        toolReasoningAbility()
+        contextLength(1.m)
+    }
+
     private val CLAUDE_OPUS_4_8 = defineModel {
         tokens("claude", "opus", "4", "8")
         visionInput()
@@ -247,7 +263,9 @@ object ModelRegistry {
             CLAUDE_SONNET_4_6,
             CLAUDE_OPUS_4_6,
             CLAUDE_OPUS_4_7,
-            CLAUDE_OPUS_4_8
+            CLAUDE_OPUS_4_8,
+            CLAUDE_SONNET_5,
+            CLAUDE_OPUS_5
         )
     }
 
@@ -390,6 +408,30 @@ object ModelRegistry {
 
     private val GROK_4_6 = defineModel {
         tokens("grok", "4", "6")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val XIAOMI_MIMO_V3 = defineModel {
+        tokens("mimo", "v", "3")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val XIAOMI_MIMO_V3_PRO = defineModel {
+        tokens("mimo", "v", "3", "pro")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val MUSE_SPARK = defineModel {
+        tokens("muse", "spark")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val MUSE_GLIMMER = defineModel {
+        tokens("muse", "glimmer")
         visionInput()
         toolReasoningAbility()
     }
@@ -594,6 +636,10 @@ object ModelRegistry {
         GROK_4_5,
         GROK_4_6,
         GROK_BUILD,
+        XIAOMI_MIMO_V3,
+        XIAOMI_MIMO_V3_PRO,
+        MUSE_SPARK,
+        MUSE_GLIMMER,
         KIMI_K2,
         KIMI_K2_5,
         KIMI_K2_6,
