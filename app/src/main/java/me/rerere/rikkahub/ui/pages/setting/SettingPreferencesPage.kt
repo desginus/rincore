@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.dp
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Notification01
 import me.rerere.hugeicons.stroke.PaintBoard
-import me.rerere.hugeicons.stroke.Settings03
+import me.rerere.hugeicons.stroke.Internet
 import me.rerere.hugeicons.stroke.Sun01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
@@ -73,7 +73,7 @@ fun SettingPreferencesPage() {
                     )
                     item(
                         onClick = { navController.navigate(Screen.SettingPreferencesGeneral) },
-                        leadingContent = { Icon(HugeIcons.Settings03, null) },
+                        leadingContent = { Icon(HugeIcons.Internet, null) },
                         headlineContent = { Text(stringResource(R.string.setting_page_preferences_general)) },
                         supportingContent = { Text(stringResource(R.string.setting_page_preferences_general_desc)) },
                     )
