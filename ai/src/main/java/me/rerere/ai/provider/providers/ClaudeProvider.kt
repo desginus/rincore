@@ -30,6 +30,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.ProxyRoute
 import me.rerere.ai.provider.resolveProxy
 import me.rerere.ai.core.MessageRole
@@ -598,6 +599,11 @@ class ClaudeProvider(
     // 我们未移植 ServerTool part 机制, 仅保留通用分支
     private fun UIMessagePart.toContentBlocks(): List<JsonObject> =
         listOfNotNull(toContentBlock())
+
+    // 原版 List 重载 (server tool 按原始 content block index 排序回放);
+    // 我们无 server tool, 顺序转换等价
+    private fun List<UIMessagePart>.toContentBlocks(): List<JsonObject> =
+        flatMap { it.toContentBlocks() }
 
     private fun UIMessagePart.toContentBlock(): JsonObject? = when (this) {
         is UIMessagePart.Text -> buildJsonObject {
