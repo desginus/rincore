@@ -776,6 +776,8 @@
   <string name="setting_mcp_page_sse_url_placeholder">https://example.com/sse</string>
   <string name="setting_mcp_page_streamable_http_url_desc">URL address for Streamable HTTP server</string>
   <string name="setting_mcp_page_streamable_http_url_placeholder">https://example.com/mcp</string>
+  <string name="setting_mcp_page_studio_command_desc">Command line for STDIO transport (e.g. python3 /path/server.py)</string>
+  <string name="setting_mcp_page_studio_command_placeholder">python3 /path/server.py</string>
   <string name="setting_mcp_page_title">MCP</string>
   <string name="setting_mcp_page_tools">Tools</string>
   <string name="setting_mcp_page_tools_unavailable_message">Cannot view tool list when adding MCP Server, please check back after adding</string>

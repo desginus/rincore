@@ -758,6 +758,8 @@
   <string name="setting_mcp_page_sse_url_placeholder">https://example.com/sse</string>
   <string name="setting_mcp_page_streamable_http_url_desc">流式HTTP服务器的URL地址</string>
   <string name="setting_mcp_page_streamable_http_url_placeholder">https://example.com/mcp</string>
+  <string name="setting_mcp_page_studio_command_desc">STDIO 传输的命令行（例如 python3 /path/server.py）</string>
+  <string name="setting_mcp_page_studio_command_placeholder">python3 /path/server.py</string>
   <string name="setting_mcp_page_title">MCP</string>
   <string name="setting_mcp_page_tools">工具</string>
   <string name="setting_mcp_page_tools_unavailable_message">添加MCP Server时无法查看工具列表，请添加完后再来查看</string>
