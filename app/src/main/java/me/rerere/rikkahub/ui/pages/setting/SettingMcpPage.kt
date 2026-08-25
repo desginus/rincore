@@ -1,13 +1,7 @@
 package me.rerere.rikkahub.ui.pages.setting
 
-
-/* ───【原版对齐】SettingMcpPage | 差异 +198 行
- * 来源: 原版移植 + 自研 (STDIO workspace 分支)
- * 功能: MCP 服务器管理页 (SSE/StreamableHTTP/STDIO)
- * 差异: STDIO 分支 (viaWorkspace 配置)、OAuth 状态、传输类型
- *       教堂窗对齐 (v3.6.90 短标签)
- * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -30,6 +25,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
@@ -63,6 +59,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -74,12 +71,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.core.InputSchema
@@ -92,9 +90,11 @@ import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.FileImport
 import me.rerere.hugeicons.stroke.McpServer
+import me.rerere.hugeicons.stroke.MessageBlocked
+import me.rerere.hugeicons.stroke.View
+import me.rerere.hugeicons.stroke.ViewOff
 import me.rerere.hugeicons.stroke.Settings03
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.ai.mcp.McpCommonOptions
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
@@ -111,6 +111,7 @@ import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.ui.theme.extendColors
+import me.rerere.rikkahub.utils.writeClipboardText
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 
@@ -119,16 +120,9 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val mcpConfigs = settings.mcpServers
     val creationState = useEditState<McpServerConfig> {
-        // 新服务器同时绑定当前默认助手 — 否则 getAllAvailableTools 按
-        // assistant.mcpServers 白名单过滤, 模型与域管理页都看不到
-        val currentAssistant = settings.getCurrentAssistant()
         vm.updateSettings(
             settings.copy(
-                mcpServers = mcpConfigs + it,
-                assistants = settings.assistants.map { a ->
-                    if (a.id != currentAssistant.id) a
-                    else a.copy(mcpServers = a.mcpServers + it.id)
-                }
+                mcpServers = mcpConfigs + it
             )
         )
     }
@@ -246,16 +240,7 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
             onImport = { newConfigs ->
                 val existingIds = mcpConfigs.map { it.commonOptions.name }.toSet()
                 val toAdd = newConfigs.filter { it.commonOptions.name.isNotBlank() && it.commonOptions.name !in existingIds }
-                val currentAssistant = settings.getCurrentAssistant()
-                vm.updateSettings(
-                    settings.copy(
-                        mcpServers = mcpConfigs + toAdd,
-                        assistants = settings.assistants.map { a ->
-                            if (a.id != currentAssistant.id) a
-                            else a.copy(mcpServers = a.mcpServers + toAdd.map { it.id })
-                        }
-                    )
-                )
+                vm.updateSettings(settings.copy(mcpServers = mcpConfigs + toAdd))
                 showImportDialog = false
             }
         )
@@ -273,6 +258,42 @@ private fun McpServerItem(
     val status by mcpManager.getStatus(item).collectAsStateWithLifecycle(McpStatus.Idle)
     val dismissBoxState = rememberSwipeToDismissBoxState()
     val scope = rememberCoroutineScope()
+    var errorDetail by remember { mutableStateOf<McpStatus.Error?>(null) }
+
+    errorDetail?.let { error ->
+        val context = LocalContext.current
+        val fullText = error.detail ?: error.message
+        AlertDialog(
+            onDismissRequest = { errorDetail = null },
+            title = { Text(item.commonOptions.name.ifBlank { "MCP" }) },
+            text = {
+                SelectionContainer {
+                    Text(
+                        text = fullText,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier
+                            .heightIn(max = 320.dp)
+                            .verticalScroll(rememberScrollState()),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        context.writeClipboardText(fullText)
+                        errorDetail = null
+                    }
+                ) {
+                    Text(stringResource(R.string.copy))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { errorDetail = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
     SwipeToDismissBox(
         state = dismissBoxState,
         backgroundContent = {
@@ -314,9 +335,7 @@ private fun McpServerItem(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 when (status) {
-                    // v3.10.4: Idle (懒加载已配置未连接) 不再显示划掉气泡 — 语义错配,
-                    // 配置在即显示折线连接图标, 与 Connected 同款; 状态文案行区分
-                    McpStatus.Idle -> Icon(HugeIcons.McpServer, null)
+                    McpStatus.Idle -> Icon(HugeIcons.MessageBlocked, null)
                     McpStatus.Connecting -> CircularProgressIndicator(
                         modifier = Modifier.size(
                             24.dp
@@ -366,45 +385,19 @@ private fun McpServerItem(
                             when (item) {
                                 is McpServerConfig.SseTransportServer -> Text("SSE")
                                 is McpServerConfig.StreamableHTTPServer -> Text("Streamable HTTP")
-                                is McpServerConfig.StdioTransportServer -> Text("Stdio")
                             }
                         }
                     }
                     if (status is McpStatus.Error) {
+                        val error = status as McpStatus.Error
                         Text(
-                            text = (status as McpStatus.Error).message,
+                            text = error.message,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.error,
                             maxLines = 3,
                             overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.clickable { errorDetail = error },
                         )
-                    }
-                    if (status == McpStatus.Idle) {
-                        Text(
-                            text = "已配置 — 首次调用工具时自动连接（懒加载）。工具已按配置注册，查看位置: 工具与分类管理页 / 对话中 invoke_tools(\"MCP 域\")",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    if (status == McpStatus.Connected) {
-                        val tools = item.commonOptions.tools
-                        if (tools.isEmpty()) {
-                            Text(
-                                text = "已连接 — 服务器未返回工具（检查服务器是否实现了 MCP 工具协议）",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                            )
-                        } else {
-                            Text(
-                                text = "已连接 — ${tools.size} 个工具: " + tools.joinToString(", ") { t -> t.name },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                maxLines = 3,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
                     }
                     if (status == McpStatus.NeedsAuthorization) {
                         val context = LocalContext.current
@@ -573,10 +566,6 @@ private fun McpCommonOptionsConfigure(
                                 is McpServerConfig.StreamableHTTPServer -> config.copy(
                                     commonOptions = config.commonOptions.copy(enable = enabled)
                                 )
-
-                                is McpServerConfig.StdioTransportServer -> config.copy(
-                                    commonOptions = config.commonOptions.copy(enable = enabled)
-                                )
                             }
                         )
                     }
@@ -608,9 +597,7 @@ private fun McpCommonOptionsConfigure(
                             is McpServerConfig.StreamableHTTPServer -> config.copy(
                                 commonOptions = config.commonOptions.copy(name = name)
                             )
-                        is McpServerConfig.StdioTransportServer -> config.copy(
-                            commonOptions = config.commonOptions.copy(name = name)
-                        )                        }
+                        }
                     )
                 },
                 label = { Text(stringResource(R.string.setting_mcp_page_name)) },
@@ -634,17 +621,13 @@ private fun McpCommonOptionsConfigure(
                 Text(stringResource(R.string.setting_mcp_page_transport_type_desc))
             }
         ) {
-            // v3.6.90: 短标签 — "Streamable HTTP" 在教堂窗三段均分宽度下折成两行
-            // 导致三段不对齐, 改为 HTTP/SSE/Stdio 严格单行对齐
             val transportTypes = listOf(
-                "HTTP",
-                "SSE",
-                "Stdio"
+                "Streamable HTTP",
+                "SSE"
             )
             val currentTypeIndex = when (config) {
                 is McpServerConfig.StreamableHTTPServer -> 0
                 is McpServerConfig.SseTransportServer -> 1
-                is McpServerConfig.StdioTransportServer -> 2
             }
 
             SingleChoiceSegmentedButtonRow(
@@ -662,7 +645,6 @@ private fun McpCommonOptionsConfigure(
                                         url = when (config) {
                                             is McpServerConfig.SseTransportServer -> config.url
                                             is McpServerConfig.StreamableHTTPServer -> config.url
-                                            is McpServerConfig.StdioTransportServer -> config.command
                                         }
                                     )
 
@@ -672,17 +654,6 @@ private fun McpCommonOptionsConfigure(
                                         url = when (config) {
                                             is McpServerConfig.SseTransportServer -> config.url
                                             is McpServerConfig.StreamableHTTPServer -> config.url
-                                            is McpServerConfig.StdioTransportServer -> config.command
-                                        }
-                                    )
-
-                                    2 -> McpServerConfig.StdioTransportServer(
-                                        id = config.id,
-                                        commonOptions = config.commonOptions,
-                                        command = when (config) {
-                                            is McpServerConfig.SseTransportServer -> config.url
-                                            is McpServerConfig.StreamableHTTPServer -> config.url
-                                            is McpServerConfig.StdioTransportServer -> config.command
                                         }
                                     )
 
@@ -711,7 +682,6 @@ private fun McpCommonOptionsConfigure(
                     when (config) {
                         is McpServerConfig.SseTransportServer -> stringResource(R.string.setting_mcp_page_sse_url_desc)
                         is McpServerConfig.StreamableHTTPServer -> stringResource(R.string.setting_mcp_page_streamable_http_url_desc)
-                        is McpServerConfig.StdioTransportServer -> "Stdio process transport"
                     }
                 )
             }
@@ -720,13 +690,12 @@ private fun McpCommonOptionsConfigure(
                 value = when (config) {
                     is McpServerConfig.SseTransportServer -> config.url
                     is McpServerConfig.StreamableHTTPServer -> config.url
-                is McpServerConfig.StdioTransportServer -> config.command                },
+                },
                 onValueChange = { url ->
                     update(
                         when (config) {
                             is McpServerConfig.SseTransportServer -> config.copy(url = url)
                             is McpServerConfig.StreamableHTTPServer -> config.copy(url = url)
-                            is McpServerConfig.StdioTransportServer -> config.copy(command = url)
                         }
                     )
                 },
@@ -737,38 +706,10 @@ private fun McpCommonOptionsConfigure(
                         when (config) {
                             is McpServerConfig.SseTransportServer -> stringResource(R.string.setting_mcp_page_sse_url_placeholder)
                             is McpServerConfig.StreamableHTTPServer -> stringResource(R.string.setting_mcp_page_streamable_http_url_placeholder)
-                            is McpServerConfig.StdioTransportServer -> "python3 -m server"
                         }
                     )
                 }
             )
-        }
-
-        // Stdio 工作区启动: 沙箱内有 Python/Node 运行时, 服务器代码跑在 workspace 内
-        if (config is McpServerConfig.StdioTransportServer) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "通过工作区启动（沙箱内有 Python/Node）",
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Switch(
-                    checked = config.viaWorkspace,
-                    onCheckedChange = { checked -> update(config.copy(viaWorkspace = checked)) }
-                )
-            }
-            if (config.viaWorkspace) {
-                OutlinedTextField(
-                    value = config.workspaceId,
-                    onValueChange = { id -> update(config.copy(workspaceId = id)) },
-                    label = { Text("Workspace ID") },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("工作区 ID（工作区管理中查看）") }
-                )
-            }
         }
 
         HorizontalDivider()
@@ -788,6 +729,7 @@ private fun McpCommonOptionsConfigure(
                 config.commonOptions.headers.forEachIndexed { index, header ->
                     var headerName by remember(header.first) { mutableStateOf(header.first) }
                     var headerValue by remember(header.second) { mutableStateOf(header.second) }
+                    var headerValueVisible by rememberSaveable { mutableStateOf(false) }
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -811,7 +753,7 @@ private fun McpCommonOptionsConfigure(
                                             is McpServerConfig.StreamableHTTPServer -> config.copy(
                                                 commonOptions = config.commonOptions.copy(headers = updatedHeaders)
                                             )
-                                        is McpServerConfig.StdioTransportServer -> config.copy(commonOptions = config.commonOptions)                                        }
+                                        }
                                     )
                                 },
                                 label = { Text(stringResource(R.string.setting_mcp_page_header_name)) },
@@ -835,11 +777,20 @@ private fun McpCommonOptionsConfigure(
                                             is McpServerConfig.StreamableHTTPServer -> config.copy(
                                                 commonOptions = config.commonOptions.copy(headers = updatedHeaders)
                                             )
-                                        is McpServerConfig.StdioTransportServer -> config.copy(commonOptions = config.commonOptions)                                        }
+                                        }
                                     )
                                 },
                                 label = { Text(stringResource(R.string.setting_mcp_page_header_value)) },
                                 modifier = Modifier.fillMaxWidth(),
+                                visualTransformation = if (headerValueVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                trailingIcon = {
+                                    IconButton(onClick = { headerValueVisible = !headerValueVisible }) {
+                                        Icon(
+                                            if (headerValueVisible) HugeIcons.ViewOff else HugeIcons.View,
+                                            contentDescription = null
+                                        )
+                                    }
+                                },
                                 placeholder = { Text(stringResource(R.string.setting_mcp_page_header_value_placeholder)) }
                             )
                         }
@@ -855,7 +806,7 @@ private fun McpCommonOptionsConfigure(
                                     is McpServerConfig.StreamableHTTPServer -> config.copy(
                                         commonOptions = config.commonOptions.copy(headers = updatedHeaders)
                                     )
-                                is McpServerConfig.StdioTransportServer -> config.copy(commonOptions = config.commonOptions)                                }
+                                }
                             )
                         }) {
                             Icon(
@@ -879,7 +830,7 @@ private fun McpCommonOptionsConfigure(
                                 is McpServerConfig.StreamableHTTPServer -> config.copy(
                                     commonOptions = config.commonOptions.copy(headers = updatedHeaders)
                                 )
-                            is McpServerConfig.StdioTransportServer -> config.copy(commonOptions = config.commonOptions)                            }
+                            }
                         )
                     },
                     modifier = Modifier.fillMaxWidth()
@@ -902,8 +853,6 @@ private fun McpToolsConfigure(
     update: (McpServerConfig) -> Unit,
 ) {
     val mcpManager = koinInject<McpManager>()
-    val settingsStore = koinInject<me.rerere.rikkahub.data.datastore.SettingsStore>()
-    val scope = rememberCoroutineScope()
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -917,14 +866,6 @@ private fun McpToolsConfigure(
         items(config.commonOptions.tools) { tool ->
             McpToolCard(
                 tool = tool,
-                onRename = { newName ->
-                    // v3.6.102: 完整工具名 (mcp__服务器__工具) 的改名写入
-                    scope.launch {
-                        settingsStore.update { s ->
-                            s.copy(toolNameOverrides = s.toolNameOverrides + ("mcp__${config.commonOptions.name}__${tool.name}" to newName))
-                        }
-                    }
-                },
                 onEnableChange = { newVal ->
                     update(
                         config.clone(
@@ -965,36 +906,8 @@ private fun McpToolCard(
     tool: McpTool,
     onEnableChange: (Boolean) -> Unit,
     onNeedsApprovalChange: (Boolean) -> Unit,
-    onRename: (String) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    // v3.6.102/105: 工具改名 — 汉语名工具改为英文 (模型识别)
-    var showRename by remember { mutableStateOf(false) }
-    var renameText by remember(tool) { mutableStateOf("") }
-    if (showRename) {
-        AlertDialog(
-            onDismissRequest = { showRename = false },
-            title = { Text("重命名工具: ${tool.name}") },
-            text = {
-                OutlinedTextField(
-                    value = renameText,
-                    onValueChange = { renameText = it },
-                    label = { Text("新工具名（仅字母/数字/_/-）") },
-                    singleLine = true,
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val newName = renameText.trim()
-                    if (newName.isNotBlank() && newName.all { ch -> ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch == '_' || ch == '-' }) {
-                        onRename(newName)
-                        showRename = false
-                    }
-                }) { Text("保存") }
-            },
-            dismissButton = { TextButton(onClick = { showRename = false }) { Text("取消") } },
-        )
-    }
     Card(
         colors = CardDefaults.cardColors(
             containerColor = CustomColors.listItemColors.containerColor
@@ -1049,10 +962,6 @@ private fun McpToolCard(
                         onCheckedChange = onEnableChange,
                         size = SwitchSize.Small
                     )
-                }
-                // v3.6.102: 重命名按钮 (汉语名工具改英文)
-                TextButton(onClick = { showRename = true }) {
-                    Text("重命名", style = MaterialTheme.typography.labelSmall)
                 }
                 // 展开/收起按钮
                 IconButton(
@@ -1111,30 +1020,14 @@ private fun parseMcpServersFromJson(json: String): List<McpServerConfig> {
     return mcpServers.entries.mapNotNull { (name, element) ->
         val obj = element.jsonObject
         val type = obj["type"]?.jsonPrimitive?.contentOrNull ?: "streamable_http"
+        val url = obj["url"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
         val headers = obj["headers"]?.jsonObject?.entries?.map { (k, v) ->
             k to (v.jsonPrimitive.contentOrNull ?: "")
         } ?: emptyList()
         val commonOptions = McpCommonOptions(name = name, headers = headers)
         when (type) {
-            "sse" -> {
-                val url = obj["url"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                McpServerConfig.SseTransportServer(commonOptions = commonOptions, url = url)
-            }
-            "stdio" -> {
-                // stdio: 必需 command, 可选 args (MCP 标准格式)
-                val command = obj["command"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                val args = obj["args"]?.jsonArray
-                    ?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
-                McpServerConfig.StdioTransportServer(
-                    commonOptions = commonOptions,
-                    command = command,
-                    args = args,
-                )
-            }
-            else -> {
-                val url = obj["url"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                McpServerConfig.StreamableHTTPServer(commonOptions = commonOptions, url = url)
-            }
+            "sse" -> McpServerConfig.SseTransportServer(commonOptions = commonOptions, url = url)
+            else -> McpServerConfig.StreamableHTTPServer(commonOptions = commonOptions, url = url)
         }
     }
 }
