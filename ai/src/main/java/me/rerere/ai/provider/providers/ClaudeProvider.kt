@@ -336,7 +336,29 @@ class ClaudeProvider(
                             val msgs = requestBody["messages"]?.jsonArray
                             append(" msgCount=").append(msgs?.size ?: 0)
                             msgs?.forEachIndexed { i, m ->
-                                append(" [").append(i).append("]=").append(m.jsonObject["role"])
+                                val o = m.jsonObject
+                                append(" [").append(i).append("]=").append(o["role"])
+                                // v3.11.3: 块类型统计 — 定位严格网关拒绝的具体块
+                                val content = o["content"]
+                                if (content is JsonArray) {
+                                    val counts = mutableMapOf<String, Int>()
+                                    content.forEach { blk ->
+                                        val t = blk.jsonObject["type"]?.jsonPrimitive?.contentOrNull ?: "?"
+                                        counts[t] = (counts[t] ?: 0) + 1
+                                    }
+                                    append("(")
+                                    counts.entries.sortedBy { it.key }.forEach { (t, n) ->
+                                        append(t).append(":").append(n).append(" ")
+                                    }
+                                    append(")")
+                                    // tool_use id 格式提示
+                                    content.firstOrNull { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "tool_use" }?.let { tu ->
+                                        val id = tu.jsonObject["id"]?.jsonPrimitive?.contentOrNull ?: ""
+                                        append(" toolId=${id.take(12)} len=${id.length}")
+                                    }
+                                } else {
+                                    append("(content=").append(content?.let { it::class.simpleName } ?: "null").append(")")
+                                }
                             }
                             append(" maxTokens=").append(requestBody["max_tokens"] ?: "?")
                             append(" keys=").append(requestBody.keys.joinToString(","))
@@ -764,15 +786,21 @@ class ClaudeProvider(
                 }
 
                 "input_json_delta" -> {
+                    // v3.11.3: 空 toolCallId/name 的增量块不保存 —
+                    // 回放会发出 id="" 的 tool_use, 严格网关 (Minimax) 400
                     val input = block["partial_json"]?.jsonPrimitive?.contentOrNull
-                    parts.add(
-                        UIMessagePart.Tool(
-                            toolCallId = "",
-                            toolName = "",
-                            input = input ?: "",
-                            output = emptyList()
+                    if (input.isNullOrBlank()) {
+                        // 无内容则忽略
+                    } else {
+                        parts.add(
+                            UIMessagePart.Tool(
+                                toolCallId = "",
+                                toolName = "",
+                                input = input,
+                                output = emptyList()
+                            )
                         )
-                    )
+                    }
                 }
             }
         }

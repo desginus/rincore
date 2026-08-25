@@ -61,6 +61,13 @@ internal fun applyTimeReminder(messages: List<UIMessage>): List<UIMessage> {
     for (i in messages.indices) {
         val current = messages[i]
         if (current.role == MessageRole.USER) {
+            // v3.11.3: 工具结果消息 (含 Tool part) 不合并 reminder —
+            // tool_result 消息混入文本块会被严格网关 (Minimax) 拒收
+            val isToolResultMessage = current.parts.any { it is me.rerere.ai.ui.UIMessagePart.Tool }
+            if (isToolResultMessage) {
+                result.add(current)
+                continue
+            }
             val currInstant = current.createdAt.toInstant(tz)
             if (!firstUserFound) {
                 firstUserFound = true
