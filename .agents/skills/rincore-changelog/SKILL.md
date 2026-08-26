@@ -376,3 +376,14 @@ description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日�
 - 对照包: v3.10.16 (自研深修线) / v3.10.17 (原版对齐线) / v3.10.15-base
 - 300+ 补丁期 (v3.10.4→v3.10.17) 收敛: 400 根因=千问 thinking, 
   修复已入 v3.11.1 main
+
+## v3.11.2 / v3.11.3 / v3.11.4 (2026-08-25/27)
+- v3.11.2: MCP 数据层整体回原版 2.4.12 (McpManager 委托版 + McpSessionRegistry
+  状态机 + OAuthCoordinator; 启动即连无懒加载); SettingMcpPage 图标回原版
+  (Idle→MessageBlocked 等); STDIO viaWorkspace 作为兼容分支保留
+- v3.11.3: Minimax 400 第三候选修复 — time_reminder 不污染 tool_result 消息
+  (Tool part 消息跳过合并); input_json_delta 空 id Tool 丢弃; REQ_META 升级
+  为逐消息块类型统计 (下次 400 直接定位被拒块)
+- v3.11.4: 工具调用后"卡死"根治 — 断流重试时间预算 75s (旧: 7轮xwatchdog
+  60-180s=20+分钟静默); 预算耗尽保留已输出内容+明确报错 (不再回滚丢弃);
+  重试期间 UI 提示"生成中断, 正在自动重试 (n/7)"; TraceLogger 工具轮标记
