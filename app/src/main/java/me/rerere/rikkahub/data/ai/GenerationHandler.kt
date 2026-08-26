@@ -123,10 +123,11 @@ class GenerationHandler(
         /** 工具执行超时 (ms): 工具挂起时返回超时错误, 不阻塞整个生成流程 */
         private const val TOOL_EXECUTION_TIMEOUT_MS = 60_000L
 
-        /** v3.11.4 断流重试时间预算 (ms): 平台持续空流/慢流时, 重试不无限叠加
-         *  (旧行为: 7 轮 x 每轮 watchdog 60-180s = 最长静默 20+ 分钟, 用户感知卡死)。
-         *  预算内快速重试覆盖瞬时断流; 超预算立即明确失败, 用户最多等待 ~90s。 */
-        private const val STREAM_RETRY_BUDGET_MS = 75_000L
+        /** v3.11.6 断流重试时间预算 (ms): 15 次重试总时长 10s 内完成
+         *  (用户要求: 15 次共 10s, 前 5s 至少 7 次)。
+         *  平滑指数递增 (100ms 起 x1.22); 超预算保留已输出内容+
+         *  明确失败, 杜绝无限静默。 */
+        private const val STREAM_RETRY_BUDGET_MS = 10_000L
     }
 
     fun generateText(
@@ -840,22 +841,20 @@ class GenerationHandler(
                 // 60-180s 会静默 20+ 分钟 (用户感知"卡死"), 预算内快速重试
                 // 覆盖瞬时断流, 超预算立即明确失败报错。
                 val retryElapsedMs = System.currentTimeMillis() - retryBudgetStartMs
-                if (streamRetryCount < 7 && retryElapsedMs < STREAM_RETRY_BUDGET_MS) {
+                if (streamRetryCount < 15 && retryElapsedMs < STREAM_RETRY_BUDGET_MS) {
                     streamRetryCount++
-                    // v3.8.8: 重试节奏 — 7 次 5 秒内全部尝试完毕:
-                    // 前 3 次密集按指数 (200/400/800ms 急退先试), 第 4 次起
-                    // 固定节奏 (900ms x4), 总 200+400+800+3600 = 5000ms。
-                    // 快速失败快速再试, 覆盖瞬时断流 (前 3 次), 持续断流
-                    // 也不再拖长等待 (旧线性 1+2+3+4+5=15s 太慢性)。
-                    val retryDelayMs =
-                        if (streamRetryCount <= 3) 200L * (1L shl (streamRetryCount - 1))
-                        else 900L
+                    // v3.11.6: 重试节奏 — 15 次总时长 ≤10s, 平滑指数递增:
+                    // 100ms 起每步 x1.22 (100/122/149/182/222/271/330/403/
+                    // 491/599/731/892/1088/1327/1619, 和 ≈8.5s);
+                    // 前 7 次 ≈1.4s 完成 — 满足"前 5 秒至少 7 次",
+                    // 消除阶梯感 (用户: 15 次共 10 秒, 平滑递增)。
+                    val retryDelayMs = (100L * kotlin.math.pow(1.22, streamRetryCount - 1.0)).toLong()
                     // v3.11.4: 重试期间 UI 状态提示 — 回滚瞬间内容消失,
                     // 无提示时用户感知"卡死"; 提示后用户知道在自动恢复
-                    processingStatus.value = "生成中断，正在自动重试 ($streamRetryCount/7)"
+                    processingStatus.value = "生成中断，正在自动重试 ($streamRetryCount/15)"
                     kotlinx.coroutines.delay(retryDelayMs)
-                    Log.w(TAG, "stream interrupted (${e.message}), rolling back & retry $streamRetryCount/7 (delay=${retryDelayMs}ms)")
-                    CallTracer.event("RETRY", "stream_interrupted", "interrupted: ${e.message}, rollback & retry $streamRetryCount/7", metrics = sseDiagMetrics())
+                    Log.w(TAG, "stream interrupted (${e.message}), rolling back & retry $streamRetryCount/15 (delay=${retryDelayMs}ms)")
+                    CallTracer.event("RETRY", "stream_interrupted", "interrupted: ${e.message}, rollback & retry $streamRetryCount/15", metrics = sseDiagMetrics())
                     messages = preStreamMessages  // 丢弃本次生成的半截内容
                     onUpdateMessages(messages)    // UI 同步回滚
                     continue@streamLoop  // 重试 (maxSteps 内, 消息相同缓存命中)
@@ -865,7 +864,7 @@ class GenerationHandler(
                 // 现在保留模型实际输出过的内容到 UI, 再明确报错)
                 processingStatus.value = null
                 onUpdateMessages(messages)
-                val retryInfo = if (streamRetryCount >= 7) {
+                val retryInfo = if (streamRetryCount >= 15) {
                     "重试 ${streamRetryCount} 次已达上限"
                 } else {
                     "重试 ${streamRetryCount} 次, 耗时 ${retryElapsedMs / 1000}s 超预算"
