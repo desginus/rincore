@@ -848,7 +848,7 @@ class GenerationHandler(
                     // 491/599/731/892/1088/1327/1619, 和 ≈8.5s);
                     // 前 7 次 ≈1.4s 完成 — 满足"前 5 秒至少 7 次",
                     // 消除阶梯感 (用户: 15 次共 10 秒, 平滑递增)。
-                    val retryDelayMs = (100L * kotlin.math.pow(1.22, streamRetryCount - 1.0)).toLong()
+                    val retryDelayMs = (100L * Math.pow(1.22, (streamRetryCount - 1).toDouble())).toLong()
                     // v3.11.4: 重试期间 UI 状态提示 — 回滚瞬间内容消失,
                     // 无提示时用户感知"卡死"; 提示后用户知道在自动恢复
                     processingStatus.value = "生成中断，正在自动重试 ($streamRetryCount/15)"
