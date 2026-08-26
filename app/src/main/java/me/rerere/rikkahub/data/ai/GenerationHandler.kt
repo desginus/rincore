@@ -122,6 +122,11 @@ class GenerationHandler(
     companion object {
         /** 工具执行超时 (ms): 工具挂起时返回超时错误, 不阻塞整个生成流程 */
         private const val TOOL_EXECUTION_TIMEOUT_MS = 60_000L
+
+        /** v3.11.4 断流重试时间预算 (ms): 平台持续空流/慢流时, 重试不无限叠加
+         *  (旧行为: 7 轮 x 每轮 watchdog 60-180s = 最长静默 20+ 分钟, 用户感知卡死)。
+         *  预算内快速重试覆盖瞬时断流; 超预算立即明确失败, 用户最多等待 ~90s。 */
+        private const val STREAM_RETRY_BUDGET_MS = 75_000L
     }
 
     fun generateText(
@@ -767,6 +772,7 @@ class GenerationHandler(
             // NAT 超时/平台断流 — IOException) → 回滚本次已输出内容 → 自动重试。
             // 用户核心诉求: 一直保持连接, 不自己中断。重试请求消息相同 → 缓存命中。
             streamLoop@ while (true) {
+            val retryBudgetStartMs = System.currentTimeMillis()
             val preStreamMessages = messages
             // v3.6.49: UI 更新节流 — 每 chunk 调 onUpdateMessages 触发整个 ChatPage
             // 重组, 流式期间高频重组是卡顿/发热/120Hz 掉帧根因。
@@ -776,6 +782,13 @@ class GenerationHandler(
             // chunk 间隔本就大于 50ms, 节流不产生额外延迟, 密集时批处理保帧率。
             var lastUiUpdateMs = 0L
             try {
+            // v3.11.4: 工具轮次诊断 — 运行日志页 SSE 现场可区分首轮/工具轮请求
+            val toolRound = internalMessages.flatMap { m -> m.parts }
+                .filterIsInstance<me.rerere.ai.ui.UIMessagePart.Tool>()
+                .count { it.output.isNotEmpty() }
+            me.rerere.ai.util.TraceLogger.log(
+                "SSE", "round: toolResultCount=$toolRound messages=${internalMessages.size}"
+            )
             providerImpl.streamText(
                 providerSetting = provider,
                 messages = internalMessages,
@@ -809,6 +822,7 @@ class GenerationHandler(
                 }
             }
             // 流式成功完成 — 补一次 UI 更新, 确保节流期间的最后内容完整显示
+            processingStatus.value = null  // v3.11.4: 重试提示清除
             onUpdateMessages(messages)
             break@streamLoop  // 流式成功完成, 退出重试循环
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -821,11 +835,12 @@ class GenerationHandler(
                 onUpdateMessages(messages)
                 throw e
             } catch (e: java.io.IOException) {
-                // 断流 (切后台/网络切换/NAT/平台): 回滚半截输出 → 自动重试 (最多 5 次)
-                // v3.5.59: 2→5 (用户实测网络切换频繁, 2 次不够)
-                // v3.6.15: 线性递增 1/2/3/4/5s (用户决策 — 后台网络切换时快速恢复,
-                // 5 次总等待 15s, 重试消息相同缓存命中)
-                if (streamRetryCount < 7) {
+                // 断流 (切后台/网络切换/NAT/平台): 回滚半截输出 → 自动重试
+                // v3.11.4: 时间预算封顶 — 平台持续空流/慢流时 7 轮 x watchdog
+                // 60-180s 会静默 20+ 分钟 (用户感知"卡死"), 预算内快速重试
+                // 覆盖瞬时断流, 超预算立即明确失败报错。
+                val retryElapsedMs = System.currentTimeMillis() - retryBudgetStartMs
+                if (streamRetryCount < 7 && retryElapsedMs < STREAM_RETRY_BUDGET_MS) {
                     streamRetryCount++
                     // v3.8.8: 重试节奏 — 7 次 5 秒内全部尝试完毕:
                     // 前 3 次密集按指数 (200/400/800ms 急退先试), 第 4 次起
@@ -835,6 +850,9 @@ class GenerationHandler(
                     val retryDelayMs =
                         if (streamRetryCount <= 3) 200L * (1L shl (streamRetryCount - 1))
                         else 900L
+                    // v3.11.4: 重试期间 UI 状态提示 — 回滚瞬间内容消失,
+                    // 无提示时用户感知"卡死"; 提示后用户知道在自动恢复
+                    processingStatus.value = "生成中断，正在自动重试 ($streamRetryCount/7)"
                     kotlinx.coroutines.delay(retryDelayMs)
                     Log.w(TAG, "stream interrupted (${e.message}), rolling back & retry $streamRetryCount/7 (delay=${retryDelayMs}ms)")
                     CallTracer.event("RETRY", "stream_interrupted", "interrupted: ${e.message}, rollback & retry $streamRetryCount/7", metrics = sseDiagMetrics())
@@ -842,7 +860,20 @@ class GenerationHandler(
                     onUpdateMessages(messages)    // UI 同步回滚
                     continue@streamLoop  // 重试 (maxSteps 内, 消息相同缓存命中)
                 }
-                throw e
+                // v3.11.4: 重试次数或时间预算耗尽 — 保留已输出内容 + 明确失败
+                // (旧行为: 半截输出已随回滚丢弃 → 用户看到"工具后无输出"卡死感;
+                // 现在保留模型实际输出过的内容到 UI, 再明确报错)
+                processingStatus.value = null
+                onUpdateMessages(messages)
+                val retryInfo = if (streamRetryCount >= 7) {
+                    "重试 ${streamRetryCount} 次已达上限"
+                } else {
+                    "重试 ${streamRetryCount} 次, 耗时 ${retryElapsedMs / 1000}s 超预算"
+                }
+                Log.e(TAG, "stream retry exhausted: $retryInfo, last error: ${e.message}")
+                throw java.io.IOException(
+                    "平台持续无响应 ($retryInfo): ${e.message ?: "连接中断"}，已保留已生成内容", e
+                )
             }
             }
         } else {
