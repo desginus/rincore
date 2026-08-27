@@ -387,3 +387,22 @@ description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日�
 - v3.11.4: 工具调用后"卡死"根治 — 断流重试时间预算 75s (旧: 7轮xwatchdog
   60-180s=20+分钟静默); 预算耗尽保留已输出内容+明确报错 (不再回滚丢弃);
   重试期间 UI 提示"生成中断, 正在自动重试 (n/7)"; TraceLogger 工具轮标记
+
+## v3.11.5 - v3.11.10 (2026-08-27)
+- v3.11.5: 断流重试参数定稿 (用户) — 15 次共 ~8.5s (前 7 次 ≈1.4s),
+  平滑指数 100ms x1.22; 弃用 75s 预算设计
+- v3.11.6: 缓存恢复 — 移除 isOfficialAnthropic gating (误伤千问/Minimax
+  显式缓存); opencode watchdog 收紧 60/90s (两通道); processingStatus
+  兜底清除 (取消/异常路径残留修复)
+- v3.11.7: 全模型请求体格式调研存档 (docs/ecosystem/05-请求体格式调研/);
+  ChatCompletionsAPI max_tokens 缺失兜底 8192
+- v3.11.8: max_tokens 兜底按家族分离 (DeepSeek 32K/Kimi 8K/GLM 8K/Grok
+  4K); opencode 网关 thinking 仅 DeepSeek 家族发送; 缓存机制调研存档
+  (各家 cache_control 支持矩阵 + 客户端工程结论)
+- v3.11.9: MiniMax 家族请求体分离 — 顶层 cache_control 移除 (间歇性
+  随机 2013 头号根因, Pydantic 实证兼容网关不支持顶层自动缓存)、块级
+  保留、thinking 仅 {adaptive}; 2013 降级重试 (400+2013 → minimal body
+  重试一次, 流式+非流式双通道, AtomicReference 容器化)
+- v3.11.10: 断流预算从断流时刻起算 (旧含静默期致重试 0 次完全失效);
+  Claude 型 provider 预热补全 (RikkaHubApp 同步+异步按类型分流,
+  Claude 走 claudeClient 长保活池; ChatService 并行预热同构补全)

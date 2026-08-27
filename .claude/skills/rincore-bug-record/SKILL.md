@@ -359,3 +359,14 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
   重试期间 processingStatus 提示; TraceLogger 工具轮标记
 - **验证**: v3.11.4 实测 — 正常输出不受影响; 断流 5s 内恢复 (提示可见);
   平台持续无响应 90s 内明确失败且内容保留
+
+## Console Go Minimax随机 2013 + 断流重试失效 (2026-08-27 更新)
+- 现象A: 带图新窗口首条消息随机 400 (2013), 同请求有时可用。根因层:
+  顶层 cache_control (自动缓存模式) 兼容网关不支持 (Pydantic 实证);
+  thinking display/output_config 字段未知校验。修复 v3.11.9 家族分离 +
+  2013 降级重试。
+- 现象B: 发送后一直无反应最后报错 "重试 0 次, 耗时 60s"。根因:
+  retryBudgetStartMs 在流启动时计时, 含首包等待静默期, watchdog 单次
+  即耗尽预算 → 重试条件永不满足。修复 v3.11.10 断流时刻重置起点。
+- 经验: 重试预算计时必须只覆盖"检测到故障后"的窗口; 预热必须与主
+  请求同池 (provider 类型决定 client, host 判定不可靠)。
