@@ -207,8 +207,11 @@ class ClaudeProvider(
         val isOpencode = runCatching {
             providerSetting.baseUrl.toHttpUrl().host == "opencode.ai"
         }.getOrDefault(false)
-        val firstByteLimit = if (isOpencode) 120_000L else 60_000L
-        val streamLimit = if (isOpencode) 180_000L else 120_000L
+        // v3.11.6: opencode 时限收紧 (120/180→60/90s) — 用户反馈 OpenCode Go
+        // 通道"极不稳定": 网关断流/静默后旧时限要等 2-3 分钟才断开重试,
+        // 收紧后 60-90s 内快速失败进入断流重试 (15 次 10s 预算), 恢复更快
+        val firstByteLimit = if (isOpencode) 60_000L else 60_000L
+        val streamLimit = if (isOpencode) 90_000L else 120_000L
         val lastEventAt = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
 
         // v3.8.6: SSE 诊断统计 — 输出中途中断/半截时在运行日志页可抓取全部现场
@@ -408,24 +411,22 @@ class ClaudeProvider(
         params: TextGenerationParams,
         stream: Boolean = false
     ): JsonObject {
-        // v3.10.14: 非官方 host (Console Go/Minimax/千问/其他 Anthropic 兼容
-        // 网关) 拒收 Anthropic 私有元字段 (thinking/cache_control/output_config)
-        // → invalid params 400 (2013)。只有官方 api.anthropic.com 发送,
-        // 兼容网关走最小标准 Anthropic 协议子集。
-        val isOfficialAnthropic =
-            runCatching { providerSetting.baseUrl.toHttpUrl().host }.getOrNull() == "api.anthropic.com"
-        val effectivePromptCaching =
-            providerSetting.promptCaching && isOfficialAnthropic
+        // v3.11.6: 恢复原版请求构建 — 移除 v3.10.14 非官方 host gating。
+        // 依据: 3.11.0 (= v3.10.4 原码, 含 cache_control/thinking 全字段)
+        // 在 Minimax 新窗口实测正常; 400 (2013) 根因已锁定为历史消息
+        // 无签名 thinking 块 (v3.10.12 防御保留), 与顶层私有字段无关。
+        // gating 误伤: 千问/Minimax 等 anthropic 兼容通道显式缓存
+        // (cache_control) 被整体关闭 → 缓存率大幅下降 (用户反馈)。
+        // 保留防御: 无签名 thinking 丢弃 / 空文本块丢弃 / BOM strip /
+        // 连续同角色合并 / tool_result 消息净化 (v3.10.12-3.11.3)。
+        val effectivePromptCaching = providerSetting.promptCaching
         return buildJsonObject {
             put("model", params.model.modelId)
             put(
                 "messages",
                 buildMessages(messages, effectivePromptCaching, providerSetting.promptCacheTtl)
             )
-            // v3.10.15: max_tokens 兜底按 host 区分 — 非官方兼容层对大值敏感,
-            // MiniMax 等会把 64000 当 context budget 解析触发 2013. 8192 实测安全.
-            val maxTokensFallback = if (isOfficialAnthropic) 64_000 else 8_192
-            put("max_tokens", params.maxTokens ?: maxTokensFallback)
+            put("max_tokens", params.maxTokens ?: 64_000)
 
             // 顶层 cache_control: 仅官方 Anthropic (兼容网关拒收)
             if (effectivePromptCaching) {
@@ -457,10 +458,8 @@ class ClaudeProvider(
                 })
             }
 
-            // 处理 thinking — 非官方 Anthropic host (兼容网关) 不发 thinking/
-            // output_config 字段 (Minimax 等严格校验拒收 → 2013)
-            // 官方 api.anthropic.com 走原版完整 adaptive 协议
-            if (isOfficialAnthropic && params.model.abilities.contains(ModelAbility.REASONING)) {
+            // v3.11.6: thinking 参数恢复原版协议 (不再按 host 区分)
+            if (params.model.abilities.contains(ModelAbility.REASONING)) {
                 when (params.reasoningLevel) {
                     ReasoningLevel.OFF -> {
                         put("thinking", buildJsonObject { put("type", "disabled") })

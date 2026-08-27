@@ -230,8 +230,10 @@ class ChatCompletionsAPI(
         // v3.10.5: TTFT 可观测 — 首字延迟 = 发送完成 → 首个有效 data 事件 (onEvent 插桩)
         val sentAtMs = System.currentTimeMillis()
         val firstDataAtMs = java.util.concurrent.atomic.AtomicLong(0)
-        val firstByteLimit = if (isOpencode) 120_000L else 60_000L
-        val streamLimit = if (isOpencode) 180_000L else 120_000L
+        // v3.11.6: opencode 时限收紧 (120/180→60/90s) — OpenCode Go 网关
+        // 断流/静默后快速失败进入断流重试 (15 次 10s 预算), 恢复更快
+        val firstByteLimit = if (isOpencode) 60_000L else 60_000L
+        val streamLimit = if (isOpencode) 90_000L else 120_000L
         val watchdog = launch {
             while (true) {
                 delay(15_000)

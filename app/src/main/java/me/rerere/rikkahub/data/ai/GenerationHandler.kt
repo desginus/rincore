@@ -601,6 +601,9 @@ class GenerationHandler(
                 )
             )
         }
+        // v3.11.6: 生成结束兜底清除重试提示 — 取消/异常路径不经过
+        // 成功/预算耗尽分支, 提示会残留 (用户: 恢复后提示必须消失)
+        processingStatus.value = null
         CallTracer.finishTrace()
 
     }.flowOn(Dispatchers.IO)
