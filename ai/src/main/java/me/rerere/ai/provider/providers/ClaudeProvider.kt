@@ -255,6 +255,9 @@ class ClaudeProvider(
             }
         }
 
+        // v3.11.9: eventSource 容器前置声明 — 局部变量无前向引用,
+        // listener 匿名对象内 (onFailure 降级重试分支) 必须可见
+        val eventSourceRef = java.util.concurrent.atomic.AtomicReference<okhttp3.sse.EventSource?>()
         val listener = object : EventSourceListener() {
             override fun onEvent(
                 eventSource: EventSource,
@@ -449,7 +452,6 @@ class ClaudeProvider(
             }
         }
 
-        val eventSourceRef = java.util.concurrent.atomic.AtomicReference<okhttp3.sse.EventSource?>()
         eventSourceRef.set(
             EventSources.createFactory(
                 client.resolveProxy(proxyRoute, params.model.modelId)
