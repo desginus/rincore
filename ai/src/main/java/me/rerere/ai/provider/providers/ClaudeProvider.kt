@@ -484,6 +484,18 @@ class ClaudeProvider(
         // 保留防御: 无签名 thinking 丢弃 / 空文本块丢弃 / BOM strip /
         // 连续同角色合并 / tool_result 消息净化 (v3.10.12-3.11.3)。
         val isMiniMaxFamily = params.model.modelId.contains("minimax", ignoreCase = true)
+        // v3.11.11: 历史 thinking 不回放 (非官方通道统一规则) —
+        // 实证 REQ_META msgCount=5帮: minimal 极简请求也 2013 时,
+        // 剩余非常量 Circumstance 只有历史 assistant 回放的 thinking 块
+        // ([1]/[3] thinking:1)。兼容网关下签名与会话绑定不可迁移,
+        // 官方协议要求的历史 thinking 回放在 strict 上游必然验签失败;
+        // 同时其内容每次不同会破坏隐式缓存前缀。官方 api.anthropic.com
+        // 保持回放 (interleave thinking 协议收益); 本地纯文本判断与缓存
+        // 双正向。minimal 原创已然不发 thinking 字段,历史同样剔除。
+        val officialHost = runCatching {
+            providerSetting.baseUrl.toHttpUrl().host == "api.anthropic.com"
+        }.getOrDefault(false)
+        val dropHistoryThinking = !officialHost || minimal
         // 顶层 cache_control: 仅非 MiniMax 家族且非降级模式
         val useTopLevelCache = providerSetting.promptCaching && !minimal && !isMiniMaxFamily
         // 块级 cache_control (system 尾块 + 消息级): 全家族可用, 降级模式关闭
@@ -492,7 +504,7 @@ class ClaudeProvider(
             put("model", params.model.modelId)
             put(
                 "messages",
-                buildMessages(messages, useBlockCache, providerSetting.promptCacheTtl)
+                buildMessages(messages, useBlockCache, dropHistoryThinking, providerSetting.promptCacheTtl)
             )
             // v3.11.9: MiniMax 家族兜底用官方推荐 65536 (M2.x 64K, M3 128K)
             put("max_tokens", params.maxTokens ?: if (isMiniMaxFamily) 65_536 else 64_000)
@@ -609,7 +621,8 @@ class ClaudeProvider(
     private fun buildMessages(
         messages: List<UIMessage>,
         promptCaching: Boolean,
-        promptCacheTtl: ClaudePromptCacheTtl
+        dropHistoryThinking: Boolean = false,
+        promptCacheTtl: ClaudePromptCacheTtl = ClaudePromptCacheTtl.FIVE_MINUTES
     ) = buildJsonArray {
         // v3.10.13: 防御链 — Anthropic 消息硬性规则: 首条 user + 角色交替。
         // 1) 过滤 SYSTEM/跳过无效; 2) 丢弃前导非 user; 3) 合并连续同角色
@@ -627,7 +640,14 @@ class ClaudeProvider(
                 merged.add(m)
             }
         }
-        merged.forEach { message ->
+        // v3.11.11: 历史思考剥离 — 兼容网关场景 MINIMAL_VALIDATE via upstream
+        val finalMsgs = if (!dropHistoryThinking) merged else merged.mapNotNull { m ->
+            if (m.role != MessageRole.ASSISTANT) return@mapNotNull m
+            val kept = m.parts.filterNot { it is UIMessagePart.Reasoning }
+            // 仅含 thinking 的 assistant 剥离后整条跳过 (空 content 必被拒)
+            if (kept.isEmpty()) null else m.copy(parts = kept)
+        }
+        finalMsgs.forEach { message ->
             if (message.role == MessageRole.ASSISTANT) {
                 addAssistantMessage(message)
             } else {
