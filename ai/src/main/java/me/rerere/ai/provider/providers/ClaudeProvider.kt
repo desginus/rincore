@@ -189,21 +189,26 @@ class ClaudeProvider(
     ): Flow<MessageChunk> = callbackFlow {
         // v3.11.9: 2013 降级重试标记 — MiniMax 等严格校验上游间歇性
         // invalid params (服务端波动), 首次 400+2013 用最简请求体重试一次
+        // AtomicReference: object expression (EventSourceListener) 内写捕获
+        // 局部 var 受限 (JVM 匿名类 effectively-final), 引用容器绕过
         var attemptedMinimal = false
-        var requestBody = buildMessageRequest(providerSetting, messages, params, stream = true)
+        val requestBodyRef =
+            java.util.concurrent.atomic.AtomicReference(
+                buildMessageRequest(providerSetting, messages, params, stream = true)
+            )
         val request = Request.Builder()
             .url("${providerSetting.baseUrl}/messages")
             .headers(params.customHeaders.toHeaders())
-            .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
+            .post(json.encodeToString(requestBodyRef.get()).toRequestBody("application/json".toMediaType()))
             .addHeader("x-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
             .addHeader("anthropic-version", ANTHROPIC_VERSION)
             .addHeader("Content-Type", "application/json")
             .configureReferHeaders(providerSetting.baseUrl)
             .build()
 
-        Log.d(TAG, "streamText: ${json.encodeToString(requestBody)}") // v3.6.17: 降 d
+        Log.d(TAG, "streamText: ${json.encodeToString(requestBodyRef.get())}") // v3.6.17: 降 d
 
-        requestBody["messages"]!!.jsonArray.forEach {
+        requestBodyRef.get()["messages"]!!.jsonArray.forEach {
             Log.i(TAG, "streamText: $it")
         }
 
@@ -353,22 +358,28 @@ class ClaudeProvider(
                     attemptedMinimal = true
                     Log.w(TAG, "2013 invalid params detected — retrying with minimal request body")
                     TraceLogger.log("SSE", "2013 detected (code=400), retrying minimal body")
-                    requestBody = buildMessageRequest(
-                        providerSetting, messages, params, stream = true, minimal = true
+                    requestBodyRef.set(
+                        buildMessageRequest(
+                            providerSetting, messages, params, stream = true, minimal = true
+                        )
                     )
                     val retryRequest = Request.Builder()
                         .url("${providerSetting.baseUrl}/messages")
                         .headers(params.customHeaders.toHeaders())
-                        .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
+                        .post(json.encodeToString(requestBodyRef.get()).toRequestBody("application/json".toMediaType()))
                         .addHeader("x-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
                         .addHeader("anthropic-version", ANTHROPIC_VERSION)
                         .addHeader("Content-Type", "application/json")
                         .configureReferHeaders(providerSetting.baseUrl)
                         .build()
-                    eventSource = EventSources.createFactory(
-                        client.resolveProxy(proxyRoute, params.model.modelId)
-                    ).newEventSource(retryRequest, this)
-                    eventSource.request()
+                    eventSourceRef.set(
+                        EventSources.createFactory(
+                            client.resolveProxy(proxyRoute, params.model.modelId)
+                        ).newEventSource(retryRequest, this)
+                    )
+                    // 重试连接建立前, 重置 watchdog 计时 — 防止旧 idle 计时
+                    // 在连接/首字节阶段误掐断重试流
+                    lastEventAt.set(System.currentTimeMillis())
                     return
                 }
 
@@ -380,8 +391,8 @@ class ClaudeProvider(
                         // v3.10.15: 元数据诊断 — 不泄露 system/messages 内容
                         // (用户警告: 错误详情泄露系统提示词). 只显示结构摘要
                         val meta = buildString {
-                            append("\nREQ_META: model=").append(requestBody["model"])
-                            val msgs = requestBody["messages"]?.jsonArray
+                            append("\nREQ_META: model=").append(requestBodyRef.get()["model"])
+                            val msgs = requestBodyRef.get()["messages"]?.jsonArray
                             append(" msgCount=").append(msgs?.size ?: 0)
                             msgs?.forEachIndexed { i, m ->
                                 val o = m.jsonObject
@@ -408,8 +419,8 @@ class ClaudeProvider(
                                     append("(content=").append(content?.let { it::class.simpleName } ?: "null").append(")")
                                 }
                             }
-                            append(" maxTokens=").append(requestBody["max_tokens"] ?: "?")
-                            append(" keys=").append(requestBody.keys.joinToString(","))
+                            append(" maxTokens=").append(requestBodyRef.get()["max_tokens"] ?: "?")
+                            append(" keys=").append(requestBodyRef.get().keys.joinToString(","))
                         }
                         exception = me.rerere.ai.util.HttpException(
                             "${exception.message}$meta"
@@ -438,16 +449,17 @@ class ClaudeProvider(
             }
         }
 
-        // v3.11.9: 可空 var (lateinit var 闭包捕获后只读, 降级重试要写入)
-        var eventSource: okhttp3.sse.EventSource? = null
-        eventSource = EventSources.createFactory(
-            client.resolveProxy(proxyRoute, params.model.modelId)
-        ).newEventSource(request, listener)
+        val eventSourceRef = java.util.concurrent.atomic.AtomicReference<okhttp3.sse.EventSource?>()
+        eventSourceRef.set(
+            EventSources.createFactory(
+                client.resolveProxy(proxyRoute, params.model.modelId)
+            ).newEventSource(request, listener)
+        )
 
         awaitClose {
             runCatching { watchdog.cancel() }
             Log.d(TAG, "Closing eventSource")
-            eventSource?.cancel()
+            eventSourceRef.get()?.cancel()
         }
         // trySend 在缓冲满时会静默丢弃 delta，导致回复中间缺字 (#1295)，因此缓冲必须无界
     }.buffer(Channel.UNLIMITED)
