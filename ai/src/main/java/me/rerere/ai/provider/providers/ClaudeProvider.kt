@@ -126,24 +126,38 @@ class ClaudeProvider(
         messages: List<UIMessage>,
         params: TextGenerationParams
     ): MessageChunk = withContext(Dispatchers.IO) {
-        val requestBody = buildMessageRequest(providerSetting, messages, params)
-        val request = Request.Builder()
-            .url("${providerSetting.baseUrl}/messages")
-            .headers(params.customHeaders.toHeaders())
-            .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
-            .addHeader("x-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
-            .addHeader("anthropic-version", ANTHROPIC_VERSION)
-            .configureReferHeaders(providerSetting.baseUrl)
-            .build()
+        // v3.11.9: 2013 降级重试 — MiniMax 等严格校验上游间歇性 invalid params
+        // (服务端波动/未知字段间歇拒绝, 用户实测同一请求随机 400)。
+        // 首次 400+2013 → 用最简请求体 (无 cache_control/thinking) 重试一次。
+        var requestBody = buildMessageRequest(providerSetting, messages, params)
+        var response = null as okhttp3.Response?
+        var attempts = 0
+        while (attempts < 2) {
+            attempts++
+            val request = Request.Builder()
+                .url("${providerSetting.baseUrl}/messages")
+                .headers(params.customHeaders.toHeaders())
+                .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
+                .addHeader("x-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
+                .addHeader("anthropic-version", ANTHROPIC_VERSION)
+                .configureReferHeaders(providerSetting.baseUrl)
+                .build()
 
-        Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
+            Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
 
-        val response = client.resolveProxy(proxyRoute, params.model.modelId).newCall(request).await()
-        if (!response.isSuccessful) {
-            throw Exception("Failed to get response: ${response.code} ${response.body.string()}")
+            response = client.resolveProxy(proxyRoute, params.model.modelId).newCall(request).await()
+            if (response.isSuccessful) break
+            val bodyStr = response.body.string()
+            if (attempts == 1 && response.code == 400 && bodyStr.contains("2013")) {
+                Log.w(TAG, "generateText: 2013 invalid params — retrying with minimal body")
+                TraceLogger.log("SSE", "generateText 2013 → minimal retry")
+                requestBody = buildMessageRequest(providerSetting, messages, params, minimal = true)
+                continue
+            }
+            throw Exception("Failed to get response: ${response.code} $bodyStr")
         }
 
-        val bodyStr = response.body.string()
+        val bodyStr = response!!.body.string()
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
 
         // 从 JsonObject 中提取必要的信息
@@ -173,7 +187,10 @@ class ClaudeProvider(
         messages: List<UIMessage>,
         params: TextGenerationParams
     ): Flow<MessageChunk> = callbackFlow {
-        val requestBody = buildMessageRequest(providerSetting, messages, params, stream = true)
+        // v3.11.9: 2013 降级重试标记 — MiniMax 等严格校验上游间歇性
+        // invalid params (服务端波动), 首次 400+2013 用最简请求体重试一次
+        var attemptedMinimal = false
+        var requestBody = buildMessageRequest(providerSetting, messages, params, stream = true)
         val request = Request.Builder()
             .url("${providerSetting.baseUrl}/messages")
             .headers(params.customHeaders.toHeaders())
@@ -327,6 +344,34 @@ class ClaudeProvider(
                 }
 
                 val bodyRaw = response?.body?.stringSafe()
+
+                // v3.11.9: 2013 降级重试 — 严格校验网关 (MiniMax) 间歇性
+                // invalid params (用户实测同一请求随机 400): 首次 400+2013
+                // 用最简请求体 (无 cache_control/thinking) 重试一次;
+                // 重试仍失败则走正常错误上报
+                if (!attemptedMinimal && response?.code == 400 && bodyRaw?.contains("2013") == true) {
+                    attemptedMinimal = true
+                    Log.w(TAG, "2013 invalid params detected — retrying with minimal request body")
+                    TraceLogger.log("SSE", "2013 detected (code=400), retrying minimal body")
+                    requestBody = buildMessageRequest(
+                        providerSetting, messages, params, stream = true, minimal = true
+                    )
+                    val retryRequest = Request.Builder()
+                        .url("${providerSetting.baseUrl}/messages")
+                        .headers(params.customHeaders.toHeaders())
+                        .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
+                        .addHeader("x-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
+                        .addHeader("anthropic-version", ANTHROPIC_VERSION)
+                        .addHeader("Content-Type", "application/json")
+                        .configureReferHeaders(providerSetting.baseUrl)
+                        .build()
+                    eventSource = EventSources.createFactory(
+                        client.resolveProxy(proxyRoute, params.model.modelId)
+                    ).newEventSource(retryRequest, this)
+                    eventSource.request()
+                    return
+                }
+
                 try {
                     if (!bodyRaw.isNullOrBlank()) {
                         val bodyElement = Json.parseToJsonElement(bodyRaw)
@@ -393,7 +438,8 @@ class ClaudeProvider(
             }
         }
 
-        val eventSource = EventSources.createFactory(
+        lateinit var eventSource: okhttp3.sse.EventSource
+        eventSource = EventSources.createFactory(
             client.resolveProxy(proxyRoute, params.model.modelId)
         ).newEventSource(request, listener)
 
@@ -409,27 +455,34 @@ class ClaudeProvider(
         providerSetting: ProviderSetting.Claude,
         messages: List<UIMessage>,
         params: TextGenerationParams,
-        stream: Boolean = false
+        stream: Boolean = false,
+        minimal: Boolean = false
     ): JsonObject {
-        // v3.11.6: 恢复原版请求构建 — 移除 v3.10.14 非官方 host gating。
-        // 依据: 3.11.0 (= v3.10.4 原码, 含 cache_control/thinking 全字段)
-        // 在 Minimax 新窗口实测正常; 400 (2013) 根因已锁定为历史消息
-        // 无签名 thinking 块 (v3.10.12 防御保留), 与顶层私有字段无关。
-        // gating 误伤: 千问/Minimax 等 anthropic 兼容通道显式缓存
-        // (cache_control) 被整体关闭 → 缓存率大幅下降 (用户反馈)。
+        // v3.11.9: 家族分离定稿 (调研存档 docs/ecosystem/05-请求体格式调研/):
+        //   - MiniMax 家族 (modelId 含 minimax): 顶层 cache_control (自动缓存
+        //     模式) 不支持 — Pydantic 实证 (MiniMax/OpenRouter/LiteLLM 类网关
+        //     "don't support top-level automatic caching"); 块级 cache_control
+        //     (system 尾块/消息级) 官方 Explicit Prompt Caching 文档支持 ✓ 保留
+        //   - 千问/官方/其他兼容层: 顶层+块级全保留 (v3.11.6 恢复)
+        //   - minimal=true (2013 降级重试): 顶层/块级 cache_control 全关,
+        //     thinking 不发 (平台默认), 最简标准 Anthropic 协议子集
         // 保留防御: 无签名 thinking 丢弃 / 空文本块丢弃 / BOM strip /
         // 连续同角色合并 / tool_result 消息净化 (v3.10.12-3.11.3)。
-        val effectivePromptCaching = providerSetting.promptCaching
+        val isMiniMaxFamily = params.model.modelId.contains("minimax", ignoreCase = true)
+        // 顶层 cache_control: 仅非 MiniMax 家族且非降级模式
+        val useTopLevelCache = providerSetting.promptCaching && !minimal && !isMiniMaxFamily
+        // 块级 cache_control (system 尾块 + 消息级): 全家族可用, 降级模式关闭
+        val useBlockCache = providerSetting.promptCaching && !minimal
         return buildJsonObject {
             put("model", params.model.modelId)
             put(
                 "messages",
-                buildMessages(messages, effectivePromptCaching, providerSetting.promptCacheTtl)
+                buildMessages(messages, useBlockCache, providerSetting.promptCacheTtl)
             )
-            put("max_tokens", params.maxTokens ?: 64_000)
+            // v3.11.9: MiniMax 家族兜底用官方推荐 65536 (M2.x 64K, M3 128K)
+            put("max_tokens", params.maxTokens ?: if (isMiniMaxFamily) 65_536 else 64_000)
 
-            // 顶层 cache_control: 仅官方 Anthropic (兼容网关拒收)
-            if (effectivePromptCaching) {
+            if (useTopLevelCache) {
                 put("cache_control", cacheControlEphemeral(providerSetting.promptCacheTtl))
             }
 
@@ -450,7 +503,7 @@ class ClaudeProvider(
                         add(buildJsonObject {
                             put("type", "text")
                             put("text", part.text.trimStart(CHAR_BOM).replace(CHAR_BOM.toString(), ""))
-                            if (effectivePromptCaching && index == systemTextParts.lastIndex) {
+                            if (useBlockCache && index == systemTextParts.lastIndex) {
                                 put("cache_control", cacheControlEphemeral(providerSetting.promptCacheTtl))
                             }
                         })
@@ -458,8 +511,12 @@ class ClaudeProvider(
                 })
             }
 
-            // v3.11.6: thinking 参数恢复原版协议 (不再按 host 区分)
-            if (params.model.abilities.contains(ModelAbility.REASONING)) {
+            // v3.11.9: thinking 按家族分离 —
+            //   minimal (2013 降级): 不发 thinking, 平台默认行为
+            //   MiniMax 家族: 官方示例仅 type adaptive (无 display/output_config,
+            //     间歇性严格校验未知字段 → 2013)
+            //   其他家族: 原版完整协议 (adaptive + display + output_config effort)
+            if (params.model.abilities.contains(ModelAbility.REASONING) && !minimal) {
                 when (params.reasoningLevel) {
                     ReasoningLevel.OFF -> {
                         put("thinking", buildJsonObject { put("type", "disabled") })
@@ -468,18 +525,20 @@ class ClaudeProvider(
                     ReasoningLevel.AUTO -> {
                         put("thinking", buildJsonObject {
                             put("type", "adaptive")
-                            put("display", "summarized")
+                            if (!isMiniMaxFamily) put("display", "summarized")
                         })
                     }
 
                     else -> {
                         put("thinking", buildJsonObject {
                             put("type", "adaptive")
-                            put("display", "summarized")
+                            if (!isMiniMaxFamily) put("display", "summarized")
                         })
-                        put("output_config", buildJsonObject {
-                            put("effort", params.reasoningLevel.effort)
-                        })
+                        if (!isMiniMaxFamily) {
+                            put("output_config", buildJsonObject {
+                                put("effort", params.reasoningLevel.effort)
+                            })
+                        }
                     }
                 }
             }
