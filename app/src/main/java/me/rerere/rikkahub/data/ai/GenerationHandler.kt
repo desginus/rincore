@@ -776,7 +776,11 @@ class GenerationHandler(
             // NAT 超时/平台断流 — IOException) → 回滚本次已输出内容 → 自动重试。
             // 用户核心诉求: 一直保持连接, 不自己中断。重试请求消息相同 → 缓存命中。
             streamLoop@ while (true) {
-            val retryBudgetStartMs = System.currentTimeMillis()
+            // v3.11.10: 重试预算在首次断流时刻重置起算 — 旧实现从流启动计时,
+            // 含"流启动→断流"的静默期; 平台首包就静默时 watchdog 60s 单次
+            // 已耗尽全部预算, 进入 catch 时连第一次重试都不满足条件,
+            // 用户感知"一直没反应最后报错"且重试机制完全失效
+            var retryBudgetStartMs = System.currentTimeMillis()
             val preStreamMessages = messages
             // v3.6.49: UI 更新节流 — 每 chunk 调 onUpdateMessages 触发整个 ChatPage
             // 重组, 流式期间高频重组是卡顿/发热/120Hz 掉帧根因。
@@ -843,6 +847,13 @@ class GenerationHandler(
                 // v3.11.4: 时间预算封顶 — 平台持续空流/慢流时 7 轮 x watchdog
                 // 60-180s 会静默 20+ 分钟 (用户感知"卡死"), 预算内快速重试
                 // 覆盖瞬时断流, 超预算立即明确失败报错。
+                // v3.11.10: 首次断流时重置预算起点 + 清零本次计数状态
+                // (streamRetryCount==0 说明这轮失败发生在任何成功数据之前;
+                // 后续轮次的失败继续从第一次断流累计, 预算切分正确)
+                if (streamRetryCount == 0) {
+                    retryBudgetStartMs = System.currentTimeMillis()
+                    streamRetryCount = 0
+                }
                 val retryElapsedMs = System.currentTimeMillis() - retryBudgetStartMs
                 if (streamRetryCount < 15 && retryElapsedMs < STREAM_RETRY_BUDGET_MS) {
                     streamRetryCount++

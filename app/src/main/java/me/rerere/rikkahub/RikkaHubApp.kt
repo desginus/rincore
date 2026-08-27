@@ -71,10 +71,15 @@ class RikkaHubApp : Application() {
         // 通过本条日志即可确认设备页大小与镜像版本。
         logDeviceEnvironment()
         // 连接预热: 冷启动后预解析 DNS + 预建 TCP 到 API 端点, 首次请求延迟降低 200-500ms
+        // v3.11.10: 补 Claude 型 provider — 旧实现只暖 OpenAI 型, Console Go 等
+        // Claude 通道网关完全不预热 (用户: 打开软件就预热)
         val warmUrls = DEFAULT_PROVIDERS
             .filterIsInstance<me.rerere.ai.provider.ProviderSetting.OpenAI>()
             .mapNotNull { it.baseUrl.takeIf { u -> u.isNotEmpty() } }
-        ConnectionWarmer.warmConfiguredProviders(this, warmUrls)
+        val warmClaudeUrls = DEFAULT_PROVIDERS
+            .filterIsInstance<me.rerere.ai.provider.ProviderSetting.Claude>()
+            .mapNotNull { it.baseUrl.takeIf { u -> u.isNotEmpty() } }
+        ConnectionWarmer.warmConfiguredProviders(this, warmUrls + warmClaudeUrls)
         startKoin {
             androidLogger()
             androidContext(this@RikkaHubApp)
@@ -85,15 +90,28 @@ class RikkaHubApp : Application() {
         // 首次请求跳过 DNS+TCP, 降低首字延迟。DEFAULT_PROVIDERS 已在上面同步预热。
         Thread({
             runCatching {
-                val userUrls = get<SettingsStore>().settingsFlow.value.providers
+                // v3.11.10: 按类型分流预热 — 池必须与主请求一致否则白做:
+                //   OpenAI 型 → 默认池 (opencode.ai 域进长保活池)
+                //   Claude 型 → claudeClient 长保活池 (300s keepalive + ping),
+                //     与 ClaudeProvider 主请求同池 (Console Go 等网关首次预热生效)
+                val providers = get<SettingsStore>().settingsFlow.value.providers
+                val userUrls = providers
                     .filterIsInstance<ProviderSetting.OpenAI>()
+                    .mapNotNull { it.baseUrl.takeIf { u -> u.isNotEmpty() } }
+                val claudeUrls = providers
+                    .filterIsInstance<ProviderSetting.Claude>()
                     .mapNotNull { it.baseUrl.takeIf { u -> u.isNotEmpty() } }
                 // v3.10.5: OkHttp 级预热 — 连接真实进池 (默认池 60s / opencode 池 300s),
                 // 跳过 DNS+TCP+TLS 缩短 TTFT; 裸 socket 预热保留作 DNS 兜底
                 val httpClient = get<OkHttpClient>()
                 val opencodeClient = me.rerere.ai.provider.ProviderManager.opencodeClient
                 userUrls.forEach { url -> ConnectionWarmer.warmWithOkHttp(httpClient, url, opencodeClient) }
-                ConnectionWarmer.warmConfiguredProviders(this@RikkaHubApp, userUrls)
+                claudeUrls.forEach { url ->
+                    warmWithOkHttp(
+                        me.rerere.ai.provider.ProviderManager.claudeClient ?: httpClient, url
+                    )
+                }
+                ConnectionWarmer.warmConfiguredProviders(this@RikkaHubApp, userUrls + claudeUrls)
             }
         }, "warmup-user-providers").start()
         this.createNotificationChannel()

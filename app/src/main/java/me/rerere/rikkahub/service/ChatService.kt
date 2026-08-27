@@ -571,13 +571,26 @@ class ChatService(
         // 延迟连接预热: 与消息预处理(正则/模板/组装)并行执行, 降低 TTFB
         // v3.10.5: OkHttp 级 — 预热请求与组装并发, 主请求发送时连接已就绪进池
         val provider = model.findProvider(settings.providers)
-        if (provider is ProviderSetting.OpenAI && provider.baseUrl.isNotBlank()) {
-            // v3.10.7: opencode.ai 预热进长保活池 (ProviderManager.opencodeClient),
-            // 与主请求同池 — 修复 v3.10.5 预热池错配
-            ConnectionWarmer.warmWithOkHttp(httpClient, provider.baseUrl, me.rerere.ai.provider.ProviderManager.opencodeClient)
-            runCatching { java.net.URI(provider.baseUrl).host }
-                .getOrNull()
-                ?.let { host -> ConnectionWarmer.warmHostOnce(context, host) }
+        // v3.11.10: 预热池与主请求严格同池 — 按 provider 类型分流:
+        //   OpenAI 型默认池 (opencode.ai 域长保活池)、Claude 型 claudeClient 池;
+        // 旧实现无 Claude 分支, Console Go 网关生成时零并行预热
+        when (provider) {
+            is ProviderSetting.OpenAI -> if (provider.baseUrl.isNotBlank()) {
+                ConnectionWarmer.warmWithOkHttp(httpClient, provider.baseUrl, me.rerere.ai.provider.ProviderManager.opencodeClient)
+                runCatching { java.net.URI(provider.baseUrl).host }
+                    .getOrNull()
+                    ?.let { host -> ConnectionWarmer.warmHostOnce(context, host) }
+            }
+            is ProviderSetting.Claude -> if (provider.baseUrl.isNotBlank()) {
+                ConnectionWarmer.warmWithOkHttp(
+                    me.rerere.ai.provider.ProviderManager.claudeClient ?: httpClient,
+                    provider.baseUrl
+                )
+                runCatching { java.net.URI(provider.baseUrl).host }
+                    .getOrNull()
+                    ?.let { host -> ConnectionWarmer.warmHostOnce(context, host) }
+            }
+            else -> Unit
         }
 
         val senderName = if (assistant.useAssistantAvatar) {
