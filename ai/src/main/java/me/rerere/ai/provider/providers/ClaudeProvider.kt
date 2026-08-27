@@ -438,7 +438,8 @@ class ClaudeProvider(
             }
         }
 
-        lateinit var eventSource: okhttp3.sse.EventSource
+        // v3.11.9: 可空 var (lateinit var 闭包捕获后只读, 降级重试要写入)
+        var eventSource: okhttp3.sse.EventSource? = null
         eventSource = EventSources.createFactory(
             client.resolveProxy(proxyRoute, params.model.modelId)
         ).newEventSource(request, listener)
@@ -446,7 +447,7 @@ class ClaudeProvider(
         awaitClose {
             runCatching { watchdog.cancel() }
             Log.d(TAG, "Closing eventSource")
-            eventSource.cancel()
+            eventSource?.cancel()
         }
         // trySend 在缓冲满时会静默丢弃 delta，导致回复中间缺字 (#1295)，因此缓冲必须无界
     }.buffer(Channel.UNLIMITED)
@@ -571,7 +572,7 @@ class ClaudeProvider(
             if (toolDefinitions.isNotEmpty()) {
                 putJsonArray("tools") {
                     toolDefinitions.forEachIndexed { index, definition ->
-                        if (effectivePromptCaching && index == toolDefinitions.lastIndex) {
+                        if (useBlockCache && index == toolDefinitions.lastIndex) {
                             add(JsonObject(
                                 definition + mapOf(
                                     "cache_control" to cacheControlEphemeral(providerSetting.promptCacheTtl)
