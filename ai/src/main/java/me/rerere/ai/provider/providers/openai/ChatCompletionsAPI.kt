@@ -232,16 +232,29 @@ class ChatCompletionsAPI(
         val firstDataAtMs = java.util.concurrent.atomic.AtomicLong(0)
         // v3.11.6: opencode 时限收紧 (120/180→60/90s) — OpenCode Go 网关
         // 断流/静默后快速失败进入断流重试 (15 次 10s 预算), 恢复更快
-        val firstByteLimit = if (isOpencode) 60_000L else 60_000L
+        // v3.11.13: 三阶段 watchdog (对齐 ClaudeProvider) —"多尝试, 少静默":
+        // 阶段1 建连/响应头 30s (网关挂起快速断开→内层 SSE 重试×5 立即换连接);
+        // 阶段2 已连接未出首事件 150s (上游思考, 重试无意义, 耐心等);
+        // 阶段3 流中 90/120s 不变
+        val headerReceived = java.util.concurrent.atomic.AtomicBoolean(false)
+        val headerLimit = 30_000L
+        val firstEventLimit = 150_000L
         val streamLimit = if (isOpencode) 90_000L else 120_000L
         val watchdog = launch {
             while (true) {
                 delay(15_000)
                 val idleMs = System.currentTimeMillis() - lastEventAt.get()
-                val limit = if (hasReceivedData.get()) streamLimit else firstByteLimit
+                val (phase, limit, closeMsg) = when {
+                    hasReceivedData.get() -> Triple("stream", streamLimit,
+                        "生成无有效数据超时 (${streamLimit / 1000}s): 平台断流或卡死")
+                    headerReceived.get() -> Triple("first-event", firstEventLimit,
+                        "生成无有效数据超时 (${firstEventLimit / 1000}s): 上游思考或排队中无输出")
+                    else -> Triple("header", headerLimit,
+                        "平台连接无响应 (${headerLimit / 1000}s): 网关冷启动或挂起")
+                }
                 if (idleMs > limit) {
-                    Log.w(TAG, "SSE idle ${idleMs / 1000}s (phase=${if (hasReceivedData.get()) "stream" else "first-byte"}) — closing stream")
-                    close(java.io.IOException("生成无有效数据超时 (${limit / 1000}s): 平台断流或卡死"))
+                    Log.w(TAG, "SSE idle ${idleMs / 1000}s (phase=$phase) — closing stream")
+                    close(java.io.IOException(closeMsg))
                     break
                 }
             }
@@ -319,6 +332,12 @@ class ChatCompletionsAPI(
 
         fun connect() {
             listener = object : EventSourceListener() {
+            // v3.11.13: 响应头到达 — 阶段2 起, 计时重置
+            override fun onOpen(eventSource: EventSource, response: okhttp3.Response) {
+                headerReceived.set(true)
+                lastEventAt.set(System.currentTimeMillis())
+            }
+
             override fun onEvent(
                 eventSource: EventSource,
                 id: String?,

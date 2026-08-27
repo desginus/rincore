@@ -232,24 +232,42 @@ class ClaudeProvider(
         // v3.11.6: opencode 时限收紧 (120/180→60/90s) — 用户反馈 OpenCode Go
         // 通道"极不稳定": 网关断流/静默后旧时限要等 2-3 分钟才断开重试,
         // 收紧后 60-90s 内快速失败进入断流重试 (15 次 10s 预算), 恢复更快
-        val firstByteLimit = if (isOpencode) 60_000L else 60_000L
+        // v3.11.13: 三阶段 watchdog ("尽可能多尝试, 少静默") — 旧实现把
+        // "连接未就绪" 与 "已连接在思考" 混成同一 60s 计时, 后果两头堵:
+        // 网关挂起要等满 60s 才断开重试 (静默久), 上游长思考又常被 60s
+        // 误杀 (重试后重新排队更慢)。按连接状态分级:
+        //   阶段1 建连/响应头 (onOpen 之前): 30s — 网关冷启动/挂起快速
+        //     断开 → GenerationHandler 瞬时分支 15 次快速重试 (多尝试)
+        //   阶段2 已连接未出首事件 (上游思考/排队): 150s — 请求已被网关
+        //     接受, 重试只会重新排队更慢, 耐心等待 (原版即如此)
+        //   阶段3 流出中 (首事件后): 90s — 流间隙上限
+        val headerReceived = java.util.concurrent.atomic.AtomicBoolean(false)
+        val headerLimit = 30_000L
+        val firstEventLimit = 150_000L
         val streamLimit = if (isOpencode) 90_000L else 120_000L
         val lastEventAt = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
 
         // v3.8.6: SSE 诊断统计 — 输出中途中断/半截时在运行日志页可抓取全部现场
         val eventCount = java.util.concurrent.atomic.AtomicInteger(0)
         val dataChars = java.util.concurrent.atomic.AtomicLong(0)
-        TraceLogger.log("SSE", "start: model=${params.model.modelId}, isOpencode=$isOpencode, firstByteLimit=${firstByteLimit / 1000}s, streamLimit=${streamLimit / 1000}s, maxTokens=${params.maxTokens ?: 64000}")
+        TraceLogger.log("SSE", "start: model=${params.model.modelId}, isOpencode=$isOpencode, headerLimit=30s, firstEventLimit=150s, streamLimit=${streamLimit / 1000}s, maxTokens=${params.maxTokens ?: 64000}")
 
         val watchdog = launch {
             while (true) {
                 kotlinx.coroutines.delay(15_000)
                 val idleMs = System.currentTimeMillis() - lastEventAt.get()
-                val limit = if (hasData.get()) streamLimit else firstByteLimit
+                val (phase, limit, closeMsg) = when {
+                    hasData.get() -> Triple("stream", streamLimit,
+                        "生成无有效数据超时 (${streamLimit / 1000}s): 平台断流或卡死")
+                    headerReceived.get() -> Triple("first-event", firstEventLimit,
+                        "生成无有效数据超时 (${firstEventLimit / 1000}s): 上游思考或排队中无输出")
+                    else -> Triple("header", headerLimit,
+                        "平台连接无响应 (${headerLimit / 1000}s): 网关冷启动或挂起")
+                }
                 if (idleMs > limit) {
-                    Log.w(TAG, "Claude SSE idle ${idleMs / 1000}s (phase=${if (hasData.get()) "stream" else "first-byte"}) — closing")
+                    Log.w(TAG, "Claude SSE idle ${idleMs / 1000}s (phase=$phase) — closing")
                     TraceLogger.log("SSE", "watchdog timeout: idle=${idleMs / 1000}s, limit=${limit / 1000}s, events=${eventCount.get()}, dataChars=${dataChars.get()}")
-                    close(java.io.IOException("生成无有效数据超时 (${limit / 1000}s): 平台断流或卡死"))
+                    close(java.io.IOException(closeMsg))
                     break
                 }
             }
@@ -259,6 +277,14 @@ class ClaudeProvider(
         // listener 匿名对象内 (onFailure 降级重试分支) 必须可见
         val eventSourceRef = java.util.concurrent.atomic.AtomicReference<okhttp3.sse.EventSource?>()
         val listener = object : EventSourceListener() {
+            // v3.11.13: SSE 200 响应头到达 — 阶段1(建连)结束/阶段2(思考)开始,
+            // 计时起点重置, 后续按首事件/流间隙分别判定
+            override fun onOpen(eventSource: EventSource, response: okhttp3.Response) {
+                headerReceived.set(true)
+                lastEventAt.set(System.currentTimeMillis())
+                TraceLogger.log("SSE", "onOpen: header after ${System.currentTimeMillis() - streamStartMs}ms, code=${response.code}")
+            }
+
             override fun onEvent(
                 eventSource: EventSource,
                 id: String?,
