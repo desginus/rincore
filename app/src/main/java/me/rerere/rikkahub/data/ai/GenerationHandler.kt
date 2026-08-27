@@ -844,15 +844,40 @@ class GenerationHandler(
                 throw e
             } catch (e: java.io.IOException) {
                 // 断流 (切后台/网络切换/NAT/平台): 回滚半截输出 → 自动重试
-                // v3.11.4: 时间预算封顶 — 平台持续空流/慢流时 7 轮 x watchdog
-                // 60-180s 会静默 20+ 分钟 (用户感知"卡死"), 预算内快速重试
-                // 覆盖瞬时断流, 超预算立即明确失败报错。
+                // v3.11.12: 失败类型分级 — 这两类失败的恢复机制完全不同:
+                //   A. 静默超时型 (watchdog "生成无有效数据超时"): 平台一个
+                //      字节都不给, 每次重试自身又要等满 watchdog (60s+) —
+                //      塞进 10s 快速预算必然互相矛盾 (v3.11.10 报错"重试 1 次
+                //      耗时 60s 超预算"的根因)。单独策略: 仅重试 1 次 (网关
+                //      瞬时挂起可能恢复), 再静默立即明确报错。总时长 2×watchdog
+                //      封顶, 不产生"无限升级的等待"。
+                //   B. 瞬时断流型 (connection reset/EOF/网络切换): 失败在毫秒
+                //      级发生, 快速重试窗口 (<10s) 完整适用 15 次。
+                val isWatchdogTimeout = e.message?.contains("生成无有效数据超时") == true
+                if (isWatchdogTimeout) {
+                    if (streamRetryCount == 0) {
+                        streamRetryCount = 1
+                        processingStatus.value = "生成中断，平台无响应，正在重试 (1/1)"
+                        kotlinx.coroutines.delay(300)
+                        Log.w(TAG, "watchdog timeout — single recovery retry: ${e.message}")
+                        CallTracer.event("RETRY", "watchdog_single_retry", e.message ?: "watchdog", metrics = sseDiagMetrics())
+                        messages = preStreamMessages
+                        onUpdateMessages(messages)
+                        continue@streamLoop
+                    }
+                    // 第二次仍静默 — 明确报错 (不再进入任何重试循环)
+                    processingStatus.value = null
+                    onUpdateMessages(messages)
+                    Log.e(TAG, "watchdog timeout twice: ${e.message}")
+                    throw java.io.IOException(
+                        "平台两次等待均无响应 (每次约 60s 静默): 平台未返回任何数据，已保留已生成内容", e
+                    )
+                }
                 // v3.11.10: 首次断流时重置预算起点 + 清零本次计数状态
                 // (streamRetryCount==0 说明这轮失败发生在任何成功数据之前;
                 // 后续轮次的失败继续从第一次断流累计, 预算切分正确)
                 if (streamRetryCount == 0) {
                     retryBudgetStartMs = System.currentTimeMillis()
-                    streamRetryCount = 0
                 }
                 val retryElapsedMs = System.currentTimeMillis() - retryBudgetStartMs
                 if (streamRetryCount < 15 && retryElapsedMs < STREAM_RETRY_BUDGET_MS) {
@@ -881,7 +906,7 @@ class GenerationHandler(
                 val retryInfo = if (streamRetryCount >= 15) {
                     "重试 ${streamRetryCount} 次已达上限"
                 } else {
-                    "重试 ${streamRetryCount} 次, 耗时 ${retryElapsedMs / 1000}s 超预算"
+                    "重试 ${streamRetryCount} 次后仍失败"
                 }
                 Log.e(TAG, "stream retry exhausted: $retryInfo, last error: ${e.message}")
                 throw java.io.IOException(
