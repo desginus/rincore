@@ -107,7 +107,7 @@ class RikkaHubApp : Application() {
                 val opencodeClient = me.rerere.ai.provider.ProviderManager.opencodeClient
                 userUrls.forEach { url -> ConnectionWarmer.warmWithOkHttp(httpClient, url, opencodeClient) }
                 claudeUrls.forEach { url ->
-                    warmWithOkHttp(
+                    ConnectionWarmer.warmWithOkHttp(
                         me.rerere.ai.provider.ProviderManager.claudeClient ?: httpClient, url
                     )
                 }
