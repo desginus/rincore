@@ -591,10 +591,21 @@ class ChatCompletionsAPI(
                 if (params.temperature != null) put("temperature", params.temperature)
                 if (params.topP != null) put("top_p", params.topP)
             }
-            // v3.11.7: max_tokens 缺失兜底 8192 — Kimi 等平台缺失时默认 1024
-            // (长输出截断), GLM/DeepSeek/Grok 兜底值均在各自上限内安全。
+            // v3.11.8: max_tokens 缺失兜底按家族分离 (用户: 家族冲突时按家族处理,
+            // 一刀切会让部分模型不可用):
+            //   DeepSeek 家族 (V4 输出上限 384K) / 网关默认 → 32K (OpenCode 官方默认)
+            //   Kimi 家族 (K2.5 缺失默认 1024 截断) → 8K
+            //   GLM 家族 (上限 131072, 建议≥1024) → 8K
+            //   Grok 家族 (默认 4096, 上限保守) → 4K
             // 用户显式设置时尊重设置 (assistant.maxTokens)。
-            put("max_tokens", params.maxTokens ?: 8_192)
+            val maxTokensFallback = when (host) {
+                "api.deepseek.com" -> 32_768
+                "api.moonshot.cn" -> 8_192
+                "open.bigmodel.cn" -> 8_192
+                "api.x.ai", "api.grok.ai" -> 4_096
+                else -> 32_768  // opencode.ai 网关等: 与 OpenCode 官方默认一致
+            }
+            put("max_tokens", params.maxTokens ?: maxTokensFallback)
 
             put("stream", stream)
             if (stream) {
@@ -712,22 +723,29 @@ class ChatCompletionsAPI(
                         })
                     }
 
-                    "api.deepseek.com" -> {
-                        put("thinking", buildJsonObject {
-                            put("type", if (!level.isEnabled) "disabled" else "enabled")
-                        })
-                        if (level.isEnabled && level != ReasoningLevel.AUTO) {
-                            // v3.6.49: DeepSeek 官方 reasoning_effort 只支持 high/max
-                            // (对齐 DeepSeek Harness llm-deepseek: off→thinking:disabled,
-                            //  high/max→reasoning_effort; low/medium 不支持直接报错)。
-                            // low/medium 映射到最低档 high, xhigh 映射 max
-                            val effort = when (level) {
-                                ReasoningLevel.LOW -> "high"     // low 不支持 → 最低档 high
-                                ReasoningLevel.MEDIUM -> "high"  // medium 不支持 → high
-                                ReasoningLevel.XHIGH, ReasoningLevel.MAX -> "max"    // xhigh/max → max
-                                else -> level.effort             // HIGH -> "high"
+                    "api.deepseek.com", "opencode.ai" -> {
+                        // v3.11.8: opencode.ai 网关按模型家族分离 — 网关可路由多个
+                        // 模型, 仅 DeepSeek 家族 (modelId 含 deepseek) 发 thinking/
+                        // reasoning_effort; Grok/GLM/Kimi 等不收 thinking 参数防 400
+                        val isDeepSeekFamily = host == "api.deepseek.com" ||
+                            params.model.modelId.contains("deepseek", ignoreCase = true)
+                        if (isDeepSeekFamily) {
+                            put("thinking", buildJsonObject {
+                                put("type", if (!level.isEnabled) "disabled" else "enabled")
+                            })
+                            if (level.isEnabled && level != ReasoningLevel.AUTO) {
+                                // v3.6.49: DeepSeek 官方 reasoning_effort 只支持 high/max
+                                // (对齐 DeepSeek Harness llm-deepseek: off→thinking:disabled,
+                                //  high/max→reasoning_effort; low/medium 不支持直接报错)。
+                                // low/medium 映射到最低档 high, xhigh 映射 max
+                                val effort = when (level) {
+                                    ReasoningLevel.LOW -> "high"     // low 不支持 → 最低档 high
+                                    ReasoningLevel.MEDIUM -> "high"  // medium 不支持 → high
+                                    ReasoningLevel.XHIGH, ReasoningLevel.MAX -> "max"    // xhigh/max → max
+                                    else -> level.effort             // HIGH -> "high"
+                                }
+                                put("reasoning_effort", effort)
                             }
-                            put("reasoning_effort", effort)
                         }
                     }
 
