@@ -591,7 +591,10 @@ class ChatCompletionsAPI(
                 if (params.temperature != null) put("temperature", params.temperature)
                 if (params.topP != null) put("top_p", params.topP)
             }
-            if (params.maxTokens != null) put("max_tokens", params.maxTokens)
+            // v3.11.7: max_tokens 缺失兜底 8192 — Kimi 等平台缺失时默认 1024
+            // (长输出截断), GLM/DeepSeek/Grok 兜底值均在各自上限内安全。
+            // 用户显式设置时尊重设置 (assistant.maxTokens)。
+            put("max_tokens", params.maxTokens ?: 8_192)
 
             put("stream", stream)
             if (stream) {
