@@ -176,12 +176,6 @@ fun ChatInput(
     val imeAnimationTarget = WindowInsets.imeAnimationTarget
     // Unlike isImeVisible, the target changes as soon as the IME animation starts.
     val imeTargetVisible = imeAnimationTarget.getBottom(density) > 0
-    val modelListState = rememberModelListState(
-        modelId = assistant.chatModelId ?: settings.chatModelId,
-        providers = settings.providers,
-        type = ModelType.CHAT,
-    )
->>>>>>> theirs
 
     fun sendMessage() {
         focusManager.clearFocus(force = true)
@@ -234,7 +228,7 @@ fun ChatInput(
                 .imePadding()
                 .navigationBarsPadding()
                 .padding(horizontal = 8.dp)
-                .padding(bottom = if (imeVisible) 0.dp else 8.dp),
+                .padding(bottom = if (imeTargetVisible) 0.dp else 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // v3.6.36: 页面完全静默 — 降维开启/关闭页面无差别 (状态与统计移至设置-其他功能)

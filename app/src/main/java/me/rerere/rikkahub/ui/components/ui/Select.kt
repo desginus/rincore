@@ -32,6 +32,17 @@ import androidx.compose.ui.util.fastForEach
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowDown01
 import me.rerere.hugeicons.stroke.ArrowUp01
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.ExposedDropdownMenu
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 
 @Composable
 fun <T> Select(
@@ -95,6 +106,73 @@ fun <T> Select(
                     },
                     leadingIcon = optionLeading?.let {
                         { it(option) }
+                    }
+                )
+            }
+        }
+    }
+}
+
+// v(2.4.14 移植): SelectTextField — 下拉选择+自由输入通用组件 (Chatbox/上游 TTS 均使用)
+@Composable
+fun <T> SelectTextField(
+    value: String,
+    options: List<T>,
+    onOptionSelected: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    onValueChange: (String) -> Unit = {},
+    readOnly: Boolean = false,
+    placeholder: @Composable (() -> Unit)? = null,
+    optionToString: @Composable (T) -> String = { it.toString() },
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var anchorWidth by remember { mutableIntStateOf(0) }
+    val density = LocalDensity.current
+
+    Box(modifier = modifier) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            readOnly = readOnly,
+            placeholder = placeholder,
+            modifier = Modifier
+                .fillMaxWidth()
+                .onGloballyPositioned { anchorWidth = it.size.width },
+            trailingIcon = {
+                IconButton(onClick = { expanded = !expanded }) {
+                    Icon(
+                        imageVector = if (expanded) HugeIcons.ArrowUp01 else HugeIcons.ArrowDown01,
+                        contentDescription = "expand"
+                    )
+                }
+            }
+        )
+
+        // 只读时整个输入框都可点击展开, 且不会抢焦点弹出输入法
+        if (readOnly) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { expanded = !expanded }
+            )
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier
+                .width(with(density) { anchorWidth.toDp() })
+                .heightIn(max = 240.dp)
+        ) {
+            options.fastForEach { option ->
+                DropdownMenuItem(
+                    text = { Text(text = optionToString(option), maxLines = 1) },
+                    onClick = {
+                        expanded = false
+                        onOptionSelected(option)
                     }
                 )
             }

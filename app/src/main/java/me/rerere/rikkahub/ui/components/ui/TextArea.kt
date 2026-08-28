@@ -134,7 +134,7 @@ fun TextArea(
                 ) {
                     if (enableFullscreen) {
                         Icon(
-                            imageVector = HugeIcons.FullScreen,
+                            imageVector = HugeIcons.Fullscreen,
                             contentDescription = stringResource(R.string.text_area_fullscreen_edit),
                             modifier = Modifier
                                 .onClick(onClick = {

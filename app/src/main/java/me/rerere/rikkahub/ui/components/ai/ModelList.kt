@@ -1,10 +1,9 @@
-@file:OptIn(FlowPreview::class)
-package me.rerere.rikkahub.ui.components.ai
-
 
 /* ───【原版对齐】ModelList.kt | 差异 ±2 行
  * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
  * ───────────────────────────────────────────────────────────────*/
+package me.rerere.rikkahub.ui.components.ai
+
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -63,7 +62,6 @@ import androidx.compose.ui.util.fastAny
 import androidx.compose.ui.util.fastFilter
 import androidx.compose.ui.util.fastForEach
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -179,6 +177,29 @@ fun ModelSelector(
         providers = providers,
         type = type,
     )
+
+    ModelSelectorButton(
+        state = state,
+        modifier = modifier,
+        onlyIcon = onlyIcon,
+        allowClear = allowClear,
+        onClear = { onSelect(Model()) },
+    )
+
+    ModelListSheet(
+        state = state,
+        onSelect = onSelect,
+    )
+}
+
+@Composable
+internal fun ModelSelectorButton(
+    state: ModelListState,
+    modifier: Modifier = Modifier,
+    onlyIcon: Boolean = false,
+    allowClear: Boolean = false,
+    onClear: () -> Unit = {},
+) {
     val model = state.currentModel
 
     if (!onlyIcon) {
@@ -208,9 +229,7 @@ fun ModelSelector(
             }
             if (allowClear && model != null) {
                 IconButton(
-                    onClick = {
-                        onSelect(Model())
-                    }
+                    onClick = onClear,
                 ) {
                     Icon(
                         imageVector = HugeIcons.Cancel01,
@@ -240,11 +259,6 @@ fun ModelSelector(
             }
         }
     }
-
-    ModelListSheet(
-        state = state,
-        onSelect = onSelect,
-    )
 }
 
 @Composable
