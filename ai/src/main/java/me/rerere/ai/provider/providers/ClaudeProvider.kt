@@ -242,7 +242,7 @@ class ClaudeProvider(
         //     接受, 重试只会重新排队更慢, 耐心等待 (原版即如此)
         //   阶段3 流出中 (首事件后): 90s — 流间隙上限
         val headerReceived = java.util.concurrent.atomic.AtomicBoolean(false)
-        val headerLimit = 30_000L
+        val headerLimit = 15_000L
         val firstEventLimit = 150_000L
         val streamLimit = if (isOpencode) 90_000L else 120_000L
         val lastEventAt = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())

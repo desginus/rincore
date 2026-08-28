@@ -120,6 +120,11 @@ class GenerationHandler(
 ) {
     /** 断流重试计数 (v3.5.46): 类成员 — 切后台/NAT/平台断流自动恢复, 每次生成最多 5 次 (v3.5.59) */
     private var streamRetryCount = 0
+
+    /** v3.11.16: 网关连接超时独立计数 — header 阶段判死每次 15s, 与快失败型
+     *  (毫秒级判死) 恢复机制互斥, 必须分道计数, 否则 30s/次的败因塞进 10s
+     *  快速预算在第二次尝试后必然爆掉 (v3.11.14 实证: "重试 1 次后仍失败") */
+    private var headerRetryCount = 0
     companion object {
         /** 工具执行超时 (ms): 工具挂起时返回超时错误, 不阻塞整个生成流程 */
         private const val TOOL_EXECUTION_TIMEOUT_MS = 60_000L
@@ -854,6 +859,30 @@ class GenerationHandler(
                 //      封顶, 不产生"无限升级的等待"。
                 //   B. 瞬时断流型 (connection reset/EOF/网络切换): 失败在毫秒
                 //      级发生, 快速重试窗口 (<10s) 完整适用 15 次。
+                //   C. 网关连接超时型 (watchdog header 阶段 "平台连接无响应"):
+                //      每次判死耗 15s, 但失败本身典型可重试 (网关冷启动/瞬时挂起,
+                //      新建连接往往立刻可用) — 用户定版: 15 次密集重试, 固定间隔,
+                //      不受 10s 快速预算约束 (否则第二次尝试后预算必爆, 退化成
+                //      只试 1 次)。上限 15 次 ≈ 4min 内完全穷尽。
+                val isHeaderTimeout = e.message?.contains("平台连接无响应") == true
+                if (isHeaderTimeout) {
+                    if (headerRetryCount < 15) {
+                        headerRetryCount++
+                        processingStatus.value = "网关无响应，正在重试 ($headerRetryCount/15)"
+                        kotlinx.coroutines.delay(800)
+                        Log.w(TAG, "header timeout — gateway retry $headerRetryCount/15: ${e.message}")
+                        CallTracer.event("RETRY", "header_retry", "gateway no response, retry $headerRetryCount/15", metrics = sseDiagMetrics())
+                        messages = preStreamMessages
+                        onUpdateMessages(messages)
+                        continue@streamLoop
+                    }
+                    processingStatus.value = null
+                    onUpdateMessages(messages)
+                    Log.e(TAG, "header timeout exhausted: $headerRetryCount retries")
+                    throw java.io.IOException(
+                        "[v${BuildConfig.VERSION_NAME}] 网关连续 $headerRetryCount 次连接无响应 (每次 15s 静默): 网关持续不可达，已保留已生成内容", e
+                    )
+                }
                 val isWatchdogTimeout = e.message?.contains("生成无有效数据超时") == true
                 if (isWatchdogTimeout) {
                     if (streamRetryCount == 0) {
@@ -883,12 +912,10 @@ class GenerationHandler(
                 val retryElapsedMs = System.currentTimeMillis() - retryBudgetStartMs
                 if (streamRetryCount < 15 && retryElapsedMs < STREAM_RETRY_BUDGET_MS) {
                     streamRetryCount++
-                    // v3.11.6: 重试节奏 — 15 次总时长 ≤10s, 平滑指数递增:
-                    // 100ms 起每步 x1.22 (100/122/149/182/222/271/330/403/
-                    // 491/599/731/892/1088/1327/1619, 和 ≈8.5s);
-                    // 前 7 次 ≈1.4s 完成 — 满足"前 5 秒至少 7 次",
-                    // 消除阶梯感 (用户: 15 次共 10 秒, 平滑递增)。
-                    val retryDelayMs = (100L * Math.pow(1.22, (streamRetryCount - 1).toDouble())).toLong()
+                    // v3.11.16: 重试节奏扁平化 — 用户定版"密集重试", 固定 150ms
+                    // (旧指数序列尾部拖到 1.6s, 冗余: 快失败重试间隔无意义,
+                    // 密集命中恢复窗口才是目的; 15 次共 ≈2.3s)
+                    val retryDelayMs = 150L
                     // v3.11.4: 重试期间 UI 状态提示 — 回滚瞬间内容消失,
                     // 无提示时用户感知"卡死"; 提示后用户知道在自动恢复
                     processingStatus.value = "生成中断，正在自动重试 ($streamRetryCount/15)"
