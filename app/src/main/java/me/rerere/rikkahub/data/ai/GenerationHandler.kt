@@ -32,6 +32,7 @@ package me.rerere.rikkahub.data.ai
  * ────────────────────────────────────────────────────────────────────*/
 
 import android.content.Context
+import me.rerere.rikkahub.BuildConfig
 import android.util.Log
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import kotlinx.coroutines.CancellationException
@@ -870,7 +871,7 @@ class GenerationHandler(
                     onUpdateMessages(messages)
                     Log.e(TAG, "watchdog timeout twice: ${e.message}")
                     throw java.io.IOException(
-                        "平台两次等待均无响应 (每次约 60s 静默): 平台未返回任何数据，已保留已生成内容", e
+                        "[v${BuildConfig.VERSION_NAME}] 平台两次等待均无响应 (${e.message ?: "watchdog 超时"}): 平台未返回有效数据，已保留已生成内容", e
                     )
                 }
                 // v3.11.10: 首次断流时重置预算起点 + 清零本次计数状态
@@ -910,7 +911,7 @@ class GenerationHandler(
                 }
                 Log.e(TAG, "stream retry exhausted: $retryInfo, last error: ${e.message}")
                 throw java.io.IOException(
-                    "平台持续无响应 ($retryInfo): ${e.message ?: "连接中断"}，已保留已生成内容", e
+                    "[v${BuildConfig.VERSION_NAME}] 平台持续无响应 ($retryInfo): ${e.message ?: "连接中断"}，已保留已生成内容", e
                 )
             }
             }
