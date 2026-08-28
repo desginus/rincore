@@ -724,7 +724,7 @@ private fun TextInputRow(
                             onClick = {
                                 isFullScreen = !isFullScreen
                             }) {
-                            Icon(HugeIcons.Fullscreen, null)
+                            Icon(HugeIcons.FullScreen, null)
                         }
 
                     }
