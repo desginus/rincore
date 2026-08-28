@@ -373,6 +373,8 @@ private fun MiMoTTSConfiguration(
         )
     }
 }
+
+@Composable
 private fun MiniMaxTTSConfiguration(
     setting: TTSProviderSetting.MiniMax,
     onValueChange: (TTSProviderSetting) -> Unit
