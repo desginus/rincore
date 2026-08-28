@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -76,7 +77,7 @@ fun TTSProviderConfigure(
                         .fillMaxWidth()
                         .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                 )
-                ExposedDropdownMenu(
+                DropdownMenu(
                     expanded = expanded,
                     onDismissRequest = { expanded = false }
                 ) {
@@ -273,7 +274,7 @@ private fun OpenAITTSConfiguration(
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = voiceExpanded)
                 }
             )
-            ExposedDropdownMenu(
+            DropdownMenu(
                 expanded = voiceExpanded,
                 onDismissRequest = { voiceExpanded = false }
             ) {
@@ -459,7 +460,7 @@ private fun MiniMaxTTSConfiguration(
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = voiceIdExpanded)
                 }
             )
-            ExposedDropdownMenu(
+            DropdownMenu(
                 expanded = voiceIdExpanded,
                 onDismissRequest = { voiceIdExpanded = false }
             ) {
@@ -681,7 +682,7 @@ private fun QwenTTSConfiguration(
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = voiceExpanded)
                 }
             )
-            ExposedDropdownMenu(
+            DropdownMenu(
                 expanded = voiceExpanded,
                 onDismissRequest = { voiceExpanded = false }
             ) {
@@ -722,7 +723,7 @@ private fun QwenTTSConfiguration(
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = languageExpanded)
                 }
             )
-            ExposedDropdownMenu(
+            DropdownMenu(
                 expanded = languageExpanded,
                 onDismissRequest = { languageExpanded = false }
             ) {
@@ -814,7 +815,7 @@ private fun GroqTTSConfiguration(
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = voiceExpanded)
                 }
             )
-            ExposedDropdownMenu(
+            DropdownMenu(
                 expanded = voiceExpanded,
                 onDismissRequest = { voiceExpanded = false }
             ) {
@@ -897,7 +898,7 @@ private fun XAITTSConfiguration(
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = voiceExpanded)
                 }
             )
-            ExposedDropdownMenu(
+            DropdownMenu(
                 expanded = voiceExpanded,
                 onDismissRequest = { voiceExpanded = false }
             ) {
@@ -957,7 +958,7 @@ private fun XAITTSConfiguration(
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = languageExpanded)
                 }
             )
-            ExposedDropdownMenu(
+            DropdownMenu(
                 expanded = languageExpanded,
                 onDismissRequest = { languageExpanded = false }
             ) {
@@ -1038,7 +1039,7 @@ private fun ElevenLabsTTSConfiguration(
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelExpanded)
                 }
             )
-            ExposedDropdownMenu(
+            DropdownMenu(
                 expanded = modelExpanded,
                 onDismissRequest = { modelExpanded = false }
             ) {
@@ -1165,7 +1166,7 @@ private fun FishAudioTTSConfiguration(
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelExpanded)
                 }
             )
-            ExposedDropdownMenu(
+            DropdownMenu(
                 expanded = modelExpanded,
                 onDismissRequest = { modelExpanded = false }
             ) {
@@ -1292,7 +1293,7 @@ private fun StepTTSConfiguration(
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelExpanded)
                 }
             )
-            ExposedDropdownMenu(
+            DropdownMenu(
                 expanded = modelExpanded,
                 onDismissRequest = { modelExpanded = false }
             ) {
@@ -1367,7 +1368,7 @@ private fun StepTTSConfiguration(
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = voiceExpanded)
                 }
             )
-            ExposedDropdownMenu(
+            DropdownMenu(
                 expanded = voiceExpanded,
                 onDismissRequest = { voiceExpanded = false }
             ) {
@@ -1408,7 +1409,7 @@ private fun StepTTSConfiguration(
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = formatExpanded)
                 }
             )
-            ExposedDropdownMenu(
+            DropdownMenu(
                 expanded = formatExpanded,
                 onDismissRequest = { formatExpanded = false }
             ) {
@@ -1482,7 +1483,7 @@ private fun StepTTSConfiguration(
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = sampleRateExpanded)
                 }
             )
-            ExposedDropdownMenu(
+            DropdownMenu(
                 expanded = sampleRateExpanded,
                 onDismissRequest = { sampleRateExpanded = false }
             ) {
