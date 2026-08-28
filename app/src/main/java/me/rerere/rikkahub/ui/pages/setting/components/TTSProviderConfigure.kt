@@ -27,6 +27,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.ui.FormItem
+import me.rerere.rikkahub.ui.components.ui.SelectTextField
 import me.rerere.rikkahub.ui.components.ui.OutlinedNumberInput
 import me.rerere.tts.provider.TTSProviderSetting
 
@@ -342,22 +343,36 @@ private fun MiMoTTSConfiguration(
     }
 
     // Voice
+    // v(2.4.14 移植): 快速选择音色 — MiMo 官方音色集, 支持下拉选择+自由输入
+    val voices = listOf(
+        "mimo_default",
+        "冰糖",
+        "茉莉",
+        "苏打",
+        "白桦",
+        "Mia",
+        "Chloe",
+        "Milo",
+        "Dean"
+    )
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_voice)) },
         description = { Text(stringResource(R.string.setting_tts_page_voice_description)) }
     ) {
-        OutlinedTextField(
+        SelectTextField(
             value = setting.voice,
+            options = voices,
             onValueChange = { newVoice ->
                 onValueChange(setting.copy(voice = newVoice))
+            },
+            onOptionSelected = { voice ->
+                onValueChange(setting.copy(voice = voice))
             },
             modifier = Modifier.fillMaxWidth(),
             placeholder = { Text("mimo_default") }
         )
     }
 }
-
-@Composable
 private fun MiniMaxTTSConfiguration(
     setting: TTSProviderSetting.MiniMax,
     onValueChange: (TTSProviderSetting) -> Unit
