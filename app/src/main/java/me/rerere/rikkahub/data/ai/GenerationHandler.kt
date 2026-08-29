@@ -536,7 +536,7 @@ class GenerationHandler(
                             // (Missing:/Error/Invalid/MCP manager not initialized/未找到/超时)。
                             // key = 工具名 + 参数指纹; 连续 ≥3 次相同失败后在回传文本
                             // 前插入升级警告: 告知重复无用 + 给出三条修正路径。
-                            run {
+                            val finalOutput: List<UIMessagePart> = run {
                                 val failText = truncated.filterIsInstance<UIMessagePart.Text>()
                                     .joinToString(" ") { it.text }.trim()
                                 val isFailure = failText.startsWith("Missing:") ||
@@ -552,24 +552,25 @@ class GenerationHandler(
                                     if (n >= 3) {
                                         CallTracer.event("TOOL", "failure_loop_break",
                                             "same-failure x$n: ${'$'}{tool.toolName}", metrics = sseDiagMetrics())
-                                        truncated.add(0, UIMessagePart.Text(
+                                        return@run listOf(UIMessagePart.Text(
                                             "⚠️ 这是第 ${'$'}n 次以完全相同的参数调用 ${'$'}{tool.toolName} 并得到相同错误 (错误: ${'$'}{failText.take(120)})。" +
                                             "以相同方式重复该调用不会产生不同结果, 请立即停止重复。可选路径: " +
                                             "1) 重新确认你实际意图的工具名 (检查工具列表, 是否写错或选了错误工具); " +
                                             "2) 若是参数问题, 先补齐必填参数再调用; " +
                                             "3) 若该工具确实不可用, 换用其他工具 (可用 invoke_tools 查看可用工具) 或放弃该路径, 以文字向用户说明情况。" +
-                                            "禁止再发出与本次相同的调用。"))
+                                            "禁止再发出与本次相同的调用。")) + truncated
                                     }
                                 } else {
                                     toolFailureCounts.remove(tool.toolName + "|" + tool.input.hashCode())
                                 }
+                                truncated
                             }
                             val outChars = result.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }
                             CallTracer.event("TOOL", "result_${toolDef.name}",
                                 "Exe输出: ${result.size} parts, ${outChars}c",
                                 mapOf("tool" to toolDef.name, "parts" to "${result.size}"))
                             executedTools += tool.copy(
-                                output = truncated
+                                output = finalOutput
                             )
                         }.onFailure {
                             // 工具执行超时: 写回超时错误, 让模型继续 (不传播为取消)
