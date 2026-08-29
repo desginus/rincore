@@ -126,13 +126,20 @@ object DynamicTools {
                 val obj = input as? JsonObject
                     ?: return@Tool listOf(UIMessagePart.Text("Invalid args, need JSON object"))
                 val name = obj["name"]?.jsonPrimitive?.content
-                    ?: return@Tool listOf(UIMessagePart.Text("Missing: name"))
+                    ?: return@Tool listOf(UIMessagePart.Text(
+                        "mcp_connect 调用失败: 缺少必填参数 name。" +
+                        "该工具用于连接 MCP 服务器, 完整参数: {\"name\": 服务器名, \"transport\": \"sse\"|\"streamable_http\"|\"stdio\", " +
+                        "\"url\": sse/http 模式必填, \"command\": stdio 模式必填}。" +
+                        "若你的意图并非连接 MCP 服务器 (例如进行网络搜索), 说明工具选择环节发生了错误: " +
+                        "请停止重复本调用, 先用 invoke_tools 查看可用工具, 选择与意图相符的工具再调用。"))
                 val transport = obj["transport"]?.jsonPrimitive?.content ?: "streamable_http"
 
                 when (transport.lowercase()) {
                     "stdio" -> {
                         val command = obj["command"]?.jsonPrimitive?.content
-                            ?: return@Tool listOf(UIMessagePart.Text("stdio mode requires: command"))
+                            ?: return@Tool listOf(UIMessagePart.Text(
+                                "mcp_connect (stdio 模式) 失败: 缺少必填参数 command。" +
+                                "stdio 模式参数: {\"name\": 服务器名, \"transport\": \"stdio\", \"command\": 启动命令}。"))
                         // Android 侧无 python3 (error=2) — 默认经 workspace 沙箱启动
                         // (沙箱内有 Python/Node 运行时), workspaceId 取当前助手配置
                         val workspaceId = settingsStore?.settingsFlow?.value

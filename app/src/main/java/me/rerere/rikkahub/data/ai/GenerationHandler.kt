@@ -526,6 +526,38 @@ class GenerationHandler(
                             }
                             val hasShellAccess = toolsInternal.any { it.name == "workspace_shell" }
                             val truncated = maybeTruncateToolOutput(tool.toolCallId, result, hasShellAccess, tool.toolName)
+                            // v3.11.17: 连续相同失败熔断 — 判据: 结果文本以失败形态开头
+                            // (Missing:/Error/Invalid/MCP manager not initialized/未找到/超时)。
+                            // key = 工具名 + 参数指纹; 连续 ≥3 次相同失败后在回传文本
+                            // 前插入升级警告: 告知重复无用 + 给出三条修正路径。
+                            run {
+                                val failText = truncated.filterIsInstance<UIMessagePart.Text>()
+                                    .joinToString(" ") { it.text }.trim()
+                                val isFailure = failText.startsWith("Missing:") ||
+                                    failText.startsWith("Error") ||
+                                    failText.startsWith("Invalid") ||
+                                    failText.startsWith("MCP manager not initialized") ||
+                                    failText.contains("工具 ${'$'}{tool.toolName} 未找到") ||
+                                    failText.startsWith("Tool execution timed out")
+                                if (isFailure) {
+                                    val key = tool.toolName + "|" + tool.input.hashCode()
+                                    val n = (toolFailureCounts[key] ?: 0) + 1
+                                    toolFailureCounts[key] = n
+                                    if (n >= 3) {
+                                        CallTracer.event("TOOL", "failure_loop_break",
+                                            "same-failure x$n: ${'$'}{tool.toolName}", metrics = sseDiagMetrics())
+                                        truncated.add(0, UIMessagePart.Text(
+                                            "⚠️ 这是第 ${'$'}n 次以完全相同的参数调用 ${'$'}{tool.toolName} 并得到相同错误 (错误: ${'$'}{failText.take(120)})。" +
+                                            "以相同方式重复该调用不会产生不同结果, 请立即停止重复。可选路径: " +
+                                            "1) 重新确认你实际意图的工具名 (检查工具列表, 是否写错或选了错误工具); " +
+                                            "2) 若是参数问题, 先补齐必填参数再调用; " +
+                                            "3) 若该工具确实不可用, 换用其他工具 (可用 invoke_tools 查看可用工具) 或放弃该路径, 以文字向用户说明情况。" +
+                                            "禁止再发出与本次相同的调用。"))
+                                    }
+                                } else {
+                                    toolFailureCounts.remove(tool.toolName + "|" + tool.input.hashCode())
+                                }
+                            }
                             val outChars = result.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }
                             CallTracer.event("TOOL", "result_${toolDef.name}",
                                 "Exe输出: ${result.size} parts, ${outChars}c",
@@ -788,6 +820,12 @@ class GenerationHandler(
             // 用户感知"一直没反应最后报错"且重试机制完全失效
             var retryBudgetStartMs = System.currentTimeMillis()
             val preStreamMessages = messages
+            // v3.11.17: 工具连续相同失败聚合 — (工具名+参数指纹) 维度计数。
+            // 实证 (bug 报告): 模型锁死在错误工具名 26 次重复空参调用, 每次都
+            // 只回一行 "Missing: name" 等价于一次失败重复 26 遍, 无任何聚合
+            // 反馈 — 模型侧低强度错误信号 永远走不出惯性通路。阈值 ≥3 时在
+            // 工具结果前置升级警告, 强制打破循环。
+            val toolFailureCounts = HashMap<String, Int>()
             // v3.6.49: UI 更新节流 — 每 chunk 调 onUpdateMessages 触发整个 ChatPage
             // 重组, 流式期间高频重组是卡顿/发热/120Hz 掉帧根因。
             // v3.8.6: 50ms→5ms 用户实测 — 顿挫感反而极严重: 5ms 下每个 chunk
@@ -868,7 +906,8 @@ class GenerationHandler(
                 if (isHeaderTimeout) {
                     if (headerRetryCount < 15) {
                         headerRetryCount++
-                        processingStatus.value = "网关无响应，正在重试 ($headerRetryCount/15)"
+                        // v3.11.17: 重试静默化 (用户定版) — 不再挂"正在重试" UI 提示,
+                        // 失败回滚对用户零感知; 进度只进日志与 Trace
                         kotlinx.coroutines.delay(800)
                         Log.w(TAG, "header timeout — gateway retry $headerRetryCount/15: ${e.message}")
                         CallTracer.event("RETRY", "header_retry", "gateway no response, retry $headerRetryCount/15", metrics = sseDiagMetrics())
@@ -887,7 +926,7 @@ class GenerationHandler(
                 if (isWatchdogTimeout) {
                     if (streamRetryCount == 0) {
                         streamRetryCount = 1
-                        processingStatus.value = "生成中断，平台无响应，正在重试 (1/1)"
+                        // v3.11.17: 静默恢复 (同上, 无 UI 提示)
                         kotlinx.coroutines.delay(300)
                         Log.w(TAG, "watchdog timeout — single recovery retry: ${e.message}")
                         CallTracer.event("RETRY", "watchdog_single_retry", e.message ?: "watchdog", metrics = sseDiagMetrics())
@@ -918,7 +957,7 @@ class GenerationHandler(
                     val retryDelayMs = 150L
                     // v3.11.4: 重试期间 UI 状态提示 — 回滚瞬间内容消失,
                     // 无提示时用户感知"卡死"; 提示后用户知道在自动恢复
-                    processingStatus.value = "生成中断，正在自动重试 ($streamRetryCount/15)"
+                    // v3.11.17: 静默重试 (同上, 无 UI 提示)
                     kotlinx.coroutines.delay(retryDelayMs)
                     Log.w(TAG, "stream interrupted (${e.message}), rolling back & retry $streamRetryCount/15 (delay=${retryDelayMs}ms)")
                     CallTracer.event("RETRY", "stream_interrupted", "interrupted: ${e.message}, rollback & retry $streamRetryCount/15", metrics = sseDiagMetrics())
