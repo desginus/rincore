@@ -523,6 +523,25 @@ class GenerationHandler(
                             }.getOrElse {
                                 error("Invalid tool arguments JSON for ${tool.toolName}: ${it.message}")
                             }
+                            // v3.11.18: 熔断物理闸门 — 同键 (工具名+参数指纹) 连续失败
+                            // ≥6 次后拒绝下发执行, 直接返回硬阻断信号 (不执行)。
+                            // 提示型纠错 (v3.11.17) 对已锁死的生成通路是低效的 —
+                            // 错误循环必须物理断开; 前序轮次: 1-2 正常执行反馈,
+                            // 3-5 警告执行, 6+ 拦截。
+                            val gateKey = tool.toolName + "|" + tool.input.hashCode()
+                            if ((toolFailureCounts[gateKey] ?: 0) >= 6) {
+                                Log.w(TAG, "generateText: tool gated off (fused): ${tool.toolName}")
+                                CallTracer.event("TOOL", "fused_gate",
+                                    "tool=${tool.toolName} blocked, same-args failures=${toolFailureCounts[gateKey]}",
+                                    metrics = sseDiagMetrics())
+                                executedTools += tool.copy(
+                                    output = listOf(UIMessagePart.Text(
+                                        "⛔ 该调用已被客户端熔断拦截, 本次未执行。" +
+                                        "工具 ${tool.toolName} 已连续以完全相同的参数失败至少 5 次, 客户端已禁止继续执行该参数组合。" +
+                                        "更换参数或工具后才可能通过 (若重新调用会立刻被再次拦截)。" +
+                                        "请回到意图层重新决策: 核对工具名 → 补齐参数 → 或换用其他工具 (invoke_tools) → 或以文字说明放弃该路径。")))
+                                return@runCatching
+                            }
                             Log.i(TAG, "generateText: executing tool ${toolDef.name} with args: $args")
                             CallTracer.event("TOOL", "exec_${toolDef.name}", "Executing ${toolDef.name}, args=${tool.input.length}c")
                             // 工具执行超时兜底: 工具挂起(网络/IO)时不永久卡住,

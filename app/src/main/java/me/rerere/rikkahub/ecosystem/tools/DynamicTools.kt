@@ -116,7 +116,9 @@ object DynamicTools {
 
     private fun createMcpConnectTool(): Tool = Tool(
         name = "mcp_connect",
-        description = "Dynamically add an MCP server. Args: {name, url, transport: sse|streamable_http|stdio, command: shell command for stdio mode}",
+        description = "仅用于建立/管理 MCP 服务器连接, 不是搜索工具, 不能执行网页/资料搜索。" +
+            "若意图是搜索, 请使用 mcp__ 开头的搜索类工具 (如 mcp__websearch__webSearchPro)。" +
+            "Args: {name, url, transport: sse|streamable_http|stdio, command: shell command for stdio mode}",
         systemPrompt = { _, _ -> "" },
         needsApproval = { false },
         execute = { input: JsonElement ->
