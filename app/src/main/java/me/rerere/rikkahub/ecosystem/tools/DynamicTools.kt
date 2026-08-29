@@ -115,7 +115,7 @@ object DynamicTools {
     // ═══ mcp_connect — P0 MCP 动态连接 ═══════════════════════
 
     private fun createMcpConnectTool(): Tool = Tool(
-        name = "mcp_connect",
+        name = "manage_mcp_servers",
         description = "仅用于建立/管理 MCP 服务器连接, 不是搜索工具, 不能执行网页/资料搜索。" +
             "若意图是搜索, 请使用 mcp__ 开头的搜索类工具 (如 mcp__websearch__webSearchPro)。" +
             "Args: {name, url, transport: sse|streamable_http|stdio, command: shell command for stdio mode}",
@@ -129,7 +129,7 @@ object DynamicTools {
                     ?: return@Tool listOf(UIMessagePart.Text("Invalid args, need JSON object"))
                 val name = obj["name"]?.jsonPrimitive?.content
                     ?: return@Tool listOf(UIMessagePart.Text(
-                        "mcp_connect 调用失败: 缺少必填参数 name。" +
+                        "manage_mcp_servers 调用失败: 缺少必填参数 name。" +
                         "该工具用于连接 MCP 服务器, 完整参数: {\"name\": 服务器名, \"transport\": \"sse\"|\"streamable_http\"|\"stdio\", " +
                         "\"url\": sse/http 模式必填, \"command\": stdio 模式必填}。" +
                         "若你的意图并非连接 MCP 服务器 (例如进行网络搜索), 说明工具选择环节发生了错误: " +
@@ -140,7 +140,7 @@ object DynamicTools {
                     "stdio" -> {
                         val command = obj["command"]?.jsonPrimitive?.content
                             ?: return@Tool listOf(UIMessagePart.Text(
-                                "mcp_connect (stdio 模式) 失败: 缺少必填参数 command。" +
+                                "manage_mcp_servers (stdio 模式) 失败: 缺少必填参数 command。" +
                                 "stdio 模式参数: {\"name\": 服务器名, \"transport\": \"stdio\", \"command\": 启动命令}。"))
                         // Android 侧无 python3 (error=2) — 默认经 workspace 沙箱启动
                         // (沙箱内有 Python/Node 运行时), workspaceId 取当前助手配置

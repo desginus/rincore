@@ -202,7 +202,7 @@ class GenerationHandler(
                 removedBuiltinDomains = currentSettings.removedBuiltinDomains,
                 exemptFromDomainTools = currentSettings.exemptFromDomainTools,
             )
-            // 每步刷新 MCP 工具 (支持 mcp_connect 运行时添加) — 合并到域池走懒加载,
+            // 每步刷新 MCP 工具 (支持 manage_mcp_servers 运行时添加) — 合并到域池走懒加载,
             // 不直接注入函数定义 (813af56d 移植: Token 65K → ~6K)
             val currentMcpTools = DynamicTools.getMcpTools()
             // v3.5.56 回归全量: 含框架工具 — 系统域/workspace 等必须可见可下钻
@@ -516,6 +516,11 @@ class GenerationHandler(
                             val toolDef = tools.find { toolDef -> toolDef.name == tool.toolName }
                                 ?: toolsInternal.find { toolDef -> toolDef.name == tool.toolName }
                             if (toolDef == null) {
+                                // v3.11.18: 弃用旧名引导 — 历史会话惯性调用 mcp_connect
+                                // 时给出无损过渡指引 (词族根除: 新清单已无此名)
+                                if (tool.toolName == "mcp_connect") {
+                                    error("工具 mcp_connect 已更名为 manage_mcp_servers (避免与 mcp__ 搜索工具混淆)。请使用 manage_mcp_servers 并补齐 {name, transport, url 或 command}; 若你的意图是搜索, 请直接调用已加载的 mcp__ 域搜索工具")
+                                }
                                 error("工具 ${tool.toolName} 未找到")
                             }
                             val args = runCatching {

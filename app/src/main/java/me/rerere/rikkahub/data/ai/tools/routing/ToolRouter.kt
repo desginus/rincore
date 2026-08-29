@@ -158,7 +158,7 @@ class ToolRouter(
     /** 系统级工具名称前缀 — 精确匹配, 避免被关键词误分类 */
     private val SYSTEM_TOOL_PREFIXES = listOf(
         "manage_domain", "list_domains", "move_tool_to_domain",
-        "mcp_connect", "clawhub_", "plugin_install",
+        "manage_mcp_servers", "clawhub_", "plugin_install",
         "get_battery_status",
         "workspace_", // v3.5.56: workspace 工具归系统域 — 不再落入未分类失踪
     )
@@ -616,7 +616,7 @@ class ToolRouter(
             appendLine()
             appendLine("生态能力安装引导：")
             appendLine("- 插件: 用 plugin_install 工具安装 Claude Code 插件 (zipFile=设备 ZIP 路径, 或 url=可下载直链, 需含 plugin.json/.claude-plugin/plugin.json)。workspace 文件区 .plugins/<插件名>/ 目录格式的插件重启后自动注册。")
-            appendLine("- MCP: 用 mcp_connect 工具动态连接服务器 {name, transport: sse|streamable_http|stdio, url 或 command}; stdio 命令经 workspace 沙箱启动。")
+            appendLine("- MCP: 用 manage_mcp_servers 工具连接/管理 MCP 服务器 {name, transport: sse|streamable_http|stdio, url 或 command}。注意: 该工具仅用于连接管理, 搜索/网页抓取请直接使用已加载的 mcp__ 域搜索工具 (如 mcp__websearch__webSearchPro), 不要把搜索意图路由到连接管理工具。")
             appendLine("- Skill: 经 invoke_tools(\"技能\") 查看技能列表, skill__<名> 工具直接加载使用。")
         }
     }
