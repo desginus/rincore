@@ -15,7 +15,10 @@ package me.rerere.rikkahub.ecosystem.tools
  * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.jsonPrimitive
+import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.ai.mcp.McpCommonOptions
@@ -119,6 +122,30 @@ object DynamicTools {
         description = "仅用于建立/管理 MCP 服务器连接, 不是搜索工具, 不能执行网页/资料搜索。" +
             "若意图是搜索, 请使用 mcp__ 开头的搜索类工具 (如 mcp__websearch__webSearchPro)。" +
             "Args: {name, url, transport: sse|streamable_http|stdio, command: shell command for stdio mode}",
+        parameters = {
+            InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("name", buildJsonObject {
+                        put("type", "string")
+                        put("description", "MCP 服务器名 (必填)")
+                    })
+                    put("transport", buildJsonObject {
+                        put("type", "string")
+                        put("enum", buildJsonArray { add(JsonPrimitive("sse")); add(JsonPrimitive("streamable_http")); add(JsonPrimitive("stdio")) })
+                        put("description", "传输类型, 默认 streamable_http")
+                    })
+                    put("url", buildJsonObject {
+                        put("type", "string")
+                        put("description", "sse/streamable_http 模式的服务器 URL")
+                    })
+                    put("command", buildJsonObject {
+                        put("type", "string")
+                        put("description", "stdio 模式的启动命令 (经 workspace 沙箱)")
+                    })
+                },
+                required = listOf("name")
+            )
+        },
         systemPrompt = { _, _ -> "" },
         needsApproval = { false },
         execute = { input: JsonElement ->
@@ -220,6 +247,20 @@ object DynamicTools {
     private fun createClawhubInstallTool(): Tool = Tool(
         name = "clawhub_install",
         description = "Install a skill from ClawHub or GitHub. Args: {slug: @owner/name or github:owner/repo/path or url: direct URL}",
+        parameters = {
+            InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("slug", buildJsonObject {
+                        put("type", "string")
+                        put("description", "ClawHub 插件 slug (与 url 二选一)")
+                    })
+                    put("url", buildJsonObject {
+                        put("type", "string")
+                        put("description", "插件包下载直链 (与 slug 二选一)")
+                    })
+                }
+            )
+        },
         systemPrompt = { _, _ -> "" },
         needsApproval = { false },
         execute = { input: JsonElement ->
@@ -249,6 +290,21 @@ object DynamicTools {
     private fun createClawhubSearchTool(): Tool = Tool(
         name = "clawhub_search",
         description = "Search ClawHub marketplace for skills. Args: {query: search term, limit: max results (default 10)}",
+        parameters = {
+            InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("query", buildJsonObject {
+                        put("type", "string")
+                        put("description", "搜索关键词 (必填)")
+                    })
+                    put("limit", buildJsonObject {
+                        put("type", "integer")
+                        put("description", "返回条数上限, 默认 10")
+                    })
+                },
+                required = listOf("query")
+            )
+        },
         systemPrompt = { _, _ -> "" },
         needsApproval = { false },
         execute = { input: JsonElement ->
@@ -279,6 +335,20 @@ object DynamicTools {
     private fun createPluginInstallTool(): Tool = Tool(
         name = "plugin_install",
         description = "Install a Claude Code / OpenClaw plugin from ZIP. Args: {zipFile: path to ZIP file, or url: URL to download}",
+        parameters = {
+            InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("zipFile", buildJsonObject {
+                        put("type", "string")
+                        put("description", "设备本地 ZIP 路径 (与 url 二选一)")
+                    })
+                    put("url", buildJsonObject {
+                        put("type", "string")
+                        put("description", "插件包下载直链 (与 zipFile 二选一)")
+                    })
+                }
+            )
+        },
         systemPrompt = { _, _ -> "" },
         needsApproval = { false },
         execute = { input: JsonElement ->
@@ -393,6 +463,22 @@ object DynamicTools {
     private fun createSkillsLockTool(): Tool = Tool(
         name = "skills_lock",
         description = "List or manage installed skills. Args: {action: list|remove, name: skill name for remove}",
+        parameters = {
+            InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("action", buildJsonObject {
+                        put("type", "string")
+                        put("enum", buildJsonArray { add(JsonPrimitive("list")); add(JsonPrimitive("install")); add(JsonPrimitive("remove")) })
+                        put("description", "操作类型, 默认 list")
+                    })
+                    put("name", buildJsonObject {
+                        put("type", "string")
+                        put("description", "remove/install 时的技能名")
+                    })
+                },
+                required = listOf("action")
+            )
+        },
         systemPrompt = { _, _ -> "" },
         needsApproval = { false },
         execute = { input: JsonElement ->
