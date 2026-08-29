@@ -467,6 +467,12 @@ class GenerationHandler(
             }
 
             // Handle tools (execute approved tools, handle denied tools)
+            // v3.11.17: 工具连续相同失败聚合 — (工具名+参数指纹) 维度计数。
+            // 实证 (bug 报告): 模型锁死在错误工具名 26 次重复空参调用, 每次都
+            // 只回一行 "Missing: name" 等价于一次失败重复 26 遍, 无任何聚合
+            // 反馈 — 低强度错误信号下模型永远走不出惯性通路。阈值 ≥3 时在
+            // 工具结果前置升级警告, 强制打破循环 (作用域: 全部工具轮次共享)
+            val toolFailureCounts = HashMap<String, Int>()
             val executedTools = arrayListOf<UIMessagePart.Tool>()
             toolsToProcess.forEach { tool ->
                 when (tool.approvalState) {
@@ -820,12 +826,6 @@ class GenerationHandler(
             // 用户感知"一直没反应最后报错"且重试机制完全失效
             var retryBudgetStartMs = System.currentTimeMillis()
             val preStreamMessages = messages
-            // v3.11.17: 工具连续相同失败聚合 — (工具名+参数指纹) 维度计数。
-            // 实证 (bug 报告): 模型锁死在错误工具名 26 次重复空参调用, 每次都
-            // 只回一行 "Missing: name" 等价于一次失败重复 26 遍, 无任何聚合
-            // 反馈 — 模型侧低强度错误信号 永远走不出惯性通路。阈值 ≥3 时在
-            // 工具结果前置升级警告, 强制打破循环。
-            val toolFailureCounts = HashMap<String, Int>()
             // v3.6.49: UI 更新节流 — 每 chunk 调 onUpdateMessages 触发整个 ChatPage
             // 重组, 流式期间高频重组是卡顿/发热/120Hz 掉帧根因。
             // v3.8.6: 50ms→5ms 用户实测 — 顿挫感反而极严重: 5ms 下每个 chunk
