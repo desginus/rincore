@@ -51,7 +51,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.key
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -385,12 +384,8 @@ private fun ChatPageContent(
 
     TTSAutoPlay(vm = vm, setting = setting, conversation = conversation)
 
-    // v3.11.19: 渐变背景修复 — 开启渐变时 Surface 让出纯色
-    // (此前 Surface 不透明底色与渐变层叠加, 部分机型渐变被压为
-    // 纯色观感, 键盘弹起区域露出的是 Surface 色而非渐变延续)
-    val gradientActive = setting.getCurrentAssistant().useGradientBackground
     Surface(
-        color = if (gradientActive) Color.Transparent else MaterialTheme.colorScheme.background,
+        color = MaterialTheme.colorScheme.background,
         modifier = Modifier.fillMaxSize()
     ) {
         // v3.8.20: 返回前台强制重绘重建模糊纹理 — 不销毁 hazeSource 节点。
@@ -398,20 +393,16 @@ private fun ChatPageContent(
         // 节点导致模糊源永久失效 (首次进入 ON_RESUME 即触发, 全场景
         // 液态玻璃变普通背景)。改为 draw 阶段读取状态: tick 递增仅触发
         // 重绘 (draw 订阅), 节点保留, 模糊纹理随重绘重建。
-        // v3.11.19: 开关切换时强制重建背景子树 (含 hazeSource 节点) —
-        // 渐变⇄静态图切换后模糊纹理即时刷新, 不残留旧形态
-        key(gradientActive) {
-            AssistantBackground(
-                setting = setting,
-                modifier = Modifier
-                    .hazeSource(hazeState)
-                    .drawWithContent {
-                        @Suppress("UNUSED_EXPRESSION")
-                        hazeRebuildTick
-                        drawContent()
-                    }
-            )
-        }
+        AssistantBackground(
+            setting = setting,
+            modifier = Modifier
+                .hazeSource(hazeState)
+                .drawWithContent {
+                    @Suppress("UNUSED_EXPRESSION")
+                    hazeRebuildTick
+                    drawContent()
+                }
+        )
         // v3.6.13: 对话设置对话框 — 延迟自动回复开关
 
         Scaffold(
