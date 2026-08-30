@@ -1,15 +1,13 @@
 package me.rerere.rikkahub.ui.pages.chat
 
 
-/* ───【原版对齐】MeshGradientBackground.kt
- * 来源: 原版移植 + 自研小调整
+/* ───【原版对齐】MeshGradientBackground.kt | v3.11.21 对齐最新原版
+ * 动画速度与轨迹逐参数复刻原版 phase(5500/20)/7000/8500/6200 正弦
+ * 漂移; 差异仅在实现载体: 原版单 Canvas 逐帧全屏重绘 (v3.6.82 曾因此
+ * GPU 满载被静态化), 本版改为每光斑独立渐变 Box + withFrameNanos 相
+ * 位驱动 offset (placement 层合成位移, 不触发重绘) — 视觉与原版一致,
+ * GPU 成本近似零。
  * ───────────────────────────────────────────────────────────────*/
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.StartOffset
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -18,45 +16,47 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /**
- * Gemini 风格渐变背景 (v3.11.20 动画回归)。
+ * Gemini 风格动态渐变背景。
  *
- * 历史脉络:
- *  - 原版: 4 光斑缓慢漂移动画 (Canvas 每帧重绘)
- *  - v3.6.82: 用户报静态卡顿 — Canvas 逐帧重绘 + hazeSource 重采样
- *    导致 GPU 满载, 被静态化 → 光团永久不动 (用户 2026-08-30 指出
- *    "光团留在那里根本不动", 要求恢复)
- *  - v3.11.20: 恢复漂移且不再走 Canvas 重绘 — 每个光团为独立
- *    radient Box, 用 graphicsLayer translation 做位移动画 (合成器
- *    属性动画, 不触发 measure/layout/draw), GPU 成本近似零,
- *    兼得动画与不卡。
+ * 原理 (与原版一致):
+ *  1. 底层一个线性渐变(顶部偏蓝/深蓝、底部渐隐)。
+ *  2. 上面叠几个 radialGradient 光斑 (中心有色 → 边缘透明)。
+ *  3. 每个光斑独立周期的无限动画, 沿正弦/余弦轨迹缓慢漂移,
+ *     总时长取 loops 对齐原版 (5.5s/圈 ×20, 7s ×1, 8.5s ×10, 6.2s ×10)。
  *
- * 每个 nek Τα光斑独立周期 (11s~19s) + 相位错开, 往复漂移。
+ * 实现差异: 位移动画走 offset placement 层, 渐层本体零重绘。
  */
-private data class BlobSpec(
-    val color: Color,
-    val alpha: Float,
-    val baseX: Float, val baseY: Float,
-    val ampX: Float, val ampY: Float,
-    val durMs: Int, val phaseMs: Int,
-)
-
 @Composable
 fun MeshGradientBackground(
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit = {},
 ) {
+    // 全局时间源: 每帧更新一次 (placement 阶段读取, 不触发重组/重绘)
+    val timeNanos = remember { mutableLongStateOf(0L) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            withFrameNanos { timeNanos.longValue = it }
+        }
+    }
+
     val dark = LocalDarkMode.current
     val baseGradient = if (dark) {
         arrayOf(
@@ -76,7 +76,7 @@ fun MeshGradientBackground(
         )
     }
 
-    // 光斑配色 (蓝/青/淡蓝/暖色) 及浓度, 亮暗各一套
+    // 光斑配色 (蓝 / 青 / 淡蓝 / 暖色) 及浓度, 亮暗各一套
     val blobBlue = if (dark) Color(0xFF3E6FB0) else Color(0xFF9EC5F0)
     val blobTeal = if (dark) Color(0xFF2E7D74) else Color(0xFFA8E6E0)
     val blobLightBlue = if (dark) Color(0xFF4A6E96) else Color(0xFFB6D7F2)
@@ -97,54 +97,77 @@ fun MeshGradientBackground(
             val hPx = with(density) { maxHeight.toPx() }
             val diameter = with(density) { maxOf(maxWidth, maxHeight).toPx() * 0.72f }
 
-            // 漂移参数: 中心基准 + 幅度 (px) + 独立周期/相位
-            // (幅度与 v3.6.82 前原动画同量级, 光斑全部聚在顶部向下渐隐)
+            // 原版各光斑参数逐一复刻: 中心基准 + 正弦漂移幅度 + 独立周期
+            // (periodMs = 原版 phase() 的 durationMillis, 一圈时长)
+            data class BlobSpec(
+                val color: Color, val alpha: Float, val radiusRatio: Float,
+                val periodMs: Double, val phaseOffset: Double,
+                val cx: Double, val cy: Double,
+                val ampX: Double, val ampY: Double,
+                // 轨迹参数: x = cx + sin(p + px) * ax ; y = cy + cos(p * ky) * ay
+                val px: Double, val ax: Double,
+                val ky: Double, val ay: Double,
+            )
+            val TWO_PI = 2.0 * PI
             val specs = listOf(
-                BlobSpec(blobBlue, alphaBlue, wPx * 0.48f, hPx * 0.10f, wPx * 0.20f, hPx * 0.07f, 13_000, 0),
-                BlobSpec(blobTeal, alphaTeal, wPx * 0.18f, hPx * 0.24f, wPx * 0.16f, hPx * 0.09f, 17_000, 1_800),
-                BlobSpec(blobLightBlue, alphaLightBlue, wPx * 0.82f, hPx * 0.12f, wPx * 0.17f, hPx * 0.08f, 11_000, 3_100),
-                BlobSpec(blobWarm, alphaWarm, wPx * 0.58f, hPx * 0.32f, wPx * 0.14f, hPx * 0.07f, 19_000, 5_600),
+                // 顶部蓝 (主色, 横向漂移) — 5.5s/圈 [x圈=×20]
+                BlobSpec(blobBlue, alphaBlue, 0.36f, 5_500.0, 0.0,
+                    wPx * 0.48, hPx * 0.08, wPx * 0.38, hPx * 0.18, 0.0, 1.0, 1.15, 1.0),
+                // 左上青绿点缀 — 7s/圈
+                BlobSpec(blobTeal, alphaTeal, 0.28f, 7_000.0, PI * 0.55,
+                    wPx * 0.18, hPx * 0.24, wPx * 0.30, hPx * 0.20, 0.0, 1.0, 1.0, 1.0),
+                // 右上淡蓝 — 8.5s/圈 (x 方向负幅度)
+                BlobSpec(blobLightBlue, alphaLightBlue, 0.30f, 8_500.0, PI * 0.9,
+                    wPx * 0.82, hPx * 0.12, wPx * 0.34, hPx * 0.18, 0.0, -1.0, 0.9, 1.0),
+                // 暖色光斑 — 6.2s/圈
+                BlobSpec(blobWarm, alphaWarm, 0.26f, 6_200.0, PI * 1.25,
+                    wPx * 0.58, hPx * 0.34, wPx * 0.28, hPx * 0.16, 0.0, 1.0, 1.1, 1.0),
             )
 
             specs.forEachIndexed { i, s ->
-                val t = rememberInfiniteTransition(label = "blob_$i")
-                val bx = t.animateFloat(
-                    initialValue = -1f, targetValue = 1f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(durationMillis = s.durMs, easing = androidx.compose.animation.core.FastOutSlowInEasing),
-                        repeatMode = RepeatMode.Reverse,
-                        initialStartOffset = StartOffset(s.phaseMs),
-                    ),
-                    label = "blob_x_$i",
-                )
-                val by = t.animateFloat(
-                    initialValue = 1f, targetValue = -1f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(durationMillis = s.durMs, easing = androidx.compose.animation.core.FastOutSlowInEasing),
-                        repeatMode = RepeatMode.Reverse,
-                        initialStartOffset = StartOffset(s.phaseMs + 400),
-                    ),
-                    label = "blob_y_$i",
-                )
-                Box(
-                    Modifier
-                        .offset {
-                            IntOffset(
-                                (s.baseX + bx.value * s.ampX - diameter / 2f).roundToInt(),
-                                (s.baseY + by.value * s.ampY - diameter / 2f).roundToInt(),
-                            )
-                        }
-                        .size(with(density) { diameter.toDp() })
-                        .background(
-                            Brush.radialGradient(
-                                colors = listOf(s.color.copy(alpha = s.alpha), Color.Transparent),
-                                center = Offset.Unspecified,
-                            )
-                        )
+                BlobView(
+                    spec = s, index = i,
+                    twoPi = TWO_PI,
+                    diameterPx = diameter,
+                    timeNanos = timeNanos,
+                    modifier = Modifier.size(with(density) { diameter.toDp() }),
                 )
             }
         }
 
         content()
     }
+}
+
+@Composable
+private fun BlobView(
+    spec: BlobSpec,
+    index: Int,
+    twoPi: Double,
+    diameterPx: Float,
+    timeNanos: androidx.compose.runtime.State<Long>,
+    modifier: Modifier = Modifier,
+) {
+    // 中心基准 + 半径: placement 阶段逐帧计算 (无重组)
+    val diameterHalf = diameterPx / 2.0
+    Box(
+        modifier = modifier
+            .offset {
+                val t = timeNanos.value / 1_000_000_000.0
+                // 周期 → 相位速度 (原版: 2π 每一圈)
+                val p = (t * twoPi * 1000.0 / spec.periodMs) + spec.phaseOffset
+                val cx = spec.cx + kotlin.math.sin(p + spec.px) * spec.ax
+                val cy = spec.cy + kotlin.math.cos(p * spec.ky) * spec.ay
+                IntOffset(
+                    (cx - diameterHalf).roundToInt(),
+                    (cy - diameterHalf).roundToInt(),
+                )
+            }
+            .background(
+                Brush.radialGradient(
+                    colors = listOf(spec.color.copy(alpha = spec.alpha), Color.Transparent),
+                    center = Offset.Unspecified,
+                )
+            )
+    )
 }

@@ -278,19 +278,19 @@ item(
                     )
 item(
                         onClick = { navController.navigate(Screen.SettingPlugins) },
-                        leadingContent = { Icon(HugeIcons.Puzzle, null) },
+                        leadingContent = { Icon(HugeIcons.Package, null) },
                         supportingContent = { Text("插件能力模块（workspace 目录安装：技能 + STDIO MCP 桥接）") },
                         headlineContent = { Text("插件") },
                     )
 item(
                         onClick = { showDomainPage = true },
-                        leadingContent = { Icon(HugeIcons.Settings03, null) },
+                        leadingContent = { Icon(HugeIcons.Sorting01, null) },
                         supportingContent = { Text(stringResource(R.string.setting_page_domain_management_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_domain_management)) },
                     )
 item(
                         onClick = { showBuiltinToolsPage = true },
-                        leadingContent = { Icon(HugeIcons.Settings03, null) },
+                        leadingContent = { Icon(HugeIcons.Tools, null) },
                         supportingContent = { Text("精确到工具 ID 与数量的全量清单（核对工具总数）") },
                         headlineContent = { Text("内置工具") },
                     )
