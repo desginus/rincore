@@ -290,9 +290,7 @@ fun List<UIMessagePart>.isEmptyUIMessage(): Boolean {
             is UIMessagePart.Reasoning -> message.reasoning.isBlank()
             is UIMessagePart.Video -> message.url.isBlank()
             is UIMessagePart.Audio -> message.url.isBlank()
-            is UIMessagePart.Tool,
-            is UIMessagePart.ServerTool,
-                -> false
+            is UIMessagePart.Tool -> false
             else -> true
         }
     }
