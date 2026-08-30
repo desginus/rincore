@@ -451,39 +451,37 @@ class GoogleProvider(
             buildContents(messages)
         )
 
-        // Tools
-        if (params.tools.isNotEmpty() && params.model.abilities.contains(ModelAbility.TOOL)) {
-            put("tools", buildJsonArray {
-                add(buildJsonObject {
-                    put("functionDeclarations", buildJsonArray {
-                        params.tools.forEach { tool ->
-                            add(buildJsonObject {
-                                put("name", JsonPrimitive(tool.name))
-                                put("description", JsonPrimitive(tool.description))
-                                put(
-                                    key = "parameters",
-                                    element = json.encodeToJsonElement(tool.parameters())
-                                        .removeElements(
-                                            listOf(
-                                                "const",
-                                                "exclusiveMaximum",
-                                                "exclusiveMinimum",
-                                                "format",
-                                                "additionalProperties",
-                                                "enum",
+        // Client function tools and model built-in tools share the same array.
+        val useFunctionTools =
+            params.tools.isNotEmpty() && params.model.abilities.contains(ModelAbility.TOOL)
+        if (useFunctionTools || params.model.tools.isNotEmpty()) {
+            putJsonArray("tools") {
+                if (useFunctionTools) {
+                    add(buildJsonObject {
+                        putJsonArray("functionDeclarations") {
+                            params.tools.forEach { tool ->
+                                add(buildJsonObject {
+                                    put("name", JsonPrimitive(tool.name))
+                                    put("description", JsonPrimitive(tool.description))
+                                    put(
+                                        key = "parameters",
+                                        element = json.encodeToJsonElement(tool.parameters())
+                                            .removeElements(
+                                                listOf(
+                                                    "const",
+                                                    "exclusiveMaximum",
+                                                    "exclusiveMinimum",
+                                                    "format",
+                                                    "additionalProperties",
+                                                    "enum",
+                                                )
                                             )
-                                        )
-                                )
-                            })
+                                    )
+                                })
+                            }
                         }
                     })
-                })
-            })
-        }
-        // Model BuiltIn Tools
-        // 目前不能和工具调用兼容
-        if (params.model.tools.isNotEmpty()) {
-            put("tools", buildJsonArray {
+                }
                 params.model.tools.forEach { builtInTool ->
                     when (builtInTool) {
                         BuiltInTools.Search -> {
@@ -501,7 +499,7 @@ class GoogleProvider(
                         else -> {}
                     }
                 }
-            })
+            }
         }
 
         // Safety Settings

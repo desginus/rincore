@@ -170,7 +170,7 @@ val dataSourceModule = module {
         MessageFtsManager(get())
     }
 
-    single { McpManager(settingsStore = get(), appScope = get(), filesManager = get(), appEventBus = get(), workspaceRepository = getOrNull()) }
+    single { McpManager(settingsStore = get(), appScope = get(), filesManager = get(), workspaceRepository = getOrNull()) }
 
     single {
         GenerationHandler(

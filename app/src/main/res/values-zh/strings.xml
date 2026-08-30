@@ -797,7 +797,7 @@
   <string name="setting_page_built_in_tools_search_desc">启用 Google 搜索集成</string>
   <string name="setting_page_built_in_tools_url_context">URL 上下文</string>
   <string name="setting_page_built_in_tools_url_context_desc">启用 URL 内容处理</string>
-  <string name="setting_page_chat_storage">聊天记录存储</string>
+  <string name="setting_page_chat_storage">存储管理</string>
   <string name="setting_page_chat_storage_desc">%1$d 个文件，%2$.2f MB</string>
   <string name="setting_page_code_display_settings">代码显示</string>
   <string name="setting_page_color_mode">颜色模式</string>
@@ -1303,6 +1303,9 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
     <string name="setting_files_page_clean_title">清理文件</string>
     <string name="setting_files_page_clean_confirmation">确定要删除此目录下的所有文件吗？此操作不可撤销。</string>
     <string name="setting_files_page_clean_action">清理</string>
+    <string name="setting_files_page_clean_all">全部文件</string>
+    <string name="setting_files_page_clean_older_than_days">%1$d 天前</string>
+    <string name="setting_files_page_clean_range_description">选择要永久删除的文件。此操作无法撤销。</string>
     <string name="setting_files_page_clean_content_description">一键清理</string>
     <string name="app_name">RinCore</string>
     <string name="setting_page_share_text">RinCore - 个人AI助手</string>

@@ -762,7 +762,7 @@
   <string name="setting_page_built_in_tools_search_desc">Google 검색 통합 활성화</string>
   <string name="setting_page_built_in_tools_url_context">URL 컨텍스트</string>
   <string name="setting_page_built_in_tools_url_context_desc">URL 콘텐츠 처리 활성화</string>
-  <string name="setting_page_chat_storage">채팅 저장 공간</string>
+  <string name="setting_page_chat_storage">스토리지 관리</string>
   <string name="setting_page_chat_storage_desc">%1$d개 파일, %2$.2f MB</string>
   <string name="setting_page_code_display_settings">코드 표시</string>
   <string name="setting_page_color_mode">색상 모드</string>
@@ -1265,5 +1265,8 @@ mDNS 주소: .local 호스트네임을 사용하며, IP를 몰라도 같은 네�
     <string name="app_name">RinCore</string>
     <string name="setting_page_share_text">RinCore - Personal AI Assistant</string>
     <string name="setting_page_web_server_desc">웹을 통해 RinCore에 접근할 수 있게 합니다</string>
+  <string name="setting_files_page_clean_all">모든 파일</string>
+  <string name="setting_files_page_clean_older_than_days">%1$d일 이전</string>
+  <string name="setting_files_page_clean_range_description">영구 삭제할 파일을 선택하세요. 이 작업은 되돌릴 수 없습니다.</string>
 </resources>
 

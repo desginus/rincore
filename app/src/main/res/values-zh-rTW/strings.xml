@@ -762,7 +762,7 @@
   <string name="setting_page_built_in_tools_search_desc">啟用 Google 搜尋整合</string>
   <string name="setting_page_built_in_tools_url_context">URL 上下文</string>
   <string name="setting_page_built_in_tools_url_context_desc">啟用 URL 內容處理</string>
-  <string name="setting_page_chat_storage">聊天記錄儲存</string>
+  <string name="setting_page_chat_storage">存储管理</string>
   <string name="setting_page_chat_storage_desc">%1$d 個檔案，%2$.2f MB</string>
   <string name="setting_page_code_display_settings">程式碼顯示</string>
   <string name="setting_page_color_mode">顏色模式</string>
@@ -1263,5 +1263,8 @@
     <string name="app_name">RinCore</string>
     <string name="setting_page_share_text">RinCore - 個人AI助手</string>
     <string name="setting_page_web_server_desc">允許你透過Web存取RinCore</string>
+  <string name="setting_files_page_clean_all">全部檔案</string>
+  <string name="setting_files_page_clean_older_than_days">%1$d 天前</string>
+  <string name="setting_files_page_clean_range_description">選擇要永久刪除的檔案。此操作無法撤銷。</string>
 </resources>
 
