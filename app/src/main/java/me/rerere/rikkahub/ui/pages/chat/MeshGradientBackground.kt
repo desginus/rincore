@@ -4,8 +4,8 @@ package me.rerere.rikkahub.ui.pages.chat
 /* ───【原版对齐】MeshGradientBackground.kt
  * 来源: 原版移植 + 自研小调整
  * ───────────────────────────────────────────────────────────────*/
-import androidx.compose.animation.core RepeatMode
-import androidx.compose.animation.core StartOffset
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.StartOffset
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
