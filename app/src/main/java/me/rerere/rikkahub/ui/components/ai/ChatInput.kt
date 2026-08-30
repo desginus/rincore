@@ -336,30 +336,6 @@ fun ChatInput(
     )
 }
 
-    source: WindowInsets,
-    target: WindowInsets,
-): Modifier = clipToBounds().layout { measurable, constraints ->
-    val placeable = measurable.measure(constraints)
-    val imeBottom = ime.getBottom(this)
-    val sourceBottom = source.getBottom(this)
-    val targetBottom = target.getBottom(this)
-    val expandedFraction = when {
-        sourceBottom == 0 && targetBottom == 0 -> 1f
-        sourceBottom > 0 && targetBottom > 0 -> 0f
-        targetBottom > 0 -> 1f - imeBottom.toFloat() / targetBottom
-        else -> 1f - imeBottom.toFloat() / sourceBottom
-    }.coerceIn(0f, 1f)
-    val visibleHeight = (placeable.height * expandedFraction).roundToInt()
-
-    layout(placeable.width, visibleHeight) {
-        placeable.placeRelativeWithLayer(
-            x = 0,
-            y = visibleHeight - placeable.height,
-        ) {
-            alpha = expandedFraction
-        }
-    }
-}
 
 @Composable
 private fun SendButton(
