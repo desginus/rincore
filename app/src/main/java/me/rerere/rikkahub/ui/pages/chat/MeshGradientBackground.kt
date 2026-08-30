@@ -99,7 +99,6 @@ fun MeshGradientBackground(
 
             // 原版各光斑参数逐一复刻: 中心基准 + 正弦漂移幅度 + 独立周期
             // (periodMs = 原版 phase() 的 durationMillis, 一圈时长)
-            val specs = listOf<BlobSpec>(
             val specs = listOf(
                 // 顶部蓝 (主色, 横向漂移) — 5.5s/圈 [x圈=×20]
                 BlobSpec(blobBlue, alphaBlue, 5_500.0, 0.0,
