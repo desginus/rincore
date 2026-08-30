@@ -99,28 +99,19 @@ fun MeshGradientBackground(
 
             // 原版各光斑参数逐一复刻: 中心基准 + 正弦漂移幅度 + 独立周期
             // (periodMs = 原版 phase() 的 durationMillis, 一圈时长)
-            data class BlobSpec(
-                val color: Color, val alpha: Float, val radiusRatio: Float,
-                val periodMs: Double, val phaseOffset: Double,
-                val cx: Double, val cy: Double,
-                val ampX: Double, val ampY: Double,
-                // 轨迹参数: x = cx + sin(p + px) * ax ; y = cy + cos(p * ky) * ay
-                val px: Double, val ax: Double,
-                val ky: Double, val ay: Double,
-            )
-            val TWO_PI = 2.0 * PI
+            val specs = listOf<BlobSpec>(
             val specs = listOf(
                 // 顶部蓝 (主色, 横向漂移) — 5.5s/圈 [x圈=×20]
-                BlobSpec(blobBlue, alphaBlue, 0.36f, 5_500.0, 0.0,
+                BlobSpec(blobBlue, alphaBlue, 5_500.0, 0.0,
                     wPx * 0.48, hPx * 0.08, wPx * 0.38, hPx * 0.18, 0.0, 1.0, 1.15, 1.0),
                 // 左上青绿点缀 — 7s/圈
-                BlobSpec(blobTeal, alphaTeal, 0.28f, 7_000.0, PI * 0.55,
+                BlobSpec(blobTeal, alphaTeal, 7_000.0, PI * 0.55,
                     wPx * 0.18, hPx * 0.24, wPx * 0.30, hPx * 0.20, 0.0, 1.0, 1.0, 1.0),
                 // 右上淡蓝 — 8.5s/圈 (x 方向负幅度)
-                BlobSpec(blobLightBlue, alphaLightBlue, 0.30f, 8_500.0, PI * 0.9,
+                BlobSpec(blobLightBlue, alphaLightBlue, 8_500.0, PI * 0.9,
                     wPx * 0.82, hPx * 0.12, wPx * 0.34, hPx * 0.18, 0.0, -1.0, 0.9, 1.0),
                 // 暖色光斑 — 6.2s/圈
-                BlobSpec(blobWarm, alphaWarm, 0.26f, 6_200.0, PI * 1.25,
+                BlobSpec(blobWarm, alphaWarm, 6_200.0, PI * 1.25,
                     wPx * 0.58, hPx * 0.34, wPx * 0.28, hPx * 0.16, 0.0, 1.0, 1.1, 1.0),
             )
 
@@ -138,6 +129,18 @@ fun MeshGradientBackground(
         content()
     }
 }
+
+private data class BlobSpec(
+    val color: Color,
+    val alpha: Float,
+    val periodMs: Double,
+    val phaseOffset: Double,
+    val cx: Double, val cy: Double,
+    val ampX: Double, val ampY: Double,
+    // 轨迹参数: x = cx + sin(p + px) * ax ; y = cy + cos(p * ky) * ay
+    val px: Double, val ax: Double,
+    val ky: Double, val ay: Double,
+)
 
 @Composable
 private fun BlobView(
