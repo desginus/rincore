@@ -398,19 +398,20 @@ private fun ChatPageContent(
         // 节点导致模糊源永久失效 (首次进入 ON_RESUME 即触发, 全场景
         // 液态玻璃变普通背景)。改为 draw 阶段读取状态: tick 递增仅触发
         // 重绘 (draw 订阅), 节点保留, 模糊纹理随重绘重建。
-        AssistantBackground(
-            setting = setting,
-            // v3.11.19: 开关切换时强制重建背景子树 (含 hazeSource 节点) —
-            // 渐变⇄静态图切换后模糊纹理即时刷新, 不残留旧形态
-            modifier = Modifier
-                .key(gradientActive)
-                .hazeSource(hazeState)
-                .drawWithContent {
-                    @Suppress("UNUSED_EXPRESSION")
-                    hazeRebuildTick
-                    drawContent()
-                }
-        )
+        // v3.11.19: 开关切换时强制重建背景子树 (含 hazeSource 节点) —
+        // 渐变⇄静态图切换后模糊纹理即时刷新, 不残留旧形态
+        key(gradientActive) {
+            AssistantBackground(
+                setting = setting,
+                modifier = Modifier
+                    .hazeSource(hazeState)
+                    .drawWithContent {
+                        @Suppress("UNUSED_EXPRESSION")
+                        hazeRebuildTick
+                        drawContent()
+                    }
+            )
+        }
         // v3.6.13: 对话设置对话框 — 延迟自动回复开关
 
         Scaffold(
