@@ -385,8 +385,12 @@ private fun ChatPageContent(
 
     TTSAutoPlay(vm = vm, setting = setting, conversation = conversation)
 
+    // v3.11.19: 渐变背景修复 — 开启渐变时 Surface 让出纯色
+    // (此前 Surface 不透明底色与渐变层叠加, 部分机型渐变被压为
+    // 纯色观感, 键盘弹起区域露出的是 Surface 色而非渐变延续)
+    val gradientActive = setting.getCurrentAssistant().useGradientBackground
     Surface(
-        color = MaterialTheme.colorScheme.background,
+        color = if (gradientActive) Color.Transparent else MaterialTheme.colorScheme.background,
         modifier = Modifier.fillMaxSize()
     ) {
         // v3.8.20: 返回前台强制重绘重建模糊纹理 — 不销毁 hazeSource 节点。
@@ -396,7 +400,10 @@ private fun ChatPageContent(
         // 重绘 (draw 订阅), 节点保留, 模糊纹理随重绘重建。
         AssistantBackground(
             setting = setting,
+            // v3.11.19: 开关切换时强制重建背景子树 (含 hazeSource 节点) —
+            // 渐变⇄静态图切换后模糊纹理即时刷新, 不残留旧形态
             modifier = Modifier
+                .key(gradientActive)
                 .hazeSource(hazeState)
                 .drawWithContent {
                     @Suppress("UNUSED_EXPRESSION")

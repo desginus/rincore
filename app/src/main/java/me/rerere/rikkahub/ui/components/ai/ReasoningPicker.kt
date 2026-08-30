@@ -218,8 +218,24 @@ private fun ReasoningIcon(
         ),
         label = "reasoning_max_alpha",
     )
+    // v3.11.18: XHIGH 档渐变闪烁 — 与 MAX 同款呼吸但频率慢 3 倍以上
+    // (全周期 4000ms vs MAX 1300ms = 3.08x), 视觉上区分 XHIGH/HIGH 同图标静态档
+    val xhighPulse = rememberInfiniteTransition(label = "reasoning_xhigh_pulse")
+    val xhighAlpha by xhighPulse.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.35f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 2000),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "reasoning_xhigh_alpha",
+    )
     val iconModifier = modifier.graphicsLayer {
-        alpha = if (level == ReasoningLevel.MAX) maxAlpha else 1f
+        alpha = when (level) {
+            ReasoningLevel.MAX -> maxAlpha
+            ReasoningLevel.XHIGH -> xhighAlpha
+            else -> 1f
+        }
     }
     val image = when (level) {
         ReasoningLevel.OFF -> HugeIcons.Idea
