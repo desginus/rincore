@@ -117,7 +117,7 @@ fun MeshGradientBackground(
             specs.forEachIndexed { i, s ->
                 BlobView(
                     spec = s, index = i,
-                    twoPi = TWO_PI,
+                    twoPi = 2.0 * PI,
                     diameterPx = diameter,
                     timeNanos = timeNanos,
                     modifier = Modifier.size(with(density) { diameter.toDp() }),

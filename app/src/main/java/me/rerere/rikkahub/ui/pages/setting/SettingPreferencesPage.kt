@@ -21,6 +21,7 @@ import me.rerere.hugeicons.stroke.Notification01
 import me.rerere.hugeicons.stroke.PaintBoard
 import me.rerere.hugeicons.stroke.Internet
 import me.rerere.hugeicons.stroke.Sun01
+import me.rerere.hugeicons.stroke.CursorPointer01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.ui.components.nav.BackButton
