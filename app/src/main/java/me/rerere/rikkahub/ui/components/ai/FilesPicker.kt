@@ -304,8 +304,11 @@ internal fun FilesPicker(
             QuickEntry(
                 icon = HugeIcons.AiBrain01,
                 label = stringResource(R.string.chat_quick_sub_agents),
-                trailing = if (conversationRuns.isEmpty()) null else
-                    else "${conversationRuns.count { it.status == SubAgentStatus.RUNNING || it.status == SubAgentStatus.PENDING }} 运行",
+                trailing = if (conversationRuns.isEmpty()) {
+                    null
+                } else {
+                    "${conversationRuns.count { it.status == SubAgentStatus.RUNNING || it.status == SubAgentStatus.PENDING }} 运行"
+                },
                 onClick = { showSubAgentSheet = true },
             )
             // 2. 模型记忆 — 直接路由当前助手记忆管理页 (无顶部选项卡)
