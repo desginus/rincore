@@ -5,6 +5,19 @@ description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日�
 
 # RinCore 更新日志（v2.9.4 → v3.10.0）
 
+## v3.11.24（四故障深度修复，2026-08-31）
+- F1 记忆写入健康门 (memoryHealthCheck: 4000c/时间锚断言/重复度) + buildMemoryPrompt 渲染过滤 + TimeReminder 幂等收窄
+- F2 思考工具四道协议门 + 同工具累计连调 >6 次物理拦截
+- F3 流式复读熔断 (repetitionSampleCount 384 字符粒度 → ClientGenerationGuardException)
+- D STREAM_RETRY_BUDGET_MS 10s→45s ("重试 1 次后仍失败" 假终报根治)
+
+## v3.11.23（原版 2.4.15 全量移植，2026-08-30）
+- MCP OAuth 架构重写 (:oauth module/loopback 回调/DiscoveryClient/Coordinator 重写)
+- 文件清理时间范围 (CleanRange 7/14/30/ALL BottomSheet)
+- Gemini 云端+本地工具并存 (tools 数组合并)
+- tool-only 消息操作按钮修复 (isEmptyUIMessage Tool→false)
+- 输入栏折叠动画随上游回滚; 依赖矩阵对齐 (m3 alpha27/okhttp 5.5.0/sqlite-vector 1.0.0/删 nav2)
+
 ## v3.9.9 ~ v3.10.0（媒体/渲染/网络/代理路由系列，2026-08-23）
 - v3.9.9: MCP 待命文案修正 + 密钥快捷切换（备注/掩码列表）+ Excel 横向浏览 + PPT 流式占位符
 - v3.9.10: PDF 双缓冲缩放 + DOCX 排版还原 + PPT schemeClr 主题色 + 用量视图切换持久化 + 密钥管理落盘
