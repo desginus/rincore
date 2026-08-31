@@ -379,6 +379,7 @@ class GenerationHandler(
                     processingStatus = processingStatus,
                     conversationSystemPrompt = conversationSystemPrompt,
                     conversationModeInjectionIds = conversationModeInjectionIds,
+                    skipAssistantPrompt = skipAssistantPrompt,
                     conversationLorebookIds = conversationLorebookIds,
                     workspaceCwd = workspaceCwd,
                     layer1Prompt = layer1Prompt,
@@ -780,6 +781,8 @@ class GenerationHandler(
         conversationLorebookIds: Set<Uuid> = emptySet(),
         workspaceCwd: String? = null,
         layer1Prompt: String? = null,
+        // v3.11.27: 子代理对话不注入用户自定义 prompt (其余正常注入)
+        skipAssistantPrompt: Boolean = false,
     ) {
         // v3.6.74: 节选最近对话 (原上下文降维) 方向废弃 — 消息一律原样发送, 零改动
         val effectiveMessages: List<UIMessage> = messages
