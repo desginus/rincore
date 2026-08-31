@@ -48,6 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -246,7 +247,8 @@ internal fun FilesPicker(
         var showCwdSheet by remember { mutableStateOf(false) }
         var showSubAgentSheet by remember { mutableStateOf(false) }
 
-        // v3.11.26: 快捷入口第二列 — 子代理详情 / 模型记忆 / 工作区CWD / 上下文条数
+        // v3.11.26: 快捷入口第三行 — 与上方方块网格同款 (BigIconTextButton, weight(1f), SpaceEvenly)
+        // 子代理详情 / 模型记忆 / 工作区CWD / 上下文条数 — 高度对齐上方方块
         val subAgentRegistry: me.rerere.rikkahub.subagent.SubAgentRegistry = koinInject()
         val allRuns by subAgentRegistry.runs.collectAsState()
         val conversationRuns = remember(allRuns, conversation.id) {
@@ -254,89 +256,57 @@ internal fun FilesPicker(
                 .filter { it.parentChatId == conversation.id.toString() }
                 .sortedByDescending { it.startedAtMs }
         }
-        Column(
+        val cwdReady = boundWorkspace != null && boundWorkspace.shellStatus == WorkspaceShellStatus.READY.name
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
-            @Composable
-            fun QuickEntry(
-                icon: androidx.compose.ui.graphics.vector.ImageVector,
-                label: String,
-                trailing: String? = null,
-                enabled: Boolean = true,
-                onClick: () -> Unit,
-            ) {
-                Surface(
-                    onClick = onClick,
-                    enabled = enabled,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.4f),
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
-                        )
-                        trailing?.let {
-                            Text(
-                                text = it,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-            }
             // 1. 子代理详情 — 对话子代理的唯一展示窗口
-            QuickEntry(
-                icon = HugeIcons.AiBrain01,
-                label = stringResource(R.string.chat_quick_sub_agents),
-                trailing = if (conversationRuns.isEmpty()) {
-                    null
-                } else {
-                    "${conversationRuns.count { it.status == SubAgentStatus.RUNNING || it.status == SubAgentStatus.PENDING }} 运行"
+            BigIconTextButton(
+                modifier = Modifier.weight(1f),
+                icon = { Icon(HugeIcons.AiBrain01, null) },
+                text = {
+                    Text(
+                        text = if (conversationRuns.any { it.status == SubAgentStatus.RUNNING || it.status == SubAgentStatus.PENDING }) {
+                            stringResource(R.string.chat_quick_sub_agents_active,
+                                conversationRuns.count { it.status == SubAgentStatus.RUNNING || it.status == SubAgentStatus.PENDING })
+                        } else stringResource(R.string.chat_quick_sub_agents),
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
                 },
-                onClick = { showSubAgentSheet = true },
-            )
+            ) { showSubAgentSheet = true }
             // 2. 模型记忆 — 直接路由当前助手记忆管理页 (无顶部选项卡)
-            QuickEntry(
-                icon = HugeIcons.Book02,
-                label = stringResource(R.string.chat_quick_memory),
-                onClick = {
-                    navController.navigate(Screen.AssistantMemory(assistant.id.toString()))
+            BigIconTextButton(
+                modifier = Modifier.weight(1f),
+                icon = { Icon(HugeIcons.Book02, null) },
+                text = { Text(stringResource(R.string.chat_quick_memory), maxLines = 1) },
+            ) {
+                onDismiss()
+                navController.navigate(Screen.AssistantMemory(assistant.id.toString()))
+            }
+            // 3. 工作区 CWD — 原底部文件夹入口迁入 (入口收纳; 未绑定工作区时置灰)
+            BigIconTextButton(
+                modifier = Modifier.weight(1f).alpha(if (cwdReady) 1f else 0.4f),
+                icon = { Icon(HugeIcons.Folder01, null) },
+                text = {
+                    Text(
+                        text = if (cwdReady) (conversation.workspaceCwd ?: stringResource(R.string.chat_quick_cwd))
+                               else stringResource(R.string.chat_quick_cwd),
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
                 },
-            )
-            // 3. 工作区 CWD — 原底部文件夹入口迁入 (入口收纳)
-            QuickEntry(
-                icon = HugeIcons.Folder01,
-                label = stringResource(R.string.chat_quick_cwd),
-                trailing = if (boundWorkspace != null && boundWorkspace.shellStatus == WorkspaceShellStatus.READY.name) {
-                    conversation.workspaceCwd ?: "/workspace"
-                } else null,
-                enabled = boundWorkspace != null && boundWorkspace.shellStatus == WorkspaceShellStatus.READY.name,
-                onClick = { showCwdSheet = true },
-            )
-            // 4. 当前上下文对话条数 — 压缩按条数计算, 这里给模型可见的条数统计
-            QuickEntry(
-                icon = HugeIcons.BubbleChatQuestion,
-                label = stringResource(R.string.chat_quick_context_count),
-                trailing = stringResource(R.string.chat_quick_context_count_value, conversation.messageNodes.size),
-                onClick = {},
-                enabled = false,
-            )
+            ) { if (cwdReady) showCwdSheet = true }
+            // 4. 当前上下文对话条数 — 压缩按条数计算, 这里给模型可见的条数统计 (只读)
+            BigIconTextButton(
+                modifier = Modifier.weight(1f),
+                icon = { Icon(HugeIcons.BubbleChatQuestion, null) },
+                text = {
+                    Text(
+                        text = stringResource(R.string.chat_quick_context_count_value, conversation.messageNodes.size),
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                },
+            ) { }
         }
         if (showCwdSheet && boundWorkspace != null && boundWorkspace.shellStatus == WorkspaceShellStatus.READY.name) {
             WorkspaceCwdPickerSheet(

@@ -1319,6 +1319,7 @@
   <string name="tool_ui_write_file_default">Write file</string>
   <string name="tool_ui_task_list">Task list</string>
   <string name="chat_quick_sub_agents">Sub-agents</string>
+  <string name="chat_quick_sub_agents_active">Sub-agents (%d)</string>
   <string name="chat_quick_memory">Model memory</string>
   <string name="chat_quick_cwd">Working directory</string>
   <string name="chat_quick_context_count">Context turns</string>
