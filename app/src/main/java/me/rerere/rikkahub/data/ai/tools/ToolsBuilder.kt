@@ -68,7 +68,7 @@ fun buildAssistantToolPool(
     pluginManager: me.rerere.rikkahub.data.plugin.PluginManager? = null,
 ): List<Tool> = buildList {
     // v3.11.25: 任务清单工具 (Cherry Studio Agent 任务功能移植) — 框架工具, 静态
-    addAll(createTaskTool())
+    add(createTaskTool())
     if (settings.enableWebSearch) {
         addAll(createSearchTools(settings))
     }

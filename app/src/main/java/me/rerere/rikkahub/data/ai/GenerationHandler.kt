@@ -260,7 +260,7 @@ class GenerationHandler(
                     }
                     // v3.11.24: 任务清单工具 — 始终注入 (框架工具, 静态, 零 DB;
                     // 清单存 tool output 随会话消息持久化 — Cherry 任务功能移植)
-                    addAll(createTaskTool())
+                    add(createTaskTool())
                     // 其他框架工具 (search/conversation/workspace) — 始终注入
                     addAll(frameworkTools.filter { it.name != "memory_tool" })
                     // invoke_tools 元工具 — 操作 allDomainTools (含MCP), 模型按需加载
