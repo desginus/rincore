@@ -546,28 +546,30 @@ class GenerationHandler(
                             // 协议约束此前零执行位 (5 类违规全部 success), 退化循环
                             // 因此自持。四道门全走 error 通路 (进既有失败聚合计数):
                             // ① 空/占位内容 ② 序号越界 ③ 已宣告终结仍续调 ④ 同参重复
+                            // v3.11.24: args 顶层必为 JsonObject 才可抽样校验
+                            val argsMap = args as? kotlinx.serialization.json.JsonObject
                             val isThinkingInvoke = tool.toolName.contains("sequential", ignoreCase = true) ||
                                 tool.toolName.contains("think", ignoreCase = true) ||
-                                args.containsKey("thoughtNumber")
-                            if (isThinkingInvoke) {
-                                val thought = args["thought"]?.let { j ->
+                                argsMap?.containsKey("thoughtNumber") == true
+                            if (isThinkingInvoke && argsMap != null) {
+                                val thought = argsMap["thought"]?.let { j ->
                                     (j as? JsonPrimitive)?.content.orEmpty()
                                 }.trim()
                                 if (thought.length < 12) {
                                     error("Error: thinking tool rejected — thought is empty or placeholder (${thought.length} chars). " +
                                         "Provide substantive reasoning content, or stop calling this tool and act directly (search/calendar/answer).")
                                 }
-                                val thoughtNumber = args["thoughtNumber"]?.let { j ->
+                                val thoughtNumber = argsMap["thoughtNumber"]?.let { j ->
                                     (j as? JsonPrimitive)?.content?.toIntOrNull()
                                 }
-                                val totalThoughts = args["totalThoughts"]?.let { j ->
+                                val totalThoughts = argsMap["totalThoughts"]?.let { j ->
                                     (j as? JsonPrimitive)?.content?.toIntOrNull()
                                 }
                                 if (thoughtNumber != null && totalThoughts != null && totalThoughts > 0 && thoughtNumber > totalThoughts) {
                                     error("Error: thinking tool rejected — thoughtNumber=$thoughtNumber exceeds totalThoughts=$totalThoughts. " +
                                         "Correct the indexes, or declare a fresh reasoning block with a larger totalThoughts.")
                                 }
-                                val nextNeeded = args["nextThoughtNeeded"]?.let { j ->
+                                val nextNeeded = argsMap["nextThoughtNeeded"]?.let { j ->
                                     (j as? JsonPrimitive)?.content?.lowercase()
                                 }
                                 if (thinkingSequenceClosed && nextNeeded != "true") {
