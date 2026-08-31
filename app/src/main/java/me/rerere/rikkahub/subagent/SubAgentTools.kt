@@ -64,8 +64,14 @@ fun subagentDispatchTool(
 
         Pass a clear, self-contained task — the sub-agent doesn't see your conversation,
         so restate any context it needs. Pass a short label so the user can recognise
-        the running sub-agent. For long-running work, set run_in_background=true and
-        poll with subagent_get; otherwise foreground (default) blocks until terminal.
+        the running sub-agent.
+
+        IMPORTANT (v3.11.28): dispatch is ALWAYS asynchronous — it returns immediately
+        with the run's current status (pending/running) and the task keeps executing in
+        the background. It never blocks for the result. To collect the outcome, poll
+        with subagent_get (and subagent_list to enumerate) until the run reaches a
+        terminal status, then read the result field. run_in_background only hints the
+        scheduling priority; the return contract is identical either way.
 
         Concurrency caps: each assistant has its own (default 3, configurable 1-8) and
         there's a global cap of 16 across all assistants. Over-cap dispatches fail with

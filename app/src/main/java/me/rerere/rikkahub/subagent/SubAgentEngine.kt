@@ -172,18 +172,13 @@ class SubAgentEngine(
         }
         registry.setJob(runId, executionJob)
 
-        if (cleaned.runInBackground) {
-            // Return immediately; final status delivered via registry observation.
-            DispatchResult.Ok(registry.get(runId) ?: initialRun)
-        } else {
-            // Foreground — block until terminal.
-            try {
-                executionJob.join()
-            } catch (t: Throwable) {
-                Log.w(TAG, "foreground sub-agent join failed for $runId", t)
-            }
-            DispatchResult.Ok(registry.get(runId) ?: initialRun)
-        }
+        // v3.11.28: 派发与执行解耦 — 前台/后台统一异步派发, 立即返回 run 状态。
+        // 旧实现: 前台 executionJob.join() 阻塞至终态, 撞上工具 60s 执行超时兜底
+        // 被 withTimeout 打断 (工具返回"超时"), 但执行协程独立继续跑完且结果可取回 —
+        // 用户实证: "超时只影响等待窗口, 不影响任务本身"。正确语义: 派发调用本身
+        // 必须快速返回 (run id + 当前状态), 终态由模型经 subagent_get 轮询取回,
+        // 执行全程在后台协程, 与调用链完全解耦。
+        DispatchResult.Ok(registry.get(runId) ?: initialRun)
     }
 
     private suspend fun currentAssistantCap(parentAssistantId: String): Int {
@@ -243,7 +238,6 @@ class SubAgentEngine(
             }
             if (completed == null) {
                 markTerminal(runId, SubAgentStatus.TIMED_OUT, "exceeded ${request.timeoutSeconds}-second cap")
-                notifyParentIfBackground(parentChatId, registry.get(runId))
                 return
             }
             // Harvest the assistant's final text from the conversation. Best-effort —
@@ -261,13 +255,11 @@ class SubAgentEngine(
             ledgerIds.remove(runId)?.let {
                 agentRunRepo.markTerminal(it, AgentRunStatus.succeeded)
             }
-            notifyParentIfBackground(parentChatId, registry.get(runId))
         } catch (t: Throwable) {
             Log.w(TAG, "sub-agent run failed", t)
             // CancellationException → CANCELLED, anything else → FAILED.
             val terminal = if (t is kotlinx.coroutines.CancellationException) SubAgentStatus.CANCELLED else SubAgentStatus.FAILED
             markTerminal(runId, terminal, "${t::class.simpleName}: ${t.message.orEmpty()}")
-            notifyParentIfBackground(parentChatId, registry.get(runId))
         } finally {
             HeadlessConversations.unmark(conv.id)
             registry.clearJob(runId)
@@ -313,16 +305,6 @@ class SubAgentEngine(
      * to 5 minutes for the parent to be idle before posting. After 5 minutes we post anyway
      * — better to interrupt than to silently lose the completion.
      */
-    private suspend fun notifyParentIfBackground(parentChatId: String?, run: SubAgentRun?) {
-        if (parentChatId == null || run == null || !run.runInBackground) return
-        val parentUuid = runCatching { Uuid.parse(parentChatId) }.getOrNull() ?: return
-        if (HeadlessConversations.isHeadless(parentUuid)) return
-
-        // v3.11.27: 子代理完成不再向父对话注入 "[Sub-agent]" 文本消息 —
-        // 展示收敛到子代理详情面板 (加号面板「子代理详情」), 消息列表零泄漏。
-        // registry.runs 已持久化全部运行状态与结果, UI 实时读取。
-    }
-
     private suspend fun harvestFinalText(conversationId: Uuid): String {
         // The Conversation persisted by the generation pipeline contains the full message
         // history (messageNodes). Each MessageNode holds parallel branches in
