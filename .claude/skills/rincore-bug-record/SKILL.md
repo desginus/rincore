@@ -370,3 +370,41 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
   即耗尽预算 → 重试条件永不满足。修复 v3.11.10 断流时刻重置起点。
 - 经验: 重试预算计时必须只覆盖"检测到故障后"的窗口; 预热必须与主
   请求同池 (provider 类型决定 client, host 判定不可靠)。
+
+### B106. 系统提示注入污染 — memory_tool 退化产物入毒 (v3.11.24)
+- **现象**: 2026-08-31 案 (glm-5.3-flash): system 记忆区出现 30+ 同构污染块
+  (错误日期锚 2026-04-15+幻影历史+typo 稳定传播), 每轮重注; 引发错误交付
+- **根因链**: 模型把已污染内容经 memory_tool 写入 → 落库零校验 →
+  buildMemoryPrompt 每轮注入 system 稳定区 → 全会话毒化
+- **修复**: memoryHealthCheck 三门 (4000c 上限/时间锚时钟断言/96 字符片段
+  全文>=4 次重复) 挂 create+edit; buildMemoryPrompt 渲染侧同门过滤
+  (存量污染自动出清); TimeReminderTransformer 幂等检查收窄 (contains →
+  Text part 前缀, 正文引用 tag 不再误跳过)
+- **排查教训**: 污染块特征 (时刻一致到秒+同构重复+变异) = 生成式退化,
+  不是模板泄漏;「访问客户端注入区」的组件按数据流逐一审查,
+  memory 通道是 system 区唯一无校验的写入口
+
+### B107. 思考工具循环锁死 — 运行时零校验 (v3.11.24)
+- **现象**: sequentialthinking 6 连调, 5 次占位/越界/违背协议, 全部 success
+- **根因**: 协议约束只存在于工具描述文本; v3.11.17/18 熔断只覆盖失败形态,
+  成功空转零防线
+- **修复**: GenerationHandler 工具环四道门 (thought<12c/thoughtNumber>
+  totalThoughts/nextThoughtNeeded=false 后续调/同参指纹) 全走 error 通路;
+  同工具累计连调>6 物理拦截 (含成功调用)
+- **验证**: 占位 thought/越界序号/终结后续调均返回 error 文本; 失败聚合
+  计数联动 (3 次警告 6 次物理闸)
+
+### B108. 生成复读退化无熔断 (v3.11.24)
+- **现象**: 可见思考逐字复读工具列表直至轮次燃尽 (用户观感"卡死")
+- **根因**: 流式层无自相似检测; 复读吸引子随轮自强化
+- **修复**: collect 每 384 新字符评估 repetitionSampleCount (尾 768 窗 96
+  字符片段全文>=4 次) → ClientGenerationGuardException → 保留内容+终态
+  报错, 不回滚不重试 (同 prompt 重采样大概率复现)
+- **验证**: 阈值保守 (96 字符非空白片段×4), 列表/代码天然重复不误伤
+
+### B109. 断流恢复误报"重试 1 次后仍失败" (v3.11.24)
+- **现象**: 正常输出数分钟后 Software caused connection abort → 终报
+- **根因**: STREAM_RETRY_BUDGET_MS 10s 进 catch 时 elapsed 含整段成功
+  生成时间 → 预算必爆 (v3.11.10/16 预算语义缺陷)
+- **修复**: 硬顶 45s, 语义=限制恢复风暴; 静默判定仍由三阶段 watchdog 负责
+- **排查教训**: 预算类计时器必须明确起点语义 ("故障后窗口" vs "圈起算")
