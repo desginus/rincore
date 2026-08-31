@@ -318,26 +318,9 @@ class SubAgentEngine(
         val parentUuid = runCatching { Uuid.parse(parentChatId) }.getOrNull() ?: return
         if (HeadlessConversations.isHeadless(parentUuid)) return
 
-        val message = buildString {
-            appendLine("[Sub-agent ${run.label} — ${run.status.name}]")
-            run.error?.takeIf { it.isNotBlank() }?.let {
-                appendLine("Error: $it")
-            }
-            run.result?.takeIf { it.isNotBlank() }?.let {
-                appendLine()
-                append(it)
-            }
-        }.trimEnd()
-
-        runCatching {
-            withTimeoutOrNull(5 * 60_000L) {
-                chatService.getGenerationJobStateFlow(parentUuid).first { it == null }
-                Unit
-            }
-            chatService.sendMessage(parentUuid, listOf(UIMessagePart.Text(message)))
-        }.onFailure {
-            Log.w(TAG, "failed to notify parent $parentChatId of subagent completion", it)
-        }
+        // v3.11.27: 子代理完成不再向父对话注入 "[Sub-agent]" 文本消息 —
+        // 展示收敛到子代理详情面板 (加号面板「子代理详情」), 消息列表零泄漏。
+        // registry.runs 已持久化全部运行状态与结果, UI 实时读取。
     }
 
     private suspend fun harvestFinalText(conversationId: Uuid): String {

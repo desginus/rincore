@@ -164,6 +164,8 @@ class GenerationHandler(
         workspaceCwd: String? = null,
         conversationLoadedDomains: List<String>? = null, // v3.6.10: 保序 (Set 曾致跨轮顺序不定),
         toolPoolProvider: (() -> List<Tool>)? = null, // v3.6.118: invoke_tools 实时域列表
+        // v3.11.27: 子代理对话不注入用户自定义 prompt (其余正常注入) — 由 ChatService 判定传入
+        skipAssistantPrompt: Boolean = false,
     ): Flow<GenerationChunk> = flow {
         // Trace ID 每次生成唯一 — 之前用 model.id 导致所有 trace 同 ID (日志无法区分)
         CallTracer.startTrace(id = java.util.UUID.randomUUID().toString().take(8))
@@ -802,7 +804,9 @@ class GenerationHandler(
                 // 缓存锚点 — 静态规则块 + 当前模型名 (v3.6.6: 模型配置是缓存键一部分,
                 // 模型切换 → Prompt 同步变化 → 缓存按模型隔离, 同模型前缀稳定)
                 append(buildCacheAnchor(model.displayName))
-                if (effectiveSystemPrompt.isNotBlank()) {
+                // v3.11.27: 子代理对话跳过用户 prompt (用户要求: 不注入用户设置的 prompt,
+                // 其余正常注入) — 子代理有独立 system prompt (SubAgentRun), 注入会污染其行为
+                if (!skipAssistantPrompt && effectiveSystemPrompt.isNotBlank()) {
                     appendLine()
                     append(effectiveSystemPrompt)
                 }

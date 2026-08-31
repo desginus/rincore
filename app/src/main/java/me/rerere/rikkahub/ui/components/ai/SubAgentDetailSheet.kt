@@ -6,6 +6,7 @@ package me.rerere.rikkahub.ui.components.ai
  * 本对话派发的子代理不再散落在消息列表中, 全部汇聚到这里展示。
  * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,6 +25,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -101,7 +106,7 @@ fun SubAgentDetailSheet(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     runs.forEach { run ->
-                        val sc = statusColor(run.status)
+                        var expanded by remember(run.id) { mutableStateOf(false) }
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -109,6 +114,7 @@ fun SubAgentDetailSheet(
                                     color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f),
                                     shape = RoundedCornerShape(12.dp),
                                 )
+                                .clickable { expanded = !expanded }
                                 .padding(12.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
@@ -154,24 +160,41 @@ fun SubAgentDetailSheet(
                                     }
                                 }
                             }
-                            run.error?.let {
-                                Text(
-                                    text = it,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error,
-                                    maxLines = 3,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                            run.result?.takeIf { it.isNotBlank() }?.let { result ->
-                                Text(
-                                    text = result,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier
-                                        .heightIn(max = 160.dp)
-                                        .verticalScroll(rememberScrollState()),
-                                )
+                            // 摘要: 折叠态 — 任务首行 (点击展开看详情)
+                            Text(
+                                text = run.task.takeIf { it.isNotBlank() } ?: run.label,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = if (expanded) Int.MAX_VALUE else 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (expanded) {
+                                run.task.takeIf { it.isNotBlank() }?.let { task ->
+                                    Text(
+                                        text = "任务: $task",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                }
+                                run.error?.let {
+                                    Text(
+                                        text = it,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error,
+                                        maxLines = 3,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                run.result?.takeIf { it.isNotBlank() }?.let { result ->
+                                    Text(
+                                        text = result,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier
+                                            .heightIn(max = 160.dp)
+                                            .verticalScroll(rememberScrollState()),
+                                    )
+                                }
                             }
                             if (run.status == SubAgentStatus.RUNNING || run.status == SubAgentStatus.PENDING) {
                                 Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {

@@ -640,6 +640,8 @@ class ChatService(
                 conversationLorebookIds = conversation.lorebookIds,
                 workspaceCwd = conversation.workspaceCwd,
                 conversationLoadedDomains = conversation.loadedDomains,
+                // v3.11.27: 子代理会话 ([Sub-agent] 标题) 不注入用户自定义 prompt
+                skipAssistantPrompt = conversation.title.startsWith("[Sub-agent]"),
                 toolPoolProvider = {
                     buildAssistantToolPool(
                         settings = settingsStore.settingsFlow.value,
