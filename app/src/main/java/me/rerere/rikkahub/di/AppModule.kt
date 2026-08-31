@@ -126,7 +126,9 @@ val appModule = module {
     }
 
     single {
-        SubAgentRegistry()
+        SubAgentRegistry(
+            runDao = get<me.rerere.rikkahub.data.db.AppDatabase>().subAgentRunDao(),
+        ).also { it.restoreFromDisk() }
     }
 
     single {
