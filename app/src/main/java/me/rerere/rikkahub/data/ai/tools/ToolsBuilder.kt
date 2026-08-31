@@ -38,6 +38,9 @@ val FRAMEWORK_TOOL_SET = setOf(
     // v3.6.91: clawhub_install/clawhub_search 移出框架集 — 归系统域经
     // invoke_tools(系统) 加载 (用户: 框架工具 8→6, 只保留实际常用的)
     "manage_mcp_servers", "plugin_install",
+    // v3.11.24: 任务清单 (Cherry Studio Agent 任务功能移植) — 框架工具,
+    // 不参与视图统计; 任务随 tool output 存会话消息, 零 DB
+    "task_tool",
 )
 
 /** 动态框架集 — 静态框架工具 + 用户移出域管理的工具 (v3.6.90)。
@@ -64,6 +67,8 @@ fun buildAssistantToolPool(
     workspaceRepository: me.rerere.rikkahub.data.repository.WorkspaceRepository? = null,
     pluginManager: me.rerere.rikkahub.data.plugin.PluginManager? = null,
 ): List<Tool> = buildList {
+    // v3.11.25: 任务清单工具 (Cherry Studio Agent 任务功能移植) — 框架工具, 静态
+    addAll(createTaskTool())
     if (settings.enableWebSearch) {
         addAll(createSearchTools(settings))
     }

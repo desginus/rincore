@@ -166,8 +166,8 @@ object ReadFileToolUI : ToolUIRenderer {
 
     @Composable
     override fun title(context: ToolUIContext): String {
-        val path = context.arguments.getStringContent("path")
-        return if (path != null) stringResource(R.string.tool_ui_read_file, path) else stringResource(R.string.tool_ui_read_file_default)
+        // v3.11.24: Cherry 风格语义化折叠标题 — 完整路径放展开详情, 不再堆在标题
+        return stringResource(R.string.tool_ui_read_file_default)
     }
 
     /** 已执行时从输出 JSON 读取文件内容 */
@@ -207,8 +207,8 @@ object WriteFileToolUI : ToolUIRenderer {
 
     @Composable
     override fun title(context: ToolUIContext): String {
-        val path = context.arguments.getStringContent("path")
-        return if (path != null) stringResource(R.string.tool_ui_write_file, path) else stringResource(R.string.tool_ui_write_file_default)
+        // v3.11.24: Cherry 风格语义化折叠标题 — 完整路径放展开详情, 不再堆在标题
+        return stringResource(R.string.tool_ui_write_file_default)
     }
 
     private fun textOf(context: ToolUIContext): String? =

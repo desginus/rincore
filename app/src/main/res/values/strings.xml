@@ -1317,6 +1317,7 @@
   <string name="tool_ui_show_file">Show: %s</string>
   <string name="tool_ui_show_file_default">Show file</string>
   <string name="tool_ui_write_file_default">Write file</string>
+  <string name="tool_ui_task_list">Task list</string>
   <string name="tool_ui_list_files">List: %s</string>
   <string name="tool_ui_list_files_default">List files</string>
   <string name="tool_ui_list_files_empty">Empty</string>

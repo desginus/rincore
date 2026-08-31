@@ -84,9 +84,28 @@ interface ToolUIRenderer {
     }
 }
 
-/** 未注册工具使用的默认渲染器, 全部行为来自 [ToolUIRenderer] 的默认实现 */
+/** 未注册工具使用的默认渲染器 — title 按 Snake name 动词语义化 (Cherry 风格折叠标题) */
 private object DefaultToolUIRenderer : ToolUIRenderer {
     override val toolName: String get() = ""
+
+    private val verbMap = linkedMapOf(
+        "write" to "写入", "read" to "读取", "edit" to "编辑", "create" to "创建",
+        "delete" to "删除", "execute" to "执行", "shell" to "执行命令", "search" to "搜索",
+        "scrape" to "抓取", "fetch" to "抓取", "get" to "获取", "list" to "列出",
+        "show" to "展示", "speak" to "朗读", "send" to "发送", "manage" to "管理",
+        "invoke" to "调用", "install" to "安装", "move" to "移动", "use" to "使用",
+    )
+
+    @Composable
+    override fun title(context: ToolUIContext): String {
+        val name = context.tool.toolName
+        val verb = name.split("_", "-", ".").firstOrNull { verbMap.containsKey(it.lowercase()) }
+        return if (verb != null) {
+            "${verbMap[verb.lowercase()]} ($name)"
+        } else {
+            stringResource(R.string.chat_message_tool_call_generic, name)
+        }
+    }
 }
 
 /**
@@ -94,6 +113,7 @@ private object DefaultToolUIRenderer : ToolUIRenderer {
  */
 object ToolUIRegistry {
     private val renderers: Map<String, ToolUIRenderer> = listOf(
+        TaskToolUI,
         MemoryToolUI,
         SearchWebToolUI,
         ScrapeWebToolUI,
