@@ -50,8 +50,13 @@ internal fun applyTimeReminder(messages: List<UIMessage>): List<UIMessage> {
     // USER 消息 → 消息序列出现连续 user → Anthropic 角色交替硬校验 →
     // invalid params 400 (2013)。reminder 文本合并进目标 USER 消息文本开头,
     // 消息数量/角色序列不变; 原版无此 transformer 故从未触发。
+    // v3.11.24: 幂等检查收窄 — 旧条件 toText().contains() 会被"消息体引用/粘贴了
+    // <time_reminder> 字样"误命中而整体跳过注入。合并模式下提醒文本恒在被合并
+    // Text part 开头, 前缀匹配已覆盖全部注入形态, 且不受消息内容误干扰。
     val hasReminder = messages.any { msg ->
-        msg.role == MessageRole.USER && msg.toText().contains("<time_reminder>")
+        msg.role == MessageRole.USER && msg.parts.any {
+            it is me.rerere.ai.ui.UIMessagePart.Text && it.text.startsWith("<time_reminder>")
+        }
     }
     if (hasReminder) return messages
     val result = mutableListOf<UIMessage>()

@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.data.ai
 
+import me.rerere.rikkahub.data.ai.tools.memoryHealthCheck
+
 
 /* ───【原版对齐】GenerationPrompts.kt | 差异 ±47 行
  * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
@@ -57,13 +59,23 @@ This prompt block is static. Dynamic content (tool domain map, memories, context
 internal fun buildMemoryPrompt(memories: List<AssistantMemory>) =
     if (memories.isEmpty()) ""
     else buildString {
+        // v3.11.24: 渲染侧健康过滤 — 与写入门 (MemoryTools.memoryHealthCheck) 双保险,
+        // 存量污染记忆不再进入 system 区 (写入门只防新增, 本过滤清退显存已带毒条目)
+        val healthy = memories.filter { m ->
+            val verdict = memoryHealthCheck(m.content)
+            if (verdict != null) {
+                android.util.Log.w("MemoryGuard", "memory ${m.id} blocked from prompt: ${verdict.take(80)}")
+                false
+            } else true
+        }
+        if (healthy.isEmpty()) return@buildString
         appendLine()
         append("**Memories**")
         appendLine()
         append("These are memories stored via the memory_tool that you can reference in future conversations.")
         appendLine()
         val json = buildJsonArray {
-            memories.forEach { memory ->
+            healthy.forEach { memory ->
                 add(buildJsonObject {
                     put("id", memory.id)
                     put("content", memory.content)

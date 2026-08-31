@@ -78,6 +78,7 @@ import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.ecosystem.tools.DynamicTools
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.ai.tools.FRAMEWORK_TOOL_SET
+import me.rerere.rikkahub.data.ai.tools.repetitionSampleCount
 import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
 import me.rerere.rikkahub.data.ai.tools.routing.ToolRouter
 import me.rerere.rikkahub.data.datastore.Settings
@@ -129,11 +130,20 @@ class GenerationHandler(
         /** 工具执行超时 (ms): 工具挂起时返回超时错误, 不阻塞整个生成流程 */
         private const val TOOL_EXECUTION_TIMEOUT_MS = 60_000L
 
-        /** v3.11.6 断流重试时间预算 (ms): 15 次重试总时长 10s 内完成
-         *  (用户要求: 15 次共 10s, 前 5s 至少 7 次)。
-         *  平滑指数递增 (100ms 起 x1.22); 超预算保留已输出内容+
-         *  明确失败, 杜绝无限静默。 */
-        private const val STREAM_RETRY_BUDGET_MS = 10_000L
+        /** v3.11.24 断流重试风暴硬顶 (ms): 45s。
+         *  语义修正 — 旧值 10s 把"正常生成数分钟后断流"误判为预算耗尽
+         *  (2026-08-31 实证: 网关正常输出数分钟后 Software caused connection
+         *  abort, 进 catch 时 elapsed 已远超 10s, 本可恢复的连接被打成
+         *  "重试 1 次后仍失败" 终报)。本预算本意 = 限制断流恢复风暴,
+         *  非限制生成时长: 常规风暴 15 次 x 150ms ≈ 2.3s 远小于 45s;
+         *  极劣网络 45s 亦足够穷尽 15 次上限。静默长等待的判定仍由
+         *  ChatCompletionsAPI 三阶段 watchdog 负责, 此处只兜风暴总量。 */
+        private const val STREAM_RETRY_BUDGET_MS = 45_000L
+
+        /** v3.11.24 (F2): 同一工具在同一轮生成的累计调用上限 (含成功调用)。
+         *  实证 2026-08-31: mcp__sequentialthinking 连调 6 次, 5 次无信息量,
+         *  客户端全部 success 放行 — 既有熔断只看失败形态, 对"成功空转"无防线。 */
+        private const val TOOL_SAME_TOOL_CALL_LIMIT = 6
     }
 
     fun generateText(
@@ -473,6 +483,10 @@ class GenerationHandler(
             // 反馈 — 低强度错误信号下模型永远走不出惯性通路。阈值 ≥3 时在
             // 工具结果前置升级警告, 强制打破循环 (作用域: 全部工具轮次共享)
             val toolFailureCounts = HashMap<String, Int>()
+            // v3.11.24 (F2): 同工具累计调用计数 / 思考调用参数指纹 / 思考终结标记
+            val toolCallCounts = HashMap<String, Int>()
+            val thinkingSeenSignatures = HashSet<String>()
+            var thinkingSequenceClosed = false
             val executedTools = arrayListOf<UIMessagePart.Tool>()
             toolsToProcess.forEach { tool ->
                 when (tool.approvalState) {
@@ -527,6 +541,62 @@ class GenerationHandler(
                                 json.parseToJsonElement(tool.input.ifBlank { "{}" })
                             }.getOrElse {
                                 error("Invalid tool arguments JSON for ${tool.toolName}: ${it.message}")
+                            }
+                            // v3.11.24 (F2): 思考类工具运行时协议校验 — 工具描述里的
+                            // 协议约束此前零执行位 (5 类违规全部 success), 退化循环
+                            // 因此自持。四道门全走 error 通路 (进既有失败聚合计数):
+                            // ① 空/占位内容 ② 序号越界 ③ 已宣告终结仍续调 ④ 同参重复
+                            val isThinkingInvoke = tool.toolName.contains("sequential", ignoreCase = true) ||
+                                tool.toolName.contains("think", ignoreCase = true) ||
+                                args.containsKey("thoughtNumber")
+                            if (isThinkingInvoke) {
+                                val thought = args["thought"]?.let { j ->
+                                    (j as? JsonPrimitive)?.content.orEmpty()
+                                }.trim()
+                                if (thought.length < 12) {
+                                    error("Error: thinking tool rejected — thought is empty or placeholder (${thought.length} chars). " +
+                                        "Provide substantive reasoning content, or stop calling this tool and act directly (search/calendar/answer).")
+                                }
+                                val thoughtNumber = args["thoughtNumber"]?.let { j ->
+                                    (j as? JsonPrimitive)?.content?.toIntOrNull()
+                                }
+                                val totalThoughts = args["totalThoughts"]?.let { j ->
+                                    (j as? JsonPrimitive)?.content?.toIntOrNull()
+                                }
+                                if (thoughtNumber != null && totalThoughts != null && totalThoughts > 0 && thoughtNumber > totalThoughts) {
+                                    error("Error: thinking tool rejected — thoughtNumber=$thoughtNumber exceeds totalThoughts=$totalThoughts. " +
+                                        "Correct the indexes, or declare a fresh reasoning block with a larger totalThoughts.")
+                                }
+                                val nextNeeded = args["nextThoughtNeeded"]?.let { j ->
+                                    (j as? JsonPrimitive)?.content?.lowercase()
+                                }
+                                if (thinkingSequenceClosed && nextNeeded != "true") {
+                                    error("Error: thinking tool rejected — a previous call already declared nextThoughtNeeded=false " +
+                                        "(reasoning finished). Resuming the closed sequence adds no information. " +
+                                        "If a NEW reasoning need truly arises, state it in normal text and proceed with real actions.")
+                                }
+                                if (nextNeeded == "false") thinkingSequenceClosed = true
+                                val signature = tool.toolName + "|" + tool.input
+                                if (!thinkingSeenSignatures.add(signature)) {
+                                    error("Error: thinking tool rejected — identical call already made (client dedup). " +
+                                        "The previous result is still in context; repeating it is a no-op.")
+                                }
+                                CallTracer.event("TOOL", "thinking_guard_pass", "tool=${tool.toolName}")
+                            }
+                            // v3.11.24 (F2): 同工具累计连调预算 — 成功空转同属退化
+                            // (区别于 v3.11.18 的同键失败聚合)。> 6 次物理拦截。
+                            val sameToolCallCount = (toolCallCounts[tool.toolName] ?: 0) + 1
+                            toolCallCounts[tool.toolName] = sameToolCallCount
+                            if (sameToolCallCount > TOOL_SAME_TOOL_CALL_LIMIT) {
+                                Log.w(TAG, "generateText: same-tool call budget hit: ${tool.toolName} x$sameToolCallCount")
+                                CallTracer.event("TOOL", "same_tool_budget_fuse",
+                                    "tool=${tool.toolName} blocked, calls=$sameToolCallCount",
+                                    metrics = sseDiagMetrics())
+                                executedTools += tool.copy(
+                                    output = listOf(UIMessagePart.Text(
+                                        "⛔ 工具 ${tool.toolName} 在本轮累计已被调用 $sameToolCallCount 次, 已被客户端熔断拦截, 本次未执行。" +
+                                        "重复调用 (无论成败) 说明当前通路是空转。请切换: 换用其他工具 / 直接以文字回答 / 明确放弃该路径。")))
+                                return@runCatching
                             }
                             // v3.11.18: 熔断物理闸门 — 同键 (工具名+参数指纹) 连续失败
                             // ≥6 次后拒绝下发执行, 直接返回硬阻断信号 (不执行)。
@@ -858,6 +928,7 @@ class GenerationHandler(
             // 顿挫 (与预热期 60Hz vsync 不匹配)。v3.8.7 回 50ms: OpenCode 大块
             // chunk 间隔本就大于 50ms, 节流不产生额外延迟, 密集时批处理保帧率。
             var lastUiUpdateMs = 0L
+            var repetitionCheckedLen = 0
             try {
             // v3.11.4: 工具轮次诊断 — 运行日志页 SSE 现场可区分首轮/工具轮请求
             val toolRound = internalMessages.flatMap { m -> m.parts }
@@ -892,6 +963,32 @@ class GenerationHandler(
                         }
                     }
                 }
+                // v3.11.24 (F3): 复读看门狗 — 每 384 个新增可见字符评估一次。
+                // 判据 = repetitionSampleCount (96 字符片段全文出现 >=4 次)。
+                // 2026-08-31 案: 可见思考逐字复读工具列表直至轮次燃尽, 客户端无检测。
+                // 触发 → 抛 ClientGenerationGuardException (catch 链保留内容+终态, 不重试)
+                val assistantVisibleLen = messages.lastOrNull()?.parts?.sumOf { p ->
+                    when (p) {
+                        is UIMessagePart.Text -> p.text.length
+                        is UIMessagePart.Reasoning -> p.reasoning.length
+                        else -> 0
+                    }
+                } ?: 0
+                if (assistantVisibleLen - repetitionCheckedLen >= 384) {
+                    repetitionCheckedLen = assistantVisibleLen
+                    val assistantFull = messages.lastOrNull()?.parts?.joinToString("") { p ->
+                        when (p) {
+                            is UIMessagePart.Text -> p.text
+                            is UIMessagePart.Reasoning -> p.reasoning
+                            else -> ""
+                        }
+                    }.orEmpty()
+                    if (repetitionSampleCount(assistantFull) >= 4) {
+                        throw ClientGenerationGuardException(
+                            "检测到生成内容陷入自重复循环 (同一长片段重复 4 次以上), 已熔断并保留现有内容"
+                        )
+                    }
+                }
                 val now = System.currentTimeMillis()
                 if (now - lastUiUpdateMs >= 50) {
                     onUpdateMessages(messages)
@@ -902,6 +999,17 @@ class GenerationHandler(
             processingStatus.value = null  // v3.11.4: 重试提示清除
             onUpdateMessages(messages)
             break@streamLoop  // 流式成功完成, 退出重试循环
+            } catch (e: ClientGenerationGuardException) {
+                // v3.11.24 (F3): 复读熔断 — 保留已生成内容, 不回滚不重试
+                // (同 prompt 重采样大概率复现退化), 以明确状态收尾并告知用户。
+                processingStatus.value = null
+                onUpdateMessages(messages)
+                Log.e(TAG, "repetition guard fired: ${e.message}")
+                CallTracer.event("GUARD", "repetition_break", e.message ?: "repetition",
+                    metrics = sseDiagMetrics())
+                throw java.io.IOException(
+                    "[v${'$'}{BuildConfig.VERSION_NAME}] ${e.message}", e
+                )
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e  // 用户主动停止 — 不重试
             } catch (e: me.rerere.ai.provider.providers.openai.OpenCodeStreamUnconfirmedException) {
@@ -1141,3 +1249,9 @@ class GenerationHandler(
         }
     }.flowOn(Dispatchers.IO)
 }
+
+/**
+ * v3.11.24 (F3): 生成复读熔断异常 — 非重试语义, 进入生成终态。
+ * 触发时保留已生成内容, 不回滚不重试 (同 prompt 重采样大概率再退化)。
+ */
+internal class ClientGenerationGuardException(message: String) : RuntimeException(message)
