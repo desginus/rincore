@@ -554,7 +554,7 @@ class GenerationHandler(
                             if (isThinkingInvoke && argsMap != null) {
                                 val thought = argsMap["thought"]?.let { j ->
                                     (j as? JsonPrimitive)?.content.orEmpty()
-                                }.trim()
+                                }.orEmpty().trim()
                                 if (thought.length < 12) {
                                     error("Error: thinking tool rejected — thought is empty or placeholder (${thought.length} chars). " +
                                         "Provide substantive reasoning content, or stop calling this tool and act directly (search/calendar/answer).")
