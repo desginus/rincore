@@ -361,13 +361,18 @@ private fun MessagePartsBlock(
                             }
 
                             is ThinkingStep.ToolStep -> {
-                                key(step.tool.toolCallId.ifBlank { step.hashCode().toString() }) {
-                                    ChatMessageToolStep(
-                                        tool = step.tool,
-                                        loading = loading && !step.tool.isExecuted,
-                                        onToolApproval = onToolApproval,
-                                        onToolAnswer = onToolAnswer,
-                                    )
+                                // v3.11.26: 子代理 (subagent_*) 不再展示在消息列表 —
+                                // 唯一展示窗口 = 输入栏加号面板「子代理详情」。
+                                // 数据层不动: 调用与结果仍在上下文中, 模型可跟踪子代理。
+                                if (!step.tool.toolName.startsWith("subagent_")) {
+                                    key(step.tool.toolCallId.ifBlank { step.hashCode().toString() }) {
+                                        ChatMessageToolStep(
+                                            tool = step.tool,
+                                            loading = loading && !step.tool.isExecuted,
+                                            onToolApproval = onToolApproval,
+                                            onToolAnswer = onToolAnswer,
+                                        )
+                                    }
                                 }
                             }
                         }

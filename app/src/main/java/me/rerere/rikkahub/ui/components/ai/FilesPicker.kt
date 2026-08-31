@@ -63,8 +63,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.AiMagic
+import me.rerere.hugeicons.stroke.AiBrain01
 import me.rerere.hugeicons.stroke.Camera01
 import me.rerere.hugeicons.stroke.Clock02
+import me.rerere.hugeicons.stroke.Book02
 import me.rerere.hugeicons.stroke.Codesandbox
 import me.rerere.hugeicons.stroke.ComputerTerminal01
 import me.rerere.hugeicons.stroke.Files02
@@ -88,6 +90,10 @@ import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
+import me.rerere.hugeicons.stroke.BubbleChatQuestion
+import me.rerere.rikkahub.subagent.SubAgentRegistry
+import me.rerere.rikkahub.subagent.SubAgentRun
+import me.rerere.rikkahub.subagent.SubAgentStatus
 import me.rerere.rikkahub.ui.components.ui.ExtensionSelector
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionCamera
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
@@ -237,35 +243,114 @@ internal fun FilesPicker(
         val boundWorkspace = remember(workspaces, assistant.workspaceId) {
             workspaces.find { it.id == assistant.workspaceId?.toString() }
         }
-        if (boundWorkspace != null && boundWorkspace.shellStatus == WorkspaceShellStatus.READY.name) {
-            var showCwdSheet by remember { mutableStateOf(false) }
-            TextButton(
-                onClick = { showCwdSheet = true },
-                modifier = Modifier.fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+        var showCwdSheet by remember { mutableStateOf(false) }
+        var showSubAgentSheet by remember { mutableStateOf(false) }
+
+        // v3.11.26: 快捷入口第二列 — 子代理详情 / 模型记忆 / 工作区CWD / 上下文条数
+        val subAgentRegistry: me.rerere.rikkahub.subagent.SubAgentRegistry = koinInject()
+        val allRuns by subAgentRegistry.runs.collectAsState()
+        val conversationRuns = remember(allRuns, conversation.id) {
+            allRuns.values
+                .filter { it.parentChatId == conversation.id.toString() }
+                .sortedByDescending { it.startedAtMs }
+        }
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            @Composable
+            fun QuickEntry(
+                icon: androidx.compose.ui.graphics.vector.ImageVector,
+                label: String,
+                trailing: String? = null,
+                enabled: Boolean = true,
+                onClick: () -> Unit,
             ) {
-                Icon(
-                    imageVector = HugeIcons.Folder01,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    text = conversation.workspaceCwd ?: "/workspace",
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Surface(
+                    onClick = onClick,
+                    enabled = enabled,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.4f),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        trailing?.let {
+                            Text(
+                                text = it,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
             }
-            if (showCwdSheet) {
-                WorkspaceCwdPickerSheet(
-                    workspaceId = boundWorkspace.id,
-                    currentCwd = conversation.workspaceCwd,
-                    onSelectCwd = { newCwd ->
-                        onUpdateConversation(conversation.copy(workspaceCwd = newCwd))
-                    },
-                    onDismiss = { showCwdSheet = false },
-                )
-            }
+            // 1. 子代理详情 — 对话子代理的唯一展示窗口
+            QuickEntry(
+                icon = HugeIcons.AiBrain01,
+                label = stringResource(R.string.chat_quick_sub_agents),
+                trailing = if (conversationRuns.isEmpty()) null else
+                    else "${conversationRuns.count { it.status == SubAgentStatus.RUNNING || it.status == SubAgentStatus.PENDING }} 运行",
+                onClick = { showSubAgentSheet = true },
+            )
+            // 2. 模型记忆 — 直接路由当前助手记忆管理页 (无顶部选项卡)
+            QuickEntry(
+                icon = HugeIcons.Book02,
+                label = stringResource(R.string.chat_quick_memory),
+                onClick = {
+                    navController.navigate(Screen.AssistantMemory(assistant.id.toString()))
+                },
+            )
+            // 3. 工作区 CWD — 原底部文件夹入口迁入 (入口收纳)
+            QuickEntry(
+                icon = HugeIcons.Folder01,
+                label = stringResource(R.string.chat_quick_cwd),
+                trailing = if (boundWorkspace != null && boundWorkspace.shellStatus == WorkspaceShellStatus.READY.name) {
+                    conversation.workspaceCwd ?: "/workspace"
+                } else null,
+                enabled = boundWorkspace != null && boundWorkspace.shellStatus == WorkspaceShellStatus.READY.name,
+                onClick = { showCwdSheet = true },
+            )
+            // 4. 当前上下文对话条数 — 压缩按条数计算, 这里给模型可见的条数统计
+            QuickEntry(
+                icon = HugeIcons.BubbleChatQuestion,
+                label = stringResource(R.string.chat_quick_context_count),
+                trailing = stringResource(R.string.chat_quick_context_count_value, conversation.messageNodes.size),
+                onClick = {},
+                enabled = false,
+            )
+        }
+        if (showCwdSheet && boundWorkspace != null && boundWorkspace.shellStatus == WorkspaceShellStatus.READY.name) {
+            WorkspaceCwdPickerSheet(
+                workspaceId = boundWorkspace.id,
+                currentCwd = conversation.workspaceCwd,
+                onSelectCwd = { newCwd ->
+                    onUpdateConversation(conversation.copy(workspaceCwd = newCwd))
+                },
+                onDismiss = { showCwdSheet = false },
+            )
+        }
+        if (showSubAgentSheet) {
+            SubAgentDetailSheet(
+                runs = conversationRuns,
+                onCancel = { runId -> subAgentRegistry.requestCancel(runId) },
+                onDismiss = { showSubAgentSheet = false },
+            )
         }
     }
 

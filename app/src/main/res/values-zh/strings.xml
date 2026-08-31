@@ -1235,6 +1235,11 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="tool_ui_write_file">写入: %s</string>
   <string name="tool_ui_write_file_default">写入文件</string>
   <string name="tool_ui_task_list">任务清单</string>
+  <string name="chat_quick_sub_agents">子代理详情</string>
+  <string name="chat_quick_memory">模型记忆</string>
+  <string name="chat_quick_cwd">工作区目录</string>
+  <string name="chat_quick_context_count">上下文条数</string>
+  <string name="chat_quick_context_count_value">当前 %d 条对话</string>
   <string name="tool_ui_list_files">列表：%s</string>
   <string name="tool_ui_list_files_default">列出文件</string>
   <string name="tool_ui_list_files_empty">空</string>
