@@ -37,16 +37,17 @@ import kotlin.math.roundToInt
 private fun statusLabel(status: SubAgentStatus): String = when (status) {
     SubAgentStatus.PENDING -> "排队中"
     SubAgentStatus.RUNNING -> "运行中"
-    SubAgentStatus.COMPLETED -> "已完成"
+    SubAgentStatus.SUCCEEDED -> "已完成"
     SubAgentStatus.FAILED -> "失败"
+    SubAgentStatus.TIMED_OUT -> "超时"
     SubAgentStatus.CANCELLED -> "已取消"
 }
 
 @Composable
 private fun statusColor(status: SubAgentStatus): androidx.compose.ui.graphics.Color = when (status) {
     SubAgentStatus.RUNNING -> MaterialTheme.colorScheme.tertiary
-    SubAgentStatus.COMPLETED -> MaterialTheme.colorScheme.primary
-    SubAgentStatus.FAILED -> MaterialTheme.colorScheme.error
+    SubAgentStatus.SUCCEEDED -> MaterialTheme.colorScheme.primary
+    SubAgentStatus.FAILED, SubAgentStatus.TIMED_OUT -> MaterialTheme.colorScheme.error
     else -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
