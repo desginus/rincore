@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -44,8 +43,13 @@ fun ZoomableAsyncImage(
     alpha: Float = DefaultAlpha,
 ) {
     var showImageViewer by remember { mutableStateOf(false) }
-    // v3.11.32: workspace:// 加载失败 → 渲染 alt + 占位框 (规格 §4),
-    // 其他 scheme (https/file:///sdcard) 行为完全不变
+    // v3.11.33: 布局回退为分支式 — 外部 modifier 直接作用于显示组件。
+    // v3.11.32 的 Box+matchParentSize 结构在无宽度约束场景 (用户消息缩略图
+    // clip+height(72)) 下 Box 无固有宽度 → matchParentSize 子项塌缩不可见,
+    // 用户发送图片全部变成空白占位。分支式保证: 正常态与失败态共用同一
+    // modifier 语义, 尺寸行为与 v3.11.31 之前完全一致。
+    // 其余行为不变: 正常 scheme (https/file:///sdcard) 零差异; workspace://
+    // 加载失败 → 渲染 alt + 占位框 (规格 §4)。
     val workspaceFetch = model != null && isWorkspaceUri(model)
     var workspaceFailed by remember(model) { mutableStateOf(false) }
     val context = LocalContext.current
@@ -58,17 +62,49 @@ fun ZoomableAsyncImage(
         .allowHardware(!export)
         .build()
     var loading by remember { mutableStateOf(false) }
-    Box(
-        modifier = modifier
-            .shimmer(isLoading = loading)
-            .clickable {
-                showImageViewer = true
+
+    if (workspaceFetch && workspaceFailed) {
+        // 失败态: 同一 modifier 作用在占位组件上 (尺寸跟随调用方约束)
+        Column(
+            modifier = modifier
+                .background(
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f),
+                    shape = RoundedCornerShape(8.dp),
+                )
+                .border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                    shape = RoundedCornerShape(8.dp),
+                )
+                .padding(8.dp)
+                .clickable { showImageViewer = false },
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = "图片不可用",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (!contentDescription.isNullOrBlank()) {
+                Text(
+                    text = contentDescription,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
-    ) {
+        }
+    } else {
         AsyncImage(
             model = coilModel,
             contentDescription = contentDescription,
-            modifier = Modifier.matchParentSize(),
+            modifier = modifier
+                .shimmer(isLoading = loading)
+                .clickable {
+                    showImageViewer = true
+                },
             contentScale = contentScale,
             alpha = alpha,
             alignment = alignment,
@@ -77,46 +113,12 @@ fun ZoomableAsyncImage(
             },
             onSuccess = {
                 loading = false
-                workspaceFailed = false
             },
             onError = {
                 loading = false
                 if (workspaceFetch) workspaceFailed = true
             },
         )
-        if (workspaceFailed && workspaceFetch) {
-            Column(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f),
-                        shape = RoundedCornerShape(8.dp),
-                    )
-                    .border(
-                        width = 1.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant,
-                        shape = RoundedCornerShape(8.dp),
-                    )
-                    .padding(8.dp),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(
-                    text = "图片不可用",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                if (!contentDescription.isNullOrBlank()) {
-                    Text(
-                        text = contentDescription,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-        }
     }
     if (showImageViewer) {
         ImagePreviewDialog(images = listOf(model ?: "")) {

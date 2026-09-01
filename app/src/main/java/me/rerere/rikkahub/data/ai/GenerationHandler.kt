@@ -199,6 +199,12 @@ class GenerationHandler(
         // 断流重试计数 (切后台/NAT/平台断连 — IOException 自动恢复, 每次生成最多 5 次)
         // 类成员 (局部声明曾被编译器解析为块外不可见 — 提升为成员彻底规避)
         streamRetryCount = 0
+        // v3.11.33: header 重试计数同样必须请求级重置 — 实测 (2026-09-01 20:11,
+        // Trace 20260901-201134-872): 发送 2-3 秒即报 "网关连续 15 次连接无响应",
+        // 15x15s=225s 物理不可能, 根因是单例 handler 的 headerRetryCount 跨请求
+        // 残留 (上一次生成的计数直接继承), 新请求叠加 1-2 次即假满 → "很快中断"
+        // 与 "一直卡死" 交替出现 (残留多寡随机)。
+        headerRetryCount = 0
 
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
@@ -1077,7 +1083,7 @@ class GenerationHandler(
                         // v3.11.17: 重试静默化 (用户定版) — 不再挂"正在重试" UI 提示,
                         // 失败回滚对用户零感知; 进度只进日志与 Trace
                         kotlinx.coroutines.delay(800)
-                        Log.w(TAG, "header timeout — gateway retry $headerRetryCount/15: ${e.message}")
+                        Log.w(TAG, "header timeout — gateway retry $headerRetryCount/15 elapsed=${System.currentTimeMillis() - retryBudgetStartMs}ms: ${e.message}")
                         CallTracer.event("RETRY", "header_retry", "gateway no response, retry $headerRetryCount/15", metrics = sseDiagMetrics())
                         messages = preStreamMessages
                         onUpdateMessages(messages)
