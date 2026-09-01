@@ -316,6 +316,29 @@ class SubAgentEngine(
      * to 5 minutes for the parent to be idle before posting. After 5 minutes we post anyway
      * — better to interrupt than to silently lose the completion.
      */
+    /**
+     * v3.11.30: 聚合子代理会话全部 assistant 消息的 TokenUsage。
+     * 口径 = 账单 (每轮 promptTokens + completionTokens 合计), 多轮各自计费不合并。
+     */
+    private suspend fun harvestTokenUsage(conversationId: Uuid): Pair<Long, Long> {
+        return runCatching {
+            val conv = conversationRepo.getConversationById(conversationId)
+            var tIn = 0L
+            var tOut = 0L
+            conv?.messageNodes?.forEach { node ->
+                node.messages.forEach { msg ->
+                    val usage = msg.usage ?: return@forEach
+                    if (usage.promptTokens > 0) tIn += usage.promptTokens
+                    if (usage.completionTokens > 0) tOut += usage.completionTokens
+                }
+            }
+            tIn to tOut
+        }.getOrElse {
+            Log.w(TAG, "harvestTokenUsage failed for $conversationId", it)
+            0L to 0L
+        }
+    }
+
     private suspend fun harvestFinalText(conversationId: Uuid): String {
         // The Conversation persisted by the generation pipeline contains the full message
         // history (messageNodes). Each MessageNode holds parallel branches in

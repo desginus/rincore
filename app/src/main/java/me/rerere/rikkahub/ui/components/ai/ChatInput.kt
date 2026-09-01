@@ -213,7 +213,9 @@ fun ChatInput(
                     .fillMaxWidth()
                     .clip(containerShape)
                     .then(
-                        if (settings.displaySetting.enableBlurEffect) Modifier.hazeBlur(
+                        // v3.11.31: 流式生成中列表高频重绘 → blur 每帧重算是"磨砂
+                        // 经常卡掉"主因 — 生成期间降级为半透明纯色, 静止即恢复
+                        if (settings.displaySetting.enableBlurEffect && !loading) Modifier.hazeBlur(
                             input = HazeInput.Sources(hazeState),
                             style = inputHazeStyle,
                         )

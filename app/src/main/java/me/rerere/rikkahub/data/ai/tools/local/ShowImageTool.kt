@@ -68,11 +68,21 @@ fun showImageTool(
                 buildJsonObject { put("error", "missing_path"); put("detail", "path is required") }.toString()
             ))
         }
-        val path = AgentWorkspace.expand(rawPath)
-        PathSafetyGuard.check(path)?.let { v ->
-            return@Tool listOf(UIMessagePart.Text(fmErrEnvelope(v.code, v.detail)))
+        // v3.11.31: workspace:// (与 /workspace/...) 走 rootfs 直读 —
+        // 与 Markdown 内联图片同一 resolver, 地址语义在两条通道统一。
+        val file = if (me.rerere.rikkahub.utils.isWorkspaceUri(rawPath)) {
+            me.rerere.rikkahub.utils.WorkspaceImageResolver.resolve(rawPath)
+                ?: return@Tool listOf(UIMessagePart.Text(fmErrEnvelope(
+                    "not_found",
+                    "File not found in workspace: ${'$'}rawPath (越权/不存在/非图片扩展名)"
+                )))
+        } else {
+            val path = AgentWorkspace.expand(rawPath)
+            PathSafetyGuard.check(path)?.let { v ->
+                return@Tool listOf(UIMessagePart.Text(fmErrEnvelope(v.code, v.detail)))
+            }
+            File(path)
         }
-        val file = File(path)
         if (!file.exists() || !file.isFile) {
             return@Tool listOf(UIMessagePart.Text(fmErrEnvelope("not_found", "File not found: $rawPath")))
         }

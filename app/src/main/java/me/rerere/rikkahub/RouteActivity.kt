@@ -91,6 +91,8 @@ import me.rerere.rikkahub.data.db.MigrationState
 import me.rerere.rikkahub.data.event.AppEvent
 import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.ui.activity.SafeModeActivity
+import me.rerere.rikkahub.ui.components.richtext.WorkspaceImageFetcherFactory
+import me.rerere.rikkahub.ui.components.richtext.WorkspaceUriKeyer
 import me.rerere.rikkahub.ui.components.ui.TTSController
 import me.rerere.rikkahub.ui.context.LocalASRState
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -215,6 +217,9 @@ class RouteActivity : ComponentActivity() {
                                 add(GifDecoder.Factory())
                             }
                             add(SvgDecoder.Factory(scaleToDensity = true))
+                            // v3.11.31: workspace:// 图片 — rootfs 直读, mtime cache key
+                            add(WorkspaceUriKeyer())
+                            add(WorkspaceImageFetcherFactory())
                         }
                         .build()
                 }

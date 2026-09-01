@@ -138,6 +138,26 @@ class WorkspaceManager(
         return RootfsLocation(linuxDir(root), trimmed.trimStart('/'))
     }
 
+    /**
+     * v3.11.31: 带安全校验的 Rootfs 内文件解析 (供图片渲染链路使用)。
+     * canonical 后要求落在 [RootfsLocation.rootDir] (workspace files 区或 bind
+     * mount source) 之内, 拒绝 `..` / symlink / bind 逃逸; 指向 rootDir 自身目录
+     * 或不存在/非普通文件一律返回 null。永不抛出异常。
+     */
+    fun resolveRootfsFileSafe(root: String, path: String): File? {
+        return runCatching {
+            val location = resolveRootfsPath(root, path)
+            val target = fileSystem.resolve(location.rootDir, location.relativePath)
+            val rootReal = java.io.File(location.rootDir).canonicalFile
+            val real = target.canonicalFile
+            val rootPath = rootReal.path
+            val targetPath = real.path
+            if (targetPath == rootPath || !targetPath.startsWith(rootPath + File.separator)) return null
+            if (!real.isFile) return null
+            real
+        }.getOrNull()
+    }
+
     fun rootfsFileSize(root: String, path: String): Long =
         resolveRootfsFile(root, path).also { it.requireReadableFile(path) }.length()
 
