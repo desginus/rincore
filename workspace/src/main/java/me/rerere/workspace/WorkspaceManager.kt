@@ -147,15 +147,10 @@ class WorkspaceManager(
     fun resolveRootfsFileSafe(root: String, path: String): File? {
         return runCatching {
             val location = resolveRootfsPath(root, path)
-            val rootDirHost = File(location.rootDir)
-            val target = fileSystem.resolve(rootDirHost, location.relativePath)
-            val rootReal = rootDirHost.canonicalFile
-            val real = target.canonicalFile
-            val rootPath = rootReal.path
-            val targetPath = real.path
-            if (targetPath == rootPath || !targetPath.startsWith(rootPath + File.separator)) return null
-            if (!real.isFile) return null
-            real
+            // resolve 内部已做 canonical + 逃逸拒绝 (resolvePath require)
+            val target = fileSystem.resolve(location.rootDir, location.relativePath)
+            if (target.path == location.rootDir.path || !target.isFile) return null
+            target
         }.getOrNull()
     }
 
