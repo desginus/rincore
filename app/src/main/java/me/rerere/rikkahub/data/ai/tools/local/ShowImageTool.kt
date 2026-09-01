@@ -72,7 +72,9 @@ fun showImageTool(
         // 与 Markdown 内联图片同一 resolver, 地址语义在两条通道统一。
         // v3.11.32: resolveDetailed 分级失败文案 (环节可定位), 插值事故修复。
         val file = if (me.rerere.rikkahub.utils.isWorkspaceUri(rawPath)) {
-            val (hit, reason) = me.rerere.rikkahub.utils.WorkspaceImageResolver.resolveDetailed(rawPath)
+            val resolved = me.rerere.rikkahub.utils.WorkspaceImageResolver.resolveDetailed(rawPath)
+            val hit = resolved.file
+            val reason = resolved.reason
             if (hit == null) {
                 val detail = when {
                     reason == "empty_input" -> "path 为空"

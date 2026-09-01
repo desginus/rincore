@@ -119,15 +119,20 @@ object WorkspaceImageResolver {
      * not_found / extension_rejected — 供 show_image 分级文案与日志定位。
      * 多 workspace 环境遍历全部 root 求命中 (同名文件以首个命中为准)。
      */
-    fun resolveDetailed(raw: String?): Pair<File, String>? {
-        if (raw.isNullOrBlank()) return null to "empty_input"
+    fun resolveDetailed(raw: String?): WorkspaceResolveResult {
+        if (raw.isNullOrBlank()) return WorkspaceResolveResult(null, "empty_input")
         val rel = resolveWorkspaceRelPath(raw)
-            ?: return null to if (isWorkspaceUri(raw)) "invalid_path" else "prefix_not_recognized"
+            ?: return WorkspaceResolveResult(
+                null,
+                if (isWorkspaceUri(raw)) "invalid_path" else "prefix_not_recognized",
+            )
         val ext = rel.substringAfterLast('.', "").lowercase()
-        if (ext !in WORKSPACE_IMAGE_EXTENSIONS) return null to "extension_rejected:$ext"
+        if (ext !in WORKSPACE_IMAGE_EXTENSIONS) {
+            return WorkspaceResolveResult(null, "extension_rejected:$ext")
+        }
 
         val koin = runCatching { org.koin.core.context.GlobalContext.get() }.getOrNull()
-            ?: return null to "no_workspace"
+            ?: return WorkspaceResolveResult(null, "no_workspace")
         val repo = runCatching { koin.get<me.rerere.rikkahub.data.repository.WorkspaceRepository>() }.getOrNull()
             ?: return null to "no_workspace"
         val manager = runCatching { koin.get<me.rerere.workspace.WorkspaceManager>() }.getOrNull()
@@ -135,7 +140,7 @@ object WorkspaceImageResolver {
         val workspaces = runCatching {
             kotlinx.coroutines.runBlocking { repo.getAllWorkspaces() }
         }.getOrNull()
-        if (workspaces.isNullOrEmpty()) return null to "no_workspace"
+        if (workspaces.isNullOrEmpty()) return WorkspaceResolveResult(null, "no_workspace")
 
         // 转发路径 = ROOTFS_WORKSPACE_DIR 常量拼接 (语义: workspace:// 永远指
         // Rootfs 内 /workspace 文件区) — v3.11.32 死点修复
@@ -151,7 +156,7 @@ object WorkspaceImageResolver {
                         "mtime=${hit.lastModified()} size=${hit.length()}"
                 )
                 cachedRoot = ws.root
-                return hit to "ok"
+                return WorkspaceResolveResult(hit, "ok")
             }
             // 记录最后尝试的宿主猜测路径 (linuxDir 误落诊断用)
             runCatching {
@@ -166,9 +171,12 @@ object WorkspaceImageResolver {
                 "workspaces=${workspaces.size} fallbackGuess=${lastHostGuess?.absolutePath} " +
                 "fallbackExists=${lastHostGuess?.exists()}"
         )
-        return null to "not_found"
+        return WorkspaceResolveResult(null, "not_found")
     }
 
     /** 简单入口: 成功返回宿主 File, 失败返回 null (Coil Fetcher 用) */
-    fun resolve(raw: String?): File? = resolveDetailed(raw)?.first
+    fun resolve(raw: String?): File? = resolveDetailed(raw).file
 }
+
+/** 解析结果 (v3.11.32): file 非 null = ok; 否则 reason = 失败环节 */
+data class WorkspaceResolveResult(val file: File?, val reason: String)
