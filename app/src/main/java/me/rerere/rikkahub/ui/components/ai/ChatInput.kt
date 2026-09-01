@@ -224,7 +224,12 @@ fun ChatInput(
                 shape = containerShape,
                 tonalElevation = 0.dp,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                color = if (settings.displaySetting.enableBlurEffect) Color.Transparent else hazeTintColor,
+                // v3.11.34: color 与磨砂 modifier 条件必须同源 — 旧实现只看
+                // enableBlurEffect, 生成中 (loading) modifier 已降级但 color 仍
+                // 透明 → 输入条整体透明 (既非黑框也非磨砂) 的"特定情况"。
+                color = if (settings.displaySetting.enableBlurEffect && !loading) {
+                    Color.Transparent
+                } else hazeTintColor,
             ) {
                 Column(
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),

@@ -154,7 +154,6 @@ class LocalTools(
             tools.add(createDirectoryTool())
             tools.add(fileInfoTool())
             tools.add(findFilesTool())
-            tools.add(showImageTool(context, invocationContext.modelCanSeeImages))
             tools.add(openFileTool(context, invocationContext))
             tools.add(batchCopyTool())
             tools.add(batchMoveTool())
