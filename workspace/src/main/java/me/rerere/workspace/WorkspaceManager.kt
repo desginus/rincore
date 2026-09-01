@@ -147,8 +147,9 @@ class WorkspaceManager(
     fun resolveRootfsFileSafe(root: String, path: String): File? {
         return runCatching {
             val location = resolveRootfsPath(root, path)
-            val target = fileSystem.resolve(location.rootDir, location.relativePath)
-            val rootReal = java.io.File(location.rootDir).canonicalFile
+            val rootDirHost = File(location.rootDir)
+            val target = fileSystem.resolve(rootDirHost, location.relativePath)
+            val rootReal = rootDirHost.canonicalFile
             val real = target.canonicalFile
             val rootPath = rootReal.path
             val targetPath = real.path
