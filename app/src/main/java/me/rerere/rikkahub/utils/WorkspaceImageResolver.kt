@@ -36,12 +36,14 @@ fun percentDecodeLenient(s: String): String {
     var i = 0
     while (i < s.length) {
         val c = s[i]
-        val isPercent = c == '%' && i + 2 <= s.length - 1 &&
-            s[i + 1].digitToIntOrNull(16) != null && s[i + 2].digitToIntOrNull(16) != null
-        if (isPercent) {
-            byteBuf.write(((s[i + 1].digitToIntOrNull(16)!!. shl 4) or s[i + 2].digitToIntOrNull(16)!!))
-            i += 3
-            continue
+        if (c == '%') {
+            val hi = s.getOrNull(i + 1)?.digitToIntOrNull(16)
+            val lo = s.getOrNull(i + 2)?.digitToIntOrNull(16)
+            if (hi != null && lo != null) {
+                byteBuf.write(hi * 16 + lo)
+                i += 3
+                continue
+            }
         }
         flushBytes()
         out.append(c)

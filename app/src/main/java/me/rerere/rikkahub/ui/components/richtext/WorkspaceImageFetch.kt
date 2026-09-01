@@ -6,13 +6,14 @@ package me.rerere.rikkahub.ui.components.richtext
  * cache key 含 mtime+size (同名覆盖更新后显示新图); 解码失败走占位符不崩溃。
  * ───────────────────────────────────────────────────────────────*/
 import coil3.ImageLoader
-import coil3.Keyer
 import coil3.decode.DataSource
+import coil3.decode.ImageSource
 import coil3.fetch.Fetcher
 import coil3.fetch.SourceFetchResult
+import coil3.key.Keyer
 import coil3.request.Options
-import me.rerere.rikkahub.utils.WorkspaceImageResolver
 import me.rerere.rikkahub.utils.WORKSPACE_IMAGE_EXTENSIONS
+import me.rerere.rikkahub.utils.WorkspaceImageResolver
 import me.rerere.rikkahub.utils.isWorkspaceUri
 import me.rerere.rikkahub.utils.resolveWorkspaceRelPath
 import okio.FileSystem
@@ -40,7 +41,7 @@ class WorkspaceImageFetcherFactory : Fetcher.Factory<String> {
         imageLoader: ImageLoader,
     ): Fetcher? {
         if (!isWorkspaceUri(data)) return null
-        // 扩展名前置校验: 非图片扩展名不加载 (R 系列: .txt/.md → 占位符)
+        // 扩展名前置校验: 非图片扩展名不加载 (.txt/.md → 占位符)
         val rel = resolveWorkspaceRelPath(data)
         val ext = rel?.substringAfterLast('.', "")?.lowercase().orEmpty()
         if (ext !in WORKSPACE_IMAGE_EXTENSIONS) return null
@@ -62,13 +63,13 @@ private class WorkspaceImageFetcher(
     private val mime: String,
 ) : Fetcher {
     override suspend fun fetch(): coil3.fetch.FetchResult {
-        // 文件加载中途被删 → FileSource 抛错 → Coil error 态 → 占位符, 不崩
+        // 文件加载中途被删 → source 读写抛错 → Coil error 态 → 占位符, 不崩
+        val okioPath = okio.Path.of(file.absolutePath)
+        val buffered = FileSystem.SYSTEM.source(okioPath)
         return SourceFetchResult(
-            source = FileSystem.SYSTEM.source(file.toOkioPath()),
+            source = ImageSource(buffered, FileSystem.SYSTEM),
             mimeType = mime,
             dataSource = DataSource.DISK,
         )
     }
-
-    private fun java.io.File.toOkioPath(): okio.Path = okio.Path(this.absolutePath, java.io.File.separatorChar)
 }
