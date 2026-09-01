@@ -4,6 +4,8 @@ package me.rerere.rikkahub.ui.components.richtext
 /* ───【自研】WorkspaceImageFetch.kt — 原版无此文件
  * v3.11.31: Coil3 自定义数据源 — workspace:// 图片走 rootfs 文件直接解码。
  * cache key 含 mtime+size (同名覆盖更新后显示新图); 解码失败走占位符不崩溃。
+ * API 口径按 coil3 3.5.0: coil3.key.Keyer / ImageSource(path, fileSystem) /
+ * okio Path.toPath()。
  * ───────────────────────────────────────────────────────────────*/
 import coil3.ImageLoader
 import coil3.decode.DataSource
@@ -17,6 +19,7 @@ import me.rerere.rikkahub.utils.WorkspaceImageResolver
 import me.rerere.rikkahub.utils.isWorkspaceUri
 import me.rerere.rikkahub.utils.resolveWorkspaceRelPath
 import okio.FileSystem
+import okio.Path.Companion.toPath
 
 /**
  * workspace:// 的 cache key — 含宿主文件 mtime+size, 同名覆盖后强制新加载。
@@ -63,11 +66,11 @@ private class WorkspaceImageFetcher(
     private val mime: String,
 ) : Fetcher {
     override suspend fun fetch(): coil3.fetch.FetchResult {
-        // 文件加载中途被删 → source 读写抛错 → Coil error 态 → 占位符, 不崩
-        val okioPath = okio.Path.of(file.absolutePath)
-        val buffered = FileSystem.SYSTEM.source(okioPath)
+        // 从 Path 构造 FileImageSource (coil3.5 推荐路径)。
+        // 文件加载中途被删 → 读取抛错 → Coil error 态 → 占位符, 不崩。
+        val okioPath = file.absolutePath.toPath()
         return SourceFetchResult(
-            source = ImageSource(buffered, FileSystem.SYSTEM),
+            source = ImageSource(okioPath, FileSystem.SYSTEM),
             mimeType = mime,
             dataSource = DataSource.DISK,
         )
