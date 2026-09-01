@@ -134,9 +134,9 @@ object WorkspaceImageResolver {
         val koin = runCatching { org.koin.core.context.GlobalContext.get() }.getOrNull()
             ?: return WorkspaceResolveResult(null, "no_workspace")
         val repo = runCatching { koin.get<me.rerere.rikkahub.data.repository.WorkspaceRepository>() }.getOrNull()
-            ?: return null to "no_workspace"
+            ?: return WorkspaceResolveResult(null, "no_workspace")
         val manager = runCatching { koin.get<me.rerere.workspace.WorkspaceManager>() }.getOrNull()
-            ?: return null to "no_workspace"
+            ?: return WorkspaceResolveResult(null, "no_workspace")
         val workspaces = runCatching {
             kotlinx.coroutines.runBlocking { repo.getAllWorkspaces() }
         }.getOrNull()
