@@ -95,6 +95,19 @@ class WorkspacePathResolverTest {
     }
 
     @Test
+    fun rel_rfc8089ThreeSlash() {
+        assertEquals("/x/y.png", resolveWorkspaceRelPath("file:///workspace/x/y.png"))
+        assertEquals("/mini_t.png", resolveWorkspaceRelPath("file:///workspace/mini_t.png"))
+    }
+
+    @Test
+    fun rel_rootLevelFile_viaWorkspaceScheme() {
+        // v3.11.32 实测主用例: 根目录文件 workspace://rt0901.png → /workspace/rt0901.png
+        assertEquals("/rt0901.png", resolveWorkspaceRelPath("workspace://rt0901.png"))
+        assertEquals("/rt0901.png", resolveWorkspaceRelPath("/workspace/rt0901.png"))
+    }
+
+    @Test
     fun rel_wrongScheme_notRecognized() {
         assertNull(resolveWorkspaceRelPath("workspce://x.png"))
         assertNull(resolveWorkspaceRelPath("file:///sdcard/x.png"))

@@ -70,12 +70,32 @@ fun showImageTool(
         }
         // v3.11.31: workspace:// (与 /workspace/...) 走 rootfs 直读 —
         // 与 Markdown 内联图片同一 resolver, 地址语义在两条通道统一。
+        // v3.11.32: resolveDetailed 分级失败文案 (环节可定位), 插值事故修复。
         val file = if (me.rerere.rikkahub.utils.isWorkspaceUri(rawPath)) {
-            me.rerere.rikkahub.utils.WorkspaceImageResolver.resolve(rawPath)
-                ?: return@Tool listOf(UIMessagePart.Text(fmErrEnvelope(
-                    "not_found",
-                    "File not found in workspace: ${'$'}rawPath (越权/不存在/非图片扩展名)"
-                )))
+            val (hit, reason) = me.rerere.rikkahub.utils.WorkspaceImageResolver.resolveDetailed(rawPath)
+            if (hit == null) {
+                val detail = when {
+                    reason == "empty_input" -> "path 为空"
+                    reason == "prefix_not_recognized" ->
+                        "前缀未识别: ${'$'}rawPath (支持 workspace:// / file:///workspace/ / /workspace/)"
+                    reason == "invalid_path" ->
+                        "路径非法 (目录穿越或空路径): ${'$'}rawPath"
+                    reason == "extension_rejected" ->
+                        "非图片扩展名: ${'$'}rawPath (仅支持 png/jpg/jpeg/webp/gif/bmp)"
+                    reason == "no_workspace" ->
+                        "当前无可用的绑定 workspace (rootfs 未初始化)"
+                    else ->
+                        "workspace 内不存在: ${'$'}rawPath (已规范化为 /workspace 下绝对路径检索全部 workspace)"
+                }
+                val code = when {
+                    reason == "no_workspace" -> "no_workspace"
+                    reason!!.startsWith("extension_rejected") -> "not_an_image"
+                    reason == "invalid_path" -> "invalid_path"
+                    else -> "not_found"
+                }
+                return@Tool listOf(UIMessagePart.Text(fmErrEnvelope(code, detail)))
+            }
+            hit
         } else {
             val path = AgentWorkspace.expand(rawPath)
             PathSafetyGuard.check(path)?.let { v ->
