@@ -651,7 +651,8 @@ private fun ChatFilesPickerSheet(
             onShowCompressDialogChange = { showCompressDialog = it },
             deferAutoReply = setting.deferAutoReply,
             onToggleDeferAutoReply = { checked ->
-                vm.updateSettings(setting.copy(deferAutoReply = checked))
+                // v3.11.30: 立即同步写 — toggle 后立刻发消息也必生效 (拦截不再概率性失败)
+                vm.toggleDeferAutoReply(checked)
             },
             onDismiss = { dismissAll() },
             onTakePic = attachmentPickerActions.onTakePicture,

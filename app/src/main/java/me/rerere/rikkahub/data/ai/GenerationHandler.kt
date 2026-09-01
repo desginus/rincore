@@ -80,6 +80,7 @@ import me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.ai.tools.FRAMEWORK_TOOL_SET
 import me.rerere.rikkahub.data.ai.tools.createTaskTool
 import me.rerere.rikkahub.data.ai.tools.repetitionSampleCount
+import me.rerere.rikkahub.data.ai.tools.repetitionTailCount
 import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
 import me.rerere.rikkahub.data.ai.tools.routing.ToolRouter
 import me.rerere.rikkahub.data.datastore.Settings
@@ -492,6 +493,9 @@ class GenerationHandler(
             val toolFailureCounts = HashMap<String, Int>()
             // v3.11.24 (F2): 同工具累计调用计数 / 思考调用参数指纹 / 思考终结标记
             val toolCallCounts = HashMap<String, Int>()
+            // v3.11.30 (DL-1/DL-2): 同工具+同参数幂等命中 → 复用上次成功结果,
+            // 不计数不执行 (正常推进不撞熔断; 同参重复提交直接返回, 不空转烧配额)
+            val idempotentCache = HashMap<String, List<UIMessagePart>>()
             val thinkingSeenSignatures = HashSet<String>()
             var thinkingSequenceClosed = false
             val executedTools = arrayListOf<UIMessagePart.Tool>()
@@ -594,6 +598,17 @@ class GenerationHandler(
                             }
                             // v3.11.24 (F2): 同工具累计连调预算 — 成功空转同属退化
                             // (区别于 v3.11.18 的同键失败聚合)。> 6 次物理拦截。
+                            // v3.11.30 (DL-1/DL-2): 幂等命中在计数前短路 — 同参重放
+                            // 返回缓存结果不占用连调预算 (长任务合法多步推进不受影响)。
+                            val idemKey = tool.toolName + "|" + tool.input.toString()
+                            val cachedResult = idempotentCache[idemKey]
+                            if (cachedResult != null) {
+                                CallTracer.event("TOOL", "idempotent_replay",
+                                    "tool=${tool.toolName} (同参重放, 返回上次结果)",
+                                    metrics = sseDiagMetrics())
+                                executedTools += tool.copy(output = cachedResult)
+                                return@forEach
+                            }
                             val sameToolCallCount = (toolCallCounts[tool.toolName] ?: 0) + 1
                             toolCallCounts[tool.toolName] = sameToolCallCount
                             if (sameToolCallCount > TOOL_SAME_TOOL_CALL_LIMIT) {
@@ -672,6 +687,7 @@ class GenerationHandler(
                             CallTracer.event("TOOL", "result_${toolDef.name}",
                                 "Exe输出: ${result.size} parts, ${outChars}c",
                                 mapOf("tool" to toolDef.name, "parts" to "${result.size}"))
+                            idempotentCache[idemKey] = finalOutput
                             executedTools += tool.copy(
                                 output = finalOutput
                             )
@@ -996,7 +1012,13 @@ class GenerationHandler(
                             else -> ""
                         }
                     }.orEmpty()
-                    if (repetitionSampleCount(assistantFull) >= 4) {
+                    // v3.11.30: 误杀修复 — 全文 4 次重复单独出现于长文档 (表格行/
+                    // 清单模板) 属正常结构; 真复读退化的强特征是片段在尾部窗口内
+                    // 近邻重复。双条件: 全文 >=4 且尾窗 768 内 >=3 才熔断。
+                    // (v3.11.24 案的连续复读在尾窗内必累积多次, 检出力保留)
+                    if (repetitionSampleCount(assistantFull) >= 4 &&
+                        repetitionTailCount(assistantFull) >= 3
+                    ) {
                         throw ClientGenerationGuardException(
                             "检测到生成内容陷入自重复循环 (同一长片段重复 4 次以上), 已熔断并保留现有内容"
                         )
@@ -1021,7 +1043,7 @@ class GenerationHandler(
                 CallTracer.event("GUARD", "repetition_break", e.message ?: "repetition",
                     metrics = sseDiagMetrics())
                 throw java.io.IOException(
-                    "[v${'$'}{BuildConfig.VERSION_NAME}] ${e.message}", e
+                    "[v${BuildConfig.VERSION_NAME}] ${e.message}", e
                 )
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e  // 用户主动停止 — 不重试

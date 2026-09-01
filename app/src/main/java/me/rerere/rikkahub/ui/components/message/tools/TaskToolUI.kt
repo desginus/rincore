@@ -106,9 +106,11 @@ object TaskToolUI : ToolUIRenderer {
 
     /** 从工具输出 JSON 解析任务清单 */
     private fun parseTasks(context: ToolUIContext): List<TaskItem> {
-        val tasksEl = context.content ?: return emptyList()
-        val obj = tasksEl as? JsonObject ?: return emptyList()
-        val arr = obj["tasks"] as? JsonArray ?: return emptyList()
+        // v3.11.30: 清单数据源 = 工具调用参数 (input.tasks, 全量替换语义下即当前清单)。
+        // replace 响应已轻量化 (不回显 tasks), output.tasks 仅在 action=get 时存在。
+        val arr = (context.arguments as? JsonObject)?.get("tasks") as? JsonArray
+            ?: (context.content as? JsonObject)?.get("tasks") as? JsonArray
+            ?: return emptyList()
         return arr.mapNotNull { el ->
             val obj = el as? JsonObject ?: return@mapNotNull null
             TaskItem(

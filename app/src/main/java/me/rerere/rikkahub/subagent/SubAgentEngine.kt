@@ -237,6 +237,11 @@ class SubAgentEngine(
                 Unit
             }
             if (completed == null) {
+                // v3.11.30: 超时也统计已消耗 token (任务被杀但计费已发生)
+                val (tIn, tOut) = harvestTokenUsage(conv.id)
+                if (tIn > 0 || tOut > 0) {
+                    registry.update(runId) { it.copy(tokensIn = it.tokensIn + tIn, tokensOut = it.tokensOut + tOut) }
+                }
                 markTerminal(runId, SubAgentStatus.TIMED_OUT, "exceeded ${request.timeoutSeconds}-second cap")
                 return
             }
@@ -259,6 +264,12 @@ class SubAgentEngine(
             Log.w(TAG, "sub-agent run failed", t)
             // CancellationException → CANCELLED, anything else → FAILED.
             val terminal = if (t is kotlinx.coroutines.CancellationException) SubAgentStatus.CANCELLED else SubAgentStatus.FAILED
+            runCatching {
+                val (tIn, tOut) = harvestTokenUsage(conv.id)
+                if (tIn > 0 || tOut > 0) {
+                    registry.update(runId) { it.copy(tokensIn = it.tokensIn + tIn, tokensOut = it.tokensOut + tOut) }
+                }
+            }
             markTerminal(runId, terminal, "${t::class.simpleName}: ${t.message.orEmpty()}")
         } finally {
             HeadlessConversations.unmark(conv.id)

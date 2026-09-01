@@ -131,6 +131,19 @@ class ChatVM(
     // MCP管理器
     val mcpManager = chatService.mcpManager
 
+    /**
+     * v3.11.30: 延迟自动回复开关 — 立即同步写内存 (消除 toggle→发送 的
+     * flow 更新竞态, 修复"有概率拦截失败"), 磁盘持久化异步进行。
+     */
+    fun toggleDeferAutoReply(checked: Boolean) {
+        val current = settingsStore.settingsFlow.value
+        if (current.deferAutoReply == checked) return
+        settingsStore.updateSync(current.copy(deferAutoReply = checked))
+        viewModelScope.launch {
+            runCatching { settingsStore.update(settingsStore.settingsFlow.value) }
+        }
+    }
+
     // 更新设置
     fun updateSettings(newSettings: Settings): Job {
         return viewModelScope.launch {
@@ -185,6 +198,9 @@ class ChatVM(
 
         // v3.6.13: 延迟自动回复 — 开启时发送不触发模型回复 (消息排队,
         // 关闭后发消息触发; 解决消息未发完模型打断回复)
+        // v3.11.30: 双保险 — 开关切换已同步写内存 (见 toggleDeferAutoReply),
+        // 这里再读一次 flow.value 保证最新值。仍读旧值期间不可能出现:
+        // updateSync 在主线程同步完成, 同线程后续消息必见新值。
         val effectiveAnswer = if (settingsStore.settingsFlow.value.deferAutoReply) false else answer
         chatService.sendMessage(_conversationId, content, effectiveAnswer)
     }

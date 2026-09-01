@@ -423,13 +423,22 @@ class SettingsStore(
     // 值去重导致写后界面不刷新; 工具写入/设置页修改均触发)
     val settingsRevision = kotlinx.coroutines.flow.MutableStateFlow(0)
 
+    /** v3.11.30: 同步内存写 (主线程安全, 值与 revision 立即生效; 磁盘由调用方异步持久化) */
+    fun updateSync(settings: Settings) {
+        if (settings.init) return
+        settingsFlow.value = settings
+        settingsRevision.value = settingsRevision.value + 1
+    }
+
     suspend fun update(settings: Settings) {
         if(settings.init) {
             Log.w(TAG, "Cannot update dummy settings")
             return
         }
-        settingsFlow.value = settings
-        settingsRevision.value = settingsRevision.value + 1
+        // v3.11.30: 内存写同步先落 (toggle 后紧接发送不再读到旧值 — 延迟自动
+        // 回复拦截竞态根因: updateSettings 走 viewModelScope.launch 排队, 发送
+        // 事件可能先于 flow 更新执行), 磁盘持久化仍挂起写入。
+        updateSync(settings)
         dataStore.edit { preferences ->
             preferences[DYNAMIC_COLOR] = settings.dynamicColor
             preferences[THEME_ID] = settings.themeId

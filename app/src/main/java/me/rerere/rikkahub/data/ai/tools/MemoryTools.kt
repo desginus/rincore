@@ -37,6 +37,22 @@ internal fun repetitionSampleCount(text: String, sampleLen: Int = 96, window: In
     return count
 }
 
+/** v3.11.30: 尾窗内片段近邻重复计数 — 复读退化 (连续同块) 的强特征。
+ *  与 repetitionSampleCount 区别: 只在尾部 768 字符窗口内数, 不看全文。
+ *  正常长文档的结构性重复 (表格行/清单模板散布全文) 在尾窗内通常仅 1-2 次。 */
+internal fun repetitionTailCount(text: String, sampleLen: Int = 96, window: Int = 768): Int {
+    val t = text.trim()
+    if (t.length < sampleLen) return 0
+    val tail = t.takeLast(window)
+    var s = tail.take(sampleLen)
+    // 尾部片段若空白占比过高 (表格边框线等), 退化为无判定
+    if (s.count { it.isWhitespace() || it == '|' || it == '-' } > sampleLen * 2 / 3) return 0
+    var count = 0
+    var idx = tail.indexOf(s)
+    while (idx >= 0) { count++; idx = tail.indexOf(s, idx + sampleLen) }
+    return count
+}
+
 /**
  * v3.11.24 记忆健康门 — F1 (系统提示注入污染) 根治。
  * 2026-08-31 案: 退化生成产物 (错误日期锚 + 30+ 同构块 + typo 稳定传播)
