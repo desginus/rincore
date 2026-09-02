@@ -15,6 +15,39 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 
 ## 已修复 Bug 明细（按时间倒序）
 
+### B45. 输入条生成中整体透明（v3.11.34 修复）
+现象: 生成回答时输入条既非黑框也非磨砂, 完全透明穿透。
+根因: v3.11.31 磨砂降级把 hazeBlur modifier 条件改为 enableBlurEffect && !loading,
+但 Surface color 条件没同步 (仍只看 enableBlurEffect) — loading 时无磨砂但
+背景仍是 Color.Transparent。
+修复: color 与 modifier 条件同源。教训: 同一视觉状态的两个属性条件必须同源。
+
+### B44. 发起阶段 2-3 秒报"15 次连接无响应"（v3.11.33 修复）
+现象: 发送 2-3 秒即报网关连续 15 次无响应 (15x15s=225s 物理不可能); 有时秒断
+有时卡死交替。
+根因: GenerationHandler 是 Koin single, 类成员 headerRetryCount 不在请求入口
+重置 (streamRetryCount 有) — 上一次生成累积计数被下一条消息继承, 叠加 1-2 次
+即假满。
+修复: 与 streamRetryCount 同点每请求重置; header retry 日志带 elapsed。
+铁律: 重试/熔断计数一律请求级重置; "物理不可能的时长"=残留假满的铁证。
+
+### B43. 用户消息图片全部空白（v3.11.33 修复）
+现象: 用户发送的图片在气泡里只剩 72dp 空白条, 图不可见。
+根因: v3.11.32 把 ZoomableAsyncImage 改为外层 Box + matchParentSize 承接外部
+modifier — 无宽度约束场景 (clip+height(72dp)) Box 无固有宽度, matchParentSize
+子项不参与测量 → 尺寸塌缩。
+修复: 回退分支式 (失败态/正常态共用同一 modifier 直挂显示组件)。
+铁律: matchParentSize 子项不能作为 Box 的唯一内容; 外部 modifier 必须直达显示组件。
+
+### B42. workspace:// 图片渲染全败 (三前缀一致 not_found)（v3.11.32 修复）
+现象: workspace:// / /workspace/ / file://workspace/ 全部空占位, show_image 报
+not_found; https/sdcard 正常。
+根因: resolver 向 WorkspaceManager 转发的是拼好的相对路径 (/x.png), 而
+resolveRootfsPath 的 filesDir 分支只认 /workspace 前缀的 Rootfs 内路径 —
+fallthrough 到 linuxDir (../linux/x.png), 文件实际在 ../files/。
+修复: 转发路径 = ROOTFS_WORKSPACE_DIR 常量 + rel。教训: 跨层转发路径语义
+必须在汇合点核对; 外部测试模型的"跨进程隔离"结论先对照代码证伪。
+
 ### B41. token 统计虚高与缓存越界（v3.8.43 修复）
 - **现象**：会话 token 统计与实际严重不符，出现共计十几 K 缓存六十几 K 的荒谬组合
 - **根因**：自研 TokenBudgetTracker 把每条消息 usage.promptTokens（该轮完整上下文）逐条求和致数倍虚高；cached 无钳制，中转将历史累计命中打包显示越界

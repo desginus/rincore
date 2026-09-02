@@ -3,7 +3,57 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v3.11.26 为最新）
+# RinCore 更新日志（v3.12.0 为最新）
+
+## v3.12.0（对话发起与连接稳定性定版，2026-09-02）
+- 发起阶段优化定版: header 判死 15s→25s (ClaudeProvider+ChatCompletionsAPI 同步, 吸收网关冷启动 10-20s 单窗口直接成功) + 重试 15→4 次封顶 (4x25s+退避≈110s 快速终报, 旧 225s)
+- 退避分级: 前 2 次 800ms (瞬时挂起快速恢复), 3 次起 2s (持续不可达不连续怼)
+- 预热请求短超时 clone (connect 4s/read 6s, 同池): 死网关时预热线程不再按主 client 3min readTimeout 挂死
+- keepAlive 60s 维持 v2.9.8 定版 (DeepSeek 空闲关闭快, 拉长撞陈旧连接 → unexpected end of stream)
+
+## v3.11.35（子代理统计补齐 + 发起重试重写，2026-09-02）
+- 子代理三路径 (成功/超时/失败) 填充 tokensIn/Out + tripCount; harvestTripCount = 会话内 assistant 消息数 (此前 tripCount 恒 0)
+- 详情卡耗费统计: tokens in/out + 合计 (账单口径)
+- 发起重试重写: header 判死 25s + 4 次封顶 (见 v3.12.0)
+- 教训: v3.11.30 成功路径填充块因脚本中断未落盘 (统计恒空的根因)
+
+## v3.11.34（show_image 下线 + 输入条透明修复，2026-09-01）
+- show_image 工具删除 (被 workspace:// 内联渲染取代); 注册点 ToolInvocationContext+LocalTools 两处; 历史调用卡回退通用渲染
+- 输入条透明 bug: Surface color 与 hazeBlur modifier 条件必须同源 (enableBlurEffect && !loading), color 单看 enableBlurEffect 时生成中透明
+
+## v3.11.33（用户图片空白修复 + 重试计数残留根治，2026-09-01）
+- ZoomableAsyncImage 回退分支式布局: Box+matchParentSize 在无宽度约束场景 (clip+height(72dp)) 塌缩空白; 失败态/正常态共用同一 modifier 直挂显示组件
+- GenerationHandler headerRetryCount 请求级重置 (Koin single 类成员跨请求残留, 2-3 秒报"15 次"物理不可能=残留铁证); header retry 日志带 elapsed
+
+## v3.11.32（workspace:// 渲染死点修复，2026-09-01）
+- 真实死点: resolver 转发路径须带 "/workspace" 前缀 (ROOTFS_WORKSPACE_DIR 常量), 直接传 rel 会 fallthrough 到 linuxDir 必然 not_found
+- show_image detail 插值事故修复 + 失败环节分级文案; file:///workspace/ 三斜杠支持; workspace:// 失败渲染 alt+占位框
+- 外部测试模型"跨进程/桥通信"结论被证伪: 单进程架构, PathSafetyGuard 策略文案≠内核权限
+
+## v3.11.31（workspace:// 图片内联渲染首版，2026-09-01）
+- 纯函数 resolver (三前缀/宽松 percent-decode/UTF-8 中文/.. 折叠穿越拒绝) + WorkspaceManager.resolveRootfsFileSafe (复用 resolvePath 内建 canonical 防逃逸)
+- Coil3: WorkspaceUriKeyer (mtime+size cache key, 覆盖更新即新图) + WorkspaceImageFetcherFactory (扩展名白名单, ImageSource(path,fs) 直读 rootfs)
+- coil3.5 API 口径: coil3.key.Keyer / ImageSource(path, fileSystem) / Path.toPath(); matchParentSize 是 BoxScope 成员不 import
+- 磨砂生成期降级: loading 时输入条 hazeBlur → 半透明纯色 (静止恢复)
+- WorkspacePathResolverTest 单测 (R 系列用例)
+
+## v3.11.30（task_tool 压测 + 熔断双条件 + token 统计，2026-09-01）
+- task_tool 22 条压测修复 (响应轻量化不回显清单 <1KB, UI 从 input.tasks 解析)
+- 复读熔断误杀修复 = 双条件: 全文重复 >=4 且 repetitionTailCount 尾窗 768 内近邻 >=3
+- GenerationHandler idempotentCache: 同工具+同参数重放返回上次结果, 不占 TOOL_SAME_TOOL_CALL_LIMIT 预算
+- 子代理 token 统计 harvestTokenUsage (账单口径)
+- CI 失败教训: 多文件 python patch 中断丢整段 (success fill 漏提交, harvestTokenUsage 函数体 v3.11.31 补)
+
+## v3.11.29（子代理运行记录 Room 落盘，2026-08-31）
+- sub_agent_runs 表 + SubAgentRunDao; 启动恢复 restoreFromDisk; 遗留 running/pending 标记 FAILED(process_lost)
+- Migration_28_29 手写 (schema 28.json 缺失时 AutoMigration 不可用)
+
+## v3.11.28（派发/执行解耦，2026-08-31）
+- dispatch() 不再 join: 前台/后台统一异步派发, 立即返回 run id + pending; 终态由 subagent_get 轮询
+- subagent_* 工具卡恢复显示 (与普通工具一致)
+
+## v3.11.27（子代理清理 + prompt 隔离，2026-08-31）
+- notifyParentIfBackground 移除; ConversationDAO 全列表排除子代理会话; 子代理 skipAssistantPrompt 跳过用户 system prompt
 
 ## v3.11.26（Cherry Studio 任务功能延伸 + 加号面板改造 + 子代理展示收敛，2026-08-31）
 - task_tool 推进反馈 (sequential-thinking 风格) — 每次调用返回 {tasks, progress, hint}，hint 给下一步指引（单 in_progress 规则 / 全部 completed 交付 / 空转纠偏）
