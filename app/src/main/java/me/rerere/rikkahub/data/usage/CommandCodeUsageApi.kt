@@ -75,20 +75,38 @@ object CommandCodeUsageApi {
             .build()
     }
 
-    private fun getJson(url: String, apiKey: String): JSONObject? {
+    /** 查询失败原因 (UI 直接展示; null = 无错误) */
+    data class FetchOutcome(val result: CommandCodeUsageResult?, val error: String?)
+
+    private fun getJson(url: String, apiKey: String): Pair<JSONObject?, String?> {
         val request = Request.Builder()
             .url(url)
             .header("Authorization", "Bearer $apiKey")
             .header("Accept", "application/json")
+            .header("User-Agent", "commandcode-cli/1.40.1")
             .get()
             .build()
-        client.newCall(request).execute().use { resp ->
-            if (!resp.isSuccessful) {
-                Log.w(TAG, "http ${resp.code} $url")
-                return null
+        runCatching {
+            client.newCall(request).execute().use { resp ->
+                val bodyText = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) {
+                    // 透出服务端错误 message (Hono 结构化错误含 message 字段)
+                    val serverMsg = runCatching {
+                        JSONObject(bodyText).optJSONObject("error")?.optString("message")
+                    }.getOrNull()
+                    Log.w(TAG, "http ${resp.code} $url ${bodyText.take(200)}")
+                    return null to "HTTP ${resp.code}${serverMsg?.let { ": $it" } ?: ""}"
+                }
+                val json = runCatching { JSONObject(bodyText) }.getOrNull()
+                if (json == null) {
+                    Log.w(TAG, "bad json $url ${bodyText.take(200)}")
+                    return null to "响应非 JSON: ${bodyText.take(80)}"
+                }
+                return json to null
             }
-            val body = resp.body?.string() ?: return null
-            return runCatching { JSONObject(body) }.getOrNull()
+        }.getOrElse { e ->
+            Log.e(TAG, "request failed $url: ${e.javaClass.simpleName}: ${e.message}")
+            return null to "${e.javaClass.simpleName}: ${e.message ?: "网络异常"}"
         }
     }
 
@@ -104,15 +122,21 @@ object CommandCodeUsageApi {
         )
     }
 
-    suspend fun fetchUsage(apiKey: String): CommandCodeUsageResult? = withContext(Dispatchers.IO) {
-        if (apiKey.isBlank()) return@withContext null
+    suspend fun fetchUsage(apiKey: String): FetchOutcome = withContext(Dispatchers.IO) {
+        if (apiKey.isBlank()) return@withContext FetchOutcome(null, "未配置 API Key")
         runCatching {
-            coroutineScope {
-                // 方案 §3.1: 两接口并行
-                val creditsJob = async { getJson("$BASE/alpha/billing/credits", apiKey) }
-                val subsJob = async { getJson("$BASE/alpha/billing/subscriptions", apiKey) }
-                val creditsRoot = creditsJob.await() ?: return@coroutineScope null
-                val subsRoot = subsJob.await()
+        coroutineScope {
+            // 方案 §3.1: 两接口并行
+            val creditsJob = async { getJson("$BASE/alpha/billing/credits", apiKey) }
+            val subsJob = async { getJson("$BASE/alpha/billing/subscriptions", apiKey) }
+            val (creditsRoot, creditsErr) = creditsJob.await()
+            val (subsRoot, subsErr) = subsJob.await()
+            // credits 失败 = 整体失败 (核心数据); subs 失败仅降级 (重置时间缺省)
+            if (creditsRoot == null) {
+                val e = creditsErr ?: "未知错误"
+                Log.w(TAG, "fetchUsage fail: $e")
+                return@coroutineScope FetchOutcome(null, e)
+            }
 
                 val credits = creditsRoot.optJSONObject("credits")
                 val limits = creditsRoot.optJSONObject("windowLimits")
@@ -171,11 +195,11 @@ object CommandCodeUsageApi {
                     currentPeriodEnd = currentPeriodEnd,
                     monthlyTotal = monthlyTotal,
                     catalogMatched = matched,
-                )
+                ).let { FetchOutcome(it, null) }
             }
         }.getOrElse { e ->
-            Log.e(TAG, "fetchUsage failed: ${e.message}")
-            null
+            Log.e(TAG, "parse failed: ${e.javaClass.simpleName}: ${e.message}")
+            FetchOutcome(null, "解析异常: ${e.message ?: e.javaClass.simpleName}")
         }
     }
 
