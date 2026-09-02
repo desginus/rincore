@@ -617,6 +617,8 @@ data class Settings(
     val opencodeApiKey: String = "", // v3.8.0: OpenCode 用量查询 API Key (当前选中/最后使用)
     val opencodeApiKeys: List<String> = emptyList(), // v3.8.1: 密钥卡包 (历史密钥列表)
     val usageViewMode: String = "cards", // v3.9.10: 用量查询视图 cards=多卡片 focus=焦点单卡, 持久化
+    val opencodeWarmEnabled: Boolean = false, // v3.12.6: OpenCode 专项预热开关 (默认关, 用户可选)
+    val commandCodeWarmEnabled: Boolean = false, // v3.12.6: Command Code 专项预热开关 (默认关, 用户可选)
     val dynamicColor: Boolean = true,
     val themeId: String = PresetThemes[0].id,
     val customThemes: List<CustomTheme> = emptyList(),

@@ -67,8 +67,16 @@ object ConnectionWarmer {
     // 裸 socket 预热 (warmHost) 只暖 DNS 缓存, 不进池 — TTFT 专项升级。
     // 注意: 必须使用与主请求相同的 OkHttpClient 实例, 否则连接池独立无复用。
     // 401/404 亦可 (连接已建立进池); 全部静默, 不影响主链路。
+    // v3.12.6: okhttp 预热节流 — 同 host 60s 内只发一次 (此前每条消息都发)
+    private val lastWarmAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
     fun warmWithOkHttp(client: OkHttpClient, baseUrl: String, opencodeClient: OkHttpClient? = null) {
         val safe = runCatching { baseUrl.trimEnd('/') + "/models" }.getOrNull() ?: return
+        val host = runCatching { java.net.URI(baseUrl).host }.getOrNull() ?: return
+        val now = System.currentTimeMillis()
+        val last = lastWarmAt[host] ?: 0L
+        if (now - last < 60_000L) return
+        lastWarmAt[host] = now
         // v3.10.7: 按 host 选池 — opencode.ai 主请求走长保活池 (opencodeClient),
         // 预热必须进同一个池否则白做 (v3.10.5 疏漏: 预热只进默认池)
         val isOpencode = runCatching { java.net.URI(baseUrl).host == "opencode.ai" }.getOrDefault(false)

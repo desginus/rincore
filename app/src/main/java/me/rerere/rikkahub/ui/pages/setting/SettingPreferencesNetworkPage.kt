@@ -326,6 +326,40 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
                     )
                 }
             }
+            // v3.12.6: 密钥专项预热开关 — 用户可选 (默认关), 与软件本体
+            // 启动预热拆分; 定向预热在部分网络下会同 key 并发被服务端
+            // 串行化反而拉长首字节, 由用户按网络环境自行决定
+            item {
+                CardGroup(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    title = { Text("密钥预热") },
+                ) {
+                    item(
+                        headlineContent = { Text("OpenCode 预热") },
+                        supportingContent = { Text("发消息时并行预热 OpenCode 网关连接") },
+                        trailingContent = {
+                            Switch(
+                                checked = settings.opencodeWarmEnabled,
+                                onCheckedChange = { checked ->
+                                    vm.updateSettings(settings.copy(opencodeWarmEnabled = checked))
+                                },
+                            )
+                        },
+                    )
+                    item(
+                        headlineContent = { Text("Command Code 预热") },
+                        supportingContent = { Text("发消息时并行预热 Command Code 网关连接") },
+                        trailingContent = {
+                            Switch(
+                                checked = settings.commandCodeWarmEnabled,
+                                onCheckedChange = { checked ->
+                                    vm.updateSettings(settings.copy(commandCodeWarmEnabled = checked))
+                                },
+                            )
+                        },
+                    )
+                }
+            }
             item {
                 CardGroup(
                     modifier = Modifier.padding(horizontal = 8.dp),

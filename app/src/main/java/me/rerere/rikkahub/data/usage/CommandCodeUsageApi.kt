@@ -225,10 +225,7 @@ object CommandCodeUsageApi {
             p <= 75f -> lerp(yellow, orange, (p - 50f) / 25f)
             else -> lerp(orange, red, (p - 75f) / 25f)
         }
-        return (0xFF000000L.toInt() and 0xFF000000.toInt()) or
-            (c[0].times(255).toInt() shl 16) or
-            (c[1].times(255).toInt() shl 8) or
-            c[2].times(255).toInt()
+        return argb(c)
     }
 
     /**
@@ -246,11 +243,13 @@ object CommandCodeUsageApi {
         } else {
             lerp(yellow, green, (progress - 0.5f) / 0.5f)
         }
-        return (0xFF000000L.toInt() and 0xFF000000.toInt()) or
-            (c[0].times(255).toInt() shl 16) or
-            (c[1].times(255).toInt() shl 8) or
-            c[2].times(255).toInt()
+        return argb(c)
     }
+
+    private fun argb(c: FloatArray): Int =
+        (0xFF shl 24) or (c[0].times(255).toInt().coerceIn(0, 255) shl 16) or
+            (c[1].times(255).toInt().coerceIn(0, 255) shl 8) or
+            c[2].times(255).toInt().coerceIn(0, 255)
 
     private fun lerp(a: FloatArray, b: FloatArray, t: Float): FloatArray =
         FloatArray(3) { i -> a[i] + (b[i] - a[i]) * t }

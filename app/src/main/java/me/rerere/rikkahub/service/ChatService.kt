@@ -592,14 +592,25 @@ class ChatService(
             }
             else -> Unit
         }
-        // v3.12.5: Command Code 专项预热 — 当前 key 为 user_ 前缀时, 与消息
-        // 组装并行预热 api.commandcode.ai 的 /provider/v1/models (GET 可读,
-        // TLS+连接进池), 降低首次查询/首次生成的建连延迟 (对齐 OpenCode warm)
-        if (settings.opencodeApiKey.startsWith("user_", ignoreCase = true)) {
-            ConnectionWarmer.warmWithOkHttp(
-                httpClient,
-                "https://api.commandcode.ai/provider/v1"
-            )
+        // v3.12.6: 双预热开关化 (用户可选, 与软件本体拆分, 默认关) —
+        // 定向预热在部分网络环境会同 key 并发请求被服务端串行化, 反而
+        // 拉长首字节 (用户实测), 故改为 opt-in。开与关均持久化。
+        // 节流: 同 host 60s 内只发一次 (此前每条消息都发一次 models 请求)。
+        val key = settings.opencodeApiKey
+        if (key.startsWith("user_", ignoreCase = true)) {
+            if (settings.commandCodeWarmEnabled) {
+                ConnectionWarmer.warmWithOkHttp(
+                    httpClient,
+                    "https://api.commandcode.ai/provider/v1"
+                )
+            }
+        } else if (key.startsWith("sk", ignoreCase = true)) {
+            if (settings.opencodeWarmEnabled) {
+                ConnectionWarmer.warmWithOkHttp(
+                    httpClient,
+                    "https://opencode.ai/zen/go/v1"
+                )
+            }
         }
 
         val senderName = if (assistant.useAssistantAvatar) {

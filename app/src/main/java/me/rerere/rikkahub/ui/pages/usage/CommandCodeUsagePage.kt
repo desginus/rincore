@@ -265,6 +265,47 @@ fun CommandCodeUsagePage(onBack: () -> Unit = {}) {
                                 }
                             }
                             item {
+                                // v3.12.6: 第四卡 重置倒计时 (对齐 OpenCode 四栏) —
+                                // 5h/7d/月度三窗口取最近, 环与文本 红→绿 渐变
+                                val now = System.currentTimeMillis()
+                                data class CW(val resetsAtMs: Long?, val windowMs: Long)
+                                val windows = listOf(
+                                    CW(fh?.resetAtMs, 5L * 3_600_000),
+                                    CW(wk?.resetAtMs, 7L * 24 * 3_600_000),
+                                    CW(active.currentPeriodEnd?.let {
+                                        runCatching {
+                                            java.time.Instant.parse(it).toEpochMilli()
+                                        }.getOrNull()
+                                    }, 30L * 24 * 3_600_000),
+                                )
+                                val nearest = windows
+                                    .mapNotNull { w -> w.resetsAtMs?.let { w to it } }
+                                    .filter { (_, ts) -> ts > now }
+                                    .minByOrNull { (_, ts) -> ts - now }
+                                val nearestInfo = if (nearest == null) {
+                                    null
+                                } else {
+                                    val (w, ts) = nearest
+                                    val elapsed = ((now - (ts - w.windowMs)).coerceAtLeast(0L)).toFloat() / w.windowMs * 100f
+                                    Triple(elapsed.coerceIn(0f, 100f), ts, w.windowMs)
+                                }
+                                if (nearestInfo != null) {
+                                    val (elapsedPct, resetTs, windowMs) = nearestInfo
+                                    val remaining = (resetTs - now).coerceAtLeast(0L)
+                                    val cd = CommandCodeUsageApi.countdownText(resetTs) ?: ""
+                                    CommandCodeRingCard(
+                                        title = "重置倒计时",
+                                        subtitle = "最近窗口重置",
+                                        percent = elapsedPct.toInt(),
+                                        mainText = cd,
+                                        bottomText = CommandCodeUsageApi.periodEndText(active.currentPeriodEnd) ?: "月度重置见本月卡",
+                                        color = usageGradientColor(elapsedPct.toInt()),
+                                        exceeded = false,
+                                        bottomColor = Color(CommandCodeUsageApi.resetColorArgb(remaining, windowMs)),
+                                    )
+                                }
+                            }
+                            item {
                                 CommandCodeRingCard(
                                     title = "本月余额",
                                     subtitle = if (active.catalogMatched) "月度积分池" else "月度积分池 · 目录未匹配",
