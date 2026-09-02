@@ -73,10 +73,20 @@ object ConnectionWarmer {
         // 预热必须进同一个池否则白做 (v3.10.5 疏漏: 预热只进默认池)
         val isOpencode = runCatching { java.net.URI(baseUrl).host == "opencode.ai" }.getOrDefault(false)
         val eff = if (isOpencode) (opencodeClient ?: client) else client
+        // v3.12.0: 预热请求用短超时 clone (同池) — 死网关/黑洞 host 时预热线程
+        // 不再按主 client 的 3min readTimeout 挂死, 占用线程与连接池位置;
+        // 连接建立部分照常进池复用
+        val warmClient = runCatching {
+            eff.newBuilder()
+                .connectTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(6, java.util.concurrent.TimeUnit.SECONDS)
+                .writeTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
+                .build()
+        }.getOrDefault(eff)
         Thread({
             runCatching {
                 val req = okhttp3.Request.Builder().url(safe).get().build()
-                eff.newCall(req).execute().use { }
+                warmClient.newCall(req).execute().use { }
             }.onFailure {
                 Log.w(TAG, "OkHttp 预热失败: $safe — ${it.message}")
             }

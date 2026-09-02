@@ -1085,7 +1085,9 @@ class GenerationHandler(
                         headerRetryCount++
                         // v3.11.17: 重试静默化 (用户定版) — 不再挂"正在重试" UI 提示,
                         // 失败回滚对用户零感知; 进度只进日志与 Trace
-                        kotlinx.coroutines.delay(800)
+                        // v3.12.0: 退避分级 — 前 2 次短间隔快速恢复 (瞬时挂起),
+                        // 3 次起 2s (持续不可达的网关不连续怼, 给冷启动留窗口)
+                        kotlinx.coroutines.delay(if (headerRetryCount <= 2) 800L else 2000L)
                         Log.w(TAG, "header timeout — gateway retry $headerRetryCount/4 elapsed=${System.currentTimeMillis() - retryBudgetStartMs}ms: ${e.message}")
                         CallTracer.event("RETRY", "header_retry", "gateway no response, retry $headerRetryCount/4", metrics = sseDiagMetrics())
                         messages = preStreamMessages
