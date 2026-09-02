@@ -69,6 +69,12 @@ fun UsagePage(onBack: () -> Unit = {}) {
     val settingsStore = koinInject<SettingsStore>()
     val settings by settingsStore.settingsFlow.collectAsState()
     val apiKey = settings.opencodeApiKey
+    // v3.12.2: Key 前缀分流 — "User" 开头 = Command Code key, 走对齐版
+    // Command Code 用量监测 (同位置同交互); 其余 (sk 开头) = OpenCode 原逻辑
+    if (apiKey.startsWith("User")) {
+        CommandCodeUsagePage(onBack)
+        return
+    }
     val savedKeys = settings.opencodeApiKeys
 
     val scope = rememberCoroutineScope()
