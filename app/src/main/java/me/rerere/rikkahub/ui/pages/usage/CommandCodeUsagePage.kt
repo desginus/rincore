@@ -225,99 +225,73 @@ fun CommandCodeUsagePage(onBack: () -> Unit = {}) {
                                 }
                             }
                         } else {
-                            // 单密钥: 竖列四卡 (5h/7d/本月/加油包)
+                            // v3.12.7: 单密钥竖列四卡 — 恒显四卡 (与 OpenCode 一致,
+                            // 无窗口数据时显示 0% + 无重置信息)
                             val fh = active.fiveHour
                             val wk = active.weekly
-                            if (active.limited && fh != null && wk != null) {
-                                item {
-                                    // v3.12.4: 环与主色 = 用量渐变 (绿→黄→橙→红);
-                                    // 重置时间文本 = 红→绿 (临近重置额度恢复)
-                                    val resetColor = Color(CommandCodeUsageApi.resetColorArgb(
-                                        fh.resetAtMs?.let { it - System.currentTimeMillis() },
-                                        5L * 3_600_000,
-                                    ))
-                                    CommandCodeRingCard(
-                                        title = "5 小时窗口",
-                                        subtitle = "\$ of usage",
-                                        percent = fh.percent ?: 0,
-                                        mainText = fh.remaining?.let { "剩余 $${fmt(it)} / $${fmt(fh.cap ?: 0.0)}" } ?: "剩余未知",
-                                        bottomText = if (fh.exceeded) "限额已用尽" else CommandCodeUsageApi.countdownText(fh.resetAtMs) ?: "无重置信息",
-                                        color = usageGradientColor(fh.percent ?: 0),
-                                        exceeded = fh.exceeded,
-                                        bottomColor = resetColor,
-                                    )
-                                }
-                                item {
-                                    val resetColor = Color(CommandCodeUsageApi.resetColorArgb(
-                                        wk.resetAtMs?.let { it - System.currentTimeMillis() },
-                                        7L * 24 * 3_600_000,
-                                    ))
-                                    CommandCodeRingCard(
-                                        title = "7 天窗口",
-                                        subtitle = "\$ of usage",
-                                        percent = wk.percent ?: 0,
-                                        mainText = wk.remaining?.let { "剩余 $${fmt(it)} / $${fmt(wk.cap ?: 0.0)}" } ?: "剩余未知",
-                                        bottomText = if (wk.exceeded) "限额已用尽" else CommandCodeUsageApi.countdownText(wk.resetAtMs) ?: "无重置信息",
-                                        color = usageGradientColor(wk.percent ?: 0),
-                                        exceeded = wk.exceeded,
-                                        bottomColor = resetColor,
-                                    )
-                                }
+                                    // v3.12.7: 四卡完全对齐 OpenCode — 竖列 (环居中,
+                            // 上名字下重置时间), 顺序 近5小时→周→月→重置倒计时(最下),
+                            // 颜色统一用量渐变 (占比越大越红, 与 OpenCode 同向)
+                            item {
+                                CCUsageRingCard(
+                                    title = "近 5 小时用量",
+                                    subtitle = "5 小时窗口 \$ of usage",
+                                    percent = fh?.percent ?: 0,
+                                    bottomText = if (fh?.exceeded == true) "限额已用尽"
+                                    else "剩余 " + (fh?.remaining?.let { "$" + fmt(it) } ?: "未知") + " · " +
+                                        (CommandCodeUsageApi.countdownText(fh?.resetAtMs) ?: "无重置信息"),
+                                    color = usageGradientColor(fh?.percent ?: 0),
+                                )
                             }
                             item {
-                                // v3.12.6: 第四卡 重置倒计时 (对齐 OpenCode 四栏) —
-                                // 5h/7d/月度三窗口取最近, 环与文本 红→绿 渐变
+                                CCUsageRingCard(
+                                    title = "周限额用量",
+                                    subtitle = "7 天窗口 \$ of usage",
+                                    percent = wk?.percent ?: 0,
+                                    bottomText = if (wk?.exceeded == true) "限额已用尽"
+                                    else "剩余 " + (wk?.remaining?.let { "$" + fmt(it) } ?: "未知") + " · " +
+                                        (CommandCodeUsageApi.countdownText(wk?.resetAtMs) ?: "无重置信息"),
+                                    color = usageGradientColor(wk?.percent ?: 0),
+                                )
+                            }
+                            item {
+                                CCUsageRingCard(
+                                    title = "月限额用量",
+                                    subtitle = "月度积分池" + if (active.catalogMatched) "" else " · 目录未匹配",
+                                    percent = active.monthlyUsedPercent ?: 0,
+                                    bottomText = "剩余 " + "$" + fmt(active.monthlyRemaining) +
+                                        (active.monthlyTotal?.let { " / $" + fmt(it) } ?: "") +
+                                        " · " + (CommandCodeUsageApi.periodEndText(active.currentPeriodEnd) ?: "重置时间未知"),
+                                    color = usageGradientColor(active.monthlyUsedPercent ?: 0),
+                                )
+                            }
+                            item {
+                                // 重置倒计时: 三窗口取最近, 占比越大越红 (用户定版, 与用量卡同向)
                                 val now = System.currentTimeMillis()
                                 data class CW(val resetsAtMs: Long?, val windowMs: Long)
                                 val windows = listOf(
                                     CW(fh?.resetAtMs, 5L * 3_600_000),
                                     CW(wk?.resetAtMs, 7L * 24 * 3_600_000),
                                     CW(active.currentPeriodEnd?.let {
-                                        runCatching {
-                                            java.time.Instant.parse(it).toEpochMilli()
-                                        }.getOrNull()
+                                        runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull()
                                     }, 30L * 24 * 3_600_000),
                                 )
                                 val nearest = windows
                                     .mapNotNull { w -> w.resetsAtMs?.let { w to it } }
                                     .filter { (_, ts) -> ts > now }
                                     .minByOrNull { (_, ts) -> ts - now }
-                                val nearestInfo = if (nearest == null) {
-                                    null
-                                } else {
+                                val elapsedPct = if (nearest == null) 0f else {
                                     val (w, ts) = nearest
-                                    val elapsed = ((now - (ts - w.windowMs)).coerceAtLeast(0L)).toFloat() / w.windowMs * 100f
-                                    Triple(elapsed.coerceIn(0f, 100f), ts, w.windowMs)
+                                    val elapsed = (now - (ts - w.windowMs)).coerceAtLeast(0L).toFloat() / w.windowMs * 100f
+                                    elapsed.coerceIn(0f, 100f)
                                 }
-                                if (nearestInfo != null) {
-                                    val (elapsedPct, resetTs, windowMs) = nearestInfo
-                                    val remaining = (resetTs - now).coerceAtLeast(0L)
-                                    val cd = CommandCodeUsageApi.countdownText(resetTs) ?: ""
-                                    CommandCodeRingCard(
-                                        title = "重置倒计时",
-                                        subtitle = "最近窗口重置",
-                                        percent = elapsedPct.toInt(),
-                                        mainText = cd,
-                                        bottomText = CommandCodeUsageApi.periodEndText(active.currentPeriodEnd) ?: "月度重置见本月卡",
-                                        color = usageGradientColor(elapsedPct.toInt()),
-                                        exceeded = false,
-                                        bottomColor = Color(CommandCodeUsageApi.resetColorArgb(remaining, windowMs)),
-                                    )
-                                }
-                            }
-                            item {
-                                CommandCodeRingCard(
-                                    title = "本月余额",
-                                    subtitle = if (active.catalogMatched) "月度积分池" else "月度积分池 · 目录未匹配",
-                                    percent = active.monthlyUsedPercent ?: 0,
-                                    mainText = if (active.monthlyTotal != null) {
-                                        "剩余 $${fmt(active.monthlyRemaining)} / $${fmt(active.monthlyTotal)}"
-                                    } else {
-                                        "剩余 $${fmt(active.monthlyRemaining)}"
-                                    },
-                                    bottomText = CommandCodeUsageApi.periodEndText(active.currentPeriodEnd) ?: "月度重置时间未知",
-                                    color = usageGradientColor(active.monthlyUsedPercent ?: 0),
-                                    exceeded = false,
+                                val resetTs = nearest?.second
+                                CCUsageRingCard(
+                                    title = "重置倒计时",
+                                    subtitle = "最近窗口重置",
+                                    percent = elapsedPct.toInt(),
+                                    bottomText = if (resetTs != null) ccPeriodClockText(resetTs) else "未知",
+                                    color = usageGradientColor(elapsedPct.toInt()),
                                 )
                             }
                         }
@@ -396,6 +370,29 @@ private fun MiniRing(percent: Int, label: String, color: Color) {
     }
 }
 
+// 时段划分与 OpenCode 重置卡同款 (12 小时制 + 时段标注)
+private fun ccPeriodClockText(resetTsMs: Long): String {
+    val zdt = java.time.ZonedDateTime.ofInstant(
+        java.time.Instant.ofEpochMilli(resetTsMs), java.time.ZoneId.systemDefault()
+    )
+    val h = zdt.hour
+    val m = zdt.minute
+    val period = when (h) {
+        in 11..13 -> "中午"
+        in 14..17 -> if (h < 17 || m < 30) "下午" else "傍晚"
+        in 17..18 -> "傍晚"
+        in 19..22 -> "夜晚"
+        23 -> "深夜"
+        in 0..2 -> "深夜"
+        in 3..5 -> "凌晨"
+        in 6..7 -> "清晨"
+        else -> "早晨"
+    }
+    val h12 = h % 12
+    val h12d = if (h12 == 0) 12 else h12
+    return "$period ${h12d}:${m.toString().padStart(2, '0')} 重置"
+}
+
 private fun fmt(v: Double): String =
     if (v == v.toLong().toDouble()) v.toLong().toString() else String.format(java.util.Locale.US, "%.1f", v)
 
@@ -403,33 +400,36 @@ private fun fmt(v: Double): String =
 private fun usageGradientColor(percent: Int): Color = Color(CommandCodeUsageApi.usageColorArgb(percent))
 
 @Composable
-private fun CommandCodeRingCard(
+private fun CCUsageRingCard(
     title: String,
     subtitle: String,
     percent: Int,
-    mainText: String,
     bottomText: String,
     color: Color,
-    exceeded: Boolean,
-    bottomColor: Color? = null,
 ) {
+    // v3.12.7: 布局完全复刻 UsagePage.UsageRingCard — Column 居中,
+    // 环 64dp, 上名字下重置时间; exceeded 时容器 errorContainer
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = if (exceeded) {
-                MaterialTheme.colorScheme.errorContainer
-            } else {
-                MaterialTheme.colorScheme.surfaceContainerHigh
-            },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
     ) {
-        Row(
-            Modifier.fillMaxWidth().padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            Modifier.fillMaxWidth().padding(vertical = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(72.dp)) {
-                Canvas(Modifier.size(72.dp)) {
-                    val stroke = 7.dp.toPx()
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(2.dp))
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(10.dp))
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(64.dp)) {
+                Canvas(Modifier.size(64.dp)) {
+                    val stroke = 6.dp.toPx()
                     val inset = stroke / 2
                     val arcSize = Size(size.width - stroke, size.height - stroke)
                     drawArc(
@@ -455,42 +455,22 @@ private fun CommandCodeRingCard(
                 }
                 Text(
                     "$percent%",
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Bold,
                     color = color,
                 )
             }
-            Spacer(Modifier.width(16.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    mainText,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                )
-                Text(
-                    bottomText,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = when {
-                        exceeded -> MaterialTheme.colorScheme.error
-                        bottomColor != null -> bottomColor
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                bottomText,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
         }
     }
 }
+
 
 @Composable
 private fun CommandCodeKeyCard(
@@ -537,13 +517,13 @@ private fun CommandCodeKeyCard(
             val wk = usage.weekly
             if (usage.limited && fh != null && wk != null) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    MiniRing(fh.percent ?: 0, "5h", MaterialTheme.colorScheme.primary)
-                    MiniRing(wk.percent ?: 0, "周", MaterialTheme.colorScheme.secondary)
+                    MiniRing(fh.percent ?: 0, "5h", usageGradientColor(fh.percent ?: 0))
+                    MiniRing(wk.percent ?: 0, "周", usageGradientColor(wk.percent ?: 0))
                 }
                 Spacer(Modifier.height(8.dp))
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                MiniRing(usage.monthlyUsedPercent ?: 0, "月", MaterialTheme.colorScheme.tertiary)
+                MiniRing(usage.monthlyUsedPercent ?: 0, "月", usageGradientColor(usage.monthlyUsedPercent ?: 0))
             }
         }
     }
