@@ -242,7 +242,10 @@ class ClaudeProvider(
         //     接受, 重试只会重新排队更慢, 耐心等待 (原版即如此)
         //   阶段3 流出中 (首事件后): 90s — 流间隙上限
         val headerReceived = java.util.concurrent.atomic.AtomicBoolean(false)
-        val headerLimit = 15_000L
+        // v3.11.35: header 判死 15s→25s — 网关冷启动典型 10-20s, 旧值在冷启动
+        // 场景每次判死都白等 15s 后重连重新排队, 反复错过启动完成窗口;
+        // 25s 单窗口直接覆盖典型冷启动, 大幅降低"发起阶段等半天"感知
+        val headerLimit = 25_000L
         val firstEventLimit = 150_000L
         val streamLimit = if (isOpencode) 90_000L else 120_000L
         val lastEventAt = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
@@ -250,7 +253,7 @@ class ClaudeProvider(
         // v3.8.6: SSE 诊断统计 — 输出中途中断/半截时在运行日志页可抓取全部现场
         val eventCount = java.util.concurrent.atomic.AtomicInteger(0)
         val dataChars = java.util.concurrent.atomic.AtomicLong(0)
-        TraceLogger.log("SSE", "start: model=${params.model.modelId}, isOpencode=$isOpencode, headerLimit=30s, firstEventLimit=150s, streamLimit=${streamLimit / 1000}s, maxTokens=${params.maxTokens ?: 64000}")
+        TraceLogger.log("SSE", "start: model=${params.model.modelId}, isOpencode=$isOpencode, headerLimit=25s, firstEventLimit=150s, streamLimit=${streamLimit / 1000}s, maxTokens=${params.maxTokens ?: 64000}")
 
         val watchdog = launch {
             while (true) {

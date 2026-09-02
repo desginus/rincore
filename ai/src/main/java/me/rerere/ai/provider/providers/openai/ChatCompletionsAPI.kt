@@ -237,7 +237,8 @@ class ChatCompletionsAPI(
         // 阶段2 已连接未出首事件 150s (上游思考, 重试无意义, 耐心等);
         // 阶段3 流中 90/120s 不变
         val headerReceived = java.util.concurrent.atomic.AtomicBoolean(false)
-        val headerLimit = 15_000L
+        // v3.11.35: header 判死 15s→25s (与 ClaudeProvider 同步) — 吸收网关冷启动
+        val headerLimit = 25_000L
         val firstEventLimit = 150_000L
         val streamLimit = if (isOpencode) 90_000L else 120_000L
         val watchdog = launch {

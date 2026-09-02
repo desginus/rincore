@@ -239,9 +239,8 @@ class SubAgentEngine(
             if (completed == null) {
                 // v3.11.30: 超时也统计已消耗 token (任务被杀但计费已发生)
                 val (tIn, tOut) = harvestTokenUsage(conv.id)
-                if (tIn > 0 || tOut > 0) {
-                    registry.update(runId) { it.copy(tokensIn = it.tokensIn + tIn, tokensOut = it.tokensOut + tOut) }
-                }
+                val trips = harvestTripCount(conv.id)
+                registry.update(runId) { it.copy(tokensIn = it.tokensIn + tIn, tokensOut = it.tokensOut + tOut, tripCount = trips) }
                 markTerminal(runId, SubAgentStatus.TIMED_OUT, "exceeded ${request.timeoutSeconds}-second cap")
                 return
             }
@@ -250,11 +249,18 @@ class SubAgentEngine(
             // text parts from the last assistant message. This mirrors how the
             // CronJobWorker treats LLM-mode jobs.
             val finalText = harvestFinalText(conv.id)
+            // v3.11.35: token/轮次统计补齐 — v3.11.30 时该块因脚本中断未落盘,
+            // 成功路径从未填充 tokensIn/Out (详情页 tokens 恒不显示的根因)。
+            val (tIn, tOut) = harvestTokenUsage(conv.id)
+            val trips = harvestTripCount(conv.id)
             registry.update(runId) {
                 it.copy(
                     status = SubAgentStatus.SUCCEEDED,
                     result = finalText,
                     finishedAtMs = System.currentTimeMillis(),
+                    tokensIn = it.tokensIn + tIn,
+                    tokensOut = it.tokensOut + tOut,
+                    tripCount = trips,
                 )
             }
             ledgerIds.remove(runId)?.let {
@@ -266,9 +272,8 @@ class SubAgentEngine(
             val terminal = if (t is kotlinx.coroutines.CancellationException) SubAgentStatus.CANCELLED else SubAgentStatus.FAILED
             runCatching {
                 val (tIn, tOut) = harvestTokenUsage(conv.id)
-                if (tIn > 0 || tOut > 0) {
-                    registry.update(runId) { it.copy(tokensIn = it.tokensIn + tIn, tokensOut = it.tokensOut + tOut) }
-                }
+                val trips = harvestTripCount(conv.id)
+                registry.update(runId) { it.copy(tokensIn = it.tokensIn + tIn, tokensOut = it.tokensOut + tOut, tripCount = trips) }
             }
             markTerminal(runId, terminal, "${t::class.simpleName}: ${t.message.orEmpty()}")
         } finally {

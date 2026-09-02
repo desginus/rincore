@@ -212,5 +212,9 @@ fun SubAgentDetailSheet(
     }
 }
 
-private fun SubAgentRun.tokenCountText(): String? =
-    if (tokensIn <= 0L && tokensOut <= 0L) null else "tokens ${tokensIn}/${tokensOut}"
+// v3.11.35: 耗费统计 — in/out + 合计 (账单口径), 无用量时不显示
+private fun SubAgentRun.tokenCountText(): String? {
+    if (tokensIn <= 0L && tokensOut <= 0L) return null
+    val total = tokensIn + tokensOut
+    return "tokens ${tokensIn}/${tokensOut} (合计 $total)"
+}

@@ -1078,13 +1078,16 @@ class GenerationHandler(
                 //      只试 1 次)。上限 15 次 ≈ 4min 内完全穷尽。
                 val isHeaderTimeout = e.message?.contains("平台连接无响应") == true
                 if (isHeaderTimeout) {
-                    if (headerRetryCount < 15) {
+                    // v3.11.35: 重试重写 — 判死窗口 25s (provider 层已提) 后,
+                    // 4 次封顶 (4x25s+退避≈110s) 快速终报; 旧 15 次 x 15s=225s
+                    // 对"彻底挂死"场景拖 4 分钟才报, 启动感知极差。
+                    if (headerRetryCount < 4) {
                         headerRetryCount++
                         // v3.11.17: 重试静默化 (用户定版) — 不再挂"正在重试" UI 提示,
                         // 失败回滚对用户零感知; 进度只进日志与 Trace
                         kotlinx.coroutines.delay(800)
-                        Log.w(TAG, "header timeout — gateway retry $headerRetryCount/15 elapsed=${System.currentTimeMillis() - retryBudgetStartMs}ms: ${e.message}")
-                        CallTracer.event("RETRY", "header_retry", "gateway no response, retry $headerRetryCount/15", metrics = sseDiagMetrics())
+                        Log.w(TAG, "header timeout — gateway retry $headerRetryCount/4 elapsed=${System.currentTimeMillis() - retryBudgetStartMs}ms: ${e.message}")
+                        CallTracer.event("RETRY", "header_retry", "gateway no response, retry $headerRetryCount/4", metrics = sseDiagMetrics())
                         messages = preStreamMessages
                         onUpdateMessages(messages)
                         continue@streamLoop
@@ -1093,7 +1096,7 @@ class GenerationHandler(
                     onUpdateMessages(messages)
                     Log.e(TAG, "header timeout exhausted: $headerRetryCount retries")
                     throw java.io.IOException(
-                        "[v${BuildConfig.VERSION_NAME}] 网关连续 $headerRetryCount 次连接无响应 (每次 15s 静默): 网关持续不可达，已保留已生成内容", e
+                        "[v${BuildConfig.VERSION_NAME}] 网关连续 $headerRetryCount 次连接无响应 (每次 25s 静默): 网关持续不可达，已保留已生成内容", e
                     )
                 }
                 val isWatchdogTimeout = e.message?.contains("生成无有效数据超时") == true
