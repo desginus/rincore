@@ -58,6 +58,7 @@ import me.rerere.hugeicons.stroke.FileView
 import me.rerere.hugeicons.stroke.Settings02
 import me.rerere.hugeicons.stroke.View
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.usage.CommandCodeUsageApi
 import me.rerere.rikkahub.data.usage.UsageApi
 import org.koin.compose.koinInject
 import java.time.Instant
@@ -69,9 +70,13 @@ fun UsagePage(onBack: () -> Unit = {}) {
     val settingsStore = koinInject<SettingsStore>()
     val settings by settingsStore.settingsFlow.collectAsState()
     val apiKey = settings.opencodeApiKey
-    // v3.12.2: Key 前缀分流 — "User" 开头 = Command Code key, 走对齐版
+    // v3.12.2: Key 前缀分流 — user_ 开头 = Command Code key, 走对齐版
     // Command Code 用量监测 (同位置同交互); 其余 (sk 开头) = OpenCode 原逻辑
-    if (apiKey.startsWith("User")) {
+    // v3.12.5: 决定性修复 — 真实 key 格式是 user_ (小写下划线), 旧判据
+    // startsWith("User") 大小写敏感永不命中 → Command Code key 一直走
+    // OpenCode 分支查 OpenCode 端点 → 必然失败且显示 OpenCode 分支旧文案。
+    // 这就是 "key 完全正常但查询失败且文案不变" 的根因。
+    if (apiKey.startsWith("user_", ignoreCase = true)) {
         CommandCodeUsagePage(onBack)
         return
     }
@@ -207,12 +212,14 @@ fun UsagePage(onBack: () -> Unit = {}) {
                         } else {
                             // ── 单密钥: 竖列全屏 ──
                             item {
+                                // v3.12.5: 全密钥统一渐变配色 — 环与主色按用量
+                                // 绿→黄→橙→红 (Command Code 同源 usageColorArgb)
                                 UsageRingCard(
                                     title = "滚动窗口",
                                     subtitle = "近 5 小时用量",
                                     percent = activeUsage.rolling.percent?.toFloat() ?: 0f,
                                     resetAt = activeUsage.rolling.resetsAt,
-                                    color = MaterialTheme.colorScheme.primary,
+                                    color = usageGradientColor(activeUsage.rolling.percent ?: 0),
                                 )
                             }
                             item {
@@ -221,7 +228,7 @@ fun UsagePage(onBack: () -> Unit = {}) {
                                     subtitle = "周限额用量",
                                     percent = activeUsage.weekly.percent?.toFloat() ?: 0f,
                                     resetAt = activeUsage.weekly.resetsAt,
-                                    color = MaterialTheme.colorScheme.secondary,
+                                    color = usageGradientColor(activeUsage.weekly.percent ?: 0),
                                 )
                             }
                             item {
@@ -230,17 +237,28 @@ fun UsagePage(onBack: () -> Unit = {}) {
                                     subtitle = "月限额用量",
                                     percent = activeUsage.monthly.percent?.toFloat() ?: 0f,
                                     resetAt = activeUsage.monthly.resetsAt,
-                                    color = MaterialTheme.colorScheme.tertiary,
+                                    color = usageGradientColor(activeUsage.monthly.percent ?: 0),
                                 )
                             }
                             item {
                                 val resetInfo = nearestReset(activeUsage)
+                                // 重置倒计时: 等待中红 → 临近重置绿 (额度恢复)
+                                val resetColor = Color(
+                                    CommandCodeUsageApi.resetColorArgb(
+                                        (100f - resetInfo.elapsedPercent).let { p ->
+                                            val nearest = nearestResetWindowMs(activeUsage)
+                                            (nearest * (p / 100f)).toLong()
+                                        },
+                                        5 * 60 * 60 * 1000L,
+                                    )
+                                )
                                 UsageRingCard(
                                     title = "重置倒计时",
                                     subtitle = "最近窗口重置",
                                     percent = resetInfo.elapsedPercent,
                                     bottomText = resetInfo.remainingText,
-                                    color = MaterialTheme.colorScheme.error,
+                                    color = usageGradientColor(resetInfo.elapsedPercent.toInt()),
+                                    bottomColor = resetColor,
                                 )
                             }
                         }
@@ -305,14 +323,14 @@ private fun KeyUsageCard(
             }
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                MiniRing(usage.rolling.percent ?: 0, "5h", MaterialTheme.colorScheme.primary)
-                MiniRing(usage.weekly.percent ?: 0, "周", MaterialTheme.colorScheme.secondary)
+                MiniRing(usage.rolling.percent ?: 0, "5h", usageGradientColor(usage.rolling.percent ?: 0))
+                MiniRing(usage.weekly.percent ?: 0, "周", usageGradientColor(usage.weekly.percent ?: 0))
             }
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                MiniRing(usage.monthly.percent ?: 0, "月", MaterialTheme.colorScheme.tertiary)
+                MiniRing(usage.monthly.percent ?: 0, "月", usageGradientColor(usage.monthly.percent ?: 0))
                 val resetInfo = nearestReset(usage)
-                MiniRing(resetInfo.elapsedPercent.toInt(), "重置", MaterialTheme.colorScheme.error)
+                MiniRing(resetInfo.elapsedPercent.toInt(), "重置", usageGradientColor(resetInfo.elapsedPercent.toInt()))
             }
         }
     }
@@ -372,6 +390,7 @@ private fun UsageRingCard(
     color: Color,
     resetAt: String? = null,
     bottomText: String? = null,
+    bottomColor: Color? = null,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -400,7 +419,7 @@ private fun UsageRingCard(
             Text(
                 bottomText ?: resetAt?.let { formatRemaining(it) } ?: "",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = bottomColor ?: MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
         }
@@ -551,6 +570,23 @@ private fun KeyCardDialog(
             TextButton(onClick = onDismiss) { Text("取消") }
         },
     )
+}
+
+// v3.12.5: 全密钥渐变 (Command Code 同源 ARGB)
+private fun usageGradientColor(percent: Int): Color =
+    Color(CommandCodeUsageApi.usageColorArgb(percent))
+
+private fun nearestResetWindowMs(u: UsageApi.UsageResult): Long {
+    val now = System.currentTimeMillis()
+    data class W(val resetsAt: String?, val windowMs: Long)
+    return listOf(
+        W(u.rolling.resetsAt, 5 * 60 * 60 * 1000L),
+        W(u.weekly.resetsAt, 7 * 24 * 60 * 60 * 1000L),
+        W(u.monthly.resetsAt, 30 * 24 * 60 * 60 * 1000L),
+    ).mapNotNull { w ->
+        val ts = w.resetsAt?.let { parseEpochMs(it) } ?: return@mapNotNull null
+        if (ts > now) w.windowMs else null
+    }.minOrNull() ?: (5 * 60 * 60 * 1000L)
 }
 
 // ── 重置倒计时计算 ──
