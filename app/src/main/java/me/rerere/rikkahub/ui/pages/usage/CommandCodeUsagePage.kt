@@ -230,25 +230,37 @@ fun CommandCodeUsagePage(onBack: () -> Unit = {}) {
                             val wk = active.weekly
                             if (active.limited && fh != null && wk != null) {
                                 item {
+                                    // v3.12.4: 环与主色 = 用量渐变 (绿→黄→橙→红);
+                                    // 重置时间文本 = 红→绿 (临近重置额度恢复)
+                                    val resetColor = Color(CommandCodeUsageApi.resetColorArgb(
+                                        fh.resetAtMs?.let { it - System.currentTimeMillis() },
+                                        5L * 3_600_000,
+                                    ))
                                     CommandCodeRingCard(
                                         title = "5 小时窗口",
                                         subtitle = "\$ of usage",
                                         percent = fh.percent ?: 0,
                                         mainText = fh.remaining?.let { "剩余 $${fmt(it)} / $${fmt(fh.cap ?: 0.0)}" } ?: "剩余未知",
                                         bottomText = if (fh.exceeded) "限额已用尽" else CommandCodeUsageApi.countdownText(fh.resetAtMs) ?: "无重置信息",
-                                        color = windowColor(fh.percent, fh.exceeded, MaterialTheme.colorScheme.primary),
+                                        color = usageGradientColor(fh.percent ?: 0),
                                         exceeded = fh.exceeded,
+                                        bottomColor = resetColor,
                                     )
                                 }
                                 item {
+                                    val resetColor = Color(CommandCodeUsageApi.resetColorArgb(
+                                        wk.resetAtMs?.let { it - System.currentTimeMillis() },
+                                        7L * 24 * 3_600_000,
+                                    ))
                                     CommandCodeRingCard(
                                         title = "7 天窗口",
                                         subtitle = "\$ of usage",
                                         percent = wk.percent ?: 0,
                                         mainText = wk.remaining?.let { "剩余 $${fmt(it)} / $${fmt(wk.cap ?: 0.0)}" } ?: "剩余未知",
                                         bottomText = if (wk.exceeded) "限额已用尽" else CommandCodeUsageApi.countdownText(wk.resetAtMs) ?: "无重置信息",
-                                        color = windowColor(wk.percent, wk.exceeded, MaterialTheme.colorScheme.secondary),
+                                        color = usageGradientColor(wk.percent ?: 0),
                                         exceeded = wk.exceeded,
+                                        bottomColor = resetColor,
                                     )
                                 }
                             }
@@ -263,7 +275,7 @@ fun CommandCodeUsagePage(onBack: () -> Unit = {}) {
                                         "剩余 $${fmt(active.monthlyRemaining)}"
                                     },
                                     bottomText = CommandCodeUsageApi.periodEndText(active.currentPeriodEnd) ?: "月度重置时间未知",
-                                    color = MaterialTheme.colorScheme.tertiary,
+                                    color = usageGradientColor(active.monthlyUsedPercent ?: 0),
                                     exceeded = false,
                                 )
                             }
@@ -346,12 +358,8 @@ private fun MiniRing(percent: Int, label: String, color: Color) {
 private fun fmt(v: Double): String =
     if (v == v.toLong().toDouble()) v.toLong().toString() else String.format(java.util.Locale.US, "%.1f", v)
 
-private fun windowColor(percent: Int?, exceeded: Boolean, base: Color): Color = when {
-    exceeded -> Color(0xFFB3261E)
-    percent != null && percent > 95 -> Color(0xFFB3261E)
-    percent != null && percent > 80 -> Color(0xFFF59E0B)
-    else -> base
-}
+// v3.12.4: 0→100% 绿→黄→橙→红连续渐变 (Api 层 ARGB 换算)
+private fun usageGradientColor(percent: Int): Color = Color(CommandCodeUsageApi.usageColorArgb(percent))
 
 @Composable
 private fun CommandCodeRingCard(
@@ -362,6 +370,7 @@ private fun CommandCodeRingCard(
     bottomText: String,
     color: Color,
     exceeded: Boolean,
+    bottomColor: Color? = null,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -431,7 +440,11 @@ private fun CommandCodeRingCard(
                 Text(
                     bottomText,
                     style = MaterialTheme.typography.labelMedium,
-                    color = if (exceeded) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = when {
+                        exceeded -> MaterialTheme.colorScheme.error
+                        bottomColor != null -> bottomColor
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                 )
             }
         }

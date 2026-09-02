@@ -30,9 +30,16 @@ object CommandCodeUsageApi {
     private const val TAG = "CommandCodeUsageApi"
     private const val BASE = "https://api.commandcode.ai"
 
-    // v1.0 方案 §5.1: 套餐目录 (2026-09 定价页抄录), cap 作锚点防调价失真
+    // v1.0 方案 §5.1: 套餐目录 — 官方 pricing-limits 页 (2026-09) 全套餐抄录,
+    // cap 作锚点防调价失真
     private val PLAN_CATALOG = mapOf(
+        "go" to PlanCatalog(fiveHour = 3.0, weekly = 6.0, monthly = 10.0),
         "goat" to PlanCatalog(fiveHour = 14.0, weekly = 35.0, monthly = 70.0),
+        "pro" to PlanCatalog(fiveHour = 16.0, weekly = 40.0, monthly = 80.0),
+        "provider" to PlanCatalog(fiveHour = 0.0, weekly = 0.0, monthly = 0.0), // 按量付费无窗口
+        "max10" to PlanCatalog(fiveHour = 45.0, weekly = 90.0, monthly = 150.0),
+        "max20" to PlanCatalog(fiveHour = 90.0, weekly = 180.0, monthly = 300.0),
+        "teampro" to PlanCatalog(fiveHour = 12.0, weekly = 24.0, monthly = 40.0),
     )
 
     data class PlanCatalog(val fiveHour: Double, val weekly: Double, val monthly: Double)
@@ -202,6 +209,51 @@ object CommandCodeUsageApi {
             FetchOutcome(null, "解析异常: ${e.message ?: e.javaClass.simpleName}")
         }
     }
+
+    /**
+     * 用量颜色 ARGB: 0%→绿, 50%→黄, 75%→橙, 100%→红 (分段线性插值)。
+     * 额度卡 (用量) 从绿渐变到红。
+     */
+    fun usageColorArgb(percent: Int): Int {
+        val p = percent.coerceIn(0, 100).toFloat()
+        val green = floatArrayOf(0f, 0.77f, 0.37f)   // #22C55E
+        val yellow = floatArrayOf(0.92f, 0.71f, 0.03f) // #EAB308
+        val orange = floatArrayOf(0.98f, 0.45f, 0.09f) // #F97316
+        val red = floatArrayOf(0.86f, 0.15f, 0.15f)  // #DC2626
+        val c = when {
+            p <= 50f -> lerp(green, yellow, p / 50f)
+            p <= 75f -> lerp(yellow, orange, (p - 50f) / 25f)
+            else -> lerp(orange, red, (p - 75f) / 25f)
+        }
+        return (0xFF000000L.toInt() and 0xFF000000.toInt()) or
+            (c[0].times(255).toInt() shl 16) or
+            (c[1].times(255).toInt() shl 8) or
+            c[2].times(255).toInt()
+    }
+
+    /**
+     * 重置时间颜色 ARGB: 等待中(刚用完)→红, 临近重置→绿 (额度即将恢复)。
+     * progress = 1 - remaining/window (0=刚重置过, 1=即将重置), 颜色红→绿反向插值。
+     */
+    fun resetColorArgb(remainingMs: Long?, windowMs: Long): Int {
+        val progress = if (remainingMs == null || remainingMs <= 0) 1f
+        else (1f - remainingMs.toFloat() / windowMs.toFloat()).coerceIn(0f, 1f)
+        val green = floatArrayOf(0f, 0.77f, 0.37f)
+        val yellow = floatArrayOf(0.92f, 0.71f, 0.03f)
+        val red = floatArrayOf(0.86f, 0.15f, 0.15f)
+        val c = if (progress < 0.5f) {
+            lerp(red, yellow, progress / 0.5f)
+        } else {
+            lerp(yellow, green, (progress - 0.5f) / 0.5f)
+        }
+        return (0xFF000000L.toInt() and 0xFF000000.toInt()) or
+            (c[0].times(255).toInt() shl 16) or
+            (c[1].times(255).toInt() shl 8) or
+            c[2].times(255).toInt()
+    }
+
+    private fun lerp(a: FloatArray, b: FloatArray, t: Float): FloatArray =
+        FloatArray(3) { i -> a[i] + (b[i] - a[i]) * t }
 
     /** 倒计时 "Xh Ym 后重置" (resetAt 为毫秒, null 返回 null) */
     fun countdownText(resetAtMs: Long?): String? {
