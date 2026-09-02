@@ -69,10 +69,16 @@ object CommandCodeUsageApi {
         val monthlyTotal: Double?,          // GOAT 三重校验通过才有, null = 只报剩余
         val catalogMatched: Boolean,
     ) {
+        // v3.12.8: 已用百分比宽松回退 — 三重校验失败 (cap 锚点缺失/套餐未命中)
+        // 时仍用 planId 命中的目录总额算已用比例, 不再回退 0%;
+        // 仅 planId 完全未命中目录时才无百分比
         val monthlyUsedPercent: Int?
-            get() = if (monthlyTotal != null && monthlyTotal > 0) {
-                ((monthlyTotal - monthlyRemaining) / monthlyTotal * 100).toInt().coerceIn(0, 100)
-            } else null
+            get() {
+                val total = monthlyTotal ?: PLAN_CATALOG[planId?.lowercase()]?.monthly
+                return if (total != null && total > 0) {
+                    ((total - monthlyRemaining) / total * 100).toInt().coerceIn(0, 100)
+                } else null
+            }
     }
 
     private val client by lazy {

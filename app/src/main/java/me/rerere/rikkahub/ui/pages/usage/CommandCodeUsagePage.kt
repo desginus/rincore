@@ -286,12 +286,21 @@ fun CommandCodeUsagePage(onBack: () -> Unit = {}) {
                                     elapsed.coerceIn(0f, 100f)
                                 }
                                 val resetTs = nearest?.second
+                                // v3.12.8: 重置倒计时颜色与其他三卡相反 (用户定版):
+                                // 刚用完 (等待久) 红 → 临近重置 (额度恢复) 绿
+                                val resetColor = if (resetTs != null && nearest != null) {
+                                    Color(CommandCodeUsageApi.resetColorArgb(
+                                        (resetTs - now).coerceAtLeast(0L), nearest.first.windowMs))
+                                } else {
+                                    usageGradientColor(elapsedPct.toInt())
+                                }
                                 CCUsageRingCard(
                                     title = "重置倒计时",
                                     subtitle = "最近窗口重置",
                                     percent = elapsedPct.toInt(),
                                     bottomText = if (resetTs != null) ccPeriodClockText(resetTs) else "未知",
-                                    color = usageGradientColor(elapsedPct.toInt()),
+                                    color = resetColor,
+                                    bottomColor = resetColor,
                                 )
                             }
                         }
@@ -406,6 +415,7 @@ private fun CCUsageRingCard(
     percent: Int,
     bottomText: String,
     color: Color,
+    bottomColor: Color? = null,
 ) {
     // v3.12.7: 布局完全复刻 UsagePage.UsageRingCard — Column 居中,
     // 环 64dp, 上名字下重置时间; exceeded 时容器 errorContainer
@@ -464,7 +474,7 @@ private fun CCUsageRingCard(
             Text(
                 bottomText,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = bottomColor ?: MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
         }

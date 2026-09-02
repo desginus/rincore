@@ -113,6 +113,9 @@ class SettingsStore(
         val DEVELOPER_MODE = booleanPreferencesKey("developer_mode")
         val OPENCODE_API_KEY = stringPreferencesKey("opencode_api_key")
         val OPENCODE_API_KEYS = stringPreferencesKey("opencode_api_keys")
+        // v3.12.8: 预热开关持久化 (v3.12.6 漏接 DataStore 两端, 重启回默认 false)
+        val OPENCODE_WARM_ENABLED = booleanPreferencesKey("opencode_warm_enabled")
+        val COMMAND_CODE_WARM_ENABLED = booleanPreferencesKey("command_code_warm_enabled")
         val USAGE_VIEW_MODE = stringPreferencesKey("usage_view_mode")
 
         // 模型选择
@@ -248,6 +251,8 @@ class SettingsStore(
                 } ?: emptyList(),
                 developerMode = preferences[DEVELOPER_MODE] == true,
                 opencodeApiKey = preferences[OPENCODE_API_KEY] ?: "",
+                opencodeWarmEnabled = preferences[OPENCODE_WARM_ENABLED] == true,
+                commandCodeWarmEnabled = preferences[COMMAND_CODE_WARM_ENABLED] == true,
                 usageViewMode = preferences[USAGE_VIEW_MODE] ?: "cards",
                 opencodeApiKeys = preferences[OPENCODE_API_KEYS]?.let {
                     JsonInstant.decodeFromString(it)
@@ -447,6 +452,8 @@ class SettingsStore(
             preferences[OPENCODE_API_KEY] = settings.opencodeApiKey
             preferences[USAGE_VIEW_MODE] = settings.usageViewMode
             preferences[OPENCODE_API_KEYS] = JsonInstant.encodeToString(settings.opencodeApiKeys)
+            preferences[OPENCODE_WARM_ENABLED] = settings.opencodeWarmEnabled
+            preferences[COMMAND_CODE_WARM_ENABLED] = settings.commandCodeWarmEnabled
             preferences[DISPLAY_SETTING] = JsonInstant.encodeToString(settings.displaySetting)
             preferences[NETWORK_SETTING] = JsonInstant.encodeToString(settings.networkSetting)
 

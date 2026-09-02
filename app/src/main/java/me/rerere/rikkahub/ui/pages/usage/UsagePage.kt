@@ -242,7 +242,8 @@ fun UsagePage(onBack: () -> Unit = {}) {
                             }
                             item {
                                 val resetInfo = nearestReset(activeUsage)
-                                // 重置倒计时: 等待中红 → 临近重置绿 (额度恢复)
+                                // v3.12.8: 重置倒计时颜色与其他三卡相反 (用户定版):
+                                // 刚用完 (等待久) 红 → 临近重置 (额度恢复) 绿
                                 val resetColor = Color(
                                     CommandCodeUsageApi.resetColorArgb(
                                         (100f - resetInfo.elapsedPercent).let { p ->
@@ -257,7 +258,7 @@ fun UsagePage(onBack: () -> Unit = {}) {
                                     subtitle = "最近窗口重置",
                                     percent = resetInfo.elapsedPercent,
                                     bottomText = resetInfo.remainingText,
-                                    color = usageGradientColor(resetInfo.elapsedPercent.toInt()),
+                                    color = resetColor,
                                     bottomColor = resetColor,
                                 )
                             }
