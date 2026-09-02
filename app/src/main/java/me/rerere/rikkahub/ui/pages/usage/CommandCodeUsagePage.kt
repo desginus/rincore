@@ -90,7 +90,8 @@ fun CommandCodeUsagePage(onBack: () -> Unit = {}) {
         loading = true
         // 查询卡包内全部密钥 (焦点 + 历史), 多密钥卡片展示
         val keys = (listOf(apiKey) + savedKeys).distinct()
-        val fetched = keys.associateWith { CommandCodeUsageApi.fetchUsage(it) }
+        val outcomes = keys.associateWith { CommandCodeUsageApi.fetchUsage(it) }
+        val fetched = outcomes.mapValues { it.value.result }
         val activeOk = fetched[apiKey] != null
         if (activeOk) {
             usages = fetched
@@ -98,9 +99,11 @@ fun CommandCodeUsagePage(onBack: () -> Unit = {}) {
             lastSuccessAt = System.currentTimeMillis()
             error = null
         } else {
-            // 拉取失败: 保留旧数据标灰 (stale), 无旧数据才显示错误
+            // 拉取失败: 保留旧数据标灰 (stale), 显示具体失败原因 (HTTP code/
+            // 服务端 message/网络异常类型), 供直接定位
+            val reason = outcomes[apiKey]?.error ?: "未知错误"
             if (usages.isEmpty()) {
-                error = "查询失败，请检查 API Key 或网络后下拉重试"
+                error = "查询失败: $reason"
                 usages = emptyMap()
             }
             stale = true
@@ -138,13 +141,6 @@ fun CommandCodeUsagePage(onBack: () -> Unit = {}) {
                             text = "数据已过期",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    if (usages[apiKey]?.belowThreshold == true) {
-                        Text(
-                            text = "● 低额预警",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.error,
                         )
                     }
                     IconButton(onClick = {
@@ -268,17 +264,6 @@ fun CommandCodeUsagePage(onBack: () -> Unit = {}) {
                                     },
                                     bottomText = CommandCodeUsageApi.periodEndText(active.currentPeriodEnd) ?: "月度重置时间未知",
                                     color = MaterialTheme.colorScheme.tertiary,
-                                    exceeded = false,
-                                )
-                            }
-                            item {
-                                CommandCodeRingCard(
-                                    title = "加油包",
-                                    subtitle = "充值积分",
-                                    percent = 0,
-                                    mainText = "$${fmt(active.purchasedCredits)}",
-                                    bottomText = "永不过期，不占月度池",
-                                    color = MaterialTheme.colorScheme.error,
                                     exceeded = false,
                                 )
                             }
@@ -505,7 +490,6 @@ private fun CommandCodeKeyCard(
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 MiniRing(usage.monthlyUsedPercent ?: 0, "月", MaterialTheme.colorScheme.tertiary)
-                MiniRing(0, "加油包", MaterialTheme.colorScheme.error)
             }
         }
     }
