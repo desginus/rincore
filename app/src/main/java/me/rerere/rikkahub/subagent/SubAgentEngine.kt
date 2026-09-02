@@ -322,6 +322,18 @@ class SubAgentEngine(
      * — better to interrupt than to silently lose the completion.
      */
     /**
+     * v3.11.35: 实际轮次 = 会话内 assistant 消息条数 (每条 assistant 回复为一轮)。
+     */
+    private suspend fun harvestTripCount(conversationId: Uuid): Int {
+        return runCatching {
+            val conv = conversationRepo.getConversationById(conversationId)
+            conv?.messageNodes?.count { node ->
+                node.messages.getOrNull(node.selectIndex)?.role?.name.equals("assistant", ignoreCase = true)
+            } ?: 0
+        }.getOrDefault(0)
+    }
+
+    /**
      * v3.11.30: 聚合子代理会话全部 assistant 消息的 TokenUsage。
      * 口径 = 账单 (每轮 promptTokens + completionTokens 合计), 多轮各自计费不合并。
      */
