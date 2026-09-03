@@ -76,6 +76,7 @@ object CommandCodeUsageApi {
             get() {
                 val total = monthlyTotal ?: PLAN_CATALOG[planId?.lowercase()]?.monthly
                 return if (total != null && total > 0) {
+                    // v3.13.1: clamp 防负数/爆表 (滚存超池时 used 可能 < 0)
                     ((total - monthlyRemaining) / total * 100).toInt().coerceIn(0, 100)
                 } else null
             }
@@ -151,6 +152,7 @@ object CommandCodeUsageApi {
                 return@coroutineScope FetchOutcome(null, e)
             }
 
+                Log.i(TAG, "subs raw: ${subsRoot?.toString()?.take(300) ?: "null"}, planId=${subsRoot?.optJSONObject("data")?.optString("planId") ?: subsRoot?.optString("planId") ?: subsRoot?.optString("data")}")
                 val credits = creditsRoot.optJSONObject("credits")
                 val limits = creditsRoot.optJSONObject("windowLimits")
                 val monthlyCredits = credits?.optDouble("monthlyCredits", 0.0) ?: 0.0
@@ -179,9 +181,17 @@ object CommandCodeUsageApi {
                     )
                 }
 
-                val planId = subsRoot?.optJSONObject("data")?.optString("planId")?.takeIf { it.isNotBlank() }
-                val currentPeriodEnd = subsRoot?.optJSONObject("data")
-                    ?.optString("currentPeriodEnd")?.takeIf { it.isNotBlank() }
+                // v3.13.1: planId 提取容错 — 真实响应的 planId 可能在 data 任意
+                // 层 (非 data 子对象) 或以别名/复合值出现; data 子对象缺失时
+                // 回退顶层字段; "data" 本身也可能是字符串 (planId 直接是字符串)
+                val subsData = subsRoot?.optJSONObject("data")
+                val planId = listOf(
+                    subsData?.optString("planId"),
+                    subsRoot?.optString("planId"),
+                    subsRoot?.optString("data"),
+                ).firstOrNull { !it.isNullOrBlank() && it != "null" && it != "{}" }?.takeIf { it.isNotBlank() }
+                val currentPeriodEnd = subsData?.optString("currentPeriodEnd")?.takeIf { it.isNotBlank() }
+                    ?: subsRoot?.optString("currentPeriodEnd")?.takeIf { it.isNotBlank() }
 
                 // v3.13.0: 月度总额授信语义修正 — planId 命中目录即授信显示
                 // 总额与百分比。旧三重校验 (cap 锚点一致 + 剩余<=总额) 过度
@@ -189,17 +199,31 @@ object CommandCodeUsageApi {
                 // ② limited:false 或 cap 与目录有出入时校验必然失败, 正常
                 // 账号被卡 "目录未匹配"。cap 锚点降级为日志警告 (保留调价
                 // 失真侦测, 不阻塞显示)。
-                val cat = PLAN_CATALOG[planId?.lowercase()]
+                // v3.13.1: 授信匹配加宽 — 精确命中优先, 其次包含匹配
+                // (真实 planId 可能带后缀/前缀, 如 "goat_v2"/"cmd-goat")
+                val pidLower = planId?.lowercase().orEmpty()
+                val cat = PLAN_CATALOG[pidLower]
+                    // v3.13.1: 包含匹配取最长 key 命中 (goat_v2 命中 goat 而非 go)
+                    ?: PLAN_CATALOG.entries
+                        .filter { (k, _) -> pidLower.contains(k) }
+                        .maxByOrNull { (k, _) -> k.length }
+                        ?.value
                 var monthlyTotal: Double? = null
                 var matched = false
-                if (cat != null && cat.monthly > 0) {
-                    monthlyTotal = cat.monthly
+                // v3.13.1: planId 未命中时按月度剩余的"近似不足额"反推目录
+                // (月度剩余 0..总额 开区间内总有 cat.monthly > remaining 的
+                // 最小档; 滚存超池则 remaining 可能超所有档, 不强行匹配)
+                val effectiveCat = cat ?: PLAN_CATALOG.values
+                    .filter { it.monthly > 0 && monthlyCredits < it.monthly }
+                    .minByOrNull { it.monthly - monthlyCredits }
+                if (effectiveCat != null && effectiveCat.monthly > 0) {
+                    monthlyTotal = effectiveCat.monthly
                     matched = true
                     if (fiveHour?.cap != null && weekly?.cap != null) {
-                        val capsOk = kotlin.math.abs(fiveHour.cap!! - cat.fiveHour) < 1e-6 &&
-                            kotlin.math.abs(weekly.cap!! - cat.weekly) < 1e-6
+                        val capsOk = kotlin.math.abs(fiveHour.cap!! - effectiveCat.fiveHour) < 1e-6 &&
+                            kotlin.math.abs(weekly.cap!! - effectiveCat.weekly) < 1e-6
                         if (!capsOk) {
-                            Log.w(TAG, "plan $planId cap anchor mismatch: api=${fiveHour?.cap}/${weekly?.cap} catalog=${cat.fiveHour}/${cat.weekly} — 官方定价可能已调整, 请核对 pricing-limits 页")
+                            Log.w(TAG, "plan $planId cap anchor mismatch: api=${fiveHour?.cap}/${weekly?.cap} catalog=${effectiveCat.fiveHour}/${effectiveCat.weekly} — 官方定价可能已调整, 请核对 pricing-limits 页")
                         }
                     }
                 }

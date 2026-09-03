@@ -257,7 +257,9 @@ fun CommandCodeUsagePage(onBack: () -> Unit = {}) {
                             item {
                                 CCUsageRingCard(
                                     title = "月限额用量",
-                                    subtitle = "月度积分池" + if (active.catalogMatched) "" else " · 目录未匹配",
+                                    // v3.13.1: 未匹配时显示真实 planId 原文 (自证诊断)
+                                    subtitle = "月度积分池" + if (active.catalogMatched) ""
+                                    else " · plan: ${active.planId ?: "无订阅数据"}",
                                     percent = active.monthlyUsedPercent ?: 0,
                                     bottomText = "剩余 " + "$" + fmt(active.monthlyRemaining) +
                                         (active.monthlyTotal?.let { " / $" + fmt(it) } ?: "") +
