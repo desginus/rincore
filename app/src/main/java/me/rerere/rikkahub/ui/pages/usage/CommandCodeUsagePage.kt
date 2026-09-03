@@ -79,6 +79,8 @@ fun CommandCodeUsagePage(onBack: () -> Unit = {}) {
 
     val scope = rememberCoroutineScope()
     var usages by remember { mutableStateOf<Map<String, CommandCodeUsageApi.CommandCodeUsageResult?>>(emptyMap()) }
+    // v3.13.2: 跨族密钥查询结果 (本页为 Command Code 族, sk 密钥存这里)
+    var crossUsages by remember { mutableStateOf<Map<String, UsageApi.UsageResult>>(emptyMap()) }
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     var stale by remember { mutableStateOf(false) }
@@ -132,8 +134,6 @@ fun CommandCodeUsagePage(onBack: () -> Unit = {}) {
                 ?: crossUsages[k]?.let { k to openCodeMiniCard(it) }
         })
         .filter { (_, d) -> listOf(d.p5, d.pw, d.pm).all { p -> p == null || p < 100 } }
-    // v3.13.2: 跨族密钥查询结果 (本页为 Command Code 族, sk 密钥存这里)
-    var crossUsages by remember { mutableStateOf<Map<String, UsageApi.UsageResult>>(emptyMap()) }
     val showCards = settings.usageViewMode == "cards" && otherVisible.isNotEmpty()
     val focusMode = settings.usageViewMode == "focus"
 
@@ -216,10 +216,8 @@ fun CommandCodeUsagePage(onBack: () -> Unit = {}) {
                             item {
                                 CommandCodeKeyCard(
                                     key = apiKey,
-                                    usage = active,
+                                    card = commandCodeMiniCard(active),
                                     isActive = true,
-                                    stale = stale,
-                                    dataTime = dataTime,
                                 )
                             }
                             if (showCards) {
