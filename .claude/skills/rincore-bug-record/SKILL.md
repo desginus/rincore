@@ -447,3 +447,15 @@ fallthrough 到 linuxDir (../linux/x.png), 文件实际在 ../files/。
 - **根因** (三叠加): ① FileEncoder.compressAndEncode GIF 走"保持原样"分支发 data:image/gif, CC 网关严格校验拒绝; ② BitmapFactory 解不出 (SVG/ICO/损坏数据) → encodeBase64 onFailure → 发 {type:text,text:""} 空块被拒 (v3.10.12 已知空块敏感); ③ 发起阶段重试池把 4xx Invalid input 当可重试错误重试 4 次 (0.5/1/2/4s) → 无报错硬等
 - **修复**: CCImageCompatTransformer (CC 专属 opt-in) — JPEG/PNG/WebP 放行; GIF/HEIC 等转 JPEG 静态帧; 不可解码剔除+备注, 绝不发空块; 双重条件 (开关+user_ key), 关闭/其他通道行为与旧版一致
 - **教训**: 严格网关拒绝空 text 块与不支持的图片 mime; 图片链路改动必须考虑最严格网关; 用户报告"其他客户端正常"时优先对比该客户端的请求体标准化策略 (Cherry Studio 统一转 JPEG 即标准策略)
+
+### B111. CC 通道图片卡死 — role=tool content 塞 image_url (非标准结构) (v3.13.7 定案)
+- **现象**: CC 通道输入图/看图后静默挂起, 无 header → 25s 判死 4 次重试; OpenCode/Cherry Studio 同场景正常
+- **根因**: OpenAI 规范 role=tool 的 content 仅支持 text; RinCore 把工具结果图片塞进 role=tool content (非标准)。DeepSeek/OpenCode 网关宽容无感, CC 严格兼容层静默挂起
+- **修复迭代**: v3.13.3 格式修复→无效; v3.13.4 尺寸闸门→无效 (体积归因推翻); v3.13.5 OCR 转写→用户否决; v3.13.6 tool result 重定位 v1→找错目标 (RinCore 无 role=TOOL 消息, 工具结果是 Tool part 挂在消息 parts 里); v3.13.7 修正目标 (Tool.output 中的图片抽出为紧随 user 消息) → 定案
+- **教训**: 修数据结构前先确认数据真实形态 (grep 注释/构造点, 不能只看序列化层产物); 图片归因顺序: 请求体结构合规性 > 格式 > 体积 > 模型能力路由; Cherry Studio=AI SDK=工具结果图片重定位为 user 消息
+
+### B112. 纯文本输出中途卡几十秒后死寂 — 三套恢复链并行混乱 (v3.14.0)
+- **现象**: 输出中途突然卡住几十秒, 极少数恢复多数彻底卡死 (纯文本场景)
+- **根因**: watchdog 单次恢复 / headerRetry 4 次 / 风暴 15×500ms 三套恢复机制各自为政, 恢复节奏不可预期; 耗尽路径长等待叠加导致"死寂"观感
+- **修复**: 用户定版统一三轮链 — 每轮=风暴 3×300ms + 经典 3 次 (1s/2s/4s 对齐原版 2.4.16), 共 3 轮 18 次 ≈26s 必有终报; 废弃三分支
+- **教训**: 恢复机制多链并行=体验不可预期, 单一可预期链优于多链特化

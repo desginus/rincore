@@ -3,7 +3,13 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v3.13.3 为最新）
+# RinCore 更新日志（v3.14.0 为最新）
+
+## v3.14.0（断流重试统一三轮链，2026-09-03）
+- 用户实证: 纯文本输出中途卡几十秒, 极少数恢复多数彻底卡死 — 多链并行恢复混乱
+- 重构为用户定版三轮链: 每轮=风暴 3 次×300ms + 经典 3 次 (1s/2s/4s, 对齐原版 2.4.16 指数退避), 共 3 轮 18 次, 总窗口 ≈26s 必有终报
+- 废弃: watchdog 单次恢复 / headerRetry 4 次流中分支 / 风暴 15×500ms 三分支; 发起阶段 4 次独立池保留
+- CC 图片根治 (v3.13.3-7 迭代): 最终方案 = tool result 图片重定位 (图片在 Tool part.output 里非 TOOL 消息), 对齐 AI SDK 标准行为
 
 ## v3.13.3（Command Code 图片兼容适配，2026-09-03）
 - 根因: CC 网关严格校验 ChatCompletions 图片 — GIF data URI 被拒 / 编码失败发空 text 块被拒 → Invalid input → 发起重试 4 次 = 无报错硬等卡死；OpenCode 网关宽容 + Cherry Studio 统一转 JPEG 所以正常
