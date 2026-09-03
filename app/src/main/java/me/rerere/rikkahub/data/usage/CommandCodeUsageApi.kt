@@ -183,16 +183,24 @@ object CommandCodeUsageApi {
                 val currentPeriodEnd = subsRoot?.optJSONObject("data")
                     ?.optString("currentPeriodEnd")?.takeIf { it.isNotBlank() }
 
-                // §5.1 三重校验: planId 命中目录 + 双 cap 锚点一致 + 剩余<=总额
+                // v3.13.0: 月度总额授信语义修正 — planId 命中目录即授信显示
+                // 总额与百分比。旧三重校验 (cap 锚点一致 + 剩余<=总额) 过度
+                // 设计: ① 官方积分滚存永不过期, 剩余超月度池是合法状态;
+                // ② limited:false 或 cap 与目录有出入时校验必然失败, 正常
+                // 账号被卡 "目录未匹配"。cap 锚点降级为日志警告 (保留调价
+                // 失真侦测, 不阻塞显示)。
                 val cat = PLAN_CATALOG[planId?.lowercase()]
                 var monthlyTotal: Double? = null
                 var matched = false
-                if (cat != null && fiveHour?.cap != null && weekly?.cap != null) {
-                    val capsOk = kotlin.math.abs(fiveHour.cap!! - cat.fiveHour) < 1e-6 &&
-                        kotlin.math.abs(weekly.cap!! - cat.weekly) < 1e-6
-                    if (capsOk && monthlyCredits <= cat.monthly) {
-                        monthlyTotal = cat.monthly
-                        matched = true
+                if (cat != null && cat.monthly > 0) {
+                    monthlyTotal = cat.monthly
+                    matched = true
+                    if (fiveHour?.cap != null && weekly?.cap != null) {
+                        val capsOk = kotlin.math.abs(fiveHour.cap!! - cat.fiveHour) < 1e-6 &&
+                            kotlin.math.abs(weekly.cap!! - cat.weekly) < 1e-6
+                        if (!capsOk) {
+                            Log.w(TAG, "plan $planId cap anchor mismatch: api=${fiveHour?.cap}/${weekly?.cap} catalog=${cat.fiveHour}/${cat.weekly} — 官方定价可能已调整, 请核对 pricing-limits 页")
+                        }
                     }
                 }
 
