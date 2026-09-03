@@ -336,7 +336,7 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
                 ) {
                     item(
                         headlineContent = { Text("OpenCode 预热") },
-                        supportingContent = { Text("发消息时并行预热 OpenCode 网关连接") },
+                        supportingContent = { Text("应用启动时预热 OpenCode 网关连接") },
                         trailingContent = {
                             Switch(
                                 checked = settings.opencodeWarmEnabled,
@@ -348,7 +348,7 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
                     )
                     item(
                         headlineContent = { Text("Command Code 预热") },
-                        supportingContent = { Text("发消息时并行预热 Command Code 网关连接") },
+                        supportingContent = { Text("应用启动时预热 Command Code 网关连接") },
                         trailingContent = {
                             Switch(
                                 checked = settings.commandCodeWarmEnabled,
@@ -370,7 +370,7 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
                 ) {
                     item(
                         headlineContent = { Text("图片自动适配") },
-                        supportingContent = { Text("GIF/不兼容格式转 JPEG, 无法解码的图片自动跳过, 避免 Invalid input 卡死。仅影响 Command Code 通道") },
+                        supportingContent = { Text("图片超 2048px 或 1.5MB 自动压缩至 Cherry Studio 同款规格 (显示不受影响), GIF 转静帧, 不可解码自动跳过。仅影响 Command Code 通道") },
                         trailingContent = {
                             Switch(
                                 checked = settings.ccImageCompat,

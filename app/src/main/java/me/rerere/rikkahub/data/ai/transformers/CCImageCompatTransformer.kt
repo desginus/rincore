@@ -14,12 +14,13 @@ import java.net.URL
 /**
  * v3.13.3: Command Code 图片兼容适配 (CC 专属, opt-in)
  *
- * 根因: CC 网关对 OpenAI Chat Completions 图片格式严格校验 —
- * ① data:image/gif (GIF 保持原样分支) 被拒; ② BitmapFactory 解不出的
- * 格式 (SVG/ICO/损坏图) 走编码失败分支, 发送空 text 块被拒 Invalid
- * input; ③ 失败重试 4 次 → 用户感知"无报错硬等卡死"。
- * OpenCode/DeepSeek 网关宽容所以同图正常; Cherry Studio 统一转 JPEG
- * 所以正常 — 本 transformer 复刻该策略。
+ * 根因: CC 网关对 OpenAI Chat Completions 图片严格 — ① GIF data URI
+ * 被拒; ② 编码失败发空 text 块被拒 Invalid input; ③ v3.13.4 实锤主因:
+ * 原图未压缩 (PNG 截图 6-8MB base64) + 历史全量重发 → 请求体滚雪球,
+ * 上行超时 → header 25s 判死 → 4 次重试 130s 硬等 (Cherry Studio
+ * issue #14061 同款: 60MB payload 无限加载)。
+ * 对齐 Cherry Studio 官方策略 (sharp resize 2048 inside + jpeg q85):
+ * 所有图片过尺寸闸门, 小图原样放行; 显示端不受影响。
  *
  * 行为: JPEG/PNG/WebP 原样放行; GIF/其他可解码格式转 JPEG 静态帧;
  * 不可解码格式剔除图片块并留文本备注 (绝不发空块)。仅当用户在
@@ -27,8 +28,13 @@ import java.net.URL
  */
 object CCImageCompatTransformer : InputMessageTransformer {
     private const val TAG = "CCImageCompat"
-    private const val MAX_DIMENSION = 10_000
-    private const val MAX_PIXELS = 16_000_000L
+    // v3.13.4: 对齐 Cherry Studio 官方压缩策略 (sharp resize 2048 inside +
+    // jpeg q85, issue #14061: 60MB payload 致网关无限加载同款事故):
+    // 所有图片过尺寸闸门 — 最长边 >2048px 或体积 >1.5MB 即重编码,
+    // 小图原样放行不折腾 (用户: 不要压缩太狠; 2048px 为视觉 API 推荐口径,
+    // 模型识别无损失, 显示端仍用原图不受影响)
+    private const val MAX_DIMENSION = 2048
+    private const val REENCODE_BYTES = 1_500_000L
     private const val JPEG_QUALITY = 85
     private val SUPPORTED_MIME = setOf("image/jpeg", "image/png", "image/webp")
 
@@ -79,7 +85,16 @@ object CCImageCompatTransformer : InputMessageTransformer {
                     if (it.isEmpty()) error("data URI 无 base64 载荷")
                     Base64.decode(it, Base64.DEFAULT)
                 }
-                if (mime in SUPPORTED_MIME) return@withContext url
+                if (mime in SUPPORTED_MIME && b64.size <= REENCODE_BYTES) {
+                    // v3.13.4: 合规 mime 也要过尺寸闸门 — PNG 无损截图可达
+                    // 6-8MB, 多图历史重发滚雪球致 header 25s 判死 (Cherry
+                    // Studio 同款事故 #14061); 体积小才原样放行
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeByteArray(b64, 0, b64.size, bounds)
+                    if (bounds.outWidth in 1..MAX_DIMENSION && bounds.outHeight in 1..MAX_DIMENSION) {
+                        return@withContext url
+                    }
+                }
                 b64
             }
             url.startsWith("file://") -> {
@@ -115,10 +130,7 @@ object CCImageCompatTransformer : InputMessageTransformer {
 
     private fun calcSampleSize(w: Int, h: Int): Int {
         var sample = 1
-        var pixels = w.toLong() * h
-        while (pixels / (sample.toLong() * sample) > MAX_PIXELS ||
-            maxOf(w, h) / sample > MAX_DIMENSION
-        ) sample *= 2
+        while (maxOf(w, h) / (sample * 2) >= MAX_DIMENSION) sample *= 2
         return sample
     }
 

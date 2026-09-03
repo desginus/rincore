@@ -112,6 +112,13 @@ class RikkaHubApp : Application() {
                     )
                 }
                 ConnectionWarmer.warmConfiguredProviders(this@RikkaHubApp, userUrls + claudeUrls)
+                // v3.13.4: Command Code 启动即预热 (用户定版: 应用启动预热,
+                // 非"发消息时") — 焦点 key 为 user_ 且开关开时, 启动线程预热
+                // api.commandcode.ai, 冷启动 10-20s 窗口在首条消息前消化
+                val st = get<SettingsStore>().settingsFlow.value
+                if (st.opencodeApiKey.startsWith("user_", ignoreCase = true) && st.commandCodeWarmEnabled) {
+                    ConnectionWarmer.warmWithOkHttp(httpClient, "https://api.commandcode.ai/provider/v1")
+                }
             }
         }, "warmup-user-providers").start()
         this.createNotificationChannel()
