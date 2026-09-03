@@ -3,7 +3,45 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v3.12.0 为最新）
+# RinCore 更新日志（v3.13.3 为最新）
+
+## v3.13.3（Command Code 图片兼容适配，2026-09-03）
+- 根因: CC 网关严格校验 ChatCompletions 图片 — GIF data URI 被拒 / 编码失败发空 text 块被拒 → Invalid input → 发起重试 4 次 = 无报错硬等卡死；OpenCode 网关宽容 + Cherry Studio 统一转 JPEG 所以正常
+- CCImageCompatTransformer (CC 专属 opt-in): JPEG/PNG/WebP 放行, GIF/HEIC 等转 JPEG 静态帧, 不可解码剔除+文本备注, 绝不发空块
+- 双重生效: 设置开关 ccImageCompat && key user_ 前缀; 设置-偏好-网络独立开关组; DataStore 两端接通
+
+## v3.13.2（时间进制 + 跨族统一小卡 + CC 小卡第四环，2026-09-03）
+- countdownText 进制对齐: 24h 进位天、7 天进位周 (同 OpenCode formatRemaining); UsageCards.formatRemainingMs 统一
+- 卡片视图跨族密钥可见: 新建 UsageCards.kt (UsageMiniCardData 四环 5h/周/月/重置), 两页 doQuery 按 key 前缀分流存 crossUsages, otherVisible 合并本族+跨族
+- CC KeyCard 补第四环"重置" (红→绿反向), 恒显四环; 两页 KeyCard 签名统一 MiniCardData
+- 编译失败三连教训: 局部变量先声明后用 / 改签名全局 grep 调用点 / fetchUsage 可空 mapNotNull 过滤 / patch assert 失败静默中断需独立小脚本
+
+## v3.13.1（planId 提取容错 + 多级授信匹配，2026-09-03）
+- planId 三级回退: data.planId → 顶层 planId → data 本身是字符串
+- 授信多级: 精确 → 包含匹配 (最长 key, goat_v2 命中 goat) → 月度剩余"最近不足档"反推; percent clamp 0-100
+- 诊断自证: 未匹配时 UI 副标题显示真实 planId 原文, 日志打 subs 原文前 300 字符
+
+## v3.13.0（月度总额授信语义修正 + 缓存连接巡检，2026-09-03）
+- 月度"目录不匹配"根因: 三重校验过度设计 (官方积分滚存永不过期, 剩余超月度池合法) → 改授信语义: planId 命中即显示总额与百分比; cap 锚点降级日志警告
+- 缓存/连接巡检全绿: 重试三池请求级重置 / 幂等缓存函数局部 / workspace cache key mtime+size / 预热节流 host 60s / 连接池 12x60s+长保活 12x300s / CC 生成走 claude 池
+
+## v3.12.8（预热开关落盘 + 月度已用百分比 + 重置卡红→绿，2026-09-02）
+- 预热开关重启丢失根因: 只在 Settings 数据类定义, DataStore 两端都没接 (纯内存字段); 补齐键定义+流恢复+updateSync — 教训: 新增设置字段必须同 commit 接通两端
+- 月度已用百分比宽松回退 (目录总额算已用比例, 不再 0%)
+- 重置倒计时颜色定版: 与用量卡反向 红→绿 (环+文本同色, CC+OpenCode 双侧)
+
+## v3.12.7（CC 展示完全对齐 OpenCode，2026-09-02）
+- CC 单密钥四卡复刻 UsageRingCard 竖列布局: 顺序 5h→周→月→重置倒计时最下, 环 64dp 上名字下重置时间, 四卡恒显
+- bottomText 合并剩余数量+重置时间; 重置卡时段标注式; 多密钥 MiniRing 渐变统一; 空壳 item 嵌套修复
+
+## v3.12.6（双预热开关化 + CC 第四卡 + 预热节流，2026-09-02）
+- 设置-偏好-网络"密钥预热"组: OpenCode/Command Code 两独立 Switch (默认关); ChatService 按开关分流
+- warmWithOkHttp 60s 节流; 定向预热变慢根因 = 同 key 并发预热+生成被服务端串行化 → opt-in
+
+## v3.12.5（user_ 分流决定性修复 + 全密钥渐变 + CC 专项预热，2026-09-02）
+- 分流决定性 bug: 判据 startsWith("User") 大小写敏感, 真实 key user_ 永不命中 → 一直查 OpenCode 端点必然失败; 修复 ignoreCase=true
+- 渐变配色升级全密钥默认: OpenCode 四卡+MiniRing 全接 usageColorArgb; 重置倒计时红→绿 (后 v3.12.8 定版反向)
+- ChatService CC 专项预热 (v3.12.6 开关化)
 
 ## v3.12.0（对话发起与连接稳定性定版，2026-09-02）
 - 发起阶段优化定版: header 判死 15s→25s (ClaudeProvider+ChatCompletionsAPI 同步, 吸收网关冷启动 10-20s 单窗口直接成功) + 重试 15→4 次封顶 (4x25s+退避≈110s 快速终报, 旧 225s)

@@ -441,3 +441,9 @@ fallthrough 到 linuxDir (../linux/x.png), 文件实际在 ../files/。
   生成时间 → 预算必爆 (v3.11.10/16 预算语义缺陷)
 - **修复**: 硬顶 45s, 语义=限制恢复风暴; 静默判定仍由三阶段 watchdog 负责
 - **排查教训**: 预算类计时器必须明确起点语义 ("故障后窗口" vs "圈起算")
+
+### B110. CC 通道图片 Invalid input — GIF data URI + 空 text 块 + 4xx 重试卡死 (v3.13.3)
+- **现象**: CC 通道输入部分图片无法建连/途中看图立即卡死无报错硬等 4 次重试耗尽; 原版报 Invalid input; OpenCode 通道同图正常; Cherry Studio PC 全功能正常
+- **根因** (三叠加): ① FileEncoder.compressAndEncode GIF 走"保持原样"分支发 data:image/gif, CC 网关严格校验拒绝; ② BitmapFactory 解不出 (SVG/ICO/损坏数据) → encodeBase64 onFailure → 发 {type:text,text:""} 空块被拒 (v3.10.12 已知空块敏感); ③ 发起阶段重试池把 4xx Invalid input 当可重试错误重试 4 次 (0.5/1/2/4s) → 无报错硬等
+- **修复**: CCImageCompatTransformer (CC 专属 opt-in) — JPEG/PNG/WebP 放行; GIF/HEIC 等转 JPEG 静态帧; 不可解码剔除+备注, 绝不发空块; 双重条件 (开关+user_ key), 关闭/其他通道行为与旧版一致
+- **教训**: 严格网关拒绝空 text 块与不支持的图片 mime; 图片链路改动必须考虑最严格网关; 用户报告"其他客户端正常"时优先对比该客户端的请求体标准化策略 (Cherry Studio 统一转 JPEG 即标准策略)
