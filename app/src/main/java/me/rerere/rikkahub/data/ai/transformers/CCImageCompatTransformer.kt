@@ -14,13 +14,17 @@ import java.net.URL
 /**
  * v3.13.3: Command Code 图片兼容适配 (CC 专属, opt-in)
  *
- * 根因: CC 网关对 OpenAI Chat Completions 图片严格 — ① GIF data URI
- * 被拒; ② 编码失败发空 text 块被拒 Invalid input; ③ v3.13.4 实锤主因:
- * 原图未压缩 (PNG 截图 6-8MB base64) + 历史全量重发 → 请求体滚雪球,
- * 上行超时 → header 25s 判死 → 4 次重试 130s 硬等 (Cherry Studio
- * issue #14061 同款: 60MB payload 无限加载)。
- * 对齐 Cherry Studio 官方策略 (sharp resize 2048 inside + jpeg q85):
- * 所有图片过尺寸闸门, 小图原样放行; 显示端不受影响。
+ * 根因 (社区调查定案, v3.13.5): CC Provider API 上 Go 档模型
+ * (DeepSeek V4 Flash) 不接受图片 — pi-commandcode-provider 实测
+ * "Go must select generate and reject unsupported images"; OpenAI
+ * 兼容层的 reject 表现为 SSE 静默挂起 (CC issue #785 同族, 无
+ * header 无报错) → 客户端 25s 判死重试 4 次。PC 端 CLI 正常是因为
+ * 官方 Vision 机制: 图永远不进主模型请求, 先侧调用 vision 模型
+ * 转文字 (VISION 工具) 再回答。压缩/格式修复 (v3.13.3/4) 无效
+ * 因为问题在服务端模型路由, 不在请求体。
+ * 本 transformer 复刻 CLI VISION 机制: 图片经 OCR 模型转文字后
+ * 替换为文本块, 图不进 CC 请求。需在助手设置配置 OCR 模型
+ * (任意 vision 模型, 走任意可用通道)。
  *
  * 行为: JPEG/PNG/WebP 原样放行; GIF/其他可解码格式转 JPEG 静态帧;
  * 不可解码格式剔除图片块并留文本备注 (绝不发空块)。仅当用户在
@@ -45,35 +49,60 @@ object CCImageCompatTransformer : InputMessageTransformer {
         if (!ctx.settings.ccImageCompat) return messages
         // 仅 Command Code 通道生效 (user_ key); 关闭或 OpenCode 通道保持原状
         if (!ctx.settings.opencodeApiKey.startsWith("user_", ignoreCase = true)) return messages
+        // 图已全部转写过 (上一轮已替换为文字) 的消息跳过
+        val hasImages = messages.any { m -> m.parts.any { it is UIMessagePart.Image } }
+        if (!hasImages) return messages
 
-        var converted = 0
-        var skipped = 0
-        val out = messages.map { msg ->
-            if (msg.parts.none { it is UIMessagePart.Image }) return@map msg
-            val notes = mutableListOf<String>()
-            val newParts = mutableListOf<UIMessagePart>()
-            msg.parts.forEach { part ->
-                if (part !is UIMessagePart.Image) {
-                    newParts.add(part)
-                    return@forEach
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            ctx.processingStatus.value = "正在识别图片 (Command Code 模式)..."
+            try {
+                var described = 0
+                var skipped = 0
+                val out = messages.map { msg ->
+                    if (msg.parts.none { it is UIMessagePart.Image }) return@map msg
+                    val notes = mutableListOf<String>()
+                    val newParts = mutableListOf<UIMessagePart>()
+                    msg.parts.forEach { part ->
+                        if (part !is UIMessagePart.Image) {
+                            newParts.add(part)
+                            return@forEach
+                        }
+                        // v3.13.5: CLI VISION 工具同款 — 图经 OCR 模型转文字
+                        // (LRU 缓存), 替换为文本块; CC Go 档模型 reject 图片,
+                        // 图不能进主请求 (服务端行为, 客户端格式修复无效)
+                        val ocr = me.rerere.rikkahub.data.ai.transformers.OcrTransformer
+                            .performOcr(copyImageForOcr(part))
+                        if (ocr.startsWith("[ERROR") || ocr == "[Image]") {
+                            skipped++
+                            notes.add("[图片未能识别: 请在设置中配置 OCR 模型 (任意 vision 模型)]")
+                        } else {
+                            described++
+                            newParts.add(UIMessagePart.Text(ocr))
+                        }
+                    }
+                    if (notes.isNotEmpty()) newParts.add(UIMessagePart.Text(notes.joinToString("\n")))
+                    msg.copy(parts = newParts)
                 }
-                val dataUri = runCatching { toJpegDataUri(part.url) }.getOrNull()
-                if (dataUri != null) {
-                    converted++
-                    if (dataUri !== part.url) newParts.add(part.copy(url = dataUri)) else newParts.add(part)
-                } else {
-                    skipped++
-                    notes.add("[图片已跳过: ${maskUrl(part.url)} 格式不被 Command Code 网关支持]")
-                }
+                Log.i(TAG, "described=$described skipped=$skipped")
+                out
+            } finally {
+                ctx.processingStatus.value = null
             }
-            // 纯图消息全被剔时保留备注, 防止 content 数组为空
-            if (notes.isNotEmpty()) newParts.add(UIMessagePart.Text(notes.joinToString("\n")))
-            msg.copy(parts = newParts)
         }
-        if (converted > 0 || skipped > 0) {
-            Log.i(TAG, "converted=$converted skipped=$skipped")
-        }
-        return out
+    }
+
+    /** performOcr 需要 file:// URI (FilesManager 读取), data URI 先落盘 */
+    private suspend fun copyImageForOcr(part: UIMessagePart.Image): UIMessagePart.Image {
+        if (part.url.startsWith("file://") || part.url.startsWith("content://")) return part
+        val bytes = runCatching { toJpegDataUri(part.url) }.getOrNull()
+            ?.let { uri ->
+                val b64 = uri.substringAfter("base64,", "")
+                if (b64.isNotEmpty()) android.util.Base64.decode(b64, android.util.Base64.DEFAULT) else null
+            } ?: return part
+        val fm = org.koin.java.KoinJavaComponent.getKoin()
+            .get<me.rerere.rikkahub.data.files.FilesManager>()
+        val uri2 = fm.createChatFilesByByteArrays(listOf(bytes)).first()
+        return part.copy(url = uri2.toString())
     }
 
     /** 返回可直接放入 image_url.url 的 data URI; 已合规则原样返回引用 */
