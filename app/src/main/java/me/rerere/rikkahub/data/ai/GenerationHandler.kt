@@ -127,7 +127,6 @@ class GenerationHandler(
     /** v3.11.16: 网关连接超时独立计数 — header 阶段判死每次 15s, 与快失败型
      *  (毫秒级判死) 恢复机制互斥, 必须分道计数, 否则 30s/次的败因塞进 10s
      *  快速预算在第二次尝试后必然爆掉 (v3.11.14 实证: "重试 1 次后仍失败") */
-    private var headerRetryCount = 0
 
     /** v3.12.1: 发起阶段独立重试计数 — 与流中恢复彻底分流 (类成员, 请求入口重置) */
     private var initRetryCount = 0
@@ -202,12 +201,9 @@ class GenerationHandler(
         // 断流重试计数 (切后台/NAT/平台断连 — IOException 自动恢复, 每次生成最多 5 次)
         // 类成员 (局部声明曾被编译器解析为块外不可见 — 提升为成员彻底规避)
         streamRetryCount = 0
-        // v3.11.33: header 重试计数同样必须请求级重置 — 实测 (2026-09-01 20:11,
-        // Trace 20260901-201134-872): 发送 2-3 秒即报 "网关连续 15 次连接无响应",
-        // 15x15s=225s 物理不可能, 根因是单例 handler 的 headerRetryCount 跨请求
-        // 残留 (上一次生成的计数直接继承), 新请求叠加 1-2 次即假满 → "很快中断"
-        // 与 "一直卡死" 交替出现 (残留多寡随机)。
-        headerRetryCount = 0
+        // v3.14.0: 断流重试统一三轮链 (风暴3x300ms+经典3次x3轮), streamRetryCount
+        // 请求级归零保留; headerRetry/initRetry 独立池语义废弃/保留见下
+        streamRetryCount = 0
         // v3.12.1: 发起重试池同步归零 (Koin single 类成员必须请求级重置)
         initRetryCount = 0
 
@@ -1110,86 +1106,30 @@ class GenerationHandler(
                         "[v${BuildConfig.VERSION_NAME}] 发起对话失败: 已尝试 $initRetryCount 次仍无法建立连接 (网关冷启动或瞬时不可达)，已保留输入内容，请稍后重试", e
                     )
                 }
-                val isHeaderTimeout = e.message?.contains("平台连接无响应") == true
-                if (isHeaderTimeout) {
-                    // v3.11.35: 重试重写 — 判死窗口 25s (provider 层已提) 后,
-                    // 4 次封顶 (4x25s+退避≈110s) 快速终报; 旧 15 次 x 15s=225s
-                    // 对"彻底挂死"场景拖 4 分钟才报, 启动感知极差。
-                    if (headerRetryCount < 4) {
-                        headerRetryCount++
-                        // v3.11.17: 重试静默化 (用户定版) — 不再挂"正在重试" UI 提示,
-                        // 失败回滚对用户零感知; 进度只进日志与 Trace
-                        // v3.12.0: 退避分级 — 前 2 次短间隔快速恢复 (瞬时挂起),
-                        // 3 次起 2s (持续不可达的网关不连续怼, 给冷启动留窗口)
-                        kotlinx.coroutines.delay(if (headerRetryCount <= 2) 800L else 2000L)
-                        Log.w(TAG, "header timeout — gateway retry $headerRetryCount/4 elapsed=${System.currentTimeMillis() - retryBudgetStartMs}ms: ${e.message}")
-                        CallTracer.event("RETRY", "header_retry", "gateway no response, retry $headerRetryCount/4", metrics = sseDiagMetrics())
-                        messages = preStreamMessages
-                        onUpdateMessages(messages)
-                        continue@streamLoop
-                    }
-                    processingStatus.value = null
-                    onUpdateMessages(messages)
-                    Log.e(TAG, "header timeout exhausted: $headerRetryCount retries")
-                    throw java.io.IOException(
-                        "[v${BuildConfig.VERSION_NAME}] 网关连续 $headerRetryCount 次连接无响应 (每次 25s 静默): 网关持续不可达，已保留已生成内容", e
-                    )
-                }
-                val isWatchdogTimeout = e.message?.contains("生成无有效数据超时") == true
-                if (isWatchdogTimeout) {
-                    if (streamRetryCount == 0) {
-                        streamRetryCount = 1
-                        // v3.11.17: 静默恢复 (同上, 无 UI 提示)
-                        kotlinx.coroutines.delay(300)
-                        Log.w(TAG, "watchdog timeout — single recovery retry: ${e.message}")
-                        CallTracer.event("RETRY", "watchdog_single_retry", e.message ?: "watchdog", metrics = sseDiagMetrics())
-                        messages = preStreamMessages
-                        onUpdateMessages(messages)
-                        continue@streamLoop
-                    }
-                    // 第二次仍静默 — 明确报错 (不再进入任何重试循环)
-                    processingStatus.value = null
-                    onUpdateMessages(messages)
-                    Log.e(TAG, "watchdog timeout twice: ${e.message}")
-                    throw java.io.IOException(
-                        "[v${BuildConfig.VERSION_NAME}] 平台两次等待均无响应 (${e.message ?: "watchdog 超时"}): 平台未返回有效数据，已保留已生成内容", e
-                    )
-                }
-                // v3.11.10: 首次断流时重置预算起点 + 清零本次计数状态
-                // (streamRetryCount==0 说明这轮失败发生在任何成功数据之前;
-                // 后续轮次的失败继续从第一次断流累计, 预算切分正确)
-                if (streamRetryCount == 0) {
-                    retryBudgetStartMs = System.currentTimeMillis()
-                }
-                val retryElapsedMs = System.currentTimeMillis() - retryBudgetStartMs
-                if (streamRetryCount < 15 && retryElapsedMs < STREAM_RETRY_BUDGET_MS) {
+                // v3.14.0: 断流恢复统一三轮链 (用户定版) —
+                // 每轮 = 风暴 3 次 ×300ms + 经典 3 次 (1s/2s/4s, 对齐原版
+                // rikkahub 2.4.16 指数退避风格); 共 3 轮, 总计 18 次。
+                // 旧三分支 (watchdog 单次恢复 / headerRetry 4 次 / 风暴
+                // 15×500ms) 废弃 — 多链并行时用户感知混乱 ("卡几十秒突然
+                // 恢复或彻底卡死"), 统一单链后恢复节奏可预期、终报明确。
+                val totalAttempts = 18
+                val round = streamRetryCount / 6 + 1
+                val phaseInRound = streamRetryCount % 6 + 1
+                if (streamRetryCount < totalAttempts) {
                     streamRetryCount++
-                    // v3.11.16: 重试节奏扁平化 — 用户定版"密集重试", 固定 150ms
-                    // (旧指数序列尾部拖到 1.6s, 冗余: 快失败重试间隔无意义,
-                    // 密集命中恢复窗口才是目的; 15 次共 ≈2.3s)
-                    // v3.12.4: 用户定版 150ms→500ms (15 次共 7.5s, 恢复窗口更长)
-                    val retryDelayMs = 500L
-                    // v3.11.4: 重试期间 UI 状态提示 — 回滚瞬间内容消失,
-                    // 无提示时用户感知"卡死"; 提示后用户知道在自动恢复
-                    // v3.11.17: 静默重试 (同上, 无 UI 提示)
+                    val isStorm = phaseInRound <= 3
+                    val retryDelayMs = if (isStorm) 300L else longArrayOf(1000L, 2000L, 4000L)[phaseInRound - 4]
+                    // v3.11.17: 重试静默化 (无 UI 提示, 进度只进日志与 Trace)
                     kotlinx.coroutines.delay(retryDelayMs)
-                    Log.w(TAG, "stream interrupted (${e.message}), rolling back & retry $streamRetryCount/15 (delay=${retryDelayMs}ms)")
-                    CallTracer.event("RETRY", "stream_interrupted", "interrupted: ${e.message}, rollback & retry $streamRetryCount/15", metrics = sseDiagMetrics())
+                    Log.w(TAG, "stream interrupted (${e.message}) — round $round/3 phase ${if (isStorm) "storm" else "classic"} $phaseInRound/6, retry $streamRetryCount/18 (delay=${retryDelayMs}ms)")
+                    CallTracer.event("RETRY", "stream_interrupted", "round $round/3 ${if (isStorm) "storm" else "classic"} retry $streamRetryCount/18: ${e.message}", metrics = sseDiagMetrics())
                     messages = preStreamMessages  // 丢弃本次生成的半截内容
                     onUpdateMessages(messages)    // UI 同步回滚
-                    continue@streamLoop  // 重试 (maxSteps 内, 消息相同缓存命中)
+                    continue@streamLoop
                 }
-                // v3.11.4: 重试次数或时间预算耗尽 — 保留已输出内容 + 明确失败
-                // (旧行为: 半截输出已随回滚丢弃 → 用户看到"工具后无输出"卡死感;
-                // 现在保留模型实际输出过的内容到 UI, 再明确报错)
                 processingStatus.value = null
                 onUpdateMessages(messages)
-                // v3.12.1: 流中断文案与发起失败明确区分 (用户要求两场景分流)
-                val retryInfo = if (streamRetryCount >= 15) {
-                    "自动恢复 ${streamRetryCount} 次已达上限"
-                } else {
-                    "自动恢复 ${streamRetryCount} 次后仍失败"
-                }
+                val retryInfo = "自动恢复 3 轮 (共 $streamRetryCount 次) 已达上限"
                 Log.e(TAG, "stream retry exhausted: $retryInfo, last error: ${e.message}")
                 throw java.io.IOException(
                     "[v${BuildConfig.VERSION_NAME}] 生成中断: $retryInfo，已保留已生成内容 (${e.message ?: "连接中断"})", e
