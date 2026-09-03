@@ -1085,6 +1085,13 @@ class GenerationHandler(
                 // 没恢复就报错 — 报错几秒后重发立即成功。
                 val isInitPhase = streamRetryCount == 0 &&
                     e.message?.contains("生成无有效数据超时") != true
+                if (isInitPhase && !settings.networkSetting.enableAutoRetry) {
+                    processingStatus.value = null
+                    onUpdateMessages(messages)
+                    throw java.io.IOException(
+                        "[v${BuildConfig.VERSION_NAME}] 发起对话失败: 自动重试已关闭 (${e.message ?: "连接失败"})", e
+                    )
+                }
                 if (isInitPhase) {
                     if (initRetryCount < 4) {
                         initRetryCount++
@@ -1104,6 +1111,14 @@ class GenerationHandler(
                     Log.e(TAG, "init phase exhausted: $initRetryCount retries: ${e.message}")
                     throw java.io.IOException(
                         "[v${BuildConfig.VERSION_NAME}] 发起对话失败: 已尝试 $initRetryCount 次仍无法建立连接 (网关冷启动或瞬时不可达)，已保留输入内容，请稍后重试", e
+                    )
+                }
+                // v3.15.0: 自动重试开关 (2.4.16 移植) — false 时断联直接报错
+                if (!settings.networkSetting.enableAutoRetry) {
+                    processingStatus.value = null
+                    onUpdateMessages(messages)
+                    throw java.io.IOException(
+                        "[v${BuildConfig.VERSION_NAME}] 生成中断: 自动重试已关闭 (${e.message ?: "连接中断"})", e
                     )
                 }
                 // v3.14.0: 断流恢复统一三轮链 (用户定版) —

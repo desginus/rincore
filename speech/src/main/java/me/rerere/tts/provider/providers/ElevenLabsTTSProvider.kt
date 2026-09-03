@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.flow
 import me.rerere.tts.model.AudioChunk
 import me.rerere.tts.model.AudioFormat
 import me.rerere.tts.model.TTSRequest
+import me.rerere.tts.provider.TTSProviderException
 import me.rerere.tts.provider.TTSProvider
 import me.rerere.tts.provider.TTSProviderSetting
 import okhttp3.MediaType.Companion.toMediaType
@@ -56,7 +57,10 @@ class ElevenLabsTTSProvider : TTSProvider<TTSProviderSetting.ElevenLabs> {
             val errorBody = response.body.string()
             Log.e(TAG, "generateSpeech: ${response.code} ${response.message}")
             Log.e(TAG, "generateSpeech: $errorBody")
-            throw Exception("ElevenLabs TTS request failed: ${response.code} ${response.message}")
+            throw TTSProviderException(
+                message = "ElevenLabs TTS request failed: ${response.code} ${response.message}",
+                statusCode = response.code
+            )
         }
 
         val audioData = response.body.bytes()

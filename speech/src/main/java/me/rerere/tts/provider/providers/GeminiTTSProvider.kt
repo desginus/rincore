@@ -11,6 +11,7 @@ import kotlinx.serialization.json.Json
 import me.rerere.tts.model.AudioChunk
 import me.rerere.tts.model.AudioFormat
 import me.rerere.tts.model.TTSRequest
+import me.rerere.tts.provider.TTSProviderException
 import me.rerere.tts.provider.TTSProvider
 import me.rerere.tts.provider.TTSProviderSetting
 import okhttp3.MediaType.Companion.toMediaType
@@ -97,7 +98,10 @@ class GeminiTTSProvider : TTSProvider<TTSProviderSetting.Gemini> {
         val response = httpClient.newCall(httpRequest).execute()
 
         if (!response.isSuccessful) {
-            throw Exception("Gemini TTS request failed: ${response.code} ${response.message}")
+            throw TTSProviderException(
+                message = "Gemini TTS request failed: ${response.code} ${response.message}",
+                statusCode = response.code
+            )
         }
 
         val responseJson = response.body.string()

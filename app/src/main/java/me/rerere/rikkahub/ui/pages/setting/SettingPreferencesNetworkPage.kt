@@ -63,6 +63,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.network.toProxyOrNull
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
+import me.rerere.rikkahub.ui.components.ui.Switch
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.plus
@@ -187,6 +188,27 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+            item {
+                // v3.15.0: 自动重试开关 (2.4.16 移植) — false = 断联直接报错
+                CardGroup(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                ) {
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_page_preferences_network_auto_retry)) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_preferences_network_auto_retry_desc)) },
+                        trailingContent = {
+                            Switch(
+                                checked = settings.networkSetting.enableAutoRetry,
+                                onCheckedChange = { checked ->
+                                    vm.updateSettings(
+                                        settings.copy(networkSetting = settings.networkSetting.copy(enableAutoRetry = checked))
+                                    )
+                                },
+                            )
+                        },
+                    )
+                }
+            }
                     OutlinedTextField(
                         value = proxyUrlDraft,
                         onValueChange = { proxyUrlDraft = it },

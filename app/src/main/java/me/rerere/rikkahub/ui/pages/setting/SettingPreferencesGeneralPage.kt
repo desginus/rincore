@@ -1,6 +1,8 @@
 package me.rerere.rikkahub.ui.pages.setting
 
 import androidx.compose.foundation.layout.Arrangement
+
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,6 +17,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -33,10 +37,15 @@ import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 
+import kotlin.math.roundToInt
+
 @Composable
 fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     var displaySetting by remember(settings) { mutableStateOf(settings.displaySetting) }
+    var ttsPlaybackSpeed by remember(settings.defaultTTSPlaybackSpeed) {
+        mutableFloatStateOf(settings.defaultTTSPlaybackSpeed)
+    }
 
     fun updateDisplaySetting(setting: DisplaySetting) {
         displaySetting = setting
@@ -261,7 +270,38 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
                     modifier = Modifier.padding(horizontal = 8.dp),
                     title = { Text(stringResource(R.string.setting_page_tts_settings)) },
                 ) {
-                    item(
+                                        item(
+                        headlineContent = {
+                            Text(stringResource(R.string.setting_tts_page_default_playback_speed))
+                        },
+                        supportingContent = {
+                            Column {
+                                Text(stringResource(R.string.setting_tts_page_default_playback_speed_description))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Slider(
+                                        value = ttsPlaybackSpeed,
+                                        onValueChange = {
+                                            ttsPlaybackSpeed = (it * 10).roundToInt() / 10f
+                                        },
+                                        onValueChangeFinished = {
+                                            vm.updateSettings(
+                                                settings.copy(defaultTTSPlaybackSpeed = ttsPlaybackSpeed)
+                                            )
+                                        },
+                                        valueRange = 0.5f..2.0f,
+                                        steps = 14,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    Text(text = "x${"%.1f".format(ttsPlaybackSpeed)}")
+                                }
+                            }
+                        },
+                    )
+item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_tts_only_read_quoted_title)) },
                         supportingContent = { Text(stringResource(R.string.setting_display_page_tts_only_read_quoted_desc)) },
                         trailingContent = {

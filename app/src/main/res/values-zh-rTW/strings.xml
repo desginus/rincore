@@ -1266,5 +1266,9 @@
   <string name="setting_files_page_clean_all">全部檔案</string>
   <string name="setting_files_page_clean_older_than_days">%1$d 天前</string>
   <string name="setting_files_page_clean_range_description">選擇要永久刪除的檔案。此操作無法撤銷。</string>
+  <string name="setting_page_preferences_network_auto_retry">自動重試</string>
+  <string name="setting_page_preferences_network_auto_retry_desc">網路錯誤時自動重試模型請求 (風暴+經典共三輪)。</string>
+  <string name="setting_tts_page_default_playback_speed">預設播放速度</string>
+  <string name="setting_tts_page_default_playback_speed_description">本地套用於所有 TTS 提供商, 不變更其合成設定。</string>
 </resources>
 

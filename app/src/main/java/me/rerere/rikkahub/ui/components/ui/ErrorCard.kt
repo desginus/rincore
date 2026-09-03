@@ -183,7 +183,7 @@ fun ErrorCard(
                         color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f),
                     )
                 }
-                if (error.solution == ChatErrorSolution.CheckTitleModelSettings) {
+                if (error.solution == ChatErrorSolution.CheckFastModelSettings) {
                     Text(
                         text = buildAnnotatedString {
                             withLink(

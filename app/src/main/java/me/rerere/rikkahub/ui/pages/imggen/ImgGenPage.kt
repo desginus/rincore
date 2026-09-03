@@ -6,6 +6,7 @@ package me.rerere.rikkahub.ui.pages.imggen
  * ───────────────────────────────────────────────────────────────*/
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
