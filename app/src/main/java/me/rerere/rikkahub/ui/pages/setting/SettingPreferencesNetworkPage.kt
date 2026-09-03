@@ -188,27 +188,6 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-            item {
-                // v3.15.0: 自动重试开关 (2.4.16 移植) — false = 断联直接报错
-                CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                ) {
-                    item(
-                        headlineContent = { Text(stringResource(R.string.setting_page_preferences_network_auto_retry)) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_preferences_network_auto_retry_desc)) },
-                        trailingContent = {
-                            Switch(
-                                checked = settings.networkSetting.enableAutoRetry,
-                                onCheckedChange = { checked ->
-                                    vm.updateSettings(
-                                        settings.copy(networkSetting = settings.networkSetting.copy(enableAutoRetry = checked))
-                                    )
-                                },
-                            )
-                        },
-                    )
-                }
-            }
                     OutlinedTextField(
                         value = proxyUrlDraft,
                         onValueChange = { proxyUrlDraft = it },
@@ -310,6 +289,27 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
             contentPadding = contentPadding + PaddingValues(8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            item {
+                // v3.15.0: 自动重试开关 (2.4.16 移植) — false = 断联直接报错
+                CardGroup(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                ) {
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_page_preferences_network_auto_retry)) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_preferences_network_auto_retry_desc)) },
+                        trailingContent = {
+                            Switch(
+                                checked = settings.networkSetting.enableAutoRetry,
+                                onCheckedChange = { checked ->
+                                    vm.updateSettings(
+                                        settings.copy(networkSetting = settings.networkSetting.copy(enableAutoRetry = checked))
+                                    )
+                                },
+                            )
+                        },
+                    )
+                }
+            }
             item {
                 CardGroup(
                     modifier = Modifier.padding(horizontal = 8.dp),
