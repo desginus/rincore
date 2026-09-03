@@ -59,6 +59,10 @@ import me.rerere.hugeicons.stroke.Settings02
 import me.rerere.hugeicons.stroke.View
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.usage.CommandCodeUsageApi
+import me.rerere.rikkahub.data.usage.UsageMiniCardData
+import me.rerere.rikkahub.data.usage.openCodeMiniCard
+import me.rerere.rikkahub.data.usage.commandCodeMiniCard
+import me.rerere.rikkahub.data.usage.formatRemainingMs
 import me.rerere.rikkahub.data.usage.UsageApi
 import org.koin.compose.koinInject
 import java.time.Instant
@@ -97,8 +101,15 @@ fun UsagePage(onBack: () -> Unit = {}) {
         }
         loading = true
         // 查询卡包内全部密钥 (焦点密钥 + 历史密钥), 供多密钥卡片展示
+        // v3.13.2: 跨族分流 — user_ 开头是 Command Code key, 用 CC Api 查
+        // (旧逻辑全走 OpenCode Api, 跨族 key 必失败被滤, 卡片视图看不到)
         val keys = (listOf(apiKey) + savedKeys).distinct()
-        usages = keys.associateWith { UsageApi.fetchUsage(it) }
+        val ccKeys = keys.filter { it.startsWith("user_", ignoreCase = true) }
+        val ocKeys = keys.filter { !it.startsWith("user_", ignoreCase = true) }
+        usages = ocKeys.associateWith { UsageApi.fetchUsage(it) }
+        crossUsages = ccKeys.mapNotNull { k ->
+            CommandCodeUsageApi.fetchUsage(k)?.result?.let { k to it }
+        }.toMap()
         error = if (usages[apiKey] == null) {
             "查询失败，请检查 API Key 或网络后下拉重试"
         } else {
@@ -120,6 +131,8 @@ fun UsagePage(onBack: () -> Unit = {}) {
             listOf(u.rolling.percent, u.weekly.percent, u.monthly.percent)
                 .all { p -> p == null || p < 100 }
         }
+    // v3.13.2: 跨族密钥查询结果 (本页为 OpenCode 族, user_ 密钥存这里)
+    var crossUsages by remember { mutableStateOf<Map<String, CommandCodeUsageApi.CommandCodeUsageResult>>(emptyMap()) }
     val showCards = settings.usageViewMode == "cards" && otherVisible.isNotEmpty()
     val focusMode = settings.usageViewMode == "focus"
     // 焦点视图 = 单密钥大窗展示形式 (UsageRingCard 竖列), 与单卡一毛一样
@@ -201,10 +214,10 @@ fun UsagePage(onBack: () -> Unit = {}) {
                                 )
                             }
                             if (showCards) {
-                                items(otherVisible, key = { it.first }) { (k, u) ->
+                                items(otherVisible, key = { it.first }) { (k, d) ->
                                     KeyUsageCard(
                                         key = k,
-                                        usage = u,
+                                        card = d,
                                         isActive = false,
                                     )
                                 }
@@ -293,7 +306,7 @@ fun UsagePage(onBack: () -> Unit = {}) {
 @Composable
 private fun KeyUsageCard(
     key: String,
-    usage: UsageApi.UsageResult,
+    card: UsageMiniCardData,
     isActive: Boolean,
 ) {
     Card(
@@ -324,14 +337,17 @@ private fun KeyUsageCard(
             }
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                MiniRing(usage.rolling.percent ?: 0, "5h", usageGradientColor(usage.rolling.percent ?: 0))
-                MiniRing(usage.weekly.percent ?: 0, "周", usageGradientColor(usage.weekly.percent ?: 0))
+                MiniRing(card.p5 ?: 0, "5h", usageGradientColor(card.p5 ?: 0))
+                MiniRing(card.pw ?: 0, "周", usageGradientColor(card.pw ?: 0))
             }
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                MiniRing(usage.monthly.percent ?: 0, "月", usageGradientColor(usage.monthly.percent ?: 0))
-                val resetInfo = nearestReset(usage)
-                MiniRing(resetInfo.elapsedPercent.toInt(), "重置", usageGradientColor(resetInfo.elapsedPercent.toInt()))
+                MiniRing(card.pm ?: 0, "月", usageGradientColor(card.pm ?: 0))
+                // 重置环红→绿 (与三环反向, v3.12.8 用户定版)
+                MiniRing(
+                    card.resetElapsedPct, "重置",
+                    Color(CommandCodeUsageApi.resetColorArgb(card.resetRemainingMs ?: 0L, card.resetWindowMs)),
+                )
             }
         }
     }

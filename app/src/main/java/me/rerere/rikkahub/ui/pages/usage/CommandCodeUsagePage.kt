@@ -60,6 +60,10 @@ import me.rerere.hugeicons.stroke.Settings02
 import me.rerere.hugeicons.stroke.View
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.usage.CommandCodeUsageApi
+import me.rerere.rikkahub.data.usage.UsageMiniCardData
+import me.rerere.rikkahub.data.usage.openCodeMiniCard
+import me.rerere.rikkahub.data.usage.commandCodeMiniCard
+import me.rerere.rikkahub.data.usage.formatRemainingMs
 import org.koin.compose.koinInject
 import java.time.Instant
 import java.time.ZoneId
@@ -89,8 +93,12 @@ fun CommandCodeUsagePage(onBack: () -> Unit = {}) {
         }
         loading = true
         // 查询卡包内全部密钥 (焦点 + 历史), 多密钥卡片展示
+        // v3.13.2: 跨族分流 — sk 开头是 OpenCode key, 用 OpenCode Api 查
         val keys = (listOf(apiKey) + savedKeys).distinct()
-        val outcomes = keys.associateWith { CommandCodeUsageApi.fetchUsage(it) }
+        val ccKeys = keys.filter { !it.startsWith("sk", ignoreCase = true) }
+        val ocKeys = keys.filter { it.startsWith("sk", ignoreCase = true) }
+        val outcomes = ccKeys.associateWith { CommandCodeUsageApi.fetchUsage(it) }
+        crossUsages = ocKeys.associateWith { UsageApi.fetchUsage(it) }
         val fetched = outcomes.mapValues { it.value.result }
         val activeOk = fetched[apiKey] != null
         if (activeOk) {
@@ -116,15 +124,15 @@ fun CommandCodeUsagePage(onBack: () -> Unit = {}) {
     val pullState = rememberPullToRefreshState()
 
     // 非焦点密钥: 各窗口均有空余才显示 (与 OpenCode 同规则)
-    val otherVisible = savedKeys
-        .filter { it != apiKey }
-        .mapNotNull { k -> usages[k]?.let { k to it } }
-        .filter { (_, u) ->
-            val p5 = u.fiveHour?.percent
-            val pw = u.weekly?.percent
-            val pm = u.monthlyUsedPercent
-            listOf(p5, pw, pm).all { p -> p == null || p < 100 }
-        }
+    // v3.13.2: 统一小卡数据 (本族 + 跨族 OpenCode 密钥), 卡片视图全展示
+    val otherVisible = (savedKeys.filter { it != apiKey }
+        .mapNotNull { k ->
+            usages[k]?.let { k to commandCodeMiniCard(it) }
+                ?: crossUsages[k]?.let { k to openCodeMiniCard(it) }
+        })
+        .filter { (_, d) -> listOf(d.p5, d.pw, d.pm).all { p -> p == null || p < 100 } }
+    // v3.13.2: 跨族密钥查询结果 (本页为 Command Code 族, sk 密钥存这里)
+    var crossUsages by remember { mutableStateOf<Map<String, UsageApi.UsageResult>>(emptyMap()) }
     val showCards = settings.usageViewMode == "cards" && otherVisible.isNotEmpty()
     val focusMode = settings.usageViewMode == "focus"
 
@@ -214,13 +222,11 @@ fun CommandCodeUsagePage(onBack: () -> Unit = {}) {
                                 )
                             }
                             if (showCards) {
-                                items(otherVisible, key = { it.first }) { (k, u) ->
+                                items(otherVisible, key = { it.first }) { (k, d) ->
                                     CommandCodeKeyCard(
                                         key = k,
-                                        usage = u,
+                                        card = d,
                                         isActive = false,
-                                        stale = stale,
-                                        dataTime = dataTime,
                                     )
                                 }
                             }
@@ -487,10 +493,8 @@ private fun CCUsageRingCard(
 @Composable
 private fun CommandCodeKeyCard(
     key: String,
-    usage: CommandCodeUsageApi.CommandCodeUsageResult,
+    card: UsageMiniCardData,
     isActive: Boolean,
-    stale: Boolean,
-    dataTime: String,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -503,39 +507,24 @@ private fun CommandCodeKeyCard(
         ),
     ) {
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    maskKey(key),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                )
-                if (isActive) {
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "使用中",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Spacer(Modifier.weight(1f))
-                    Text(
-                        if (stale) "已过期" else dataTime,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (stale) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
-                    )
-                }
-            }
+            Text(
+                maskKey(key),
+                style = MaterialTheme.typography.titleSmall,
+                color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            )
             Spacer(Modifier.height(10.dp))
-            val fh = usage.fiveHour
-            val wk = usage.weekly
-            if (usage.limited && fh != null && wk != null) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    MiniRing(fh.percent ?: 0, "5h", usageGradientColor(fh.percent ?: 0))
-                    MiniRing(wk.percent ?: 0, "周", usageGradientColor(wk.percent ?: 0))
-                }
-                Spacer(Modifier.height(8.dp))
-            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                MiniRing(usage.monthlyUsedPercent ?: 0, "月", usageGradientColor(usage.monthlyUsedPercent ?: 0))
+                MiniRing(card.p5 ?: 0, "5h", usageGradientColor(card.p5 ?: 0))
+                MiniRing(card.pw ?: 0, "周", usageGradientColor(card.pw ?: 0))
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                MiniRing(card.pm ?: 0, "月", usageGradientColor(card.pm ?: 0))
+                // 重置环红→绿 (与三环反向, v3.12.8 用户定版) — v3.13.2 补第四环
+                MiniRing(
+                    card.resetElapsedPct, "重置",
+                    Color(CommandCodeUsageApi.resetColorArgb(card.resetRemainingMs ?: 0L, card.resetWindowMs)),
+                )
             }
         }
     }

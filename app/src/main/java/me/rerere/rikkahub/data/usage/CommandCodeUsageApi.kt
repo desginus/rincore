@@ -297,9 +297,20 @@ object CommandCodeUsageApi {
         if (resetAtMs == null || resetAtMs <= 0) return null
         val diff = resetAtMs - System.currentTimeMillis()
         if (diff <= 0) return "即将重置"
-        val h = diff / 3_600_000
-        val m = (diff % 3_600_000) / 60_000
-        return if (h > 0) "${h}h ${m}m 后重置" else "${m}m 后重置"
+        // v3.13.2: 进制对齐 — 24h 进位天, 7 天进位周 (同 OpenCode formatRemaining)
+        val days = diff / 86_400_000
+        val hours = (diff % 86_400_000) / 3_600_000
+        val mins = (diff % 3_600_000) / 60_000
+        return when {
+            days >= 7 -> {
+                val weeks = days / 7
+                val rd = days % 7
+                if (rd > 0) "${weeks}周 ${rd}天 后重置" else "${weeks}周 后重置"
+            }
+            days > 0 -> "${days}天 ${hours}小时 后重置"
+            hours > 0 -> "${hours}小时 ${mins}分钟 后重置"
+            else -> "${mins}分钟 后重置"
+        }
     }
 
     /** 月度重置日 "10月1日重置" */
