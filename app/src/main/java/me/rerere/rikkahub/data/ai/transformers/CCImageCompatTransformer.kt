@@ -66,3 +66,4 @@ object CCImageCompatTransformer : InputMessageTransformer {
         if (relocated > 0) Log.i(TAG, "relocated tool-result images: $relocated")
         return out
     }
+}
