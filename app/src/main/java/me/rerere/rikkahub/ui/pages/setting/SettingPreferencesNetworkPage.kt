@@ -370,7 +370,7 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
                 ) {
                     item(
                         headlineContent = { Text("图片自动适配") },
-                        supportingContent = { Text("图片经 OCR 模型转文字后发送 (Command Code CLI 同款机制, Go 档模型不收图)。需在助手设置配置 OCR 模型; 未配置时图片自动跳过。仅影响 Command Code 通道") },
+                        supportingContent = { Text("修复 Command Code 通道图片卡死: 工具返回的图片转为规范格式发送 (对齐 Cherry Studio)。仅影响 Command Code 通道") },
                         trailingContent = {
                             Switch(
                                 checked = settings.ccImageCompat,
