@@ -38,6 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
@@ -49,6 +50,7 @@ import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.ui.components.ai.ModelListSheet
+import me.rerere.rikkahub.ui.components.ai.ReasoningButton
 import me.rerere.rikkahub.ui.components.ai.rememberModelListState
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
@@ -139,20 +141,14 @@ private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding:
                 modelId = settings.fastModelId,
                 providers = settings.providers,
                 onSelect = { vm.updateSettings(settings.copy(fastModelId = it.id)) },
+                reasoningLevel = settings.fastModelReasoningLevel,
+                onUpdateReasoningLevel = {
+                    vm.updateSettings(settings.copy(fastModelReasoningLevel = it))
+                },
             )
         }
         item {
-            ModelSettingItem(
-                title = stringResource(R.string.setting_model_page_title_model),
-                description = stringResource(R.string.setting_model_page_title_model_desc),
-                modelId = settings.titleModelId,
-                providers = settings.providers,
-                onSelect = { vm.updateSettings(settings.copy(titleModelId = it.id)) },
-                onClear = { vm.updateSettings(settings.copy(titleModelId = null)) },
-            )
-        }
-        item {
-            SuggestionModelSettingItem(
+            SuggestionSettingItem(
                 settings = settings,
                 vm = vm,
             )
@@ -210,19 +206,12 @@ private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding:
 }
 
 @Composable
-private fun SuggestionModelSettingItem(
+private fun SuggestionSettingItem(
     settings: Settings,
     vm: SettingVM,
 ) {
-    val title = stringResource(R.string.setting_model_page_suggestion_model)
-    val state = rememberModelListState(
-        modelId = settings.suggestionModelId,
-        providers = settings.providers,
-        type = ModelType.CHAT,
-    )
-
     Column {
-        CardGroup(title = { Text(title) }) {
+        CardGroup {
             item(
                 headlineContent = { Text(stringResource(R.string.setting_model_page_enable_suggestion)) },
                 trailingContent = {
@@ -234,41 +223,6 @@ private fun SuggestionModelSettingItem(
                     )
                 },
             )
-            if (settings.enableSuggestion) {
-                item(
-                    onClick = { state.open() },
-                    headlineContent = { Text(title) },
-                    trailingContent = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Text(
-                                text = state.currentModel?.displayName
-                                    ?: stringResource(R.string.model_list_select_model),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            if (state.currentModel != null) {
-                                IconButton(
-                                    onClick = { vm.updateSettings(settings.copy(suggestionModelId = null)) },
-                                    modifier = Modifier.size(20.dp),
-                                ) {
-                                    Icon(HugeIcons.Cancel01, contentDescription = null, modifier = Modifier.size(14.dp))
-                                }
-                            } else {
-                                Icon(
-                                    HugeIcons.ArrowRight01,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                            }
-                        }
-                    },
-                )
-            }
         }
         Text(
             text = stringResource(R.string.setting_model_page_suggestion_model_desc),
@@ -277,8 +231,6 @@ private fun SuggestionModelSettingItem(
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
         )
     }
-
-    ModelListSheet(state = state, onSelect = { vm.updateSettings(settings.copy(suggestionModelId = it.id)) })
 }
 
 @Composable
@@ -289,6 +241,8 @@ private fun ModelSettingItem(
     providers: List<ProviderSetting>,
     onSelect: (Model) -> Unit,
     onClear: (() -> Unit)? = null,
+    reasoningLevel: ReasoningLevel? = null,
+    onUpdateReasoningLevel: ((ReasoningLevel) -> Unit)? = null,
 ) {
     val state = rememberModelListState(
         modelId = modelId,
@@ -328,6 +282,17 @@ private fun ModelSettingItem(
                     }
                 },
             )
+            if (reasoningLevel != null && onUpdateReasoningLevel != null) {
+                item(
+                    headlineContent = { Text(stringResource(R.string.assistant_page_thinking_budget)) },
+                    trailingContent = {
+                        ReasoningButton(
+                            reasoningLevel = reasoningLevel,
+                            onUpdateReasoningLevel = onUpdateReasoningLevel,
+                        )
+                    },
+                )
+            }
         }
         Text(
             text = description,
