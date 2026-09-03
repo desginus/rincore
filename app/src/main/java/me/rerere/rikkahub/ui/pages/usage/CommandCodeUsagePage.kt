@@ -60,6 +60,7 @@ import me.rerere.hugeicons.stroke.Settings02
 import me.rerere.hugeicons.stroke.View
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.usage.CommandCodeUsageApi
+import me.rerere.rikkahub.data.usage.UsageApi
 import me.rerere.rikkahub.data.usage.UsageMiniCardData
 import me.rerere.rikkahub.data.usage.openCodeMiniCard
 import me.rerere.rikkahub.data.usage.commandCodeMiniCard
