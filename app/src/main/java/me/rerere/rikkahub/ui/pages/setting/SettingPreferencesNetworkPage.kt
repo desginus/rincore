@@ -361,6 +361,28 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
                 }
             }
             item {
+                // v3.13.3: CC 图片兼容适配 (opt-in) — CC 网关严格校验图片格式,
+                // GIF/SVG 等会触发 Invalid input 并 4 次重试卡死; 开启后
+                // 自动转 JPEG/剔除不兼容图, 仅影响 Command Code 通道
+                CardGroup(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    title = { Text("Command Code 图片兼容") },
+                ) {
+                    item(
+                        headlineContent = { Text("图片自动适配") },
+                        supportingContent = { Text("GIF/不兼容格式转 JPEG, 无法解码的图片自动跳过, 避免 Invalid input 卡死。仅影响 Command Code 通道") },
+                        trailingContent = {
+                            Switch(
+                                checked = settings.ccImageCompat,
+                                onCheckedChange = { checked ->
+                                    vm.updateSettings(settings.copy(ccImageCompat = checked))
+                                },
+                            )
+                        },
+                    )
+                }
+            }
+            item {
                 CardGroup(
                     modifier = Modifier.padding(horizontal = 8.dp),
                     title = {

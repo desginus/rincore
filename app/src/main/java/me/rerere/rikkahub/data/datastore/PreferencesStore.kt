@@ -116,6 +116,7 @@ class SettingsStore(
         // v3.12.8: 预热开关持久化 (v3.12.6 漏接 DataStore 两端, 重启回默认 false)
         val OPENCODE_WARM_ENABLED = booleanPreferencesKey("opencode_warm_enabled")
         val COMMAND_CODE_WARM_ENABLED = booleanPreferencesKey("command_code_warm_enabled")
+        val CC_IMAGE_COMPAT = booleanPreferencesKey("cc_image_compat")
         val USAGE_VIEW_MODE = stringPreferencesKey("usage_view_mode")
 
         // 模型选择
@@ -253,6 +254,7 @@ class SettingsStore(
                 opencodeApiKey = preferences[OPENCODE_API_KEY] ?: "",
                 opencodeWarmEnabled = preferences[OPENCODE_WARM_ENABLED] == true,
                 commandCodeWarmEnabled = preferences[COMMAND_CODE_WARM_ENABLED] == true,
+                ccImageCompat = preferences[CC_IMAGE_COMPAT] == true,
                 usageViewMode = preferences[USAGE_VIEW_MODE] ?: "cards",
                 opencodeApiKeys = preferences[OPENCODE_API_KEYS]?.let {
                     JsonInstant.decodeFromString(it)
@@ -454,6 +456,7 @@ class SettingsStore(
             preferences[OPENCODE_API_KEYS] = JsonInstant.encodeToString(settings.opencodeApiKeys)
             preferences[OPENCODE_WARM_ENABLED] = settings.opencodeWarmEnabled
             preferences[COMMAND_CODE_WARM_ENABLED] = settings.commandCodeWarmEnabled
+            preferences[CC_IMAGE_COMPAT] = settings.ccImageCompat
             preferences[DISPLAY_SETTING] = JsonInstant.encodeToString(settings.displaySetting)
             preferences[NETWORK_SETTING] = JsonInstant.encodeToString(settings.networkSetting)
 
@@ -626,6 +629,7 @@ data class Settings(
     val usageViewMode: String = "cards", // v3.9.10: 用量查询视图 cards=多卡片 focus=焦点单卡, 持久化
     val opencodeWarmEnabled: Boolean = false, // v3.12.6: OpenCode 专项预热开关 (默认关, 用户可选)
     val commandCodeWarmEnabled: Boolean = false, // v3.12.6: Command Code 专项预热开关 (默认关, 用户可选)
+    val ccImageCompat: Boolean = false, // v3.13.3: Command Code 图片兼容适配 (默认关, opt-in, 仅 CC 通道)
     val dynamicColor: Boolean = true,
     val themeId: String = PresetThemes[0].id,
     val customThemes: List<CustomTheme> = emptyList(),

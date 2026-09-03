@@ -694,6 +694,11 @@ class ChatService(
                     add(templateTransformer)
                     add(workspaceReminderTransformer)
                     add(me.rerere.rikkahub.ecosystem.tools.SlashCommandRouter)
+                    // v3.13.3: CC 图片兼容适配 (opt-in, transformer 内部
+                    // 再校验 user_ key, 双重条件确保不影响 OpenCode 通道)
+                    if (settings.ccImageCompat) {
+                        add(me.rerere.rikkahub.data.ai.transformers.CCImageCompatTransformer)
+                    }
                 },
                 outputTransformers = outputTransformers,
                 tools = buildAssistantToolPool(
