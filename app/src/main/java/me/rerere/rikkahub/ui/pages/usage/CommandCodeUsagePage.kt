@@ -101,7 +101,7 @@ fun CommandCodeUsagePage(onBack: () -> Unit = {}) {
         val ccKeys = keys.filter { !it.startsWith("sk", ignoreCase = true) }
         val ocKeys = keys.filter { it.startsWith("sk", ignoreCase = true) }
         val outcomes = ccKeys.associateWith { CommandCodeUsageApi.fetchUsage(it) }
-        crossUsages = ocKeys.associateWith { UsageApi.fetchUsage(it) }
+        crossUsages = ocKeys.mapNotNull { k -> UsageApi.fetchUsage(k)?.let { k to it } }.toMap()
         val fetched = outcomes.mapValues { it.value.result }
         val activeOk = fetched[apiKey] != null
         if (activeOk) {

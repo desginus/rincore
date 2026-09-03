@@ -88,6 +88,8 @@ fun UsagePage(onBack: () -> Unit = {}) {
 
     val scope = rememberCoroutineScope()
     var usages by remember { mutableStateOf<Map<String, UsageApi.UsageResult?>>(emptyMap()) }
+    // v3.13.2: 跨族密钥查询结果 (本页为 OpenCode 族, user_ 密钥存这里)
+    var crossUsages by remember { mutableStateOf<Map<String, CommandCodeUsageApi.CommandCodeUsageResult>>(emptyMap()) }
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     var showKeyDialog by remember { mutableStateOf(false) }
@@ -131,8 +133,6 @@ fun UsagePage(onBack: () -> Unit = {}) {
             listOf(u.rolling.percent, u.weekly.percent, u.monthly.percent)
                 .all { p -> p == null || p < 100 }
         }
-    // v3.13.2: 跨族密钥查询结果 (本页为 OpenCode 族, user_ 密钥存这里)
-    var crossUsages by remember { mutableStateOf<Map<String, CommandCodeUsageApi.CommandCodeUsageResult>>(emptyMap()) }
     val showCards = settings.usageViewMode == "cards" && otherVisible.isNotEmpty()
     val focusMode = settings.usageViewMode == "focus"
     // 焦点视图 = 单密钥大窗展示形式 (UsageRingCard 竖列), 与单卡一毛一样
@@ -209,7 +209,7 @@ fun UsagePage(onBack: () -> Unit = {}) {
                             item {
                                 KeyUsageCard(
                                     key = apiKey,
-                                    usage = activeUsage,
+                                    card = openCodeMiniCard(activeUsage),
                                     isActive = true,
                                 )
                             }
