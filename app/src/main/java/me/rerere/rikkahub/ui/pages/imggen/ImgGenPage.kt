@@ -347,7 +347,7 @@ private fun InputBar(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val imagePickerLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { selectedUris ->
+        rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { selectedUris ->
             if (selectedUris.isNotEmpty()) {
                 scope.launch {
                     val paths = selectedUris.mapNotNull { uri ->

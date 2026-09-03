@@ -140,7 +140,7 @@ internal fun rememberChatAttachmentPickerActions(
         }
 
     val videoPickerLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { selectedUris ->
+        rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { selectedUris ->
             if (selectedUris.isNotEmpty()) {
                 inputState.addVideos(filesManager.createChatFilesByContents(selectedUris))
                 onAttachmentAdded()
@@ -148,7 +148,7 @@ internal fun rememberChatAttachmentPickerActions(
         }
 
     val audioPickerLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { selectedUris ->
+        rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { selectedUris ->
             if (selectedUris.isNotEmpty()) {
                 inputState.addAudios(filesManager.createChatFilesByContents(selectedUris))
                 onAttachmentAdded()

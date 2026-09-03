@@ -141,7 +141,6 @@ class TtsController(
         }
 
         if (workerJob?.isActive != true) startWorker()
-        prefetchFrom((_currentChunk.value).coerceAtLeast(0))
     }
 
     private fun internalReset() {
@@ -249,7 +248,7 @@ class TtsController(
                     }
 
                     // 预取下一窗口
-                    prefetchFrom(chunk.index + 1)
+                    prefetchNextChunks(chunk.index)
 
                     val response = try {
                         awaitOrCreate(chunk, provider)
@@ -283,29 +282,64 @@ class TtsController(
         }
     }
 
-    private fun prefetchFrom(startIndex: Int) {
+    private fun prefetchNextChunks(currentIndex: Int) {
         val provider = currentProvider ?: return
-        val begin = startIndex.coerceAtLeast(lastPrefetchedIndex + 1)
+        val begin = currentIndex + 1
         val endExclusive = (begin + prefetchCount).coerceAtMost(allChunks.size)
         if (begin >= endExclusive) return
 
         for (i in begin until endExclusive) {
             val chunk = allChunks.getOrNull(i) ?: continue
-            cache.computeIfAbsent(chunk.id) {
-                scope.async(Dispatchers.IO) { synthesizer.synthesize(provider, chunk) }
-            }
+            getOrCreateSynthesis(chunk, provider)
         }
-        lastPrefetchedIndex = endExclusive - 1
     }
 
     private suspend fun awaitOrCreate(chunk: TtsChunk, provider: TTSProviderSetting): TTSResponse {
-        val deferred = cache.computeIfAbsent(chunk.id) {
-            scope.async(Dispatchers.IO) { synthesizer.synthesize(provider, chunk) }
-        }
+        val deferred = getOrCreateSynthesis(chunk, provider)
         return try {
             deferred.await()
-        } finally {
-            // 可按需保留缓存（此处保留，便于重播/重试）
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            // 避免后续复用已经失败或取消的 Deferred
+            cache.remove(chunk.id, deferred)
+            throw e
+        }
+    }
+
+    private fun getOrCreateSynthesis(
+        chunk: TtsChunk,
+        provider: TTSProviderSetting
+    ): kotlinx.coroutines.Deferred<TTSResponse> {
+        return cache.computeIfAbsent(chunk.id) {
+            scope.async(Dispatchers.IO) {
+                synthesizeWithRetry(provider, chunk)
+            }
+        }
+    }
+
+    private suspend fun synthesizeWithRetry(
+        provider: TTSProviderSetting,
+        chunk: TtsChunk
+    ): TTSResponse {
+        var attempt = 1
+        while (true) {
+            try {
+                return synthesizer.synthesize(provider, chunk)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (!e.isRetryableSynthesisError() || attempt >= MAX_SYNTHESIS_ATTEMPTS) throw e
+
+                val retryDelayMs = SYNTHESIS_RETRY_BASE_DELAY_MS * (1L shl (attempt - 1))
+                Log.w(
+                    TAG,
+                    "Synthesis attempt $attempt/$MAX_SYNTHESIS_ATTEMPTS failed for chunk ${chunk.index}; " +
+                        "retrying in ${retryDelayMs}ms",
+                    e
+                )
+                delay(retryDelayMs)
+                attempt++
+            }
         }
     }
     // endregion

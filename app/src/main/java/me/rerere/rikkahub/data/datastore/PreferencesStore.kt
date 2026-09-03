@@ -705,6 +705,8 @@ data class NetworkSetting(
     val proxyEnabled: Boolean = false,
     // v3.9.15: 部分开启 — true = 仅勾选模型的请求走代理; false = 全局走代理
     val proxyPartialEnabled: Boolean = false,
+    // v3.15.0: 自动重试开关 (2.4.16 移植) — false = 断联直接报错不重试
+    val enableAutoRetry: Boolean = true,
     // v3.9.15: 勾选走代理的模型 id (modelId 字符串) 列表
     val proxyModelIds: List<String> = emptyList(),
 )
