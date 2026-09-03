@@ -126,13 +126,13 @@ fun UsagePage(onBack: () -> Unit = {}) {
     val pullState = rememberPullToRefreshState()
 
     // 非焦点密钥: 3 个用量均有空余 (percent<100) 才显示; null 视为未满
-    val otherVisible = savedKeys
-        .filter { it != apiKey }
-        .mapNotNull { k -> usages[k]?.let { k to it } }
-        .filter { (_, u) ->
-            listOf(u.rolling.percent, u.weekly.percent, u.monthly.percent)
-                .all { p -> p == null || p < 100 }
-        }
+    // v3.13.2: 统一小卡数据 (本族 + 跨族 Command Code 密钥), 卡片视图全展示
+    val otherVisible = (savedKeys.filter { it != apiKey }
+        .mapNotNull { k ->
+            usages[k]?.let { k to openCodeMiniCard(it) }
+                ?: crossUsages[k]?.let { k to commandCodeMiniCard(it) }
+        })
+        .filter { (_, d) -> listOf(d.p5, d.pw, d.pm).all { p -> p == null || p < 100 } }
     val showCards = settings.usageViewMode == "cards" && otherVisible.isNotEmpty()
     val focusMode = settings.usageViewMode == "focus"
     // 焦点视图 = 单密钥大窗展示形式 (UsageRingCard 竖列), 与单卡一毛一样
