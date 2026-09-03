@@ -22,10 +22,14 @@ import me.rerere.tts.model.PlaybackState
 import me.rerere.tts.model.PlaybackStatus
 import me.rerere.tts.model.TTSResponse
 import me.rerere.tts.provider.TTSManager
+import me.rerere.tts.provider.TTSProviderException
 import me.rerere.tts.provider.TTSProviderSetting
+import java.io.IOException
 import java.util.UUID
 
 private const val TAG = "TtsController"
+private const val MAX_SYNTHESIS_ATTEMPTS = 3
+private const val SYNTHESIS_RETRY_BASE_DELAY_MS = 500L
 
 /**
  * TTS 控制器（重构版）
@@ -340,4 +344,8 @@ class TtsController(
         }
     }
     // endregion
+}
+
+private fun Exception.isRetryableSynthesisError(): Boolean {
+    return this is IOException || this is TTSProviderException && isRetryable
 }
