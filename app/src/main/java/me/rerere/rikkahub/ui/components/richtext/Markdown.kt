@@ -1063,7 +1063,6 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                         latexColorArgb = latexColorArgb,
                         onClickCitation = onClickCitation
                     )
-                        linkContext = LocalContext.current,
                 }
             }
         }
@@ -1082,7 +1081,6 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                         latexColorArgb = latexColorArgb,
                         onClickCitation = onClickCitation
                     )
-                        linkContext = LocalContext.current,
                 }
             }
         }
@@ -1101,7 +1099,6 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                         latexColorArgb = latexColorArgb,
                         onClickCitation = onClickCitation
                     )
-                        linkContext = LocalContext.current,
                 }
             }
         }
@@ -1171,7 +1168,6 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
 
         node.type == MarkdownElementTypes.AUTOLINK -> {
             val links = node.children.trim(MarkdownTokenTypes.LT, 1).trim(MarkdownTokenTypes.GT, 1)
-            val linkCtx = LocalContext.current
             links.fastForEach { link ->
                 withLink(
                     LinkAnnotation.Url(
@@ -1285,7 +1281,6 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                     latexColorArgb = latexColorArgb,
                     onClickCitation = onClickCitation
                 )
-                    linkContext = LocalContext.current,
             }
         }
     }
