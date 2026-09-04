@@ -206,16 +206,6 @@ class GenerationHandler(
 
         // G3 平台空流重试计数 (每次生成仅重试一次)
         var emptyRetryCount = 0
-        // v3.15.1: 重试状态 per-request 局部对象 (根除 v3.11.33 教训的残余形态 —
-        // 类成员在子代理并发生成时互相偷预算/归零互踩; 局部 val 闭包捕获, 并发安全)。
-        // receivedAnyData: 本轮是否收到过任何流数据 — 发起/流中断判据的事实依据
-        // (替代 retry.stream==0 的弱判据: 输出中断流时计数同样是 0)。
-        val retry = RetryState()
-        // v3.15.1: MCP 工具会话内快照 (缓存稳定) — 旧实现每步 getMcpTools()
-        // 实时拉取, MCP 连接波动/重连时工具列表抖动 → tools JSON 变化 →
-        // DeepSeek 前缀缓存每步全灭 (缓存键含 tools 序列)。快照后循环内复用;
-        // manage_mcp_servers 执行后 DynamicTools 置脏, 下一步检测到才刷新。
-        var mcpToolsSnapshot = DynamicTools.getMcpTools()
 
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
@@ -821,6 +811,16 @@ class GenerationHandler(
         // v3.11.27: 子代理对话不注入用户自定义 prompt (其余正常注入)
         skipAssistantPrompt: Boolean = false,
     ) {
+        // v3.15.1: 重试状态 per-request 局部对象 (根除 v3.11.33 教训的残余形态 —
+        // 类成员在子代理并发生成时互相偷预算/归零互踩; 局部 val 闭包捕获, 并发安全)。
+        // receivedAnyData: 本轮是否收到过任何流数据 — 发起/流中断判据的事实依据
+        // (替代 retry.stream==0 的弱判据: 输出中断流时计数同样是 0)。
+        val retry = RetryState()
+        // v3.15.1: MCP 工具会话内快照 (缓存稳定) — 旧实现每步 getMcpTools()
+        // 实时拉取, MCP 连接波动/重连时工具列表抖动 → tools JSON 变化 →
+        // DeepSeek 前缀缓存每步全灭 (缓存键含 tools 序列)。快照后循环内复用;
+        // manage_mcp_servers 执行后 DynamicTools 置脏, 下一步检测到才刷新。
+        var mcpToolsSnapshot = DynamicTools.getMcpTools()
         // v3.6.74: 节选最近对话 (原上下文降维) 方向废弃 — 消息一律原样发送, 零改动
         val effectiveMessages: List<UIMessage> = messages
         var internalMessages = buildList {
