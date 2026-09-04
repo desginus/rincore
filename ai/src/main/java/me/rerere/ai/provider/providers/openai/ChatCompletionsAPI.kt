@@ -803,46 +803,25 @@ class ChatCompletionsAPI(
                     }
 
                     "api.commandcode.ai" -> {
-                        // v3.15.2: CommandCode 网关 (/provider/v1 Chat Completions)
-                        // 按模型家族分流 (用户实证: OFF 落入 else 被映射成 low = 假关):
-                        // - DeepSeek 家族: thinking enabled/disabled + effort 映射
-                        //   (对齐官方语义, v4-flash 档位 low/high/max)
-                        // - Claude 家族: thinking {type, budget_tokens} (CC 文档实锤
-                        //   chat/completions 路由同样接受 thinking 块)
-                        // - 其他: reasoning_effort 原样 (none 原样发, 网关透传)
-                        val modelId = params.model.modelId.lowercase()
-                        when {
-                            modelId.contains("deepseek") -> {
-                                put("thinking", buildJsonObject {
-                                    put("type", if (!level.isEnabled) "disabled" else "enabled")
-                                })
-                                if (level.isEnabled && level != ReasoningLevel.AUTO) {
-                                    val effort = when (level) {
-                                        ReasoningLevel.LOW -> "low"
-                                        ReasoningLevel.MEDIUM -> "low"
-                                        ReasoningLevel.XHIGH, ReasoningLevel.MAX -> "max"
-                                        else -> "high"
-                                    }
-                                    put("reasoning_effort", effort)
-                                }
+                        // v3.15.4: CC 分支简化为纯 reasoning_effort (B117 回归修复)。
+                        // v3.15.2 发 thinking 字段导致 CC 全模块炸 (关思考无法建连):
+                        // ①RinCore CC provider 是 OpenAI 类型只走 /provider/v1/chat/
+                        //   completions; CC 严格校验模型-端点配对 (claude 发 chat/
+                        //   completions 直接 400 wrong endpoint) → CC 通道实际可用
+                        //   模型只有 OpenAI 形状后端, claude 子分支永不命中
+                        // ②Bifrost 类网关的 DeepSeek provider 不认识 thinking 字段
+                        //   → v3.15.2 发的 thinking:{type:disabled/enabled} 被拒 400
+                        //   → OFF/enabled 全炸 = "整个思考模块都炸"
+                        // CC 档位 (DeepSeek-V4-Flash-0731): low/high/max, 无 none/
+                        // minimal → OFF 无法真关, 用 low (最低档, 连接正常优先)
+                        if (level != ReasoningLevel.AUTO) {
+                            val effort = when (level) {
+                                ReasoningLevel.OFF -> "low"
+                                ReasoningLevel.LOW, ReasoningLevel.MEDIUM -> "low"
+                                ReasoningLevel.XHIGH, ReasoningLevel.MAX -> "max"
+                                else -> "high"
                             }
-                            modelId.contains("claude") -> {
-                                put("thinking", buildJsonObject {
-                                    put("type", if (!level.isEnabled) "disabled" else "enabled")
-                                    if (level.isEnabled && level.budgetTokens > 0) {
-                                        put("budget_tokens", level.budgetTokens)
-                                    }
-                                })
-                            }
-                            else -> {
-                                if (level != ReasoningLevel.AUTO) {
-                                    // v3.15.3: OFF→minimal (none 对部分后端 400/空响应)
-                                    put(
-                                        "reasoning_effort",
-                                        if (level.effort == "none") "minimal" else level.effort,
-                                    )
-                                }
-                            }
+                            put("reasoning_effort", effort)
                         }
                     }
 
