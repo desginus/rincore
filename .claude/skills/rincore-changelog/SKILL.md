@@ -3,7 +3,12 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v3.15.4 为最新）
+# RinCore 更新日志（v3.16.0 为最新）
+
+## v3.16.0（强兼容模式 + User Agent 方向移除 + 基础链路审计，2026-09-04）
+- 强兼容模式: NetworkSetting.cherryCompatMode (持久化, 网络页首位开关, 默认关) → TextGenerationParams.cherryCompatMode → ChatCompletionsAPI 分支。开启后请求体对齐 Cherry Studio/AI SDK 极简形状: ①reasoning_content 不回传 (纯 reasoning assistant 自然跳过) ②tool 消息去 name 字段 ③空 content+tool_calls → content:null ④思考控制整体停用 ⑤常规模式行为零变化
+- User Agent 方向移除: 网络设置页 UA UI 整块删除、DataSourceModule 两处 interceptor UA 注入删除、v3.9.13 空 UA 检查空壳清除; NetworkSetting.userAgent 字段保留仅作 DataStore 反序列化兼容; 工具 fetch UA (RinCore/3.6) 与 CC 查询 UA (commandcode-cli) 属功能标识保留
+- 基础链路审计: buildChatCompletionRequest 逐字段核对 (model/messages/temperature/top_p/max_tokens/stream/stream_options/tools/tool_choice) 全部合规; 非兼容风险点 (reasoning_content 回传/name 字段/thinking 字段) 已由强兼容模式统一覆盖
 
 ## v3.15.4（CC 思考分支简化 — B117 回归修复，2026-09-04）
 - CC 通道关思考无法建连、整个思考模块炸: v3.15.2 发的 thinking 字段被网关拒绝 (Bifrost 类 DeepSeek provider 不认识 thinking; claude 子分支永不命中 — CC 严格校验模型-端点配对, claude 发 chat/completions 直接 400 wrong endpoint)
