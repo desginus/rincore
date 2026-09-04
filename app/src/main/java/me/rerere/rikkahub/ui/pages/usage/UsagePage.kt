@@ -97,7 +97,7 @@ fun UsagePage(onBack: () -> Unit = {}) {
 
     suspend fun doQuery() {
         if (apiKey.isBlank()) {
-            error = "未配置 Open Code API Key，点击右上角设置后自动查询"
+            error = "未配置 API Key，点击右上角卡包后自动查询"
             usages = emptyMap()
             return
         }
@@ -123,6 +123,16 @@ fun UsagePage(onBack: () -> Unit = {}) {
     // 进入页面自动查询一次; API Key 变化 (切换/删除) 时重新查询
     LaunchedEffect(apiKey, savedKeys) { doQuery() }
 
+    // v3.18.0: 密钥统一保存收口 (用户定版: 密钥就是密钥, 不分 OpenCode/
+    // CC 卡包) — 当前 key 不在卡包时自动收编, 根治概率性"没被判成保存态":
+    // 卡包弹窗手动保存走双写正常, 但任何其他路径 (备份恢复/迁移/其他入口)
+    // 只写 opencodeApiKey 单槽时卡包漏收, 本兜底统一收口
+    LaunchedEffect(apiKey) {
+        if (apiKey.isNotBlank() && apiKey !in savedKeys) {
+            settingsStore.update { it.copy(opencodeApiKeys = (listOf(apiKey) + it.opencodeApiKeys).distinct()) }
+        }
+    }
+
     val pullState = rememberPullToRefreshState()
 
     // 非焦点密钥: 3 个用量均有空余 (percent<100) 才显示; null 视为未满
@@ -133,10 +143,12 @@ fun UsagePage(onBack: () -> Unit = {}) {
                 ?: crossUsages[k]?.let { k to commandCodeMiniCard(it) }
         })
         .filter { (_, d) -> listOf(d.p5, d.pw, d.pm).all { p -> p == null || p < 100 } }
-    val showCards = settings.usageViewMode == "cards" && otherVisible.isNotEmpty()
-    val focusMode = settings.usageViewMode == "focus"
-    // 焦点视图 = 单密钥大窗展示形式 (UsageRingCard 竖列), 与单卡一毛一样
-    // 多卡片视图 = KeyUsageCard 小窗 (焦点卡 + 其他卡)
+    // v3.18.0: 视图渲染完全由 usageViewMode 决定, 与 otherVisible 解耦
+    // (旧实现 showCards 依赖 otherVisible.isNotEmpty — 其他卡用量全满被滤
+    // 空时 cards 模式错误落入大窗分支, 视图状态与渲染结果错位)
+    // cards 模式 = 焦点小卡 + 其他小卡 (其他为空时仅焦点小卡, 仍是卡片形态)
+    // focus 模式 = 仅焦点密钥完整形态 (UsageRingCard 竖列大窗)
+    val isCardsMode = settings.usageViewMode == "cards"
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
@@ -185,7 +197,7 @@ fun UsagePage(onBack: () -> Unit = {}) {
                                     Text("未配置 API Key", style = MaterialTheme.typography.titleMedium)
                                     Spacer(Modifier.height(8.dp))
                                     Text(
-                                        "点击右上角齿轮填写 Open Code API Key 后，页面将实时动态查询",
+                                        "点击右上角卡包填写 API Key 后，页面将实时动态查询",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -203,9 +215,8 @@ fun UsagePage(onBack: () -> Unit = {}) {
                     } else if (usages[apiKey] != null) {
                         val activeUsage = usages[apiKey]!!
 
-                        if (showCards || focusMode) {
-                            // ── 多卡片视图: 焦点卡 + 其他密钥卡 ──
-                            // ── 焦点视图: 仅焦点密钥单卡 (与\"一张卡展示一毛一样\") ──
+                        if (isCardsMode) {
+                            // ── 多卡片视图: 焦点卡 + 其他密钥卡 (其他为空仅焦点卡) ──
                             item {
                                 KeyUsageCard(
                                     key = apiKey,
@@ -213,16 +224,15 @@ fun UsagePage(onBack: () -> Unit = {}) {
                                     isActive = true,
                                 )
                             }
-                            if (showCards) {
-                                items(otherVisible, key = { it.first }) { (k, d) ->
-                                    KeyUsageCard(
-                                        key = k,
-                                        card = d,
-                                        isActive = false,
-                                    )
-                                }
+                            items(otherVisible, key = { it.first }) { (k, d) ->
+                                KeyUsageCard(
+                                    key = k,
+                                    card = d,
+                                    isActive = false,
+                                )
                             }
                         } else {
+                            // ── 焦点视图: 仅焦点密钥完整形态 (竖列大窗) ──
                             // ── 单密钥: 竖列全屏 ──
                             item {
                                 // v3.12.5: 全密钥统一渐变配色 — 环与主色按用量
@@ -498,13 +508,13 @@ private fun KeyCardDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Open Code API Key 卡包") },
+        title = { Text("API Key 卡包") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = keyInput,
                     onValueChange = { keyInput = it },
-                    placeholder = { Text("输入新密钥 sk-...") },
+                    placeholder = { Text("输入新密钥 sk- 或 user_ 开头") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )

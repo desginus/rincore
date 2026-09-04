@@ -46,6 +46,11 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import android.widget.Toast
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.runBlocking
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowLeft01
@@ -81,16 +86,27 @@ private fun exportSessionsMarkdown(context: Context, sessionId: String? = null):
     }.getOrNull()
 }
 
-/** 导出为分享 Intent (chooser 内可选 保存/发送); sessionId=null 导出全部 */
+/** 导出为分享 Intent (chooser 内可选 保存/发送); sessionId=null 导出全部
+ *  v3.18.0: 协程化 — runBlocking+file IO 曾在主线程, 日志大时 ANR */
 private fun shareMarkdown(context: Context, sessionId: String? = null) {
-    val uri = exportSessionsMarkdown(context, sessionId) ?: return
-    val send = Intent(Intent.ACTION_SEND).apply {
-        type = "text/markdown"
-        putExtra(Intent.EXTRA_STREAM, uri)
-        putExtra(Intent.EXTRA_SUBJECT, if (sessionId == null) "RinCore 运行日志" else "RinCore 轮次报告 $sessionId")
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    CoroutineScope(Dispatchers.IO).launch {
+        val uri = exportSessionsMarkdown(context, sessionId)
+        if (uri == null) {
+            withContext(Dispatchers.Main) {
+                Toast.makeText(context, "导出失败", Toast.LENGTH_SHORT).show()
+            }
+            return@launch
+        }
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/markdown"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, if (sessionId == null) "RinCore 运行日志" else "RinCore 轮次报告 $sessionId")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        withContext(Dispatchers.Main) {
+            context.startActivity(Intent.createChooser(send, "导出运行日志"))
+        }
     }
-    context.startActivity(Intent.createChooser(send, "导出运行日志"))
 }
 
 @Composable
