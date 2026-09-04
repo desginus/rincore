@@ -96,6 +96,18 @@ import kotlin.time.Clock
 import kotlin.uuid.Uuid
 import me.rerere.rikkahub.data.ai.CallTracer
 
+/**
+ * v3.15.1: per-request 重试状态 (方法内 val 实例, 闭包捕获堆对象)。
+ * 根除类成员计数在子代理并发生成时的互踩污染 (v3.11.33 教训残余:
+ * 入口归零只救单线程, 救不了并发)。
+ */
+private data class RetryState(
+    var stream: Int = 0,
+    var init: Int = 0,
+    /** 本轮是否收到过任何流数据 (collect 置位) — 发起/流中断判据 */
+    var receivedAnyData: Boolean = false,
+)
+
 private const val TAG = "GenerationHandler"
 
 /** 框架层工具名 — 不参与域分类, 分层模式下直接注入 */
@@ -121,15 +133,11 @@ class GenerationHandler(
     private val settingsStore: SettingsStore,
     private val skillManager: me.rerere.rikkahub.data.files.SkillManager? = null,
 ) {
-    /** 断流重试计数 (v3.5.46): 类成员 — 切后台/NAT/平台断流自动恢复, 每次生成最多 5 次 (v3.5.59) */
-    private var streamRetryCount = 0
 
     /** v3.11.16: 网关连接超时独立计数 — header 阶段判死每次 15s, 与快失败型
      *  (毫秒级判死) 恢复机制互斥, 必须分道计数, 否则 30s/次的败因塞进 10s
      *  快速预算在第二次尝试后必然爆掉 (v3.11.14 实证: "重试 1 次后仍失败") */
 
-    /** v3.12.1: 发起阶段独立重试计数 — 与流中恢复彻底分流 (类成员, 请求入口重置) */
-    private var initRetryCount = 0
     companion object {
         /** 工具执行超时 (ms): 工具挂起时返回超时错误, 不阻塞整个生成流程 */
         private const val TOOL_EXECUTION_TIMEOUT_MS = 60_000L
@@ -198,14 +206,16 @@ class GenerationHandler(
 
         // G3 平台空流重试计数 (每次生成仅重试一次)
         var emptyRetryCount = 0
-        // 断流重试计数 (切后台/NAT/平台断连 — IOException 自动恢复, 每次生成最多 5 次)
-        // 类成员 (局部声明曾被编译器解析为块外不可见 — 提升为成员彻底规避)
-        streamRetryCount = 0
-        // v3.14.0: 断流重试统一三轮链 (风暴3x300ms+经典3次x3轮), streamRetryCount
-        // 请求级归零保留; headerRetry/initRetry 独立池语义废弃/保留见下
-        streamRetryCount = 0
-        // v3.12.1: 发起重试池同步归零 (Koin single 类成员必须请求级重置)
-        initRetryCount = 0
+        // v3.15.1: 重试状态 per-request 局部对象 (根除 v3.11.33 教训的残余形态 —
+        // 类成员在子代理并发生成时互相偷预算/归零互踩; 局部 val 闭包捕获, 并发安全)。
+        // receivedAnyData: 本轮是否收到过任何流数据 — 发起/流中断判据的事实依据
+        // (替代 retry.stream==0 的弱判据: 输出中断流时计数同样是 0)。
+        val retry = RetryState()
+        // v3.15.1: MCP 工具会话内快照 (缓存稳定) — 旧实现每步 getMcpTools()
+        // 实时拉取, MCP 连接波动/重连时工具列表抖动 → tools JSON 变化 →
+        // DeepSeek 前缀缓存每步全灭 (缓存键含 tools 序列)。快照后循环内复用;
+        // manage_mcp_servers 执行后 DynamicTools 置脏, 下一步检测到才刷新。
+        var mcpToolsSnapshot = DynamicTools.getMcpTools()
 
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
@@ -225,7 +235,11 @@ class GenerationHandler(
             )
             // 每步刷新 MCP 工具 (支持 manage_mcp_servers 运行时添加) — 合并到域池走懒加载,
             // 不直接注入函数定义 (813af56d 移植: Token 65K → ~6K)
-            val currentMcpTools = DynamicTools.getMcpTools()
+            // v3.15.1: 快照复用 — 仅 manage_mcp_servers 置脏后才重新拉取
+            if (DynamicTools.isDirty()) {
+                mcpToolsSnapshot = DynamicTools.getMcpTools()
+            }
+            val currentMcpTools = mcpToolsSnapshot
             // v3.5.56 回归全量: 含框架工具 — 系统域/workspace 等必须可见可下钻
             // (v3.5.52 过滤框架 → 触发词指向的系统域展开为空 + workspace 5 工具
             // 失踪 — 用户实测 Bug; 全量池不影响 layer1 静态性, 缓存前缀稳定)
@@ -979,6 +993,8 @@ class GenerationHandler(
                 params = params
             ).collect {
                 messages = messages.handleMessageChunk(chunk = it, model = model)
+                // v3.15.1: 收到任何流数据即置位 — 发起/流中断判据的事实依据
+                if (it.choices.isNotEmpty()) retry.receivedAnyData = true
                 it.usage?.let { usage ->
                     // 缓存诊断 (G4): 每次 usage 回传记录 prompt/cached 构成
                     if (usage.promptTokens > 0) {
@@ -1077,13 +1093,14 @@ class GenerationHandler(
                 //      新建连接往往立刻可用) — 用户定版: 15 次密集重试, 固定间隔,
                 //      不受 10s 快速预算约束 (否则第二次尝试后预算必爆, 退化成
                 //      只试 1 次)。上限 15 次 ≈ 4min 内完全穷尽。
-                // v3.12.1: 发起/流中分流 — streamRetryCount==0 表示尚无任何成功
-                // 数据 (本轮失败发生在首个字节之前), 属发起阶段; 与流中恢复
-                // (15x150ms 风暴) 彻底分开, 不再共用一条重试链。
-                // 用户实证 (2026-09-02): 发起阶段毫秒级失败落入流中风暴分支,
-                // 2.3s 内 15 连发打完终报"重试 15 次", 网关几秒的瞬时忙根本
-                // 没恢复就报错 — 报错几秒后重发立即成功。
-                val isInitPhase = streamRetryCount == 0 &&
+                // v3.12.1: 发起/流中分流。
+                // v3.15.1 判据重写 (用户实证 2026-09-04: 高速输出中突然中断,
+                // 无任何重试直接报"发起对话失败 4 次") — 旧判据 retry.stream==0
+                // 把输出中断流误判为发起阶段 (输出中断流时计数同样是 0), 走
+                // init 池 4×25s=100s 全静默后终报, 三轮链 (26s 可预期恢复)
+                // 完全没机会跑。新判据: 本轮从未收到任何流数据 (receivedAnyData
+                // 在 collect 内置位) 才是发起失败; 收到过数据的一律走三轮链。
+                val isInitPhase = !retry.receivedAnyData &&
                     e.message?.contains("生成无有效数据超时") != true
                 if (isInitPhase && !settings.networkSetting.enableAutoRetry) {
                     processingStatus.value = null
@@ -1093,24 +1110,24 @@ class GenerationHandler(
                     )
                 }
                 if (isInitPhase) {
-                    if (initRetryCount < 4) {
-                        initRetryCount++
+                    if (retry.init < 4) {
+                        retry.init++
                         val headerDead = e.message?.contains("平台连接无响应") == true
                         // header 判死型已耗 25s 等待, 直接重试不 delay;
                         // 快速失败型 (connect refused/DNS/SSL) 线性退避 0.5/1/2/4s,
                         // 总恢复窗口 ≈8s + 4 次连接尝试, 覆盖几秒级瞬时忙
-                        if (!headerDead) kotlinx.coroutines.delay(500L * initRetryCount)
-                        Log.w(TAG, "init-phase failure — retry $initRetryCount/4 headerDead=$headerDead elapsed=${System.currentTimeMillis() - retryBudgetStartMs}ms: ${e.message}")
-                        CallTracer.event("RETRY", "init_retry", "connect fail, retry $initRetryCount/4 (headerDead=$headerDead)", metrics = sseDiagMetrics())
+                        if (!headerDead) kotlinx.coroutines.delay(500L * retry.init)
+                        Log.w(TAG, "init-phase failure — retry $retry.init/4 headerDead=$headerDead elapsed=${System.currentTimeMillis() - retryBudgetStartMs}ms: ${e.message}")
+                        CallTracer.event("RETRY", "init_retry", "connect fail, retry $retry.init/4 (headerDead=$headerDead)", metrics = sseDiagMetrics())
                         messages = preStreamMessages
                         onUpdateMessages(messages)
                         continue@streamLoop
                     }
                     processingStatus.value = null
                     onUpdateMessages(messages)
-                    Log.e(TAG, "init phase exhausted: $initRetryCount retries: ${e.message}")
+                    Log.e(TAG, "init phase exhausted: $retry.init retries: ${e.message}")
                     throw java.io.IOException(
-                        "[v${BuildConfig.VERSION_NAME}] 发起对话失败: 已尝试 $initRetryCount 次仍无法建立连接 (网关冷启动或瞬时不可达)，已保留输入内容，请稍后重试", e
+                        "[v${BuildConfig.VERSION_NAME}] 发起对话失败: 已尝试 $retry.init 次仍无法建立连接 (网关冷启动或瞬时不可达)，已保留输入内容，请稍后重试", e
                     )
                 }
                 // v3.15.0: 自动重试开关 (2.4.16 移植) — false 时断联直接报错
@@ -1128,23 +1145,23 @@ class GenerationHandler(
                 // 15×500ms) 废弃 — 多链并行时用户感知混乱 ("卡几十秒突然
                 // 恢复或彻底卡死"), 统一单链后恢复节奏可预期、终报明确。
                 val totalAttempts = 18
-                val round = streamRetryCount / 6 + 1
-                val phaseInRound = streamRetryCount % 6 + 1
-                if (streamRetryCount < totalAttempts) {
-                    streamRetryCount++
+                val round = retry.stream / 6 + 1
+                val phaseInRound = retry.stream % 6 + 1
+                if (retry.stream < totalAttempts) {
+                    retry.stream++
                     val isStorm = phaseInRound <= 3
                     val retryDelayMs = if (isStorm) 300L else longArrayOf(1000L, 2000L, 4000L)[phaseInRound - 4]
                     // v3.11.17: 重试静默化 (无 UI 提示, 进度只进日志与 Trace)
                     kotlinx.coroutines.delay(retryDelayMs)
-                    Log.w(TAG, "stream interrupted (${e.message}) — round $round/3 phase ${if (isStorm) "storm" else "classic"} $phaseInRound/6, retry $streamRetryCount/18 (delay=${retryDelayMs}ms)")
-                    CallTracer.event("RETRY", "stream_interrupted", "round $round/3 ${if (isStorm) "storm" else "classic"} retry $streamRetryCount/18: ${e.message}", metrics = sseDiagMetrics())
+                    Log.w(TAG, "stream interrupted (${e.message}) — round $round/3 phase ${if (isStorm) "storm" else "classic"} $phaseInRound/6, retry $retry.stream/18 (delay=${retryDelayMs}ms)")
+                    CallTracer.event("RETRY", "stream_interrupted", "round $round/3 ${if (isStorm) "storm" else "classic"} retry $retry.stream/18: ${e.message}", metrics = sseDiagMetrics())
                     messages = preStreamMessages  // 丢弃本次生成的半截内容
                     onUpdateMessages(messages)    // UI 同步回滚
                     continue@streamLoop
                 }
                 processingStatus.value = null
                 onUpdateMessages(messages)
-                val retryInfo = "自动恢复 3 轮 (共 $streamRetryCount 次) 已达上限"
+                val retryInfo = "自动恢复 3 轮 (共 $retry.stream 次) 已达上限"
                 Log.e(TAG, "stream retry exhausted: $retryInfo, last error: ${e.message}")
                 throw java.io.IOException(
                     "[v${BuildConfig.VERSION_NAME}] 生成中断: $retryInfo，已保留已生成内容 (${e.message ?: "连接中断"})", e

@@ -72,6 +72,20 @@ object DynamicTools {
     /** v3.6.110: 技能落盘后回调 (Claw 插件技能根同步 — 安装后热生效) */
     var onSkillsChanged: (() -> Unit)? = null
 
+    // v3.15.1: MCP 工具列表脏标志 (GenerationHandler 会话内快照刷新依据)
+    @Volatile
+    private var mcpToolsDirty = true
+
+    /** MCP 工具列表是否需要重新拉取 (初始 true / manage_mcp_servers 执行后置位) */
+    @Synchronized
+    fun isDirty(): Boolean = mcpToolsDirty
+
+    /** 置脏 — MCP 工具集合变化后调用 (下一步生成重新快照) */
+    @Synchronized
+    fun markMcpDirty() {
+        mcpToolsDirty = true
+    }
+
     fun initialize(mcp: McpManager, workspaceRoot: String, skillsRoot: String = "", settingsStore: me.rerere.rikkahub.data.datastore.SettingsStore? = null) {
         mcpManager = mcp
         this.settingsStore = settingsStore
@@ -92,6 +106,7 @@ object DynamicTools {
 
     /** 动态 MCP 工具 — 每个 step 都会重新获取，确保 mcp_connect 后立即可用。 */
     fun getMcpTools(): List<Tool> {
+        mcpToolsDirty = false  // v3.15.1: 拉取即消费最新列表, 清脏
         val mcp = mcpManager ?: return emptyList()
         return mcp.getAllAvailableTools().map { (serverId, serverName, tool) ->
             Tool(
@@ -189,6 +204,7 @@ object DynamicTools {
                             workspaceId = workspaceId.toString(),
                         )
                         mcp.addClient(config)
+                        markMcpDirty()  // v3.15.1: 连接新增 → 工具列表待刷新
                         persistServer(config)
                         listOf(UIMessagePart.Text(
                             "MCP server (stdio) spawned: $name\n" +
@@ -212,6 +228,7 @@ object DynamicTools {
                             )
                         }
                         mcp.addClient(config)
+                        markMcpDirty()  // v3.15.1: 连接新增 → 工具列表待刷新
                         persistServer(config)
                         listOf(UIMessagePart.Text(
                             "MCP server added: $name ($transport)\n$url\n已持久化并绑定当前助手。"
@@ -428,6 +445,7 @@ object DynamicTools {
                         )
                         try {
                             mcp.addClient(config)
+                            markMcpDirty()  // v3.15.1: 连接新增 → 工具列表待刷新
                             mcpResults.add("MCP connected: ${mcpDef.name}")
                         } catch (e: Exception) {
                             mcpResults.add("MCP failed: ${mcpDef.name} — ${e.message}")
@@ -567,6 +585,7 @@ object DynamicTools {
                             url = def.url,
                         )
                         mcp.addClient(config)
+                        markMcpDirty()  // v3.15.1: 连接新增 → 工具列表待刷新
                         mcpMsgs.add("MCP auto-connected: ${def.name}")
                     } catch (e: Exception) {
                         mcpMsgs.add("MCP failed: ${def.name} — ${e.message}")
