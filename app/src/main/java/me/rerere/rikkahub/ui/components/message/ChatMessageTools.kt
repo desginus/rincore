@@ -310,6 +310,9 @@ private fun ChainOfThoughtScope.AskUserToolStep(
     val answers = remember { mutableStateMapOf<String, String>() }
     // Track selected options for multi questions
     val multiAnswers = remember { mutableStateMapOf<String, Set<String>>() }
+    // v3.19.0: 默认存在的开放输入框 (用户定版) — 不依赖问题列表, 恒显示;
+    // 内容并入答案顶层 followup 字段, 不影响模型对 answers 的正常解析
+    var followUp by remember { mutableStateOf("") }
 
     val firstQuestion = questions.firstOrNull()?.question ?: "..."
 
@@ -460,6 +463,20 @@ private fun ChainOfThoughtScope.AskUserToolStep(
                     }
                 }
 
+                // v3.19.0: 默认开放输入框 — 模型未问到的内容用户也可主动补充
+                if (isPending && onToolAnswer != null) {
+                    OutlinedTextField(
+                        value = followUp,
+                        onValueChange = { followUp = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = MaterialTheme.typography.bodySmall,
+                        label = { Text("补充说明 (可选)") },
+                        singleLine = false,
+                        minLines = 1,
+                        maxLines = 4,
+                    )
+                }
+
                 // Submit button
                 if (isPending && onToolAnswer != null) {
                     FilledTonalButton(
@@ -473,6 +490,10 @@ private fun ChainOfThoughtScope.AskUserToolStep(
                                         }
                                     }
                                 })
+                                // v3.19.0: 开放输入框内容并入顶层 followup (可选字段)
+                                if (followUp.isNotBlank()) {
+                                    put("followup", JsonPrimitive(followUp.trim()))
+                                }
                             }
                             onToolAnswer(tool.toolCallId, answerPayload.toString())
                         },

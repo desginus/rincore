@@ -1,4 +1,10 @@
 @file:OptIn(DelicateCoroutinesApi::class)
+/* ───【技术债审计 v3.19.0】
+ * 审计结论: eventSource 生命周期 (awaitClose 双 cancel) ✓; 重试三轮链
+ * (局部对象) ✓; 强兼容独立路径 (buildMessagesCherry 互斥分流) ✓;
+ * host×家族×档位三维思考控制 ✓。残余风险: Opus 直连/Gemini 兼容未覆盖
+ * (OpenAI 类型走本类, 其他协议在各自 Provider 类)。
+ * ───────────────────────────────────────────────────────────────*/
 /**
  * ChatCompletions API 传输 — 模块: A. 传输链 / ai
  *

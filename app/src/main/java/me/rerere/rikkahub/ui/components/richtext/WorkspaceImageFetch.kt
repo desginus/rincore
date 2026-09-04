@@ -14,7 +14,6 @@ import coil3.fetch.Fetcher
 import coil3.fetch.SourceFetchResult
 import coil3.key.Keyer
 import coil3.request.Options
-import me.rerere.rikkahub.utils.WORKSPACE_IMAGE_EXTENSIONS
 import me.rerere.rikkahub.utils.WorkspaceImageResolver
 import me.rerere.rikkahub.utils.isWorkspaceUri
 import me.rerere.rikkahub.utils.resolveWorkspaceRelPath
@@ -44,18 +43,23 @@ class WorkspaceImageFetcherFactory : Fetcher.Factory<String> {
         imageLoader: ImageLoader,
     ): Fetcher? {
         if (!isWorkspaceUri(data)) return null
-        // 扩展名前置校验: 非图片扩展名不加载 (.txt/.md → 占位符)
+        // v3.19.0: 渲染放宽 (用户定版: 不要太严格) — 不再按扩展名白名单
+        // 拒绝, 全部尝试解码; Coil 解码失败自然落占位符, .txt/.md 等文本
+        // 文件解码失败代价 = 占位符一帧, 换取未知图片格式 (heic/avif/tiff)
+        // 的正常显示
         val rel = resolveWorkspaceRelPath(data)
-        val ext = rel?.substringAfterLast('.', "")?.lowercase().orEmpty()
-        if (ext !in WORKSPACE_IMAGE_EXTENSIONS) return null
         val file = WorkspaceImageResolver.resolve(data) ?: return null
+        val ext = rel?.substringAfterLast('.', "")?.lowercase().orEmpty()
         val mime = when (ext) {
             "png" -> "image/png"
             "jpg", "jpeg" -> "image/jpeg"
             "webp" -> "image/webp"
             "gif" -> "image/gif"
             "bmp" -> "image/bmp"
-            else -> return null
+            "heic", "heif" -> "image/heif"
+            "avif" -> "image/avif"
+            "svg" -> "image/svg+xml"
+            else -> "image/*"   // 未知扩展: 宽松 mime, 解码器自行嗅探
         }
         return WorkspaceImageFetcher(file, mime)
     }

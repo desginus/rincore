@@ -904,7 +904,10 @@ class GenerationHandler(
                     .digest((cacheFpSystem + tools.joinToString { it.name }).toByteArray())
                     .take(8).joinToString("") { "%02x".format(it) }
                 Log.i(TAG, "cache-fp: $fp (system=${cacheFpSystem.length}c tools=${tools.size})")
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+                // 技术债审计 (v3.19.0): 此处吞错仅影响 cache-fp 诊断日志, 不在
+                // 用户链路 — 静默保留属设计权衡, 非缺陷
+            }
             // stable+记忆 → 历史/当前轮 (记忆在稳定前缀内, 可命中)
             val fullSystem = listOf(stableSystem, volatileSystem).filter { it.isNotBlank() }.joinToString("\n")
             if (fullSystem.isNotBlank()) {

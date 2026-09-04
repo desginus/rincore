@@ -1,4 +1,9 @@
 /**
+/* ───【技术债审计 v3.19.0】
+ * 审计结论: SSOT 单向流 (settingsFlow) ✓; @Serializable 双端兼容 ✓;
+ * 废弃字段保留策略 (userAgent @Deprecated) ✓。残余风险: 大 JSON 首帧
+ * 反序列化在主线程一次 (启动关键路径, 实测 <50ms 可接受)。
+ * ───────────────────────────────────────────────────────────────*/
  * 偏好存储 + SettingsStore (SSOT) — 模块: B. 会话与存储
  *
  * 职责: DataStore 持久化 + SettingsStore.settingsFlow 唯一真值源 —

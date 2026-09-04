@@ -112,8 +112,18 @@ fun UsagePage(onBack: () -> Unit = {}) {
         crossUsages = ccKeys.mapNotNull { k ->
             CommandCodeUsageApi.fetchUsage(k)?.result?.let { k to it }
         }.toMap()
-        error = if (usages[apiKey] == null) {
+        // v3.19.0: 报错敏感性 (用户定版: 有问题先报错) — 部分密钥查询失败
+        // 不再静默 (此前失败 key 直接从卡片消失无任何提示)
+        val ocFailed = ocKeys.count { usages[it] == null }
+        val ccFailed = ccKeys.count { crossUsages[it] == null }
+        val partialFail = listOfNotNull(
+            if (ocFailed > 0) "OpenCode $ocFailed 张" else null,
+            if (ccFailed > 0) "CC $ccFailed 张" else null,
+        ).joinToString("、")
+        error = if (usages[apiKey] == null && crossUsages[apiKey] == null) {
             "查询失败，请检查 API Key 或网络后下拉重试"
+        } else if (partialFail.isNotEmpty()) {
+            "部分密钥查询失败（$partialFail），其余已显示"
         } else {
             null
         }
@@ -143,6 +153,9 @@ fun UsagePage(onBack: () -> Unit = {}) {
                 ?: crossUsages[k]?.let { k to commandCodeMiniCard(it) }
         })
         .filter { (_, d) -> listOf(d.p5, d.pw, d.pm).all { p -> p == null || p < 100 } }
+    // v3.19.0: 焦点密钥数据双族统一 — usages=OpenCode 结果, crossUsages=CC 结果
+    val focalOC = usages[apiKey]
+    val focalCC = crossUsages[apiKey]
     // v3.18.0: 视图渲染完全由 usageViewMode 决定, 与 otherVisible 解耦
     // (旧实现 showCards 依赖 otherVisible.isNotEmpty — 其他卡用量全满被滤
     // 空时 cards 模式错误落入大窗分支, 视图状态与渲染结果错位)
@@ -204,7 +217,7 @@ fun UsagePage(onBack: () -> Unit = {}) {
                                 }
                             }
                         }
-                    } else if (error != null && usages[apiKey] == null) {
+                    } else if (error != null && focalOC == null && focalCC == null) {
                         item {
                             Card(Modifier.fillMaxWidth()) {
                                 Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -212,15 +225,15 @@ fun UsagePage(onBack: () -> Unit = {}) {
                                 }
                             }
                         }
-                    } else if (usages[apiKey] != null) {
-                        val activeUsage = usages[apiKey]!!
-
+                    } else if (focalOC != null || focalCC != null) {
                         if (isCardsMode) {
                             // ── 多卡片视图: 焦点卡 + 其他密钥卡 (其他为空仅焦点卡) ──
                             item {
                                 KeyUsageCard(
                                     key = apiKey,
-                                    card = openCodeMiniCard(activeUsage),
+                                    // v3.19.0: 焦点卡双族 — CC 密钥聚焦时用 CC mini 卡
+                                    card = focalOC?.let { openCodeMiniCard(it) }
+                                        ?: commandCodeMiniCard(focalCC!!),
                                     isActive = true,
                                 )
                             }
@@ -233,7 +246,63 @@ fun UsagePage(onBack: () -> Unit = {}) {
                             }
                         } else {
                             // ── 焦点视图: 仅焦点密钥完整形态 (竖列大窗) ──
-                            // ── 单密钥: 竖列全屏 ──
+                            if (focalCC != null && focalOC == null) {
+                                // v3.19.0: CC 密钥焦点大窗 (修复 CC 聚焦无数据分支
+                                // 落入 error/转圈的 Bug — CC 结果此前只进小卡路径)
+                                val cc = focalCC
+                                val ccMini = commandCodeMiniCard(cc)
+                                items(4) { idx ->
+                                    when (idx) {
+                                        0 -> UsageRingCard(
+                                            title = "滚动窗口",
+                                            subtitle = "近 5 小时用量",
+                                            percent = cc.fiveHour?.percent?.toFloat() ?: 0f,
+                                            resetAt = cc.fiveHour?.resetAtMs?.let {
+                                                java.time.Instant.ofEpochMilli(it).toString()
+                                            },
+                                            color = usageGradientColor(cc.fiveHour?.percent ?: 0),
+                                        )
+                                        1 -> UsageRingCard(
+                                            title = "本周",
+                                            subtitle = "周限额用量",
+                                            percent = cc.weekly?.percent?.toFloat() ?: 0f,
+                                            resetAt = cc.weekly?.resetAtMs?.let {
+                                                java.time.Instant.ofEpochMilli(it).toString()
+                                            },
+                                            color = usageGradientColor(cc.weekly?.percent ?: 0),
+                                        )
+                                        2 -> UsageRingCard(
+                                            title = "本月",
+                                            subtitle = "月限额用量",
+                                            percent = cc.monthlyUsedPercent?.toFloat() ?: 0f,
+                                            resetAt = cc.currentPeriodEnd,
+                                            color = usageGradientColor(cc.monthlyUsedPercent ?: 0),
+                                        )
+                                        else -> {
+                                            // v3.12.8: 重置倒计时反向红→绿 (用户定版)
+                                            val resetColor = Color(
+                                                CommandCodeUsageApi.resetColorArgb(
+                                                    ccMini.resetElapsedPct,
+                                                    5 * 60 * 60 * 1000L,
+                                                )
+                                            )
+                                            UsageRingCard(
+                                                title = "重置倒计时",
+                                                subtitle = "最近窗口重置",
+                                                percent = ccMini.resetElapsedPct,
+                                                bottomText = ccMini.resetRemainingMs?.let { ms ->
+                                                    val h = ms / 3_600_000
+                                                    val m = (ms % 3_600_000) / 60_000
+                                                    if (h > 0) "${h}小时${m}分后" else "${m}分后"
+                                                },
+                                                color = resetColor,
+                                                bottomColor = resetColor,
+                                            )
+                                        }
+                                    }
+                                }
+                            } else {
+                            val activeUsage = focalOC!!
                             item {
                                 // v3.12.5: 全密钥统一渐变配色 — 环与主色按用量
                                 // 绿→黄→橙→红 (Command Code 同源 usageColorArgb)
@@ -284,6 +353,7 @@ fun UsagePage(onBack: () -> Unit = {}) {
                                     color = resetColor,
                                     bottomColor = resetColor,
                                 )
+                            }
                             }
                         }
                     } else {
