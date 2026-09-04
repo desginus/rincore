@@ -212,6 +212,9 @@ object WorkspaceImageResolver {
 
     /** 简单入口: 成功返回宿主 File, 失败返回 null (Coil Fetcher 用) */
     fun resolve(raw: String?): File? = resolveDetailed(raw).file
+
+    /** v3.15.3: 任意文件解析 (链接点击打开 xlsx/pdf 等, 不限图片扩展名) */
+    fun resolveAnyFile(raw: String?): File? = resolveDetailed(raw, imageOnly = false).file
 }
 
 /** 解析结果 (v3.11.32): file 非 null = ok; 否则 reason = 失败环节 */
