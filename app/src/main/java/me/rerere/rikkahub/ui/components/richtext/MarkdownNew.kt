@@ -848,6 +848,7 @@ private fun AnnotatedString.Builder.appendHtmlInlineElement(
     inlineContents: MutableMap<String, InlineTextContent>,
     density: Density,
     style: TextStyle,
+    linkContext: android.content.Context? = null,
     enableLatexRendering: Boolean,
     onClickCitation: (String) -> Unit,
 ) {
@@ -955,11 +956,13 @@ private fun AnnotatedString.Builder.appendHtmlInlineElement(
                         color = colorScheme.primary,
                         textDecoration = TextDecoration.Underline,
                     ).merge(cssStyle ?: SpanStyle())
-                    val linkCtx = LocalContext.current
                     withLink(
                         LinkAnnotation.Url(
                             href,
-                            linkInteractionListener = { l -> openWorkspaceLink(linkCtx, l.url) },
+                            linkInteractionListener = { ann ->
+                                val u = (ann as? LinkAnnotation.Url)?.url ?: href
+                                openWorkspaceLink(u)
+                            },
                         )
                     ) {
                         withStyle(linkStyle) {

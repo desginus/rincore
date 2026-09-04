@@ -1014,17 +1014,20 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
     enableLatexRendering: Boolean = true,
     latexColorArgb: Int = 0,
     onClickCitation: (String) -> Unit = {},
+    linkContext: android.content.Context? = null,
 ) {
     when {
         node.type == MarkdownTokenTypes.BLOCK_QUOTE -> {}
 
         node.type == GFMTokenTypes.GFM_AUTOLINK -> {
             val link = node.getTextInNode(content)
-            val linkCtx = LocalContext.current
             withLink(
                 LinkAnnotation.Url(
                     link,
-                    linkInteractionListener = { l -> openWorkspaceLink(linkCtx, l.url) },
+                    linkInteractionListener = { ann ->
+                        val u = (ann as? LinkAnnotation.Url)?.url ?: link
+                        openWorkspaceLink(u)
+                    },
                 )
             ) {
                 withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
@@ -1060,6 +1063,7 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                         latexColorArgb = latexColorArgb,
                         onClickCitation = onClickCitation
                     )
+                        linkContext = LocalContext.current,
                 }
             }
         }
@@ -1078,6 +1082,7 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                         latexColorArgb = latexColorArgb,
                         onClickCitation = onClickCitation
                     )
+                        linkContext = LocalContext.current,
                 }
             }
         }
@@ -1096,6 +1101,7 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                         latexColorArgb = latexColorArgb,
                         onClickCitation = onClickCitation
                     )
+                        linkContext = LocalContext.current,
                 }
             }
         }
@@ -1143,11 +1149,13 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                     appendInlineContent("citation:$linkDest")
                 }
             } else {
-                val linkCtx = LocalContext.current
                 withLink(
                     LinkAnnotation.Url(
                         linkDest,
-                        linkInteractionListener = { l -> openWorkspaceLink(linkCtx, l.url) },
+                        linkInteractionListener = { ann ->
+                            val u = (ann as? LinkAnnotation.Url)?.url ?: linkDest
+                            openWorkspaceLink(u)
+                        },
                     )
                 ) {
                     withStyle(
@@ -1168,7 +1176,10 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                 withLink(
                     LinkAnnotation.Url(
                         link.getTextInNode(content),
-                        linkInteractionListener = { l -> openWorkspaceLink(linkCtx, l.url) },
+                        linkInteractionListener = { ann ->
+                            val u = (ann as? LinkAnnotation.Url)?.url ?: link.getTextInNode(content)
+                            openWorkspaceLink(u)
+                        },
                     )
                 ) {
                     withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
@@ -1274,6 +1285,7 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                     latexColorArgb = latexColorArgb,
                     onClickCitation = onClickCitation
                 )
+                    linkContext = LocalContext.current,
             }
         }
     }

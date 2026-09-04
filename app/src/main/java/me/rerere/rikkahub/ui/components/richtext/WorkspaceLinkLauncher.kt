@@ -24,7 +24,14 @@ import me.rerere.rikkahub.utils.resolveAnyFile
  * - 解析失败 → Toast 提示 (不崩溃不静默)
  * - http/https 等其他 scheme → 系统默认打开
  */
-fun openWorkspaceLink(context: Context, url: String) {
+fun openWorkspaceLink(url: String) {
+    // v3.15.3: application context — 链路深处 (AnnotatedString builder lambda)
+    // 无法合法获取 Composable LocalContext, App 级 context 对 startActivity
+    // (FLAG_ACTIVITY_NEW_TASK) 与 FileProvider 完全等价。
+    // 取法: Koin GlobalContext (与 WorkspaceImageResolver 同款惯例)
+    val context = runCatching {
+        org.koin.core.context.GlobalContext.get().get<android.app.Application>() as Context
+    }.getOrElse { return }
     val trimmed = url.trim()
     if (isWorkspaceUri(trimmed)) {
         val file = runCatching { resolveAnyFile(trimmed) }.getOrNull()
