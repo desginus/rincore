@@ -459,3 +459,15 @@ fallthrough 到 linuxDir (../linux/x.png), 文件实际在 ../files/。
 - **根因**: watchdog 单次恢复 / headerRetry 4 次 / 风暴 15×500ms 三套恢复机制各自为政, 恢复节奏不可预期; 耗尽路径长等待叠加导致"死寂"观感
 - **修复**: 用户定版统一三轮链 — 每轮=风暴 3×300ms + 经典 3 次 (1s/2s/4s 对齐原版 2.4.16), 共 3 轮 18 次 ≈26s 必有终报; 废弃三分支
 - **教训**: 恢复机制多链并行=体验不可预期, 单一可预期链优于多链特化
+
+### B113. 高速输出中突然中断无重试 — 发起误判 + 并发计数污染 (v3.15.1)
+- **现象**: 前一秒高速输出, 下一秒突然中断, 无任何重试动作; 报错"发起对话失败 已尝试 4 次" (与事实不符, 实际在输出中)
+- **根因双因子**: ①isInitPhase 判据 retry.stream==0 把输出中断流误判为发起阶段 (输出中断流时计数同样是 0) → 走 init 池 4×25s=100s 全静默, 三轮链 (26s) 没机会跑; ②GenerationHandler 是 Koin single, 重试计数为类成员, 子代理并发生成时互相偷预算/归零互踩 (v3.11.33 入口归零只救单线程)
+- **修复**: RetryState per-request 局部对象 (generateText 声明, 经参数传入 generateInternal) + receivedAnyData 置位 (collect 内 chunk.choices 非空即置位) + 判据改为 receivedAnyData==false && 非watchdog型
+- **教训**: 发起/流中断判据必须用事实依据 (是否收到过数据), 不能用计数状态推断; 单例 handler 的可变状态在并发场景一律 per-request 局部化经参数传递
+
+### B114. 缓存率 90%→0 骤降 — MCP 工具列表抖动破坏前缀缓存 (v3.15.1)
+- **现象**: 上一秒缓存率 80-90%, 下一秒基本不缓存
+- **根因**: DeepSeek 前缀缓存键含 tools 数组序列; currentMcpTools 每步实时拉取, MCP 连接波动/重连时工具列表抖动 → tools JSON 变化 → 缓存全灭
+- **修复**: MCP 工具会话内快照 (循环内复用) + DynamicTools.isDirty/markMcpDirty 置脏机制 (manage_mcp_servers 执行后置脏, 下一步重新快照, 运行时加 MCP 功能保留)
+- **教训**: 前缀缓存的键包括 tools 数组 (不只 messages); 会话内恒定的数据必须快照, 实时拉取=每个波动点都是缓存炸弹

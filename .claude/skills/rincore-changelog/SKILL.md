@@ -3,7 +3,18 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v3.14.0 为最新）
+# RinCore 更新日志（v3.15.1 为最新）
+
+## v3.15.1（突然中断无重试 + 缓存骤降双修，2026-09-04）
+- Bug1 突然中断无重试: isInitPhase 判据 retry.stream==0 把输出中断流误判为发起阶段 → init 池 4×25s=100s 全静默终报, 三轮链没机会跑; 且类成员计数在子代理并发时互相偷预算
+- 修复: RetryState per-request 局部对象经参数传入 generateInternal + receivedAnyData 置位 (collect 内 chunk.choices 非空即置位) + 判据改为 receivedAnyData==false 才是发起失败 — 输出中断一律走三轮链
+- Bug2 缓存 90%→0: currentMcpTools 每步实时拉取, MCP 连接波动时 tools JSON 抖动 → DeepSeek 前缀缓存每步全灭 (缓存键含 tools 序列)
+- 修复: MCP 工具会话内快照 + DynamicTools.isDirty/markMcpDirty 置脏刷新 (manage_mcp_servers 功能保留)
+
+## v3.15.0（原版 2.4.16 定向移植，2026-09-03）
+- 8 项中 6 项移植: 气泡透明度 roundToInt / HTML-SVG 默认不预览 / 快速模型思考级别+移除标题建议模型 / 自动重试开关 (NetworkSetting.enableAutoRetry) / PickVisualMedia 图片选择 (对齐原版只迁 image) / TTS 稳定性 (TtsController 重构+TTSProviderException+倍速移常规页)
+- 2 项跳过: Gemini 混合工具 (upstream 已拆 google/ 子目录, RinCore 单文件结构前提不存在) / 硅基流动余额移除 (RinCore 自研 provider 集合无此对象)
+- 方法论: 先分清基准 (upstream 4309fdfe 终态符号集合对照) 再整体交织, 不追编译错误
 
 ## v3.14.0（断流重试统一三轮链，2026-09-03）
 - 用户实证: 纯文本输出中途卡几十秒, 极少数恢复多数彻底卡死 — 多链并行恢复混乱
