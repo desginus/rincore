@@ -3,7 +3,7 @@ package me.rerere.rikkahub.ui.pages.setting
 
 /* ───【2.4.11 移植】SettingPreferencesNetworkPage | v3.9.12 新增
  * 来源: 原版 2.4.11 移植 (SettingPreferencesNetworkPage)
- * 功能: 网络设置 — 自定义 User-Agent / 代理 URL / 鉴权 + 连接测试
+ * 功能: 网络设置 — 代理 URL / 鉴权 + 连接测试 + 强兼容模式
  * 改动: 直接移植原版, 包名一致, 标识 RinCore 用法不变
  * ───────────────────────────────────────────────────────────────*/
 
@@ -80,9 +80,6 @@ private const val PROXY_TEST_URL = "https://www.google.com/generate_204"
 fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
     val httpClient = koinInject<OkHttpClient>()
     val settings by vm.settings.collectAsStateWithLifecycle()
-    var userAgent by remember(settings.networkSetting.userAgent) {
-        mutableStateOf(settings.networkSetting.userAgent)
-    }
     var proxyUrl by remember(settings.networkSetting.proxyUrl) {
         mutableStateOf(settings.networkSetting.proxyUrl)
     }
@@ -105,15 +102,6 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
     var proxyTesting by remember { mutableStateOf(false) }
     // v3.9.15: 部分开启 — 模型勾选弹窗
     var modelPickerVisible by remember { mutableStateOf(false) }
-
-    fun updateUserAgent(value: String) {
-        userAgent = value
-        vm.updateSettings(
-            settings.copy(
-                networkSetting = settings.networkSetting.copy(userAgent = value),
-            )
-        )
-    }
 
     fun saveProxy() {
         vm.updateSettings(
@@ -290,6 +278,35 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item {
+                // v3.16.0: 强兼容模式 — 请求体按 Cherry Studio 极简格式发送
+                CardGroup(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    title = { Text("强兼容模式") },
+                ) {
+                    item(
+                        headlineContent = { Text("Cherry Studio 兼容请求格式") },
+                        supportingContent = {
+                            Text(
+                                "开启后按 Cherry Studio 的极简格式发送请求, " +
+                                    "最大化任意模型可用性。代价: 思考控制与历史推理回传停用。"
+                            )
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = settings.networkSetting.cherryCompatMode,
+                                onCheckedChange = { checked ->
+                                    vm.updateSettings(
+                                        settings.copy(
+                                            networkSetting = settings.networkSetting.copy(cherryCompatMode = checked)
+                                        )
+                                    )
+                                },
+                            )
+                        },
+                    )
+                }
+            }
+            item {
                 // v3.15.0: 自动重试开关 (2.4.16 移植) — false = 断联直接报错
                 CardGroup(
                     modifier = Modifier.padding(horizontal = 8.dp),
@@ -306,44 +323,6 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
                                     )
                                 },
                             )
-                        },
-                    )
-                }
-            }
-            item {
-                CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                    title = {
-                        Text(stringResource(R.string.setting_page_preferences_network_user_agent))
-                    },
-                ) {
-                    item(
-                        headlineContent = {
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalAlignment = Alignment.End,
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                OutlinedTextField(
-                                    value = userAgent,
-                                    onValueChange = ::updateUserAgent,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    label = {
-                                        Text(stringResource(R.string.setting_page_preferences_network_user_agent))
-                                    },
-                                    placeholder = { Text(stringResource(R.string.setting_page_preferences_network_user_agent_placeholder)) },
-                                    supportingText = {
-                                        Text(stringResource(R.string.setting_page_preferences_network_user_agent_desc))
-                                    },
-                                    singleLine = true,
-                                )
-                                TextButton(
-                                    onClick = { updateUserAgent("") },
-                                    enabled = userAgent.isNotEmpty(),
-                                ) {
-                                    Text(stringResource(R.string.setting_model_page_reset_to_default))
-                                }
-                            }
                         },
                     )
                 }

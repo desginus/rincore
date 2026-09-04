@@ -49,7 +49,6 @@ class UpdateChecker(private val client: OkHttpClient) {
 //                            .url(API_URL)
 //                            .get()
 //                            .addHeader(
-//                                "User-Agent",
 //                                "RikkaHub ${BuildConfig.VERSION_NAME} #${BuildConfig.VERSION_CODE}"
 //                            )
 //                            .build()

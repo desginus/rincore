@@ -68,6 +68,8 @@ data class TextGenerationParams(
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBody: List<CustomBody> = emptyList(),
     val conversationId: String? = null, // v3.6.45: OpenCode Zen sticky session 用 (x-opencode-session header)
+    // v3.16.0: 强兼容模式 — Chat Completions 按 Cherry Studio 极简格式发送
+    val cherryCompatMode: Boolean = false,
 )
 
 @Serializable

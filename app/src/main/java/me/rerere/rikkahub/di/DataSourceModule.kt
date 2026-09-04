@@ -228,10 +228,6 @@ val dataSourceModule = module {
                         if (orig.header(HttpHeaders.UserAgent) == null) {
                             // v3.9.13: 只发用户显式自定义的 UA; 留空不发送,
                             // 避免暴露客户端标识 (不污染请求头/上下文)
-                            val userAgent = settingsStore.settingsFlow.value.networkSetting.userAgent.trim()
-                            if (userAgent.isNotEmpty()) {
-                                addHeader(HttpHeaders.UserAgent, userAgent)
-                            }
                         }
                     }
                     .build()
@@ -321,10 +317,6 @@ val dataSourceModule = module {
                         .addHeader(HttpHeaders.AcceptLanguage, acceptLang)
                         .apply {
                             if (orig.header(HttpHeaders.UserAgent) == null) {
-                                val userAgent = settingsStore.settingsFlow.value.networkSetting.userAgent.trim()
-                                if (userAgent.isNotEmpty()) {
-                                    addHeader(HttpHeaders.UserAgent, userAgent)
-                                }
                             }
                         }
                         .build()

@@ -602,8 +602,11 @@ class ChatCompletionsAPI(
                 "messages",
                 buildMessages(
                     messages = messages,
-                    includeHistoryReasoning = providerSetting.includeHistoryReasoning,
+                    // v3.16.0: 强兼容模式不回传 reasoning_content (Cherry 语义)
+                    includeHistoryReasoning = providerSetting.includeHistoryReasoning &&
+                        !params.cherryCompatMode,
                     supportInputModalities = params.model.inputModalities,
+                    cherryCompatMode = params.cherryCompatMode,
                 )
             )
 
@@ -650,7 +653,11 @@ class ChatCompletionsAPI(
             // 不支持的参数自行容错, 模型注册未勾 REASONING 也不得吞掉思考控制
             // (用户实证 2026-09-04: 任何情况下无法修正思考程度的根因之一)。
             val isAggregateGateway = host == "opencode.ai" || host == "api.commandcode.ai"
-            if (params.model.abilities.contains(ModelAbility.REASONING) || isAggregateGateway) {
+            // v3.16.0: 强兼容模式不发任何思考控制参数 (thinking/reasoning_effort/
+            // reasoning) — Cherry 不发, 目标是任意模型零 400
+            if ((params.model.abilities.contains(ModelAbility.REASONING) || isAggregateGateway) &&
+                !params.cherryCompatMode
+            ) {
                 val level = params.reasoningLevel
                 when (host) {
                     "openrouter.ai" -> {
@@ -865,6 +872,7 @@ class ChatCompletionsAPI(
         messages: List<UIMessage>,
         includeHistoryReasoning: Boolean = true,
         supportInputModalities: List<Modality> = listOf(Modality.TEXT, Modality.IMAGE),
+        cherryCompatMode: Boolean = false,
     ) = buildJsonArray {
         val filteredMessages = messages.filter { it.isValidToUpload() }
 
@@ -874,6 +882,7 @@ class ChatCompletionsAPI(
                     message = message,
                     includeReasoning = includeHistoryReasoning,
                     supportInputModalities = supportInputModalities,
+                    cherryCompatMode = cherryCompatMode,
                 )
             } else {
                 addNonAssistantMessage(message)
@@ -885,6 +894,7 @@ class ChatCompletionsAPI(
         message: UIMessage,
         includeReasoning: Boolean,
         supportInputModalities: List<Modality>,
+        cherryCompatMode: Boolean = false,
     ) {
         val groups = groupPartsByToolBoundary(message.parts)
         val contentBuffer = mutableListOf<UIMessagePart>()
@@ -909,7 +919,8 @@ class ChatCompletionsAPI(
                     buildAssistantMessageJson(
                         contentParts = contentBuffer,
                         tools = group.tools,
-                        reasoningPart = reasoningPart
+                        reasoningPart = reasoningPart,
+                        cherryCompatMode = cherryCompatMode,
                     )?.let { assistantMessage ->
                         add(assistantMessage)
                     }
@@ -920,7 +931,9 @@ class ChatCompletionsAPI(
                     group.tools.forEach { tool ->
                         add(buildJsonObject {
                             put("role", "tool")
-                            put("name", tool.toolName)
+                            // v3.16.0: 强兼容模式不发 name (OpenAI 规范可选字段,
+                            // 部分严格网关对多余字段拒收; Cherry 只发四要素)
+                            if (!cherryCompatMode) put("name", tool.toolName)
                             put("tool_call_id", tool.toolCallId)
                             put("content", tool.toToolResultContent(supportInputModalities))
                         })
@@ -934,7 +947,8 @@ class ChatCompletionsAPI(
             buildAssistantMessageJson(
                 contentParts = contentBuffer,
                 tools = emptyList(),
-                reasoningPart = reasoningPart
+                reasoningPart = reasoningPart,
+                cherryCompatMode = cherryCompatMode,
             )?.let { assistantMessage ->
                 add(assistantMessage)
             }
@@ -945,6 +959,7 @@ class ChatCompletionsAPI(
         contentParts: List<UIMessagePart>,
         tools: List<UIMessagePart.Tool>,
         reasoningPart: UIMessagePart.Reasoning?,
+        cherryCompatMode: Boolean = false,
     ): JsonObject? {
         val hasUsableContent = contentParts.any { part ->
             when (part) {
@@ -953,7 +968,9 @@ class ChatCompletionsAPI(
                 else -> false
             }
         }
-        val hasReasoning = !reasoningPart?.reasoning.isNullOrBlank()
+        // v3.16.0: 强兼容模式 reasoning 一律不回传 → 纯 reasoning assistant
+        // (无正文无工具) 自然落入 null 跳过, 与 Cherry/AI SDK 行为一致
+        val hasReasoning = !cherryCompatMode && !reasoningPart?.reasoning.isNullOrBlank()
         if (!hasUsableContent && !hasReasoning && tools.isEmpty()) {
             return null
         }
@@ -969,7 +986,10 @@ class ChatCompletionsAPI(
 
             // content
             if (contentParts.isEmpty()) {
-                put("content", "")
+                // v3.16.0: 强兼容模式空 content 发 null (OpenAI 官方 tool-call
+                // 形状); 常规模式保持 "" (v3.6.53 缓存前缀稳定性语义不变)
+                if (cherryCompatMode) put("content", kotlinx.serialization.json.JsonNull)
+                else put("content", "")
             } else if (contentParts.size == 1 && contentParts[0] is UIMessagePart.Text) {
                 put("content", (contentParts[0] as UIMessagePart.Text).text)
             } else {

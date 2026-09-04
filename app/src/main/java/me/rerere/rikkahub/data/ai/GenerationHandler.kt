@@ -952,6 +952,8 @@ class GenerationHandler(
             maxTokens = assistant.maxTokens,
             tools = tools,
             reasoningLevel = assistant.reasoningLevel,
+            // v3.16.0: 强兼容模式注入 (全局设置 → 请求层)
+            cherryCompatMode = settingsStore.settingsFlow.value.networkSetting.cherryCompatMode,
             customHeaders = buildList {
                 addAll(assistant.customHeaders)
                 addAll(model.customHeaders)

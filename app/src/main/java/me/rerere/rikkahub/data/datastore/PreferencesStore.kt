@@ -697,6 +697,9 @@ data class Settings(
 
 @Serializable
 data class NetworkSetting(
+    // v3.16.0: UI 与请求注入已移除 (用户定版: 不需要 UA 方向的功能)。
+    // 字段保留仅为 DataStore 旧 JSON 反序列化兼容, 恒为 "" 不再消费
+    @Deprecated("v3.16.0 removed: UI & header injection")
     val userAgent: String = "",
     val proxyUrl: String = "",
     val proxyUsername: String = "",
@@ -707,6 +710,11 @@ data class NetworkSetting(
     val proxyPartialEnabled: Boolean = false,
     // v3.15.0: 自动重试开关 (2.4.16 移植) — false = 断联直接报错不重试
     val enableAutoRetry: Boolean = true,
+    // v3.16.0: 强兼容模式 — 开启后 Chat Completions 请求按 Cherry Studio
+    // 极简格式发送 (不回传 reasoning_content / 不发思考控制参数 / tool 消息
+    // 去 name / 纯 reasoning assistant 跳过), 以最大化任意模型可用性;
+    // 代价: 思考档位调节与历史推理回传在开启期间失效
+    val cherryCompatMode: Boolean = false,
     // v3.9.15: 勾选走代理的模型 id (modelId 字符串) 列表
     val proxyModelIds: List<String> = emptyList(),
 )
