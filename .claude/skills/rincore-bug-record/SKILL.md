@@ -471,3 +471,15 @@ fallthrough 到 linuxDir (../linux/x.png), 文件实际在 ../files/。
 - **根因**: DeepSeek 前缀缓存键含 tools 数组序列; currentMcpTools 每步实时拉取, MCP 连接波动/重连时工具列表抖动 → tools JSON 变化 → 缓存全灭
 - **修复**: MCP 工具会话内快照 (循环内复用) + DynamicTools.isDirty/markMcpDirty 置脏机制 (manage_mcp_servers 执行后置脏, 下一步重新快照, 运行时加 MCP 功能保留)
 - **教训**: 前缀缓存的键包括 tools 数组 (不只 messages); 会话内恒定的数据必须快照, 实时拉取=每个波动点都是缓存炸弹
+
+### B115. file:// 链接点击 FileUriExposedException 崩溃 (v3.15.3)
+- **现象**: 点击模型输出的 file://...xlsx 链接, 主线程 StrictMode 崩溃
+- **根因**: Compose 默认 LinkAnnotation.Url handler 直通 Intent.setData(file://) — Android 7+ 禁止 file:// 跨进程共享; v3.15.2 host 前缀适配后模型更常输出 file:// 链接, 崩溃面暴露
+- **修复**: 四处 markdown 链接点击 (GFM_AUTOLINK/citation/AUTOLINK/MarkdownNew href) 统一拦截 → resolveAnyFile → FileProvider content:// URI → ACTION_VIEW + FLAG_GRANT_READ; 解析失败 Toast
+- **教训**: file:// 一律不得直通 Intent; 渲染链接与点击链接是两条链路, 修渲染时必须同步审计点击; compose LinkInteractionListener 参数是 LinkAnnotation 基类, 取 url 须 as? LinkAnnotation.Url; AnnotatedString builder lambda 无 Composable 上下文, LocalContext 不可用 (App context 经 Koin GlobalContext 取)
+
+### B116. 偶发发消息后模型无反应 (v3.15.3)
+- **现象**: 个别情况下发送消息后模型无任何反应 (非普遍)
+- **根因**: v3.15.2 非 DeepSeek 家族 OFF 发 reasoning_effort:none 原样 — 强制思考型模型 (GLM-5.3 thinking mandatory, disable 语义失败) 与部分后端对 none 400/空响应
+- **修复**: OpenCode 非 DeepSeek 家族与 CC 其他家族 OFF→minimal (Bifrost 全档支持, 最接近关闭); DeepSeek/claude 家族 thinking:disabled 保留 (官方语义)
+- **教训**: "关闭思考"在不同后端无统一表达; 网关模型对参数档位的支持是 model-specific, none 这种档位必须按模型家族分流, 不能全局原样透传

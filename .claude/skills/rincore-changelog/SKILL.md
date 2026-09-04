@@ -3,7 +3,15 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v3.15.1 为最新）
+# RinCore 更新日志（v3.15.3 为最新）
+
+## v3.15.3（file:// 点击崩溃根治 + 偶发无响应，2026-09-04）
+- FileUriExposedException 主线程崩溃: 模型输出 file:// 链接 (xlsx 等) 被 Compose 默认 handler 直通 Intent.setData → StrictMode 判死。四处 markdown 链接点击统一拦截 → openWorkspaceLink → resolveAnyFile (新增, 不限图片扩展名) → FileProvider content:// → ACTION_VIEW
+- 偶发发消息无反应: v3.15.2 非 DeepSeek 家族 OFF 发 reasoning_effort:none 原样, 强制思考型模型 (GLM-5.3 mandatory) 与部分后端 none=400/空响应 → OFF 语义改 minimal (Bifrost 全档支持)
+
+## v3.15.2（思考程度控制修复 + host 前缀适配，2026-09-04）
+- 思考不可调三重根因: ①REASONING 能力门槛吞参数 (聚合网关放行) ②OpenCode 非 DeepSeek 家族静默跳过 (v3.11.8 防 400 副作用, 补 reasoning_effort 原样发送) ③CC api.commandcode.ai 落 else 分支 OFF→low 假关 (新增 CC 分支: deepseek→thinking+effort / claude→thinking{type,budget_tokens} / 其他→effort 原样); 清理 v3.6.80 opencode 死分支
+- workspace host 前缀适配: [file://]/data/data|user/0/<pkg>/files/workspaces/<UUID>/files/<rel> 归一化为 /workspace/<rel> (教训固化: proot 与 host 渲染端互不可见, /data/user/0 symlink 别名等价归一)
 
 ## v3.15.1（突然中断无重试 + 缓存骤降双修，2026-09-04）
 - Bug1 突然中断无重试: isInitPhase 判据 retry.stream==0 把输出中断流误判为发起阶段 → init 池 4×25s=100s 全静默终报, 三轮链没机会跑; 且类成员计数在子代理并发时互相偷预算
