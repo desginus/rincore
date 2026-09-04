@@ -463,6 +463,22 @@ private fun ChainOfThoughtScope.AskUserToolStep(
                     }
                 }
 
+                // v3.19.0: answered 态显示已提交的补充说明
+                if (isAnswered) {
+                    val answeredState = tool.approvalState as ToolApprovalState.Answered
+                    val followupText = runCatching {
+                        JsonInstant.parseToJsonElement(answeredState.answer)
+                            .jsonObject["followup"]?.jsonPrimitive?.contentOrNull
+                    }.getOrNull()
+                    if (!followupText.isNullOrBlank()) {
+                        Text(
+                            text = "补充: $followupText",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+
                 // v3.19.0: 默认开放输入框 — 模型未问到的内容用户也可主动补充
                 if (isPending && onToolAnswer != null) {
                     OutlinedTextField(

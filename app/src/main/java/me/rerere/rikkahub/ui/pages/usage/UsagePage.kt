@@ -282,14 +282,14 @@ fun UsagePage(onBack: () -> Unit = {}) {
                                             // v3.12.8: 重置倒计时反向红→绿 (用户定版)
                                             val resetColor = Color(
                                                 CommandCodeUsageApi.resetColorArgb(
-                                                    ccMini.resetElapsedPct,
+                                                    ccMini.resetRemainingMs,
                                                     5 * 60 * 60 * 1000L,
                                                 )
                                             )
                                             UsageRingCard(
                                                 title = "重置倒计时",
                                                 subtitle = "最近窗口重置",
-                                                percent = ccMini.resetElapsedPct,
+                                                percent = ccMini.resetElapsedPct.toFloat(),
                                                 bottomText = ccMini.resetRemainingMs?.let { ms ->
                                                     val h = ms / 3_600_000
                                                     val m = (ms % 3_600_000) / 60_000
