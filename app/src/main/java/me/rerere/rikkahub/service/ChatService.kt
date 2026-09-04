@@ -599,16 +599,20 @@ class ChatService(
         val key = settings.opencodeApiKey
         if (key.startsWith("user_", ignoreCase = true)) {
             if (settings.commandCodeWarmEnabled) {
+                // v3.17.0: CC 预热与主请求同入长保活池 (60s 默认池错配修复)
                 ConnectionWarmer.warmWithOkHttp(
                     httpClient,
-                    "https://api.commandcode.ai/provider/v1"
+                    "https://api.commandcode.ai/provider/v1",
+                    me.rerere.ai.provider.ProviderManager.opencodeClient,
                 )
             }
         } else if (key.startsWith("sk", ignoreCase = true)) {
             if (settings.opencodeWarmEnabled) {
+                // v3.17.0: OpenCode 定向预热同入长保活池
                 ConnectionWarmer.warmWithOkHttp(
                     httpClient,
-                    "https://opencode.ai/zen/go/v1"
+                    "https://opencode.ai/zen/go/v1",
+                    me.rerere.ai.provider.ProviderManager.opencodeClient,
                 )
             }
         }
