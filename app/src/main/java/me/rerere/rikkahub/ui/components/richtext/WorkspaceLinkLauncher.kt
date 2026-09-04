@@ -14,8 +14,8 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.core.content.FileProvider
+import me.rerere.rikkahub.utils.WorkspaceImageResolver
 import me.rerere.rikkahub.utils.isWorkspaceUri
-import me.rerere.rikkahub.utils.resolveAnyFile
 
 /**
  * 工作区链接统一打开入口:
@@ -34,7 +34,7 @@ fun openWorkspaceLink(url: String) {
     }.getOrElse { return }
     val trimmed = url.trim()
     if (isWorkspaceUri(trimmed)) {
-        val file = runCatching { resolveAnyFile(trimmed) }.getOrNull()
+        val file = runCatching { WorkspaceImageResolver.resolveAnyFile(trimmed) }.getOrNull()
         if (file == null || !file.exists()) {
             Toast.makeText(
                 context,
