@@ -3,7 +3,12 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v3.17.0 为最新）
+# RinCore 更新日志（v3.18.0 为最新）
+
+## v3.18.0（用量页焦点视图重构 + 密钥统一保存收口 + 导出 ANR 修复，2026-09-04）
+- 焦点视图矩阵: 渲染完全由 usageViewMode 决定与 otherVisible 解耦 (旧实现其他密钥用量全满被滤空时 cards 模式错误落入大窗分支); cards=焦点小卡+其他小卡, focus=仅焦点密钥完整形态 (竖列大窗)
+- 密钥统一保存收口 (用户定版: 密钥就是密钥不分族): UsagePage LaunchedEffect 兜底 — 当前 key 不在卡包自动收编, 根治备份恢复/迁移等单槽路径的概率性漏保存; UI 文案全部去族化
+- 技术债扫描修复: SettingCallTracePage 导出链 runBlocking+file IO 在主线程 (日志大时 ANR) 协程化; 审计达标: GenerationHandler/ChatService 无主线程阻塞, ChatCompletionsAPI eventSource 生命周期正确
 
 ## v3.17.0（强兼容完全独立 Cherry 路径 + CC 长保活池 + 预热池错配修复，2026-09-04）
 - 强兼容重构: 新增 buildMessagesCherry 独立构造路径 (assistant reasoning 一律不回传/纯 reasoning 整条跳过/tool 四要素无 name/空 content+tool_calls → content:null); 常规路径全部还原 (v3.16.0 穿透参数全撤), 调用处 if/else 分流, 开关两态互不可见
