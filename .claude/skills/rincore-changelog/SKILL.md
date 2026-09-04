@@ -3,7 +3,12 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v3.16.0 为最新）
+# RinCore 更新日志（v3.17.0 为最新）
+
+## v3.17.0（强兼容完全独立 Cherry 路径 + CC 长保活池 + 预热池错配修复，2026-09-04）
+- 强兼容重构: 新增 buildMessagesCherry 独立构造路径 (assistant reasoning 一律不回传/纯 reasoning 整条跳过/tool 四要素无 name/空 content+tool_calls → content:null); 常规路径全部还原 (v3.16.0 穿透参数全撤), 调用处 if/else 分流, 开关两态互不可见
+- CC 长保活池: v3.13.4 CC 预热进默认池 keepalive 60s, 60 秒后连接被 OkHttp 回收 = 预热白做; effClient 将 api.commandcode.ai 同入 opencodeClient 300s 池 (对齐 OpenCode); warmWithOkHttp 长池判定 + RikkaHubApp/ChatService 四处预热调用传参同步修正
+- 预热核查: OpenCode 链 (启动 warmWithOkHttp → GET /models 真实请求 → 300s 池) 落实; CC 链动作真实但此前进错池, 本次修复; 消息时定向预热与裸 socket DNS 兜底独立正常
 
 ## v3.16.0（强兼容模式 + User Agent 方向移除 + 基础链路审计，2026-09-04）
 - 强兼容模式: NetworkSetting.cherryCompatMode (持久化, 网络页首位开关, 默认关) → TextGenerationParams.cherryCompatMode → ChatCompletionsAPI 分支。开启后请求体对齐 Cherry Studio/AI SDK 极简形状: ①reasoning_content 不回传 (纯 reasoning assistant 自然跳过) ②tool 消息去 name 字段 ③空 content+tool_calls → content:null ④思考控制整体停用 ⑤常规模式行为零变化
