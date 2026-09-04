@@ -46,6 +46,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
@@ -954,7 +955,13 @@ private fun AnnotatedString.Builder.appendHtmlInlineElement(
                         color = colorScheme.primary,
                         textDecoration = TextDecoration.Underline,
                     ).merge(cssStyle ?: SpanStyle())
-                    withLink(LinkAnnotation.Url(href)) {
+                    val linkCtx = LocalContext.current
+                    withLink(
+                        LinkAnnotation.Url(
+                            href,
+                            linkInteractionListener = { l -> openWorkspaceLink(linkCtx, l.url) },
+                        )
+                    ) {
                         withStyle(linkStyle) {
                             recurseChildren(element, style.merge(linkStyle.asTextStyle()))
                         }

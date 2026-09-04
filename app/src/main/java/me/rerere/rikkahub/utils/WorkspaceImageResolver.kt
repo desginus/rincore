@@ -154,7 +154,8 @@ object WorkspaceImageResolver {
      * not_found / extension_rejected — 供 show_image 分级文案与日志定位。
      * 多 workspace 环境遍历全部 root 求命中 (同名文件以首个命中为准)。
      */
-    fun resolveDetailed(raw: String?): WorkspaceResolveResult {
+    // v3.15.3: imageOnly=false 时跳过图片扩展名校验 (链接点击打开任意文件: xlsx/pdf 等)
+    fun resolveDetailed(raw: String?, imageOnly: Boolean = true): WorkspaceResolveResult {
         if (raw.isNullOrBlank()) return WorkspaceResolveResult(null, "empty_input")
         val rel = resolveWorkspaceRelPath(raw)
             ?: return WorkspaceResolveResult(
@@ -162,7 +163,7 @@ object WorkspaceImageResolver {
                 if (isWorkspaceUri(raw)) "invalid_path" else "prefix_not_recognized",
             )
         val ext = rel.substringAfterLast('.', "").lowercase()
-        if (ext !in WORKSPACE_IMAGE_EXTENSIONS) {
+        if (imageOnly && ext !in WORKSPACE_IMAGE_EXTENSIONS) {
             return WorkspaceResolveResult(null, "extension_rejected:$ext")
         }
 

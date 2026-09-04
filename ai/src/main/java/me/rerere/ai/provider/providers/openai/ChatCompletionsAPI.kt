@@ -773,8 +773,15 @@ class ChatCompletionsAPI(
                                 put("reasoning_effort", effort)
                             }
                         } else if (host == "opencode.ai" && level != ReasoningLevel.AUTO) {
-                            // v3.15.2: reasoning_effort 原样 (none=关闭, 网关透传)
-                            put("reasoning_effort", level.effort)
+                            // v3.15.2: 非 DeepSeek 家族原样发送 reasoning_effort。
+                            // v3.15.3: OFF 语义 none→minimal (用户实证: 偶发发消息后
+                            // 模型无反应 — 强制思考型模型 GLM-5.3 thinking mandatory,
+                            // disable 语义失败; 部分后端对 none 直接 400/空响应)。
+                            // minimal 在 Bifrost 全档支持列表内, 最接近关闭且合法。
+                            put(
+                                "reasoning_effort",
+                                if (level.effort == "none") "minimal" else level.effort,
+                            )
                         }
                     }
 
@@ -829,7 +836,11 @@ class ChatCompletionsAPI(
                             }
                             else -> {
                                 if (level != ReasoningLevel.AUTO) {
-                                    put("reasoning_effort", level.effort)
+                                    // v3.15.3: OFF→minimal (none 对部分后端 400/空响应)
+                                    put(
+                                        "reasoning_effort",
+                                        if (level.effort == "none") "minimal" else level.effort,
+                                    )
                                 }
                             }
                         }

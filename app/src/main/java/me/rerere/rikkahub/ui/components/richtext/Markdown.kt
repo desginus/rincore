@@ -1020,7 +1020,13 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
 
         node.type == GFMTokenTypes.GFM_AUTOLINK -> {
             val link = node.getTextInNode(content)
-            withLink(LinkAnnotation.Url(link)) {
+            val linkCtx = LocalContext.current
+            withLink(
+                LinkAnnotation.Url(
+                    link,
+                    linkInteractionListener = { l -> openWorkspaceLink(linkCtx, l.url) },
+                )
+            ) {
                 withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
                     append(link)
                 }
@@ -1137,7 +1143,13 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                     appendInlineContent("citation:$linkDest")
                 }
             } else {
-                withLink(LinkAnnotation.Url(linkDest)) {
+                val linkCtx = LocalContext.current
+                withLink(
+                    LinkAnnotation.Url(
+                        linkDest,
+                        linkInteractionListener = { l -> openWorkspaceLink(linkCtx, l.url) },
+                    )
+                ) {
                     withStyle(
                         SpanStyle(
                             color = colorScheme.primary, textDecoration = TextDecoration.Underline
@@ -1151,8 +1163,14 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
 
         node.type == MarkdownElementTypes.AUTOLINK -> {
             val links = node.children.trim(MarkdownTokenTypes.LT, 1).trim(MarkdownTokenTypes.GT, 1)
+            val linkCtx = LocalContext.current
             links.fastForEach { link ->
-                withLink(LinkAnnotation.Url(link.getTextInNode(content))) {
+                withLink(
+                    LinkAnnotation.Url(
+                        link.getTextInNode(content),
+                        linkInteractionListener = { l -> openWorkspaceLink(linkCtx, l.url) },
+                    )
+                ) {
                     withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
                         append(link.getTextInNode(content))
                     }
