@@ -224,12 +224,6 @@ val dataSourceModule = module {
                 val orig = chain.request()
                 val req = orig.newBuilder()
                     .addHeader(HttpHeaders.AcceptLanguage, acceptLang)
-                    .apply {
-                        if (orig.header(HttpHeaders.UserAgent) == null) {
-                            // v3.9.13: 只发用户显式自定义的 UA; 留空不发送,
-                            // 避免暴露客户端标识 (不污染请求头/上下文)
-                        }
-                    }
                     .build()
                 chain.proceed(req)
             }
