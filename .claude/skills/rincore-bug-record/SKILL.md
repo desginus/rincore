@@ -483,3 +483,9 @@ fallthrough 到 linuxDir (../linux/x.png), 文件实际在 ../files/。
 - **根因**: v3.15.2 非 DeepSeek 家族 OFF 发 reasoning_effort:none 原样 — 强制思考型模型 (GLM-5.3 thinking mandatory, disable 语义失败) 与部分后端对 none 400/空响应
 - **修复**: OpenCode 非 DeepSeek 家族与 CC 其他家族 OFF→minimal (Bifrost 全档支持, 最接近关闭); DeepSeek/claude 家族 thinking:disabled 保留 (官方语义)
 - **教训**: "关闭思考"在不同后端无统一表达; 网关模型对参数档位的支持是 model-specific, none 这种档位必须按模型家族分流, 不能全局原样透传
+
+### B117. CC 通道思考参数致全模块炸 — thinking 字段被网关拒绝 (v3.15.4)
+- **现象**: CC 通道关闭思考后无法建立连接并输出; 开思考同样炸 — v3.15.2 后整个 CC 思考控制失效
+- **根因链**: ①RinCore CC provider 是 OpenAI 类型只走 /provider/v1/chat/completions; ②CC 严格校验模型-端点配对 (claude 发 chat/completions 直接 400 wrong endpoint) → CC 通道实际可用模型只有 OpenAI 形状后端, v3.15.2 的 claude 子分支永不命中; ③Bifrost 类网关的 DeepSeek provider 不认识 thinking 字段 → thinking:{type:disabled/enabled} 被拒 400 → OFF/enabled 全炸
+- **修复**: CC 分支删 thinking 字段与 claude 子分支, 简化为纯 reasoning_effort (AUTO 不发 / OFF→low / low|medium→low / high→high / xhigh|max→max); CC 无 none/minimal 档位, OFF 真关不可表达, low 最低档保连接
+- **教训**: 网关参数支持必须按 (host × 路由 × 模型家族) 三维核实, 文档的 "同样接受" 不代表网关实现透传; chat/completions 路由上 claude 模型根本不可达, 为它写分支是无效代码; 修复后必须全档位回归 (OFF/AUTO/low/high 各发一次), 只测单档位会漏炸

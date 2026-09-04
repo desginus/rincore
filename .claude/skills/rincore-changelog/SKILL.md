@@ -3,7 +3,11 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v3.15.3 为最新）
+# RinCore 更新日志（v3.15.4 为最新）
+
+## v3.15.4（CC 思考分支简化 — B117 回归修复，2026-09-04）
+- CC 通道关思考无法建连、整个思考模块炸: v3.15.2 发的 thinking 字段被网关拒绝 (Bifrost 类 DeepSeek provider 不认识 thinking; claude 子分支永不命中 — CC 严格校验模型-端点配对, claude 发 chat/completions 直接 400 wrong endpoint)
+- CC 分支简化为纯 reasoning_effort: AUTO 不发 / OFF→low (v4-flash 最低档, CC 无 none/minimal) / low|medium→low / high→high / xhigh|max→max
 
 ## v3.15.3（file:// 点击崩溃根治 + 偶发无响应，2026-09-04）
 - FileUriExposedException 主线程崩溃: 模型输出 file:// 链接 (xlsx 等) 被 Compose 默认 handler 直通 Intent.setData → StrictMode 判死。四处 markdown 链接点击统一拦截 → openWorkspaceLink → resolveAnyFile (新增, 不限图片扩展名) → FileProvider content:// → ACTION_VIEW
