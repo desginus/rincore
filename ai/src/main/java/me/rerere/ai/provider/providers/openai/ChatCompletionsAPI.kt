@@ -116,9 +116,13 @@ class ChatCompletionsAPI(
     private val opencodeClient: OkHttpClient? = null,
 ) : OpenAIImpl {
     // v3.10.5: opencode.ai 直连场景走长保活池, 其余回落默认池 (代理路由在 resolveProxy 后生效)
+    // v3.17.0: api.commandcode.ai 同入长保活池 — CC 默认池 keepalive 60s,
+    // 预热连接在用户发消息前已被 OkHttp 回收, 预热白做; 300s 池对齐 OpenCode 待遇
     private fun effClient(providerSetting: ProviderSetting.OpenAI): OkHttpClient {
         val host = providerSetting.baseUrl.toHttpUrl().host
-        return if (host == "opencode.ai") (opencodeClient ?: client) else client
+        return if (host == "opencode.ai" || host == "api.commandcode.ai") {
+            (opencodeClient ?: client)
+        } else client
     }
 
     override suspend fun generateText(
@@ -600,14 +604,20 @@ class ChatCompletionsAPI(
             put("model", params.model.modelId)
             put(
                 "messages",
-                buildMessages(
-                    messages = messages,
-                    // v3.16.0: 强兼容模式不回传 reasoning_content (Cherry 语义)
-                    includeHistoryReasoning = providerSetting.includeHistoryReasoning &&
-                        !params.cherryCompatMode,
-                    supportInputModalities = params.model.inputModalities,
-                    cherryCompatMode = params.cherryCompatMode,
-                )
+                // v3.17.0: 强兼容模式走完全独立的 Cherry 构造路径 (与常规路径
+                // 零共享状态零参数穿透) — 开关两态各自封闭, 逻辑互不可见
+                if (params.cherryCompatMode) {
+                    buildMessagesCherry(
+                        messages = messages,
+                        supportInputModalities = params.model.inputModalities,
+                    )
+                } else {
+                    buildMessages(
+                        messages = messages,
+                        includeHistoryReasoning = providerSetting.includeHistoryReasoning,
+                        supportInputModalities = params.model.inputModalities,
+                    )
+                }
             )
 
             if (isModelAllowTemperature(params.model)) {
@@ -868,11 +878,179 @@ class ChatCompletionsAPI(
         return !ModelRegistry.OPENAI_O_MODELS.match(model.modelId) && !ModelRegistry.GPT_5.match(model.modelId)
     }
 
+    // ─────────────────────────────────────────────────────────────
+    // v3.17.0: Cherry Studio 强兼容构造路径 — 与常规路径完全独立。
+    // 对齐 Cherry Studio (openai SDK) 实际出站形状 (源码级证据:
+    // CherryHQ/cherry-studio issue 8708 实录请求体):
+    //   assistant: {role, content: string|parts|null, tool_calls?}
+    //     reasoning 一律不回传; 纯 reasoning 无正文无工具 → 整条跳过
+    //   tool: {role:'tool', tool_call_id, content} 四要素 (无 name)
+    //   空 content + tool_calls 在场 → content:null (openai SDK 官方形状)
+    //   user/system: 字符串或 parts (与常规路径一致)
+    // 思考控制参数 (thinking/reasoning_effort/reasoning) 在外层
+    // buildChatCompletionRequest 已按 cherryCompatMode 整体停用。
+    // ─────────────────────────────────────────────────────────────
+    private fun buildMessagesCherry(
+        messages: List<UIMessage>,
+        supportInputModalities: List<Modality>,
+    ) = buildJsonArray {
+        val filteredMessages = messages.filter { it.isValidToUpload() }
+
+        filteredMessages.forEach { message ->
+            if (message.role == MessageRole.ASSISTANT) {
+                val groups = groupPartsByToolBoundary(message.parts)
+                val contentBuffer = mutableListOf<UIMessagePart>()
+
+                for (group in groups) {
+                    when (group) {
+                        is PartGroup.Content -> {
+                            // Cherry: reasoning parts 全部丢弃, 不回传
+                            group.parts
+                                .filter { it is UIMessagePart.Text || it is UIMessagePart.Image }
+                                .forEach { contentBuffer.add(it) }
+                        }
+
+                        is PartGroup.Tools -> {
+                            // assistant (content|null + tool_calls)
+                            buildCherryAssistantMessage(
+                                contentParts = contentBuffer,
+                                tools = group.tools,
+                            )?.let { add(it) }
+                            contentBuffer.clear()
+
+                            // tool 结果: Cherry 四要素 (无 name)
+                            group.tools.forEach { tool ->
+                                add(buildJsonObject {
+                                    put("role", "tool")
+                                    put("tool_call_id", tool.toolCallId)
+                                    put("content", tool.toToolResultContent(supportInputModalities))
+                                })
+                            }
+                        }
+                    }
+                }
+
+                // 尾段 (无工具跟随的正文)
+                if (contentBuffer.isNotEmpty()) {
+                    buildCherryAssistantMessage(
+                        contentParts = contentBuffer,
+                        tools = emptyList(),
+                    )?.let { add(it) }
+                }
+            } else {
+                // user/system: 与常规路径相同 (Cherry 同形状)
+                addCherryNonAssistantMessage(message)
+            }
+        }
+    }
+
+    /** Cherry assistant 消息: reasoning 永不回传; 纯 reasoning 跳过; 空 content+tools → null */
+    private fun buildCherryAssistantMessage(
+        contentParts: List<UIMessagePart>,
+        tools: List<UIMessagePart.Tool>,
+    ): JsonObject? {
+        val hasUsableContent = contentParts.any { part ->
+            when (part) {
+                is UIMessagePart.Text -> part.text.isNotBlank()
+                is UIMessagePart.Image -> part.url.isNotBlank()
+                else -> false
+            }
+        }
+        if (!hasUsableContent && tools.isEmpty()) return null
+        return buildJsonObject {
+            put("role", "assistant")
+            when {
+                contentParts.isEmpty() ->
+                    put("content", kotlinx.serialization.json.JsonNull)
+                contentParts.size == 1 && contentParts[0] is UIMessagePart.Text ->
+                    put("content", (contentParts[0] as UIMessagePart.Text).text)
+                else -> putJsonArray("content") {
+                    contentParts.forEach { part ->
+                        when (part) {
+                            is UIMessagePart.Text -> {
+                                add(buildJsonObject {
+                                    put("type", "text")
+                                    put("text", part.text)
+                                })
+                            }
+                            is UIMessagePart.Image -> {
+                                add(buildJsonObject {
+                                    part.encodeBase64().onSuccess { encodedImage ->
+                                        put("type", "image_url")
+                                        put("image_url", buildJsonObject {
+                                            put("url", encodedImage.base64)
+                                        })
+                                    }.onFailure {
+                                        it.printStackTrace()
+                                        put("type", "text")
+                                        put("text", "")
+                                    }
+                                })
+                            }
+                            else -> {}
+                        }
+                    }
+                }
+            }
+            if (tools.isNotEmpty()) {
+                put("tool_calls", buildJsonArray {
+                    tools.forEach { tool ->
+                        add(buildJsonObject {
+                            put("id", tool.toolCallId)
+                            put("type", "function")
+                            put("function", buildJsonObject {
+                                put("name", tool.toolName)
+                                put("arguments", tool.inputAsJson().toString())
+                            })
+                        })
+                    }
+                })
+            }
+        }
+    }
+
+    /** Cherry user/system 消息 (形状与常规路径一致, 独立实现保持路径封闭) */
+    private fun JsonArrayBuilder.addCherryNonAssistantMessage(message: UIMessage) {
+        add(buildJsonObject {
+            put("role", JsonPrimitive(message.role.name.lowercase()))
+            if (message.parts.isOnlyTextPart()) {
+                put("content", message.parts.filterIsInstance<UIMessagePart.Text>().first().text)
+            } else {
+                putJsonArray("content") {
+                    message.parts.forEach { part ->
+                        when (part) {
+                            is UIMessagePart.Text -> {
+                                add(buildJsonObject {
+                                    put("type", "text")
+                                    put("text", part.text)
+                                })
+                            }
+                            is UIMessagePart.Image -> {
+                                add(buildJsonObject {
+                                    part.encodeBase64().onSuccess { encodedImage ->
+                                        put("type", "image_url")
+                                        put("image_url", buildJsonObject {
+                                            put("url", encodedImage.base64)
+                                        })
+                                    }.onFailure {
+                                        it.printStackTrace()
+                                        put("type", "text")
+                                        put("text", "")
+                                    }
+                                })
+                            }
+                            else -> {}
+                        }
+                    }
+                }
+            }
+        })
+    }
+
     private fun buildMessages(
         messages: List<UIMessage>,
         includeHistoryReasoning: Boolean = true,
         supportInputModalities: List<Modality> = listOf(Modality.TEXT, Modality.IMAGE),
-        cherryCompatMode: Boolean = false,
     ) = buildJsonArray {
         val filteredMessages = messages.filter { it.isValidToUpload() }
 
@@ -882,7 +1060,6 @@ class ChatCompletionsAPI(
                     message = message,
                     includeReasoning = includeHistoryReasoning,
                     supportInputModalities = supportInputModalities,
-                    cherryCompatMode = cherryCompatMode,
                 )
             } else {
                 addNonAssistantMessage(message)
@@ -894,7 +1071,6 @@ class ChatCompletionsAPI(
         message: UIMessage,
         includeReasoning: Boolean,
         supportInputModalities: List<Modality>,
-        cherryCompatMode: Boolean = false,
     ) {
         val groups = groupPartsByToolBoundary(message.parts)
         val contentBuffer = mutableListOf<UIMessagePart>()
@@ -919,8 +1095,7 @@ class ChatCompletionsAPI(
                     buildAssistantMessageJson(
                         contentParts = contentBuffer,
                         tools = group.tools,
-                        reasoningPart = reasoningPart,
-                        cherryCompatMode = cherryCompatMode,
+                        reasoningPart = reasoningPart
                     )?.let { assistantMessage ->
                         add(assistantMessage)
                     }
@@ -931,9 +1106,7 @@ class ChatCompletionsAPI(
                     group.tools.forEach { tool ->
                         add(buildJsonObject {
                             put("role", "tool")
-                            // v3.16.0: 强兼容模式不发 name (OpenAI 规范可选字段,
-                            // 部分严格网关对多余字段拒收; Cherry 只发四要素)
-                            if (!cherryCompatMode) put("name", tool.toolName)
+                            put("name", tool.toolName)
                             put("tool_call_id", tool.toolCallId)
                             put("content", tool.toToolResultContent(supportInputModalities))
                         })
@@ -947,8 +1120,7 @@ class ChatCompletionsAPI(
             buildAssistantMessageJson(
                 contentParts = contentBuffer,
                 tools = emptyList(),
-                reasoningPart = reasoningPart,
-                cherryCompatMode = cherryCompatMode,
+                reasoningPart = reasoningPart
             )?.let { assistantMessage ->
                 add(assistantMessage)
             }
@@ -959,7 +1131,6 @@ class ChatCompletionsAPI(
         contentParts: List<UIMessagePart>,
         tools: List<UIMessagePart.Tool>,
         reasoningPart: UIMessagePart.Reasoning?,
-        cherryCompatMode: Boolean = false,
     ): JsonObject? {
         val hasUsableContent = contentParts.any { part ->
             when (part) {
@@ -968,9 +1139,7 @@ class ChatCompletionsAPI(
                 else -> false
             }
         }
-        // v3.16.0: 强兼容模式 reasoning 一律不回传 → 纯 reasoning assistant
-        // (无正文无工具) 自然落入 null 跳过, 与 Cherry/AI SDK 行为一致
-        val hasReasoning = !cherryCompatMode && !reasoningPart?.reasoning.isNullOrBlank()
+        val hasReasoning = !reasoningPart?.reasoning.isNullOrBlank()
         if (!hasUsableContent && !hasReasoning && tools.isEmpty()) {
             return null
         }
@@ -986,10 +1155,7 @@ class ChatCompletionsAPI(
 
             // content
             if (contentParts.isEmpty()) {
-                // v3.16.0: 强兼容模式空 content 发 null (OpenAI 官方 tool-call
-                // 形状); 常规模式保持 "" (v3.6.53 缓存前缀稳定性语义不变)
-                if (cherryCompatMode) put("content", kotlinx.serialization.json.JsonNull)
-                else put("content", "")
+                put("content", "")
             } else if (contentParts.size == 1 && contentParts[0] is UIMessagePart.Text) {
                 put("content", (contentParts[0] as UIMessagePart.Text).text)
             } else {

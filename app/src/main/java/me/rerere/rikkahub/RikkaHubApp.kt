@@ -117,7 +117,12 @@ class RikkaHubApp : Application() {
                 // api.commandcode.ai, 冷启动 10-20s 窗口在首条消息前消化
                 val st = get<SettingsStore>().settingsFlow.value
                 if (st.opencodeApiKey.startsWith("user_", ignoreCase = true) && st.commandCodeWarmEnabled) {
-                    ConnectionWarmer.warmWithOkHttp(httpClient, "https://api.commandcode.ai/provider/v1")
+                    // v3.17.0: CC 预热必须进长保活池 (与 v3.17.0 起 CC 主请求同池)
+                    ConnectionWarmer.warmWithOkHttp(
+                        httpClient,
+                        "https://api.commandcode.ai/provider/v1",
+                        me.rerere.ai.provider.ProviderManager.opencodeClient,
+                    )
                 }
             }
         }, "warmup-user-providers").start()

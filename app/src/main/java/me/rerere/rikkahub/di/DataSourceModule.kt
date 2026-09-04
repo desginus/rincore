@@ -309,10 +309,6 @@ val dataSourceModule = module {
                 chain.proceed(
                     orig.newBuilder()
                         .addHeader(HttpHeaders.AcceptLanguage, acceptLang)
-                        .apply {
-                            if (orig.header(HttpHeaders.UserAgent) == null) {
-                            }
-                        }
                         .build()
                 )
             }
