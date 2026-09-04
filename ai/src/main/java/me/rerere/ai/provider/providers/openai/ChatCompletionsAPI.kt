@@ -646,7 +646,11 @@ class ChatCompletionsAPI(
                 }
             }
 
-            if (params.model.abilities.contains(ModelAbility.REASONING)) {
+            // v3.15.2: 聚合网关 (OpenCode/CommandCode) 放行能力门槛 — 网关对
+            // 不支持的参数自行容错, 模型注册未勾 REASONING 也不得吞掉思考控制
+            // (用户实证 2026-09-04: 任何情况下无法修正思考程度的根因之一)。
+            val isAggregateGateway = host == "opencode.ai" || host == "api.commandcode.ai"
+            if (params.model.abilities.contains(ModelAbility.REASONING) || isAggregateGateway) {
                 val level = params.reasoningLevel
                 when (host) {
                     "openrouter.ai" -> {
@@ -744,9 +748,13 @@ class ChatCompletionsAPI(
                     }
 
                     "api.deepseek.com", "opencode.ai" -> {
-                        // v3.11.8: opencode.ai 网关按模型家族分离 — 网关可路由多个
-                        // 模型, 仅 DeepSeek 家族 (modelId 含 deepseek) 发 thinking/
-                        // reasoning_effort; Grok/GLM/Kimi 等不收 thinking 参数防 400
+                        // v3.11.8: opencode.ai 网关按模型家族分离 — DeepSeek 家族发
+                        // thinking/reasoning_effort (官方语义); Grok/GLM/Kimi 等不收
+                        // thinking 参数防 400。
+                        // v3.15.2: 非 DeepSeek 家族不再静默跳过 (用户实证: OpenCode
+                        // 多轮对话模型思考完全不可控) — Bifrost 网关文档实锤
+                        // reasoning_effort 全档支持 (none/minimal/low/medium/high/max),
+                        // 原样发送即可; AUTO 不发保持网关默认。
                         val isDeepSeekFamily = host == "api.deepseek.com" ||
                             params.model.modelId.contains("deepseek", ignoreCase = true)
                         if (isDeepSeekFamily) {
@@ -755,8 +763,6 @@ class ChatCompletionsAPI(
                             })
                             if (level.isEnabled && level != ReasoningLevel.AUTO) {
                                 // v3.6.49: DeepSeek 官方 reasoning_effort 只支持 high/max
-                                // (对齐 DeepSeek Harness llm-deepseek: off→thinking:disabled,
-                                //  high/max→reasoning_effort; low/medium 不支持直接报错)。
                                 // low/medium 映射到最低档 high, xhigh 映射 max
                                 val effort = when (level) {
                                     ReasoningLevel.LOW -> "high"     // low 不支持 → 最低档 high
@@ -766,6 +772,9 @@ class ChatCompletionsAPI(
                                 }
                                 put("reasoning_effort", effort)
                             }
+                        } else if (host == "opencode.ai" && level != ReasoningLevel.AUTO) {
+                            // v3.15.2: reasoning_effort 原样 (none=关闭, 网关透传)
+                            put("reasoning_effort", level.effort)
                         }
                     }
 
@@ -786,10 +795,43 @@ class ChatCompletionsAPI(
                         }
                     }
 
-                    "opencode.ai" -> {
-                        // v3.6.80: 对齐原版 RikkaHub — 原版 grok 调用正常, 不做任何特判
-                        if (level != ReasoningLevel.AUTO) {
-                            put("reasoning_effort", level.effort)
+                    "api.commandcode.ai" -> {
+                        // v3.15.2: CommandCode 网关 (/provider/v1 Chat Completions)
+                        // 按模型家族分流 (用户实证: OFF 落入 else 被映射成 low = 假关):
+                        // - DeepSeek 家族: thinking enabled/disabled + effort 映射
+                        //   (对齐官方语义, v4-flash 档位 low/high/max)
+                        // - Claude 家族: thinking {type, budget_tokens} (CC 文档实锤
+                        //   chat/completions 路由同样接受 thinking 块)
+                        // - 其他: reasoning_effort 原样 (none 原样发, 网关透传)
+                        val modelId = params.model.modelId.lowercase()
+                        when {
+                            modelId.contains("deepseek") -> {
+                                put("thinking", buildJsonObject {
+                                    put("type", if (!level.isEnabled) "disabled" else "enabled")
+                                })
+                                if (level.isEnabled && level != ReasoningLevel.AUTO) {
+                                    val effort = when (level) {
+                                        ReasoningLevel.LOW -> "low"
+                                        ReasoningLevel.MEDIUM -> "low"
+                                        ReasoningLevel.XHIGH, ReasoningLevel.MAX -> "max"
+                                        else -> "high"
+                                    }
+                                    put("reasoning_effort", effort)
+                                }
+                            }
+                            modelId.contains("claude") -> {
+                                put("thinking", buildJsonObject {
+                                    put("type", if (!level.isEnabled) "disabled" else "enabled")
+                                    if (level.isEnabled && level.budgetTokens > 0) {
+                                        put("budget_tokens", level.budgetTokens)
+                                    }
+                                })
+                            }
+                            else -> {
+                                if (level != ReasoningLevel.AUTO) {
+                                    put("reasoning_effort", level.effort)
+                                }
+                            }
                         }
                     }
 

@@ -13,6 +13,33 @@ import java.io.File
 /** 支持的图片扩展名 (与 show_image 声明一致) */
 val WORKSPACE_IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg", "webp", "gif", "bmp")
 
+/**
+ * v3.15.2: host 字面 file:// 前缀识别 (大小写不敏感匹配用)。
+ * 形态: [file://]/data/data|/data/user/0/<pkg>/files/workspaces/<UUID>/files/<rel>
+ * 前缀含包名通配段 — 用尾部锚 "/files/workspaces/" 定位。
+ */
+internal const val HOST_WS_ANCHOR = "/files/workspaces/"
+internal val HOST_WS_PREFIXES = listOf(
+    "file:///data/data/",
+    "file:///data/user/0/",
+    "/data/data/",
+    "/data/user/0/",
+)
+
+/** host 字面前缀 → 规范化为 /workspace/<rel> (UUID 段忽略, 遍历命中由 resolve 完成) */
+internal fun normalizeHostWorkspacePath(raw: String): String? {
+    val lower = raw.lowercase().trim()
+    val anchorIdx = lower.indexOf(HOST_WS_ANCHOR)
+    if (anchorIdx < 0) return null
+    // workspaces/<UUID>/files/<rel> — 取锚点后第 2 个 '/' 之后
+    val afterAnchor = raw.trim().substring(anchorIdx + HOST_WS_ANCHOR.length)
+    val secondSlash = afterAnchor.indexOf('/')
+    if (secondSlash < 0) return null
+    val afterUuid = afterAnchor.substring(secondSlash + 1)
+    if (!afterUuid.lowercase().startsWith("files/")) return null
+    return "/workspace/" + afterUuid.substring("files/".length)
+}
+
 /** scheme/前缀是否为工作区地址 (前缀大小写不敏感, 路径本体大小写敏感) */
 fun isWorkspaceUri(raw: String?): Boolean {
     if (raw == null) return false
@@ -21,7 +48,10 @@ fun isWorkspaceUri(raw: String?): Boolean {
     return lower.startsWith("workspace://") ||
         lower.startsWith("file:///workspace/") ||
         lower.startsWith("file://workspace/") ||
-        bare.startsWith("/workspace/")
+        bare.startsWith("/workspace/") ||
+        // v3.15.2: host 字面前缀 (教训固化: proot 内 /workspace 与 host 渲染端
+        // 互不可见; 模型可能直接输出 host 真实路径, /data/user/0 为 symlink 别名)
+        HOST_WS_PREFIXES.any { lower.startsWith(it) }
 }
 
 /**
@@ -65,6 +95,11 @@ fun percentDecodeLenient(s: String): String {
  */
 fun resolveWorkspaceRelPath(raw: String): String? {
     val lower = raw.lowercase().trim()
+    // v3.15.2: host 字面前缀先归一化 (file:///data/data|user/0/.../workspaces/<UUID>/files/<rel>)
+    if (HOST_WS_PREFIXES.any { lower.startsWith(it) }) {
+        val normalized = normalizeHostWorkspacePath(raw) ?: return null
+        return resolveWorkspaceRelPath(normalized)
+    }
     val rest: String = when {
         lower.startsWith("workspace://") -> raw.trim().substring("workspace://".length)
         lower.startsWith("file:///workspace/") -> raw.trim().substring("file:///workspace/".length)
