@@ -89,7 +89,6 @@ fun UsagePage(onBack: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
     var usages by remember { mutableStateOf<Map<String, UsageApi.UsageResult?>>(emptyMap()) }
     // v3.13.2: 跨族密钥查询结果 (本页为 OpenCode 族, user_ 密钥存这里)
-    var crossUsages by remember { mutableStateOf<Map<String, CommandCodeUsageApi.CommandCodeUsageResult>>(emptyMap()) }
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     var showKeyDialog by remember { mutableStateOf(false) }
@@ -108,19 +107,22 @@ fun UsagePage(onBack: () -> Unit = {}) {
         val keys = (listOf(apiKey) + savedKeys).distinct()
         val ccKeys = keys.filter { it.startsWith("user_", ignoreCase = true) }
         val ocKeys = keys.filter { !it.startsWith("user_", ignoreCase = true) }
-        usages = ocKeys.associateWith { UsageApi.fetchUsage(it) }
-        crossUsages = ccKeys.mapNotNull { k ->
-            CommandCodeUsageApi.fetchUsage(k)?.result?.let { k to it }
+        // v3.22.0: 数据链统一 — OC 直查, CC 查后转 OC 形状, 同入 usages 单 map
+        val ocResults = ocKeys.associateWith { UsageApi.fetchUsage(it) }
+        val ccResults = ccKeys.mapNotNull { k ->
+            CommandCodeUsageApi.fetchUsage(k)?.result?.let { k to it.toOcShape() }
         }.toMap()
+        usages = ocResults + ccResults
         // v3.19.0: 报错敏感性 (用户定版: 有问题先报错) — 部分密钥查询失败
         // 不再静默 (此前失败 key 直接从卡片消失无任何提示)
+        // v3.22.0: 数据链统一后按统一 map 统计
         val ocFailed = ocKeys.count { usages[it] == null }
-        val ccFailed = ccKeys.count { crossUsages[it] == null }
+        val ccFailed = ccKeys.count { usages[it] == null }
         val partialFail = listOfNotNull(
             if (ocFailed > 0) "OpenCode $ocFailed 张" else null,
             if (ccFailed > 0) "CC $ccFailed 张" else null,
         ).joinToString("、")
-        error = if (usages[apiKey] == null && crossUsages[apiKey] == null) {
+        error = if (focal == null) {
             "查询失败，请检查 API Key 或网络后下拉重试"
         } else if (partialFail.isNotEmpty()) {
             "部分密钥查询失败（$partialFail），其余已显示"
@@ -147,15 +149,12 @@ fun UsagePage(onBack: () -> Unit = {}) {
 
     // 非焦点密钥: 3 个用量均有空余 (percent<100) 才显示; null 视为未满
     // v3.13.2: 统一小卡数据 (本族 + 跨族 Command Code 密钥), 卡片视图全展示
+    // v3.22.0: 数据链统一 — 其他密钥全部从统一 usages map 取 (CC 已转 OC 形状)
     val otherVisible = (savedKeys.filter { it != apiKey }
-        .mapNotNull { k ->
-            usages[k]?.let { k to openCodeMiniCard(it) }
-                ?: crossUsages[k]?.let { k to commandCodeMiniCard(it) }
-        })
+        .mapNotNull { k -> usages[k]?.let { k to openCodeMiniCard(it) } })
         .filter { (_, d) -> listOf(d.p5, d.pw, d.pm).all { p -> p == null || p < 100 } }
-    // v3.19.0: 焦点密钥数据双族统一 — usages=OpenCode 结果, crossUsages=CC 结果
-    val focalOC = usages[apiKey]
-    val focalCC = crossUsages[apiKey]
+    // v3.22.0: 数据链统一后单焦点抽象 (CC 已在入口转为 OC 形状)
+    val focal = usages[apiKey]
     // v3.18.0: 视图渲染完全由 usageViewMode 决定, 与 otherVisible 解耦
     // (旧实现 showCards 依赖 otherVisible.isNotEmpty — 其他卡用量全满被滤
     // 空时 cards 模式错误落入大窗分支, 视图状态与渲染结果错位)
@@ -217,10 +216,10 @@ fun UsagePage(onBack: () -> Unit = {}) {
                                 }
                             }
                         }
-                    } else if (error != null && focalOC == null && focalCC == null) {
+                    } else if (error != null && focal == null) {
                         android.util.Log.w(
                             "UsageView",
-                            "branch=error mode=${settings.usageViewMode} usages=${usages.size} cross=${crossUsages.size} err=$error",
+                            "branch=error mode=${settings.usageViewMode} usages=${usages.size} err=$error",
                         )
                         item {
                             Card(Modifier.fillMaxWidth()) {
@@ -229,20 +228,18 @@ fun UsagePage(onBack: () -> Unit = {}) {
                                 }
                             }
                         }
-                    } else if (focalOC != null || focalCC != null) {
-                        // v3.21.0: 渲染分支诊断 (CC 焦点窗问题定位)
+                    } else if (focal != null) {
+                        // v3.21.0: 渲染分支诊断 (数据链统一后仍保留定位能力)
                         android.util.Log.i(
                             "UsageView",
-                            "branch=focal mode=${settings.usageViewMode} oc=${focalOC != null} cc=${focalCC != null} usages=${usages.size} cross=${crossUsages.size}",
+                            "branch=focal mode=${settings.usageViewMode} usages=${usages.size}",
                         )
                         if (isCardsMode) {
                             // ── 多卡片视图: 焦点卡 + 其他密钥卡 (其他为空仅焦点卡) ──
                             item {
                                 KeyUsageCard(
                                     key = apiKey,
-                                    // v3.19.0: 焦点卡双族 — CC 密钥聚焦时用 CC mini 卡
-                                    card = focalOC?.let { openCodeMiniCard(it) }
-                                        ?: commandCodeMiniCard(focalCC!!),
+                                    card = openCodeMiniCard(focal),
                                     isActive = true,
                                 )
                             }
@@ -254,85 +251,8 @@ fun UsagePage(onBack: () -> Unit = {}) {
                                 )
                             }
                         } else {
-                            // ── 焦点视图: 仅焦点密钥完整形态 (竖列大窗) ──
-                            if (focalCC != null && focalOC == null) {
-                                // v3.21.0: CC 焦点大窗 — 完全对齐 OC 焦点窗结构
-                                // (4 个独立 item 块 + nearestReset 同款倒计时逻辑,
-                                // 用户定版: 完全对齐 OpenCode 的焦点窗)
-                                val cc = focalCC
-                                val ccRing = { p: Int? -> usageGradientColor(p ?: 0) }
-                                item {
-                                    UsageRingCard(
-                                        title = "滚动窗口",
-                                        subtitle = "近 5 小时用量",
-                                        percent = cc.fiveHour?.percent?.toFloat() ?: 0f,
-                                        resetAt = cc.fiveHour?.resetAtMs?.let {
-                                            java.time.Instant.ofEpochMilli(it).toString()
-                                        },
-                                        color = ccRing(cc.fiveHour?.percent),
-                                    )
-                                }
-                                item {
-                                    UsageRingCard(
-                                        title = "本周",
-                                        subtitle = "周限额用量",
-                                        percent = cc.weekly?.percent?.toFloat() ?: 0f,
-                                        resetAt = cc.weekly?.resetAtMs?.let {
-                                            java.time.Instant.ofEpochMilli(it).toString()
-                                        },
-                                        color = ccRing(cc.weekly?.percent),
-                                    )
-                                }
-                                item {
-                                    UsageRingCard(
-                                        title = "本月",
-                                        subtitle = "月限额用量",
-                                        percent = cc.monthlyUsedPercent?.toFloat() ?: 0f,
-                                        resetAt = cc.currentPeriodEnd,
-                                        color = ccRing(cc.monthlyUsedPercent),
-                                    )
-                                }
-                                item {
-                                    // 重置倒计时: 与 commandCodeMiniCard 同款最近窗口计算
-                                    val now = System.currentTimeMillis()
-                                    data class W(val resetsAtMs: Long?, val windowMs: Long)
-                                    val nearest = listOf(
-                                        W(cc.fiveHour?.resetAtMs, 5L * 3_600_000),
-                                        W(cc.weekly?.resetAtMs, 7L * 24 * 3_600_000),
-                                        W(cc.currentPeriodEnd?.let {
-                                            runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull()
-                                        }, 30L * 24 * 3_600_000),
-                                    ).mapNotNull { w ->
-                                        val ts = w.resetsAtMs ?: return@mapNotNull null
-                                        if (ts > now) w to ts else null
-                                    }.minByOrNull { (_, ts) -> ts - now }
-                                    val elapsed = if (nearest == null) 0f else {
-                                        val (w, ts) = nearest
-                                        ((now - (ts - w.windowMs)).coerceAtLeast(0L)).toFloat() / w.windowMs * 100f
-                                    }.coerceIn(0f, 100f)
-                                    // v3.12.8: 重置倒计时反向红→绿 (用户定版)
-                                    val resetColor = Color(
-                                        CommandCodeUsageApi.resetColorArgb(
-                                            nearest?.let { (_, ts) -> ts - now },
-                                            nearest?.first?.windowMs ?: (5L * 3_600_000),
-                                        )
-                                    )
-                                    UsageRingCard(
-                                        title = "重置倒计时",
-                                        subtitle = "最近窗口重置",
-                                        percent = elapsed,
-                                        bottomText = nearest?.let { (_, ts) ->
-                                            val ms = ts - now
-                                            val h = ms / 3_600_000
-                                            val m = (ms % 3_600_000) / 60_000
-                                            if (h > 0) "${h}小时${m}分后" else "${m}分后"
-                                        } ?: "无活动窗口",
-                                        color = resetColor,
-                                        bottomColor = resetColor,
-                                    )
-                                }
-                            } else {
-                            val activeUsage = focalOC!!
+                            // ── 焦点视图: 仅焦点密钥完整形态 (竖列大窗, CC/OC 统一形状) ──
+                            val activeUsage = focal
                             item {
                                 // v3.12.5: 全密钥统一渐变配色 — 环与主色按用量
                                 // 绿→黄→橙→红 (Command Code 同源 usageColorArgb)
@@ -410,6 +330,27 @@ fun UsagePage(onBack: () -> Unit = {}) {
             onDismiss = { showKeyDialog = false },
         )
     }
+}
+
+// v3.22.0: 数据链统一 (用户定版: CC 数据按 OC 模式解析, 二者零差别,
+// 唯一变化=数据从哪个 API 来) — CC 结果在数据入口即转换为 OC 形状,
+// 下游渲染 (大窗/cards/错误判定) 只认一种形状, 族分流代码全部删除
+private fun CommandCodeUsageApi.CommandCodeUsageResult.toOcShape(): UsageApi.UsageResult {
+    val iso = { ms: Long? -> ms?.let { java.time.Instant.ofEpochMilli(it).toString() } }
+    return UsageApi.UsageResult(
+        rolling = UsageApi.WindowUsage(
+            percent = fiveHour?.percent,
+            resetsAt = iso(fiveHour?.resetAtMs),
+        ),
+        weekly = UsageApi.WindowUsage(
+            percent = weekly?.percent,
+            resetsAt = iso(weekly?.resetAtMs),
+        ),
+        monthly = UsageApi.WindowUsage(
+            percent = monthlyUsedPercent,
+            resetsAt = currentPeriodEnd,
+        ),
+    )
 }
 
 // ── 多密钥卡片 (2x2 横排 4 用量) ──

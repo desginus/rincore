@@ -116,6 +116,21 @@ class WorkspaceDetailVM(
         }
     }
 
+    // v3.22.0: 文件预览 — shareFile 已封装宿主 File 解析 (缓存拷贝),
+    // onReady 回调内直接置 state (StateFlow 线程安全)
+    fun openPreview(entry: WorkspaceFileEntry) {
+        val cacheDir = java.io.File(getApplication<android.app.Application>().cacheDir, "workspace_preview")
+            .apply { mkdirs() }
+        _state.update { it.copy(previewEntry = entry) }
+        shareFile(entry, cacheDir) { f ->
+            _state.update { it.copy(previewFile = f) }
+        }
+    }
+
+    fun closePreview() {
+        _state.update { it.copy(previewFile = null, previewEntry = null) }
+    }
+
     fun importFile(inputStream: InputStream, fileName: String) {
         viewModelScope.launch {
             runCatching {
@@ -329,6 +344,9 @@ data class WorkspaceDetailState(
     val area: WorkspaceStorageArea = WorkspaceStorageArea.FILES,
     val path: String = "",
     val entries: List<WorkspaceFileEntry> = emptyList(),
+    // v3.22.0: 文件预览 (解析出的宿主 File; null=无预览)
+    val previewFile: File? = null,
+    val previewEntry: WorkspaceFileEntry? = null,
     val loading: Boolean = false,
     val error: String? = null,
 )

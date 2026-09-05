@@ -86,6 +86,10 @@ import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.fileSizeToString
 import me.rerere.rikkahub.utils.plus
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import java.io.File
+import androidx.compose.ui.text.font.FontFamily
 import me.rerere.workspace.RootfsInstallProgress
 import me.rerere.workspace.RootfsInstallStage
 import me.rerere.workspace.WorkspaceFileEntry
@@ -110,18 +114,23 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
     var showMoveDestDialog by remember { mutableStateOf(false) }
     var showInstallDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    // v3.22.0: 多文件上传 (用户定版: 与对话页一致可同时选择多个)
     val filePicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument(),
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        val fileName = context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (nameIndex >= 0) cursor.getString(nameIndex) else null
-            } else null
-        } ?: uri.lastPathSegment ?: "imported_file"
-        val inputStream = context.contentResolver.openInputStream(uri) ?: return@rememberLauncherForActivityResult
-        vm.importFile(inputStream, fileName)
+        contract = ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        uris.forEach { uri ->
+            val fileName = context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex >= 0) cursor.getString(nameIndex) else null
+                } else null
+            } ?: uri.lastPathSegment ?: "imported_file"
+            runCatching {
+                val inputStream = context.contentResolver.openInputStream(uri) ?: return@forEach
+                vm.importFile(inputStream, fileName)
+            }
+        }
     }
     var exportTarget by remember { mutableStateOf<WorkspaceFileEntry?>(null) }
     val exportLauncher = rememberLauncherForActivityResult(
@@ -315,6 +324,20 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
                 }
             },
         )
+    }
+
+    // v3.22.0: 文件预览对话框 (图片缩放查看 / 文本滚动显示)
+    state.previewEntry?.let { entry ->
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { vm.closePreview() },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            WorkspaceFilePreviewDialog(
+                entry = entry,
+                file = state.previewFile,
+                onClose = { vm.closePreview() },
+            )
+        }
     }
 
     if (showCreateDialog) {
@@ -893,6 +916,21 @@ private fun WorkspaceFileCard(
                     expanded = menuExpanded,
                     onDismissRequest = { menuExpanded = false },
                 ) {
+                    if (!entry.isDirectory) {
+                        DropdownMenuItem(
+                            text = { Text("预览") },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = HugeIcons.View,
+                                    contentDescription = null,
+                                )
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onPreview()
+                            },
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text("重命名") },
                         leadingIcon = {
