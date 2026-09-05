@@ -148,7 +148,7 @@ class ClaudeProvider(
             response = client.resolveProxy(proxyRoute, params.model.modelId).newCall(request).await()
             if (response.isSuccessful) break
             val bodyStr = response.body.string()
-            if (attempts == 1 && response.code == 400 && bodyStr.contains("2013")) {
+            if (me.rerere.ai.core.MinimalBodyRetry.shouldDegrade(response.code, bodyStr.contains(me.rerere.ai.core.MinimalBodyRetry.MARKER), attempts != 1)) {
                 Log.w(TAG, "generateText: 2013 invalid params — retrying with minimal body")
                 TraceLogger.log("SSE", "generateText 2013 → minimal retry")
                 requestBody = buildMessageRequest(providerSetting, messages, params, minimal = true)
@@ -220,60 +220,25 @@ class ClaudeProvider(
         // completed/gotFinish 机制 (v3.6.75 双向: 有收尾标记才视为完成)。
         val completed = java.util.concurrent.atomic.AtomicBoolean(false)
 
-        // v3.8.3: OpenCode 适配 — 对齐 ChatCompletionsAPI v3.6.44 (该通道已有
-        // opencode.ai 判定放宽 watchdog): OpenCode Zen 中转聚合转发 + 深度思考,
-        // 静默期长且可能不逐 token 转发。无 watchdog 时中转静默会无限挂起直到
-        // readTimeout (3min), 用户感知首字延迟极久。分阶段 watchdog:
-        // 首包前 120s 断开 (opencode) / 60s (其他); 首包后 180s (opencode) /
-        // 120s (其他)。断开抛 IOException → GenerationHandler 断流重试, 收敛挂起。
+        // 4.0.0 重写: 三阶段 watchdog 状态机统一收敛至 StreamWatchdog
+        // (ai/core/WatchdogPolicy.kt, 与 ChatCompletionsAPI 同一实现) —
+        // 数值/文案/tick 节奏逐字保留
         val isOpencode = runCatching {
             providerSetting.baseUrl.toHttpUrl().host == "opencode.ai"
         }.getOrDefault(false)
-        // v3.11.6: opencode 时限收紧 (120/180→60/90s) — 用户反馈 OpenCode Go
-        // 通道"极不稳定": 网关断流/静默后旧时限要等 2-3 分钟才断开重试,
-        // 收紧后 60-90s 内快速失败进入断流重试 (15 次 10s 预算), 恢复更快
-        // v3.11.13: 三阶段 watchdog ("尽可能多尝试, 少静默") — 旧实现把
-        // "连接未就绪" 与 "已连接在思考" 混成同一 60s 计时, 后果两头堵:
-        // 网关挂起要等满 60s 才断开重试 (静默久), 上游长思考又常被 60s
-        // 误杀 (重试后重新排队更慢)。按连接状态分级:
-        //   阶段1 建连/响应头 (onOpen 之前): 30s — 网关冷启动/挂起快速
-        //     断开 → GenerationHandler 瞬时分支 15 次快速重试 (多尝试)
-        //   阶段2 已连接未出首事件 (上游思考/排队): 150s — 请求已被网关
-        //     接受, 重试只会重新排队更慢, 耐心等待 (原版即如此)
-        //   阶段3 流出中 (首事件后): 90s — 流间隙上限
         val headerReceived = java.util.concurrent.atomic.AtomicBoolean(false)
-        // v3.11.35: header 判死 15s→25s — 网关冷启动典型 10-20s, 旧值在冷启动
-        // 场景每次判死都白等 15s 后重连重新排队, 反复错过启动完成窗口;
-        // 25s 单窗口直接覆盖典型冷启动, 大幅降低"发起阶段等半天"感知
-        val headerLimit = 25_000L
-        val firstEventLimit = 150_000L
-        val streamLimit = if (isOpencode) 90_000L else 120_000L
         val lastEventAt = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
-
-        // v3.8.6: SSE 诊断统计 — 输出中途中断/半截时在运行日志页可抓取全部现场
-        val eventCount = java.util.concurrent.atomic.AtomicInteger(0)
-        val dataChars = java.util.concurrent.atomic.AtomicLong(0)
-        TraceLogger.log("SSE", "start: model=${params.model.modelId}, isOpencode=$isOpencode, headerLimit=25s, firstEventLimit=150s, streamLimit=${streamLimit / 1000}s, maxTokens=${params.maxTokens ?: 64000}")
-
-        val watchdog = launch {
-            while (true) {
-                kotlinx.coroutines.delay(15_000)
-                val idleMs = System.currentTimeMillis() - lastEventAt.get()
-                val (phase, limit, closeMsg) = when {
-                    hasData.get() -> Triple("stream", streamLimit,
-                        "生成无有效数据超时 (${streamLimit / 1000}s): 平台断流或卡死")
-                    headerReceived.get() -> Triple("first-event", firstEventLimit,
-                        "生成无有效数据超时 (${firstEventLimit / 1000}s): 上游思考或排队中无输出")
-                    else -> Triple("header", headerLimit,
-                        "平台连接无响应 (${headerLimit / 1000}s): 网关冷启动或挂起")
-                }
-                if (idleMs > limit) {
-                    Log.w(TAG, "Claude SSE idle ${idleMs / 1000}s (phase=$phase) — closing")
-                    TraceLogger.log("SSE", "watchdog timeout: idle=${idleMs / 1000}s, limit=${limit / 1000}s, events=${eventCount.get()}, dataChars=${dataChars.get()}")
-                    close(java.io.IOException(closeMsg))
-                    break
-                }
-            }
+        val watchdogJob = me.rerere.ai.core.StreamWatchdog.launchIn(
+            this,
+            me.rerere.ai.core.StreamWatchdog(
+                isOpencode = isOpencode,
+                headerReceived = headerReceived,
+                hasData = hasData,
+                lastEventAt = lastEventAt,
+                onTimeout = { close(it) },
+            ),
+        ) { fired ->
+            Log.w(TAG, "Claude SSE idle timeout — closing: $fired")
         }
 
         // v3.11.9: eventSource 容器前置声明 — 局部变量无前向引用,
@@ -386,7 +351,7 @@ class ClaudeProvider(
                 // invalid params (用户实测同一请求随机 400): 首次 400+2013
                 // 用最简请求体 (无 cache_control/thinking) 重试一次;
                 // 重试仍失败则走正常错误上报
-                if (!attemptedMinimal && response?.code == 400 && bodyRaw?.contains("2013") == true) {
+                if (me.rerere.ai.core.MinimalBodyRetry.shouldDegrade(response?.code, bodyRaw?.contains(me.rerere.ai.core.MinimalBodyRetry.MARKER) == true, attemptedMinimal)) {
                     attemptedMinimal = true
                     Log.w(TAG, "2013 invalid params detected — retrying with minimal request body")
                     TraceLogger.log("SSE", "2013 detected (code=400), retrying minimal body")
@@ -488,7 +453,7 @@ class ClaudeProvider(
         )
 
         awaitClose {
-            runCatching { watchdog.cancel() }
+            runCatching { watchdogJob.cancel() }
             Log.d(TAG, "Closing eventSource")
             eventSourceRef.get()?.cancel()
         }

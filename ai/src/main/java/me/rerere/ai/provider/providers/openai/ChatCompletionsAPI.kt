@@ -223,14 +223,14 @@ class ChatCompletionsAPI(
         // 教训链: v3.5.14 主动断开误杀长思考 → 改只日志; v3.5.45 缩短到 25s 后
         // 用户实测误杀 (Trace 95098f39: 平台存在 >25s 静默期, 非断流) —
         // 25s 假设"推理期间持续有 reasoning chunk"在用户环境不成立。
-        // v3.6.5 分阶段 watchdog: 首包前 60s 断 (连接无数据 → 快速失败进入
-        // 断流重试, 收敛中断后"正在输出"挂起时长 — 用户实测中断后长时间不结束);
-        // 首包后 120s (平台思考/回复间隙静默不误杀)。
+        // 4.0.0 重写: 三阶段 watchdog 状态机统一收敛至 StreamWatchdog
+        // (ai/core/WatchdogPolicy.kt) — 数值/文案/tick 节奏逐字保留
         val hasReceivedData = java.util.concurrent.atomic.AtomicBoolean(false)  // 前置声明 (watchdog 引用)
         val lastEventAt = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
-        // v3.6.44: opencode.ai 针对性适配 — 网关聚合转发 + 深度思考, 静默期更长,
-        // 放宽 watchdog 避免误杀长思考 (首包 120s / 流中 180s)
         val isOpencode = providerSetting.baseUrl.toHttpUrl().host == "opencode.ai"
+        val sentAtMs = System.currentTimeMillis()
+        val firstDataAtMs = java.util.concurrent.atomic.AtomicLong(0)
+        val headerReceived = java.util.concurrent.atomic.AtomicBoolean(false)
         // v3.8.40: ox 系模型正文走 reasoning_content (社区实锤: opencode 客户端
         // 将其直接当正文显示, 无独立 content 输出)。开启后 reasoning_content
         // 提升为正文, 不再作为思考链单独显示 — 与 opencode 行为对齐。
@@ -239,38 +239,15 @@ class ChatCompletionsAPI(
                 params.model.displayName.contains("x-preview", ignoreCase = true) ||
                 params.model.modelId.contains("x-preview", ignoreCase = true)
             )
-        // v3.10.5: TTFT 可观测 — 首字延迟 = 发送完成 → 首个有效 data 事件 (onEvent 插桩)
-        val sentAtMs = System.currentTimeMillis()
-        val firstDataAtMs = java.util.concurrent.atomic.AtomicLong(0)
-        // v3.11.6: opencode 时限收紧 (120/180→60/90s) — OpenCode Go 网关
-        // 断流/静默后快速失败进入断流重试 (15 次 10s 预算), 恢复更快
-        // v3.11.13: 三阶段 watchdog (对齐 ClaudeProvider) —"多尝试, 少静默":
-        // 阶段1 建连/响应头 30s (网关挂起快速断开→内层 SSE 重试×5 立即换连接);
-        // 阶段2 已连接未出首事件 150s (上游思考, 重试无意义, 耐心等);
-        // 阶段3 流中 90/120s 不变
-        val headerReceived = java.util.concurrent.atomic.AtomicBoolean(false)
-        // v3.11.35: header 判死 15s→25s (与 ClaudeProvider 同步) — 吸收网关冷启动
-        val headerLimit = 25_000L
-        val firstEventLimit = 150_000L
-        val streamLimit = if (isOpencode) 90_000L else 120_000L
-        val watchdog = launch {
-            while (true) {
-                delay(15_000)
-                val idleMs = System.currentTimeMillis() - lastEventAt.get()
-                val (phase, limit, closeMsg) = when {
-                    hasReceivedData.get() -> Triple("stream", streamLimit,
-                        "生成无有效数据超时 (${streamLimit / 1000}s): 平台断流或卡死")
-                    headerReceived.get() -> Triple("first-event", firstEventLimit,
-                        "生成无有效数据超时 (${firstEventLimit / 1000}s): 上游思考或排队中无输出")
-                    else -> Triple("header", headerLimit,
-                        "平台连接无响应 (${headerLimit / 1000}s): 网关冷启动或挂起")
-                }
-                if (idleMs > limit) {
-                    Log.w(TAG, "SSE idle ${idleMs / 1000}s (phase=$phase) — closing stream")
-                    close(java.io.IOException(closeMsg))
-                    break
-                }
-            }
+        val watchdog = me.rerere.ai.core.StreamWatchdog(
+            isOpencode = isOpencode,
+            headerReceived = headerReceived,
+            hasData = hasReceivedData,
+            lastEventAt = lastEventAt,
+            onTimeout = { close(it) },
+        )
+        val watchdogJob = me.rerere.ai.core.StreamWatchdog.launchIn(this@callbackFlow, watchdog) { fired ->
+            Log.w(TAG, "SSE idle timeout — closing stream: $fired")
         }
 
         // SSE 连接优化: 首次数据到达前断连时自动重试, 指数退避 (移植 v2.9.8 稳定行为)
@@ -594,7 +571,7 @@ class ChatCompletionsAPI(
 
         awaitClose {
             Log.d(TAG, "awaitClose: cancelling eventSource")
-            watchdog.cancel()
+            watchdogJob.cancel()
             currentEventSource?.cancel()
         }
         // trySend 在缓冲满时会静默丢弃 delta，导致回复中间缺字 (#1295)，因此缓冲必须无界
