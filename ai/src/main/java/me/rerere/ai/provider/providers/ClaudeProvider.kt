@@ -541,7 +541,6 @@ class ClaudeProvider(
                 thinkingField(isMiniMaxFamily, params.reasoningLevel)?.forEach { (k, v) -> put(k, v) }
             }
 
-            }
 
             // 处理工具
             val useFunctionTools =
