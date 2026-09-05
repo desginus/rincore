@@ -3,7 +3,13 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v4.0.1 为最新）
+# RinCore 更新日志（v4.0.2 为最新）
+
+## v4.0.2（Office/PDF 文档预览 + 澎湃 OS 4 动效统一，2026-09-05）
+- 文档预览（零新依赖）：DocumentPreview.kt OOXML 纯解析（docx 段落/pptx 按页分节/xlsx sharedStrings+行解析/epub），SAX 流式+XXE 防护+200KB 截断；PDF 用内置 PdfRenderer 渲染前 3 页位图+页数提示；旧版二进制（doc/ppt/xls）引导外部打开——该类型不支持预览 问题消除
+- 澎湃 OS 4 动效基建（HyperMotion.kt）：HyperMotionSpec 弹性 spring（damping 0.85/stiffness 380 柔和回弹）+HyperGlassPanel 柔光玻璃（半透明表面+白高光描边+24dp 圆角）+HyperDialog 弹窗统一入口（入场 fade 220ms+scale 0.92→1 弹性）+HyperFullPanel 全屏玻璃面板
+- 全局替换：RikkaConfirmDialog 换壳 HyperDialog（签名对齐 M3 Composable lambda，9 文件调用方零改动）；WorkspaceDetailPage 4 个 AlertDialog+预览 Dialog → HyperDialog/HyperFullPanel
+- 编译教训：HyperDialog 签名必须与 M3 AlertDialog 一致（title/text 是 Composable lambda 非 String）；ColumnScope.PdfPreviewPages 扩展 receiver 解决 weight 作用域
 
 ## v4.0.1（426 报错修复 + 原版 2.4.17 全量适配移植，2026-09-05）
 - Bug 修复: ClaudeProvider/ChatCompletionsAPI onFailure 5xx 转 IOException 进重试链（HttpException 是 RuntimeException 重试链不捕，qwen3.8-flash 网关 500 无重试终态失败）；4xx 保持直接报错
