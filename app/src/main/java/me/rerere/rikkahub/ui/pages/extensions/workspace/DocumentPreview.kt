@@ -64,12 +64,14 @@ internal object DocumentPreview {
             if (slides.isEmpty()) return null
             val sb = StringBuilder()
             slides.forEachIndexed { index, name ->
-                val entry = zip.getEntry(name) ?: return@forEachIndexed
-                val texts = readXmlTexts(zip.getInputStream(entry), "a:t", "p:t")
-                sb.append("── 第 ").append(index + 1).append(" 页 ──\n")
-                if (texts.isEmpty()) sb.append("(无文本内容)\n")
-                else texts.forEach { sb.append(it.trim()).append('\n') }
-                sb.append('\n')
+                val entry = zip.getEntry(name)
+                if (entry != null) {
+                    val texts = readXmlTexts(zip.getInputStream(entry), "a:t", "p:t")
+                    sb.append("── 第 ").append(index + 1).append(" 页 ──\n")
+                    if (texts.isEmpty()) sb.append("(无文本内容)\n")
+                    else texts.forEach { sb.append(it.trim()).append('\n') }
+                    sb.append('\n')
+                }
             }
             return sb.toString()
         }
@@ -114,12 +116,14 @@ internal object DocumentPreview {
             if (htmls.isEmpty()) return null
             val sb = StringBuilder()
             htmls.forEach { name ->
-                val entry = zip.getEntry(name) ?: return@forEachIndexed
-                val texts = readXmlTexts(zip.getInputStream(entry), "p", "h1", "h2", "h3", "h4", "div")
-                if (texts.isNotEmpty()) {
-                    sb.append("── ").append(name.substringAfterLast('/')).append(" ──\n")
-                    texts.forEach { sb.append(it.trim()).append('\n') }
-                    sb.append('\n')
+                val entry = zip.getEntry(name)
+                if (entry != null) {
+                    val texts = readXmlTexts(zip.getInputStream(entry), "p", "h1", "h2", "h3", "h4", "div")
+                    if (texts.isNotEmpty()) {
+                        sb.append("── ").append(name.substringAfterLast('/')).append(" ──\n")
+                        texts.forEach { sb.append(it.trim()).append('\n') }
+                        sb.append('\n')
+                    }
                 }
             }
             return sb.toString()
@@ -234,7 +238,7 @@ internal object DocumentPreview {
  * 4.0.2: PDF 内置预览 — android.graphics.pdf.PdfRenderer 前 3 页位图。
  */
 @Composable
-internal fun PdfPreviewPages(file: java.io.File) {
+internal fun androidx.compose.foundation.layout.ColumnScope.PdfPreviewPages(file: java.io.File) {
     val pages = remember(file.absolutePath) {
         runCatching {
             val renderer = android.graphics.pdf.PdfRenderer(

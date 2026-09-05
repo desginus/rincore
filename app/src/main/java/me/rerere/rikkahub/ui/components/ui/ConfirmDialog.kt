@@ -26,7 +26,7 @@ fun RikkaConfirmDialog(
 
     HyperDialog(
         onDismissRequest = onDismiss,
-        title = title,
+        title = { Text(title) },
         text = text,
         confirmButton = {
             TextButton(onClick = onConfirm) {

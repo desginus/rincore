@@ -86,7 +86,7 @@ fun HyperDialog(
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
     properties: DialogProperties = DialogProperties(),
-    title: String? = null,
+    title: (@Composable () -> Unit)? = null,
     text: (@Composable () -> Unit)? = null,
     confirmButton: (@Composable () -> Unit)? = null,
     dismissButton: (@Composable () -> Unit)? = null,
@@ -107,11 +107,7 @@ fun HyperDialog(
         ) {
             HyperGlassPanel(modifier = modifier) {
                 if (title != null) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp),
-                    )
+                    Box(Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp)) { title() }
                 }
                 if (text != null) {
                     Box(Modifier.padding(horizontal = 24.dp, vertical = 16.dp)) { text() }
