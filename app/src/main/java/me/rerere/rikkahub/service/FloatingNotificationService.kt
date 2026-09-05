@@ -10,6 +10,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
@@ -106,6 +107,8 @@ private class FloatingWindowOwner : LifecycleOwner, SavedStateRegistryOwner, Vie
 /**
  * 悬浮窗通知服务: WindowManager 叠加层 + ComposeView.
  */
+private const val TAG = "FloatingNotifSvc"
+
 class FloatingNotificationService : Service() {
 
     private val svcScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
