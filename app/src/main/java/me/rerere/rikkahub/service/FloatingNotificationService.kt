@@ -199,6 +199,22 @@ class FloatingNotificationService : Service() {
         owner = null; cv = null
     }
 
+    // A17/澎湃OS 4 定向 (2026-09-05): specialUse/dataSync 类型 FGS 有系统
+    // 超时 (Android 14+ 引入, A17 严格执行) — 超时回调先到, 不处理会被系统
+    // 直接杀服务 (生成中途断流)。优雅降级: 停前台保留进程, WakeLock 与
+    // OkHttp 流由既有 finally 链收尾。
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        Log.w(TAG, "FGS timeout (type=$fgsType) — degrade to background, keep process")
+        runCatching { stopForeground(STOP_FOREGROUND_DETACH) }
+    }
+
+    // 用户划掉应用卡片: 前台服务继续跑 (后台生成本就是设计目标), 但
+    // 澎湃OS 4 会压缩 cached 进程 — 记录现场供断流排查
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        Log.w(TAG, "onTaskRemoved — FGS keeps running, HyperOS may compress process")
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() { dismiss(); svcScope.cancel(); super.onDestroy() }
 
     private fun canDraw() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) Settings.canDrawOverlays(this) else true
