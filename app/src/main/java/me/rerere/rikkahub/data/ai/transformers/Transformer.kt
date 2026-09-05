@@ -90,7 +90,7 @@ suspend fun List<UIMessage>.transforms(
             .onFailure { e ->
                 android.util.Log.e("Transformer", "${transformer.javaClass.simpleName} failed: ${e.message}", e)
                 ctx.processingStatus.value = "消息处理组件 ${transformer.javaClass.simpleName.substringBefore("Transformer")} 异常, 已降级继续"
-                me.rerere.rikkahub.data.log.CallTracer.event(
+                me.rerere.rikkahub.data.ai.CallTracer.event(
                     "TRANSFORMER", "isolated_failure",
                     "${transformer.javaClass.simpleName}: ${e.message}",
                 )
