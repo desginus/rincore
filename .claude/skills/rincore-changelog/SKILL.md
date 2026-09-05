@@ -3,7 +3,12 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v3.21.0 为最新）
+# RinCore 更新日志（v3.22.0 为最新）
+
+## v3.22.0（用量数据链统一 + 工作区文件预览 + 多文件上传，2026-09-05）
+- 数据链统一（用户定版：CC 数据按 OC 模式解析，二者零差别，唯一变化=数据从哪个 API 来）：新增 toOcShape 转换（CC 结果在数据入口转为 OC UsageResult 形状），OC/CC 同入单一 usages map；下游全部去族化（focalOC/focalCC 双族抽象删除→单 focal，CC 大窗专用代码块删除统一走 OC 大窗，cards 焦点卡统一，otherVisible/error 判定/失败统计全从统一 map 取）；crossUsages state 与双族渲染引用全删——密钥加入顺序对渲染零影响
+- 工作区文件预览：文件菜单新增预览（第一项）；图片扩展 → ZoomableAsyncImage 缩放（对话页同款），21 种文本扩展 → 等宽滚动显示（200KB 截断），解析中 loading，不支持类型显示大小；VM.openPreview 复用 shareFile 缓存拷贝链（Page 传 context.cacheDir）
+- 多文件上传：OpenDocument 单选 → OpenMultipleDocuments 多选，循环导入
 
 ## v3.21.0（CC 焦点大窗同构重写 + 点击编辑取消 + Transformer 链隔离，2026-09-05）
 - CC 焦点大窗: 按用户指示完全对齐 OC 焦点窗同构 (4 个独立 item 块替代 items(4)+when, nearestReset 同款最近窗口计算); 渲染分支入口加 UsageView 诊断日志 (branch/mode/双族判定/两 map 大小), 复现一次日志即实锤实际分支
