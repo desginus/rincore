@@ -218,6 +218,10 @@ fun UsagePage(onBack: () -> Unit = {}) {
                             }
                         }
                     } else if (error != null && focalOC == null && focalCC == null) {
+                        android.util.Log.w(
+                            "UsageView",
+                            "branch=error mode=${settings.usageViewMode} usages=${usages.size} cross=${crossUsages.size} err=$error",
+                        )
                         item {
                             Card(Modifier.fillMaxWidth()) {
                                 Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -226,6 +230,11 @@ fun UsagePage(onBack: () -> Unit = {}) {
                             }
                         }
                     } else if (focalOC != null || focalCC != null) {
+                        // v3.21.0: 渲染分支诊断 (CC 焦点窗问题定位)
+                        android.util.Log.i(
+                            "UsageView",
+                            "branch=focal mode=${settings.usageViewMode} oc=${focalOC != null} cc=${focalCC != null} usages=${usages.size} cross=${crossUsages.size}",
+                        )
                         if (isCardsMode) {
                             // ── 多卡片视图: 焦点卡 + 其他密钥卡 (其他为空仅焦点卡) ──
                             item {
@@ -247,59 +256,80 @@ fun UsagePage(onBack: () -> Unit = {}) {
                         } else {
                             // ── 焦点视图: 仅焦点密钥完整形态 (竖列大窗) ──
                             if (focalCC != null && focalOC == null) {
-                                // v3.19.0: CC 密钥焦点大窗 (修复 CC 聚焦无数据分支
-                                // 落入 error/转圈的 Bug — CC 结果此前只进小卡路径)
+                                // v3.21.0: CC 焦点大窗 — 完全对齐 OC 焦点窗结构
+                                // (4 个独立 item 块 + nearestReset 同款倒计时逻辑,
+                                // 用户定版: 完全对齐 OpenCode 的焦点窗)
                                 val cc = focalCC
-                                val ccMini = commandCodeMiniCard(cc)
-                                items(4) { idx ->
-                                    when (idx) {
-                                        0 -> UsageRingCard(
-                                            title = "滚动窗口",
-                                            subtitle = "近 5 小时用量",
-                                            percent = cc.fiveHour?.percent?.toFloat() ?: 0f,
-                                            resetAt = cc.fiveHour?.resetAtMs?.let {
-                                                java.time.Instant.ofEpochMilli(it).toString()
-                                            },
-                                            color = usageGradientColor(cc.fiveHour?.percent ?: 0),
+                                val ccRing = { p: Int? -> usageGradientColor(p ?: 0) }
+                                item {
+                                    UsageRingCard(
+                                        title = "滚动窗口",
+                                        subtitle = "近 5 小时用量",
+                                        percent = cc.fiveHour?.percent?.toFloat() ?: 0f,
+                                        resetAt = cc.fiveHour?.resetAtMs?.let {
+                                            java.time.Instant.ofEpochMilli(it).toString()
+                                        },
+                                        color = ccRing(cc.fiveHour?.percent),
+                                    )
+                                }
+                                item {
+                                    UsageRingCard(
+                                        title = "本周",
+                                        subtitle = "周限额用量",
+                                        percent = cc.weekly?.percent?.toFloat() ?: 0f,
+                                        resetAt = cc.weekly?.resetAtMs?.let {
+                                            java.time.Instant.ofEpochMilli(it).toString()
+                                        },
+                                        color = ccRing(cc.weekly?.percent),
+                                    )
+                                }
+                                item {
+                                    UsageRingCard(
+                                        title = "本月",
+                                        subtitle = "月限额用量",
+                                        percent = cc.monthlyUsedPercent?.toFloat() ?: 0f,
+                                        resetAt = cc.currentPeriodEnd,
+                                        color = ccRing(cc.monthlyUsedPercent),
+                                    )
+                                }
+                                item {
+                                    // 重置倒计时: 与 commandCodeMiniCard 同款最近窗口计算
+                                    val now = System.currentTimeMillis()
+                                    data class W(val resetsAtMs: Long?, val windowMs: Long)
+                                    val nearest = listOf(
+                                        W(cc.fiveHour?.resetAtMs, 5L * 3_600_000),
+                                        W(cc.weekly?.resetAtMs, 7L * 24 * 3_600_000),
+                                        W(cc.currentPeriodEnd?.let {
+                                            runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull()
+                                        }, 30L * 24 * 3_600_000),
+                                    ).mapNotNull { w ->
+                                        val ts = w.resetsAtMs ?: return@mapNotNull null
+                                        if (ts > now) w to ts else null
+                                    }.minByOrNull { (_, ts) -> ts - now }
+                                    val elapsed = if (nearest == null) 0f else {
+                                        val (w, ts) = nearest
+                                        ((now - (ts - w.windowMs)).coerceAtLeast(0L)).toFloat() / w.windowMs * 100f
+                                    }.coerceIn(0f, 100f)
+                                    // v3.12.8: 重置倒计时反向红→绿 (用户定版)
+                                    val resetColor = Color(
+                                        CommandCodeUsageApi.resetColorArgb(
+                                            nearest?.let { (_, ts) -> ts - now },
+                                            nearest?.first?.windowMs ?: (5L * 3_600_000),
                                         )
-                                        1 -> UsageRingCard(
-                                            title = "本周",
-                                            subtitle = "周限额用量",
-                                            percent = cc.weekly?.percent?.toFloat() ?: 0f,
-                                            resetAt = cc.weekly?.resetAtMs?.let {
-                                                java.time.Instant.ofEpochMilli(it).toString()
-                                            },
-                                            color = usageGradientColor(cc.weekly?.percent ?: 0),
-                                        )
-                                        2 -> UsageRingCard(
-                                            title = "本月",
-                                            subtitle = "月限额用量",
-                                            percent = cc.monthlyUsedPercent?.toFloat() ?: 0f,
-                                            resetAt = cc.currentPeriodEnd,
-                                            color = usageGradientColor(cc.monthlyUsedPercent ?: 0),
-                                        )
-                                        else -> {
-                                            // v3.12.8: 重置倒计时反向红→绿 (用户定版)
-                                            val resetColor = Color(
-                                                CommandCodeUsageApi.resetColorArgb(
-                                                    ccMini.resetRemainingMs,
-                                                    5 * 60 * 60 * 1000L,
-                                                )
-                                            )
-                                            UsageRingCard(
-                                                title = "重置倒计时",
-                                                subtitle = "最近窗口重置",
-                                                percent = ccMini.resetElapsedPct.toFloat(),
-                                                bottomText = ccMini.resetRemainingMs?.let { ms ->
-                                                    val h = ms / 3_600_000
-                                                    val m = (ms % 3_600_000) / 60_000
-                                                    if (h > 0) "${h}小时${m}分后" else "${m}分后"
-                                                },
-                                                color = resetColor,
-                                                bottomColor = resetColor,
-                                            )
-                                        }
-                                    }
+                                    )
+                                    UsageRingCard(
+                                        title = "重置倒计时",
+                                        subtitle = "最近窗口重置",
+                                        percent = elapsed,
+                                        bottomText = nearest?.let { (_, ts) ->
+                                            val ms = ts - now
+                                            val h = ms / 3_600_000
+                                            val m = (ms % 3_600_000) / 60_000
+                                            if (h > 0) "${h}小时${m}分后" else "${m}分后"
+                                        } ?: "无活动窗口",
+                                        color = resetColor,
+                                        bottomColor = resetColor,
+                                    )
                                 }
                             } else {
                             val activeUsage = focalOC!!

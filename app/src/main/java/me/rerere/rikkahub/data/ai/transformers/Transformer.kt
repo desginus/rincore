@@ -82,8 +82,20 @@ suspend fun List<UIMessage>.transforms(
         processingStatus = processingStatus,
         workspaceCwd = workspaceCwd,
     )
+    // v3.21.0: 链级异常隔离 (技术债) — 单个 transformer 抛异常不再炸整条
+    // 生成链 (此前任何 transformer 内部 bug = 用户"发送失败"), 降级为跳过
+    // 该 transformer + 用户可见状态提示 + 日志/CallTrace 可查
     return transformers.fold(this) { acc, transformer ->
-        transformer.transform(ctx, acc)
+        runCatching { transformer.transform(ctx, acc) }
+            .onFailure { e ->
+                android.util.Log.e("Transformer", "${transformer.javaClass.simpleName} failed: ${e.message}", e)
+                ctx.processingStatus.value = "消息处理组件 ${transformer.javaClass.simpleName.substringBefore("Transformer")} 异常, 已降级继续"
+                me.rerere.rikkahub.data.log.CallTracer.event(
+                    "TRANSFORMER", "isolated_failure",
+                    "${transformer.javaClass.simpleName}: ${e.message}",
+                )
+            }
+            .getOrDefault(acc)
     }
 }
 
@@ -95,9 +107,14 @@ suspend fun List<UIMessage>.visualTransforms(
     settings: Settings,
 ): List<UIMessage> {
     val ctx = TransformerContext(context, model, assistant, settings)
+    // v3.21.0: 视觉链同样隔离 (输出渲染组件异常不炸消息回写)
     return transformers.fold(this) { acc, transformer ->
         if (transformer is OutputMessageTransformer) {
-            transformer.visualTransform(ctx, acc)
+            runCatching { transformer.visualTransform(ctx, acc) }
+                .onFailure { e ->
+                    android.util.Log.e("Transformer", "${transformer.javaClass.simpleName} visual failed: ${e.message}", e)
+                }
+                .getOrDefault(acc)
         } else {
             acc
         }

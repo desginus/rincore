@@ -189,7 +189,8 @@ fun ChatMessage(
                 model = model,
                 onToolApproval = onToolApproval,
                 onToolAnswer = onToolAnswer,
-                onUserMessageClick = if (message.role == MessageRole.USER) onEdit else null,
+                // v3.21.0: 点击呼出编辑已取消 (用户定版) — 编辑走长按菜单
+                onUserMessageClick = null,
             )
 
             message.translation?.let { translation ->
