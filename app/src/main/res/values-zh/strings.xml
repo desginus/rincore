@@ -1321,5 +1321,7 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_page_preferences_network_auto_retry_desc">网络错误时自动重试模型请求 (风暴+经典共三轮)。</string>
   <string name="setting_tts_page_default_playback_speed">默认播放速度</string>
   <string name="setting_tts_page_default_playback_speed_description">本地应用于所有 TTS 提供商, 不更改其合成设置。</string>
+  <string name="search_page_scope_current_assistant">当前助手</string>
+  <string name="search_page_scope_all_assistants">所有助手</string>
 </resources>
 

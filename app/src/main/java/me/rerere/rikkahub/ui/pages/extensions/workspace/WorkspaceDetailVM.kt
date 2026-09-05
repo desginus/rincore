@@ -147,6 +147,11 @@ class WorkspaceDetailVM(
         }
     }
 
+    suspend fun resolveImageFile(
+        entry: WorkspaceFileEntry,
+        area: WorkspaceStorageArea,
+    ): File = repository.resolveFile(id, area, entry.path)
+
     fun exportFile(entry: WorkspaceFileEntry, outputStream: OutputStream) {
         viewModelScope.launch {
             runCatching {

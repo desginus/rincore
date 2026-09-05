@@ -63,6 +63,14 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.memoryCacheKey
+import kotlinx.coroutines.CancellationException
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowTurnBackward
 import me.rerere.hugeicons.stroke.Bash
@@ -228,6 +236,7 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
                     onDelete = { deleteTarget = it },
                     onRename = { renameTarget = it },
                     onMove = { moveTarget = it },
+                    onResolveImage = { entry, area -> vm.resolveImageFile(entry, area) },
                     onPreviewFile = { entry -> vm.openPreview(entry, context.cacheDir) },
                     onExport = { entry ->
                         exportTarget = entry
@@ -762,6 +771,7 @@ private fun WorkspaceFilesPage(
     onExport: (WorkspaceFileEntry) -> Unit,
     onShare: (WorkspaceFileEntry) -> Unit,
     onPreviewFile: (WorkspaceFileEntry) -> Unit,
+    onResolveImage: suspend (WorkspaceFileEntry, WorkspaceStorageArea) -> File?,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -798,6 +808,8 @@ private fun WorkspaceFilesPage(
         items(state.entries, key = { "${state.area.name}:${it.path}" }) { entry ->
             WorkspaceFileCard(
                 entry = entry,
+                area = state.area,
+                onResolveImage = { onResolveImage(entry, state.area) },
                 onPreview = { onPreviewFile(entry) },
                 onOpen = { onOpen(entry) },
                 onDelete = { onDelete(entry) },
@@ -863,6 +875,8 @@ private fun WorkspacePathBar(
 @Composable
 private fun WorkspaceFileCard(
     entry: WorkspaceFileEntry,
+    area: WorkspaceStorageArea,
+    onResolveImage: suspend () -> File?,
     onPreview: () -> Unit = {},
     onOpen: () -> Unit,
     onDelete: () -> Unit,
@@ -885,16 +899,73 @@ private fun WorkspaceFileCard(
                 .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                imageVector = if (entry.isDirectory) HugeIcons.Folder01 else HugeIcons.File02,
-                contentDescription = null,
-                modifier = Modifier.size(22.dp),
-                tint = if (entry.isDirectory) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            )
+            val isImage = !entry.isDirectory &&
+                entry.name.substringAfterLast('.', "").lowercase() in PREVIEW_IMAGE_EXTS
+            val imageFile by produceState<File?>(
+                initialValue = null,
+                key1 = if (isImage) area else null,
+                key2 = if (isImage) entry.path else null,
+                key3 = if (isImage) entry.sizeBytes else null,
+            ) {
+                if (isImage) {
+                    value = try {
+                        onResolveImage()
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
+            }
+            if (isImage) {
+                val context = LocalContext.current
+                val imageRequest = remember(imageFile, entry.sizeBytes) {
+                    imageFile?.let {
+                        ImageRequest.Builder(context)
+                            .data(it)
+                            .memoryCacheKey("workspace:${it.absolutePath}:${entry.sizeBytes}")
+                            .build()
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = HugeIcons.File02,
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    imageRequest?.let {
+                        AsyncImage(
+                            model = it,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    }
+                }
+            } else {
+                Box(
+                    modifier = Modifier.size(40.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = if (entry.isDirectory) HugeIcons.Folder01 else HugeIcons.File02,
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp),
+                        tint = if (entry.isDirectory) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+            }
             Column(
                 modifier = Modifier
                     .weight(1f)

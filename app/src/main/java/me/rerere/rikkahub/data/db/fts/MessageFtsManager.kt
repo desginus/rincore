@@ -65,18 +65,31 @@ class MessageFtsManager(private val database: AppDatabase) {
     suspend fun search(
         keyword: String,
         sort: MessageSearchSort = MessageSearchSort.RELEVANCE,
+        assistantId: String? = null,
     ): List<MessageSearchResult> = withContext(Dispatchers.IO) {
         val results = mutableListOf<MessageSearchResult>()
+        val assistantFilter = if (assistantId != null) {
+            """
+            AND EXISTS (
+                SELECT 1 FROM conversationentity AS conversation
+                WHERE conversation.id = message_fts.conversation_id
+                  AND conversation.assistant_id = ?
+            )
+            """.trimIndent()
+        } else {
+            ""
+        }
         val cursor = db.query(
             """
             SELECT node_id, message_id, conversation_id, title, update_at,
                    simple_snippet(message_fts, 0, '[', ']', '...', 30) AS snippet
             FROM message_fts
             WHERE text MATCH jieba_query(?)
+            $assistantFilter
             ORDER BY ${sort.orderBy}
             LIMIT 50
             """.trimIndent(),
-            arrayOf(keyword)
+            if (assistantId != null) arrayOf(keyword, assistantId) else arrayOf(keyword)
         )
         Log.i(TAG, "search: $keyword")
         cursor.use {

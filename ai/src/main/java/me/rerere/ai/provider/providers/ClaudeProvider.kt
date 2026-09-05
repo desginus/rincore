@@ -431,6 +431,16 @@ class ClaudeProvider(
                     Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
                     e.printStackTrace()
                 } finally {
+                    // 4.0.1: 5xx 服务端瞬时错误转 IOException — HttpException 是
+                    // RuntimeException, GenerationHandler 重试链只捕 IOException,
+                    // 不转则 500 直接终态失败 (用户实测 qwen3.8-flash 网关瞬时 500
+                    // 无重试)。4xx 保持 HttpException 直接报错 (参数/鉴权错误重试无意义)。
+                    if (exception != null && response?.code in 500..599 &&
+                        exception !is java.io.IOException
+                    ) {
+                        Log.w(TAG, "server error ${response?.code} — wrapping as IOException for retry chain")
+                        exception = java.io.IOException("[${response?.code}] ${exception.message}", exception)
+                    }
                     TraceLogger.dumpAndLog(TAG, exception ?: Exception("Unknown"), 60)
                     close(exception)
                 }

@@ -42,6 +42,11 @@ import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.datastore.DEFAULT_PROVIDERS
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import android.widget.Toast
+import kotlinx.coroutines.runBlocking
+import me.rerere.rikkahub.data.sync.BackupManager
+import me.rerere.rikkahub.data.sync.RestoreFailedException
+import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.service.WebServerService
 import me.rerere.rikkahub.service.ConnectionWarmer
 import me.rerere.rikkahub.utils.CrashHandler
@@ -63,6 +68,20 @@ const val WEB_SERVER_NOTIFICATION_CHANNEL_ID = "web_server"
 class RikkaHubApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        // 4.0.1 (原版 2.4.17): 备份恢复前置 — 必须在 Koin/Room/SettingsFlow
+        // 初始化前完成安装 (部分恢复的 DB 不能被 Room 打开)。runBlocking(IO)
+        // 为数据一致性刚需: 启动阻塞换完整性 (恢复只在有 pending 时实际做 IO)。
+        try {
+            val restored = runBlocking(Dispatchers.IO) {
+                BackupManager.applyPendingRestore(this@RikkaHubApp, JsonInstant)
+            }
+            if (restored) {
+                Toast.makeText(this, R.string.backup_page_restore_success, Toast.LENGTH_LONG).show()
+            }
+        } catch (e: RestoreFailedException) {
+            Log.e(TAG, "Backup restore rolled back", e)
+            Toast.makeText(this, "备份恢复失败，已保留原数据。请重新导入备份。", Toast.LENGTH_LONG).show()
+        }
         // v3.8.34: 运行日志持久化存储初始化 (轮次会话, 最多 10 轮)
         LogSessionStore.init(this)
         // v3.9.14: 设备环境检测日志 — 澎湃 OS4 / 骁龙 8 Elite 适配诊断铺垫。

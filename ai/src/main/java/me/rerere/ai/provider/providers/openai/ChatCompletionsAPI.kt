@@ -490,6 +490,12 @@ class ChatCompletionsAPI(
                     return
                 }
 
+                // 4.0.1: 5xx 服务端瞬时错误转 IOException 进重试链 (与 ClaudeProvider 同步) —
+                // HttpException 是 RuntimeException, 重试链只捕 IOException, 不转则 500 终态失败
+                if (exception != null && response?.code in 500..599 && exception !is IOException) {
+                    Log.w(TAG, "server error ${response?.code} — wrapping as IOException for retry chain")
+                    exception = IOException("[${response?.code}] ${exception.message}", exception)
+                }
                 close(exception)
             }
 

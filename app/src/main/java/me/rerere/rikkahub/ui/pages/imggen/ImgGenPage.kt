@@ -6,7 +6,6 @@ package me.rerere.rikkahub.ui.pages.imggen
  * ───────────────────────────────────────────────────────────────*/
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -347,7 +346,7 @@ private fun InputBar(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val imagePickerLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { selectedUris ->
+        rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { selectedUris ->
             if (selectedUris.isNotEmpty()) {
                 scope.launch {
                     val paths = selectedUris.mapNotNull { uri ->
@@ -418,11 +417,7 @@ private fun InputBar(
             }
 
             IconButton(
-                onClick = {
-                    imagePickerLauncher.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    )
-                }
+onClick = { imagePickerLauncher.launch("image/*") }
             ) {
                 Icon(
                     imageVector = HugeIcons.Add01,
