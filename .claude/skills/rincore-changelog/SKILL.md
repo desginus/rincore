@@ -3,7 +3,17 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v4.0.0 为最新 — 大版本重写工程启动）
+# RinCore 更新日志（v4.0.1 为最新）
+
+## v4.0.1（426 报错修复 + 原版 2.4.17 全量适配移植，2026-09-05）
+- Bug 修复: ClaudeProvider/ChatCompletionsAPI onFailure 5xx 转 IOException 进重试链（HttpException 是 RuntimeException 重试链不捕，qwen3.8-flash 网关 500 无重试终态失败）；4xx 保持直接报错
+- 工作区图片缩略图（原版移植适配）: resolveFile 链（Manager→Repo→VM）+ 卡片 40dp coil 缩略图；适配 detectFileType→扩展名（共享 PREVIEW_IMAGE_EXTS）/updatedAt→sizeBytes/保留 onPreview 链
+- OpenCode 兼容综合: v3.20.0 已实现更严格版本（非会话请求不发），不重复移植；ModelRegistry 注册 GPT_6
+- 备份体系重构（原版移植适配）: BackupManager+DatabaseBackup（VACUUM INTO+integrity_check）+PendingRestore（journal 原子安装+回滚）+SQLiteConfiguration+AppDatabaseFactory 提取；适配 persistSettings 字段清单按 RinCore 全字段生成（原版缺自研字段会丢配置）/settingsFlow→settingsFlow；RikkaHubApp 启动前恢复（runBlocking(IO) 数据一致性刚需）；S3/WebDav -600 行复制粘贴
+- 搜索按助手过滤: FTS EXISTS 子查询+SearchVM scope 重构+分段按钮+6 语言
+- 选择器兼容: PickVisualMedia→GetContent/GetMultipleContents（厂商兼容）；代码导出 wt+UTF8+IO；记忆页去 #id
+- 顺手修历史遗留: toolNameOverrides 持久化键 TOOL_NAME_OVERRIDES 未定义（settings 有字段但写盘即丢）
+- 移植教训: 原版 persistSettings 字段清单照搬会丢自研配置；测试文件需核实原版 tag 真实存在（git show 失败重定向会造空文件）
 
 ## v4.0.0（重写工程全量完成 — 四模块屎山削除，2026-09-05）
 - 模块1 GenerationHandler 重试链: 135 行嵌套 catch → RetryPolicy.kt 策略对象 (129 行); RetryState 纯计数器
