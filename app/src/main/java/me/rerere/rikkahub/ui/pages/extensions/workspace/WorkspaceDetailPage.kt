@@ -225,6 +225,7 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
                     onDelete = { deleteTarget = it },
                     onRename = { renameTarget = it },
                     onMove = { moveTarget = it },
+                    onPreviewFile = { entry -> vm.openPreview(entry, context.cacheDir) },
                     onExport = { entry ->
                         exportTarget = entry
                         exportLauncher.launch(entry.name)
@@ -858,6 +859,7 @@ private fun WorkspacePathBar(
 @Composable
 private fun WorkspaceFileCard(
     entry: WorkspaceFileEntry,
+    onPreview: () -> Unit = {},
     onOpen: () -> Unit,
     onDelete: () -> Unit,
     onRename: () -> Unit,
@@ -1055,3 +1057,95 @@ internal fun String.toShellStatusLabel(): String = when (this) {
 
 private const val DEFAULT_ROOTFS_URL =
     "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.3-base-arm64.tar.gz"
+
+// ── v3.22.0: 工作区文件预览 (图片缩放 / 文本滚动, 对话页同款渲染) ──
+private val PREVIEW_IMAGE_EXTS = setOf("png", "jpg", "jpeg", "webp", "gif", "bmp", "heic", "heif", "avif")
+private val PREVIEW_TEXT_EXTS = setOf(
+    "txt", "md", "json", "csv", "kt", "java", "py", "sh", "log", "xml",
+    "html", "css", "js", "ts", "yaml", "yml", "toml", "conf", "ini", "gradle", "pro",
+)
+
+@Composable
+private fun WorkspaceFilePreviewDialog(
+    entry: WorkspaceFileEntry,
+    file: File?,
+    onClose: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = entry.name,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            IconButton(onClick = onClose) {
+                Icon(HugeIcons.Cancel01, contentDescription = "关闭")
+            }
+        }
+
+        val ext = entry.name.substringAfterLast('.', "").lowercase()
+        when {
+            !entry.isDirectory && ext in PREVIEW_IMAGE_EXTS && file != null -> {
+                me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage(
+                    model = file.toURI().toString(),
+                    contentDescription = entry.name,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                )
+            }
+            !entry.isDirectory && ext in PREVIEW_TEXT_EXTS && file != null -> {
+                val text = remember(file.absolutePath) {
+                    runCatching { file.readText().take(200_000) }.getOrNull()
+                }
+                if (text != null) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState()),
+                    ) {
+                        Text(
+                            text = text,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                    }
+                } else {
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        Text("无法读取文件内容", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            !entry.isDirectory && file == null -> {
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            }
+            else -> {
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("该类型不支持预览", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (entry.sizeBytes > 0) {
+                            Text(
+                                text = (entry.sizeBytes / 1024).toString() + " KB",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
