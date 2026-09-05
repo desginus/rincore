@@ -648,7 +648,6 @@ class ChatCompletionsAPI(
             // (原 185 行内联 when — host×家族×档位映射单一可测试)
             if (params.model.abilities.contains(ModelAbility.REASONING) || isAggregateGateway(host)) {
                 thinkingControlFields(host, params)?.forEach { (k, v) -> put(k, v) }
-                }
             }
 
             if (params.model.abilities.contains(ModelAbility.TOOL) && params.tools.isNotEmpty()) {
