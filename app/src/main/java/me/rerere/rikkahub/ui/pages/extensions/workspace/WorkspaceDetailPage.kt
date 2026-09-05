@@ -100,6 +100,8 @@ import java.io.File
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.background
 import androidx.compose.material3.CircularProgressIndicator
+import me.rerere.rikkahub.ui.components.motion.HyperDialog
+import me.rerere.rikkahub.ui.components.motion.HyperFullPanel
 import me.rerere.workspace.RootfsInstallProgress
 import me.rerere.workspace.RootfsInstallStage
 import me.rerere.workspace.WorkspaceFileEntry
@@ -275,7 +277,7 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
     }
 
     installError?.let { message ->
-        AlertDialog(
+        HyperDialog(
             onDismissRequest = vm::dismissInstallError,
             title = { Text(stringResource(R.string.workspace_detail_rootfs_install_failed)) },
             text = { Text(message) },
@@ -305,7 +307,7 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
 
     renameTarget?.let { entry ->
         var newName by remember(entry.path) { mutableStateOf(entry.name) }
-        AlertDialog(
+        HyperDialog(
             onDismissRequest = { renameTarget = null },
             title = { Text("重命名") },
             text = {
@@ -338,12 +340,9 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
         )
     }
 
-    // v3.22.0: 文件预览对话框 (图片缩放查看 / 文本滚动显示)
+    // 4.0.2: 文件预览全屏玻璃面板 (澎湃动效+文档/图片/文本全分支)
     state.previewEntry?.let { entry ->
-        androidx.compose.ui.window.Dialog(
-            onDismissRequest = { vm.closePreview() },
-            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
-        ) {
+        HyperFullPanel(onDismiss = { vm.closePreview() }) {
             WorkspaceFilePreviewDialog(
                 entry = entry,
                 file = state.previewFile,
@@ -355,7 +354,7 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
     if (showCreateDialog) {
         var createName by remember { mutableStateOf("") }
         var isFolder by remember { mutableStateOf(true) }
-        AlertDialog(
+        HyperDialog(
             onDismissRequest = { showCreateDialog = false },
             title = { Text(if (isFolder) "新建文件夹" else "新建文件") },
             text = {
@@ -426,7 +425,7 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
             )
             dirs
         }
-        AlertDialog(
+        HyperDialog(
             onDismissRequest = { moveTarget = null },
             title = { Text("移动到") },
             text = {
@@ -1169,7 +1168,35 @@ private fun WorkspaceFilePreviewDialog(
         }
 
         val ext = entry.name.substringAfterLast('.', "").lowercase()
+        val isDoc = ext in DocumentPreview.EXTRACTABLE_EXTS
+        val isPdf = ext == "pdf"
+        val docText = remember(file?.absolutePath) {
+            if (file != null && isDoc) DocumentPreview.extract(file, ext) else null
+        }
         when {
+            // 4.0.2: Office 文档大纲 (docx/pptx/xlsx/epub 零依赖解析)
+            isDoc && docText != null -> {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    Text(
+                        text = docText.take(200_000),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
+            }
+            isDoc && docText == null -> {
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    Text("无法解析该文档内容", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            // 4.0.2: PDF 内置渲染 (PdfRenderer 前 3 页)
+            isPdf && file != null -> {
+                PdfPreviewPages(file)
+            }
             !entry.isDirectory && ext in PREVIEW_IMAGE_EXTS && file != null -> {
                 me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage(
                     model = file.toURI().toString(),
@@ -1204,6 +1231,14 @@ private fun WorkspaceFilePreviewDialog(
             !entry.isDirectory && file == null -> {
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
+                }
+            }
+            !entry.isDirectory && ext in DocumentPreview.BINARY_LEGACY_EXTS -> {
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("旧版 Office 二进制格式暂不支持预览", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("建议导出后用 WPS/Office 打开", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
             else -> {
