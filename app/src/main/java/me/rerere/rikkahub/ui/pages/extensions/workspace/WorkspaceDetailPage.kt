@@ -66,6 +66,7 @@ import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowTurnBackward
 import me.rerere.hugeicons.stroke.Bash
+import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.ComputerTerminal01
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.File02
@@ -90,6 +91,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import java.io.File
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.foundation.background
+import androidx.compose.material3.CircularProgressIndicator
 import me.rerere.workspace.RootfsInstallProgress
 import me.rerere.workspace.RootfsInstallStage
 import me.rerere.workspace.WorkspaceFileEntry
