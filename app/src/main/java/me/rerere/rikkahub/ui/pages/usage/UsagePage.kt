@@ -304,7 +304,6 @@ fun UsagePage(onBack: () -> Unit = {}) {
                                     bottomColor = resetColor,
                                 )
                             }
-                            }
                         }
                     } else {
                         item {

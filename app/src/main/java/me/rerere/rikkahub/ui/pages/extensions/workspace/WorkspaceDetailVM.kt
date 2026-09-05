@@ -118,11 +118,9 @@ class WorkspaceDetailVM(
 
     // v3.22.0: 文件预览 — shareFile 已封装宿主 File 解析 (缓存拷贝),
     // onReady 回调内直接置 state (StateFlow 线程安全)
-    fun openPreview(entry: WorkspaceFileEntry) {
-        val cacheDir = java.io.File(getApplication<android.app.Application>().cacheDir, "workspace_preview")
-            .apply { mkdirs() }
+    fun openPreview(entry: WorkspaceFileEntry, cacheDir: File) {
         _state.update { it.copy(previewEntry = entry) }
-        shareFile(entry, cacheDir) { f ->
+        shareFile(entry, java.io.File(cacheDir, "workspace_preview").apply { mkdirs() }) { f ->
             _state.update { it.copy(previewFile = f) }
         }
     }

@@ -793,6 +793,7 @@ private fun WorkspaceFilesPage(
         items(state.entries, key = { "${state.area.name}:${it.path}" }) { entry ->
             WorkspaceFileCard(
                 entry = entry,
+                onPreview = { vm.openPreview(entry, context.cacheDir) },
                 onOpen = { onOpen(entry) },
                 onDelete = { onDelete(entry) },
                 onRename = { onRename(entry) },
@@ -921,7 +922,7 @@ private fun WorkspaceFileCard(
                             text = { Text("预览") },
                             leadingIcon = {
                                 Icon(
-                                    imageVector = HugeIcons.View,
+                                    imageVector = HugeIcons.File02,
                                     contentDescription = null,
                                 )
                             },
