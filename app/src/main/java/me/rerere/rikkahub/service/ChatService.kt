@@ -654,6 +654,8 @@ class ChatService(
             generationHandler.generateText(
                 settings = settings,
                 model = model,
+                // v3.20.0: 会话稳定 ID → x-opencode-session (OpenCode 官方强制)
+                conversationId = conversationId,
                 processingStatus = session.processingStatus,
                 messages = conversation.currentMessages.let {
                     if (messageRange != null) {

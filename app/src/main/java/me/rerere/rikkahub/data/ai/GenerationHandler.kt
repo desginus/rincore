@@ -177,6 +177,9 @@ class GenerationHandler(
         toolPoolProvider: (() -> List<Tool>)? = null, // v3.6.118: invoke_tools 实时域列表
         // v3.11.27: 子代理对话不注入用户自定义 prompt (其余正常注入) — 由 ChatService 判定传入
         skipAssistantPrompt: Boolean = false,
+        // v3.20.0: 会话稳定 ID → x-opencode-session 头 (OpenCode 官方 2026-09-06
+        // 起强制, 自动生效非 opt-in; 非 OpenCode host 不发)
+        conversationId: Uuid? = null,
     ): Flow<GenerationChunk> = flow {
         // Trace ID 每次生成唯一 — 之前用 model.id 导致所有 trace 同 ID (日志无法区分)
         CallTracer.startTrace(id = java.util.UUID.randomUUID().toString().take(8))
@@ -407,7 +410,8 @@ class GenerationHandler(
                     conversationLorebookIds = conversationLorebookIds,
                     workspaceCwd = workspaceCwd,
                     layer1Prompt = layer1Prompt,
-                    // v3.6.85: conversationId 已随 x-opencode-session 头一并移除 (v3.6.80)
+                    // v3.20.0: 会话 ID 恢复透传 (x-opencode-session 官方强制)
+                    conversationId = conversationId,
                 )
                 CallTracer.event(
                     "RECV", "post_api",
@@ -823,6 +827,7 @@ class GenerationHandler(
         layer1Prompt: String? = null,
         // v3.11.27: 子代理对话不注入用户自定义 prompt (其余正常注入)
         skipAssistantPrompt: Boolean = false,
+        conversationId: Uuid? = null,
     ) {
         // v3.6.74: 节选最近对话 (原上下文降维) 方向废弃 — 消息一律原样发送, 零改动
         val effectiveMessages: List<UIMessage> = messages
@@ -966,7 +971,9 @@ class GenerationHandler(
             customBody = buildList {
                 addAll(assistant.customBodies)
                 addAll(model.customBodies)
-            }
+            },
+            // v3.20.0: OpenCode 官方强制 x-opencode-session (API 层按 host 自动注入)
+            conversationId = conversationId?.toString(),
         )
         if (stream) {
             // 断流自动恢复 (v3.5.46 根治): 输出中连接中断 (切后台网络切换/

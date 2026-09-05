@@ -149,6 +149,7 @@ class ChatCompletionsAPI(
             .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
             .addHeader("Authorization", "Bearer ${keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())}")
             .configureReferHeaders(providerSetting.baseUrl)
+            .sessionHeader(providerSetting.baseUrl, params.conversationId)
             .build()
 
         Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
@@ -209,6 +210,7 @@ class ChatCompletionsAPI(
             .addHeader("Authorization", "Bearer ${keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())}")
             .addHeader("Content-Type", "application/json")
             .configureReferHeaders(providerSetting.baseUrl)
+            .sessionHeader(providerSetting.baseUrl, params.conversationId)
             .build()
 
         // v3.6.17: 降 d — release 裁剪 (每请求大 JSON 格式化是功耗热点, debug 保留诊断)
@@ -1457,4 +1459,17 @@ class ChatCompletionsAPI(
                    msg.contains("canceled", ignoreCase = true)
         }
     }
+}
+
+
+/**
+ * v3.20.0: x-opencode-session 头 — OpenCode 官方 2026-09-06 起强制
+ * (缺头请求可能报错)。仅 opencode.ai host 且有会话 ID 时注入,
+ * 其余 host 零影响; ID 为会话 UUID, 一次对话内稳定。
+ */
+private fun Request.Builder.sessionHeader(baseUrl: String, conversationId: String?): Request.Builder {
+    if (conversationId.isNullOrBlank()) return this
+    val host = runCatching { baseUrl.toHttpUrl().host }.getOrNull() ?: return this
+    if (host != "opencode.ai") return this
+    return addHeader("x-opencode-session", conversationId)
 }
