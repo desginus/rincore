@@ -122,7 +122,7 @@ fun UsagePage(onBack: () -> Unit = {}) {
             if (ocFailed > 0) "OpenCode $ocFailed 张" else null,
             if (ccFailed > 0) "CC $ccFailed 张" else null,
         ).joinToString("、")
-        error = if (focal == null) {
+        error = if (usages[apiKey] == null) {
             "查询失败，请检查 API Key 或网络后下拉重试"
         } else if (partialFail.isNotEmpty()) {
             "部分密钥查询失败（$partialFail），其余已显示"
