@@ -3,7 +3,12 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v3.19.0 为最新）
+# RinCore 更新日志（v3.20.0 为最新）
+
+## v3.20.0（x-opencode-session 自动注入 — OpenCode 官方 09/06 强制，2026-09-05）
+- OpenCode 官方邮件: 缺 x-opencode-session 头的请求 09/06 起可能报错, 要求每会话一个稳定 ID
+- 实现 (自动生效非 opt-in): generateText +conversationId 参数 (默认 null 零破坏) → params → ChatCompletionsAPI 两处 Request 的 sessionHeader 扩展, 仅 host==opencode.ai 且 ID 在场时注入; ChatService 主对话传 conversation.id (会话 UUID 稳定); 标题/建议/翻译等单轮调用不传不发
+- v3.6.80 曾全局删除该头 (疑似 grok 400), 现按 host 精确判定恢复, 官方语义反转
 
 ## v3.19.0（CC 焦点大窗 + AskUser 开放输入框 + 渲染放宽 + 报错敏感，2026-09-04）
 - CC 密钥焦点模式不显示完整形态: 根因=数据分支只认 usages[apiKey] (OC), CC 结果在 crossUsages, CC 聚焦时 focal 分支恒缺失; 修复=焦点数据双族统一 focalOC/focalCC, focus 大窗新增 CC 四环, cards 焦点卡按族选 mini 卡, error 判定双族
