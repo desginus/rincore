@@ -798,6 +798,7 @@ private fun WorkspaceFilesPage(
         items(state.entries, key = { "${state.area.name}:${it.path}" }) { entry ->
             WorkspaceFileCard(
                 entry = entry,
+                onPreview = { onPreviewFile(entry) },
                 onOpen = { onOpen(entry) },
                 onDelete = { onDelete(entry) },
                 onRename = { onRename(entry) },
