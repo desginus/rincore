@@ -3,7 +3,13 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v3.20.0 为最新）
+# RinCore 更新日志（v3.21.0 为最新）
+
+## v3.21.0（CC 焦点大窗同构重写 + 点击编辑取消 + Transformer 链隔离，2026-09-05）
+- CC 焦点大窗: 按用户指示完全对齐 OC 焦点窗同构 (4 个独立 item 块替代 items(4)+when, nearestReset 同款最近窗口计算); 渲染分支入口加 UsageView 诊断日志 (branch/mode/双族判定/两 map 大小), 复现一次日志即实锤实际分支
+- 点击呼出编辑取消 (用户定版: 编辑走长按菜单), onUserMessageClick 置 null
+- Transformer 链异常隔离 (技术债高危): fold 无隔离致单个 transformer 内部 bug 炸整条生成链; 链级 runCatching 降级跳过 + processingStatus 用户可见 + CallTrace 记录; visualTransforms 同样隔离
+- 时间系统核查: app 内时间链路正确 (createdAt 存本地墙上时间+显示同源); 对不上的是 workspace 沙箱时钟 (UTC 差 8h), 属工具环境限制
 
 ## v3.20.0（x-opencode-session 自动注入 — OpenCode 官方 09/06 强制，2026-09-05）
 - OpenCode 官方邮件: 缺 x-opencode-session 头的请求 09/06 起可能报错, 要求每会话一个稳定 ID
