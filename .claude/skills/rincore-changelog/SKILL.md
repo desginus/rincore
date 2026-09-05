@@ -5,7 +5,14 @@ description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日�
 
 # RinCore 更新日志（v4.0.0 为最新 — 大版本重写工程启动）
 
-## v4.0.0（重写工程启动 · 模块1 GenerationHandler 重试链策略对象化，2026-09-05）
+## v4.0.0（重写工程全量完成 — 四模块屎山削除，2026-09-05）
+- 模块1 GenerationHandler 重试链: 135 行嵌套 catch → RetryPolicy.kt 策略对象 (129 行); RetryState 纯计数器
+- 模块2/3 watchdog 三阶段跨族统一: ChatCompletionsAPI 与 ClaudeProvider 各 ~60 行逐字复制的状态机 → WatchdogPolicy.kt (94 行) StreamWatchdog 单一实现双族共用; 2013 降级判定 → MinimalBodyRetry.shouldDegrade 收敛
+- 模块4 思考控制分派提取: CC 185 行 host 分派 when 内联 → thinkingControlFields 纯函数; Claude thinking 家族三态 → thinkingField 纯函数
+- 削减效果: GenerationHandler 78→71 处标记 (1326→1270 行), ChatCompletionsAPI 57→49 (1475→1430), ClaudeProvider 31→26 (957→923); 策略逻辑全部收敛至两个独立策略文件 (224 行)
+- 行为等价: 全部重试数值/closeMsg 文案 (重试链判据输入)/thinking 分派映射/2013 判据逐字保留
+
+（以下为模块1 首发记录）
 - 屎山现状: streamLoop catch 链 IOException 分支 135 行嵌套, 策略数值硬编码散落 (4/500L×n/18/6/300L/1000/2000/4000), 状态算术内联, 终态清理代码重复 4 次
 - 重写产物: 新文件 RetryPolicy.kt (129 行) — RetryPhase 密封类 (Init 4 次线性退避/Stream 三轮链 18 次, 封装配额与推进) + StreamFailureClassifier (嗅探判据收敛) + RetryDecision (统一 Retry/Abort 决策); GenerationHandler catch 链 135 行 → 42 行职责原语; RetryState 瘦身为纯计数器
 - 行为等价保证: 全部策略数值逐字保留 (4 次/0.5s×n/header 判死不 delay/18 次/风暴 300ms×3/经典 1-2-4s), 全部用户可见报错文案逐字保留, 自动重试开关拦截语义不变
