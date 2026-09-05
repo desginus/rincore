@@ -292,6 +292,7 @@ class SettingsStore(
         val REMOVED_BUILTIN_DOMAINS = stringPreferencesKey("removed_builtin_domains")
         val EXEMPT_FROM_DOMAIN_TOOLS = stringPreferencesKey("exempt_from_domain_tools")
         val CLASSIFIER_PROMPT = stringPreferencesKey("classifier_prompt")
+        val TOOL_NAME_OVERRIDES = stringPreferencesKey("tool_name_overrides")
     }
 
     private val dataStore = context.settingsStore
