@@ -108,8 +108,9 @@ object RetryDecision {
             !phase.hasQuota -> RetryVerdict.Abort((phase as RetryPhase.Init).exhaustedMessage())
             else -> {
                 val p = phase as RetryPhase.Init
-                val delay = if (p.headerDead) 0L else p.backoffMs(p.used + 1)
-                RetryVerdict.Retry(delay, "connect fail, retry ${p.used + 1}/${p.total} (headerDead=${p.headerDead})")
+                val headerDead = (failure as StreamFailure.InitPhase).headerDead
+                val delay = if (headerDead) 0L else p.backoffMs(p.used + 1)
+                RetryVerdict.Retry(delay, "connect fail, retry ${p.used + 1}/${p.total} (headerDead=$headerDead)")
             }
         }
         is StreamFailure.StreamInterrupted -> when {
