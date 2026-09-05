@@ -3,7 +3,16 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v3.22.0 为最新）
+# RinCore 更新日志（v3.22.2 为最新）
+
+## v3.22.2（A17/澎湃OS 4 定向 FGS 防护，2026-09-05）
+- FloatingNotificationService.onTimeout: specialUse/dataSync FGS 系统超时（A14+ 引入，A17 严格执行）优雅降级 stopForeground(DETACH) 保留进程，杜绝生成中途被强杀断流
+- onTaskRemoved: 划掉应用卡片记录现场（HyperOS 4 cached 进程压缩排查锚点）
+- 达标确认: WakeLock 15min 兜底/精确闹钟权限引导/全库无 setThreadPriority（A17 Java 层越界校验无风险）/targetSdk 37
+
+## v3.22.1（工作区文件预览点击无反应修复，2026-09-05）
+- 根因: WorkspaceFileCard 调用点未传 onPreview，签名默认空 lambda 编译通过但点击执行空操作（用户判断"导向问题"正确）
+- 上轮 v3.22.0 补参断言失败后未回验传导链的遗漏；修复后链路五段自检全通
 
 ## v3.22.0（用量数据链统一 + 工作区文件预览 + 多文件上传，2026-09-05）
 - 数据链统一（用户定版：CC 数据按 OC 模式解析，二者零差别，唯一变化=数据从哪个 API 来）：新增 toOcShape 转换（CC 结果在数据入口转为 OC UsageResult 形状），OC/CC 同入单一 usages map；下游全部去族化（focalOC/focalCC 双族抽象删除→单 focal，CC 大窗专用代码块删除统一走 OC 大窗，cards 焦点卡统一，otherVisible/error 判定/失败统计全从统一 map 取）；crossUsages state 与双族渲染引用全删——密钥加入顺序对渲染零影响
