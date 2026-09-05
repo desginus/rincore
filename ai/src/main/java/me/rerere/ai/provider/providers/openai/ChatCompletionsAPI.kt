@@ -644,196 +644,12 @@ class ChatCompletionsAPI(
                 }
             }
 
-            // v3.15.2: 聚合网关 (OpenCode/CommandCode) 放行能力门槛 — 网关对
-            // 不支持的参数自行容错, 模型注册未勾 REASONING 也不得吞掉思考控制
-            // (用户实证 2026-09-04: 任何情况下无法修正思考程度的根因之一)。
-            val isAggregateGateway = host == "opencode.ai" || host == "api.commandcode.ai"
-            // v3.16.0: 强兼容模式不发任何思考控制参数 (thinking/reasoning_effort/
-            // reasoning) — Cherry 不发, 目标是任意模型零 400
-            if ((params.model.abilities.contains(ModelAbility.REASONING) || isAggregateGateway) &&
-                !params.cherryCompatMode
-            ) {
-                val level = params.reasoningLevel
-                when (host) {
-                    "openrouter.ai" -> {
-                        // https://openrouter.ai/docs/use-cases/reasoning-tokens
-                        put("reasoning", buildJsonObject {
-                            when (level) {
-                                ReasoningLevel.OFF -> put("effort", "none")
-                                ReasoningLevel.AUTO -> put("enabled", true)
-                                else -> put("effort", level.effort)
-                            }
-                        })
-                    }
+            // 4.0.0 重写: 思考控制按 host 分派提取为独立纯函数 thinkingControlFields
+            // (原 185 行内联 when — host×家族×档位映射单一可测试)
+            if (params.model.abilities.contains(ModelAbility.REASONING) || isAggregateGateway(host)) {
+                thinkingControlFields(host, params)?.forEach { (k, v) -> put(k, v) }
+            }
 
-                    "dashscope.aliyuncs.com" -> {
-                        // 阿里云百炼
-                        // https://bailian.console.aliyun.com/console?tab=doc#/doc/?type=model&url=https%3A%2F%2Fhelp.aliyun.com%2Fdocument_detail%2F2870973.html&renderType=iframe
-                        put("enable_thinking", level.isEnabled)
-                        if (level != ReasoningLevel.AUTO) put("thinking_budget", level.budgetTokens)
-                    }
-
-                    "ark.cn-beijing.volces.com" -> {
-                        // 豆包 (火山)
-                        put("thinking", buildJsonObject {
-                            put("type", if (!level.isEnabled) "disabled" else "enabled")
-                        })
-                    }
-
-                    "api.mistral.ai" -> {
-                        // Mistral 不支持
-                    }
-
-                    "chat.intern-ai.org.cn" -> {
-                        // 书生
-                        // https://internlm.intern-ai.org.cn/api/document?lang=zh
-                        put("thinking_mode", level.isEnabled)
-                    }
-
-                    "api.siliconflow.cn" -> {
-                        // https://docs.siliconflow.cn/cn/userguide/capabilities/reasoning#3-1-api-%E5%8F%82%E6%95%B0
-                        val modelId = params.model.modelId
-                        val siliconflowThinkingModels = setOf(
-                            "Pro/moonshotai/Kimi-K2.5",
-                            "Pro/zai-org/GLM-5",
-                            "Pro/zai-org/GLM-5.1",
-                            "Pro/zai-org/GLM-4.7",
-                            "deepseek-ai/DeepSeek-V3.2",
-                            "Pro/deepseek-ai/DeepSeek-V3.2",
-                            "Qwen/Qwen3.5-397B-A17B",
-                            "Qwen/Qwen3.5-122B-A10B",
-                            "Qwen/Qwen3.5-35B-A3B",
-                            "Qwen/Qwen3.5-27B",
-                            "Qwen/Qwen3.5-9B",
-                            "Qwen/Qwen3.5-4B",
-                            "zai-org/GLM-4.6",
-                            "Qwen/Qwen3-8B",
-                            "Qwen/Qwen3-14B",
-                            "Qwen/Qwen3-32B",
-                            "Qwen/Qwen3-30B-A3B",
-                            "tencent/Hunyuan-A13B-Instruct",
-                            "zai-org/GLM-4.5V",
-                            "deepseek-ai/DeepSeek-V3.1-Terminus",
-                            "Pro/deepseek-ai/DeepSeek-V3.1-Terminus",
-                            "deepseek-ai/DeepSeek-V4-Flash",
-                            "Pro/deepseek-ai/DeepSeek-V4-Flash",
-                            "deepseek-ai/DeepSeek-V4-Pro",
-                            "Pro/deepseek-ai/DeepSeek-V4-Pro",
-                        )
-                        if (modelId in siliconflowThinkingModels) {
-                            put("enable_thinking", level.isEnabled)
-                        }
-                    }
-
-                    "aiping.cn" -> {
-                        put("enable_thinking", level.isEnabled)
-                    }
-
-                    "open.bigmodel.cn" -> {
-                        put("thinking", buildJsonObject {
-                            put("type", if (!level.isEnabled) "disabled" else "enabled")
-                        })
-                    }
-
-                    "api.xiaomimimo.com", "token-plan-cn.xiaomimimo.com" -> {
-                        // v3.9.12 (2.4.11 移植): 小米 MiMo
-                        // https://mimo.mi.com/docs/zh-CN/api/chat/openai-api
-                        put("thinking", buildJsonObject {
-                            put("type", if (!level.isEnabled) "disabled" else "enabled")
-                        })
-                    }
-
-                    "api.moonshot.cn" -> {
-                        put("thinking", buildJsonObject {
-                            put("type", if (!level.isEnabled) "disabled" else "enabled")
-                        })
-                    }
-
-                    "api.deepseek.com", "opencode.ai" -> {
-                        // v3.11.8: opencode.ai 网关按模型家族分离 — DeepSeek 家族发
-                        // thinking/reasoning_effort (官方语义); Grok/GLM/Kimi 等不收
-                        // thinking 参数防 400。
-                        // v3.15.2: 非 DeepSeek 家族不再静默跳过 (用户实证: OpenCode
-                        // 多轮对话模型思考完全不可控) — Bifrost 网关文档实锤
-                        // reasoning_effort 全档支持 (none/minimal/low/medium/high/max),
-                        // 原样发送即可; AUTO 不发保持网关默认。
-                        val isDeepSeekFamily = host == "api.deepseek.com" ||
-                            params.model.modelId.contains("deepseek", ignoreCase = true)
-                        if (isDeepSeekFamily) {
-                            put("thinking", buildJsonObject {
-                                put("type", if (!level.isEnabled) "disabled" else "enabled")
-                            })
-                            if (level.isEnabled && level != ReasoningLevel.AUTO) {
-                                // v3.6.49: DeepSeek 官方 reasoning_effort 只支持 high/max
-                                // low/medium 映射到最低档 high, xhigh 映射 max
-                                val effort = when (level) {
-                                    ReasoningLevel.LOW -> "high"     // low 不支持 → 最低档 high
-                                    ReasoningLevel.MEDIUM -> "high"  // medium 不支持 → high
-                                    ReasoningLevel.XHIGH, ReasoningLevel.MAX -> "max"    // xhigh/max → max
-                                    else -> level.effort             // HIGH -> "high"
-                                }
-                                put("reasoning_effort", effort)
-                            }
-                        } else if (host == "opencode.ai" && level != ReasoningLevel.AUTO) {
-                            // v3.15.2: 非 DeepSeek 家族原样发送 reasoning_effort。
-                            // v3.15.3: OFF 语义 none→minimal (用户实证: 偶发发消息后
-                            // 模型无反应 — 强制思考型模型 GLM-5.3 thinking mandatory,
-                            // disable 语义失败; 部分后端对 none 直接 400/空响应)。
-                            // minimal 在 Bifrost 全档支持列表内, 最接近关闭且合法。
-                            put(
-                                "reasoning_effort",
-                                if (level.effort == "none") "minimal" else level.effort,
-                            )
-                        }
-                    }
-
-                    "integrate.api.nvidia.com" -> {
-                        if ("deepseek-v4" in params.model.modelId.lowercase()) {
-                            if (level != ReasoningLevel.AUTO) {
-                                val effort = when (level) {
-                                    ReasoningLevel.XHIGH, ReasoningLevel.MAX -> "max"
-                                    ReasoningLevel.OFF -> "none"
-                                    else -> "high"
-                                }
-                                put("reasoning_effort", effort)
-                            }
-                        } else {
-                            if (level != ReasoningLevel.AUTO) {
-                                put("reasoning_effort", if (level.effort == "none") "low" else level.effort)
-                            }
-                        }
-                    }
-
-                    "api.commandcode.ai" -> {
-                        // v3.15.4: CC 分支简化为纯 reasoning_effort (B117 回归修复)。
-                        // v3.15.2 发 thinking 字段导致 CC 全模块炸 (关思考无法建连):
-                        // ①RinCore CC provider 是 OpenAI 类型只走 /provider/v1/chat/
-                        //   completions; CC 严格校验模型-端点配对 (claude 发 chat/
-                        //   completions 直接 400 wrong endpoint) → CC 通道实际可用
-                        //   模型只有 OpenAI 形状后端, claude 子分支永不命中
-                        // ②Bifrost 类网关的 DeepSeek provider 不认识 thinking 字段
-                        //   → v3.15.2 发的 thinking:{type:disabled/enabled} 被拒 400
-                        //   → OFF/enabled 全炸 = "整个思考模块都炸"
-                        // CC 档位 (DeepSeek-V4-Flash-0731): low/high/max, 无 none/
-                        // minimal → OFF 无法真关, 用 low (最低档, 连接正常优先)
-                        if (level != ReasoningLevel.AUTO) {
-                            val effort = when (level) {
-                                ReasoningLevel.OFF -> "low"
-                                ReasoningLevel.LOW, ReasoningLevel.MEDIUM -> "low"
-                                ReasoningLevel.XHIGH, ReasoningLevel.MAX -> "max"
-                                else -> "high"
-                            }
-                            put("reasoning_effort", effort)
-                        }
-                    }
-
-                    else -> {
-                        // OpenAI 官方
-                        // 文档中，completions API 只支持 "low", "medium", "high"
-                        if (level != ReasoningLevel.AUTO) {
-                            put("reasoning_effort", if (level.effort == "none") "low" else level.effort)
-                        }
-                    }
                 }
             }
 
@@ -857,6 +673,171 @@ class ChatCompletionsAPI(
                 }
             }
         }.mergeCustomBody(params.customBody)
+    }
+
+    /** 聚合网关放行判定 (v3.15.2): 网关对不支持参数自行容错, 思考控制不被模型注册吞掉 */
+    private fun isAggregateGateway(host: String): Boolean =
+        host == "opencode.ai" || host == "api.commandcode.ai"
+
+    /**
+     * 4.0.0 重写: 思考控制字段按 host 分派 (原 buildChatCompletionRequest 内联
+     * 185 行 when 块 → 独立纯函数, 输入 host+params, 输出字段集或 null)。
+     * cherryCompatMode 时返回 null (v3.16.0: 强兼容零思考参数)。
+     * 全部分派数值/文案逐字保留 (v3.15.2/3/4 定版语义)。
+     */
+    private fun thinkingControlFields(host: String, params: TextGenerationParams): JsonObject? {
+        // v3.16.0: 强兼容模式不发任何思考控制参数 — Cherry 不发, 任意模型零 400
+        if (params.cherryCompatMode) return null
+        if (!params.model.abilities.contains(ModelAbility.REASONING) && !isAggregateGateway(host)) return null
+        val level = params.reasoningLevel
+        fun obj(block: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit): JsonObject =
+            buildJsonObject(block)
+        return when (host) {
+            "openrouter.ai" -> obj {
+                // https://openrouter.ai/docs/use-cases/reasoning-tokens
+                put("reasoning", buildJsonObject {
+                    when (level) {
+                        ReasoningLevel.OFF -> put("effort", "none")
+                        ReasoningLevel.AUTO -> put("enabled", true)
+                        else -> put("effort", level.effort)
+                    }
+                })
+            }
+            "dashscope.aliyuncs.com" -> obj {
+                // 阿里云百炼
+                put("enable_thinking", level.isEnabled)
+                if (level != ReasoningLevel.AUTO) put("thinking_budget", level.budgetTokens)
+            }
+            "ark.cn-beijing.volces.com" -> obj {
+                // 豆包 (火山)
+                put("thinking", buildJsonObject {
+                    put("type", if (!level.isEnabled) "disabled" else "enabled")
+                })
+            }
+            "api.mistral.ai" -> null
+            "chat.intern-ai.org.cn" -> obj {
+                // 书生
+                put("thinking_mode", level.isEnabled)
+            }
+            "api.siliconflow.cn" -> {
+                // https://docs.siliconflow.cn/... thinking 白名单模型才发
+                val modelId = params.model.modelId
+                val siliconflowThinkingModels = setOf(
+                    "Pro/moonshotai/Kimi-K2.5",
+                    "Pro/zai-org/GLM-5",
+                    "Pro/zai-org/GLM-5.1",
+                    "Pro/zai-org/GLM-4.7",
+                    "deepseek-ai/DeepSeek-V3.2",
+                    "Pro/deepseek-ai/DeepSeek-V3.2",
+                    "Qwen/Qwen3.5-397B-A17B",
+                    "Qwen/Qwen3.5-122B-A10B",
+                    "Qwen/Qwen3.5-35B-A3B",
+                    "Qwen/Qwen3.5-27B",
+                    "Qwen/Qwen3.5-9B",
+                    "Qwen/Qwen3.5-4B",
+                    "zai-org/GLM-4.6",
+                    "Qwen/Qwen3-8B",
+                    "Qwen/Qwen3-14B",
+                    "Qwen/Qwen3-32B",
+                    "Qwen/Qwen3-30B-A3B",
+                    "tencent/Hunyuan-A13B-Instruct",
+                    "zai-org/GLM-4.5V",
+                    "deepseek-ai/DeepSeek-V3.1-Terminus",
+                    "Pro/deepseek-ai/DeepSeek-V3.1-Terminus",
+                    "deepseek-ai/DeepSeek-V4-Flash",
+                    "Pro/deepseek-ai/DeepSeek-V4-Flash",
+                    "deepseek-ai/DeepSeek-V4-Pro",
+                    "Pro/deepseek-ai/DeepSeek-V4-Pro",
+                )
+                if (modelId in siliconflowThinkingModels) obj {
+                    put("enable_thinking", level.isEnabled)
+                } else null
+            }
+            "aiping.cn" -> obj {
+                put("enable_thinking", level.isEnabled)
+            }
+            "open.bigmodel.cn" -> obj {
+                put("thinking", buildJsonObject {
+                    put("type", if (!level.isEnabled) "disabled" else "enabled")
+                })
+            }
+            "api.xiaomimimo.com", "token-plan-cn.xiaomimimo.com" -> obj {
+                // v3.9.12 (2.4.11 移植): 小米 MiMo
+                put("thinking", buildJsonObject {
+                    put("type", if (!level.isEnabled) "disabled" else "enabled")
+                })
+            }
+            "api.moonshot.cn" -> obj {
+                put("thinking", buildJsonObject {
+                    put("type", if (!level.isEnabled) "disabled" else "enabled")
+                })
+            }
+            "api.deepseek.com", "opencode.ai" -> {
+                // v3.15.2: DeepSeek 家族发 thinking/reasoning_effort (官方语义);
+                // 非 DeepSeek 家族走 Bifrost reasoning_effort 全档 (AUTO 不发)
+                val isDeepSeekFamily = host == "api.deepseek.com" ||
+                    params.model.modelId.contains("deepseek", ignoreCase = true)
+                if (isDeepSeekFamily) {
+                    obj {
+                        put("thinking", buildJsonObject {
+                            put("type", if (!level.isEnabled) "disabled" else "enabled")
+                        })
+                        if (level.isEnabled && level != ReasoningLevel.AUTO) {
+                            // v3.6.49: DeepSeek 官方 reasoning_effort 只支持 high/max
+                            val effort = when (level) {
+                                ReasoningLevel.LOW -> "high"
+                                ReasoningLevel.MEDIUM -> "high"
+                                ReasoningLevel.XHIGH, ReasoningLevel.MAX -> "max"
+                                else -> level.effort
+                            }
+                            put("reasoning_effort", effort)
+                        }
+                    }
+                } else if (host == "opencode.ai" && level != ReasoningLevel.AUTO) {
+                    // v3.15.3: OFF 语义 none→minimal (强制思考型模型 disable 失败)
+                    obj {
+                        put(
+                            "reasoning_effort",
+                            if (level.effort == "none") "minimal" else level.effort,
+                        )
+                    }
+                } else null
+            }
+            "integrate.api.nvidia.com" -> {
+                if ("deepseek-v4" in params.model.modelId.lowercase()) {
+                    if (level != ReasoningLevel.AUTO) {
+                        val effort = when (level) {
+                            ReasoningLevel.XHIGH, ReasoningLevel.MAX -> "max"
+                            ReasoningLevel.OFF -> "none"
+                            else -> "high"
+                        }
+                        obj { put("reasoning_effort", effort) }
+                    } else null
+                } else {
+                    if (level != ReasoningLevel.AUTO) {
+                        obj { put("reasoning_effort", if (level.effort == "none") "low" else level.effort) }
+                    } else null
+                }
+            }
+            "api.commandcode.ai" -> {
+                // v3.15.4: CC 纯 reasoning_effort (B117: thinking 字段被拒, OFF→low 保连接)
+                if (level != ReasoningLevel.AUTO) {
+                    val effort = when (level) {
+                        ReasoningLevel.OFF -> "low"
+                        ReasoningLevel.LOW, ReasoningLevel.MEDIUM -> "low"
+                        ReasoningLevel.XHIGH, ReasoningLevel.MAX -> "max"
+                        else -> "high"
+                    }
+                    obj { put("reasoning_effort", effort) }
+                } else null
+            }
+            else -> {
+                // OpenAI 官方: completions API 只支持 low/medium/high
+                if (level != ReasoningLevel.AUTO) {
+                    obj { put("reasoning_effort", if (level.effort == "none") "low" else level.effort) }
+                } else null
+            }
+        }
     }
 
     private fun isModelAllowTemperature(model: Model): Boolean {

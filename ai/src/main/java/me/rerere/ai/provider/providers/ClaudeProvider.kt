@@ -536,36 +536,11 @@ class ClaudeProvider(
                 })
             }
 
-            // v3.11.9: thinking 按家族分离 —
-            //   minimal (2013 降级): 不发 thinking, 平台默认行为
-            //   MiniMax 家族: 官方示例仅 type adaptive (无 display/output_config,
-            //     间歇性严格校验未知字段 → 2013)
-            //   其他家族: 原版完整协议 (adaptive + display + output_config effort)
+            // 4.0.0 重写: thinking 家族三态提取为独立纯函数
             if (params.model.abilities.contains(ModelAbility.REASONING) && !minimal) {
-                when (params.reasoningLevel) {
-                    ReasoningLevel.OFF -> {
-                        put("thinking", buildJsonObject { put("type", "disabled") })
-                    }
+                thinkingField(isMiniMaxFamily, params.reasoningLevel)?.forEach { (k, v) -> put(k, v) }
+            }
 
-                    ReasoningLevel.AUTO -> {
-                        put("thinking", buildJsonObject {
-                            put("type", "adaptive")
-                            if (!isMiniMaxFamily) put("display", "summarized")
-                        })
-                    }
-
-                    else -> {
-                        put("thinking", buildJsonObject {
-                            put("type", "adaptive")
-                            if (!isMiniMaxFamily) put("display", "summarized")
-                        })
-                        if (!isMiniMaxFamily) {
-                            put("output_config", buildJsonObject {
-                                put("effort", params.reasoningLevel.effort)
-                            })
-                        }
-                    }
-                }
             }
 
             // 处理工具
@@ -609,6 +584,29 @@ class ClaudeProvider(
                 }
             }
         }.mergeCustomBody(params.customBody)
+    }
+
+    /**
+     * 4.0.0 重写: thinking 字段家族三态 (原 buildMessageRequest 内联块)。
+     *   MiniMax 家族: 仅 type adaptive (无 display/output_config, 严格校验防 2013)
+     *   其他家族: 完整协议 (adaptive + display + output_config effort)
+     * OFF → disabled; AUTO → adaptive 无 effort; 档位 → adaptive + effort。
+     */
+    private fun thinkingField(isMiniMaxFamily: Boolean, level: ReasoningLevel): JsonObject? = when (level) {
+        ReasoningLevel.OFF -> buildJsonObject { put("type", "disabled") }
+        ReasoningLevel.AUTO -> buildJsonObject {
+            put("type", "adaptive")
+            if (!isMiniMaxFamily) put("display", "summarized")
+        }
+        else -> buildJsonObject {
+            put("type", "adaptive")
+            if (!isMiniMaxFamily) put("display", "summarized")
+            if (!isMiniMaxFamily) {
+                put("output_config", buildJsonObject {
+                    put("effort", level.effort)
+                })
+            }
+        }
     }
 
     private fun cacheControlEphemeral(promptCacheTtl: ClaudePromptCacheTtl) = buildJsonObject {
