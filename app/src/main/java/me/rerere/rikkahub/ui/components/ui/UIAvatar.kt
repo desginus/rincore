@@ -230,9 +230,7 @@ fun UIAvatar(
                     Button(
                         onClick = {
                             showPickOption = false
-                            imagePickerLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
+                            imagePickerLauncher.launch("image/*")
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
