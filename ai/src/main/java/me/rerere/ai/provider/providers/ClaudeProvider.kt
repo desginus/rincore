@@ -241,6 +241,10 @@ class ClaudeProvider(
             Log.w(TAG, "Claude SSE idle timeout — closing: $fired")
         }
 
+        // v3.8.6: SSE 诊断统计 — 输出中途中断/半截时在运行日志页可抓取全部现场
+        val eventCount = java.util.concurrent.atomic.AtomicInteger(0)
+        val dataChars = java.util.concurrent.atomic.AtomicLong(0)
+
         // v3.11.9: eventSource 容器前置声明 — 局部变量无前向引用,
         // listener 匿名对象内 (onFailure 降级重试分支) 必须可见
         val eventSourceRef = java.util.concurrent.atomic.AtomicReference<okhttp3.sse.EventSource?>()

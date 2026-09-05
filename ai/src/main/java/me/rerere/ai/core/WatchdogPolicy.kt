@@ -1,5 +1,9 @@
 package me.rerere.ai.core
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
 /**
  * 4.0.0 重写工程 · 模块 2: 流式三阶段 watchdog (原 ChatCompletionsAPI 与
  * ClaudeProvider 各自内联 ~60 行逐字复制的同一套状态机 → 单一实现双族共用)。
@@ -60,12 +64,12 @@ class StreamWatchdog(
          * 超时后 break 退出 (与旧实现一致: 一次判死即关流)。
          */
         fun launchIn(
-            scope: kotlinx.coroutines.CoroutineScope,
+            scope: CoroutineScope,
             watchdog: StreamWatchdog,
             onTimeoutLog: (String) -> Unit,
         ): kotlinx.coroutines.Job = scope.launch {
             while (true) {
-                kotlinx.coroutines.delay(TICK_INTERVAL_MS)
+                delay(TICK_INTERVAL_MS)
                 val fired = watchdog.tick()
                 if (fired != null) {
                     onTimeoutLog(fired)
