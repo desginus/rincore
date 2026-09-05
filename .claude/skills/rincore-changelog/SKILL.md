@@ -3,7 +3,13 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v3.22.2 为最新）
+# RinCore 更新日志（v4.0.0 为最新 — 大版本重写工程启动）
+
+## v4.0.0（重写工程启动 · 模块1 GenerationHandler 重试链策略对象化，2026-09-05）
+- 屎山现状: streamLoop catch 链 IOException 分支 135 行嵌套, 策略数值硬编码散落 (4/500L×n/18/6/300L/1000/2000/4000), 状态算术内联, 终态清理代码重复 4 次
+- 重写产物: 新文件 RetryPolicy.kt (129 行) — RetryPhase 密封类 (Init 4 次线性退避/Stream 三轮链 18 次, 封装配额与推进) + StreamFailureClassifier (嗅探判据收敛) + RetryDecision (统一 Retry/Abort 决策); GenerationHandler catch 链 135 行 → 42 行职责原语; RetryState 瘦身为纯计数器
+- 行为等价保证: 全部策略数值逐字保留 (4 次/0.5s×n/header 判死不 delay/18 次/风暴 300ms×3/经典 1-2-4s), 全部用户可见报错文案逐字保留, 自动重试开关拦截语义不变
+- 后续模块 (未动手): ChatCompletionsAPI 1475 行 57 处 (watchdog 三阶段), ClaudeProvider 957 行 31 处
 
 ## v3.22.2（A17/澎湃OS 4 定向 FGS 防护，2026-09-05）
 - FloatingNotificationService.onTimeout: specialUse/dataSync FGS 系统超时（A14+ 引入，A17 严格执行）优雅降级 stopForeground(DETACH) 保留进程，杜绝生成中途被强杀断流
