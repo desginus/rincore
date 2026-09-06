@@ -3,7 +3,13 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v4.0.4 为最新）
+# RinCore 更新日志（v4.0.5 为最新）
+
+## v4.0.5（工具图片拆独立 user 消息 + 极简错误体细化，2026-09-06）
+- 16:07 单实证: v4.0.4 同消息混排（image:2 tool_result:11）仍被拒——兼容层（qwen 等，按模型分协议直传 Anthropic）对含 tool_result 的 user 消息要求纯 tool_result 块序列，同消息混入任何其他块都拒
+- 重写: tool_result 消息恢复纯 tool_result 块序列；工具图片拆独立后继 user 消息（[工具返回的图片]+image 块）——唯一被本会话验证安全的图片形状（user 图消息 [0][6][14] 正常工作）；官方通道自动合并连续 user 语义等价；拆分在 JsonArray 层不受 UIMessage 合并防御链影响
+- 报错细化: 极简错误体（{"model":...} 零信息回显）识别→可读诊断（含 http code 与方向提示）；REQ_META 增补 tool_result 内嵌块统计 innerNonText（顶层统计看不到内嵌 image 的定位教训）
+- 编译教训: Kotlin 字符串内嵌套双引号经 heredoc 双重转义事故（""model""→"\\"model\\""），生成后必须逐行核验含引号字面量
 
 ## v4.0.4（工具结果图片重定位 + 网关挂起重试修正，2026-09-06）
 - 根因（15:37 报错单，与 CC 图片兼容 v3.13.7 同构）：工具读文件返回图片 → tool_result content 内嵌 image → OpenCode 网关（Anthropic→CC 转换）变 role=tool content 的 image_url，OpenAI 规范 tool content 仅支持 text，严格上游挂起/报错（报错体 {"model":...} 为网关极简回显）；重试携带同样非法结构 → 永久失败
