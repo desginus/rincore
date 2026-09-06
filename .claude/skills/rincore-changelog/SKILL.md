@@ -3,7 +3,14 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v4.0.2 为最新）
+# RinCore 更新日志（v4.0.4 为最新）
+
+## v4.0.4（工具结果图片重定位 + 网关挂起重试修正，2026-09-06）
+- 根因（15:37 报错单，与 CC 图片兼容 v3.13.7 同构）：工具读文件返回图片 → tool_result content 内嵌 image → OpenCode 网关（Anthropic→CC 转换）变 role=tool content 的 image_url，OpenAI 规范 tool content 仅支持 text，严格上游挂起/报错（报错体 {"model":...} 为网关极简回显）；重试携带同样非法结构 → 永久失败
+- PartGroup.Tools 序列化段整段重写：tool_result 剥离内嵌图片 → 同 user 消息 tool_result 块后追加独立 image 块（Anthropic 官方合法混排，图片仍送达）
+- toToolResultBlock 重写：content 只留文本块，空 content 补占位防严格上游拒收
+- onFailure 瞬时判定重写：5xx 或无状态码（网关 hang 裸断 response==null）一律转 IOException 进重试链；4xx 保持终态 — 修复重试无法正常重试
+- CC 通道由 CCImageCompatTransformer opt-in 覆盖（v3.13.3 用户定版），不动
 
 ## v4.0.2（Office/PDF 文档预览 + 澎湃 OS 4 动效统一，2026-09-05）
 - 文档预览（零新依赖）：DocumentPreview.kt OOXML 纯解析（docx 段落/pptx 按页分节/xlsx sharedStrings+行解析/epub），SAX 流式+XXE 防护+200KB 截断；PDF 用内置 PdfRenderer 渲染前 3 页位图+页数提示；旧版二进制（doc/ppt/xls）引导外部打开——该类型不支持预览 问题消除
