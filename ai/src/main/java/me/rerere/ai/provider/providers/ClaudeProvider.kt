@@ -503,11 +503,19 @@ class ClaudeProvider(
         val officialHost = runCatching {
             providerSetting.baseUrl.toHttpUrl().host == "api.anthropic.com"
         }.getOrDefault(false)
+        // 4.0.3: OpenCode 网关 (Anthropic 协议→Chat Completions 上游) —
+        // cache_control 是 Anthropic 专属字段, 网关转 CC 后无效; 非标准字段
+        // 透传 CC 上游 (qwen 等) 是 500 嫌疑源 (2026-09-05 19:39 报错单 keys
+        // 含 cache_control)。上游自动前缀缓存靠请求字节稳定 (已达标:
+        // 会话时间基准/幂等 reminder), 不依赖显式断点 — OpenCode 全关。
+        val opencodeHost = runCatching {
+            providerSetting.baseUrl.toHttpUrl().host == "opencode.ai"
+        }.getOrDefault(false)
         val dropHistoryThinking = !officialHost || minimal
-        // 顶层 cache_control: 仅非 MiniMax 家族且非降级模式
-        val useTopLevelCache = providerSetting.promptCaching && !minimal && !isMiniMaxFamily
+        // 顶层 cache_control: 仅非 MiniMax 家族且非降级模式且非 OpenCode
+        val useTopLevelCache = providerSetting.promptCaching && !minimal && !isMiniMaxFamily && !opencodeHost
         // 块级 cache_control (system 尾块 + 消息级): 全家族可用, 降级模式关闭
-        val useBlockCache = providerSetting.promptCaching && !minimal
+        val useBlockCache = providerSetting.promptCaching && !minimal && !opencodeHost
         return buildJsonObject {
             put("model", params.model.modelId)
             put(

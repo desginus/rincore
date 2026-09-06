@@ -1085,6 +1085,15 @@ class GenerationHandler(
                 )
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e  // 用户主动停止 — 不重试
+            } catch (e: me.rerere.ai.util.HttpException) {
+                // 4.0.3 双保险: 5xx HttpException → IOException 进重试链
+                // (正常路径 Provider 层已转换; 此处防回归/防其他通道裸抛)。
+                // 非 5xx (4xx 参数/鉴权) 保持冒泡终态报错。
+                val isServer = Regex("""\\[[5]\\d\\d\\]""").containsMatchIn(e.message ?: "") ||
+                    e.message?.contains("Internal server error", ignoreCase = true) == true
+                if (!isServer) throw e
+                Log.w(TAG, "HttpException 5xx fallback — converting to IOException for retry chain: ${e.message}")
+                throw java.io.IOException(e.message ?: "server error", e)
             } catch (e: me.rerere.ai.provider.providers.openai.OpenCodeStreamUnconfirmedException) {
                 // v3.8.32: OpenCode Zen 无完成信号关流 (ox 系等) — 服务端已完成或
                 // 中途掐断在信号层面无法区分。保留已生成内容 (已随 chunk 流入
