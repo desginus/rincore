@@ -489,3 +489,11 @@ fallthrough 到 linuxDir (../linux/x.png), 文件实际在 ../files/。
 - **根因链**: ①RinCore CC provider 是 OpenAI 类型只走 /provider/v1/chat/completions; ②CC 严格校验模型-端点配对 (claude 发 chat/completions 直接 400 wrong endpoint) → CC 通道实际可用模型只有 OpenAI 形状后端, v3.15.2 的 claude 子分支永不命中; ③Bifrost 类网关的 DeepSeek provider 不认识 thinking 字段 → thinking:{type:disabled/enabled} 被拒 400 → OFF/enabled 全炸
 - **修复**: CC 分支删 thinking 字段与 claude 子分支, 简化为纯 reasoning_effort (AUTO 不发 / OFF→low / low|medium→low / high→high / xhigh|max→max); CC 无 none/minimal 档位, OFF 真关不可表达, low 最低档保连接
 - **教训**: 网关参数支持必须按 (host × 路由 × 模型家族) 三维核实, 文档的 "同样接受" 不代表网关实现透传; chat/completions 路由上 claude 模型根本不可达, 为它写分支是无效代码; 修复后必须全档位回归 (OFF/AUTO/low/high 各发一次), 只测单档位会漏炸
+
+
+### B118. 工具返回图片兼容 — 四形状实证链与 qwen 兼容层硬校验 (v4.0.4-4.0.6, 最高级)
+- **现象**: Workspace ReadFile 读图后全链路卡死/报错; OpenCode (qwen3.8-flash, Anthropic 协议) 400/极简错误体 {"model":...}, CC (Chat Completions) 无报错静默挂起; 原生阿里云 API 同模型零问题
+- **根因** (基础层, 请求构造): ①CC toToolResultContent 模型支持图片输入时把 image_url 塞 role=tool content — OpenAI 规范 tool content 仅文本, 严格上游不报错只挂起 (25s 判死); ②Anthropic 通道 tool_result content 内嵌 image / 同消息混排 / 拆独立消息后连续 user 三种形状全被 qwen 兼容层拒
+- **四形状实证链**: 15:37 内嵌拒 → 16:07 同 user 消息混排 (image+tool_result) 拒 (REQ_META 证实重定位已生效) → 16:42 拆独立 user 消息产生连续三条 user 拒 (角色交替硬校验) → 终态: qwen 兼容层唯一安全形状四条 = 纯 tool_result user / text+image 混合 user / assistant(text+tool_use) / assistant(text)
+- **终态修复**: ①CC content 只留文本 (空补占位) + 图片经 addToolImagesAsUserMessage 拆独立后继 user 消息 (常规+Cherry 共用); ②Anthropic normalizeConsecutiveToolImageUsers 后处理: 工具图 user 与后继 user 相邻→图块并入其 content 头部; 否则前插 assistant 占位文本恢复交替; ③报错细化: 极简错误体识别转可读诊断, REQ_META 增补 tool_result 内嵌块统计 innerNonText
+- **教训**: ①原生 API 正常+网关异常 ⇒ 差异必在请求构造的字节级形状, 逐形状实证排除而非猜测协议; ②网关对消息结构校验是 shape-level 不是语义级 (官方合法形状照拒); ③拆分/重定位消息必须做全序列后处理规范化 (角色交替/纯块序列约束), 局部拆分必然引入新违规; ④极简错误体 ({"model":...}) 是网关挂起/拒绝的指纹, 必须转可读诊断; ⑤REQ_META 顶层块统计看不到嵌套块, 定位嵌套问题需 innerNonText 类统计; ⑥用户锚定"问题在工具返回本身"时, 先查该数据的完整序列化路径 (格式/位置/包装), 不要跳到压缩/传输等远端因素
