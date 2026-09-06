@@ -446,7 +446,7 @@ class ClaudeProvider(
                         val rawMsg = exception.message ?: ""
                         val minimalEcho = rawMsg.startsWith("{") &&
                             rawMsg.trimEnd().endsWith("}") &&
-                            rawMsg.contains(""model"") &&
+                            rawMsg.contains("\"model\"") &&
                             !rawMsg.contains("error", ignoreCase = true) &&
                             !rawMsg.contains("message", ignoreCase = true) &&
                             !rawMsg.contains("detail", ignoreCase = true)
