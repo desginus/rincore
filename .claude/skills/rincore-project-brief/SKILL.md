@@ -26,13 +26,10 @@ DeepSeek V4 系列（测试环境：api.deepseek.com Chat Completions 流式）�
 
 **验证路径**：更新环境后 UI 统计行与 `invoke_tools` 返回的工具数应完全一致。
 
-## 传输层状态（v3.9.x）
-- 基线：3.2.2（原版 RikkaHub 2.4.5 移植前稳定逻辑）
-- HTTP/1.1 only（禁 HTTP/2，DataSourceModule 参照 v2.9.8）、keepalive 60s、readTimeout 3min
-- SSE 物理判据（v3.8.33）：服务端关流时最后一行 JSON 完整性 = 完成/截断判定
-- 运行期自适应（v3.8.42）：思考链/正文分离，无 content 时缓冲正文化
-- 内容级截断检测（v3.8.36）：textTail 强截断特征启发
-- 重试机制：SSE 未收到数据自动重试 5 次指数退避；watchdog 只日志不动作
+## 传输层状态（v4.0.x）
+- 架构：v4.0.0 全量重写完成 — RetryPolicy.kt（重试策略抽象）/WatchdogPolicy（跨族统一）/thinkingControlFields（思考控制三态提取）/请求构造分层/流解析收口
+- 关键组件：GenerationHandler（重试链）→ RetryPhase 密封类；CC 通道 ChatCompletionsAPI；ClaudeProvider（Anthropic 协议）；工具图片序列化层默认剥离+规范化后处理（B118）
+- 网关形状约束（B118 铁律）：qwen 兼容层唯一安全形状四条 = 纯 tool_result user / text+image 混合 user / assistant(text+tool_use) / assistant(text)
 
 ## MCP 体系（v3.8.41 懒连接）
 - 启动/配置变更只登记待连接（pendingConfigs），首次工具调用才建连
