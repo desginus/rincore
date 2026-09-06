@@ -416,6 +416,23 @@ class ClaudeProvider(
                                         val id = tu.jsonObject["id"]?.jsonPrimitive?.contentOrNull ?: ""
                                         append(" toolId=${id.take(12)} len=${id.length}")
                                     }
+                                    // 4.0.5: tool_result 内嵌块统计 (顶层统计看不到
+                                    // 内嵌 image, 15:37 单教训) — 内嵌非文本块 = 兼容
+                                    // 层拒绝的高危结构
+                                    content.firstOrNull { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "tool_result" }?.let { tr ->
+                                        val inner = tr.jsonObject["content"] as? JsonArray
+                                        if (inner != null) {
+                                            val innerCounts = mutableMapOf<String, Int>()
+                                            inner.forEach { b ->
+                                                val bt = b.jsonObject["type"]?.jsonPrimitive?.contentOrNull ?: "?"
+                                                innerCounts[bt] = (innerCounts[bt] ?: 0) + 1
+                                            }
+                                            val nonText = innerCounts.filterKeys { it != "text" && it != "tool_result" }
+                                            if (nonText.isNotEmpty()) {
+                                                append(" innerNonText=$nonText")
+                                            }
+                                        }
+                                    }
                                 } else {
                                     append("(content=").append(content?.let { it::class.simpleName } ?: "null").append(")")
                                 }
@@ -423,8 +440,21 @@ class ClaudeProvider(
                             append(" maxTokens=").append(requestBodyRef.get()["max_tokens"] ?: "?")
                             append(" keys=").append(requestBodyRef.get().keys.joinToString(","))
                         }
+                        // 4.0.5: 极简错误体细化 — 网关 hang/拒绝时回显形如
+                        // {"model":"xxx"} 的零信息 JSON, 原样展示对排障无意义。
+                        // 识别后转可读诊断 (含 http code 与推断方向)。
+                        val rawMsg = exception.message ?: ""
+                        val minimalEcho = rawMsg.startsWith("{") &&
+                            rawMsg.trimEnd().endsWith("}") &&
+                            rawMsg.contains(""model"") &&
+                            !rawMsg.contains("error", ignoreCase = true) &&
+                            !rawMsg.contains("message", ignoreCase = true) &&
+                            !rawMsg.contains("detail", ignoreCase = true)
+                        val displayMsg = if (minimalEcho) {
+                            "网关返回空错误体 (${rawMsg.take(80)}) — 请求被上游拒绝或挂起, 无具体原因。常见方向: 请求结构含上游不支持的块类型, 或上游服务异常 (code=${response?.code ?: "无"})"
+                        } else rawMsg
                         exception = me.rerere.ai.util.HttpException(
-                            "${exception.message}$meta"
+                            "$displayMsg$meta"
                         )
                     }
                 } catch (e: Throwable) {
@@ -746,27 +776,38 @@ class ClaudeProvider(
                     })
                     contentBuffer.clear()
 
-                    // 4.0.4 整段重写: tool_result 剥离内嵌图片 → 同 user 消息
-                    // tool_result 块之后追加独立 image 块。
-                    // 根因 (2026-09-06 15:37 报错单, 与 CC 图片兼容 v3.13.7 同构):
-                    // 工具读文件返回图片 → tool_result content 内嵌 image 块 →
-                    // OpenCode 网关 (Anthropic→CC 转换) 变成 role=tool content 的
-                    // image_url — OpenAI 规范 tool content 仅支持 text, 严格上游
-                    // 挂起/报错 (报错体 {"model":...} 为网关极简回显), 且该轮
-                    // 每次重试都带同样的非法结构 → 永久失败。Anthropic 官方
-                    // 支持 user content 混排 tool_result+image, 重定位后官方
-                    // 通道语义零差异 (图片仍送达), 网关通道转为合法结构。
+                    // 4.0.5 重写: tool_result 消息保持纯 tool_result 块序列,
+                    // 工具图片拆独立后继 user 消息。
+                    // 演进: 15:37 单 tool_result content 内嵌 image 被拒 (v4.0.3
+                    // 及之前) → 16:07 单同消息混排 image+tool_result 仍被拒
+                    // (v4.0.4) — 实证兼容层 (qwen 等) 对含 tool_result 的 user
+                    // 消息要求纯 tool_result 块序列, 同消息混入任何其他块
+                    // (含官方合法的 text/image) 都拒。唯一被本会话验证安全的
+                    // 图片形状是独立 user 图消息 ([0][6][14] 前后邻 assistant
+                    // 正常工作)。拆分后官方通道语义等价 (官方自动合并连续
+                    // user; CCImageCompat v3.13.7 在 CC 通道验证同构形状有效)。
                     add(buildJsonObject {
                         put("role", "user")
                         putJsonArray("content") {
-                            group.tools.forEach { tool ->
-                                add(tool.toToolResultBlock())
-                                tool.output.filterIsInstance<UIMessagePart.Image>().forEach { img ->
+                            group.tools.forEach { add(it.toToolResultBlock()) }
+                        }
+                    })
+                    val toolImages = group.tools
+                        .flatMap { it.output.filterIsInstance<UIMessagePart.Image>() }
+                    if (toolImages.isNotEmpty()) {
+                        add(buildJsonObject {
+                            put("role", "user")
+                            putJsonArray("content") {
+                                add(buildJsonObject {
+                                    put("type", "text")
+                                    put("text", "[工具返回的图片]")
+                                })
+                                toolImages.forEach { img ->
                                     img.toContentBlock()?.let { add(it) }
                                 }
                             }
-                        }
-                    })
+                        })
+                    }
                 }
             }
         }
