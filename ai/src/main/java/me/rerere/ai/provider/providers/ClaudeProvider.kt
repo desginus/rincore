@@ -431,15 +431,27 @@ class ClaudeProvider(
                     Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
                     e.printStackTrace()
                 } finally {
-                    // 4.0.1: 5xx 服务端瞬时错误转 IOException — HttpException 是
-                    // RuntimeException, GenerationHandler 重试链只捕 IOException,
-                    // 不转则 500 直接终态失败 (用户实测 qwen3.8-flash 网关瞬时 500
-                    // 无重试)。4xx 保持 HttpException 直接报错 (参数/鉴权错误重试无意义)。
-                    if (exception != null && response?.code in 500..599 &&
-                        exception !is java.io.IOException
-                    ) {
-                        Log.w(TAG, "server error ${response?.code} — wrapping as IOException for retry chain")
-                        exception = java.io.IOException("[${response?.code}] ${exception.message}", exception)
+                    // 4.0.4 重写: 服务端瞬时错误转 IOException 进重试链。
+                    // HttpException 是 RuntimeException, 重试链只捕 IOException。
+                    // 判定规则:
+                    //   5xx → 瞬时, 转 IOException 重试
+                    //   4xx → 参数/鉴权类, 保持 HttpException 终态 (重试无意义);
+                    //         例外: 2013 降级已在上方处理
+                    //   response==null / bodyRaw 空 (网关 hang 后裸断, 无状态码
+                    //   可判) → 按瞬时处理 (2026-09-06 报错单: 网关挂起场景
+                    //   曾因无法判定 code 而跳过重试, 用户感知"重试无法重试")
+                    val httpCode = response?.code
+                    val isTransient = when {
+                        httpCode == null -> exception !is java.io.IOException
+                        httpCode in 500..599 -> exception !is java.io.IOException
+                        else -> false
+                    }
+                    if (exception != null && isTransient) {
+                        Log.w(TAG, "transient server failure (code=${httpCode ?: "null"}) — wrapping as IOException for retry chain")
+                        exception = java.io.IOException(
+                            "[${httpCode ?: "hang"}] ${exception.message}",
+                            exception,
+                        )
                     }
                     TraceLogger.dumpAndLog(TAG, exception ?: Exception("Unknown"), 60)
                     close(exception)
@@ -734,11 +746,25 @@ class ClaudeProvider(
                     })
                     contentBuffer.clear()
 
-                    // 紧跟 tool_result
+                    // 4.0.4 整段重写: tool_result 剥离内嵌图片 → 同 user 消息
+                    // tool_result 块之后追加独立 image 块。
+                    // 根因 (2026-09-06 15:37 报错单, 与 CC 图片兼容 v3.13.7 同构):
+                    // 工具读文件返回图片 → tool_result content 内嵌 image 块 →
+                    // OpenCode 网关 (Anthropic→CC 转换) 变成 role=tool content 的
+                    // image_url — OpenAI 规范 tool content 仅支持 text, 严格上游
+                    // 挂起/报错 (报错体 {"model":...} 为网关极简回显), 且该轮
+                    // 每次重试都带同样的非法结构 → 永久失败。Anthropic 官方
+                    // 支持 user content 混排 tool_result+image, 重定位后官方
+                    // 通道语义零差异 (图片仍送达), 网关通道转为合法结构。
                     add(buildJsonObject {
                         put("role", "user")
                         putJsonArray("content") {
-                            group.tools.forEach { add(it.toToolResultBlock()) }
+                            group.tools.forEach { tool ->
+                                add(tool.toToolResultBlock())
+                                tool.output.filterIsInstance<UIMessagePart.Image>().forEach { img ->
+                                    img.toContentBlock()?.let { add(it) }
+                                }
+                            }
                         }
                     })
                 }
@@ -833,11 +859,24 @@ class ClaudeProvider(
         put("input", inputAsJson())
     }
 
+    // 4.0.4: tool_result content 只保留文本块 — 图片由 PartGroup.Tools
+    // 序列化段重定位到同 user 消息的 tool_result 之后 (网关 CC 转换层
+    // 对 role=tool 非文本 content 严格校验挂起)。空 content 时补占位
+    // 文本块防严格上游拒收空数组。
     private fun UIMessagePart.Tool.toToolResultBlock() = buildJsonObject {
         put("type", "tool_result")
         put("tool_use_id", toolCallId)
         putJsonArray("content") {
-            output.mapNotNull { it.toContentBlock() }.forEach { add(it) }
+            val blocks = output.filterNot { it is UIMessagePart.Image }
+                .mapNotNull { it.toContentBlock() }
+            if (blocks.isEmpty()) {
+                add(buildJsonObject {
+                    put("type", "text")
+                    put("text", "(工具结果已送达)")
+                })
+            } else {
+                blocks.forEach { add(it) }
+            }
         }
     }
 
