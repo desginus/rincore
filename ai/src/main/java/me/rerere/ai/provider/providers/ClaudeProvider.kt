@@ -710,8 +710,73 @@ class ClaudeProvider(
             }
         }
     }.let { messagesArray ->
+        normalizeConsecutiveToolImageUsers(messagesArray)
+    }.let { messagesArray ->
         if (!promptCaching) return@let messagesArray
         insertMessagesCacheControl(messagesArray, promptCacheTtl)
+    }
+
+    /**
+     * 4.0.6: 工具图片独立 user 消息的连续 user 规范化。
+     * PartGroup.Tools 拆分产生的独立图 user 消息可能与相邻 user 消息
+     * (tool_result 消息或后续用户消息) 形成连续 user — qwen 等严格
+     * 兼容层对角色交替硬校验 → 400。处理:
+     *   后一条是 user → 图块合并进后一条 content 头部 (user 图文混合
+     *     形状, 与 [0][6][14] 用户消息同类, 已验证安全)
+     *   否则 (后一条是 assistant 或结尾) → 在前插入 assistant 占位
+     *     文本消息, 恢复严格交替
+     */
+    private fun normalizeConsecutiveToolImageUsers(messages: JsonArray): JsonArray {
+        val toolImageMarker = "[工具返回的图片]"
+        val items = messages.map { it.jsonObject }
+        val isToolImageMsg: (JsonObject) -> Boolean = { obj ->
+            obj["role"]?.jsonPrimitive?.contentOrNull == "user" &&
+                (obj["content"] as? JsonArray)?.any {
+                    it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "text" &&
+                        it.jsonObject["text"]?.jsonPrimitive?.contentOrNull == toolImageMarker
+                } == true
+        }
+        val result = mutableListOf<JsonObject>()
+        var i = 0
+        while (i < items.size) {
+            val cur = items[i]
+            if (isToolImageMsg(cur)) {
+                val next = items.getOrNull(i + 1)
+                if (next != null && next["role"]?.jsonPrimitive?.contentOrNull == "user") {
+                    // 合并进后一条 user content 头部 (去标记文本, 留图块)
+                    val curBlocks = (cur["content"] as JsonArray)
+                        .filterNot {
+                            it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "text" &&
+                                it.jsonObject["text"]?.jsonPrimitive?.contentOrNull == toolImageMarker
+                        }
+                    val nextBlocks = (next["content"] as? JsonArray)?.toMutableList() ?: mutableListOf()
+                    nextBlocks.addAll(0, curBlocks)
+                    val merged = JsonObject(next.toMutableMap().apply {
+                        put("content", JsonArray(nextBlocks))
+                    })
+                    result.add(merged)
+                    i += 2
+                    continue
+                } else {
+                    // 前插 assistant 占位恢复交替
+                    result.add(buildJsonObject {
+                        put("role", "assistant")
+                        putJsonArray("content") {
+                            add(buildJsonObject {
+                                put("type", "text")
+                                put("text", "(已接收工具返回的图片, 见下一条消息)")
+                            })
+                        }
+                    })
+                    result.add(cur)
+                    i += 1
+                    continue
+                }
+            }
+            result.add(cur)
+            i += 1
+        }
+        return JsonArray(result)
     }
 
     /**
