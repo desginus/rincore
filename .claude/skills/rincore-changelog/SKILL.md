@@ -3,7 +3,13 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v4.0.5 为最新）
+# RinCore 更新日志（v4.0.6 为最新）
+
+## v4.0.6（工具图片格式基础层重写 CC+Anthropic 双通道，2026-09-06）
+- 基础层根因（用户锚定 Workspace ReadFile 返回，原生阿里云无此问题）：CC 通道 toToolResultContent 在模型支持图片输入时把 image_url 块塞进 role=tool content——OpenAI 规范 tool content 仅支持文本，严格上游挂起=CC 卡死根因；Anthropic 通道 v4.0.5 拆独立 user 消息后与相邻 user 连续→qwen 兼容层角色交替硬校验 400
+- CC 重写：toToolResultContent content 只留文本（空补占位，多文本块数组形状）；新增共享 addToolImagesAsUserMessage（图片拆独立后继 user 消息，常规+Cherry 路径共用）；CCImageCompatTransformer 保留（转换器层已无图可转，幂等）
+- Anthropic 重写：normalizeConsecutiveToolImageUsers 后处理——工具图 user 消息与后继 user 相邻则合并图块进其 content 头部（user 图文混合形状=[0][6][14] 同类已验证安全）；否则前插 assistant 占位文本恢复严格交替
+- 形状实证链闭环：内嵌拒（15:37）→同消息混排拒（16:07）→独立消息连续 user 拒（16:42）→最终合法形状=纯 tool_result 消息+图文合并 user 或 assistant 占位隔离
 
 ## v4.0.5（工具图片拆独立 user 消息 + 极简错误体细化，2026-09-06）
 - 16:07 单实证: v4.0.4 同消息混排（image:2 tool_result:11）仍被拒——兼容层（qwen 等，按模型分协议直传 Anthropic）对含 tool_result 的 user 消息要求纯 tool_result 块序列，同消息混入任何其他块都拒
