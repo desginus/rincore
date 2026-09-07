@@ -714,73 +714,100 @@ class ClaudeProvider(
             }
         }
     }.let { messagesArray ->
-        normalizeConsecutiveToolImageUsers(messagesArray)
+        normalizeMessageSequence(messagesArray)
     }.let { messagesArray ->
         if (!promptCaching) return@let messagesArray
         insertMessagesCacheControl(messagesArray, promptCacheTtl)
     }
 
     /**
-     * 4.0.6: 工具图片独立 user 消息的连续 user 规范化。
-     * PartGroup.Tools 拆分产生的独立图 user 消息可能与相邻 user 消息
-     * (tool_result 消息或后续用户消息) 形成连续 user — qwen 等严格
-     * 兼容层对角色交替硬校验 → 400。处理:
-     *   后一条是 user → 图块合并进后一条 content 头部 (user 图文混合
-     *     形状, 与 [0][6][14] 用户消息同类, 已验证安全)
-     *   否则 (后一条是 assistant 或结尾) → 在前插入 assistant 占位
-     *     文本消息, 恢复严格交替
+     * 4.0.9: 消息序列统一规范化 — 严格 assistant/user 交替保证。
+     * 网关 (qwen 兼容层) 按官方语义合并连续 user 消息, 合并后 tool_result
+     * 与 text/image 块混排 → CC 转换器挂起 (极简错误体; B118 形状链:
+     * 16:07 同消息混排拒 / 16:42 三连 user 拒 / 18:30 tool_result 后直接
+     * 用户消息拒)。qwen 兼容层唯一安全形状: 严格交替 + user 消息要么纯
+     * tool_result 要么纯 text+image。
+     * 两阶段算法:
+     *   阶段 1: 工具图消息 ([工具返回的图片] 标记) 合并进后继 user
+     *     content 头部 (图+文混合 user, 已验证安全形状)
+     *   阶段 2: 循环修正交替违规, 直到无相邻 user-user:
+     *     任一方含 tool_result → 插 assistant 占位隔离 (合并必产生混排)
+     *     双方均普通 user → 合并 content 块 (官方自动合并语义显式实现)
+     *   循环收敛: 每次合并消息数 -1, 占位打断一对相邻; 违规对单调不增。
+     *   assistant 占位文本对模型语义中性 ("已收到工具结果")。
      */
-    private fun normalizeConsecutiveToolImageUsers(messages: JsonArray): JsonArray {
+    private fun normalizeMessageSequence(messages: JsonArray): JsonArray {
         val toolImageMarker = "[工具返回的图片]"
-        val items = messages.map { it.jsonObject }
+        val items = messages.map { it.jsonObject }.toMutableList()
+
+        fun role(obj: JsonObject) = obj["role"]?.jsonPrimitive?.contentOrNull
+        fun contentBlocks(obj: JsonObject): List<JsonObject> =
+            (obj["content"] as? JsonArray)?.map { it.jsonObject } ?: emptyList()
+        fun hasBlock(obj: JsonObject, type: String) =
+            contentBlocks(obj).any { it["type"]?.jsonPrimitive?.contentOrNull == type }
         val isToolImageMsg: (JsonObject) -> Boolean = { obj ->
-            obj["role"]?.jsonPrimitive?.contentOrNull == "user" &&
-                (obj["content"] as? JsonArray)?.any {
-                    it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "text" &&
-                        it.jsonObject["text"]?.jsonPrimitive?.contentOrNull == toolImageMarker
-                } == true
+            role(obj) == "user" && contentBlocks(obj).any {
+                it["type"]?.jsonPrimitive?.contentOrNull == "text" &&
+                    it["text"]?.jsonPrimitive?.contentOrNull == toolImageMarker
+            }
         }
-        val result = mutableListOf<JsonObject>()
+
+        // 阶段 1: 工具图消息 → 合并进后继 user (去标记); 无后继 user 则原样
+        // (阶段 2 会处理它与前条的相邻关系)
+        val stage1 = mutableListOf<JsonObject>()
         var i = 0
         while (i < items.size) {
             val cur = items[i]
-            if (isToolImageMsg(cur)) {
-                val next = items.getOrNull(i + 1)
-                if (next != null && next["role"]?.jsonPrimitive?.contentOrNull == "user") {
-                    // 合并进后一条 user content 头部 (去标记文本, 留图块)
-                    val curBlocks = (cur["content"] as JsonArray)
-                        .filterNot {
-                            it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "text" &&
-                                it.jsonObject["text"]?.jsonPrimitive?.contentOrNull == toolImageMarker
-                        }
-                    val nextBlocks = (next["content"] as? JsonArray)?.toMutableList() ?: mutableListOf()
-                    nextBlocks.addAll(0, curBlocks)
-                    val merged = JsonObject(next.toMutableMap().apply {
-                        put("content", JsonArray(nextBlocks))
-                    })
-                    result.add(merged)
-                    i += 2
-                    continue
-                } else {
-                    // 前插 assistant 占位恢复交替
-                    result.add(buildJsonObject {
-                        put("role", "assistant")
-                        putJsonArray("content") {
-                            add(buildJsonObject {
-                                put("type", "text")
-                                put("text", "(已接收工具返回的图片, 见下一条消息)")
-                            })
-                        }
-                    })
-                    result.add(cur)
-                    i += 1
-                    continue
+            if (isToolImageMsg(cur) && i + 1 < items.size && role(items[i + 1]) == "user") {
+                val imgBlocks = contentBlocks(cur).filterNot {
+                    it["type"]?.jsonPrimitive?.contentOrNull == "text" &&
+                        it["text"]?.jsonPrimitive?.contentOrNull == toolImageMarker
                 }
+                stage1.add(JsonObject(items[i + 1].toMutableMap().apply {
+                    put("content", JsonArray(imgBlocks + contentBlocks(items[i + 1])))
+                }))
+                i += 2
+            } else {
+                stage1.add(cur)
+                i += 1
             }
-            result.add(cur)
-            i += 1
         }
-        return JsonArray(result)
+
+        // 阶段 2: 循环修正相邻 user-user 直到收敛
+        val seq = stage1.toMutableList()
+        var changed = true
+        var guard = 0
+        while (changed && guard++ < 64) {
+            changed = false
+            var k = 1
+            while (k < seq.size) {
+                val prev = seq[k - 1]
+                val cur = seq[k]
+                if (role(prev) == "user" && role(cur) == "user") {
+                    if (hasBlock(prev, "tool_result") || hasBlock(cur, "tool_result")) {
+                        // 占位隔离 — tool_result 与任何块混排都会挂网关
+                        seq.add(k, buildJsonObject {
+                            put("role", "assistant")
+                            putJsonArray("content") {
+                                add(buildJsonObject {
+                                    put("type", "text")
+                                    put("text", "(已收到工具结果)")
+                                })
+                            }
+                        })
+                    } else {
+                        // 官方自动合并语义的显式实现 (顺序保留)
+                        seq[k - 1] = JsonObject(cur.toMutableMap().apply {
+                            put("content", JsonArray(contentBlocks(prev) + contentBlocks(cur)))
+                        })
+                        seq.removeAt(k)
+                    }
+                    changed = true
+                }
+                k += 1
+            }
+        }
+        return JsonArray(seq)
     }
 
     /**
