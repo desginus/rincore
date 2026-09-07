@@ -84,6 +84,7 @@ import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.encodeBase64
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
+import me.rerere.ai.util.sessionHeader
 import me.rerere.ai.util.parseErrorDetail
 import me.rerere.ai.util.stringSafe
 import me.rerere.ai.util.toHeaders
@@ -786,24 +787,20 @@ class ChatCompletionsAPI(
                             put("type", if (!level.isEnabled) "disabled" else "enabled")
                         })
                         if (level.isEnabled && level != ReasoningLevel.AUTO) {
-                            // v3.6.49: DeepSeek 官方 reasoning_effort 只支持 high/max
+                            // 4.0.7 对齐原版 2.4.17: MEDIUM/HIGH→high, MAX→max,
+                            // 其余 (LOW/XHIGH) effort 直透 — 撤 v3.6.49 档位塌缩
                             val effort = when (level) {
-                                ReasoningLevel.LOW -> "high"
-                                ReasoningLevel.MEDIUM -> "high"
-                                ReasoningLevel.XHIGH, ReasoningLevel.MAX -> "max"
+                                ReasoningLevel.MEDIUM, ReasoningLevel.HIGH -> "high"
+                                ReasoningLevel.MAX -> "max"
                                 else -> level.effort
                             }
                             put("reasoning_effort", effort)
                         }
                     }
                 } else if (host == "opencode.ai" && level != ReasoningLevel.AUTO) {
-                    // v3.15.3: OFF 语义 none→minimal (强制思考型模型 disable 失败)
-                    obj {
-                        put(
-                            "reasoning_effort",
-                            if (level.effort == "none") "minimal" else level.effort,
-                        )
-                    }
+                    // 4.0.7 对齐原版: effort 直透 (OFF→none 原样发) —
+                    // 撤 v3.15.3 none→minimal 补丁
+                    obj { put("reasoning_effort", level.effort) }
                 } else null
             }
             "integrate.api.nvidia.com" -> {
@@ -822,18 +819,7 @@ class ChatCompletionsAPI(
                     } else null
                 }
             }
-            "api.commandcode.ai" -> {
-                // v3.15.4: CC 纯 reasoning_effort (B117: thinking 字段被拒, OFF→low 保连接)
-                if (level != ReasoningLevel.AUTO) {
-                    val effort = when (level) {
-                        ReasoningLevel.OFF -> "low"
-                        ReasoningLevel.LOW, ReasoningLevel.MEDIUM -> "low"
-                        ReasoningLevel.XHIGH, ReasoningLevel.MAX -> "max"
-                        else -> "high"
-                    }
-                    obj { put("reasoning_effort", effort) }
-                } else null
-            }
+
             else -> {
                 // OpenAI 官方: completions API 只支持 low/medium/high
                 if (level != ReasoningLevel.AUTO) {
@@ -1423,14 +1409,3 @@ class ChatCompletionsAPI(
 }
 
 
-/**
- * v3.20.0: x-opencode-session 头 — OpenCode 官方 2026-09-06 起强制
- * (缺头请求可能报错)。仅 opencode.ai host 且有会话 ID 时注入,
- * 其余 host 零影响; ID 为会话 UUID, 一次对话内稳定。
- */
-private fun Request.Builder.sessionHeader(baseUrl: String, conversationId: String?): Request.Builder {
-    if (conversationId.isNullOrBlank()) return this
-    val host = runCatching { baseUrl.toHttpUrl().host }.getOrNull() ?: return this
-    if (host != "opencode.ai") return this
-    return addHeader("x-opencode-session", conversationId)
-}

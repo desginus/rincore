@@ -21,6 +21,20 @@ fun List<CustomHeader>.toHeaders(): Headers {
     }.build()
 }
 
+/**
+ * v3.20.0: x-opencode-session 头 — OpenCode 官方 2026-09-06 起强制
+ * (缺头请求可能报错)。仅 opencode.ai host 且有会话 ID 时注入,
+ * 其余 host 零影响; ID 为会话 UUID, 一次对话内稳定。
+ * 4.0.7: 从 ChatCompletionsAPI 私有函数提取为共享 (Anthropic 通道同用 —
+ * qwen3.8 等模型走 ClaudeProvider 时此前缺头)。
+ */
+fun Request.Builder.sessionHeader(baseUrl: String, conversationId: String?): Request.Builder {
+    if (conversationId.isNullOrBlank()) return this
+    val host = runCatching { baseUrl.toHttpUrl().host }.getOrNull() ?: return this
+    if (host != "opencode.ai") return this
+    return addHeader("x-opencode-session", conversationId)
+}
+
 fun Request.Builder.configureReferHeaders(url: String): Request.Builder {
     val httpUrl = url.toHttpUrl()
     return when (httpUrl.host) {

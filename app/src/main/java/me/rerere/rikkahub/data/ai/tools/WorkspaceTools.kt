@@ -364,16 +364,24 @@ private suspend fun WorkspaceRepository.readImageInRootfs(
     workspaceId: String,
     path: String,
 ): List<UIMessagePart> {
+    // 4.0.7: Image part 保持 v4.0.6 已实证形状 (host file:// URI, 模型可见可复述);
+    // 渲染侧由 LocalFileUriFetcher 接管 (app 私有目录进程内直读, targetSdk 37 合法)。
+    // text 引导: 模型在回复中原样复述 URI 即可渲染 — 触发零成本。
     val bytes = readRootfsBuffer(workspaceId, path).toByteArray()
 
     val filesManager = getKoin().get<FilesManager>()
     val uris = filesManager.createChatFilesByByteArrays(listOf(bytes))
+    val imageUri = uris.first().toString()
     return listOf(
-        UIMessagePart.Image(url = uris.first().toString()),
+        UIMessagePart.Image(url = imageUri),
         UIMessagePart.Text(
             buildJsonObject {
                 put("path", path)
                 put("description", "Image file read successfully")
+                put(
+                    "display_hint",
+                    "To show this image to the user, embed it in your reply as markdown: ![](workspace://${path.removePrefix("/")})",
+                )
             }.toString()
         ),
     )

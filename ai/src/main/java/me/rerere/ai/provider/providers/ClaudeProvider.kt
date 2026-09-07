@@ -31,6 +31,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import me.rerere.ai.provider.BuiltInTools
+import me.rerere.ai.util.sessionHeader
 import me.rerere.ai.provider.ProxyRoute
 import me.rerere.ai.provider.resolveProxy
 import me.rerere.ai.core.MessageRole
@@ -140,7 +141,8 @@ class ClaudeProvider(
                 .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
                 .addHeader("x-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
                 .addHeader("anthropic-version", ANTHROPIC_VERSION)
-                .configureReferHeaders(providerSetting.baseUrl)
+                .sessionHeader(providerSetting.baseUrl, params.conversationId)
+            .configureReferHeaders(providerSetting.baseUrl)
                 .build()
 
             Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
@@ -203,6 +205,7 @@ class ClaudeProvider(
             .addHeader("x-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
             .addHeader("anthropic-version", ANTHROPIC_VERSION)
             .addHeader("Content-Type", "application/json")
+            .sessionHeader(providerSetting.baseUrl, params.conversationId)
             .configureReferHeaders(providerSetting.baseUrl)
             .build()
 
@@ -371,7 +374,8 @@ class ClaudeProvider(
                         .addHeader("x-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
                         .addHeader("anthropic-version", ANTHROPIC_VERSION)
                         .addHeader("Content-Type", "application/json")
-                        .configureReferHeaders(providerSetting.baseUrl)
+                        .sessionHeader(providerSetting.baseUrl, params.conversationId)
+            .configureReferHeaders(providerSetting.baseUrl)
                         .build()
                     eventSourceRef.set(
                         EventSources.createFactory(
