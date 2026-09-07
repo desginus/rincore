@@ -3,7 +3,14 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v4.0.6 为最新）
+# RinCore 更新日志（v4.0.7 为最新）
+
+## v4.0.7（本地图片链接渲染根修 + 思考控制对齐原版 + Anthropic session 头，2026-09-07）
+- 图片渲染根因（决定性实验闭环）：rikkahub markdown fork 的 XssSafeLinks 把 file:// 协议 img src 改写为 '#'（URI 丢失，渲染层无解）；workspace:// 与 /workspace/ 绝对路径原样保留。之前"修好又坏"真相 = v3.15.x 工具返回改 host file:// URI 后模型复述被库打 '#'
+- 修复：readImageInRootfs 返回增补 display_hint 引导模型在回复中嵌入 ![](workspace://<path>)；渲染层 v3.11.31 起原生支持（Coil Fetcher 直读 rootfs + mtime cache key）。正确渲染格式：![](workspace:///workspace/相对路径)，file:// 不可用
+- 思考控制三处根修：①abilities 根本修复（listModels 均不带 abilities，UI 未编辑模型恒空 → REASONING 门控全哑；GenerationHandler transforms 前经 ModelRegistry.MODEL_ABILITIES 按 modelId 兜底）②CC thinkingControlFields 对齐原版 2.4.17（deepseek 家族撤 v3.6.49 档位塌缩 MEDIUM/HIGH→high MAX→max 其余直透；opencode.ai 撤 v3.15.3 none→minimal effort 直透；删 v3.15.4 commandcode 特判落 else 兜底）③Anthropic thinkingField 已对齐保持（adaptive+output_config.effort）
+- session 头：sessionHeader 提取到 ai/util/Request.kt 共享，ClaudeProvider 3 处 /messages 注入（streamText/generateText/2013 重试）
+- 过程教训：git 身份丢失致 commit 静默失败后误派旧代码 dispatch（已取消重派）；patch 后 checkout 恢复与再注入叠加产生重复声明（CI 红 1 次后去重修复）——文件操作必须先重读现场再动手
 
 ## v4.0.6（工具图片格式基础层重写 CC+Anthropic 双通道，2026-09-06）
 - 基础层根因（用户锚定 Workspace ReadFile 返回，原生阿里云无此问题）：CC 通道 toToolResultContent 在模型支持图片输入时把 image_url 块塞进 role=tool content——OpenAI 规范 tool content 仅支持文本，严格上游挂起=CC 卡死根因；Anthropic 通道 v4.0.5 拆独立 user 消息后与相邻 user 连续→qwen 兼容层角色交替硬校验 400
