@@ -602,7 +602,7 @@ class ClaudeProvider(
 
             // 4.0.0 重写: thinking 家族三态提取为独立纯函数
             if (params.model.abilities.contains(ModelAbility.REASONING) && !minimal) {
-                thinkingField(isMiniMaxFamily, params.reasoningLevel)?.forEach { (k, v) -> put(k, v) }
+                thinkingFields(isMiniMaxFamily, params.reasoningLevel).forEach { (k, v) -> put(k, v) }
             }
 
 
@@ -655,22 +655,38 @@ class ClaudeProvider(
      *   其他家族: 完整协议 (adaptive + display + output_config effort)
      * OFF → disabled; AUTO → adaptive 无 effort; 档位 → adaptive + effort。
      */
-    private fun thinkingField(isMiniMaxFamily: Boolean, level: ReasoningLevel): JsonObject? = when (level) {
-        ReasoningLevel.OFF -> buildJsonObject { put("type", "disabled") }
-        ReasoningLevel.AUTO -> buildJsonObject {
-            put("type", "adaptive")
-            if (!isMiniMaxFamily) put("display", "summarized")
-        }
-        else -> buildJsonObject {
-            put("type", "adaptive")
-            if (!isMiniMaxFamily) put("display", "summarized")
-            if (!isMiniMaxFamily) {
-                put("output_config", buildJsonObject {
-                    put("effort", level.effort)
+    /**
+     * 4.0.10: thinking 顶层字段集 — 返回键即请求体顶层字段名。
+     * v4.0.0-v4.0.9 语义错误: 旧实现返回 thinking 的值对象再 forEach 平铺,
+     * thinking 内部字段 (type/display/output_config) 被铺平到请求体顶层,
+     * qwen 兼容层 schema 校验非法字段直接 400 且返回极简空错误体
+     * (18:30/20:11 两单 keys 裸 type+display 实证)。
+     * 正确语义: thinking={type,display?} 与 output_config={effort} 是独立的
+     * 顶层字段, 各自完整嵌套 — 与原版内联 put 行为等价。
+     */
+    private fun thinkingFields(isMiniMaxFamily: Boolean, level: ReasoningLevel): Map<String, JsonObject> =
+        when (level) {
+            ReasoningLevel.OFF -> mapOf(
+                "thinking" to buildJsonObject { put("type", "disabled") }
+            )
+            ReasoningLevel.AUTO -> mapOf(
+                "thinking" to buildJsonObject {
+                    put("type", "adaptive")
+                    if (!isMiniMaxFamily) put("display", "summarized")
+                }
+            )
+            else -> buildMap {
+                put("thinking", buildJsonObject {
+                    put("type", "adaptive")
+                    if (!isMiniMaxFamily) put("display", "summarized")
                 })
+                if (!isMiniMaxFamily) {
+                    put("output_config", buildJsonObject {
+                        put("effort", level.effort)
+                    })
+                }
             }
         }
-    }
 
     private fun cacheControlEphemeral(promptCacheTtl: ClaudePromptCacheTtl) = buildJsonObject {
         put("type", "ephemeral")
