@@ -952,15 +952,6 @@ class GenerationHandler(
         val estTotalTokens = totalChars / 2.5
         Log.i(TAG, "Request total: ${internalMessages.size} messages, ${totalChars}c (~${estTotalTokens.toInt()}t)")
 
-        // 4.0.7: abilities 根本修复 — 自定义模型 (listModels 不带 abilities,
-        // UI 未编辑过的) abilities 恒空 → 思考控制/工具门控全哑。注册表按
-        // modelId 兜底 (原版 ModelRegistry 语义), 命中即还原真实能力。
-        // 置于 transforms 之前: transformer 链同样消费 abilities/modalities。
-        val modelWithAbilities = if (model.abilities.isEmpty()) {
-            val inferred = ModelRegistry.MODEL_ABILITIES.getData(model.modelId)
-            model.copy(abilities = inferred)
-        } else model
-
         // 协议层: 发送前结构性保证 (首条 system + tool 配对) — 幂等, 合规消息零修改
         val protocolMessages = MessageProtocol.enforce(internalMessages)
         if (protocolMessages != internalMessages) {
