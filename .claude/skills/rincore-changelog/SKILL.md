@@ -3,7 +3,14 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v4.0.9 为最新）
+# RinCore 更新日志（v4.0.10 为最新）
+
+## v4.0.10（thinking 字段语义结构根修 + 放弃 Cherry 分裂模式，2026-09-07）
+- 根本根因（18:30/20:11 两单同根）：thinkingField 返回 thinking 值对象再 forEach 平铺 → type 和 display 被铺平到请求体顶层 → qwen 网关 schema 校验非法字段直接 400 且返回极简空错误体。v4.0.8 backfill 激活 thinking 后 bug 才暴露（v4.0.6 压测时 abilities 空 thinking 未激活）
+- thinkingFields 修正为返回 Map 字段名→值：thinking={type,display?} 与 output_config={effort} 独立顶层字段完整嵌套。keys 固定为 model,messages,max_tokens,stream,system,thinking[,output_config],tools，无裸 type/display（模拟回归 4 场景 PASS）
+- 放弃 Cherry 分裂模式（v3.17.0 引入的 buildMessagesCherry 独立路径）：删除 cherry 分支分派+buildCherryAssistantMessage 全函数+相关注释，请求构造统一为单一路径。cherryCompatMode 数据壳保留 DataStore 兼容（UI Legacy 壳标注），已无行为分支
+- CC 通道无同型 bug（thinking 嵌套对象平铺安全），不改
+- 教训：提取函数返回值必须是"被掉进的字段集合"而不是"某个字段的值对象"——forEach 平铺同源 bug 在 thinkingControlFields（CC）处也存在，但 CC 通道返回的是顶层字段集合本身所以无 bug。函数自评：返回类型改变语义完全变
 
 ## v4.0.9（消息序列统一规范化两阶段重写，2026-09-07）
 - 18:30 单暴露序列级缺口（同一网关合并语义下的漏网形状）：REQ_META [10]=user(tool_result:2) → [11]=user(text:1) 两连 user。网关按官方语义合并连续 user → 合并后 tool_result 与 text 块混排 → CC 转换器挂起（极简错误体）。v4.0.6 规范化只覆盖工具图消息，普通 tool_result+用户消息场景漏网（16:07 实证过混排必挂）
