@@ -3,9 +3,15 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v4.0.12 为最新）
+# RinCore 更新日志（v4.0.13 为最新）
 
 ZoomableAsyncImage fallback 现在显示 resolver 失败原因 (resolveDetailed.reason)：reason=prefix_not_recognized / invalid_path / no_workspace / not_found / extension_rejected 或 not_workspace_uri。按具体 reason 针对性根治，所需一次数据收集明确替代回滚方向。
+
+## v4.0.13（图片落盘/读取自动注入标准本地渲染 URL，2026-09-07）
+- 按用户指示放弃模型自己拼凑地址；在图片落盘或读取返回瞬间自动注入 render_url
+- 标准格式：file:///data/data/me.rincore.app/files/workspaces/<UUID>/files/<relPath>，严格对齐当前 resolver 逻辑（HOST_WS_PREFIXES 识别 file:///data/data/.../workspaces/<UUID>/files/ 前缀并 normalize 到 /workspace/<rel>）以及模型回馈的精确链接方案
+- 注入点：readImageInRootfs 返回、write_file 写入图片扩展名文件后的返回
+- 修复 CI 编译错误：Map<String,JsonElement> 要求用 JsonPrimitive 包装 render_url
 
 ## v4.0.12（仅回滚图片方向本地链接解析，2026-09-07）
 - 用户指示：仅回滚图片方向，其他绝对不动
