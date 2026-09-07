@@ -3,7 +3,12 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v4.0.8 为最新）
+# RinCore 更新日志（v4.0.9 为最新）
+
+## v4.0.9（消息序列统一规范化两阶段重写，2026-09-07）
+- 18:30 单暴露序列级缺口（同一网关合并语义下的漏网形状）：REQ_META [10]=user(tool_result:2) → [11]=user(text:1) 两连 user。网关按官方语义合并连续 user → 合并后 tool_result 与 text 块混排 → CC 转换器挂起（极简错误体）。v4.0.6 规范化只覆盖工具图消息，普通 tool_result+用户消息场景漏网（16:07 实证过混排必挂）
+- normalizeConsecutiveToolImageUsers 整段重写为 normalizeMessageSequence（两阶段算法）：阶段 1 工具图消息合并进后继 user content 头部；阶段 2 循环修正交替违规直到收敛——任一方含 tool_result 则插 assistant 占位隔离（合并必混排），双方普通 user 则显式合并（官方自动合并语义实现，顺序保留）；guard 64 防死循环
+- 五形状模拟回归全 PASS：18:30 现场 / 16:42 图消息 / v4.0.6 压测回归 / 普通图文合并 / 正常交替零修改。教训：规范化类改动必须对全部已知形状做模拟回归（v4.0.6 的单遍算法在 16:42 形状上模拟即 FAIL——当时没做就上线了）
 
 ## v4.0.8（思考控制 UI 门控数据层兜底 + 图片展示引导全覆盖，2026-09-07）
 - 思考控制残留根因（数据生命周期层）：v4.0.7 只兜底了请求层，历史遗留模型持久化 abilities 恒空 → UI 门控（ChatInput 思考按钮读 getCurrentChatModel().abilities）依然空值，按钮根本不显示。原版能工作不是有额外代码，而是模型都经新 UI 添加（添加时注入并持久化）
