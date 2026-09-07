@@ -344,7 +344,7 @@ private fun createShellTool(
                     if (result.truncated) put("truncated", true)
                     if (imagePaths.isNotEmpty()) {
                         put("render_urls", buildJsonArray {
-                            imagePaths.forEach { put(buildRenderUrl(workspaceId, it)) }
+                            imagePaths.forEach { add(JsonPrimitive(buildRenderUrl(workspaceId, it))) }
                         })
                     }
                 }.toString()
