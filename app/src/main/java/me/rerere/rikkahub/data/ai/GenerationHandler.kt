@@ -831,6 +831,15 @@ class GenerationHandler(
     ) {
         // v3.6.74: 节选最近对话 (原上下文降维) 方向废弃 — 消息一律原样发送, 零改动
         val effectiveMessages: List<UIMessage> = messages
+
+        // 4.0.7: abilities 根本修复 — 自定义模型 (listModels 不带 abilities,
+        // UI 未编辑过的) abilities 恒空 → 思考控制/工具门控全哑。注册表按
+        // modelId 兜底 (原版 ModelRegistry 语义), 命中即还原真实能力。
+        // 置于 transforms 之前: transformer 链同样消费 abilities/modalities。
+        val modelWithAbilities = if (model.abilities.isEmpty()) {
+            val inferred = ModelRegistry.MODEL_ABILITIES.getData(model.modelId)
+            model.copy(abilities = inferred)
+        } else model
         var internalMessages = buildList {
             val sysPromptLen: Int
             val memPromptLen: Int
