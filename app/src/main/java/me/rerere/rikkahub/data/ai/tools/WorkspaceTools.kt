@@ -7,6 +7,7 @@ package me.rerere.rikkahub.data.ai.tools
  * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.JsonObjectBuilder
@@ -247,7 +248,9 @@ private fun createShowFileTool(
     name = "workspace_show_file",
     description = """
         Present an existing workspace file to the user as a file chip attached to the conversation.
-        Use this when you need to hand over or display a file to the user (e.g. a generated document, report, image).
+        Use this for documents, reports, or other downloadable files that the user may want to export/share.
+        Do NOT use this for images that should appear inline in the chat bubble — inline images are handled
+        automatically via render_url in workspace_read_file / workspace_write_file / workspace_shell results.
         The file must already exist — writing a file does NOT show it automatically; call this tool explicitly.
     """.trimIndent().replace("\n", " "),
     parameters = {
@@ -329,6 +332,8 @@ private fun createShellTool(
             ?.times(1_000L)
             ?: WorkspaceManager.DEFAULT_COMMAND_TIMEOUT_MS
         val result = workspaceRepository.executeCommand(workspaceId, command, cwd, timeoutMillis)
+        val combinedOutput = (result.stdout ?: "") + "\n" + (result.stderr ?: "")
+        val imagePaths = extractImagePathsFromText(combinedOutput)
         listOf(
             UIMessagePart.Text(
                 buildJsonObject {
@@ -337,6 +342,11 @@ private fun createShellTool(
                     put("stderr", result.stderr)
                     put("timedOut", result.timedOut)
                     if (result.truncated) put("truncated", true)
+                    if (imagePaths.isNotEmpty()) {
+                        put("render_urls", buildJsonArray {
+                            imagePaths.forEach { put(buildRenderUrl(workspaceId, it)) }
+                        })
+                    }
                 }.toString()
             )
         )
@@ -375,6 +385,20 @@ private suspend fun WorkspaceRepository.readRootfsBuffer(
  * 模型在回复中原样复述 ![](render_url) 即可被 Markdown/ZoomableAsyncImage
  * 直接渲染, 无需再自己拼凑地址。
  */
+/**
+ * 4.0.14: 从 shell stdout/stderr 中启发式提取可能生成的图片路径。
+ * 支持 /workspace/...、workspace://...、file:///data/data/.../files/... 等形态。
+ * 提取结果用于在 shell 返回中附带 render_urls，减少模型再次 read_file 的负担。
+ */
+private fun extractImagePathsFromText(text: String): List<String> {
+    if (text.isBlank()) return emptyList()
+    val regex = """(?i)(?:file://)?(?:/workspace/|workspace://|/data/data/[^\s"'`<>|]*/files/workspaces/[^\s"'`<>|]*/files/)[^\s"'`<>|]+\.(?:png|jpg|jpeg|gif|webp|bmp|svg|heic|heif|avif|ico)""".toRegex()
+    return regex.findAll(text)
+        .map { it.value.trim() }
+        .distinct()
+        .toList()
+}
+
 private fun buildRenderUrl(workspaceId: String, path: String): String {
     val rel = path.trimStart('/').removePrefix("workspace/").removePrefix("/workspace/")
     return "file:///data/data/me.rincore.app/files/workspaces/$workspaceId/files/$rel"

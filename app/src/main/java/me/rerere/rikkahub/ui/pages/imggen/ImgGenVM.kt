@@ -38,9 +38,21 @@ data class GeneratedImage(
     val id: Int,
     val prompt: String,
     val filePath: String,
+    val renderUrl: String,
     val timestamp: Long,
     val model: String
 )
+
+
+/**
+ * 4.0.14: AI 图片生成后返回标准本地渲染 URL。
+ * 图片保存在 context.filesDir/images/ 下，格式为:
+ * file:///data/data/me.rincore.app/files/images/<filename>
+ */
+private fun buildImageRenderUrl(filePath: String): String {
+    val file = java.io.File(filePath)
+    return "file:///data/data/me.rincore.app/files/images/${file.name}"
+}
 
 private fun GenMediaEntity.toGeneratedImage(filesManager: FilesManager): GeneratedImage {
     val imagesDir = filesManager.getImagesDir()
@@ -50,6 +62,7 @@ private fun GenMediaEntity.toGeneratedImage(filesManager: FilesManager): Generat
         id = this.id,
         prompt = this.prompt,
         filePath = fullPath,
+        renderUrl = buildImageRenderUrl(fullPath),
         timestamp = this.createAt,
         model = this.modelId
     )
@@ -253,6 +266,7 @@ class ImgGenVM(
                     id = 0,
                     prompt = prompt,
                     filePath = imageFile.absolutePath,
+                    renderUrl = buildImageRenderUrl(imageFile.absolutePath),
                     timestamp = System.currentTimeMillis(),
                     model = modelName
                 )
@@ -272,6 +286,7 @@ class ImgGenVM(
                         id = 0, // Will be updated after database insertion
                         prompt = prompt,
                         filePath = imageFile.absolutePath,
+                        renderUrl = buildImageRenderUrl(imageFile.absolutePath),
                         timestamp = System.currentTimeMillis(),
                         model = modelName
                     )

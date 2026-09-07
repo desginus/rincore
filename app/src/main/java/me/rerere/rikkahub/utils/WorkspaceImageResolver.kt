@@ -26,13 +26,31 @@ internal val HOST_WS_PREFIXES = listOf(
     "/data/user/0/",
 )
 
+/**
+ * v4.0.14: /data/user/0/<pkg> 是 /data/data/<pkg> 的符号链接别名，
+ * resolver 在渲染端无法穿透该别名（症状：stat 可达、字节不通）。
+ * 所有 host 路径入口统一规范化为字面 /data/data 前缀后再处理。
+ */
+internal fun normalizeDataUserAlias(raw: String): String {
+    val lower = raw.lowercase()
+    val prefixUser = "/data/user/0/"
+    val prefixData = "/data/data/"
+    val idx = lower.indexOf(prefixUser)
+    if (idx < 0) return raw
+    val after = raw.substring(idx + prefixUser.length)
+    val slash = after.indexOf('/')
+    return if (slash < 0) raw
+    else raw.substring(0, idx) + prefixData + after
+}
+
 /** host 字面前缀 → 规范化为 /workspace/<rel> (UUID 段忽略, 遍历命中由 resolve 完成) */
 internal fun normalizeHostWorkspacePath(raw: String): String? {
-    val lower = raw.lowercase().trim()
+    val normalizedRaw = normalizeDataUserAlias(raw)
+    val lower = normalizedRaw.lowercase().trim()
     val anchorIdx = lower.indexOf(HOST_WS_ANCHOR)
     if (anchorIdx < 0) return null
     // workspaces/<UUID>/files/<rel> — 取锚点后第 2 个 '/' 之后
-    val afterAnchor = raw.trim().substring(anchorIdx + HOST_WS_ANCHOR.length)
+    val afterAnchor = normalizedRaw.trim().substring(anchorIdx + HOST_WS_ANCHOR.length)
     val secondSlash = afterAnchor.indexOf('/')
     if (secondSlash < 0) return null
     val afterUuid = afterAnchor.substring(secondSlash + 1)
@@ -94,10 +112,11 @@ fun percentDecodeLenient(s: String): String {
  * 空路径 (指向根) → null。返回值已规范为 "/a/b/c" 形式。
  */
 fun resolveWorkspaceRelPath(raw: String): String? {
-    val lower = raw.lowercase().trim()
+    val normalizedRaw = normalizeDataUserAlias(raw)
+    val lower = normalizedRaw.lowercase().trim()
     // v3.15.2: host 字面前缀先归一化 (file:///data/data|user/0/.../workspaces/<UUID>/files/<rel>)
     if (HOST_WS_PREFIXES.any { lower.startsWith(it) }) {
-        val normalized = normalizeHostWorkspacePath(raw) ?: return null
+        val normalized = normalizeHostWorkspacePath(normalizedRaw) ?: return null
         return resolveWorkspaceRelPath(normalized)
     }
     val rest: String = when {
