@@ -98,7 +98,6 @@ private fun createReadFileTool(
         Read a file using the assistant's bound workspace Rootfs. Paths must be absolute inside Rootfs.
         Use /workspace for the workspace files area.
         Supports UTF-8 text files and image files (png, jpg, jpeg, gif, webp, bmp, svg, heic, heif, avif, ico).
-        To show any workspace image to the user, embed it in your reply as markdown ![](workspace://<path>) e.g. ![](workspace://out.png). Do NOT use file:// or relative paths in image links — they will not render.
     """.trimIndent().replace("\n", " "),
     parameters = {
         InputSchema.Obj(
@@ -160,21 +159,7 @@ private fun createWriteFileTool(
         val text = params.string("text") ?: error("text is required")
         val overwrite = params["overwrite"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: true
         val entry = workspaceRepository.writeTextInRootfs(workspaceId, path, text, overwrite)
-        val resultParts = mutableListOf(UIMessagePart.Text(entry.toJson().toString()))
-        // 4.0.7.1: 图片展示引导 — 模型生成图片文件后, 引导其在回复中以
-        // workspace:// 链接嵌入 (该格式被渲染器原生支持; file:// 会被
-        // markdown 库安全层改写失效, 相对路径解析不到)
-        if (path.isImagePath()) {
-            resultParts += UIMessagePart.Text(
-                buildJsonObject {
-                    put(
-                        "display_hint",
-                        "To show this image to the user, embed it in your reply as markdown: ![](workspace://${path.removePrefix("/")})",
-                    )
-                }.toString()
-            )
-        }
-        resultParts
+        listOf(UIMessagePart.Text(entry.toJson().toString()))
     },
 )
 
@@ -296,8 +281,7 @@ private fun createShellTool(
         if (!defaultCwd.isNullOrBlank()) {
             append("Defaults to '$defaultCwd'. ")
         }
-        append("Requires Rootfs to be installed and ready. ")
-        append("If a command generates an image the user should see, embed it in your reply as markdown ![](workspace://<path>) e.g. ![](workspace://out.png). Do NOT use file:// or relative paths in image links — they will not render.")
+        append("Requires Rootfs to be installed and ready.")
     },
     parameters = {
         InputSchema.Obj(
@@ -380,24 +364,16 @@ private suspend fun WorkspaceRepository.readImageInRootfs(
     workspaceId: String,
     path: String,
 ): List<UIMessagePart> {
-    // 4.0.7: Image part 保持 v4.0.6 已实证形状 (host file:// URI, 模型可见可复述);
-    // 渲染侧由 LocalFileUriFetcher 接管 (app 私有目录进程内直读, targetSdk 37 合法)。
-    // text 引导: 模型在回复中原样复述 URI 即可渲染 — 触发零成本。
     val bytes = readRootfsBuffer(workspaceId, path).toByteArray()
 
     val filesManager = getKoin().get<FilesManager>()
     val uris = filesManager.createChatFilesByByteArrays(listOf(bytes))
-    val imageUri = uris.first().toString()
     return listOf(
-        UIMessagePart.Image(url = imageUri),
+        UIMessagePart.Image(url = uris.first().toString()),
         UIMessagePart.Text(
             buildJsonObject {
                 put("path", path)
                 put("description", "Image file read successfully")
-                put(
-                    "display_hint",
-                    "To show this image to the user, embed it in your reply as markdown: ![](workspace://${path.removePrefix("/")})",
-                )
             }.toString()
         ),
     )

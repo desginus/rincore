@@ -86,14 +86,6 @@ fun ZoomableAsyncImage(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            val reason = if (isWorkspaceUri(model)) {
-                me.rerere.rikkahub.utils.WorkspaceImageResolver.resolveDetailed(model).reason
-            } else "not_workspace_uri"
-            Text(
-                text = "reason=$reason",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
             if (!contentDescription.isNullOrBlank()) {
                 Text(
                     text = contentDescription,
