@@ -3,7 +3,9 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v4.0.10 为最新）
+# RinCore 更新日志（v4.0.11 诊断窗口，2026-09-07）
+
+ZoomableAsyncImage fallback 现在显示 resolver 失败原因 (resolveDetailed.reason)：reason=prefix_not_recognized / invalid_path / no_workspace / not_found / extension_rejected 或 not_workspace_uri。按具体 reason 针对性根治，所需一次数据收集明确替代回滚方向。
 
 ## v4.0.10（thinking 字段语义结构根修 + 放弃 Cherry 分裂模式，2026-09-07）
 - 根本根因（18:30/20:11 两单同根）：thinkingField 返回 thinking 值对象再 forEach 平铺 → type 和 display 被铺平到请求体顶层 → qwen 网关 schema 校验非法字段直接 400 且返回极简空错误体。v4.0.8 backfill 激活 thinking 后 bug 才暴露（v4.0.6 压测时 abilities 空 thinking 未激活）
