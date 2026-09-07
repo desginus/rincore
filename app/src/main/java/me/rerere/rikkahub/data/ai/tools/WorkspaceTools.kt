@@ -6,6 +6,7 @@ package me.rerere.rikkahub.data.ai.tools
  * 差异: 工具审批默认值 (v3.6.13)、CWD 支持等自研
  * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.JsonObjectBuilder
@@ -162,7 +163,7 @@ private fun createWriteFileTool(
         val entry = workspaceRepository.writeTextInRootfs(workspaceId, path, text, overwrite)
         val resultJson = entry.toJson().toMutableMap()
         if (path.isImagePath()) {
-            resultJson["render_url"] = buildRenderUrl(workspaceId, path)
+            resultJson["render_url"] = JsonPrimitive(buildRenderUrl(workspaceId, path))
         }
         listOf(UIMessagePart.Text(JsonObject(resultJson).toString()))
     },
