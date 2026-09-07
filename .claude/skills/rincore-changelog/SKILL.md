@@ -3,7 +3,14 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v4.0.7 为最新）
+# RinCore 更新日志（v4.0.8 为最新）
+
+## v4.0.8（思考控制 UI 门控数据层兜底 + 图片展示引导全覆盖，2026-09-07）
+- 思考控制残留根因（数据生命周期层）：v4.0.7 只兜底了请求层，历史遗留模型持久化 abilities 恒空 → UI 门控（ChatInput 思考按钮读 getCurrentChatModel().abilities）依然空值，按钮根本不显示。原版能工作不是有额外代码，而是模型都经新 UI 添加（添加时注入并持久化）
+- 根本修复：PreferencesStore.settingsFlow providers 解码后 abilities backfill（按注册表还原空 abilities 模型，读时增强不写回），一处修复覆盖 UI 门控+请求层+任意未来消费点
+- 图片展示残留根因（引导覆盖面）：v4.0.7 display_hint 只挂 read_file，用户场景"模型生成图片后展示"走 write_file/shell 无任何引导
+- 修复：①write_file 图片路径返回增补 display_hint ②shell description 增补展示格式（工具列表常驻可见）③read_file description 同步；全部引导明确禁用 file:// 与相对路径
+- 方法论教训：修门控问题必须全消费点排查（UI 门控与请求层是两条独立读取路径，只修一条=没修完）；"原版能用"要区分"代码差异"与"数据差异"——历史数据问题不能用代码对齐解决
 
 ## v4.0.7（本地图片链接渲染根修 + 思考控制对齐原版 + Anthropic session 头，2026-09-07）
 - 图片渲染根因（决定性实验闭环）：rikkahub markdown fork 的 XssSafeLinks 把 file:// 协议 img src 改写为 '#'（URI 丢失，渲染层无解）；workspace:// 与 /workspace/ 绝对路径原样保留。之前"修好又坏"真相 = v3.15.x 工具返回改 host file:// URI 后模型复述被库打 '#'
