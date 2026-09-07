@@ -5,6 +5,7 @@ package me.rerere.rikkahub.data.ai.tools
  * 来源: 原版移植 + 自研 (工作区工具增强)
  * 差异: 工具审批默认值 (v3.6.13)、CWD 支持等自研
  * ───────────────────────────────────────────────────────────────*/
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.JsonObjectBuilder
@@ -159,7 +160,11 @@ private fun createWriteFileTool(
         val text = params.string("text") ?: error("text is required")
         val overwrite = params["overwrite"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: true
         val entry = workspaceRepository.writeTextInRootfs(workspaceId, path, text, overwrite)
-        listOf(UIMessagePart.Text(entry.toJson().toString()))
+        val resultJson = entry.toJson().toMutableMap()
+        if (path.isImagePath()) {
+            resultJson["render_url"] = buildRenderUrl(workspaceId, path)
+        }
+        listOf(UIMessagePart.Text(JsonObject(resultJson).toString()))
     },
 )
 
@@ -360,6 +365,20 @@ private suspend fun WorkspaceRepository.readRootfsBuffer(
     return ByteArrayOutputStream(size.toInt()).also { exportRootfsFile(workspaceId, path, it) }
 }
 
+/**
+ * 4.0.13: 图片落盘/读取后生成标准本地渲染 URL。
+ * 格式严格对齐当前 resolver 已支持的 host 字面路径:
+ * file:///data/data/<package>/files/workspaces/<UUID>/files/<relPath>
+ * 该路径由 proot -b 参数决定, resolver 通过 HOST_WS_PREFIXES 识别并
+ * normalize 到 /workspace/<rel>, 再遍历 workspace root 命中真实文件。
+ * 模型在回复中原样复述 ![](render_url) 即可被 Markdown/ZoomableAsyncImage
+ * 直接渲染, 无需再自己拼凑地址。
+ */
+private fun buildRenderUrl(workspaceId: String, path: String): String {
+    val rel = path.trimStart('/').removePrefix("workspace/").removePrefix("/workspace/")
+    return "file:///data/data/me.rincore.app/files/workspaces/$workspaceId/files/$rel"
+}
+
 private suspend fun WorkspaceRepository.readImageInRootfs(
     workspaceId: String,
     path: String,
@@ -374,6 +393,7 @@ private suspend fun WorkspaceRepository.readImageInRootfs(
             buildJsonObject {
                 put("path", path)
                 put("description", "Image file read successfully")
+                put("render_url", buildRenderUrl(workspaceId, path))
             }.toString()
         ),
     )
