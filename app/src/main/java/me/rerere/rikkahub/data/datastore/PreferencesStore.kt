@@ -45,6 +45,7 @@ import kotlinx.serialization.Transient
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.provider.Model
+import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
@@ -335,7 +336,23 @@ class SettingsStore(
                 assistantTags = preferences[ASSISTANT_TAGS]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: emptyList(),
-                providers = JsonInstant.decodeFromString(preferences[PROVIDERS] ?: "[]"),
+                // 4.0.7.1: abilities 数据层兜底 — 历史遗留模型 (旧版添加时无
+                // abilities 注入) 持久化 abilities 为空, UI 门控 (ChatInput 思考
+                // 按钮) 与请求层 (REASONING/TOOL 参数) 全部哑火。加载时按注册表
+                // 还原真实能力 (读时增强, 不写回 DataStore), 一处修复覆盖全部
+                // 消费点 — 与原版"添加时注入"语义等价的运行时补全。
+                providers = JsonInstant.decodeFromString<List<ProviderSetting>>(
+                    preferences[PROVIDERS] ?: "[]"
+                ).map { provider ->
+                    val needsFix = provider.models.any { it.abilities.isEmpty() }
+                    if (!needsFix) provider else provider.copyProvider(
+                        models = provider.models.map { model ->
+                            if (model.abilities.isEmpty()) {
+                                model.copy(abilities = ModelRegistry.MODEL_ABILITIES.getData(model.modelId))
+                            } else model
+                        }
+                    )
+                },
                 assistants = JsonInstant.decodeFromString(preferences[ASSISTANTS] ?: "[]"),
                 dynamicColor = preferences[DYNAMIC_COLOR] != false,
                 themeId = preferences[THEME_ID] ?: PresetThemes[0].id,

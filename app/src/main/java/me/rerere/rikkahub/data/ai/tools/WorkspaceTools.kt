@@ -98,6 +98,7 @@ private fun createReadFileTool(
         Read a file using the assistant's bound workspace Rootfs. Paths must be absolute inside Rootfs.
         Use /workspace for the workspace files area.
         Supports UTF-8 text files and image files (png, jpg, jpeg, gif, webp, bmp, svg, heic, heif, avif, ico).
+        To show any workspace image to the user, embed it in your reply as markdown ![](workspace://<path>) e.g. ![](workspace://out.png). Do NOT use file:// or relative paths in image links — they will not render.
     """.trimIndent().replace("\n", " "),
     parameters = {
         InputSchema.Obj(
@@ -159,7 +160,21 @@ private fun createWriteFileTool(
         val text = params.string("text") ?: error("text is required")
         val overwrite = params["overwrite"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: true
         val entry = workspaceRepository.writeTextInRootfs(workspaceId, path, text, overwrite)
-        listOf(UIMessagePart.Text(entry.toJson().toString()))
+        val resultParts = mutableListOf(UIMessagePart.Text(entry.toJson().toString()))
+        // 4.0.7.1: 图片展示引导 — 模型生成图片文件后, 引导其在回复中以
+        // workspace:// 链接嵌入 (该格式被渲染器原生支持; file:// 会被
+        // markdown 库安全层改写失效, 相对路径解析不到)
+        if (path.isImagePath()) {
+            resultParts += UIMessagePart.Text(
+                buildJsonObject {
+                    put(
+                        "display_hint",
+                        "To show this image to the user, embed it in your reply as markdown: ![](workspace://${path.removePrefix("/")})",
+                    )
+                }.toString()
+            )
+        }
+        resultParts
     },
 )
 
@@ -281,7 +296,8 @@ private fun createShellTool(
         if (!defaultCwd.isNullOrBlank()) {
             append("Defaults to '$defaultCwd'. ")
         }
-        append("Requires Rootfs to be installed and ready.")
+        append("Requires Rootfs to be installed and ready. ")
+        append("If a command generates an image the user should see, embed it in your reply as markdown ![](workspace://<path>) e.g. ![](workspace://out.png). Do NOT use file:// or relative paths in image links — they will not render.")
     },
     parameters = {
         InputSchema.Obj(
