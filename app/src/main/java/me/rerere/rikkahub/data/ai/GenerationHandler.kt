@@ -808,6 +808,7 @@ class GenerationHandler(
 
     private suspend fun generateInternal(
         assistant: Assistant,
+        val startMs = System.currentTimeMillis()
         settings: Settings,
         retry: RetryState,
         messages: List<UIMessage>,
@@ -946,11 +947,12 @@ class GenerationHandler(
             workspaceCwd = workspaceCwd,
         )
 
+        val buildInternalMs = System.currentTimeMillis() - startMs
         val totalChars = internalMessages.sumOf { msg ->
             msg.parts.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }
         }
         val estTotalTokens = totalChars / 2.5
-        Log.i(TAG, "Request total: ${internalMessages.size} messages, ${totalChars}c (~${estTotalTokens.toInt()}t)")
+        Log.i(TAG, "Request total: ${internalMessages.size} messages, ${totalChars}c (~${estTotalTokens.toInt()}t), internalBuild=${buildInternalMs}ms")
 
         // 协议层: 发送前结构性保证 (首条 system + tool 配对) — 幂等, 合规消息零修改
         val protocolMessages = MessageProtocol.enforce(internalMessages)
@@ -1011,6 +1013,8 @@ class GenerationHandler(
             me.rerere.ai.util.TraceLogger.log(
                 "SSE", "round: toolResultCount=$toolRound messages=${internalMessages.size}"
             )
+            val preStreamMs = System.currentTimeMillis() - startMs
+            Log.i(TAG, "Pre-stream ready in ${preStreamMs}ms, calling provider...")
             providerImpl.streamText(
                 providerSetting = provider,
                 messages = internalMessages,

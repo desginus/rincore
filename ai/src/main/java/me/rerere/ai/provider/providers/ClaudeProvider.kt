@@ -209,11 +209,9 @@ class ClaudeProvider(
             .configureReferHeaders(providerSetting.baseUrl)
             .build()
 
-        Log.d(TAG, "streamText: ${json.encodeToString(requestBodyRef.get())}") // v3.6.17: 降 d
-
-        requestBodyRef.get()["messages"]!!.jsonArray.forEach {
-            Log.i(TAG, "streamText: $it")
-        }
+        val bodyJson = requestBodyRef.get()
+        val messagesArray = bodyJson["messages"]?.jsonArray
+        Log.d(TAG, "streamText: model=${bodyJson["model"]}, messages=${messagesArray?.size ?: 0}, bodyChars=${json.encodeToString(bodyJson).length}")
 
         val hasData = java.util.concurrent.atomic.AtomicBoolean(false)
         val streamStartMs = System.currentTimeMillis()
@@ -527,6 +525,7 @@ class ClaudeProvider(
         stream: Boolean = false,
         minimal: Boolean = false
     ): JsonObject {
+        val reqStartMs = System.currentTimeMillis()
         // v3.11.9: 家族分离定稿 (调研存档 docs/ecosystem/05-请求体格式调研/):
         //   - MiniMax 家族 (modelId 含 minimax): 顶层 cache_control (自动缓存
         //     模式) 不支持 — Pydantic 实证 (MiniMax/OpenRouter/LiteLLM 类网关
@@ -646,7 +645,9 @@ class ClaudeProvider(
                     }
                 }
             }
-        }.mergeCustomBody(params.customBody)
+        }.mergeCustomBody(params.customBody).also {
+            Log.d(TAG, "buildMessageRequest done in ${System.currentTimeMillis() - reqStartMs}ms, messages=${messages.size}")
+        }
     }
 
     /**
@@ -753,6 +754,7 @@ class ClaudeProvider(
      *   assistant 占位文本对模型语义中性 ("已收到工具结果")。
      */
     private fun normalizeMessageSequence(messages: JsonArray): JsonArray {
+        val normStartMs = System.currentTimeMillis()
         val toolImageMarker = "[工具返回的图片]"
         val items = messages.map { it.jsonObject }.toMutableList()
 
@@ -823,7 +825,9 @@ class ClaudeProvider(
                 k += 1
             }
         }
-        return JsonArray(seq)
+        return JsonArray(seq).also {
+            Log.d(TAG, "normalizeMessageSequence done in ${System.currentTimeMillis() - normStartMs}ms, in=${messages.size}, out=${it.size}")
+        }
     }
 
     /**
@@ -833,6 +837,7 @@ class ClaudeProvider(
         messages: JsonArray,
         promptCacheTtl: ClaudePromptCacheTtl
     ): JsonArray {
+        val cacheStartMs = System.currentTimeMillis()
         // 找出所有非 tool_result 的 user message 的索引
         val realUserIndices = messages.mapIndexedNotNull { index, msg ->
             val obj = msg.jsonObject
@@ -864,7 +869,9 @@ class ClaudeProvider(
                 })
                 JsonObject(obj + mapOf("content" to newContent))
             } else msg
-        })
+        }).also {
+            Log.d(TAG, "insertMessagesCacheControl done in ${System.currentTimeMillis() - cacheStartMs}ms")
+        }
     }
 
     private fun JsonArrayBuilder.addAssistantMessage(message: UIMessage) {
