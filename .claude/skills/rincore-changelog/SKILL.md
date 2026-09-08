@@ -3,9 +3,15 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v4.0.13 为最新）
+# RinCore 更新日志（v4.0.14 为最新）
 
 ZoomableAsyncImage fallback 现在显示 resolver 失败原因 (resolveDetailed.reason)：reason=prefix_not_recognized / invalid_path / no_workspace / not_found / extension_rejected 或 not_workspace_uri。按具体 reason 针对性根治，所需一次数据收集明确替代回滚方向。
+
+## v4.0.14（本地图片链接渲染增强：别名规范化 + 全场景 render_url，2026-09-07）
+- resolver 别名规范化：/data/user/0/<pkg> → /data/data/<pkg>，消除“stat 可达、字节不通”
+- workspace_shell 返回自动提取 render_urls：扫描 stdout/stderr 中的 /workspace/、workspace://、file:///data/data/.../files/workspaces/.../files/ 图片路径
+- workspace_show_file 描述更新：明确不推荐用于对话框内联图片，内联图片由 read_file/write_file/shell 的 render_url 自动处理
+- AI 图片生成（ImgGenVM）落盘时附加 renderUrl 字段，为发送到对话等场景做准备
 
 ## v4.0.13（图片落盘/读取自动注入标准本地渲染 URL，2026-09-07）
 - 按用户指示放弃模型自己拼凑地址；在图片落盘或读取返回瞬间自动注入 render_url
