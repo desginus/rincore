@@ -3,9 +3,18 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v4.0.14 为最新）
+# RinCore 更新日志（v4.0.15 为最新）
 
 ZoomableAsyncImage fallback 现在显示 resolver 失败原因 (resolveDetailed.reason)：reason=prefix_not_recognized / invalid_path / no_workspace / not_found / extension_rejected 或 not_workspace_uri。按具体 reason 针对性根治，所需一次数据收集明确替代回滚方向。
+
+## v4.0.15（长上下文首 token 延迟诊断，2026-09-08）
+- 在 GenerationHandler.generateInternal 与 ClaudeProvider 关键路径加毫秒级计时日志
+  (internalBuild / preStream / buildMessageRequest / normalizeMessageSequence /
+   insertMessagesCacheControl)
+- 消除两条与上下文大小成正比的大日志:
+  - 删除 streamText 中遍历打印每条消息完整 JSON 的 Log.i
+  - 完整请求体 Log.d 改为只打印 model/messages数/bodyChars
+- 不改业务逻辑, 等待用户抓取日志后定位真实瓶颈
 
 ## v4.0.14（本地图片链接渲染增强：别名规范化 + 全场景 render_url，2026-09-07）
 - resolver 别名规范化：/data/user/0/<pkg> → /data/data/<pkg>，消除“stat 可达、字节不通”
