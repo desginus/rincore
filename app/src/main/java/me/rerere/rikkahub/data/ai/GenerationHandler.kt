@@ -808,7 +808,6 @@ class GenerationHandler(
 
     private suspend fun generateInternal(
         assistant: Assistant,
-        val startMs = System.currentTimeMillis()
         settings: Settings,
         retry: RetryState,
         messages: List<UIMessage>,
@@ -830,6 +829,7 @@ class GenerationHandler(
         skipAssistantPrompt: Boolean = false,
         conversationId: Uuid? = null,
     ) {
+        val startMs = System.currentTimeMillis()
         // v3.6.74: 节选最近对话 (原上下文降维) 方向废弃 — 消息一律原样发送, 零改动
         val effectiveMessages: List<UIMessage> = messages
 
