@@ -1300,5 +1300,8 @@ mDNS 주소: .local 호스트네임을 사용하며, IP를 몰라도 같은 네�
 <string name="setting_page_asr_silence_duration">발화 종료 무음 시간</string>
 <string name="setting_page_asr_silence_duration_desc">이 시간 동안 연속 무음이 지속되면 발화를 종료합니다. 권장: 800–1000 ms.</string>
 <string name="setting_page_asr_milliseconds">밀리초</string>
+<string name="workspace_terminal_close_confirm_title">터미널 %1$d번을 닫으시겠습니까?</string>
+<string name="workspace_terminal_close_confirm_message">이 탭을 닫으면 실행 중인 프로세스가 종료됩니다.</string>
+<string name="workspace_terminal_close">닫기</string>
 </resources>
 

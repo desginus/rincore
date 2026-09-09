@@ -75,9 +75,10 @@ sealed class ASRProviderSetting {
         override val id: Uuid = Uuid.random(),
         override val name: String = "Volcengine ASR",
         val apiKey: String = "",
-        val websocketUrl: String = "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel",
+        val websocketUrl: String = VOLCENGINE_ASR_WEBSOCKET_URL,
         val resourceId: String = "volc.seedasr.sauc.duration",
         val language: String = "",
+        val silenceDurationMs: Int = 800,
     ) : ASRProviderSetting() {
         override fun copyProvider(
             id: Uuid,

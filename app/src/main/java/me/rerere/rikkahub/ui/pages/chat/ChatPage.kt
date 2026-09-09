@@ -57,6 +57,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.platform.LocalContext
 
@@ -351,6 +353,21 @@ private fun ChatPageContent(
     val toaster = LocalToaster.current
     val workspaceRepository: WorkspaceRepository = koinInject()
     var previewMode by rememberSaveable { mutableStateOf(false) }
+    val hazeState = rememberHazeState()
+    // v3.8.9: 分享面板 (外部 Activity) 返回后 Haze 模糊纹理失效成黑框,
+    // 进设置再返回能恢复 (导航触发重组), 分享返回不触发任何重组。
+    // ON_RESUME 递增 tick 强制背景重组, 重建模糊纹理。
+    var hazeRebuildTick by remember { mutableStateOf(0) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hazeRebuildTick++
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val assistant = setting.getCurrentAssistant()
     var showFilesSheet by remember { mutableStateOf(false) }
     val attachmentPickerActions = rememberChatAttachmentPickerActions(
@@ -381,7 +398,13 @@ private fun ChatPageContent(
     ) {
         AssistantBackground(
             setting = setting,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .hazeSource(hazeState)
+                .drawWithContent {
+                    @Suppress("UNUSED_EXPRESSION")
+                    hazeRebuildTick
+                    drawContent()
+                }
         )
         // v3.6.13: 对话设置对话框 — 延迟自动回复开关
 
@@ -410,6 +433,7 @@ private fun ChatPageContent(
                 val messageQueue by vm.messageQueue.collectAsStateWithLifecycle()
                 val voiceState by vm.voiceSession.state.collectAsStateWithLifecycle()
                 ChatInput(
+                    hazeState = hazeState,
                     onStartVoiceMode = onStartVoiceMode,
                     voiceState = voiceState,
                     onStopVoiceMode = vm.voiceSession::stop,
@@ -489,6 +513,7 @@ private fun ChatPageContent(
         ) { innerPadding ->
             ChatList(
                 innerPadding = innerPadding,
+                hazeState = hazeState,
                 conversation = conversation,
                 state = chatListState,
                 loading = loadingJob != null,

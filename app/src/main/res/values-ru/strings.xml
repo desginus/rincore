@@ -1300,5 +1300,8 @@
 <string name="setting_page_asr_silence_duration">Длительность паузы окончания высказывания</string>
 <string name="setting_page_asr_silence_duration_desc">Высказывание завершается после непрерывной паузы указанной длительности. Рекомендуется: 800–1000 мс.</string>
 <string name="setting_page_asr_milliseconds">мс</string>
+<string name="workspace_terminal_close_confirm_title">Закрыть терминал %1$d?</string>
+<string name="workspace_terminal_close_confirm_message">Закрытие этой вкладки приведет к завершению всех процессов, которые все еще в ней выполняются.</string>
+<string name="workspace_terminal_close">Закрыть</string>
 </resources>
 

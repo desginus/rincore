@@ -77,6 +77,11 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import dev.chrisbanes.haze.HazeInput
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.blur.HazeBlurStyle
+import dev.chrisbanes.haze.blur.hazeBlur
+import dev.chrisbanes.haze.blur.material3.Material3
 import com.dokar.sonner.ToastType
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collectLatest
@@ -134,6 +139,7 @@ fun ChatInput(
     onCancelClick: () -> Unit,
     onSendClick: () -> Unit,
     onLongSendClick: () -> Unit,
+    hazeState: HazeState,
     // 4.1.0: 消息发送队列 (2.5.0 移植)
     messageQueue: MessageQueueState = MessageQueueState(),
     onRemoveQueuedMessage: (Uuid) -> Unit = {},
@@ -145,6 +151,11 @@ fun ChatInput(
     onStopVoiceMode: () -> Unit = {},
 ) {
     val toaster = LocalToaster.current
+    val hazeTintColor = MaterialTheme.colorScheme.surfaceContainerLow
+    val inputHazeStyle = HazeBlurStyle.Material3 {
+        // v3.6.82: 8dp -> 4dp, 进一步降低 120Hz 下 GPU 模糊采样开销
+        blurRadius(4.dp)
+    }
     val assistant = settings.getCurrentAssistant()
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
@@ -214,11 +225,24 @@ fun ChatInput(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(containerShape),
+                    .clip(containerShape)
+                    .then(
+                        // v3.11.31: 流式生成中列表高频重绘 → blur 每帧重算是"磨砂
+                        // 经常卡掉"主因 — 生成期间降级为半透明纯色, 静止即恢复
+                        if (settings.displaySetting.enableBlurEffect && !loading) Modifier.hazeBlur(
+                            input = HazeInput.Sources(hazeState),
+                            style = inputHazeStyle,
+                        )
+                        else Modifier
+                    ),
                 shape = containerShape,
                 tonalElevation = 0.dp,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                // v3.11.34: color 与磨砂 modifier 条件必须同源 — 生成中 (loading)
+                // modifier 已降级但 color 仍透明 → 输入条整体透明的"特定情况"。
+                color = if (settings.displaySetting.enableBlurEffect && !loading) {
+                    Color.Transparent
+                } else hazeTintColor,
             ) {
                 Column(
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),

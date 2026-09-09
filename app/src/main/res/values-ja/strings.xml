@@ -1300,5 +1300,8 @@ mDNSアドレス: .localホスト名を使用し、IPを知らなくても同じ
 <string name="setting_page_asr_silence_duration">発話終了の無音時間</string>
 <string name="setting_page_asr_silence_duration_desc">無音がこの時間続いたら発話を終了します。推奨: 800〜1000 ms。</string>
 <string name="setting_page_asr_milliseconds">ミリ秒</string>
+<string name="workspace_terminal_close_confirm_title">ターミナル %1$d を閉じますか？</string>
+<string name="workspace_terminal_close_confirm_message">このタブを閉じると、実行中のプロセスは終了します。</string>
+<string name="workspace_terminal_close">閉じる</string>
 </resources>
 

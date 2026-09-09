@@ -129,6 +129,10 @@ class WorkspaceRepository(
         return dao.getAll().any { it.id != excludeId && it.name.trim() == target }
     }
 
+    suspend fun setShellCompatibilityMode(id: String, enabled: Boolean) {
+        dao.setShellCompatibilityMode(id, enabled, System.currentTimeMillis())
+    }
+
     suspend fun setToolApproval(id: String, toolName: String, needsApproval: Boolean): Boolean {
         val workspace = dao.getById(id) ?: return false
         val overrides = workspace.toolApprovalOverrides() + (toolName to needsApproval)
@@ -346,7 +350,10 @@ class WorkspaceRepository(
         // runInterruptible 让协程取消转化为线程中断，从而打断阻塞的 Process.waitFor 并杀掉进程
         return runInterruptible(Dispatchers.IO) {
             manager.ensureWorkspace(workspace.root)
-            manager.executeCommand(workspace.root, command, cwd, timeoutMillis, stdin)
+            manager.executeCommand(
+                workspace.root, command, cwd, timeoutMillis, stdin,
+                shellCompatibilityMode = workspace.shellCompatibilityMode,
+            )
         }
     }
 

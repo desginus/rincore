@@ -63,7 +63,7 @@ import me.rerere.rikkahub.utils.JsonInstant
         WorkflowRunEntity::class,
         SubAgentRunEntity::class,
     ],
-    version = 29,
+    version = 30,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -85,6 +85,13 @@ import me.rerere.rikkahub.utils.JsonInstant
         AutoMigration(from = 23, to = 24),
     ]
 )
+
+/** 4.1.0: Shell 兼容模式字段 (25+ schema json 缺失, 手写迁移 — 同 28_29 先例) */
+val MIGRATION_29_30 = object : androidx.room.migration.Migration(29, 30) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE workspaces ADD COLUMN shell_compatibility_mode INTEGER NOT NULL DEFAULT 0")
+    }
+}
 @TypeConverters(TokenUsageConverter::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDAO

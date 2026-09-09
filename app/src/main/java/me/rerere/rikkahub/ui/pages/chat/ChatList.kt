@@ -45,6 +45,8 @@ import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -149,6 +151,7 @@ fun ChatList(
                 innerPadding = innerPadding,
                 conversation = conversation,
                 settings = settings,
+                hazeState = hazeState,
                 onJumpToMessage = onJumpToMessage,
                 animatedVisibilityScope = this@AnimatedContent,
             )
@@ -160,6 +163,7 @@ fun ChatList(
                 loading = loading,
                 processingStatus = processingStatus,
                 settings = settings,
+                hazeState = hazeState,
                 errors = errors,
                 onDismissError = onDismissError,
                 onClearAllErrors = onClearAllErrors,
@@ -189,6 +193,7 @@ private fun ChatListNormal(
     loading: Boolean,
     processingStatus: String? = null,
     settings: Settings,
+    hazeState: HazeState,
     errors: List<ChatError>,
     onDismissError: (Uuid) -> Unit,
     onClearAllErrors: () -> Unit,
@@ -307,6 +312,7 @@ private fun ChatListNormal(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier
                     .fillMaxSize()
+                    .hazeSource(state = hazeState)
                     .padding(top = innerPadding.calculateTopPadding()),
             ) {
             itemsIndexed(
@@ -594,6 +600,7 @@ private fun ChatListPreview(
     innerPadding: PaddingValues,
     conversation: Conversation,
     settings: Settings,
+    hazeState: HazeState,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onJumpToMessage: (Int) -> Unit
 ) {
@@ -612,7 +619,8 @@ private fun ChatListPreview(
     Column(
         modifier = Modifier
             .padding(top = innerPadding.calculateTopPadding())
-            .fillMaxSize(),
+            .fillMaxSize()
+            .hazeSource(state = hazeState),
     ) {
         // 搜索框
         OutlinedTextField(

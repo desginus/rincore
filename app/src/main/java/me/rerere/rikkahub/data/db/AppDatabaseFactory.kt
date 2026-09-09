@@ -16,7 +16,7 @@ internal object AppDatabaseFactory {
     fun create(context: Context, name: String = SQLiteConfiguration.DATABASE_NAME): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, name)
             .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
-            .addMigrations(Migration_6_7, Migration_11_12, Migration_13_14, Migration_14_15, Migration_15_16)
+            .addMigrations(Migration_6_7, Migration_11_12, Migration_13_14, Migration_14_15, Migration_15_16, MIGRATION_29_30)
             .addCallback(object : RoomDatabase.Callback() {
                 override fun onOpen(db: SupportSQLiteDatabase) {
                     val dictDir = SimpleDictManager.extractDict(context)

@@ -234,6 +234,7 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
                     workspace = state.workspace,
                     installProgress = installProgress,
                     onInstallRootfs = { showInstallDialog = true },
+                    onShellCompatibilityModeChange = vm::setShellCompatibilityMode,
                     onToolApprovalChange = vm::setToolApproval,
                 )
 
@@ -498,6 +499,7 @@ private fun WorkspaceBasicPage(
     workspace: WorkspaceEntity?,
     installProgress: RootfsInstallProgress?,
     onInstallRootfs: () -> Unit,
+    onShellCompatibilityModeChange: (Boolean) -> Unit,
     onToolApprovalChange: (String, Boolean) -> Unit,
 ) {
     val shellStatus = workspace?.shellStatus
@@ -570,6 +572,41 @@ private fun WorkspaceBasicPage(
 
                     installProgress?.let { progress ->
                         RootfsProgress(progress)
+                    }
+                }
+            }
+        }
+
+        // 4.1.0: Shell 兼容模式 (2.5.1 移植) — 禁用 PRoot seccomp 加速
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CustomColors.cardColorsOnSurfaceContainer,
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.workspace_terminal_shell_compatibility_mode),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        text = stringResource(R.string.workspace_terminal_shell_compatibility_mode_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        Switch(
+                            checked = workspace?.shellCompatibilityMode ?: false,
+                            onCheckedChange = onShellCompatibilityModeChange,
+                            enabled = workspace != null,
+                        )
                     }
                 }
             }

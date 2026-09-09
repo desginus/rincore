@@ -1457,5 +1457,12 @@
 <string name="setting_page_asr_silence_duration">End-of-speech silence duration</string>
 <string name="setting_page_asr_silence_duration_desc">End the utterance after this duration of continuous silence. Recommended: 800–1000 ms.</string>
 <string name="setting_page_asr_milliseconds">Milliseconds</string>
+<string name="workspace_terminal_tab">Terminal %1$d</string>
+<string name="workspace_terminal_new_tab">New terminal tab</string>
+<string name="workspace_terminal_close_tab">Close terminal %1$d</string>
+<string name="workspace_terminal_close_confirm_title">Close terminal %1$d?</string>
+<string name="workspace_terminal_close_confirm_message">Closing this tab will terminate any process still running in it.</string>
+<string name="workspace_terminal_close">Close</string>
+<string name="workspace_terminal_no_tabs">No open terminal tabs</string>
 </resources>
 
