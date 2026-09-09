@@ -38,6 +38,7 @@ import android.util.Log
 import androidx.core.net.toUri
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.completeWith
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -116,6 +117,7 @@ import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.localFileUrls
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.replaceRegexes
@@ -620,12 +622,6 @@ class ChatService(
                 part is UIMessagePart.Tool && part.isPending && part.toolCallId != toolCallId
             }
         }
-        if (hasOtherPendingTools) {
-            me.rerere.rikkahub.data.ai.CallTracer.event(
-                "TOOL", "approval_deferred", "tool=$toolCallId (other pending tools exist)"
-            )
-        }
-
         val job = appScope.launch(start = CoroutineStart.LAZY) {
             try {
                 me.rerere.rikkahub.data.ai.CallTracer.event(

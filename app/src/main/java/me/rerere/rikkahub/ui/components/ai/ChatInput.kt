@@ -221,6 +221,13 @@ fun ChatInput(
                 .padding(bottom = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            MessageQueuePanel(
+                state = messageQueue,
+                onRemove = onRemoveQueuedMessage,
+                onBeginEdit = onBeginEditQueuedMessage,
+                onFinishEdit = onFinishEditQueuedMessage,
+                onResume = onResumeMessageQueue,
+            )
             // v3.6.36: 页面完全静默 — 降维开启/关闭页面无差别 (状态与统计移至设置-其他功能)
             Surface(
                 modifier = Modifier
@@ -773,13 +780,6 @@ private fun FullScreenEditor(
                 .imePadding(),
             verticalArrangement = Arrangement.Bottom
         ) {
-            MessageQueuePanel(
-                state = messageQueue,
-                onRemove = onRemoveQueuedMessage,
-                onBeginEdit = onBeginEditQueuedMessage,
-                onFinishEdit = onFinishEditQueuedMessage,
-                onResume = onResumeMessageQueue,
-            )
             Surface(
                 modifier = Modifier
                     .widthIn(max = 800.dp)
