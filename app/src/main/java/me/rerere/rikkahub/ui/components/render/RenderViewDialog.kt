@@ -163,7 +163,7 @@ fun RenderViewDialog(
 /** WebView 分页内容: file 产物加载 + JS 深色切类 + 捏合缩放 */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun HtmlPagesContent(
+internal fun HtmlPagesContent(
     workDir: File,
     pageIndex: Int,
     isDark: Boolean,

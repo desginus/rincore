@@ -278,35 +278,6 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item {
-                // v3.16.0: 强兼容模式 — 请求体按 Cherry Studio 极简格式发送
-                CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                    title = { Text("强兼容模式") },
-                ) {
-                    item(
-                        headlineContent = { Text("Cherry Studio 兼容请求格式") },
-                        supportingContent = {
-                            Text(
-                                "开启后按 Cherry Studio 的极简格式发送请求, " +
-                                    "最大化任意模型可用性。代价: 思考控制与历史推理回传停用。"
-                            )
-                        },
-                        trailingContent = {
-                            Switch(
-                                checked = settings.networkSetting.cherryCompatMode,
-                                onCheckedChange = { checked ->
-                                    vm.updateSettings(
-                                        settings.copy(
-                                            networkSetting = settings.networkSetting.copy(cherryCompatMode = checked)
-                                        )
-                                    )
-                                },
-                            )
-                        },
-                    )
-                }
-            }
-            item {
                 // v3.15.0: 自动重试开关 (2.4.16 移植) — false = 断联直接报错
                 CardGroup(
                     modifier = Modifier.padding(horizontal = 8.dp),
@@ -355,28 +326,6 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
                                 checked = settings.commandCodeWarmEnabled,
                                 onCheckedChange = { checked ->
                                     vm.updateSettings(settings.copy(commandCodeWarmEnabled = checked))
-                                },
-                            )
-                        },
-                    )
-                }
-            }
-            item {
-                // v3.13.3: CC 图片兼容适配 (opt-in) — CC 网关严格校验图片格式,
-                // GIF/SVG 等会触发 Invalid input 并 4 次重试卡死; 开启后
-                // 自动转 JPEG/剔除不兼容图, 仅影响 Command Code 通道
-                CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                    title = { Text("Command Code 图片兼容") },
-                ) {
-                    item(
-                        headlineContent = { Text("图片自动适配") },
-                        supportingContent = { Text("修复 Command Code 通道图片卡死: 工具返回的图片转为规范格式发送 (对齐 Cherry Studio)。仅影响 Command Code 通道") },
-                        trailingContent = {
-                            Switch(
-                                checked = settings.ccImageCompat,
-                                onCheckedChange = { checked ->
-                                    vm.updateSettings(settings.copy(ccImageCompat = checked))
                                 },
                             )
                         },

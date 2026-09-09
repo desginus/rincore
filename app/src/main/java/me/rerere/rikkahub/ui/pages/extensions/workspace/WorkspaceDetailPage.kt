@@ -108,6 +108,13 @@ import me.rerere.workspace.WorkspaceFileEntry
 import me.rerere.workspace.WorkspaceShellStatus
 import me.rerere.workspace.WorkspaceStorageArea
 import org.koin.androidx.compose.koinViewModel
+import me.rerere.rikkahub.ui.components.render.RenderEngine
+import me.rerere.rikkahub.ui.components.render.RenderResult
+import me.rerere.rikkahub.ui.components.render.HtmlPagesContent
+import me.rerere.rikkahub.ui.components.render.PdfRenderView
+import me.rerere.rikkahub.ui.components.render.ImageRenderView
+import me.rerere.rikkahub.ui.components.render.VideoRenderView
+import me.rerere.rikkahub.ui.components.render.AudioRenderView
 import org.koin.core.parameter.parametersOf
 
 @Composable
@@ -1168,35 +1175,8 @@ private fun WorkspaceFilePreviewDialog(
         }
 
         val ext = entry.name.substringAfterLast('.', "").lowercase()
-        val isDoc = ext in DocumentPreview.EXTRACTABLE_EXTS
-        val isPdf = ext == "pdf"
-        val docText = remember(file?.absolutePath) {
-            if (file != null && isDoc) DocumentPreview.extract(file, ext) else null
-        }
         when {
-            // 4.0.2: Office 文档大纲 (docx/pptx/xlsx/epub 零依赖解析)
-            isDoc && docText != null -> {
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState()),
-                ) {
-                    Text(
-                        text = docText.take(200_000),
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                    )
-                }
-            }
-            isDoc && docText == null -> {
-                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    Text("无法解析该文档内容", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            // 4.0.2: PDF 内置渲染 (PdfRenderer 前 3 页)
-            isPdf && file != null -> {
-                PdfPreviewPages(file)
-            }
+            // 图片：原生缩放查看
             !entry.isDirectory && ext in PREVIEW_IMAGE_EXTS && file != null -> {
                 me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage(
                     model = file.toURI().toString(),
@@ -1206,39 +1186,26 @@ private fun WorkspaceFilePreviewDialog(
                         .weight(1f),
                 )
             }
-            !entry.isDirectory && ext in PREVIEW_TEXT_EXTS && file != null -> {
-                val text = remember(file.absolutePath) {
-                    runCatching { file.readText().take(200_000) }.getOrNull()
+            // 其他文件：统一走渲染机 (docx/xlsx/pptx/pdf/txt/md/代码/音视频等)
+            !entry.isDirectory && file != null -> {
+                val renderResult = remember(file.absolutePath) {
+                    val taskDir = File(file.parentFile, "render_task_${System.currentTimeMillis()}")
+                    runCatching { RenderEngine.render(file, taskDir, entry.name) }
+                        .getOrElse { RenderResult.Unsupported(entry.name, "无法解析该文档内容") }
                 }
-                if (text != null) {
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .verticalScroll(rememberScrollState()),
-                    ) {
-                        Text(
-                            text = text,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                        )
-                    }
-                } else {
-                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        Text("无法读取文件内容", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                val unsupportedMessage = when {
+                    ext in DocumentPreview.BINARY_LEGACY_EXTS ->
+                        "旧版 Office 二进制格式暂不支持预览，建议导出后用 WPS/Office 打开"
+                    else -> "无法解析该文档内容"
                 }
+                WorkspaceRenderContent(
+                    renderResult = renderResult,
+                    fallbackMessage = unsupportedMessage,
+                )
             }
             !entry.isDirectory && file == null -> {
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
-                }
-            }
-            !entry.isDirectory && ext in DocumentPreview.BINARY_LEGACY_EXTS -> {
-                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("旧版 Office 二进制格式暂不支持预览", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("建议导出后用 WPS/Office 打开", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
                 }
             }
             else -> {
@@ -1254,6 +1221,50 @@ private fun WorkspaceFilePreviewDialog(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * 4.0.16: 工作区预览复用渲染机结果视图。
+ * 与 ChatMessageEditedFiles 的“第三功能”渲染对齐，统一由 RenderEngine 处理。
+ */
+@Composable
+private fun WorkspaceRenderContent(
+    renderResult: RenderResult,
+    fallbackMessage: String,
+) {
+    var isDark by remember { mutableStateOf(false) }
+    var pageIndex by remember { mutableIntStateOf(0) }
+    var zoom by remember { mutableFloatStateOf(1f) }
+    Box(Modifier.fillMaxSize()) {
+        when (val result = renderResult) {
+            is RenderResult.HtmlPages -> HtmlPagesContent(
+                workDir = result.workDir,
+                pageIndex = pageIndex,
+                isDark = isDark,
+            )
+            is RenderResult.PdfView -> PdfRenderView(
+                pdfFile = result.pdfFile,
+                zoom = zoom,
+                onZoomChange = { zoom = (zoom * it).coerceIn(0.5f, 4f) },
+            )
+            is RenderResult.ImageView -> ImageRenderView(
+                imageFile = result.imageFile,
+                contentDescription = result.title,
+            )
+            is RenderResult.VideoView -> VideoRenderView(result.videoFile)
+            is RenderResult.AudioView -> AudioRenderView(result.audioFile)
+            is RenderResult.Unsupported -> Box(
+                Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    fallbackMessage,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             }
         }
     }

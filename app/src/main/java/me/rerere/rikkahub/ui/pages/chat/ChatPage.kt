@@ -2,9 +2,9 @@ package me.rerere.rikkahub.ui.pages.chat
 
 
 /* ───【原版对齐】ChatPage | 差异 +107 行
- * 来源: 原版移植 + 自研 (haze/延时回复/插件等)
+ * 来源: 原版移植 + 自研 (延时回复/插件等)
  * 功能: 聊天主页面
- * 差异: haze 毛玻璃 (背景静态化 v3.6.82)、延时自动回复、
+ * 差异: 延时自动回复、
  *       SettingPlugins 导航等自研
  * ───────────────────────────────────────────────────────────────*/
 import android.net.Uri
@@ -72,8 +72,6 @@ import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 
 import com.dokar.sonner.ToastType
-import dev.chrisbanes.haze.hazeSource
-import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import me.rerere.ai.provider.Model
@@ -345,21 +343,6 @@ private fun ChatPageContent(
     val toaster = LocalToaster.current
     val workspaceRepository: WorkspaceRepository = koinInject()
     var previewMode by rememberSaveable { mutableStateOf(false) }
-    val hazeState = rememberHazeState()
-    // v3.8.9: 分享面板 (外部 Activity) 返回后 Haze 模糊纹理失效成黑框,
-    // 进设置再返回能恢复 (导航触发重组), 分享返回不触发任何重组。
-    // ON_RESUME 递增 tick 强制背景重组, 重建模糊纹理。
-    var hazeRebuildTick by remember { mutableStateOf(0) }
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                hazeRebuildTick++
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
     val assistant = setting.getCurrentAssistant()
     var showFilesSheet by remember { mutableStateOf(false) }
     val attachmentPickerActions = rememberChatAttachmentPickerActions(
@@ -388,20 +371,9 @@ private fun ChatPageContent(
         color = MaterialTheme.colorScheme.background,
         modifier = Modifier.fillMaxSize()
     ) {
-        // v3.8.20: 返回前台强制重绘重建模糊纹理 — 不销毁 hazeSource 节点。
-        // v3.8.9 曾用 key(hazeRebuildTick) 重建背景, 销毁重建 hazeSource
-        // 节点导致模糊源永久失效 (首次进入 ON_RESUME 即触发, 全场景
-        // 液态玻璃变普通背景)。改为 draw 阶段读取状态: tick 递增仅触发
-        // 重绘 (draw 订阅), 节点保留, 模糊纹理随重绘重建。
         AssistantBackground(
             setting = setting,
-            modifier = Modifier
-                .hazeSource(hazeState)
-                .drawWithContent {
-                    @Suppress("UNUSED_EXPRESSION")
-                    hazeRebuildTick
-                    drawContent()
-                }
+            modifier = Modifier.fillMaxSize()
         )
         // v3.6.13: 对话设置对话框 — 延迟自动回复开关
 
@@ -431,7 +403,6 @@ private fun ChatPageContent(
                     state = inputState,
                     loading = loadingJob != null,
                     settings = setting,
-                    hazeState = hazeState,
                     completionProviders = completionProviders,
                     onCancelClick = {
                         vm.stopGeneration()
@@ -506,7 +477,6 @@ private fun ChatPageContent(
                 processingStatus = processingStatus,
                 previewMode = previewMode,
                 settings = setting,
-                hazeState = hazeState,
                 errors = errors,
                 onDismissError = onDismissError,
                 onClearAllErrors = onClearAllErrors,

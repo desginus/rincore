@@ -24,7 +24,7 @@ android {
 // 比较 — 相同 code + 相同签名 = 任意替换安装 (升/降/同级均可)。
 // versionName 正常递增用于显示与归档; 发版只改 versionName。
 versionCode = 9999
-versionName = "4.0.15"
+versionName = "4.0.16"
 
             testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -165,9 +165,6 @@ dependencies {
     implementation(libs.metadata.extractor)
 
     // Haze (background blur)
-    implementation(libs.haze)
-    implementation(libs.haze.blur)
-    implementation(libs.haze.blur.material3)
 
     // koin
     implementation(platform(libs.koin.bom))
