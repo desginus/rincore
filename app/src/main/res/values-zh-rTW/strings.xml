@@ -1306,5 +1306,15 @@
 <string name="workspace_terminal_close_confirm_title">關閉終端機 %1$d？</string>
 <string name="workspace_terminal_close_confirm_message">關閉此分頁將終止仍在其中執行的任何程序。</string>
 <string name="workspace_terminal_close">關閉</string>
+<string name="chat_page_queue_file">[檔案]</string>
+<string name="chat_page_queue_image">[圖片]</string>
+<string name="chat_page_queue_pending_count">佇列中 · %1$d</string>
+<string name="chat_page_queue_resume">恢復傳送</string>
+<string name="chat_page_queue_remove">移除</string>
+<string name="chat_page_queue_video">[影片]</string>
+<string name="chat_page_queue_audio">[音訊]</string>
+<string name="chat_page_queue_editing">編輯中</string>
+<string name="chat_page_queue_paused_count">佇列已暫停 · %1$d</string>
+<string name="chat_page_queue_edit_title">編輯佇列中的訊息</string>
 </resources>
 

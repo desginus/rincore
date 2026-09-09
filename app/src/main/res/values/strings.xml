@@ -1464,5 +1464,15 @@
 <string name="workspace_terminal_close_confirm_message">Closing this tab will terminate any process still running in it.</string>
 <string name="workspace_terminal_close">Close</string>
 <string name="workspace_terminal_no_tabs">No open terminal tabs</string>
+<string name="chat_page_queue_file">[File]</string>
+<string name="chat_page_queue_image">[Image]</string>
+<string name="chat_page_queue_pending_count">Queued · %1$d</string>
+<string name="chat_page_queue_resume">Resume sending</string>
+<string name="chat_page_queue_remove">Remove</string>
+<string name="chat_page_queue_video">[Video]</string>
+<string name="chat_page_queue_audio">[Audio]</string>
+<string name="chat_page_queue_editing">Editing</string>
+<string name="chat_page_queue_paused_count">Queue paused · %1$d</string>
+<string name="chat_page_queue_edit_title">Edit queued message</string>
 </resources>
 

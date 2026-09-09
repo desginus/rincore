@@ -1303,5 +1303,15 @@
 <string name="workspace_terminal_close_confirm_title">Закрыть терминал %1$d?</string>
 <string name="workspace_terminal_close_confirm_message">Закрытие этой вкладки приведет к завершению всех процессов, которые все еще в ней выполняются.</string>
 <string name="workspace_terminal_close">Закрыть</string>
+<string name="chat_page_queue_file">[Файл]</string>
+<string name="chat_page_queue_image">[Изображение]</string>
+<string name="chat_page_queue_pending_count">В очереди · %1$d</string>
+<string name="chat_page_queue_resume">Возобновить отправку</string>
+<string name="chat_page_queue_remove">Удалить</string>
+<string name="chat_page_queue_video">[Видео]</string>
+<string name="chat_page_queue_audio">[Аудио]</string>
+<string name="chat_page_queue_editing">Редактирование</string>
+<string name="chat_page_queue_paused_count">Очередь приостановлена · %1$d</string>
+<string name="chat_page_queue_edit_title">Редактировать сообщение в очереди</string>
 </resources>
 

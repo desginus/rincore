@@ -1303,5 +1303,15 @@ mDNSアドレス: .localホスト名を使用し、IPを知らなくても同じ
 <string name="workspace_terminal_close_confirm_title">ターミナル %1$d を閉じますか？</string>
 <string name="workspace_terminal_close_confirm_message">このタブを閉じると、実行中のプロセスは終了します。</string>
 <string name="workspace_terminal_close">閉じる</string>
+<string name="chat_page_queue_file">[ファイル]</string>
+<string name="chat_page_queue_image">[画像]</string>
+<string name="chat_page_queue_pending_count">送信待ち · %1$d</string>
+<string name="chat_page_queue_resume">送信を再開</string>
+<string name="chat_page_queue_remove">削除</string>
+<string name="chat_page_queue_video">[動画]</string>
+<string name="chat_page_queue_audio">[音声]</string>
+<string name="chat_page_queue_editing">編集中</string>
+<string name="chat_page_queue_paused_count">送信一時停止中 · %1$d</string>
+<string name="chat_page_queue_edit_title">送信待ちメッセージを編集</string>
 </resources>
 

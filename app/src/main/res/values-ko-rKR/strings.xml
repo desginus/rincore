@@ -1303,5 +1303,15 @@ mDNS 주소: .local 호스트네임을 사용하며, IP를 몰라도 같은 네�
 <string name="workspace_terminal_close_confirm_title">터미널 %1$d번을 닫으시겠습니까?</string>
 <string name="workspace_terminal_close_confirm_message">이 탭을 닫으면 실행 중인 프로세스가 종료됩니다.</string>
 <string name="workspace_terminal_close">닫기</string>
+<string name="chat_page_queue_file">[파일]</string>
+<string name="chat_page_queue_image">[이미지]</string>
+<string name="chat_page_queue_pending_count">대기 중 · %1$d</string>
+<string name="chat_page_queue_resume">전송 재개</string>
+<string name="chat_page_queue_remove">삭제</string>
+<string name="chat_page_queue_video">[동영상]</string>
+<string name="chat_page_queue_audio">[오디오]</string>
+<string name="chat_page_queue_editing">편집 중</string>
+<string name="chat_page_queue_paused_count">대기열 일시 중지 · %1$d</string>
+<string name="chat_page_queue_edit_title">대기 중인 메시지 편집</string>
 </resources>
 
