@@ -1313,5 +1313,12 @@ mDNS 주소: .local 호스트네임을 사용하며, IP를 몰라도 같은 네�
 <string name="chat_page_queue_editing">편집 중</string>
 <string name="chat_page_queue_paused_count">대기열 일시 중지 · %1$d</string>
 <string name="chat_page_queue_edit_title">대기 중인 메시지 편집</string>
+<string name="imggen_page_deleting">삭제 중…</string>
+<string name="imggen_page_delete_images_title">이미지 삭제</string>
+<string name="imggen_page_delete_images_message">선택한 이미지(%1$d)를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.</string>
+<string name="imggen_page_selected_count">선택됨: %1$d</string>
+<string name="imggen_page_delete_images_failed">삭제됨: %1$d. 실패: %2$d. 다시 시도하세요.</string>
+<string name="imggen_page_delete_images_success">이미지 %1$d개가 삭제되었습니다.</string>
+<string name="imggen_page_select_image">이미지 선택</string>
 </resources>
 

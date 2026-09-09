@@ -1313,5 +1313,12 @@
 <string name="chat_page_queue_editing">Редактирование</string>
 <string name="chat_page_queue_paused_count">Очередь приостановлена · %1$d</string>
 <string name="chat_page_queue_edit_title">Редактировать сообщение в очереди</string>
+<string name="imggen_page_deleting">Удаление…</string>
+<string name="imggen_page_delete_images_title">Удалить изображения</string>
+<string name="imggen_page_delete_images_message">Удалить выбранные изображения (%1$d)? Это действие необратимо.</string>
+<string name="imggen_page_selected_count">Выбрано: %1$d</string>
+<string name="imggen_page_delete_images_failed">Удалено: %1$d. Не удалось: %2$d. Попробуйте ещё раз.</string>
+<string name="imggen_page_delete_images_success">Изображения удалены: %1$d</string>
+<string name="imggen_page_select_image">Выбрать изображение</string>
 </resources>
 

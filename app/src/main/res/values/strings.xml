@@ -1474,5 +1474,12 @@
 <string name="chat_page_queue_editing">Editing</string>
 <string name="chat_page_queue_paused_count">Queue paused · %1$d</string>
 <string name="chat_page_queue_edit_title">Edit queued message</string>
+<string name="imggen_page_deleting">Deleting…</string>
+<string name="imggen_page_delete_images_title">Delete images</string>
+<string name="imggen_page_delete_images_message">Delete the selected images (%1$d)? This cannot be undone.</string>
+<string name="imggen_page_selected_count">Selected: %1$d</string>
+<string name="imggen_page_delete_images_failed">Deleted: %1$d. Failed: %2$d. Please try again.</string>
+<string name="imggen_page_delete_images_success">Images deleted: %1$d</string>
+<string name="imggen_page_select_image">Select image</string>
 </resources>
 

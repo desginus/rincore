@@ -1313,5 +1313,12 @@ mDNSアドレス: .localホスト名を使用し、IPを知らなくても同じ
 <string name="chat_page_queue_editing">編集中</string>
 <string name="chat_page_queue_paused_count">送信一時停止中 · %1$d</string>
 <string name="chat_page_queue_edit_title">送信待ちメッセージを編集</string>
+<string name="imggen_page_deleting">削除中…</string>
+<string name="imggen_page_delete_images_title">画像を削除</string>
+<string name="imggen_page_delete_images_message">選択した画像 (%1$d) を削除しますか？この操作は元に戻せません。</string>
+<string name="imggen_page_selected_count">選択中: %1$d</string>
+<string name="imggen_page_delete_images_failed">削除：%1$d件、失敗：%2$d件。もう一度お試しください。</string>
+<string name="imggen_page_delete_images_success">画像を%1$d件削除しました</string>
+<string name="imggen_page_select_image">画像を選択</string>
 </resources>
 

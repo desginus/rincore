@@ -590,11 +590,11 @@ private fun WorkspaceBasicPage(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(
-                        text = stringResource(R.string.workspace_terminal_shell_compatibility_mode),
+                        text = stringResource(R.string.workspace_detail_compatibility_mode),
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Text(
-                        text = stringResource(R.string.workspace_terminal_shell_compatibility_mode_desc),
+                        text = stringResource(R.string.workspace_detail_compatibility_mode_desc),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

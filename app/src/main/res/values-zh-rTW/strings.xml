@@ -1316,5 +1316,12 @@
 <string name="chat_page_queue_editing">編輯中</string>
 <string name="chat_page_queue_paused_count">佇列已暫停 · %1$d</string>
 <string name="chat_page_queue_edit_title">編輯佇列中的訊息</string>
+<string name="imggen_page_deleting">刪除中…</string>
+<string name="imggen_page_delete_images_title">刪除圖片</string>
+<string name="imggen_page_delete_images_message">刪除選取的圖片（%1$d）？此操作無法復原。</string>
+<string name="imggen_page_selected_count">已選取：%1$d</string>
+<string name="imggen_page_delete_images_failed">已刪除：%1$d。失敗：%2$d。請再試一次。</string>
+<string name="imggen_page_delete_images_success">已刪除 %1$d 張圖片</string>
+<string name="imggen_page_select_image">選擇圖片</string>
 </resources>
 
