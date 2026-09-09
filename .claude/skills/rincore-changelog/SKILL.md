@@ -3,9 +3,27 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v4.0.15 为最新）
+# RinCore 更新日志（v4.0.16 为最新）
 
 ZoomableAsyncImage fallback 现在显示 resolver 失败原因 (resolveDetailed.reason)：reason=prefix_not_recognized / invalid_path / no_workspace / not_found / extension_rejected 或 not_workspace_uri。按具体 reason 针对性根治，所需一次数据收集明确替代回滚方向。
+
+## v4.0.16（回滚流光玻璃 + 删除兼容设置 + 工作区预览桥接渲染机，2026-09-09）
+- 回滚澎湃 OS4 流光玻璃 (haze blur):
+  - 移除 ChatInput/ChatList/ChatPage 中的 HazeState/hazeSource/hazeBlur
+  - 删除设置-显示中的“启用模糊效果”开关
+  - 删除 Gradle haze/haze-blur/haze-blur-material3 依赖
+  - 保留 DataStore enableBlurEffect 字段（废弃字段保留原则），不再读取
+  - HyperMotion 的弹窗基础设施 HyperDialog/HyperFullPanel 保留，仅回滚 haze 模糊
+- 删除设置-网络中的“强兼容模式”和“Command Code 图片兼容”两个开关
+  - GenerationHandler 不再注入 cherryCompatMode
+  - ChatService 不再按 ccImageCompat 条件加入 CCImageCompatTransformer
+  - DataStore 字段保留（废弃字段保留原则）
+- 工作区文件预览桥接渲染机：
+  - WorkspaceFilePreviewDialog 对非图片文件统一调用 RenderEngine.render
+  - 复用 ChatMessageEditedFiles 的“第三功能”渲染能力（docx/xlsx/pptx/pdf/txt/md/代码/音视频）
+  - 图片仍走 ZoomableAsyncImage
+  - RenderEngine 无法处理或非图片 Unsupported 时显示“无法解析该文档内容”
+  - HtmlPagesContent 提升为 internal 以便复用
 
 ## v4.0.15（长上下文首 token 延迟诊断，2026-09-08）
 - 在 GenerationHandler.generateInternal 与 ClaudeProvider 关键路径加毫秒级计时日志
