@@ -24,8 +24,6 @@ import java.time.format.TextStyle
 import java.util.Locale
 import kotlin.time.toJavaInstant
 
-private const val TIME_GAP_THRESHOLD_SECONDS = 3600L // 1 小时
-
 /**
  * 时间提醒注入转换器
  *
@@ -37,11 +35,15 @@ object TimeReminderTransformer : InputMessageTransformer {
         messages: List<UIMessage>,
     ): List<UIMessage> {
         if (!ctx.assistant.enableTimeReminder) return messages
-        return applyTimeReminder(messages)
+        return applyTimeReminder(messages, ctx.assistant.timeReminderIntervalMinutes)
     }
 }
 
-internal fun applyTimeReminder(messages: List<UIMessage>): List<UIMessage> {
+internal fun applyTimeReminder(
+    messages: List<UIMessage>,
+    intervalMinutes: Int = 60,
+): List<UIMessage> {
+    val thresholdSeconds = intervalMinutes.coerceAtLeast(1).toLong() * 60
     // v3.6.63: 幂等 — 已注入过时间提醒则直接返回, 不再重复插入。
     // 根因: 工具循环每个 step 都重新执行本转换器, 之前每次对第一条 USER 重新插
     // <time_reminder> USER 消息 → windowStart 每轮后移 2 → history 每轮 +2
@@ -82,7 +84,7 @@ internal fun applyTimeReminder(messages: List<UIMessage>): List<UIMessage> {
                 val prevInstant = previous.createdAt.toInstant(tz)
                 val gapSeconds = (currInstant - prevInstant).inWholeSeconds
 
-                if (gapSeconds > TIME_GAP_THRESHOLD_SECONDS) {
+                if (gapSeconds > thresholdSeconds) {
                     result.add(mergeTimeReminder(current, gapSeconds, currInstant))
                 } else {
                     result.add(current)

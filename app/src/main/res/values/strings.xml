@@ -1425,5 +1425,10 @@
   <string name="setting_page_preferences_network_auto_retry_desc">Retry model requests up to 3 rounds on network errors.</string>
   <string name="search_page_scope_current_assistant">Current Assistant</string>
   <string name="search_page_scope_all_assistants">All Assistants</string>
+    <string name="assistant_page_time_reminder_interval">时间提醒间隔</string>
+    <string name="assistant_page_time_reminder_interval_desc">设置触发时间提醒的最小时间间隔</string>
+    <string name="assistant_page_time_reminder_interval_label">间隔（分钟）</string>
+    <string name="assistant_page_time_reminder_interval_hint">至少 1 分钟</string>
+    <string name="assistant_page_time_reminder_interval_value">每 %1$d 分钟</string>
 </resources>
 

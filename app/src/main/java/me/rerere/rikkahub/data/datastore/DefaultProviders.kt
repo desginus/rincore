@@ -141,4 +141,13 @@ val DEFAULT_PROVIDERS = listOf(
         enabled = false,
         builtIn = true,
     ),
+    ProviderSetting.OpenAI(
+        id = Uuid.parse("afbc54ad-807e-4455-9594-7d7a546356ad"),
+        name = "MaruCode",
+        baseUrl = "https://api.muteki.site/v1",
+        apiKey = "",
+        enabled = false,
+        builtIn = true,
+        useResponseApi = true,
+    ),
 )

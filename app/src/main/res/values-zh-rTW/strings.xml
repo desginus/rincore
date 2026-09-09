@@ -1272,5 +1272,10 @@
   <string name="setting_tts_page_default_playback_speed_description">本地套用於所有 TTS 提供商, 不變更其合成設定。</string>
   <string name="search_page_scope_current_assistant">目前助手</string>
   <string name="search_page_scope_all_assistants">全部助手</string>
+    <string name="assistant_page_time_reminder_interval">時間提醒間隔</string>
+    <string name="assistant_page_time_reminder_interval_desc">設定觸發時間提醒的最小時間間隔</string>
+    <string name="assistant_page_time_reminder_interval_label">間隔（分鐘）</string>
+    <string name="assistant_page_time_reminder_interval_hint">至少 1 分鐘</string>
+    <string name="assistant_page_time_reminder_interval_value">每 %1$d 分鐘</string>
 </resources>
 

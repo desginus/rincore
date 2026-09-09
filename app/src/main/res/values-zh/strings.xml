@@ -1323,5 +1323,10 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_tts_page_default_playback_speed_description">本地应用于所有 TTS 提供商, 不更改其合成设置。</string>
   <string name="search_page_scope_current_assistant">当前助手</string>
   <string name="search_page_scope_all_assistants">所有助手</string>
+    <string name="assistant_page_time_reminder_interval">时间提醒间隔</string>
+    <string name="assistant_page_time_reminder_interval_desc">设置触发时间提醒的最小时间间隔</string>
+    <string name="assistant_page_time_reminder_interval_label">间隔（分钟）</string>
+    <string name="assistant_page_time_reminder_interval_hint">至少 1 分钟</string>
+    <string name="assistant_page_time_reminder_interval_value">每 %1$d 分钟</string>
 </resources>
 

@@ -981,8 +981,8 @@ class GenerationHandler(
                 addAll(assistant.customBodies)
                 addAll(model.customBodies)
             },
-            // v3.20.0: OpenCode 官方强制 x-opencode-session (API 层按 host 自动注入)
-            conversationId = conversationId?.toString(),
+            // 4.1.0: sessionId 双头注入 (X-Session-ID + x-opencode-session), API 层按 host 自动补全
+            sessionId = conversationId?.toString(),
         )
         if (stream) {
             // 断流自动恢复 (v3.5.46 根治): 输出中连接中断 (切后台网络切换/

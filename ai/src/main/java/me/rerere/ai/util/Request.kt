@@ -28,12 +28,6 @@ fun List<CustomHeader>.toHeaders(): Headers {
  * 4.0.7: 从 ChatCompletionsAPI 私有函数提取为共享 (Anthropic 通道同用 —
  * qwen3.8 等模型走 ClaudeProvider 时此前缺头)。
  */
-fun Request.Builder.sessionHeader(baseUrl: String, conversationId: String?): Request.Builder {
-    if (conversationId.isNullOrBlank()) return this
-    val host = runCatching { baseUrl.toHttpUrl().host }.getOrNull() ?: return this
-    if (host != "opencode.ai") return this
-    return addHeader("x-opencode-session", conversationId)
-}
 
 fun Request.Builder.configureReferHeaders(url: String): Request.Builder {
     val httpUrl = url.toHttpUrl()
@@ -49,6 +43,15 @@ fun Request.Builder.configureReferHeaders(url: String): Request.Builder {
         }
 
         else -> this
+    }
+}
+
+fun Request.Builder.configureSessionHeaders(url: String, sessionId: String?): Request.Builder = apply {
+    if (sessionId != null) {
+        header("X-Session-ID", sessionId)
+        if (url.toHttpUrl().host == "opencode.ai") {
+            header("x-opencode-session", sessionId)
+        }
     }
 }
 

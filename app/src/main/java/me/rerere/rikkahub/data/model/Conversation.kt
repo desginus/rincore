@@ -71,8 +71,8 @@ data class Conversation(
     val files: List<Uri>
         get() = messageNodes
             .flatMap { node -> node.messages.flatMap { it.parts } }
-            .collectAllParts()
-            .mapNotNull { it.fileUri() }
+            .localFileUrls()
+            .map { it.toUri() }
 
     val currentMessages
         get(): List<UIMessage> {
@@ -213,13 +213,21 @@ fun UIMessage.toMessageNode(): MessageNode {
     )
 }
 
-private fun List<UIMessagePart>.collectAllParts(): List<UIMessagePart> =
-    this + filterIsInstance<UIMessagePart.Tool>().flatMap { it.output.collectAllParts() }
+/** 本地附件引用，包含工具结果中的嵌套附件。 */
+internal fun List<UIMessagePart>.localFileUrls(): Set<String> = buildSet {
+    this@localFileUrls.forEach { part ->
+        val url = when (part) {
+            is UIMessagePart.Image -> part.url
+            is UIMessagePart.Document -> part.url
+            is UIMessagePart.Video -> part.url
+            is UIMessagePart.Audio -> part.url
+            is UIMessagePart.Tool -> {
+                addAll(part.output.localFileUrls())
+                null
+            }
 
-private fun UIMessagePart.fileUri(): Uri? = when (this) {
-    is UIMessagePart.Image -> url.takeIf { it.startsWith("file://") }?.toUri()
-    is UIMessagePart.Document -> url.takeIf { it.startsWith("file://") }?.toUri()
-    is UIMessagePart.Video -> url.takeIf { it.startsWith("file://") }?.toUri()
-    is UIMessagePart.Audio -> url.takeIf { it.startsWith("file://") }?.toUri()
-    else -> null
+            else -> null
+        }
+        if (url?.startsWith("file://") == true) add(url)
+    }
 }

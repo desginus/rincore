@@ -13,6 +13,7 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.channels.onFailure
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -31,7 +32,6 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import me.rerere.ai.provider.BuiltInTools
-import me.rerere.ai.util.sessionHeader
 import me.rerere.ai.provider.ProxyRoute
 import me.rerere.ai.provider.resolveProxy
 import me.rerere.ai.core.MessageRole
@@ -54,6 +54,7 @@ import me.rerere.ai.ui.metadataAs
 import me.rerere.ai.ui.toMetadata
 import me.rerere.ai.util.KeyRoulette
 import me.rerere.ai.util.configureReferHeaders
+import me.rerere.ai.util.configureSessionHeaders
 import me.rerere.ai.util.encodeBase64
 import me.rerere.ai.util.json
 import me.rerere.ai.util.TraceLogger
@@ -141,8 +142,8 @@ class ClaudeProvider(
                 .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
                 .addHeader("x-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
                 .addHeader("anthropic-version", ANTHROPIC_VERSION)
-                .sessionHeader(providerSetting.baseUrl, params.conversationId)
-            .configureReferHeaders(providerSetting.baseUrl)
+                .configureReferHeaders(providerSetting.baseUrl)
+            .configureSessionHeaders(providerSetting.baseUrl, params.sessionId)
                 .build()
 
             Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
@@ -205,8 +206,8 @@ class ClaudeProvider(
             .addHeader("x-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
             .addHeader("anthropic-version", ANTHROPIC_VERSION)
             .addHeader("Content-Type", "application/json")
-            .sessionHeader(providerSetting.baseUrl, params.conversationId)
             .configureReferHeaders(providerSetting.baseUrl)
+            .configureSessionHeaders(providerSetting.baseUrl, params.sessionId)
             .build()
 
         val bodyJson = requestBodyRef.get()
@@ -372,8 +373,8 @@ class ClaudeProvider(
                         .addHeader("x-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
                         .addHeader("anthropic-version", ANTHROPIC_VERSION)
                         .addHeader("Content-Type", "application/json")
-                        .sessionHeader(providerSetting.baseUrl, params.conversationId)
-            .configureReferHeaders(providerSetting.baseUrl)
+                        .configureReferHeaders(providerSetting.baseUrl)
+            .configureSessionHeaders(providerSetting.baseUrl, params.sessionId)
                         .build()
                     eventSourceRef.set(
                         EventSources.createFactory(
@@ -516,7 +517,7 @@ class ClaudeProvider(
             eventSourceRef.get()?.cancel()
         }
         // trySend 在缓冲满时会静默丢弃 delta，导致回复中间缺字 (#1295)，因此缓冲必须无界
-    }.buffer(Channel.UNLIMITED)
+    }.buffer(Channel.UNLIMITED).flowOn(Dispatchers.IO)
 
     private fun buildMessageRequest(
         providerSetting: ProviderSetting.Claude,
