@@ -1320,5 +1320,7 @@ mDNS 주소: .local 호스트네임을 사용하며, IP를 몰라도 같은 네�
 <string name="imggen_page_delete_images_failed">삭제됨: %1$d. 실패: %2$d. 다시 시도하세요.</string>
 <string name="imggen_page_delete_images_success">이미지 %1$d개가 삭제되었습니다.</string>
 <string name="imggen_page_select_image">이미지 선택</string>
+<string name="workspace_detail_compatibility_mode">호환 모드</string>
+<string name="workspace_detail_compatibility_mode_desc">터미널이 시작되지 않으면 이 옵션을 활성화해 보세요. 성능이 저하될 수 있습니다. 새 터미널 탭과 이후 명령에 적용됩니다.</string>
 </resources>
 

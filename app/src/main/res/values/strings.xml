@@ -1481,5 +1481,7 @@
 <string name="imggen_page_delete_images_failed">Deleted: %1$d. Failed: %2$d. Please try again.</string>
 <string name="imggen_page_delete_images_success">Images deleted: %1$d</string>
 <string name="imggen_page_select_image">Select image</string>
+<string name="workspace_detail_compatibility_mode">Compatibility mode</string>
+<string name="workspace_detail_compatibility_mode_desc">Try enabling this if the terminal fails to start. It may reduce performance. Applies to new terminal tabs and subsequent commands.</string>
 </resources>
 

@@ -1323,5 +1323,7 @@
 <string name="imggen_page_delete_images_failed">已刪除：%1$d。失敗：%2$d。請再試一次。</string>
 <string name="imggen_page_delete_images_success">已刪除 %1$d 張圖片</string>
 <string name="imggen_page_select_image">選擇圖片</string>
+<string name="workspace_detail_compatibility_mode">相容模式</string>
+<string name="workspace_detail_compatibility_mode_desc">如果終端機無法啟動，請嘗試啟用此選項。這可能會降低效能。適用於新的終端機分頁和後續指令。</string>
 </resources>
 
