@@ -1274,5 +1274,31 @@ mDNSアドレス: .localホスト名を使用し、IPを知らなくても同じ
   <string name="setting_tts_page_default_playback_speed_description">すべてのTTSプロバイダーにローカルで適用され、合成設定は変更されません。</string>
   <string name="search_page_scope_current_assistant">現在のアシスタント</string>
   <string name="search_page_scope_all_assistants">すべてのアシスタント</string>
+<string name="chat_page_voice_title">音声モード</string>
+<string name="chat_page_voice_connecting">接続中…</string>
+<string name="chat_page_voice_listening_queued">聞き取り中；新しい発話はキューに追加されます</string>
+<string name="chat_page_voice_listening">聞き取り中；話し終わるとメッセージが送信されます</string>
+<string name="chat_page_voice_transcribing">文字起こしを確定中…</string>
+<string name="chat_page_voice_speaking">読み上げ中；その後、聞き取りを再開します</string>
+<string name="chat_page_voice_paused">一時停止中</string>
+<string name="chat_page_voice_retry">再試行</string>
+<string name="chat_page_voice_end">終了</string>
+<string name="chat_page_voice_configure_asr">まず音声設定でASRを設定してください</string>
+<string name="chat_page_voice_unsupported_asr">このASRプロバイダーはサーバーサイドの発話終了検出をサポートしていません。OpenAI Realtime、DashScope、Volcengineを使用してください。</string>
+<string name="chat_page_voice_select_model">最初にチャットモデルを選択してください</string>
+<string name="chat_page_voice_finish_dictation">先に現在の音声入力を終了してください</string>
+<string name="chat_page_voice_resume_queue">メッセージキューは一時停止されています。先に再開してください。</string>
+<string name="chat_page_voice_pending_tools">先に保留中のツール承認を処理してください</string>
+<string name="chat_page_voice_configure_key">先にASR APIキーを設定してください</string>
+<string name="chat_page_voice_no_endpointing">このASRプロバイダーはサーバーサイドの音声エンドポインティングをサポートしていません</string>
+<string name="chat_page_voice_failed">音声モードが失敗しました。再起動してください。</string>
+<string name="chat_page_voice_tool_approval">ツールの承認が必要です。対応してから、音声モードを再起動してください。</string>
+<string name="chat_page_voice_empty">音声が認識されませんでした</string>
+<string name="chat_page_voice_tools_before_resume">音声モードを再開する前に、保留中のツール承認を処理してください</string>
+<string name="chat_page_voice_generation_failed">モデルの応答生成に失敗しました。チャットでエラーを確認してください。</string>
+<string name="chat_page_voice_queue_paused">メッセージキューが一時停止しています。問題を解決してから、音声モードを再起動してください。</string>
+<string name="setting_page_asr_silence_duration">発話終了の無音時間</string>
+<string name="setting_page_asr_silence_duration_desc">無音がこの時間続いたら発話を終了します。推奨: 800〜1000 ms。</string>
+<string name="setting_page_asr_milliseconds">ミリ秒</string>
 </resources>
 

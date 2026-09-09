@@ -1274,5 +1274,31 @@
   <string name="setting_tts_page_default_playback_speed_description">Применяется локально ко всем TTS-провайдерам, не меняя их настройки синтеза.</string>
   <string name="search_page_scope_current_assistant">Текущий ассистент</string>
   <string name="search_page_scope_all_assistants">Все ассистенты</string>
+<string name="chat_page_voice_title">Голосовой режим</string>
+<string name="chat_page_voice_connecting">Подключение…</string>
+<string name="chat_page_voice_listening_queued">Слушаю; новые фразы будут поставлены в очередь</string>
+<string name="chat_page_voice_listening">Слушаю; ваше сообщение будет отправлено, когда вы закончите говорить</string>
+<string name="chat_page_voice_transcribing">Завершаем расшифровку…</string>
+<string name="chat_page_voice_speaking">Читаю вслух; затем прослушивание возобновится</string>
+<string name="chat_page_voice_paused">Приостановлено</string>
+<string name="chat_page_voice_retry">Повторить</string>
+<string name="chat_page_voice_end">Завершить</string>
+<string name="chat_page_voice_configure_asr">Сначала настройте ASR в настройках речи</string>
+<string name="chat_page_voice_unsupported_asr">Этот провайдер ASR не поддерживает определение конца речи на стороне сервера. Используйте OpenAI Realtime, DashScope или Volcengine.</string>
+<string name="chat_page_voice_select_model">Сначала выберите модель чата.</string>
+<string name="chat_page_voice_finish_dictation">Сначала завершите текущий голосовой ввод.</string>
+<string name="chat_page_voice_resume_queue">Очередь сообщений приостановлена. Сначала возобновите её.</string>
+<string name="chat_page_voice_pending_tools">Сначала разрешите ожидающие подтверждения инструментов.</string>
+<string name="chat_page_voice_configure_key">Сначала настройте API-ключ ASR.</string>
+<string name="chat_page_voice_no_endpointing">Этот ASR-провайдер не поддерживает серверное определение конца речи.</string>
+<string name="chat_page_voice_failed">Голосовой режим не сработал. Пожалуйста, перезапустите его.</string>
+<string name="chat_page_voice_tool_approval">Требуется одобрение использования инструмента. Одобрите его, затем перезапустите голосовой режим.</string>
+<string name="chat_page_voice_empty">Речь не распознана</string>
+<string name="chat_page_voice_tools_before_resume">Обработайте ожидающие запросы на одобрение использования инструментов, прежде чем возобновить голосовой режим.</string>
+<string name="chat_page_voice_generation_failed">Не удалось сгенерировать ответ модели. Проверьте ошибку в чате.</string>
+<string name="chat_page_voice_queue_paused">Очередь сообщений приостановлена. Устраните проблему, затем перезапустите голосовой режим.</string>
+<string name="setting_page_asr_silence_duration">Длительность паузы окончания высказывания</string>
+<string name="setting_page_asr_silence_duration_desc">Высказывание завершается после непрерывной паузы указанной длительности. Рекомендуется: 800–1000 мс.</string>
+<string name="setting_page_asr_milliseconds">мс</string>
 </resources>
 

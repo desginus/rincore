@@ -12,4 +12,16 @@
             android:data="rincoredesk://shortcut" />
         <categories android:name="android.shortcut.conversation" />
     </shortcut>
+    <shortcut
+        android:shortcutId="translate"
+        android:enabled="true"
+        android:icon="@drawable/ic_translate"
+        android:shortcutShortLabel="@string/shortcut_translate"
+        android:shortcutLongLabel="@string/shortcut_translate">
+        <intent
+            android:action="me.rerere.rikkahub.action.TRANSLATE"
+            android:targetPackage="${applicationId}"
+            android:targetClass="me.rerere.rikkahub.RouteActivity" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
 </shortcuts>

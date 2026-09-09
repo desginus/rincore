@@ -86,22 +86,30 @@ class OpenAIRealtimeASRController(
 
         webSocket = httpClient.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                if (this@OpenAIRealtimeASRController.webSocket !== webSocket ||
+                    state.value.status != ASRStatus.Connecting
+                ) {
+                    webSocket.cancel()
+                    return
+                }
                 webSocket.send(provider.sessionUpdateEvent().toString())
                 _state.update { it.copy(status = ASRStatus.Listening, errorMessage = null) }
                 startRecorder(provider, webSocket)
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                handleServerEvent(text)
+                if (this@OpenAIRealtimeASRController.webSocket === webSocket) handleServerEvent(text)
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                if (this@OpenAIRealtimeASRController.webSocket !== webSocket) return
                 Log.e(TAG, "Realtime ASR websocket failed", t)
                 releaseRecorder()
                 setError(t.message ?: "ASR websocket failed")
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                if (this@OpenAIRealtimeASRController.webSocket !== webSocket) return
                 releaseRecorder()
                 _state.update {
                     it.copy(
@@ -111,6 +119,11 @@ class OpenAIRealtimeASRController(
                 }
             }
         })
+    }
+
+    override fun pauseCapture() {
+        recorderJob?.cancel()
+        runCatching { audioRecord?.stop() }
     }
 
     override fun stop() {

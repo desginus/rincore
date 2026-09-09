@@ -1277,5 +1277,31 @@
     <string name="assistant_page_time_reminder_interval_label">間隔（分鐘）</string>
     <string name="assistant_page_time_reminder_interval_hint">至少 1 分鐘</string>
     <string name="assistant_page_time_reminder_interval_value">每 %1$d 分鐘</string>
+<string name="chat_page_voice_title">語音模式</string>
+<string name="chat_page_voice_connecting">連線中…</string>
+<string name="chat_page_voice_listening_queued">聆聽中；新的語音將排入佇列</string>
+<string name="chat_page_voice_listening">聆聽中；您說完話後即會傳送訊息</string>
+<string name="chat_page_voice_transcribing">正在完成轉錄…</string>
+<string name="chat_page_voice_speaking">朗讀中；之後將恢復聆聽</string>
+<string name="chat_page_voice_paused">已暫停</string>
+<string name="chat_page_voice_retry">重試</string>
+<string name="chat_page_voice_end">結束</string>
+<string name="chat_page_voice_configure_asr">請先在語音設定中設定 ASR</string>
+<string name="chat_page_voice_unsupported_asr">此 ASR 提供者不支援伺服器端語音端點偵測。請使用 OpenAI Realtime、DashScope 或 Volcengine。</string>
+<string name="chat_page_voice_select_model">請先選擇聊天模型</string>
+<string name="chat_page_voice_finish_dictation">請先完成目前的語音輸入</string>
+<string name="chat_page_voice_resume_queue">訊息佇列已暫停，請先恢復佇列。</string>
+<string name="chat_page_voice_pending_tools">請先處理待處理的工具核准</string>
+<string name="chat_page_voice_configure_key">請先設定 ASR API 金鑰</string>
+<string name="chat_page_voice_no_endpointing">此 ASR 提供者不支援伺服器端語音端點偵測</string>
+<string name="chat_page_voice_failed">語音模式失敗。請重新啟動語音模式。</string>
+<string name="chat_page_voice_tool_approval">需要工具核准。請先解決，再重新啟動語音模式。</string>
+<string name="chat_page_voice_empty">未辨識到任何語音</string>
+<string name="chat_page_voice_tools_before_resume">恢復語音模式前，請先解決待處理的工具核准。</string>
+<string name="chat_page_voice_generation_failed">模型生成失敗。請在聊天中檢查錯誤。</string>
+<string name="chat_page_voice_queue_paused">訊息佇列已暫停。請解決問題，然後重新啟動語音模式。</string>
+<string name="setting_page_asr_silence_duration">語音結束靜音時長</string>
+<string name="setting_page_asr_silence_duration_desc">在連續靜音達此時間後結束語句。建議：800–1000 毫秒。</string>
+<string name="setting_page_asr_milliseconds">毫秒</string>
 </resources>
 

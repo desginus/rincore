@@ -156,6 +156,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingWebPage
 import me.rerere.rikkahub.ui.pages.setting.scheduledjobs.ScheduledJobsScreen
 import me.rerere.rikkahub.ui.pages.setting.scheduledjobs.ScheduledJobDetailScreen
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerPage
+import me.rerere.rikkahub.ui.pages.translator.TranslatorPage
 import me.rerere.rikkahub.ui.pages.stats.StatsPage
 import me.rerere.rikkahub.ui.pages.webview.WebViewPage
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
@@ -168,6 +169,7 @@ import org.koin.compose.koinInject
 import kotlin.uuid.Uuid
 
 private const val TAG = "RouteActivity"
+private const val ACTION_TRANSLATE = "me.rerere.rikkahub.action.TRANSLATE"
 
 class RouteActivity : ComponentActivity() {
     private val okHttpClient by inject<OkHttpClient>()
@@ -251,6 +253,11 @@ class RouteActivity : ComponentActivity() {
             }
 
             val action = intent?.action ?: return@LaunchedEffect
+            if (action == ACTION_TRANSLATE) {
+                handled = true
+                backStack.add(Screen.Translator)
+                return@LaunchedEffect
+            }
             val isSpecialAction = action in setOf(
                 Intent.ACTION_SEND,
                 Intent.ACTION_SEND_MULTIPLE,
@@ -344,6 +351,9 @@ class RouteActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        if (intent.action == ACTION_TRANSLATE) {
+            navStack?.add(Screen.Translator)
+        }
         // Navigate to the chat screen if a conversation ID is provided
         intent.getStringExtra("conversationId")?.let { text ->
             navStack?.add(Screen.Chat(text))
@@ -503,6 +513,10 @@ class RouteActivity : ComponentActivity() {
                                     text = key.text,
                                     image = key.streamUri
                                 )
+                            }
+
+                            entry<Screen.Translator> {
+                                TranslatorPage()
                             }
 
                             entry<Screen.History> {
@@ -772,6 +786,10 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data class ShareHandler(val text: String, val streamUri: String? = null) : Screen
+
+    // 4.1.0: AI 翻译页 (2.5.1 移植)
+    @Serializable
+    data object Translator : Screen
 
     @Serializable
     data object History : Screen

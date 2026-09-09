@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.ui.pages.extensions.workspace
 
 import android.graphics.Typeface
-import android.view.MotionEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -12,7 +11,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -173,7 +171,10 @@ private fun WorkspaceTerminalContent(
         modifier = Modifier
             .fillMaxSize()
             .padding(contentPadding)
-            .imePadding(),
+            .consumeWindowInsets(contentPadding)
+            // Resize to the final IME height at animation start so the toolbar moves immediately
+            // and terminal rows stay stable instead of sending a SIGWINCH for every frame.
+            .windowInsetsPadding(WindowInsets.imeAnimationTarget),
         color = Color.Black,
     ) {
         Column(modifier = Modifier.fillMaxSize()) {

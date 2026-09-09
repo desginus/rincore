@@ -26,10 +26,16 @@ fun createSearchTools(settings: Settings): Set<Tool> {
                 description = """
                     Search the web for up-to-date or specific information.
                     Use this when the user asks for the latest news, current facts, or needs verification.
+                    Do not treat result order as proof of freshness. Prefer primary sources and inspect
+                    each result's title, URL, publication date, and content before making a current claim.
+                    Use the optional publication-date and domain filters only when they match the question.
+                    If a date or primary source is missing, or sources conflict, run another focused search
+                    or use scrape_web to verify the most relevant source before answering.
                     Generate focused keywords and run multiple searches if needed.
 
                     Response format:
-                    - items[].id (short id), title, url, text
+                    - retrievedAt is the local retrieval time, never a publication date
+                    - items[].id (short id), index, title, url, publishedDate (if supplied), highlights (if supplied), text
                     - images[]: image urls related to the query (may be empty)
 
                     Citations:
@@ -62,9 +68,9 @@ fun createSearchTools(settings: Settings): Set<Tool> {
                         params = it.jsonObject,
                         commonOptions = settings.searchCommonOptions,
                         serviceOptions = options,
-                    )
+                    ).getOrThrow().copy(retrievedAt = java.time.Instant.now().toString())
                     val results =
-                        JsonInstantPretty.encodeToJsonElement(result.getOrThrow()).jsonObject.let { json ->
+                        JsonInstantPretty.encodeToJsonElement(result).jsonObject.let { json ->
                             val map = json.toMutableMap()
                             map["items"] =
                                 JsonArray(map["items"]!!.jsonArray.mapIndexed { index, item ->
@@ -90,7 +96,8 @@ fun createSearchTools(settings: Settings): Set<Tool> {
                     name = "scrape_web",
                     description = """
                         Scrape a URL for detailed page content.
-                        Use this when the user requests content from a specific page or when search snippets are insufficient.
+                        Use this when the user requests content from a specific page, when search snippets are insufficient,
+                        or when a current claim needs verification against a specific source.
                         Avoid using it for common questions unless the user asks.
                         """.trimIndent(),
                     parameters = {
@@ -110,7 +117,9 @@ fun createSearchTools(settings: Settings): Set<Tool> {
                             commonOptions = settings.searchCommonOptions,
                             serviceOptions = options,
                         )
-                        val payload = JsonInstantPretty.encodeToJsonElement(result.getOrThrow()).jsonObject
+                        val payload = JsonInstantPretty.encodeToJsonElement(
+                            result.getOrThrow().copy(retrievedAt = java.time.Instant.now().toString())
+                        ).jsonObject
                         listOf(UIMessagePart.Text(payload.toString()))
                     }
                 ))

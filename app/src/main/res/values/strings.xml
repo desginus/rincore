@@ -1125,6 +1125,7 @@
   <string name="share">Share</string>
   <string name="share_handler_page_title">Select an Assistant</string>
   <string name="shortcut_take_picture">Take Picture &amp; Ask</string>
+  <string name="shortcut_translate">AI Translator</string>
   <string name="silicon_flow_description">**Leading global AI capability provider, accelerating AGI to benefit humanity.**</string>
   <string name="silicon_flow_website">Website: [https://cloud.siliconflow.cn/](https://cloud.siliconflow.cn/i/u1Ia4Ycf)</string>
   <string name="skill_detail_page_content">Content</string>
@@ -1430,5 +1431,31 @@
     <string name="assistant_page_time_reminder_interval_label">间隔（分钟）</string>
     <string name="assistant_page_time_reminder_interval_hint">至少 1 分钟</string>
     <string name="assistant_page_time_reminder_interval_value">每 %1$d 分钟</string>
+<string name="chat_page_voice_title">Voice mode</string>
+<string name="chat_page_voice_connecting">Connecting…</string>
+<string name="chat_page_voice_listening_queued">Listening; new speech will be queued</string>
+<string name="chat_page_voice_listening">Listening; your message will be sent when you finish speaking</string>
+<string name="chat_page_voice_transcribing">Finalizing transcription…</string>
+<string name="chat_page_voice_speaking">Reading aloud; listening will resume afterward</string>
+<string name="chat_page_voice_paused">Paused</string>
+<string name="chat_page_voice_retry">Retry</string>
+<string name="chat_page_voice_end">End</string>
+<string name="chat_page_voice_configure_asr">Configure ASR in speech settings first</string>
+<string name="chat_page_voice_unsupported_asr">This ASR provider does not support server-side speech endpointing. Use OpenAI Realtime, DashScope, or Volcengine.</string>
+<string name="chat_page_voice_select_model">Select a chat model first</string>
+<string name="chat_page_voice_finish_dictation">Finish the current voice input first</string>
+<string name="chat_page_voice_resume_queue">The message queue is paused. Resume it first.</string>
+<string name="chat_page_voice_pending_tools">Resolve pending tool approvals first</string>
+<string name="chat_page_voice_configure_key">Configure the ASR API key first</string>
+<string name="chat_page_voice_no_endpointing">This ASR provider does not support server-side speech endpointing</string>
+<string name="chat_page_voice_failed">Voice mode failed. Please restart it.</string>
+<string name="chat_page_voice_tool_approval">Tool approval is required. Resolve it, then restart voice mode.</string>
+<string name="chat_page_voice_empty">No speech was recognized</string>
+<string name="chat_page_voice_tools_before_resume">Resolve pending tool approvals before resuming voice mode</string>
+<string name="chat_page_voice_generation_failed">Model generation failed. Check the error in the chat.</string>
+<string name="chat_page_voice_queue_paused">The message queue is paused. Resolve the issue, then restart voice mode.</string>
+<string name="setting_page_asr_silence_duration">End-of-speech silence duration</string>
+<string name="setting_page_asr_silence_duration_desc">End the utterance after this duration of continuous silence. Recommended: 800–1000 ms.</string>
+<string name="setting_page_asr_milliseconds">Milliseconds</string>
 </resources>
 

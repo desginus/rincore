@@ -1328,5 +1328,32 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
     <string name="assistant_page_time_reminder_interval_label">间隔（分钟）</string>
     <string name="assistant_page_time_reminder_interval_hint">至少 1 分钟</string>
     <string name="assistant_page_time_reminder_interval_value">每 %1$d 分钟</string>
+  <string name="shortcut_translate">AI 翻译</string>
+<string name="chat_page_voice_title">语音模式</string>
+<string name="chat_page_voice_connecting">连接中…</string>
+<string name="chat_page_voice_listening_queued">正在聆听，新语音将加入队列</string>
+<string name="chat_page_voice_listening">正在聆听，说完后自动发送</string>
+<string name="chat_page_voice_transcribing">正在确认识别结果…</string>
+<string name="chat_page_voice_speaking">正在朗读，结束后继续聆听</string>
+<string name="chat_page_voice_paused">已暂停</string>
+<string name="chat_page_voice_retry">重试</string>
+<string name="chat_page_voice_end">结束</string>
+<string name="chat_page_voice_configure_asr">请先在语音设置中配置 ASR</string>
+<string name="chat_page_voice_unsupported_asr">当前 ASR 不支持服务端断句，请使用 OpenAI Realtime、DashScope 或火山</string>
+<string name="chat_page_voice_select_model">请先选择聊天模型</string>
+<string name="chat_page_voice_finish_dictation">请先完成当前语音输入</string>
+<string name="chat_page_voice_resume_queue">消息队列已暂停，请先继续队列</string>
+<string name="chat_page_voice_pending_tools">请先处理工具确认</string>
+<string name="chat_page_voice_configure_key">请先配置 ASR API 密钥</string>
+<string name="chat_page_voice_no_endpointing">当前 ASR 不支持服务端断句</string>
+<string name="chat_page_voice_failed">语音模式失败。请重新启动。</string>
+<string name="chat_page_voice_tool_approval">需要确认工具操作，请处理后重新开始语音模式</string>
+<string name="chat_page_voice_empty">未识别到语音</string>
+<string name="chat_page_voice_tools_before_resume">请先处理工具确认，再继续语音模式</string>
+<string name="chat_page_voice_generation_failed">模型生成失败。请在聊天中查看错误。</string>
+<string name="chat_page_voice_queue_paused">消息队列已暂停。请解决问题后重新启动语音模式。</string>
+<string name="setting_page_asr_silence_duration">静音判停时长</string>
+<string name="setting_page_asr_silence_duration_desc">连续静音达到此时长后结束一句话，推荐 800–1000 毫秒。</string>
+<string name="setting_page_asr_milliseconds">毫秒</string>
 </resources>
 

@@ -71,6 +71,10 @@ class ChatVM(
     // 聊天输入状态 - 保存在 ViewModel 中避免 TransactionTooLargeException
     val inputState = ChatInputState()
 
+    val voiceSession = VoiceSessionController(viewModelScope, context::getString) {
+        chatService.enqueueVoiceMessage(_conversationId, it)
+    }
+
     // 异步任务 (从ChatService获取，响应式)
     val conversationJob: StateFlow<Job?> =
         chatService
@@ -99,6 +103,7 @@ class ChatVM(
     }
 
     override fun onCleared() {
+        voiceSession.stop()
         super.onCleared()
         // 移除对话引用
         chatService.removeConversationReference(_conversationId)
