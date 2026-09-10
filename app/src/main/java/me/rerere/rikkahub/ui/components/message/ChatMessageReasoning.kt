@@ -102,8 +102,6 @@ private fun rememberReasoningState(reasoning: UIMessagePart.Reasoning): Pair<Rea
         if (loading) {
             if (!state.expandState.expanded && settings.displaySetting.showThinkingContent)
                 state.expandState = ReasoningCardState.Preview
-            // v3.7.1: 滚动防抖 — 思考链 delta 高频触发时不再每帧滚动 (卡顿源)
-            delay(100)
             scrollState.animateScrollTo(scrollState.maxValue)
         } else {
             if (state.expandState.expanded) {
@@ -119,9 +117,9 @@ private fun rememberReasoningState(reasoning: UIMessagePart.Reasoning): Pair<Rea
         if (loading) {
             while (isActive) {
                 state.duration = (reasoning.finishedAt ?: Clock.System.now()) - reasoning.createdAt
-                // v3.6.47: 50ms→500ms — 50ms 更新每秒触发 20 次 mutableState 重组,
-                // 思考链期间持续高 CPU → 帧率低/发热。0.5s 精度足够显示, 重组降 90%。
-                delay(500)
+                // 4.1.5 对齐原版: 50ms 精度 (v3.6.47 的 500ms 是用户实测
+                // "思考计时每 0.5s 跳一下"的直接来源, 原版 delay(50))
+                delay(50)
             }
         }
     }

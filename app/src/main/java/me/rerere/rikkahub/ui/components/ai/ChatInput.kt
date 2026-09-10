@@ -235,9 +235,10 @@ fun ChatInput(
                     .fillMaxWidth()
                     .clip(containerShape)
                     .then(
-                        // v3.11.31: 流式生成中列表高频重绘 → blur 每帧重算是"磨砂
-                        // 经常卡掉"主因 — 生成期间降级为半透明纯色, 静止即恢复
-                        if (settings.displaySetting.enableBlurEffect && !loading) Modifier.hazeBlur(
+                        // 4.1.5 对齐原版: 删除生成中模糊降级 (v3.11.31/34 的
+                        // `&& !loading` 降级在 haze 2.0 下已无必要, 且是用户
+                        // 实测"输入条显示为同色底"的直接原因 — 原版恒模糊)
+                        if (settings.displaySetting.enableBlurEffect) Modifier.hazeBlur(
                             input = HazeInput.Sources(hazeState),
                             style = inputHazeStyle,
                         )
@@ -246,11 +247,7 @@ fun ChatInput(
                 shape = containerShape,
                 tonalElevation = 0.dp,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                // v3.11.34: color 与磨砂 modifier 条件必须同源 — 生成中 (loading)
-                // modifier 已降级但 color 仍透明 → 输入条整体透明的"特定情况"。
-                color = if (settings.displaySetting.enableBlurEffect && !loading) {
-                    Color.Transparent
-                } else hazeTintColor,
+                color = if (settings.displaySetting.enableBlurEffect) Color.Transparent else hazeTintColor,
             ) {
                 Column(
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),

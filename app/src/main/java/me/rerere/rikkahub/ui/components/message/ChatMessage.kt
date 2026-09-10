@@ -7,8 +7,6 @@ package me.rerere.rikkahub.ui.components.message
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.SpringSpec
-import androidx.compose.animation.core.TweenSpec
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -57,7 +55,6 @@ import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastAll
 import androidx.compose.ui.util.fastForEach
@@ -104,18 +101,12 @@ import me.rerere.rikkahub.utils.urlDecode
 import java.util.Locale
 import kotlin.time.Duration.Companion.milliseconds
 
-// v3.8.12: 内容动画参数化 — 修复输出完成瞬间整条消息抽动。
-// v3.7.x 条件化 [loading 时无 animateContentSize] 在 loading 翻转瞬间
-// 改变修饰符链 → 强制重组合 + 动画从无到有 → Markdown 重渲染 + 高度
-// 动画 → 页面上下抽动。改回原版 always animateContentSize 形态, 动画
-// 速度参数化: 流式时 TweenSpec(0) 瞬跳 (保留流式防抖收益), 完成时
-// SpringSpec (原版行为)。修饰符链不再在 loading 翻转时变化。
-private val streamingContentSizeSpec = TweenSpec<IntSize>(durationMillis = 0)
-private val settledContentSizeSpec = SpringSpec<IntSize>()
-
-@Composable
+// 4.1.5 根修: v3.8.12 的 spec 参数化仍是"loading 翻转瞬间改变
+// animateContentSize 参数" — Tween(0)→Spring 参数变化重启动画,
+// 输出完成瞬间整页抽动 (用户实测 v4.1.4 仍在)。对齐原版恒定形态:
+// animateContentSize() 无参数差异, loading 翻转零动画扰动。
 private fun Modifier.contentSizeAnimated(loading: Boolean): Modifier =
-    animateContentSize(animationSpec = if (loading) streamingContentSizeSpec else settledContentSizeSpec)
+    animateContentSize()
 
 @Composable
 fun ChatMessage(
@@ -409,23 +400,23 @@ private fun MessagePartsBlock(
                                     ) {
                                         Column(modifier = Modifier.padding(8.dp)) {
                                             MarkdownBlock(
-                                                    content = part.text.replaceRegexes(
-                                                        assistant = assistant,
-                                                        scope = AssistantAffectScope.ASSISTANT,
-                                                        visual = true,
-                                                    ),
-                                                onClickCitation = handleClickCitation,
+                                                content = part.text.replaceRegexes(
+                                                    assistant = assistant,
+                                                    scope = AssistantAffectScope.ASSISTANT,
+                                                    visual = true,
+                                                ),
+                                                onClickCitation = handleClickCitation
                                             )
                                         }
                                     }
                                 } else {
                                     MarkdownBlock(
-                                            content = part.text.replaceRegexes(
-                                                assistant = assistant,
-                                                scope = AssistantAffectScope.ASSISTANT,
-                                                visual = true,
-                                            ),
-                                        onClickCitation = handleClickCitation,
+                                        content = part.text.replaceRegexes(
+                                            assistant = assistant,
+                                            scope = AssistantAffectScope.ASSISTANT,
+                                            visual = true,
+                                        ),
+                                        onClickCitation = handleClickCitation
                                     )
                                 }
                             }

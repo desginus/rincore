@@ -98,6 +98,7 @@ import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.ui.components.ai.ChatAttachmentPickerActions
+import me.rerere.rikkahub.ui.components.motion.LocalHazeState
 import me.rerere.rikkahub.ui.components.ai.ChatInput
 import me.rerere.rikkahub.ui.components.ai.FilesPicker
 import me.rerere.rikkahub.ui.components.ai.completion.WorkspaceCompletionProvider
@@ -409,6 +410,11 @@ private fun ChatPageContent(
         )
         // v3.6.13: 对话设置对话框 — 延迟自动回复开关
 
+        // 4.1.5: 弹窗柔光玻璃 source — 全局弹窗经 LocalHazeState 消费
+        // 本页背景 source (HyperDialog/HyperGlassPanel 真模糊)
+        androidx.compose.runtime.CompositionLocalProvider(
+            LocalHazeState provides hazeState,
+        ) {
         Scaffold(
             topBar = {
                 TopBar(
@@ -588,6 +594,7 @@ private fun ChatPageContent(
                 },
             )
         }
+        } // LocalHazeState provider 闭合
 
         if (showFilesSheet) {
             ChatFilesPickerSheet(

@@ -31,13 +31,27 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import dev.chrisbanes.haze.HazeInput
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.blur.HazeBlurStyle
+import dev.chrisbanes.haze.blur.hazeBlur
+import dev.chrisbanes.haze.blur.material3.Material3
 
 /**
  * 4.0.2: 澎湃 OS 4 动效基建 — 柔和弹性曲线 + 柔光玻璃面板。
  * 全局弹窗系统统一走本组件 (弹出/关闭 scale+fade 弹性, 玻璃化表面, 高光描边)。
+ *
+ * 4.1.5 柔光玻璃根修: HyperGlassPanel 此前是半透明纯色底 (surface 0.88),
+ * 用户实测 = "和背景同色的渐变", 无真模糊。升级为 HazeInput.Sources 真
+ * blur — 弹窗层经 CompositionLocal 共享聊天页 hazeState (主窗 source),
+ * haze 2.0 官方支持 Dialog 跨 window blur; 无 source 场景回退半透明。
  */
+
+/** 聊天页 (或宿主页) 的 HazeState — 弹窗玻璃消费此 source 做真模糊 */
+val LocalHazeState = staticCompositionLocalOf<HazeState?> { null }
 
 /** 澎湃弹性规格: 中高阻尼 (柔和回弹不过弹), 中刚度 (跟手不拖沓) */
 object HyperMotionSpec {
@@ -64,10 +78,22 @@ fun HyperGlassPanel(
 ) {
     val surfaceAlpha = 0.88f
     val highlightAlpha = 0.14f
+    // 4.1.5: 真柔光玻璃 — 有 haze source 时 blur + 透明底 (模糊透出背景),
+    // 无 source (非聊天场景) 时回退半透明底
+    val hazeState = LocalHazeState.current
     Column(
         modifier = modifier
             .clip(shape)
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = surfaceAlpha))
+            .then(
+                if (hazeState != null) Modifier.hazeBlur(
+                    input = HazeInput.Sources(hazeState),
+                    style = HazeBlurStyle.Material3 { },
+                ) else Modifier
+            )
+            .background(
+                if (hazeState != null) Color.Transparent
+                else MaterialTheme.colorScheme.surface.copy(alpha = surfaceAlpha)
+            )
             .border(
                 width = 1.dp,
                 color = Color.White.copy(alpha = highlightAlpha),
@@ -95,6 +121,9 @@ fun HyperDialog(
         onDismissRequest = onDismissRequest,
         properties = properties,
     ) {
+        // 4.1.5: 弹窗 dim 归零 — 默认 dim 遮罩会盖住玻璃 blur 的透出效果
+        val view = androidx.compose.ui.platform.LocalView.current
+        (view.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window?.setDimAmount(0f)
         AnimatedVisibility(
             visible = true,
             enter = fadeIn(tween(HyperMotionSpec.FADE_IN_MS)) +
