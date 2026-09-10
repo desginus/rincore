@@ -1031,24 +1031,17 @@ class GenerationHandler(
                 messages = streamHandler.handle(messages, chunk)
                 // v3.15.1: 收到任何流数据即置位 — StreamChunk 判据 (Finish 之外均视为有效数据)
                 if (chunk !is me.rerere.ai.ui.StreamChunk.Finish) retry.receivedAnyData = true
+                // 4.2.1 bug 修复: usage 合并已在 StreamChunkHandler.Usage 内完成
+                // (copy(usage = usage.merge)), 此处不得再 merge — v4.2.0 双重合并
+                // 使 token 统计翻倍。保留缓存诊断日志。
                 (chunk as? me.rerere.ai.ui.StreamChunk.Usage)?.usage?.let { usage ->
-                    // 缓存诊断 (G4): 每次 usage 回传记录 prompt/cached 构成
                     if (usage.promptTokens > 0) {
-                        val cacheHitRate = if (usage.promptTokens > 0) {
-                            usage.cachedTokens * 100 / usage.promptTokens
-                        } else 0
+                        val cacheHitRate = usage.cachedTokens * 100 / usage.promptTokens
                         Log.i(
                             TAG,
                             "cache: prompt=${usage.promptTokens} cached=${usage.cachedTokens}" +
                                 " hit=$cacheHitRate%"
                         )
-                    }
-                    messages = messages.mapIndexed { index, message ->
-                        if (index == messages.lastIndex) {
-                            message.copy(usage = message.usage.merge(usage))
-                        } else {
-                            message
-                        }
                     }
                 }
                 // v3.11.24 (F3): 复读看门狗 — 每 384 个新增可见字符评估一次。

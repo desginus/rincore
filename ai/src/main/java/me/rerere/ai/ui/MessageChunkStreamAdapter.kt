@@ -21,8 +21,12 @@ class MessageChunkStreamAdapter {
 
     fun adapt(chunk: MessageChunk): List<StreamChunk> {
         val out = mutableListOf<StreamChunk>()
-        val choice = chunk.choices.firstOrNull() ?: return out
-        val delta = choice.delta ?: choice.message ?: return out
+        // usage-only 尾包 (choices 空) 也要桥接 — 旧路径 collect 层能拿到
+        // chunk.usage, 桥接器丢弃会丢最终用量 (缓存诊断/统计)
+        val out_usage = chunk.usage?.let { mutableListOf<StreamChunk>(StreamChunk.Usage(it)) } ?: mutableListOf()
+        val choice = chunk.choices.firstOrNull()
+        if (choice == null) return out_usage
+        val delta = choice.delta ?: choice.message ?: return out_usage
         delta.parts.forEach { part ->
             when (part) {
                 is UIMessagePart.Text -> {
@@ -52,7 +56,8 @@ class MessageChunkStreamAdapter {
                     }
                 }
                 is UIMessagePart.Tool -> {
-                    if (part.toolCallId !in toolsSeen) {
+                    val firstSeen = part.toolCallId !in toolsSeen
+                    if (firstSeen) {
                         out += StreamChunk.ToolCallStart(
                             id = part.toolCallId,
                             toolName = part.toolName,
@@ -60,23 +65,26 @@ class MessageChunkStreamAdapter {
                         )
                         toolsSeen += part.toolCallId
                     }
-                    // Start 与 Delta 分开: 首 delta 的 toolName 已在 Start 内,
-                    // 但 input 增量必须始终走 Delta (handler 按 id 累积, 否则首 delta 入参丢字)
-                    if (part.toolName.isNotEmpty() || part.input.isNotEmpty()) {
+                    // Start 已携带首见 toolName — 首 delta 的 Delta.toolNameDelta 必须为空
+                    // (否则 handler 拼接两次翻倍); 非首见的 toolName 增量照常走 Delta。
+                    // input 增量始终走 Delta (Start 不携带 input, 否则首 delta 入参丢字)
+                    val nameDelta = if (firstSeen) "" else part.toolName
+                    if (nameDelta.isNotEmpty() || part.input.isNotEmpty()) {
                         out += StreamChunk.ToolCallDelta(
                             id = part.toolCallId,
-                            toolNameDelta = part.toolName,
+                            toolNameDelta = nameDelta,
                             inputDelta = part.input,
                             metadata = part.metadata,
                         )
                     }
                 }
                 is UIMessagePart.Image -> {
+                    // 固定 id: url 是 base64 增量, 前缀每次变化不能当 id (会裂成多张图)
                     if (!imageStarted) {
-                        out += StreamChunk.ImageStart(id = part.url.take(64), metadata = part.metadata)
+                        out += StreamChunk.ImageStart(id = "image", metadata = part.metadata)
                         imageStarted = true
                     }
-                    out += StreamChunk.ImageDelta(id = part.url.take(64), data = part.url, metadata = part.metadata)
+                    out += StreamChunk.ImageDelta(id = "image", data = part.url, metadata = part.metadata)
                 }
                 else -> {}
             }
@@ -94,7 +102,7 @@ class MessageChunkStreamAdapter {
                 reasoningStarted = false
             }
             if (imageStarted) {
-                out += StreamChunk.ImageEnd(id = "end")
+                out += StreamChunk.ImageEnd(id = "image")
                 imageStarted = false
             }
             toolsSeen.forEach { out += StreamChunk.ToolCallEnd(id = it) }
@@ -105,8 +113,7 @@ class MessageChunkStreamAdapter {
                 model = chunk.model,
             )
         }
-        chunk.usage?.let { out += StreamChunk.Usage(it) }
-        return out
+        return out + out_usage
     }
 }
 
