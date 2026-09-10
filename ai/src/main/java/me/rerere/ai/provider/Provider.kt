@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import me.rerere.ai.core.ReasoningLevel
+import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.ImageGenSize
 import me.rerere.ai.ui.ImageGenerationItem
@@ -16,6 +17,15 @@ import me.rerere.ai.ui.UIMessage
 
 // 提供商实现
 // 采用无状态设计，使用时除了需要传入需要的参数外，还需要传入provider setting作为参数
+// 4.1.7 原版对齐: 非流式生成结果 (2.5.x 架构 — StreamChunkHandler 配套)
+data class TextGenerationResult(
+    val id: String,
+    val model: String,
+    val message: UIMessage,
+    val finishReason: String? = null,
+    val usage: TokenUsage? = null,
+)
+
 interface Provider<T : ProviderSetting> {
     suspend fun listModels(providerSetting: T): List<Model>
 
