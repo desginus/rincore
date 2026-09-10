@@ -31,7 +31,9 @@ import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.provider.providers.openai.ChatCompletionsAPI
 import me.rerere.ai.provider.providers.openai.ResponseAPI
 import me.rerere.ai.ui.ImageGenerationItem
+import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.StreamChunk
+import me.rerere.ai.provider.TextGenerationResult
 import me.rerere.ai.ui.toTextGenerationResult
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.util.KeyRoulette

@@ -113,7 +113,7 @@ class MessageChunkStreamAdapter {
 /** 非流式 (generateText) 快捷桥接: MessageChunk → TextGenerationResult */
 fun MessageChunk.toTextGenerationResult(): me.rerere.ai.provider.TextGenerationResult {
     val choice = choices.firstOrNull()
-    val message = choice?.message ?: delta ?: UIMessage.assistant("")
+    val message = choice?.message ?: choice?.delta ?: UIMessage.assistant("")
     return me.rerere.ai.provider.TextGenerationResult(
         id = id,
         model = model,

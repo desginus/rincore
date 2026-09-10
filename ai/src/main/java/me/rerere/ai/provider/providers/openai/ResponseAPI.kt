@@ -57,6 +57,7 @@ import me.rerere.ai.provider.providers.PartGroup
 import me.rerere.ai.provider.providers.groupPartsByToolBoundary
 import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.MessageChunk
+import me.rerere.ai.provider.TextGenerationResult
 import me.rerere.ai.ui.toTextGenerationResult
 import me.rerere.ai.ui.OpenAIReasoningMetadata
 import me.rerere.ai.ui.UIMessage

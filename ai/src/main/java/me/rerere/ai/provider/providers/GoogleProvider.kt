@@ -50,6 +50,7 @@ import me.rerere.ai.provider.providers.vertex.ServiceAccountTokenProvider
 import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.GoogleThoughtMetadata
 import me.rerere.ai.ui.MessageChunk
+import me.rerere.ai.provider.TextGenerationResult
 import me.rerere.ai.ui.toTextGenerationResult
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageAnnotation
