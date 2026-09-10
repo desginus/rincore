@@ -680,7 +680,11 @@ class ChatCompletionsAPI(
      * 全部分派数值/文案逐字保留 (v3.15.2/3/4 定版语义)。
      */
     private fun thinkingControlFields(host: String, params: TextGenerationParams): JsonObject? {
-        if (!params.model.abilities.contains(ModelAbility.REASONING) && !isAggregateGateway(host)) return null
+        // 4.1.2: 门控诊断日志 — level/abilities/是否发送, 思考问题直接看此行
+        val gate = params.model.abilities.contains(ModelAbility.REASONING) || isAggregateGateway(host)
+        Log.i(TAG, "Thinking gate(cc): host=$host level=${params.reasoningLevel} " +
+            "abilities=${params.model.abilities} → send=$gate")
+        if (!gate) return null
         val level = params.reasoningLevel
         fun obj(block: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit): JsonObject =
             buildJsonObject(block)

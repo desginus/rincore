@@ -601,7 +601,11 @@ class ClaudeProvider(
             }
 
             // 4.0.0 重写: thinking 家族三态提取为独立纯函数
-            if (params.model.abilities.contains(ModelAbility.REASONING) && !minimal) {
+            // 4.1.2: 门控诊断日志 — 思考控制问题直接看此行定位 (档位/abilities/是否发送)
+            val thinkingGate = params.model.abilities.contains(ModelAbility.REASONING) && !minimal
+            Log.i(TAG, "Thinking gate(anthropic): level=${params.reasoningLevel} " +
+                "abilities=${params.model.abilities} minimal=$minimal → send=$thinkingGate")
+            if (thinkingGate) {
                 thinkingFields(isMiniMaxFamily, params.reasoningLevel).forEach { (k, v) -> put(k, v) }
             }
 

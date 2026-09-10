@@ -840,10 +840,18 @@ class GenerationHandler(
         // UI 未编辑过的) abilities 恒空 → 思考控制/工具门控全哑。注册表按
         // modelId 兜底 (原版 ModelRegistry 语义), 命中即还原真实能力。
         // 置于 transforms 之前: transformer 链同样消费 abilities/modalities。
-        val modelWithAbilities = if (model.abilities.isEmpty()) {
-            val inferred = ModelRegistry.MODEL_ABILITIES.getData(model.modelId)
-            model.copy(abilities = inferred)
-        } else model
+        // 4.1.2 根治 (思考控制反复发作的最终根因): 旧逻辑仅 abilities 完全为空时兜底,
+        // abilities 非空但缺 REASONING 的模型 (历史数据/listModels 部分返回/编辑过的模型)
+        // 永远不兜底 → 发送侧 thinkingControlFields 门控 false → 请求体无 thinking 字段
+        // → 服务端按默认 auto → 用户任何档位调整都无效 ("固定路由到自动")。
+        // 注册表语义 = 该 modelId 真实具备的能力 (原版 ModelRegistry 定义), 差集合并只增
+        // 不减: 命中注册表的模型 abilities 恒正确, 与 UI 门控同源, 单点消除。
+        val modelWithAbilities = model.copy(
+            abilities = model.abilities + ModelRegistry.MODEL_ABILITIES.getData(model.modelId)
+        )
+        if (modelWithAbilities.abilities != model.abilities) {
+            Log.i(TAG, "Abilities resolved: ${model.modelId} ${model.abilities} → ${modelWithAbilities.abilities}")
+        }
         var internalMessages = buildList {
             val sysPromptLen: Int
             val memPromptLen: Int
