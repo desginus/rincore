@@ -67,6 +67,7 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlin.reflect.full.primaryConstructor
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import me.rerere.rikkahub.utils.plus
 
 @Composable
 fun SettingSearchPage(vm: SettingVM = koinViewModel()) {

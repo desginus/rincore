@@ -31,6 +31,7 @@ import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.ui.theme.CustomColors
 import org.koin.compose.koinInject
 import androidx.compose.foundation.layout.heightIn
+import me.rerere.rikkahub.utils.plus
 
 data class ToolPreview(val name: String, val description: String)
 

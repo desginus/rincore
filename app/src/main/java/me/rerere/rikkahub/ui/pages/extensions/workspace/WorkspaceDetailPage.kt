@@ -114,6 +114,7 @@ import me.rerere.rikkahub.ui.components.render.AudioRenderView
 import org.koin.core.parameter.parametersOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import me.rerere.rikkahub.utils.plus
 
 @Composable
 fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {

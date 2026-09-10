@@ -127,6 +127,7 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlin.uuid.Uuid
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import me.rerere.rikkahub.utils.plus
 
 @Composable
 fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {

@@ -32,6 +32,7 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.ui.theme.CustomColors
 import org.koin.compose.koinInject
+import me.rerere.rikkahub.utils.plus
 
 @Composable
 fun SettingToolListPage(

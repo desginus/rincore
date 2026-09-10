@@ -107,6 +107,7 @@ import kotlin.math.roundToInt
 import kotlin.uuid.Uuid
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import me.rerere.rikkahub.utils.plus
 
 private const val TAG = "ChatList"
 private const val LoadingIndicatorKey = "LoadingIndicator"

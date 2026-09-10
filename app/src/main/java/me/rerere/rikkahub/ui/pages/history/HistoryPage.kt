@@ -60,6 +60,7 @@ import me.rerere.rikkahub.utils.toLocalDateTime
 import org.koin.androidx.compose.koinViewModel
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import me.rerere.rikkahub.utils.plus
 
 @Composable
 fun HistoryPage(vm: HistoryVM = koinViewModel()) {

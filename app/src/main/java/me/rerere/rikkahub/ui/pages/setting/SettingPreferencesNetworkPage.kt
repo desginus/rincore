@@ -76,6 +76,7 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import me.rerere.rikkahub.utils.plus
 
 private const val PROXY_TEST_URL = "https://www.google.com/generate_204"
 

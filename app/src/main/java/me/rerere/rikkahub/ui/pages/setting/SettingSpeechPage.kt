@@ -80,6 +80,7 @@ import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import me.rerere.rikkahub.utils.plus
 
 @Composable
 fun SettingSpeechPage(vm: SettingVM = koinViewModel()) {

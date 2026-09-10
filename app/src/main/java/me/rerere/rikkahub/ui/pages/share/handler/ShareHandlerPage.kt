@@ -36,6 +36,7 @@ import me.rerere.rikkahub.utils.navigateToChatPage
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import androidx.compose.runtime.getValue
+import me.rerere.rikkahub.utils.plus
 
 @Composable
 fun ShareHandlerPage(text: String, image: String?) {

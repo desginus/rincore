@@ -69,6 +69,7 @@ import me.rerere.rikkahub.web.WebServerManager
 import org.koin.compose.koinInject
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import me.rerere.rikkahub.utils.plus
 
 @Composable
 fun SettingWebPage() {

@@ -54,6 +54,7 @@ import java.time.format.TextStyle
 import java.time.temporal.TemporalAdjusters
 import java.util.Locale
 import androidx.compose.runtime.getValue
+import me.rerere.rikkahub.utils.plus
 
 @Composable
 fun StatsPage(vm: StatsVM = koinViewModel()) {

@@ -80,6 +80,7 @@ import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import me.rerere.rikkahub.utils.plus
 
 @Composable
 fun SettingPage(vm: SettingVM = koinViewModel()) {

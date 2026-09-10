@@ -51,6 +51,7 @@ import me.rerere.rikkahub.utils.navigateToChatPage
 import me.rerere.rikkahub.utils.toLocalDateTime
 import org.koin.androidx.compose.koinViewModel
 import java.time.Instant
+import me.rerere.rikkahub.utils.plus
 
 @Composable
 fun FavoritePage(vm: FavoriteVM = koinViewModel()) {

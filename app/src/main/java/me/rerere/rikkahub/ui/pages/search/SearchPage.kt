@@ -64,6 +64,7 @@ import org.koin.androidx.compose.koinViewModel
 import kotlin.uuid.Uuid
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import me.rerere.rikkahub.utils.plus
 
 @Composable
 fun SearchPage(vm: SearchVM = koinViewModel()) {

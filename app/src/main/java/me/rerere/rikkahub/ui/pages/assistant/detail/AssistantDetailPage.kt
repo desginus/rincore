@@ -47,6 +47,7 @@ import me.rerere.rikkahub.ui.theme.CustomColors
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import androidx.compose.runtime.getValue
+import me.rerere.rikkahub.utils.plus
 
 @Composable
 fun AssistantDetailPage(id: String) {

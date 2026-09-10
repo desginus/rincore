@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.core.graphics.createBitmap
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
+import androidx.core.graphics.set
 
 @Composable
 fun QRCode(

@@ -86,6 +86,7 @@ import kotlin.math.roundToInt
 import kotlin.uuid.Uuid
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import me.rerere.rikkahub.utils.plus
 
 private val themeJson = Json {
     ignoreUnknownKeys = true
