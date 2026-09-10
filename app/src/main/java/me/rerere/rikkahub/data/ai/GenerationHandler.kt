@@ -65,7 +65,6 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.rikkahub.data.ai.protocol.MessageProtocol
 import me.rerere.ai.util.TraceLogger
-import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.OutputMessageTransformer
@@ -1022,15 +1021,17 @@ class GenerationHandler(
             )
             val preStreamMs = System.currentTimeMillis() - startMs
             Log.i(TAG, "Pre-stream ready in ${preStreamMs}ms, calling provider...")
+            // 4.2.0: 消费侧切原版 StreamChunkHandler (2.5.x 架构)
+            val streamHandler = me.rerere.ai.ui.StreamChunkHandler(model = model)
             providerImpl.streamText(
                 providerSetting = provider,
                 messages = internalMessages,
                 params = params
-            ).collect {
-                messages = messages.handleMessageChunk(chunk = it, model = model)
-                // v3.15.1: 收到任何流数据即置位 — 发起/流中断判据的事实依据
-                if (it.choices.isNotEmpty()) retry.receivedAnyData = true
-                it.usage?.let { usage ->
+            ).collect { chunk ->
+                messages = streamHandler.handle(messages, chunk)
+                // v3.15.1: 收到任何流数据即置位 — StreamChunk 判据 (Finish 之外均视为有效数据)
+                if (chunk !is me.rerere.ai.ui.StreamChunk.Finish) retry.receivedAnyData = true
+                (chunk as? me.rerere.ai.ui.StreamChunk.Usage)?.usage?.let { usage ->
                     // 缓存诊断 (G4): 每次 usage 回传记录 prompt/cached 构成
                     if (usage.promptTokens > 0) {
                         val cacheHitRate = if (usage.promptTokens > 0) {
@@ -1157,13 +1158,18 @@ class GenerationHandler(
             }
             }
         } else {
-            val chunk = providerImpl.generateText(
+            // 4.2.0: 非流式返回 TextGenerationResult (原版 2.5.x 形态)
+            val result = providerImpl.generateText(
                 providerSetting = provider,
                 messages = internalMessages,
                 params = params,
             )
-            messages = messages.handleMessageChunk(chunk = chunk, model = model)
-            chunk.usage?.let { usage ->
+            messages = if (messages.lastOrNull()?.role == result.message.role) {
+                messages.dropLast(1) + result.message
+            } else {
+                messages + result.message
+            }
+            result.usage?.let { usage ->
                 messages = messages.mapIndexed { index, message ->
                     if (index == messages.lastIndex) {
                         message.copy(
@@ -1242,6 +1248,8 @@ class GenerationHandler(
             var messages = listOf(UIMessage.user(prompt))
             var translatedText = ""
 
+            // 4.2.0: 消费侧切 StreamChunkHandler (翻译通道)
+            val translateHandler = me.rerere.ai.ui.StreamChunkHandler()
             providerHandler.streamText(
                 providerSetting = provider,
                 messages = messages,
@@ -1250,7 +1258,7 @@ class GenerationHandler(
                     reasoningLevel = ReasoningLevel.fromBudgetTokens(settings.translateThinkingBudget),
                 ),
             ).collect { chunk ->
-                messages = messages.handleMessageChunk(chunk)
+                messages = translateHandler.handle(messages, chunk)
                 translatedText = messages.lastOrNull()?.toText() ?: ""
 
                 if (translatedText.isNotBlank()) {
@@ -1261,7 +1269,7 @@ class GenerationHandler(
         } else {
             // Use Qwen MT model with special translation options
             val messages = listOf(UIMessage.user(sourceText))
-            val chunk = providerHandler.generateText(
+            val result = providerHandler.generateText(
                 providerSetting = provider,
                 messages = messages,
                 params = TextGenerationParams(
@@ -1282,7 +1290,8 @@ class GenerationHandler(
                     )
                 ),
             )
-            val translatedText = chunk.choices.firstOrNull()?.message?.toText() ?: ""
+            // 4.2.0: TextGenerationResult 直接持 message
+            val translatedText = result.message.toText()
 
             if (translatedText.isNotBlank()) {
                 onStreamUpdate?.invoke(translatedText)

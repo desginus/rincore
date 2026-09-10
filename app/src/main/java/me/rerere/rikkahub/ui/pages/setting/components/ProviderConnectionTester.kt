@@ -130,7 +130,8 @@ fun ProviderConnectionTester(
                             launch {
                                 runCatching {
                                     nonStreamingState = UiState.Loading
-                                    val chunk = provider.generateText(
+                                    // 4.2.0: 非流式返回 TextGenerationResult
+                                    val result = provider.generateText(
                                         providerSetting = internalProvider,
                                         messages = listOf(UIMessage.system("You are a helpful assistant"), UIMessage.user("hello")),
                                         params = TextGenerationParams(
@@ -139,9 +140,9 @@ fun ProviderConnectionTester(
                                             customBody = model!!.customBodies
                                         )
                                     )
-                                    val text = chunk.choices.firstOrNull()?.message?.parts
-                                        ?.filterIsInstance<UIMessagePart.Text>()
-                                        ?.joinToString("") { it.text } ?: ""
+                                    val text = result.message.parts
+                                        .filterIsInstance<UIMessagePart.Text>()
+                                        .joinToString("") { it.text }
                                     nonStreamingState = UiState.Success(text)
                                 }.onFailure { nonStreamingState = UiState.Error(it) }
                             }
@@ -158,9 +159,10 @@ fun ProviderConnectionTester(
                                         )
                                     )
                                     flow.collect { chunk ->
-                                        chunk.choices.firstOrNull()?.delta?.parts
-                                            ?.filterIsInstance<UIMessagePart.Text>()
-                                            ?.forEach { streamingText += it.text }
+                                        // 4.2.0: StreamChunk 消费
+                                        if (chunk is me.rerere.ai.ui.StreamChunk.TextDelta) {
+                                            streamingText += chunk.text
+                                        }
                                     }
                                     streamingState = UiState.Success("")
                                 }.onFailure { streamingState = UiState.Error(it) }
@@ -183,16 +185,17 @@ fun ProviderConnectionTester(
                                             customBody = model!!.customBodies
                                         )
                                     )
-                                    val message = chunk.choices.firstOrNull()?.message
-                                    val toolCall = message?.parts
-                                        ?.filterIsInstance<UIMessagePart.Tool>()
-                                        ?.firstOrNull()
+                                    // 4.2.0: TextGenerationResult 直接持 message
+                                    val message = chunk.message
+                                    val toolCall = message.parts
+                                        .filterIsInstance<UIMessagePart.Tool>()
+                                        .firstOrNull()
                                     val result = if (toolCall != null) {
                                         "调用: ${toolCall.toolName}  入参: ${toolCall.input}"
                                     } else {
-                                        val text = message?.parts
-                                            ?.filterIsInstance<UIMessagePart.Text>()
-                                            ?.joinToString("") { it.text } ?: ""
+                                        val text = message.parts
+                                            .filterIsInstance<UIMessagePart.Text>()
+                                            .joinToString("") { it.text }
                                         "未调用工具，响应: $text"
                                     }
                                     toolsState = UiState.Success(result)

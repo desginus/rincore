@@ -1089,7 +1089,7 @@ class ChatService(
             conversationRepo.getConversationById(conversation.id)?.let {
                 saveConversation(
                     conversationId,
-                    it.copy(title = result.choices[0].message?.toText()?.trim() ?: "")
+                    it.copy(title = result.message.toText().trim().ifEmpty { "" })
                 )
             }
         }.onFailure {
@@ -1133,8 +1133,8 @@ class ChatService(
                 params = backgroundTextGenerationParams(model, settings.fastModelReasoningLevel),
             )
             val suggestions =
-                result.choices[0].message?.toText()?.split("\n")?.map { it.trim() }
-                    ?.filter { it.isNotBlank() } ?: emptyList()
+                result.message.toText().split("\n").map { it.trim() }
+                    .filter { it.isNotBlank() }
 
             val latestConversation = conversationRepo.getConversationById(conversationId)
                 ?: sessions[conversationId]?.state?.value
@@ -1211,8 +1211,7 @@ class ChatService(
                 params = backgroundTextGenerationParams(model),
             )
 
-            return result.choices[0].message?.toText()?.trim()
-                ?: throw IllegalStateException("Failed to generate compressed summary")
+            return result.message.toText().trim().ifEmpty { throw IllegalStateException("Failed to generate compressed summary") }
         }
 
         val compressedSummaries = coroutineScope {

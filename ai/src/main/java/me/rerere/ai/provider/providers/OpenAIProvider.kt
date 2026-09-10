@@ -31,7 +31,8 @@ import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.provider.providers.openai.ChatCompletionsAPI
 import me.rerere.ai.provider.providers.openai.ResponseAPI
 import me.rerere.ai.ui.ImageGenerationItem
-import me.rerere.ai.ui.MessageChunk
+import me.rerere.ai.ui.StreamChunk
+import me.rerere.ai.ui.toTextGenerationResult
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.util.KeyRoulette
 import me.rerere.ai.util.configureReferHeaders
@@ -124,29 +125,37 @@ class OpenAIProvider(
         }
     }
 
+    // 4.2.0: 接口切换 StreamChunk (原版 2.5.x 形态) — 内层解析仍产出
+    // MessageChunk, 由 MessageChunkStreamAdapter 桥接 (v4.2.1 逐层替换)
     override suspend fun streamText(
         providerSetting: ProviderSetting.OpenAI,
         messages: List<UIMessage>,
         params: TextGenerationParams
-    ): Flow<MessageChunk> = if (providerSetting.useResponseApi) {
-        responseAPI.streamText(
-            providerSetting = providerSetting,
-            messages = messages,
-            params = params
-        )
-    } else {
-        chatCompletionsAPI.streamText(
-            providerSetting = providerSetting,
-            messages = messages,
-            params = params
-        )
+    ): Flow<StreamChunk> {
+        val adapter = me.rerere.ai.ui.MessageChunkStreamAdapter()
+        val inner: Flow<MessageChunk> = if (providerSetting.useResponseApi) {
+            responseAPI.streamText(
+                providerSetting = providerSetting,
+                messages = messages,
+                params = params
+            )
+        } else {
+            chatCompletionsAPI.streamText(
+                providerSetting = providerSetting,
+                messages = messages,
+                params = params
+            )
+        }
+        return flow {
+            inner.collect { chunk -> adapter.adapt(chunk).forEach { emit(it) } }
+        }
     }
 
     override suspend fun generateText(
         providerSetting: ProviderSetting.OpenAI,
         messages: List<UIMessage>,
         params: TextGenerationParams
-    ): MessageChunk {
+    ): TextGenerationResult {
         // 协议兜底: 严格端点 (DeepSeek V4 Flash 等) 要求首条消息为 system —
         // 子请求 (标题生成/建议/背景文本/工具分类) 常直接传 user 消息,
         // 缺 system 前缀 → 服务端报 'Required SETTINGS preface not received'
@@ -158,7 +167,7 @@ class OpenAIProvider(
         } else {
             messages
         }
-        return if (providerSetting.useResponseApi) {
+        val chunk: MessageChunk = if (providerSetting.useResponseApi) {
             responseAPI.generateText(
                 providerSetting = providerSetting,
                 messages = normalized,
@@ -171,6 +180,7 @@ class OpenAIProvider(
                 params = params
             )
         }
+        return chunk.toTextGenerationResult()
     }
 
     override suspend fun generateEmbedding(

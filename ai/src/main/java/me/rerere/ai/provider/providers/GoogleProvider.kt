@@ -11,6 +11,9 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.channels.onFailure
 import kotlinx.coroutines.flow.Flow
+import me.rerere.ai.ui.StreamChunk
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.flatMapConcat
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.callbackFlow
@@ -47,6 +50,7 @@ import me.rerere.ai.provider.providers.vertex.ServiceAccountTokenProvider
 import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.GoogleThoughtMetadata
 import me.rerere.ai.ui.MessageChunk
+import me.rerere.ai.ui.toTextGenerationResult
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessageChoice
@@ -171,7 +175,7 @@ class GoogleProvider(
         providerSetting: ProviderSetting.Google,
         messages: List<UIMessage>,
         params: TextGenerationParams,
-    ): MessageChunk = withContext(Dispatchers.IO) {
+    ): TextGenerationResult = withContext(Dispatchers.IO) {
         val requestBody = buildCompletionRequestBody(messages, params)
 
         val url = buildUrl(
@@ -221,10 +225,10 @@ class GoogleProvider(
             usage = parseUsageMeta(usage)
         )
 
-        messageChunk
+        messageChunk.toTextGenerationResult()
     }
 
-    override suspend fun streamText(
+    private suspend fun streamTextRaw(
         providerSetting: ProviderSetting.Google,
         messages: List<UIMessage>,
         params: TextGenerationParams,
@@ -698,6 +702,20 @@ class GoogleProvider(
             }
         })
     }
+
+    // 4.2.0 接口切换: Flow<StreamChunk> (原版 2.5.x 形态) — 内层解析仍产出
+    // MessageChunk, 由 MessageChunkStreamAdapter 桥接 (行为等价, v4.2.1 起内层逐步替换 StreamDecoder)
+    override suspend fun streamText(
+        providerSetting: ProviderSetting.Google,
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
+    ): Flow<StreamChunk> {
+        val adapter = me.rerere.ai.ui.MessageChunkStreamAdapter()
+        return streamTextRaw(providerSetting, messages, params).flatMapConcat { chunk ->
+            adapter.adapt(chunk).asFlow()
+        }
+    }
+
 
     private fun UIMessagePart.toGooglePart(): JsonObject? = when (this) {
         is UIMessagePart.Text -> buildJsonObject {

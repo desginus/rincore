@@ -11,6 +11,9 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.channels.onFailure
 import kotlinx.coroutines.flow.Flow
+import me.rerere.ai.ui.StreamChunk
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.flatMapConcat
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.callbackFlow
@@ -45,6 +48,7 @@ import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.ImageGenerationItem
 import me.rerere.ai.ui.MessageChunk
+import me.rerere.ai.ui.toTextGenerationResult
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageChoice
 import me.rerere.ai.ui.ClaudeReasoningMetadata
@@ -126,7 +130,7 @@ class ClaudeProvider(
         providerSetting: ProviderSetting.Claude,
         messages: List<UIMessage>,
         params: TextGenerationParams
-    ): MessageChunk = withContext(Dispatchers.IO) {
+    ): TextGenerationResult = withContext(Dispatchers.IO) {
         // v3.11.9: 2013 降级重试 — MiniMax 等严格校验上游间歇性 invalid params
         // (服务端波动/未知字段间歇拒绝, 用户实测同一请求随机 400)。
         // 首次 400+2013 → 用最简请求体 (无 cache_control/thinking) 重试一次。
@@ -181,10 +185,10 @@ class ClaudeProvider(
                 )
             ),
             usage = usage
-        )
+        ).toTextGenerationResult()
     }
 
-    override suspend fun streamText(
+    private suspend fun streamTextRaw(
         providerSetting: ProviderSetting.Claude,
         messages: List<UIMessage>,
         params: TextGenerationParams
@@ -956,6 +960,20 @@ class ClaudeProvider(
 
     /** v3.10.15: strip BOM (U+FEFF) 等不可见控制符 — 严格网关 JSON parser
      * 可能拒收. 应用于所有 text 块内容. */
+    // 4.2.0 接口切换: Flow<StreamChunk> (原版 2.5.x 形态) — 内层解析仍产出
+    // MessageChunk, 由 MessageChunkStreamAdapter 桥接 (行为等价, v4.2.1 起内层逐步替换 StreamDecoder)
+    override suspend fun streamText(
+        providerSetting: ProviderSetting.Claude,
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
+    ): Flow<StreamChunk> {
+        val adapter = me.rerere.ai.ui.MessageChunkStreamAdapter()
+        return streamTextRaw(providerSetting, messages, params).flatMapConcat { chunk ->
+            adapter.adapt(chunk).asFlow()
+        }
+    }
+
+
     private fun stripBom(obj: JsonObject): JsonObject {
         val text = obj["text"]?.takeIf { it is JsonPrimitive }?.jsonPrimitive?.contentOrNull
         if (text == null) return obj
