@@ -20,8 +20,6 @@ package me.rerere.rikkahub.data.ai.tools.routing
 /* ───【自研】ToolRouter.kt — 原版无此文件
  * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
  * ───────────────────────────────────────────────────────────────*/
-import android.util.Log
-import me.rerere.rikkahub.data.ai.tools.sanitizeSkillToolName
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive

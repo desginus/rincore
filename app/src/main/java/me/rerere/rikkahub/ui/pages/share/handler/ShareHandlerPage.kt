@@ -1,7 +1,10 @@
 package me.rerere.rikkahub.ui.pages.share.handler
 
+/* ───【原版对齐】ShareHandlerPage.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,7 +20,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -31,9 +33,9 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.utils.base64Encode
 import me.rerere.rikkahub.utils.navigateToChatPage
-import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
+import androidx.compose.runtime.getValue
 
 @Composable
 fun ShareHandlerPage(text: String, image: String?) {

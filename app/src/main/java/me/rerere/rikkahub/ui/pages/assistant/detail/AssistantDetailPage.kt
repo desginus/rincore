@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
+/* ───【原版对齐】AssistantDetailPage.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.BookOpen01
 import me.rerere.hugeicons.stroke.Brain02
@@ -24,7 +28,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -41,9 +44,9 @@ import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.heroAnimation
 import me.rerere.rikkahub.ui.theme.CustomColors
-import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
+import androidx.compose.runtime.getValue
 
 @Composable
 fun AssistantDetailPage(id: String) {

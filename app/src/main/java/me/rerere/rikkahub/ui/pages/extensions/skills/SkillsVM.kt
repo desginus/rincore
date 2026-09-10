@@ -25,7 +25,6 @@ import me.rerere.rikkahub.data.files.SkillMetadata
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import org.json.JSONArray
-import kotlin.collections.iterator
 
 class SkillsVM(
     private val skillManager: SkillManager,

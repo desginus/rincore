@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+/* ───【原版对齐】SettingPreferencesUIPage.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import android.content.Context
 import android.graphics.Typeface
 import android.net.Uri
@@ -23,11 +27,9 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -55,10 +57,11 @@ import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.ui.theme.rememberChatFontFamily
-import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 import java.io.File
 import kotlin.math.roundToInt
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 @Composable
 fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {

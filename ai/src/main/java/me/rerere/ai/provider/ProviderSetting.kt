@@ -1,5 +1,9 @@
 package me.rerere.ai.provider
 
+/* ───【原版对齐】ProviderSetting.kt | 差异 ±41 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 
 import androidx.compose.runtime.Composable
 import kotlinx.serialization.SerialName

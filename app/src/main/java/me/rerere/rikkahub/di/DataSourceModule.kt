@@ -27,11 +27,6 @@ import me.rerere.rikkahub.data.sync.BackupManager
 import me.rerere.rikkahub.data.db.AppDatabaseFactory
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.fts.MessageFtsManager
-import me.rerere.rikkahub.data.db.migrations.Migration_24_25
-import me.rerere.rikkahub.data.db.migrations.Migration_28_29
-import me.rerere.rikkahub.data.db.migrations.Migration_25_26
-import me.rerere.rikkahub.data.db.migrations.Migration_26_27
-import me.rerere.rikkahub.data.db.migrations.Migration_27_28
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.network.SettingsProxySelector
 import me.rerere.rikkahub.data.network.SettingsProxyAuthenticator

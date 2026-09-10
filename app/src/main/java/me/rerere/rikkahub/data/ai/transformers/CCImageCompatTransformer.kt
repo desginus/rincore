@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.ai.transformers
 
+/* ───【自研】CCImageCompatTransformer.kt | 原版 2.5.1 无此文件
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import android.util.Log
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart

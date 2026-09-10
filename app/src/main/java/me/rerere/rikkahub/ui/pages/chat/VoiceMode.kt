@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+/* ───【原版对齐】VoiceMode.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import me.rerere.rikkahub.R
 import android.content.Context
 import android.media.AudioAttributes
@@ -7,7 +11,6 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.lifecycle.Lifecycle
@@ -37,6 +40,7 @@ import me.rerere.rikkahub.utils.removeBracketedContent
 import me.rerere.rikkahub.utils.stripMarkdown
 import okhttp3.OkHttpClient
 import org.koin.compose.koinInject
+import androidx.compose.runtime.getValue
 
 /** Lives above adaptive drawer branches, so resizing does not recreate the voice session. */
 @Composable

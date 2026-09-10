@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.db.fts
 
+/* ───【原版对齐】MessageFtsManager.kt | 差异 ±2 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -7,7 +11,6 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.model.Conversation
-import me.rerere.rikkahub.data.model.MessageNode
 import java.time.Instant
 
 data class MessageSearchResult(

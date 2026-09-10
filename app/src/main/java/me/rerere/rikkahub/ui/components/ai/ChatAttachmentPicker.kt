@@ -1,14 +1,16 @@
 package me.rerere.rikkahub.ui.components.ai
 
+/* ───【原版对齐】ChatAttachmentPicker.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.core.content.FileProvider
@@ -29,6 +31,8 @@ import me.rerere.rikkahub.utils.isAllowedFileType
 import org.koin.compose.koinInject
 import java.io.File
 import kotlin.uuid.Uuid
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 internal data class ChatAttachmentPickerActions(
     val onTakePicture: () -> Unit,

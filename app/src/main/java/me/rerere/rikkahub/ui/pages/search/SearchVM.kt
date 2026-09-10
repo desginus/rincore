@@ -1,8 +1,10 @@
 package me.rerere.rikkahub.ui.pages.search
 
-import androidx.compose.runtime.getValue
+/* ───【原版对齐】SearchVM.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -21,6 +23,8 @@ import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.ui.hooks.readStringPreference
 import me.rerere.rikkahub.ui.hooks.writeStringPreference
 import kotlin.uuid.Uuid
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 private const val SORT_ORDER_PREF_KEY = "search_page_sort_order"
 

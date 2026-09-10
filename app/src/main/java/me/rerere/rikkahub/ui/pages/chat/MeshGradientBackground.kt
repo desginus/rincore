@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+/* ───【原版对齐】MeshGradientBackground.kt | 差异 ±18 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -11,7 +15,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -21,6 +24,7 @@ import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
+import androidx.compose.runtime.getValue
 
 /**
  * Gemini 风格动态渐变背景。

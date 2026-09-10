@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.ai.tools.local
 
+/* ───【原版对齐】ClipboardTool.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import android.content.Context
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray

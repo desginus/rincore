@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.sync.importer
 
+/* ───【原版对齐】ChatboxImporter.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.JsonArray

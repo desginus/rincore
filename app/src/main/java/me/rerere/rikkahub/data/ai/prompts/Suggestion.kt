@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.ai.prompts
 
+/* ───【原版对齐】Suggestion.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 internal val DEFAULT_SUGGESTION_PROMPT = """
     I will provide you with some chat content in the `<content>` block, including conversations between the User and the AI assistant.
     You need to act as the **User** to reply to the assistant, generating 3~5 appropriate and contextually relevant responses to help the assistant improve its answers.

@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.ai.tools.local
 
+/* ───【原版对齐】LocalToolOption.kt | 差异 ±52 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 

@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.ai.transformers
 
+/* ───【原版对齐】ThinkTagTransformer.kt | 差异 ±15 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 
 /* ───【原版对齐 + 2.4.11 移植】ThinkTagTransformer | v3.9.12 重写
  * 来源: 原版 RikkaHub 2.4.11 (transformThinkTags 重构, 89 行测试覆盖)

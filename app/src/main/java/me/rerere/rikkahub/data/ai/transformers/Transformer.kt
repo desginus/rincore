@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.ai.transformers
 
+/* ───【原版对齐】Transformer.kt | 差异 ±27 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import me.rerere.ai.provider.Model

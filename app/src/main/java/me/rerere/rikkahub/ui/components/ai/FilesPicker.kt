@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
@@ -25,7 +24,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -42,28 +40,22 @@ import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Job
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import me.rerere.ai.provider.ProviderSetting
 import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.Voice
 import me.rerere.hugeicons.stroke.AiMagic
 import me.rerere.hugeicons.stroke.AiBrain01
 import me.rerere.hugeicons.stroke.Camera01
@@ -75,7 +67,6 @@ import me.rerere.hugeicons.stroke.Files02
 import me.rerere.hugeicons.stroke.Folder01
 import me.rerere.hugeicons.stroke.Image02
 import me.rerere.hugeicons.stroke.MusicNote03
-import me.rerere.hugeicons.stroke.Package
 import me.rerere.hugeicons.stroke.Package01
 import me.rerere.hugeicons.stroke.Settings02
 import me.rerere.hugeicons.stroke.Video01
@@ -94,29 +85,20 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.hugeicons.stroke.BubbleChatQuestion
 import me.rerere.rikkahub.subagent.SubAgentRegistry
-import me.rerere.rikkahub.subagent.SubAgentRun
 import me.rerere.rikkahub.subagent.SubAgentStatus
 import me.rerere.rikkahub.ui.components.ui.ExtensionSelector
-import me.rerere.rikkahub.ui.components.ui.permission.PermissionCamera
-import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
-import me.rerere.rikkahub.ui.components.ui.permission.rememberPermissionState
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.workspace.WorkspaceShellStatus
 import org.koin.compose.koinInject
 import kotlin.uuid.Uuid
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import me.rerere.workspace.WorkspaceFileEntry
-import me.rerere.workspace.WorkspaceStorageArea
 import me.rerere.hugeicons.stroke.ArrowTurnBackward
-import me.rerere.hugeicons.stroke.File01
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.background
 import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 @Composable
 internal fun FilesPicker(

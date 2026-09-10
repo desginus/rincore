@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.backup.components
 
+/* ───【原版对齐】BackupDialog.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text

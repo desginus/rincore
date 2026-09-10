@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.components.ui
 
+/* ───【原版对齐】RabbitLoading.kt | 差异 ±65 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -10,13 +14,13 @@ import androidx.compose.foundation.Image
 import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.context.LocalSettings
+import androidx.compose.runtime.getValue
 
 /**
  * v3.6.71: 原版兔子 AnimatedVectorDrawable 动画替换为 RinCore 图标线条动画 —

@@ -16,16 +16,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.Screen
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowLeft01
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.hugeicons.stroke.GlobalSearch
 import me.rerere.hugeicons.stroke.Megaphone01
 import me.rerere.hugeicons.stroke.Package
@@ -35,6 +32,8 @@ import me.rerere.hugeicons.stroke.Settings03
 import me.rerere.rikkahub.data.datastore.Settings
 
 import me.rerere.rikkahub.ui.components.ui.CardGroup
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * 高级功能统一入口 (v3.6.16)

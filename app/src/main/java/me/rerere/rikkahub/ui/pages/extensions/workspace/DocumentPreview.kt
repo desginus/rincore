@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.extensions.workspace
 
+/* ───【自研】DocumentPreview.kt | 原版 2.5.1 无此文件
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column

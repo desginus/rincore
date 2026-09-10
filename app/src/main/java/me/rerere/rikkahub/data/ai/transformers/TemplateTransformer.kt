@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.ai.transformers
 
+/* ───【原版对齐】TemplateTransformer.kt | 差异 ±3 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import io.pebbletemplates.pebble.PebbleEngine
 import io.pebbletemplates.pebble.loader.Loader
 import kotlinx.datetime.TimeZone

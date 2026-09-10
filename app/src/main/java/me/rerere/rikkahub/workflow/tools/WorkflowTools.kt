@@ -4,7 +4,6 @@ package me.rerere.rikkahub.workflow.tools
 /* ───【自研】WorkflowTools.kt — 原版无此文件
  * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
  * ───────────────────────────────────────────────────────────────*/
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -21,7 +20,6 @@ import me.rerere.rikkahub.workflow.model.WorkflowDefinition
 import me.rerere.rikkahub.workflow.model.WorkflowCapabilitySnapshot
 import me.rerere.rikkahub.workflow.model.WorkflowJson
 import me.rerere.rikkahub.workflow.repository.WorkflowRepository
-import me.rerere.rikkahub.workflow.trigger.TriggerRegistry
 
 /**
  * Phase 12 — the seven `workflow_*` tools the LLM uses to author and manage workflows.

@@ -1,13 +1,15 @@
 package me.rerere.rikkahub.ui.theme
 
+/* ───【原版对齐】Type.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.ExperimentalTextApi
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.sp
 import me.rerere.rikkahub.R
 
 val base = Typography()

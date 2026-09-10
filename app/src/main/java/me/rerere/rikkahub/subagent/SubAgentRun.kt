@@ -5,7 +5,6 @@ package me.rerere.rikkahub.subagent
  * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
  * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.Serializable
-import kotlin.uuid.Uuid
 
 /**
  * Phase 11 — sub-agent run record. Lives in [SubAgentRegistry]'s in-memory map for the

@@ -5,7 +5,6 @@ package me.rerere.rikkahub.workflow.ui
  * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
  * ───────────────────────────────────────────────────────────────*/
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -29,11 +28,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -50,6 +47,8 @@ import me.rerere.rikkahub.workflow.model.TriggerSpec
 import me.rerere.rikkahub.workflow.model.WorkflowDefinition
 import me.rerere.rikkahub.workflow.repository.WorkflowRepository
 import org.koin.compose.koinInject
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /** 工作流列表 — 浏览/启停/删除/手动运行 */
 @Composable

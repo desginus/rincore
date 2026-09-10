@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.repository
 
+/* ───【原版对齐】MemoryRepository.kt | 差异 ±41 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map

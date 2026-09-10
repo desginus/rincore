@@ -49,14 +49,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -95,11 +93,7 @@ import me.rerere.rikkahub.ui.components.ui.RikkaConfirmDialog
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.fileSizeToString
-import me.rerere.rikkahub.utils.plus
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
 import java.io.File
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.background
 import androidx.compose.material3.CircularProgressIndicator
 import me.rerere.rikkahub.ui.components.motion.HyperDialog
@@ -118,6 +112,8 @@ import me.rerere.rikkahub.ui.components.render.ImageRenderView
 import me.rerere.rikkahub.ui.components.render.VideoRenderView
 import me.rerere.rikkahub.ui.components.render.AudioRenderView
 import org.koin.core.parameter.parametersOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 @Composable
 fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {

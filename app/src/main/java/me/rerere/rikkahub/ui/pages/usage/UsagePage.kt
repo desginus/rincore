@@ -37,11 +37,9 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -61,13 +59,12 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.usage.CommandCodeUsageApi
 import me.rerere.rikkahub.data.usage.UsageMiniCardData
 import me.rerere.rikkahub.data.usage.openCodeMiniCard
-import me.rerere.rikkahub.data.usage.commandCodeMiniCard
-import me.rerere.rikkahub.data.usage.formatRemainingMs
 import me.rerere.rikkahub.data.usage.UsageApi
 import org.koin.compose.koinInject
 import java.time.Instant
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 @Composable
 fun UsagePage(onBack: () -> Unit = {}) {

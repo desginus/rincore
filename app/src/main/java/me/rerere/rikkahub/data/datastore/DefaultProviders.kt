@@ -5,21 +5,8 @@ package me.rerere.rikkahub.data.datastore
  * 来源: 原版移植 + 自研 (提供商集合扩展)
  * 差异: 自研提供商定义 (OpenCode Zen/grok 等) 与图标匹配
  * ───────────────────────────────────────────────────────────────*/
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.LinkAnnotation
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withLink
-import androidx.compose.ui.text.withStyle
 import me.rerere.ai.provider.BalanceOption
-import me.rerere.ai.provider.Modality
-import me.rerere.ai.provider.Model
-import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderSetting
-import me.rerere.rikkahub.R
-import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import kotlin.uuid.Uuid
 
 val DEFAULT_AUTO_MODEL_ID = Uuid.parse("b7055fb4-39f9-4042-a88a-0d80ed76cf08")

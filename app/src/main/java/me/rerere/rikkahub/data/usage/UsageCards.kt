@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.usage
 
+/* ───【自研】UsageCards.kt | 原版 2.5.1 无此文件
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import java.time.Instant
 
 /**

@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.ai.prompts
 
+/* ───【原版对齐】CompressPrompt.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 internal val DEFAULT_COMPRESS_PROMPT = """
     You are a conversation compression assistant. Compress the following conversation into a concise summary.
 

@@ -6,7 +6,6 @@ package me.rerere.ai.provider.providers
  * ───────────────────────────────────────────────────────────────*/
 import android.content.Context
 import android.util.Log
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose

@@ -15,7 +15,6 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
-import me.rerere.ai.ui.UIMessagePart
 
 fun showLocationOnMapTool(
     context: Context,

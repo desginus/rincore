@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.components.ai
 
+/* ───【原版对齐】CropLauncher.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
@@ -7,10 +11,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.net.toFile
 import com.dokar.sonner.ToastType
@@ -20,6 +22,8 @@ import me.rerere.common.android.Logging
 import me.rerere.common.android.appTempFolder
 import me.rerere.rikkahub.ui.context.LocalToaster
 import java.io.File
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 @Composable
 internal fun useCropLauncher(

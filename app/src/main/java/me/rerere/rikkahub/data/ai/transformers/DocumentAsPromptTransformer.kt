@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.ai.transformers
 
+/* ───【原版对齐】DocumentAsPromptTransformer.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import androidx.core.net.toFile
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers

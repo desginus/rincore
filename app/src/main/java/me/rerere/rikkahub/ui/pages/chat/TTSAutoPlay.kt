@@ -1,8 +1,11 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+/* ───【原版对齐】TTSAutoPlay.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import me.rerere.ai.core.MessageRole
 import me.rerere.rikkahub.data.datastore.Settings
@@ -10,6 +13,7 @@ import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.ui.context.LocalTTSState
 import me.rerere.rikkahub.utils.extractQuotedContentAsText
 import me.rerere.rikkahub.utils.removeBracketedContent
+import androidx.compose.runtime.getValue
 
 @Composable
 fun TTSAutoPlay(vm: ChatVM, setting: Settings, conversation: Conversation) {

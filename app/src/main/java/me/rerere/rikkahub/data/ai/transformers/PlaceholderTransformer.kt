@@ -19,7 +19,6 @@ import kotlin.time.Clock
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.model.Assistant
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get

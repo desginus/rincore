@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.db.migrations
 
+/* ───【原版对齐】Migration_11_12.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import android.database.sqlite.SQLiteBlobTooBigException
 import android.util.Log
 import androidx.room.migration.Migration

@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.theme
 
+/* ───【原版对齐】PresetTheme.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import androidx.compose.material3.ColorScheme
 import androidx.compose.runtime.Composable
 import me.rerere.rikkahub.ui.theme.presets.AutumnThemePreset

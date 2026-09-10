@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.ai.mcp
 
+/* ───【原版对齐】McpManager.kt | 差异 ±14 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import android.content.Context
 import androidx.core.net.toUri
 import io.ktor.client.HttpClient

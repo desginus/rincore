@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.backup.tabs
 
+/* ───【原版对齐】ReminderTab.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,7 +18,6 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -25,6 +28,7 @@ import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.pages.backup.BackupVM
 import me.rerere.rikkahub.utils.toLocalDateTime
 import java.time.Instant
+import androidx.compose.runtime.getValue
 
 @Composable
 fun ReminderTab(vm: BackupVM) {

@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.setting.components
 
+/* ───【原版对齐】ASRProviderConfigure.kt | 差异 ±23 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth

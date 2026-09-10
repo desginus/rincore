@@ -13,7 +13,6 @@ import android.content.Intent
 import android.util.Log
 import android.graphics.PixelFormat
 import android.os.Build
-import android.os.IBinder
 import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent

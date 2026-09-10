@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.ai.tools
 
+/* ───【原版对齐】TextReplacers.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 /**
  * workspace_edit_file 使用的文本替换器, 按 [WorkspaceEditReplacers] 顺序逐级尝试,
  * 前一级找不到任何匹配时才会降级到下一级更宽松的匹配策略。

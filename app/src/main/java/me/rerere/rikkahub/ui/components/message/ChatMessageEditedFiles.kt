@@ -26,11 +26,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -48,8 +46,6 @@ import me.rerere.hugeicons.stroke.File02
 import me.rerere.hugeicons.stroke.FileImport
 import me.rerere.hugeicons.stroke.FileView
 import me.rerere.hugeicons.stroke.Share08
-import com.dokar.sonner.ToastType
-import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
@@ -63,6 +59,8 @@ import me.rerere.rikkahub.ui.components.detectRenderKind
 import me.rerere.workspace.WorkspaceStorageArea
 import org.koin.compose.koinInject
 import java.io.File
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 private const val DEFAULT_VISIBLE_COUNT = 3
 private val WORKSPACE_FILE_TOOL_NAMES = setOf("workspace_show_file")

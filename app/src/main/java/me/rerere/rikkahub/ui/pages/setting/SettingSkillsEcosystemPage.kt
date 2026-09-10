@@ -6,19 +6,18 @@ package me.rerere.rikkahub.ui.pages.setting
  * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.theme.CustomColors
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * 技能与生态 — 合并页 (OpenClaw 技能 + 生态系统)

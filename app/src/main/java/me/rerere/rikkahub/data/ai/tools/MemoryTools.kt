@@ -5,12 +5,10 @@ package me.rerere.rikkahub.data.ai.tools
  * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
  * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.jsonPrimitive

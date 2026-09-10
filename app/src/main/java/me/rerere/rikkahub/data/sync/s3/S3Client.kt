@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.sync.s3
 
+/* ───【原版对齐】S3Client.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import android.util.Log
 import android.util.Xml
 import io.ktor.client.HttpClient
@@ -13,7 +17,6 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpMethod
 import io.ktor.http.isSuccess
 import io.ktor.utils.io.jvm.javaio.toInputStream
-import io.ktor.utils.io.readAvailable
 import io.ktor.util.cio.readChannel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

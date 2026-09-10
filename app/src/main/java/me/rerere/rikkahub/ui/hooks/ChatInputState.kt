@@ -1,13 +1,17 @@
 package me.rerere.rikkahub.ui.hooks
 
+/* ───【原版对齐】ChatInputState.kt | 差异 ±4 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import android.net.Uri
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import me.rerere.ai.ui.UIMessagePart
 import kotlin.uuid.Uuid
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 class ChatInputState {
     val textContent = TextFieldState()

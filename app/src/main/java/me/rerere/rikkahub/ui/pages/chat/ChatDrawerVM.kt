@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+/* ───【原版对齐】ChatDrawerVM.kt | 差异 ±31 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 
 import android.app.Application
 import androidx.lifecycle.SavedStateHandle

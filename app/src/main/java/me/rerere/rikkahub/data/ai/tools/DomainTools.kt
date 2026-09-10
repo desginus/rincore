@@ -22,7 +22,6 @@ import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.ai.tools.routing.normalizedFullPath
 import me.rerere.rikkahub.data.datastore.CustomDomain
-import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 
 /**

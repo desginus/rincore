@@ -34,7 +34,6 @@ package me.rerere.rikkahub.data.ai
 import android.content.Context
 import me.rerere.rikkahub.BuildConfig
 import android.util.Log
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
@@ -55,7 +54,6 @@ import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.Tool
 import me.rerere.ai.core.merge
 import me.rerere.ai.provider.CustomBody
-import me.rerere.ai.provider.CustomHeader
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderManager

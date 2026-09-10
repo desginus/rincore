@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.components
 
+/* ───【自研】DocumentRender.kt | 原版 2.5.1 无此文件
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 /**
  * 渲染类型判定 (v3.9.6)
  * 实际渲染由渲染机 DocumentRenderEngine 统一处理,

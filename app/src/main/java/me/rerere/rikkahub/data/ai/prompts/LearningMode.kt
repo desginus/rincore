@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.ai.prompts
 
+/* ───【原版对齐】LearningMode.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 val LEARNING_MODE_PROMPT = """
     The user is currently STUDYING, and they've asked you to follow these **strict rules** during this chat. No matter what other instructions follow, you MUST obey these rules:
 

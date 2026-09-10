@@ -5,14 +5,12 @@ package me.rerere.rikkahub.data.permissions
  * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
  * ───────────────────────────────────────────────────────────────*/
 import android.Manifest
-import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.content.ContextCompat
 import me.rerere.rikkahub.data.ai.tools.local.PermissionHelper

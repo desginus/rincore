@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.service
 
+/* ───【自研】ContextCompressor.kt | 原版 2.5.1 无此文件
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import kotlin.math.abs

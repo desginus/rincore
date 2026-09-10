@@ -4,8 +4,6 @@ package me.rerere.rikkahub.ui.components.message
 /* ───【原版对齐】ChatMessageNerdLine.kt | 差异 ±5 行
  * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
  * ───────────────────────────────────────────────────────────────*/
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.runtime.getValue
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.FlowRow
@@ -34,6 +32,7 @@ import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.utils.formatNumber
 import me.rerere.rikkahub.utils.toFixed
 import java.time.Duration
+import androidx.compose.runtime.getValue
 
 /**
  * 显示消息的技术统计信息（如 token 使用量）

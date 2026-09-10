@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.data.datastore.migration
 
+/* ───【原版对齐】PreferenceStoreV3Migration.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import androidx.datastore.core.DataMigration
 import androidx.datastore.preferences.core.Preferences
 import kotlinx.serialization.json.JsonArray
