@@ -146,7 +146,7 @@ class ClaudeProvider(
             .configureSessionHeaders(providerSetting.baseUrl, params.sessionId)
                 .build()
 
-            Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
+            // 4.1.3 TTFT: 删除全量请求体日志 (qwen Anthropic 直传路径, 同 CC 通道语义)
 
             response = client.resolveProxy(proxyRoute, params.model.modelId).newCall(request).await()
             if (response.isSuccessful) break

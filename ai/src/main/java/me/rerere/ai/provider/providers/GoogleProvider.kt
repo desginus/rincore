@@ -254,7 +254,7 @@ class GoogleProvider(
                 .build()
         )
 
-        Log.d(TAG, "streamText: ${json.encodeToString(requestBody)}") // v3.6.17: 降 d
+        // 4.1.3 TTFT: Log.d 参数在 release 同样求值, 全量序列化纯浪费 — 删除
 
         var hasData = false
         val listener = object : EventSourceListener() {

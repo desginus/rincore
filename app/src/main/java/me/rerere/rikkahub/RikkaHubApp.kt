@@ -143,6 +143,17 @@ class RikkaHubApp : Application() {
                         me.rerere.ai.provider.ProviderManager.opencodeClient,
                     )
                 }
+                // 4.1.3: 常驻保活心跳 — 服务端 (CF 系) 空闲 ~100s 关连接, 静态预热
+                // 只覆盖启动窗口; 心跳每 45s 同池刷连接, 任意时刻发送都是热连接。
+                // 取代生成前预热 (同 key 串行化, v3.12.6 实测反拉长首包)。
+                ConnectionWarmer.startProviderKeepAlive(
+                    appScope = get<AppScope>(),
+                    httpClient = httpClient,
+                    opencodeClient = me.rerere.ai.provider.ProviderManager.opencodeClient,
+                    apiKey = st.opencodeApiKey,
+                    commandCodeEnabled = st.commandCodeWarmEnabled,
+                    opencodeEnabled = st.opencodeWarmEnabled,
+                )
             }
         }, "warmup-user-providers").start()
         this.createNotificationChannel()

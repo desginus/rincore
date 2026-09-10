@@ -8,6 +8,8 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.util.Log
 import okhttp3.OkHttpClient
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -103,6 +105,63 @@ object ConnectionWarmer {
                 Log.w(TAG, "OkHttp 预热失败: $safe — ${it.message}")
             }
         }, "warmup-okhttp").start()
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // 4.1.3: 常驻连接保活心跳 (TTFT 根治) —
+    // 旧预热体系失效的两个结构性原因:
+    //   a) 服务端 (CF 系) 空闲 ~100s 关连接, 池 300s 只是客户端意愿,
+    //      用户隔几分钟发一条 → 池内连接早已死, 复用失败重试反而更慢;
+    //   b) 生成前预热与主请求并发, 同 key 请求被网关串行化 (v3.12.6
+    //      用户实测), 预热请求挂在慢网关上时主请求排队等它。
+    // 心跳方案: 应用级常驻协程每 45s (< 100s 空闲阈值, 留安全余量)
+    // 对目标 host 发 GET /models (同池), 连接池内永远有 ≤45s 新鲜连接;
+    // 发送时零握手零冷连, 且主请求与心跳碰撞窗口 <1s (心跳请求耗时)。
+    // 开关沿用 opencodeWarmEnabled/commandCodeWarmEnabled (语义升级为保活)。
+    // ─────────────────────────────────────────────────────────────
+    @Volatile private var keepAliveJob: kotlinx.coroutines.Job? = null
+    @Volatile private var keepAliveKey: String? = null
+
+    fun startProviderKeepAlive(
+        appScope: kotlinx.coroutines.CoroutineScope,
+        httpClient: OkHttpClient,
+        opencodeClient: OkHttpClient?,
+        apiKey: String,
+        commandCodeEnabled: Boolean,
+        opencodeEnabled: Boolean,
+    ) {
+        val target = when {
+            apiKey.startsWith("user_", ignoreCase = true) && commandCodeEnabled ->
+                "https://api.commandcode.ai/provider/v1" to (opencodeClient ?: httpClient)
+            apiKey.startsWith("sk", ignoreCase = true) && opencodeEnabled ->
+                "https://opencode.ai/zen/go/v1" to (opencodeClient ?: httpClient)
+            else -> null
+        } ?: return
+        val (baseUrl, client) = target
+        // 开关/环境变化 → 重启心跳
+        if (keepAliveKey == baseUrl && keepAliveJob?.isActive == true) return
+        keepAliveJob?.cancel()
+        keepAliveKey = baseUrl
+        val host = runCatching { java.net.URI(baseUrl).host }.getOrNull() ?: return
+        keepAliveJob = appScope.launch {
+            while (isActive) {
+                kotlinx.coroutines.delay(45_000L)
+                runCatching {
+                    val warmClient = client.newBuilder()
+                        .connectTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
+                        .readTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
+                        .writeTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
+                        .build()
+                    val req = okhttp3.Request.Builder()
+                        .url(baseUrl.trimEnd('/') + "/models").get().build()
+                    warmClient.newCall(req).execute().use { }
+                }.onFailure {
+                    Log.w(TAG, "keepalive $host: ${it.message}")
+                }
+                Log.d(TAG, "keepalive $host ok (pool fresh)")
+            }
+        }
+        Log.i(TAG, "Provider keepalive started: $host (45s interval, same-pool)")
     }
 
     /**

@@ -124,7 +124,7 @@ class ResponseAPI(
             .configureSessionHeaders(providerSetting.baseUrl, params.sessionId)
             .build()
 
-        Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
+        // 4.1.3 TTFT: 删除全量请求体日志 (同 CC 通道)
 
         val response = effClient(providerSetting).resolveProxy(proxyRoute, params.model.modelId).newCall(request).await()
         if (!response.isSuccessful) {
@@ -163,7 +163,7 @@ class ResponseAPI(
             .configureSessionHeaders(providerSetting.baseUrl, params.sessionId)
             .build()
 
-        Log.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
+        // 4.1.3 TTFT: 删除全量请求体日志 (同 CC 通道)
 
         // SSE 无数据看门狗: 120s 无任何事件 → 主动断开 (快速失败, 不等 readTimeout)
         // 无数据看门狗: 只记录日志不主动断开 — 主动断开曾引入长思考中断 (3.5.14)

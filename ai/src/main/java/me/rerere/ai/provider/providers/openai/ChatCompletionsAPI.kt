@@ -153,8 +153,8 @@ class ChatCompletionsAPI(
             .configureSessionHeaders(providerSetting.baseUrl, params.sessionId)
             .build()
 
-        Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
-
+        // 4.1.3 TTFT: 删除全量请求体日志 — 大请求体 (工具 schema 多/上下文长) 每请求
+        // 多一次全量 JSON 序列化 + logcat, 纯发送前开销; 错误路径 (下方) 保留完整请求体
         val response = effClient(providerSetting).resolveProxy(proxyRoute, params.model.modelId).newCall(request).await()
         if (!response.isSuccessful) {
             // v3.6.78: 报错带完整请求体 — 定位 400 触发字段 (grok 排查)
@@ -214,8 +214,8 @@ class ChatCompletionsAPI(
             .configureSessionHeaders(providerSetting.baseUrl, params.sessionId)
             .build()
 
-        // v3.6.17: 降 d — release 裁剪 (每请求大 JSON 格式化是功耗热点, debug 保留诊断)
-        Log.d(TAG, "streamText: ${json.encodeToString(requestBody)}")
+        // 4.1.3 TTFT: Log.d 的参数在 release 同样求值 — 每次流式请求都全量序列化
+        // 请求体 (几百 KB 时 50-300ms + GC 压力) 直接加到首包延迟; 彻底删除
 
         // just for debugging response body
         // println(client.newCall(request).await().body?.string())

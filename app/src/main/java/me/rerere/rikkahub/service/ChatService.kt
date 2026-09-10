@@ -720,54 +720,13 @@ class ChatService(
         // v3.6.15: 生成保活 — 切后台时 CPU/网络读稳定 (onCompletion 释放)
         val genWakeLock = acquireGenWakeLock()
 
-        // 延迟连接预热: 与消息预处理(正则/模板/组装)并行执行, 降低 TTFB
-        // v3.10.5: OkHttp 级 — 预热请求与组装并发, 主请求发送时连接已就绪进池
-        val provider = model.findProvider(settings.providers)
-        // v3.11.10: 预热池与主请求严格同池 — 按 provider 类型分流:
-        //   OpenAI 型默认池 (opencode.ai 域长保活池)、Claude 型 claudeClient 池;
-        // 旧实现无 Claude 分支, Console Go 网关生成时零并行预热
-        when (provider) {
-            is ProviderSetting.OpenAI -> if (provider.baseUrl.isNotBlank()) {
-                ConnectionWarmer.warmWithOkHttp(httpClient, provider.baseUrl, me.rerere.ai.provider.ProviderManager.opencodeClient)
-                runCatching { java.net.URI(provider.baseUrl).host }
-                    .getOrNull()
-                    ?.let { host -> ConnectionWarmer.warmHostOnce(context, host) }
-            }
-            is ProviderSetting.Claude -> if (provider.baseUrl.isNotBlank()) {
-                ConnectionWarmer.warmWithOkHttp(
-                    me.rerere.ai.provider.ProviderManager.claudeClient ?: httpClient,
-                    provider.baseUrl
-                )
-                runCatching { java.net.URI(provider.baseUrl).host }
-                    .getOrNull()
-                    ?.let { host -> ConnectionWarmer.warmHostOnce(context, host) }
-            }
-            else -> Unit
-        }
-        // v3.12.6: 双预热开关化 (用户可选, 与软件本体拆分, 默认关) —
-        // 定向预热在部分网络环境会同 key 并发请求被服务端串行化, 反而
-        // 拉长首字节 (用户实测), 故改为 opt-in。开与关均持久化。
-        // 节流: 同 host 60s 内只发一次 (此前每条消息都发一次 models 请求)。
-        val key = settings.opencodeApiKey
-        if (key.startsWith("user_", ignoreCase = true)) {
-            if (settings.commandCodeWarmEnabled) {
-                // v3.17.0: CC 预热与主请求同入长保活池 (60s 默认池错配修复)
-                ConnectionWarmer.warmWithOkHttp(
-                    httpClient,
-                    "https://api.commandcode.ai/provider/v1",
-                    me.rerere.ai.provider.ProviderManager.opencodeClient,
-                )
-            }
-        } else if (key.startsWith("sk", ignoreCase = true)) {
-            if (settings.opencodeWarmEnabled) {
-                // v3.17.0: OpenCode 定向预热同入长保活池
-                ConnectionWarmer.warmWithOkHttp(
-                    httpClient,
-                    "https://opencode.ai/zen/go/v1",
-                    me.rerere.ai.provider.ProviderManager.opencodeClient,
-                )
-            }
-        }
+        // 4.1.3 TTFT: 生成前预热整体移除 — 两点结构性缺陷:
+        //   a) 与主请求并发, 同 key 请求被网关串行化 (v3.12.6 用户实测),
+        //      预热挂在慢网关上时主请求反而排队等它;
+        //   b) 60s 节流 + 服务端 (CF 系) ~100s 空闲断连, 绝大多数发送时
+        //      连接已死, 预热名存实亡。
+        // 连接新鲜度由 ConnectionWarmer.startProviderKeepAlive 常驻心跳
+        // (45s 周期, 同池, App 启动拉起) 保证, 任意时刻发送均为热连接。
 
         val senderName = if (assistant.useAssistantAvatar) {
             assistant.name.ifEmpty { context.getString(R.string.assistant_page_default_assistant) }
