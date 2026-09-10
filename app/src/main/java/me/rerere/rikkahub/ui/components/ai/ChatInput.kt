@@ -87,6 +87,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collectLatest
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.asr.ASRStatus
@@ -299,8 +300,11 @@ fun ChatInput(
                             // v3.6.9: 联网图标已删除 (UI 更整齐; enableWebSearch 由设置页控制)
 
                             // Reasoning
+                            // 4.1.2: 门控与发送侧同源 — 注册表差集合并后的 abilities
                             val model = settings.getCurrentChatModel()
-                            if (model?.abilities?.contains(ModelAbility.REASONING) == true) {
+                            if (model != null && (model.abilities + ModelRegistry.MODEL_ABILITIES.getData(model.modelId))
+                                    .contains(ModelAbility.REASONING)
+                            ) {
                                 ReasoningButton(
                                     reasoningLevel = assistant.reasoningLevel,
                                     onUpdateReasoningLevel = {
