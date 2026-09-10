@@ -806,46 +806,6 @@ class GenerationHandler(
         return if (lines.isEmpty()) emptyMap() else mapOf("sse_diag" to lines.joinToString(" | "))
     }
 
-    /**
-     * 4.1.0: 压缩历史 — 用户定版算法。
-     * UIMessage 层的 Tool part 携带自身 output (调用+结果同条), 任意裁剪边界
-     * 都不会把 tool_use 与 tool_result 拆开; 发送层 MessageProtocol.enforce
-     * 继续兜底首条 system/user 等协议约束。
-     */
-    private fun applyContextCompression(messages: List<UIMessage>): List<UIMessage> {
-        val count = messages.size
-        if (count <= 1) return messages
-
-        fun UIMessage.approxTokens(): Double = parts.sumOf { part ->
-            when (part) {
-                is UIMessagePart.Text -> part.text.length
-                is UIMessagePart.Reasoning -> part.reasoning.length
-                is UIMessagePart.Tool -> part.output.sumOf { o ->
-                    (o as? UIMessagePart.Text)?.text?.length ?: 0
-                }
-                else -> 0
-            }.toDouble() / 2.5
-        }
-
-        return if (count <= 9) {
-            // 保留 round(消息数 * 60%) 条, 至少 1 条
-            val keep = kotlin.math.round(count * 0.6).toInt().coerceAtLeast(1)
-            messages.takeLast(keep)
-        } else {
-            // 保留至 round(总Token * 60%) 对应的那条消息 (尾部累计)
-            val totalTokens = messages.sumOf { it.approxTokens() }
-            val target = kotlin.math.round(totalTokens * 0.6).coerceAtLeast(1.0)
-            var acc = 0.0
-            var start = count
-            while (start > 0) {
-                acc += messages[start - 1].approxTokens()
-                start--
-                if (acc >= target) break
-            }
-            messages.subList(start, count)
-        }
-    }
-
     private suspend fun generateInternal(
         assistant: Assistant,
         settings: Settings,
@@ -870,13 +830,11 @@ class GenerationHandler(
         conversationId: Uuid? = null,
     ) {
         val startMs = System.currentTimeMillis()
-        // 4.1.0: 压缩历史 (用户定版算法, 取代 v3.6.74 "零改动" 决策):
-        //   消息数 <= 9 → 保留 round(消息数 * 60%) 条
-        //   消息数 > 9  → 保留至 round(总Token * 60%) 所对应的那条消息 (保留尾部)
-        // 尾部累计天然保证最后一条 user 消息保留; RinCore UIMessage 层 tool 调用
-        // 与结果同条 (assistant 的 Tool part 携带 output), 裁剪不产生 tool_use
-        // 与 tool_result 分离, 协议配对安全。
-        val effectiveMessages: List<UIMessage> = applyContextCompression(messages)
+        // v3.6.74 (4.1.1 重申): 消息一律原样发送, 零改动。
+        // 4.1.0 的无条件压缩是严重回归 (4 条裁 2 条/6 条裁 4 条), 已回滚。
+        // 60% 默认算法仅作用于手动"压缩历史"功能的默认保留范围
+        // (ContextCompressor.recommendedKeepMessages), 正常对话严禁任何截断。
+        val effectiveMessages: List<UIMessage> = messages
 
         // 4.0.7: abilities 根本修复 — 自定义模型 (listModels 不带 abilities,
         // UI 未编辑过的) abilities 恒空 → 思考控制/工具门控全哑。注册表按

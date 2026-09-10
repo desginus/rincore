@@ -68,6 +68,24 @@ object ContextCompressor {
         if (messages.size < 2) return 0
         val rounds = splitIntoRounds(messages)
         if (rounds.size <= 1) return 0
+
+        // 4.1.1: 用户定版默认算法 — 消息数 <= 9 时按条数 60% (四舍五入),
+        // 轮边界对齐不拆轮 (累计 >= 目标条数的最小整轮, 保留只多不少);
+        // > 9 条沿用下方 token 60% 轮累计逻辑。
+        val totalCount = messages.size
+        if (totalCount <= 9) {
+            val keepCount = kotlin.math.round(totalCount * 0.6).toInt()
+            if (keepCount >= totalCount) return 0
+            var acc = 0
+            var k = 0
+            for (i in rounds.indices.reversed()) {
+                acc += rounds[i].size
+                k++
+                if (acc >= keepCount) break
+            }
+            return acc.coerceAtMost(totalCount)
+        }
+
         val roundTokens = rounds.map { r -> r.sumOf { estimateTokens(textOf(it)) }.toDouble() }
         val total = roundTokens.sum()
         if (total <= 0) return maxOf(1, rounds.last().size)
