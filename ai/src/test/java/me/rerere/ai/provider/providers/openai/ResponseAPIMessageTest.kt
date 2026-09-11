@@ -4,6 +4,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
@@ -408,7 +409,7 @@ class ResponseAPIMessageTest {
         assertFalse("DeepSeek 不支持 summary", input.containsKey("summary"))
         assertFalse("DeepSeek 不支持 encrypted_content", input.containsKey("encrypted_content"))
         val content = input["content"]?.jsonArray
-        assertTrue("明文 content 必须存在", content != null && content.size() > 0)
+        assertTrue("明文 content 必须存在", content != null && content.size > 0)
         assertEquals("reasoning_text", content!![0].jsonObject["type"]?.jsonPrimitive?.content)
         assertEquals("思考内容", content[0].jsonObject["text"]?.jsonPrimitive?.content)
     }
@@ -425,7 +426,7 @@ class ResponseAPIMessageTest {
         )[0].jsonObject
         assertEquals("reasoning", input["type"]?.jsonPrimitive?.content)
         val summary = input["summary"]?.jsonArray
-        assertTrue("summary 必须存在", summary != null && summary.size() > 0)
+        assertTrue("summary 必须存在", summary != null && summary.size > 0)
         assertEquals("summary_text", summary!![0].jsonObject["type"]?.jsonPrimitive?.content)
     }
 
