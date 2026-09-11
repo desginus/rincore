@@ -18,6 +18,12 @@ class MessageChunkStreamAdapter {
     private var reasoningStarted = false
     private var imageStarted = false
     private val toolsSeen = LinkedHashSet<String>()
+    // v4.2.4: 无 id Tool delta 归属追踪 — CC 流带参工具调用的后续 delta 只带
+    // arguments 增量 (id/name 仅首 delta 给出), toolCallId 为空串。旧 appendChunk
+    // 的 blank-id 分支把它 merge 到最近一个 Tool; 若桥接器不追踪, 空 id 会被
+    // firstSeen 误判为新工具 → 每段 arguments 增量都裂成独立 part, 输入永远
+    // 只有首段 '{"' → 工具参数 JSON 解析 100% 失败 (带参工具全军覆没)。
+    private var lastToolId: String? = null
 
     fun adapt(chunk: MessageChunk): List<StreamChunk> {
         val out = mutableListOf<StreamChunk>()
@@ -30,16 +36,18 @@ class MessageChunkStreamAdapter {
         delta.parts.forEach { part ->
             when (part) {
                 is UIMessagePart.Text -> {
-                    if (!textStarted) {
+                    // Start 延迟到首个有效载荷 (文本非空或带 metadata) — 空正文
+                    // delta 不产生空 part, 与旧 fold 的 skip 空文本行为一致
+                    if (!textStarted && (part.text.isNotEmpty() || part.metadata != null)) {
                         out += StreamChunk.TextStart(id = "text", metadata = part.metadata)
                         textStarted = true
                     }
-                    if (part.text.isNotEmpty()) {
+                    if (textStarted && part.text.isNotEmpty()) {
                         out += StreamChunk.TextDelta(id = "text", text = part.text, metadata = part.metadata)
                     }
                 }
                 is UIMessagePart.Reasoning -> {
-                    if (!reasoningStarted) {
+                    if (!reasoningStarted && (part.reasoning.isNotEmpty() || part.metadata != null)) {
                         out += StreamChunk.ReasoningStart(
                             id = "reasoning",
                             metadata = part.metadata,
@@ -47,7 +55,7 @@ class MessageChunkStreamAdapter {
                         )
                         reasoningStarted = true
                     }
-                    if (part.reasoning.isNotEmpty()) {
+                    if (reasoningStarted && part.reasoning.isNotEmpty()) {
                         out += StreamChunk.ReasoningDelta(
                             id = "reasoning",
                             text = part.reasoning,
@@ -56,26 +64,32 @@ class MessageChunkStreamAdapter {
                     }
                 }
                 is UIMessagePart.Tool -> {
-                    val firstSeen = part.toolCallId !in toolsSeen
-                    if (firstSeen) {
-                        out += StreamChunk.ToolCallStart(
-                            id = part.toolCallId,
-                            toolName = part.toolName,
-                            metadata = part.metadata,
-                        )
-                        toolsSeen += part.toolCallId
-                    }
-                    // Start 已携带首见 toolName — 首 delta 的 Delta.toolNameDelta 必须为空
-                    // (否则 handler 拼接两次翻倍); 非首见的 toolName 增量照常走 Delta。
-                    // input 增量始终走 Delta (Start 不携带 input, 否则首 delta 入参丢字)
-                    val nameDelta = if (firstSeen) "" else part.toolName
-                    if (nameDelta.isNotEmpty() || part.input.isNotEmpty()) {
-                        out += StreamChunk.ToolCallDelta(
-                            id = part.toolCallId,
-                            toolNameDelta = nameDelta,
-                            inputDelta = part.input,
-                            metadata = part.metadata,
-                        )
+                    // 复刻旧 appendChunk 的 blank-id 归属语义: 无 id delta 归属
+                    // 最近一个工具 (CC 增量流后续 delta 无 id/name)
+                    val id = part.toolCallId.ifBlank { lastToolId }
+                    if (id != null && id.isNotBlank()) {
+                        val firstSeen = id !in toolsSeen
+                        if (firstSeen) {
+                            out += StreamChunk.ToolCallStart(
+                                id = id,
+                                toolName = part.toolName,
+                                metadata = part.metadata,
+                            )
+                            toolsSeen += id
+                        }
+                        // Start 已携带首见 toolName — 首 delta 的 toolNameDelta 必须为空
+                        // (否则 handler 拼接翻倍); 非首见增量照常走 Delta。
+                        // input 增量始终走 Delta (Start 不携带 input, 否则首 delta 入参丢字)
+                        val nameDelta = if (firstSeen) "" else part.toolName
+                        if (nameDelta.isNotEmpty() || part.input.isNotEmpty()) {
+                            out += StreamChunk.ToolCallDelta(
+                                id = id,
+                                toolNameDelta = nameDelta,
+                                inputDelta = part.input,
+                                metadata = part.metadata,
+                            )
+                        }
+                        lastToolId = id
                     }
                 }
                 is UIMessagePart.Image -> {
@@ -116,6 +130,7 @@ class MessageChunkStreamAdapter {
             }
             toolsSeen.forEach { out += StreamChunk.ToolCallEnd(id = it) }
             toolsSeen.clear()
+            lastToolId = null
             out += StreamChunk.Finish(
                 finishReason = finishReason,
                 responseId = chunk.id,
