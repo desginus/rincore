@@ -232,6 +232,11 @@ class ChatCompletionsAPI(
         // 4.0.0 重写: 三阶段 watchdog 状态机统一收敛至 StreamWatchdog
         // (ai/core/WatchdogPolicy.kt) — 数值/文案/tick 节奏逐字保留
         val hasReceivedData = java.util.concurrent.atomic.AtomicBoolean(false)  // 前置声明 (watchdog 引用)
+        // v4.3.0: 增量流工具调用 id 映射 — CC 协议的 tool_calls[i].index 是归属键,
+        // id/name 仅首 delta 给出, 后续 delta 只有 arguments 增量。维护 index→id
+        // 映射并回填到 parseMessage 产物, 多工具并行交错增量按 index 精确归属
+        // (旧 blank-id "归属最近工具" 在并行交错时会把 tool0 增量拼进 tool1)
+        val deltaToolIds = java.util.concurrent.ConcurrentHashMap<Int, String>()
         val lastEventAt = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
         val isOpencode = providerSetting.baseUrl.toHttpUrl().host == "opencode.ai"
         val sentAtMs = System.currentTimeMillis()
@@ -419,7 +424,34 @@ class ChatCompletionsAPI(
                                     }
                                 }
                                 if (message != null) {
-                                    val delta = parseMessage(message)
+                                    var delta = parseMessage(message)
+                                    // v4.3.0: 增量流 id 回填 — tool part 与 tool_calls 数组
+                                    // 元素一一对应 (forEach add), 按元素的 index 归属:
+                                    // id 非空记录映射; id 空从映射取回填, 无映射保持空串
+                                    // (桥接器 lastToolId 兜底)
+                                    val tcArr = (choice["delta"] as? JsonObject)?.get("tool_calls") as? JsonArray
+                                    if (tcArr != null) {
+                                        val tools = delta.parts.filterIsInstance<UIMessagePart.Tool>()
+                                        if (tools.isNotEmpty()) {
+                                            var ti = 0
+                                            val patched = delta.parts.map { part ->
+                                                if (part is UIMessagePart.Tool && ti < tcArr.size) {
+                                                    val tcObj = tcArr[ti].jsonObject
+                                                    val idx = tcObj["index"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
+                                                    val id = tcObj["id"]?.jsonPrimitive?.contentOrNull
+                                                    ti++
+                                                    when {
+                                                        !id.isNullOrBlank() -> { deltaToolIds[idx] = id; part }
+                                                        part.toolCallId.isBlank() -> deltaToolIds[idx]?.let { part.copy(toolCallId = it) } ?: part
+                                                        else -> part
+                                                    }
+                                                } else part
+                                            }
+                                            if (patched != delta.parts) {
+                                                delta = delta.copy(parts = patched)
+                                            }
+                                        }
+                                    }
                                     // v3.8.42: 思考链经 parseMessage 自然成为 Reasoning part,
                                     // 正文经 content 提取 — 两者不再混淆
                                     add(
