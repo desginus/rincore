@@ -92,7 +92,16 @@ class MessageChunkStreamAdapter {
         if (delta.annotations.isNotEmpty()) {
             out += StreamChunk.Annotations(delta.annotations)
         }
-        if (choice.finishReason != null) {
+        // 流尾判定: 只有真实 finishReason 才触发 End/Finish 序列。
+        // CC 通道的 delta choice 填默认 "unknown" (finishReason ?: "unknown"),
+        // 旧 handleMessageChunk 不消费 finishReason 所以无感; 桥接器若把
+        // "unknown" 当流尾, 每个 delta 都会 End+Finish → 每 token 裂一个 part、
+        // 每块思考计时 0.0 秒 (finishedAt 每 delta 重置)。
+        // grok (OpenCode Zen) 真流尾无 finish_reason, 走 "unknown" → 不收尾,
+        // finishedAt 由 ChatService 兜底 finishReasoning() — 与旧路径一致。
+        val finishReason = choice.finishReason
+        val isRealFinish = finishReason != null && finishReason != "unknown"
+        if (isRealFinish) {
             if (textStarted) {
                 out += StreamChunk.TextEnd(id = "text")
                 textStarted = false
@@ -108,7 +117,7 @@ class MessageChunkStreamAdapter {
             toolsSeen.forEach { out += StreamChunk.ToolCallEnd(id = it) }
             toolsSeen.clear()
             out += StreamChunk.Finish(
-                finishReason = choice.finishReason,
+                finishReason = finishReason,
                 responseId = chunk.id,
                 model = chunk.model,
             )

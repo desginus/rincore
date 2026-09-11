@@ -34,6 +34,7 @@ import me.rerere.rikkahub.ui.components.ui.LocalExportContext
 import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.isWorkspaceUri
+import me.rerere.rikkahub.utils.resolveWorkspaceRelPath
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
@@ -55,6 +56,13 @@ fun ZoomableAsyncImage(
     // 其余行为不变: 正常 scheme (https/file:///sdcard) 零差异; workspace://
     // 加载失败 → 渲染 alt + 占位框 (规格 §4)。
     val workspaceFetch = model != null && isWorkspaceUri(model)
+    // v4.2.2: 流式不完整 URL 短路 — 模型回复 ![](workspace://...) 逐字到达,
+    // 路径段未完整时 resolve 必失败; 若放行 Coil, 每次 delta 重组都会重建
+    // ImageRequest 失败重试 (remember(model) 随部分 URL 变化) → 请求风暴。
+    // 短路判定 = resolveWorkspaceRelPath 能解析出完整相对路径才进 Coil,
+    // 否则直接渲染占位。完整 URL 的行为不变 (存在与否仍由 Coil 判定)。
+    val workspaceResolvable = workspaceFetch && resolveWorkspaceRelPath(model) != null
+    val workspaceDead = workspaceFetch && !workspaceResolvable
     var workspaceFailed by remember(model) { mutableStateOf(false) }
     val context = LocalContext.current
     val placeholder = if (LocalDarkMode.current) R.drawable.placeholder_dark else R.drawable.placeholder
@@ -67,7 +75,7 @@ fun ZoomableAsyncImage(
         .build()
     var loading by remember { mutableStateOf(false) }
 
-    if (workspaceFetch && workspaceFailed) {
+    if (workspaceFetch && (workspaceFailed || workspaceDead)) {
         // 失败态: 同一 modifier 作用在占位组件上 (尺寸跟随调用方约束)
         Column(
             modifier = modifier
