@@ -52,13 +52,13 @@ jobs:
             printf 'storeFile=../app/release-key.jks\nstorePassword=%s\nkeyAlias=rincore\nkeyPassword=%s\n' "${{ secrets.KEYSTORE_PASSWORD }}" "${{ secrets.KEYSTORE_PASSWORD }}" > local.properties
           fi
 
+      # v4.3.0 加固: 每次发版前跑 ai 模块单测 (StreamChunkHandlerTest 等) —
+      # 测试失败即阻断发版, 架构改动有回归网兜底
+      - name: Run AI module unit tests
+        run: ./gradlew :ai:testReleaseUnitTest --no-daemon --stacktrace
+
       - name: Build Release APK
-        # v4.3.0 加固: 每次发版前跑 ai 模块单测 (StreamChunkHandlerTest 等) —
-        # 测试失败即阻断发版, 架构改动有回归网兜底
-        - name: Run AI module unit tests
-          run: ./gradlew :ai:testReleaseUnitTest --no-daemon --stacktrace
-        - name: Build release
-          run: ./gradlew assembleRelease --no-daemon --stacktrace
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v6
