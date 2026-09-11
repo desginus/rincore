@@ -39,21 +39,6 @@ class ResponseAPIMessageTest {
         api = ResponseAPI(OkHttpClient())
     }
 
-    // v4.3.0: 补回历史缺失 helper — 本文件在 4.1.x 起就编译失败 (测试门禁缺失
-    // 导致从未被发现), 现随门禁启用一并修复
-    private fun createExecutedTool(
-        callId: String,
-        name: String,
-        input: String,
-        output: String
-    ): UIMessagePart.Tool {
-        return UIMessagePart.Tool(
-            toolCallId = callId,
-            toolName = name,
-            input = input,
-            output = listOf(UIMessagePart.Text(output))
-        )
-    }
 
     private fun userWithToolResult(callId: String): UIMessage = UIMessage(
         role = MessageRole.USER,
