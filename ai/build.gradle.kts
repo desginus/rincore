@@ -51,6 +51,15 @@ android {
     }
 }
 
+// v4.3.0: 测试失败详情直出 (expected/actual) — 断言失败必须可诊断
+tasks.withType<Test>().configureEach {
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showStackTraces = true
+    }
+}
+
 dependencies {
     implementation(project(":common"))
 
