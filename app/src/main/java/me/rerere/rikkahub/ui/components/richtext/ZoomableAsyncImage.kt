@@ -33,6 +33,7 @@ import me.rerere.rikkahub.ui.components.ui.ImagePreviewDialog
 import me.rerere.rikkahub.ui.components.ui.LocalExportContext
 import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.utils.isVirtualWorkspaceUri
 import me.rerere.rikkahub.utils.isWorkspaceUri
 import me.rerere.rikkahub.utils.resolveWorkspaceRelPath
 import androidx.compose.runtime.getValue
@@ -61,8 +62,12 @@ fun ZoomableAsyncImage(
     // ImageRequest 失败重试 (remember(model) 随部分 URL 变化) → 请求风暴。
     // 短路判定 = resolveWorkspaceRelPath 能解析出完整相对路径才进 Coil,
     // 否则直接渲染占位。完整 URL 的行为不变 (存在与否仍由 Coil 判定)。
-    val workspaceResolvable = workspaceFetch && resolveWorkspaceRelPath(model) != null
-    val workspaceDead = workspaceFetch && !workspaceResolvable
+    // v4.2.3 修正: 短路只针对虚拟 workspace:// 前缀 (流式逐字到达)。host 真实
+    // 路径 (file:///data/data/.../files/upload/... 聊天文件, 工具结果注入) 的
+    // isWorkspaceUri=true 但 resolve 失败是"非 workspace 文件"而非"路径未完整",
+    // 必须照常走 Coil 加载 — v4.2.2 误判导致工具结果图片全部"图片不可用"。
+    val workspaceDead = model != null && isVirtualWorkspaceUri(model) &&
+        resolveWorkspaceRelPath(model) == null
     var workspaceFailed by remember(model) { mutableStateOf(false) }
     val context = LocalContext.current
     val placeholder = if (LocalDarkMode.current) R.drawable.placeholder_dark else R.drawable.placeholder

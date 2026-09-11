@@ -107,6 +107,23 @@ fun percentDecodeLenient(s: String): String {
 }
 
 /**
+ * v4.2.3: 虚拟 workspace 前缀判定 — 排除 HOST_WS_PREFIXES (host 真实路径)。
+ * host 前缀匹配过宽 (app 私有目录全部命中, 含聊天文件 file:///data/data/...
+ * /files/upload/...), resolveWorkspaceRelPath 对非 workspaces 结构返回 null,
+ * v4.2.2 的流式短路若用它判定会把工具结果里的聊天文件图片误杀为"图片不可用"。
+ * 短路只针对虚拟前缀 (workspace:// 等 — 流式逐字到达的形态)。
+ */
+fun isVirtualWorkspaceUri(raw: String?): Boolean {
+    if (raw == null) return false
+    val lower = raw.lowercase().trim()
+    val bare = raw.trim()
+    return lower.startsWith("workspace://") ||
+        lower.startsWith("file:///workspace/") ||
+        lower.startsWith("file://workspace/") ||
+        bare.startsWith("/workspace/")
+}
+
+/**
  * 解析 workspace:// 类地址 → Rootfs 内相对路径 (不含前缀)。
  * 折叠 // 与 .;`..` 在栈空时弹出 = 目录穿越 → 返回 null。
  * 空路径 (指向根) → null。返回值已规范为 "/a/b/c" 形式。
