@@ -383,7 +383,6 @@ class ResponseAPIMessageTest {
             output = listOf(UIMessagePart.Text(output))
         )
     }
-}
 
     // ==================== reasoning 回传格式 (官方协议) ====================
 
@@ -528,3 +527,4 @@ class ResponseAPIMessageTest {
         val next = input[reasoningIdx + 1].jsonObject
         assertEquals("function_call", next["type"]?.jsonPrimitive?.content)
     }
+}
