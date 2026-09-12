@@ -955,10 +955,16 @@ class ChatCompletionsAPI(
                     reasoningPart = null // 清空，下一个 group 可能有新的 reasoning
 
                     // 紧跟 tool 结果消息
+                    // v4.3.3 (BUG12): 整段重写 — OpenAI 现行标准 role=tool 消息仅
+                    // role/tool_call_id/content 三字段。历史残留的 "name" 字段
+                    // (老版协议的可选字段, 已废弃) 被严格端点拒绝: 用户实证
+                    // [invalid_request_error] messages[3]: "name" is not supported
+                    // by this endpoint — 工具结果回传后第二轮全部被拒, 表现为
+                    // 生成永久卡死。工具归属由 tool_call_id 唯一确定 (v4.3.0 起
+                    // 增量 id 回填保证非空), name 无任何消费方, 移除。
                     group.tools.forEach { tool ->
                         add(buildJsonObject {
                             put("role", "tool")
-                            put("name", tool.toolName)
                             put("tool_call_id", tool.toolCallId)
                             put("content", tool.toToolResultContent(supportInputModalities))
                         })
