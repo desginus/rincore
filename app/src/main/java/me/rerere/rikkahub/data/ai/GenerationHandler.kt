@@ -1166,7 +1166,9 @@ class GenerationHandler(
                         }
                         if (verdict.delayMs > 0) kotlinx.coroutines.delay(verdict.delayMs)
                         Log.w(TAG, "stream retry $verdict.logDetail (budget ${System.currentTimeMillis() - retryBudgetStartMs}ms): ${e.message}")
-                        CallTracer.event("RETRY", "stream_retry", verdict.logDetail, metrics = sseDiagMetrics())
+                        CallTracer.event("RETRY", "stream_retry",
+                            "${verdict.logDetail} | ${e.javaClass.simpleName}: ${e.message}",
+                            metrics = sseDiagMetrics())
                         messages = preStreamMessages  // 丢弃半截内容, 回滚 UI
                         onUpdateMessages(messages)
                         continue@streamLoop

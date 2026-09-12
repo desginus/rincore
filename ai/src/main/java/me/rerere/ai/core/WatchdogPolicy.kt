@@ -31,7 +31,11 @@ class StreamWatchdog(
     private val onTimeout: (java.io.IOException) -> Unit,
 ) {
     // v3.11.35: header 判死 25s — 吸收网关冷启动典型 10-20s
-    val headerLimitMs = 25_000L
+    // v4.3.2 (BUG11): 25s 误杀大上下文慢网关 — 用户实证: 428 工具 schema + 工具
+    // 结果回传的请求, glm 网关 TTFT 30s+ (处理工具 schema 集群), 25s 判死 → 回滚
+    // 重试 → 又 25s → 重试链耗尽 → "数据彻底卡死"表象。60s 吸收重负载 TTFT;
+    // 真死网关 60s 后仍走重试链, 最终报错不受影响。
+    val headerLimitMs = 60_000L
     val firstEventLimitMs = 150_000L
     val streamLimitMs = if (isOpencode) 90_000L else 120_000L
 
