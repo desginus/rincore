@@ -47,6 +47,8 @@ import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
@@ -153,6 +155,12 @@ class GenerationHandler(
          *  实证 2026-08-31: mcp__sequentialthinking 连调 6 次, 5 次无信息量,
          *  客户端全部 success 放行 — 既有熔断只看失败形态, 对"成功空转"无防线。 */
         private const val TOOL_SAME_TOOL_CALL_LIMIT = 6
+
+        /** v4.3.1 (BUG10): 审批等待超时 — Pending 工具超过该时长自动转为 Denied。
+         *  死锁形态实证: 工具进 Pending 后 break 等待用户审批, 若审批链路任何
+         *  环节断开 (切会话/进程恢复/UI 未渲染), 生成流永远停在"数据彻底卡死"。
+         *  超时自动拒绝让模型收到拒绝文案后可继续决策 — 不再出现无限等待。 */
+        private const val TOOL_APPROVAL_TIMEOUT_MS = 5 * 60_000L
     }
 
     fun generateText(
@@ -465,15 +473,39 @@ class GenerationHandler(
                     val toolDef = toolsInternal.find { it.name == tool.toolName }
                     when {
                         // Tool needs approval and state is Auto -> set to Pending
+                        // v4.3.1: 同时记录 pending_since 时间戳 (metadata), 供超时判定
                         toolDef?.needsApproval(tool.inputAsJson()) == true &&
                             tool.approvalState is ToolApprovalState.Auto -> {
                             hasPendingApproval = true
-                            tool.copy(approvalState = ToolApprovalState.Pending)
+                            tool.copy(
+                                approvalState = ToolApprovalState.Pending,
+                                metadata = (tool.metadata ?: kotlinx.serialization.json.buildJsonObject { })
+                                    .takeIf { it.containsKey("pending_since") }
+                                    ?: kotlinx.serialization.json.buildJsonObject {
+                                        (tool.metadata ?: kotlinx.serialization.json.JsonObject(emptyMap()))
+                                            .forEach { (k, v) -> put(k, v) }
+                                        put("pending_since", kotlinx.serialization.json.JsonPrimitive(
+                                            android.os.SystemClock.elapsedRealtime()))
+                                    }
+                            )
                         }
-                        // State is Pending -> keep waiting
+                        // State is Pending -> keep waiting, but auto-deny on timeout
+                        // (v4.3.1: 审批链路任何环节断开都不允许永久卡死生成流)
                         tool.approvalState is ToolApprovalState.Pending -> {
-                            hasPendingApproval = true
-                            tool
+                            val since = tool.metadata?.get("pending_since")
+                                ?.jsonPrimitive?.contentOrNull?.toLongOrNull()
+                            if (since != null &&
+                                android.os.SystemClock.elapsedRealtime() - since > TOOL_APPROVAL_TIMEOUT_MS) {
+                                Log.w(TAG, "generateText: tool ${tool.toolName} approval timeout, auto-denied")
+                                CallTracer.event("TOOL", "approval_timeout_${tool.toolName}",
+                                    "Pending approval exceeded ${'$'}{TOOL_APPROVAL_TIMEOUT_MS / 1000}s, auto-denied")
+                                tool.copy(approvalState = ToolApprovalState.Denied(
+                                    "客户端审批等待超时 (${TOOL_APPROVAL_TIMEOUT_MS / 1000} 秒), 已自动拒绝本次调用。"
+                                    + "如确需执行该工具, 请在用户确认授权后重新发起; 或换用其他工具完成意图。"))
+                            } else {
+                                hasPendingApproval = true
+                                tool
+                            }
                         }
 
                         else -> tool
