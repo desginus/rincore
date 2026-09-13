@@ -621,6 +621,82 @@ class ChatCompletionsAPI(
         // trySend 在缓冲满时会静默丢弃 delta，导致回复中间缺字 (#1295)，因此缓冲必须无界
     }.buffer(Channel.UNLIMITED).flowOn(Dispatchers.IO)
 
+    /**
+     * v4.3.6 (BUG15): 图片预算 — 请求构造层确定性防御 (无条件, 不依赖任何开关)。
+     * GLM 类严格端点硬性限制: 单请求 ≤8 张图 (inline data URL / 公网 HTTPS),
+     * 单张 ≤16MiB, 总量 ≤64MiB; 本地路径/私网/音视频不支持。高强度工作
+     * (截图/视觉工具连续调用) 数轮即超限, 整请求被拒 — 全部进度随之中断。
+     *
+     * 策略: 按时间序保留"最近的"图片 (最新上下文最相关), 超额的更早图片
+     * 替换为文本占位 (模型可感知"此处曾有图"并按文本继续)。裁剪是确定性的:
+     * 同一消息序列恒产出同一裁剪结果。槽位以 (消息序, parts 序, output 序)
+     * 三元组定位, 替换与预算判定用同一键, 不依赖对象相等性。
+     */
+    private fun applyImageBudget(messages: List<UIMessage>, modelName: String): List<UIMessage> {
+        data class ImageSlot(val messageIndex: Int, val partIndex: Int, val outputIndex: Int) {
+            val key: Triple<Int, Int, Int> get() = Triple(messageIndex, partIndex, outputIndex)
+        }
+
+        // 收集全部图片槽位 (消息 parts + 工具输出)
+        val slots = mutableListOf<Pair<ImageSlot, UIMessagePart.Image>>()
+        messages.forEachIndexed { mi, msg ->
+            msg.parts.forEachIndexed { pi, part ->
+                when {
+                    part is UIMessagePart.Image -> slots.add(ImageSlot(mi, pi, -1) to part)
+                    part is UIMessagePart.Tool -> part.output.forEachIndexed { oi, op ->
+                        if (op is UIMessagePart.Image) slots.add(ImageSlot(mi, -1, oi) to op)
+                    }
+                    else -> {}
+                }
+            }
+        }
+        if (slots.size <= IMAGE_BUDGET_COUNT &&
+            slots.sumOf { (_, img) -> estimateImageBytes(img) } <= IMAGE_BUDGET_TOTAL_BYTES) return messages
+
+        // 从最新往旧保留预算 (计数 + 总量), 单张超限一律降级
+        val keptKeys = mutableSetOf<Triple<Int, Int, Int>>()
+        var total = 0L
+        for ((slot, img) in slots.asReversed()) {
+            if (keptKeys.size >= IMAGE_BUDGET_COUNT) break
+            val bytes = estimateImageBytes(img)
+            if (bytes > IMAGE_BUDGET_SINGLE_BYTES) continue
+            if (total + bytes > IMAGE_BUDGET_TOTAL_BYTES) continue
+            keptKeys.add(slot.key)
+            total += bytes
+        }
+        val droppedCount = slots.count { (slot, _) -> slot.key !in keptKeys }
+        if (droppedCount == 0) return messages
+
+        Log.i(TAG, "Image budget: model=$modelName total=${slots.size} kept=${keptKeys.size} dropped=$droppedCount " +
+            "(limits: ${IMAGE_BUDGET_COUNT} imgs / ${IMAGE_BUDGET_SINGLE_BYTES / 1048576}MiB each / ${IMAGE_BUDGET_TOTAL_BYTES / 1048576}MiB total)")
+
+        return messages.mapIndexed { mi, msg ->
+            val newParts = msg.parts.mapIndexed { pi, part ->
+                when {
+                    part is UIMessagePart.Image && Triple(mi, pi, -1) !in keptKeys ->
+                        UIMessagePart.Text(IMAGE_BUDGET_PLACEHOLDER)
+                    part is UIMessagePart.Tool -> part.copy(output = part.output.mapIndexed { oi, op ->
+                        if (op is UIMessagePart.Image && Triple(mi, -1, oi) !in keptKeys) {
+                            UIMessagePart.Text(IMAGE_BUDGET_PLACEHOLDER)
+                        } else op
+                    })
+                    else -> part
+                }
+            }
+            msg.copy(parts = newParts)
+        }
+    }
+
+    private fun estimateImageBytes(image: UIMessagePart.Image): Long {
+        return when {
+            image.url.startsWith("data:") -> image.url.length.toLong()  // base64 内联: 字符数量级≈字节数
+            image.url.startsWith("file://") -> runCatching {
+                java.io.File(image.url.removePrefix("file://")).length()
+            }.getOrDefault(0L)
+            else -> 0L  // 公网 URL: 无法本地计量, 仅计入张数预算
+        }
+    }
+
     private fun buildChatCompletionRequest(
         messages: List<UIMessage>,
         params: TextGenerationParams,
@@ -628,12 +704,16 @@ class ChatCompletionsAPI(
         stream: Boolean = false,
     ): JsonObject {
         val host = providerSetting.baseUrl.toHttpUrl().host
+        // v4.3.6 (BUG15): 图片预算裁剪 — 严格端点 (GLM 类) 限制单请求图片数量/体积,
+        // 高强度视觉工作流超限后整个请求被 [too_many_images] 拒绝, 用户全部进度中断。
+        // 裁剪发生在请求副本上 (UI 不受影响), 保留最近图片, 超额部分降级为文本占位。
+        val budgetedMessages = applyImageBudget(messages, params.model.displayName)
         return buildJsonObject {
             put("model", params.model.modelId)
             put(
                 "messages",
                 buildMessages(
-                    messages = messages,
+                    messages = budgetedMessages,
                     includeHistoryReasoning = providerSetting.includeHistoryReasoning,
                     supportInputModalities = params.model.inputModalities,
                 )
@@ -1305,6 +1385,12 @@ class ChatCompletionsAPI(
     }
 
     companion object {
+        /** v4.3.6 (BUG15): 图片预算常量 — 对齐 GLM 类端点现行硬性限制 */
+        private const val IMAGE_BUDGET_COUNT = 8
+        private const val IMAGE_BUDGET_SINGLE_BYTES = 16L * 1024 * 1024
+        private const val IMAGE_BUDGET_TOTAL_BYTES = 64L * 1024 * 1024
+        private const val IMAGE_BUDGET_PLACEHOLDER =
+            "[图片已省略: 超出本请求的图片数量预算 (最多 8 张), 此处以文字占位]"
         /**
          * 判断流式传输中断是否为可恢复错误 (stream reset / protocol error).
          * 对于可恢复错误, 若已有部分数据到达则保留部分响应, 避免整体丢失.

@@ -90,6 +90,7 @@ import me.rerere.rikkahub.data.ai.tools.buildAssistantToolPool
 import me.rerere.rikkahub.data.ai.tools.createWorkspaceTools
 import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.data.ai.transformers.Base64ImageToLocalFileTransformer
+import me.rerere.rikkahub.data.ai.transformers.CCImageCompatTransformer
 import me.rerere.rikkahub.data.ai.transformers.DocumentAsPromptTransformer
 import me.rerere.rikkahub.data.ai.transformers.OcrTransformer
 import me.rerere.rikkahub.data.ai.transformers.PlaceholderTransformer
@@ -159,6 +160,10 @@ private val inputTransformers by lazy {
         PlaceholderTransformer,
         DocumentAsPromptTransformer,
         OcrTransformer,
+        // v4.3.6 (BUG15): 死代码接线 — v3.13.7 的 tool 结果图片重定位修复从未
+        // 注册进 transformer 链, 一直未生效 (内部自带 ccImageCompat+user_ key
+        // 双重 opt-in 检查, 注册本身无副作用)
+        CCImageCompatTransformer,
     )
 }
 
