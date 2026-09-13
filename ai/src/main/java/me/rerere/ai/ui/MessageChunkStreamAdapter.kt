@@ -36,6 +36,15 @@ class MessageChunkStreamAdapter {
         delta.parts.forEach { part ->
             when (part) {
                 is UIMessagePart.Text -> {
+                    // v4.3.4 (BUG13): reasoning→text 切换点先关闭思考 — 思考计时器
+                    // 必须停止于正文首字到达。原缺陷: ReasoningEnd 只在流尾真实
+                    // finishReason 时发出, 正文输出全程 finishedAt=null, 计时器
+                    // 一直以思考名义记录整条消息时长 (用户实测: 思考 4 秒正确,
+                    // 随后正文输出期间计时器继续涨到流结束)。
+                    if (reasoningStarted && part.text.isNotEmpty()) {
+                        out += StreamChunk.ReasoningEnd(id = "reasoning", metadata = part.metadata)
+                        reasoningStarted = false
+                    }
                     // Start 延迟到首个有效载荷 (文本非空或带 metadata) — 空正文
                     // delta 不产生空 part, 与旧 fold 的 skip 空文本行为一致
                     if (!textStarted && (part.text.isNotEmpty() || part.metadata != null)) {
@@ -70,6 +79,12 @@ class MessageChunkStreamAdapter {
                     if (id != null && id.isNotBlank()) {
                         val firstSeen = id !in toolsSeen
                         if (firstSeen) {
+                            // v4.3.4: reasoning→tool 切换同样先关思考 (模型思考完
+                            // 直接调工具不输出正文时, 思考计时器同样要停表)
+                            if (reasoningStarted) {
+                                out += StreamChunk.ReasoningEnd(id = "reasoning", metadata = part.metadata)
+                                reasoningStarted = false
+                            }
                             out += StreamChunk.ToolCallStart(
                                 id = id,
                                 toolName = part.toolName,
