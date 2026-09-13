@@ -1385,10 +1385,10 @@ class ChatCompletionsAPI(
     }
 
     companion object {
-        /** v4.3.7 (BUG15): 图片预算常量 — 端点硬上限 8 张, 预算收紧到 4 张:
-         *  高强度视觉工作流中最近 4 张已覆盖当前工作状态, 更早的图多为过时
-         *  上下文; 省下的预算让"按需重取" (read_image) 的图有充足余量。 */
-        private const val IMAGE_BUDGET_COUNT = 4
+        /** v4.3.8 (BUG15): 图片预算常量 — 端点硬上限 8 张, 用户定版预算=8 张
+         *  (v4.3.7 曾试 4 张, 用户拍板回 8): 满配预算保证复杂视觉工作流
+         *  (多工具并行截图) 不降级; 超限部分仍走 read_image 按需重取闭环。 */
+        private const val IMAGE_BUDGET_COUNT = 8
         private const val IMAGE_BUDGET_SINGLE_BYTES = 16L * 1024 * 1024
         private const val IMAGE_BUDGET_TOTAL_BYTES = 64L * 1024 * 1024
 
