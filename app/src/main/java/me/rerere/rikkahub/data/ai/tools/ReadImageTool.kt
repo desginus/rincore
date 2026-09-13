@@ -57,7 +57,7 @@ fun createReadImageTool(allowedRoot: File): Tool = Tool(
         )
         val file = File(path.removePrefix("file://").removePrefix("file:"))
         val canonical = runCatching { file.canonicalPath }.getOrElse { return@Tool readImageError("Invalid: 路径无法解析: $path") }
-        val root = runCatching { allowedRoot.canonicalPath }.getOrElse(allowedRoot.path)
+        val root = runCatching { allowedRoot.canonicalPath }.getOrElse { allowedRoot.path }
         if (canonical != root && !canonical.startsWith(root + File.separator)) {
             return@Tool readImageError(
                 "Invalid: 路径不在会话文件目录内",
