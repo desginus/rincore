@@ -161,6 +161,14 @@ class GenerationHandler(
          *  环节断开 (切会话/进程恢复/UI 未渲染), 生成流永远停在"数据彻底卡死"。
          *  超时自动拒绝让模型收到拒绝文案后可继续决策 — 不再出现无限等待。 */
         private const val TOOL_APPROVAL_TIMEOUT_MS = 5 * 60_000L
+
+        /** v4.3.5 (BUG14): 缓存前缀指纹跨轮追踪 — fp 变化时输出组件级对比。
+         *  用户实证: 缓存命中率显著低于 v4.1.x 基线, 静态排查未发现明显漂移源
+         *  (system 各组件静态, tools 名单保序, transformers 幂等) — 用指纹对比
+         *  直接定位: fp_stable=客户端前缀无漂移, 缓存低在网关/上游侧;
+         *  fp_drift=前缀真变了, 组件摘要指出漂移源。 */
+        private val lastCacheFp = java.util.concurrent.ConcurrentHashMap<String, String>()
+        private val lastCacheParts = java.util.concurrent.ConcurrentHashMap<String, String>()
     }
 
     fun generateText(
@@ -954,10 +962,25 @@ class GenerationHandler(
             // 记忆位置策略: 记忆放 stable 之后 (历史之前) — 记忆是稳定前缀一部分, 可命中
             val cacheFpSystem = listOf(stableSystem, volatileSystem).filter { it.isNotBlank() }.joinToString("\n")
             // v3.5.58 缓存核验: 请求体前缀指纹 (stable system+tools 序列化稳定)
+            // v4.3.5 (BUG14): 组件级漂移自诊断 — fp 相同=前缀稳定 (缓存低在网关侧);
+            // fp 变化=客户端前缀漂移, 组件摘要直接指出漂移源 (stable/volatile/工具名单)
             try {
                 val fp = java.security.MessageDigest.getInstance("SHA-256")
                     .digest((cacheFpSystem + tools.joinToString { it.name }).toByteArray())
                     .take(8).joinToString("") { "%02x".format(it) }
+                val parts = "stable=${stableSystem.length}c volatile=${volatileSystem.length}c " +
+                    "ntools=${tools.size} toolsHash=${tools.joinToString { it.name }.hashCode()}"
+                val key = conversationId?.toString() ?: "global"
+                val prev = lastCacheFp.put(key, fp)
+                when {
+                    prev == null ->
+                        CallTracer.event("CACHE", "fp_init", "fp=$fp | $parts")
+                    prev == fp ->
+                        CallTracer.event("CACHE", "fp_stable", "fp=$fp unchanged | $parts")
+                    else -> CallTracer.event("CACHE", "fp_drift",
+                        "PREFIX CHANGED prev=$prev now=$fp | prev[${lastCacheParts[key]}] now[$parts]")
+                }
+                lastCacheParts[key] = parts
                 Log.i(TAG, "cache-fp: $fp (system=${cacheFpSystem.length}c tools=${tools.size})")
             } catch (_: Exception) {
                 // 技术债审计 (v3.19.0): 此处吞错仅影响 cache-fp 诊断日志, 不在
@@ -1069,6 +1092,8 @@ class GenerationHandler(
                 (chunk as? me.rerere.ai.ui.StreamChunk.Usage)?.usage?.let { usage ->
                     if (usage.promptTokens > 0) {
                         val cacheHitRate = usage.cachedTokens * 100 / usage.promptTokens
+                        CallTracer.event("CACHE", "usage",
+                            "prompt=${usage.promptTokens} cached=${usage.cachedTokens} hit=$cacheHitRate%")
                         Log.i(
                             TAG,
                             "cache: prompt=${usage.promptTokens} cached=${usage.cachedTokens}" +
