@@ -24,6 +24,7 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.data.repository.ConversationRepository
+import me.rerere.rikkahub.data.ai.tools.createReadImageTool
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
 import me.rerere.rikkahub.data.ai.tools.ToolInvocationContext
 
@@ -38,6 +39,8 @@ val FRAMEWORK_TOOL_SET = setOf(
     // v3.6.91: clawhub_install/clawhub_search 移出框架集 — 归系统域经
     // invoke_tools(系统) 加载 (用户: 框架工具 8→6, 只保留实际常用的)
     "manage_mcp_servers", "plugin_install",
+    // v4.3.7: 图片预算闭环件 — 占位图的重取通道 (始终可用, 免审批)
+    "read_image",
     // v3.11.24: 任务清单 (Cherry Studio Agent 任务功能移植) — 框架工具,
     // 不参与视图统计; 任务随 tool output 存会话消息, 零 DB
     "task_tool",
@@ -66,7 +69,10 @@ fun buildAssistantToolPool(
     workspaceCwd: String? = null,
     workspaceRepository: me.rerere.rikkahub.data.repository.WorkspaceRepository? = null,
     pluginManager: me.rerere.rikkahub.data.plugin.PluginManager? = null,
+    filesRoot: java.io.File? = null,                // v4.3.7: read_image 白名单根 (context.filesDir), null=不注入
 ): List<Tool> = buildList {
+    // v4.3.7: 图片预算闭环件 — 占位图按需重取 (默认 null 不注入, 仅 ChatService 主链路注入)
+    filesRoot?.let { add(createReadImageTool(it)) }
     // v3.11.25: 任务清单工具 (Cherry Studio Agent 任务功能移植) — 框架工具, 静态
     add(createTaskTool())
     if (settings.enableWebSearch) {

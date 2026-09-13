@@ -674,10 +674,10 @@ class ChatCompletionsAPI(
             val newParts = msg.parts.mapIndexed { pi, part ->
                 when {
                     part is UIMessagePart.Image && Triple(mi, pi, -1) !in keptKeys ->
-                        UIMessagePart.Text(IMAGE_BUDGET_PLACEHOLDER)
+                        UIMessagePart.Text(imageBudgetPlaceholder(part))
                     part is UIMessagePart.Tool -> part.copy(output = part.output.mapIndexed { oi, op ->
                         if (op is UIMessagePart.Image && Triple(mi, -1, oi) !in keptKeys) {
-                            UIMessagePart.Text(IMAGE_BUDGET_PLACEHOLDER)
+                            UIMessagePart.Text(imageBudgetPlaceholder(op))
                         } else op
                     })
                     else -> part
@@ -1385,12 +1385,19 @@ class ChatCompletionsAPI(
     }
 
     companion object {
-        /** v4.3.6 (BUG15): 图片预算常量 — 对齐 GLM 类端点现行硬性限制 */
-        private const val IMAGE_BUDGET_COUNT = 8
+        /** v4.3.7 (BUG15): 图片预算常量 — 端点硬上限 8 张, 预算收紧到 4 张:
+         *  高强度视觉工作流中最近 4 张已覆盖当前工作状态, 更早的图多为过时
+         *  上下文; 省下的预算让"按需重取" (read_image) 的图有充足余量。 */
+        private const val IMAGE_BUDGET_COUNT = 4
         private const val IMAGE_BUDGET_SINGLE_BYTES = 16L * 1024 * 1024
         private const val IMAGE_BUDGET_TOTAL_BYTES = 64L * 1024 * 1024
-        private const val IMAGE_BUDGET_PLACEHOLDER =
-            "[图片已省略: 超出本请求的图片数量预算 (最多 8 张), 此处以文字占位]"
+
+        /** v4.3.7: 动态占位 — 文件图带原路径 (模型可经 read_image 重取); 内联图无持久路径 */
+        private fun imageBudgetPlaceholder(image: UIMessagePart.Image): String = when {
+            image.url.startsWith("file://") ->
+                "[图片已省略 (超出本请求图片预算): 原文件已保存于会话中, 路径: ${'$'}{image.url} — 需要查看时调用 read_image 工具传入该路径]"
+            else -> "[图片已省略 (超出本请求图片预算): 内联图片数据未保留]"
+        }
         /**
          * 判断流式传输中断是否为可恢复错误 (stream reset / protocol error).
          * 对于可恢复错误, 若已有部分数据到达则保留部分响应, 避免整体丢失.

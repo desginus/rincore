@@ -778,6 +778,7 @@ class ChatService(
                 skipAssistantPrompt = conversation.title.startsWith("[Sub-agent]"),
                 toolPoolProvider = {
                     buildAssistantToolPool(
+                        filesRoot = context.filesDir,
                         settings = settingsStore.settingsFlow.value,
                         assistant = settingsStore.settingsFlow.value.getCurrentAssistant(),
                         localTools = localTools,
@@ -811,6 +812,7 @@ class ChatService(
                 },
                 outputTransformers = outputTransformers,
                 tools = buildAssistantToolPool(
+                    filesRoot = context.filesDir,
                     settings = settings,
                     assistant = assistant,
                     localTools = localTools,
