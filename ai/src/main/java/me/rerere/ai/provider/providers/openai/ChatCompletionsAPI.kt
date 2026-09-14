@@ -516,7 +516,12 @@ class ChatCompletionsAPI(
                 }
 
                 // 仅在尚未收到任何数据时重试 (避免重复响应) — 移植 v2.9.8 稳定行为
-                if (!hasReceivedData.get() && retryCount.incrementAndGet() <= maxRetries && !scope.isClosedForSend) {
+                // v4.3.13 (BUG20): 4xx 客户端错误 (invalid_request/context length 等)
+                // 终态不重试 — 重试只会原样重发同一大请求, 指数退避串行空转,
+                // 用户感知"彻底卡死"。仅 408 (超时) / 429 (限流) 保留重试价值。
+                val httpCodeForRetry = response?.code ?: 0
+                val clientErrorNoRetry = httpCodeForRetry in 400..499 && httpCodeForRetry != 408 && httpCodeForRetry != 429
+                if (!hasReceivedData.get() && !clientErrorNoRetry && retryCount.incrementAndGet() <= maxRetries && !scope.isClosedForSend) {
                     val delayMs = 1000L * (1 shl (retryCount.get() - 1))
                     Log.w(TAG, "SSE pre-data failure, retry ${retryCount.get()}/$maxRetries after ${delayMs}ms: ${exception?.message}")
                     scope.launch {
