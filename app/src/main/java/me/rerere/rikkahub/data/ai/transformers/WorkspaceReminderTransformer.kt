@@ -62,9 +62,8 @@ private fun buildWorkspacePrompt(workspace: WorkspaceEntity, cwd: String? = null
     appendLine("- When asked to produce a document, slides, or spreadsheet: write a short Python script and run it via `workspace_shell`, or use `pandoc` for direct conversion. Save the output under `/workspace` and report the resulting path.")
     appendLine("- The skills directory is mounted at `/skills`. Each skill is a subdirectory `/skills/<skill-name>/` containing a `SKILL.md` (with `name` and `description` frontmatter) plus any supporting files. Read a skill's `SKILL.md` before using it, and follow its instructions.")
     appendLine("- Files the user uploaded are mounted at `/upload`. Treat `/upload` as READ-ONLY: read uploaded files from `/upload/<file-name>`, but never modify, overwrite, or delete anything there. If you need to change an uploaded file, copy it into `/workspace` first and edit the copy.")
-    if (!cwd.isNullOrBlank()) {
-        appendLine("- Current working directory: `$cwd`. Use this as the default context for file operations and shell commands.")
-    }
+    // v4.3.14: cwd 不再注入 — cwd 会在会话中切换, 动态行破坏 system 前缀缓存
+    // (fp 实测 volatile 漂移); 模型需要时可用 workspace_shell 的 pwd 自行获知
     append("</workspace>")
 }
 

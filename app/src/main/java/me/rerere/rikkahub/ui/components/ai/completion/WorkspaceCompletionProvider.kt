@@ -163,6 +163,16 @@ class WorkspaceCompletionProvider(
         val normalizedPath = path.lowercase()
         val normalizedName = name.lowercase()
         val normalizedQuery = query.lowercase()
+        // v4.3.14 (BUG21): 用户敲目录路径时 (query 含 / 或为绝对路径), 该目录下的
+        // 直接子项给予最高权重 — 否则 cwd 加权 (1500) 把别的目录的文件排到前面,
+        // 用户"从对应文件夹去找"时目标内容被淹没 (浏览不到, 只能凭空敲名字)。
+        val browsedDir = normalizedQuery.substringBeforeLast('/', "")
+        val dirDirectChildScore = if (browsedDir.isNotBlank()) {
+            if (normalizedPath.startsWith(browsedDir) &&
+                normalizedPath.substring(browsedDir.length).startsWith("/") &&
+                !normalizedPath.removePrefix(browsedDir).removePrefix("/").contains('/')
+            ) BROWSED_DIR_CHILD_SCORE else null
+        } else null
         val globalScore = if (normalizedQuery.isBlank()) {
             1
         } else {
@@ -173,7 +183,7 @@ class WorkspaceCompletionProvider(
         }
 
         val cwdScore = if (!absoluteQuery) matchCwdScore(normalizedQuery) else null
-        val score = max(globalScore, cwdScore ?: -1)
+        val score = max(max(globalScore, dirDirectChildScore ?: -1), cwdScore ?: -1)
         return score + if (isDirectory) DIRECTORY_SCORE_BONUS else 0
     }
 
@@ -272,8 +282,11 @@ class WorkspaceCompletionProvider(
 
     companion object {
         private const val MAX_COMPLETION_ITEMS = 8
-        private const val MAX_INDEXED_ENTRIES = 500
-        private const val MAX_INDEXED_DIRS = 80
+        // v4.3.14: 索引配额提升 — 500 条/80 目录在大工作区尾部截断, 部分
+        // 文件根本不进索引; 2000/200 覆盖常规会话工作区全量
+        private const val MAX_INDEXED_ENTRIES = 2000
+        private const val MAX_INDEXED_DIRS = 200
+        private const val BROWSED_DIR_CHILD_SCORE = 2_000
         private const val CACHE_TTL_MILLIS = 5_000L
         private const val DIRECTORY_SCORE_BONUS = 25
         private const val CWD_SCORE_BONUS = 1_500
