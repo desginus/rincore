@@ -513,7 +513,7 @@ class GenerationHandler(
                                 android.os.SystemClock.elapsedRealtime() - since > TOOL_APPROVAL_TIMEOUT_MS) {
                                 Log.w(TAG, "generateText: tool ${tool.toolName} approval timeout, auto-denied")
                                 CallTracer.event("TOOL", "approval_timeout_${tool.toolName}",
-                                    "Pending approval exceeded ${'$'}{TOOL_APPROVAL_TIMEOUT_MS / 1000}s, auto-denied")
+                                    "Pending approval exceeded " + (TOOL_APPROVAL_TIMEOUT_MS / 1000) + "s, auto-denied")
                                 tool.copy(approvalState = ToolApprovalState.Denied(
                                     "客户端审批等待超时 (${TOOL_APPROVAL_TIMEOUT_MS / 1000} 秒), 已自动拒绝本次调用。"
                                     + "如确需执行该工具, 请在用户确认授权后重新发起; 或换用其他工具完成意图。"))
@@ -732,7 +732,7 @@ class GenerationHandler(
                                     failText.startsWith("Error") ||
                                     failText.startsWith("Invalid") ||
                                     failText.startsWith("MCP manager not initialized") ||
-                                    failText.contains("工具 ${'$'}{tool.toolName} 未找到") ||
+                                    failText.contains("工具 " + tool.toolName + " 未找到") ||
                                     failText.startsWith("Tool execution timed out")
                                 if (isFailure) {
                                     val key = tool.toolName + "|" + tool.input.hashCode()
@@ -740,9 +740,9 @@ class GenerationHandler(
                                     toolFailureCounts[key] = n
                                     if (n >= 3) {
                                         CallTracer.event("TOOL", "failure_loop_break",
-                                            "same-failure x$n: ${'$'}{tool.toolName}", metrics = sseDiagMetrics())
+                                            "same-failure x" + n + ": " + tool.toolName, metrics = sseDiagMetrics())
                                         return@run listOf(UIMessagePart.Text(
-                                            "⚠️ 这是第 ${'$'}n 次以完全相同的参数调用 ${'$'}{tool.toolName} 并得到相同错误 (错误: ${'$'}{failText.take(120)})。" +
+                                            "⚠️ 这是第 " + n + " 次以完全相同的参数调用 " + tool.toolName + " 并得到相同错误 (错误: " + failText.take(120) + ")。" +
                                             "以相同方式重复该调用不会产生不同结果, 请立即停止重复。可选路径: " +
                                             "1) 重新确认你实际意图的工具名 (检查工具列表, 是否写错或选了错误工具); " +
                                             "2) 若是参数问题, 先补齐必填参数再调用; " +

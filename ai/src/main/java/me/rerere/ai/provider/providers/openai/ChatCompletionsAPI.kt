@@ -650,7 +650,7 @@ class ChatCompletionsAPI(
             }
             msg.copy(parts = newParts)
         }
-        if (replaced > 0) Log.i(TAG, "Image budget: replaced ${'$'}replaced marked images with placeholders")
+        if (replaced > 0) Log.i(TAG, "Image budget: replaced " + replaced + " marked images with placeholders")
         return out
     }
 
@@ -666,7 +666,7 @@ class ChatCompletionsAPI(
 
     private fun imageBudgetPlaceholder(image: UIMessagePart.Image): String = when {
         image.url.startsWith("file://") ->
-            "[图片已省略 (超出本请求图片预算): 原文件已保存于会话中, 路径: ${'$'}{image.url} — 需要查看时调用 read_image 工具传入该路径]"
+            "[图片已省略 (超出本请求图片预算): 原文件已保存于会话中, 路径: " + image.url + " — 需要查看时调用 read_image 工具传入该路径]"
         else -> "[图片已省略 (超出本请求图片预算): 内联图片数据未保留]"
     }
 
