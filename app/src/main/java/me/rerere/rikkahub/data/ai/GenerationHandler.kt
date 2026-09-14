@@ -206,9 +206,7 @@ class GenerationHandler(
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
 
-        // v4.3.10: 流式基准 = 带图片预算标记的消息 (标记在 metadata, 内容零改动,
-        // UI 渲染不受影响) — 标记随 onUpdateMessages 落盘, 跨轮持久
-        var messages: List<UIMessage> = markedMessages
+        var messages: List<UIMessage> = messages
 
         // === 分层路由状态 ===
         // 注: 消息发送前统一组装, 各步共享同一构建路径 —
@@ -1130,7 +1128,10 @@ class GenerationHandler(
 
         // v3.6.34: 流式基准 = 原始消息 (关键) — 压缩包只进请求 (internalMessages),
         // 流式累积/onUpdateMessages 回写必须用原始消息, 否则 UI 消息被替换成压缩包
-        var messages: List<UIMessage> = messages
+        // v4.3.10: 基准 = markedMessages — 图片预算标记在 metadata (内容零改动,
+        // UI 渲染不受影响), 标记随 onUpdateMessages 落盘跨轮持久; 无图片场景
+        // markedMessages 与原始消息逐条相等
+        var messages: List<UIMessage> = markedMessages
         val params = TextGenerationParams(
             model = modelWithAbilities,
             temperature = assistant.temperature,
