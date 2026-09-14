@@ -53,9 +53,13 @@ fun Request.Builder.configureReferHeaders(url: String): Request.Builder {
 fun Request.Builder.configureSessionHeaders(url: String, sessionId: String?): Request.Builder = apply {
     if (sessionId != null) {
         header("X-Session-ID", sessionId)
-        if (url.toHttpUrl().host == "opencode.ai") {
-            header("x-opencode-session", sessionId)
-        }
+        // v4.3.9 (BUG16): host 白名单过窄 — 仅 opencode.ai 发送。用户实证 (fp 诊断
+        // 日志): Console Go (OpenCode Go 自建部署, host≠opencode.ai) 依赖该头做
+        // 会话粘性路由, 头缺失 → 每轮请求被路由到不同上游实例 → 各上游只见过
+        // 部分前缀 → 同会话 fp_stable 不变而命中率 87%→12%→17% 崩塌。改为
+        // sessionId 非空即统一发送 — 标准 HTTP 转发对未知头忽略, 对官方端点
+        // 与其他网关零影响。
+        header("x-opencode-session", sessionId)
     }
 }
 
