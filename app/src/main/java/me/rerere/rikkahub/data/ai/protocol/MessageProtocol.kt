@@ -35,7 +35,26 @@ object MessageProtocol {
         var result = messages
         result = ensureSystemFirst(result)
         result = sanitizeToolSequence(result)
+        result = sanitizeEmptyTextParts(result)
         return result
+    }
+
+    /**
+     * v4.3.16: 空 text part 净化 — OpenCode 网关实证 (上游 issue #16220 同型):
+     * 生成中途取消会在消息里留下空 text 块 ("text": ""), 该块原样重放给模型
+     * API 即被拒收, 会话永久变砖。剥离空 text (同消息还有其它 parts 时);
+     * 整条消息只剩空 text 时替换为中断占位 — 请求体永不携带空内容。
+     */
+    fun sanitizeEmptyTextParts(messages: List<UIMessage>): List<UIMessage> {
+        return messages.map { msg ->
+            val hasEmptyText = msg.parts.any { it is UIMessagePart.Text && it.text.isBlank() }
+            if (!hasEmptyText) msg else {
+                val cleaned = msg.parts.filter { it !is UIMessagePart.Text || it.text.isNotBlank() }
+                msg.copy(parts = if (cleaned.isEmpty()) {
+                    listOf(UIMessagePart.Text("[已中断: 此消息生成时被取消, 无有效内容]"))
+                } else cleaned)
+            }
+        }
     }
 
     /** 首条必须 system — 无 system 时创建空 system；首条非 system 时合并文本并前置 */

@@ -1097,8 +1097,9 @@ class ChatCompletionsAPI(
             }
 
             // content
+            // v4.3.16: 空 content 不再发 "" — 部分上游对空字符串 content 拒收
             if (contentParts.isEmpty()) {
-                put("content", "")
+                put("content", "[此消息在生成中断时被保留, 正文为空]")
             } else if (contentParts.size == 1 && contentParts[0] is UIMessagePart.Text) {
                 put("content", (contentParts[0] as UIMessagePart.Text).text)
             } else {
@@ -1184,6 +1185,17 @@ class ChatCompletionsAPI(
                                 })
                             }
 
+                            // v4.3.16: 导入的 role=tool 消息 (如第三方导入) — 提取结果文本,
+                            // 避免 Tool part 被忽略后 content 为空数组遭上游拒收
+                            is UIMessagePart.Tool -> part.output.forEach { op ->
+                                if (op is UIMessagePart.Text && op.text.isNotBlank()) {
+                                    add(buildJsonObject {
+                                        put("type", "text")
+                                        put("text", op.text)
+                                    })
+                                }
+                            }
+
                             else -> {}
                         }
                     }
@@ -1208,7 +1220,8 @@ class ChatCompletionsAPI(
                 else -> null
             }
         }
-        return JsonPrimitive(lines.joinToString("\n"))
+        // v4.3.16: 空工具输出防线 — OpenCode API 要求 tool content 至少 1 项
+        return JsonPrimitive(lines.filter { it.isNotBlank() }.ifEmpty { listOf("[工具返回为空]") }.joinToString("\n"))
     }
 
     private fun parseMessage(jsonObject: JsonObject): UIMessage {
