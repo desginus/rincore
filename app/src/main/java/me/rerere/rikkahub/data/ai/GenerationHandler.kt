@@ -858,12 +858,19 @@ class GenerationHandler(
      * ChatCompletionsAPI.applyImageMarkers 消费标记替换为占位文本。
      */
     private fun applyImageBudgetMarking(messages: List<UIMessage>): List<UIMessage> {
+        // v4.3.11 (BUG17): Slot key=(mi, pi, oi) — pi 永远是真实 part 索引 (普通图 oi=-1,
+        // Tool.output 图 oi>=0 且 pi=Tool 的 part 索引)。v4.3.10 曾用 pi=-1 哨兵存
+        // Tool 图, imageAt 先 parts[pi] 越界 → 用户发 PDF 即崩溃。统一真实索引后
+        // imageAt 先走 oi 分支, 无 -1 索引; 再加 getOrNull 边界守卫双保险。
         data class Slot(val key: Triple<Int, Int, Int>, val url: String, val bytes: Long)
         val slots = mutableListOf<Slot>()
         val imageAt: (Int, Int, Int) -> UIMessagePart.Image? = { mi, pi, oi ->
-            val p = messages[mi].parts[pi]
-            if (oi < 0) p as? UIMessagePart.Image
-            else (p as? UIMessagePart.Tool)?.output?.getOrNull(oi) as? UIMessagePart.Image
+            val p = messages.getOrNull(mi)?.parts?.getOrNull(pi)
+            when {
+                p == null -> null
+                oi < 0 -> p as? UIMessagePart.Image
+                else -> (p as? UIMessagePart.Tool)?.output?.getOrNull(oi) as? UIMessagePart.Image
+            }
         }
         messages.forEachIndexed { mi, msg ->
             msg.parts.forEachIndexed { pi, part ->
@@ -872,7 +879,7 @@ class GenerationHandler(
                     part is UIMessagePart.Image -> slots.add(Slot(Triple(mi, pi, -1), part.url, 0L))
                     part is UIMessagePart.Tool -> part.output.forEachIndexed { oi, op ->
                         if (op is UIMessagePart.Image && op.metadata?.get("budget_dropped") == null) {
-                            slots.add(Slot(Triple(mi, -1, oi), op.url, 0L))
+                            slots.add(Slot(Triple(mi, pi, oi), op.url, 0L))
                         }
                     }
                     else -> {}
@@ -908,13 +915,13 @@ class GenerationHandler(
         val result = messages.mapIndexed { mi, msg ->
             if (dropped.none { it.key.first == mi }) msg else msg.copy(parts = msg.parts.mapIndexed { pi, part ->
                 when {
-                    part is UIMessagePart.Image && dropped.any { it.key.first == mi && it.key.second == pi } ->
+                    part is UIMessagePart.Image && dropped.any { it.key.first == mi && it.key.second == pi && it.key.third == -1 } ->
                         part.copy(metadata = kotlinx.serialization.json.buildJsonObject {
                             (part.metadata ?: kotlinx.serialization.json.JsonObject(emptyMap())).forEach { (k, v) -> put(k, v) }
                             put("budget_dropped", kotlinx.serialization.json.JsonPrimitive("true"))
                         })
                     part is UIMessagePart.Tool -> part.copy(output = part.output.mapIndexed { oi, op ->
-                        if (op is UIMessagePart.Image && dropped.any { it.key.first == mi && it.key.second == -1 && it.key.third == oi }) {
+                        if (op is UIMessagePart.Image && dropped.any { it.key.first == mi && it.key.second == pi && it.key.third == oi }) {
                             op.copy(metadata = kotlinx.serialization.json.buildJsonObject {
                                 (op.metadata ?: kotlinx.serialization.json.JsonObject(emptyMap())).forEach { (k, v) -> put(k, v) }
                                 put("budget_dropped", kotlinx.serialization.json.JsonPrimitive("true"))
@@ -1301,6 +1308,12 @@ class GenerationHandler(
                             metrics = sseDiagMetrics())
                         messages = preStreamMessages  // 丢弃半截内容, 回滚 UI
                         onUpdateMessages(messages)
+                        // v4.3.11 (BUG18): receivedAnyData 语义是"本轮是否收到过流数据"
+                        // — 重试开新轮必须重置, 否则首轮收过数据、次轮发起即败时
+                        // classify 拿着上轮残留误判为 StreamInterrupted, 发起类失败
+                        // 被塞进 18 次流中断链 (每次立即失败) 而不是 4 次快速失败
+                        // 终态, 重试风暴打在死连接上白耗 1 分钟+
+                        retry.receivedAnyData = false
                         continue@streamLoop
                     }
                     is RetryVerdict.Abort -> {
