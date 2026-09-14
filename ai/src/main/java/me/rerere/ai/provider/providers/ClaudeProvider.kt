@@ -1013,8 +1013,10 @@ class ClaudeProvider(
                 })
             }.onFailure {
                 Log.w(TAG, "encode image failed: $url", it)
+                // v4.5.0: 空 text 块被严格网关拒收 (对齐 CC 通道 v4.3.12 防线) —
+                // 编码失败发显式占位, 带原始路径与 read_image 指引, 重取闭环可用
                 put("type", "text")
-                put("text", "")
+                put("text", "[图片编码失败: $url — 需要查看时调用 read_image 工具传入该路径]")
             }
         }
 
