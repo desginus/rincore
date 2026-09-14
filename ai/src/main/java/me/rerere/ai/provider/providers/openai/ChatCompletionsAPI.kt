@@ -683,7 +683,7 @@ class ChatCompletionsAPI(
                 buildMessages(
                     messages = budgetedMessages,
                     includeHistoryReasoning = providerSetting.includeHistoryReasoning,
-                    supportInputModalities = params.model.inputModalities,
+    
                 )
             )
 
@@ -932,10 +932,10 @@ class ChatCompletionsAPI(
                                         put("image_url", buildJsonObject {
                                             put("url", encodedImage.base64)
                                         })
-                                    }.onFailure {
-                                        it.printStackTrace()
+                                    }.onFailure { e ->
+                                        Log.w(TAG, "encode user image failed: ${part.url}", e)
                                         put("type", "text")
-                                        put("text", "")
+                                        put("text", "[图片编码失败: ${part.url} — 需要查看时调用 read_image 工具传入该路径]")
                                     }
                                 })
                             }
@@ -950,7 +950,7 @@ class ChatCompletionsAPI(
     private fun buildMessages(
         messages: List<UIMessage>,
         includeHistoryReasoning: Boolean = true,
-        supportInputModalities: List<Modality> = listOf(Modality.TEXT, Modality.IMAGE),
+
     ) = buildJsonArray {
         val filteredMessages = messages.filter { it.isValidToUpload() }
 
@@ -959,7 +959,6 @@ class ChatCompletionsAPI(
                 addAssistantMessages(
                     message = message,
                     includeReasoning = includeHistoryReasoning,
-                    supportInputModalities = supportInputModalities,
                 )
             } else {
                 addNonAssistantMessage(message)
@@ -970,7 +969,6 @@ class ChatCompletionsAPI(
     private fun JsonArrayBuilder.addAssistantMessages(
         message: UIMessage,
         includeReasoning: Boolean,
-        supportInputModalities: List<Modality>,
     ) {
         val groups = groupPartsByToolBoundary(message.parts)
         val contentBuffer = mutableListOf<UIMessagePart>()
@@ -1014,7 +1012,41 @@ class ChatCompletionsAPI(
                         add(buildJsonObject {
                             put("role", "tool")
                             put("tool_call_id", tool.toolCallId)
-                            put("content", tool.toToolResultContent(supportInputModalities))
+                            put("content", tool.toToolResultContent())
+                        })
+                    }
+                    // v4.3.12 (BUG19): 工具结果图转移 — tool content 只能 text
+                    // (GLM 网关硬限制), 图片改为紧随的 user 消息附图: 模型支持
+                    // 图片输入时直接可见 (无需 read_image 二次拉取); 预算降级
+                    // (budget_dropped) 的图在 applyImageMarkers 已替换为占位,
+                    // 此处只处理预算内的图。
+                    val groupImages = group.tools
+                        .flatMap { it.output }
+                        .filterIsInstance<UIMessagePart.Image>()
+                        .filter { it.metadata?.get("budget_dropped")?.jsonPrimitive?.contentOrNull != "true" }
+                    if (groupImages.isNotEmpty()) {
+                        add(buildJsonObject {
+                            put("role", "user")
+                            put("content", buildJsonArray {
+                                add(buildJsonObject {
+                                    put("type", "text")
+                                    put("text", "[工具返回的图片]")
+                                })
+                                groupImages.forEach { img ->
+                                    add(buildJsonObject {
+                                        img.encodeBase64().onSuccess { encodedImage ->
+                                            put("type", "image_url")
+                                            put("image_url", buildJsonObject {
+                                                put("url", encodedImage.base64)
+                                            })
+                                        }.onFailure { e ->
+                                            Log.w(TAG, "encode tool-result image failed: ${img.url}", e)
+                                            put("type", "text")
+                                            put("text", "[图片编码失败: ${img.url} — 可调用 read_image 工具传入该路径读取]")
+                                        }
+                                    })
+                                }
+                            })
                         })
                     }
                 }
@@ -1082,10 +1114,10 @@ class ChatCompletionsAPI(
                                         put("image_url", buildJsonObject {
                                             put("url", encodedImage.base64)
                                         })
-                                    }.onFailure {
-                                        it.printStackTrace()
+                                    }.onFailure { e ->
+                                        Log.w(TAG, "encode user image failed: ${part.url}", e)
                                         put("type", "text")
-                                        put("text", "")
+                                        put("text", "[图片编码失败: ${part.url} — 需要查看时调用 read_image 工具传入该路径]")
                                     }
                                 })
                             }
@@ -1155,51 +1187,23 @@ class ChatCompletionsAPI(
         })
     }
 
-    private fun UIMessagePart.Tool.toToolResultContent(supportInputModalities: List<Modality>): JsonElement {
-        // 只考虑文字和图片;只有模型支持图片输入时,图片才作为多模态内容回传,否则以文本占位,避免发给不支持的模型报错
-        val supportsImageInput = Modality.IMAGE in supportInputModalities
-        val hasImageToSend = output.any { it is UIMessagePart.Image && supportsImageInput }
-        return if (!hasImageToSend) {
-            JsonPrimitive(output.mapNotNull { part ->
-                when (part) {
-                    is UIMessagePart.Text -> part.text
-                    is UIMessagePart.Image -> "[Image output omitted: current model does not support image input]"
-                    else -> null
-                }
-            }.joinToString("\n"))
-        } else {
-            buildJsonArray {
-                output.forEach { part ->
-                    when (part) {
-                        is UIMessagePart.Text -> {
-                            if (part.text.isNotBlank()) {
-                                add(buildJsonObject {
-                                    put("type", "text")
-                                    put("text", part.text)
-                                })
-                            }
-                        }
-
-                        is UIMessagePart.Image -> {
-                            add(buildJsonObject {
-                                part.encodeBase64().onSuccess { encodedImage ->
-                                    put("type", "image_url")
-                                    put("image_url", buildJsonObject {
-                                        put("url", encodedImage.base64)
-                                    })
-                                }.onFailure {
-                                    Log.w(TAG, "encode tool result image failed: ${part.url}", it)
-                                    put("type", "text")
-                                    put("text", "Error: Failed to encode image to base64")
-                                }
-                            })
-                        }
-
-                        else -> {}
-                    }
-                }
+    /**
+     * v4.3.12 (BUG19): tool content 纯文本化 — 用户实证 GLM 网关硬限制:
+     * messages[N]: tool content: part type "image_url" is not supported;
+     * only text is。即使模型声明了 IMAGE modality, role=tool 的 content
+     * 也不接受 image_url part。改为无条件纯文本: 工具结果中的图片以占位
+     * 文本交代去向, 真正的图片由调用方 (工具分组循环) 转移到紧随其后的
+     * user 消息中 — 模型支持图片输入时直接可见, 不支持时占位提示。
+     */
+    private fun UIMessagePart.Tool.toToolResultContent(): JsonElement {
+        val lines = output.mapNotNull { part ->
+            when (part) {
+                is UIMessagePart.Text -> part.text
+                is UIMessagePart.Image -> "[图片已省略: 工具返回的图片已作为随后的用户消息附图提供]"
+                else -> null
             }
         }
+        return JsonPrimitive(lines.joinToString("\n"))
     }
 
     private fun parseMessage(jsonObject: JsonObject): UIMessage {
