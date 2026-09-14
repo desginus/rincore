@@ -1171,10 +1171,10 @@ class ChatCompletionsAPI(
                                         put("image_url", buildJsonObject {
                                             put("url", encodedImage.base64)
                                         })
-                                    }.onFailure {
-                                        it.printStackTrace()
+                                    }.onFailure { e ->
+                                        Log.w(TAG, "encode non-assistant image failed: ${part.url}", e)
                                         put("type", "text")
-                                        put("text", "")
+                                        put("text", "[图片编码失败: ${part.url} — 需要查看时调用 read_image 工具传入该路径]")
                                     }
                                 })
                             }
