@@ -206,7 +206,9 @@ class GenerationHandler(
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
 
-        var messages: List<UIMessage> = messages
+        // v4.3.10: 流式基准 = 带图片预算标记的消息 (标记在 metadata, 内容零改动,
+        // UI 渲染不受影响) — 标记随 onUpdateMessages 落盘, 跨轮持久
+        var messages: List<UIMessage> = markedMessages
 
         // === 分层路由状态 ===
         // 注: 消息发送前统一组装, 各步共享同一构建路径 —
@@ -849,6 +851,86 @@ class GenerationHandler(
         val lines = me.rerere.ai.util.TraceLogger.takeTagged("SSE", 12)
         return if (lines.isEmpty()) emptyMap() else mapOf("sse_diag" to lines.joinToString(" | "))
     }
+    /**
+     * v4.3.10 (BUG15 v2): 图片预算判定+持久标记 — 未标记图中从最新往旧保留
+     * IMAGE_BUDGET_COUNT 张 (count/size 预算), 超额的写 budget_dropped 标记。
+     * 标记随消息落盘持久化 (重启不丢), 降级不可逆 → 请求前缀在已降级位置
+     * 恒定 (消除 v4.3.6 "最近 8 张" 滚动重算造成的每轮前缀断裂)。
+     * 只改 Image.metadata, 内容零改动, UI 渲染不受影响; 请求构造时
+     * ChatCompletionsAPI.applyImageMarkers 消费标记替换为占位文本。
+     */
+    private fun applyImageBudgetMarking(messages: List<UIMessage>): List<UIMessage> {
+        data class Slot(val key: Triple<Int, Int, Int>, val url: String, val bytes: Long)
+        val slots = mutableListOf<Slot>()
+        val imageAt: (Int, Int, Int) -> UIMessagePart.Image? = { mi, pi, oi ->
+            val p = messages[mi].parts[pi]
+            if (oi < 0) p as? UIMessagePart.Image
+            else (p as? UIMessagePart.Tool)?.output?.getOrNull(oi) as? UIMessagePart.Image
+        }
+        messages.forEachIndexed { mi, msg ->
+            msg.parts.forEachIndexed { pi, part ->
+                when {
+                    part is UIMessagePart.Image && part.metadata?.get("budget_dropped") != null -> {}
+                    part is UIMessagePart.Image -> slots.add(Slot(Triple(mi, pi, -1), part.url, 0L))
+                    part is UIMessagePart.Tool -> part.output.forEachIndexed { oi, op ->
+                        if (op is UIMessagePart.Image && op.metadata?.get("budget_dropped") == null) {
+                            slots.add(Slot(Triple(mi, -1, oi), op.url, 0L))
+                        }
+                    }
+                    else -> {}
+                }
+            }
+        }
+        // 字节估算: data URL 按字符数, 本地文件按大小, 公网 URL 仅计张数
+        val sized = slots.map { s ->
+            val img = imageAt(s.key.first, s.key.second, s.key.third)
+            val bytes = when {
+                img == null -> 0L
+                img.url.startsWith("data:") -> img.url.length.toLong()
+                img.url.startsWith("file://") -> runCatching {
+                    java.io.File(img.url.removePrefix("file://")).length()
+                }.getOrDefault(0L)
+                else -> 0L
+            }
+            s.copy(bytes = bytes)
+        }
+        if (sized.size <= IMAGE_BUDGET_COUNT && sized.sumOf { it.bytes } <= IMAGE_BUDGET_TOTAL_BYTES) return messages
+        val kept = mutableSetOf<Triple<Int, Int, Int>>()
+        var total = 0L
+        for (s in sized.asReversed()) {
+            if (kept.size >= IMAGE_BUDGET_COUNT) break
+            if (s.bytes > IMAGE_BUDGET_SINGLE_BYTES) continue
+            if (total + s.bytes > IMAGE_BUDGET_TOTAL_BYTES) continue
+            kept.add(s.key)
+            total += s.bytes
+        }
+        val dropped = sized.filter { it.key !in kept }
+        if (dropped.isEmpty()) return messages
+        Log.w(TAG, "image budget: dropping ${dropped.size} older images (kept ${kept.size}, ${dropped.size + kept.size} total)")
+        val result = messages.mapIndexed { mi, msg ->
+            if (dropped.none { it.key.first == mi }) msg else msg.copy(parts = msg.parts.mapIndexed { pi, part ->
+                when {
+                    part is UIMessagePart.Image && dropped.any { it.key.first == mi && it.key.second == pi } ->
+                        part.copy(metadata = kotlinx.serialization.json.buildJsonObject {
+                            (part.metadata ?: kotlinx.serialization.json.JsonObject(emptyMap())).forEach { (k, v) -> put(k, v) }
+                            put("budget_dropped", kotlinx.serialization.json.JsonPrimitive("true"))
+                        })
+                    part is UIMessagePart.Tool -> part.copy(output = part.output.mapIndexed { oi, op ->
+                        if (op is UIMessagePart.Image && dropped.any { it.key.first == mi && it.key.second == -1 && it.key.third == oi }) {
+                            op.copy(metadata = kotlinx.serialization.json.buildJsonObject {
+                                (op.metadata ?: kotlinx.serialization.json.JsonObject(emptyMap())).forEach { (k, v) -> put(k, v) }
+                                put("budget_dropped", kotlinx.serialization.json.JsonPrimitive("true"))
+                            })
+                        } else op
+                    })
+                    else -> part
+                }
+            })
+        }
+        Log.i(TAG, "image budget: permanent downgrade marks written (${dropped.size} images, persisted with message store)")
+        return result
+    }
+
 
     private suspend fun generateInternal(
         assistant: Assistant,
@@ -879,6 +961,9 @@ class GenerationHandler(
         // 60% 默认算法仅作用于手动"压缩历史"功能的默认保留范围
         // (ContextCompressor.recommendedKeepMessages), 正常对话严禁任何截断。
         val effectiveMessages: List<UIMessage> = messages
+        // v4.3.10: 图片预算判定+持久标记 — 标记随流式基准落盘 (降级不可逆),
+        // 请求构造 (internalMessages) 与 UI 回写共用同一标记视图
+        val markedMessages: List<UIMessage> = applyImageBudgetMarking(effectiveMessages)
 
         // 4.0.7: abilities 根本修复 — 自定义模型 (listModels 不带 abilities,
         // UI 未编辑过的) abilities 恒空 → 思考控制/工具门控全哑。注册表按
@@ -968,94 +1053,13 @@ class GenerationHandler(
             )
             // 记忆位置策略: 记忆放 stable 之后 (历史之前) — 记忆是稳定前缀一部分, 可命中
             val cacheFpSystem = listOf(stableSystem, volatileSystem).filter { it.isNotBlank() }.joinToString("\n")
-            // v4.3.10 (BUG15 v2): 图片预算判定+持久标记 — 未标记图中从最新往旧
-            // 保留 IMAGE_BUDGET_COUNT 张 (count/size 预算), 超额的写 budget_dropped
-            // 标记 (随 onUpdateMessages 落盘, 降级不可逆)。带标记的图由 CC 层
-            // (applyImageMarkers) 在请求构造时替换为占位 — UI 消息不动。
-            run {
-                data class Slot(val key: Triple<Int, Int, Int>, val url: String, val bytes: Long)
-                var dirty = false
-                val slots = mutableListOf<Slot>()
-                val imageAt: (Int, Int, Int) -> UIMessagePart.Image? = { mi, pi, oi ->
-                    val p = messages[mi].parts[pi]
-                    if (oi < 0) p as? UIMessagePart.Image
-                    else (p as? UIMessagePart.Tool)?.output?.getOrNull(oi) as? UIMessagePart.Image
-                }
-                messages.forEachIndexed { mi, msg ->
-                    msg.parts.forEachIndexed { pi, part ->
-                        when {
-                            part is UIMessagePart.Image && part.metadata?.get("budget_dropped") != null -> {}
-                            part is UIMessagePart.Image -> slots.add(Slot(Triple(mi, pi, -1), part.url, 0L))
-                            part is UIMessagePart.Tool -> part.output.forEachIndexed { oi, op ->
-                                if (op is UIMessagePart.Image && op.metadata?.get("budget_dropped") == null) {
-                                    slots.add(Slot(Triple(mi, -1, oi), op.url, 0L))
-                                }
-                            }
-                            else -> {}
-                        }
-                    }
-                }
-                // 字节估算: data URL 按字符数, 本地文件按大小, 公网 URL 仅计张数
-                val sized = slots.map { s ->
-                    val img = imageAt(s.key.first, s.key.second, s.key.third)
-                    val bytes = when {
-                        img == null -> 0L
-                        img.url.startsWith("data:") -> img.url.length.toLong()
-                        img.url.startsWith("file://") -> runCatching {
-                            java.io.File(img.url.removePrefix("file://")).length()
-                        }.getOrDefault(0L)
-                        else -> 0L
-                    }
-                    s.copy(bytes = bytes)
-                }
-                if (sized.size > IMAGE_BUDGET_COUNT || sized.sumOf { it.bytes } > IMAGE_BUDGET_TOTAL_BYTES) {
-                    val kept = mutableSetOf<Triple<Int, Int, Int>>()
-                    var total = 0L
-                    for (s in sized.asReversed()) {
-                        if (kept.size >= IMAGE_BUDGET_COUNT) break
-                        if (s.bytes > IMAGE_BUDGET_SINGLE_BYTES) continue
-                        if (total + s.bytes > IMAGE_BUDGET_TOTAL_BYTES) continue
-                        kept.add(s.key)
-                        total += s.bytes
-                    }
-                    val dropped = sized.filter { it.key !in kept }
-                    if (dropped.isNotEmpty()) {
-                        Log.w(TAG, "image budget: dropping ${dropped.size} older images (kept ${kept.size})")
-                        messages = messages.mapIndexed { mi, msg ->
-                            if (dropped.none { it.key.first == mi }) msg else msg.copy(parts = msg.parts.mapIndexed { pi, part ->
-                                when {
-                                    part is UIMessagePart.Image && dropped.any { it.key.first == mi && it.key.second == pi } -> {
-                                        dirty = true
-                                        part.copy(metadata = kotlinx.serialization.json.buildJsonObject {
-                                            (part.metadata ?: kotlinx.serialization.json.JsonObject(emptyMap())).forEach { (k, v) -> put(k, v) }
-                                            put("budget_dropped", kotlinx.serialization.json.JsonPrimitive("true"))
-                                        })
-                                    }
-                                    part is UIMessagePart.Tool -> part.copy(output = part.output.mapIndexed { oi, op ->
-                                        if (op is UIMessagePart.Image && dropped.any { it.key.first == mi && it.key.second == -1 && it.key.third == oi }) {
-                                            dirty = true
-                                            op.copy(metadata = kotlinx.serialization.json.buildJsonObject {
-                                                (op.metadata ?: kotlinx.serialization.json.JsonObject(emptyMap())).forEach { (k, v) -> put(k, v) }
-                                                put("budget_dropped", kotlinx.serialization.json.JsonPrimitive("true"))
-                                            })
-                                        } else op
-                                    })
-                                    else -> part
-                                }
-                            })
-                        }
-                    }
-                }
-                if (dirty) Log.i(TAG, "image budget: permanent downgrade marks written (persisted with message store)")
-            }
-
             // v3.5.58 缓存核验: 请求体前缀指纹 (stable system+tools 序列化稳定)
             // v4.3.5 (BUG14): 组件级漂移自诊断 — fp 相同=前缀稳定 (缓存低在网关侧);
             // fp 变化=客户端前缀漂移, 组件摘要直接指出漂移源 (stable/volatile/工具名单)
             try {
                 // v4.3.10: 历史稳定性摘要 — 排除尾部 2 条 (每轮合法追加), 若更早的
                 // 历史被改写 (压缩/截断/降级文本变化), 摘要变化 → fp_drift 直接指出
-                val histStable = messages.dropLast(2)
+                val histStable = markedMessages.dropLast(2)
                 val histSum = histStable.sumOf { m -> m.parts.sumOf { p ->
                     when (p) {
                         is UIMessagePart.Text -> p.text.length
@@ -1097,7 +1101,7 @@ class GenerationHandler(
                     " total=${fullSystem.length}c (~${estTokens.toInt()}t)")
                 add(UIMessage.system(prompt = fullSystem))
             }
-            addAll(effectiveMessages)
+            addAll(markedMessages)
         }.transforms(
             transformers = transformers,
             context = context,
