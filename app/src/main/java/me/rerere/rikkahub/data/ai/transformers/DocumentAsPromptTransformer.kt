@@ -101,7 +101,9 @@ object DocumentAsPromptTransformer : InputMessageTransformer {
                 val head = raw.take(HEAD_KEEP)
                 val tail = raw.takeLast(TAIL_KEEP)
                 val omitted = raw.length - HEAD_KEEP - TAIL_KEEP
-                "$head\n[... 文件过大，中间省略 ${'$'}{omitted} 字符；完整文件在工作区路径: ${'$'}{resolveWorkspacePath(document) ?: "/upload/" + document.fileName}，需要完整内容时调用 read_file 工具传入该路径 ...]\n$tail"
+                val wsPath = resolveWorkspacePath(document) ?: ("/upload/" + document.fileName)
+                val notice = "[... 文件过大，中间省略 " + omitted + " 字符；完整文件在工作区路径: " + wsPath + "，需要完整内容时调用 read_file 工具传入该路径 ...]"
+                head + "\n" + notice + "\n" + tail
             }
         }.getOrElse {
             "[ERROR, failed to read file: ${document.fileName}]"
