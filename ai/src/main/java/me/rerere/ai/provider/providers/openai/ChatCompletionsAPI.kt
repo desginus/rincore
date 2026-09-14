@@ -622,62 +622,22 @@ class ChatCompletionsAPI(
     }.buffer(Channel.UNLIMITED).flowOn(Dispatchers.IO)
 
     /**
-     * v4.3.6 (BUG15): 图片预算 — 请求构造层确定性防御 (无条件, 不依赖任何开关)。
-     * GLM 类严格端点硬性限制: 单请求 ≤8 张图 (inline data URL / 公网 HTTPS),
-     * 单张 ≤16MiB, 总量 ≤64MiB; 本地路径/私网/音视频不支持。高强度工作
-     * (截图/视觉工具连续调用) 数轮即超限, 整请求被拒 — 全部进度随之中断。
-     *
-     * 策略: 按时间序保留"最近的"图片 (最新上下文最相关), 超额的更早图片
-     * 替换为文本占位 (模型可感知"此处曾有图"并按文本继续)。裁剪是确定性的:
-     * 同一消息序列恒产出同一裁剪结果。槽位以 (消息序, parts 序, output 序)
-     * 三元组定位, 替换与预算判定用同一键, 不依赖对象相等性。
+     * v4.3.10 (BUG15 v2): 图片预算的消费端 — 替换已标记降级的图片为占位。
+     * 预算判定与持久标记由 GenerationHandler (app 层) 负责: 降级标记写入
+     * Image.metadata["budget_dropped"], 随消息落盘持久化, 降级不可逆 →
+     * 请求前缀在已降级位置恒定 (消除滚动重算造成的每轮断裂点后移)。
+     * 本层只做确定性替换: 带标记的 Image → 占位文本 (含原路径+read_image 指引)。
      */
-    private fun applyImageBudget(messages: List<UIMessage>, modelName: String): List<UIMessage> {
-        data class ImageSlot(val messageIndex: Int, val partIndex: Int, val outputIndex: Int) {
-            val key: Triple<Int, Int, Int> get() = Triple(messageIndex, partIndex, outputIndex)
-        }
-
-        // 收集全部图片槽位 (消息 parts + 工具输出)
-        val slots = mutableListOf<Pair<ImageSlot, UIMessagePart.Image>>()
-        messages.forEachIndexed { mi, msg ->
-            msg.parts.forEachIndexed { pi, part ->
+    private fun applyImageMarkers(messages: List<UIMessage>): List<UIMessage> {
+        var replaced = 0
+        val out = messages.map { msg ->
+            val newParts = msg.parts.map { part ->
                 when {
-                    part is UIMessagePart.Image -> slots.add(ImageSlot(mi, pi, -1) to part)
-                    part is UIMessagePart.Tool -> part.output.forEachIndexed { oi, op ->
-                        if (op is UIMessagePart.Image) slots.add(ImageSlot(mi, -1, oi) to op)
-                    }
-                    else -> {}
-                }
-            }
-        }
-        if (slots.size <= IMAGE_BUDGET_COUNT &&
-            slots.sumOf { (_, img) -> estimateImageBytes(img) } <= IMAGE_BUDGET_TOTAL_BYTES) return messages
-
-        // 从最新往旧保留预算 (计数 + 总量), 单张超限一律降级
-        val keptKeys = mutableSetOf<Triple<Int, Int, Int>>()
-        var total = 0L
-        for ((slot, img) in slots.asReversed()) {
-            if (keptKeys.size >= IMAGE_BUDGET_COUNT) break
-            val bytes = estimateImageBytes(img)
-            if (bytes > IMAGE_BUDGET_SINGLE_BYTES) continue
-            if (total + bytes > IMAGE_BUDGET_TOTAL_BYTES) continue
-            keptKeys.add(slot.key)
-            total += bytes
-        }
-        val droppedCount = slots.count { (slot, _) -> slot.key !in keptKeys }
-        if (droppedCount == 0) return messages
-
-        Log.i(TAG, "Image budget: model=$modelName total=${slots.size} kept=${keptKeys.size} dropped=$droppedCount " +
-            "(limits: ${IMAGE_BUDGET_COUNT} imgs / ${IMAGE_BUDGET_SINGLE_BYTES / 1048576}MiB each / ${IMAGE_BUDGET_TOTAL_BYTES / 1048576}MiB total)")
-
-        return messages.mapIndexed { mi, msg ->
-            val newParts = msg.parts.mapIndexed { pi, part ->
-                when {
-                    part is UIMessagePart.Image && Triple(mi, pi, -1) !in keptKeys ->
-                        UIMessagePart.Text(imageBudgetPlaceholder(part))
-                    part is UIMessagePart.Tool -> part.copy(output = part.output.mapIndexed { oi, op ->
-                        if (op is UIMessagePart.Image && Triple(mi, -1, oi) !in keptKeys) {
-                            UIMessagePart.Text(imageBudgetPlaceholder(op))
+                    part is UIMessagePart.Image && part.metadata?.get("budget_dropped")?.jsonPrimitive?.contentOrNull == "true" ->
+                        UIMessagePart.Text(imageBudgetPlaceholder(part)).also { replaced++ }
+                    part is UIMessagePart.Tool -> part.copy(output = part.output.map { op ->
+                        if (op is UIMessagePart.Image && op.metadata?.get("budget_dropped")?.jsonPrimitive?.contentOrNull == "true") {
+                            UIMessagePart.Text(imageBudgetPlaceholder(op)).also { replaced++ }
                         } else op
                     })
                     else -> part
@@ -685,6 +645,8 @@ class ChatCompletionsAPI(
             }
             msg.copy(parts = newParts)
         }
+        if (replaced > 0) Log.i(TAG, "Image budget: replaced ${'$'}replaced marked images with placeholders")
+        return out
     }
 
     private fun estimateImageBytes(image: UIMessagePart.Image): Long {
@@ -697,6 +659,12 @@ class ChatCompletionsAPI(
         }
     }
 
+    private fun imageBudgetPlaceholder(image: UIMessagePart.Image): String = when {
+        image.url.startsWith("file://") ->
+            "[图片已省略 (超出本请求图片预算): 原文件已保存于会话中, 路径: ${'$'}{image.url} — 需要查看时调用 read_image 工具传入该路径]"
+        else -> "[图片已省略 (超出本请求图片预算): 内联图片数据未保留]"
+    }
+
     private fun buildChatCompletionRequest(
         messages: List<UIMessage>,
         params: TextGenerationParams,
@@ -707,7 +675,7 @@ class ChatCompletionsAPI(
         // v4.3.6 (BUG15): 图片预算裁剪 — 严格端点 (GLM 类) 限制单请求图片数量/体积,
         // 高强度视觉工作流超限后整个请求被 [too_many_images] 拒绝, 用户全部进度中断。
         // 裁剪发生在请求副本上 (UI 不受影响), 保留最近图片, 超额部分降级为文本占位。
-        val budgetedMessages = applyImageBudget(messages, params.model.displayName)
+        val budgetedMessages = applyImageMarkers(messages)
         return buildJsonObject {
             put("model", params.model.modelId)
             put(
@@ -1385,19 +1353,7 @@ class ChatCompletionsAPI(
     }
 
     companion object {
-        /** v4.3.8 (BUG15): 图片预算常量 — 端点硬上限 8 张, 用户定版预算=8 张
-         *  (v4.3.7 曾试 4 张, 用户拍板回 8): 满配预算保证复杂视觉工作流
-         *  (多工具并行截图) 不降级; 超限部分仍走 read_image 按需重取闭环。 */
-        private const val IMAGE_BUDGET_COUNT = 8
-        private const val IMAGE_BUDGET_SINGLE_BYTES = 16L * 1024 * 1024
-        private const val IMAGE_BUDGET_TOTAL_BYTES = 64L * 1024 * 1024
-
-        /** v4.3.7: 动态占位 — 文件图带原路径 (模型可经 read_image 重取); 内联图无持久路径 */
-        private fun imageBudgetPlaceholder(image: UIMessagePart.Image): String = when {
-            image.url.startsWith("file://") ->
-                "[图片已省略 (超出本请求图片预算): 原文件已保存于会话中, 路径: ${'$'}{image.url} — 需要查看时调用 read_image 工具传入该路径]"
-            else -> "[图片已省略 (超出本请求图片预算): 内联图片数据未保留]"
-        }
+        /** v4.3.10: 占位文案 — 预算判定/常量在 GenerationHandler (app 层), 此处仅消费标记 */
         /**
          * 判断流式传输中断是否为可恢复错误 (stream reset / protocol error).
          * 对于可恢复错误, 若已有部分数据到达则保留部分响应, 避免整体丢失.
