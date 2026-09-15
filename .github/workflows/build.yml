@@ -31,6 +31,11 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
+        # 2026-09-15: runner 镜像 20260907.300 更新后, v4 内部安装 obsolete
+        # 'tools' 包被 Google 仓库拒绝 (Failed to find package 'tools'),
+        # exit 1 纯基础设施问题 — 镜像自带 SDK 完整可用, licenses 与平台
+        # 组件由后续步骤自行安装, 此步失败不再阻断
+        continue-on-error: true
 
       - name: Accept SDK licenses
         run: yes | sdkmanager --licenses || true
