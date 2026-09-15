@@ -968,7 +968,12 @@ class GenerationHandler(
         val effectiveMessages: List<UIMessage> = messages
         // v4.3.10: 图片预算判定+持久标记 — 标记随流式基准落盘 (降级不可逆),
         // 请求构造 (internalMessages) 与 UI 回写共用同一标记视图
-        val markedMessages: List<UIMessage> = applyImageBudgetMarking(effectiveMessages)
+        // v4.5.6: 图片上传模式分流 — compat (旧形态) 承诺"不转移、不降级",
+        // 预算持久标记必须整体跳过 (否则工具图/user 图仍会被降级占位, 与
+        // SettingClientPage 的描述不符); classic 维持预算闭环。
+        val markedMessages: List<UIMessage> =
+            if (settings.imageUploadMode == "compat") effectiveMessages
+            else applyImageBudgetMarking(effectiveMessages)
 
         // 4.0.7: abilities 根本修复 — 自定义模型 (listModels 不带 abilities,
         // UI 未编辑过的) abilities 恒空 → 思考控制/工具门控全哑。注册表按
