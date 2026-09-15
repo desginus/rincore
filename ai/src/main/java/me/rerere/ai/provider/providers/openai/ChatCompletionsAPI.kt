@@ -389,7 +389,7 @@ class ChatCompletionsAPI(
                                 if (finishReason == "stop" || finishReason == "length") {
                                     gotFinish.set(true)
                                 }
-        val gotFinish = java.util.concurrent.atomic.AtomicBoolean(false)                                val message =
+                                val message =
                                     choice["delta"]?.jsonObject ?: choice["message"]?.jsonObject
                                 // v3.8.37: 记录文本尾部 (截断启发用) — 兼容三种 chunk 形态:
                                 // string content (OpenAI 标准) / content 数组 (Claude 风格
