@@ -1082,8 +1082,16 @@ class GenerationHandler(
                 val fp = java.security.MessageDigest.getInstance("SHA-256")
                     .digest((cacheFpSystem + tools.joinToString { it.name } + "|" + histFp).toByteArray())
                     .take(8).joinToString("") { "%02x".format(it) }
-                val parts = "stable=${stableSystem.length}c volatile=${volatileSystem.length}c " +
-                    "ntools=${tools.size} toolsHash=${tools.joinToString { it.name }.hashCode()} hist=${histStable.size}m/${histSum}c"
+                // v4.5.4: fp 分量化 — 此前只打各段长度, 长度相同而内容变化时
+                // (如记忆条目 update) drift 归因失明, 全落在 hist 上。各段带短
+                // hash 后 drift 直接指认变化段。
+                val segHash: (String) -> String = { s ->
+                    java.security.MessageDigest.getInstance("SHA-256")
+                        .digest(s.toByteArray()).take(4).joinToString("") { "%02x".format(it) }
+                }
+                val parts = "stable=${stableSystem.length}c#${segHash(stableSystem)} " +
+                    "volatile=${volatileSystem.length}c#${segHash(volatileSystem)} " +
+                    "ntools=${tools.size} toolsHash=${tools.joinToString { it.name }.hashCode()} hist=${histStable.size}m/${histSum}c#${segHash(histStable.joinToString("|") { m -> m.id.toString() })}"
                 val key = conversationId?.toString() ?: "global"
                 val prev = lastCacheFp.put(key, fp)
                 when {
@@ -1100,7 +1108,7 @@ class GenerationHandler(
                 // 技术债审计 (v3.19.0): 此处吞错仅影响 cache-fp 诊断日志, 不在
                 // 用户链路 — 静默保留属设计权衡, 非缺陷
             }
-            // stable+记忆 → 历史/当前轮 (记忆在稳定前缀内, 可命中)
+            // v4.5.3: stable → 历史/当前轮 (记忆已移至消息尾部, 不在前缀内)
             val fullSystem = listOf(stableSystem, volatileSystem).filter { it.isNotBlank() }.joinToString("\n")
             if (fullSystem.isNotBlank()) {
                 val estTokens = fullSystem.length / 2.5
