@@ -1196,6 +1196,14 @@ class GenerationHandler(
                 params = params
             ).collect { chunk ->
                 messages = streamHandler.handle(messages, chunk)
+                // v4.5.2: 长度截断的工具调用修复 — finish_reason=length 时最后一条
+                // 助手消息里 input JSON 解析失败的调用 = 参数被 token 上限掐断。
+                // 不终态报错 (v4.5.1 方案体验硬), 不静默执行 (执行 = 文件写一半):
+                // 预填结构化错误 output, 模型下一轮看到错误自动改用更小分段,
+                // 对话连续, 用户无感。截断检测依据 provider 层 truncatedByLength。
+                if (chunk is me.rerere.ai.ui.StreamChunk.Finish && chunk.finishReason == "length") {
+                    messages = repairLengthTruncatedToolCalls(messages)
+                }
                 // v3.15.1: 收到任何流数据即置位 — StreamChunk 判据 (Finish 之外均视为有效数据)
                 if (chunk !is me.rerere.ai.ui.StreamChunk.Finish) retry.receivedAnyData = true
                 // 4.2.1 bug 修复: usage 合并已在 StreamChunkHandler.Usage 内完成
@@ -1476,3 +1484,25 @@ class GenerationHandler(
  * 触发时保留已生成内容, 不回滚不重试 (同 prompt 重采样大概率再退化)。
  */
 internal class ClientGenerationGuardException(message: String) : RuntimeException(message)
+
+/** v4.5.2: 修复 finish_reason=length 截断的工具调用 — input JSON 解析失败的
+ *  未执行调用预填结构化错误 output (isExecuted 随 output 非空成立), 防止残缺
+ *  参数照常执行 (文件写一半), 同时把失败原因与正确出路 (分段) 反馈给模型。 */
+private fun repairLengthTruncatedToolCalls(messages: List<UIMessage>): List<UIMessage> {
+    val last = messages.lastOrNull() ?: return messages
+    val repaired = last.parts.map { part ->
+        if (part is UIMessagePart.Tool && part.output.isEmpty() && part.input.isNotBlank()) {
+            val parses = runCatching { kotlinx.serialization.json.Json.parseToJsonElement(part.input) }.isSuccess
+            if (!parses) {
+                part.copy(output = listOf(UIMessagePart.Text(
+                    "[调用未执行: 模型输出达到长度上限 (max_tokens), 本次工具调用的参数在传输中被截断。" +
+                    "请把同样的任务拆成多个更小的调用完成 — 例如分段写入文件 (先写主体, 再追加剩余部分), " +
+                    "或减小单次参数的内容量, 然后重新调用。]"
+                )))
+            } else part
+        } else part
+    }
+    return if (repaired != last.parts) {
+        messages.dropLast(1) + last.copy(parts = repaired)
+    } else messages
+}

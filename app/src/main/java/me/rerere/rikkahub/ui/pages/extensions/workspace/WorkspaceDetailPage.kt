@@ -157,7 +157,7 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
         val entry = exportTarget.also { exportTarget = null } ?: return@rememberLauncherForActivityResult
         if (uri == null) return@rememberLauncherForActivityResult
         val outputStream = context.contentResolver.openOutputStream(uri) ?: return@rememberLauncherForActivityResult
-        vm.exportFile(entry, outputStream)
+        if (entry.isDirectory) vm.exportFolder(entry, outputStream) else vm.exportFile(entry, outputStream)
     }
 
     BackHandler(enabled = pagerState.currentPage == 1 && state.path.isNotBlank()) {
@@ -248,21 +248,26 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
                     onPreviewFile = { entry -> vm.openPreview(entry, context.cacheDir) },
                     onExport = { entry ->
                         exportTarget = entry
-                        exportLauncher.launch(entry.name)
+                        exportLauncher.launch(if (entry.isDirectory) entry.name.trimEnd('/') + ".zip" else entry.name)
                     },
                     onShare = { entry ->
-                        vm.shareFile(entry, context.cacheDir) { file ->
+                        val onReady: (java.io.File) -> Unit = { file ->
                             val uri = FileProvider.getUriForFile(
                                 context,
                                 "${context.packageName}.fileprovider",
                                 file,
                             )
                             val intent = Intent(Intent.ACTION_SEND).apply {
-                                type = "application/octet-stream"
+                                type = "application/zip"
                                 putExtra(Intent.EXTRA_STREAM, uri)
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
                             context.startActivity(Intent.createChooser(intent, null))
+                        }
+                        if (entry.isDirectory) {
+                            vm.shareFolder(entry, context.cacheDir, onReady)
+                        } else {
+                            vm.shareFile(entry, context.cacheDir, onReady)
                         }
                     },
                 )
@@ -1076,9 +1081,9 @@ private fun WorkspaceFileCard(
                             onMove()
                         },
                     )
-                    if (!entry.isDirectory) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.common_export)) },
+                    // v4.5.2: 目录同样可导出/分享 (整体打包 zip)
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.common_export)) },
                             leadingIcon = {
                                 Icon(
                                     imageVector = HugeIcons.FileImport,
@@ -1090,20 +1095,19 @@ private fun WorkspaceFileCard(
                                 onExport()
                             },
                         )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.common_share)) },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = HugeIcons.Share08,
-                                    contentDescription = null,
-                                )
-                            },
-                            onClick = {
-                                menuExpanded = false
-                                onShare()
-                            },
-                        )
-                    }
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.common_share)) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = HugeIcons.Share08,
+                                contentDescription = null,
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onShare()
+                        },
+                    )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) },
                         leadingIcon = {

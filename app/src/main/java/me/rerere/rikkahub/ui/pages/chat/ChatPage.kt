@@ -195,7 +195,10 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
             val contentTypes = files.mapNotNull { file ->
                 filesManager.getFileMimeType(file)
             }
-            val fileNames = files.mapNotNull { file ->
+            // v4.5.2: mapNotNull 会剔除解析失败的条目导致 files/names 索引错位 —
+            // 第 i 个胶囊显示第 j (j≠i) 个文件的名字。改为保留 null 占位对齐索引;
+            // 兜底名取原始 uri 的路径段 (原文件名), 绝不取复制后 UUID 存储名
+            val fileNames = files.map { file ->
                 filesManager.getFileNameFromUri(file)
             }
             val parts = buildList {
@@ -209,7 +212,9 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
                         // 非媒体文件: PDF/DOCX/XLSX 等, 作为 Document 附件
                         else -> add(UIMessagePart.Document(
                             url = localUri.toString(),
-                            fileName = name ?: localUri.lastPathSegment ?: "file",
+                            fileName = name
+                                ?: files.getOrNull(index)?.lastPathSegment?.substringAfterLast('/')
+                                ?: "file",
                             mime = type ?: "application/octet-stream"
                         ))
                     }

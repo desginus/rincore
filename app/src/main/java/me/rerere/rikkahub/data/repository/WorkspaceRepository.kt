@@ -247,6 +247,17 @@ class WorkspaceRepository(
         manager.exportFile(workspace.root, path, area, outputStream)
     }
 
+    /** v4.5.2: 工作区 shell 命令执行 (VM 层文件夹打包等工具用途) */
+    suspend fun executeCommand(
+        id: String,
+        command: String,
+        cwd: String = "",
+    ): me.rerere.workspace.WorkspaceCommandResult = withContext(Dispatchers.IO) {
+        val workspace = dao.getById(id) ?: error("Workspace not found: $id")
+        manager.ensureWorkspace(workspace.root)
+        manager.executeCommand(root = workspace.root, command = command, cwd = cwd)
+    }
+
     /** 按 Rootfs 内绝对路径读取文件大小, 支持 /workspace、bind mount 与 Rootfs 内部路径 */
     suspend fun rootfsFileSize(
         id: String,

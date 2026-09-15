@@ -51,6 +51,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonArrayBuilder
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -552,17 +553,9 @@ class ChatCompletionsAPI(
             }
 
             override fun onClosed(eventSource: EventSource) {
-                // v4.5.1: 长度截断 + 工具调用 = 参数 JSON 残缺 — 残缺调用绝不执行
-                // (执行 = 文件写一半/命令跑一半), 直接终态报错指明原因与出路。
-                // IllegalStateException 非 IOException, 天然穿透重试链 (重试也会再截断)。
-                if (truncatedByLength.get() && sawToolCallDelta.get()) {
-                    Log.w(TAG, "onClosed: finish_reason=length with tool_call — arguments JSON truncated, aborting execution")
-                    close(IllegalStateException(
-                        "模型输出达到长度上限 (max_tokens), 最后的工具调用参数被截断, 本次调用未执行。" +
-                        "请减小单次工具调用的内容量 (例如把大文件分段多次写入, 或先写主体再补充), 然后重试。"
-                    ))
-                    return
-                }
+                // v4.5.2: 长度截断 + 工具调用不再终态报错 (v4.5.1 方案体验硬) —
+                // 残缺调用的结构化错误由 GH 层在 Finish(length) 时预填 tool output,
+                // 模型下一轮看到错误自动分段, 对话连续, 用户无感。残缺调用依然绝不执行。
                 // 服务器主动关闭连接: [DONE] 或 finish_reason=stop 已收到 → 正常完成;
                 // 否则视为断流 (消息不完整且无报错 → 用户感知"莫名其妙中断")
                 // v3.8.33 物理判据 (替代 v3.8.31/32 的模型名单分流与一律未确认):
@@ -1119,7 +1112,7 @@ class ChatCompletionsAPI(
             // content
             // v4.3.16: 空 content 不再发 "" — 部分上游对空字符串 content 拒收
             if (contentParts.isEmpty()) {
-                put("content", "(aborted)")
+                put("content", JsonNull)
             } else if (contentParts.size == 1 && contentParts[0] is UIMessagePart.Text) {
                 put("content", (contentParts[0] as UIMessagePart.Text).text)
             } else {
