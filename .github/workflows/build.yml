@@ -38,10 +38,15 @@ jobs:
         continue-on-error: true
 
       - name: Accept SDK licenses
-        run: yes | sdkmanager --licenses || true
+        run: |
+          # setup-android 被容忍失败后, sdkmanager 不在 PATH — 自行从镜像
+          # 自带 SDK 解析 cmdline-tools 路径 (版本目录随镜像漂移, 用通配)
+          export PATH="$(ls -d $ANDROID_HOME/cmdline-tools/*/bin | head -1):$PATH"
+          yes | sdkmanager --licenses || true
 
       - name: Install SDK components
         run: |
+          export PATH="$(ls -d $ANDROID_HOME/cmdline-tools/*/bin | head -1):$PATH"
           sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
           sdkmanager "ndk;28.2.13676358" 2>/dev/null || true
 
