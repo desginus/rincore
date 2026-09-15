@@ -266,6 +266,11 @@ class ChatCompletionsAPI(
         // v3.6.75: finish_reason=stop/length 已收到即视为完成 — 部分中转 (VPN 代理/
         // Go 订阅) 不发送 [DONE] 直接断开, 此前被误判为断流 → 回滚重试 → 多轮重复回复
         val gotFinish = java.util.concurrent.atomic.AtomicBoolean(false)
+        // v4.5.1: 输出长度截断检测 — finish_reason=length 时工具调用参数 JSON
+        // 极易被掐断 (模型写大文件场景), 残缺 input 若照常执行 = 文件写一半。
+        // sawToolCallDelta 记录本流是否出现过工具调用, onClosed 终判。
+        val truncatedByLength = java.util.concurrent.atomic.AtomicBoolean(false)
+        val sawToolCallDelta = java.util.concurrent.atomic.AtomicBoolean(false)
         val retryCount = java.util.concurrent.atomic.AtomicInteger(0)
         val maxRetries = 5 // 指数退避 1+2+4+8+16=31s 窗口, 覆盖瞬时网络波动
         var currentEventSource: EventSource? = null
@@ -388,6 +393,9 @@ class ChatCompletionsAPI(
                                 if (finishReason == "stop" || finishReason == "length") {
                                     gotFinish.set(true)
                                 }
+                                if (finishReason == "length") {
+                                    truncatedByLength.set(true)
+                                }
                                 val message =
                                     choice["delta"]?.jsonObject ?: choice["message"]?.jsonObject
                                 // v3.8.37: 记录文本尾部 (截断启发用) — 兼容三种 chunk 形态:
@@ -431,6 +439,7 @@ class ChatCompletionsAPI(
                                     // (桥接器 lastToolId 兜底)
                                     val tcArr = (choice["delta"] as? JsonObject)?.get("tool_calls") as? JsonArray
                                     if (tcArr != null) {
+                                        sawToolCallDelta.set(true)
                                         val tools = delta.parts.filterIsInstance<UIMessagePart.Tool>()
                                         if (tools.isNotEmpty()) {
                                             var ti = 0
@@ -543,6 +552,17 @@ class ChatCompletionsAPI(
             }
 
             override fun onClosed(eventSource: EventSource) {
+                // v4.5.1: 长度截断 + 工具调用 = 参数 JSON 残缺 — 残缺调用绝不执行
+                // (执行 = 文件写一半/命令跑一半), 直接终态报错指明原因与出路。
+                // IllegalStateException 非 IOException, 天然穿透重试链 (重试也会再截断)。
+                if (truncatedByLength.get() && sawToolCallDelta.get()) {
+                    Log.w(TAG, "onClosed: finish_reason=length with tool_call — arguments JSON truncated, aborting execution")
+                    close(IllegalStateException(
+                        "模型输出达到长度上限 (max_tokens), 最后的工具调用参数被截断, 本次调用未执行。" +
+                        "请减小单次工具调用的内容量 (例如把大文件分段多次写入, 或先写主体再补充), 然后重试。"
+                    ))
+                    return
+                }
                 // 服务器主动关闭连接: [DONE] 或 finish_reason=stop 已收到 → 正常完成;
                 // 否则视为断流 (消息不完整且无报错 → 用户感知"莫名其妙中断")
                 // v3.8.33 物理判据 (替代 v3.8.31/32 的模型名单分流与一律未确认):
@@ -1099,7 +1119,7 @@ class ChatCompletionsAPI(
             // content
             // v4.3.16: 空 content 不再发 "" — 部分上游对空字符串 content 拒收
             if (contentParts.isEmpty()) {
-                put("content", "[此消息在生成中断时被保留, 正文为空]")
+                put("content", "(aborted)")
             } else if (contentParts.size == 1 && contentParts[0] is UIMessagePart.Text) {
                 put("content", (contentParts[0] as UIMessagePart.Text).text)
             } else {
