@@ -1127,22 +1127,26 @@ class GenerationHandler(
         // v4.5.3: 记忆尾部注入 — 记忆块追加到最后一条 user 消息尾部 (无 user
         // 消息时独立成条)。记忆位于全部历史之后, memory_tool 每轮写入只影响
         // 尾部追加, 之前的图片/文档/工具历史缓存全部保留。
-        if (memoryPrompt.isNotBlank()) {
-            val memBlock = "\n\n<memory>\n" + memoryPrompt + "\n</memory>"
-            val lastUserIdx = internalMessages.indexOfLast { it.role == MessageRole.USER }
-            internalMessages = if (lastUserIdx >= 0) {
-                val target = internalMessages[lastUserIdx]
-                val parts = target.parts.toMutableList()
-                val ti = parts.indexOfLast { it is UIMessagePart.Text }
-                if (ti >= 0) {
-                    val t = parts[ti] as UIMessagePart.Text
-                    parts[ti] = t.copy(text = t.text + memBlock)
+        if (assistant.enableMemory) {
+            // buildList 内的 memoryPrompt 局部变量作用域不外泄, 在此重算
+            val tailMemoryPrompt = buildMemoryPrompt(memories = memories)
+            if (tailMemoryPrompt.isNotBlank()) {
+                val memBlock = "\n\n<memory>\n" + tailMemoryPrompt + "\n</memory>"
+                val lastUserIdx = internalMessages.indexOfLast { it.role == MessageRole.USER }
+                internalMessages = if (lastUserIdx >= 0) {
+                    val target = internalMessages[lastUserIdx]
+                    val parts = target.parts.toMutableList()
+                    val ti = parts.indexOfLast { it is UIMessagePart.Text }
+                    if (ti >= 0) {
+                        val t = parts[ti] as UIMessagePart.Text
+                        parts[ti] = t.copy(text = t.text + memBlock)
+                    } else {
+                        parts.add(UIMessagePart.Text(memBlock.trim()))
+                    }
+                    internalMessages.toMutableList().also { it[lastUserIdx] = target.copy(parts = parts) }
                 } else {
-                    parts.add(UIMessagePart.Text(memBlock.trim()))
+                    internalMessages + UIMessage.user(tailMemoryPrompt)
                 }
-                internalMessages.toMutableList().also { it[lastUserIdx] = target.copy(parts = parts) }
-            } else {
-                internalMessages + UIMessage.user(UIMessagePart.Text(memoryPrompt))
             }
         }
 
