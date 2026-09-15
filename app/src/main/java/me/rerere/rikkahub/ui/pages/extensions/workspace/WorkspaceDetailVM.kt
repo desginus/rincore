@@ -195,62 +195,43 @@ class WorkspaceDetailVM(
     }
 
     /**
-     * v4.5.2: 文件夹导出/分享 — 工作区内对某个文件夹整体打包。
-     * 实现: Rootfs 内 python3 zipfile 打包到临时 .export/ 目录, 经
-     * exportRootfsFile 取出宿主缓存文件后走系统分享。打包产物用完即删。
+     * v4.5.3: 文件夹打包走纯 Kotlin 文件 IO (exportFolderZip), 不经 Rootfs
+     * shell — 无临时产物、无解释器依赖; 失败经 state.error 显式呈现, 空产物
+     * 直接报错, 不再静默。
      */
-    /** v4.5.2: 文件夹 → Rootfs 内 zip 包 (python3 zipfile, 用完即删), 返回 Rootfs 内 zip 绝对路径 */
-    private suspend fun zipFolderToRootfs(entry: WorkspaceFileEntry): String {
-        val zipName = entry.name.trimEnd('/') + ".zip"
-        val rootfsZip = "/workspace/.export/" + zipName
-        val rel = entry.path.removePrefix("/workspace/").removePrefix("/")
-        val cmd = "mkdir -p .export && python3 -m zipfile -c " +
-            "'" + rootfsZip + "' '" + rel + "'"
-        val result = repository.executeCommand(id = id, command = cmd, cwd = "")
-        if (result.exitCode != 0) {
-            error("文件夹打包失败: " + (result.stderr.ifBlank { result.stdout }).take(200))
-        }
-        return rootfsZip
-    }
-
-    private suspend fun cleanupRootfsZip(rootfsZip: String) {
-        runCatching {
-            repository.executeCommand(id = id, command = "rm -f '" + rootfsZip + "'", cwd = "")
-        }
-    }
-
     fun shareFolder(entry: WorkspaceFileEntry, cacheDir: File, onReady: (File) -> Unit) {
         viewModelScope.launch {
             runCatching {
                 val dir = File(cacheDir, "workspace_share").apply { mkdirs() }
-                val rootfsZip = zipFolderToRootfs(entry)
-                try {
-                    val file = File(dir, rootfsZip.substringAfterLast('/'))
-                    file.outputStream().use { output ->
-                        repository.exportRootfsFile(id = id, path = rootfsZip, outputStream = output)
-                    }
-                    file
-                } finally {
-                    cleanupRootfsZip(rootfsZip)
+                val zipName = entry.name.trimEnd('/') + ".zip"
+                val file = File(dir, zipName)
+                val count = file.outputStream().use { output ->
+                    repository.exportFolderZip(
+                        id = id,
+                        area = state.value.area,
+                        folderPath = entry.path,
+                        outputStream = output,
+                    )
                 }
+                require(file.length() > 0) { "打包产物为空" }
+                file
             }.onSuccess(onReady).onFailure { error ->
-                _state.update { it.copy(error = error.message ?: "分享文件夹失败") }
+                _state.update { it.copy(error = error.message ?: "分享文件夹失败: " + (error.message ?: "")) }
             }
         }
     }
 
-    /** v4.5.2: 文件夹导出 (SAF 用户选位置) — 打包 zip 后写入输出流 */
     fun exportFolder(entry: WorkspaceFileEntry, outputStream: OutputStream) {
         viewModelScope.launch {
             runCatching {
-                val rootfsZip = zipFolderToRootfs(entry)
-                try {
-                    repository.exportRootfsFile(id = id, path = rootfsZip, outputStream = outputStream)
-                } finally {
-                    cleanupRootfsZip(rootfsZip)
-                }
+                repository.exportFolderZip(
+                    id = id,
+                    area = state.value.area,
+                    folderPath = entry.path,
+                    outputStream = outputStream,
+                )
             }.onFailure { error ->
-                _state.update { it.copy(error = error.message ?: "导出文件夹失败") }
+                _state.update { it.copy(error = error.message ?: "导出文件夹失败: " + (error.message ?: "")) }
             }
         }
     }

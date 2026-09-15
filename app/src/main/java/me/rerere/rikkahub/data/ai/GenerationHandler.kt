@@ -1051,12 +1051,17 @@ class GenerationHandler(
 
             val (stableSystem, volatileSystem) = SystemPromptBuilder().buildSections(
                 assistantPrompt = stablePrompt,
-                memoryPrompt = memoryPrompt,
+                // v4.5.3: 记忆不再进 system — 记忆在轮间变化 (memory_tool 写入),
+                // 位于历史之前时每次变化都把其后全部历史缓存打断 (19:37 trace:
+                // 图片会话调 memory_tool 后多轮 cached=0, 无图会话 92% 对照)。
+                // 记忆改注入消息尾部 (见 transforms 之后), 其前历史全部稳定。
+                memoryPrompt = "",
                 recentChatsPrompt = "",   // 本项目未启用 recent chats 参考
                 toolPrompts = toolPrompts,
                 systemAddendum = forcedSkillAddendum,
             )
-            // 记忆位置策略: 记忆放 stable 之后 (历史之前) — 记忆是稳定前缀一部分, 可命中
+            // v4.5.3 记忆位置策略 (根治): 记忆放消息尾部 (历史之后) — 动态内容
+            // 在历史之前会使其后全部缓存失效, 只有尾部追加才缓存友好
             val cacheFpSystem = listOf(stableSystem, volatileSystem).filter { it.isNotBlank() }.joinToString("\n")
             // v3.5.58 缓存核验: 请求体前缀指纹 (stable system+tools 序列化稳定)
             // v4.3.5 (BUG14): 组件级漂移自诊断 — fp 相同=前缀稳定 (缓存低在网关侧);
@@ -1118,6 +1123,28 @@ class GenerationHandler(
             processingStatus = processingStatus,
             workspaceCwd = workspaceCwd,
         )
+
+        // v4.5.3: 记忆尾部注入 — 记忆块追加到最后一条 user 消息尾部 (无 user
+        // 消息时独立成条)。记忆位于全部历史之后, memory_tool 每轮写入只影响
+        // 尾部追加, 之前的图片/文档/工具历史缓存全部保留。
+        if (memoryPrompt.isNotBlank()) {
+            val memBlock = "\n\n<memory>\n" + memoryPrompt + "\n</memory>"
+            val lastUserIdx = internalMessages.indexOfLast { it.role == MessageRole.USER }
+            internalMessages = if (lastUserIdx >= 0) {
+                val target = internalMessages[lastUserIdx]
+                val parts = target.parts.toMutableList()
+                val ti = parts.indexOfLast { it is UIMessagePart.Text }
+                if (ti >= 0) {
+                    val t = parts[ti] as UIMessagePart.Text
+                    parts[ti] = t.copy(text = t.text + memBlock)
+                } else {
+                    parts.add(UIMessagePart.Text(memBlock.trim()))
+                }
+                internalMessages.toMutableList().also { it[lastUserIdx] = target.copy(parts = parts) }
+            } else {
+                internalMessages + UIMessage.user(UIMessagePart.Text(memoryPrompt))
+            }
+        }
 
         val buildInternalMs = System.currentTimeMillis() - startMs
         val totalChars = internalMessages.sumOf { msg ->
