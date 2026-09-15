@@ -81,6 +81,9 @@ data class TextGenerationParams(
     val sessionId: String? = null,
     // v3.16.0: 强兼容模式 — Chat Completions 按 Cherry Studio 极简格式发送
     val cherryCompatMode: Boolean = false,
+    // v4.5.5: 图片上传模式 (客户端设置) — classic=工具图转移 user+预算标记 /
+    // compat=工具图内嵌 tool content image_url (v4.3.12 前形态)
+    val imageUploadMode: String = "classic",
 )
 
 @Serializable

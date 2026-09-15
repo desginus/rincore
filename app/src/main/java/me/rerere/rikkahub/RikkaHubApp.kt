@@ -67,6 +67,11 @@ const val WEB_SERVER_NOTIFICATION_CHANNEL_ID = "web_server"
 class RikkaHubApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        // v4.5.5: 全局时区强制北京时间 — 工作区计时器等所有依赖默认时区的
+        // 格式化 (SimpleDateFormat/DateTimeFormatter/日志时间戳) 统一按
+        // UTC+8 呈现, 不随设备时区漂移。根修于应用入口, 非逐点打补丁。
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Shanghai"))
+        java.util.Locale.setDefault(java.util.Locale.SIMPLIFIED_CHINESE)
         // 4.0.1 (原版 2.4.17): 备份恢复前置 — 必须在 Koin/Room/SettingsFlow
         // 初始化前完成安装 (部分恢复的 DB 不能被 Room 打开)。runBlocking(IO)
         // 为数据一致性刚需: 启动阻塞换完整性 (恢复只在有 pending 时实际做 IO)。

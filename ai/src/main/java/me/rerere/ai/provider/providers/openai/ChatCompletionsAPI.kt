@@ -267,11 +267,6 @@ class ChatCompletionsAPI(
         // v3.6.75: finish_reason=stop/length 已收到即视为完成 — 部分中转 (VPN 代理/
         // Go 订阅) 不发送 [DONE] 直接断开, 此前被误判为断流 → 回滚重试 → 多轮重复回复
         val gotFinish = java.util.concurrent.atomic.AtomicBoolean(false)
-        // v4.5.1: 输出长度截断检测 — finish_reason=length 时工具调用参数 JSON
-        // 极易被掐断 (模型写大文件场景), 残缺 input 若照常执行 = 文件写一半。
-        // sawToolCallDelta 记录本流是否出现过工具调用, onClosed 终判。
-        val truncatedByLength = java.util.concurrent.atomic.AtomicBoolean(false)
-        val sawToolCallDelta = java.util.concurrent.atomic.AtomicBoolean(false)
         val retryCount = java.util.concurrent.atomic.AtomicInteger(0)
         val maxRetries = 5 // 指数退避 1+2+4+8+16=31s 窗口, 覆盖瞬时网络波动
         var currentEventSource: EventSource? = null
@@ -394,10 +389,7 @@ class ChatCompletionsAPI(
                                 if (finishReason == "stop" || finishReason == "length") {
                                     gotFinish.set(true)
                                 }
-                                if (finishReason == "length") {
-                                    truncatedByLength.set(true)
-                                }
-                                val message =
+        val gotFinish = java.util.concurrent.atomic.AtomicBoolean(false)                                val message =
                                     choice["delta"]?.jsonObject ?: choice["message"]?.jsonObject
                                 // v3.8.37: 记录文本尾部 (截断启发用) — 兼容三种 chunk 形态:
                                 // string content (OpenAI 标准) / content 数组 (Claude 风格
@@ -440,7 +432,6 @@ class ChatCompletionsAPI(
                                     // (桥接器 lastToolId 兜底)
                                     val tcArr = (choice["delta"] as? JsonObject)?.get("tool_calls") as? JsonArray
                                     if (tcArr != null) {
-                                        sawToolCallDelta.set(true)
                                         val tools = delta.parts.filterIsInstance<UIMessagePart.Tool>()
                                         if (tools.isNotEmpty()) {
                                             var ti = 0
@@ -987,6 +978,7 @@ class ChatCompletionsAPI(
     private fun JsonArrayBuilder.addAssistantMessages(
         message: UIMessage,
         includeReasoning: Boolean,
+        imageUploadCompat: Boolean = false,
     ) {
         val groups = groupPartsByToolBoundary(message.parts)
         val contentBuffer = mutableListOf<UIMessagePart>()
@@ -1030,7 +1022,7 @@ class ChatCompletionsAPI(
                         add(buildJsonObject {
                             put("role", "tool")
                             put("tool_call_id", tool.toolCallId)
-                            put("content", tool.toToolResultContent())
+                            put("content", tool.toToolResultContent(imageUploadCompat = imageUploadCompat))
                         })
                     }
                     // v4.3.12 (BUG19): 工具结果图转移 — tool content 只能 text
@@ -1038,7 +1030,9 @@ class ChatCompletionsAPI(
                     // 图片输入时直接可见 (无需 read_image 二次拉取); 预算降级
                     // (budget_dropped) 的图在 applyImageMarkers 已替换为占位,
                     // 此处只处理预算内的图。
-                    val groupImages = group.tools
+                    // v4.5.5: 图片上传模式分流 — compat 时工具图内嵌 tool content
+                    // (v4.3.12 前形态, 适用于接受工具结果带图的网关), 不转移不降级
+                    val groupImages = if (imageUploadCompat) emptyList() else group.tools
                         .flatMap { it.output }
                         .filterIsInstance<UIMessagePart.Image>()
                         .filter { it.metadata?.get("budget_dropped")?.jsonPrimitive?.contentOrNull != "true" }
@@ -1225,7 +1219,32 @@ class ChatCompletionsAPI(
      * 文本交代去向, 真正的图片由调用方 (工具分组循环) 转移到紧随其后的
      * user 消息中 — 模型支持图片输入时直接可见, 不支持时占位提示。
      */
-    private fun UIMessagePart.Tool.toToolResultContent(): JsonElement {
+    private fun UIMessagePart.Tool.toToolResultContent(imageUploadCompat: Boolean = false): JsonElement {
+        // v4.5.5: 图片模式分流 — compat 时工具图以内嵌 image_url 进入 tool
+        // content (v4.3.12 前形态); classic 时保持占位文本 (图由调用方转移)。
+        // content 结构按是否含图选择: 纯文本=字符串 (兼容严格上游), 含图=块数组。
+        if (imageUploadCompat && output.any { it is UIMessagePart.Image }) {
+            return buildJsonArray {
+                output.forEach { part ->
+                    when (part) {
+                        is UIMessagePart.Text -> if (part.text.isNotBlank()) add(buildJsonObject {
+                            put("type", "text")
+                            put("text", part.text)
+                        })
+                        is UIMessagePart.Image -> add(buildJsonObject {
+                            part.encodeBase64().onSuccess { encoded ->
+                                put("type", "image_url")
+                                put("image_url", buildJsonObject { put("url", encoded.base64) })
+                            }.onFailure {
+                                put("type", "text")
+                                put("text", "[图片编码失败: " + part.url + " — 需要查看时调用 read_image 工具传入该路径]")
+                            }
+                        })
+                        else -> {}
+                    }
+                }
+            }
+        }
         val lines = output.mapNotNull { part ->
             when (part) {
                 is UIMessagePart.Text -> part.text

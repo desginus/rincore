@@ -121,6 +121,8 @@ class SettingsStore(
         val OPENCODE_WARM_ENABLED = booleanPreferencesKey("opencode_warm_enabled")
         val COMMAND_CODE_WARM_ENABLED = booleanPreferencesKey("command_code_warm_enabled")
         val CC_IMAGE_COMPAT = booleanPreferencesKey("cc_image_compat")
+        val IMAGE_UPLOAD_MODE = stringPreferencesKey("image_upload_mode")
+        val FILE_UPLOAD_MODE = stringPreferencesKey("file_upload_mode")
         val USAGE_VIEW_MODE = stringPreferencesKey("usage_view_mode")
 
         // 模型选择
@@ -215,6 +217,8 @@ class SettingsStore(
                 preferences[OPENCODE_WARM_ENABLED] = settings.opencodeWarmEnabled
                 preferences[COMMAND_CODE_WARM_ENABLED] = settings.commandCodeWarmEnabled
                 preferences[CC_IMAGE_COMPAT] = settings.ccImageCompat
+                preferences[IMAGE_UPLOAD_MODE] = settings.imageUploadMode
+                preferences[FILE_UPLOAD_MODE] = settings.fileUploadMode
                 preferences[DISPLAY_SETTING] = JsonInstant.encodeToString(settings.displaySetting)
                 preferences[NETWORK_SETTING] = JsonInstant.encodeToString(settings.networkSetting)
                 preferences[ENABLE_WEB_SEARCH] = settings.enableWebSearch
@@ -362,6 +366,8 @@ class SettingsStore(
                 opencodeWarmEnabled = preferences[OPENCODE_WARM_ENABLED] == true,
                 commandCodeWarmEnabled = preferences[COMMAND_CODE_WARM_ENABLED] == true,
                 ccImageCompat = preferences[CC_IMAGE_COMPAT] == true,
+                imageUploadMode = preferences[IMAGE_UPLOAD_MODE] ?: "classic",
+                fileUploadMode = preferences[FILE_UPLOAD_MODE] ?: "compat",
                 usageViewMode = preferences[USAGE_VIEW_MODE] ?: "cards",
                 opencodeApiKeys = preferences[OPENCODE_API_KEYS]?.let {
                     JsonInstant.decodeFromString(it)
@@ -732,6 +738,11 @@ data class Settings(
     val opencodeWarmEnabled: Boolean = false, // v3.12.6: OpenCode 专项预热开关 (默认关, 用户可选)
     val commandCodeWarmEnabled: Boolean = false, // v3.12.6: Command Code 专项预热开关 (默认关, 用户可选)
     val ccImageCompat: Boolean = false, // v3.13.3: Command Code 图片兼容适配 (默认关, opt-in, 仅 CC 通道)
+    // v4.5.5: 客户端设置 — 上传模式 (用户可选, 二选一, 请求体严格按所选模式构造)
+    // 图片: classic=当前 (base64 内联+预算持久标记+工具图转移 user) / compat=以前 (工具图内嵌 tool content)
+    // 文件: classic=以前 (全文提取内联 prompt) / compat=当前 (精确路径引用+workspace_read_file 按需读取)
+    val imageUploadMode: String = "classic",
+    val fileUploadMode: String = "compat",
     val dynamicColor: Boolean = true,
     val themeId: String = PresetThemes[0].id,
     val customThemes: List<CustomTheme> = emptyList(),
