@@ -165,10 +165,15 @@ private fun preProcess(content: String): String {
         }
     }
 
-    // v3.6.73: 单个波浪号转义 — 与 MarkdownNew Bug #12 对齐。
-    // 20%~30% 中间的 ~ 会被 GFM 误判为删除线标记, 把直到下一个 ~ 的
-    // 内容全部划掉。只保留 ~~text~~ 双波浪号删除线语义。
-    result = result.replace(Regex("(?<!~)~(?!~)"), "\\~")
+    // v4.5.11: 单波浪号改用字符替换而非转义 — ①fork 解析器对 \~ 转义支持
+    // 不可靠, 转义后仍可能被当删除线渲染 (贯穿线); ②公式内 ~ 会被破坏
+    // (\~ 是 LaTeX 重音符), jlatexmath 失败后公式回退纯文本显示。
+    // 替换为 Unicode 近似号 ∼ (U+223C): 不触发删除线; 文本语境 (~30%)
+    // 显示波浪号本身; 公式语境 (LaTeX 中 ~ 为不换行空格) 替换后渲染为
+    // 近似号, 符合模型意图。~~text~~ 双波浪删除线保留; 代码块内原样。
+    result = Regex("(?<!~)~(?!~)").replace(result) { m ->
+        if (isInCodeBlock(m.range.first)) m.value else "\u223C"
+    }
 
     return result
 }
