@@ -21,6 +21,8 @@ package me.rerere.rikkahub.data.ai.tools.routing
  * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
  * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -414,6 +416,18 @@ class ToolRouter(
      * 层1概览 — 缓存稳定版。输出只依赖静态配置 (域树/显示名/触发描述/触发条件),
      * 不含任何运行时数据 (工具数/状态 → invoke_tools 帮助, 消息层)。
      */
+    // v4.5.15: 工具行带参数 schema — 顶层工具集恒定后, 域工具定义不再进请求
+    // tools 数组, invoke_tools 的返回文本是模型获知参数结构的唯一通道; 旧行
+    // 仅名字+短描述, 模型只能盲调参数 → 调用失败率上升。schema 就地内联:
+    // 一次 invoke 调用的文本成本, 换后续调用参数正确率。
+    private fun toolLineWithSchema(t: Tool, descLen: Int): String = buildString {
+        append("- `${t.name}`: ${t.description.take(descLen).replace("\\n", " ")}")
+        t.parameters()?.let { schema ->
+            appendLine()
+            append("  参数定义: " + Json.encodeToString(schema))
+        }
+    }
+
     fun buildLayer1(tools: List<Tool>): String {
         // 统一视图 — 与 Invoke Tools/List Domains/UI 完全同源
         val view = unifiedDomainView(tools)
@@ -532,7 +546,7 @@ class ToolRouter(
                                         appendLine()
                                         appendLine("直接工具：")
                                         for (t in directTools.sortedBy { it.name }) {
-                                            appendLine("- `${t.name}`: ${t.description.take(60).replace("\\n", " ")}")
+                                            appendLine(router.toolLineWithSchema(t, 60))
                                         }
                                     } else {
                                         appendLine("「${router.formatDomainLabel(finalName)}」含${childKeys.size}个子域（已全部加载，可直接调用）：")
@@ -559,8 +573,7 @@ class ToolRouter(
                                     } else {
                                         appendLine("「${router.formatDomainLabel(finalName)}」可用工具（均可直接调用）：")
                                         for (t in rootOnly.sortedBy { it.name }) {
-                                            val desc = t.description.take(80).replace("\n", " ")
-                                            appendLine("- `${t.name}`: $desc")
+                                            appendLine(router.toolLineWithSchema(t, 80))
                                         }
                                         // 技能域: 全部 skill__ 工具已在 rootOnly 直接列出 (v3.5.49 统一 —
                                         // 移除独立 skills 参数: 技能信息只来自工具池, 无自相矛盾)
