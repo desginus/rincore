@@ -720,8 +720,27 @@ class GenerationHandler(
                             CallTracer.event("TOOL", "exec_${toolDef.name}", "Executing ${toolDef.name}, args=${tool.input.length}c")
                             // 工具执行超时兜底: 工具挂起(网络/IO)时不永久卡住,
                             // 超时返回错误结果让模型继续 (修复: ChatCompletions 工具调用后一直加载)
-                            val result = withTimeout(TOOL_EXECUTION_TIMEOUT_MS) {
-                                toolDef.execute(args)
+                            // v4.5.13: 超时异常分类修复 — withTimeout 抛的
+                            // TimeoutCancellationException 继承 CancellationException,
+                            // 此前被下方"取消传播"判定误杀并原样上抛, 生成静默终止,
+                            // 超时兜底形同虚设 (模型收不到错误反馈, 用户感知"莫名
+                            // 中断"的另一来源)。显式捕获超时转错误结果回传; 其余
+                            // 取消 (用户停止) 仍然 rethrow 走正常取消链。
+                            val result = runCatching {
+                                withTimeout(TOOL_EXECUTION_TIMEOUT_MS) {
+                                    toolDef.execute(args)
+                                }
+                            }.getOrElse { e ->
+                                if (e is kotlinx.coroutines.TimeoutCancellationException) {
+                                    CallTracer.event("TOOL", "timeout_${tool.toolName}",
+                                        "tool timed out after ${TOOL_EXECUTION_TIMEOUT_MS / 1000}s",
+                                        metrics = sseDiagMetrics())
+                                    listOf(UIMessagePart.Text(
+                                        "Error: Tool execution timed out after ${TOOL_EXECUTION_TIMEOUT_MS / 1000}s (${tool.toolName}). " +
+                                        "The tool may be hanging on network/IO. Reconsider: different parameters, another tool (invoke_tools), or answer in text."))
+                                } else {
+                                    throw e
+                                }
                             }
                             val hasShellAccess = toolsInternal.any { it.name == "workspace_shell" }
                             val truncated = maybeTruncateToolOutput(tool.toolCallId, result, hasShellAccess, tool.toolName)
