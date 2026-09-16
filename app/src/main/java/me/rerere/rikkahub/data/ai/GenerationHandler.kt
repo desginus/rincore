@@ -489,7 +489,12 @@ class GenerationHandler(
                 // Check for tools that need approval
                 var hasPendingApproval = false
                 val updatedTools = tools.map { tool ->
+                    // v4.5.14: 顶层恒定后域工具查找回退全量池 — 顶层 tools 只决定
+                    // 模型可见性, 执行不依赖顶层定义。invoke_tools 指引"加载后
+                    // 直接调用"的语义由此恢复 (v4.5.12 只改注入未核执行链,
+                    // 域工具调用撞"未找到"—— 整体呈现教训的活案例)
                     val toolDef = toolsInternal.find { it.name == tool.toolName }
+                        ?: allDomainTools.find { it.name == tool.toolName }
                     when {
                         // Tool needs approval and state is Auto -> set to Pending
                         // v4.3.1: 同时记录 pending_since 时间戳 (metadata), 供超时判定
@@ -615,6 +620,7 @@ class GenerationHandler(
                             runCatching {
                             val toolDef = tools.find { toolDef -> toolDef.name == tool.toolName }
                                 ?: toolsInternal.find { toolDef -> toolDef.name == tool.toolName }
+                                ?: allDomainTools.find { toolDef -> toolDef.name == tool.toolName }
                             if (toolDef == null) {
                                 // v3.11.18: 弃用旧名引导 — 历史会话惯性调用 mcp_connect
                                 // 时给出无损过渡指引 (词族根除: 新清单已无此名)

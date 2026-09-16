@@ -109,12 +109,26 @@ private fun preProcess(content: String): String {
     // 不可靠, 转义后仍可能被当删除线渲染 (贯穿线); ②公式内 ~ 会被破坏
     // (\~ 是 LaTeX 重音符), jlatexmath 失败后公式回退纯文本显示。
     // 替换为 Unicode 近似号 ∼ (U+223C): 不触发删除线; 文本语境 (~30%)
-    // 显示波浪号本身; 公式语境 (LaTeX 中 ~ 为不换行空格) 替换后渲染为
-    // 近似号, 符合模型意图。~~text~~ 双波浪删除线保留; 代码块内原样。
-    result = Regex("(?<!~)~(?!~)").replace(result) { m ->
+    // 显示波浪号本身; ~~text~~ 双波浪删除线保留; 代码块内原样。
+    // v4.5.14: 公式段区分 — 公式语境统一转 LaTeX 标准命令 \sim
+    // (jlatexmath 对 Unicode ∼ 的支持未验证, \sim 是核心符号必支持),
+    // 文本语境保持 ∼ 字符; 代码块内 $ 段不占位 (isInCodeBlock 原样)。
+    val mathSegRegex = Regex("\\$\\$[\\s\\S]*?\\$\\$|\\$[^$\\n]*\\$")
+    val mathSegs = mutableListOf<String>()
+    val withMathPlaceholder = mathSegRegex.replace(result) { m ->
+        if (isInCodeBlock(m.range.first)) m.value
+        else {
+            mathSegs.add(m.value)
+            "\u0000MATH${mathSegs.size - 1}\u0000"
+        }
+    }
+    val textDone = Regex("(?<!~)~(?!~)").replace(withMathPlaceholder) { m ->
         if (isInCodeBlock(m.range.first)) m.value else "\u223C"
     }
-    
+    result = Regex("\u0000MATH(\\d+)\u0000").replace(textDone) { m ->
+        mathSegs[m.groupValues[1].toInt()].replace(Regex("(?<!~)~(?!~)"), "\\sim")
+    }
+
     return result
 }
 
