@@ -867,11 +867,15 @@ class ChatCompletionsAPI(
                 // 非 DeepSeek 家族走 Bifrost reasoning_effort 全档 (AUTO 不发)
                 val isDeepSeekFamily = host == "api.deepseek.com" ||
                     params.model.modelId.contains("deepseek", ignoreCase = true)
-                // v4.5.7 根修: GLM 家族经 OpenCode 网关时此前只发 reasoning_effort,
-                // 智谱不认该参数 → thinking 参数从未真正到达 → GLM 默认开启思考,
-                // 关闭档位完全失效 (横贯多版的根因)。智谱语义是 thinking.type
-                // 二态 (enabled/disabled), 无档位 — OFF=disabled, 其余=enabled。
-                val isGlmFamily = params.model.modelId.contains("glm", ignoreCase = true)
+                // v4.5.8: thinking 字段仅对确认支持的 host 发送。实测 20260916:
+                // OpenCode 网关 (Console Go) 的 CC 通道 schema 不含 thinking,
+                // Go 端严格解析直接 400 (unknown field) — v4.5.7 的 GLM 家族
+                // 分支在网关侧不可用。智谱直连 (open.bigmodel.cn) 维持原生
+                // thinking.type 二态 (GLM 无档位: OFF=disabled 其余=enabled);
+                // 经网关的 GLM 回退 reasoning_effort (网关 schema 内, 不 400),
+                // 思考开关是否生效取决于网关是否向智谱映射该参数。
+                val isGlmFamily = host == "open.bigmodel.cn" &&
+                    params.model.modelId.contains("glm", ignoreCase = true)
                 if (isGlmFamily) {
                     obj {
                         put("thinking", buildJsonObject {
