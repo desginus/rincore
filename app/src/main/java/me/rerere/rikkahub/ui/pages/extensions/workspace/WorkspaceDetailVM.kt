@@ -162,12 +162,15 @@ class WorkspaceDetailVM(
     fun exportFile(entry: WorkspaceFileEntry, outputStream: OutputStream) {
         viewModelScope.launch {
             runCatching {
-                repository.exportFile(
-                    id = id,
-                    area = state.value.area,
-                    path = entry.path,
-                    outputStream = outputStream,
-                )
+                // v4.5.7: exportFile 契约变更 — 不再关闭传入流, 由调用方管理
+                outputStream.use { output ->
+                    repository.exportFile(
+                        id = id,
+                        area = state.value.area,
+                        path = entry.path,
+                        outputStream = output,
+                    )
+                }
             }.onFailure { error ->
                 _state.update { it.copy(error = error.message ?: "导出文件失败") }
             }

@@ -112,7 +112,11 @@ class WorkspaceManager(
         val file = fileSystem.resolve(areaDir(root, area), path)
         require(file.exists()) { "File does not exist: $path" }
         require(file.isFile) { "Path is not a file: $path" }
-        outputStream.use { out -> file.inputStream().use { it.copyTo(out) } }
+        // v4.5.7 根修: 不关闭调用方的输出流 — 文件夹打包 (exportFolderZip) 传入
+        // ZipOutputStream, 此前 outputStream.use 在第一个文件写完即关闭 zip 流,
+        // 后续所有条目抛异常 (导出"传输中断"/分享静默失败)。流生命周期一律由
+        // 调用方管理, 本方法只负责拷贝并关闭自己打开的输入流。
+        file.inputStream().use { input -> input.copyTo(outputStream) }
     }
 
     /**
@@ -171,7 +175,8 @@ class WorkspaceManager(
     fun exportRootfsFile(root: String, path: String, outputStream: OutputStream) {
         val file = resolveRootfsFile(root, path)
         file.requireReadableFile(path)
-        outputStream.use { out -> file.inputStream().use { it.copyTo(out) } }
+        // v4.5.7: 流契约统一 — 只关闭自己打开的输入流, 调用方流由调用方管理
+        file.inputStream().use { input -> input.copyTo(outputStream) }
     }
 
     private fun resolveRootfsFile(root: String, path: String): File {

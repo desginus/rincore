@@ -867,7 +867,18 @@ class ChatCompletionsAPI(
                 // 非 DeepSeek 家族走 Bifrost reasoning_effort 全档 (AUTO 不发)
                 val isDeepSeekFamily = host == "api.deepseek.com" ||
                     params.model.modelId.contains("deepseek", ignoreCase = true)
-                if (isDeepSeekFamily) {
+                // v4.5.7 根修: GLM 家族经 OpenCode 网关时此前只发 reasoning_effort,
+                // 智谱不认该参数 → thinking 参数从未真正到达 → GLM 默认开启思考,
+                // 关闭档位完全失效 (横贯多版的根因)。智谱语义是 thinking.type
+                // 二态 (enabled/disabled), 无档位 — OFF=disabled, 其余=enabled。
+                val isGlmFamily = params.model.modelId.contains("glm", ignoreCase = true)
+                if (isGlmFamily) {
+                    obj {
+                        put("thinking", buildJsonObject {
+                            put("type", if (!level.isEnabled) "disabled" else "enabled")
+                        })
+                    }
+                } else if (isDeepSeekFamily) {
                     obj {
                         put("thinking", buildJsonObject {
                             put("type", if (!level.isEnabled) "disabled" else "enabled")
