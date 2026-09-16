@@ -267,6 +267,9 @@ class ChatCompletionsAPI(
         // v3.6.75: finish_reason=stop/length 已收到即视为完成 — 部分中转 (VPN 代理/
         // Go 订阅) 不发送 [DONE] 直接断开, 此前被误判为断流 → 回滚重试 → 多轮重复回复
         val gotFinish = java.util.concurrent.atomic.AtomicBoolean(false)
+        // v4.5.12: 完成归因 — 流结束时记录显式 finish_reason (stop/length),
+        // 中断现场日志可直接确证结束来源, 不再只有"正常收尾"一笔带过
+        var lastFinishReason: String? = null
         val retryCount = java.util.concurrent.atomic.AtomicInteger(0)
         val maxRetries = 5 // 指数退避 1+2+4+8+16=31s 窗口, 覆盖瞬时网络波动
         var currentEventSource: EventSource? = null
@@ -388,6 +391,13 @@ class ChatCompletionsAPI(
                                     choice["finish_reason"]?.jsonPrimitive?.contentOrNull
                                 if (finishReason == "stop" || finishReason == "length") {
                                     gotFinish.set(true)
+                                    lastFinishReason = finishReason
+                                    if (finishReason == "length") {
+                                        // v4.5.12: 截断显式化 — max_tokens 用尽时
+                                        // 服务端以 length 正常收尾, 旧逻辑静默完成,
+                                        // 用户感知"思考到一半断了"却无迹可查
+                                        Log.w(TAG, "finish_reason=length: output truncated by max_tokens budget")
+                                    }
                                 }
                                 val message =
                                     choice["delta"]?.jsonObject ?: choice["message"]?.jsonObject
@@ -405,6 +415,9 @@ class ChatCompletionsAPI(
                                     text?.takeIf { it.isNotBlank() }?.let {
                                         hasTextContent = true
                                         textTail = if (it.length > 80) it.takeLast(80) else it
+                                        // v4.5.12: usage 心跳后仍收到正文 → 撤销完成
+                                        // 标记 (流实际还在输出, usage 是中途统计行)
+                                        if (gotFinish.get()) gotFinish.set(false)
                                     }
                                 }
                                 // v3.8.39/40: 思考内容跟踪 — 非 ox 模型记录思考尾部
@@ -422,6 +435,8 @@ class ChatCompletionsAPI(
                                 } else {
                                     reasoningRaw?.takeIf { it.isNotBlank() }?.let {
                                         reasoningTail = if (it.length > 80) it.takeLast(80) else it
+                                        // v4.5.12: usage 心跳后仍收到思考 → 撤销完成标记
+                                        if (gotFinish.get()) gotFinish.set(false)
                                     }
                                 }
                                 if (message != null) {
@@ -471,7 +486,16 @@ class ChatCompletionsAPI(
                         // finish_reason=stop, 以 usage/cost 结尾行标记完成 —
                         // usage 或 cost 收到即视为本轮完成信号
                         if (usage != null || it["cost"] != null) {
-                            gotFinish.set(true)
+                            // v4.5.12: 中途 usage 心跳否决 — 网关会对长思考流中途
+                            // 发 usage/cost 行, 旧逻辑立即置完成标记; 若服务器随后
+                            // 中断流, 关流时被掩盖为"正常完成"(用户感知: 思考到
+                            // 一半莫名断)。本 chunk 自带实质内容时不置位。
+                            val chunkDelta = (it["choices"] as? JsonArray)?.firstOrNull()
+                                ?.jsonObject?.get("delta") as? JsonObject
+                            val chunkHasRealDelta =
+                                !chunkDelta?.get("content")?.jsonPrimitive?.contentOrNull.isNullOrBlank() ||
+                                !chunkDelta?.get("reasoning_content")?.jsonPrimitive?.contentOrNull.isNullOrBlank()
+                            if (!chunkHasRealDelta) gotFinish.set(true)
                         }
 
                         val messageChunk = MessageChunk(
@@ -554,6 +578,9 @@ class ChatCompletionsAPI(
                 //   完整发完 (正常完结, 即使无 [DONE]/stop/usage — Zen 网关常态);
                 //   最后一行残缺 = 服务端中途掐断 (真断流)。
                 //   按物理层的事实判定, 不再猜测模型行为。
+                Log.i(TAG, "stream end: completed=" + completed.get() + " gotFinish=" + gotFinish.get() +
+                    " finishReason=" + lastFinishReason + " events=" + eventCount +
+                    " hasData=" + hasReceivedData.get() + " model=" + params.model.modelId)
                 if (!completed.get() && !gotFinish.get()) {
                     if (isOpencode && hasReceivedData.get()) {
                         // v3.8.42: 运行时自适应 —
