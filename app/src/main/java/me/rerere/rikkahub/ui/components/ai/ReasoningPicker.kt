@@ -27,7 +27,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.SliderState
 import androidx.compose.material3.Text
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
@@ -55,6 +54,7 @@ import me.rerere.rikkahub.ui.components.ui.icons.ReasoningLow
 import me.rerere.rikkahub.ui.components.ui.icons.ReasoningMedium
 import kotlin.math.roundToInt
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.setValue
 
 private val levels = ReasoningLevel.entries
@@ -104,17 +104,13 @@ fun ReasoningPicker(
     onUpdateReasoningLevel: (ReasoningLevel) -> Unit,
 ) {
     val currentIndex = levels.indexOf(reasoningLevel).coerceAtLeast(0)
-    // 原版 2.5.2 移植: Slider 状态改用 SliderState (value/trackRange/steps 聚合)
-    val sliderState = remember {
-        SliderState(
-            value = currentIndex.toFloat(),
-            trackRange = 0f..(levelCount - 1).toFloat(),
-            steps = levelCount - 2,
-        )
-    }
+    // 原版 2.5.2 将此 Slider 迁移到 SliderState API, 该形态依赖更新版
+    // material3 (随 2.5.2 的 libs.versions.toml 升级)。本项目依赖未跟进,
+    // 保持行为等价的 value/onValueChange 形态: 吸附/同步/回调语义一致。
+    var sliderValue by remember { mutableFloatStateOf(currentIndex.toFloat()) }
 
     LaunchedEffect(currentIndex) {
-        sliderState.value = currentIndex.toFloat()
+        sliderValue = currentIndex.toFloat()
     }
 
     ModalBottomSheet(
@@ -168,11 +164,11 @@ fun ReasoningPicker(
 
             // v3.6.97 移植原版 d1e8effc: 移除底部刻度 (简化推理选择页面)
             Slider(
-                state = sliderState,
-                onValueChange = { sliderState.value = it },
+                value = sliderValue,
+                onValueChange = { sliderValue = it },
                 onValueChangeFinished = {
-                    val snappedIndex = sliderState.value.roundToInt().coerceIn(0, levelCount - 1)
-                    sliderState.value = snappedIndex.toFloat()
+                    val snappedIndex = sliderValue.roundToInt().coerceIn(0, levelCount - 1)
+                    sliderValue = snappedIndex.toFloat()
                     onUpdateReasoningLevel(levels[snappedIndex])
                 },
                 modifier = Modifier.fillMaxWidth(),
