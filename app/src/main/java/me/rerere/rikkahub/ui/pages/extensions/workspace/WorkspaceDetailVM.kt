@@ -191,7 +191,11 @@ class WorkspaceDetailVM(
                     )
                 }
                 file
-            }.onSuccess(onReady).onFailure { error ->
+            }.onSuccess { file ->
+                runCatching { onReady(file) }.onFailure { error ->
+                    _state.update { it.copy(error = "分享启动失败: " + (error.message ?: error.toString())) }
+                }
+            }.onFailure { error ->
                 _state.update { it.copy(error = error.message ?: "分享文件失败") }
             }
         }
@@ -217,8 +221,15 @@ class WorkspaceDetailVM(
                     )
                 }
                 require(file.length() > 0) { "打包产物为空" }
+                android.util.Log.i("WorkspaceShare", "folder zip ready: " + file.absolutePath + " bytes=" + file.length() + " entries=" + count)
                 file
-            }.onSuccess(onReady).onFailure { error ->
+            }.onSuccess { file ->
+                // v4.5.10: onReady (FileProvider/Intent) 的异常必须可见 —
+                // 此前 onSuccess 回调抛错被协程吞掉, 表现为"点分享没反应"
+                runCatching { onReady(file) }.onFailure { error ->
+                    _state.update { it.copy(error = "分享启动失败: " + (error.message ?: error.toString())) }
+                }
+            }.onFailure { error ->
                 _state.update { it.copy(error = error.message ?: "分享文件夹失败: " + (error.message ?: "")) }
             }
         }

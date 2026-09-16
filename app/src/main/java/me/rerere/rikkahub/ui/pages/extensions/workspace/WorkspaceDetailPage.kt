@@ -260,6 +260,9 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
                             val intent = Intent(Intent.ACTION_SEND).apply {
                                 type = "application/zip"
                                 putExtra(Intent.EXTRA_STREAM, uri)
+                                // v4.5.10: ClipData +-grant — 部分 chooser 实现只看
+                                // ClipData 的授权, 缺失时附件对目标应用不可读
+                                clipData = android.content.ClipData.newRawUri(null, uri)
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
                             context.startActivity(Intent.createChooser(intent, null))
