@@ -27,12 +27,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SliderState
 import androidx.compose.material3.Text
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -104,10 +104,17 @@ fun ReasoningPicker(
     onUpdateReasoningLevel: (ReasoningLevel) -> Unit,
 ) {
     val currentIndex = levels.indexOf(reasoningLevel).coerceAtLeast(0)
-    var sliderValue by remember { mutableFloatStateOf(currentIndex.toFloat()) }
+    // 原版 2.5.2 移植: Slider 状态改用 SliderState (value/trackRange/steps 聚合)
+    val sliderState = remember {
+        SliderState(
+            value = currentIndex.toFloat(),
+            trackRange = 0f..(levelCount - 1).toFloat(),
+            steps = levelCount - 2,
+        )
+    }
 
     LaunchedEffect(currentIndex) {
-        sliderValue = currentIndex.toFloat()
+        sliderState.value = currentIndex.toFloat()
     }
 
     ModalBottomSheet(
@@ -161,15 +168,13 @@ fun ReasoningPicker(
 
             // v3.6.97 移植原版 d1e8effc: 移除底部刻度 (简化推理选择页面)
             Slider(
-                value = sliderValue,
-                onValueChange = { sliderValue = it },
+                state = sliderState,
+                onValueChange = { sliderState.value = it },
                 onValueChangeFinished = {
-                    val snappedIndex = sliderValue.roundToInt().coerceIn(0, levelCount - 1)
-                    sliderValue = snappedIndex.toFloat()
+                    val snappedIndex = sliderState.value.roundToInt().coerceIn(0, levelCount - 1)
+                    sliderState.value = snappedIndex.toFloat()
                     onUpdateReasoningLevel(levels[snappedIndex])
                 },
-                valueRange = 0f..(levelCount - 1).toFloat(),
-                steps = levelCount - 2,
                 modifier = Modifier.fillMaxWidth(),
                 thumb = {
                     Box(

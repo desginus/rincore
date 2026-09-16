@@ -299,6 +299,13 @@ object ModelRegistry {
         toolReasoningAbility()
     }
 
+    // 原版 2.5.2 移植: deepseek-flash 模型名识别 (reasoning ability → 思考门控生效)
+    private val DEEPSEEK_FLASH = defineModel {
+        tokens("deepseek", "flash")
+        visionInput()
+        toolReasoningAbility()
+    }
+
     private val DEEPSEEK_V4_FLASH = defineModel {
         tokens("deepseek", "v", "4", "flash")
         toolReasoningAbility()
@@ -629,6 +636,7 @@ object ModelRegistry {
         DEEPSEEK_CHAT,
         DEEPSEEK_R1_MODEL,
         DEEPSEEK_REASONER,
+        DEEPSEEK_FLASH,
         DEEPSEEK_V4_FLASH,
         DEEPSEEK_V4_FLASH_VISION_EXP,
         DEEPSEEK_V4_1_FLASH,

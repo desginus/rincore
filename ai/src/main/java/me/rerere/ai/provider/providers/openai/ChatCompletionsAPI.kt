@@ -876,7 +876,22 @@ class ChatCompletionsAPI(
                 // 思考开关是否生效取决于网关是否向智谱映射该参数。
                 val isGlmFamily = host == "open.bigmodel.cn" &&
                     params.model.modelId.contains("glm", ignoreCase = true)
-                if (isGlmFamily) {
+                // v4.5.9: Grok 4.6 语义 (x.ai 官方) — reasoning_effort 四档
+                // low/medium/high/xhigh, 默认 low, 无 true disabled (Think/Big
+                // Brain flags 已废)。OFF→low 为 xAI 语义下最接近关闭的档位;
+                // 不发任何参数时模型自主决定是否推理, 即"有时思考有时不思考"。
+                val isGrokFamily = params.model.modelId.contains("grok", ignoreCase = true)
+                if (isGrokFamily && (host == "api.x.ai" || host == "api.grok.ai" || host == "opencode.ai")) {
+                    if (level != ReasoningLevel.AUTO) {
+                        val effort = when (level) {
+                            ReasoningLevel.OFF, ReasoningLevel.LOW -> "low"
+                            ReasoningLevel.MEDIUM -> "medium"
+                            ReasoningLevel.HIGH -> "high"
+                            ReasoningLevel.XHIGH, ReasoningLevel.MAX -> "xhigh"
+                        }
+                        obj { put("reasoning_effort", effort) }
+                    } else null
+                } else if (isGlmFamily) {
                     obj {
                         put("thinking", buildJsonObject {
                             put("type", if (!level.isEnabled) "disabled" else "enabled")
@@ -888,11 +903,12 @@ class ChatCompletionsAPI(
                             put("type", if (!level.isEnabled) "disabled" else "enabled")
                         })
                         if (level.isEnabled && level != ReasoningLevel.AUTO) {
-                            // 4.0.7 对齐原版 2.4.17: MEDIUM/HIGH→high, MAX→max,
-                            // 其余 (LOW/XHIGH) effort 直透 — 撤 v3.6.49 档位塌缩
+                            // 4.0.7 对齐原版 2.4.17; v4.5.9 按官方档位修订:
+                            // V4 官方档位 low/high/max (low 自 0731 卡片起合法);
+                            // MEDIUM/HIGH→high, XHIGH/MAX→max (xhigh 是 V4.1 才有)
                             val effort = when (level) {
                                 ReasoningLevel.MEDIUM, ReasoningLevel.HIGH -> "high"
-                                ReasoningLevel.MAX -> "max"
+                                ReasoningLevel.XHIGH, ReasoningLevel.MAX -> "max"
                                 else -> level.effort
                             }
                             put("reasoning_effort", effort)

@@ -14,6 +14,7 @@ import me.rerere.ai.ui.ImageGenSize
 import me.rerere.ai.ui.ImageGenerationItem
 import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.UIMessage
+import kotlin.uuid.Uuid
 
 // 提供商实现
 // 采用无状态设计，使用时除了需要传入需要的参数外，还需要传入provider setting作为参数
@@ -78,7 +79,9 @@ data class TextGenerationParams(
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBody: List<CustomBody> = emptyList(),
     // 4.1.0: 对齐原版 2.5.x — sessionId 双头 (X-Session-ID 全局 + x-opencode-session 网关)
-    val sessionId: String? = null,
+    // 原版 2.5.2 移植: 默认随机 session — 非聊天内部请求 (标题/翻译/压缩等)
+    // 也携带 session id 头, 网关侧用量归因与粘路由不再缺失
+    val sessionId: String? = Uuid.random().toString(),
     // v3.16.0: 强兼容模式 — Chat Completions 按 Cherry Studio 极简格式发送
     val cherryCompatMode: Boolean = false,
     // v4.5.5: 图片上传模式 (客户端设置) — classic=工具图转移 user+预算标记 /
