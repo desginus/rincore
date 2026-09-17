@@ -273,6 +273,15 @@ class ResponseAPI(
             put("stream", stream)
             put("store", false)
 
+            // v4.5.17: 仿 OpenCode — opencode.ai 网关携带 promptCacheKey (= 会话 ID),
+            // 对齐 OpenCode 客户端行为 (transform.ts: providerID 以 "opencode" 开头
+            // → promptCacheKey/reasoningSummary/include 三件套), 服务端据此做跨轮
+            // 缓存路由。include=reasoning.encrypted_content 与 reasoning.summary=auto
+            // 已由下方 reasoning 段按 capabilities 输出。
+            if (host == "opencode.ai") {
+                params.sessionId?.let { put("promptCacheKey", it) }
+            }
+
             if (isModelAllowTemperature(params.model)) {
                 if (params.temperature != null) put("temperature", params.temperature)
                 if (params.topP != null) put("top_p", params.topP)

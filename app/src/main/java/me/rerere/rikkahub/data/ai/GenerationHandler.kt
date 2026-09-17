@@ -60,6 +60,8 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.providers.opencode.OpencodeProtocol
+import me.rerere.ai.provider.providers.opencode.OpencodeRequestMode
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.UIMessage
@@ -132,6 +134,36 @@ class GenerationHandler(
     private val settingsStore: SettingsStore,
     private val skillManager: me.rerere.rikkahub.data.files.SkillManager? = null,
 ) {
+
+    /**
+     * v4.5.17: 仿 OpenCode 请求模式 — 对 opencode.ai 网关按模型协议映射
+     * (models.dev 同源) 分派传输 handler: Anthropic / Google / Responses 模型
+     * 走对应协议, Chat Completions 或非 opencode 网关返回 null (原路径)。
+     * 数据来源与行为语义均在 OpencodeRequestMode 内文档化。
+     */
+    private fun resolveOpencodeStream(
+        provider: ProviderSetting,
+        model: Model,
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
+    ): kotlinx.coroutines.flow.Flow<me.rerere.ai.ui.StreamChunk>? {
+        val protocol = OpencodeRequestMode.resolveFor(provider, model.modelId) ?: return null
+        return when (protocol) {
+            OpencodeProtocol.ANTHROPIC -> {
+                val s = OpencodeRequestMode.toClaudeSetting(provider)
+                providerManager.getProviderByType(s).streamText(s, messages, params)
+            }
+            OpencodeProtocol.GOOGLE -> {
+                val s = OpencodeRequestMode.toGoogleSetting(provider)
+                providerManager.getProviderByType(s).streamText(s, messages, params)
+            }
+            OpencodeProtocol.RESPONSES -> {
+                val s = OpencodeRequestMode.toResponseSetting(provider)
+                providerManager.getProviderByType(s).streamText(s, messages, params)
+            }
+            OpencodeProtocol.CHAT_COMPLETIONS -> null
+        }
+    }
 
     /** v3.11.16: 网关连接超时独立计数 — header 阶段判死每次 15s, 与快失败型
      *  (毫秒级判死) 恢复机制互斥, 必须分道计数, 否则 30s/次的败因塞进 10s
@@ -1264,11 +1296,17 @@ class GenerationHandler(
             Log.i(TAG, "Pre-stream ready in ${preStreamMs}ms, calling provider...")
             // 4.2.0: 消费侧切原版 StreamChunkHandler (2.5.x 架构)
             val streamHandler = me.rerere.ai.ui.StreamChunkHandler(model = model)
-            providerImpl.streamText(
+            // v4.5.17: 仿 OpenCode 请求模式 — 开启且目标为 opencode.ai 网关时,
+            // 按模型协议映射切换传输 handler (严格对齐 OpenCode 客户端);
+            // 关闭或非 opencode 网关: null → 走原 providerImpl 路径, 零行为变化
+            val opencodeStream = if (settings.opencodeRequestMode) {
+                resolveOpencodeStream(provider, model, internalMessages, params)
+            } else null
+            (opencodeStream ?: providerImpl.streamText(
                 providerSetting = provider,
                 messages = internalMessages,
                 params = params
-            ).collect { chunk ->
+            )).collect { chunk ->
                 messages = streamHandler.handle(messages, chunk)
                 // v4.5.2: 长度截断的工具调用修复 — finish_reason=length 时最后一条
                 // 助手消息里 input JSON 解析失败的调用 = 参数被 token 上限掐断。
@@ -1502,14 +1540,19 @@ class GenerationHandler(
 
             // 4.2.0: 消费侧切 StreamChunkHandler (翻译通道)
             val translateHandler = me.rerere.ai.ui.StreamChunkHandler()
-            providerHandler.streamText(
+            // v4.5.17: 仿 OpenCode 请求模式 — 翻译同受协议分派约束 (同一模型)
+            val translateParams = TextGenerationParams(
+                model = model,
+                reasoningLevel = ReasoningLevel.fromBudgetTokens(settings.translateThinkingBudget),
+            )
+            val opencodeTranslate = if (settings.opencodeRequestMode) {
+                resolveOpencodeStream(provider, model, messages, translateParams)
+            } else null
+            (opencodeTranslate ?: providerHandler.streamText(
                 providerSetting = provider,
                 messages = messages,
-                params = TextGenerationParams(
-                    model = model,
-                    reasoningLevel = ReasoningLevel.fromBudgetTokens(settings.translateThinkingBudget),
-                ),
-            ).collect { chunk ->
+                params = translateParams,
+            )).collect { chunk ->
                 messages = translateHandler.handle(messages, chunk)
                 translatedText = messages.lastOrNull()?.toText() ?: ""
 

@@ -128,6 +128,9 @@ class SettingsStore(
         // 模型选择
         val ENABLE_WEB_SEARCH = booleanPreferencesKey("enable_web_search")
         val DEFER_AUTO_REPLY = booleanPreferencesKey("defer_auto_reply")
+        // v4.5.17: 仿 OpenCode 请求模式 — 对 opencode.ai 网关按模型协议映射
+        // (Chat Completions / Responses / Anthropic / Google) 自动选择传输协议
+        val OPENCODE_REQUEST_MODE = booleanPreferencesKey("opencode_request_mode")
         val FAVORITE_MODELS = stringPreferencesKey("favorite_models")
         val SELECT_MODEL = stringPreferencesKey("chat_model")
         val FAST_MODEL = stringPreferencesKey("fast_model")
@@ -223,6 +226,7 @@ class SettingsStore(
                 preferences[NETWORK_SETTING] = JsonInstant.encodeToString(settings.networkSetting)
                 preferences[ENABLE_WEB_SEARCH] = settings.enableWebSearch
                 preferences[DEFER_AUTO_REPLY] = settings.deferAutoReply
+                preferences[OPENCODE_REQUEST_MODE] = settings.opencodeRequestMode
                 preferences[FAVORITE_MODELS] = JsonInstant.encodeToString(settings.favoriteModels)
                 preferences[SELECT_MODEL] = settings.chatModelId.toString()
                 preferences[FAST_MODEL] = settings.fastModelId.toString()
@@ -311,6 +315,7 @@ class SettingsStore(
             Settings(
                 enableWebSearch = preferences[ENABLE_WEB_SEARCH] == true,
                 deferAutoReply = preferences[DEFER_AUTO_REPLY] == true,
+                opencodeRequestMode = preferences[OPENCODE_REQUEST_MODE] == true,
                 favoriteModels = preferences[FAVORITE_MODELS]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: emptyList(),
@@ -575,6 +580,7 @@ class SettingsStore(
 
             preferences[ENABLE_WEB_SEARCH] = settings.enableWebSearch
             preferences[DEFER_AUTO_REPLY] = settings.deferAutoReply
+            preferences[OPENCODE_REQUEST_MODE] = settings.opencodeRequestMode
             preferences[FAVORITE_MODELS] = JsonInstant.encodeToString(settings.favoriteModels)
             preferences[SELECT_MODEL] = settings.chatModelId.toString()
             preferences[FAST_MODEL] = settings.fastModelId.toString()
@@ -753,6 +759,10 @@ data class Settings(
     // v3.6.13: 延迟自动回复 — 开启时发消息不触发模型回复 (消息排队,
     // 关闭后发消息触发; 解决消息未发完模型打断回复)
     val deferAutoReply: Boolean = false,
+    // v4.5.17: 仿 OpenCode 请求模式 — 对齐 OpenCode 客户端对 opencode.ai 网关
+    // 的每模型协议分派 (models.dev npm 同源), 使 Responses/Anthropic/Google
+    // 专属模型可用; 关闭时零行为变化
+    val opencodeRequestMode: Boolean = false,
     val favoriteModels: List<Uuid> = emptyList(),
     val chatModelId: Uuid = Uuid.random(),
     val fastModelId: Uuid = Uuid.random(),

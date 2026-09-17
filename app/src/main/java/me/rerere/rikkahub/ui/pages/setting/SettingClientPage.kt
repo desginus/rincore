@@ -30,6 +30,7 @@ import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.theme.CustomColors
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Switch
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 
@@ -107,6 +108,33 @@ fun SettingClientPage(vm: SettingVM = koinViewModel()) {
                             desc = "当前形态：文件以内联占位替换，仅携带精确工作区路径，模型需要内容时用 workspace_read_file 按需读取。请求短小、缓存稳定。",
                             selected = settings.fileUploadMode == "compat",
                             onClick = { vm.updateSettings(settings.copy(fileUploadMode = "compat")) },
+                        )
+                    }
+                }
+            }
+            item {
+                // v4.5.17: 仿 OpenCode 请求模式 — 对 opencode.ai 网关按模型协议映射
+                // (与 OpenCode 客户端同源: models.dev 每模型 npm 决定传输协议)
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("仿 OpenCode 请求模式", style = MaterialTheme.typography.titleMedium)
+                            }
+                            Switch(
+                                checked = settings.opencodeRequestMode,
+                                onCheckedChange = { vm.updateSettings(settings.copy(opencodeRequestMode = it)) },
+                            )
+                        }
+                        Text(
+                            "开启后，发往 OpenCode 网关 (opencode.ai) 的请求严格对齐 OpenCode 客户端：按每个模型的传输协议 (Chat Completions / Responses / Anthropic / Google) 自动分派，" +
+                                "使 Zen/Go 上仅支持 Responses 或 Anthropic 等协议的模型可用。关闭时请求行为与现在完全一致。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp),
                         )
                     }
                 }
