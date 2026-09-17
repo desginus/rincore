@@ -297,6 +297,21 @@ class FilesManager(
                 activityContext.exportImage(activity, bitmap)
             }
 
+            // v4.5.16: workspace 形态优先 — 本地生成图片/模型引用图片的标准
+            // 渲染 URL (file:///data/data/.../workspaces/<UUID>/files/...,
+            // workspace://..., /workspace/...) 此前落 file:/else 分支:
+            // file:///data/data 因别名字节不通, workspace:// 直接报
+            // "Invalid image format"。统一经 WorkspaceImageResolver 解析为
+            // 真实宿主文件 (内部处理别名与 proot 穿透) 再导出。
+            me.rerere.rikkahub.utils.isWorkspaceUri(image) -> {
+                val resolved = me.rerere.rikkahub.utils.WorkspaceImageResolver.resolve(image)
+                if (resolved != null) {
+                    activityContext.exportImageFile(activity, resolved)
+                } else {
+                    android.util.Log.w("FilesManager", "saveMessageImage: workspace image unresolved: $image")
+                }
+            }
+
             image.startsWith("file:") -> {
                 val file = image.toUri().toFile()
                 activityContext.exportImageFile(activity, file)
@@ -305,6 +320,7 @@ class FilesManager(
             image.startsWith("/") -> {
                 activityContext.exportImageFile(activity, File(image))
             }
+
 
             image.startsWith("http") -> {
                 runCatching {

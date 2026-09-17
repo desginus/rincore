@@ -134,6 +134,14 @@ fun ZoomableAsyncImage(
             onError = {
                 loading = false
                 if (workspaceFetch) workspaceFailed = true
+                // v4.5.16: 图片不渲染现场诊断 — 失败时记录 url 形态与 resolve
+                // 结果 (resolve 失败即数据/路径层问题; resolve 成功即解码层),
+                // 用户报"图片不可见"时 logcat 一行定论。
+                android.util.Log.w("ZoomableAsyncImage", "load failed: model=" +
+                    model?.take(160) + " ws=" + workspaceFetch +
+                    " resolve=" + runCatching {
+                        me.rerere.rikkahub.utils.WorkspaceImageResolver.resolve(model)?.absolutePath
+                    }.getOrNull())
             },
         )
     }

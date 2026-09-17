@@ -222,6 +222,11 @@ class ChatVM(
         if (parts.isEmptyInputMessage()) return
         analytics.logEvent("ai_edit_message", null)
 
+        // v4.5.16: 延时自动回复拦截补全 — 编辑消息此前绕过 deferAutoReply
+        // gate 立即触发重新生成 (开关开着模型照样回复, 用户感知"拦截不
+        // 彻底")。开启时仅保存编辑版本, 不自动生成。
+        val deferAutoReply = settingsStore.settingsFlow.value.deferAutoReply
+
         viewModelScope.launch {
             // 1. 追加新版本 (旧版本保留, 123 按钮可切换)
             chatService.editMessage(_conversationId, messageId, parts)
@@ -232,7 +237,7 @@ class ChatVM(
                 .flatMap { it.messages }
                 .find { it.id == messageId } ?: return@launch
             // v3.5.53: 仅编辑 user 消息触发重新生成 — assistant 回复编辑只保存
-            if (edited.role == me.rerere.ai.core.MessageRole.USER) {
+            if (edited.role == me.rerere.ai.core.MessageRole.USER && !deferAutoReply) {
                 chatService.regenerateAtMessage(_conversationId, edited)
             }
         }

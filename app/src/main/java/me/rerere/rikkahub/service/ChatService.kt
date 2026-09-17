@@ -1212,10 +1212,18 @@ class ChatService(
                 "locale" to Locale.getDefault().displayName
             )
 
+            // v4.5.16: 背景任务一致性 — 压缩此前用默认 AUTO 档 (模型默认思考
+            // 常开), 与标题/建议 (fastModelReasoningLevel) 不一致; 长上下文 +
+            // 默认思考 = 非流式 3 分钟 readTimeout 挂起 (用户实测"一直正在
+            // 压缩中直到漫长超时")。对齐 fastModelReasoningLevel 并记录请求
+            // 参数, 挂起时日志可直接归因。
+            val settingsNow = settingsStore.settingsFlow.first()
+            val compressLevel = settingsNow.fastModelReasoningLevel
+            android.util.Log.i("ChatService", "compressMessages: model=${model.modelId} level=$compressLevel chunk=${messages.size}msgs chars=${contentToCompress.length}")
             val result = providerHandler.generateText(
                 providerSetting = provider,
                 messages = listOf(UIMessage.user(prompt)),
-                params = backgroundTextGenerationParams(model),
+                params = backgroundTextGenerationParams(model, compressLevel),
             )
 
             return result.message.toText().trim().ifEmpty { throw IllegalStateException("Failed to generate compressed summary") }
