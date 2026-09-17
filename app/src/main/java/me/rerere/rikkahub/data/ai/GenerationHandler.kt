@@ -141,7 +141,7 @@ class GenerationHandler(
      * 走对应协议, Chat Completions 或非 opencode 网关返回 null (原路径)。
      * 数据来源与行为语义均在 OpencodeRequestMode 内文档化。
      */
-    private fun resolveOpencodeStream(
+    private suspend fun resolveOpencodeStream(
         provider: ProviderSetting,
         model: Model,
         messages: List<UIMessage>,
