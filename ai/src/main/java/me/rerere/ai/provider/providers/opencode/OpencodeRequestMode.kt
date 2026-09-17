@@ -1,5 +1,7 @@
 package me.rerere.ai.provider.providers.opencode
 
+import me.rerere.ai.provider.ProviderSetting
+
 /* ───【自研】OpencodeRequestMode.kt | 仿 OpenCode 请求模式 (v4.5.17)
  * 数据源: models.dev api.json (OpenCode 客户端同源模型库), 提取
  * OpenCode Zen (opencode.ai/zen/v1) 与 OpenCode Go (opencode.ai/zen/go/v1)
