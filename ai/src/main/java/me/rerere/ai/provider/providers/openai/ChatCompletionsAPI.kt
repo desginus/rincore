@@ -287,6 +287,9 @@ class ChatCompletionsAPI(
         // reasoning_content (思考) 不发 content (正文): 仅思考无正文时
         // 必须可见报错而非静默"完成"
         var hasTextContent = false
+        // v4.5.20: 工具调用检测标志 — "无正文关闭"判中断时必须排除正常工具
+        // 回合 (工具流可无正文且部分网关无完成信号), 防误判重试
+        var hasToolCalls = false
         var reasoningTail = ""
         // v3.8.42: 思考缓冲 — ox 系无 content 时结束后正文化; 流中思考保持思考链
         val reasoningBuffer = StringBuilder()
@@ -389,7 +392,11 @@ class ChatCompletionsAPI(
                                 // 原判定写在 message!=null 分支内会漏判 → 误判断流
                                 val finishReason =
                                     choice["finish_reason"]?.jsonPrimitive?.contentOrNull
-                                if (finishReason == "stop" || finishReason == "length") {
+                                if (finishReason == "stop" || finishReason == "length" || finishReason == "tool_calls") {
+                                    // v4.5.20: tool_calls 纳入完成信号 — 工具调用回合的
+                                    // 标准收尾 (finish_reason=tool_calls) 同样是硬完成;
+                                    // 此前只认 stop/length, 工具流走无信号路径靠"有工具"
+                                    // 兜底, 判定链更脆弱
                                     gotFinish.set(true)
                                     lastFinishReason = finishReason
                                     if (finishReason == "length") {
@@ -441,6 +448,8 @@ class ChatCompletionsAPI(
                                 }
                                 if (message != null) {
                                     var delta = parseMessage(message)
+                                    // v4.5.20: 流中一旦出现工具 part 即标记 (工具回合识别的兜底)
+                                    if (delta.parts.any { it is UIMessagePart.Tool }) hasToolCalls = true
                                     // v4.3.0: 增量流 id 回填 — tool part 与 tool_calls 数组
                                     // 元素一一对应 (forEach add), 按元素的 index 归属:
                                     // id 非空记录映射; id 空从映射取回填, 无映射保持空串
@@ -588,7 +597,11 @@ class ChatCompletionsAPI(
                         //   行完整 + 无 content + 有思考缓冲 => 思考正文化补发为正文
                         //   (ox 系纯思考输出场景, 对齐 opencode 客户端行为);
                         //   行残缺 / 尾部强截断特征 => 保留内容 + 明确报错。
-                        val truncated = !lastEventParsed || looksTruncated(textTail)
+                        // v4.5.20 (用户实证"多模型异常中断"): closed-after-data 不再一概
+                        // 当完成 — 无完成信号 + 无正文 + 无工具 = 外部掐流 (真中断),
+                        // 进重试链自动恢复。实证: glm-5.3-flash 142s 全思考被关 /
+                        // deepseek-flash 空流 events=1 被关, 均被旧逻辑静默"完成"。
+                        val truncated = !lastEventParsed || looksTruncated(textTail) || looksTruncated(reasoningTail)
                         if (truncated) {
                             val why = if (!lastEventParsed) "mid-event truncation"
                             else "content ends truncated (tail=\"${textTail.take(40)}\")"
@@ -626,8 +639,19 @@ class ChatCompletionsAPI(
                                 ).onFailure { e -> Log.w(TAG, "onClosed: body promotion chunk dropped (${e?.message})") }
                                 close()
                             }
+                        } else if (!hasTextContent && !hasToolCalls && reasoningTail.isNotBlank()) {
+                            // v4.5.20 (用户实证): 纯思考无正文的关闭 = 思考阶段被掐,
+                            // 非正常收尾 — 正常回合必有正文或工具。进重试链。
+                            Log.w(TAG, "onClosed: opencode.ai closed during reasoning-only phase (model=${params.model.modelId} events=$eventCount) — treat as interruption, retry\nlast: ${dumpLastEvents()}")
+                            TraceLogger.log("SSE", "opencode.ai closed during reasoning phase (no body/tools, events=$eventCount) — interruption, entering retry chain")
+                            close(IOException("SSE 流在思考阶段被服务器关闭 (无正文输出, 无完成信号)"))
+                        } else if (!hasTextContent && !hasToolCalls) {
+                            // v4.5.20 (用户实证): 零输出空流 (仅角色/心跳块后即关) = 明确中断
+                            Log.w(TAG, "onClosed: opencode.ai closed with zero output (model=${params.model.modelId} events=$eventCount) — treat as interruption, retry\nlast: ${dumpLastEvents()}")
+                            TraceLogger.log("SSE", "opencode.ai closed with zero output (events=$eventCount) — interruption, entering retry chain")
+                            close(IOException("SSE 流在输出任何内容前被服务器关闭 (无完成信号)"))
                         } else {
-                            TraceLogger.log("SSE", "opencode.ai closed after complete data (events=$eventCount) — treated as complete, no completion signal needed (tail=\"${textTail.take(40)}\" deltaKeys=\"$lastDeltaKeys\" delta=\"${lastDeltaRaw.take(260)}\")")
+                            TraceLogger.log("SSE", "opencode.ai closed after complete data (events=$eventCount) — treated as complete (body=$hasTextContent tools=$hasToolCalls, no completion signal on this gateway, tail=\"${textTail.take(40)}\" deltaKeys=\"$lastDeltaKeys\")")
                             close()
                         }
                     } else {
