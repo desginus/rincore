@@ -374,13 +374,14 @@ private fun ChatPageContent(
     val allowAudioVideoAttachments =
         setting.getCurrentChatModel()?.findProvider(setting.providers) is ProviderSetting.Google
 
-    val completionProviders = remember(assistant.workspaceId, conversation.workspaceCwd, workspaceRepository) {
+    val completionProviders = remember(assistant.workspaceId, assistant.workspaceCwd, workspaceRepository) {
         assistant.workspaceId?.let { workspaceId ->
             listOf(
                 WorkspaceCompletionProvider(
                     workspaceId = workspaceId.toString(),
                     repository = workspaceRepository,
-                    currentCwd = conversation.workspaceCwd,
+                    // v4.5.23: CWD 助手级 (原会话级退役)
+                    currentCwd = assistant.workspaceCwd,
                 )
             )
         }.orEmpty()
@@ -664,10 +665,6 @@ private fun ChatFilesPickerSheet(
             onUpdateConversation = {
                 vm.updateConversation(it)
                 vm.saveConversationAsync()
-            },
-            // v4.5.19: CWD 专用链 — 设置即落库 (内存+DB 双写), 重启不丢
-            onSelectWorkspaceCwd = { cwd ->
-                vm.setWorkspaceCwd(cwd)
             },
             showInjectionSheet = showInjectionSheet,
             onShowInjectionSheetChange = { showInjectionSheet = it },

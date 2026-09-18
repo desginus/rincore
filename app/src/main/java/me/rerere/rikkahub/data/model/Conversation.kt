@@ -58,6 +58,8 @@ data class Conversation(
     val modeInjectionIds: Set<Uuid> = emptySet(),
     val lorebookIds: Set<Uuid> = emptySet(),
     // Absolute path inside the workspace rootfs
+    // legacy 数据壳: v4.5.23 起 CWD 为助手级 (Assistant.workspaceCwd); 本字段不再参与任何行为,
+    // 仅保留序列化兼容。读取/写入点均已移除。
     val workspaceCwd: String? = null,
     // 所属文件夹（助手内分组），null 表示未归入任何文件夹
     val folderId: Uuid? = null,

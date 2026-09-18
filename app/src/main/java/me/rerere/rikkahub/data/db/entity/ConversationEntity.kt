@@ -33,6 +33,7 @@ data class ConversationEntity(
     val modeInjectionIds: String = "[]",
     @ColumnInfo("lorebook_ids", defaultValue = "[]")
     val lorebookIds: String = "[]",
+    // legacy 数据壳: v4.5.23 起 CWD 为助手级; 列保留避免 DB 迁移, 无行为分支
     @ColumnInfo("workspace_cwd", defaultValue = "")
     val workspaceCwd: String = "",
     @ColumnInfo("folder_id", defaultValue = "")

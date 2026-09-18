@@ -46,6 +46,9 @@ data class Assistant(
     // false=全量兼容 (存量助手, v3.6.92 前语义: 存在即可用)
     val filterSkills: Boolean = false,
     val workspaceId: Uuid? = null,
+    // v4.5.23: 助手级工作目录 — 该助手的全部对话共享 (设置一次, 整个助手生效)。
+    // 语义变更: 原会话级 conversation.workspaceCwd 退役为数据壳, 不再参与任何行为。
+    val workspaceCwd: String? = null,
     val background: String? = null, // 聊天页背景图地址(本地文件 URI 或网络 URL), 为 null 时无背景
     val backgroundOpacity: Float = 1.0f, // 背景图不透明度(0~1)
     val useGradientBackground: Boolean = false, // 开启后聊天页使用动态渐变背景

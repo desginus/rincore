@@ -376,6 +376,7 @@ class ConversationRepository(
             customSystemPrompt = conversation.customSystemPrompt ?: "",
             modeInjectionIds = JsonInstant.encodeToString(conversation.modeInjectionIds),
             lorebookIds = JsonInstant.encodeToString(conversation.lorebookIds),
+            // legacy 数据壳: v4.5.23 起 CWD 为助手级 (Assistant.workspaceCwd), 本列仅数据兼容
             workspaceCwd = conversation.workspaceCwd ?: "",
             folderId = conversation.folderId?.toString() ?: "",
         )
@@ -402,7 +403,7 @@ class ConversationRepository(
             customSystemPrompt = conversationEntity.customSystemPrompt.ifEmpty { null },
             modeInjectionIds = JsonInstant.decodeFromString(conversationEntity.modeInjectionIds),
             lorebookIds = JsonInstant.decodeFromString(conversationEntity.lorebookIds),
-            workspaceCwd = conversationEntity.workspaceCwd.ifEmpty { null },
+            workspaceCwd = conversationEntity.workspaceCwd.ifEmpty { null }, // legacy 数据壳 (v4.5.23 助手级接管)
             folderId = conversationEntity.folderId.ifEmpty { null }?.let { Uuid.parse(it) },
         )
     }
@@ -432,22 +433,6 @@ class ConversationRepository(
             id = conversationId.toString(),
             folderId = folderId?.toString() ?: ""
         )
-    }
-
-    /**
-     * v4.5.19: 单列更新会话的工作区 CWD (null → 清空回默认)。
-     * 与 updateConversationFolderId 同模式 — 设置即刻落库, 不经整对象保存。
-     */
-    suspend fun updateConversationWorkspaceCwd(conversationId: Uuid, cwd: String?) {
-        conversationDAO.updateWorkspaceCwd(
-            id = conversationId.toString(),
-            cwd = cwd ?: ""
-        )
-    }
-
-    /** v4.5.22: CWD 回读 — 单列直读, 用于写入后自验证 (不经完整对象装配)。 */
-    suspend fun getConversationWorkspaceCwd(conversationId: Uuid): String? {
-        return conversationDAO.getWorkspaceCwd(conversationId.toString())?.ifEmpty { null }
     }
 
     private fun conversationSummaryToConversation(entity: LightConversationEntity): Conversation {

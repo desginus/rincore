@@ -110,9 +110,6 @@ internal fun FilesPicker(
     onRestoreCompressAt: (Int) -> Unit = {},
     onUpdateAssistant: (Assistant) -> Unit,
     onUpdateConversation: (Conversation) -> Unit,
-    // v4.5.19: CWD 专用落库回调 — 设置/清除即写数据库 (重启不丢),
-    // 不走通用 Conversation 整对象保存链 (用户实证该链不落库)
-    onSelectWorkspaceCwd: (String?) -> Unit,
     showInjectionSheet: Boolean,
     onShowInjectionSheetChange: (Boolean) -> Unit,
     showCompressDialog: Boolean,
@@ -277,7 +274,7 @@ internal fun FilesPicker(
                 icon = { Icon(HugeIcons.Folder01, null) },
                 text = {
                     Text(
-                        text = if (cwdReady) (conversation.workspaceCwd ?: stringResource(R.string.chat_quick_cwd))
+                        text = if (cwdReady) (assistant.workspaceCwd ?: stringResource(R.string.chat_quick_cwd))
                                else stringResource(R.string.chat_quick_cwd),
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
@@ -298,9 +295,10 @@ internal fun FilesPicker(
         if (showCwdSheet && boundWorkspace != null && boundWorkspace.shellStatus == WorkspaceShellStatus.READY.name) {
             WorkspaceCwdPickerSheet(
                 workspaceId = boundWorkspace.id,
-                currentCwd = conversation.workspaceCwd,
+                currentCwd = assistant.workspaceCwd,
                 onSelectCwd = { newCwd ->
-                    onSelectWorkspaceCwd(newCwd)
+                    // v4.5.23: 写入助手级 CWD (settings 持久化) — 整个助手全部对话生效
+                    onUpdateAssistant(assistant.copy(workspaceCwd = newCwd))
                 },
                 onDismiss = { showCwdSheet = false },
             )
@@ -344,91 +342,6 @@ internal fun FilesPicker(
         }, onConfirm = { additionalPrompt, targetTokens, keepRecentMessages ->
             onCompressContext(additionalPrompt, targetTokens, keepRecentMessages)
         })
-    }
-}
-
-@Composable
-private fun WorkspacePickerListItem(
-    assistant: Assistant,
-    conversation: Conversation,
-    workspaces: List<WorkspaceEntity>,
-    onUpdateAssistant: (Assistant) -> Unit,
-    onUpdateConversation: (Conversation) -> Unit,
-    onSelectWorkspaceCwd: (String?) -> Unit,
-    onNavigateToDetail: (String) -> Unit,
-    onNavigateToTerminal: (String) -> Unit,
-    onNavigateToManage: () -> Unit,
-) {
-    var showSheet by remember { mutableStateOf(false) }
-    val boundWorkspace = remember(workspaces, assistant.workspaceId) {
-        workspaces.find { it.id == assistant.workspaceId?.toString() }
-    }
-
-    ListItem(
-        leadingContent = {
-            Icon(
-                imageVector = HugeIcons.Codesandbox,
-                contentDescription = stringResource(R.string.assistant_page_workspace),
-            )
-        },
-        supportingContent = {
-            Text(
-                text = boundWorkspace?.name ?: stringResource(R.string.assistant_page_workspace_unbound),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
-        trailingContent = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (boundWorkspace != null) {
-                    IconButton(onClick = { onNavigateToDetail(boundWorkspace.id) }) {
-                        Icon(
-                            imageVector = HugeIcons.Settings02,
-                            contentDescription = stringResource(R.string.workspace_detail),
-                        )
-                    }
-                    if (boundWorkspace.shellStatus != WorkspaceShellStatus.DISABLED.name) {
-                        IconButton(onClick = { onNavigateToTerminal(boundWorkspace.id) }) {
-                            Icon(
-                                imageVector = HugeIcons.ComputerTerminal01,
-                                contentDescription = stringResource(R.string.workspace_terminal),
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        colors = ListItemDefaults.colors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
-        ),
-        modifier = Modifier
-            .clip(MaterialTheme.shapes.large)
-            .clickable { showSheet = true } ) {
-Text(stringResource(R.string.assistant_page_workspace))
-}
-
-    if (showSheet) {
-        WorkspaceSelectSheet(
-            assistant = assistant,
-            workspaces = workspaces,
-            onSelect = { workspaceId ->
-                val newId = workspaceId?.let { Uuid.parse(it) }
-                if (newId != assistant.workspaceId) {
-                    onUpdateAssistant(assistant.copy(workspaceId = newId))
-                    if (conversation.workspaceCwd != null) {
-                        onSelectWorkspaceCwd(null)
-                    }
-                }
-                showSheet = false
-            },
-            onManage = {
-                showSheet = false
-                onNavigateToManage()
-            },
-            onDismiss = { showSheet = false },
-        )
     }
 }
 
