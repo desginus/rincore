@@ -93,6 +93,11 @@ interface ConversationDAO {
     @Query("UPDATE conversationentity SET folder_id = :folderId WHERE id = :id")
     suspend fun updateFolderId(id: String, folderId: String)
 
+    // v4.5.19: 会话工作区 CWD 单列更新 — 设置即落库, 重启不丢 (用户实证:
+    // 经 updateConversationState 的纯内存更新 + 后续整对象保存路径不可靠)
+    @Query("UPDATE conversationentity SET workspace_cwd = :cwd WHERE id = :id")
+    suspend fun updateWorkspaceCwd(id: String, cwd: String)
+
     @Query("UPDATE conversationentity SET folder_id = '' WHERE folder_id = :folderId")
     suspend fun clearFolder(folderId: String)
 

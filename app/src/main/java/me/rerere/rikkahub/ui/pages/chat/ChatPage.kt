@@ -665,6 +665,10 @@ private fun ChatFilesPickerSheet(
                 vm.updateConversation(it)
                 vm.saveConversationAsync()
             },
+            // v4.5.19: CWD 专用链 — 设置即落库 (内存+DB 双写), 重启不丢
+            onSelectWorkspaceCwd = { cwd ->
+                vm.setWorkspaceCwd(cwd)
+            },
             showInjectionSheet = showInjectionSheet,
             onShowInjectionSheetChange = { showInjectionSheet = it },
             showCompressDialog = showCompressDialog,

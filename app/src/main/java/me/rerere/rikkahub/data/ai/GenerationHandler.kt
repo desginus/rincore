@@ -186,7 +186,6 @@ class GenerationHandler(
         /** v3.11.24 (F2): 同一工具在同一轮生成的累计调用上限 (含成功调用)。
          *  实证 2026-08-31: mcp__sequentialthinking 连调 6 次, 5 次无信息量,
          *  客户端全部 success 放行 — 既有熔断只看失败形态, 对"成功空转"无防线。 */
-        private const val TOOL_SAME_TOOL_CALL_LIMIT = 6
 
         /** v4.3.1 (BUG10): 审批等待超时 — Pending 工具超过该时长自动转为 Denied。
          *  死锁形态实证: 工具进 Pending 后 break 等待用户审批, 若审批链路任何
@@ -203,8 +202,15 @@ class GenerationHandler(
          *  用户定版预算=8 张。降级标记持久写入 Image.metadata["budget_dropped"],
          *  随消息落盘, 降级不可逆 → 前缀在已降级位置恒定。 */
         private const val IMAGE_BUDGET_COUNT = 8
-        private const val IMAGE_BUDGET_SINGLE_BYTES = 16L * 1024 * 1024
-        private const val IMAGE_BUDGET_TOTAL_BYTES = 64L * 1024 * 1024
+        // v4.5.19: 单张/总量预算从 16M/64M 收紧到 5MiB —
+        // Console Go 实测: 4 张 ~1.84M 字符的图被其按 ~47x 系数计
+        // (86.6MB/张, 总 330MiB > 256MiB 预算被拒 "Request exceeds TCP
+        // payload budget")。5MiB 字符在 45x-64x 系数下均 < 256MiB:
+        // 4x1.84M 场景自动降级最旧 2 张 → 保留 2 张 (3.68M → 166-235MiB)。
+        // 降级为持久标记 (budget_dropped), 请求中替换为路径占位,
+        // 模型可经 read_image 按需读取; UI 内容零改动。
+        private const val IMAGE_BUDGET_SINGLE_BYTES = 5L * 1024 * 1024
+        private const val IMAGE_BUDGET_TOTAL_BYTES = 5L * 1024 * 1024
 
         private val lastCacheFp = java.util.concurrent.ConcurrentHashMap<String, String>()
         private val lastCacheParts = java.util.concurrent.ConcurrentHashMap<String, String>()
@@ -724,17 +730,11 @@ class GenerationHandler(
                             }
                             val sameToolCallCount = (toolCallCounts[tool.toolName] ?: 0) + 1
                             toolCallCounts[tool.toolName] = sameToolCallCount
-                            if (sameToolCallCount > TOOL_SAME_TOOL_CALL_LIMIT) {
-                                Log.w(TAG, "generateText: same-tool call budget hit: ${tool.toolName} x$sameToolCallCount")
-                                CallTracer.event("TOOL", "same_tool_budget_fuse",
-                                    "tool=${tool.toolName} blocked, calls=$sameToolCallCount",
-                                    metrics = sseDiagMetrics())
-                                executedTools += tool.copy(
-                                    output = listOf(UIMessagePart.Text(
-                                        "⛔ 工具 ${tool.toolName} 在本轮累计已被调用 $sameToolCallCount 次, 已被客户端熔断拦截, 本次未执行。" +
-                                        "重复调用 (无论成败) 说明当前通路是空转。请切换: 换用其他工具 / 直接以文字回答 / 明确放弃该路径。")))
-                                return@runCatching
-                            }
+                            // v4.5.19 (用户令): 同工具每轮累计调用上限熔断已关闭 —
+                            // "关闭每轮 7 次上限的工具熔断"。长任务 (多步文件/命令
+                            // 工作流) 合法深链被误伤。计数保留供诊断 (CallTracer)。
+                            // 物理性保护仍在: 同键失败熔断 (gateKey >= 6) / 幂等重放 /
+                            // 超时控制 / 输出截断, 对"真死循环"依旧兜底。
                             // v3.11.18: 熔断物理闸门 — 同键 (工具名+参数指纹) 连续失败
                             // ≥6 次后拒绝下发执行, 直接返回硬阻断信号 (不执行)。
                             // 提示型纠错 (v3.11.17) 对已锁死的生成通路是低效的 —

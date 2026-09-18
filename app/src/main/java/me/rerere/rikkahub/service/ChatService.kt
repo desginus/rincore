@@ -1280,6 +1280,19 @@ class ChatService(
     }
 
     /**
+     * v4.5.19: 设置会话工作区 CWD — 内存态与数据库双写 (用户实证"设置后重启
+     * 回归原始": 此前仅经 updateConversationState 纯内存更新, 未落库前重启即丢)。
+     * 与 moveConversationToFolder 同模式: 先同步内存 (后续整对象保存带上新值),
+     * 再单列落库 (不依赖后续任意保存时机)。
+     */
+    suspend fun setConversationWorkspaceCwd(conversationId: Uuid, cwd: String?) {
+        if (sessions.containsKey(conversationId)) {
+            updateConversationState(conversationId) { it.copy(workspaceCwd = cwd) }
+        }
+        conversationRepo.updateConversationWorkspaceCwd(conversationId, cwd)
+    }
+
+    /**
      * 文件夹内是否存在正在生成回复的会话。
      * 仅活跃 session 可能在生成；内存态 folderId 为权威（移动会先同步内存态）。
      */

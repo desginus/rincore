@@ -379,6 +379,12 @@ class ChatVM(
         chatService.clearTranslationField(_conversationId, messageId)
     }
 
+    fun setWorkspaceCwd(cwd: String?) {
+        viewModelScope.launch {
+            chatService.setConversationWorkspaceCwd(_conversationId, cwd)
+        }
+    }
+
     fun updateConversation(newConversation: Conversation) {
         chatService.updateConversationState(_conversationId) {
             newConversation

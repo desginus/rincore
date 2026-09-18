@@ -434,6 +434,17 @@ class ConversationRepository(
         )
     }
 
+    /**
+     * v4.5.19: 单列更新会话的工作区 CWD (null → 清空回默认)。
+     * 与 updateConversationFolderId 同模式 — 设置即刻落库, 不经整对象保存。
+     */
+    suspend fun updateConversationWorkspaceCwd(conversationId: Uuid, cwd: String?) {
+        conversationDAO.updateWorkspaceCwd(
+            id = conversationId.toString(),
+            cwd = cwd ?: ""
+        )
+    }
+
     private fun conversationSummaryToConversation(entity: LightConversationEntity): Conversation {
         return Conversation(
             id = Uuid.parse(entity.id),

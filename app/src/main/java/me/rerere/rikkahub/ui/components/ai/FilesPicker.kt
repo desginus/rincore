@@ -110,6 +110,9 @@ internal fun FilesPicker(
     onRestoreCompressAt: (Int) -> Unit = {},
     onUpdateAssistant: (Assistant) -> Unit,
     onUpdateConversation: (Conversation) -> Unit,
+    // v4.5.19: CWD 专用落库回调 — 设置/清除即写数据库 (重启不丢),
+    // 不走通用 Conversation 整对象保存链 (用户实证该链不落库)
+    onSelectWorkspaceCwd: (String?) -> Unit,
     showInjectionSheet: Boolean,
     onShowInjectionSheetChange: (Boolean) -> Unit,
     showCompressDialog: Boolean,
@@ -297,7 +300,7 @@ internal fun FilesPicker(
                 workspaceId = boundWorkspace.id,
                 currentCwd = conversation.workspaceCwd,
                 onSelectCwd = { newCwd ->
-                    onUpdateConversation(conversation.copy(workspaceCwd = newCwd))
+                    onSelectWorkspaceCwd(newCwd)
                 },
                 onDismiss = { showCwdSheet = false },
             )
@@ -351,6 +354,7 @@ private fun WorkspacePickerListItem(
     workspaces: List<WorkspaceEntity>,
     onUpdateAssistant: (Assistant) -> Unit,
     onUpdateConversation: (Conversation) -> Unit,
+    onSelectWorkspaceCwd: (String?) -> Unit,
     onNavigateToDetail: (String) -> Unit,
     onNavigateToTerminal: (String) -> Unit,
     onNavigateToManage: () -> Unit,
@@ -414,7 +418,7 @@ Text(stringResource(R.string.assistant_page_workspace))
                 if (newId != assistant.workspaceId) {
                     onUpdateAssistant(assistant.copy(workspaceId = newId))
                     if (conversation.workspaceCwd != null) {
-                        onUpdateConversation(conversation.copy(workspaceCwd = null))
+                        onSelectWorkspaceCwd(null)
                     }
                 }
                 showSheet = false
