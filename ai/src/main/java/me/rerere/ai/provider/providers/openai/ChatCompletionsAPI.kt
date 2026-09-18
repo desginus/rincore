@@ -1140,7 +1140,21 @@ class ChatCompletionsAPI(
         tools: List<UIMessagePart.Tool>,
         reasoningPart: UIMessagePart.Reasoning?,
     ): JsonObject? {
-        val hasUsableContent = contentParts.any { part ->
+        // v4.5.18: 判定整段重写 — "模型输出→非法 assistant 消息"系统修复。
+        // 病灶: 模型某轮只输出思考 (正文为空, 含 think 标签全文被剥离入思考
+        // 的场景), 消息存为 Reasoning+空正文; 下一轮序列化后 content=null +
+        // reasoning_content + 无 tool_calls, 被严格上游拒收:
+        // [invalid_request_error] Invalid assistant message: content or
+        // tool_calls must be set (Console Go 实证; 历史上多次同类 —
+        // "模型正常输出, 继续对话发现用不了")。
+        // 处理矩阵 (OpenAI 规范: 无 tool_calls 时 content 必须为有效内容):
+        //   有效正文            → 正常发送
+        //   正文空 + 有思考 + 无工具 → 思考提升为正文兜底 (content 恒非空,
+        //                        保内容不丢; 对齐"思考即输出"的网关语义)
+        //   全空 + 无工具        → 跳过 (返回 null, 该消息不参与请求)
+        //   有 tool_calls       → content 允许 null, 空正文不再引发拒收
+        // 另: 无用的 part (空文本/空 URL 图) 统一在入口过滤, 不再全量下发。
+        val usableContent = contentParts.filter { part ->
             when (part) {
                 is UIMessagePart.Text -> part.text.isNotBlank()
                 is UIMessagePart.Image -> part.url.isNotBlank()
@@ -1148,7 +1162,7 @@ class ChatCompletionsAPI(
             }
         }
         val hasReasoning = !reasoningPart?.reasoning.isNullOrBlank()
-        if (!hasUsableContent && !hasReasoning && tools.isEmpty()) {
+        if (usableContent.isEmpty() && !hasReasoning && tools.isEmpty()) {
             return null
         }
         return buildJsonObject {
@@ -1161,41 +1175,50 @@ class ChatCompletionsAPI(
                 put("reasoning_content", reasoningPart.reasoning)
             }
 
-            // content
-            // v4.3.16: 空 content 不再发 "" — 部分上游对空字符串 content 拒收
-            if (contentParts.isEmpty()) {
-                put("content", JsonNull)
-            } else if (contentParts.size == 1 && contentParts[0] is UIMessagePart.Text) {
-                put("content", (contentParts[0] as UIMessagePart.Text).text)
-            } else {
-                putJsonArray("content") {
-                    contentParts.forEach { part ->
-                        when (part) {
-                            is UIMessagePart.Text -> {
-                                add(buildJsonObject {
-                                    put("type", "text")
-                                    put("text", part.text)
-                                })
-                            }
-
-                            is UIMessagePart.Image -> {
-                                add(buildJsonObject {
-                                    part.encodeBase64().onSuccess { encodedImage ->
-                                        put("type", "image_url")
-                                        put("image_url", buildJsonObject {
-                                            put("url", encodedImage.base64)
+            // content — 无 tool_calls 时必须有有效内容 (上游硬校验)
+            when {
+                usableContent.isNotEmpty() -> {
+                    if (usableContent.size == 1 && usableContent[0] is UIMessagePart.Text) {
+                        put("content", (usableContent[0] as UIMessagePart.Text).text)
+                    } else {
+                        putJsonArray("content") {
+                            usableContent.forEach { part ->
+                                when (part) {
+                                    is UIMessagePart.Text -> {
+                                        add(buildJsonObject {
+                                            put("type", "text")
+                                            put("text", part.text)
                                         })
-                                    }.onFailure { e ->
-                                        Log.w(TAG, "encode user image failed: ${part.url}", e)
-                                        put("type", "text")
-                                        put("text", "[图片编码失败: ${part.url} — 需要查看时调用 read_image 工具传入该路径]")
                                     }
-                                })
-                            }
 
-                            else -> {}
+                                    is UIMessagePart.Image -> {
+                                        add(buildJsonObject {
+                                            part.encodeBase64().onSuccess { encodedImage ->
+                                                put("type", "image_url")
+                                                put("image_url", buildJsonObject {
+                                                    put("url", encodedImage.base64)
+                                                })
+                                            }.onFailure { e ->
+                                                Log.w(TAG, "encode user image failed: ${part.url}", e)
+                                                put("type", "text")
+                                                put("text", "[图片编码失败: ${part.url} — 需要查看时调用 read_image 工具传入该路径]")
+                                            }
+                                        })
+                                    }
+
+                                    else -> {}
+                                }
+                            }
                         }
                     }
+                }
+                tools.isEmpty() && hasReasoning -> {
+                    // 纯思考消息: 思考提升为正文 — content 或 tool_calls 必须至少有一
+                    put("content", reasoningPart.reasoning)
+                }
+                else -> {
+                    // 有 tool_calls: content null 为 OpenAI 规范允许形态
+                    put("content", JsonNull)
                 }
             }
 
