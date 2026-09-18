@@ -39,6 +39,18 @@ internal object TaskStateStore {
     @Volatile var snapshot: List<TaskItem> = emptyList()
     val flipHistory = LinkedHashMap<String, MutableList<String>>()
     val reopenCounts = HashMap<String, Int>()
+
+    // v4.5.21 (用户实证: "把清单当节奏器反复敲, 15 次无效写入全数放行"):
+    // 1) 空转检测 — no-op 连续计数 (清单内容与上次完全相同时累计, 任一实质变更清零)
+    @Volatile var noOpStreak: Int = 0
+
+    // 2) 停滞检测 — 每个任务在 in_progress 上连续跨越的实质变更次数
+    val staleProgressCounts = HashMap<String, Int>()
+
+    // 3) 真实行动关联 — 外部工具执行计数器 (GenerationHandler 每次执行
+    // 非 task_tool 工具时递增); replace 时对比, 未推进 = 纯记账无行动
+    @Volatile var realActionCounter: Long = 0
+    @Volatile var lastObservedActionCounter: Long = -1L
 }
 
 internal data class TaskItem(
@@ -109,7 +121,10 @@ fun createTaskTool(): Tool = Tool(
         "把目标拆解为可核验的步骤; 执行中同一时间只允许一个 in_progress 任务; " +
         "完成一步立即更新状态; 全部 completed 后才能交付最终结果。" +
         "默认 action=replace: 以完整清单全量替换 (未列出的任务视为移除, 响应会回报 removed 列表); " +
+        "action=update (推荐用于日常推进): 只传 id + 要改的字段 (status/title/activeForm), 单任务增量更新, 无需重发全部任务; " +
         "action=get: 只读查询当前清单 (无副作用); action=clear: 清空清单。" +
+        "注意: 与当前清单完全相同的 replace 会被识别为空操作 (不产生变更, 响应 changed=false); " +
+        "清单不会自行推进任务 — 先执行真实动作, 再更新状态。" +
         "约束: 任务数 ≤50, title ≤200 字符, id 匹配 [A-Za-z0-9_-]{1,32}。" +
         "若调用被拒绝, 不要原样重试 — 先按 error/fix 修正, 必要时先 action=get 查看现状。",
     parameters = {
@@ -117,8 +132,21 @@ fun createTaskTool(): Tool = Tool(
             properties = buildJsonObject {
                 put("action", buildJsonObject {
                     put("type", "string")
-                    put("enum", buildJsonArray { add("replace"); add("get"); add("clear") })
-                    put("description", "replace=全量替换 (默认), get=只读查询, clear=清空")
+                    put("enum", buildJsonArray { add("replace"); add("update"); add("get"); add("clear") })
+                    put("description", "replace=全量替换 (默认), update=单任务增量更新, get=只读查询, clear=清空")
+                })
+                put("id", buildJsonObject {
+                    put("type", "string")
+                    put("description", "action=update 时必填: 要更新的任务 id")
+                })
+                put("status", buildJsonObject {
+                    put("type", "string")
+                    put("enum", buildJsonArray { add("pending"); add("in_progress"); add("completed") })
+                    put("description", "action=update 时的新状态 (可选)")
+                })
+                put("title", buildJsonObject {
+                    put("type", "string")
+                    put("description", "action=update 时的新标题 (可选)")
                 })
                 put("tasks", buildJsonObject {
                     put("type", "array")
@@ -159,7 +187,8 @@ fun createTaskTool(): Tool = Tool(
         面对多步骤、有明确交付物、或容易遗漏步骤的任务时, 必须先创建任务清单引导自己:
         1. 调用 task_tool (默认 replace) 写入完整任务清单 (含全部步骤, 初始 pending);
         2. 开始某步骤前将其标记 in_progress (同一时间只允许一个, 双个会被拒绝);
-        3. 完成步骤立即更新为 completed, 同时把下一步置为 in_progress;
+        3. 完成步骤立即更新为 completed, 同时把下一步置为 in_progress; 日常推进优先用 action=update (只传 id+status), 不必全量重发;
+        3b. 清单是记账不是推进: 每次更新状态前必须已执行对应的真实动作 (工具调用); "更新清单"本身不算进展, 连续提交无变化的清单会被拒绝;
         4. 全部 completed 后才能向用户交付最终结果;
         5. 计划外新步骤 → 追加进清单; 不可行步骤 → 标记 completed 并说明原因;
         6. 不确定清单现状时用 action=get 只读查询, 不要盲目重写。
@@ -227,8 +256,137 @@ fun createTaskTool(): Tool = Tool(
             ))
         }
 
+        // ── update: 单任务部分更新 (v4.5.21 — 消除"改一个字段也要全量重发"的
+        // API 诱导; 支持单任务 title/status/activeForm 增量修改, 其余不动) ──
+        if (action == "update") {
+            if (TaskStateStore.snapshot.isEmpty()) {
+                return@Tool errorPayload("清单为空, 无法 update", fix = "先 action=replace 创建清单")
+            }
+            val idRaw = if (isPlainString(params["id"])) {
+                sanitizeTaskText(params["id"]!!.jsonPrimitive.contentOrNull ?: "")
+            } else null
+            if (idRaw.isNullOrBlank() || !ID_REGEX.matches(idRaw)) {
+                return@Tool errorPayload("update requires a valid id", fix = "提供 [A-Za-z0-9_-]{1,32} 的任务 id, 先 get 确认")
+            }
+            val targetIdx = TaskStateStore.snapshot.indexOfFirst { it.id == idRaw }
+            if (targetIdx < 0) {
+                return@Tool errorPayload("task not found: $idRaw", fix = "用 action=get 查看当前清单确认 id")
+            }
+            val target = TaskStateStore.snapshot[targetIdx]
+            val newStatus = if (params.containsKey("status")) {
+                if (!isPlainString(params["status"])) {
+                    return@Tool errorPayload("status must be a string", fix = "pending | in_progress | completed")
+                }
+                val s = params["status"]!!.jsonPrimitive.contentOrNull?.trim()?.lowercase() ?: ""
+                if (s !in VALID_STATUS) {
+                    return@Tool errorPayload("invalid status: \"$s\"", fix = "pending | in_progress | completed")
+                }
+                s
+            } else target.status
+            val newTitle = if (params.containsKey("title")) {
+                if (!isPlainString(params["title"])) return@Tool errorPayload("title must be a string")
+                val t = sanitizeTaskText(params["title"]!!.jsonPrimitive.contentOrNull ?: "")
+                if (t.isBlank()) return@Tool errorPayload("title cannot be blank")
+                if (t.length > MAX_TITLE_CHARS) return@Tool errorPayload("title too long: ${t.length} > $MAX_TITLE_CHARS")
+                t
+            } else target.title
+            val newActiveForm = when {
+                newStatus != "in_progress" -> null
+                params.containsKey("activeForm") -> sanitizeTaskText(
+                    (params["activeForm"] as? JsonPrimitive)?.contentOrNull ?: ""
+                ).takeIf { it.isNotBlank() }?.take(MAX_ACTIVE_FORM_CHARS)
+                else -> target.activeForm
+            }
+            // no-op 检测 (update 路径, 与 replace 同口径): 目标字段与现值全同 = 零推进
+            if (newStatus == target.status && newTitle == target.title && newActiveForm == target.activeForm) {
+                TaskStateStore.noOpStreak += 1
+                val streak = TaskStateStore.noOpStreak
+                return@Tool listOf(UIMessagePart.Text(
+                    JsonInstant.encodeToString(buildJsonObject {
+                        put("ok", true)
+                        put("changed", false)
+                        put("no_op_streak", streak)
+                        put("version", TaskStateStore.version)
+                        put("hint", (if (streak >= 2)
+                            "⚠️ 你已连续 $streak 次提交无变化的状态更新。清单是记账, 不是推进 — 停止更新, 立即执行当前进行中任务的真实动作。"
+                        else
+                            "提交内容与当前状态完全一致, 未产生变更 (未计入版本)。").take(MAX_HINT_CHARS))
+                    })
+                ))
+            }
+            val updated = TaskStateStore.snapshot.toMutableList().also {
+                it[targetIdx] = target.copy(title = newTitle, status = newStatus, activeForm = newActiveForm)
+            }
+            val ipCount = updated.count { it.status == "in_progress" }
+            if (ipCount > 1) {
+                return@Tool errorPayload(
+                    "$ipCount tasks with status=in_progress (must be exactly 1)",
+                    fix = "仍有其他任务处于 in_progress — 先把旧任务标 completed 或 pending; 同一时间只允许一个"
+                )
+            }
+            // 差分 (removed 恒空 — update 不移除; reopened/振荡沿用既有链)
+            val upReopened = ArrayList<String>()
+            var upOscillating = false
+            if (target.status == "completed" && newStatus != "completed") {
+                TaskStateStore.reopenCounts[idRaw] = (TaskStateStore.reopenCounts[idRaw] ?: 0) + 1
+                upReopened += idRaw
+            }
+            if (target.status != newStatus) {
+                val flips = TaskStateStore.flipHistory.getOrPut(idRaw) { mutableListOf() }
+                flips.add(newStatus)
+                if (flips.size >= 4) upOscillating = true
+            }
+            // 停滞 & 行动关联 (与 replace 同口径)
+            updated.forEach { task ->
+                if (task.status == "in_progress") {
+                    val old = TaskStateStore.snapshot.firstOrNull { it.id == task.id }
+                    TaskStateStore.staleProgressCounts[task.id] =
+                        if (old != null && old.status == "in_progress") (TaskStateStore.staleProgressCounts[task.id] ?: 0) + 1
+                        else 0
+                } else {
+                    TaskStateStore.staleProgressCounts.remove(task.id)
+                }
+            }
+            val upActionNow = TaskStateStore.realActionCounter
+            val upActionStalled = TaskStateStore.lastObservedActionCounter >= 0 &&
+                upActionNow == TaskStateStore.lastObservedActionCounter
+            TaskStateStore.lastObservedActionCounter = upActionNow
+            TaskStateStore.noOpStreak = 0
+
+            TaskStateStore.version += 1
+            TaskStateStore.snapshot = updated
+            val upCompleted = updated.count { it.status == "completed" }
+            val upInProgress = updated.count { it.status == "in_progress" }
+            val upPending = updated.size - upCompleted - upInProgress
+            val upExtra = buildString {
+                if (upReopened.isNotEmpty()) append("⚠️ 已完成任务被回退 ($idRaw), 请确认是否有意重开。 ")
+                if (upOscillating) append("⚠️ 检测到部分任务状态反复翻转, 停止无意义的状态往返。 ")
+                val stale = updated.filter { it.status == "in_progress" && (TaskStateStore.staleProgressCounts[it.id] ?: 0) >= 5 }
+                if (stale.isNotEmpty()) {
+                    append("⚠️ 「${stale.first().title.take(24)}」已连续 ${TaskStateStore.staleProgressCounts[stale.first().id]} 次更新保持 in_progress 而无完成推进, 疑似空转 — 先完成它或如实回退状态。 ")
+                }
+                if (upActionStalled) append("⚠️ 自上次清单更新以来未执行任何实际动作 (外部工具调用记录未推进)。清单不会自行推进任务 — 立即执行当前进行中任务, 再回来更新状态。 ")
+            }.takeIf { it.isNotBlank() }
+            return@Tool listOf(UIMessagePart.Text(
+                JsonInstant.encodeToString(buildJsonObject {
+                    put("ok", true)
+                    put("version", TaskStateStore.version)
+                    put("updated", idRaw)
+                    put("progress", buildJsonObject {
+                        put("total", updated.size)
+                        put("completed", upCompleted)
+                        put("in_progress", upInProgress)
+                        put("pending", upPending)
+                    })
+                    put("hint", hintFor(
+                        updated.firstOrNull { it.status == "in_progress" }?.title,
+                        upInProgress, upCompleted, updated.size, upExtra))
+                })
+            ))
+        }
+
         if (action != "replace") {
-            return@Tool errorPayload("invalid action: $action", fix = "action 必须是 replace / get / clear")
+            return@Tool errorPayload("invalid action: $action", fix = "action 必须是 replace / get / update / clear")
         }
 
         // ── replace: 全量替换 ──
@@ -329,6 +487,54 @@ fun createTaskTool(): Tool = Tool(
             )
         }
 
+        // ── v4.5.21 (用户实证 "15 次无变化写入全数放行"): no-op 检测 ──
+        // 内容 (id/title/status/activeForm) 与当前快照全等 = 零推进写入:
+        // 不递增 version (消除"版本号增长=推进"错觉), 返回 changed:false + 警示。
+        val noOp = parsed.size == TaskStateStore.snapshot.size &&
+            parsed.all { new ->
+                val old = TaskStateStore.snapshot.firstOrNull { it.id == new.id }
+                old != null && old.title == new.title && old.status == new.status &&
+                    old.activeForm == new.activeForm
+            }
+        if (noOp) {
+            TaskStateStore.noOpStreak += 1
+            val streak = TaskStateStore.noOpStreak
+            val noOpMsg = if (streak >= 2) {
+                "⚠️ 你已连续 $streak 次提交完全相同的清单。清单是记账, 不是推进 — " +
+                    "停止更新清单, 立即执行当前进行中任务的真实动作, 执行完成后再更新状态。"
+            } else {
+                "清单与上次完全一致, 本次未产生任何变化 (未计入版本)。如无真实进展, 请勿重复提交清单。"
+            }
+            return@Tool listOf(UIMessagePart.Text(
+                JsonInstant.encodeToString(buildJsonObject {
+                    put("ok", true)
+                    put("changed", false)
+                    put("no_op_streak", streak)
+                    put("version", TaskStateStore.version)
+                    put("hint", noOpMsg.take(MAX_HINT_CHARS))
+                })
+            ))
+        }
+        TaskStateStore.noOpStreak = 0
+
+        // ── v4.5.21: 停滞计数 — in_progress 任务连续跨越实质更新仍未完成 ──
+        parsed.forEach { task ->
+            if (task.status == "in_progress") {
+                val old = TaskStateStore.snapshot.firstOrNull { it.id == task.id }
+                TaskStateStore.staleProgressCounts[task.id] =
+                    if (old != null && old.status == "in_progress") (TaskStateStore.staleProgressCounts[task.id] ?: 0) + 1
+                    else 0
+            } else {
+                TaskStateStore.staleProgressCounts.remove(task.id)
+            }
+        }
+
+        // ── v4.5.21: 真实行动关联 — 自上次清单更新以来外部工具是否真的执行过 ──
+        val actionNow = TaskStateStore.realActionCounter
+        val actionStalled = TaskStateStore.lastObservedActionCounter >= 0 &&
+            actionNow == TaskStateStore.lastObservedActionCounter
+        TaskStateStore.lastObservedActionCounter = actionNow
+
         // ST-1: removed 报告; ST-2: 回退警示; DL-2: 振荡检测
         val removed = TaskStateStore.snapshot.map { it.id }.filter { newId -> parsed.none { it.id == newId } }
         val reopened = ArrayList<String>()
@@ -352,10 +558,16 @@ fun createTaskTool(): Tool = Tool(
 
         val total = parsed.size
         val pending = total - inProgress - completed
+        val staleTasks = parsed.filter { it.status == "in_progress" && (TaskStateStore.staleProgressCounts[it.id] ?: 0) >= 5 }
         val extra = buildString {
             if (removed.isNotEmpty()) append("已移除 ${removed.size} 项 (${removed.take(6).joinToString(",")}${if (removed.size > 6) "…" else ""})。 ")
             if (reopened.isNotEmpty()) append("⚠️ ${reopened.size} 项已完成任务被回退 (${reopened.take(4).joinToString(",")}), 请确认是否有意重开。 ")
             if (oscillating) append("⚠️ 检测到部分任务状态反复翻转, 停止无意义的状态往返。 ")
+            if (staleTasks.isNotEmpty()) {
+                val t = staleTasks.first()
+                append("⚠️ 「${t.title.take(24)}」已连续 ${TaskStateStore.staleProgressCounts[t.id]} 次清单更新保持 in_progress 而无完成推进, 疑似空转 — 先完成它或如实回退状态。 ")
+            }
+            if (actionStalled) append("⚠️ 自上次清单更新以来未执行任何实际动作 (外部工具调用记录未推进)。清单不会自行推进任务 — 立即执行当前进行中任务, 再回来更新状态。 ")
         }.takeIf { it.isNotBlank() }
 
         val hint = hintFor(firstInProgressTitle, inProgress, completed, total, extra)

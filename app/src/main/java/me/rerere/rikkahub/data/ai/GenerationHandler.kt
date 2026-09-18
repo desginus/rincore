@@ -823,6 +823,11 @@ class GenerationHandler(
                             executedTools += tool.copy(
                                 output = finalOutput
                             )
+                            // v4.5.21: 真实行动计数 — 非 task_tool 工具的成功执行。
+                            // 任务清单空转检测的事实依据 (清单更新 vs 真实动作的比例)。
+                            if (toolDef.name != "task_tool") {
+                                me.rerere.rikkahub.data.ai.tools.TaskStateStore.realActionCounter += 1
+                            }
                         }.onFailure {
                             // 工具执行超时: 写回超时错误, 让模型继续 (不传播为取消)
                             if (it is TimeoutCancellationException) {
