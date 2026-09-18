@@ -67,6 +67,7 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.Tool
 import me.rerere.ai.provider.Model
+import me.rerere.ai.util.TraceLogger
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
@@ -1280,16 +1281,32 @@ class ChatService(
     }
 
     /**
-     * v4.5.19: 设置会话工作区 CWD — 内存态与数据库双写 (用户实证"设置后重启
-     * 回归原始": 此前仅经 updateConversationState 纯内存更新, 未落库前重启即丢)。
-     * 与 moveConversationToFolder 同模式: 先同步内存 (后续整对象保存带上新值),
-     * 再单列落库 (不依赖后续任意保存时机)。
+     * v4.5.22: 设置会话工作区 CWD — 落盘优先 + 回读自验证 + 全程留痕。
+     *
+     * 背景: v4.5.19 引入双写 (内存 + 单列落库) 后用户二次实证"重启依然丢失"。
+     * 静态链路已全量核验无断点, 因此本版升级为:
+     *   1. 先落库 (DB 为唯一真相源 — 即使进程随后立即被杀, 值已持久化);
+     *   2. 写后立即回读, 不一致则 Log.e + TraceLogger 留痕 (把"写失败"与
+     *      "读丢失"两个后续方向从日志上区分开);
+     *   3. 最后同步内存态 (UI 立即反映, 后续整对象保存也带上新值)。
      */
     suspend fun setConversationWorkspaceCwd(conversationId: Uuid, cwd: String?) {
-        if (sessions.containsKey(conversationId)) {
-            updateConversationState(conversationId) { it.copy(workspaceCwd = cwd) }
+        val normalized = cwd?.takeIf { it.isNotBlank() }
+        // 1. 落盘优先
+        conversationRepo.updateConversationWorkspaceCwd(conversationId, normalized)
+        // 2. 回读自验证
+        val back = conversationRepo.getConversationWorkspaceCwd(conversationId)
+        if (back != normalized) {
+            Log.e(TAG, "setConversationWorkspaceCwd verify FAILED: want=$normalized back=$back conv=$conversationId")
+            TraceLogger.log("CWD", "persist verify FAILED want=$normalized back=$back conv=${conversationId.toString().take(8)}")
+        } else {
+            Log.i(TAG, "setConversationWorkspaceCwd persisted: $normalized conv=${conversationId.toString().take(8)}")
+            TraceLogger.log("CWD", "persisted=${normalized ?: "(cleared)"} conv=${conversationId.toString().take(8)}")
         }
-        conversationRepo.updateConversationWorkspaceCwd(conversationId, cwd)
+        // 3. 内存同步
+        if (sessions.containsKey(conversationId)) {
+            updateConversationState(conversationId) { it.copy(workspaceCwd = normalized) }
+        }
     }
 
     /**

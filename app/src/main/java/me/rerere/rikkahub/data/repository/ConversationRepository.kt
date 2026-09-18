@@ -445,6 +445,11 @@ class ConversationRepository(
         )
     }
 
+    /** v4.5.22: CWD 回读 — 单列直读, 用于写入后自验证 (不经完整对象装配)。 */
+    suspend fun getConversationWorkspaceCwd(conversationId: Uuid): String? {
+        return conversationDAO.getWorkspaceCwd(conversationId.toString())?.ifEmpty { null }
+    }
+
     private fun conversationSummaryToConversation(entity: LightConversationEntity): Conversation {
         return Conversation(
             id = Uuid.parse(entity.id),
