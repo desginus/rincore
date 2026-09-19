@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+office-check — quality gate for Office deliverables (.docx / .pptx / .xlsx).
+
+Run it on any file you are about to deliver. It verifies the file is a
+structurally valid Office document, prints a small structure summary, and
+scans the text layer for leftover template placeholders (a document that
+still says 【姓名】 or {price} is not done).
+
+Checks:
+  - archive readable, key parts present, XML parses
+  - placeholder scan: {xxx} {{xxx}} 【xxx】 and TODO/FIXME/XXX/TBD words
+  - structure stats: paragraphs/tables (docx), slides (pptx), sheets/cells (xlsx)
+
+Usage:
+  office-check <file> [more files...]
+
+Exit codes: 0 = clean, 2 = issues found, 1 = error (unreadable file).
+"""
+import os
+import re
+import sys
+import zipfile
+import xml.etree.ElementTree as ET
+
+PLACEHOLDER_RES = [
+    re.compile(r"\{\{([^{}\n]{1,40})\}\}"),
+    re.compile(r"(?<!\{)\{([A-Za-z0-9_\u4e00-\u9fff][A-Za-z0-9_ \-/\u4e00-\u9fff]{0,39})\}(?!\})"),
+    re.compile(r"【([^【】\n]{1,20})】"),
+]
+WORD_RE = re.compile(r"\b(TODO|FIXME|XXX|TBD)\b", re.IGNORECASE)
+
+def decode_entities(s):
+    return (s.replace("&lt;", "<").replace("&gt;", ">")
+             .replace("&quot;", '"').replace("&apos;", "'").replace("&amp;", "&"))
+
+def xml_texts(xml_bytes):
+    """Yield (context, text) for each text element, plus verify XML validity."""
+    root = ET.fromstring(xml_bytes)  # raises on invalid XML
+    out = []
+    for el in root.iter():
+        tag = el.tag.rsplit("}", 1)[-1]
+        if tag in ("t", "v") and el.text:
+            out.append(el.text)
+        elif tag == "f" and el.text:
+            out.append("=" + el.text)
+    return out
+
+def scan_text(context, text, issues):
+    for rx in PLACEHOLDER_RES:
+        for m in rx.finditer(text):
+            frag = m.group(0)
+            issues.append(f"suspicious placeholder {frag!r} in {context}")
+    for m in WORD_RE.finditer(text):
+        issues.append(f"suspicious placeholder {m.group(0)!r} in {context}")
+
+def check_docx(z, issues):
+    stats = {}
+    names = z.namelist()
+    for req in ("word/document.xml",):
+        if req not in names:
+            issues.append(f"missing part: {req}")
+            return stats
+    doc = z.read("word/document.xml")
+    texts = xml_texts(doc)
+    paras = len(re.findall(rb"<w:p[ >]", doc))
+    tables = len(re.findall(rb"<w:tbl>", doc))
+    stats["paragraphs"] = paras
+    stats["tables"] = tables
+    for t in texts:
+        scan_text("word/document.xml", t, issues)
+    for name in names:
+        if re.match(r"word/(header\d+|footer\d+)\.xml$", name):
+            try:
+                for t in xml_texts(z.read(name)):
+                    scan_text(name, t, issues)
+            except ET.ParseError:
+                issues.append(f"invalid XML: {name}")
+    return stats
+
+def check_pptx(z, issues):
+    stats = {}
+    names = [n for n in z.namelist() if re.match(r"ppt/slides/slide\d+\.xml$", n)]
+    if not names:
+        issues.append("missing parts: no ppt/slides/slideN.xml found")
+        return stats
+    stats["slides"] = len(names)
+    for name in sorted(names):
+        try:
+            for t in xml_texts(z.read(name)):
+                scan_text(name, t, issues)
+        except ET.ParseError:
+            issues.append(f"invalid XML: {name}")
+    return stats
+
+def check_xlsx(z, issues):
+    stats = {}
+    names = z.namelist()
+    if "xl/workbook.xml" not in names:
+        issues.append("missing part: xl/workbook.xml")
+        return stats
+    sheets = [n for n in names if re.match(r"xl/worksheets/sheet\d+\.xml$", n)]
+    stats["sheets"] = len(sheets)
+    cells = 0
+    for name in sheets:
+        body = z.read(name)
+        cells += len(re.findall(rb"<c[ >]", body))
+        try:
+            for t in xml_texts(body):
+                scan_text(name, t, issues)
+        except ET.ParseError:
+            issues.append(f"invalid XML: {name}")
+    stats["non-empty cells"] = cells
+    if "xl/sharedStrings.xml" in names:
+        try:
+            for t in xml_texts(z.read("xl/sharedStrings.xml")):
+                scan_text("xl/sharedStrings.xml", t, issues)
+        except ET.ParseError:
+            issues.append("invalid XML: xl/sharedStrings.xml")
+    return stats
+
+def check_file(path):
+    basename = os.path.basename(path)
+    if not os.path.exists(path):
+        print(f"error: {path}: file not found", file=sys.stderr)
+        return 1
+    try:
+        z = zipfile.ZipFile(path)
+    except zipfile.BadZipFile:
+        print(f"{basename}: error: not a valid zip/Office archive", file=sys.stderr)
+        return 1
+    ext = os.path.splitext(path)[1].lower()
+    issues = []
+    try:
+        if ext == ".docx":
+            stats = check_docx(z, issues)
+            kind = "docx"
+        elif ext == ".pptx":
+            stats = check_pptx(z, issues)
+            kind = "pptx"
+        elif ext == ".xlsx":
+            stats = check_xlsx(z, issues)
+            kind = "xlsx"
+        else:
+            print(f"{basename}: error: unsupported extension {ext} (docx/pptx/xlsx)", file=sys.stderr)
+            return 1
+    except ET.ParseError as e:
+        issues.append(f"invalid XML in document: {e}")
+        stats = {}
+        kind = ext.lstrip(".")
+    finally:
+        z.close()
+
+    stat_line = ", ".join(f"{k}: {v}" for k, v in stats.items()) or "n/a"
+    print(f"{basename}: {kind} — {stat_line}")
+    for i in issues:
+        print(f"  ! {i}")
+    if issues:
+        print(f"  => {len(issues)} issue(s) found — fix before delivering")
+        return 2
+    print("  ok — valid, no leftover placeholders")
+    return 0
+
+def main(argv):
+    if not argv:
+        print(__doc__)
+        return 1
+    worst = 0
+    for path in argv:
+        code = check_file(path)
+        if code == 1:
+            worst = max(worst, 1)
+        elif code == 2 and worst == 0:
+            worst = 2
+    return worst
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

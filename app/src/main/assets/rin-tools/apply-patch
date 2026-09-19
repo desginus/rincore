@@ -1,0 +1,435 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+apply-patch — Codex-style patch applier for text files.
+
+Applies patches written in the OpenAI Codex `apply_patch` envelope format:
+
+    *** Begin Patch
+    *** Add File: hello.txt
+    +Hello world
+    *** Update File: src/app.py
+    @@ def greet():
+    -    print("Hi")
+    +    print("Hello, world!")
+    *** Delete File: obsolete.txt
+    *** End Patch
+
+Update chunks locate their position by context (four-pass tolerant matching:
+exact -> ignore trailing whitespace -> ignore surrounding whitespace -> unicode
+punctuation normalisation), so small whitespace or typography differences do
+not break a patch.
+
+All edits are transactional: every file is computed in memory first and the
+patch is written only if the whole patch applies cleanly. On any failure the
+filesystem is left untouched and the failing chunk is reported.
+
+Usage:
+  apply-patch < patch.txt          # read patch from stdin
+  apply-patch patch.txt            # read patch from a file
+  apply-patch --check patch.txt    # dry-run, do not write
+
+Exit codes: 0 = applied, 1 = error (nothing written).
+"""
+import os
+import re
+import sys
+
+MARK_BEGIN = "*** Begin Patch"
+MARK_END = "*** End Patch"
+MARK_ADD = "*** Add File: "
+MARK_DELETE = "*** Delete File: "
+MARK_UPDATE = "*** Update File: "
+MARK_MOVE = "*** Move to: "
+MARK_EOF = "*** End of File"
+MARK_CTX = "@@ "
+
+# ─────────────────────────── parser ───────────────────────────
+
+class PatchError(Exception):
+    pass
+
+class Chunk:
+    __slots__ = ("change_context", "old_lines", "new_lines", "is_end_of_file")
+
+    def __init__(self):
+        self.change_context = None
+        self.old_lines = []
+        self.new_lines = []
+        self.is_end_of_file = False
+
+    def push_context(self, line):
+        self.old_lines.append(line)
+        self.new_lines.append(line)
+
+class FileOp:
+    __slots__ = ("kind", "path", "move_to", "chunks", "add_lines")
+
+    def __init__(self, kind, path):
+        self.kind = kind            # add | update | delete
+        self.path = path
+        self.move_to = None
+        self.chunks = []
+        self.add_lines = []
+
+def strip_heredoc(text):
+    lines = text.split("\n")
+    while lines and lines[0].strip() == "":
+        lines.pop(0)
+    while lines and lines[-1].strip() == "":
+        lines.pop()
+    if len(lines) >= 4 and lines[0].strip() in ("<<EOF", "<<'EOF'", '<<"EOF"') and lines[-1].strip().endswith("EOF"):
+        return lines[1:-1]
+    return lines
+
+def parse_patch(text):
+    lines = strip_heredoc(text)
+    if not lines:
+        raise PatchError("empty patch")
+    first = lines[0].strip()
+    last = lines[-1].strip()
+    if first != MARK_BEGIN:
+        raise PatchError(f"patch must start with '{MARK_BEGIN}', got: {first!r}")
+    if last != MARK_END:
+        raise PatchError(f"patch must end with '{MARK_END}', got: {last!r}")
+    body = lines[1:-1]
+
+    ops = []
+    cur = None         # current FileOp
+    chunk = None       # current update chunk (None until first @@ in an update file)
+    i = 0
+    n = len(body)
+    while i < n:
+        raw = body[i]
+        line = raw.rstrip("\r")
+        trimmed = line.strip()
+        if trimmed.startswith(MARK_ADD):
+            path = trimmed[len(MARK_ADD):].strip()
+            if not path:
+                raise PatchError("Add File: empty path")
+            cur = FileOp("add", path)
+            ops.append(cur)
+            chunk = None
+            i += 1
+            # collect following '+' / empty lines
+            while i < n:
+                l2 = body[i].rstrip("\r")
+                t2 = l2.strip()
+                if t2.startswith("*** ") and not t2.startswith("*** End of File"):
+                    break
+                if t2 == MARK_END:
+                    break
+                if l2.startswith("+"):
+                    cur.add_lines.append(l2[1:])
+                elif l2.strip() == "":
+                    cur.add_lines.append("")
+                else:
+                    raise PatchError(f"invalid line in Add File {path!r}: {l2!r} (must start with '+')")
+                i += 1
+            continue
+        if trimmed.startswith(MARK_DELETE):
+            path = trimmed[len(MARK_DELETE):].strip()
+            if not path:
+                raise PatchError("Delete File: empty path")
+            cur = FileOp("delete", path)
+            ops.append(cur)
+            chunk = None
+            i += 1
+            continue
+        if trimmed.startswith(MARK_UPDATE):
+            path = trimmed[len(MARK_UPDATE):].strip()
+            if not path:
+                raise PatchError("Update File: empty path")
+            cur = FileOp("update", path)
+            ops.append(cur)
+            chunk = None
+            i += 1
+            # optional move marker (before any chunk)
+            if i < n and body[i].rstrip("\r").strip().startswith(MARK_MOVE):
+                cur.move_to = body[i].rstrip("\r").strip()[len(MARK_MOVE):].strip()
+                i += 1
+            continue
+        if trimmed == MARK_EOF:
+            if cur is None or cur.kind != "update":
+                raise PatchError("'*** End of File' outside an Update File section")
+            if chunk is None:
+                chunk = Chunk()
+                cur.chunks.append(chunk)
+            chunk.is_end_of_file = True
+            i += 1
+            continue
+        if trimmed == MARK_END or trimmed.startswith("*** "):
+            raise PatchError(f"unexpected marker line: {line!r}")
+        # update-file body lines
+        if cur is None or cur.kind != "update":
+            if trimmed == "":
+                i += 1
+                continue
+            raise PatchError(f"unexpected line outside of a file section: {line!r}")
+        if trimmed.startswith(MARK_CTX):
+            ctx = trimmed[len(MARK_CTX):]
+            if chunk is not None and (chunk.old_lines or chunk.new_lines or chunk.change_context):
+                chunk = None
+            chunk = Chunk()
+            chunk.change_context = ctx if ctx else None
+            cur.chunks.append(chunk)
+            i += 1
+            continue
+        if trimmed == "@@":
+            chunk = Chunk()
+            cur.chunks.append(chunk)
+            i += 1
+            continue
+        if trimmed == MARK_EOF:
+            if chunk is None:
+                chunk = Chunk()
+                cur.chunks.append(chunk)
+            chunk.is_end_of_file = True
+            i += 1
+            continue
+        if chunk is None:
+            raise PatchError(f"update chunk must start with a @@ context marker, got: {line!r}")
+        if line == "":
+            chunk.push_context("")
+        elif line.startswith(" "):
+            chunk.push_context(line[1:])
+        elif line.startswith("+"):
+            chunk.new_lines.append(line[1:])
+        elif line.startswith("-"):
+            chunk.old_lines.append(line[1:])
+        else:
+            raise PatchError(f"invalid line in update hunk: {line!r} (must start with ' ', '+', or '-')")
+        i += 1
+
+    if not ops:
+        raise PatchError("patch contains no file operations")
+    for op in ops:
+        if op.kind == "update" and not op.chunks and not op.move_to:
+            raise PatchError(f"Update File {op.path!r} has no chunks")
+    return ops
+
+# ─────────────────────────── seek_sequence (ported from Codex) ───────────────────────────
+
+def _normalise(s):
+    out = []
+    for c in s.strip():
+        o = ord(c)
+        if o in (0x2010, 0x2011, 0x2012, 0x2013, 0x2014, 0x2015, 0x2212):
+            out.append("-")
+        elif o in (0x2018, 0x2019, 0x201A, 0x201B):
+            out.append("'")
+        elif o in (0x201C, 0x201D, 0x201E, 0x201F):
+            out.append('"')
+        elif o in (0x00A0, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200A, 0x202F, 0x205F, 0x3000):
+            out.append(" ")
+        else:
+            out.append(c)
+    return "".join(out)
+
+def seek_sequence(lines, pattern, start, eof):
+    if not pattern:
+        return start
+    if len(pattern) > len(lines):
+        return None
+    search_start = len(lines) - len(pattern) if eof else start
+    if search_start < 0:
+        search_start = 0
+    last = len(lines) - len(pattern)
+    # 1. exact
+    for i in range(search_start, last + 1):
+        if lines[i:i + len(pattern)] == pattern:
+            return i
+    # 2. rstrip
+    pat_rs = [p.rstrip() for p in pattern]
+    for i in range(search_start, last + 1):
+        if [l.rstrip() for l in lines[i:i + len(pattern)]] == pat_rs:
+            return i
+    # 3. full trim
+    pat_ts = [p.strip() for p in pattern]
+    for i in range(search_start, last + 1):
+        if [l.strip() for l in lines[i:i + len(pattern)]] == pat_ts:
+            return i
+    # 4. unicode-normalised trim
+    pat_ns = [_normalise(p) for p in pattern]
+    for i in range(search_start, last + 1):
+        if [_normalise(l) for l in lines[i:i + len(pattern)]] == pat_ns:
+            return i
+    return None
+
+# ─────────────────────────── apply (ported from Codex) ───────────────────────────
+
+def compute_new_lines(original_lines, chunks, path):
+    """Return (new_lines, plus_count, minus_count). Raises PatchError."""
+    replacements = []   # (start, old_len, new_lines)
+    line_index = 0
+    plus = minus = 0
+    for chunk in chunks:
+        if chunk.change_context is not None:
+            idx = seek_sequence(original_lines, [chunk.change_context], line_index, False)
+            if idx is None:
+                raise PatchError(f"failed to find context {chunk.change_context!r} in {path}")
+            line_index = idx + 1
+        if not chunk.old_lines:
+            insertion_idx = len(original_lines)
+            if original_lines and original_lines[-1] == "":
+                insertion_idx -= 1
+            replacements.append((insertion_idx, 0, list(chunk.new_lines)))
+            plus += len([l for l in chunk.new_lines])
+            continue
+        pattern = chunk.old_lines
+        new_slice = chunk.new_lines
+        found = seek_sequence(original_lines, pattern, line_index, chunk.is_end_of_file)
+        if found is None and pattern and pattern[-1] == "":
+            pattern = pattern[:-1]
+            if new_slice and new_slice[-1] == "":
+                new_slice = new_slice[:-1]
+            found = seek_sequence(original_lines, pattern, line_index, chunk.is_end_of_file)
+        if found is None:
+            raise PatchError(
+                "failed to find expected lines in {}:\n{}\n".format(
+                    path, "\n".join("  | " + l for l in chunk.old_lines))
+                + "  (tip: include slightly more surrounding context lines)")
+        replacements.append((found, len(pattern), list(new_slice)))
+        # count +/- for the report
+        changed = 0
+        for a, b in zip(pattern, new_slice):
+            if a != b:
+                changed += 1
+        plus += len(new_slice) - min(len(pattern), len(new_slice)) + changed
+        minus += len(pattern) - min(len(pattern), len(new_slice)) + changed
+        line_index = found + len(pattern)
+
+    replacements.sort(key=lambda r: r[0])
+    out = []
+    cursor = 0
+    for start, old_len, new_lines_ in replacements:
+        if start < cursor:
+            raise PatchError(f"overlapping chunks in {path}")
+        out.extend(original_lines[cursor:start])
+        out.extend(new_lines_)
+        cursor = start + old_len
+    out.extend(original_lines[cursor:])
+    # ensure trailing newline
+    if not out or out[-1] != "":
+        out.append("")
+    return out, plus, minus
+
+# ─────────────────────────── file io ───────────────────────────
+
+def read_text(path):
+    with open(path, "r", encoding="utf-8", errors="surrogateescape") as f:
+        return f.read()
+
+def split_lines(text):
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    crlf = "\r\n" in text and text.count("\r\n") >= max(1, text.count("\n") // 2 + text.count("\n") % 2)
+    lines = [l[:-1] if l.endswith("\r") else l for l in lines]
+    return lines, crlf
+
+def join_lines(lines, crlf):
+    text = "\n".join(lines)
+    if crlf:
+        text = text.replace("\n", "\r\n")
+    return text
+
+def write_atomic(path, text):
+    tmp = path + ".tmp-apply-patch"
+    with open(tmp, "w", encoding="utf-8", errors="surrogateescape") as f:
+        f.write(text)
+    os.replace(tmp, path)
+
+# ─────────────────────────── main ───────────────────────────
+
+def main(argv):
+    args = list(argv)
+    dry_run = False
+    if "--check" in args:
+        dry_run = True
+        args.remove("--check")
+    if len(args) > 1:
+        print("usage: apply-patch [--check] [patch-file]   (stdin if omitted)", file=sys.stderr)
+        return 1
+    if len(args) == 1:
+        try:
+            raw = read_text(args[0])
+        except OSError as e:
+            print(f"error: cannot read patch file: {e}", file=sys.stderr)
+            return 1
+    else:
+        raw = sys.stdin.read()
+
+    try:
+        ops = parse_patch(raw)
+    except PatchError as e:
+        print(f"error: invalid patch: {e}", file=sys.stderr)
+        return 1
+
+    # ── stage 1: compute everything in memory (transaction) ──
+    writes = []       # (path, text or None(delete))
+    deletes = []      # paths to remove after writes
+    report = []
+    try:
+        seen = set()
+        for op in ops:
+            if op.path in seen and op.kind in ("add", "delete"):
+                raise PatchError(f"duplicate operation on {op.path!r}")
+            seen.add(op.path)
+            if op.kind == "add":
+                if os.path.exists(op.path):
+                    raise PatchError(f"Add File failed: {op.path} already exists")
+                text = "\n".join(op.add_lines) + "\n"
+                writes.append((op.path, text))
+                report.append(f"A {op.path} (+{len(op.add_lines)})")
+            elif op.kind == "delete":
+                if not os.path.exists(op.path):
+                    raise PatchError(f"Delete File failed: {op.path} not found")
+                deletes.append(op.path)
+                report.append(f"D {op.path}")
+            elif op.kind == "update":
+                if not os.path.exists(op.path):
+                    raise PatchError(f"Update File failed: {op.path} not found")
+                text = read_text(op.path)
+                lines, crlf = split_lines(text)
+                new_lines, plus, minus = compute_new_lines(lines, op.chunks, op.path)
+                new_text = join_lines(new_lines, crlf)
+                target = op.move_to or op.path
+                if op.move_to:
+                    if os.path.exists(op.move_to):
+                        raise PatchError(f"Move to failed: {op.move_to} already exists")
+                    deletes.append(op.path)
+                    report.append(f"M {op.path} -> {op.move_to} (+{plus} -{minus})")
+                else:
+                    report.append(f"M {op.path} (+{plus} -{minus})")
+                writes.append((target, new_text))
+    except PatchError as e:
+        print(f"error: {e}", file=sys.stderr)
+        print("patch not applied (all changes rolled back)", file=sys.stderr)
+        return 1
+
+    if dry_run:
+        print("check ok (dry-run, not written):")
+        for r in report:
+            print(" ", r)
+        return 0
+
+    # ── stage 2: write ──
+    for path, text in writes:
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        write_atomic(path, text)
+    for path in deletes:
+        try:
+            os.remove(path)
+        except OSError as e:
+            print(f"warning: could not remove {path}: {e}", file=sys.stderr)
+
+    for r in report:
+        print(r)
+    print(f"done: {len(ops)} file(s) changed")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
