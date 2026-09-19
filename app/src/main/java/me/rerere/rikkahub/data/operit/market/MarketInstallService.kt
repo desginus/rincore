@@ -55,7 +55,11 @@ class MarketInstallService(
             ?: entry.assets.lastOrNull()
             ?: return@withContext InstallResult.Failure("No downloadable asset for entry ${entry.id}")
 
-        val fileName = asset.assetName.ifBlank { "${entry.id}.bin" }
+        // v4.5.31: 文件名消毒 — 市场数据不可信, 防路径穿越 (取 basename + 字符白名单)
+        val rawName = asset.assetName.ifBlank { "${entry.id}.bin" }
+        val fileName = File(rawName).name
+            .filter { it.isLetterOrDigit() || it in "._-" }
+            .ifBlank { "pkg_${entry.id.takeLast(24)}.bin" }
         val storageDir = store.storageDir(entry.type.lowercase())
         val destFile = File(storageDir, fileName)
 

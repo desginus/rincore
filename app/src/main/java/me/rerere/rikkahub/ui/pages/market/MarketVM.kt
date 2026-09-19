@@ -145,11 +145,16 @@ class MarketVM(
         if (current.installing) return
         _detailState.value = current.copy(installing = true, installProgress = 0f, message = null)
         viewModelScope.launch {
-            when (val r = installService.install(entry) { d, t ->
-                _detailState.value = _detailState.value.copy(
-                    installProgress = if (t > 0) (d.toFloat() / t).coerceIn(0f, 1f) else 0f,
-                )
-            }) {
+            val installResult = runCatching {
+                installService.install(entry) { d, t ->
+                    _detailState.value = _detailState.value.copy(
+                        installProgress = if (t > 0) (d.toFloat() / t).coerceIn(0f, 1f) else 0f,
+                    )
+                }
+            }.getOrElse { e ->
+                MarketInstallService.InstallResult.Failure("安装异常: ${e.message ?: e}", e)
+            }
+            when (val r = installResult) {
                 is MarketInstallService.InstallResult.Success -> {
                     _detailState.value = _detailState.value.copy(
                         installing = false,

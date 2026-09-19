@@ -44,14 +44,14 @@ import coil3.compose.AsyncImage
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.plus
-import org.koin.compose.koinInject
+import org.koin.androidx.compose.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MarketDetailPage(
     entryId: String,
 ) {
-    val vm: MarketVM = koinInject()
+    val vm: MarketVM = koinViewModel()
     val state by vm.detailState.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 

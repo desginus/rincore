@@ -55,20 +55,26 @@ object OperitMcpImporter {
         }.getOrDefault(emptyList())
     }
 
-    /** 导入到 Settings.mcpServers (同名跳过); 返回新加入的 server ids */
+    /**
+     * 导入到 Settings.mcpServers (同名跳过)。
+     * 返回: 本次导入对应的【全部】server ids (新增 + 同名已存在的) —
+     * 卸载/启停按此集合操作, 防止"更新场景同名跳过导致 extraJson 丢失
+     * 旧 id → 卸载清理失效"的残留问题 (v4.5.31 审计修复)。
+     */
     suspend fun applyImport(
         settingsStore: SettingsStore,
         configs: List<McpServerConfig>,
     ): List<Uuid> = withContext(Dispatchers.IO) {
         if (configs.isEmpty()) return@withContext emptyList()
-        var added = emptyList<Uuid>()
+        var allIds = emptyList<Uuid>()
         settingsStore.update { settings ->
-            val existingNames = settings.mcpServers.map { it.commonOptions.name }.toSet()
-            val toAdd = configs.filter { it.commonOptions.name !in existingNames }
-            added = toAdd.map { it.id }
+            val existingByName = settings.mcpServers.associateBy { it.commonOptions.name }
+            val toAdd = configs.filter { it.commonOptions.name !in existingByName.keys }
+            allIds = toAdd.map { it.id } +
+                configs.mapNotNull { existingByName[it.commonOptions.name]?.id }
             if (toAdd.isEmpty()) settings else settings.copy(mcpServers = settings.mcpServers + toAdd)
         }
-        added
+        allIds
     }
 
     /** 启用/停用已导入的 server (切换 McpCommonOptions.enable) */

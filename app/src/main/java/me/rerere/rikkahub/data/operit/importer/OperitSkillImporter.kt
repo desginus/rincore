@@ -105,7 +105,11 @@ object OperitSkillImporter {
             runCatching {
                 client.newCall(request).execute().use { resp ->
                     if (resp.isSuccessful) {
-                        return resp.body?.bytes()
+                        val len = resp.body?.contentLength() ?: -1L
+                        if (len > MAX_ZIP_BYTES) error("repo zip 过大 ($len bytes) — 拒绝下载")
+                        val bytes = resp.body?.bytes()
+                        if (bytes != null && bytes.size > MAX_ZIP_BYTES) error("repo zip 过大 — 拒绝")
+                        return bytes
                     }
                 }
             }
@@ -175,4 +179,5 @@ object OperitSkillImporter {
     }
 
     private const val MAX_FILE_CHARS = 512 * 1024
+    private const val MAX_ZIP_BYTES = 20L * 1024 * 1024
 }

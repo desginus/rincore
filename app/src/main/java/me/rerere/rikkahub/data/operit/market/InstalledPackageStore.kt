@@ -47,8 +47,11 @@ class InstalledPackageStore(private val context: Context) {
     private val json = Json { ignoreUnknownKeys = true }
     private val dir = File(context.filesDir, "operit_packages").apply { mkdirs() }
 
-    /** 各类型独立子目录, 阶段2 运行时从这里加载 */
-    fun storageDir(type: String): File = File(dir, type).apply { mkdirs() }
+    /** 各类型独立子目录, 阶段2 运行时从这里加载 (type 消毒防路径穿越) */
+    fun storageDir(type: String): File {
+        val safe = type.lowercase().filter { it.isLetterOrDigit() }.ifBlank { "misc" }.take(24)
+        return File(dir, safe).apply { mkdirs() }
+    }
 
     val installedFlow: Flow<List<InstalledPackage>> = context.operitInstalledDataStore.data.map { p ->
         p[INSTALLED_KEY]?.let { json.decodeFromString<List<InstalledPackage>>(it) } ?: emptyList()

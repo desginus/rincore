@@ -51,12 +51,12 @@ import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.plus
-import org.koin.compose.koinInject
+import org.koin.androidx.compose.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MarketPage() {
-    val vm: MarketVM = koinInject()
+    val vm: MarketVM = koinViewModel()
     val state by vm.listState.collectAsStateWithLifecycle()
     val installedMap by vm.installedMap.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
