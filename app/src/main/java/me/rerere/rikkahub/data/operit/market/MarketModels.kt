@@ -5,7 +5,6 @@ package me.rerere.rikkahub.data.operit.market
  * 按实测的真实市场 API schema (static.operit.app/market/v2/...) 对齐
  * 来源: RinCore 自研新增 (LGPL 下独立实现, 不复制 Operit 代码)
  * ───────────────────────────────────────────────────────────────*/
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 

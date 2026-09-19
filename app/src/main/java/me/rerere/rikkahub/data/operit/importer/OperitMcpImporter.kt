@@ -1,11 +1,11 @@
 package me.rerere.rikkahub.data.operit.importer
 
 
-// ───【自研】岔路口计划·阶段3 — Operit MCP 导入器
-// installConfig (mcpServers JSON) → RinCore McpServerConfig → Settings.mcpServers
-// stdio: command/args → StdioTransportServer (env 丢弃 — RinCore 无 env 字段, 诚实降级)
-// http/sse: url → StreamableHTTPServer / SseTransportServer
-// ───────────────────────────────────────────────────────────────
+/* ───【自研】岔路口计划·阶段3 — Operit MCP 导入器
+ * installConfig (mcpServers JSON) → RinCore McpServerConfig → Settings.mcpServers
+ * stdio: command/args → StdioTransportServer (env 丢弃 — RinCore 无 env 字段, 诚实降级)
+ * http/sse: url → StreamableHTTPServer / SseTransportServer
+ * ───────────────────────────────────────────────────────────────*/
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json

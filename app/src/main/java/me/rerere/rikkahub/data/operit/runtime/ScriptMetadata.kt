@@ -1,9 +1,10 @@
 package me.rerere.rikkahub.data.operit.runtime
 
 
-// ───【自研】岔路口计划·阶段2 — 脚本 METADATA 解析 (宽容变体)
-// 实测两种格式: "/* METADATA 同行" 与 "/*\nMETADATA 分行" — 解析须宽容
-// ───────────────────────────────────────────────────────────────
+/* ───【自研】岔路口计划·阶段2 — 脚本 METADATA 解析 (宽容变体)
+ * 实测两种格式: "斜杠星号+METADATA 同行" 与 "斜杠星号换行后 METADATA" — 解析须宽容
+ * 来源: RinCore 自研新增
+ * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 

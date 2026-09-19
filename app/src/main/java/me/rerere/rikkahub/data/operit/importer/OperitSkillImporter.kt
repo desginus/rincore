@@ -1,10 +1,10 @@
 package me.rerere.rikkahub.data.operit.importer
 
 
-// ───【自研】岔路口计划·阶段3 — Operit Skill 导入器
-// skill_v2: GitHub repo → skills/<name>/SKILL.md (标准 SKILL.md, 与 RinCore 同构)
-// legacy:  Operit 专属 JSON 形态 → 诚实降级 (暂不支持)
-// ───────────────────────────────────────────────────────────────
+/* ───【自研】岔路口计划·阶段3 — Operit Skill 导入器
+ * skill_v2: GitHub repo → skills/<name>/SKILL.md (标准 SKILL.md, 与 RinCore 同构)
+ * legacy:  Operit 专属 JSON 形态 → 诚实降级 (暂不支持)
+ * ───────────────────────────────────────────────────────────────*/
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json

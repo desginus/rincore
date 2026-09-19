@@ -1,17 +1,16 @@
 package me.rerere.rikkahub.data.operit.runtime
 
 
-// ───【自研】岔路口计划·阶段2 — Operit 脚本运行时 (QuickJS 最小宿主面)
-// 协议对齐实测结论: Tools.Files 子集 + complete/done/emit + 两种返回风格
-// (complete 回调 与 return Promise 均支持 — 桩实验已验证)
-// ───────────────────────────────────────────────────────────────
+/* ───【自研】岔路口计划·阶段2 — Operit 脚本运行时 (QuickJS 最小宿主面)
+ * 协议对齐实测结论: Tools.Files 子集 + complete/done/emit + 两种返回风格
+ * (complete 回调 与 return Promise 均支持 — 桩实验已验证)
+ * ───────────────────────────────────────────────────────────────*/
 import com.dokar.quickjs.QuickJs
 import com.dokar.quickjs.binding.function
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import java.io.File

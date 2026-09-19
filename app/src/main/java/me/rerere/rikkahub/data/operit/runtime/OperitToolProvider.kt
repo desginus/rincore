@@ -1,9 +1,9 @@
 package me.rerere.rikkahub.data.operit.runtime
 
 
-// ───【自研】岔路口计划·阶段2 — Operit 脚本工具提供器
-// 从已启用脚本生成 operit__<包>__<工具> 工具 (归「插件」域)
-// ───────────────────────────────────────────────────────────────
+/* ───【自研】岔路口计划·阶段2 — Operit 脚本工具提供器
+ * 从已启用脚本生成 operit__<包>__<工具> 工具 (归「插件」域)
+ * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
