@@ -206,7 +206,8 @@ class MarketInstallService(
             var entry = zis.nextEntry
             while (entry != null) {
                 val name = entry.name
-                if (!name.contains("..")) {
+                // v4.5.31: 防 zip slip 加固 (相对路径 + 非绝对路径)
+                if (!name.contains("..") && !name.startsWith("/") && !name.startsWith("\\")) {
                     val target = File(destDir, name)
                     if (entry.isDirectory) {
                         target.mkdirs()

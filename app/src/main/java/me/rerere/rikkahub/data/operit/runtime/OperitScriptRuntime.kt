@@ -179,10 +179,15 @@ class OperitScriptRuntime(
             else -> normalized
         }
         val f = File(root, relative)
-        // 防逃逸
+        // 防逃逸 (v4.5.31 加固: 前缀匹配带分隔符边界 — 防 operit_runtime_evil 类
+        // sibling 目录绕过; 逃逸时抛异常由 handleHostCall 统一转为错误响应)
         val canonical = f.canonicalFile
         val rootCanonical = root.canonicalFile
-        return if (canonical.path.startsWith(rootCanonical.path)) canonical else File(root, "blocked")
+        val rootPath = rootCanonical.path
+        val canonicalPath = canonical.path
+        val inside = canonicalPath == rootPath || canonicalPath.startsWith(rootPath + File.separator)
+        if (!inside) throw SecurityException("path escapes runtime root: $path")
+        return canonical
     }
 
     private companion object {
@@ -190,6 +195,11 @@ class OperitScriptRuntime(
 
         /** 宿主前导 JS — 定义脚本世界 (与 Operit 协议对齐) */
         val HOST_PRELUDE = """
+            // v4.5.31: exports/module 全局注入 — 脚本以 CommonJS 风格导出工具
+            // (exports.xxx = function), 全局脚本环境必须先行定义 (桩实验环境
+            // 通过 Function 构造器参数注入, 掩盖了此缺口)
+            var exports = {};
+            var module = { exports: exports };
             var __operitDone = false;
             var __operitResult = null;
             function __operitFinish(v) {
@@ -228,14 +238,43 @@ class OperitScriptRuntime(
                     copy: function (f, t) { return __hostJSON('files.copy', [f, t]); }
                 },
                 System: {
-                    sleep: function (ms) { return new Promise(function (res) { setTimeout(res, Math.min(Number(ms) || 0, 5000)); }); },
-                    getDeviceInfo: function () { return { model: 'RinCore', sdk: 0 }; }
+                    sleep: function (ms) { return Promise.resolve(); },
+                    getDeviceInfo: function () { return { model: 'RinCore', sdk: 0 }; },
+                    startApp: function () { return __notImplemented('system.startApp'); },
+                    sendNotification: function () { return __notImplemented('system.sendNotification'); },
+                    toast: function () { return __notImplemented('system.toast'); },
+                    terminal: function () { return __notImplemented('system.terminal'); },
+                    shell: function () { return __notImplemented('system.shell'); },
+                    exec: function () { return __notImplemented('system.exec'); },
+                    getAppUsageTime: function () { return __notImplemented('system.getAppUsageTime'); }
+                },
+                // v4.5.31: 未实现命名空间的友好降级桩 —
+                // 明确 capability not implemented (而非裸 TypeError), 脚本可按需处理
+                Chat: {
+                    listChats: function () { return __notImplemented('chat.listChats'); },
+                    findChat: function () { return __notImplemented('chat.findChat'); },
+                    getMessages: function () { return __notImplemented('chat.getMessages'); },
+                    getMessagesRange: function () { return __notImplemented('chat.getMessagesRange'); },
+                    updateTitle: function () { return __notImplemented('chat.updateTitle'); },
+                    deleteChat: function () { return __notImplemented('chat.deleteChat'); },
+                    startService: function () { return __notImplemented('chat.startService'); }
+                },
+                UI: {
+                    getPageInfo: function () { return __notImplemented('ui.getPageInfo'); },
+                    swipe: function () { return __notImplemented('ui.swipe'); }
+                },
+                Workflow: {
+                    getAll: function () { return __notImplemented('workflow.getAll'); },
+                    create: function () { return __notImplemented('workflow.create'); },
+                    update: function () { return __notImplemented('workflow.update'); }
                 }
             };
-            // QuickJS 无 setTimeout — 用 job 队列兼容实现 (立即 resolve, 避免脚本挂起)
+            function __notImplemented(name) {
+                return { success: false, message: 'capability not implemented in RinCore runtime yet: ' + name };
+            }
+            // QuickJS 无 setTimeout — 立即执行兼容桩 (避免依赖定时器的脚本挂起)
             if (typeof setTimeout === 'undefined') {
-                var setTimeout = function (fn) { self_promise_resolve(fn); return 0; };
-                function self_promise_resolve(fn) { if (typeof fn === 'function') { try { fn(); } catch (e) {} } }
+                var setTimeout = function (fn) { if (typeof fn === 'function') { try { fn(); } catch (e) {} } return 0; };
                 var clearTimeout = function () {};
                 var setInterval = function () { return 0; };
                 var clearInterval = function () {};

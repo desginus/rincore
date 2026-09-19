@@ -119,8 +119,9 @@ object OperitSkillImporter {
             var entry = zis.nextEntry
             while (entry != null) {
                 val name = entry.name
-                // 防 zip slip
-                if (!name.contains("..")) {
+                // 防 zip slip (v4.5.31: 补绝对路径检查 — Java File(parent, "/abs")
+                // 会丢弃 parent 指向绝对路径)
+                if (!name.contains("..") && !name.startsWith("/") && !name.startsWith("\\")) {
                     val target = File(destDir, name)
                     if (entry.isDirectory) {
                         target.mkdirs()
