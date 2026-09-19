@@ -15,7 +15,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.rikkahub.data.ai.mcp.McpCommonOptions
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import java.util.UUID
+import kotlin.uuid.Uuid
 
 object OperitMcpImporter {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
@@ -59,9 +59,9 @@ object OperitMcpImporter {
     suspend fun applyImport(
         settingsStore: SettingsStore,
         configs: List<McpServerConfig>,
-    ): List<UUID> = withContext(Dispatchers.IO) {
+    ): List<Uuid> = withContext(Dispatchers.IO) {
         if (configs.isEmpty()) return@withContext emptyList()
-        var added = emptyList<UUID>()
+        var added = emptyList<Uuid>()
         settingsStore.update { settings ->
             val existingNames = settings.mcpServers.map { it.commonOptions.name }.toSet()
             val toAdd = configs.filter { it.commonOptions.name !in existingNames }
@@ -74,7 +74,7 @@ object OperitMcpImporter {
     /** 启用/停用已导入的 server (切换 McpCommonOptions.enable) */
     suspend fun setEnabled(
         settingsStore: SettingsStore,
-        ids: List<UUID>,
+        ids: List<Uuid>,
         enabled: Boolean,
     ) = withContext(Dispatchers.IO) {
         if (ids.isEmpty()) return@withContext
@@ -92,7 +92,7 @@ object OperitMcpImporter {
     /** 从 Settings.mcpServers 移除已导入的 server */
     suspend fun remove(
         settingsStore: SettingsStore,
-        ids: List<UUID>,
+        ids: List<Uuid>,
     ) = withContext(Dispatchers.IO) {
         if (ids.isEmpty()) return@withContext
         settingsStore.update { settings ->

@@ -186,9 +186,9 @@ class MarketInstallService(
         return InstallResult.Success(pkg)
     }
 
-    private fun parseUuids(extraJson: String): List<java.util.UUID> = runCatching {
+    private fun parseUuids(extraJson: String): List<kotlin.uuid.Uuid> = runCatching {
         kotlinx.serialization.json.Json.parseToJsonElement(extraJson)
             .let { el -> (el as? kotlinx.serialization.json.JsonArray)?.mapNotNull { it.jsonPrimitive.content } ?: emptyList() }
-            .mapNotNull { runCatching { java.util.UUID.fromString(it) }.getOrNull() }
+            .mapNotNull { runCatching { kotlin.uuid.Uuid.parse(it) }.getOrNull() }
     }.getOrDefault(emptyList())
 }
