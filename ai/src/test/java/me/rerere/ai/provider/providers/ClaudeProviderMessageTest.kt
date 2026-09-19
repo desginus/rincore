@@ -35,14 +35,16 @@ class ClaudeProviderMessageTest {
 
     // Helper to invoke private buildMessages method via reflection
     private fun invokeBuildMessages(messages: List<UIMessage>): JsonArray {
+        // v4.5.29: 对齐实现签名 — buildMessages(List, Boolean, dropHistoryThinking, ClaudePromptCacheTtl)
         val method = ClaudeProvider::class.java.getDeclaredMethod(
             "buildMessages",
             List::class.java,
             Boolean::class.javaPrimitiveType,
+            Boolean::class.javaPrimitiveType,
             ClaudePromptCacheTtl::class.java
         )
         method.isAccessible = true
-        return method.invoke(provider, messages, false, ClaudePromptCacheTtl.FIVE_MINUTES) as JsonArray
+        return method.invoke(provider, messages, false, false, ClaudePromptCacheTtl.FIVE_MINUTES) as JsonArray
     }
 
     @Test

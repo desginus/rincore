@@ -394,9 +394,9 @@ class ResponseAPIMessageTest {
         )
 
     @Test
-    fun `deepseek response api should pass reasoning as plain content`() {
-        // DeepSeek 官方 Responses API: summary/encrypted_content 不支持,
-        // reasoning 明文 content (reasoning_text) 必须回传
+    fun `deepseek response api should pass reasoning as standard summary after v3_6_48`() {
+        // v4.5.29: v3.6.48 起 DeepSeek 走标准 OpenAI 格式 (summary 数组) —
+        // 对齐原版 RikkaHub 2.4.8 移除 deepseek 明文特殊分支 (此前明文回传一直报错)
         val messages = listOf(
             UIMessage.system("sys"),
             assistantWithReasoning("思考内容"),
@@ -406,12 +406,10 @@ class ResponseAPIMessageTest {
             resolveResponseProviderCapabilities("api.deepseek.com"),
         )[0].jsonObject
         assertEquals("reasoning", input["type"]?.jsonPrimitive?.content)
-        assertFalse("DeepSeek 不支持 summary", input.containsKey("summary"))
-        assertFalse("DeepSeek 不支持 encrypted_content", input.containsKey("encrypted_content"))
-        val content = input["content"]?.jsonArray
-        assertTrue("明文 content 必须存在", content != null && content.size > 0)
-        assertEquals("reasoning_text", content!![0].jsonObject["type"]?.jsonPrimitive?.content)
-        assertEquals("思考内容", content[0].jsonObject["text"]?.jsonPrimitive?.content)
+        val summary = input["summary"]?.jsonArray
+        assertTrue("标准格式 summary 必须存在", summary != null && summary.size > 0)
+        assertEquals("summary_text", summary!![0].jsonObject["type"]?.jsonPrimitive?.content)
+        assertEquals("思考内容", summary[0].jsonObject["text"]?.jsonPrimitive?.content)
     }
 
     @Test
@@ -482,7 +480,14 @@ class ResponseAPIMessageTest {
             role = MessageRole.ASSISTANT,
             parts = listOf(
                 UIMessagePart.Reasoning(reasoning = reasoningText),
-                UIMessagePart.ToolCall(callId, "get_time_info", "{}"),
+                // v4.5.29: 对齐 v4.x 架构 — Tool 需带 output (isExecuted) 才进入 Tools 分组,
+                // 真实链路中工具执行后 output 原地填入 assistant 消息的 Tool part
+                UIMessagePart.Tool(
+                    toolCallId = callId,
+                    toolName = "get_time_info",
+                    input = "{}",
+                    output = listOf(UIMessagePart.Text("12:00")),
+                ),
             ),
         )
 
@@ -501,12 +506,12 @@ class ResponseAPIMessageTest {
             messages,
             resolveResponseProviderCapabilities("api.deepseek.com"),
         )
-        // 序列: reasoning → assistant(空 content) → function_call → function_call_output
+        // v4.5.29: DeepSeek 走标准 OpenAI 格式 (v3.6.48 对齐原版移除特殊分支) —
+        // 序列: reasoning → function_call → function_call_output (不补 adjacent assistant)
         val reasoningIdx = input.indexOfFirst { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "reasoning" }
         assertTrue("reasoning item 必须存在", reasoningIdx >= 0)
         val next = input[reasoningIdx + 1].jsonObject
-        assertEquals("assistant", next["role"]?.jsonPrimitive?.content)
-        assertEquals("", next["content"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("function_call", next["type"]?.jsonPrimitive?.content)
         val callIdx = input.indexOfFirst { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "function_call" }
         assertTrue("function_call 必须存在", callIdx >= 0)
     }

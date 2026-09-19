@@ -567,6 +567,8 @@ fun List<UIMessagePart>.isEmptyUIMessage(): Boolean {
             is UIMessagePart.Video -> message.url.isBlank()
             is UIMessagePart.Audio -> message.url.isBlank()
             is UIMessagePart.Tool -> false
+            // v4.5.29: ServerTool 为真实 UI 内容 (服务器工具执行状态), 不应视为空消息
+            is UIMessagePart.ServerTool -> false
             else -> true
         }
     }

@@ -55,10 +55,11 @@ class OperitScriptRuntime(
 
             // 4. 调用工具函数 (async 安全: evaluate 自动 drain job queue 直到 Promise 完成)
             val paramsLiteral = json.encodeToString(JsonElement.serializer(), paramsJson)
+            val toolNameLiteral = JsonPrimitive(toolName).toString()
             val invokeCode = """
                 (function () {
                     try {
-                        var __r = exports[${json.encodeToString(JsonPrimitive.serializer(), toolName)}]($paramsLiteral);
+                        var __r = exports[$toolNameLiteral]($paramsLiteral);
                         if (__r !== undefined && __r !== null && typeof __r.then === 'function') {
                             __r.then(function (v) { __operitFinish(v); }, function (e) { __operitFinish({ success: false, message: String((e && e.message) || e) }); });
                         } else {

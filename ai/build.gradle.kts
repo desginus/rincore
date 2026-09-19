@@ -39,6 +39,11 @@ android {
     buildFeatures {
         compose = true
     }
+    // v4.5.29: JVM 单元测试 allow android.util.Log 等 framework 方法返回默认值
+    // (MoonshotTest 因 Log.i not mocked 崩溃 — 标准测试环境修复)
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 //    externalNativeBuild {
 //        cmake {
 //            path = file("src/main/cpp/CMakeLists.txt")

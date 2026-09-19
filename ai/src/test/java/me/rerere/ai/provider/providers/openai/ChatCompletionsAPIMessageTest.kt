@@ -36,18 +36,17 @@ class ChatCompletionsAPIMessageTest {
         messages: List<UIMessage>,
         includeHistoryReasoning: Boolean = true
     ): JsonArray {
+        // v4.5.29: 对齐实现签名 — buildMessages(List, Boolean) (Modality 参数已移除)
         val method = ChatCompletionsAPI::class.java.getDeclaredMethod(
             "buildMessages",
             List::class.java,
-            Boolean::class.javaPrimitiveType,
-            List::class.java
+            Boolean::class.javaPrimitiveType
         )
         method.isAccessible = true
         return method.invoke(
             api,
             messages,
-            includeHistoryReasoning,
-            listOf(Modality.TEXT, Modality.IMAGE)
+            includeHistoryReasoning
         ) as JsonArray
     }
 
