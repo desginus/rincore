@@ -36,6 +36,7 @@ import com.whl.quickjs.android.QuickJSLoader
 import me.rerere.rikkahub.di.appModule
 import me.rerere.rikkahub.di.dataSourceModule
 import me.rerere.rikkahub.di.repositoryModule
+import me.rerere.rikkahub.di.operitModule
 import me.rerere.rikkahub.di.viewModelModule
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.datastore.DEFAULT_PROVIDERS
@@ -107,7 +108,7 @@ class RikkaHubApp : Application() {
             androidLogger()
             androidContext(this@RikkaHubApp)
             workManagerFactory()
-            modules(appModule, viewModelModule, dataSourceModule, repositoryModule)
+            modules(appModule, viewModelModule, dataSourceModule, repositoryModule, operitModule)
         }
         // v3.6.45: 异步预热用户自定义 provider host (含 OpenCode Zen) —
         // 首次请求跳过 DNS+TCP, 降低首字延迟。DEFAULT_PROVIDERS 已在上面同步预热。

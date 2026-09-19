@@ -115,6 +115,8 @@ import me.rerere.rikkahub.ui.pages.backup.BackupPage
 import me.rerere.rikkahub.ui.pages.chat.ChatPage
 import me.rerere.rikkahub.ui.pages.debug.DebugPage
 import me.rerere.rikkahub.ui.pages.extensions.ExtensionsPage
+import me.rerere.rikkahub.ui.pages.market.MarketDetailPage
+import me.rerere.rikkahub.ui.pages.market.MarketPage
 import me.rerere.rikkahub.ui.pages.extensions.PromptPage
 import me.rerere.rikkahub.ui.pages.extensions.QuickMessagesPage
 import me.rerere.rikkahub.ui.pages.extensions.skills.SkillDetailPage
@@ -709,6 +711,13 @@ class RouteActivity : ComponentActivity() {
                                 WorkspacePage()
                             }
 
+                            entry<Screen.Market> {
+                                MarketPage()
+                            }
+                            entry<Screen.MarketDetail> { key ->
+                                MarketDetailPage(key.id)
+                            }
+
                             entry<Screen.WorkspaceDetail> { key ->
                                 WorkspaceDetailPage(key.id, key.initialTab)
                             }
@@ -947,6 +956,13 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object Workspaces : Screen
+
+    // v4.5.28 岔路口计划·阶段1: 应用市场
+    @Serializable
+    data object Market : Screen
+
+    @Serializable
+    data class MarketDetail(val id: String) : Screen
 
     @Serializable
     data class WorkspaceDetail(val id: String, val initialTab: Int = 0) : Screen

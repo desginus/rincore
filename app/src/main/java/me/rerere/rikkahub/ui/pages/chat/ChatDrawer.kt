@@ -59,6 +59,7 @@ import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ChartColumn
 import me.rerere.hugeicons.stroke.Clock02
+import me.rerere.hugeicons.stroke.Download04
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Folder01
 import me.rerere.hugeicons.stroke.FolderAdd
@@ -368,6 +369,19 @@ fun ChatDrawerContent(
                     },
                     onClick = {
                         navController.navigate(Screen.Stats)
+                    },
+                )
+
+                // v4.5.28 岔路口计划·阶段1: 应用市场入口
+                DrawerAction(
+                    icon = {
+                        Icon(HugeIcons.Download04, "应用市场")
+                    },
+                    label = {
+                        Text("应用市场")
+                    },
+                    onClick = {
+                        navController.navigate(Screen.Market)
                     },
                 )
 
