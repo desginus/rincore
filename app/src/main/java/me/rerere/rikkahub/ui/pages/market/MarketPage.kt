@@ -67,7 +67,7 @@ fun MarketPage() {
     val reachedBottom by remember {
         derivedStateOf {
             val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            last >= listState.layoutInfo.totalItems - 5
+            last >= listState.layoutInfo.totalItemsCount - 5
         }
     }
     LaunchedEffect(reachedBottom) {
