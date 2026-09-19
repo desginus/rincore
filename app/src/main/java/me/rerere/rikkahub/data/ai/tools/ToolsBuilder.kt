@@ -70,6 +70,7 @@ fun buildAssistantToolPool(
     workspaceRepository: me.rerere.rikkahub.data.repository.WorkspaceRepository? = null,
     pluginManager: me.rerere.rikkahub.data.plugin.PluginManager? = null,
     filesRoot: java.io.File? = null,                // v4.3.7: read_image 白名单根 (context.filesDir), null=不注入
+    operitToolProvider: me.rerere.rikkahub.data.operit.runtime.OperitToolProvider? = null, // v4.5.29 岔路口计划·阶段2: Operit 脚本工具
 ): List<Tool> = buildList {
     // v4.3.7: 图片预算闭环件 — 占位图按需重取 (默认 null 不注入, 仅 ChatService 主链路注入)
     filesRoot?.let { add(createReadImageTool(it)) }
@@ -125,6 +126,12 @@ fun buildAssistantToolPool(
     runCatching {
         val clawTools = me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry.createPluginSkillTools()
         if (clawTools.isNotEmpty()) addAll(clawTools)
+    }
+    // v4.5.29 岔路口计划·阶段2: Operit 脚本工具
+    // operit__<包>__<工具> 注入 (插件域; 由已启用脚本的 METADATA 生成)
+    runCatching {
+        val operitTools = operitToolProvider?.createScriptTools() ?: emptyList()
+        if (operitTools.isNotEmpty()) addAll(operitTools)
     }
     // AI 域管理工具 — 单一源头: list/search/move 的 execute 实时构建
     // 与模型侧完全同源的完整工具池 (此前 knownToolNames 默认空集 → List

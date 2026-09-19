@@ -230,6 +230,12 @@ class ToolRouter(
             return if (isValidDomain("插件")) "插件" else "未分类"
         }
 
+        // 2.6 v4.5.29 岔路口计划·阶段2: Operit 脚本工具 — 统一归「插件」根域
+        // (归根域不派生动态子域 — 与「技能」域同纪律, 防 layer1 缓存断裂)
+        if (name.startsWith("operit__")) {
+            return if (isValidDomain("插件")) "插件" else "未分类"
+        }
+
         // 3. 系统级工具 — 前缀精确匹配
         if (SYSTEM_TOOL_PREFIXES.any { name.startsWith(it) }) {
             return if (isValidDomain("系统")) "系统" else "未分类"

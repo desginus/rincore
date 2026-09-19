@@ -46,6 +46,7 @@ fun SettingToolListPage(
     val conversationRepo: ConversationRepository = koinInject()
     val settingsStore: SettingsStore = koinInject()
     val workspaceRepository: WorkspaceRepository = koinInject()
+    val operitToolProvider: me.rerere.rikkahub.data.operit.runtime.OperitToolProvider = koinInject()
     var searchQuery by remember { mutableStateOf("") }
     var filterDomain by remember { mutableStateOf("全部") }
     var selectedTool by remember { mutableStateOf<ToolPreview?>(null) }
@@ -64,6 +65,7 @@ fun SettingToolListPage(
             conversationRepo = conversationRepo,
             settingsStore = settingsStore,
             workspaceRepository = workspaceRepository,
+            operitToolProvider = operitToolProvider,
         )
     }
 

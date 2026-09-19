@@ -43,6 +43,7 @@ fun buildPreviewTools(
     conversationRepo: me.rerere.rikkahub.data.repository.ConversationRepository,
     settingsStore: SettingsStore,
     workspaceRepository: me.rerere.rikkahub.data.repository.WorkspaceRepository? = null,
+    operitToolProvider: me.rerere.rikkahub.data.operit.runtime.OperitToolProvider? = null,
 ): List<ToolPreview> {
     // 全信源统一: 与模型侧完全同源 (buildAssistantToolPool) —
     // 域管理页计数/分区/工具列表 与 模型工具池 完全一致 (用户要求 v3.5.41)
@@ -58,6 +59,7 @@ fun buildPreviewTools(
             mcpManager = mcpManager,
             settingsStore = settingsStore,
             workspaceRepository = workspaceRepository,
+            operitToolProvider = operitToolProvider,
         )
     } catch (_: Exception) {
         emptyList()
@@ -120,6 +122,7 @@ fun SettingDomainPage(
     val conversationRepo: me.rerere.rikkahub.data.repository.ConversationRepository = koinInject()
     val settingsStore: SettingsStore = koinInject()
     val workspaceRepository: me.rerere.rikkahub.data.repository.WorkspaceRepository = koinInject()
+    val operitToolProvider: me.rerere.rikkahub.data.operit.runtime.OperitToolProvider = koinInject()
 
     var deleteConfirm by remember { mutableStateOf<String?>(null) }
     var isClassifying by remember { mutableStateOf(false) }
@@ -157,6 +160,7 @@ fun SettingDomainPage(
             conversationRepo = conversationRepo,
             settingsStore = settingsStore,
             workspaceRepository = workspaceRepository,
+            operitToolProvider = operitToolProvider,
         )
     }
 

@@ -27,6 +27,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -160,10 +161,30 @@ fun MarketDetailPage(
                                 onClick = { vm.uninstall(entry.id) },
                                 modifier = Modifier.fillMaxWidth(),
                             ) { Text("卸载") }
-                            // 阶段1 诚实降级: 脚本类启用尚未支持
-                            if (installed.type == "script" || installed.type == "package") {
+                            // v4.5.29 阶段2: 脚本启用开关 (启用后工具注册到「插件」域)
+                            if (installed.type == "script") {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("启用脚本工具", style = MaterialTheme.typography.titleSmall)
+                                        Text(
+                                            if (installed.enabled) "工具已注册到「插件」域, 模型可调用"
+                                            else "启用后脚本工具才会注入模型工具池",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Switch(
+                                        checked = installed.enabled,
+                                        onCheckedChange = { vm.setScriptEnabled(entry.id, it) },
+                                    )
+                                }
+                            } else if (installed.type == "package") {
                                 Text(
-                                    "运行时支持即将上线 (阶段2) — 当前已下载到本地, 可在文件管理中查看",
+                                    "包类型 (ToolPkg) 运行时支持即将上线 — 当前已下载到本地",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )

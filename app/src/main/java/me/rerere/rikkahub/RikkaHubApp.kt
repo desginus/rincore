@@ -110,6 +110,12 @@ class RikkaHubApp : Application() {
             workManagerFactory()
             modules(appModule, viewModelModule, dataSourceModule, repositoryModule, operitModule)
         }
+        // v4.5.29 岔路口计划·阶段2: 刷新已启用 Operit 脚本工具缓存
+        get<me.rerere.rikkahub.data.operit.runtime.OperitToolProvider>().let { provider ->
+            get<AppScope>().launch(Dispatchers.IO) {
+                runCatching { provider.refresh() }
+            }
+        }
         // v3.6.45: 异步预热用户自定义 provider host (含 OpenCode Zen) —
         // 首次请求跳过 DNS+TCP, 降低首字延迟。DEFAULT_PROVIDERS 已在上面同步预热。
         Thread({

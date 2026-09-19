@@ -26,6 +26,7 @@ retrofit = "3.0.0"
 coil = "3.5.0"
 haze = "2.0.0-beta01"
 quickjs = "3.2.3"
+quickjs-kt = "1.0.15"
 room = "2.8.4"
 koin-bom = "4.2.2"
 datastore = "1.2.1"
@@ -126,6 +127,7 @@ coil-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", versio
 coil-svg = { group = "io.coil-kt.coil3", name = "coil-svg", version.ref = "coil" }
 coil-cache-control = { group = "io.coil-kt.coil3", name = "coil-network-cache-control", version.ref = "coil" }
 quickjs = { group = "wang.harlon.quickjs", name = "wrapper-android", version.ref = "quickjs" }
+quickjs-kt-android = { module = "io.github.dokar3:quickjs-kt-android", version.ref = "quickjs-kt" }
 koin-bom = { group = "io.insert-koin", name = "koin-bom", version.ref = "koin-bom" }
 koin-android = { group = "io.insert-koin", name = "koin-android" }
 koin-compose = { group = "io.insert-koin", name = "koin-androidx-compose" }

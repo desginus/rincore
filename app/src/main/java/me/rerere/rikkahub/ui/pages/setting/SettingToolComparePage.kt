@@ -56,6 +56,7 @@ fun SettingToolComparePage(
     val conversationRepo: ConversationRepository = koinInject()
     val settingsStore: SettingsStore = koinInject()
     val workspaceRepository: WorkspaceRepository = koinInject()
+    val operitToolProvider: me.rerere.rikkahub.data.operit.runtime.OperitToolProvider = koinInject()
 
     val assistant = settings.getCurrentAssistant()
     // 单一源头: 与模型侧完全同源的工具池 + 统一视图
@@ -73,6 +74,7 @@ fun SettingToolComparePage(
                 mcpManager = mcpManager,
                 settingsStore = settingsStore,
                 workspaceRepository = workspaceRepository,
+                operitToolProvider = operitToolProvider,
             ).filter { it.name !in me.rerere.rikkahub.data.ai.tools.FRAMEWORK_TOOL_SET }
         }.getOrDefault(emptyList())
     }

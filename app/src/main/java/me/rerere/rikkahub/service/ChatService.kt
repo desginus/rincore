@@ -193,6 +193,7 @@ class ChatService(
     private val workspaceRepository: WorkspaceRepository,
     private val folderRepository: FolderRepository,
     private val pluginManager: me.rerere.rikkahub.data.plugin.PluginManager? = null,
+    private val operitToolProvider: me.rerere.rikkahub.data.operit.runtime.OperitToolProvider? = null,
 ) {
     init {
         me.rerere.rikkahub.ecosystem.tools.DynamicTools.initialize(
@@ -789,6 +790,7 @@ class ChatService(
                         workspaceCwd = assistant.workspaceCwd,
                         workspaceRepository = workspaceRepository,
                         pluginManager = pluginManager,
+                        operitToolProvider = operitToolProvider,
                     ).let { pool ->
                         // 与主构建同口径: 非法服务器名剔除
                         val invalidNames = mcpManager.getAllAvailableTools()
@@ -823,6 +825,7 @@ class ChatService(
                     workspaceCwd = assistant.workspaceCwd,
                     workspaceRepository = workspaceRepository,
                     pluginManager = pluginManager,
+                    operitToolProvider = operitToolProvider,
                 ).let { pool ->
                     // MCP 服务器名合法性检查 (对齐原逻辑)
                     // v3.6.96: 不弹窗阻塞 — 历史残留的非法名称服务器 (如测试遗留

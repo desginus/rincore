@@ -45,7 +45,8 @@ data class MarketDetailUiState(
 class MarketVM(
     private val repository: MarketRepository,
     private val installService: MarketInstallService,
-    installedStore: me.rerere.rikkahub.data.operit.market.InstalledPackageStore,
+    private val installedStore: me.rerere.rikkahub.data.operit.market.InstalledPackageStore,
+    private val operitToolProvider: me.rerere.rikkahub.data.operit.runtime.OperitToolProvider,
 ) : ViewModel() {
 
     private val _listState = MutableStateFlow(MarketListUiState(loading = true))
@@ -175,11 +176,26 @@ class MarketVM(
     fun uninstall(entryId: String) {
         viewModelScope.launch {
             if (installService.uninstall(entryId)) {
+                runCatching { operitToolProvider.refresh() }
                 _detailState.value = _detailState.value.copy(
                     installed = null,
                     message = "已卸载",
                 )
             }
+        }
+    }
+
+    /** v4.5.29 阶段2: 启用/停用脚本 (启用后工具注册到工具池「插件」域) */
+    fun setScriptEnabled(entryId: String, enabled: Boolean) {
+        viewModelScope.launch {
+            runCatching {
+                installedStore.setEnabled(entryId, enabled)
+                operitToolProvider.refresh()
+            }
+            _detailState.value = _detailState.value.copy(
+                installed = _detailState.value.installed?.copy(enabled = enabled),
+                message = if (enabled) "已启用 — 工具已注册 (插件域)" else "已停用",
+            )
         }
     }
 }

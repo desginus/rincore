@@ -20,5 +20,17 @@ val operitModule = module {
     single { PackageDownloader(get<OkHttpClient>()) }
     single { InstalledPackageStore(get()) }
     single { MarketInstallService(get(), get(), get()) }
+
+    // v4.5.29 阶段2: 脚本运行时 + 工具提供器
+    single {
+        val ctx = get<android.content.Context>()
+        me.rerere.rikkahub.data.operit.runtime.OperitScriptRuntime(
+            filesRootProvider = {
+                java.io.File(ctx.filesDir, "operit_runtime")
+            },
+        )
+    }
+    single { me.rerere.rikkahub.data.operit.runtime.OperitToolProvider(get(), get()) }
+
     viewModelOf(::MarketVM)
 }
