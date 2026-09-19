@@ -3,6 +3,7 @@ package me.rerere.ai.provider.providers
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.ClaudePromptCacheTtl
@@ -154,7 +155,14 @@ class ClaudeProviderMessageTest {
         val assistantMessage = UIMessage(
             role = MessageRole.ASSISTANT,
             parts = listOf(
-                UIMessagePart.Reasoning(reasoning = "Let me think about this..."),
+                // v4.5.31: 对齐 v3.10.12 防御 — 无 signature 的 thinking 块被有意丢弃,
+                // 回放需带签名 (兼容网关验签语义)
+                UIMessagePart.Reasoning(
+                    reasoning = "Let me think about this...",
+                    metadata = kotlinx.serialization.json.buildJsonObject {
+                        put("signature", "test-signature")
+                    },
+                ),
                 UIMessagePart.Text("Here is my response")
             )
         )

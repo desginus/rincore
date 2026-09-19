@@ -80,7 +80,7 @@ class MarketInstallService(
         // v4.5.31 阶段4: package (ToolPkg) 类型解压到独立目录
         var installPath = destFile.absolutePath
         if (entry.type == "package" && fileName.endsWith(".toolpkg")) {
-            val extractDir = File(storageDir, "pkg_" + entry.id.takeLast(48).replace(Regex("[^A-Za-z0-9_\-]"), "_"))
+            val extractDir = File(storageDir, "pkg_" + entry.id.takeLast(48).replace(Regex("[^A-Za-z0-9_-]"), "_"))
             runCatching {
                 if (extractDir.exists()) extractDir.deleteRecursively()
                 extractDir.mkdirs()

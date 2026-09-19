@@ -264,7 +264,9 @@ class ChatCompletionsAPIMessageTest {
         val nextMsg = result[assistantIndex + 1].jsonObject
         assertEquals("tool", nextMsg["role"]?.jsonPrimitive?.content)
         assertEquals("call_abc", nextMsg["tool_call_id"]?.jsonPrimitive?.content)
-        assertEquals("my_tool", nextMsg["name"]?.jsonPrimitive?.content)
+        // v4.5.31: v4.3.0 起 tool 消息有意移除 name 字段 (工具归属由 tool_call_id
+        // 唯一确定, name 无消费方 — 部分上游拒收该字段); 断言改为 content 非空
+        assertTrue("tool content 必须存在", nextMsg["content"] != null)
     }
 
     @Test
@@ -381,7 +383,10 @@ class ChatCompletionsAPIMessageTest {
         assertEquals("user", result[0].jsonObject["role"]?.jsonPrimitive?.content)
         assertEquals("assistant", result[1].jsonObject["role"]?.jsonPrimitive?.content)
         assertEquals("thinking", result[1].jsonObject["reasoning_content"]?.jsonPrimitive?.content)
-        assertEquals("", result[1].jsonObject["content"]?.jsonPrimitive?.content)
+        // v4.5.31: 对齐 v4.5.18 行为 — 正文空+有思考+无工具 → 思考提升为正文兜底
+        // (content 恒非空, 修复 "Invalid assistant message: content or tool_calls
+        // must be set" 严格上游拒收)
+        assertEquals("thinking", result[1].jsonObject["content"]?.jsonPrimitive?.content)
     }
 
     // ==================== Helper Functions ====================
