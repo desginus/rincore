@@ -77,6 +77,21 @@ class MarketInstallService(
             )
         }
 
+        // v4.5.31 阶段4: package (ToolPkg) 类型解压到独立目录
+        var installPath = destFile.absolutePath
+        if (entry.type == "package" && fileName.endsWith(".toolpkg")) {
+            val extractDir = File(storageDir, "pkg_" + entry.id.takeLast(48).replace(Regex("[^A-Za-z0-9_\-]"), "_"))
+            runCatching {
+                if (extractDir.exists()) extractDir.deleteRecursively()
+                extractDir.mkdirs()
+                unzipTo(destFile, extractDir)
+                destFile.delete()
+                installPath = extractDir.absolutePath
+            }.onFailure { e ->
+                return@withContext InstallResult.Failure("toolpkg 解压失败: ${e.message ?: e}", e)
+            }
+        }
+
         val installed = InstalledPackage(
             entryId = entry.id,
             type = entry.type,
@@ -84,7 +99,7 @@ class MarketInstallService(
             version = latestVersion.version,
             assetId = asset.id,
             fileName = fileName,
-            installPath = destFile.absolutePath,
+            installPath = installPath,
             formatVer = latestVersion.formatVer,
             sha256 = asset.sha256,
             installedAt = System.currentTimeMillis(),
@@ -184,6 +199,26 @@ class MarketInstallService(
         )
         store.upsert(pkg)
         return InstallResult.Success(pkg)
+    }
+
+    private fun unzipTo(zipFile: File, destDir: File) {
+        java.util.zip.ZipInputStream(zipFile.inputStream().buffered()).use { zis ->
+            var entry = zis.nextEntry
+            while (entry != null) {
+                val name = entry.name
+                if (!name.contains("..")) {
+                    val target = File(destDir, name)
+                    if (entry.isDirectory) {
+                        target.mkdirs()
+                    } else {
+                        target.parentFile?.mkdirs()
+                        target.outputStream().use { out -> zis.copyTo(out) }
+                    }
+                }
+                zis.closeEntry()
+                entry = zis.nextEntry
+            }
+        }
     }
 
     private fun parseUuids(extraJson: String): List<kotlin.uuid.Uuid> = runCatching {

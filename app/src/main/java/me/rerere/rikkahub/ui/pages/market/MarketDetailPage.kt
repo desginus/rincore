@@ -210,11 +210,26 @@ fun MarketDetailPage(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             } else if (installed.type == "package") {
-                                Text(
-                                    "包类型 (ToolPkg) 运行时支持即将上线 — 当前已下载到本地",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                                // v4.5.31 阶段4: ToolPkg 启用开关 (子包工具注册)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("启用工具包", style = MaterialTheme.typography.titleSmall)
+                                        Text(
+                                            if (installed.enabled) "子包工具已注册到「插件」域 (UI 面板/钩子不支持)"
+                                            else "启用后工具包内子包的工具才注入模型工具池",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Switch(
+                                        checked = installed.enabled,
+                                        onCheckedChange = { vm.setScriptEnabled(entry.id, it) },
+                                    )
+                                }
                             }
                         }
                         else -> {

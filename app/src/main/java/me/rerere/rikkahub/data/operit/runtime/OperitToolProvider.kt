@@ -31,14 +31,60 @@ class OperitToolProvider(
     suspend fun refresh() {
         val installed = store.listInstalled()
         enabledScripts = installed
-            .filter { it.enabled && it.type == "script" }
-            .mapNotNull { pkg ->
-                val file = File(pkg.installPath)
-                if (!file.exists() || !file.name.endsWith(".js")) return@mapNotNull null
-                val meta = runCatching { ScriptMetadataParser.parse(file.readText()) }.getOrNull()
-                    ?: return@mapNotNull null
-                EnabledScript(pkg, meta, file)
+            .filter { it.enabled && (it.type == "script" || it.type == "package") }
+            .flatMap { pkg ->
+                when (pkg.type) {
+                    "script" -> loadScriptUnit(pkg)
+                    // v4.5.31 阶段4: ToolPkg — 扫描 manifest subpackages 的子包脚本
+                    // (子包 js 与 script 同构: METADATA + exports 工具函数; main.js 钩子/UI 不执行)
+                    "package" -> loadPackageUnits(pkg)
+                    else -> emptyList()
+                }
             }
+    }
+
+    private fun loadScriptUnit(pkg: InstalledPackage): List<EnabledScript> {
+        val file = File(pkg.installPath)
+        if (!file.exists() || !file.name.endsWith(".js")) return emptyList()
+        val meta = runCatching { ScriptMetadataParser.parse(file.readText()) }.getOrNull() ?: return emptyList()
+        return listOf(EnabledScript(pkg, meta, file))
+    }
+
+    private fun loadPackageUnits(pkg: InstalledPackage): List<EnabledScript> {
+        val root = File(pkg.installPath)
+        if (!root.exists() || !root.isDirectory) return emptyList()
+        val manifestFile = File(root, "manifest.json")
+        val entries = mutableListOf<File>()
+        if (manifestFile.exists()) {
+            val manifest = runCatching {
+                kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+                    .parseToJsonElement(manifestFile.readText())
+            }.getOrNull()
+            val subpackages = (manifest as? kotlinx.serialization.json.JsonObject)
+                ?.get("subpackages") as? kotlinx.serialization.json.JsonArray
+            subpackages?.forEach { sp ->
+                val entry = (sp as? kotlinx.serialization.json.JsonObject)?.get("entry")
+                    ?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+                if (!entry.isNullOrBlank()) {
+                    val f = File(root, entry)
+                    if (f.exists()) entries.add(f)
+                }
+            }
+        }
+        // 兜底: manifest 缺失时扫描 packages/**/*.js
+        if (entries.isEmpty()) {
+            val packagesDir = File(root, "packages")
+            packagesDir.walkTopDown()
+                .filter { it.isFile && it.name.endsWith(".js") && it.parentFile?.name != "ui" }
+                .take(20)
+                .forEach { entries.add(it) }
+        }
+        return entries.distinct().mapNotNull { f ->
+            val meta = runCatching { ScriptMetadataParser.parse(f.readText()) }.getOrNull()
+                ?: return@mapNotNull null
+            if (meta.tools.isEmpty()) return@mapNotNull null
+            EnabledScript(pkg, meta, f)
+        }
     }
 
     /** 生成脚本工具列表 (同步, 读内存缓存 — 供 buildAssistantToolPool 调用) */
