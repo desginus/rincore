@@ -72,6 +72,7 @@ internal fun EditedFilesList(
     assistant: Assistant?,
 ) {
     val workspaceId = assistant?.workspaceId?.toString() ?: return
+    val cwdRel = remember(assistant) { editedFilesCwd(assistant) }
     val editedFiles = remember(parts) {
         parts.filterIsInstance<UIMessagePart.Tool>()
             .filter { it.toolName in WORKSPACE_FILE_TOOL_NAMES && it.isExecuted }
@@ -102,9 +103,8 @@ internal fun EditedFilesList(
         val outputStream = context.contentResolver.openOutputStream(uri) ?: return@rememberLauncherForActivityResult
         scope.launch {
             runCatching {
-                val (area, relativePath) = resolveWorkspacePath(path)
                 outputStream.use { output ->
-                    workspaceRepository.exportFile(workspaceId, area, relativePath, output)
+                    exportScopedFile(workspaceRepository, workspaceId, path, cwdRel, output)
                 }
             }
         }
@@ -209,11 +209,10 @@ internal fun EditedFilesList(
                         selectedPath = null
                         scope.launch {
                             runCatching {
-                                val (area, relativePath) = resolveWorkspacePath(p)
                                 val dir = File(context.cacheDir, "workspace_share").apply { mkdirs() }
                                 val file = File(dir, p.substringAfterLast('/'))
                                 file.outputStream().use { output ->
-                                    workspaceRepository.exportFile(workspaceId, area, relativePath, output)
+                                    exportScopedFile(workspaceRepository, workspaceId, p, cwdRel, output)
                                 }
                                 val uri = FileProvider.getUriForFile(
                                     context,
@@ -258,14 +257,13 @@ internal fun EditedFilesList(
                             scope.launch {
                                 withContext(Dispatchers.IO) {
                                     runCatching {
-                                        val (area, relativePath) = resolveWorkspacePath(p)
                                         renderFileName = p.substringAfterLast('/')
                                         val dir = File(context.cacheDir, "workspace_render")
                                         dir.deleteRecursively()
                                         dir.mkdirs()
                                         val file = File(dir, renderFileName)
                                         file.outputStream().use { output ->
-                                            workspaceRepository.exportFile(workspaceId, area, relativePath, output)
+                                            exportScopedFile(workspaceRepository, workspaceId, p, cwdRel, output)
                                         }
                                         val taskDir = File(dir, "task")
                                         renderResult = RenderEngine.render(file, taskDir, renderFileName)
@@ -318,23 +316,44 @@ internal fun EditedFilesList(
     }
 }
 
-private suspend fun readBytes(
-    repository: WorkspaceRepository,
-    workspaceId: String,
-    area: me.rerere.workspace.WorkspaceStorageArea,
-    relativePath: String,
-    displayPath: String,
-): ByteArray {
-    val bos = java.io.ByteArrayOutputStream()
-    repository.exportFile(workspaceId, area, relativePath, bos)
-    return bos.toByteArray()
-}
-
-private fun resolveWorkspacePath(path: String): Pair<WorkspaceStorageArea, String> {
+private fun resolveWorkspacePath(path: String, cwdRel: String? = null): Pair<WorkspaceStorageArea, String> {
     val trimmed = path.trimEnd('/')
     return if (trimmed == "/workspace" || trimmed.startsWith("/workspace/")) {
-        WorkspaceStorageArea.FILES to trimmed.removePrefix("/workspace").trimStart('/')
+        val rel = trimmed.removePrefix("/workspace").trimStart('/')
+        // v4.5.27: CWD 专一空间 — 模型视角路径映射到助手文件夹;
+        // 已含 cwd 前缀 (历史惯性) 的不再二次拼接。
+        val scoped = when {
+            cwdRel.isNullOrEmpty() || rel.isEmpty() -> rel
+            rel == cwdRel || rel.startsWith("$cwdRel/") -> rel
+            else -> "$cwdRel/$rel"
+        }
+        WorkspaceStorageArea.FILES to scoped
     } else {
         WorkspaceStorageArea.LINUX to trimmed.trimStart('/')
+    }
+}
+
+/** v4.5.27: 助手 cwd 归一化 (同 WorkspaceTools 口径), null/空 = 无约束 */
+private fun editedFilesCwd(assistant: Assistant?): String? {
+    val raw = assistant?.workspaceCwd?.trim('/') ?: return null
+    val rel = (if (raw == "workspace") "" else raw.removePrefix("workspace/")).trim('/')
+    return rel.ifBlank { null }
+}
+
+/** v4.5.27: 带 CWD 的导出 — 先按助手文件夹解析; 失败回退无 cwd 解析 (历史文件兼容) */
+private suspend fun exportScopedFile(
+    repository: WorkspaceRepository,
+    workspaceId: String,
+    path: String,
+    cwdRel: String?,
+    output: java.io.OutputStream,
+) {
+    val (area, rel) = resolveWorkspacePath(path, cwdRel)
+    try {
+        repository.exportFile(workspaceId, area, rel, output)
+    } catch (e: Exception) {
+        val (fallbackArea, fallbackRel) = resolveWorkspacePath(path, null)
+        if (fallbackRel == rel) throw e
+        repository.exportFile(workspaceId, fallbackArea, fallbackRel, output)
     }
 }

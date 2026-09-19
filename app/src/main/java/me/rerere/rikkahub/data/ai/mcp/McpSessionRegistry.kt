@@ -441,6 +441,14 @@ internal class McpSessionRegistry(
         clientInfo = Implementation(name = config.commonOptions.name, version = "1.0")
     )
 
+    /** v4.5.27: 当前助手的 CWD (归一为相对 files 的子路径; 空串 = 无约束)。
+     *  MCP stdio 沙箱进程的 /workspace 挂载源与之对齐, 与文件工具同源。 */
+    private fun currentAssistantCwdRel(): String {
+        val cwd = settingsStore.settingsFlow.value.getCurrentAssistant().workspaceCwd ?: return ""
+        val raw = cwd.trim('/')
+        return (if (raw == "workspace") "" else raw.removePrefix("workspace/")).trim('/')
+    }
+
     private suspend fun createTransport(config: McpServerConfig): AbstractTransport = when (config) {
         is McpServerConfig.SseTransportServer -> SseClientTransport(
             urlString = config.url,
@@ -463,7 +471,7 @@ internal class McpSessionRegistry(
                 val repo = workspaceRepository
                     ?: throw IllegalStateException("viaWorkspace stdio requires WorkspaceRepository")
                 val p = runCatching {
-                    repo.launchProcess(config.workspaceId, config.command, "")
+                    repo.launchProcess(config.workspaceId, config.command, currentAssistantCwdRel())
                 }.getOrElse { e ->
                     Log.e("McpSessionRegistry", "viaWorkspace launch failed: ${e.message}")
                     throw IllegalStateException("workspace 启动 MCP 服务器失败: ${e.message}", e)
@@ -478,7 +486,7 @@ internal class McpSessionRegistry(
                     val workspaceId = settingsStore.settingsFlow.value
                         .getCurrentAssistant().workspaceId
                     if (workspaceId == null) throw e
-                    val wp = workspaceRepository?.launchProcess(workspaceId.toString(), config.command, "")
+                    val wp = workspaceRepository?.launchProcess(workspaceId.toString(), config.command, currentAssistantCwdRel())
                         ?: throw e
                     runCatching {
                         settingsStore.update { cur ->

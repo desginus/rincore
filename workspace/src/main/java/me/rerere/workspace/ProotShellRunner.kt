@@ -60,6 +60,15 @@ class ProotShellRunner(
         context: WorkspaceShellContext,
         proot: File,
     ): List<String> {
+        // v4.5.27: CWD 专一空间 — cwd 非空时把 /workspace 直接挂到该子目录,
+        // 沙箱内根本看不到兄弟目录 (浏览与读写同时物理受限);
+        // cwd 为空维持整区挂载 (用户终端 / 无 CWD 助手行为不变)。
+        val scopedCwd = context.cwd.trim().trim('/')
+        val mountSource = if (scopedCwd.isEmpty()) {
+            context.filesDir
+        } else {
+            File(context.filesDir, scopedCwd)
+        }
         val command = mutableListOf(
             proot.absolutePath,
             "--root-id",
@@ -68,9 +77,9 @@ class ProotShellRunner(
             "-r",
             context.linuxDir.absolutePath,
             "-w",
-            context.prootCwd(),
+            WORKSPACE_DIR,
             "-b",
-            "${context.filesDir.absolutePath}:$WORKSPACE_DIR",
+            "${mountSource.absolutePath}:$WORKSPACE_DIR",
         )
 
         context.bindMounts.forEach { mount ->
@@ -101,19 +110,10 @@ class ProotShellRunner(
             // 命令通过位置参数传入, 避免任何转义; eval "$2" 对命令文本只求值一次, 等价于 bash -c "$cmd"
             "cd -- \"\$1\" && eval \"\$2\"",
             "rikkahub",
-            context.prootCwd(),
+            WORKSPACE_DIR,
             context.command,
         )
         return command
-    }
-
-    private fun WorkspaceShellContext.prootCwd(): String {
-        val normalized = cwd.trim().trim('/')
-        return if (normalized.isBlank()) {
-            WORKSPACE_DIR
-        } else {
-            "$WORKSPACE_DIR/$normalized"
-        }
     }
 
     private fun File.hasUsableRootfs(): Boolean =

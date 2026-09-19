@@ -73,7 +73,7 @@ private fun createWorkspaceToolsWithApprovals(
 ): List<Tool> {
     fun needsApproval(name: String) = resolveWorkspaceToolApproval(name, approvalOverrides)
 
-    val shellCwd = cwd?.removePrefix("/workspace/")?.removePrefix("/workspace")
+    val shellCwd = workspaceCwdRel(cwd)
 
     return listOf(
         createReadFileTool(workspaceId, ::needsApproval, workspaceRepository, cwd),
@@ -113,12 +113,12 @@ private fun createReadFileTool(
     },
     needsApproval = { needsApproval("workspace_read_file") },
     execute = {
-        val path = it.jsonObject.absolutePath("path")
-        enforceCwdScope(path, cwd)
+        val path = normalizeScopedPath(it.jsonObject.absolutePath("path"), cwd)
+        val cwdRel = workspaceCwdRel(cwd)
         if (path.isImagePath()) {
-            workspaceRepository.readImageInRootfs(workspaceId, path)
+            workspaceRepository.readImageInRootfs(workspaceId, path, cwdRel)
         } else {
-            val text = workspaceRepository.readTextInRootfs(workspaceId, path)
+            val text = workspaceRepository.readTextInRootfs(workspaceId, path, cwdRel)
             listOf(
                 UIMessagePart.Text(
                     buildJsonObject {
@@ -161,14 +161,14 @@ private fun createWriteFileTool(
     needsApproval = { needsApproval("workspace_write_file") || it.pathOutsideWritableRoots("path") },
     execute = {
         val params = it.jsonObject
-        val path = params.absolutePath("path")
-        enforceCwdScope(path, cwd)
+        val path = normalizeScopedPath(params.absolutePath("path"), cwd)
+        val cwdRel = workspaceCwdRel(cwd)
         val text = params.string("text") ?: error("text is required")
         val overwrite = params["overwrite"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: true
-        val entry = workspaceRepository.writeTextInRootfs(workspaceId, path, text, overwrite)
+        val entry = workspaceRepository.writeTextInRootfs(workspaceId, path, text, overwrite, cwdRel)
         val resultJson = entry.toJson().toMutableMap()
         if (path.isImagePath()) {
-            resultJson["render_url"] = JsonPrimitive(buildRenderUrl(workspaceId, path))
+            resultJson["render_url"] = JsonPrimitive(buildRenderUrl(workspaceId, path, cwdRel))
         }
         listOf(UIMessagePart.Text(JsonObject(resultJson).toString()))
     },
@@ -210,21 +210,21 @@ private fun createEditFileTool(
     needsApproval = { needsApproval("workspace_edit_file") || it.pathOutsideWritableRoots("path") },
     execute = {
         val params = it.jsonObject
-        val path = params.absolutePath("path")
-        enforceCwdScope(path, cwd)
+        val path = normalizeScopedPath(params.absolutePath("path"), cwd)
+        val cwdRel = workspaceCwdRel(cwd)
         val oldText = params.string("old_text") ?: error("old_text is required")
         val newText = params.string("new_text") ?: error("new_text is required")
         val replaceAll = params["replace_all"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
         require(oldText.isNotEmpty()) { "old_text must not be empty" }
 
-        val original = workspaceRepository.readTextInRootfs(workspaceId, path)
+        val original = workspaceRepository.readTextInRootfs(workspaceId, path, cwdRel)
         // 逐级尝试 exact -> line_trimmed -> block_anchor 替换器, 见 TextReplacers.kt
         val result = try {
             replaceText(original, oldText, newText, replaceAll)
         } catch (e: IllegalArgumentException) {
             error("${e.message} (path: $path)")
         }
-        val entry = workspaceRepository.writeTextInRootfs(workspaceId, path, result.updated, overwrite = true)
+        val entry = workspaceRepository.writeTextInRootfs(workspaceId, path, result.updated, overwrite = true, cwd = cwdRel)
         val diff = generateUnifiedDiff(original, result.updated, entry.path)
         listOf(
             UIMessagePart.Text(
@@ -270,9 +270,9 @@ private fun createShowFileTool(
     },
     needsApproval = { needsApproval("workspace_show_file") },
     execute = {
-        val path = it.jsonObject.absolutePath("path")
-        enforceCwdScope(path, cwd)
-        val size = workspaceRepository.rootfsFileSize(workspaceId, path) // 不存在则抛异常
+        val path = normalizeScopedPath(it.jsonObject.absolutePath("path"), cwd)
+        val cwdRel = workspaceCwdRel(cwd)
+        val size = workspaceRepository.rootfsFileSize(workspaceId, path, cwdRel) // 不存在则抛异常
         listOf(
             UIMessagePart.Text(
                 buildJsonObject {
@@ -333,13 +333,15 @@ private fun createShellTool(
     execute = {
         val params = it.jsonObject
         val command = params.string("command") ?: error("command is required")
-        val cwd = (params.string("cwd") ?: defaultCwd.orEmpty())
-            .removePrefix("/workspace/").removePrefix("/workspace")
+        // 完整归一化 ("/workspace/xxx" / "xxx" / "workspace/xxx" -> "xxx"): 该值同时是
+        // proot 的 /workspace 挂载源选择依据 (v4.5.27), 必须单一精确口径。
+        val cwd = workspaceCwdRel(params.string("cwd") ?: defaultCwd).orEmpty()
         val timeoutMillis = params.string("timeout")?.toLongOrNull()
             ?.coerceIn(1L, SHELL_TIMEOUT_MAX_SECONDS)
             ?.times(1_000L)
             ?: WorkspaceManager.DEFAULT_COMMAND_TIMEOUT_MS
         val result = workspaceRepository.executeCommand(workspaceId, command, cwd, timeoutMillis)
+        val cwdRel = cwd.ifBlank { null }
         val combinedOutput = (result.stdout ?: "") + "\n" + (result.stderr ?: "")
         val imagePaths = extractImagePathsFromText(combinedOutput)
         listOf(
@@ -352,7 +354,7 @@ private fun createShellTool(
                     if (result.truncated) put("truncated", true)
                     if (imagePaths.isNotEmpty()) {
                         put("render_urls", buildJsonArray {
-                            imagePaths.forEach { add(JsonPrimitive(buildRenderUrl(workspaceId, it))) }
+                            imagePaths.forEach { add(JsonPrimitive(buildRenderUrl(workspaceId, it, cwdRel))) }
                         })
                     }
                 }.toString()
@@ -367,7 +369,8 @@ private fun kotlinx.serialization.json.JsonObject.string(name: String): String? 
 private suspend fun WorkspaceRepository.readTextInRootfs(
     workspaceId: String,
     path: String,
-): String = readRootfsBuffer(workspaceId, path).toString(Charsets.UTF_8.name())
+    cwd: String? = null,
+): String = readRootfsBuffer(workspaceId, path, cwd).toString(Charsets.UTF_8.name())
 
 /**
  * 按 Rootfs 内绝对路径读入内存。路径映射交给 WorkspaceManager, 由它统一处理
@@ -376,12 +379,13 @@ private suspend fun WorkspaceRepository.readTextInRootfs(
 private suspend fun WorkspaceRepository.readRootfsBuffer(
     workspaceId: String,
     path: String,
+    cwd: String? = null,
 ): ByteArrayOutputStream {
-    val size = rootfsFileSize(workspaceId, path)
+    val size = rootfsFileSize(workspaceId, path, cwd)
     require(size <= MAX_READ_FILE_BYTES) {
         "File is too large to read: $path (${size / 1024 / 1024}MB, max ${MAX_READ_FILE_BYTES / 1024 / 1024}MB). Use shell commands like head, tail, or grep to read parts of it."
     }
-    return ByteArrayOutputStream(size.toInt()).also { exportRootfsFile(workspaceId, path, it) }
+    return ByteArrayOutputStream(size.toInt()).also { exportRootfsFile(workspaceId, path, it, cwd) }
 }
 
 /**
@@ -407,16 +411,23 @@ private fun extractImagePathsFromText(text: String): List<String> {
         .toList()
 }
 
-private fun buildRenderUrl(workspaceId: String, path: String): String {
-    val rel = path.trimStart('/').removePrefix("workspace/").removePrefix("/workspace/")
+private fun buildRenderUrl(workspaceId: String, path: String, cwd: String? = null): String {
+    // v4.5.27: CWD 专一空间 — 生成宿主完整路径时拼入 cwd 段, resolver 侧无需感知 cwd。
+    // host 字面形态输入 (含 workspaces/<UUID>/files/) 直接取其后段, 不再二次拼 cwd。
+    val hostRel = me.rerere.rikkahub.utils.normalizeHostWorkspacePath(path)?.removePrefix("/workspace/")
+    val rel = hostRel ?: run {
+        val base = path.trimStart('/').removePrefix("workspace/").removePrefix("/workspace/")
+        if (cwd.isNullOrEmpty()) base else "$cwd/$base"
+    }
     return "file:///data/data/me.rincore.app/files/workspaces/$workspaceId/files/$rel"
 }
 
 private suspend fun WorkspaceRepository.readImageInRootfs(
     workspaceId: String,
     path: String,
+    cwd: String? = null,
 ): List<UIMessagePart> {
-    val bytes = readRootfsBuffer(workspaceId, path).toByteArray()
+    val bytes = readRootfsBuffer(workspaceId, path, cwd).toByteArray()
 
     val filesManager = getKoin().get<FilesManager>()
     val uris = filesManager.createChatFilesByByteArrays(listOf(bytes))
@@ -426,7 +437,7 @@ private suspend fun WorkspaceRepository.readImageInRootfs(
             buildJsonObject {
                 put("path", path)
                 put("description", "Image file read successfully")
-                put("render_url", buildRenderUrl(workspaceId, path))
+                put("render_url", buildRenderUrl(workspaceId, path, cwd))
             }.toString()
         ),
     )
@@ -437,6 +448,7 @@ private suspend fun WorkspaceRepository.writeTextInRootfs(
     path: String,
     text: String,
     overwrite: Boolean,
+    cwd: String? = null,
 ): WorkspaceFileEntry {
     val pathArg = path.shellQuote()
     val result = runRootfsCommand(
@@ -457,6 +469,7 @@ private suspend fun WorkspaceRepository.writeTextInRootfs(
             ${statEntryCommand(path)}
         """.trimIndent(),
         stdin = text.toByteArray(Charsets.UTF_8),
+        cwd = cwd,
     )
     return result.stdout.parseRootfsEntry()
 }
@@ -466,10 +479,12 @@ private suspend fun WorkspaceRepository.runRootfsCommand(
     action: String,
     command: String,
     stdin: ByteArray? = null,
+    cwd: String? = null,
 ): WorkspaceCommandResult {
     val result = executeCommand(
         id = workspaceId,
         command = command,
+        cwd = cwd.orEmpty(),
         timeoutMillis = WorkspaceManager.DEFAULT_COMMAND_TIMEOUT_MS,
         stdin = stdin,
     )
@@ -525,21 +540,30 @@ private fun kotlinx.serialization.json.JsonObject.absolutePath(name: String): St
     return path
 }
 
-// v4.5.26: CWD 专一空间 — 助手级 CWD 存在时, 对 /workspace 的路径操作必须落在 CWD 之内。
-// 系统路径 (/tmp /usr 等) 维持放行, 约束对象是工作区文件区的数据边界。
-private fun enforceCwdScope(path: String, cwd: String?) {
-    if (cwd.isNullOrBlank()) return
+/**
+ * v4.5.27: 助手级 CWD 归一化 — 输入形如 "/workspace/xxx"、"xxx"、"workspace/xxx" 或 "/workspace",
+ * 输出相对 files 的纯子路径 ("xxx") 或 null (无约束)。所有链路的 cwd 参数统一经此口径。
+ */
+private fun workspaceCwdRel(cwd: String?): String? {
+    if (cwd.isNullOrBlank()) return null
     val raw = cwd.trim('/')
-    val scopeRel = (if (raw == "workspace") "" else raw.removePrefix("workspace/")).trim('/')
-    if (scopeRel.isEmpty()) return
-    if (!path.startsWith("/workspace")) return
+    val rel = (if (raw == "workspace") "" else raw.removePrefix("workspace/")).trim('/')
+    return rel.ifBlank { null }
+}
+
+/**
+ * v4.5.27: CWD 专一空间 — 模型路径归一化。
+ * 助手文件夹在沙箱内即 /workspace 根 (proot 挂载 + 直读解析同源实现);
+ * 模型若携带 cwd 名前缀 (/workspace/<cwd>/x, 历史惯性) 则剥离之, 保持单一语义。
+ */
+private fun normalizeScopedPath(path: String, cwd: String?): String {
+    val scopeRel = workspaceCwdRel(cwd) ?: return path
     val scopeAbs = "/workspace/$scopeRel"
-    val normalized = path.trimEnd('/')
-    if (normalized == scopeAbs || normalized.startsWith("$scopeAbs/")) return
-    throw IllegalArgumentException(
-        "Path '$path' is outside this assistant's workspace scope ($scopeAbs). " +
-            "This folder is assigned exclusively to this assistant — keep every file operation inside $scopeAbs."
-    )
+    return when {
+        path == scopeAbs -> "/workspace"
+        path.startsWith("$scopeAbs/") -> "/workspace/" + path.removePrefix("$scopeAbs/")
+        else -> path
+    }
 }
 
 // 免强制审批的可写安全区: 工作区文件目录、临时目录和技能目录

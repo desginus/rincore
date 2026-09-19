@@ -77,12 +77,12 @@ private fun buildWorkspacePrompt(workspace: WorkspaceEntity, cwd: String? = null
     appendLine("- Before delivering a document, run `office-check <file>` (built-in): verifies the file opens correctly and scans for leftover placeholders ({xxx} / 【xxx】 / TODO).")
     appendLine("- The skills directory is mounted at `/skills`. Each skill is a subdirectory `/skills/<skill-name>/` containing a `SKILL.md` (with `name` and `description` frontmatter) plus any supporting files. Read a skill's `SKILL.md` before using it, and follow its instructions.")
     appendLine("- Files the user uploaded are mounted at `/upload`. Treat `/upload` as READ-ONLY: read uploaded files from `/upload/<file-name>`, but never modify, overwrite, or delete anything there. If you need to change an uploaded file, copy it into `/workspace` first and edit the copy.")
-    // v4.5.26: 助手级 CWD = 该助手的专一空间。B30 后 cwd 为助手级稳定值 (不再随会话漂移),
-    // 注入安全; 明确边界 + 首步引导, 解决"看一眼整个工作区、不知道怎么下手"。
+    // v4.5.27: 助手级 CWD = 该助手的专一空间, 物理隔离在挂载层实现 —
+    // 该文件夹即沙箱内 /workspace 根 (proot 挂载 + 文件工具解析同源), 外部目录不可见/不可达。
     val rawCwd = cwd?.trim('/').orEmpty()
     val scopeRel = (if (rawCwd == "workspace") "" else rawCwd.removePrefix("workspace/")).trim('/')
     if (scopeRel.isNotEmpty()) {
-        appendLine("- This assistant's working folder is `/workspace/$scopeRel` — it is your exclusive project space: read, edit and create everything inside it, and start by listing its contents to see what you have. File operations outside this folder are blocked by the client.")
+        appendLine("- This assistant's exclusive folder \"$scopeRel\" is mounted directly at `/workspace` — everything under /workspace is yours; areas outside it are not visible or reachable from this sandbox. Start by listing /workspace to see what you have.")
     }
     append("</workspace>")
 }

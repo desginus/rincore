@@ -340,25 +340,29 @@ class WorkspaceRepository(
         manager.executeCommand(root = workspace.root, command = command, cwd = cwd)
     }
 
-    /** 按 Rootfs 内绝对路径读取文件大小, 支持 /workspace、bind mount 与 Rootfs 内部路径 */
+    /** 按 Rootfs 内绝对路径读取文件大小, 支持 /workspace、bind mount 与 Rootfs 内部路径。
+     *  v4.5.27: cwd 非空时 /workspace 解析到助手级子目录 (CWD 专一空间)。 */
     suspend fun rootfsFileSize(
         id: String,
         path: String,
+        cwd: String? = null,
     ): Long = withContext(Dispatchers.IO) {
         val workspace = dao.getById(id) ?: error("Workspace not found: $id")
         manager.ensureWorkspace(workspace.root)
-        manager.rootfsFileSize(workspace.root, path)
+        manager.rootfsFileSize(workspace.root, path, cwd)
     }
 
-    /** 按 Rootfs 内绝对路径导出文件内容, 支持 /workspace、bind mount 与 Rootfs 内部路径 */
+    /** 按 Rootfs 内绝对路径导出文件内容, 支持 /workspace、bind mount 与 Rootfs 内部路径。
+     *  v4.5.27: cwd 非空时 /workspace 解析到助手级子目录 (CWD 专一空间)。 */
     suspend fun exportRootfsFile(
         id: String,
         path: String,
         outputStream: OutputStream,
+        cwd: String? = null,
     ) = withContext(Dispatchers.IO) {
         val workspace = dao.getById(id) ?: error("Workspace not found: $id")
         manager.ensureWorkspace(workspace.root)
-        manager.exportRootfsFile(workspace.root, path, outputStream)
+        manager.exportRootfsFile(workspace.root, path, outputStream, cwd)
     }
 
     suspend fun deleteFile(

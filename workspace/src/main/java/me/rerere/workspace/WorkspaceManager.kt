@@ -126,7 +126,7 @@ class WorkspaceManager(
      * 可以直接用文件 IO 访问, 无需经过 PRoot; 只是 Rootfs 目录里对应位置是个空挂载点,
      * 按 [WorkspaceStorageArea.LINUX] 解析必然落空。
      */
-    fun resolveRootfsPath(root: String, path: String): RootfsLocation {
+    fun resolveRootfsPath(root: String, path: String, cwd: String? = null): RootfsLocation {
         val trimmed = path.trim().trimEnd('/').ifBlank { "/" }
         require(trimmed.startsWith("/")) { "Rootfs path must be absolute: $path" }
 
@@ -139,8 +139,9 @@ class WorkspaceManager(
         }
 
         if (trimmed == ROOTFS_WORKSPACE_DIR || trimmed.startsWith("$ROOTFS_WORKSPACE_DIR/")) {
+            // v4.5.27: CWD 专一空间 — cwd 非空时 /workspace 解析到该子目录 (与 proot 挂载同源)
             return RootfsLocation(
-                rootDir = filesDir(root),
+                rootDir = workspaceScopeDir(root, cwd),
                 relativePath = trimmed.removePrefix(ROOTFS_WORKSPACE_DIR).trimStart('/'),
             )
         }
@@ -159,9 +160,27 @@ class WorkspaceManager(
      * mount source) 之内, 拒绝 `..` / symlink / bind 逃逸; 指向 rootDir 自身目录
      * 或不存在/非普通文件一律返回 null。永不抛出异常。
      */
-    fun resolveRootfsFileSafe(root: String, path: String): File? {
+    /**
+     * v4.5.27: 助手级 CWD 作用域目录 — cwd 非空时返回 filesDir/<cwd> (canonical 校验在 filesDir 内),
+     * 与 ProotShellRunner 的 /workspace 挂载源保持同源; cwd 为空/非法时回退整区 filesDir。
+     */
+    private fun workspaceScopeDir(root: String, cwd: String?): File {
+        val base = filesDir(root)
+        if (cwd.isNullOrBlank()) return base
         return runCatching {
-            val location = resolveRootfsPath(root, path)
+            val baseCanonical = base.canonicalFile
+            val scoped = File(baseCanonical, cwd.trim().trim('/')).canonicalFile
+            if (scoped.path == baseCanonical.path || scoped.path.startsWith(baseCanonical.path + File.separator)) {
+                scoped
+            } else {
+                base
+            }
+        }.getOrDefault(base)
+    }
+
+    fun resolveRootfsFileSafe(root: String, path: String, cwd: String? = null): File? {
+        return runCatching {
+            val location = resolveRootfsPath(root, path, cwd)
             // resolve 内部已做 canonical + 逃逸拒绝 (resolvePath require)
             val target = fileSystem.resolve(location.rootDir, location.relativePath)
             if (target.path == location.rootDir.path || !target.isFile) return null
@@ -169,18 +188,18 @@ class WorkspaceManager(
         }.getOrNull()
     }
 
-    fun rootfsFileSize(root: String, path: String): Long =
-        resolveRootfsFile(root, path).also { it.requireReadableFile(path) }.length()
+    fun rootfsFileSize(root: String, path: String, cwd: String? = null): Long =
+        resolveRootfsFile(root, path, cwd).also { it.requireReadableFile(path) }.length()
 
-    fun exportRootfsFile(root: String, path: String, outputStream: OutputStream) {
-        val file = resolveRootfsFile(root, path)
+    fun exportRootfsFile(root: String, path: String, outputStream: OutputStream, cwd: String? = null) {
+        val file = resolveRootfsFile(root, path, cwd)
         file.requireReadableFile(path)
         // v4.5.7: 流契约统一 — 只关闭自己打开的输入流, 调用方流由调用方管理
         file.inputStream().use { input -> input.copyTo(outputStream) }
     }
 
-    private fun resolveRootfsFile(root: String, path: String): File {
-        val location = resolveRootfsPath(root, path)
+    private fun resolveRootfsFile(root: String, path: String, cwd: String? = null): File {
+        val location = resolveRootfsPath(root, path, cwd)
         return fileSystem.resolve(location.rootDir, location.relativePath)
     }
 
