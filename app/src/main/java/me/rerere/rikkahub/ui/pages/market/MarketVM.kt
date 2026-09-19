@@ -6,6 +6,7 @@ package me.rerere.rikkahub.ui.pages.market
  * ───────────────────────────────────────────────────────────────*/
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -47,6 +48,7 @@ class MarketVM(
     private val installService: MarketInstallService,
     private val installedStore: me.rerere.rikkahub.data.operit.market.InstalledPackageStore,
     private val operitToolProvider: me.rerere.rikkahub.data.operit.runtime.OperitToolProvider,
+    private val settingsStore: me.rerere.rikkahub.data.datastore.SettingsStore,
 ) : ViewModel() {
 
     private val _listState = MutableStateFlow(MarketListUiState(loading = true))
@@ -185,17 +187,39 @@ class MarketVM(
         }
     }
 
-    /** v4.5.29 阶段2: 启用/停用脚本 (启用后工具注册到工具池「插件」域) */
+    /**
+     * v4.5.29/30 阶段2/3: 启用/停用 (按类型分发)
+     *   script: 工具注册/移除「插件」域
+     *   mcp:    切换 mcpServers 里的 enable 状态
+     *   skill:  导入即用, 无开关
+     */
     fun setScriptEnabled(entryId: String, enabled: Boolean) {
         viewModelScope.launch {
+            val installed = _detailState.value.installed ?: installedStore.getInstalled(entryId)
+            val type = installed?.type ?: "script"
             runCatching {
-                installedStore.setEnabled(entryId, enabled)
-                operitToolProvider.refresh()
+                when (type) {
+                    "mcp" -> {
+                        val ids = parseUuids(installed?.extraJson.orEmpty())
+                        me.rerere.rikkahub.data.operit.importer.OperitMcpImporter.setEnabled(settingsStore, ids, enabled)
+                        installedStore.setEnabled(entryId, enabled)
+                    }
+                    else -> {
+                        installedStore.setEnabled(entryId, enabled)
+                        operitToolProvider.refresh()
+                    }
+                }
             }
             _detailState.value = _detailState.value.copy(
                 installed = _detailState.value.installed?.copy(enabled = enabled),
-                message = if (enabled) "已启用 — 工具已注册 (插件域)" else "已停用",
+                message = if (enabled) "已启用" else "已停用",
             )
         }
     }
+
+    private fun parseUuids(extraJson: String): List<java.util.UUID> = runCatching {
+        kotlinx.serialization.json.Json.parseToJsonElement(extraJson)
+            .let { el -> (el as? kotlinx.serialization.json.JsonArray)?.mapNotNull { it.jsonPrimitive.content } ?: emptyList() }
+            .mapNotNull { runCatching { java.util.UUID.fromString(it) }.getOrNull() }
+    }.getOrDefault(emptyList())
 }

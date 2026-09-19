@@ -123,6 +123,8 @@ data class MarketVersion(
     val publisherId: String = "",
     val publisher: MarketContributor? = null,
     val publishedAt: String? = null,
+    // v4.5.30 阶段3: mcp 类型的 installConfig (mcpServers JSON)
+    val installConfig: String? = null,
 )
 
 @Serializable

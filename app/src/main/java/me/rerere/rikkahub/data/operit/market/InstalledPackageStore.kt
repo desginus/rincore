@@ -33,6 +33,11 @@ data class InstalledPackage(
     val installedAt: Long = System.currentTimeMillis(),
     val enabled: Boolean = false,       // 阶段2 才支持真正启用; 阶段1 默认 false
     val runtimePackageId: String? = null,
+    // v4.5.30 阶段3: 类型特定附加数据
+    //   skill: 导入的技能名列表 (JSON array 字符串)
+    //   mcp:   导入的 server id 列表 (JSON array 字符串)
+    val extraJson: String = "",
+    val sourceUrl: String = "",          // skill/mcp 的 source (GitHub repo url)
 )
 
 private val Context.operitInstalledDataStore: DataStore<Preferences> by preferencesDataStore(name = "operit_installed")

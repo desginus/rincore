@@ -19,7 +19,17 @@ val operitModule = module {
     single { MarketRepository(get()) }
     single { PackageDownloader(get<OkHttpClient>()) }
     single { InstalledPackageStore(get()) }
-    single { MarketInstallService(get(), get(), get()) }
+    single {
+        MarketInstallService(
+            apiService = get(),
+            downloader = get(),
+            store = get(),
+            context = get(),
+            okHttpClient = get(),
+            skillManager = get(),
+            settingsStore = get(),
+        )
+    }
 
     // v4.5.29 阶段2: 脚本运行时 + 工具提供器
     single {

@@ -182,6 +182,33 @@ fun MarketDetailPage(
                                         onCheckedChange = { vm.setScriptEnabled(entry.id, it) },
                                     )
                                 }
+                            } else if (installed.type == "mcp") {
+                                // v4.5.30 阶段3: MCP 服务器导入开关
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("启用 MCP 服务器", style = MaterialTheme.typography.titleSmall)
+                                        Text(
+                                            if (installed.enabled) "已加入 MCP 配置并启用 (设置 → MCP)"
+                                            else "已暂停 (配置保留, 可随时重新启用)",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Switch(
+                                        checked = installed.enabled,
+                                        onCheckedChange = { vm.setScriptEnabled(entry.id, it) },
+                                    )
+                                }
+                            } else if (installed.type == "skill") {
+                                Text(
+                                    "已导入到技能体系 (能力 → Agent Skills), 模型可直接使用",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             } else if (installed.type == "package") {
                                 Text(
                                     "包类型 (ToolPkg) 运行时支持即将上线 — 当前已下载到本地",
