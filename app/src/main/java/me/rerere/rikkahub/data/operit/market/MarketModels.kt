@@ -2,7 +2,7 @@ package me.rerere.rikkahub.data.operit.market
 
 
 /* ───【自研】岔路口计划·阶段1 — Operit 云商城数据模型
- * 按实测的真实市场 API schema (static.operit.app/market/v2/*) 对齐
+ * 按实测的真实市场 API schema (static.operit.app/market/v2/...) 对齐
  * 来源: RinCore 自研新增 (LGPL 下独立实现, 不复制 Operit 代码)
  * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.SerialName
