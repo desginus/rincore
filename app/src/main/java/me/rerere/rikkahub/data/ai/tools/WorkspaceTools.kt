@@ -76,10 +76,10 @@ private fun createWorkspaceToolsWithApprovals(
     val shellCwd = cwd?.removePrefix("/workspace/")?.removePrefix("/workspace")
 
     return listOf(
-        createReadFileTool(workspaceId, ::needsApproval, workspaceRepository),
-        createWriteFileTool(workspaceId, ::needsApproval, workspaceRepository),
-        createEditFileTool(workspaceId, ::needsApproval, workspaceRepository),
-        createShowFileTool(workspaceId, ::needsApproval, workspaceRepository),
+        createReadFileTool(workspaceId, ::needsApproval, workspaceRepository, cwd),
+        createWriteFileTool(workspaceId, ::needsApproval, workspaceRepository, cwd),
+        createEditFileTool(workspaceId, ::needsApproval, workspaceRepository, cwd),
+        createShowFileTool(workspaceId, ::needsApproval, workspaceRepository, cwd),
         createShellTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
     )
 }
@@ -95,6 +95,7 @@ private fun createReadFileTool(
     workspaceId: String,
     needsApproval: (String) -> Boolean,
     workspaceRepository: WorkspaceRepository,
+    cwd: String? = null,
 ) = Tool(
     name = "workspace_read_file",
     description = """
@@ -113,6 +114,7 @@ private fun createReadFileTool(
     needsApproval = { needsApproval("workspace_read_file") },
     execute = {
         val path = it.jsonObject.absolutePath("path")
+        enforceCwdScope(path, cwd)
         if (path.isImagePath()) {
             workspaceRepository.readImageInRootfs(workspaceId, path)
         } else {
@@ -133,6 +135,7 @@ private fun createWriteFileTool(
     workspaceId: String,
     needsApproval: (String) -> Boolean,
     workspaceRepository: WorkspaceRepository,
+    cwd: String? = null,
 ) = Tool(
     name = "workspace_write_file",
     description = """
@@ -159,6 +162,7 @@ private fun createWriteFileTool(
     execute = {
         val params = it.jsonObject
         val path = params.absolutePath("path")
+        enforceCwdScope(path, cwd)
         val text = params.string("text") ?: error("text is required")
         val overwrite = params["overwrite"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: true
         val entry = workspaceRepository.writeTextInRootfs(workspaceId, path, text, overwrite)
@@ -174,6 +178,7 @@ private fun createEditFileTool(
     workspaceId: String,
     needsApproval: (String) -> Boolean,
     workspaceRepository: WorkspaceRepository,
+    cwd: String? = null,
 ) = Tool(
     name = "workspace_edit_file",
     description = """
@@ -206,6 +211,7 @@ private fun createEditFileTool(
     execute = {
         val params = it.jsonObject
         val path = params.absolutePath("path")
+        enforceCwdScope(path, cwd)
         val oldText = params.string("old_text") ?: error("old_text is required")
         val newText = params.string("new_text") ?: error("new_text is required")
         val replaceAll = params["replace_all"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
@@ -244,6 +250,7 @@ private fun createShowFileTool(
     workspaceId: String,
     needsApproval: (String) -> Boolean,
     workspaceRepository: WorkspaceRepository,
+    cwd: String? = null,
 ) = Tool(
     name = "workspace_show_file",
     description = """
@@ -264,6 +271,7 @@ private fun createShowFileTool(
     needsApproval = { needsApproval("workspace_show_file") },
     execute = {
         val path = it.jsonObject.absolutePath("path")
+        enforceCwdScope(path, cwd)
         val size = workspaceRepository.rootfsFileSize(workspaceId, path) // 不存在则抛异常
         listOf(
             UIMessagePart.Text(
@@ -515,6 +523,23 @@ private fun kotlinx.serialization.json.JsonObject.absolutePath(name: String): St
     require(path.startsWith("/")) { "$name must be an absolute path inside Rootfs" }
     require(!path.contains('\u0000')) { "$name contains invalid character" }
     return path
+}
+
+// v4.5.26: CWD 专一空间 — 助手级 CWD 存在时, 对 /workspace 的路径操作必须落在 CWD 之内。
+// 系统路径 (/tmp /usr 等) 维持放行, 约束对象是工作区文件区的数据边界。
+private fun enforceCwdScope(path: String, cwd: String?) {
+    if (cwd.isNullOrBlank()) return
+    val raw = cwd.trim('/')
+    val scopeRel = (if (raw == "workspace") "" else raw.removePrefix("workspace/")).trim('/')
+    if (scopeRel.isEmpty()) return
+    if (!path.startsWith("/workspace")) return
+    val scopeAbs = "/workspace/$scopeRel"
+    val normalized = path.trimEnd('/')
+    if (normalized == scopeAbs || normalized.startsWith("$scopeAbs/")) return
+    throw IllegalArgumentException(
+        "Path '$path' is outside this assistant's workspace scope ($scopeAbs). " +
+            "This folder is assigned exclusively to this assistant — keep every file operation inside $scopeAbs."
+    )
 }
 
 // 免强制审批的可写安全区: 工作区文件目录、临时目录和技能目录

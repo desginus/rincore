@@ -53,6 +53,7 @@ private fun buildWorkspacePrompt(workspace: WorkspaceEntity, cwd: String? = null
     appendLine("  - `workspace_write_file` / `workspace_edit_file`: create files, or make precise edits to existing files.")
     appendLine("  - `workspace_shell`: run shell commands (the files area is mounted at /workspace).")
     appendLine("- Prefer `workspace_shell` for tasks that standard Unix tools handle well, and prefer `workspace_edit_file` for targeted edits over rewriting whole files.")
+    appendLine("- Run `toolbox` any time to list the sandbox's built-in tools and check the environment (python3, pandoc, libraries) — a good first step when unsure what is available.")
     appendLine("- Document tools are installed and ready — prefer `office-edit` to modify an EXISTING file; use python/pandoc to create NEW files:")
     appendLine("  - `office-edit` (built-in): edits .docx / .pptx / .xlsx in place without losing formatting (patches only the touched XML; atomic — file untouched on failure).")
     appendLine("    `office-edit docx read <f>` · `office-edit docx replace <f> \"old\" \"new\"` · same with `pptx` · `office-edit xlsx read <f>` / `office-edit xlsx set <f> <sheet> <cell> \"value\"`.")
@@ -76,8 +77,13 @@ private fun buildWorkspacePrompt(workspace: WorkspaceEntity, cwd: String? = null
     appendLine("- Before delivering a document, run `office-check <file>` (built-in): verifies the file opens correctly and scans for leftover placeholders ({xxx} / 【xxx】 / TODO).")
     appendLine("- The skills directory is mounted at `/skills`. Each skill is a subdirectory `/skills/<skill-name>/` containing a `SKILL.md` (with `name` and `description` frontmatter) plus any supporting files. Read a skill's `SKILL.md` before using it, and follow its instructions.")
     appendLine("- Files the user uploaded are mounted at `/upload`. Treat `/upload` as READ-ONLY: read uploaded files from `/upload/<file-name>`, but never modify, overwrite, or delete anything there. If you need to change an uploaded file, copy it into `/workspace` first and edit the copy.")
-    // v4.3.14: cwd 不再注入 — cwd 会在会话中切换, 动态行破坏 system 前缀缓存
-    // (fp 实测 volatile 漂移); 模型需要时可用 workspace_shell 的 pwd 自行获知
+    // v4.5.26: 助手级 CWD = 该助手的专一空间。B30 后 cwd 为助手级稳定值 (不再随会话漂移),
+    // 注入安全; 明确边界 + 首步引导, 解决"看一眼整个工作区、不知道怎么下手"。
+    val rawCwd = cwd?.trim('/').orEmpty()
+    val scopeRel = (if (rawCwd == "workspace") "" else rawCwd.removePrefix("workspace/")).trim('/')
+    if (scopeRel.isNotEmpty()) {
+        appendLine("- This assistant's working folder is `/workspace/$scopeRel` — it is your exclusive project space: read, edit and create everything inside it, and start by listing its contents to see what you have. File operations outside this folder are blocked by the client.")
+    }
     append("</workspace>")
 }
 

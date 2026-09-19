@@ -1,0 +1,57 @@
+#!/bin/sh
+# toolbox — list the built-in tools available in this sandbox and check the
+# environment (python3 / pandoc / python libraries). Part of the RinCore
+# workspace provision (assets/rin-tools), injected into /usr/local/bin.
+
+echo "=== Built-in tools (in /usr/local/bin, already on PATH) ==="
+print_tool() {
+    name="$1"; desc="$2"; usage="$3"
+    if command -v "$name" >/dev/null 2>&1; then
+        echo "  [ok] $name — $desc"
+        echo "       usage: $usage"
+    else
+        echo "  [MISSING] $name — expected at /usr/local/bin/$name"
+        echo "       (re-open the app so workspace provisioning re-injects it)"
+    fi
+}
+print_tool office-edit "edit EXISTING .docx/.pptx/.xlsx without losing formatting (patches only touched parts; atomic)" \
+    'office-edit docx|pptx read <file> · office-edit docx|pptx replace <file> "old" "new" · office-edit xlsx read <file> / office-edit xlsx set <file> <sheet> <cell> "value"'
+print_tool apply-patch "Codex-style multi-file patch applier; hunks located by context, whole patch is one transaction" \
+    "apply-patch <<'PATCH' ... *** Begin Patch / *** Update File: <path> / @@ <context> / -old / +new / *** End Patch ... PATCH"
+print_tool office-check "delivery QA — structural check + leftover placeholder scan for .docx/.pptx/.xlsx" \
+    'office-check <file.docx|.pptx|.xlsx>'
+
+echo ""
+echo "=== Environment ==="
+if command -v python3 >/dev/null 2>&1; then
+    echo "  python3  : $(python3 --version 2>&1) ($(command -v python3))"
+    python3 - <<'PYEOF'
+mods = ["docx", "openpyxl", "pptx", "reportlab", "pandas"]
+missing = []
+for m in mods:
+    try:
+        __import__(m)
+    except Exception:
+        missing.append(m)
+if missing:
+    print("  py libs  : missing: " + ", ".join(missing))
+    print("             install: pip3 install " + " ".join(missing))
+else:
+    print("  py libs  : python-docx / openpyxl / python-pptx / reportlab / pandas — all ready")
+PYEOF
+else
+    echo "  python3  : MISSING — office-edit / apply-patch / office-check need it"
+    echo "             install: apt-get update && apt-get install -y python3 python3-pip"
+fi
+if command -v pandoc >/dev/null 2>&1; then
+    echo "  pandoc   : $(pandoc --version 2>/dev/null | head -1) ($(command -v pandoc))"
+else
+    echo "  pandoc   : not installed (optional; install: apt-get update && apt-get install -y pandoc)"
+fi
+
+echo ""
+echo "=== Workflow hints ==="
+echo "  1. Read a file before editing it."
+echo "  2. Code/text edits -> apply-patch; existing Office files -> office-edit; build new files -> python3 / pandoc."
+echo "  3. After a successful apply-patch, do NOT re-read the file — the tool result is authoritative."
+echo "  4. Run office-check before delivering any .docx/.pptx/.xlsx."
