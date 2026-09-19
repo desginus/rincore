@@ -6,6 +6,7 @@ package me.rerere.rikkahub.data.repository
  * 差异: launchProcess 常驻 (v3.5.27)、refreshDshSkillRoots、
  *       getAllWorkspaces、工具审批等自研
  * ───────────────────────────────────────────────────────────────*/
+import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -34,6 +35,7 @@ class WorkspaceRepository(
     private val manager: WorkspaceManager,
     private val rootfsInstaller: RootfsInstaller,
     private val settingsStore: SettingsStore,
+    private val context: Context,
 ) {
     fun listFlow(): Flow<List<WorkspaceEntity>> = dao.listFlow()
 
@@ -81,9 +83,47 @@ class WorkspaceRepository(
                 updateShellState(workspace.id, WorkspaceShellStatus.DISABLED.name)
             }
         }
+        // v4.5.24: 每次启动幂等注入内置工具 (新装 / 工具升级自动就位)
+        provisionBuiltinTools()
     }
 
     suspend fun getById(id: String): WorkspaceEntity? = dao.getById(id)
+
+    /**
+     * v4.5.24: 内置工具注入 — 把 assets/rin-tools 下的工具写入各工作区 rootfs 的
+     * /usr/local/bin (proot PATH 已含该目录), 使沙箱开箱具备 Office 文档手术编辑
+     * 能力 (office-edit: 只改被触及的 XML 部件, 其余字节原样保留, 格式不崩)。
+     * 幂等: 内容一致跳过; 工具随版本升级在下次启动/安装完成时自动覆盖。
+     */
+    suspend fun provisionBuiltinTools(workspaceId: String? = null) = withContext(Dispatchers.IO) {
+        val workspaces = if (workspaceId != null) listOfNotNull(dao.getById(workspaceId)) else dao.getAll()
+        for (workspace in workspaces) {
+            if (workspace.shellStatus != WorkspaceShellStatus.READY.name) continue
+            if (!manager.hasRootfs(workspace.root)) continue
+            runCatching { provisionInto(manager.linuxDir(workspace.root)) }
+                .onFailure { Log.w(TAG, "provisionBuiltinTools failed: id=${workspace.id}", it) }
+        }
+    }
+
+    private fun provisionInto(linuxDir: File) {
+        val names = runCatching { context.assets.list(TOOLS_ASSET_DIR)?.toList().orEmpty() }
+            .getOrDefault(emptyList())
+        if (names.isEmpty()) return
+        val binDir = File(linuxDir, "usr/local/bin").apply { mkdirs() }
+        for (name in names) {
+            val target = File(binDir, name)
+            val bytes = context.assets.open("$TOOLS_ASSET_DIR/$name").use { it.readBytes() }
+            val unchanged = target.isFile && target.length() == bytes.size.toLong() &&
+                runCatching { target.readBytes().contentEquals(bytes) }.getOrDefault(false)
+            if (!unchanged) {
+                target.writeBytes(bytes)
+                Log.i(TAG, "provisioned builtin tool: ${target.absolutePath} (${bytes.size} bytes)")
+            }
+            target.setExecutable(true, false)
+            target.setReadable(true, false)
+        }
+    }
+
 
     /** 全量 workspace 列表 (插件扫描等) */
     suspend fun getAllWorkspaces(): List<WorkspaceEntity> = dao.getAll()
@@ -158,6 +198,8 @@ class WorkspaceRepository(
                 rootfsInstaller.install(workspace.root, url, onProgress)
             }
             updateShellState(workspace, WorkspaceShellStatus.READY.name)
+            // v4.5.24: 安装完成即注入内置工具, 开箱可用
+            provisionBuiltinTools(workspace.id)
             return true
         } catch (e: CancellationException) {
             withContext(NonCancellable) {
@@ -464,5 +506,6 @@ class WorkspaceRepository(
 
     companion object {
         private const val TAG = "WorkspaceRepository"
+        private const val TOOLS_ASSET_DIR = "rin-tools"
     }
 }

@@ -82,7 +82,8 @@ val repositoryModule = module {
     }
 
     single {
-        WorkspaceRepository(get(), get(), get(), get())
+        // v4.5.24: + Context (内置工具注入 assets/rin-tools → rootfs /usr/local/bin)
+        WorkspaceRepository(get(), get(), get(), get(), get())
     }
 
     single {

@@ -1,0 +1,504 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+office-edit — surgical editor for real Office files (.docx / .pptx / .xlsx).
+
+Patches only the touched XML parts and keeps everything else byte-identical
+(same idea as GenOffice's byte-preserving OOXML surgery), so formatting and
+layout survive round-trips through Word / PowerPoint / Excel.
+
+Uses Python 3 standard library only. Edits are atomic: on any failure the
+original file is left untouched.
+
+Commands:
+  office-edit docx read <file>
+  office-edit docx replace <file> "old" "new" [--output out.docx]
+  office-edit pptx read <file>
+  office-edit pptx replace <file> "old" "new" [--output out.pptx]
+  office-edit xlsx read <file>
+  office-edit xlsx set <file> <sheet> <cell> "value" [--output out.xlsx]
+
+Exit codes: 0 = ok, 1 = error, 2 = nothing replaced (old text not found).
+"""
+import os
+import re
+import sys
+import shutil
+import zipfile
+import tempfile
+
+VERSION = "1.0.0"
+
+# ─────────────────────────── XML text helpers ───────────────────────────
+
+_ENTITIES = {("amp", "&"), ("lt", "<"), ("gt", ">"), ("quot", '"'), ("apos", "'")}
+
+def decode_entities(s: str) -> str:
+    def sub(m):
+        body = m.group(1)
+        if body in ("amp", "lt", "gt", "quot", "apos"):
+            return {"amp": "&", "lt": "<", "gt": ">", "quot": '"', "apos": "'"}[body]
+        if body.startswith("#x") or body.startswith("#X"):
+            try:
+                return chr(int(body[2:], 16))
+            except ValueError:
+                return m.group(0)
+        if body.startswith("#"):
+            try:
+                return chr(int(body[1:]))
+            except ValueError:
+                return m.group(0)
+        return m.group(0)
+    return re.sub(r"&([A-Za-z#][A-Za-z0-9#xX]*);", sub, s)
+
+def escape_xml_text(s: str) -> str:
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+# ─────────────────────────── paragraph / text slices ───────────────────────────
+# Depth-aware paragraph scan: paragraphs may legally nest (textboxes), a lazy
+# open-to-first-close match would truncate the outer paragraph.
+
+def para_slices(xml: str, p_tag: str):
+    out = []
+    open_re = re.compile(r"<" + p_tag + r"(?:\s[^>]*)?>")
+    close_re = re.compile(r"</" + p_tag + r">")
+    self_re = re.compile(r"<" + p_tag + r"(?:\s[^>]*)?/>")
+    pos = 0
+    depth = 0
+    start = -1
+    n = len(xml)
+    while pos < n:
+        m_open = open_re.search(xml, pos)
+        m_close = close_re.search(xml, pos)
+        m_self = self_re.search(xml, pos)
+        cands = [m for m in (m_open, m_close, m_self) if m]
+        if not cands:
+            break
+        m = min(cands, key=lambda x: x.start())
+        tok = m.group(0)
+        if m is m_close:
+            if depth == 0:
+                pos = m.end()
+                continue
+            depth -= 1
+            if depth == 0 and start != -1:
+                out.append((start, m.end(), xml[start:m.end()]))
+                start = -1
+            pos = m.end()
+        elif m is m_self:
+            if depth == 0:
+                out.append((m.start(), m.end(), tok))
+            pos = m.end()
+        else:
+            if depth == 0:
+                start = m.start()
+            depth += 1
+            pos = m.end()
+    return out
+
+def t_slices(para_xml: str, t_tag: str):
+    # (tag_start, inner_start, inner_end, decoded_text)
+    out = []
+    rex = re.compile(r"<" + t_tag + r"(?:\s[^>]*)?>([\s\S]*?)</" + t_tag + r">")
+    for m in rex.finditer(para_xml):
+        inner = m.group(1)
+        inner_start = m.start(1)
+        out.append((m.start(), inner_start, inner_start + len(inner), decode_entities(inner)))
+    return out
+
+def para_text(para_xml: str, t_tag: str) -> str:
+    return "".join(t[3] for t in t_slices(para_xml, t_tag))
+
+def patch_one_para(para_xml: str, new_text: str, t_tag: str):
+    """Minimal w:t-level replacement; returns patched xml or None on failure."""
+    slices = t_slices(para_xml, t_tag)
+    if not slices:
+        return None
+    old_text = "".join(s[3] for s in slices)
+    if old_text == new_text:
+        return para_xml
+    max_common = min(len(old_text), len(new_text))
+    prefix = 0
+    while prefix < max_common and old_text[prefix] == new_text[prefix]:
+        prefix += 1
+    suffix = 0
+    while (suffix < max_common - prefix
+           and old_text[len(old_text) - 1 - suffix] == new_text[len(new_text) - 1 - suffix]):
+        suffix += 1
+    change_start = prefix
+    change_end = len(old_text) - suffix
+    replacement = new_text[prefix:len(new_text) - suffix]
+    acc = 0
+    first = -1
+    last = -1
+    bounds = []
+    for i, s in enumerate(slices):
+        st, en = acc, acc + len(s[3])
+        bounds.append((st, en))
+        touches = (st <= change_start <= en) if change_start == change_end \
+            else (st < change_end and en > change_start)
+        if touches:
+            if first == -1:
+                first = i
+            last = i
+        acc = en
+    if first == -1:
+        return None
+    new_inner = []
+    for i in range(first, last + 1):
+        if i == first:
+            head = slices[i][3][:change_start - bounds[i][0]]
+            tail = slices[last][3][change_end - bounds[last][0]:]
+            new_inner.append(escape_xml_text(head + replacement + tail))
+        else:
+            new_inner.append("")
+    out = para_xml
+    for i in range(last, first - 1, -1):
+        s = slices[i]
+        close_end = s[2] + len("</" + t_tag + ">")
+        out = (out[:s[0]]
+               + '<' + t_tag + ' xml:space="preserve">' + new_inner[i - first] + '</' + t_tag + '>'
+               + out[close_end:])
+    return out
+
+def patch_part(xml: str, old: str, new: str, p_tag: str, t_tag: str):
+    """Apply old->new as surgical paragraph patches. Returns (new_xml, count, failures)."""
+    if old == "":
+        return xml, 0, -1
+    out = ""
+    cursor = 0
+    count = 0
+    failures = 0
+    for start, end, para in para_slices(xml, p_tag):
+        ptext = para_text(para, t_tag)
+        if old not in ptext:
+            continue
+        new_ptext = ptext.replace(old, new)
+        patched = patch_one_para(para, new_ptext, t_tag)
+        # self-check: re-extracted text must equal the target
+        if patched is None or para_text(patched, t_tag) != new_ptext:
+            failures += 1
+            continue
+        out += xml[cursor:start]
+        out += patched
+        cursor = end
+        count += ptext.count(old)
+    out += xml[cursor:]
+    return out, count, failures
+
+# ─────────────────────────── zip surgery ───────────────────────────
+
+def read_zip_entry(path: str, name: str):
+    with zipfile.ZipFile(path) as z:
+        return z.read(name)
+
+def write_patched_zip(src: str, dst: str, edits: dict):
+    """Rewrite the archive; only `edits` entries change content. Others copied as-is."""
+    with zipfile.ZipFile(src, "r") as zin:
+        names = zin.namelist()
+        infos = {i.filename: i for i in zin.infolist()}
+        tmp = dst + ".tmp-office-edit"
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
+            for name in names:
+                info = infos[name]
+                new_info = zipfile.ZipInfo(name, date_time=info.date_time)
+                new_info.compress_type = zipfile.ZIP_DEFLATED
+                new_info.external_attr = info.external_attr
+                new_info.create_system = info.create_system
+                data = edits[name] if name in edits else zin.read(name)
+                zout.writestr(new_info, data)
+        os.replace(tmp, dst)
+
+# ─────────────────────────── docx ───────────────────────────
+
+DOCX_TEXT_PARTS = re.compile(
+    r"^word/(document\.xml|header\d+\.xml|footer\d+\.xml|footnotes\.xml|endnotes\.xml|comments\.xml)$")
+
+PP_NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+
+def fix_docx_namespace(xml: str) -> str:
+    """合法 OOXML 在根元素声明 xmlns:w; 若缺失 (非常规文件), 在根元素开标签内补齐。
+    注意跳过 <?xml ...?> 声明与注释, 避免污染声明段。"""
+    m = re.search(r"<(?!\?|!)[A-Za-z_][\w:.-]*", xml)
+    if not m:
+        return xml
+    start = m.start()
+    end = xml.find(">", start)
+    if end == -1:
+        return xml
+    if "xmlns:w=" in xml[start:end]:
+        return xml
+    return xml[:end] + " " + PP_NS + xml[end:]
+
+def docx_read(path: str):
+    with zipfile.ZipFile(path) as z:
+        names = [n for n in z.namelist() if DOCX_TEXT_PARTS.match(n)]
+        if not names:
+            print("error: not a docx (word/document.xml missing)", file=sys.stderr)
+            return 1
+        total = 0
+        for name in sorted(names, key=lambda n: (n != "word/document.xml", n)):
+            xml = z.read(name).decode("utf-8")
+            xml = fix_docx_namespace(xml)
+            paras = [p[2] for p in para_slices(xml, "w:p")]
+            texts = [para_text(p, "w:t") for p in paras]
+            header_printed = name == "word/document.xml"
+            for i, t in enumerate(texts, 1):
+                if t.strip():
+                    if not header_printed:
+                        print(f"--- {name} ---")
+                        header_printed = True
+                    print(f"[{i}] {t}")
+                    total += 1
+        if total == 0:
+            print("(no text)")
+    return 0
+
+def docx_replace(path: str, old: str, new: str, output: str):
+    with zipfile.ZipFile(path) as z:
+        names = z.namelist()
+    edits = {}
+    total = 0
+    fails = 0
+    for name in names:
+        if not DOCX_TEXT_PARTS.match(name):
+            continue
+        xml = read_zip_entry(path, name).decode("utf-8")
+        xml2 = fix_docx_namespace(xml)
+        patched, count, failures = patch_part(xml2, old, new, "w:p", "w:t")
+        total += count
+        fails += failures if failures > 0 else 0
+        if count > 0:
+            edits[name] = patched.encode("utf-8")
+    if total == 0 and fails == 0:
+        print(f"no match: {old!r} not found in {os.path.basename(path)}")
+        return 2
+    if fails > 0:
+        print(f"error: {fails} paragraph(s) could not be patched safely; file unchanged", file=sys.stderr)
+        return 1
+    write_patched_zip(path, output, edits)
+    print(f"replaced {total} occurrence(s) in {os.path.basename(path)} -> {os.path.basename(output)}")
+    return 0
+
+# ─────────────────────────── pptx ───────────────────────────
+
+PPTX_TEXT_PARTS = re.compile(r"^ppt/(slides/slide\d+\.xml|notesSlides/notesSlide\d+\.xml)$")
+
+def pptx_read(path: str):
+    with zipfile.ZipFile(path) as z:
+        names = [n for n in z.namelist() if PPTX_TEXT_PARTS.match(n)]
+        if not names:
+            print("error: not a pptx (pptx/slides missing)", file=sys.stderr)
+            return 1
+        slides = sorted(n for n in names if "slides/" in n)
+        for name in slides:
+            xml = z.read(name).decode("utf-8")
+            paras = [p[2] for p in para_slices(xml, "a:p")]
+            texts = [para_text(p, "a:t") for p in paras]
+            idx = re.search(r"slide(\d+)\.xml", name).group(1)
+            print(f"--- Slide {idx} ---")
+            for t in texts:
+                if t.strip():
+                    print(t)
+    return 0
+
+def pptx_replace(path: str, old: str, new: str, output: str):
+    with zipfile.ZipFile(path) as z:
+        names = z.namelist()
+    edits = {}
+    total = 0
+    fails = 0
+    for name in names:
+        if not PPTX_TEXT_PARTS.match(name):
+            continue
+        xml = read_zip_entry(path, name).decode("utf-8")
+        patched, count, failures = patch_part(xml, old, new, "a:p", "a:t")
+        total += count
+        fails += failures if failures > 0 else 0
+        if count > 0:
+            edits[name] = patched.encode("utf-8")
+    if total == 0 and fails == 0:
+        print(f"no match: {old!r} not found in {os.path.basename(path)}")
+        return 2
+    if fails > 0:
+        print(f"error: {fails} paragraph(s) could not be patched safely; file unchanged", file=sys.stderr)
+        return 1
+    write_patched_zip(path, output, edits)
+    print(f"replaced {total} occurrence(s) in {os.path.basename(path)} -> {os.path.basename(output)}")
+    return 0
+
+# ─────────────────────────── xlsx ───────────────────────────
+
+def xlsx_sheet_files(path: str):
+    """sheet name -> worksheet xml part name"""
+    with zipfile.ZipFile(path) as z:
+        wb = z.read("xl/workbook.xml").decode("utf-8")
+        rels = z.read("xl/_rels/workbook.xml.rels").decode("utf-8") if "xl/_rels/workbook.xml.rels" in z.namelist() else None
+        sheets = re.findall(r'<sheet[^>]*name="([^"]*)"[^>]*r:id="([^"]*)"', wb)
+        if not sheets:
+            sheets = [(m.group(1), None) for m in re.finditer(r'<sheet[^>]*name="([^"]*)"', wb)]
+        result = {}
+        rid_map = {}
+        if rels:
+            for m in re.finditer(r'<Relationship[^>]*Id="([^"]*)"[^>]*Target="([^"]*)"', rels):
+                rid_map[m.group(1)] = m.group(2)
+            for m in re.finditer(r'<Relationship[^>]*Target="([^"]*)"[^>]*Id="([^"]*)"', rels):
+                rid_map.setdefault(m.group(1), m.group(2))
+        for name, rid in sheets:
+            target = rid_map.get(rid) if rid else None
+            if target:
+                target = target.lstrip("/")
+                if not target.startswith("xl/"):
+                    target = "xl/" + target
+                result[name] = target
+        # fallback: sheetN in order
+        fallback = sorted(n for n in z.namelist() if re.match(r"xl/worksheets/sheet\d+\.xml$", n))
+        for i, (name, _) in enumerate(sheets):
+            if name not in result and i < len(fallback):
+                result[name] = fallback[i]
+        return result
+
+def cell_value(cell_xml: str, shared: list):
+    if 't="inlineStr"' in cell_xml:
+        m = re.search(r"<is>[\s\S]*?<t(?:\s[^>]*)?>([\s\S]*?)</t>[\s\S]*?</is>", cell_xml)
+        return decode_entities(m.group(1)) if m else ""
+    if 't="s"' in cell_xml:
+        m = re.search(r"<v>([\s\S]*?)</v>", cell_xml)
+        if m:
+            i = int(m.group(1))
+            return shared[i] if 0 <= i < len(shared) else ""
+        return ""
+    if 't="str"' in cell_xml or "f>" in cell_xml:
+        m = re.search(r"<v>([\s\S]*?)</v>", cell_xml)
+        fm = re.search(r"<f[^>]*>([\s\S]*?)</f>", cell_xml)
+        val = decode_entities(m.group(1)) if m else ""
+        f = decode_entities(fm.group(1)) if fm else ""
+        return f"={f}" if f else val
+    m = re.search(r"<v>([\s\S]*?)</v>", cell_xml)
+    return decode_entities(m.group(1)) if m else ""
+
+def xlsx_read(path: str):
+    with zipfile.ZipFile(path) as z:
+        shared = []
+        if "xl/sharedStrings.xml" in z.namelist():
+            ss = z.read("xl/sharedStrings.xml").decode("utf-8")
+            for si in re.findall(r"<si>([\s\S]*?)</si>", ss):
+                shared.append("".join(decode_entities(m) for m in re.findall(r"<t(?:\s[^>]*)?>([\s\S]*?)</t>", si)))
+        for sheet_name, part in xlsx_sheet_files(path).items():
+            xml = z.read(part).decode("utf-8")
+            print(f"--- Sheet: {sheet_name} ---")
+            for row in re.findall(r"<row[^>]*>([\s\S]*?)</row>|<row[^>]*/>", xml):
+                for cm in re.finditer(r'<c\s+r="([A-Z]+\d+)"[^>]*(?:/>|>([\s\S]*?)</c>)', row):
+                    ref = cm.group(1)
+                    inner = cm.group(0)
+                    val = cell_value(inner, shared)
+                    if val != "":
+                        print(f"{ref}: {val}")
+    return 0
+
+def col_index(ref: str) -> int:
+    letters = re.match(r"([A-Z]+)", ref).group(1)
+    n = 0
+    for ch in letters:
+        n = n * 26 + (ord(ch) - ord("A") + 1)
+    return n
+
+def xlsx_set(path: str, sheet: str, cell: str, value: str, output: str):
+    cell = cell.upper()
+    with zipfile.ZipFile(path) as z:
+        sheets = xlsx_sheet_files(path)
+        if sheet not in sheets:
+            print(f"error: sheet {sheet!r} not found; available: {', '.join(sheets)}", file=sys.stderr)
+            return 1
+        part = sheets[sheet]
+        xml = z.read(part).decode("utf-8")
+    mrow = re.match(r"([A-Z]+)(\d+)", cell)
+    if not mrow:
+        print(f"error: bad cell ref {cell!r} (expected e.g. B3)", file=sys.stderr)
+        return 1
+    col, row = mrow.group(1), int(mrow.group(2))
+    is_num = re.match(r"^-?\d+(\.\d+)?$", value) is not None
+    if is_num:
+        body = f'<v>{value}</v>'
+        t_attr = ""
+    else:
+        body = f'<is><t xml:space="preserve">{escape_xml_text(value)}</t></is>'
+        t_attr = ' t="inlineStr"'
+
+    # existing cell?
+    cm = re.search(r'<c\s+r="' + cell + r'"(?:\s[^>]*)?(?:/>|>[\s\S]*?</c>)', xml)
+    if cm:
+        old = cm.group(0)
+        s_attr = ""
+        sm = re.match(r'<c\s+r="' + cell + r'"(\s[^>]*)?', old)
+        if sm and sm.group(1):
+            s_attr_m = re.search(r'\ss="[^"]*"', sm.group(1))
+            if s_attr_m:
+                s_attr = s_attr_m.group(0)
+        new_cell = f'<c r="{cell}"{s_attr}{t_attr}>{body}</c>'
+        xml = xml[:cm.start()] + new_cell + xml[cm.end():]
+    else:
+        # row exists?
+        rm = re.search(r'<row\s+r="' + str(row) + r'"(?:\s[^>]*)?>[\s\S]*?</row>', xml)
+        new_cell = f'<c r="{cell}"{t_attr}>{body}</c>'
+        if rm:
+            row_xml = rm.group(0)
+            # insert in column order before first wider cell, else before </row>
+            ins = None
+            for c2 in re.finditer(r'<c\s+r="([A-Z]+)\d+"', row_xml):
+                if col_index(c2.group(1) + "1") > col_index(col + "1"):
+                    ins = c2.start()
+                    break
+            if ins is None:
+                ins = row_xml.rfind("</row>")
+            row_new = row_xml[:ins] + new_cell + row_xml[ins:]
+            xml = xml[:rm.start()] + row_new + xml[rm.end():]
+        else:
+            new_row = f'<row r="{row}">{new_cell}</row>'
+            ins = None
+            for r2 in re.finditer(r'<row\s+r="(\d+)"', xml):
+                if int(r2.group(1)) > row:
+                    ins = r2.start()
+                    break
+            if ins is None:
+                ins = xml.find("</sheetData>")
+                if ins == -1:
+                    print("error: malformed sheet (no sheetData)", file=sys.stderr)
+                    return 1
+            xml = xml[:ins] + new_row + xml[ins:]
+    write_patched_zip(path, output, {part: xml.encode("utf-8")})
+    print(f"set {sheet}!{cell} = {value!r} -> {os.path.basename(output)}")
+    return 0
+
+# ─────────────────────────── CLI ───────────────────────────
+
+USAGE = __doc__
+
+def main(argv):
+    args = [a for a in argv]
+    output = None
+    if "--output" in args:
+        i = args.index("--output")
+        output = args[i + 1]
+        del args[i:i + 2]
+    if len(args) < 3:
+        print(USAGE)
+        return 1
+    kind, cmd = args[0], args[1]
+    if kind == "docx" and cmd == "read" and len(args) == 3:
+        return docx_read(args[2])
+    if kind == "docx" and cmd == "replace" and len(args) == 5:
+        return docx_replace(args[2], args[3], args[4], output or args[2])
+    if kind == "pptx" and cmd == "read" and len(args) == 3:
+        return pptx_read(args[2])
+    if kind == "pptx" and cmd == "replace" and len(args) == 5:
+        return pptx_replace(args[2], args[3], args[4], output or args[2])
+    if kind == "xlsx" and cmd == "read" and len(args) == 3:
+        return xlsx_read(args[2])
+    if kind == "xlsx" and cmd == "set" and len(args) == 6:
+        return xlsx_set(args[2], args[3], args[4], args[5], output or args[2])
+    print(USAGE)
+    return 1
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
