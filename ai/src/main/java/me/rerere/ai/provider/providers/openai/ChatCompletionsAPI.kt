@@ -1259,7 +1259,7 @@ class ChatCompletionsAPI(
                             put("id", tool.toolCallId)
                             put("type", "function")
                             put("function", buildJsonObject {
-                                put("name", tool.toolName)
+                                // 2.5.3 移植: 移除 tool_calls 回放中的冗余 name (部分服务不兼容)
                                 // 使用 inputAsJson() 归一化，避免流式中断导致的残缺 JSON 被发送
                                 put("arguments", tool.inputAsJson().toString())
                             })

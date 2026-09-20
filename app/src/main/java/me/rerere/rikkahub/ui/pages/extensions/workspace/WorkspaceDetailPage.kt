@@ -12,6 +12,10 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -82,6 +86,7 @@ import me.rerere.hugeicons.stroke.Folder01
 import me.rerere.hugeicons.stroke.MoreVertical
 import me.rerere.hugeicons.stroke.Refresh01
 import me.rerere.hugeicons.stroke.Settings03
+import me.rerere.hugeicons.stroke.Tick02
 import me.rerere.hugeicons.stroke.Share08
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.ai.tools.resolveWorkspaceToolApproval
@@ -159,8 +164,16 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
         val outputStream = context.contentResolver.openOutputStream(uri) ?: return@rememberLauncherForActivityResult
         if (entry.isDirectory) vm.exportFolder(entry, outputStream) else vm.exportFile(entry, outputStream)
     }
+    // 2.5.3 移植: 批量导出目标目录选择
+    val batchExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        vm.exportFilesToDirectory(uri, context.contentResolver)
+    }
 
-    BackHandler(enabled = pagerState.currentPage == 1 && state.path.isNotBlank()) {
+    BackHandler(enabled = state.selectionMode) { vm.exitSelectionMode() }
+    BackHandler(enabled = !state.selectionMode && pagerState.currentPage == 1 && state.path.isNotBlank()) {
         vm.goUp()
     }
 
@@ -168,15 +181,37 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = state.workspace?.name ?: stringResource(R.string.workspace_detail_title),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    if (state.exporting) {
+                        Text(
+                            text = "导出中 ${state.exportCompleted}/${state.exportTotal}",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    } else if (state.selectionMode) {
+                        Text(
+                            text = "已选 ${state.selectedPaths.size} 项",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    } else {
+                        Text(
+                            text = state.workspace?.name ?: stringResource(R.string.workspace_detail_title),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 },
-                navigationIcon = { BackButton() },
+                navigationIcon = { if (state.selectionMode) IconButton(onClick = { vm.exitSelectionMode() }) { Icon(HugeIcons.Cancel01, contentDescription = "退出多选") } else BackButton() },
                 actions = {
-                    if (pagerState.currentPage == 1) {
+                    if (state.selectionMode) {
+                        TextButton(onClick = { vm.selectAllVisible() }) { Text("全选") }
+                        TextButton(
+                            onClick = {
+                                if (vm.prepareBatchExport()) batchExportLauncher.launch(null)
+                            },
+                            enabled = state.selectedPaths.isNotEmpty() && !state.exporting,
+                        ) { Text("导出") }
+                    } else if (pagerState.currentPage == 1) {
                         IconButton(onClick = { showCreateDialog = true }) {
                             Icon(
                                 HugeIcons.File02,
@@ -273,9 +308,24 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
                             vm.shareFile(entry, context.cacheDir, onReady)
                         }
                     },
+                    // 2.5.3 移植: 长按多选
+                    onToggleSelection = { vm.toggleSelection(it) },
+                    onLongPress = { vm.enterSelectionMode(it) },
                 )
             }
         }
+    }
+
+    // 2.5.3 移植: 批量导出结果
+    state.exportResult?.let { result ->
+        AlertDialog(
+            onDismissRequest = vm::dismissExportResult,
+            title = { Text("导出结果") },
+            text = { Text(result, modifier = Modifier.verticalScroll(rememberScrollState())) },
+            confirmButton = {
+                TextButton(onClick = vm::dismissExportResult) { Text("确定") }
+            },
+        )
     }
 
     state.workspace?.let { workspace ->
@@ -285,8 +335,7 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
                 onDismiss = { showInstallDialog = false },
                 onConfirm = { url ->
                     vm.installRootfs(url)
-                    showInstallDialog = false
-                },
+                }
             )
         }
     }
@@ -821,6 +870,8 @@ private fun WorkspaceFilesPage(
     onShare: (WorkspaceFileEntry) -> Unit,
     onPreviewFile: (WorkspaceFileEntry) -> Unit,
     onResolveImage: suspend (WorkspaceFileEntry, WorkspaceStorageArea) -> File?,
+    onToggleSelection: (WorkspaceFileEntry) -> Unit,
+    onLongPress: (WorkspaceFileEntry) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -866,6 +917,10 @@ private fun WorkspaceFilesPage(
                 onMove = { onMove(entry) },
                 onExport = { onExport(entry) },
                 onShare = { onShare(entry) },
+                selectionMode = state.selectionMode,
+                selected = state.selectedPaths.contains(entry.path),
+                onToggleSelection = { onToggleSelection(entry) },
+                onLongPress = { onLongPress(entry) },
             )
         }
     }
@@ -922,6 +977,7 @@ private fun WorkspacePathBar(
 }
 
 @Composable
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 private fun WorkspaceFileCard(
     entry: WorkspaceFileEntry,
     area: WorkspaceStorageArea,
@@ -933,15 +989,44 @@ private fun WorkspaceFileCard(
     onMove: () -> Unit,
     onExport: () -> Unit,
     onShare: () -> Unit,
+    selectionMode: Boolean = false,
+    selected: Boolean = false,
+    onToggleSelection: () -> Unit = {},
+    onLongPress: () -> Unit = {},
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
+    // 2.5.3 移植: 多选模式整卡可点切换选中; 长按任意条目进入多选
+    val cardModifier = when {
+        selectionMode -> Modifier.combinedClickable(
+            onClick = onToggleSelection,
+            onLongClick = onLongPress,
+        )
+        entry.isDirectory -> Modifier.clickable(onClick = onOpen)
+        else -> Modifier.combinedClickable(
+            onClick = onOpen,
+            onLongClick = onLongPress,
+        )
+    }
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .then(if (entry.isDirectory) Modifier.clickable(onClick = onOpen) else Modifier),
+            .then(cardModifier),
         colors = CustomColors.cardColorsOnSurfaceContainer,
+        border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
     ) {
+        if (selectionMode && !entry.isDirectory) {
+            Row(
+                modifier = Modifier.padding(start = 12.dp, top = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = if (selected) HugeIcons.Tick02 else HugeIcons.Tick02,
+                    contentDescription = null,
+                    tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                )
+            }
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()

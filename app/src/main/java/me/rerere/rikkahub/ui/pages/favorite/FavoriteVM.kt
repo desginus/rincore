@@ -49,19 +49,16 @@ class FavoriteVM(
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    fun removeFavorite(refKey: String) {
-        viewModelScope.launch {
-            favoriteRepository.deleteByRefKey(refKey)
-        }
+    // 2.5.3 移植: suspend 化 — 调用侧保证删除/恢复完成时序, 撤销后收藏可正确恢复
+    suspend fun removeFavorite(refKey: String) {
+        favoriteRepository.deleteByRefKey(refKey)
     }
 
     suspend fun getEntityByRefKey(refKey: String): FavoriteEntity? {
         return favoriteRepository.getByRefKey(refKey)
     }
 
-    fun restoreFavorite(entity: FavoriteEntity) {
-        viewModelScope.launch {
-            favoriteRepository.upsert(entity)
-        }
+    suspend fun restoreFavorite(entity: FavoriteEntity) {
+        favoriteRepository.upsert(entity)
     }
 }

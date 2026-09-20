@@ -5,6 +5,10 @@ package me.rerere.rikkahub.ui.pages.extensions.workspace
  * 来源: 原版移植 + 自研 (工作区状态管理)
  * 差异: rootfs 安装/Shell 状态自研状态机
  * ───────────────────────────────────────────────────────────────*/
+import android.content.ContentResolver
+import android.net.Uri
+import android.provider.DocumentsContract
+import android.webkit.MimeTypeMap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
@@ -12,7 +16,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -250,6 +257,96 @@ class WorkspaceDetailVM(
         }
     }
 
+    // ═══ 2.5.3 移植: 长按多选 + 批量导出 ═══
+    private var pendingExport: Pair<WorkspaceStorageArea, List<WorkspaceFileEntry>>? = null
+
+    fun toggleSelection(entry: WorkspaceFileEntry) {
+        if (!state.value.selectionMode) return
+        _state.update { s ->
+            val next = s.selectedPaths.toMutableSet().apply {
+                if (!add(entry.path)) remove(entry.path)
+            }
+            s.copy(selectedPaths = next)
+        }
+    }
+
+    fun enterSelectionMode(entry: WorkspaceFileEntry) {
+        _state.update { it.copy(selectionMode = true, selectedPaths = setOf(entry.path)) }
+    }
+
+    fun exitSelectionMode() {
+        _state.update { it.copy(selectionMode = false, selectedPaths = emptySet()) }
+    }
+
+    fun selectAllVisible() {
+        _state.update { s ->
+            s.copy(selectedPaths = s.entries.filterNot { it.isDirectory }.map { it.path }.toSet())
+        }
+    }
+
+    fun prepareBatchExport(): Boolean {
+        val s = state.value
+        val files = s.entries.filter { it.path in s.selectedPaths && !it.isDirectory }
+        if (pendingExport != null || s.exporting || files.isEmpty()) return false
+        pendingExport = s.area to files
+        return true
+    }
+
+    fun dismissExportResult() {
+        _state.update { it.copy(exportResult = null) }
+    }
+
+    fun exportFilesToDirectory(treeUri: Uri?, resolver: ContentResolver) {
+        val (area, entries) = pendingExport.also { pendingExport = null } ?: return
+        if (treeUri == null) return
+        _state.update { it.copy(exporting = true, exportCompleted = 0, exportTotal = entries.size, exportResult = null) }
+        viewModelScope.launch {
+            var succeeded = 0
+            val failures = mutableListOf<String>()
+            try {
+                withContext(Dispatchers.IO) {
+                    val parent = DocumentsContract.buildDocumentUriUsingTree(
+                        treeUri, DocumentsContract.getTreeDocumentId(treeUri)
+                    )
+                    entries.forEachIndexed { index, entry ->
+                        ensureActive()
+                        var destination: Uri? = null
+                        try {
+                            val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(
+                                entry.name.substringAfterLast('.', "").lowercase()
+                            ) ?: "application/octet-stream"
+                            val document = DocumentsContract.createDocument(resolver, parent, mime, entry.name)
+                                ?: error("无法创建目标文件")
+                            destination = document
+                            val output = resolver.openOutputStream(document) ?: error("无法打开目标文件")
+                            output.use { repository.exportFile(id = id, area = area, path = entry.path, outputStream = it) }
+                            succeeded++
+                            destination = null
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (error: Exception) {
+                            failures += "${entry.name}：${error.message ?: "导出失败"}"
+                        } finally {
+                            // 只清理本次创建但未完整写入的文件
+                            destination?.let { runCatching { DocumentsContract.deleteDocument(resolver, it) } }
+                        }
+                        _state.update { it.copy(exportCompleted = index + 1) }
+                    }
+                }
+                _state.update {
+                    it.copy(exportResult = buildString {
+                        append("已导出 $succeeded/${entries.size} 个文件")
+                        if (failures.isNotEmpty()) append("\n\n" + failures.joinToString("\n"))
+                    }, selectionMode = false, selectedPaths = emptySet())
+                }
+            } catch (error: CancellationException) {
+                _state.update { it.copy(exporting = false) }
+            } catch (error: Exception) {
+                _state.update { it.copy(exporting = false, exportResult = "批量导出失败: ${error.message ?: ""}") }
+            }
+        }
+    }
+
     fun setShellCompatibilityMode(enabled: Boolean) {
         viewModelScope.launch {
             try {
@@ -424,6 +521,13 @@ data class WorkspaceDetailState(
     val area: WorkspaceStorageArea = WorkspaceStorageArea.FILES,
     val path: String = "",
     val entries: List<WorkspaceFileEntry> = emptyList(),
+    // 2.5.3 移植: 长按多选 + 批量导出
+    val selectionMode: Boolean = false,
+    val selectedPaths: Set<String> = emptySet(),
+    val exporting: Boolean = false,
+    val exportCompleted: Int = 0,
+    val exportTotal: Int = 0,
+    val exportResult: String? = null,
     // v3.22.0: 文件预览 (解析出的宿主 File; null=无预览)
     val previewFile: File? = null,
     val previewEntry: WorkspaceFileEntry? = null,

@@ -866,6 +866,15 @@ enum class ChatFontFamily {
 }
 
 @Serializable
+// 2.5.3 移植: 输入栏背景效果 (模糊 / 玻璃)
+@Serializable
+enum class BackgroundEffectType {
+    @SerialName("blur")
+    BLUR,
+    @SerialName("glass")
+    GLASS,
+}
+
 data class DisplaySetting(
     val userAvatar: Avatar = Avatar.Dummy,
     val userNickname: String = "",
@@ -879,6 +888,7 @@ data class DisplaySetting(
     val showTokenUsage: Boolean = true,
     val showThinkingContent: Boolean = true,
     val autoCloseThinking: Boolean = true,
+    val backgroundEffectType: BackgroundEffectType = BackgroundEffectType.BLUR,
     val showUpdates: Boolean = true,
     val showMessageJumper: Boolean = true,
     val messageJumperOnLeft: Boolean = false,

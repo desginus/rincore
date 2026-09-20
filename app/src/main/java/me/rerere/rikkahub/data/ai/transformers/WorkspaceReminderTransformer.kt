@@ -4,6 +4,10 @@ package me.rerere.rikkahub.data.ai.transformers
 /* ───【原版对齐】WorkspaceReminderTransformer.kt | 差异 ±7 行
  * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
  * ───────────────────────────────────────────────────────────────*/
+import android.util.Log
+import kotlinx.coroutines.CancellationException
+import java.io.ByteArrayOutputStream
+import java.nio.file.Paths
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -29,7 +33,9 @@ class WorkspaceReminderTransformer(
         // 与 ChatService.createWorkspaceToolsIfReady 保持一致: 仅在 shell 就绪时注入
         if (workspace.shellStatus != WorkspaceShellStatus.READY.name) return messages
 
-        val prompt = buildWorkspacePrompt(workspace, ctx.workspaceCwd)
+        // 2.5.2/2.5.3 移植: 读取工作区 AGENTS.md (项目级指令) 并入系统提示
+        val prompt = buildWorkspacePrompt(workspace, ctx.workspaceCwd) +
+            buildAgentsPrompt(workspaceId, ctx.workspaceCwd)
 
         // 追加到第一条 system 消息; 若不存在则插入一条
         val systemIndex = messages.indexOfFirst { it.role == MessageRole.SYSTEM }
@@ -40,6 +46,51 @@ class WorkspaceReminderTransformer(
         } else {
             listOf(UIMessage.system(prompt)) + messages
         }
+    }
+}
+
+/**
+ * 2.5.2/2.5.3 移植: AGENTS.md 读取 — /root/.agents、/workspace 根、会话当前目录三处。
+ * 超过 64KB 跳过 (提示词膨胀保护), 读不到静默跳过。
+ */
+private suspend fun buildAgentsPrompt(workspaceId: String, cwd: String?): String {
+    // ProotShellRunner 将 HOME 固定为 /root; 相对 PWD 按 /workspace 解析。
+    val workingDirectory = Paths.get("/workspace")
+        .resolve(cwd?.takeIf { it.isNotBlank() } ?: ".")
+        .normalize()
+    val paths = linkedSetOf(
+        "/root/.agents/AGENTS.md",
+        "/workspace/AGENTS.md",
+        workingDirectory.resolve("AGENTS.md").toString(),
+    )
+    val instructions = paths.mapNotNull { path ->
+        try {
+            val size = workspaceRepository.rootfsFileSize(workspaceId, path)
+            require(size <= MAX_AGENTS_BYTES) { "AGENTS.md exceeds $MAX_AGENTS_BYTES bytes" }
+            val content = ByteArrayOutputStream().use { output ->
+                workspaceRepository.exportRootfsFile(workspaceId, path, output)
+                output.toString(Charsets.UTF_8.name())
+            }
+            content.takeIf { it.isNotBlank() }?.let { path to it }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.d("WorkspaceReminder", "Skipping workspace instructions: $path", e)
+            null
+        }
+    }
+    if (instructions.isEmpty()) return ""
+    return buildString {
+        appendLine()
+        appendLine()
+        appendLine("<workspace_instructions>")
+        appendLine("Follow the AGENTS.md instructions below.")
+        instructions.forEach { (path, content) ->
+            appendLine()
+            appendLine("AGENTS.md source: $path")
+            appendLine(content)
+        }
+        append("</workspace_instructions>")
     }
 }
 
@@ -101,3 +152,5 @@ private fun UIMessage.appendText(extra: String): UIMessage {
     }
     return copy(parts = updatedParts)
 }
+
+private val MAX_AGENTS_BYTES: Long = 64L * 1024

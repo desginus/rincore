@@ -72,7 +72,9 @@ internal fun useCropLauncher(
             setAllowedGestures(
                 UCropActivity.SCALE, UCropActivity.ROTATE, UCropActivity.NONE
             )
-            setCompressionFormat(Bitmap.CompressFormat.PNG)
+            // 2.5.3 移植: 裁剪输出用 JPEG (PNG 对大图编码极慢且无收益, 加速确认响应)
+            setCompressionFormat(Bitmap.CompressFormat.JPEG)
+            setCompressionQuality(90)
         }).withMaxResultSize(4096, 4096)
         aspectRatio?.let { (x, y) ->
             crop = crop.withAspectRatio(x, y)

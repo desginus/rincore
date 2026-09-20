@@ -692,6 +692,9 @@
   <string name="setting_display_page_enable_auto_scroll_title">Auto Scroll</string>
   <string name="setting_display_page_enable_blur_effect_desc">Enable blur effect on chat input bar</string>
   <string name="setting_display_page_enable_blur_effect_title">Enable Blur Effect</string>
+  <string name="setting_display_page_background_effect_type">Background Effect Type</string>
+  <string name="setting_display_page_background_effect_blur">Blur</string>
+  <string name="setting_display_page_background_effect_glass">Glass</string>
   <string name="setting_display_page_enable_latex_rendering_desc">Render mathematical expressions and formulas using LaTeX syntax</string>
   <string name="setting_display_page_enable_latex_rendering_title">Enable LaTeX Rendering</string>
   <string name="setting_display_page_enable_message_generation_haptic_effect_desc">Enable haptic feedback when messages are being generated</string>

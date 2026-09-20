@@ -674,6 +674,9 @@
   <string name="setting_display_page_enable_auto_scroll_title">自动滚动</string>
   <string name="setting_display_page_enable_blur_effect_desc">在聊天输入栏启用模糊效果</string>
   <string name="setting_display_page_enable_blur_effect_title">启用模糊效果</string>
+  <string name="setting_display_page_background_effect_type">背景效果类型</string>
+  <string name="setting_display_page_background_effect_blur">模糊</string>
+  <string name="setting_display_page_background_effect_glass">玻璃</string>
   <string name="setting_display_page_enable_latex_rendering_desc">使用 LaTeX 语法渲染数学表达式和公式</string>
   <string name="setting_display_page_enable_latex_rendering_title">启用 LaTeX 渲染</string>
   <string name="setting_display_page_enable_message_generation_haptic_effect_desc">消息生成时启用触觉反馈效果</string>

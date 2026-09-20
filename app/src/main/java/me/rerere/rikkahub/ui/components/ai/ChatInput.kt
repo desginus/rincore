@@ -76,6 +76,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.glass.GlassDefaults
+import dev.chrisbanes.haze.glass.GlassStyle
+import dev.chrisbanes.haze.glass.OpticalSizeValue
+import dev.chrisbanes.haze.glass.hazeGlass
+import dev.chrisbanes.haze.glass.material3.Material3
 import dev.chrisbanes.haze.blur.HazeBlurStyle
 import dev.chrisbanes.haze.blur.hazeBlur
 import dev.chrisbanes.haze.blur.material3.Material3
@@ -96,6 +101,7 @@ import me.rerere.hugeicons.stroke.Fullscreen
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.BackgroundEffectType
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.data.datastore.getQuickMessagesOfAssistant
@@ -159,7 +165,13 @@ fun ChatInput(
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
 
-    val containerShape = MaterialTheme.shapes.largeIncreased
+    val themeShape = MaterialTheme.shapes.largeIncreased
+    val containerShape = RoundedCornerShape(
+        topStart = themeShape.topStart,
+        topEnd = themeShape.topEnd,
+        bottomEnd = themeShape.bottomEnd,
+        bottomStart = themeShape.bottomStart,
+    )
     val modelListState = rememberModelListState(
         modelId = assistant.chatModelId ?: settings.chatModelId,
         providers = settings.providers,
@@ -236,10 +248,29 @@ fun ChatInput(
                         // 4.1.5 对齐原版: 删除生成中模糊降级 (v3.11.31/34 的
                         // `&& !loading` 降级在 haze 2.0 下已无必要, 且是用户
                         // 实测"输入条显示为同色底"的直接原因 — 原版恒模糊)
-                        if (settings.displaySetting.enableBlurEffect) Modifier.hazeBlur(
-                            input = HazeInput.Sources(hazeState),
-                            style = inputHazeStyle,
-                        )
+                        if (settings.displaySetting.enableBlurEffect) {
+                            // 2.5.3 移植: 模糊 / 玻璃两种背景效果
+                            when (settings.displaySetting.backgroundEffectType) {
+                                BackgroundEffectType.BLUR -> Modifier.hazeBlur(
+                                    input = HazeInput.Sources(hazeState),
+                                    style = inputHazeStyle,
+                                )
+                                BackgroundEffectType.GLASS -> Modifier.hazeGlass(
+                                    input = HazeInput.Sources(hazeState),
+                                    style = GlassStyle.Material3(
+                                        containerColor = hazeTintColor,
+                                        tint = hazeTintColor.copy(alpha = 0.72f),
+                                    ) {
+                                        // 防止背景文字与输入文字竞争视觉
+                                        optics(GlassDefaults.optics.copy(
+                                            blurRadius = OpticalSizeValue.Fixed(16.dp),
+                                            depth = OpticalSizeValue.Fixed(0.5f),
+                                        ))
+                                        shape(containerShape)
+                                    },
+                                )
+                            }
+                        }
                         else Modifier
                     ),
                 shape = containerShape,

@@ -1456,9 +1456,18 @@ class ChatService(
                 )
             }
 
+        // 2.5.3 移植: 分支沿用原对话标题并自动添加序号 (查重直到不冲突)
+        val existingTitles = conversationRepo
+            .getConversationsOfAssistant(currentConversation.assistantId)
+            .first()
+            .mapTo(mutableSetOf()) { it.title }
+        val forkTitle = generateSequence(1) { it + 1 }
+            .map { "${currentConversation.title}($it)" }
+            .first { it !in existingTitles }
         val forkConversation = Conversation(
             id = Uuid.random(),
             assistantId = currentConversation.assistantId,
+            title = forkTitle,
             messageNodes = copiedNodes,
             customSystemPrompt = currentConversation.customSystemPrompt,
             modeInjectionIds = currentConversation.modeInjectionIds,
