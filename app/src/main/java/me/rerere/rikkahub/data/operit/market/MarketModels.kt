@@ -17,6 +17,8 @@ data class MarketManifest(
     val types: List<MarketType> = emptyList(),
     val formatVersions: List<MarketFormatVersion> = emptyList(),
     val categories: List<MarketCategory> = emptyList(),
+    // v4.5.32: states 宽容接受 (实测字段: [{code, publicListed}])
+    val states: List<JsonElement> = emptyList(),
 )
 
 @Serializable
@@ -47,7 +49,12 @@ data class MarketListResponse(
     val ok: Boolean = false,
     val marketVersion: Int = 2,
     val generatedAt: String? = null,
-    val list: String? = null,
+    // v4.5.32 修复: list 真实形态为对象 —
+    //   all: {} / type: {"type": "script"} / category: {"categoryId": "..."} /
+    //   组合: {"categoryId": "...", "type": "package"}
+    // 原建模 String 导致全列表解析失败 ("Expected beginning of the string,
+    // but got {" — 用户实机报错)。外部 schema 非关键字段宽容接受。
+    val list: JsonElement? = null,
     val sort: String? = null,
     val page: Int = 1,
     val pageSize: Int = 100,

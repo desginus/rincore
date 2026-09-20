@@ -120,7 +120,11 @@ class MarketVM(
                     error = null,
                 )
             }.onFailure { e ->
-                _listState.value = s.copy(loading = false, error = e.message ?: "load failed")
+                _listState.value = s.copy(
+                    loading = false,
+                    // v4.5.32: 上游 schema 变更时给出可诊断提示
+                    error = "市场数据加载失败（可能为上游数据格式变更）\n${e.message ?: e}",
+                )
             }
         }
     }
