@@ -23,8 +23,10 @@ import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.Screen
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowLeft01
+import me.rerere.hugeicons.stroke.Download04
 import me.rerere.hugeicons.stroke.GlobalSearch
 import me.rerere.hugeicons.stroke.Megaphone01
+import me.rerere.hugeicons.stroke.Puzzle
 import me.rerere.hugeicons.stroke.Package
 import me.rerere.hugeicons.stroke.ServerStack01
 import me.rerere.hugeicons.stroke.Settings01
@@ -125,6 +127,19 @@ fun SettingAdvancedPage(
                     leadingContent = { Icon(HugeIcons.Settings01, null) },
                     supportingContent = { Text("权限自动发现 · 后台保障链引导") },
                     headlineContent = { Text("权限管理") },
+                )
+                // v4.5.40: 生态入口收纳 (原抽屉/对话页入口迁入 — UI 恢复原样)
+                item(
+                    onClick = { navController.navigate(Screen.Market) },
+                    leadingContent = { Icon(HugeIcons.Download04, null) },
+                    supportingContent = { Text("Operit 生态应用市场 (浏览/下载/安装插件)") },
+                    headlineContent = { Text("应用市场") },
+                )
+                item(
+                    onClick = { navController.navigate(Screen.OperitUi) },
+                    leadingContent = { Icon(HugeIcons.Puzzle, null) },
+                    supportingContent = { Text("已装插件的界面面板 (侧边栏面板渲染)") },
+                    headlineContent = { Text("插件面板") },
                 )
             }
 

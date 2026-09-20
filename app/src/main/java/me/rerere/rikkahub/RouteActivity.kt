@@ -966,7 +966,10 @@ sealed interface Screen : NavKey {
     @Serializable
     data object Market : Screen
 
-    // v4.5.34: 插件界面渲染页 (对话页右上角入口)
+    // v4.5.34: 插件界面渲染页
+    // v4.5.40 修复: 补 @Serializable — NavBackStack 持久化 (onSaveInstanceState)
+    // 序列化 back stack 时缺 serializer 崩溃 (SerializationException: OperitUi)
+    @Serializable
     data object OperitUi : Screen
 
     @Serializable
