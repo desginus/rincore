@@ -108,7 +108,8 @@ class ChatCompletionsAPIMessageTest {
         assertTrue("Second assistant message should have tool_calls", assistant2.containsKey("tool_calls"))
         val toolCalls2 = assistant2["tool_calls"]?.jsonArray
         assertEquals(1, toolCalls2?.size)
-        assertEquals("calculate", toolCalls2?.get(0)?.jsonObject?.get("function")?.jsonObject?.get("name")?.jsonPrimitive?.content)
+        // 2.5.3 行为变更: name 不再回放, 校验 id 存在即可
+        assertTrue("tool call should still have id", toolCalls2?.get(0)?.jsonObject?.get("id") != null)
 
         // Verify second tool result
         val toolResult2 = result[4].jsonObject

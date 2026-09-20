@@ -874,6 +874,7 @@ enum class BackgroundEffectType {
     GLASS,
 }
 
+@Serializable
 data class DisplaySetting(
     val userAvatar: Avatar = Avatar.Dummy,
     val userNickname: String = "",
