@@ -42,8 +42,8 @@ class OperitUiRuntime {
                 val argsJson = args.getOrNull(1) as? String ?: "[]"
                 handleHostCall(name, argsJson)
             }
-            instance.evaluate<Any?>(HOST_PRELUDE)
-            instance.evaluate<Any?>(uiScriptFile.readText(), "operit_ui.js")
+            instance.evaluate<Any?>(HOST_PRELUDE + "\n;null;")
+            instance.evaluate<Any?>(uiScriptFile.readText() + "\n;null;", "operit_ui.js")
             // 调用 Screen(ctx)
             instance.evaluate<Any?>(
                 """
@@ -59,22 +59,23 @@ class OperitUiRuntime {
                 } catch (e) {
                     __uiError = String((e && e.message) || e);
                 }
+                ;null;
                 """.trimIndent(),
             )
-            val err = instance.evaluate<String?>("__uiError")
+            val err = instance.evaluate<String?>(jsSafeString("__uiError"))
             if (!err.isNullOrBlank()) {
                 instance.close()
                 return@withContext Result.failure(IllegalStateException("ui script error: $err"))
             }
-            val html = instance.evaluate<String?>("__uiResult && __uiResult.html") ?: ""
+            val html = instance.evaluate<String?>(jsSafeString("__uiResult && __uiResult.html")) ?: ""
             if (html.isBlank()) {
                 instance.close()
                 return@withContext Result.failure(IllegalStateException("ui script produced no html (Screen 未返回 ctx.UI.WebView)"))
             }
-            val baseUrl = instance.evaluate<String?>("(__uiResult && __uiResult.baseUrl) || 'about:blank'") ?: "about:blank"
+            val baseUrl = instance.evaluate<String?>(jsSafeString("(__uiResult && __uiResult.baseUrl) || 'about:blank'")) ?: "about:blank"
             // v4.5.36 修复: JS Array 直接 evaluate<String?> 会抛
             // "No such type converter to convert 'kotlin.collections.List<*>' to 'kotlin.String?'"
-            val bridgeNamesRaw = instance.evaluate<String?>("JSON.stringify(Object.keys(__uiBridges))") ?: ""
+            val bridgeNamesRaw = instance.evaluate<String?>(jsSafeString("JSON.stringify(Object.keys(__uiBridges))")) ?: ""
             Result.success(UiSession(instance, html, baseUrl, bridgeNamesRaw))
         } catch (e: Throwable) {
             runCatching { instance.close() }
@@ -188,9 +189,10 @@ class OperitUiRuntime {
                         }
                     })();
                 })();
+                ;null;
                 """.trimIndent(),
             )
-            return instance.evaluate<String?>("__operitBridgeResult")
+            return instance.evaluate<String?>(jsSafeString("__operitBridgeResult"))
                 ?: """{"ok":false,"error":"bridge produced no result"}"""
         }
 
@@ -220,8 +222,8 @@ class OperitUiRuntime {
             val instance = QuickJs.create(jobDispatcher = Dispatchers.IO)
             try {
                 instance.evaluationTimeoutMillis = 30_000L
-                instance.evaluate<Any?>(REGISTRATION_PRELUDE)
-                instance.evaluate<Any?>(mainJs.readText(), "toolpkg_main.js")
+                instance.evaluate<Any?>(REGISTRATION_PRELUDE + "\n;null;")
+                instance.evaluate<Any?>(mainJs.readText() + "\n;null;", "toolpkg_main.js")
                 instance.evaluate<Any?>(
                     """
                     try {
@@ -229,10 +231,11 @@ class OperitUiRuntime {
                             ? exports.registerToolPkg : null;
                         if (__fn) { __fn(); } else { __regError = 'no registerToolPkg export'; }
                     } catch (e) { __regError = String((e && e.message) || e); }
+                    ;null;
                     """.trimIndent(),
                 )
                 val jsonStr = instance.evaluate<String?>(
-                    "JSON.stringify({ routes: __uiRoutes, entries: __navEntries })",
+                    jsSafeString("JSON.stringify({ routes: __uiRoutes, entries: __navEntries })"),
                 ) ?: "{}"
                 // screen 相对 main.js 所在目录 — 拼接为相对包根路径
                 val mainDirRel = mainJs.parentFile
@@ -302,6 +305,17 @@ class OperitUiRuntime {
     )
 
     private companion object {
+        /**
+         * v4.5.37 根治: JS 侧类型归一化 —
+         * dokar3 evaluate<String?> 对 JS Array/Object 会抛
+         * "No such type converter to convert 'kotlin.collections.List<*>' to 'kotlin.String?'"。
+         * 所有跨边界取值经此包裹: 任意 JS 值 → string | null (永不向 Kotlin 暴露数组/对象/函数)。
+         */
+        fun jsSafeString(expr: String): String =
+            "(function(){ var __v = ($expr); if (__v === null || __v === undefined) return null; " +
+                "if (typeof __v === 'string') return __v; " +
+                "var __s = JSON.stringify(__v); return (__s === undefined) ? String(__v) : __s; })()"
+
         val REGISTRATION_PRELUDE = """
             // v4.5.35: ToolPkg 注册桩 — 对齐 Operit JsToolPkgRegistration
             var exports = {};

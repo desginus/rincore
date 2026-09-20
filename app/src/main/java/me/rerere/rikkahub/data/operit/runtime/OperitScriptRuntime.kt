@@ -48,9 +48,10 @@ class OperitScriptRuntime(
             }
             // 2. 结果捕获 (complete 协议兜底 — JS 前导已用 JS 实现, 这里不再需要 Kotlin 侧)
             // 3. 注入宿主前导 + 脚本源码
-            instance.evaluate<Any?>(HOST_PRELUDE)
+            // v4.5.37: 尾部 ;null; — 返回值确定化 (脚本末行可能是函数赋值, 避免转换器接触不确定类型)
+            instance.evaluate<Any?>(HOST_PRELUDE + "\n;null;")
             val source = scriptFile.readText()
-            instance.evaluate<Any?>(source, "operit_script.js")
+            instance.evaluate<Any?>(source + "\n;null;", "operit_script.js")
 
             // 4. 调用工具函数 (async 安全: evaluate 自动 drain job queue 直到 Promise 完成)
             val paramsLiteral = json.encodeToString(JsonElement.serializer(), paramsJson)
@@ -69,10 +70,10 @@ class OperitScriptRuntime(
                     }
                 })();
             """.trimIndent()
-            instance.evaluate<Any?>(invokeCode)
+            instance.evaluate<Any?>(invokeCode + "\n;null;")
 
             // 5. 读取结果
-            val resultStr = instance.evaluate<String?>("__operitResult")
+            val resultStr = instance.evaluate<String?>(jsSafeString("__operitResult"))
                 ?: return@withContext Result.failure(IllegalStateException("script produced no result (tool=$toolName)"))
             val parsed = runCatching { json.parseToJsonElement(resultStr) }.getOrDefault(JsonPrimitive(resultStr))
             Result.success(parsed)
@@ -190,6 +191,17 @@ class OperitScriptRuntime(
     }
 
     private companion object {
+        /**
+         * v4.5.37 根治: JS 侧类型归一化 —
+         * dokar3 evaluate<String?> 对 JS Array/Object 会抛
+         * "No such type converter to convert 'kotlin.collections.List<*>' to 'kotlin.String?'"。
+         * 所有跨边界取值经此包裹: 任意 JS 值 → string | null。
+         */
+        fun jsSafeString(expr: String): String =
+            "(function(){ var __v = ($expr); if (__v === null || __v === undefined) return null; " +
+                "if (typeof __v === 'string') return __v; " +
+                "var __s = JSON.stringify(__v); return (__s === undefined) ? String(__v) : __s; })()"
+
         const val SCRIPT_TIMEOUT_MS = 60_000L
 
         /** 宿主前导 JS — 定义脚本世界 (与 Operit 协议对齐) */
