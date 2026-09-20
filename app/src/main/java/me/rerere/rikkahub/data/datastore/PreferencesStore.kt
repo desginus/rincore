@@ -282,6 +282,7 @@ class SettingsStore(
                 preferences[HIDDEN_DOMAINS] = JsonInstant.encodeToString(settings.hiddenDomains)
                 preferences[REMOVED_BUILTIN_DOMAINS] = JsonInstant.encodeToString(settings.removedBuiltinDomains)
                 preferences[EXEMPT_FROM_DOMAIN_TOOLS] = JsonInstant.encodeToString(settings.exemptFromDomainTools)
+                preferences[DEMOTED_FRAMEWORK_TOOLS] = JsonInstant.encodeToString(settings.demotedFrameworkTools)
                 preferences[CLASSIFIER_PROMPT] = settings.classifierPrompt
                 // v3.6.102 工具改名 (自研)
                 preferences[TOOL_NAME_OVERRIDES] = JsonInstant.encodeToString(settings.toolNameOverrides)
@@ -298,6 +299,7 @@ class SettingsStore(
         val HIDDEN_DOMAINS = stringPreferencesKey("hidden_domains")
         val REMOVED_BUILTIN_DOMAINS = stringPreferencesKey("removed_builtin_domains")
         val EXEMPT_FROM_DOMAIN_TOOLS = stringPreferencesKey("exempt_from_domain_tools")
+        val DEMOTED_FRAMEWORK_TOOLS = stringPreferencesKey("demoted_framework_tools")
         val CLASSIFIER_PROMPT = stringPreferencesKey("classifier_prompt")
         val TOOL_NAME_OVERRIDES = stringPreferencesKey("tool_name_overrides")
     }
@@ -433,6 +435,7 @@ class SettingsStore(
                 hiddenDomains = preferences[HIDDEN_DOMAINS]?.let { JsonInstant.decodeFromString(it) } ?: emptySet(),
                 removedBuiltinDomains = preferences[REMOVED_BUILTIN_DOMAINS]?.let { JsonInstant.decodeFromString(it) } ?: emptySet(),
                 exemptFromDomainTools = preferences[EXEMPT_FROM_DOMAIN_TOOLS]?.let { JsonInstant.decodeFromString(it) } ?: emptySet(),
+                demotedFrameworkTools = preferences[DEMOTED_FRAMEWORK_TOOLS]?.let { JsonInstant.decodeFromString(it) } ?: emptySet(),
                 classifierPrompt = preferences[CLASSIFIER_PROMPT] ?: "",
             )
         }
@@ -641,6 +644,7 @@ class SettingsStore(
             preferences[HIDDEN_DOMAINS] = JsonInstant.encodeToString(settings.hiddenDomains)
             preferences[REMOVED_BUILTIN_DOMAINS] = JsonInstant.encodeToString(settings.removedBuiltinDomains)
             preferences[EXEMPT_FROM_DOMAIN_TOOLS] = JsonInstant.encodeToString(settings.exemptFromDomainTools)
+            preferences[DEMOTED_FRAMEWORK_TOOLS] = JsonInstant.encodeToString(settings.demotedFrameworkTools)
             preferences[CLASSIFIER_PROMPT] = settings.classifierPrompt
         }
     }
@@ -814,6 +818,7 @@ data class Settings(
     val hiddenDomains: Set<String> = emptySet(), // 用户隐藏的域（内置域不删除但可隐藏）
     val removedBuiltinDomains: Set<String> = emptySet(), // 用户删除的内置域预设
     val exemptFromDomainTools: Set<String> = emptySet(), // 移出域管理的工具名集合 — 与框架工具一样始终注入请求体, 不并入域分类
+    val demotedFrameworkTools: Set<String> = emptySet(), // v4.6.5: 被移进域管理的框架工具 (从顶层框架集降级, 由域路由接管)
     val toolNameOverrides: Map<String, String> = emptyMap(), // v3.6.102: 工具改名 — 原工具名→新工具名 (汉语名工具改为字母数字, 模型才能识别)
     val classifierPrompt: String = "", // 工具自动分类提示词。空=使用默认
 ) {

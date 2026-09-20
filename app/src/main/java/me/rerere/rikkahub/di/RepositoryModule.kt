@@ -34,6 +34,8 @@ val repositoryModule = module {
 
     single {
         MemoryRepository(get())
+        // v4.6.5: 增强记忆仓库 (增强记忆工具 ↔ 原生记忆系统)
+        me.rerere.rikkahub.data.repository.EnhancedMemoryRepository(get(), get())
     }
 
     single {

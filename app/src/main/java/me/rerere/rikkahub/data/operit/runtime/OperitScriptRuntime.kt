@@ -24,6 +24,8 @@ class OperitScriptRuntime(
     private val okHttpProvider: () -> okhttp3.OkHttpClient = { okhttp3.OkHttpClient() },
     // v4.6.4 运行兼容: shell 桥 (workspace 沙箱; null = 无可用工作区 → 诚实降级)
     private val workspaceProvider: () -> Pair<me.rerere.rikkahub.data.repository.WorkspaceRepository, String>? = { null },
+    // v4.6.5 记忆交火: 增强记忆仓库桥 (extended_memory_tools ↔ RinCore 记忆系统)
+    private val enhancedMemoryProvider: () -> me.rerere.rikkahub.data.repository.EnhancedMemoryRepository? = { null },
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true; prettyPrint = false }
 
@@ -202,6 +204,129 @@ class OperitScriptRuntime(
                         put("stderr", JsonPrimitive(result.stderr ?: ""))
                     }
                 }
+                // ═══ v4.6.5 记忆交火: 增强记忆工具 ↔ RinCore 记忆系统 (原生构建, 直接交互) ═══
+                "memory.create" -> {
+                    val p = memParams(args) ?: return err("missing params")
+                    val repo = enhancedMemoryProvider() ?: return err("memory bridge unavailable")
+                    val node = repo.create(
+                        assistantId = "",
+                        title = p["title"] as? String ?: return err("title required"),
+                        content = p["content"] as? String ?: "",
+                        contentType = p["contentType"] as? String ?: "text",
+                        source = p["source"] as? String ?: "",
+                        folderPath = p["folderPath"] as? String ?: "",
+                        tags = (p["tags"] as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
+                    )
+                    ok {
+                        put("data", if (node == null) kotlinx.serialization.json.JsonArray(emptyList())
+                        else kotlinx.serialization.json.JsonArray(listOf(nodeJson(node))))
+                    }
+                }
+                "memory.update" -> {
+                    val p = memParams(args) ?: return err("missing params")
+                    val repo = enhancedMemoryProvider() ?: return err("memory bridge unavailable")
+                    val node = repo.update(
+                        assistantId = "",
+                        oldTitle = p["oldTitle"] as? String ?: return err("oldTitle required"),
+                        newTitle = p["newTitle"] as? String ?: "",
+                        content = p["content"] as? String,
+                        contentType = p["contentType"] as? String,
+                        source = p["source"] as? String,
+                        folderPath = p["folderPath"] as? String,
+                        tags = (p["tags"] as? List<*>)?.filterIsInstance<String>(),
+                    )
+                    ok {
+                        put("data", if (node == null) kotlinx.serialization.json.JsonArray(emptyList())
+                        else kotlinx.serialization.json.JsonArray(listOf(nodeJson(node))))
+                    }
+                }
+                "memory.delete" -> {
+                    val p = memParams(args) ?: return err("missing params")
+                    val repo = enhancedMemoryProvider() ?: return err("memory bridge unavailable")
+                    val deleted = repo.deleteByTitle("", p["title"] as? String ?: return err("title required"))
+                    ok {
+                        put("data", kotlinx.serialization.json.JsonArray(
+                            if (deleted) listOf(kotlinx.serialization.json.JsonPrimitive(1)) else emptyList()
+                        ))
+                    }
+                }
+                "memory.move" -> {
+                    val p = memParams(args) ?: return err("missing params")
+                    val repo = enhancedMemoryProvider() ?: return err("memory bridge unavailable")
+                    val count = repo.move(
+                        assistantId = "",
+                        titles = (p["titles"] as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
+                        sourceFolderPath = p["sourceFolderPath"] as? String,
+                        targetFolderPath = p["targetFolderPath"] as? String ?: "",
+                    )
+                    ok {
+                        put("data", kotlinx.serialization.json.JsonArray(
+                            if (count > 0) listOf(kotlinx.serialization.json.JsonPrimitive(count)) else emptyList()
+                        ))
+                    }
+                }
+                "memory.link" -> {
+                    val p = memParams(args) ?: return err("missing params")
+                    val repo = enhancedMemoryProvider() ?: return err("memory bridge unavailable")
+                    val link = repo.link(
+                        assistantId = "",
+                        sourceTitle = p["sourceTitle"] as? String ?: return err("sourceTitle required"),
+                        targetTitle = p["targetTitle"] as? String ?: return err("targetTitle required"),
+                        linkType = p["linkType"] as? String ?: "related",
+                        weight = (p["weight"] as? Number)?.toDouble() ?: 1.0,
+                        description = p["description"] as? String ?: "",
+                    )
+                    ok {
+                        put("data", if (link == null) kotlinx.serialization.json.JsonPrimitive(false)
+                        else linkJson(link))
+                    }
+                }
+                "memory.queryLinks" -> {
+                    val p = memParams(args) ?: return err("missing params")
+                    val repo = enhancedMemoryProvider() ?: return err("memory bridge unavailable")
+                    val links = repo.queryLinks(
+                        assistantId = "",
+                        linkId = (p["linkId"] as? Number)?.toLong(),
+                        sourceTitle = p["sourceTitle"] as? String,
+                        targetTitle = p["targetTitle"] as? String,
+                        linkType = p["linkType"] as? String,
+                        limit = (p["limit"] as? Number)?.toInt() ?: 100,
+                    )
+                    ok {
+                        put("data", kotlinx.serialization.json.JsonArray(links.map { linkJson(it) }))
+                    }
+                }
+                "memory.updateLink" -> {
+                    val p = memParams(args) ?: return err("missing params")
+                    val repo = enhancedMemoryProvider() ?: return err("memory bridge unavailable")
+                    val done = repo.updateLink(
+                        assistantId = "",
+                        linkId = (p["linkId"] as? Number)?.toLong(),
+                        sourceTitle = p["sourceTitle"] as? String,
+                        targetTitle = p["targetTitle"] as? String,
+                        linkType = p["linkType"] as? String,
+                        newLinkType = p["newLinkType"] as? String ?: "",
+                        weight = (p["weight"] as? Number)?.toDouble() ?: 1.0,
+                        description = p["description"] as? String ?: "",
+                    )
+                    ok { put("data", kotlinx.serialization.json.JsonPrimitive(done)) }
+                }
+                "memory.deleteLink" -> {
+                    val p = memParams(args) ?: return err("missing params")
+                    val repo = enhancedMemoryProvider() ?: return err("memory bridge unavailable")
+                    val count = repo.deleteLink(
+                        assistantId = "",
+                        linkId = (p["linkId"] as? Number)?.toLong(),
+                        sourceTitle = p["sourceTitle"] as? String,
+                        targetTitle = p["targetTitle"] as? String,
+                        linkType = p["linkType"] as? String,
+                    )
+                    ok {
+                        put("data", kotlinx.serialization.json.JsonArray(
+                            if (count > 0) listOf(kotlinx.serialization.json.JsonPrimitive(count)) else emptyList()
+                        ))
+                    }
+                }
                 else -> err("capability not implemented in RinCore runtime yet: $name")
             }
         } catch (e: Throwable) {
@@ -216,6 +341,39 @@ class OperitScriptRuntime(
         put("success", JsonPrimitive(false))
         put("message", JsonPrimitive(message))
     }.toString()
+
+    /** memory.* 参数解析 (单参数 JSON 对象 → Map) */
+    private fun memParams(args: List<JsonElement>): Map<String, Any?>? {
+        val rawStr = args.getOrNull(0)?.let { str(it) } ?: return null
+        val obj = runCatching {
+            json.parseToJsonElement(rawStr) as? kotlinx.serialization.json.JsonObject
+        }.getOrNull() ?: return null
+        return obj.mapValues { (_, v) ->
+            when (v) {
+                is JsonPrimitive -> if (v.isString) v.content else v.content.toDoubleOrNull() ?: v.content.toBooleanStrictOrNull() ?: v.content
+                is JsonArray -> v.mapNotNull { (it as? JsonPrimitive)?.content }
+                else -> null
+            }
+        }
+    }
+
+    private fun nodeJson(node: me.rerere.rikkahub.data.db.entity.MemNodeEntity) = buildJsonObject {
+        put("id", JsonPrimitive(node.id))
+        put("title", JsonPrimitive(node.title))
+        put("content", JsonPrimitive(node.content))
+        put("folderPath", JsonPrimitive(node.folderPath))
+        put("tags", JsonPrimitive(node.tags))
+        put("updatedAt", JsonPrimitive(node.updatedAt))
+    }
+
+    private fun linkJson(link: me.rerere.rikkahub.data.db.entity.MemLinkEntity) = buildJsonObject {
+        put("id", JsonPrimitive(link.id))
+        put("sourceTitle", JsonPrimitive(link.sourceTitle))
+        put("targetTitle", JsonPrimitive(link.targetTitle))
+        put("linkType", JsonPrimitive(link.linkType))
+        put("weight", JsonPrimitive(link.weight))
+        put("description", JsonPrimitive(link.description))
+    }
 
     private fun str(el: JsonElement): String = when (el) {
         is JsonPrimitive -> el.content
@@ -288,6 +446,17 @@ class OperitScriptRuntime(
             function __hostJSON(name, args) {
                 return JSON.parse(__hostCall(name, JSON.stringify(args)));
             }
+            // v4.6.5: 记忆桥调用 (returnArray=true 返回数组语义, false 返回对象语义)
+            function __memCall(name, params, returnArray) {
+                try {
+                    var r = JSON.parse(__hostCall(name, JSON.stringify([JSON.stringify(params || {})])));
+                    if (!r.success) { return returnArray ? [] : null; }
+                    return r.data != null ? r.data : (returnArray ? [] : null);
+                } catch (e) {
+                    if (typeof console !== 'undefined' && console.log) { console.log('memory call failed: ' + name + ' ' + e); }
+                    return returnArray ? [] : null;
+                }
+            }
             var Tools = {
                 Files: {
                     read: function (p) { return __hostJSON('files.read', [p]); },
@@ -300,6 +469,18 @@ class OperitScriptRuntime(
                     listFiles: function (p) { return __hostJSON('files.list', [p]); },
                     move: function (f, t) { return __hostJSON('files.move', [f, t]); },
                     copy: function (f, t) { return __hostJSON('files.copy', [f, t]); }
+                },
+                // ═══ v4.6.5 记忆交火: 增强记忆工具直连 RinCore 记忆系统 ═══
+                Memory: {
+                    create: function (p) { return __memCall('memory.create', p, true); },
+                    update: function (p) { return __memCall('memory.update', p, true); },
+                    deleteMemory: function (p) { return __memCall('memory.delete', p, true); },
+                    move: function (p) { return __memCall('memory.move', p, true); },
+                    link: function (p) { return __memCall('memory.link', p, false); },
+                    queryLinks: function (p) { return __memCall('memory.queryLinks', p, false); },
+                    updateLink: function (p) { return __memCall('memory.updateLink', p, false); },
+                    deleteLink: function (p) { return __memCall('memory.deleteLink', p, true); },
+                    updateUserPreferences: function (p) { return __notImplemented('memory.updateUserPreferences'); }
                 },
                 // v4.6.4 运行兼容: HTTP 桥 (RinCore OkHttp; 搜索/绘图/GitHub 类包的底座)
                 Net: {

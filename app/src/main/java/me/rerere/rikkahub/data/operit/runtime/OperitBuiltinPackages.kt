@@ -12,8 +12,12 @@ import me.rerere.rikkahub.data.operit.market.InstalledPackageStore
 import java.io.File
 
 object OperitBuiltinPackages {
-    /** 种子版本 — 内置包内容更新时递增 (驱动文件刷新, 保留 enabled) */
-    private const val SEED_VERSION = 1
+    /** 种子版本 — 内置包内容更新时递增 (驱动文件刷新, 保留 enabled)
+     *  v2 (v4.6.5): 增强记忆 / 增强HTTP 默认开启 (升级时对这两个包强制开一次) */
+    private const val SEED_VERSION = 2
+
+    /** 默认开启白名单 (首次播种即开; 种子升级时强制开一次, 之后尊重用户开关) */
+    private val DEFAULT_ENABLED_PACKAGES = setOf("extended_memory_tools", "extended_http_tools")
     private const val ASSET_DIR = "operit-packages"
     private const val ENTRY_PREFIX = "builtin:"
 
@@ -73,6 +77,16 @@ object OperitBuiltinPackages {
             val title = ScriptMetadataParser.pickText(meta.display_name)
                 .ifBlank { meta.name.ifBlank { fileName.removeSuffix(".js") } }
 
+            // v4.6.5: 白名单包默认开启 (首次即开; 种子升级强制开一次, 之后尊重用户)
+            val baseName = fileName.removeSuffix(".js")
+            val isDefaultOn = baseName in DEFAULT_ENABLED_PACKAGES
+            val versionBumped = existing != null && existing.version != builtinVersion()
+            val enabled = when {
+                isDefaultOn && (existing == null || versionBumped) -> true
+                existing != null -> existing.enabled
+                else -> meta.enabledByDefault || isDefaultOn
+            }
+
             store.upsert(
                 InstalledPackage(
                     entryId = entryId,
@@ -83,8 +97,7 @@ object OperitBuiltinPackages {
                     fileName = targetFile.name,
                     installPath = targetFile.absolutePath,
                     formatVer = "script_v2",
-                    // 用户已开关过的保留其选择; 新包按 METADATA 默认值
-                    enabled = existing?.enabled ?: meta.enabledByDefault,
+                    enabled = enabled,
                     sourceUrl = "builtin",
                 )
             )

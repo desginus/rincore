@@ -16,6 +16,8 @@ import me.rerere.rikkahub.data.db.dao.FolderDAO
 import me.rerere.rikkahub.data.db.dao.GenMediaDAO
 import me.rerere.rikkahub.data.db.dao.ManagedFileDAO
 import me.rerere.rikkahub.data.db.dao.MemoryDAO
+import me.rerere.rikkahub.data.db.dao.MemNodeDAO
+import me.rerere.rikkahub.data.db.dao.MemLinkDAO
 import me.rerere.rikkahub.data.db.dao.MessageNodeDAO
 import me.rerere.rikkahub.data.db.dao.AlarmDao
 import me.rerere.rikkahub.data.db.dao.WorkspaceDAO
@@ -29,6 +31,8 @@ import me.rerere.rikkahub.data.db.entity.FolderEntity
 import me.rerere.rikkahub.data.db.entity.GenMediaEntity
 import me.rerere.rikkahub.data.db.entity.ManagedFileEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEntity
+import me.rerere.rikkahub.data.db.entity.MemNodeEntity
+import me.rerere.rikkahub.data.db.entity.MemLinkEntity
 import me.rerere.rikkahub.data.db.entity.MessageNodeEntity
 import me.rerere.rikkahub.data.db.dao.ScheduledJobDao
 import me.rerere.rikkahub.data.db.dao.ScheduledJobRunDao
@@ -62,8 +66,10 @@ import me.rerere.rikkahub.utils.JsonInstant
         WorkflowEntity::class,
         WorkflowRunEntity::class,
         SubAgentRunEntity::class,
+        MemNodeEntity::class,
+        MemLinkEntity::class,
     ],
-    version = 30,
+    version = 31,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -83,6 +89,8 @@ import me.rerere.rikkahub.utils.JsonInstant
         AutoMigration(from = 21, to = 22),
         AutoMigration(from = 22, to = 23, spec = Migration_22_23::class),
         AutoMigration(from = 23, to = 24),
+        // v4.6.5: 增强记忆表 (mem_nodes / mem_links — 新增表 auto-migratable)
+        AutoMigration(from = 30, to = 31),
     ]
 )
 
@@ -91,6 +99,10 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDAO
 
     abstract fun memoryDao(): MemoryDAO
+
+    abstract fun memNodeDao(): MemNodeDAO
+
+    abstract fun memLinkDao(): MemLinkDAO
 
     abstract fun genMediaDao(): GenMediaDAO
 

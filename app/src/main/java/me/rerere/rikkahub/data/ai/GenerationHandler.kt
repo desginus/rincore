@@ -257,9 +257,15 @@ class GenerationHandler(
         }
 
         // 分离框架工具与用户域工具 (v3.6.90: 含用户移出域管理的豁免工具)
+        // v4.6.5: demotedFrameworkTools — 被用户移进域管理的框架工具 (从顶层降级, 由域路由接管)
         val exemptSet = settings.exemptFromDomainTools
-        val domainTools = tools.filter { it.name !in FRAMEWORK_TOOL_SET && it.name !in exemptSet }
-        val frameworkTools = tools.filter { it.name in FRAMEWORK_TOOL_SET || it.name in exemptSet }
+        val demotedSet = settings.demotedFrameworkTools
+        val domainTools = tools.filter {
+            (it.name !in FRAMEWORK_TOOL_SET && it.name !in exemptSet) || it.name in demotedSet
+        }
+        val frameworkTools = tools.filter {
+            (it.name in FRAMEWORK_TOOL_SET || it.name in exemptSet) && it.name !in demotedSet
+        }
         Log.i(TAG, "frameworkToolSet(${FRAMEWORK_TOOL_SET.size}+${exemptSet.size}): ${(FRAMEWORK_TOOL_SET + exemptSet).sorted()}")
         Log.i(TAG, "frameworkTools found: ${frameworkTools.map { it.name }.sorted()}")
 

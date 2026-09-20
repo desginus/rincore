@@ -194,6 +194,8 @@ class ChatService(
     private val folderRepository: FolderRepository,
     private val pluginManager: me.rerere.rikkahub.data.plugin.PluginManager? = null,
     private val operitToolProvider: me.rerere.rikkahub.data.operit.runtime.OperitToolProvider? = null,
+    // v4.6.5: 增强记忆仓库 (增强记忆工具 ↔ 原生记忆系统交火 — 记忆注入链合流)
+    private val enhancedMemoryRepository: me.rerere.rikkahub.data.repository.EnhancedMemoryRepository? = null,
 ) {
     init {
         me.rerere.rikkahub.ecosystem.tools.DynamicTools.initialize(
@@ -800,10 +802,18 @@ class ChatService(
                         else pool.filter { tool -> invalidNames.none { bad -> tool.name.startsWith("mcp__${bad}__") } }
                     }
                 },
-                memories = if (assistant.useGlobalMemory) {
-                    memoryRepository.getGlobalMemories()
-                } else {
-                    memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
+                memories = run {
+                    val baseMemories = if (assistant.useGlobalMemory) {
+                        memoryRepository.getGlobalMemories()
+                    } else {
+                        memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
+                    }
+                    // v4.6.5 记忆交火: 增强记忆节点 (标题/文件夹/图谱) 并入原生记忆注入链 —
+                    // 增强记忆工具写入的记忆直接进入对话上下文 (原生系统消费)
+                    val enhancedMemories = runCatching {
+                        enhancedMemoryRepository?.getNodesForPrompt(assistant.id.toString())
+                    }.getOrNull().orEmpty()
+                    baseMemories + enhancedMemories
                 },
                 inputTransformers = buildList {
                     addAll(inputTransformers)

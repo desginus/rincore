@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import me.rerere.hugeicons.stroke.Puzzle
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.*
 import me.rerere.rikkahub.data.ai.tools.routing.ToolDomain
@@ -143,6 +144,13 @@ fun SettingDomainPage(
     var showNewSubdomain by remember { mutableStateOf(false) }
     var managingSubdomain by remember { mutableStateOf<String?>(null) }
     var movingTool by remember { mutableStateOf<ToolPreview?>(null) }
+    // v4.6.5: 框架工具页 (原"名称分类"入口改版)
+    var showFrameworkTools by remember { mutableStateOf(false) }
+
+    if (showFrameworkTools) {
+        FrameworkToolsPage(settings = settings, vm = vm, onBack = { showFrameworkTools = false })
+        return
+    }
 
     if (showToolList) { SettingToolListPage(settings, vm, { showToolList = false }); return }
 
@@ -201,11 +209,12 @@ fun SettingDomainPage(
                         revision++
                         classifyLog = "${previewTools.count { it.name !in me.rerere.rikkahub.data.ai.tools.frameworkSetOf(settings) }}个工具 · ${nestedDomains.size}个域"
                     }) { Icon(HugeIcons.Refresh01, "同步") }
-                    TextButton(onClick = { isClassifying = true },
+                    // v4.6.5: "名称分类"入口替换为"框架工具"页 (展示/移动顶层框架工具)
+                    TextButton(onClick = { showFrameworkTools = true },
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
-                        Icon(HugeIcons.AiMagic, "名称分类", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                        Icon(HugeIcons.Puzzle, "框架工具", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.width(4.dp))
-                        Text("名称分类", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        Text("框架工具", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                     }
                     IconButton(onClick = { showToolList = true }) { Icon(HugeIcons.View, "工具列表") }
                     IconButton(onClick = { showNewDomain = true }) { Icon(HugeIcons.Add01, "新建") }
