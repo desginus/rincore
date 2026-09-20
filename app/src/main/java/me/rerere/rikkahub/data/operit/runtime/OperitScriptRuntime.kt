@@ -208,15 +208,17 @@ class OperitScriptRuntime(
                 "memory.create" -> {
                     val p = memParams(args) ?: return err("missing params")
                     val repo = enhancedMemoryProvider() ?: return err("memory bridge unavailable")
-                    val node = repo.create(
-                        assistantId = "",
-                        title = p["title"] as? String ?: return err("title required"),
-                        content = p["content"] as? String ?: "",
-                        contentType = p["contentType"] as? String ?: "text",
-                        source = p["source"] as? String ?: "",
-                        folderPath = p["folderPath"] as? String ?: "",
-                        tags = (p["tags"] as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
-                    )
+                    val node = kotlinx.coroutines.runBlocking {
+                        repo.create(
+                            assistantId = "",
+                            title = p["title"] as? String ?: return@runBlocking null,
+                            content = p["content"] as? String ?: "",
+                            contentType = p["contentType"] as? String ?: "text",
+                            source = p["source"] as? String ?: "",
+                            folderPath = p["folderPath"] as? String ?: "",
+                            tags = (p["tags"] as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
+                        )
+                    }
                     ok {
                         put("data", if (node == null) kotlinx.serialization.json.JsonArray(emptyList())
                         else kotlinx.serialization.json.JsonArray(listOf(nodeJson(node))))
@@ -225,16 +227,18 @@ class OperitScriptRuntime(
                 "memory.update" -> {
                     val p = memParams(args) ?: return err("missing params")
                     val repo = enhancedMemoryProvider() ?: return err("memory bridge unavailable")
-                    val node = repo.update(
-                        assistantId = "",
-                        oldTitle = p["oldTitle"] as? String ?: return err("oldTitle required"),
-                        newTitle = p["newTitle"] as? String ?: "",
-                        content = p["content"] as? String,
-                        contentType = p["contentType"] as? String,
-                        source = p["source"] as? String,
-                        folderPath = p["folderPath"] as? String,
-                        tags = (p["tags"] as? List<*>)?.filterIsInstance<String>(),
-                    )
+                    val node = kotlinx.coroutines.runBlocking {
+                        repo.update(
+                            assistantId = "",
+                            oldTitle = p["oldTitle"] as? String ?: return@runBlocking null,
+                            newTitle = p["newTitle"] as? String ?: "",
+                            content = p["content"] as? String,
+                            contentType = p["contentType"] as? String,
+                            source = p["source"] as? String,
+                            folderPath = p["folderPath"] as? String,
+                            tags = (p["tags"] as? List<*>)?.filterIsInstance<String>(),
+                        )
+                    }
                     ok {
                         put("data", if (node == null) kotlinx.serialization.json.JsonArray(emptyList())
                         else kotlinx.serialization.json.JsonArray(listOf(nodeJson(node))))
@@ -243,7 +247,9 @@ class OperitScriptRuntime(
                 "memory.delete" -> {
                     val p = memParams(args) ?: return err("missing params")
                     val repo = enhancedMemoryProvider() ?: return err("memory bridge unavailable")
-                    val deleted = repo.deleteByTitle("", p["title"] as? String ?: return err("title required"))
+                    val deleted = kotlinx.coroutines.runBlocking {
+                        repo.deleteByTitle("", p["title"] as? String ?: return@runBlocking false)
+                    }
                     ok {
                         put("data", kotlinx.serialization.json.JsonArray(
                             if (deleted) listOf(kotlinx.serialization.json.JsonPrimitive(1)) else emptyList()
@@ -253,12 +259,14 @@ class OperitScriptRuntime(
                 "memory.move" -> {
                     val p = memParams(args) ?: return err("missing params")
                     val repo = enhancedMemoryProvider() ?: return err("memory bridge unavailable")
-                    val count = repo.move(
-                        assistantId = "",
-                        titles = (p["titles"] as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
-                        sourceFolderPath = p["sourceFolderPath"] as? String,
-                        targetFolderPath = p["targetFolderPath"] as? String ?: "",
-                    )
+                    val count = kotlinx.coroutines.runBlocking {
+                        repo.move(
+                            assistantId = "",
+                            titles = (p["titles"] as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
+                            sourceFolderPath = p["sourceFolderPath"] as? String,
+                            targetFolderPath = p["targetFolderPath"] as? String ?: "",
+                        )
+                    }
                     ok {
                         put("data", kotlinx.serialization.json.JsonArray(
                             if (count > 0) listOf(kotlinx.serialization.json.JsonPrimitive(count)) else emptyList()
@@ -268,14 +276,16 @@ class OperitScriptRuntime(
                 "memory.link" -> {
                     val p = memParams(args) ?: return err("missing params")
                     val repo = enhancedMemoryProvider() ?: return err("memory bridge unavailable")
-                    val link = repo.link(
-                        assistantId = "",
-                        sourceTitle = p["sourceTitle"] as? String ?: return err("sourceTitle required"),
-                        targetTitle = p["targetTitle"] as? String ?: return err("targetTitle required"),
-                        linkType = p["linkType"] as? String ?: "related",
-                        weight = (p["weight"] as? Number)?.toDouble() ?: 1.0,
-                        description = p["description"] as? String ?: "",
-                    )
+                    val link = kotlinx.coroutines.runBlocking {
+                        repo.link(
+                            assistantId = "",
+                            sourceTitle = p["sourceTitle"] as? String ?: return@runBlocking null,
+                            targetTitle = p["targetTitle"] as? String ?: return@runBlocking null,
+                            linkType = p["linkType"] as? String ?: "related",
+                            weight = (p["weight"] as? Number)?.toDouble() ?: 1.0,
+                            description = p["description"] as? String ?: "",
+                        )
+                    }
                     ok {
                         put("data", if (link == null) kotlinx.serialization.json.JsonPrimitive(false)
                         else linkJson(link))
@@ -284,14 +294,16 @@ class OperitScriptRuntime(
                 "memory.queryLinks" -> {
                     val p = memParams(args) ?: return err("missing params")
                     val repo = enhancedMemoryProvider() ?: return err("memory bridge unavailable")
-                    val links = repo.queryLinks(
-                        assistantId = "",
-                        linkId = (p["linkId"] as? Number)?.toLong(),
-                        sourceTitle = p["sourceTitle"] as? String,
-                        targetTitle = p["targetTitle"] as? String,
-                        linkType = p["linkType"] as? String,
-                        limit = (p["limit"] as? Number)?.toInt() ?: 100,
-                    )
+                    val links = kotlinx.coroutines.runBlocking {
+                        repo.queryLinks(
+                            assistantId = "",
+                            linkId = (p["linkId"] as? Number)?.toLong(),
+                            sourceTitle = p["sourceTitle"] as? String,
+                            targetTitle = p["targetTitle"] as? String,
+                            linkType = p["linkType"] as? String,
+                            limit = (p["limit"] as? Number)?.toInt() ?: 100,
+                        )
+                    }
                     ok {
                         put("data", kotlinx.serialization.json.JsonArray(links.map { linkJson(it) }))
                     }
@@ -299,28 +311,32 @@ class OperitScriptRuntime(
                 "memory.updateLink" -> {
                     val p = memParams(args) ?: return err("missing params")
                     val repo = enhancedMemoryProvider() ?: return err("memory bridge unavailable")
-                    val done = repo.updateLink(
-                        assistantId = "",
-                        linkId = (p["linkId"] as? Number)?.toLong(),
-                        sourceTitle = p["sourceTitle"] as? String,
-                        targetTitle = p["targetTitle"] as? String,
-                        linkType = p["linkType"] as? String,
-                        newLinkType = p["newLinkType"] as? String ?: "",
-                        weight = (p["weight"] as? Number)?.toDouble() ?: 1.0,
-                        description = p["description"] as? String ?: "",
-                    )
+                    val done = kotlinx.coroutines.runBlocking {
+                        repo.updateLink(
+                            assistantId = "",
+                            linkId = (p["linkId"] as? Number)?.toLong(),
+                            sourceTitle = p["sourceTitle"] as? String,
+                            targetTitle = p["targetTitle"] as? String,
+                            linkType = p["linkType"] as? String,
+                            newLinkType = p["newLinkType"] as? String ?: "",
+                            weight = (p["weight"] as? Number)?.toDouble() ?: 1.0,
+                            description = p["description"] as? String ?: "",
+                        )
+                    }
                     ok { put("data", kotlinx.serialization.json.JsonPrimitive(done)) }
                 }
                 "memory.deleteLink" -> {
                     val p = memParams(args) ?: return err("missing params")
                     val repo = enhancedMemoryProvider() ?: return err("memory bridge unavailable")
-                    val count = repo.deleteLink(
-                        assistantId = "",
-                        linkId = (p["linkId"] as? Number)?.toLong(),
-                        sourceTitle = p["sourceTitle"] as? String,
-                        targetTitle = p["targetTitle"] as? String,
-                        linkType = p["linkType"] as? String,
-                    )
+                    val count = kotlinx.coroutines.runBlocking {
+                        repo.deleteLink(
+                            assistantId = "",
+                            linkId = (p["linkId"] as? Number)?.toLong(),
+                            sourceTitle = p["sourceTitle"] as? String,
+                            targetTitle = p["targetTitle"] as? String,
+                            linkType = p["linkType"] as? String,
+                        )
+                    }
                     ok {
                         put("data", kotlinx.serialization.json.JsonArray(
                             if (count > 0) listOf(kotlinx.serialization.json.JsonPrimitive(count)) else emptyList()
