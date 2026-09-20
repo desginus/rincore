@@ -42,5 +42,13 @@ val operitModule = module {
     }
     single { me.rerere.rikkahub.data.operit.runtime.OperitToolProvider(get(), get()) }
 
+    // v4.5.34: 插件 UI 运行时 (WebView 桥) — filesRoot 与脚本运行时同目录
+    single {
+        val ctx = get<android.content.Context>()
+        me.rerere.rikkahub.data.operit.runtime.OperitUiRuntime().apply {
+            filesRoot = java.io.File(ctx.filesDir, "operit_runtime")
+        }
+    }
+
     viewModelOf(::MarketVM)
 }

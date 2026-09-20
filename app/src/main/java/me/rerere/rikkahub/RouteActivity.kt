@@ -714,6 +714,11 @@ class RouteActivity : ComponentActivity() {
                             entry<Screen.Market> {
                                 MarketPage()
                             }
+                            entry<Screen.OperitUi> {
+                                me.rerere.rikkahub.ui.pages.operitui.OperitUiPage(
+                                    onBack = { navController.popBackStack() },
+                                )
+                            }
                             entry<Screen.MarketDetail> { key ->
                                 MarketDetailPage(key.id)
                             }
@@ -960,6 +965,9 @@ sealed interface Screen : NavKey {
     // v4.5.28 岔路口计划·阶段1: 应用市场
     @Serializable
     data object Market : Screen
+
+    // v4.5.34: 插件界面渲染页 (对话页右上角入口)
+    data object OperitUi : Screen
 
     @Serializable
     data class MarketDetail(val id: String) : Screen

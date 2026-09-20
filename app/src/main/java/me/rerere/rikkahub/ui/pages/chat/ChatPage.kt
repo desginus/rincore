@@ -75,6 +75,7 @@ import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.LeftToRightListBullet
 import me.rerere.hugeicons.stroke.Menu03
 import me.rerere.hugeicons.stroke.MessageAdd01
+import me.rerere.hugeicons.stroke.Puzzle
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
@@ -423,6 +424,10 @@ private fun ChatPageContent(
                         // 用户在抽屉里选择文件夹 B 后点新建, 必须归 B
                         navigateToChatPage(navController, folderId = drawerVm.selectedFolderId.value)
                     },
+                    onOpenPluginUi = {
+                        // v4.5.34: 插件界面渲染页入口
+                        navController.navigate(me.rerere.rikkahub.Screen.OperitUi)
+                    },
                     onClickMenu = {
                         previewMode = !previewMode
                     },
@@ -705,6 +710,7 @@ private fun TopBar(
     previewMode: Boolean,
     onClickMenu: () -> Unit,
     onNewChat: () -> Unit,
+    onOpenPluginUi: () -> Unit,
     onUpdateTitle: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -763,6 +769,14 @@ private fun TopBar(
             }
         },
         actions = {
+            // v4.5.34: 插件界面渲染页 (新建对话/消息列表左侧)
+            IconButton(
+                onClick = {
+                    onOpenPluginUi()
+                }
+            ) {
+                Icon(HugeIcons.Puzzle, "Plugin UI")
+            }
             IconButton(
                 onClick = {
                     onClickMenu()

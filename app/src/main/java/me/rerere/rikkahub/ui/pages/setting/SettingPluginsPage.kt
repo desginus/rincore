@@ -13,10 +13,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -330,59 +330,75 @@ private fun OperitPluginDetailDialog(
     tools: List<Pair<String, String>>,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
+    // v4.5.34: ModalBottomSheet + LazyColumn — 长清单可滚 (弹窗铁律),
+    // 修复 AlertDialog 内容超高卡住无法上滑的问题
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = { Text(pkg.title.ifBlank { pkg.entryId }) },
-        text = {
-            Column(
-                modifier = Modifier
-                    .verticalScroll(rememberScrollState())
-                    .heightIn(max = 420.dp),
-            ) {
-                Text(
-                    "v${pkg.version} · ${if (pkg.type == "script") "脚本插件" else "工具包 (ToolPkg)"}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(12.dp))
+        sheetState = rememberBottomSheetState(
+            initialValue = SheetValue.Hidden,
+            enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.85f)
+                .padding(horizontal = 16.dp),
+        ) {
+            Text(
+                pkg.title.ifBlank { pkg.entryId },
+                style = MaterialTheme.typography.titleLarge,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "v${pkg.version} · ${if (pkg.type == "script") "脚本插件" else "工具包 (ToolPkg)"}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            LazyColumn(modifier = Modifier.weight(1f)) {
                 if (tools.isEmpty()) {
-                    Text(
-                        "未解析到工具。此插件可能为 UI 型 (其面板在 Operit 中提供) — " +
-                            "在 RinCore 中交互由模型对话驱动。",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                } else {
-                    Text(
-                        "工具清单 (${tools.size})",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    tools.forEach { (name, desc) ->
+                    item {
                         Text(
-                            "· $name",
-                            style = MaterialTheme.typography.labelLarge,
+                            "未解析到工具。此插件可能为 UI 型 (其面板在 Operit 中提供) — " +
+                                "在 RinCore 中交互由模型对话驱动。",
+                            style = MaterialTheme.typography.bodySmall,
                         )
-                        if (desc.isNotBlank()) {
-                            Text(
-                                "  $desc",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Spacer(Modifier.height(6.dp))
                     }
-                    Text(
-                        if (pkg.enabled) "已启用 — 在对话中让 AI 使用这些工具即可"
-                        else "未启用 — 打开上方开关后, 在对话中让 AI 使用这些工具",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
+                } else {
+                    item {
+                        Text(
+                            "工具清单 (${tools.size})",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    items(tools) { (name, desc) ->
+                        Column(Modifier.padding(vertical = 6.dp)) {
+                            Text("· $name", style = MaterialTheme.typography.labelLarge)
+                            if (desc.isNotBlank()) {
+                                Text(
+                                    "  $desc",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("关闭") }
-        },
-    )
+            Text(
+                if (pkg.enabled) "已启用 — 在对话中让 AI 使用这些工具即可"
+                else "未启用 — 打开上方开关后, 在对话中让 AI 使用这些工具",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.height(8.dp))
+            androidx.compose.material3.Button(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("关闭") }
+            Spacer(Modifier.height(16.dp))
+        }
+    }
 }
