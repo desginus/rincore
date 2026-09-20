@@ -16,6 +16,54 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import java.io.File
 
+/**
+ * v4.5.39: Operit JS 通用宿主环境 (共享层) — 所有 JS 执行点统一注入,
+ * 杜绝"某个 prelude 有、另一个没有"的缺口复发 (require 缺口实机事故复盘)。
+ * 覆盖: exports/module/require(万能 Proxy 桩)/Icons/Java/console/setTimeout/__notImplemented
+ */
+internal val OPERIT_COMMON_PRELUDE = """
+    // ═══ RinCore 通用宿主环境 (共享层 v4.5.39) ═══
+    var exports = {};
+    var module = { exports: exports };
+    // require 桩: 任意相对路径模块 → 万能 Proxy (属性访问返回可调用 stub,
+    // 调用返回结构化失败; __uiPath 供注册机制解析 screen 来源文件)
+    function require(path) {
+        var norm = String(path || '').replace(/^\.\.\//g, '').replace(/^\.\//, '');
+        var target = { __uiPath: norm, __esModule: true };
+        var stubFn = function () { return Promise.resolve({ success: false, message: 'capability not available in RinCore runtime yet' }); };
+        var stub = null;
+        stub = new Proxy(target, {
+            get: function (t, k) {
+                if (k in t) return t[k];
+                if (k === 'then') return undefined;
+                if (k === 'default') return stub;
+                return stubFn;
+            }
+        });
+        return stub;
+    }
+    // 图标桩 (任意名返回 null)
+    var Icons = new Proxy({}, { get: function () { return null; } });
+    // Java 桥宽容桩 (getApplicationContext → null; 调用方 try/catch 兜底)
+    var Java = {
+        getApplicationContext: function () { return null; },
+        getContext: function () { return null; }
+    };
+    // console / 定时器 条件桩 (QuickJS 可能内置, 存在则不覆盖)
+    if (typeof console === 'undefined') {
+        var console = { log: function () {}, info: function () {}, warn: function () {}, error: function () {}, debug: function () {} };
+    }
+    if (typeof setTimeout === 'undefined') {
+        var setTimeout = function (fn) { if (typeof fn === 'function') { try { fn(); } catch (e) {} } return 0; };
+        var clearTimeout = function () {};
+        var setInterval = function () { return 0; };
+        var clearInterval = function () {};
+    }
+    function __notImplemented(name) {
+        return { success: false, message: 'capability not implemented in RinCore runtime yet: ' + name };
+    }
+""".trimIndent()
+
 /** UI 面板注册项 — main.js 的 registerUiRoute/registerNavigationEntry 归一化产物
  * (对齐 Operit: screen 函数 → 脚本相对路径; surface: main_sidebar_plugins/toolbox) */
 data class UiPanelRegistration(
@@ -350,10 +398,9 @@ class OperitUiRuntime {
                 "if (typeof __v === 'string') return __v; " +
                 "var __s = JSON.stringify(__v); return (__s === undefined) ? String(__v) : __s; })()"
 
-        val REGISTRATION_PRELUDE = """
+        val REGISTRATION_PRELUDE = OPERIT_COMMON_PRELUDE + """
             // v4.5.35: ToolPkg 注册桩 — 对齐 Operit JsToolPkgRegistration
-            var exports = {};
-            var module = { exports: exports };
+            // (exports/require/Icons/Java 由共享层提供; require 的 __uiPath 供 screen 来源解析)
             var __regError = null;
             var __uiRoutes = [];
             var __navEntries = [];
@@ -414,22 +461,10 @@ class OperitUiRuntime {
                 }
             };
             var __ipcHandlers = {};
-            // Java 桥宽容桩 (messenger 等用 SharedPreferences — 未实现, getApplicationContext 返回 null,
-            // 调用方 try/catch 兜底; 面板里依赖它的写操作会显示错误 — 诚实降级)
-            var Java = {
-                getApplicationContext: function () { return null; },
-                getContext: function () { return null; }
-            };
-            // Icons 桩 (DSH 注册用 icon: Icons.Psychology — 任意名返回 null)
-            var Icons = new Proxy({}, { get: function () { return null; } });
             var globalThisRef = this;
         """.trimIndent()
 
-        val HOST_PRELUDE = """
-            // v4.5.35: exports/module 全局注入 (ui.js 结尾 exports.default = Screen —
-            // 与脚本运行时同款缺口: 桩实验环境掩盖, 实机 ReferenceError)
-            var exports = {};
-            var module = { exports: exports };
+        val HOST_PRELUDE = OPERIT_COMMON_PRELUDE + """
             // v4.5.34: Operit 插件 UI 宿主桩 (ctx) — "HTML 承重、DSL 薄桥"
             var __uiBridges = {};
             var __uiResult = null;
@@ -636,15 +671,7 @@ class OperitUiRuntime {
                     sleep: function (ms) { return Promise.resolve(); }
                 }
             };
-            function __notImplemented(name) {
-                return { success: false, message: 'capability not implemented in RinCore runtime yet: ' + name };
-            }
-            if (typeof setTimeout === 'undefined') {
-                var setTimeout = function (fn) { if (typeof fn === 'function') { try { fn(); } catch (e) {} } return 0; };
-                var clearTimeout = function () {};
-                var setInterval = function () { return 0; };
-                var clearInterval = function () {};
-            }
+            // (__notImplemented / 定时器桩移至共享层 OPERIT_COMMON_PRELUDE)
         """.trimIndent()
     }
 }

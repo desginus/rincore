@@ -205,12 +205,8 @@ class OperitScriptRuntime(
         const val SCRIPT_TIMEOUT_MS = 60_000L
 
         /** 宿主前导 JS — 定义脚本世界 (与 Operit 协议对齐) */
-        val HOST_PRELUDE = """
-            // v4.5.31: exports/module 全局注入 — 脚本以 CommonJS 风格导出工具
-            // (exports.xxx = function), 全局脚本环境必须先行定义 (桩实验环境
-            // 通过 Function 构造器参数注入, 掩盖了此缺口)
-            var exports = {};
-            var module = { exports: exports };
+        val HOST_PRELUDE = OPERIT_COMMON_PRELUDE + """
+            // v4.5.31: 脚本世界 (exports.xxx = function 风格; exports/module 由共享层提供)
             var __operitDone = false;
             var __operitResult = null;
             function __operitFinish(v) {
@@ -225,7 +221,6 @@ class OperitScriptRuntime(
             function update(v) { }
             function delta(v) { }
             function log(v) { }
-            var console = { log: function(){}, info: function(){}, warn: function(){}, error: function(){}, debug: function(){} };
             function getEnv(k) { return undefined; }
             function getLang() { return 'zh'; }
             function getState() { return undefined; }
@@ -280,16 +275,7 @@ class OperitScriptRuntime(
                     update: function () { return __notImplemented('workflow.update'); }
                 }
             };
-            function __notImplemented(name) {
-                return { success: false, message: 'capability not implemented in RinCore runtime yet: ' + name };
-            }
-            // QuickJS 无 setTimeout — 立即执行兼容桩 (避免依赖定时器的脚本挂起)
-            if (typeof setTimeout === 'undefined') {
-                var setTimeout = function (fn) { if (typeof fn === 'function') { try { fn(); } catch (e) {} } return 0; };
-                var clearTimeout = function () {};
-                var setInterval = function () { return 0; };
-                var clearInterval = function () {};
-            }
+            // (__notImplemented / 定时器桩移至共享层 OPERIT_COMMON_PRELUDE)
         """.trimIndent()
     }
 }
