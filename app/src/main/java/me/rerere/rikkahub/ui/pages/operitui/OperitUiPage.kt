@@ -288,13 +288,19 @@ private fun OperitUiRenderer(entry: OperitUiEntry, onBack: () -> Unit) {
                                 addJavascriptInterface(bridge, "__rinBridge")
                                 bridge.attach(this)
                                 webViewRef = this
-                                loadDataWithBaseURL(
-                                    s.baseUrl,
-                                    injectBridgeScript(s),
-                                    "text/html",
-                                    "utf-8",
-                                    null,
-                                )
+                                val du = s.directUrl
+                                if (!du.isNullOrBlank()) {
+                                    // v4.5.38: DSL 树含服务 URL (如 DSH 服务就绪) → 直连加载
+                                    loadUrl(du)
+                                } else {
+                                    loadDataWithBaseURL(
+                                        s.baseUrl,
+                                        injectBridgeScript(s),
+                                        "text/html",
+                                        "utf-8",
+                                        null,
+                                    )
+                                }
                             }
                         },
                     )
