@@ -55,7 +55,7 @@ data class OperitUiEntry(
     val panelName: String,
 )
 
-/** 扫描包内 ui/<panel>/*.ui.js (实测形态: ui/guardian_panel/index.ui.js) */
+/** 扫描包内 ui/<panel> 目录下的 .ui.js (实测形态: ui/guardian_panel/index.ui.js) */
 fun findUiEntries(pkg: InstalledPackage): List<OperitUiEntry> {
     if (pkg.type != "package") return emptyList()
     val root = File(pkg.installPath)

@@ -716,7 +716,7 @@ class RouteActivity : ComponentActivity() {
                             }
                             entry<Screen.OperitUi> {
                                 me.rerere.rikkahub.ui.pages.operitui.OperitUiPage(
-                                    onBack = { navController.popBackStack() },
+                                    onBack = { backStack.removeLastOrNull() },
                                 )
                             }
                             entry<Screen.MarketDetail> { key ->
