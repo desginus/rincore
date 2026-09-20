@@ -129,6 +129,13 @@ fun SettingAdvancedPage(
                     headlineContent = { Text("权限管理") },
                 )
                 // v4.5.40: 生态入口收纳 (原抽屉/对话页入口迁入 — UI 恢复原样)
+                // v4.6.2: + 生态模块页 (内置工具包 + 市场插件, 独立渲染管线)
+                item(
+                    onClick = { navController.navigate(Screen.OperitEco) },
+                    leadingContent = { Icon(HugeIcons.Package, null) },
+                    supportingContent = { Text("内置工具包与市场插件管理 (启用即注册模型工具)") },
+                    headlineContent = { Text("生态模块") },
+                )
                 item(
                     onClick = { navController.navigate(Screen.Market) },
                     leadingContent = { Icon(HugeIcons.Download04, null) },

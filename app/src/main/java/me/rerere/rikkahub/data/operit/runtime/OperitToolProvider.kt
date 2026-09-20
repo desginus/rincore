@@ -17,6 +17,8 @@ import java.io.File
 class OperitToolProvider(
     private val store: InstalledPackageStore,
     private val runtime: OperitScriptRuntime,
+    // v4.6.2: 刷新前置钩子 — 内置包播种 (幂等, 所有 refresh 链路自动携带)
+    private val preRefresh: (suspend () -> Unit)? = null,
 ) {
     data class EnabledScript(
         val pkg: InstalledPackage,
@@ -29,6 +31,7 @@ class OperitToolProvider(
 
     /** 刷新已启用脚本缓存 (安装/启用/停用/卸载/启动时调用) */
     suspend fun refresh() {
+        preRefresh?.invoke()
         val installed = store.listInstalled()
         enabledScripts = installed
             .filter { it.enabled && (it.type == "script" || it.type == "package") }
@@ -46,7 +49,11 @@ class OperitToolProvider(
     private fun loadScriptUnit(pkg: InstalledPackage): List<EnabledScript> {
         val file = File(pkg.installPath)
         if (!file.exists() || !file.name.endsWith(".js")) return emptyList()
-        val meta = runCatching { ScriptMetadataParser.parse(file.readText()) }.getOrNull() ?: return emptyList()
+        // v4.6.2: 主解析失败走简化提取 (宽松格式包 — tools 空, 自然不注册)
+        val text = file.readText()
+        val meta = runCatching { ScriptMetadataParser.parse(text) }.getOrNull()
+            ?: runCatching { ScriptMetadataParser.parseLoose(text) }.getOrNull()
+            ?: return emptyList()
         return listOf(EnabledScript(pkg, meta, file))
     }
 
@@ -80,9 +87,11 @@ class OperitToolProvider(
                 .forEach { entries.add(it) }
         }
         return entries.distinct().mapNotNull { f ->
-            val meta = runCatching { ScriptMetadataParser.parse(f.readText()) }.getOrNull()
+            val text = f.readText()
+            val meta = runCatching { ScriptMetadataParser.parse(text) }.getOrNull()
+                ?: runCatching { ScriptMetadataParser.parseLoose(text) }.getOrNull()
                 ?: return@mapNotNull null
-            if (meta.tools.isEmpty()) return@mapNotNull null
+            if (meta.tools.isEmpty()) return@mapNotNull null // 宽松格式: 不注册工具
             EnabledScript(pkg, meta, f)
         }
     }

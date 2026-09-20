@@ -40,7 +40,18 @@ val operitModule = module {
             },
         )
     }
-    single { me.rerere.rikkahub.data.operit.runtime.OperitToolProvider(get(), get()) }
+    single {
+        // v4.6.2: 内置包播种挂接 — 首次 refresh 时把 assets/operit-packages 释放入库
+        val ctx = get<android.content.Context>()
+        val builtinStore = get<me.rerere.rikkahub.data.operit.market.InstalledPackageStore>()
+        me.rerere.rikkahub.data.operit.runtime.OperitToolProvider(
+            builtinStore,
+            get(),
+            preRefresh = {
+                me.rerere.rikkahub.data.operit.runtime.OperitBuiltinPackages.ensureSeeded(ctx, builtinStore)
+            },
+        )
+    }
 
     // v4.5.34: 插件 UI 运行时 (WebView 桥) — filesRoot 与脚本运行时同目录
     single {

@@ -719,6 +719,11 @@ class RouteActivity : ComponentActivity() {
                                     onBack = { backStack.removeLastOrNull() },
                                 )
                             }
+                            entry<Screen.OperitEco> {
+                                me.rerere.rikkahub.ui.pages.operiteco.OperitEcoPage(
+                                    onBack = { backStack.removeLastOrNull() },
+                                )
+                            }
                             entry<Screen.MarketDetail> { key ->
                                 MarketDetailPage(key.id)
                             }
@@ -971,6 +976,10 @@ sealed interface Screen : NavKey {
     // 序列化 back stack 时缺 serializer 崩溃 (SerializationException: OperitUi)
     @Serializable
     data object OperitUi : Screen
+
+    // v4.6.2: 生态模块页 (内置工具包 + 市场插件 — 独立渲染管线)
+    @Serializable
+    data object OperitEco : Screen
 
     @Serializable
     data class MarketDetail(val id: String) : Screen
