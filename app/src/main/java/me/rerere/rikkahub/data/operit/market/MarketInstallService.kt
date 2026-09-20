@@ -181,7 +181,10 @@ class MarketInstallService(
 
     private suspend fun installMcp(entry: MarketEntry): InstallResult {
         val installConfig = entry.latestVersion?.installConfig.orEmpty()
-        if (installConfig.isBlank()) return InstallResult.Failure("mcp 条目缺少 installConfig")
+        if (installConfig.isBlank()) return InstallResult.Failure(
+            "此 MCP 条目未提供安装配置 (installConfig), 无法导入 — " +
+                "可能为文件型 MCP 或市场数据不完整"
+        )
         val configs = OperitMcpImporter.parseInstallConfig(installConfig)
         if (configs.isEmpty()) return InstallResult.Failure("installConfig 解析为空 (可能为不支持的传输类型)")
         val ids = OperitMcpImporter.applyImport(settingsStore, configs)

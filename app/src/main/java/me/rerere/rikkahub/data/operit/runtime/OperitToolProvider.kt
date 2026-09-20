@@ -87,6 +87,26 @@ class OperitToolProvider(
         }
     }
 
+    /**
+     * v4.5.33: 查询单个包的完整工具清单 (插件页详情弹窗用 —
+     * 与 createScriptTools 同源解析, 不受启用状态影响)
+     */
+    fun describePackage(pkg: InstalledPackage): List<Pair<String, String>> {
+        val units = when (pkg.type) {
+            "script" -> loadScriptUnit(pkg)
+            "package" -> loadPackageUnits(pkg)
+            else -> emptyList()
+        }
+        return units.flatMap { es ->
+            es.metadata.tools.mapNotNull { decl ->
+                if (decl.name.isBlank()) return@mapNotNull null
+                val desc = ScriptMetadataParser.pickText(decl.description)
+                    .ifBlank { ScriptMetadataParser.pickText(es.metadata.description) }
+                decl.name to desc
+            }
+        }
+    }
+
     /** 生成脚本工具列表 (同步, 读内存缓存 — 供 buildAssistantToolPool 调用) */
     fun createScriptTools(): List<Tool> {
         return enabledScripts.flatMap { es ->
