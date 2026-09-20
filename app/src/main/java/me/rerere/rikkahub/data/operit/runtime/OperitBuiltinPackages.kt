@@ -19,6 +19,9 @@ object OperitBuiltinPackages {
 
     /**
      * 幂等播种 — 可在任意 refresh 链路安全重复调用。
+     * v4.6.3 修正: "已播种集合"记忆 — 用户卸载的内置包不再复活。
+     * 迁移: 库里已有内置包但无集合记录 (旧版播种) → 集合初始化为当前资产全集
+     *       (用户卸过的同样打标, 不复活); 全新用户 → 空集正常全量播种。
      * @return 本次新增/更新的包数量 (0 = 无变化)
      */
     suspend fun ensureSeeded(context: Context, store: InstalledPackageStore): Int {
@@ -27,18 +30,33 @@ object OperitBuiltinPackages {
         }.getOrDefault(emptyList())
         if (assets.isEmpty()) return 0
 
+        val allEntryIds = assets.map { ENTRY_PREFIX + it.removeSuffix(".js") }.toSet()
         val installed = store.listInstalled().associateBy { it.entryId }
+        var seeded = store.getSeededEntries()
+
+        // 迁移: 旧版播种过 (库里有内置包) 但集合为空 → 全部资产打标 (不复活已卸载的)
+        if (seeded.isEmpty() && installed.keys.any { it.startsWith(ENTRY_PREFIX) }) {
+            store.addSeededEntries(allEntryIds)
+            seeded = allEntryIds
+        }
+
         val targetDir = store.storageDir("script")
         var changed = 0
+        val newlySeeded = mutableListOf<String>()
 
         for (fileName in assets) {
             val entryId = ENTRY_PREFIX + fileName.removeSuffix(".js")
             val existing = installed[entryId]
             val targetFile = File(targetDir, "builtin_$fileName")
 
-            // 已存在且内容版本一致且文件在 → 跳过 (保留用户 enabled 选择)
-            if (existing != null && existing.version == builtinVersion() && targetFile.exists()) {
-                continue
+            // 已打标 (播过/被卸载) 且文件在版本一致 → 跳过
+            if (entryId in seeded) {
+                // 例外: 内容版本升级刷新 (仅对仍在库中的, 不复活已卸载的)
+                if (existing != null && existing.version != builtinVersion()) {
+                    // fallthrough 刷新
+                } else {
+                    continue
+                }
             }
 
             val source = runCatching {
@@ -70,8 +88,10 @@ object OperitBuiltinPackages {
                     sourceUrl = "builtin",
                 )
             )
+            newlySeeded.add(entryId)
             changed++
         }
+        if (newlySeeded.isNotEmpty()) store.addSeededEntries(newlySeeded)
         return changed
     }
 

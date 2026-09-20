@@ -42,6 +42,9 @@ data class InstalledPackage(
 
 private val Context.operitInstalledDataStore: DataStore<Preferences> by preferencesDataStore(name = "operit_installed")
 private val INSTALLED_KEY = stringPreferencesKey("installed_packages_json")
+// v4.6.3: 内置包播种记忆 — 记录"已播种过"的 entryId 集合,
+// 用户卸载内置包后不再复活 (播种循环只播不在集合中的)
+private val SEEDED_KEY = stringPreferencesKey("seeded_builtin_entries_json")
 
 class InstalledPackageStore(private val context: Context) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -83,6 +86,23 @@ class InstalledPackageStore(private val context: Context) {
             val list = p[INSTALLED_KEY]?.let { json.decodeFromString<List<InstalledPackage>>(it) } ?: emptyList()
             val updated = list.map { if (it.entryId == entryId) it.copy(enabled = enabled) else it }
             p[INSTALLED_KEY] = json.encodeToString(updated)
+        }
+    }
+
+    // ── v4.6.3: 内置包播种记忆 ────────────────────────────────
+    suspend fun getSeededEntries(): Set<String> = withContext(Dispatchers.IO) {
+        context.operitInstalledDataStore.data.first()[SEEDED_KEY]?.let { raw ->
+            runCatching { json.decodeFromString<Set<String>>(raw) }.getOrDefault(emptySet())
+        } ?: emptySet()
+    }
+
+    suspend fun addSeededEntries(ids: Collection<String>) = withContext(Dispatchers.IO) {
+        if (ids.isEmpty()) return@withContext
+        context.operitInstalledDataStore.edit { p ->
+            val current = p[SEEDED_KEY]?.let { raw ->
+                runCatching { json.decodeFromString<Set<String>>(raw) }.getOrDefault(emptySet())
+            } ?: emptySet()
+            p[SEEDED_KEY] = json.encodeToString(current + ids)
         }
     }
 }

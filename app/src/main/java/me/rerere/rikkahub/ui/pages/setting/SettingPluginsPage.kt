@@ -59,7 +59,11 @@ fun SettingPluginsPage(
     val operitToolProvider: OperitToolProvider = koinInject()
     val marketInstallService: MarketInstallService = koinInject()
     val installedPackages by installedStore.installedFlow.collectAsState(initial = emptyList())
-    val operitPackages = installedPackages.filter { it.type == "script" || it.type == "package" }
+    // v4.6.3: 只显示真正从市场安装的 (内置工具包归 生态模块页, 不在本页混淆)
+    val operitPackages = installedPackages.filter {
+        (it.type == "script" || it.type == "package") &&
+            !me.rerere.rikkahub.data.operit.runtime.OperitBuiltinPackages.isBuiltin(it)
+    }
     val settings = settingsStore.settingsFlow.value
     val scope = rememberCoroutineScope()
     var refreshTick by remember { mutableIntStateOf(0) }
