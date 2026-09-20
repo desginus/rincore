@@ -89,9 +89,15 @@ fun findUiEntries(pkg: InstalledPackage): List<OperitUiEntry> {
     if (!root.isDirectory) return emptyList()
     val uiDir = File(root, "ui")
     if (!uiDir.isDirectory) return emptyList()
-    return uiDir.listFiles()?.filter { it.isDirectory }?.mapNotNull { panelDir ->
-        val script = panelDir.listFiles()?.firstOrNull { it.name.endsWith(".ui.js") }
-        script?.let { OperitUiEntry(pkg, it, panelDir.name) }
+    return uiDir.listFiles()?.mapNotNull { f ->
+        when {
+            // 形态 A: ui/<panel>/index.ui.js (guardian)
+            f.isDirectory -> f.listFiles()?.firstOrNull { it.name.endsWith(".ui.js") }
+                ?.let { OperitUiEntry(pkg, it, f.name) }
+            // 形态 B: ui/<name>.ui.js 直接文件 (messenger)
+            f.isFile && f.name.endsWith(".ui.js") -> OperitUiEntry(pkg, f, f.name.removeSuffix(".ui.js"))
+            else -> null
+        }
     } ?: emptyList()
 }
 

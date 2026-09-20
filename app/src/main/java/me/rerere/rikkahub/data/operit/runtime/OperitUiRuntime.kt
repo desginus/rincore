@@ -321,11 +321,42 @@ class OperitUiRuntime {
                         order: (typeof def.order === 'number') ? def.order : 0
                     });
                 },
-                registerToolboxUiModule: function () {},
+                registerToolboxUiModule: function (def) {
+                    def = def || {};
+                    __uiRoutes.push({
+                        id: String(def.id || ''),
+                        runtime: String(def.runtime || 'compose_dsl'),
+                        title: def.title || {},
+                        screenPath: (def.screen && def.screen.__uiPath) ? String(def.screen.__uiPath) : null,
+                        keepAlive: !!def.keepAlive,
+                        surfaceHint: 'toolbox'
+                    });
+                },
                 registerDesktopWidget: function () {},
                 registerAiProvider: function () {},
+                registerPromptInputHook: function () {},
+                registerInputMenuTogglePlugin: function () {},
+                registerChatInputHook: function () {},
+                registerChatViewHook: function () {},
+                registerChatMessageHook: function () {},
+                registerToolLifecycleHook: function () {},
+                registerMessageProcessingPlugin: function () {},
+                registerXmlRenderPlugin: function () {},
+                registerSummaryGenerateHook: function () {},
                 readResource: function () { return null; },
-                getConfigDir: function () { return '/tmp/operit_cfg'; }
+                getConfigDir: function () { return '/tmp/operit_cfg'; },
+                ipc: {
+                    on: function (channel, handler) { __ipcHandlers[String(channel || '')] = handler; },
+                    invoke: function () { return Promise.reject(new Error('ipc.invoke not implemented in RinCore runtime yet')); },
+                    emit: function () {}
+                }
+            };
+            var __ipcHandlers = {};
+            // Java 桥宽容桩 (messenger 等用 SharedPreferences — 未实现, getApplicationContext 返回 null,
+            // 调用方 try/catch 兜底; 面板里依赖它的写操作会显示错误 — 诚实降级)
+            var Java = {
+                getApplicationContext: function () { return null; },
+                getContext: function () { return null; }
             };
             var globalThisRef = this;
         """.trimIndent()
