@@ -87,8 +87,22 @@ fun findUiEntries(pkg: InstalledPackage): List<OperitUiEntry> {
     if (pkg.type != "package") return emptyList()
     val root = File(pkg.installPath)
     if (!root.isDirectory) return emptyList()
-    val uiDir = File(root, "ui")
-    if (!uiDir.isDirectory) return emptyList()
+    // v4.5.36: ui 目录位置按 manifest.main 推导 (DSH: dist/ui; guardian: ui)
+    val mainRel = runCatching {
+        val mf = File(root, "manifest.json")
+        if (mf.exists()) {
+            val m = kotlinx.serialization.json.Json.parseToJsonElement(mf.readText())
+                as? kotlinx.serialization.json.JsonObject
+            (m?.get("main") as? kotlinx.serialization.json.JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
+                ?: "main.js"
+        } else "main.js"
+    }.getOrDefault("main.js")
+    val mainDir = File(root, mainRel).parentFile ?: root
+    val uiCandidates = buildList {
+        add(File(mainDir, "ui"))
+        if (mainDir != root) add(File(root, "ui"))
+    }
+    val uiDir = uiCandidates.firstOrNull { it.isDirectory } ?: return emptyList()
     return uiDir.listFiles()?.mapNotNull { f ->
         when {
             // 形态 A: ui/<panel>/index.ui.js (guardian)

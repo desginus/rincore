@@ -72,7 +72,9 @@ class OperitUiRuntime {
                 return@withContext Result.failure(IllegalStateException("ui script produced no html (Screen 未返回 ctx.UI.WebView)"))
             }
             val baseUrl = instance.evaluate<String?>("(__uiResult && __uiResult.baseUrl) || 'about:blank'") ?: "about:blank"
-            val bridgeNamesRaw = instance.evaluate<String?>("Object.keys(__uiBridges)") ?: ""
+            // v4.5.36 修复: JS Array 直接 evaluate<String?> 会抛
+            // "No such type converter to convert 'kotlin.collections.List<*>' to 'kotlin.String?'"
+            val bridgeNamesRaw = instance.evaluate<String?>("JSON.stringify(Object.keys(__uiBridges))") ?: ""
             Result.success(UiSession(instance, html, baseUrl, bridgeNamesRaw))
         } catch (e: Throwable) {
             runCatching { instance.close() }
@@ -205,7 +207,15 @@ class OperitUiRuntime {
      */
     suspend fun discoverRegistrations(pkgRoot: File): List<UiPanelRegistration> =
         kotlinx.coroutines.withContext(Dispatchers.IO) {
-            val mainJs = File(pkgRoot, "main.js")
+            // v4.5.36: 入口路径读 manifest.main (DSH: "dist/main.js"; guardian: "main.js")
+            val manifestFile = File(pkgRoot, "manifest.json")
+            val mainRel = runCatching {
+                if (manifestFile.exists()) {
+                    val m = json.parseToJsonElement(manifestFile.readText()) as? kotlinx.serialization.json.JsonObject
+                    (m?.get("main") as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() } ?: "main.js"
+                } else "main.js"
+            }.getOrDefault("main.js")
+            val mainJs = File(pkgRoot, mainRel)
             if (!mainJs.exists()) return@withContext emptyList()
             val instance = QuickJs.create(jobDispatcher = Dispatchers.IO)
             try {
@@ -224,7 +234,10 @@ class OperitUiRuntime {
                 val jsonStr = instance.evaluate<String?>(
                     "JSON.stringify({ routes: __uiRoutes, entries: __navEntries })",
                 ) ?: "{}"
-                parseRegistrations(jsonStr)
+                // screen 相对 main.js 所在目录 — 拼接为相对包根路径
+                val mainDirRel = mainJs.parentFile
+                    ?.relativeTo(pkgRoot)?.path?.replace('\\', '/')?.takeIf { it != "." } ?: ""
+                parseRegistrations(jsonStr, mainDirRel)
             } catch (e: Throwable) {
                 emptyList()
             } finally {
@@ -232,7 +245,7 @@ class OperitUiRuntime {
             }
         }
 
-    private fun parseRegistrations(jsonStr: String): List<UiPanelRegistration> {
+    private fun parseRegistrations(jsonStr: String, mainDirRel: String): List<UiPanelRegistration> {
         return runCatching {
             val root = json.parseToJsonElement(jsonStr) as? kotlinx.serialization.json.JsonObject
                 ?: return emptyList()
@@ -267,9 +280,10 @@ class OperitUiRuntime {
             } ?: emptyList()
             routes.map { (id, screenPath, titles) ->
                 val nav = entries.firstOrNull { it.route.endsWith(id) } ?: entries.firstOrNull { it.route.contains(id) }
+                val rel = screenPath.replace('\\', '/').trimStart('/')
                 UiPanelRegistration(
                     routeId = id,
-                    screenRelPath = screenPath.replace('\\', '/').trimStart('/'),
+                    screenRelPath = if (mainDirRel.isBlank()) rel else "$mainDirRel/$rel",
                     titleZh = nav?.titleZh?.takeIf { it.isNotBlank() } ?: titles.first,
                     titleEn = nav?.titleEn?.takeIf { it.isNotBlank() } ?: titles.second,
                     surface = nav?.surface ?: "",
@@ -358,6 +372,8 @@ class OperitUiRuntime {
                 getApplicationContext: function () { return null; },
                 getContext: function () { return null; }
             };
+            // Icons 桩 (DSH 注册用 icon: Icons.Psychology — 任意名返回 null)
+            var Icons = new Proxy({}, { get: function () { return null; } });
             var globalThisRef = this;
         """.trimIndent()
 
