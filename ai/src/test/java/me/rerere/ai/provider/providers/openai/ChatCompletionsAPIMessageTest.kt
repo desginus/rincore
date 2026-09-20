@@ -94,7 +94,8 @@ class ChatCompletionsAPIMessageTest {
         assertTrue("First assistant message should have tool_calls", assistant1.containsKey("tool_calls"))
         val toolCalls1 = assistant1["tool_calls"]?.jsonArray
         assertEquals(1, toolCalls1?.size)
-        assertEquals("search", toolCalls1?.get(0)?.jsonObject?.get("function")?.jsonObject?.get("name")?.jsonPrimitive?.content)
+        // 2.5.3 行为变更: tool_calls 回放不再发送冗余 function.name (部分服务兼容)
+        assertTrue("tool call should still have id", toolCalls1?.get(0)?.jsonObject?.get("id") != null)
 
         // Verify first tool result
         val toolResult1 = result[2].jsonObject
@@ -154,12 +155,12 @@ class ChatCompletionsAPIMessageTest {
                 if (toolCalls != null && toolCalls.size == 3) {
                     foundAssistantWithMultipleTools = true
                     // Verify all three tool calls are present
-                    val toolNames = toolCalls.map {
-                        it.jsonObject["function"]?.jsonObject?.get("name")?.jsonPrimitive?.content
+                    // 2.5.3 行为变更: 以 id 校验三个并行工具调用 (name 不再回放)
+                    val toolIds = toolCalls.map {
+                        it.jsonObject["id"]?.jsonPrimitive?.content
                     }
-                    assertTrue(toolNames.contains("search_web"))
-                    assertTrue(toolNames.contains("search_docs"))
-                    assertTrue(toolNames.contains("search_wiki"))
+                    assertTrue(toolIds.all { it != null })
+                    assertTrue(toolIds.toSet().size == 3)
                     break
                 }
             }

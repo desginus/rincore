@@ -865,7 +865,6 @@ enum class ChatFontFamily {
     CUSTOM,
 }
 
-@Serializable
 // 2.5.3 移植: 输入栏背景效果 (模糊 / 玻璃)
 @Serializable
 enum class BackgroundEffectType {

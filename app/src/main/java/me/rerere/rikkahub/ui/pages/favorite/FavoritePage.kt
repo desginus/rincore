@@ -108,8 +108,6 @@ fun FavoritePage(vm: FavoriteVM = koinViewModel()) {
                     onClick = { navigateToChatPage(navController, item.conversationId, nodeId = item.nodeId) },
                     onDelete = {
                         scope.launch {
-                            // 2.5.3 移植: 移除前重置滑动状态, 撤销删除后不会恢复成已滑走形态
-                            dismissState.reset()
                             val entity = vm.getEntityByRefKey(item.refKey) ?: return@launch
                             vm.removeFavorite(item.refKey)
                             val result = snackbarHostState.showSnackbar(
@@ -146,6 +144,8 @@ private fun SwipeableFavoriteCard(
     LaunchedEffect(dismissState.currentValue) {
         when (dismissState.currentValue) {
             SwipeToDismissBoxValue.EndToStart -> {
+                // 2.5.3 移植: 移除前重置滑动状态, 撤销删除后不会恢复成已滑走形态
+                dismissState.reset()
                 onDelete()
             }
 

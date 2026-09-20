@@ -35,7 +35,7 @@ class WorkspaceReminderTransformer(
 
         // 2.5.2/2.5.3 移植: 读取工作区 AGENTS.md (项目级指令) 并入系统提示
         val prompt = buildWorkspacePrompt(workspace, ctx.workspaceCwd) +
-            buildAgentsPrompt(workspaceId, ctx.workspaceCwd)
+            buildAgentsPrompt(workspaceRepository, workspaceId, ctx.workspaceCwd)
 
         // 追加到第一条 system 消息; 若不存在则插入一条
         val systemIndex = messages.indexOfFirst { it.role == MessageRole.SYSTEM }
@@ -53,7 +53,11 @@ class WorkspaceReminderTransformer(
  * 2.5.2/2.5.3 移植: AGENTS.md 读取 — /root/.agents、/workspace 根、会话当前目录三处。
  * 超过 64KB 跳过 (提示词膨胀保护), 读不到静默跳过。
  */
-private suspend fun buildAgentsPrompt(workspaceId: String, cwd: String?): String {
+private suspend fun buildAgentsPrompt(
+    workspaceRepository: WorkspaceRepository,
+    workspaceId: String,
+    cwd: String?,
+): String {
     // ProotShellRunner 将 HOME 固定为 /root; 相对 PWD 按 /workspace 解析。
     val workingDirectory = Paths.get("/workspace")
         .resolve(cwd?.takeIf { it.isNotBlank() } ?: ".")
