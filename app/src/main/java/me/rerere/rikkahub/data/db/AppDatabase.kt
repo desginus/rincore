@@ -89,8 +89,6 @@ import me.rerere.rikkahub.utils.JsonInstant
         AutoMigration(from = 21, to = 22),
         AutoMigration(from = 22, to = 23, spec = Migration_22_23::class),
         AutoMigration(from = 23, to = 24),
-        // v4.6.5: 增强记忆表 (mem_nodes / mem_links — 新增表 auto-migratable)
-        AutoMigration(from = 30, to = 31),
     ]
 )
 
@@ -147,5 +145,25 @@ object TokenUsageConverter {
 val MIGRATION_29_30 = object : androidx.room.migration.Migration(29, 30) {
     override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE workspaces ADD COLUMN shell_compatibility_mode INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+/** v4.6.5: 增强记忆表 mem_nodes / mem_links (25+ schema json 缺失惯例, 手写迁移) */
+val MIGRATION_30_31 = object : androidx.room.migration.Migration(30, 31) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `mem_nodes` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`assistant_id` TEXT NOT NULL, `title` TEXT NOT NULL, `content` TEXT NOT NULL, " +
+                "`content_type` TEXT NOT NULL, `source` TEXT NOT NULL, `folder_path` TEXT NOT NULL, " +
+                "`tags` TEXT NOT NULL, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL)"
+        )
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `mem_links` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`assistant_id` TEXT NOT NULL, `source_title` TEXT NOT NULL, `target_title` TEXT NOT NULL, " +
+                "`link_type` TEXT NOT NULL, `weight` REAL NOT NULL, `description` TEXT NOT NULL, " +
+                "`created_at` INTEGER NOT NULL)"
+        )
     }
 }
