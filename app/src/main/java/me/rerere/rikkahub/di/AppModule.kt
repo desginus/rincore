@@ -188,7 +188,6 @@ val appModule = module {
             folderRepository = get(),
             pluginManager = getOrNull(),
             operitToolProvider = getOrNull(), // v4.5.31 岔路口计划: Operit 脚本工具注入
-            enhancedMemoryRepository = getOrNull(), // v4.6.5: 增强记忆注入链合流
         )
     }
 

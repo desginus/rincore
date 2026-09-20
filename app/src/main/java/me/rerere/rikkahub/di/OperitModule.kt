@@ -37,8 +37,6 @@ val operitModule = module {
         // v4.6.4 运行兼容: HTTP 桥 + shell 桥注入 (eager 解析防 Koin 延迟上下文问题)
         val okHttp = get<okhttp3.OkHttpClient>()
         val wsRepo = get<me.rerere.rikkahub.data.repository.WorkspaceRepository>()
-        // v4.6.5: 增强记忆桥 (extended_memory_tools ↔ RinCore 记忆系统交火)
-        val enhancedMem = get<me.rerere.rikkahub.data.repository.EnhancedMemoryRepository>()
         me.rerere.rikkahub.data.operit.runtime.OperitScriptRuntime(
             filesRootProvider = {
                 java.io.File(ctx.filesDir, "operit_runtime")
@@ -50,7 +48,8 @@ val operitModule = module {
                         .firstOrNull { it.shellStatus == me.rerere.workspace.WorkspaceShellStatus.READY.name }
                 }?.let { ws -> wsRepo to ws.id }
             },
-            enhancedMemoryProvider = { enhancedMem },
+            // v4.6.7 记忆打通 (极简版): 增强记忆工具直接读写 RinCore 原生记忆
+            memoryRepositoryProvider = { get<me.rerere.rikkahub.data.repository.MemoryRepository>() },
         )
     }
     single {

@@ -25,8 +25,8 @@ class OperitScriptRuntime(
     private val okHttpProvider: () -> okhttp3.OkHttpClient = { okhttp3.OkHttpClient() },
     // v4.6.4 运行兼容: shell 桥 (workspace 沙箱; null = 无可用工作区 → 诚实降级)
     private val workspaceProvider: () -> Pair<me.rerere.rikkahub.data.repository.WorkspaceRepository, String>? = { null },
-    // v4.6.5 记忆交火: 增强记忆仓库桥 (extended_memory_tools ↔ RinCore 记忆系统)
-    private val enhancedMemoryProvider: () -> me.rerere.rikkahub.data.repository.EnhancedMemoryRepository? = { null },
+    // v4.6.7 记忆打通 (极简): 增强记忆工具直接读写 RinCore 原生记忆
+    private val memoryRepositoryProvider: () -> me.rerere.rikkahub.data.repository.MemoryRepository? = { null },
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true; prettyPrint = false }
 
@@ -205,145 +205,68 @@ class OperitScriptRuntime(
                         put("stderr", JsonPrimitive(result.stderr ?: ""))
                     }
                 }
-                // ═══ v4.6.5 记忆交火: 增强记忆工具 ↔ RinCore 记忆系统 (原生构建, 直接交互) ═══
+                // ═══ v4.6.7 记忆打通 (极简): 增强记忆工具直连 RinCore 原生记忆 ═══
+                // 同一份数据、同一个注入链、助手记忆页可见 — 零新存储零代差。
+                // 标题编码进 content 首行 (【标题】), 与原生记忆完全同构。
                 "memory.create" -> {
                     val p = memParams(args) ?: return err("missing params")
-                    val repo = enhancedMemoryProvider() ?: return err("memory bridge unavailable")
-                    val node = kotlinx.coroutines.runBlocking {
-                        repo.create(
-                            assistantId = "",
-                            title = p["title"] as? String ?: return@runBlocking null,
-                            content = p["content"] as? String ?: "",
-                            contentType = p["contentType"] as? String ?: "text",
-                            source = p["source"] as? String ?: "",
-                            folderPath = p["folderPath"] as? String ?: "",
-                            tags = (p["tags"] as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
-                        )
+                    val repo = memoryRepositoryProvider() ?: return err("memory bridge unavailable")
+                    val title = p["title"] as? String ?: return err("title required")
+                    val folder = (p["folderPath"] as? String)?.takeIf { it.isNotBlank() }
+                    val full = buildString {
+                        append("【").append(title).append("】")
+                        if (folder != null) append("（").append(folder).append("）")
+                        append("\n").append(p["content"] as? String ?: "")
                     }
+                    val mem = kotlinx.coroutines.runBlocking { repo.addMemory("", full) }
                     ok {
-                        put("data", if (node == null) kotlinx.serialization.json.JsonArray(emptyList())
-                        else kotlinx.serialization.json.JsonArray(listOf(nodeJson(node))))
+                        put("data", kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive(mem.id))))
                     }
                 }
                 "memory.update" -> {
                     val p = memParams(args) ?: return err("missing params")
-                    val repo = enhancedMemoryProvider() ?: return err("memory bridge unavailable")
-                    val node = kotlinx.coroutines.runBlocking {
-                        repo.update(
-                            assistantId = "",
-                            oldTitle = p["oldTitle"] as? String ?: return@runBlocking null,
-                            newTitle = p["newTitle"] as? String ?: "",
-                            content = p["content"] as? String,
-                            contentType = p["contentType"] as? String,
-                            source = p["source"] as? String,
-                            folderPath = p["folderPath"] as? String,
-                            tags = (p["tags"] as? List<*>)?.filterIsInstance<String>(),
-                        )
+                    val repo = memoryRepositoryProvider() ?: return err("memory bridge unavailable")
+                    val oldTitle = p["oldTitle"] as? String ?: return err("oldTitle required")
+                    val newTitle = (p["newTitle"] as? String)?.takeIf { it.isNotBlank() } ?: oldTitle
+                    val folder = (p["folderPath"] as? String)?.takeIf { it.isNotBlank() }
+                    val full = buildString {
+                        append("【").append(newTitle).append("】")
+                        if (folder != null) append("（").append(folder).append("）")
+                        append("\n").append(p["content"] as? String ?: "")
                     }
-                    ok {
-                        put("data", if (node == null) kotlinx.serialization.json.JsonArray(emptyList())
-                        else kotlinx.serialization.json.JsonArray(listOf(nodeJson(node))))
+                    val target = kotlinx.coroutines.runBlocking {
+                        repo.getGlobalMemories().firstOrNull { it.content.startsWith("【$oldTitle】") }
+                    }
+                    if (target == null) {
+                        ok { put("data", kotlinx.serialization.json.JsonArray(emptyList())) }
+                    } else {
+                        val updated = kotlinx.coroutines.runBlocking { repo.updateContent(target.id, full) }
+                        ok {
+                            put("data", kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive(updated.id))))
+                        }
                     }
                 }
                 "memory.delete" -> {
                     val p = memParams(args) ?: return err("missing params")
-                    val repo = enhancedMemoryProvider() ?: return err("memory bridge unavailable")
-                    val deleted = kotlinx.coroutines.runBlocking {
-                        repo.deleteByTitle("", p["title"] as? String ?: return@runBlocking false)
+                    val repo = memoryRepositoryProvider() ?: return err("memory bridge unavailable")
+                    val title = p["title"] as? String ?: return err("title required")
+                    val target = kotlinx.coroutines.runBlocking {
+                        repo.getGlobalMemories().firstOrNull { it.content.startsWith("【$title】") }
                     }
-                    ok {
-                        put("data", kotlinx.serialization.json.JsonArray(
-                            if (deleted) listOf(kotlinx.serialization.json.JsonPrimitive(1)) else emptyList()
-                        ))
-                    }
-                }
-                "memory.move" -> {
-                    val p = memParams(args) ?: return err("missing params")
-                    val repo = enhancedMemoryProvider() ?: return err("memory bridge unavailable")
-                    val count = kotlinx.coroutines.runBlocking {
-                        repo.move(
-                            assistantId = "",
-                            titles = (p["titles"] as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
-                            sourceFolderPath = p["sourceFolderPath"] as? String,
-                            targetFolderPath = p["targetFolderPath"] as? String ?: "",
-                        )
-                    }
-                    ok {
-                        put("data", kotlinx.serialization.json.JsonArray(
-                            if (count > 0) listOf(kotlinx.serialization.json.JsonPrimitive(count)) else emptyList()
-                        ))
+                    if (target == null) {
+                        ok { put("data", kotlinx.serialization.json.JsonArray(emptyList())) }
+                    } else {
+                        kotlinx.coroutines.runBlocking { repo.deleteMemory(target.id) }
+                        ok { put("data", kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive(1)))) }
                     }
                 }
-                "memory.link" -> {
-                    val p = memParams(args) ?: return err("missing params")
-                    val repo = enhancedMemoryProvider() ?: return err("memory bridge unavailable")
-                    val link = kotlinx.coroutines.runBlocking {
-                        repo.link(
-                            assistantId = "",
-                            sourceTitle = p["sourceTitle"] as? String ?: return@runBlocking null,
-                            targetTitle = p["targetTitle"] as? String ?: return@runBlocking null,
-                            linkType = p["linkType"] as? String ?: "related",
-                            weight = (p["weight"] as? Number)?.toDouble() ?: 1.0,
-                            description = p["description"] as? String ?: "",
-                        )
-                    }
-                    ok {
-                        put("data", if (link == null) kotlinx.serialization.json.JsonPrimitive(false)
-                        else linkJson(link))
-                    }
-                }
-                "memory.queryLinks" -> {
-                    val p = memParams(args) ?: return err("missing params")
-                    val repo = enhancedMemoryProvider() ?: return err("memory bridge unavailable")
-                    val links = kotlinx.coroutines.runBlocking {
-                        repo.queryLinks(
-                            assistantId = "",
-                            linkId = (p["linkId"] as? Number)?.toLong(),
-                            sourceTitle = p["sourceTitle"] as? String,
-                            targetTitle = p["targetTitle"] as? String,
-                            linkType = p["linkType"] as? String,
-                            limit = (p["limit"] as? Number)?.toInt() ?: 100,
-                        )
-                    }
-                    ok {
-                        put("data", kotlinx.serialization.json.JsonArray(links.map { linkJson(it) }))
-                    }
-                }
-                "memory.updateLink" -> {
-                    val p = memParams(args) ?: return err("missing params")
-                    val repo = enhancedMemoryProvider() ?: return err("memory bridge unavailable")
-                    val done = kotlinx.coroutines.runBlocking {
-                        repo.updateLink(
-                            assistantId = "",
-                            linkId = (p["linkId"] as? Number)?.toLong(),
-                            sourceTitle = p["sourceTitle"] as? String,
-                            targetTitle = p["targetTitle"] as? String,
-                            linkType = p["linkType"] as? String,
-                            newLinkType = p["newLinkType"] as? String ?: "",
-                            weight = (p["weight"] as? Number)?.toDouble() ?: 1.0,
-                            description = p["description"] as? String ?: "",
-                        )
-                    }
-                    ok { put("data", kotlinx.serialization.json.JsonPrimitive(done)) }
-                }
-                "memory.deleteLink" -> {
-                    val p = memParams(args) ?: return err("missing params")
-                    val repo = enhancedMemoryProvider() ?: return err("memory bridge unavailable")
-                    val count = kotlinx.coroutines.runBlocking {
-                        repo.deleteLink(
-                            assistantId = "",
-                            linkId = (p["linkId"] as? Number)?.toLong(),
-                            sourceTitle = p["sourceTitle"] as? String,
-                            targetTitle = p["targetTitle"] as? String,
-                            linkType = p["linkType"] as? String,
-                        )
-                    }
-                    ok {
-                        put("data", kotlinx.serialization.json.JsonArray(
-                            if (count > 0) listOf(kotlinx.serialization.json.JsonPrimitive(count)) else emptyList()
-                        ))
-                    }
-                }
+                // 原生记忆无文件夹维度 — 诚实返回 0 条移动 (不假装成功)
+                "memory.move" -> ok { put("data", kotlinx.serialization.json.JsonArray(emptyList())) }
+                // 原生记忆无图谱链接 — 诚实降级 (返回空集, 模型可感知该能力未启用)
+                "memory.link" -> ok { put("data", kotlinx.serialization.json.JsonPrimitive(false)) }
+                "memory.queryLinks" -> ok { put("data", kotlinx.serialization.json.JsonArray(emptyList())) }
+                "memory.updateLink" -> ok { put("data", kotlinx.serialization.json.JsonPrimitive(false)) }
+                "memory.deleteLink" -> ok { put("data", kotlinx.serialization.json.JsonArray(emptyList())) }
                 else -> err("capability not implemented in RinCore runtime yet: $name")
             }
         } catch (e: Throwable) {
@@ -372,24 +295,6 @@ class OperitScriptRuntime(
                 else -> null
             }
         }
-    }
-
-    private fun nodeJson(node: me.rerere.rikkahub.data.repository.MemNode) = buildJsonObject {
-        put("id", JsonPrimitive(node.id))
-        put("title", JsonPrimitive(node.title))
-        put("content", JsonPrimitive(node.content))
-        put("folderPath", JsonPrimitive(node.folderPath))
-        put("tags", JsonPrimitive(node.tags))
-        put("updatedAt", JsonPrimitive(node.updatedAt))
-    }
-
-    private fun linkJson(link: me.rerere.rikkahub.data.repository.MemLink) = buildJsonObject {
-        put("id", JsonPrimitive(link.id))
-        put("sourceTitle", JsonPrimitive(link.sourceTitle))
-        put("targetTitle", JsonPrimitive(link.targetTitle))
-        put("linkType", JsonPrimitive(link.linkType))
-        put("weight", JsonPrimitive(link.weight))
-        put("description", JsonPrimitive(link.description))
     }
 
     private fun str(el: JsonElement): String = when (el) {
