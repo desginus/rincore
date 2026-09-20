@@ -10,14 +10,19 @@ import android.util.Log
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.put
 import me.rerere.rikkahub.data.model.AssistantMemory
 
-@Serializable
 data class MemNode(
     val id: Long = 0,
     val assistantId: String = "",
@@ -31,7 +36,6 @@ data class MemNode(
     val updatedAt: Long = 0,
 )
 
-@Serializable
 data class MemLink(
     val id: Long = 0,
     val assistantId: String = "",
@@ -60,18 +64,69 @@ class EnhancedMemoryRepository(
     }
     private val lock = Any()
 
+    // 手写 JSON 编解码 — 不依赖 serialization 编译插件 (v4.6.6 编译保险)
+    private fun nodeToJson(n: MemNode): JsonObject = buildJsonObject {
+        put("id", n.id); put("assistantId", n.assistantId); put("title", n.title)
+        put("content", n.content); put("contentType", n.contentType); put("source", n.source)
+        put("folderPath", n.folderPath); put("tags", n.tags)
+        put("createdAt", n.createdAt); put("updatedAt", n.updatedAt)
+    }
+
+    private fun nodeFromJson(o: JsonObject): MemNode = MemNode(
+        id = (o["id"] as? JsonPrimitive)?.longOrNull ?: 0,
+        assistantId = (o["assistantId"] as? JsonPrimitive)?.content ?: "",
+        title = (o["title"] as? JsonPrimitive)?.content ?: "",
+        content = (o["content"] as? JsonPrimitive)?.content ?: "",
+        contentType = (o["contentType"] as? JsonPrimitive)?.content ?: "text",
+        source = (o["source"] as? JsonPrimitive)?.content ?: "",
+        folderPath = (o["folderPath"] as? JsonPrimitive)?.content ?: "",
+        tags = (o["tags"] as? JsonPrimitive)?.content ?: "",
+        createdAt = (o["createdAt"] as? JsonPrimitive)?.longOrNull ?: 0,
+        updatedAt = (o["updatedAt"] as? JsonPrimitive)?.longOrNull ?: 0,
+    )
+
+    private fun linkToJson(l: MemLink): JsonObject = buildJsonObject {
+        put("id", l.id); put("assistantId", l.assistantId)
+        put("sourceTitle", l.sourceTitle); put("targetTitle", l.targetTitle)
+        put("linkType", l.linkType); put("weight", l.weight); put("description", l.description)
+        put("createdAt", l.createdAt)
+    }
+
+    private fun linkFromJson(o: JsonObject): MemLink = MemLink(
+        id = (o["id"] as? JsonPrimitive)?.longOrNull ?: 0,
+        assistantId = (o["assistantId"] as? JsonPrimitive)?.content ?: "",
+        sourceTitle = (o["sourceTitle"] as? JsonPrimitive)?.content ?: "",
+        targetTitle = (o["targetTitle"] as? JsonPrimitive)?.content ?: "",
+        linkType = (o["linkType"] as? JsonPrimitive)?.content ?: "related",
+        weight = (o["weight"] as? JsonPrimitive)?.doubleOrNull ?: 1.0,
+        description = (o["description"] as? JsonPrimitive)?.content ?: "",
+        createdAt = (o["createdAt"] as? JsonPrimitive)?.longOrNull ?: 0,
+    )
+
     private fun load(): MemStore = synchronized(lock) {
         if (!file.exists()) return MemStore()
         runCatching {
-            json.decodeFromString(MemStore.serializer(), file.readText())
+            val root = json.parseToJsonElement(file.readText()).jsonObject
+            MemStore(
+                nodes = root["nodes"]?.jsonArray?.map { nodeFromJson(it.jsonObject) } ?: emptyList(),
+                links = root["links"]?.jsonArray?.map { linkFromJson(it.jsonObject) } ?: emptyList(),
+                nextNodeId = (root["nextNodeId"] as? JsonPrimitive)?.longOrNull ?: 1,
+                nextLinkId = (root["nextLinkId"] as? JsonPrimitive)?.longOrNull ?: 1,
+            )
         }.onFailure { Log.w(TAG, "load store failed, resetting: ${it.message}") }
             .getOrDefault(MemStore())
     }
 
     private fun save(store: MemStore) {
         runCatching {
+            val root = buildJsonObject {
+                put("nextNodeId", store.nextNodeId)
+                put("nextLinkId", store.nextLinkId)
+                put("nodes", JsonArray(store.nodes.map { nodeToJson(it) }))
+                put("links", JsonArray(store.links.map { linkToJson(it) }))
+            }
             val tmp = File(file.parentFile, file.name + ".tmp")
-            tmp.writeText(json.encodeToString(MemStore.serializer(), store))
+            tmp.writeText(root.toString())
             if (!tmp.renameTo(file)) {
                 file.writeText(tmp.readText())
                 tmp.delete()
