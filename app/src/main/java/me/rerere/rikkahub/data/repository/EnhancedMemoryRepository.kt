@@ -43,7 +43,7 @@ data class MemLink(
     val createdAt: Long = 0,
 )
 
-private data class MemStore(
+internal data class MemStore(
     val nodes: List<MemNode> = emptyList(),
     val links: List<MemLink> = emptyList(),
     val nextNodeId: Long = 1,
@@ -61,8 +61,8 @@ class EnhancedMemoryRepository(
     private val lock = Any()
 
     private fun load(): MemStore = synchronized(lock) {
+        if (!file.exists()) return MemStore()
         runCatching {
-            if (!file.exists()) return MemStore()
             json.decodeFromString(MemStore.serializer(), file.readText())
         }.onFailure { Log.w(TAG, "load store failed, resetting: ${it.message}") }
             .getOrDefault(MemStore())
