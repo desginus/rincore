@@ -1,10 +1,12 @@
 package me.rerere.rikkahub.ui.pages.operiteco
 
 
-/* ───【自研】岔路口计划·生态模块 (v4.6.2)
- * Operit 生态页的独立渲染管线: 内置工具包 (assets/operit-packages 自带) +
- * 来自市场的插件 — 与主聊天体验双并行, 互不影响。
- * 数据源与工具供给同源 (InstalledPackageStore): 开关即注册/注销模型工具。
+/* ───【自研】岔路口计划·生态模块 v2 (v4.6.4 综合统一)
+ * "生态与插件"统一页 — 三 Tab:
+ *   ① 工具包: 内置 31 包 + 市场包 (script/package — 启用即注册模型工具)
+ *   ② 插件:   workspace 插件 (目录即安装, 桥接状态可见)
+ *   ③ 面板:   带 UI 的插件面板 (OperitUiTabContent — 独立 WebView 渲染管线)
+ * 与主聊天双并行, 数据全线走 InstalledPackageStore / PluginManager 单一信源。
  * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -25,6 +27,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -33,6 +37,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -46,6 +51,7 @@ import me.rerere.rikkahub.data.operit.market.InstalledPackageStore
 import me.rerere.rikkahub.data.operit.market.MarketInstallService
 import me.rerere.rikkahub.data.operit.runtime.OperitBuiltinPackages
 import me.rerere.rikkahub.data.operit.runtime.OperitToolProvider
+import me.rerere.rikkahub.data.plugin.PluginManager
 import org.koin.compose.koinInject
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -53,104 +59,125 @@ import org.koin.compose.koinInject
 fun OperitEcoPage(
     onBack: () -> Unit,
 ) {
+    var tab by remember { mutableIntStateOf(0) }
+
+    Column(Modifier.fillMaxSize()) {
+        TopAppBar(
+            title = { Text("生态与插件") },
+            navigationIcon = {
+                TextButton(onClick = onBack) { Text("返回") }
+            },
+        )
+        TabRow(selectedTabIndex = tab) {
+            listOf("工具包", "插件", "面板").forEachIndexed { index, title ->
+                Tab(
+                    selected = tab == index,
+                    onClick = { tab = index },
+                    text = { Text(title) },
+                )
+            }
+        }
+        when (tab) {
+            0 -> EcoPackagesTab()
+            1 -> EcoPluginsTab()
+            else -> me.rerere.rikkahub.ui.pages.operitui.OperitUiTabContent()
+        }
+    }
+}
+
+/** Tab① 工具包 — 内置 31 包 + 市场包 (脚本/工具包, 启用即注册模型工具) */
+@Composable
+private fun EcoPackagesTab() {
     val installedStore: InstalledPackageStore = koinInject()
     val operitToolProvider: OperitToolProvider = koinInject()
     val marketInstallService: MarketInstallService = koinInject()
     val installedPackages by installedStore.installedFlow.collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
 
-    // 生态包 = script/package 类型 (与插件页同口径)
     val ecoPackages = installedPackages.filter { it.type == "script" || it.type == "package" }
     val builtin = ecoPackages.filter { OperitBuiltinPackages.isBuiltin(it) }
     val fromMarket = ecoPackages.filter { !OperitBuiltinPackages.isBuiltin(it) }
 
-    // 进入页面触发一次 refresh — 幂等播种内置包 (首次进入即出现在列表)
+    // 进入即触发一次幂等播种 (首次进入内置包出现在列表)
     LaunchedEffect(Unit) {
         runCatching { operitToolProvider.refresh() }
     }
 
     var detailPkg by remember { mutableStateOf<InstalledPackage?>(null) }
 
-    Column(Modifier.fillMaxSize()) {
-        TopAppBar(
-            title = { Text("生态模块") },
-            navigationIcon = {
-                TextButton(onClick = onBack) { Text("返回") }
-            },
-        )
-        Text(
-            "生态模块与主聊天双并行：内置工具包 + 应用市场插件。启用后工具注册到「插件」域，" +
-                "在对话中让 AI 使用即可 — 渲染与交互独立于聊天管线。",
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            color = MaterialTheme.colorScheme.primary,
-        )
-        LazyColumn(Modifier.fillMaxSize()) {
-            if (builtin.isNotEmpty()) {
-                item(key = "builtin_header") {
-                    Text(
-                        "内置工具包（${builtin.size}）",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    )
-                }
-                items(builtin, key = { "b_" + it.entryId }) { pkg ->
-                    EcoPackageCard(
-                        pkg = pkg,
-                        builtin = true,
-                        onClick = { detailPkg = pkg },
-                        onToggle = { enabled ->
-                            scope.launch {
-                                installedStore.setEnabled(pkg.entryId, enabled)
-                                runCatching { operitToolProvider.refresh() }
-                            }
-                        },
-                    )
-                }
+    LazyColumn(Modifier.fillMaxSize()) {
+        item(key = "eco_hint") {
+            Text(
+                "工具包提供 AI 可调用的能力 (启用后注册到「插件」域, 对话中让 AI 使用即可)。" +
+                    "内置包随应用自带, 可随时开关。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        }
+        if (builtin.isNotEmpty()) {
+            item(key = "builtin_header") {
+                Text(
+                    "内置工具包（${builtin.size}）",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
             }
-            if (fromMarket.isNotEmpty()) {
-                item(key = "market_header") {
-                    Text(
-                        "来自市场（${fromMarket.size}）",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    )
-                }
-                items(fromMarket, key = { "m_" + it.entryId }) { pkg ->
-                    EcoPackageCard(
-                        pkg = pkg,
-                        builtin = false,
-                        onClick = { detailPkg = pkg },
-                        onToggle = { enabled ->
-                            scope.launch {
-                                installedStore.setEnabled(pkg.entryId, enabled)
-                                runCatching { operitToolProvider.refresh() }
-                            }
-                        },
-                        onUninstall = {
-                            scope.launch {
-                                runCatching { marketInstallService.uninstall(pkg.entryId) }
-                                runCatching { operitToolProvider.refresh() }
-                            }
-                        },
-                    )
-                }
+            items(builtin, key = { "b_" + it.entryId }) { pkg ->
+                EcoPackageCard(
+                    pkg = pkg,
+                    builtin = true,
+                    onClick = { detailPkg = pkg },
+                    onToggle = { enabled ->
+                        scope.launch {
+                            installedStore.setEnabled(pkg.entryId, enabled)
+                            runCatching { operitToolProvider.refresh() }
+                        }
+                    },
+                )
             }
-            if (ecoPackages.isEmpty()) {
-                item(key = "empty") {
-                    Text(
-                        "生态为空 — 内置工具包将在首次刷新后自动释放入库。",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(16.dp),
-                    )
-                }
+        }
+        if (fromMarket.isNotEmpty()) {
+            item(key = "market_header") {
+                Text(
+                    "来自市场（${fromMarket.size}）",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+            items(fromMarket, key = { "m_" + it.entryId }) { pkg ->
+                EcoPackageCard(
+                    pkg = pkg,
+                    builtin = false,
+                    onClick = { detailPkg = pkg },
+                    onToggle = { enabled ->
+                        scope.launch {
+                            installedStore.setEnabled(pkg.entryId, enabled)
+                            runCatching { operitToolProvider.refresh() }
+                        }
+                    },
+                    onUninstall = {
+                        scope.launch {
+                            runCatching { marketInstallService.uninstall(pkg.entryId) }
+                            runCatching { operitToolProvider.refresh() }
+                        }
+                    },
+                )
+            }
+        }
+        if (ecoPackages.isEmpty()) {
+            item(key = "empty") {
+                Text(
+                    "生态为空 — 内置工具包将在首次刷新后自动释放入库。",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(16.dp),
+                )
             }
         }
     }
 
-    // 详情弹窗 — 工具清单 (ModalBottomSheet + 可滚, 弹窗铁律)
     detailPkg?.let { pkg ->
         val tools = remember(pkg.entryId) {
             runCatching { operitToolProvider.describePackage(pkg) }.getOrDefault(emptyList())
@@ -160,6 +187,84 @@ fun OperitEcoPage(
             tools = tools,
             onDismiss = { detailPkg = null },
         )
+    }
+}
+
+/** Tab② 插件 — workspace 插件 (目录即安装, 桥接状态可见) */
+@Composable
+private fun EcoPluginsTab() {
+    val pluginManager: PluginManager = koinInject()
+    val scope = rememberCoroutineScope()
+    var refreshTick by remember { mutableIntStateOf(0) }
+    var refreshing by remember { mutableStateOf(false) }
+    val plugins = remember(refreshTick) { pluginManager.pluginsUiSnapshot() }
+
+    LazyColumn(Modifier.fillMaxSize()) {
+        item(key = "plugin_hint") {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "workspace 插件：目录放入文件区 .plugins/<插件名>/ 即安装（plugin.yaml + 可选 SKILL.md）。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    enabled = !refreshing,
+                    onClick = {
+                        scope.launch {
+                            refreshing = true
+                            runCatching { pluginManager.refresh() }
+                            refreshTick++
+                            refreshing = false
+                        }
+                    },
+                ) { Text(if (refreshing) "刷新中" else "刷新") }
+            }
+        }
+        if (plugins.isEmpty()) {
+            item(key = "plugin_empty") {
+                Text(
+                    "暂无 workspace 插件。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(16.dp),
+                )
+            }
+        } else {
+            items(plugins, key = { "pl_" + it.name }) { plugin ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ),
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text(plugin.name, style = MaterialTheme.typography.titleMedium)
+                        if (plugin.description.isNotBlank()) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                plugin.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            buildString {
+                                if (plugin.hasSkill) append("技能 ")
+                                append("桥接: ").append(plugin.bridgeStatus)
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -259,8 +364,7 @@ private fun EcoDetailSheet(
                 if (tools.isEmpty()) {
                     item {
                         Text(
-                            "未解析到工具。此工具包可能依赖需完整内核的能力 — " +
-                                "在 RinCore 中交互由模型对话驱动。",
+                            "未解析到工具 — 此包可能依赖需完整内核的能力。",
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }

@@ -14,9 +14,16 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import java.io.File
+import kotlinx.serialization.json.contentOrNull
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 
 class OperitScriptRuntime(
     private val filesRootProvider: () -> File,
+    // v4.6.4 运行兼容: HTTP 桥 (Tools.Net / OkHttp DSL 的底层执行器)
+    private val okHttpProvider: () -> okhttp3.OkHttpClient = { okhttp3.OkHttpClient() },
+    // v4.6.4 运行兼容: shell 桥 (workspace 沙箱; null = 无可用工作区 → 诚实降级)
+    private val workspaceProvider: () -> Pair<me.rerere.rikkahub.data.repository.WorkspaceRepository, String>? = { null },
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true; prettyPrint = false }
 
@@ -144,6 +151,57 @@ class OperitScriptRuntime(
                     from.copyTo(to, overwrite = true)
                     ok { put("success", JsonPrimitive(true)) }
                 }
+                // v4.6.4 运行兼容: HTTP 桥 (OkHttp — Tools.Net / OkHttp DSL 的底层)
+                "http.request" -> {
+                    val payload = args.getOrNull(0)?.let { str(it) } ?: return err("missing request payload")
+                    val req = runCatching {
+                        json.parseToJsonElement(payload) as? kotlinx.serialization.json.JsonObject
+                    }.getOrNull() ?: return err("invalid request payload")
+                    val url = req["url"]?.let { (it as? JsonPrimitive)?.content } ?: return err("missing url")
+                    val method = req["method"]?.let { (it as? JsonPrimitive)?.content }?.uppercase() ?: "GET"
+                    val body = req["body"]?.let { (it as? JsonPrimitive)?.contentOrNull }
+                    val headers = req["headers"] as? kotlinx.serialization.json.JsonObject
+                    val connectMs = req["connectTimeoutMs"]?.let { (it as? JsonPrimitive)?.content?.toLongOrNull() } ?: 30_000L
+                    val readMs = req["readTimeoutMs"]?.let { (it as? JsonPrimitive)?.content?.toLongOrNull() } ?: 30_000L
+                    val client = okHttpProvider().newBuilder()
+                        .connectTimeout(connectMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+                        .readTimeout(readMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+                        .callTimeout(maxOf(60_000L, connectMs + readMs), java.util.concurrent.TimeUnit.MILLISECONDS)
+                        .build()
+                    val reqBody = when {
+                        body.isNullOrEmpty() -> null
+                        method in listOf("POST", "PUT", "PATCH", "DELETE") ->
+                            body.toRequestBody("application/json; charset=utf-8".toMediaType())
+                        else -> null
+                    }
+                    val builder = okhttp3.Request.Builder().url(url).method(method, reqBody)
+                    headers?.forEach { (k, v) ->
+                        (v as? JsonPrimitive)?.contentOrNull?.let { builder.addHeader(k, it) }
+                    }
+                    client.newCall(builder.build()).execute().use { resp ->
+                        val content = resp.body?.string() ?: ""
+                        ok {
+                            put("status", JsonPrimitive(resp.code))
+                            put("statusMessage", JsonPrimitive(resp.message))
+                            put("content", JsonPrimitive(content))
+                        }
+                    }
+                }
+                // v4.6.4 运行兼容: shell 桥 (接 workspace 沙箱 — code_runner/ffmpeg 类包的执行底座)
+                "system.shell" -> {
+                    val cmd = args.getOrNull(0)?.let { str(it) } ?: return err("missing command")
+                    val ws = workspaceProvider()
+                        ?: return err("no workspace available — bind a shell-ready workspace to an assistant first")
+                    val (repo, wsId) = ws
+                    val result = kotlinx.coroutines.runBlocking {
+                        repo.executeCommand(wsId, cmd)
+                    }
+                    ok {
+                        put("exitCode", JsonPrimitive(result.exitCode))
+                        put("stdout", JsonPrimitive(result.stdout ?: ""))
+                        put("stderr", JsonPrimitive(result.stderr ?: ""))
+                    }
+                }
                 else -> err("capability not implemented in RinCore runtime yet: $name")
             }
         } catch (e: Throwable) {
@@ -243,15 +301,45 @@ class OperitScriptRuntime(
                     move: function (f, t) { return __hostJSON('files.move', [f, t]); },
                     copy: function (f, t) { return __hostJSON('files.copy', [f, t]); }
                 },
+                // v4.6.4 运行兼容: HTTP 桥 (RinCore OkHttp; 搜索/绘图/GitHub 类包的底座)
+                Net: {
+                    httpGet: function (url) {
+                        return JSON.parse(__hostCall('http.request', JSON.stringify([JSON.stringify({ url: String(url), method: 'GET' })])));
+                    },
+                    httpPost: function (url, body) {
+                        var b = (body != null && typeof body === 'object') ? JSON.stringify(body) : (body == null ? null : String(body));
+                        return JSON.parse(__hostCall('http.request', JSON.stringify([JSON.stringify({ url: String(url), method: 'POST', body: b })])));
+                    },
+                    fetch: function (url) {
+                        return JSON.parse(__hostCall('http.request', JSON.stringify([JSON.stringify({ url: String(url), method: 'GET' })])));
+                    }
+                },
                 System: {
                     sleep: function (ms) { return Promise.resolve(); },
                     getDeviceInfo: function () { return { model: 'RinCore', sdk: 0 }; },
                     startApp: function () { return __notImplemented('system.startApp'); },
                     sendNotification: function () { return __notImplemented('system.sendNotification'); },
                     toast: function () { return __notImplemented('system.toast'); },
-                    terminal: function () { return __notImplemented('system.terminal'); },
-                    shell: function () { return __notImplemented('system.shell'); },
-                    exec: function () { return __notImplemented('system.exec'); },
+                    // v4.6.4 运行兼容: terminal/hiddenExec/shell 接 workspace 沙箱
+                    // (code_runner/ffmpeg 类包的执行底座; 无 workspace 时诚实报错)
+                    terminal: {
+                        hiddenExec: function (command, options) {
+                            return JSON.parse(__hostCall('system.shell', JSON.stringify([String(command)])));
+                        },
+                        exec: function (command, options) {
+                            return JSON.parse(__hostCall('system.shell', JSON.stringify([String(command)])));
+                        },
+                        create: function () { return __notImplemented('terminal.create'); },
+                        execute: function () { return __notImplemented('terminal.execute'); },
+                        close: function () { return __notImplemented('terminal.close'); }
+                    },
+                    shell: function (cmd) {
+                        try {
+                            var __r = JSON.parse(__hostCall('system.shell', JSON.stringify([String(cmd)])));
+                            return __r;
+                        } catch (e) { return __notImplemented('system.shell'); }
+                    },
+                    exec: function (cmd) { return __notImplemented('system.exec'); },
                     getAppUsageTime: function () { return __notImplemented('system.getAppUsageTime'); }
                 },
                 // v4.5.31: 未实现命名空间的友好降级桩 —
@@ -276,6 +364,56 @@ class OperitScriptRuntime(
                 }
             };
             // (__notImplemented / 定时器桩移至共享层 OPERIT_COMMON_PRELUDE)
+            // ═══ v4.6.4 运行兼容: JS 版 OkHttp DSL (github/messenger 等 TS 编译包的底层) ═══
+            // 用法对齐 Operit: OkHttp.newBuilder().connectTimeout(ms)...build()
+            //   → client.newRequest().url(u).method(m).headers(h).body(b, type).build().execute()
+            //   → response.isSuccessful()/statusCode()/statusMessage()/content/json()
+            function __rinOkHttpClient(cfg) {
+                return {
+                    newRequest: function () {
+                        var req = { headers: {}, method: 'GET', url: '', body: null, bodyType: null };
+                        var rb = {};
+                        rb.url = function (u) { req.url = String(u); return rb; };
+                        rb.method = function (m) { req.method = String(m == null ? 'GET' : m); return rb; };
+                        rb.headers = function (h) { if (h && typeof h === 'object') { for (var k in h) { req.headers[k] = String(h[k]); } } return rb; };
+                        rb.body = function (b, type) { req.body = (b == null ? null : String(b)); req.bodyType = (type == null ? null : String(type)); return rb; };
+                        rb.build = function () {
+                            return {
+                                execute: function () {
+                                    var payload = JSON.stringify({
+                                        url: req.url, method: req.method, headers: req.headers,
+                                        body: req.body, bodyType: req.bodyType,
+                                        connectTimeoutMs: cfg.connectTimeoutMs, readTimeoutMs: cfg.readTimeoutMs
+                                    });
+                                    var raw = __hostCall('http.request', JSON.stringify([payload]));
+                                    var r = JSON.parse(raw);
+                                    if (!r.success) { throw new Error(String(r.message == null ? 'http request failed' : r.message)); }
+                                    return {
+                                        isSuccessful: function () { return r.status >= 200 && r.status < 300; },
+                                        statusCode: function () { return r.status; },
+                                        statusMessage: function () { return r.statusMessage == null ? '' : r.statusMessage; },
+                                        content: r.content == null ? '' : r.content,
+                                        body: { string: function () { return r.content == null ? '' : r.content; } },
+                                        json: function () { return JSON.parse(r.content == null ? '{}' : r.content); }
+                                    };
+                                }
+                            };
+                        };
+                        return rb;
+                    }
+                };
+            }
+            var OkHttp = {
+                newBuilder: function () {
+                    var cfg = { connectTimeoutMs: 30000, readTimeoutMs: 30000 };
+                    var b = {};
+                    b.connectTimeout = function (ms) { cfg.connectTimeoutMs = (ms == null ? 30000 : ms); return b; };
+                    b.readTimeout = function (ms) { cfg.readTimeoutMs = (ms == null ? 30000 : ms); return b; };
+                    b.writeTimeout = function (ms) { return b; };
+                    b.build = function () { return __rinOkHttpClient(cfg); };
+                    return b;
+                }
+            };
         """.trimIndent()
     }
 }

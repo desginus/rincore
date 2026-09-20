@@ -24,7 +24,7 @@ android {
 // 比较 — 相同 code + 相同签名 = 任意替换安装 (升/降/同级均可)。
 // versionName 正常递增用于显示与归档; 发版只改 versionName。
 versionCode = 9999
-versionName = "4.6.3"
+versionName = "4.6.4"
 
             testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -208,6 +208,7 @@ dependencies {
 
     // serialization
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.hjson) // v4.6.4: HJSON 解析 (Operit 生态包手写格式 — 与 Operit 同款依赖)
     implementation(libs.quickjs.kt.android) // v4.5.29 岔路口计划·阶段2: Operit 脚本运行时
 
     // zxing

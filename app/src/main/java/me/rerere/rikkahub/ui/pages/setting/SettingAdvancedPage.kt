@@ -129,24 +129,19 @@ fun SettingAdvancedPage(
                     headlineContent = { Text("权限管理") },
                 )
                 // v4.5.40: 生态入口收纳 (原抽屉/对话页入口迁入 — UI 恢复原样)
-                // v4.6.2: + 生态模块页 (内置工具包 + 市场插件, 独立渲染管线)
+                // v4.6.4: 综合统一 — 工具包/插件/面板 三合一 ("生态与插件");
+                // 插件面板并入统一页 Tab, 不再单列入口
                 item(
                     onClick = { navController.navigate(Screen.OperitEco) },
                     leadingContent = { Icon(HugeIcons.Package, null) },
-                    supportingContent = { Text("内置工具包与市场插件管理 (启用即注册模型工具)") },
-                    headlineContent = { Text("生态模块") },
+                    supportingContent = { Text("工具包 / 插件 / 面板 — 一站式生态管理") },
+                    headlineContent = { Text("生态与插件") },
                 )
                 item(
                     onClick = { navController.navigate(Screen.Market) },
                     leadingContent = { Icon(HugeIcons.Download04, null) },
-                    supportingContent = { Text("Operit 生态应用市场 (浏览/下载/安装插件)") },
+                    supportingContent = { Text("Operit 生态应用市场 (浏览/下载/安装)") },
                     headlineContent = { Text("应用市场") },
-                )
-                item(
-                    onClick = { navController.navigate(Screen.OperitUi) },
-                    leadingContent = { Icon(HugeIcons.Puzzle, null) },
-                    supportingContent = { Text("已装插件的界面面板 (侧边栏面板渲染)") },
-                    headlineContent = { Text("插件面板") },
                 )
             }
 

@@ -34,9 +34,19 @@ val operitModule = module {
     // v4.5.29 阶段2: 脚本运行时 + 工具提供器
     single {
         val ctx = get<android.content.Context>()
+        // v4.6.4 运行兼容: HTTP 桥 + shell 桥注入 (eager 解析防 Koin 延迟上下文问题)
+        val okHttp = get<okhttp3.OkHttpClient>()
+        val wsRepo = get<me.rerere.rikkahub.data.repository.WorkspaceRepository>()
         me.rerere.rikkahub.data.operit.runtime.OperitScriptRuntime(
             filesRootProvider = {
                 java.io.File(ctx.filesDir, "operit_runtime")
+            },
+            okHttpProvider = { okHttp },
+            workspaceProvider = {
+                kotlinx.coroutines.runBlocking {
+                    wsRepo.getAllWorkspaces()
+                        .firstOrNull { it.shellStatus == me.rerere.workspace.WorkspaceShellStatus.READY.name }
+                }?.let { ws -> wsRepo to ws.id }
             },
         )
     }

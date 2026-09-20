@@ -117,6 +117,26 @@ fun findUiEntries(pkg: InstalledPackage): List<OperitUiEntry> {
 
 @Composable
 fun OperitUiPage(onBack: () -> Unit) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("插件界面") },
+                navigationIcon = { TextButton(onClick = onBack) { Text("返回") } },
+            )
+        },
+    ) { padding ->
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().padding(padding)) {
+            OperitUiTabContent()
+        }
+    }
+}
+
+/**
+ * v4.6.4: 面板内容块 (无 Scaffold) — 供"生态与插件"统一页 Tab 内嵌复用。
+ * 面板 HTML 走独立 WebView 渲染管线, 与聊天/生态列表零耦合。
+ */
+@Composable
+fun OperitUiTabContent() {
     val installedStore: InstalledPackageStore = koinInject()
     val runtime: OperitUiRuntime = koinInject()
     val installed by installedStore.installedFlow.collectAsState(initial = emptyList())
@@ -132,22 +152,14 @@ fun OperitUiPage(onBack: () -> Unit) {
 
     val current = selected
     if (current == null) {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text("插件界面") },
-                    navigationIcon = { TextButton(onClick = onBack) { Text("返回") } },
-                )
-            },
-        ) { padding ->
-            Column(Modifier.fillMaxSize().padding(padding)) {
-                Text(
-                    "带 UI 面板的插件在此渲染其原生界面 (Operit 面板 HTML)。" +
-                        "面板数据通过插件桥读写, 与对话中的工具共用同一份配置。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
+        Column(Modifier.fillMaxSize()) {
+            Text(
+                "带 UI 面板的插件在此渲染其原生界面 (Operit 面板 HTML)。" +
+                    "面板数据通过插件桥读写, 与对话中的工具共用同一份配置。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
                 if (entries.isEmpty()) {
                     Text(
                         "暂无带界面的插件。\n在应用市场安装支持面板的插件 (如「温柔巡检」) 并启用后, 此处会出现入口。",
@@ -186,7 +198,6 @@ fun OperitUiPage(onBack: () -> Unit) {
                         }
                     }
                 }
-            }
         }
     } else {
         OperitUiRenderer(entry = current, onBack = { selected = null })

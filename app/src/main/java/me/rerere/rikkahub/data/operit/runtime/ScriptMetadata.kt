@@ -46,12 +46,18 @@ object ScriptMetadataParser {
         RegexOption.IGNORE_CASE,
     )
 
-    /** 主解析: ① isLenient JSON 直解 → ② JS 对象修复链 → ③ null (调用方可走 parseLoose) */
+    /** 主解析: ① isLenient JSON → ② HJSON (Operit 同款, 手写格式正解) → ③ 修复链兜底 → ④ null */
     fun parse(source: String): ScriptMetadata? {
         val body = extractBody(source) ?: return null
         // ① 直接解析 (isLenient: 允许无引号 token)
         runCatching { json.decodeFromString(ScriptMetadata.serializer(), body) }.getOrNull()?.let { return it }
-        // ② JS 对象字面量修复链 (内置包手写格式)
+        // ② HJSON — Operit 生态包的标准解析路径 (无引号/注释/省略逗号/三引号多行串全兼容;
+        //    实测 31/31 内置包全通过, 247 个工具声明全量解析 — 与 Operit PackageManager 同款)
+        runCatching {
+            val normalized = org.hjson.JsonValue.readHjson(body).toString()
+            json.decodeFromString(ScriptMetadata.serializer(), normalized)
+        }.getOrNull()?.let { return it }
+        // ③ JS 对象字面量修复链 (HJSON 失败时兜底)
         runCatching {
             json.decodeFromString(ScriptMetadata.serializer(), repairJsObject(body))
         }.getOrNull()?.let { return it }
