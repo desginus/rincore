@@ -31,12 +31,22 @@ import java.io.ByteArrayOutputStream
 private const val SHELL_TIMEOUT_MAX_SECONDS = 600L
 private const val MAX_READ_FILE_BYTES = 8L * 1024 * 1024
 
+// v4.6.1 编程能力增强: read 分页 / search 上限 (对齐业界编程 Agent 设计)
+private const val READ_DEFAULT_LIMIT = 2000
+private const val READ_MAX_LIMIT = 10000
+private const val GREP_DEFAULT_MAX = 100
+private const val GREP_MAX_LIMIT = 500
+private const val GLOB_DEFAULT_MAX = 200
+private const val GLOB_MAX_LIMIT = 1000
+
 val WorkspaceToolDefaultApprovals: Map<String, Boolean> = mapOf(
     "workspace_read_file" to false,
     "workspace_write_file" to false,
     "workspace_edit_file" to false,
     "workspace_show_file" to false,
     "workspace_shell" to false, // v3.6.13: 默认直接执行 (用户: 不弹批复)
+    "workspace_grep" to false,  // v4.6.1: 只读搜索, 免审批
+    "workspace_glob" to false,  // v4.6.1: 只读搜索, 免审批
 )
 
 fun resolveWorkspaceToolApproval(name: String, overrides: Map<String, Boolean>): Boolean =
@@ -81,6 +91,10 @@ private fun createWorkspaceToolsWithApprovals(
         createEditFileTool(workspaceId, ::needsApproval, workspaceRepository, cwd),
         createShowFileTool(workspaceId, ::needsApproval, workspaceRepository, cwd),
         createShellTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
+        // v4.6.1: 代码探索双件套 (对齐 Claude Code 的 Grep/Glob 设计 —
+        // 专用工具优于 shell 拼接: 结构化输出/统一截断/免审批只读)
+        createGrepTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
+        createGlobTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
     )
 }
 
@@ -101,29 +115,64 @@ private fun createReadFileTool(
     description = """
         Read a file using the assistant's bound workspace Rootfs. Paths must be absolute inside Rootfs.
         Use /workspace for the workspace files area.
+        Text files are returned with line numbers; large files are paginated: use offset (1-based start
+        line) and limit (line count, default $READ_DEFAULT_LIMIT) to read further sections. The result
+        reports totalLines and a continuation hint when truncated.
         Supports UTF-8 text files and image files (png, jpg, jpeg, gif, webp, bmp, svg, heic, heif, avif, ico).
     """.trimIndent().replace("\n", " "),
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
                 putPathProperty(required = true)
+                put("offset", buildJsonObject {
+                    put("type", "integer")
+                    put("description", "1-based line number to start reading from. Defaults to 1.")
+                })
+                put("limit", buildJsonObject {
+                    put("type", "integer")
+                    put("description", "Maximum number of lines to read. Defaults to $READ_DEFAULT_LIMIT.")
+                })
             },
             required = listOf("path"),
         )
     },
     needsApproval = { needsApproval("workspace_read_file") },
     execute = {
-        val path = normalizeScopedPath(it.jsonObject.absolutePath("path"), cwd)
+        val params = it.jsonObject
+        val path = normalizeScopedPath(params.absolutePath("path"), cwd)
         val cwdRel = workspaceCwdRel(cwd)
         if (path.isImagePath()) {
             workspaceRepository.readImageInRootfs(workspaceId, path, cwdRel)
         } else {
             val text = workspaceRepository.readTextInRootfs(workspaceId, path, cwdRel)
+            // v4.6.1: 行号分页 (对齐业界编程 Agent 的 Read 工具设计)
+            val offset = (params.string("offset")?.toIntOrNull() ?: 1).coerceAtLeast(1)
+            val limit = (params.string("limit")?.toIntOrNull() ?: READ_DEFAULT_LIMIT).coerceIn(1, READ_MAX_LIMIT)
+            val allLines = text.split('\n')
+            val totalLines = allLines.size
+            val startIdx = (offset - 1).coerceAtMost(totalLines)
+            val endIdx = (startIdx + limit).coerceAtMost(totalLines)
+            val window = allLines.subList(startIdx, endIdx)
+            val numbered = buildString {
+                window.forEachIndexed { i, line ->
+                    append((startIdx + i + 1).toString().padStart(6))
+                    append('→')
+                    append(line)
+                    if (i < window.size - 1) append('\n')
+                }
+            }
             listOf(
                 UIMessagePart.Text(
                     buildJsonObject {
                         put("path", path)
-                        put("text", text)
+                        put("text", numbered)
+                        put("totalLines", totalLines)
+                        put("rangeStart", startIdx + 1)
+                        put("rangeEnd", endIdx)
+                        if (endIdx < totalLines) {
+                            put("truncated", true)
+                            put("continuation", "File has $totalLines lines. Continue with offset=${endIdx + 1}.")
+                        }
                     }.toString()
                 )
             )
@@ -154,6 +203,10 @@ private fun createWriteFileTool(
                     put("type", "boolean")
                     put("description", "Whether to overwrite an existing file. Defaults to true.")
                 })
+                put("append", buildJsonObject {
+                    put("type", "boolean")
+                    put("description", "Append to the end of the file instead of replacing it. Defaults to false.")
+                })
             },
             required = listOf("path", "text"),
         )
@@ -165,7 +218,8 @@ private fun createWriteFileTool(
         val cwdRel = workspaceCwdRel(cwd)
         val text = params.string("text") ?: error("text is required")
         val overwrite = params["overwrite"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: true
-        val entry = workspaceRepository.writeTextInRootfs(workspaceId, path, text, overwrite, cwdRel)
+        val append = params["append"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
+        val entry = workspaceRepository.writeTextInRootfs(workspaceId, path, text, overwrite, cwdRel, append)
         val resultJson = entry.toJson().toMutableMap()
         if (path.isImagePath()) {
             resultJson["render_url"] = JsonPrimitive(buildRenderUrl(workspaceId, path, cwdRel))
@@ -279,6 +333,166 @@ private fun createShowFileTool(
                     put("path", path)
                     put("size", size)
                     put("status", "shown")
+                }.toString()
+            )
+        )
+    },
+)
+
+/**
+ * v4.6.1: 内容搜索 (Grep) — ripgrep 优先, grep 兜底。
+ * 对齐业界编程 Agent: "Content search: Use Grep (NOT shell grep)"。
+ */
+private fun createGrepTool(
+    workspaceId: String,
+    needsApproval: (String) -> Boolean,
+    workspaceRepository: WorkspaceRepository,
+    defaultCwd: String? = null,
+) = Tool(
+    name = "workspace_grep",
+    description = """
+        Search file contents in the workspace (ripgrep when available, grep fallback).
+        Returns matching lines as path:line:content. Use this instead of shell grep/rg for code search.
+        Parameters: pattern (regex, required); path (search root, defaults to /workspace);
+        glob (file filter like "*.kt", optional); maxResults (default $GREP_DEFAULT_MAX).
+    """.trimIndent().replace("\n", " "),
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                put("pattern", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Regex pattern to search for")
+                })
+                putPathProperty(required = false)
+                put("glob", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Optional file filter, e.g. \"*.kt\" or \"*.md\"")
+                })
+                put("maxResults", buildJsonObject {
+                    put("type", "integer")
+                    put("description", "Maximum matching lines to return. Defaults to $GREP_DEFAULT_MAX, max $GREP_MAX_LIMIT.")
+                })
+            },
+            required = listOf("pattern"),
+        )
+    },
+    needsApproval = { needsApproval("workspace_grep") },
+    execute = {
+        val params = it.jsonObject
+        val pattern = params.string("pattern") ?: error("pattern is required")
+        require(pattern.isNotBlank()) { "pattern must not be blank" }
+        val searchPath = normalizeScopedPath(
+            params.string("path")?.takeIf { it.isNotBlank() } ?: "/workspace",
+            defaultCwd,
+        )
+        val glob = params.string("glob")?.takeIf { it.isNotBlank() }
+        val maxResults = (params.string("maxResults")?.toIntOrNull() ?: GREP_DEFAULT_MAX)
+            .coerceIn(1, GREP_MAX_LIMIT)
+        val pathArg = searchPath.shellQuote()
+        val patternArg = pattern.shellQuote()
+        val globArg = glob?.let { " --glob ${it.shellQuote()}" } ?: ""
+        val grepInclude = glob?.let { " --include=${it.shellQuote()}" } ?: ""
+        val command = """
+            if command -v rg >/dev/null 2>&1; then
+              rg --line-number --no-heading --color never -e $patternArg$globArg -- $pathArg 2>/dev/null | head -n $maxResults
+            else
+              grep -rn -I -e $patternArg$grepInclude -- $pathArg 2>/dev/null | head -n $maxResults
+            fi
+            exit 0
+        """.trimIndent()
+        val result = workspaceRepository.executeCommand(workspaceId, command, defaultCwd.orEmpty())
+        val output = (result.stdout ?: "").trim()
+        val lines = if (output.isBlank()) emptyList() else output.split('\n')
+        val truncated = lines.size >= maxResults
+        listOf(
+            UIMessagePart.Text(
+                buildJsonObject {
+                    put("pattern", pattern)
+                    put("path", searchPath)
+                    if (glob != null) put("glob", glob)
+                    put("matches", lines.size)
+                    if (truncated) {
+                        put("truncated", true)
+                        put("note", "Showing first $maxResults matches; refine pattern/glob for more precision.")
+                    }
+                    put("text", output)
+                }.toString()
+            )
+        )
+    },
+)
+
+/**
+ * v4.6.1: 文件名搜索 (Glob) — 对齐业界: "File search: Use Glob (NOT find or ls)"。
+ * 输出按修改时间倒序 (最新在前)。
+ */
+private fun createGlobTool(
+    workspaceId: String,
+    needsApproval: (String) -> Boolean,
+    workspaceRepository: WorkspaceRepository,
+    defaultCwd: String? = null,
+) = Tool(
+    name = "workspace_glob",
+    description = """
+        Find files by name pattern in the workspace (e.g. "*.kt", "README*", "config.*").
+        Returns matching file paths sorted by modification time (newest first).
+        Use this instead of shell find/ls for file discovery.
+        Parameters: pattern (required); path (search root, defaults to /workspace);
+        maxResults (default $GLOB_DEFAULT_MAX).
+    """.trimIndent().replace("\n", " "),
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                put("pattern", buildJsonObject {
+                    put("type", "string")
+                    put("description", "File name pattern, e.g. \"*.kt\"")
+                })
+                putPathProperty(required = false)
+                put("maxResults", buildJsonObject {
+                    put("type", "integer")
+                    put("description", "Maximum paths to return. Defaults to $GLOB_DEFAULT_MAX, max $GLOB_MAX_LIMIT.")
+                })
+            },
+            required = listOf("pattern"),
+        )
+    },
+    needsApproval = { needsApproval("workspace_glob") },
+    execute = {
+        val params = it.jsonObject
+        val pattern = params.string("pattern") ?: error("pattern is required")
+        require(pattern.isNotBlank()) { "pattern must not be blank" }
+        val searchPath = normalizeScopedPath(
+            params.string("path")?.takeIf { it.isNotBlank() } ?: "/workspace",
+            defaultCwd,
+        )
+        val maxResults = (params.string("maxResults")?.toIntOrNull() ?: GLOB_DEFAULT_MAX)
+            .coerceIn(1, GLOB_MAX_LIMIT)
+        val pathArg = searchPath.shellQuote()
+        val patternArg = pattern.shellQuote()
+        // mtime 倒序 (find -printf 不支持时降级为原序) — 全路径输出
+        val command = """
+            if find $pathArg -maxdepth 0 -printf '' 2>/dev/null; then
+              find $pathArg -type f -name $patternArg -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -n $maxResults | cut -d' ' -f2-
+            else
+              find $pathArg -type f -name $patternArg 2>/dev/null | head -n $maxResults
+            fi
+            exit 0
+        """.trimIndent()
+        val result = workspaceRepository.executeCommand(workspaceId, command, defaultCwd.orEmpty())
+        val output = (result.stdout ?: "").trim()
+        val lines = if (output.isBlank()) emptyList() else output.split('\n')
+        val truncated = lines.size >= maxResults
+        listOf(
+            UIMessagePart.Text(
+                buildJsonObject {
+                    put("pattern", pattern)
+                    put("path", searchPath)
+                    put("count", lines.size)
+                    if (truncated) {
+                        put("truncated", true)
+                        put("note", "Showing newest $maxResults files; refine pattern for more precision.")
+                    }
+                    put("text", output)
                 }.toString()
             )
         )
@@ -449,13 +663,15 @@ private suspend fun WorkspaceRepository.writeTextInRootfs(
     text: String,
     overwrite: Boolean,
     cwd: String? = null,
+    append: Boolean = false,
 ): WorkspaceFileEntry {
     val pathArg = path.shellQuote()
+    val redirect = if (append) ">>" else ">"
     val result = runRootfsCommand(
         workspaceId = workspaceId,
         action = "Write file",
         command = """
-            if [ -e $pathArg ] && [ ${(!overwrite).shellFlag()} = 1 ]; then
+            if [ -e $pathArg ] && [ ${(!overwrite && !append).shellFlag()} = 1 ]; then
               printf '%s\n' ${"File already exists: $path".shellQuote()} >&2
               exit 1
             fi
@@ -465,7 +681,7 @@ private suspend fun WorkspaceRepository.writeTextInRootfs(
             fi
             parent=${'$'}(dirname -- $pathArg) || exit 1
             mkdir -p -- "${'$'}parent" || exit 1
-            cat > $pathArg || exit 1
+            cat $redirect $pathArg || exit 1
             ${statEntryCommand(path)}
         """.trimIndent(),
         stdin = text.toByteArray(Charsets.UTF_8),

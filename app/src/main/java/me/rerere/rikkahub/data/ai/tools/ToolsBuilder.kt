@@ -35,6 +35,8 @@ val FRAMEWORK_TOOL_SET = setOf(
     "invoke_tools",
     "search_domains",
     "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file", "workspace_show_file",
+    // v4.6.1: 代码探索双件套 (只读搜索, 框架工具)
+    "workspace_grep", "workspace_glob",
     "manage_domain", "list_domains", "move_tool_to_domain",
     // v3.6.91: clawhub_install/clawhub_search 移出框架集 — 归系统域经
     // invoke_tools(系统) 加载 (用户: 框架工具 8→6, 只保留实际常用的)
