@@ -34,8 +34,10 @@ val repositoryModule = module {
 
     single {
         MemoryRepository(get())
-        // v4.6.5: 增强记忆仓库 (增强记忆工具 ↔ 原生记忆系统)
-        me.rerere.rikkahub.data.repository.EnhancedMemoryRepository(get(), get())
+        // v4.6.6: 增强记忆仓库 — 文件存储版 (Room 迁移链紧急回退, 接口不变)
+        me.rerere.rikkahub.data.repository.EnhancedMemoryRepository(
+            java.io.File(get<android.content.Context>().filesDir, "enhanced_memory")
+        )
     }
 
     single {

@@ -68,6 +68,9 @@ const val WEB_SERVER_NOTIFICATION_CHANNEL_ID = "web_server"
 class RikkaHubApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        // v4.6.6: 崩溃收集器第一时间安装 (原位置在 startKoin 之后 — v4.6.5 出现
+        // "启动即崩且无日志"的盲区, 任何初始化阶段崩溃必须可观测)
+        CrashHandler.install(this)
         // v4.5.5: 全局时区强制北京时间 — 工作区计时器等所有依赖默认时区的
         // 格式化 (SimpleDateFormat/DateTimeFormatter/日志时间戳) 统一按
         // UTC+8 呈现, 不随设备时区漂移。根修于应用入口, 非逐点打补丁。
@@ -172,8 +175,8 @@ class RikkaHubApp : Application() {
         // set cursor window size to 32MB
         DatabaseUtil.setCursorWindowSize(32 * 1024 * 1024)
 
-        // install crash handler
-        CrashHandler.install(this)
+        // install crash handler — v4.6.6 已提前至 onCreate 最前 (此处原位置留注释防重复)
+        // CrashHandler.install(this)
 
         // Init QuickJS native library
         QuickJSLoader.init()

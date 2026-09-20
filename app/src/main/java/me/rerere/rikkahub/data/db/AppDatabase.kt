@@ -16,8 +16,6 @@ import me.rerere.rikkahub.data.db.dao.FolderDAO
 import me.rerere.rikkahub.data.db.dao.GenMediaDAO
 import me.rerere.rikkahub.data.db.dao.ManagedFileDAO
 import me.rerere.rikkahub.data.db.dao.MemoryDAO
-import me.rerere.rikkahub.data.db.dao.MemNodeDAO
-import me.rerere.rikkahub.data.db.dao.MemLinkDAO
 import me.rerere.rikkahub.data.db.dao.MessageNodeDAO
 import me.rerere.rikkahub.data.db.dao.AlarmDao
 import me.rerere.rikkahub.data.db.dao.WorkspaceDAO
@@ -31,8 +29,6 @@ import me.rerere.rikkahub.data.db.entity.FolderEntity
 import me.rerere.rikkahub.data.db.entity.GenMediaEntity
 import me.rerere.rikkahub.data.db.entity.ManagedFileEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEntity
-import me.rerere.rikkahub.data.db.entity.MemNodeEntity
-import me.rerere.rikkahub.data.db.entity.MemLinkEntity
 import me.rerere.rikkahub.data.db.entity.MessageNodeEntity
 import me.rerere.rikkahub.data.db.dao.ScheduledJobDao
 import me.rerere.rikkahub.data.db.dao.ScheduledJobRunDao
@@ -66,10 +62,8 @@ import me.rerere.rikkahub.utils.JsonInstant
         WorkflowEntity::class,
         WorkflowRunEntity::class,
         SubAgentRunEntity::class,
-        MemNodeEntity::class,
-        MemLinkEntity::class,
     ],
-    version = 31,
+    version = 30,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -97,10 +91,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDAO
 
     abstract fun memoryDao(): MemoryDAO
-
-    abstract fun memNodeDao(): MemNodeDAO
-
-    abstract fun memLinkDao(): MemLinkDAO
 
     abstract fun genMediaDao(): GenMediaDAO
 
@@ -148,22 +138,3 @@ val MIGRATION_29_30 = object : androidx.room.migration.Migration(29, 30) {
     }
 }
 
-/** v4.6.5: 增强记忆表 mem_nodes / mem_links (25+ schema json 缺失惯例, 手写迁移) */
-val MIGRATION_30_31 = object : androidx.room.migration.Migration(30, 31) {
-    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
-        db.execSQL(
-            "CREATE TABLE IF NOT EXISTS `mem_nodes` (" +
-                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
-                "`assistant_id` TEXT NOT NULL, `title` TEXT NOT NULL, `content` TEXT NOT NULL, " +
-                "`content_type` TEXT NOT NULL, `source` TEXT NOT NULL, `folder_path` TEXT NOT NULL, " +
-                "`tags` TEXT NOT NULL, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL)"
-        )
-        db.execSQL(
-            "CREATE TABLE IF NOT EXISTS `mem_links` (" +
-                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
-                "`assistant_id` TEXT NOT NULL, `source_title` TEXT NOT NULL, `target_title` TEXT NOT NULL, " +
-                "`link_type` TEXT NOT NULL, `weight` REAL NOT NULL, `description` TEXT NOT NULL, " +
-                "`created_at` INTEGER NOT NULL)"
-        )
-    }
-}

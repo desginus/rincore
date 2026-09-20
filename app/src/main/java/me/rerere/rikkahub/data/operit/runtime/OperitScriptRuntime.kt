@@ -374,7 +374,7 @@ class OperitScriptRuntime(
         }
     }
 
-    private fun nodeJson(node: me.rerere.rikkahub.data.db.entity.MemNodeEntity) = buildJsonObject {
+    private fun nodeJson(node: me.rerere.rikkahub.data.repository.MemNode) = buildJsonObject {
         put("id", JsonPrimitive(node.id))
         put("title", JsonPrimitive(node.title))
         put("content", JsonPrimitive(node.content))
@@ -383,7 +383,7 @@ class OperitScriptRuntime(
         put("updatedAt", JsonPrimitive(node.updatedAt))
     }
 
-    private fun linkJson(link: me.rerere.rikkahub.data.db.entity.MemLinkEntity) = buildJsonObject {
+    private fun linkJson(link: me.rerere.rikkahub.data.repository.MemLink) = buildJsonObject {
         put("id", JsonPrimitive(link.id))
         put("sourceTitle", JsonPrimitive(link.sourceTitle))
         put("targetTitle", JsonPrimitive(link.targetTitle))
