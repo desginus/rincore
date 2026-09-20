@@ -16,6 +16,17 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import java.io.File
 
+/** UI 面板注册项 — main.js 的 registerUiRoute/registerNavigationEntry 归一化产物
+ * (对齐 Operit: screen 函数 → 脚本相对路径; surface: main_sidebar_plugins/toolbox) */
+data class UiPanelRegistration(
+    val routeId: String,
+    val screenRelPath: String,
+    val titleZh: String,
+    val titleEn: String,
+    val surface: String,
+    val order: Int,
+)
+
 class OperitUiRuntime {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
@@ -186,8 +197,144 @@ class OperitUiRuntime {
         }
     }
 
+    /**
+     * v4.5.35: 发现包的 UI 面板注册 — 跑 main.js 收集 ToolPkg 注册项
+     * (对齐 Operit 的 JsToolPkgRegistration 机制:
+     *  registerUiRoute → screen 函数→脚本路径, registerNavigationEntry → surface/order)
+     * 返回按包根解析好的注册列表; main.js 缺失/异常时返回空 (调用方兜底扫描)
+     */
+    suspend fun discoverRegistrations(pkgRoot: File): List<UiPanelRegistration> =
+        kotlinx.coroutines.withContext(Dispatchers.IO) {
+            val mainJs = File(pkgRoot, "main.js")
+            if (!mainJs.exists()) return@withContext emptyList()
+            val instance = QuickJs.create(jobDispatcher = Dispatchers.IO)
+            try {
+                instance.evaluationTimeoutMillis = 30_000L
+                instance.evaluate<Any?>(REGISTRATION_PRELUDE)
+                instance.evaluate<Any?>(mainJs.readText(), "toolpkg_main.js")
+                instance.evaluate<Any?>(
+                    """
+                    try {
+                        var __fn = (typeof exports !== 'undefined' && exports && typeof exports.registerToolPkg === 'function')
+                            ? exports.registerToolPkg : null;
+                        if (__fn) { __fn(); } else { __regError = 'no registerToolPkg export'; }
+                    } catch (e) { __regError = String((e && e.message) || e); }
+                    """.trimIndent(),
+                )
+                val jsonStr = instance.evaluate<String?>(
+                    "JSON.stringify({ routes: __uiRoutes, entries: __navEntries })",
+                ) ?: "{}"
+                parseRegistrations(jsonStr)
+            } catch (e: Throwable) {
+                emptyList()
+            } finally {
+                runCatching { instance.close() }
+            }
+        }
+
+    private fun parseRegistrations(jsonStr: String): List<UiPanelRegistration> {
+        return runCatching {
+            val root = json.parseToJsonElement(jsonStr) as? kotlinx.serialization.json.JsonObject
+                ?: return emptyList()
+            val routes = (root["routes"] as? kotlinx.serialization.json.JsonArray)?.mapNotNull { el ->
+                val o = el as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                val id = (o["id"] as? JsonPrimitive)?.content ?: return@mapNotNull null
+                val screenPath = (o["screenPath"] as? JsonPrimitive)?.content
+                if (id.isBlank() || screenPath.isNullOrBlank()) return@mapNotNull null
+                val title = o["title"] as? kotlinx.serialization.json.JsonObject
+                Triple(
+                    id,
+                    screenPath,
+                    Pair(
+                        (title?.get("zh") as? JsonPrimitive)?.content ?: "",
+                        (title?.get("en") as? JsonPrimitive)?.content ?: "",
+                    ),
+                )
+            } ?: emptyList()
+            val entries = (root["entries"] as? kotlinx.serialization.json.JsonArray)?.mapNotNull { el ->
+                val o = el as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                val route = (o["route"] as? JsonPrimitive)?.content ?: ""
+                val surface = (o["surface"] as? JsonPrimitive)?.content ?: ""
+                val order = ((o["order"] as? JsonPrimitive)?.content?.toIntOrNull()) ?: 0
+                val title = o["title"] as? kotlinx.serialization.json.JsonObject
+                NavEntry(
+                    route = route,
+                    surface = surface,
+                    order = order,
+                    titleZh = (title?.get("zh") as? JsonPrimitive)?.content ?: "",
+                    titleEn = (title?.get("en") as? JsonPrimitive)?.content ?: "",
+                )
+            } ?: emptyList()
+            routes.map { (id, screenPath, titles) ->
+                val nav = entries.firstOrNull { it.route.endsWith(id) } ?: entries.firstOrNull { it.route.contains(id) }
+                UiPanelRegistration(
+                    routeId = id,
+                    screenRelPath = screenPath.replace('\\', '/').trimStart('/'),
+                    titleZh = nav?.titleZh?.takeIf { it.isNotBlank() } ?: titles.first,
+                    titleEn = nav?.titleEn?.takeIf { it.isNotBlank() } ?: titles.second,
+                    surface = nav?.surface ?: "",
+                    order = nav?.order ?: 0,
+                )
+            }.sortedWith(compareBy({ if (it.surface == "main_sidebar_plugins") 0 else 1 }, { it.order }))
+        }.getOrDefault(emptyList())
+    }
+
+    private data class NavEntry(
+        val route: String,
+        val surface: String,
+        val order: Int,
+        val titleZh: String,
+        val titleEn: String,
+    )
+
     private companion object {
+        val REGISTRATION_PRELUDE = """
+            // v4.5.35: ToolPkg 注册桩 — 对齐 Operit JsToolPkgRegistration
+            var exports = {};
+            var module = { exports: exports };
+            var __regError = null;
+            var __uiRoutes = [];
+            var __navEntries = [];
+            function require(path) {
+                var norm = String(path || '').replace(/^\.\//, '');
+                return { default: { __uiPath: norm }, __esModule: true };
+            }
+            var ToolPkg = {
+                _m: function () { return null; },
+                registerUiRoute: function (def) {
+                    def = def || {};
+                    __uiRoutes.push({
+                        id: String(def.id || ''),
+                        runtime: String(def.runtime || 'compose_dsl'),
+                        title: def.title || {},
+                        screenPath: (def.screen && def.screen.__uiPath) ? String(def.screen.__uiPath) : null,
+                        keepAlive: !!def.keepAlive
+                    });
+                },
+                registerNavigationEntry: function (def) {
+                    def = def || {};
+                    __navEntries.push({
+                        id: String(def.id || ''),
+                        route: String(def.route || ''),
+                        surface: String(def.surface || '').toLowerCase(),
+                        title: def.title || {},
+                        order: (typeof def.order === 'number') ? def.order : 0
+                    });
+                },
+                registerToolboxUiModule: function () {},
+                registerDesktopWidget: function () {},
+                registerAiProvider: function () {},
+                readResource: function () { return null; },
+                getConfigDir: function () { return '/tmp/operit_cfg'; }
+            };
+            var globalThisRef = this;
+        """.trimIndent()
+
         val HOST_PRELUDE = """
+            // v4.5.35: exports/module 全局注入 (ui.js 结尾 exports.default = Screen —
+            // 与脚本运行时同款缺口: 桩实验环境掩盖, 实机 ReferenceError)
+            var exports = {};
+            var module = { exports: exports };
             // v4.5.34: Operit 插件 UI 宿主桩 (ctx) — "HTML 承重、DSL 薄桥"
             var __uiBridges = {};
             var __uiResult = null;

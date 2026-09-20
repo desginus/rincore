@@ -45,15 +45,42 @@ import kotlinx.serialization.json.JsonPrimitive
 import me.rerere.rikkahub.data.operit.market.InstalledPackage
 import me.rerere.rikkahub.data.operit.market.InstalledPackageStore
 import me.rerere.rikkahub.data.operit.runtime.OperitUiRuntime
+import me.rerere.rikkahub.data.operit.runtime.UiPanelRegistration
 import org.koin.compose.koinInject
 import java.io.File
 
-/** UI 面板条目: 包 + ui 脚本文件 + 面板名 */
+/** UI 面板条目: 包 + ui 脚本文件 + 面板名 + 注册元数据 */
 data class OperitUiEntry(
     val pkg: InstalledPackage,
     val uiScript: File,
     val panelName: String,
+    val titleZh: String = "",
+    val surface: String = "",
+    val order: Int = 0,
+    val registered: Boolean = false,
 )
+
+/** v4.5.35: 跑 main.js 发现注册的面板 (surface/title/order 元数据) */
+suspend fun discoverUiEntries(pkg: InstalledPackage, runtime: OperitUiRuntime): List<OperitUiEntry> {
+    val root = File(pkg.installPath)
+    if (pkg.type != "package" || !root.isDirectory) return emptyList()
+    val regs = runtime.discoverRegistrations(root)
+    if (regs.isEmpty()) return emptyList()
+    return regs.mapNotNull { reg ->
+        val script = File(root, reg.screenRelPath)
+        if (!script.exists()) return@mapNotNull null
+        val panelName = script.parentFile?.name ?: reg.routeId
+        OperitUiEntry(
+            pkg = pkg,
+            uiScript = script,
+            panelName = panelName,
+            titleZh = reg.titleZh.ifBlank { reg.titleEn },
+            surface = reg.surface,
+            order = reg.order,
+            registered = true,
+        )
+    }
+}
 
 /** 扫描包内 ui/<panel> 目录下的 .ui.js (实测形态: ui/guardian_panel/index.ui.js) */
 fun findUiEntries(pkg: InstalledPackage): List<OperitUiEntry> {
@@ -71,8 +98,16 @@ fun findUiEntries(pkg: InstalledPackage): List<OperitUiEntry> {
 @Composable
 fun OperitUiPage(onBack: () -> Unit) {
     val installedStore: InstalledPackageStore = koinInject()
+    val runtime: OperitUiRuntime = koinInject()
     val installed by installedStore.installedFlow.collectAsState(initial = emptyList())
-    val entries = remember(installed) { installed.flatMap { findUiEntries(it) } }
+    var entries by remember { mutableStateOf<List<OperitUiEntry>>(emptyList()) }
+    LaunchedEffect(installed) {
+        // v4.5.35: 优先跑 main.js 注册 (surface/title/order); 失败则兜底扫描 ui 目录
+        entries = installed.flatMap { pkg ->
+            val regs = runCatching { discoverUiEntries(pkg, runtime) }.getOrDefault(emptyList())
+            if (regs.isNotEmpty()) regs else findUiEntries(pkg)
+        }
+    }
     var selected by remember { mutableStateOf<OperitUiEntry?>(null) }
 
     val current = selected
@@ -100,29 +135,33 @@ fun OperitUiPage(onBack: () -> Unit) {
                         modifier = Modifier.padding(16.dp),
                     )
                 } else {
+                    val sidebarEntries = entries.filter { it.surface == "main_sidebar_plugins" }
+                    val otherEntries = entries.filter { it.surface != "main_sidebar_plugins" }
                     LazyColumn(Modifier.fillMaxSize()) {
-                        items(entries, key = { it.pkg.entryId + "/" + it.panelName }) { entry ->
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 6.dp)
-                                    .clickable { selected = entry },
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                ),
-                            ) {
-                                Column(Modifier.padding(16.dp)) {
-                                    Text(
-                                        entry.pkg.title.ifBlank { entry.pkg.entryId },
-                                        style = MaterialTheme.typography.titleMedium,
-                                    )
-                                    Spacer(Modifier.height(4.dp))
-                                    Text(
-                                        "面板: ${entry.panelName}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
+                        if (sidebarEntries.isNotEmpty()) {
+                            item(key = "grp_sidebar") {
+                                Text(
+                                    "侧边栏面板 (main_sidebar_plugins)",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                )
+                            }
+                            items(sidebarEntries, key = { "sb_" + it.pkg.entryId + "/" + it.panelName }) { entry ->
+                                OperitUiEntryCard(entry) { selected = entry }
+                            }
+                        }
+                        if (otherEntries.isNotEmpty()) {
+                            item(key = "grp_other") {
+                                Text(
+                                    if (sidebarEntries.isEmpty()) "插件面板" else "其他面板",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                )
+                            }
+                            items(otherEntries, key = { "ot_" + it.pkg.entryId + "/" + it.panelName }) { entry ->
+                                OperitUiEntryCard(entry) { selected = entry }
                             }
                         }
                     }
@@ -131,6 +170,36 @@ fun OperitUiPage(onBack: () -> Unit) {
         }
     } else {
         OperitUiRenderer(entry = current, onBack = { selected = null })
+    }
+}
+
+@Composable
+private fun OperitUiEntryCard(entry: OperitUiEntry, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                entry.titleZh.ifBlank { entry.pkg.title }.ifBlank { entry.pkg.entryId },
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                buildString {
+                    append("面板: ").append(entry.panelName)
+                    if (entry.registered) append(" · 已注册")
+                    if (entry.surface.isNotBlank()) append(" · ").append(entry.surface)
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

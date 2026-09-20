@@ -60,6 +60,7 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ChartColumn
 import me.rerere.hugeicons.stroke.Clock02
 import me.rerere.hugeicons.stroke.Download04
+import me.rerere.hugeicons.stroke.Puzzle
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Folder01
 import me.rerere.hugeicons.stroke.FolderAdd
@@ -382,6 +383,20 @@ fun ChatDrawerContent(
                     },
                     onClick = {
                         navController.navigate(Screen.Market)
+                    },
+                )
+
+                // v4.5.35: 插件面板入口 (Operit 侧边栏机制移植 —
+                // main_sidebar_plugins 注册的面板在此直达)
+                DrawerAction(
+                    icon = {
+                        Icon(HugeIcons.Puzzle, "插件面板")
+                    },
+                    label = {
+                        Text("插件面板")
+                    },
+                    onClick = {
+                        navController.navigate(Screen.OperitUi)
                     },
                 )
 
