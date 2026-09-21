@@ -400,7 +400,7 @@ class ChatCompletionsAPI(
                                                             part.toolCallId.isBlank() -> {
                                                                 // 对齐原版: fallback id 生成 — 永不返回空 toolCallId
                                                                 val fallback = deltaToolIds[idx]
-                                                                    ?: (id.ifBlank { "response" }) + ":tool-$idx"
+                                                                    ?: (chunkId.ifBlank { "response" }) + ":tool-$idx"
                                                                 deltaToolIds[idx] = fallback
                                                                 part.copy(toolCallId = fallback)
                                                             }
