@@ -378,6 +378,12 @@ class ChatCompletionsAPI(
                                                 "tc=${(choice["delta"] as? JsonObject)?.get("tool_calls")?.let { (it as? JsonArray)?.size } ?: 0}"
                                         )
                                         // v4.3.0: 增量流 id 回填 (tool_calls index 归属)
+                                        // v4.7.5: 对齐原版 decoder — id 为空时生成 fallback
+                                        // "${responseId}:tool-$index" (原版 toolIdsByIndex.getOrPut)。
+                                        // v4.0.0 重写丢失 fallback → toolCallId 空串 →
+                                        // MessageChunkStreamAdapter 跳过 Tool part →
+                                        // ToolCallStart 不发 → messages 不涨 → 判空回复 →
+                                        // 重试死循环。GLM 某些 tool_calls delta 不带 id。
                                         val tcArr = (choice["delta"] as? JsonObject)?.get("tool_calls") as? JsonArray
                                         if (tcArr != null) {
                                             val tools = delta.parts.filterIsInstance<UIMessagePart.Tool>()
@@ -391,7 +397,13 @@ class ChatCompletionsAPI(
                                                         ti++
                                                         when {
                                                             !tcId.isNullOrBlank() -> { deltaToolIds[idx] = tcId; part }
-                                                            part.toolCallId.isBlank() -> deltaToolIds[idx]?.let { part.copy(toolCallId = it) } ?: part
+                                                            part.toolCallId.isBlank() -> {
+                                                                // 对齐原版: fallback id 生成 — 永不返回空 toolCallId
+                                                                val fallback = deltaToolIds[idx]
+                                                                    ?: (id.ifBlank { "response" }) + ":tool-$idx"
+                                                                deltaToolIds[idx] = fallback
+                                                                part.copy(toolCallId = fallback)
+                                                            }
                                                             else -> part
                                                         }
                                                     } else part
