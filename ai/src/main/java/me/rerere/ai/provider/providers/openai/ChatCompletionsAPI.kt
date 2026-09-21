@@ -260,6 +260,7 @@ class ChatCompletionsAPI(
         // v4.5.12: 完成归因 — 流结束时记录显式 finish_reason (stop/length),
         // 中断现场日志可直接确证结束来源, 不再只有"正常收尾"一笔带过
         var lastFinishReason: String? = null
+        var eventCount = 0
         val retryCount = java.util.concurrent.atomic.AtomicInteger(0)
         val maxRetries = 5 // 指数退避 1+2+4+8+16=31s 窗口, 覆盖瞬时网络波动
         var currentEventSource: EventSource? = null
@@ -302,6 +303,7 @@ class ChatCompletionsAPI(
                     // 否则服务器保活会使看门狗永远无法检测真挂起
                     if (data.isNotBlank()) {
                         lastEventAt.set(System.currentTimeMillis())
+                        eventCount++
                         if (firstDataAtMs.compareAndSet(0, System.currentTimeMillis())) {
                             Log.i(TAG, "TTFT ${firstDataAtMs.get() - sentAtMs}ms host=${providerSetting.baseUrl.toHttpUrl().host}")
                         }
