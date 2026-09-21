@@ -680,9 +680,20 @@ class GenerationHandler(
                             // ① 空/占位内容 ② 序号越界 ③ 已宣告终结仍续调 ④ 同参重复
                             // v3.11.24: args 顶层必为 JsonObject 才可抽样校验
                             val argsMap = args as? kotlinx.serialization.json.JsonObject
-                            val isThinkingInvoke = tool.toolName.contains("sequential", ignoreCase = true) ||
-                                tool.toolName.contains("think", ignoreCase = true) ||
-                                argsMap?.containsKey("thoughtNumber") == true
+                            val thinkingNameMatch = tool.toolName.contains("sequential", ignoreCase = true) ||
+                                tool.toolName.contains("think", ignoreCase = true)
+                            val thinkingArgsMatch = argsMap?.containsKey("thoughtNumber") == true
+                            val isThinkingInvoke = thinkingNameMatch || thinkingArgsMatch
+                            // v4.7.11: name/参数错位检测 — 现场 (GLM): 模型想调思考工具,
+                            // 但工具名填成了管理类工具 (manage_domain 等), 参数却是思考结构
+                            // (thought/thoughtNumber/...)。此前这类调用只做思考协议校验,
+                            // 然后按 name 执行错误工具 → 报错 → 修参数被吸循环。
+                            // 现在直接返回明确更正指引, 不做错误执行。
+                            if (thinkingArgsMatch && !thinkingNameMatch) {
+                                error("Error: 工具名与参数结构不匹配 — 参数是思考工具的结构 (thought/thoughtNumber/...), 但工具名是 '${tool.toolName}'。" +
+                                    "如果你想进行结构化思考, 请直接调用思考工具 (名字含 sequentialthinking/think 的工具, 如 mcp__sequentialthinking); 若它当前不可直接调用, 先用 invoke_tools 加载其所在域。" +
+                                    "如果你想使用 '${tool.toolName}', 请按它的参数结构 (查看工具定义) 重新组织调用。")
+                            }
                             if (isThinkingInvoke && argsMap != null) {
                                 val thought = argsMap["thought"]?.let { j ->
                                     (j as? JsonPrimitive)?.content.orEmpty()

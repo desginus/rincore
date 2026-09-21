@@ -76,11 +76,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.glass.GlassDefaults
-import dev.chrisbanes.haze.glass.GlassStyle
-import dev.chrisbanes.haze.glass.OpticalSizeValue
-import dev.chrisbanes.haze.glass.hazeGlass
-import dev.chrisbanes.haze.glass.material3.Material3
 import dev.chrisbanes.haze.blur.HazeBlurStyle
 import dev.chrisbanes.haze.blur.hazeBlur
 import dev.chrisbanes.haze.blur.material3.Material3
@@ -101,7 +96,6 @@ import me.rerere.hugeicons.stroke.Fullscreen
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
-import me.rerere.rikkahub.data.datastore.BackgroundEffectType
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.data.datastore.getQuickMessagesOfAssistant
@@ -249,27 +243,13 @@ fun ChatInput(
                         // `&& !loading` 降级在 haze 2.0 下已无必要, 且是用户
                         // 实测"输入条显示为同色底"的直接原因 — 原版恒模糊)
                         if (settings.displaySetting.enableBlurEffect) {
-                            // 2.5.3 移植: 模糊 / 玻璃两种背景效果
-                            when (settings.displaySetting.backgroundEffectType) {
-                                BackgroundEffectType.BLUR -> Modifier.hazeBlur(
-                                    input = HazeInput.Sources(hazeState),
-                                    style = inputHazeStyle,
-                                )
-                                BackgroundEffectType.GLASS -> Modifier.hazeGlass(
-                                    input = HazeInput.Sources(hazeState),
-                                    style = GlassStyle.Material3(
-                                        containerColor = hazeTintColor,
-                                        tint = hazeTintColor.copy(alpha = 0.72f),
-                                    ) {
-                                        // 防止背景文字与输入文字竞争视觉
-                                        optics(GlassDefaults.optics.copy(
-                                            blurRadius = OpticalSizeValue.Fixed(16.dp),
-                                            depth = OpticalSizeValue.Fixed(0.5f),
-                                        ))
-                                        shape(containerShape)
-                                    },
-                                )
-                            }
+                            // v4.7.11: 回滚 v4.7.0 移植的 模糊/玻璃 双类型 — 恢复单一模糊
+                            // (用户: 玻璃效果太丑; 回滚到 v4.5.27 形态。backgroundEffectType
+                            // 字段保留在 DisplaySetting (DataStore 废弃字段兼容), 不再参与渲染)
+                            Modifier.hazeBlur(
+                                input = HazeInput.Sources(hazeState),
+                                style = inputHazeStyle,
+                            )
                         }
                         else Modifier
                     ),
