@@ -439,6 +439,21 @@ class GenerationHandler(
             // Skip generation if we have approved/denied tool calls to handle
             if (pendingTools.isEmpty()) {
                 CallTracer.event("SEND", "pre_api", "Calling generateInternal: model=${model.id}, provider=${provider.javaClass.simpleName}")
+                // v4.7.2: 请求序列取证 — 每条消息的 role/内容规模/tool_calls 数,
+                // GLM 空回复类问题直接核对上游收到的消息序列
+                CallTracer.event("SEND", "msg_seq", messages.joinToString(" | ") { m ->
+                    val toolCalls = m.parts.filterIsInstance<UIMessagePart.Tool>()
+                        .joinToString("+") { t -> "${t.toolName}(${t.output.size}out)" }
+                    val sizes = m.parts.mapNotNull { p ->
+                        when (p) {
+                            is UIMessagePart.Text -> "T${p.text.length}"
+                            is UIMessagePart.Reasoning -> "R${p.reasoning.length}"
+                            is UIMessagePart.Image -> "IMG"
+                            else -> null
+                        }
+                    }.joinToString(",")
+                    "${m.role}(parts=${m.parts.size} $sizes${if (toolCalls.isNotEmpty()) " tools=$toolCalls" else ""})"
+                })
                 generateInternal(
                     assistant = assistant,
                     settings = settings,
@@ -509,11 +524,26 @@ class GenerationHandler(
                 // G3 平台空流重试: 流式正常结束但模型未产出任何内容
                 // (无文本/无思考/无工具调用) — 平台偶发空流, 重试一次
                 val lastMsg = messages.lastOrNull()
+                // v4.7.2: 空回复判定加非空条件 — 空字符串 Text/空 Reasoning 不算内容
+                // (GLM 实证: finish=stop + completion=117 但零内容 delta, 旧判定被
+                // 某环节塞入的空 Text 短路, 重试永不触发)
                 val emptyResponse = lastMsg != null && lastMsg.role == MessageRole.ASSISTANT &&
                     lastMsg.parts.none {
-                        it is UIMessagePart.Text || it is UIMessagePart.Reasoning || it is UIMessagePart.Tool
+                        (it is UIMessagePart.Text && it.text.isNotBlank()) ||
+                            (it is UIMessagePart.Reasoning && it.reasoning.isNotBlank()) ||
+                            it is UIMessagePart.Tool
                     }
-                if (emptyResponse && emptyRetryCount < 1) {
+                if (emptyResponse) {
+                    CallTracer.event("TRACE", "empty_detail", "parts=${lastMsg.parts.map { p ->
+                        when (p) {
+                            is UIMessagePart.Text -> "Text(${p.text.length})"
+                            is UIMessagePart.Reasoning -> "Reasoning(${p.reasoning.length})"
+                            is UIMessagePart.Tool -> "Tool(${p.toolName})"
+                            else -> p::class.simpleName
+                        }
+                    }}")
+                }
+                if (emptyResponse && emptyRetryCount < 2) {
                     emptyRetryCount++
                     CallTracer.event("RETRY", "empty_stream", "Empty assistant response, retrying once (step=$stepIndex)")
                     messages = messages.dropLast(1)
