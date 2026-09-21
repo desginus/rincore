@@ -141,7 +141,21 @@ private fun createReadFileTool(
         val params = it.jsonObject
         val path = normalizeScopedPath(params.absolutePath("path"), cwd)
         val cwdRel = workspaceCwdRel(cwd)
-        if (path.isImagePath()) {
+        // v4.7.2: Office 文档引导 — xlsx/docx/pptx 是二进制 zip 容器, 按文本读出来是乱码;
+        // 直接给出结构化读取路径, 避免模型反复用 python 中转重读同一文件 (不可追溯)
+        val officeKind = path.substringAfterLast('.', "").lowercase()
+            .takeIf { it in setOf("xlsx", "docx", "pptx") }
+        if (officeKind != null) {
+            listOf(
+                UIMessagePart.Text(
+                    buildJsonObject {
+                        put("path", path)
+                        put("error", "This is a binary Office document (.$officeKind) — cannot be read as plain text.")
+                        put("hint", "Use workspace_shell instead: `office-edit $officeKind read <path>` returns structured content (sheets/rows or slides), or `office-check <path>` for a quality report.")
+                    }.toString()
+                )
+            )
+        } else if (path.isImagePath()) {
             workspaceRepository.readImageInRootfs(workspaceId, path, cwdRel)
         } else {
             val text = workspaceRepository.readTextInRootfs(workspaceId, path, cwdRel)
@@ -219,8 +233,29 @@ private fun createWriteFileTool(
         val text = params.string("text") ?: error("text is required")
         val overwrite = params["overwrite"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: true
         val append = params["append"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
+        // v4.7.2: 覆盖前版本快照 — 多轮覆盖丢内容防护。目标已存在且将覆盖时,
+        // 先复制到同目录 .versions/<name>.<时间戳>, 保留最近 8 份; 快照失败不阻断写入。
+        var previousVersion: String? = null
+        if (!append && overwrite) {
+            runCatching {
+                workspaceRepository.rootfsFileSize(workspaceId, path, cwdRel) // 不存在会抛, 无需覆盖保护
+                val ts = java.time.LocalDateTime.now(java.time.ZoneOffset.ofHours(8))
+                    .format(java.time.format.DateTimeFormatter.ofPattern("MMdd-HHmmss"))
+                val dir = path.substringBeforeLast('/')
+                val name = path.substringAfterLast('/')
+                val vdir = "$dir/.versions"
+                workspaceRepository.executeCommand(
+                    workspaceId,
+                    "mkdir -p '$vdir' && cp -p '$path' '$vdir/$name.$ts' && ls -1t '$vdir' | tail -n +9 | while read f; do rm -f \"$vdir/\$f\"; done",
+                    cwdRel,
+                    WorkspaceManager.DEFAULT_COMMAND_TIMEOUT_MS,
+                )
+                previousVersion = "$vdir/$name.$ts"
+            }
+        }
         val entry = workspaceRepository.writeTextInRootfs(workspaceId, path, text, overwrite, cwdRel, append)
         val resultJson = entry.toJson().toMutableMap()
+        previousVersion?.let { resultJson["previous_version"] = JsonPrimitive(it) }
         if (path.isImagePath()) {
             resultJson["render_url"] = JsonPrimitive(buildRenderUrl(workspaceId, path, cwdRel))
         }
@@ -327,12 +362,33 @@ private fun createShowFileTool(
         val path = normalizeScopedPath(it.jsonObject.absolutePath("path"), cwd)
         val cwdRel = workspaceCwdRel(cwd)
         val size = workspaceRepository.rootfsFileSize(workspaceId, path, cwdRel) // 不存在则抛异常
+        // v4.7.2: 递交回执附带最近版本信息 (write 的覆盖快照) — size 有变化时提示差异
+        var prevVersion: String? = null
+        var prevSize: Long? = null
+        runCatching {
+            val dir = path.substringBeforeLast('/')
+            val name = path.substringAfterLast('/')
+            val r = workspaceRepository.executeCommand(
+                workspaceId,
+                "ls -1t '$dir/.versions' 2>/dev/null | grep -F '${name}.' | head -1",
+                cwdRel,
+                WorkspaceManager.DEFAULT_COMMAND_TIMEOUT_MS,
+            )
+            val latest = r.stdout?.trim()?.takeIf { it.isNotEmpty() } ?: return@runCatching
+            prevVersion = "$dir/.versions/$latest"
+            runCatching { prevSize = workspaceRepository.rootfsFileSize(workspaceId, "$dir/.versions/$latest", cwdRel) }
+        }
         listOf(
             UIMessagePart.Text(
                 buildJsonObject {
                     put("path", path)
                     put("size", size)
                     put("status", "shown")
+                    prevVersion?.let { put("previous_version", it) }
+                    prevSize?.let {
+                        put("previous_size", it)
+                        if (it != size) put("note", "size differs from previous version ($it → $size)")
+                    }
                 }.toString()
             )
         )
@@ -558,6 +614,13 @@ private fun createShellTool(
         val cwdRel = cwd.ifBlank { null }
         val combinedOutput = (result.stdout ?: "") + "\n" + (result.stderr ?: "")
         val imagePaths = extractImagePathsFromText(combinedOutput)
+        // v4.7.2: 静默失败感知 — exitCode==0 但 stderr 含错误特征 (多段脚本部分执行:
+        // 前段动作已完成、后段未运行, shell 取最后一条命令的退出码掩盖了失败)
+        val stderrText = result.stderr ?: ""
+        val silentFailure = result.exitCode == 0 && listOf(
+            "Traceback", "SyntaxError", "NameError", "TypeError", "KeyError", "ValueError",
+            "Exception", "command not found", "No such file or directory",
+        ).any { stderrText.contains(it, ignoreCase = false) }
         listOf(
             UIMessagePart.Text(
                 buildJsonObject {
@@ -566,6 +629,10 @@ private fun createShellTool(
                     put("stderr", result.stderr)
                     put("timedOut", result.timedOut)
                     if (result.truncated) put("truncated", true)
+                    if (silentFailure) put(
+                        "warning",
+                        "exitCode=0 but stderr contains error output — a multi-part script may have partially executed (earlier steps done, later steps skipped). Verify actual effects before proceeding."
+                    )
                     if (imagePaths.isNotEmpty()) {
                         put("render_urls", buildJsonArray {
                             imagePaths.forEach { add(JsonPrimitive(buildRenderUrl(workspaceId, it, cwdRel))) }

@@ -51,6 +51,11 @@ internal object TaskStateStore {
     // 非 task_tool 工具时递增); replace 时对比, 未推进 = 纯记账无行动
     @Volatile var realActionCounter: Long = 0
     @Volatile var lastObservedActionCounter: Long = -1L
+
+    // v4.7.2: 连续无动作计数 — 单次 stalled 可能是同批并行工具 (write 与 task_tool
+    // 同轮发出, task 先执行) 的时序假象; 连续两次清单更新之间都无任何工具执行
+    // 才是真空转, streak>=2 才告警。任一动作推进即清零。
+    @Volatile var stalledStreak: Int = 0
 }
 
 internal data class TaskItem(
@@ -348,9 +353,11 @@ fun createTaskTool(): Tool = Tool(
                 }
             }
             val upActionNow = TaskStateStore.realActionCounter
-            val upActionStalled = TaskStateStore.lastObservedActionCounter >= 0 &&
+            val upStalledNow = TaskStateStore.lastObservedActionCounter >= 0 &&
                 upActionNow == TaskStateStore.lastObservedActionCounter
+            TaskStateStore.stalledStreak = if (upStalledNow) TaskStateStore.stalledStreak + 1 else 0
             TaskStateStore.lastObservedActionCounter = upActionNow
+            val upActionStalled = upStalledNow && TaskStateStore.stalledStreak >= 2
             TaskStateStore.noOpStreak = 0
 
             TaskStateStore.version += 1
@@ -531,9 +538,11 @@ fun createTaskTool(): Tool = Tool(
 
         // ── v4.5.21: 真实行动关联 — 自上次清单更新以来外部工具是否真的执行过 ──
         val actionNow = TaskStateStore.realActionCounter
-        val actionStalled = TaskStateStore.lastObservedActionCounter >= 0 &&
+        val stalledNow = TaskStateStore.lastObservedActionCounter >= 0 &&
             actionNow == TaskStateStore.lastObservedActionCounter
+        TaskStateStore.stalledStreak = if (stalledNow) TaskStateStore.stalledStreak + 1 else 0
         TaskStateStore.lastObservedActionCounter = actionNow
+        val actionStalled = stalledNow && TaskStateStore.stalledStreak >= 2
 
         // ST-1: removed 报告; ST-2: 回退警示; DL-2: 振荡检测
         val removed = TaskStateStore.snapshot.map { it.id }.filter { newId -> parsed.none { it.id == newId } }

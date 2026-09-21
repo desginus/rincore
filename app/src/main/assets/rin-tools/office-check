@@ -94,12 +94,56 @@ def check_pptx(z, issues):
             issues.append(f"invalid XML: {name}")
     return stats
 
+def build_shared_strings(z, names):
+    """si 列表 -> 每个 si 的拼接文本 (共享字符串表, 供行解析还原单元格值)。"""
+    shared = []
+    if "xl/sharedStrings.xml" in names:
+        try:
+            sroot = ET.fromstring(z.read("xl/sharedStrings.xml"))
+            m = re.match(r"\{([^}]+)\}", sroot.tag)
+            sns = "{" + m.group(1) + "}" if m else ""
+            for si in sroot.iter(sns + "si"):
+                shared.append("".join(t.text or "" for t in si.iter(sns + "t")))
+        except ET.ParseError:
+            shared = []
+    return shared
+
+def xlsx_row_values(root, ns, shared):
+    """按行还原单元格文本值; 返回 [(行号, [文本值...]), ...] (仅非空值行)。"""
+    out = []
+    for row in root.iter(ns + "row"):
+        try:
+            rnum = int(row.get("r") or 0)
+        except ValueError:
+            rnum = 0
+        vals = []
+        for c in row.iter(ns + "c"):
+            if c.get("t") == "s":
+                v = c.find(ns + "v")
+                try:
+                    idx = int(v.text) if v is not None and v.text else -1
+                except ValueError:
+                    idx = -1
+                vals.append(shared[idx] if 0 <= idx < len(shared) else "")
+            else:
+                t_el = c.find(ns + "is/" + ns + "t")
+                if t_el is not None and t_el.text:
+                    vals.append(t_el.text)
+                else:
+                    v = c.find(ns + "v")
+                    vals.append((v.text or "") if v is not None else "")
+        cells_text = [x for x in vals if x]
+        if cells_text:
+            out.append((rnum, cells_text))
+    return out
+
 def check_xlsx(z, issues):
     stats = {}
     names = z.namelist()
     if "xl/workbook.xml" not in names:
         issues.append("missing part: xl/workbook.xml")
         return stats
+    shared = build_shared_strings(z, names)
     sheets = [n for n in names if re.match(r"xl/worksheets/sheet\d+\.xml$", n)]
     stats["sheets"] = len(sheets)
     cells = 0
@@ -111,6 +155,29 @@ def check_xlsx(z, issues):
                 scan_text(name, t, issues)
         except ET.ParseError:
             issues.append(f"invalid XML: {name}")
+            continue
+        # v4.7.2 增强: 判定残留检测 — 重复表头列 / 完全重复行
+        # (假数据行、复制粘贴残留此前全部放行通过校验)
+        try:
+            root = ET.fromstring(body)
+            m = re.match(r"\{([^}]+)\}", root.tag)
+            ns = "{" + m.group(1) + "}" if m else ""
+            rows = xlsx_row_values(root, ns, shared)
+            if rows:
+                first_num, first_vals = rows[0]
+                if first_num in (0, 1):
+                    dup_headers = sorted({h for h in first_vals if first_vals.count(h) > 1})
+                    if dup_headers:
+                        issues.append(f"{name}: duplicate header columns {dup_headers} (check row 1)")
+                seen = {}
+                for rnum, vals in rows:
+                    key = tuple(vals)
+                    seen.setdefault(key, []).append(rnum or None)
+                for key, rws in seen.items():
+                    if len(rws) > 1:
+                        issues.append(f"{name}: identical rows appear {len(rws)} times (rows {rws}, first cell '{str(key[0])[:40]}')")
+        except ET.ParseError:
+            pass
     stats["non-empty cells"] = cells
     if "xl/sharedStrings.xml" in names:
         try:
