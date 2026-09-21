@@ -608,6 +608,9 @@ class GenerationHandler(
             // 反馈 — 低强度错误信号下模型永远走不出惯性通路。阈值 ≥3 时在
             // 工具结果前置升级警告, 强制打破循环 (作用域: 全部工具轮次共享)
             val toolFailureCounts = HashMap<String, Int>()
+            // v4.7.10: 同工具连续失败计数 (不论参数) — 防"修参数被吸"循环 (模型对
+            // 同一工具换参数反复试错时同参 key 每次都变, 旧机制不可见)。成功即清零。
+            val toolConsecutiveFailures = HashMap<String, Int>()
             // v3.11.24 (F2): 同工具累计调用计数 / 思考调用参数指纹 / 思考终结标记
             val toolCallCounts = HashMap<String, Int>()
             // v3.11.30 (DL-1/DL-2): 同工具+同参数幂等命中 → 复用上次成功结果,
@@ -788,16 +791,30 @@ class GenerationHandler(
                             val finalOutput: List<UIMessagePart> = run {
                                 val failText = truncated.filterIsInstance<UIMessagePart.Text>()
                                     .joinToString(" ") { it.text }.trim()
+                                // v4.7.10: 判定扩展 — 现场 (GLM 吸住) 的两种错误形态此前
+                                // 均不匹配旧列表: ① 异常路径 JSON "{\"error\":...}"
+                                // (v4.7.9 起 "[工具错误]..."): ② 工具自身错误文本
+                                // "无效目标域..." / "工具 'xxx' 不存在"。失败计数从未
+                                // 累计 → 防循环机制从未触发 — 这就是"没拦住"的代码级原因。
                                 val isFailure = failText.startsWith("Missing:") ||
                                     failText.startsWith("Error") ||
                                     failText.startsWith("Invalid") ||
                                     failText.startsWith("MCP manager not initialized") ||
                                     failText.contains("工具 " + tool.toolName + " 未找到") ||
-                                    failText.startsWith("Tool execution timed out")
+                                    failText.startsWith("Tool execution timed out") ||
+                                    failText.startsWith("无效") ||
+                                    failText.startsWith("工具 '") ||
+                                    failText.contains("[工具错误]") ||
+                                    (failText.startsWith("{") && failText.contains("\"error\""))
                                 if (isFailure) {
                                     val key = tool.toolName + "|" + tool.input.hashCode()
                                     val n = (toolFailureCounts[key] ?: 0) + 1
                                     toolFailureCounts[key] = n
+                                    // v4.7.10: 同工具连续失败计数 (不论参数) — 防"修参数被吸"
+                                    // 循环。模型对同一工具换参数反复试错时, 同参 key 每次都
+                                    // 不同 (旧机制看不见), 此计数专治该形态。
+                                    val cn = (toolConsecutiveFailures[tool.toolName] ?: 0) + 1
+                                    toolConsecutiveFailures[tool.toolName] = cn
                                     if (n >= 3) {
                                         CallTracer.event("TOOL", "failure_loop_break",
                                             "same-failure x" + n + ": " + tool.toolName, metrics = sseDiagMetrics())
@@ -809,8 +826,19 @@ class GenerationHandler(
                                             "3) 若该工具确实不可用, 换用其他工具 (可用 invoke_tools 查看可用工具) 或放弃该路径, 以文字向用户说明情况。" +
                                             "禁止再发出与本次相同的调用。")) + truncated
                                     }
+                                    if (cn >= 3) {
+                                        CallTracer.event("TOOL", "tool_loop_break",
+                                            "consecutive-fail x" + cn + ": " + tool.toolName, metrics = sseDiagMetrics())
+                                        return@run listOf(UIMessagePart.Text(
+                                            "⚠️ 工具 " + tool.toolName + " 已连续失败 " + cn + " 次 (最近错误: " + failText.take(120) + ")。" +
+                                            "连续失败通常意味着它不是你当前任务的正确工具。请停下来重新评估: " +
+                                            "1) 你的实际目标是什么? 从目标出发重新选择工具 (invoke_tools 可查看全部可用域与工具); " +
+                                            "2) 不要继续在本工具上换参数试错; " +
+                                            "3) 若确认本工具就是正确路径, 请先仔细核对它的参数结构再调用。")) + truncated
+                                    }
                                 } else {
                                     toolFailureCounts.remove(tool.toolName + "|" + tool.input.hashCode())
+                                    toolConsecutiveFailures.remove(tool.toolName)
                                 }
                                 truncated
                             }

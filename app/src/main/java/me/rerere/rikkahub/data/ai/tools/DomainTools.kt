@@ -480,8 +480,11 @@ private fun listDomainsTool(
         if (targetDomain !in allValid) {
             me.rerere.rikkahub.data.ai.CallTracer.event("WARN", "move_tool_to_domain", "无效目标域 $targetDomain (工具 $toolName)")
             listOf(UIMessagePart.Text(
-                "无效目标域 '$targetDomain'。" +
-                "该域可能已被删除或隐藏。可用域: ${allValid.sorted().joinToString("、")}"
+                "无效目标域 '$targetDomain'。该域可能已被删除或隐藏。" +
+                // v4.7.10: 防吸尾注 — 现场 (GLM 吸住) 报错只列可用域, 注意力被锚定
+                // 在"挑域名"上而非"是否该调本工具"。显式声明工具定位, 打断误用路径。
+                "（提示：本工具仅调整工具的域归属；使用任何工具无需先移动它，直接调用即可。）" +
+                "可用域: ${allValid.sorted().joinToString("、")}"
             ))
         } else {
             val skills = poolTools.filter { it.name.startsWith("skill__") }

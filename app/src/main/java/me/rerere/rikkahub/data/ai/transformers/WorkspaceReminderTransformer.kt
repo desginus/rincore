@@ -50,6 +50,17 @@ class WorkspaceReminderTransformer(
 }
 
 /**
+ * v4.7.10: AGENTS.md 读取缓存 — 每轮请求此前做最多 6 次重 IO (查大小+读全文 ×3
+ * 路径; 每次含 Room 查询 + ensureWorkspace + 沙箱文件操作), 是"工具返回结果后
+ * 等待很久"的主要来源。TTL + size 双机制: TTL(10s) 内直接命中 (零 IO);
+ * 过期后仅查 size (轻), 未变续期用缓存, 变了才读全文; 不存在也缓存空条目
+ * (避免每轮 3 次异常探测)。文件编辑后最多 10s 生效 (可接受)。
+ */
+private data class AgentsCacheEntry(val size: Long, val content: String, val at: Long)
+private val agentsCache = java.util.concurrent.ConcurrentHashMap<String, AgentsCacheEntry>()
+private const val AGENTS_CACHE_TTL_MS = 10_000L
+
+/**
  * 2.5.2/2.5.3 移植: AGENTS.md 读取 — /root/.agents、/workspace 根、会话当前目录三处。
  * 超过 64KB 跳过 (提示词膨胀保护), 读不到静默跳过。
  */
@@ -68,17 +79,32 @@ private suspend fun buildAgentsPrompt(
         workingDirectory.resolve("AGENTS.md").toString(),
     )
     val instructions = paths.mapNotNull { path ->
+        val cacheKey = "$workspaceId|$path"
+        val now = System.currentTimeMillis()
+        val cached = agentsCache[cacheKey]
+        // TTL 内直接命中 — 零 IO
+        if (cached != null && now - cached.at < AGENTS_CACHE_TTL_MS) {
+            return@mapNotNull if (cached.content.isBlank()) null else path to cached.content
+        }
         try {
             val size = workspaceRepository.rootfsFileSize(workspaceId, path)
             require(size <= MAX_AGENTS_BYTES) { "AGENTS.md exceeds $MAX_AGENTS_BYTES bytes" }
+            // size 未变 — 续期用缓存 (省全文读)
+            if (cached != null && cached.size == size) {
+                agentsCache[cacheKey] = cached.copy(at = now)
+                return@mapNotNull if (cached.content.isBlank()) null else path to cached.content
+            }
             val content = ByteArrayOutputStream().use { output ->
                 workspaceRepository.exportRootfsFile(workspaceId, path, output)
                 output.toString(Charsets.UTF_8.name())
             }
+            agentsCache[cacheKey] = AgentsCacheEntry(size, content, now)
             content.takeIf { it.isNotBlank() }?.let { path to it }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            // 不存在/读取失败 — 缓存空条目 (TTL 内不重复探测)
+            agentsCache[cacheKey] = AgentsCacheEntry(-1L, "", now)
             Log.d("WorkspaceReminder", "Skipping workspace instructions: $path", e)
             null
         }
