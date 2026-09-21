@@ -580,74 +580,88 @@ class ChatCompletionsAPI(
                 // v4.5.2: 长度截断 + 工具调用不再终态报错 (v4.5.1 方案体验硬) —
                 // 残缺调用的结构化错误由 GH 层在 Finish(length) 时预填 tool output,
                 // 模型下一轮看到错误自动分段, 对话连续, 用户无感。残缺调用依然绝不执行。
-                // ═══ v4.7.2 判定链重写 (用户实证: glm-5.3-flash 正文输出中被服务器
-                // 静默关流, 会话以半截文本"正常结束", 断流链零触发) ═══
-                // 根因: 网关的 usage/cost 统计行会把 gotFinish 置位 (v3.6.78 为
-                // grok 系引入), 但该行不代表模型输出完成 — gotFinish=true 的流
-                // 关闭时被免检放行, usage 掩盖的中断从未进入截断判定。
-                // 修复: 完成信号分档 —
-                //   硬信号 (finish_reason / [DONE])          → 免检完成
-                //   弱信号 (仅 usage/cost 置位)              → 关流时同样过内容形态检查
-                //   无信号                                   → 原有分支链
-                // 截断判定命中统一 → IOException 进断流链自动重试 (回滚半截内容
-                // 重新生成; 重试请求相同 → 缓存命中; 重试预算有硬顶, 耗尽终态报错)。
-                // grok 系网关常态保留: 无硬信号但尾部干净 + 有正文/工具 → 正常完成。
+                // 服务器主动关闭连接: [DONE] 或 finish_reason=stop 已收到 → 正常完成;
+                // 否则视为断流 (消息不完整且无报错 → 用户感知"莫名其妙中断")
+                // v3.8.33 物理判据 (替代 v3.8.31/32 的模型名单分流与一律未确认):
+                //   SSE 每行必须是完整 JSON。最后一行解析成功 = 服务端把本段数据
+                //   完整发完 (正常完结, 即使无 [DONE]/stop/usage — Zen 网关常态);
+                //   最后一行残缺 = 服务端中途掐断 (真断流)。
+                //   按物理层的事实判定, 不再猜测模型行为。
                 Log.i(TAG, "stream end: completed=" + completed.get() + " gotFinish=" + gotFinish.get() +
                     " finishReason=" + lastFinishReason + " events=" + eventCount +
                     " hasData=" + hasReceivedData.get() + " model=" + params.model.modelId)
-                val hardFinish = completed.get() || lastFinishReason != null
-                // 截断判定: 行残缺 (服务端中途掐断的物理事实) 或 尾部强截断特征
-                val truncated = !lastEventParsed || looksTruncated(textTail) || looksTruncated(reasoningTail)
-                when {
-                    // ── 硬信号完成: finish_reason / [DONE] 已收到 → 免检 ──
-                    hardFinish -> {
-                        TraceLogger.log("SSE", "closed after hard finish signal (reason=$lastFinishReason done=${completed.get()} events=$eventCount)")
-                        close()
-                    }
-                    // ── 截断命中: 弱信号/无信号流的内容形态检查 — 统一进重试链 ──
-                    truncated -> {
-                        val why = if (!lastEventParsed) "mid-event truncation (last line malformed)"
-                        else "content ends truncated (tail=\"${textTail.take(40)}\")"
-                        Log.w(TAG, "onClosed: truncated close ($why, model=${params.model.modelId} events=$eventCount finish=$lastFinishReason) — rollback & retry\nlast: ${dumpLastEvents()}")
-                        TraceLogger.log("SSE", "truncated close — entering retry chain (events=$eventCount $why)")
-                        close(IOException("SSE 输出被服务器截断 ($why)"))
-                    }
-                    // ── 无硬信号, 无截断特征: 分输出形态 ──
-                    !hasTextContent && reasoningBuffer.isNotBlank() -> {
-                        // 无正文有思考: 缓冲思考提升为正文补发 (尾部已过截断检查)
-                        val bodyText = reasoningBuffer.toString()
-                        TraceLogger.log("SSE", "closed with reasoning only — promoted as body (chars=${bodyText.length} events=$eventCount)")
-                        trySend(
-                            MessageChunk(
-                                id = "",
-                                model = params.model.modelId,
-                                choices = listOf(
-                                    UIMessageChoice(
-                                        index = 0,
-                                        delta = UIMessage(
-                                            role = MessageRole.ASSISTANT,
-                                            parts = listOf(UIMessagePart.Text(bodyText)),
+                if (!completed.get() && !gotFinish.get()) {
+                    if (isOpencode && hasReceivedData.get()) {
+                        // v3.8.42: 运行时自适应 —
+                        //   行完整 + 有 content => 正常完成 (思考链与正文泾渭分明);
+                        //   行完整 + 无 content + 有思考缓冲 => 思考正文化补发为正文
+                        //   (ox 系纯思考输出场景, 对齐 opencode 客户端行为);
+                        //   行残缺 / 尾部强截断特征 => 保留内容 + 明确报错。
+                        // v4.5.20 (用户实证"多模型异常中断"): closed-after-data 不再一概
+                        // 当完成 — 无完成信号 + 无正文 + 无工具 = 外部掐流 (真中断),
+                        // 进重试链自动恢复。实证: glm-5.3-flash 142s 全思考被关 /
+                        // deepseek-flash 空流 events=1 被关, 均被旧逻辑静默"完成"。
+                        val truncated = !lastEventParsed || looksTruncated(textTail) || looksTruncated(reasoningTail)
+                        if (truncated) {
+                            val why = if (!lastEventParsed) "mid-event truncation"
+                            else "content ends truncated (tail=\"${textTail.take(40)}\")"
+                            Log.w(TAG, "onClosed: opencode.ai truncated ($why, model=${params.model.modelId} events=$eventCount) — keep partial content, notify user\nlast: ${dumpLastEvents()}")
+                            TraceLogger.log("SSE", "zen truncated close — keep data, notify user (events=$eventCount $why)")
+                            close(OpenCodeStreamUnconfirmedException("OpenCode 输出被截断，已保留已生成内容"))
+                        } else if (!hasTextContent && reasoningBuffer.isNotBlank()) {
+                            // 无 content: 缓冲思考提升为正文补发 (思考链已实时显示过,
+                            // 补发使正文区完整 — 与 opencode 将 reasoning_content 当正文一致)
+                            val bodyText = reasoningBuffer.toString()
+                            val bodyTail = if (bodyText.length > 80) bodyText.takeLast(80) else bodyText
+                            if (looksTruncated(bodyTail)) {
+                                Log.w(TAG, "onClosed: opencode.ai reasoning-only truncated (tail=\"${bodyTail.take(40)}\") — keep data, notify")
+                                TraceLogger.log("SSE", "zen reasoning-only truncated — keep data, notify user")
+                                close(OpenCodeStreamUnconfirmedException("OpenCode 输出被截断，已保留已生成内容"))
+                            } else {
+                                TraceLogger.log("SSE", "opencode.ai closed after complete data (events=$eventCount) — no content, promoted reasoning as body (chars=${bodyText.length} tail=\"${bodyTail.take(40)}\")")
+                                trySend(
+                                    MessageChunk(
+                                        id = "",
+                                        model = params.model.modelId,
+                                        choices = listOf(
+                                            UIMessageChoice(
+                                                index = 0,
+                                                delta = UIMessage(
+                                                    role = MessageRole.ASSISTANT,
+                                                    parts = listOf(UIMessagePart.Text(bodyText)),
+                                                ),
+                                                message = null,
+                                                finishReason = "stop",
+                                            )
                                         ),
-                                        message = null,
-                                        finishReason = "stop",
+                                        usage = null,
                                     )
-                                ),
-                                usage = null,
-                            )
-                        ).onFailure { e -> Log.w(TAG, "onClosed: body promotion chunk dropped (${e?.message})") }
-                        close()
+                                ).onFailure { e -> Log.w(TAG, "onClosed: body promotion chunk dropped (${e?.message})") }
+                                close()
+                            }
+                        } else if (!hasTextContent && !hasToolCalls && reasoningTail.isNotBlank()) {
+                            // v4.5.20 (用户实证): 纯思考无正文的关闭 = 思考阶段被掐,
+                            // 非正常收尾 — 正常回合必有正文或工具。进重试链。
+                            Log.w(TAG, "onClosed: opencode.ai closed during reasoning-only phase (model=${params.model.modelId} events=$eventCount) — treat as interruption, retry\nlast: ${dumpLastEvents()}")
+                            TraceLogger.log("SSE", "opencode.ai closed during reasoning phase (no body/tools, events=$eventCount) — interruption, entering retry chain")
+                            close(IOException("SSE 流在思考阶段被服务器关闭 (无正文输出, 无完成信号)"))
+                        } else if (!hasTextContent && !hasToolCalls) {
+                            // v4.5.20 (用户实证): 零输出空流 (仅角色/心跳块后即关) = 明确中断
+                            Log.w(TAG, "onClosed: opencode.ai closed with zero output (model=${params.model.modelId} events=$eventCount) — treat as interruption, retry\nlast: ${dumpLastEvents()}")
+                            TraceLogger.log("SSE", "opencode.ai closed with zero output (events=$eventCount) — interruption, entering retry chain")
+                            close(IOException("SSE 流在输出任何内容前被服务器关闭 (无完成信号)"))
+                        } else {
+                            TraceLogger.log("SSE", "opencode.ai closed after complete data (events=$eventCount) — treated as complete (body=$hasTextContent tools=$hasToolCalls, no completion signal on this gateway, tail=\"${textTail.take(40)}\" deltaKeys=\"$lastDeltaKeys\")")
+                            close()
+                        }
+                    } else {
+                        Log.w(TAG, "onClosed: stream closed before completion — unexpected interruption" +
+                                " (completed=${completed.get()} gotFinish=${gotFinish.get()} hasData=${hasReceivedData.get()} opencode=$isOpencode model=${params.model.modelId} events=$eventCount lastParsed=$lastEventParsed)\nlast: ${dumpLastEvents()}")
+                        close(IOException("SSE 流在完成前被服务器关闭"))
                     }
-                    !hasTextContent && !hasToolCalls -> {
-                        // 零输出 / 纯思考阶段被掐 = 明确中断, 进重试链 (v4.5.20 语义保留)
-                        Log.w(TAG, "onClosed: closed with no body/tools (model=${params.model.modelId} events=$eventCount finish=$lastFinishReason reasoningTail=\"${reasoningTail.take(40)}\") — retry\nlast: ${dumpLastEvents()}")
-                        TraceLogger.log("SSE", "closed with no output — interruption, entering retry chain (events=$eventCount)")
-                        close(IOException("SSE 流在输出任何内容前被服务器关闭 (无完成信号)"))
-                    }
-                    else -> {
-                        // 有正文/工具 + 尾部干净 + 无硬信号: grok 系网关常态, 按完成处理
-                        TraceLogger.log("SSE", "closed after complete data, no signal on gateway (body=$hasTextContent tools=$hasToolCalls events=$eventCount tail=\"${textTail.take(40)}\" deltaKeys=\"$lastDeltaKeys\")")
-                        close()
-                    }
+                } else {
+                    TraceLogger.log("SSE", "stream closed by server")
+                    close()
                 }
             }
             }
