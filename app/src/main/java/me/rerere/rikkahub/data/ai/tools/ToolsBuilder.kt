@@ -37,10 +37,14 @@ val FRAMEWORK_TOOL_SET = setOf(
     "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file", "workspace_show_file",
     // v4.6.1: 代码探索双件套 (只读搜索, 框架工具)
     "workspace_grep", "workspace_glob",
-    "manage_domain", "list_domains", "move_tool_to_domain",
+    // v4.7.9: manage_domain/move_tool_to_domain 移出顶层 (GLM 吸住修复 —
+    // 用户实证百分百被管理工具吸住死循环; 默认工具列表不再暴露, 归"系统"域
+    // 经 invoke_tools 按需加载; 执行链 allDomainTools 三级兜底不受影响)。
+    "list_domains",
     // v3.6.91: clawhub_install/clawhub_search 移出框架集 — 归系统域经
     // invoke_tools(系统) 加载 (用户: 框架工具 8→6, 只保留实际常用的)
-    "manage_mcp_servers", "plugin_install",
+    // v4.7.9: manage_mcp_servers 移出顶层 (同上, 归"系统"域按需加载)
+    "plugin_install",
     // v4.3.7: 图片预算闭环件 — 占位图的重取通道 (始终可用, 免审批)
     "read_image",
     // v3.11.24: 任务清单 (Cherry Studio Agent 任务功能移植) — 框架工具,

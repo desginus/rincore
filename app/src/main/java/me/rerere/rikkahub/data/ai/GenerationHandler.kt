@@ -859,8 +859,11 @@ class GenerationHandler(
                                                 put(
                                                     "error",
                                                     JsonPrimitive(buildString {
-                                                        append("[${it.javaClass.name}] ${it.message}")
-                                                        append("\n${it.stackTraceToString()}")
+                                                        // v4.7.9: 堆栈净化 — 完整 Kotlin 堆栈曾全量回传模型,
+                                                        // 污染上下文 (暴露内部结构, 强化"工具系统需管理"错觉;
+                                                        // GLM 吸住现场的报错文本含 java.lang...at me.rerere...
+                                                        // 三连重复)。堆栈只进日志, 模型只见简洁错误。
+                                                        append("[工具错误] ${it.message ?: it.javaClass.simpleName}")
                                                     })
                                                 )
                                             }
