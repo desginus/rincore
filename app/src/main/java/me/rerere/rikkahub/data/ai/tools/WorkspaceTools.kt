@@ -247,7 +247,7 @@ private fun createWriteFileTool(
                 workspaceRepository.executeCommand(
                     workspaceId,
                     "mkdir -p '$vdir' && cp -p '$path' '$vdir/$name.$ts' && ls -1t '$vdir' | tail -n +9 | while read f; do rm -f \"$vdir/\$f\"; done",
-                    cwdRel,
+                    cwdRel.orEmpty(),
                     WorkspaceManager.DEFAULT_COMMAND_TIMEOUT_MS,
                 )
                 previousVersion = "$vdir/$name.$ts"
@@ -371,7 +371,7 @@ private fun createShowFileTool(
             val r = workspaceRepository.executeCommand(
                 workspaceId,
                 "ls -1t '$dir/.versions' 2>/dev/null | grep -F '${name}.' | head -1",
-                cwdRel,
+                cwdRel.orEmpty(),
                 WorkspaceManager.DEFAULT_COMMAND_TIMEOUT_MS,
             )
             val latest = r.stdout?.trim()?.takeIf { it.isNotEmpty() } ?: return@runCatching
