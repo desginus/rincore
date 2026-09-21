@@ -491,21 +491,11 @@ class ChatCompletionsAPI(
                             }
                         }
                         val usage = parseTokenUsage(it["usage"] as? JsonObject)
-                        // v3.6.78: grok 系 (OpenCode Zen) 不发 [DONE] 也不发
-                        // finish_reason=stop, 以 usage/cost 结尾行标记完成 —
-                        // usage 或 cost 收到即视为本轮完成信号
-                        if (usage != null || it["cost"] != null) {
-                            // v4.5.12: 中途 usage 心跳否决 — 网关会对长思考流中途
-                            // 发 usage/cost 行, 旧逻辑立即置完成标记; 若服务器随后
-                            // 中断流, 关流时被掩盖为"正常完成"(用户感知: 思考到
-                            // 一半莫名断)。本 chunk 自带实质内容时不置位。
-                            val chunkDelta = (it["choices"] as? JsonArray)?.firstOrNull()
-                                ?.jsonObject?.get("delta") as? JsonObject
-                            val chunkHasRealDelta =
-                                !chunkDelta?.get("content")?.jsonPrimitive?.contentOrNull.isNullOrBlank() ||
-                                !chunkDelta?.get("reasoning_content")?.jsonPrimitive?.contentOrNull.isNullOrBlank()
-                            if (!chunkHasRealDelta) gotFinish.set(true)
-                        }
+                        // v4.7.2: 撤销 v3.6.78 的 grok 系 usage/cost 完成置位 (用户定版回滚)。
+                        // 网关的 usage 统计行不代表模型输出完成 — 置位会掩盖真实中断
+                        // (glm-5.3-flash 正文被关流被当正常完成)。完成信号只认
+                        // finish_reason / [DONE]; 无硬信号流由 onClosed 判定链按内容
+                        // 形态收口 (grok 正常完成走"有正文+尾部干净"分支, 不受影响)。
 
                         val messageChunk = MessageChunk(
                             id = id,
