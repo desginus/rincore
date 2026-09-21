@@ -1213,7 +1213,7 @@ class ChatService(
      * 先改内存可确保这段窗口内的整对象保存也带上新 folderId。
      */
     suspend fun moveConversationToFolder(conversationId: Uuid, folderId: Uuid?) {
-        if (sessions.containsKey(conversationId)) {
+        if (sessionManager.get(conversationId) != null) {
             updateConversationState(conversationId) { it.copy(folderId = folderId) }
         }
         conversationRepo.updateConversationFolderId(conversationId, folderId)
@@ -1224,7 +1224,7 @@ class ChatService(
      * 仅活跃 session 可能在生成；内存态 folderId 为权威（移动会先同步内存态）。
      */
     fun hasGeneratingConversationInFolder(folderId: Uuid): Boolean {
-        return sessions.values.any { it.isGenerating && it.state.value.folderId == folderId }
+        return sessionManager.snapshot().any { it.isGenerating && it.state.value.folderId == folderId }
     }
 
     /**
@@ -1235,7 +1235,7 @@ class ChatService(
      * 后续整对象保存会写回一个已被删除的 folder_id，导致会话在列表中悬空。
      */
     suspend fun deleteFolder(folderId: Uuid) {
-        sessions.values
+        sessionManager.snapshot()
             .filter { it.state.value.folderId == folderId }
             .forEach { updateConversationState(it.id) { c -> c.copy(folderId = null) } }
         folderRepository.deleteFolder(folderId)
