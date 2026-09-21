@@ -148,6 +148,36 @@ class ChatCompletionsAPI(
                 providerSetting = providerSetting
             )
 
+        // v4.7.4: 请求体 messages 取证 — GLM 空回复类问题定位 (轻量摘要, 非全量序列化)
+        val msgDump = (requestBody["messages"] as? kotlinx.serialization.json.JsonArray)
+            ?.joinToString(" | ") { el ->
+                val o = el as? kotlinx.serialization.json.JsonObject ?: return@joinToString "?"
+                val role = o["role"]?.let { (it as kotlinx.serialization.json.JsonPrimitive).content } ?: "?"
+                val content = o["content"]?.let { c ->
+                    when (c) {
+                        is kotlinx.serialization.json.JsonPrimitive ->
+                            if (c.content.isEmpty()) "empty" else "str(${c.content.length})"
+                        is kotlinx.serialization.json.JsonArray -> "arr(${c.size})"
+                        is kotlinx.serialization.json.JsonNull -> "NULL"
+                        else -> "?"
+                    }
+                } ?: "ABSENT"
+                val reasoning = o["reasoning_content"]?.let { r ->
+                    (r as? kotlinx.serialization.json.JsonPrimitive)?.content?.length
+                }
+                val toolCalls = (o["tool_calls"] as? kotlinx.serialization.json.JsonArray)?.map { tc ->
+                    val fn = (tc as? kotlinx.serialization.json.JsonObject)?.get("function") as? kotlinx.serialization.json.JsonObject
+                    val name = fn?.get("name")?.let { (it as kotlinx.serialization.json.JsonPrimitive).content } ?: "?"
+                    val argsLen = fn?.get("arguments")?.let { (it as kotlinx.serialization.json.JsonPrimitive).content.length } ?: 0
+                    "$name(args=$argsLen)"
+                }?.joinToString("+")
+                val toolContent = if (role == "tool") o["content"]?.let { c ->
+                    (c as? kotlinx.serialization.json.JsonPrimitive)?.content?.length?.toString() ?: "?"
+                } else null
+                "$role(content=$content${reasoning?.let { " reasoning=$it" } ?: ""}${toolCalls?.let { " tc=$it" } ?: ""}${toolContent?.let { " toolContent=$it" } ?: ""})"
+            } ?: "no messages"
+        TraceLogger.log("SEND", "req_body", msgDump)
+
         val request = Request.Builder()
             .url("${providerSetting.baseUrl}${providerSetting.chatCompletionsPath}")
             .headers(params.customHeaders.toHeaders())
