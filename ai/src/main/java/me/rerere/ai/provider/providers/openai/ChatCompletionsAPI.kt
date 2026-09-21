@@ -176,7 +176,7 @@ class ChatCompletionsAPI(
                 } else null
                 "$role(content=$content${reasoning?.let { " reasoning=$it" } ?: ""}${toolCalls?.let { " tc=$it" } ?: ""}${toolContent?.let { " toolContent=$it" } ?: ""})"
             } ?: "no messages"
-        TraceLogger.log("SEND", "req_body", msgDump)
+        TraceLogger.log("SEND/req_body", msgDump)
 
         val request = Request.Builder()
             .url("${providerSetting.baseUrl}${providerSetting.chatCompletionsPath}")
