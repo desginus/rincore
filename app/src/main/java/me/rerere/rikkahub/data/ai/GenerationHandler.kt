@@ -260,8 +260,7 @@ class GenerationHandler(
         val exemptSet = settings.exemptFromDomainTools
         val domainTools = tools.filter { it.name !in FRAMEWORK_TOOL_SET && it.name !in exemptSet }
         val frameworkTools = tools.filter { it.name in FRAMEWORK_TOOL_SET || it.name in exemptSet }
-        Log.i(TAG, "frameworkToolSet(${FRAMEWORK_TOOL_SET.size}+${exemptSet.size}): ${(FRAMEWORK_TOOL_SET + exemptSet).sorted()}")
-        Log.i(TAG, "frameworkTools found: ${frameworkTools.map { it.name }.sorted()}")
+        // v4.7.8: 每轮工具池构建的巨串日志删除 (441 工具排序+拼接 — 热路径开销)
 
         // Skill 已拆分为独立工具 (skill_<name>)，无需集中提取 skillListText
 

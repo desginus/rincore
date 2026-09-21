@@ -629,12 +629,10 @@ class ToolRouter(
             }
             appendLine()
             appendLine("调 `invoke_tools(\"域名称\")` 加载该域工具；工具加载后直接调用，跨轮保持。")
-            // v3.6.104: 生态引导 — 插件/MCP/Skill 安装方向 (框架工具已有安装入口, 此处只做说明)
-            appendLine()
-            appendLine("生态能力安装引导：")
-            appendLine("- 插件: 用 plugin_install 工具安装 Claude Code 插件 (zipFile=设备 ZIP 路径, 或 url=可下载直链, 需含 plugin.json/.claude-plugin/plugin.json)。workspace 文件区 .plugins/<插件名>/ 目录格式的插件重启后自动注册。")
-            appendLine("- MCP: 用 manage_mcp_servers 工具连接/管理 MCP 服务器 {name, transport: sse|streamable_http|stdio, url 或 command}。注意: 该工具仅用于连接管理, 搜索/网页抓取请直接使用已加载的 mcp__ 域搜索工具 (如 mcp__websearch__webSearchPro), 不要把搜索意图路由到连接管理工具。")
-            appendLine("- Skill: 经 invoke_tools(\"技能\") 查看技能列表, skill__<名> 工具直接加载使用。")
+            // v4.7.8: 生态能力安装引导段删除 — v3.6.104 的 plugin_install/
+            // manage_mcp_servers 推销文本是 GLM 被系统管理工具吸住死循环的
+            // 主要诱导源 (用户实证: 用了 invoke_tools 后绝对触发管理工具循环)。
+            // 管理类工具仅在用户明确要求时使用, 不做主动引导。
         }
     }
 

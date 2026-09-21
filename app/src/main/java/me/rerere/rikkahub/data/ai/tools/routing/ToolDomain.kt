@@ -178,7 +178,7 @@ enum class ToolDomain(
     // ============================================================
     // 11. 系统 (域管理/生态工具)
     // ============================================================
-    SYSTEM("系统", "域管理、MCP连接、插件安装等系统级工具", listOf(
+    SYSTEM("系统", "内部系统工具（仅用户明确要求管理域/MCP/插件时使用）", listOf(
         "manage_domain", "manage_mcp_servers", "list_domains", "move_tool", "clawhub", "plugin_install",
     ), null),
     ;

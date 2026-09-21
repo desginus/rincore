@@ -151,7 +151,7 @@ private fun createSearchDomainsTool(
 
 private fun createDomainTool(settingsStore: SettingsStore) = Tool(
     name = "manage_domain",
-    description = "创建/删除/重命名/更新工具域或子域。操作后场景地图自动同步。",
+    description = "【仅当用户明确要求创建/删除/重命名/更新工具域时调用, 不要主动调用】创建/删除/重命名/更新工具域或子域。",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
@@ -441,7 +441,7 @@ private fun listDomainsTool(
     toolPoolProvider: () -> List<Tool>,
 ) = Tool(
     name = "move_tool_to_domain",
-    description = "将工具或 Skill 移动到指定域。移动后该工具/技能在目标域内可见，调用时经 invoke_tools 加载该域即可。",
+    description = "【仅当用户明确要求移动工具/技能到某域时调用, 不要主动调用】将工具或 Skill 移动到指定域。",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {

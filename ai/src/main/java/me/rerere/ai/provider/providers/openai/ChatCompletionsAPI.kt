@@ -369,7 +369,7 @@ class ChatCompletionsAPI(
                     }
                 }
                 recordEvent(data)
-                Log.d(TAG, "onEvent: $data")
+                // v4.7.8: 每 chunk 的 Log.d 全量拼接删除 (release 同样执行字符串拼接 — 热路径开销)
                 data
                     .trim()
                     .split("\n")
