@@ -117,8 +117,6 @@ import kotlin.time.Clock
  * 直接关闭连接 — 与"服务端中途掐断"在信号层面无法区分。此时保留已生成内容,
  * 由上层明确提示用户 (不静默吞掉, 也不回滚重试轰炸)。
  */
-class OpenCodeStreamUnconfirmedException(message: String) : IOException(message)
-
 private const val TAG = "ChatCompletionsAPI"
 
 class ChatCompletionsAPI(
@@ -243,14 +241,6 @@ class ChatCompletionsAPI(
         val sentAtMs = System.currentTimeMillis()
         val firstDataAtMs = java.util.concurrent.atomic.AtomicLong(0)
         val headerReceived = java.util.concurrent.atomic.AtomicBoolean(false)
-        // v3.8.40: ox 系模型正文走 reasoning_content (社区实锤: opencode 客户端
-        // 将其直接当正文显示, 无独立 content 输出)。开启后 reasoning_content
-        // 提升为正文, 不再作为思考链单独显示 — 与 opencode 行为对齐。
-        val reasoningAsBody = isOpencode && (
-            params.model.displayName.contains("ox", ignoreCase = true) ||
-                params.model.displayName.contains("x-preview", ignoreCase = true) ||
-                params.model.modelId.contains("x-preview", ignoreCase = true)
-            )
         val watchdog = me.rerere.ai.core.StreamWatchdog(
             isOpencode = isOpencode,
             headerReceived = headerReceived,
@@ -274,15 +264,6 @@ class ChatCompletionsAPI(
         val maxRetries = 5 // 指数退避 1+2+4+8+16=31s 窗口, 覆盖瞬时网络波动
         var currentEventSource: EventSource? = null
         val scope = this@callbackFlow
-        // v3.8.33: 完成信号诊断 + 物理判据 —
-        // SSE 每行 data 必须是完整 JSON; 服务端正常发完关流 = 所有行完整;
-        // 中途掐断 = 最后一行残缺 (parse 失败)。
-        // 事件数与最近 5 条原始数据缓冲, 关流/失败时输出核对服务端收尾形态。
-        var eventCount = 0
-        var lastEventParsed = false
-        // v3.8.36: 文本尾部跟踪 — 服务端"行完整但内容截断"场景 (无完成信号的
-        // 模型输出被平台截短仍按完整行发送), 需内容形态启发辅助判定
-        var textTail = ""
         // v3.8.39: 正文/思考分离跟踪 — 已实证 ox-alpha-free 流式只发
         // reasoning_content (思考) 不发 content (正文): 仅思考无正文时
         // 必须可见报错而非静默"完成"
@@ -290,52 +271,6 @@ class ChatCompletionsAPI(
         // v4.5.20: 工具调用检测标志 — "无正文关闭"判中断时必须排除正常工具
         // 回合 (工具流可无正文且部分网关无完成信号), 防误判重试
         var hasToolCalls = false
-        var reasoningTail = ""
-        // v3.8.42: 思考缓冲 — ox 系无 content 时结束后正文化; 流中思考保持思考链
-        val reasoningBuffer = StringBuilder()
-        // v3.8.38: 最后一条"delta 非空"块原文 + 字段名 — 定位 Zen 网关内容块
-        // 真实结构 (用户实测 287 events tail 仍为空: 网关文本不走 content 字段)
-        var lastDeltaRaw = ""
-        var lastDeltaKeys = ""
-        val lastEvents = ArrayDeque<String>()
-        fun recordEvent(data: String) {
-            val lines = data.trim().split("\n").filter { it.isNotBlank() }
-            for (line in lines) {
-                lastEventParsed =
-                    runCatching { json.parseToJsonElement(line); true }.getOrDefault(false)
-                // 记录最后一条含非空 delta 的 chunk (结构取证)
-                runCatching {
-                    val obj = json.parseToJsonElement(line).jsonObject
-                    val choices = obj["choices"] as? JsonArray
-                    val delta = choices?.firstOrNull()
-                        ?.let { (it as JsonObject)["delta"] as? JsonObject }
-                    if (delta != null && delta.keys.isNotEmpty()) {
-                        lastDeltaKeys = delta.keys.joinToString(",")
-                        lastDeltaRaw = line.take(300)
-                    }
-                }
-            }
-            eventCount++
-            val preview = data.trim().replace("\n", " ")
-            lastEvents.addLast(if (preview.length > 160) preview.take(160) + "…" else preview)
-            while (lastEvents.size > 5) lastEvents.removeFirst()
-        }
-        fun dumpLastEvents(): String = lastEvents.joinToString(" | ") { it.replace("\n", " ") }
-        // v3.8.36: 内容级截断启发 (仅辅助无完成信号模型, DeepSeek 等有官方
-        // finish_reason 信号不启用)。强特征才报, 防误报:
-        // 未闭合代码块 / 以逗号分号顿号冒号破折号收尾 / 以连接词收尾
-        fun looksTruncated(tail: String): Boolean {
-            if (tail.isBlank()) return false
-            if (tail.count { it == '`' } % 2 != 0) return true
-            val last = tail.lastOrNull() ?: return false
-            if (last in ",;，；、:：|_—–".toList()) return true
-            val lower = tail.lowercase()
-            return lower.endsWith(" and") || lower.endsWith(" because") ||
-                lower.endsWith(" but") || lower.endsWith(" the") ||
-                tail.endsWith("但是") || tail.endsWith("因为") ||
-                tail.endsWith("然后") || tail.endsWith("以及") ||
-                tail.endsWith("所以") || tail.endsWith("总之") || tail.endsWith("因此")
-        }
         lateinit var listener: EventSourceListener
 
         fun connect() {
@@ -352,162 +287,107 @@ class ChatCompletionsAPI(
                 type: String?,
                 data: String
             ) {
-                if (data == "[DONE]") {
-                    Log.d(TAG, "onEvent: [DONE]")
-                    completed.set(true)  // 正常完成标记 — onClosed 据此区分静默中断
-                    close()
-                    return
-                }
-                // 仅有效数据刷新空闲标记 — 空行 (keep-alive) 不刷新,
-                // 否则服务器保活会使看门狗永远无法检测真挂起
-                if (data.isNotBlank()) {
-                    lastEventAt.set(System.currentTimeMillis())
-                    // v3.10.5: TTFT 插桩 — 首个有效 data 事件(含网关转换);
-                    // 与 sentAtMs 差即首字延迟, 连接复用/缓存命中场景应显著下降
-                    if (firstDataAtMs.compareAndSet(0, System.currentTimeMillis())) {
-                        Log.i(TAG, "TTFT ${firstDataAtMs.get() - sentAtMs}ms host=${providerSetting.baseUrl.toHttpUrl().host}")
+                // v4.7.2 重写 (对齐原版 2.5.3): onEvent 必须整体 try-catch —
+                // v4.0.0 重写丢失了该包裹, 解析异常逃逸到 OkHttp 线程后流被
+                // 静默杀死 (无 onFailure/无 onClosed/无报错), GLM 思考内容触发
+                // 解析异常时表现为"静默秒崩"。close(e) 使异常显式上抛。
+                try {
+                    if (data == "[DONE]") {
+                        Log.d(TAG, "onEvent: [DONE]")
+                        completed.set(true)
+                        close()
+                        return
                     }
-                }
-                recordEvent(data)
-                Log.d(TAG, "onEvent: $data")
-                data
-                    .trim()
-                    .split("\n")
-                    .filter { it.isNotBlank() }
-                    .map { json.parseToJsonElement(it).jsonObject }
-                    .forEach {
-                        if (it["error"] != null) {
-                            val error = it["error"]!!.parseErrorDetail()
-                            throw error
+                    // 仅有效数据刷新空闲标记 — 空行 (keep-alive) 不刷新,
+                    // 否则服务器保活会使看门狗永远无法检测真挂起
+                    if (data.isNotBlank()) {
+                        lastEventAt.set(System.currentTimeMillis())
+                        if (firstDataAtMs.compareAndSet(0, System.currentTimeMillis())) {
+                            Log.i(TAG, "TTFT ${firstDataAtMs.get() - sentAtMs}ms host=${providerSetting.baseUrl.toHttpUrl().host}")
                         }
-                        val id = it["id"]?.jsonPrimitive?.contentOrNull ?: ""
-                        val model = it["model"]?.jsonPrimitive?.contentOrNull ?: ""
+                    }
+                    Log.d(TAG, "onEvent: $data")
+                    data
+                        .trim()
+                        .split("\n")
+                        .filter { it.isNotBlank() }
+                        .map { json.parseToJsonElement(it).jsonObject }
+                        .forEach { payload ->
+                            if (payload["error"] != null) {
+                                throw payload["error"]!!.parseErrorDetail()
+                            }
+                            val chunkId = payload["id"]?.jsonPrimitive?.contentOrNull ?: ""
+                            val chunkModel = payload["model"]?.jsonPrimitive?.contentOrNull ?: ""
 
-                        val choices = it["choices"]?.jsonArray ?: JsonArray(emptyList())
-                        val choiceList = buildList {
-                            if (choices.isNotEmpty()) {
-                                val choice = choices[0].jsonObject
-                                // v3.8.31: finish_reason 判定提到 choice 层 —
-                                // 结尾 chunk 常为 delta:null + finish_reason:"stop",
-                                // 原判定写在 message!=null 分支内会漏判 → 误判断流
-                                val finishReason =
-                                    choice["finish_reason"]?.jsonPrimitive?.contentOrNull
-                                if (finishReason == "stop" || finishReason == "length" || finishReason == "tool_calls") {
-                                    // v4.5.20: tool_calls 纳入完成信号 — 工具调用回合的
-                                    // 标准收尾 (finish_reason=tool_calls) 同样是硬完成;
-                                    // 此前只认 stop/length, 工具流走无信号路径靠"有工具"
-                                    // 兜底, 判定链更脆弱
-                                    gotFinish.set(true)
-                                    lastFinishReason = finishReason
-                                    if (finishReason == "length") {
-                                        // v4.5.12: 截断显式化 — max_tokens 用尽时
-                                        // 服务端以 length 正常收尾, 旧逻辑静默完成,
-                                        // 用户感知"思考到一半断了"却无迹可查
-                                        Log.w(TAG, "finish_reason=length: output truncated by max_tokens budget")
+                            val choices = payload["choices"]?.jsonArray ?: JsonArray(emptyList())
+                            val choiceList = buildList {
+                                if (choices.isNotEmpty()) {
+                                    val choice = choices[0].jsonObject
+                                    // finish_reason 仅记录 — completed 只由 [DONE] 触发
+                                    // (原版 2.5.3 语义); onClosed 不再做内容形态判定
+                                    choice["finish_reason"]?.jsonPrimitive?.contentOrNull?.let { fr ->
+                                        gotFinish.set(true)
+                                        lastFinishReason = fr
                                     }
-                                }
-                                val message =
-                                    choice["delta"]?.jsonObject ?: choice["message"]?.jsonObject
-                                // v3.8.37: 记录文本尾部 (截断启发用) — 兼容三种 chunk 形态:
-                                // string content (OpenAI 标准) / content 数组 (Claude 风格
-                                // 网关: [{"type":"text","text":"..."}]) / thinking 文本
-                                (choice["delta"] as? JsonObject)?.get("content")?.let { raw ->
-                                    val text = when (raw) {
-                                        is JsonPrimitive -> raw.contentOrNull
-                                        is JsonArray -> raw.mapNotNull {
-                                            (it as? JsonObject)?.get("text")?.jsonPrimitive?.contentOrNull
-                                        }.joinToString("")
-                                        else -> null
-                                    }
-                                    text?.takeIf { it.isNotBlank() }?.let {
-                                        hasTextContent = true
-                                        textTail = if (it.length > 80) it.takeLast(80) else it
-                                        // v4.5.12: usage 心跳后仍收到正文 → 撤销完成
-                                        // 标记 (流实际还在输出, usage 是中途统计行)
-                                        if (gotFinish.get()) gotFinish.set(false)
-                                    }
-                                }
-                                // v3.8.39/40: 思考内容跟踪 — 非 ox 模型记录思考尾部
-                                // (无正文场景判定); ox 模型 (reasoningAsBody) 思考即正文,
-                                // 直接提升为正文尾部并视为有正文
-                                val reasoningRaw = (choice["delta"] as? JsonObject)
-                                    ?.get("reasoning_content")?.jsonPrimitiveOrNull?.contentOrNull
-                                    ?: message?.get("reasoning_content")?.jsonPrimitiveOrNull?.contentOrNull
-                                if (reasoningAsBody) {
-                                    // v3.8.42: 流中思考保持思考链实时显示 (不再提升为正文);
-                                    // 缓冲全文, 仅当流结束仍无 content 时才正文化补发
-                                    reasoningRaw?.takeIf { it.isNotBlank() }?.let {
-                                        reasoningBuffer.append(it)
-                                    }
-                                } else {
-                                    reasoningRaw?.takeIf { it.isNotBlank() }?.let {
-                                        reasoningTail = if (it.length > 80) it.takeLast(80) else it
-                                        // v4.5.12: usage 心跳后仍收到思考 → 撤销完成标记
-                                        if (gotFinish.get()) gotFinish.set(false)
-                                    }
-                                }
-                                if (message != null) {
-                                    var delta = parseMessage(message)
-                                    // v4.5.20: 流中一旦出现工具 part 即标记 (工具回合识别的兜底)
-                                    if (delta.parts.any { it is UIMessagePart.Tool }) hasToolCalls = true
-                                    // v4.3.0: 增量流 id 回填 — tool part 与 tool_calls 数组
-                                    // 元素一一对应 (forEach add), 按元素的 index 归属:
-                                    // id 非空记录映射; id 空从映射取回填, 无映射保持空串
-                                    // (桥接器 lastToolId 兜底)
-                                    val tcArr = (choice["delta"] as? JsonObject)?.get("tool_calls") as? JsonArray
-                                    if (tcArr != null) {
-                                        val tools = delta.parts.filterIsInstance<UIMessagePart.Tool>()
-                                        if (tools.isNotEmpty()) {
-                                            var ti = 0
-                                            val patched = delta.parts.map { part ->
-                                                if (part is UIMessagePart.Tool && ti < tcArr.size) {
-                                                    val tcObj = tcArr[ti].jsonObject
-                                                    val idx = tcObj["index"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
-                                                    val id = tcObj["id"]?.jsonPrimitive?.contentOrNull
-                                                    ti++
-                                                    when {
-                                                        !id.isNullOrBlank() -> { deltaToolIds[idx] = id; part }
-                                                        part.toolCallId.isBlank() -> deltaToolIds[idx]?.let { part.copy(toolCallId = it) } ?: part
-                                                        else -> part
-                                                    }
-                                                } else part
-                                            }
-                                            if (patched != delta.parts) {
-                                                delta = delta.copy(parts = patched)
+                                    val message =
+                                        choice["delta"]?.jsonObject ?: choice["message"]?.jsonObject
+                                    if (message != null) {
+                                        var delta = parseMessage(message)
+                                        if (delta.parts.any { it is UIMessagePart.Tool }) hasToolCalls = true
+                                        if (delta.parts.any { it is UIMessagePart.Text }) hasTextContent = true
+                                        // v4.3.0: 增量流 id 回填 (tool_calls index 归属)
+                                        val tcArr = (choice["delta"] as? JsonObject)?.get("tool_calls") as? JsonArray
+                                        if (tcArr != null) {
+                                            val tools = delta.parts.filterIsInstance<UIMessagePart.Tool>()
+                                            if (tools.isNotEmpty()) {
+                                                var ti = 0
+                                                val patched = delta.parts.map { part ->
+                                                    if (part is UIMessagePart.Tool && ti < tcArr.size) {
+                                                        val tcObj = tcArr[ti].jsonObject
+                                                        val idx = tcObj["index"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
+                                                        val tcId = tcObj["id"]?.jsonPrimitive?.contentOrNull
+                                                        ti++
+                                                        when {
+                                                            !tcId.isNullOrBlank() -> { deltaToolIds[idx] = tcId; part }
+                                                            part.toolCallId.isBlank() -> deltaToolIds[idx]?.let { part.copy(toolCallId = it) } ?: part
+                                                            else -> part
+                                                        }
+                                                    } else part
+                                                }
+                                                if (patched != delta.parts) {
+                                                    delta = delta.copy(parts = patched)
+                                                }
                                             }
                                         }
-                                    }
-                                    // v3.8.42: 思考链经 parseMessage 自然成为 Reasoning part,
-                                    // 正文经 content 提取 — 两者不再混淆
-                                    add(
-                                        UIMessageChoice(
-                                            index = 0,
-                                            delta = delta,
-                                            message = null,
-                                            finishReason = finishReason ?: "unknown",
+                                        add(
+                                            UIMessageChoice(
+                                                index = 0,
+                                                delta = delta,
+                                                message = null,
+                                                finishReason = lastFinishReason ?: "unknown",
+                                            )
                                         )
-                                    )
+                                    }
                                 }
                             }
+                            val usage = parseTokenUsage(payload["usage"] as? JsonObject)
+                            val messageChunk = MessageChunk(
+                                id = chunkId,
+                                model = chunkModel,
+                                choices = choiceList,
+                                usage = usage
+                            )
+                            trySend(messageChunk).onFailure { e ->
+                                Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
+                            }
+                            hasReceivedData.set(true)
                         }
-                        val usage = parseTokenUsage(it["usage"] as? JsonObject)
-                        // v4.7.2: 撤销 v3.6.78 的 grok 系 usage/cost 完成置位 (用户定版回滚)。
-                        // 网关的 usage 统计行不代表模型输出完成 — 置位会掩盖真实中断
-                        // (glm-5.3-flash 正文被关流被当正常完成)。完成信号只认
-                        // finish_reason / [DONE]; 无硬信号流由 onClosed 判定链按内容
-                        // 形态收口 (grok 正常完成走"有正文+尾部干净"分支, 不受影响)。
-
-                        val messageChunk = MessageChunk(
-                            id = id,
-                            model = model,
-                            choices = choiceList,
-                            usage = usage
-                        )
-                        trySend(messageChunk).onFailure { e ->
-                            Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
-                        }
-                        hasReceivedData.set(true)
-                    }
+                } catch (e: Throwable) {
+                    // 原版语义: 解析异常显式 close — 上层收到错误, 不再静默死亡
+                    Log.e(TAG, "onEvent: parse error — closing flow with exception", e)
+                    close(e)
+                    return
+                }
             }
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
@@ -567,106 +447,12 @@ class ChatCompletionsAPI(
             }
 
             override fun onClosed(eventSource: EventSource) {
-                // v4.5.2: 长度截断 + 工具调用不再终态报错 (v4.5.1 方案体验硬) —
-                // 残缺调用的结构化错误由 GH 层在 Finish(length) 时预填 tool output,
-                // 模型下一轮看到错误自动分段, 对话连续, 用户无感。残缺调用依然绝不执行。
-                // 服务器主动关闭连接: [DONE] 或 finish_reason=stop 已收到 → 正常完成;
-                // 否则视为断流 (消息不完整且无报错 → 用户感知"莫名其妙中断")
-                // v3.8.33 物理判据 (替代 v3.8.31/32 的模型名单分流与一律未确认):
-                //   SSE 每行必须是完整 JSON。最后一行解析成功 = 服务端把本段数据
-                //   完整发完 (正常完结, 即使无 [DONE]/stop/usage — Zen 网关常态);
-                //   最后一行残缺 = 服务端中途掐断 (真断流)。
-                //   按物理层的事实判定, 不再猜测模型行为。
-                Log.i(TAG, "stream end: completed=" + completed.get() + " gotFinish=" + gotFinish.get() +
-                    " finishReason=" + lastFinishReason + " events=" + eventCount +
-                    " hasData=" + hasReceivedData.get() + " model=" + params.model.modelId)
-                if (!completed.get() && !gotFinish.get()) {
-                    if (isOpencode && hasReceivedData.get()) {
-                        // v4.7.2: 模型家族名单分流 (用户实证 glm-5.3-flash 正文阶段被关流,
-                        // "有正文+尾部干净"分支静默放行)。历史实证存在"正常收尾不发
-                        // finish_reason"的模型家族 (grok 系 v3.6.78 / ox 系 v3.8.39) —
-                        // 名单内走 v4.5.20 宽松链; 名单外 (GLM/DeepSeek 等主流) 正常完成
-                        // 必有硬信号, 无硬信号关闭一律视为异常截断, 进断流链自动重试。
-                        val lenientNoSignalFamily =
-                            params.model.modelId.contains("grok", ignoreCase = true) ||
-                                params.model.modelId.startsWith("ox-", ignoreCase = true)
-                        if (!lenientNoSignalFamily) {
-                            Log.w(TAG, "onClosed: closed without finish signal (model=${params.model.modelId} events=$eventCount tail=\"${textTail.take(40)}\") — strict family, entering retry chain\nlast: ${dumpLastEvents()}")
-                            TraceLogger.log("SSE", "closed without finish signal — strict family, entering retry chain (events=$eventCount)")
-                            close(IOException("SSE 流被服务器关闭且无完成信号 (正文可能不完整)"))
-                        } else /* lenient family: v4.5.20 chain */ {
-                        // v3.8.42: 运行时自适应 —
-                        //   行完整 + 有 content => 正常完成 (思考链与正文泾渭分明);
-                        //   行完整 + 无 content + 有思考缓冲 => 思考正文化补发为正文
-                        //   (ox 系纯思考输出场景, 对齐 opencode 客户端行为);
-                        //   行残缺 / 尾部强截断特征 => 保留内容 + 明确报错。
-                        // v4.5.20 (用户实证"多模型异常中断"): closed-after-data 不再一概
-                        // 当完成 — 无完成信号 + 无正文 + 无工具 = 外部掐流 (真中断),
-                        // 进重试链自动恢复。实证: glm-5.3-flash 142s 全思考被关 /
-                        // deepseek-flash 空流 events=1 被关, 均被旧逻辑静默"完成"。
-                        val truncated = !lastEventParsed || looksTruncated(textTail) || looksTruncated(reasoningTail)
-                        if (truncated) {
-                            val why = if (!lastEventParsed) "mid-event truncation"
-                            else "content ends truncated (tail=\"${textTail.take(40)}\")"
-                            Log.w(TAG, "onClosed: opencode.ai truncated ($why, model=${params.model.modelId} events=$eventCount) — keep partial content, notify user\nlast: ${dumpLastEvents()}")
-                            TraceLogger.log("SSE", "zen truncated close — keep data, notify user (events=$eventCount $why)")
-                            close(OpenCodeStreamUnconfirmedException("OpenCode 输出被截断，已保留已生成内容"))
-                        } else if (!hasTextContent && reasoningBuffer.isNotBlank()) {
-                            // 无 content: 缓冲思考提升为正文补发 (思考链已实时显示过,
-                            // 补发使正文区完整 — 与 opencode 将 reasoning_content 当正文一致)
-                            val bodyText = reasoningBuffer.toString()
-                            val bodyTail = if (bodyText.length > 80) bodyText.takeLast(80) else bodyText
-                            if (looksTruncated(bodyTail)) {
-                                Log.w(TAG, "onClosed: opencode.ai reasoning-only truncated (tail=\"${bodyTail.take(40)}\") — keep data, notify")
-                                TraceLogger.log("SSE", "zen reasoning-only truncated — keep data, notify user")
-                                close(OpenCodeStreamUnconfirmedException("OpenCode 输出被截断，已保留已生成内容"))
-                            } else {
-                                TraceLogger.log("SSE", "opencode.ai closed after complete data (events=$eventCount) — no content, promoted reasoning as body (chars=${bodyText.length} tail=\"${bodyTail.take(40)}\")")
-                                trySend(
-                                    MessageChunk(
-                                        id = "",
-                                        model = params.model.modelId,
-                                        choices = listOf(
-                                            UIMessageChoice(
-                                                index = 0,
-                                                delta = UIMessage(
-                                                    role = MessageRole.ASSISTANT,
-                                                    parts = listOf(UIMessagePart.Text(bodyText)),
-                                                ),
-                                                message = null,
-                                                finishReason = "stop",
-                                            )
-                                        ),
-                                        usage = null,
-                                    )
-                                ).onFailure { e -> Log.w(TAG, "onClosed: body promotion chunk dropped (${e?.message})") }
-                                close()
-                            }
-                        } else if (!hasTextContent && !hasToolCalls && reasoningTail.isNotBlank()) {
-                            // v4.5.20 (用户实证): 纯思考无正文的关闭 = 思考阶段被掐,
-                            // 非正常收尾 — 正常回合必有正文或工具。进重试链。
-                            Log.w(TAG, "onClosed: opencode.ai closed during reasoning-only phase (model=${params.model.modelId} events=$eventCount) — treat as interruption, retry\nlast: ${dumpLastEvents()}")
-                            TraceLogger.log("SSE", "opencode.ai closed during reasoning phase (no body/tools, events=$eventCount) — interruption, entering retry chain")
-                            close(IOException("SSE 流在思考阶段被服务器关闭 (无正文输出, 无完成信号)"))
-                        } else if (!hasTextContent && !hasToolCalls) {
-                            // v4.5.20 (用户实证): 零输出空流 (仅角色/心跳块后即关) = 明确中断
-                            Log.w(TAG, "onClosed: opencode.ai closed with zero output (model=${params.model.modelId} events=$eventCount) — treat as interruption, retry\nlast: ${dumpLastEvents()}")
-                            TraceLogger.log("SSE", "opencode.ai closed with zero output (events=$eventCount) — interruption, entering retry chain")
-                            close(IOException("SSE 流在输出任何内容前被服务器关闭 (无完成信号)"))
-                        } else {
-                            TraceLogger.log("SSE", "opencode.ai closed after complete data (events=$eventCount) — treated as complete (body=$hasTextContent tools=$hasToolCalls, no completion signal on this gateway, tail=\"${textTail.take(40)}\" deltaKeys=\"$lastDeltaKeys\")")
-                            close()
-                        }
-                        } /* lenient family chain */
-                    } else {
-                        Log.w(TAG, "onClosed: stream closed before completion — unexpected interruption" +
-                                " (completed=${completed.get()} gotFinish=${gotFinish.get()} hasData=${hasReceivedData.get()} opencode=$isOpencode model=${params.model.modelId} events=$eventCount lastParsed=$lastEventParsed)\nlast: ${dumpLastEvents()}")
-                        close(IOException("SSE 流在完成前被服务器关闭"))
-                    }
-                } else {
-                    TraceLogger.log("SSE", "stream closed by server")
-                    close()
-                }
+                // v4.7.2 重写 (对齐原版 2.5.3): 全部内容形态判定链删除 —
+                // 截断启发/名单分流/思考正文化/零输出重试/usage 置位退役。
+                // 无信号关闭 = 静默结束 (v4.4.x 行为, 用户实证该时期 GLM 正常)。
+                // 静默秒崩的根源是 v4.0.0 重写丢失的 onEvent 异常包裹 (已在
+                // onEvent 恢复 try-catch 显式化), 不是缺少完成信号判定。
+                close()
             }
             }
 
