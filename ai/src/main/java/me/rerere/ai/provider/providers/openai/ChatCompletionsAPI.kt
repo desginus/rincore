@@ -327,9 +327,11 @@ class ChatCompletionsAPI(
                                     val choice = choices[0].jsonObject
                                     // finish_reason 仅记录 — completed 只由 [DONE] 触发
                                     // (原版 2.5.3 语义); onClosed 不再做内容形态判定
-                                    choice["finish_reason"]?.jsonPrimitive?.contentOrNull?.let { fr ->
+                                    val finishReason =
+                                        choice["finish_reason"]?.jsonPrimitive?.contentOrNull
+                                    if (finishReason != null) {
                                         gotFinish.set(true)
-                                        lastFinishReason = fr
+                                        lastFinishReason = finishReason
                                     }
                                     val message =
                                         choice["delta"]?.jsonObject ?: choice["message"]?.jsonObject
