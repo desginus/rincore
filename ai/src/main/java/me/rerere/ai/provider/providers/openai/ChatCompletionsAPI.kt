@@ -582,6 +582,19 @@ class ChatCompletionsAPI(
                     " hasData=" + hasReceivedData.get() + " model=" + params.model.modelId)
                 if (!completed.get() && !gotFinish.get()) {
                     if (isOpencode && hasReceivedData.get()) {
+                        // v4.7.2: 模型家族名单分流 (用户实证 glm-5.3-flash 正文阶段被关流,
+                        // "有正文+尾部干净"分支静默放行)。历史实证存在"正常收尾不发
+                        // finish_reason"的模型家族 (grok 系 v3.6.78 / ox 系 v3.8.39) —
+                        // 名单内走 v4.5.20 宽松链; 名单外 (GLM/DeepSeek 等主流) 正常完成
+                        // 必有硬信号, 无硬信号关闭一律视为异常截断, 进断流链自动重试。
+                        val lenientNoSignalFamily =
+                            params.model.modelId.contains("grok", ignoreCase = true) ||
+                                params.model.modelId.startsWith("ox-", ignoreCase = true)
+                        if (!lenientNoSignalFamily) {
+                            Log.w(TAG, "onClosed: closed without finish signal (model=${params.model.modelId} events=$eventCount tail=\"${textTail.take(40)}\") — strict family, entering retry chain\nlast: ${dumpLastEvents()}")
+                            TraceLogger.log("SSE", "closed without finish signal — strict family, entering retry chain (events=$eventCount)")
+                            close(IOException("SSE 流被服务器关闭且无完成信号 (正文可能不完整)"))
+                        } else /* lenient family: v4.5.20 chain */ {
                         // v3.8.42: 运行时自适应 —
                         //   行完整 + 有 content => 正常完成 (思考链与正文泾渭分明);
                         //   行完整 + 无 content + 有思考缓冲 => 思考正文化补发为正文
@@ -644,6 +657,7 @@ class ChatCompletionsAPI(
                             TraceLogger.log("SSE", "opencode.ai closed after complete data (events=$eventCount) — treated as complete (body=$hasTextContent tools=$hasToolCalls, no completion signal on this gateway, tail=\"${textTail.take(40)}\" deltaKeys=\"$lastDeltaKeys\")")
                             close()
                         }
+                        } /* lenient family chain */
                     } else {
                         Log.w(TAG, "onClosed: stream closed before completion — unexpected interruption" +
                                 " (completed=${completed.get()} gotFinish=${gotFinish.get()} hasData=${hasReceivedData.get()} opencode=$isOpencode model=${params.model.modelId} events=$eventCount lastParsed=$lastEventParsed)\nlast: ${dumpLastEvents()}")
