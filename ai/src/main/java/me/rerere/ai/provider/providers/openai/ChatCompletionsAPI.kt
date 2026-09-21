@@ -1249,7 +1249,10 @@ class ChatCompletionsAPI(
                             put("id", tool.toolCallId)
                             put("type", "function")
                             put("function", buildJsonObject {
-                                // 2.5.3 移植: 移除 tool_calls 回放中的冗余 name (部分服务不兼容)
+                                // v4.7.2: 恢复回放 name — 2.5.3 的移除适配 OpenCode Zen,
+                                // 但 Console Go 强校验回放必须带 name ("missing field 'name'"
+                                // / "function.name must not be empty" 用户实证)。全通道取交集。
+                                put("name", tool.toolName)
                                 // 使用 inputAsJson() 归一化，避免流式中断导致的残缺 JSON 被发送
                                 put("arguments", tool.inputAsJson().toString())
                             })
