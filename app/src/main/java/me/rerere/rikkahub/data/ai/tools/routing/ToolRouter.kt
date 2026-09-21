@@ -375,6 +375,9 @@ class ToolRouter(
         // 此前缺失域的工具直接消失 (如 133 个工具丢失)。
         val treePaths = tree.keys.toMutableSet().apply { addAll(tree.values.flatten()) }
         for (domain in classified.keys) {
+            // v4.7.16: 已删除/隐藏域绝不补入视图 (防御 — domainSource/分类层
+            // 排除之上再加一道; "删除即消失"成为强不变量)
+            if (!isValidDomain(domain)) continue
             if (domain !in treePaths) {
                 val root = domain.split("/").first()
                 if (domain.contains("/")) {

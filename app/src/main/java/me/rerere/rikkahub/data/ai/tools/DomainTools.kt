@@ -154,7 +154,7 @@ private fun createSearchDomainsTool(
 
 private fun createDomainTool(settingsStore: SettingsStore) = Tool(
     name = "manage_domain",
-    description = "【仅当用户明确要求创建/删除/重命名/更新工具域时调用, 不要主动调用】创建/删除/重命名/更新工具域或子域。",
+    description = "【仅当用户明确要求创建/删除/重命名/更新工具域时调用, 不要主动调用】创建/删除/重命名/更新工具域或子域。update 对内置域同样有效 (描述/关键词/显示名写入覆盖层)。",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
@@ -310,25 +310,34 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
                     if (newName.isNullOrBlank()) return@updateWithResult settings to "rename 需要 new_name 参数"
                     val existing = settings.customDomains.find {
                         it.name == name || it.normalizedFullPath() == name
-                    } ?: return@updateWithResult settings to "自定义域 '$name' 不存在。内置域不支持重命名。"
-                    if (settings.customDomains.any { it.name == newName }) {
-                        return@updateWithResult settings to "域 '$newName' 已存在"
+                    } ?: return@updateWithResult settings to "自定义域 '$name' 不存在。内置域不支持重命名 — 如需改显示名请用 update + display_name (内部键不变, 显示名生效)。"
+                    // v4.7.16 (用户现场反馈修复): 用 existing 的实际结构 (短名+父级) 做匹配。
+                    // 此前 `d.name == name` 拿完整路径比短名永不命中 → rename 空转、
+                    // 而 mappings 却被 remap 到新名义键 → "子域被踢出父域变成顶级"的现场。
+                    val oldShort = existing.name
+                    val oldParent = existing.parent
+                    val oldFull = existing.normalizedFullPath()
+                    val newShort = newName.substringAfterLast("/").trim()
+                    if (newShort.isBlank()) return@updateWithResult settings to "new_name 无效"
+                    val newFull = oldParent?.let { "$it/$newShort" } ?: newShort
+                    if (settings.customDomains.any { it !== existing && it.name == newShort && it.parent == oldParent }) {
+                        return@updateWithResult settings to "同级已存在域 '$newShort'"
                     }
-                    // 1. 域本身改名 + 子域 parent 随迁
+                    // 1. 域本身改名 (短名替换, 父级保留) + 子域 parent 随迁
                     val newDomains = settings.customDomains.map { d ->
                         when {
-                            d.name == name -> d.copy(name = newName)
-                            d.parent == name -> d.copy(parent = newName)
+                            d.name == oldShort && d.parent == oldParent -> d.copy(name = newShort)
+                            d.parent == oldFull -> d.copy(parent = newFull)
                             else -> d
                         }
                     }
-                    // 2. 迁移所有指向旧域的配置 (含子域路径前缀)
+                    // 2. 迁移所有指向旧域的配置 — 统一用完整路径做键
                     fun remapKey(key: String): String =
-                        if (key == name) newName
-                        else if (key.startsWith("$name/")) newName + key.removePrefix(name)
+                        if (key == oldFull) newFull
+                        else if (key.startsWith("$oldFull/")) newFull + key.removePrefix(oldFull)
                         else key
                     val newOverrides = settings.toolDomainOverrides.mapValues { (_, v) ->
-                        if (v == name || v.startsWith("$name/")) remapKey(v) else v
+                        if (v == oldFull || v.startsWith("$oldFull/")) remapKey(v) else v
                     }
                     val newDescs = settings.customDomainDescriptions.mapKeys { (k, _) -> remapKey(k) }
                     val newKeywords = settings.customDomainKeywords.mapKeys { (k, _) -> remapKey(k) }
@@ -340,7 +349,7 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
                         customDomainDescriptions = newDescs,
                         customDomainKeywords = newKeywords,
                         domainNameOverrides = newNames,
-                    ) to "已重命名域 '$name' → '$newName'。挂载映射、描述、关键词、子域父级均已迁移。"
+                    ) to "已重命名域 '$oldFull' → '$newFull' (父级保留; 挂载映射、描述、关键词、子域父级均已迁移)。"
                 }
                 me.rerere.rikkahub.data.ai.CallTracer.event("OK", "manage_domain", "rename $name → $newName: $msg")
                 listOf(UIMessagePart.Text(msg))
@@ -352,8 +361,38 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
                         it.name == name || it.normalizedFullPath() == name
                     }
                     if (existing == null) {
-                        return@updateWithResult settings to "自定义域 '$name' 不存在。内置域的描述/关键词由系统定义，可用 domainNameOverrides 修改显示名。"
-                    }
+                        // v4.7.16 (用户现场反馈): 内置域放开 — 描述/关键词/显示名写入
+                        // 覆盖层 (customDomainDescriptions/customDomainKeywords/
+                        // domainNameOverrides)。覆盖层在 getTriggerDescription/
+                        // getKeywords 中最优先 — 内置域同样生效, 且重启保留。
+                        // 此前直接拒绝 → 高命中率内置域 (搜索/搜索引擎 等) 无法补关键词。
+                        val builtin = me.rerere.rikkahub.data.ai.tools.routing.ToolDomain.entries.any { it.label == name }
+                        if (!builtin) {
+                            return@updateWithResult settings to "域 '$name' 不存在 (非内置域也非自定义域)。"
+                        }
+                        var updated = settings
+                        val applied = mutableListOf<String>()
+                        if (description.isNotEmpty()) {
+                            updated = updated.copy(customDomainDescriptions = updated.customDomainDescriptions + (name to description))
+                            applied += "描述"
+                        }
+                        if (keywords.isNotEmpty()) {
+                            updated = updated.copy(customDomainKeywords = updated.customDomainKeywords + (name to keywords))
+                            applied += "关键词"
+                        }
+                        if (!displayName.isNullOrBlank()) {
+                            updated = updated.copy(domainNameOverrides = updated.domainNameOverrides + (name to displayName))
+                            applied += "显示名"
+                        } else if (displayName != null) {
+                            updated = updated.copy(domainNameOverrides = updated.domainNameOverrides - name)
+                            applied += "显示名(清除)"
+                        }
+                        if (applied.isEmpty()) {
+                            updated to "内置域 '$name': 未提供要修改的字段 (description/keywords/display_name)。"
+                        } else {
+                            updated to "已更新内置域 '$name' 的覆盖层: ${applied.joinToString(", ")} (优先生效, 重启保留; 删除该域或删除域配置时覆盖一并清理)。"
+                        }
+                    } else {
                     val updatedDomains = settings.customDomains.map { d ->
                         if (d.name == name) {
                             d.copy(
@@ -374,6 +413,7 @@ private fun createDomainTool(settingsStore: SettingsStore) = Tool(
                         )
                     }
                     updated to "已更新域 '$name'：${if (description.isNotEmpty()) "描述, " else ""}${if (keywords.isNotEmpty()) "关键词, " else ""}${if (displayName != null) "显示名" else ""}。"
+                    }
                 }
                 me.rerere.rikkahub.data.ai.CallTracer.event("OK", "manage_domain", "update $name → $msg")
                 listOf(UIMessagePart.Text(msg))
