@@ -330,7 +330,7 @@ class OperitScriptRuntime(
                         ?: return err("NODE_NOT_FOUND: 源或目标记忆不存在")
                     synchronized(linksLock) {
                         val links = loadLinks(linksFile).toMutableList()
-                        if (links.any { it["s"] == sid && it["t"] == tid }) {
+                        if (links.any { it["s"] == JsonPrimitive(sid) && it["t"] == JsonPrimitive(tid) }) {
                             ok { put("data", JsonPrimitive(true)) } // 幂等: 已存在视为成功
                         } else {
                             links.add(buildJsonObject {
