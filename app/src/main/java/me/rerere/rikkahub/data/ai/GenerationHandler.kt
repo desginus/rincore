@@ -257,15 +257,9 @@ class GenerationHandler(
         }
 
         // 分离框架工具与用户域工具 (v3.6.90: 含用户移出域管理的豁免工具)
-        // v4.6.5: demotedFrameworkTools — 被用户移进域管理的框架工具 (从顶层降级, 由域路由接管)
         val exemptSet = settings.exemptFromDomainTools
-        val demotedSet = settings.demotedFrameworkTools
-        val domainTools = tools.filter {
-            (it.name !in FRAMEWORK_TOOL_SET && it.name !in exemptSet) || it.name in demotedSet
-        }
-        val frameworkTools = tools.filter {
-            (it.name in FRAMEWORK_TOOL_SET || it.name in exemptSet) && it.name !in demotedSet
-        }
+        val domainTools = tools.filter { it.name !in FRAMEWORK_TOOL_SET && it.name !in exemptSet }
+        val frameworkTools = tools.filter { it.name in FRAMEWORK_TOOL_SET || it.name in exemptSet }
         Log.i(TAG, "frameworkToolSet(${FRAMEWORK_TOOL_SET.size}+${exemptSet.size}): ${(FRAMEWORK_TOOL_SET + exemptSet).sorted()}")
         Log.i(TAG, "frameworkTools found: ${frameworkTools.map { it.name }.sorted()}")
 
@@ -438,23 +432,7 @@ class GenerationHandler(
 
             // Skip generation if we have approved/denied tool calls to handle
             if (pendingTools.isEmpty()) {
-                val sizeBefore = messages.size  // v4.7.3: 空流判定基线 — 本轮是否产生新 assistant
                 CallTracer.event("SEND", "pre_api", "Calling generateInternal: model=${model.id}, provider=${provider.javaClass.simpleName}")
-                // v4.7.2: 请求序列取证 — 每条消息的 role/内容规模/tool_calls 数,
-                // GLM 空回复类问题直接核对上游收到的消息序列
-                CallTracer.event("SEND", "msg_seq", messages.joinToString(" | ") { m ->
-                    val toolCalls = m.parts.filterIsInstance<UIMessagePart.Tool>()
-                        .joinToString("+") { t -> "${t.toolName}(${t.output.size}out)" }
-                    val sizes = m.parts.mapNotNull { p ->
-                        when (p) {
-                            is UIMessagePart.Text -> "T${p.text.length}"
-                            is UIMessagePart.Reasoning -> "R${p.reasoning.length}"
-                            is UIMessagePart.Image -> "IMG"
-                            else -> null
-                        }
-                    }.joinToString(",")
-                    "${m.role}(parts=${m.parts.size} $sizes${if (toolCalls.isNotEmpty()) " tools=$toolCalls" else ""})"
-                })
                 generateInternal(
                     assistant = assistant,
                     settings = settings,
@@ -524,20 +502,12 @@ class GenerationHandler(
 
                 // G3 平台空流重试: 流式正常结束但模型未产出任何内容
                 // (无文本/无思考/无工具调用) — 平台偶发空流, 重试一次
-                // v4.7.3: 空回复判定根修 — 空流时 generateInternal 不追加 assistant 消息,
-                // messages.last() 是上一轮的 (含内容) → 旧判定永远 false → 重试永不触发
-                // (这就是"重试绝对没有触发"的真正机制)。改为本轮 size 对比 + last 内容双判。
-                val grew = messages.size > sizeBefore
                 val lastMsg = messages.lastOrNull()
-                val lastHasContent = lastMsg != null && lastMsg.role == MessageRole.ASSISTANT &&
-                    lastMsg.parts.any {
-                        (it is UIMessagePart.Text && it.text.isNotBlank()) ||
-                            (it is UIMessagePart.Reasoning && it.reasoning.isNotBlank()) ||
-                            it is UIMessagePart.Tool
+                val emptyResponse = lastMsg != null && lastMsg.role == MessageRole.ASSISTANT &&
+                    lastMsg.parts.none {
+                        it is UIMessagePart.Text || it is UIMessagePart.Reasoning || it is UIMessagePart.Tool
                     }
-                val emptyResponse = !grew || (lastMsg != null && !lastHasContent)
-                CallTracer.event("TRACE", "empty_check", "grew=$grew sizeBefore=$sizeBefore sizeAfter=${messages.size} lastHasContent=$lastHasContent emptyResponse=$emptyResponse")
-                if (emptyResponse && emptyRetryCount < 2) {
+                if (emptyResponse && emptyRetryCount < 1) {
                     emptyRetryCount++
                     CallTracer.event("RETRY", "empty_stream", "Empty assistant response, retrying once (step=$stepIndex)")
                     messages = messages.dropLast(1)
@@ -1432,6 +1402,13 @@ class GenerationHandler(
                 if (!isServer) throw e
                 Log.w(TAG, "HttpException 5xx fallback — converting to IOException for retry chain: ${e.message}")
                 throw java.io.IOException(e.message ?: "server error", e)
+            } catch (e: me.rerere.ai.provider.providers.openai.OpenCodeStreamUnconfirmedException) {
+                // v3.8.32: OpenCode Zen 无完成信号关流 (ox 系等) — 服务端已完成或
+                // 中途掐断在信号层面无法区分。保留已生成内容 (已随 chunk 流入
+                // messages), 不回滚不重试, 交上层明确报错 — 杜绝静默截断。
+                Log.w(TAG, "stream unconfirmed (${e.message}) — keep partial content, no retry")
+                onUpdateMessages(messages)
+                throw e
             } catch (e: java.io.IOException) {
                 // 4.0.0 重写: 重试策略全部收敛至 RetryPolicy.kt (策略对象模式),
                 // 本处只保留职责原语: 分类 → 判决 → 回滚/delay/continue 或 终态抛出。
