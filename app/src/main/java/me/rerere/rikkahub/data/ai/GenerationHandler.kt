@@ -809,15 +809,21 @@ class GenerationHandler(
                                             "3) 若该工具确实不可用, 换用其他工具 (可用 invoke_tools 查看可用工具) 或放弃该路径, 以文字向用户说明情况。" +
                                             "禁止再发出与本次相同的调用。")) + truncated
                                     }
-                                    if (cn >= 3) {
+                                    if (cn >= 2) {
+                                        // v4.7.13: 软提示 → 强制指令升级 (分析报告实证:
+                                        // "软反馈对已经锚定的错误模式无效, 这是连续 N 次
+                                        // 不改的直接原因"; 现场: 思考说 A 动作做 B, 错误
+                                        // 历史自锚定)。阈值 3→2 提前打断, 文本改为指令式:
+                                        // 明确"停止 X"+"直接调用 Y"的下一步, 不再给选择题。
                                         CallTracer.event("TOOL", "tool_loop_break",
                                             "consecutive-fail x" + cn + ": " + tool.toolName, metrics = sseDiagMetrics())
                                         return@run listOf(UIMessagePart.Text(
-                                            "⚠️ 工具 " + tool.toolName + " 已连续失败 " + cn + " 次 (最近错误: " + failText.take(120) + ")。" +
-                                            "连续失败通常意味着它不是你当前任务的正确工具。请停下来重新评估: " +
-                                            "1) 你的实际目标是什么? 从目标出发重新选择工具 (invoke_tools 可查看全部可用域与工具); " +
-                                            "2) 不要继续在本工具上换参数试错; " +
-                                            "3) 若确认本工具就是正确路径, 请先仔细核对它的参数结构再调用。")) + truncated
+                                            "【系统强制指令】你已连续 " + cn + " 次调用 " + tool.toolName + " 失败或被拦截。立即停止调用它 — 它无法帮助你完成任务。" +
+                                            "正确的下一步: 直接发出你真正需要的工具调用。例如搜索/查资料任务: 直接调用已加载的搜索工具" +
+                                            " (如 mcp__websearch__webSearchStd, 参数 {\"search_query\": \"你的查询\"})。" +
+                                            "所有已加载工具均已注册、可直接调用 — 无需移动、注册或任何准备动作。" +
+                                            (if (cn >= 4) "【最终警告】再次调用 " + tool.toolName + " 不会被受理, 也不会产生不同结果。" else "") +
+                                            " (原始错误: " + failText.take(100) + ")")) + truncated
                                     }
                                 } else {
                                     toolFailureCounts.remove(tool.toolName + "|" + tool.input.hashCode())

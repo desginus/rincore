@@ -443,7 +443,7 @@ class ToolRouter(
             appendLine()
             appendLine("你拥有一个工具总域 `工具`，按功能场景树状组织。每个域含：显示名称、触发描述、触发条件。")
             appendLine()
-            appendLine("**使用**：工具经 `invoke_tools(\"场景名\")` 加载后直接调用，加载一次跨轮保持；`search_domains(关键词)` 反查工具位置；`invoke_tools(\"帮助\")` 查看全部域与工具。")
+            appendLine("**使用**：工具经 `invoke_tools(\"场景名\")` 加载后即可直接调用（无需移动或注册等任何前置操作），加载一次跨轮保持；`search_domains(关键词)` 反查工具位置；`invoke_tools(\"帮助\")` 查看全部域与工具。")
             appendLine()
             appendLine("### 可用场景域")
             appendLine()
@@ -560,7 +560,7 @@ class ToolRouter(
                                         append(subInfo)
                                     }
                                     appendLine()
-                                    appendLine("子域标注了触发描述与触发条件(关键词)，据此判断工具位置。所有工具均可直接调用。")
+                                    appendLine("子域标注了触发描述与触发条件(关键词)，据此判断工具位置。所有工具均已注册、可直接调用 — 直接发出工具调用即可，无需移动/注册等任何前置操作。")
                                     appendLine(withFrameworkNote)
                                 }
                                 listOf(UIMessagePart.Text(summary))
@@ -577,7 +577,7 @@ class ToolRouter(
                                     } else if (rootOnly.isEmpty()) {
                                         appendLine("「${router.formatDomainLabel(finalName)}」无用户工具。$frameworkNote")
                                     } else {
-                                        appendLine("「${router.formatDomainLabel(finalName)}」可用工具（均可直接调用）：")
+                                        appendLine("「${router.formatDomainLabel(finalName)}」以下工具已注册、可直接调用（直接以工具调用形式发出工具名，无需任何前置操作）：")
                                         for (t in rootOnly.sortedBy { it.name }) {
                                             appendLine(router.toolLineWithSchema(t, 80))
                                         }
