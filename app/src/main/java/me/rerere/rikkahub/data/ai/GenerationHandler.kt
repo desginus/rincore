@@ -364,25 +364,29 @@ class GenerationHandler(
                     // 加载一次对话内保持, 无需 use_skill 两步。
                 }.distinctBy { it.name }
                     // v3.8.27: 顶层白名单硬过滤 — 除批准框架 + 豁免 + 引擎工具
-                    // (memory_tool/invoke_tools) 外, 任何工具一律剔除并记错,
-                    // 绝不暴露在请求 tools 顶层 (用户: 一律强制归入 invoke_tools 内部)
-                    // v4.5.12: 顶层工具集恒定 (用户判满定性) — 已加载域工具不再
-                    // 进顶层 (此前随 loadedDomains 轮间漂移, ntools 47↔21 波动,
-                    // 工具段前缀缓存全灭, 实测命中率仅 5%)。顶层=框架+豁免+
-                    // memory_tool/invoke_tools, 会话内数量恒定; 域内工具严禁
-                    // 注入顶层, 一律经 invoke_tools 动态执行 (执行源为全量池,
-                    // 不依赖顶层定义)。
+                    // 外, 任何工具一律剔除并记错。
+                    // v4.7.14 (用户定版 — "喂到嘴边"): 已加载域工具注入请求 schema
+                    // 恢复。v4.5.12 的"域内工具严禁进顶层"被推翻: 断点实证 —
+                    // invoke_tools 返回的是文本描述而非函数 schema, 模型不敢直接
+                    // 调用仅存在于文字里的 mcp__ 工具, 触发"还没启用/需要注册"的
+                    // 错误心智模型 → 被 move_tool_to_domain 吸住。现改为: 域工具
+                    // 经 invoke_tools 加载后, 完整函数定义直接出现在请求 tools 数组
+                    // (从"让模型自己找"变为"喂到嘴边")。
+                    // 缓存影响: loadedDomains 为 LinkedHashSet 保序 (v3.6.10),
+                    // 新域追加尾部, 已加载前缀不变 → 缓存前缀在追加点前保持。
                     .also { built ->
                         val approved = FRAMEWORK_TOOL_SET + exemptSet +
-                            setOf("memory_tool", "invoke_tools")
+                            setOf("memory_tool", "invoke_tools") + loadedDomainToolNames
                         val leaked = built.filter { it.name !in approved }
                         if (leaked.isNotEmpty()) {
-                            Log.i(TAG, "v4.5.12 顶层恒定化: 域内工具不进顶层 (经 invoke_tools 执行): ${leaked.size} 个")
+                            Log.i(TAG, "意外顶层注入 (不在批准集合): ${leaked.map { it.name }}")
                         }
                     }
                     .filter {
                         it.name in FRAMEWORK_TOOL_SET || it.name in exemptSet ||
-                            it.name == "memory_tool" || it.name == "invoke_tools"
+                            it.name == "memory_tool" || it.name == "invoke_tools" ||
+                            // v4.7.14: 已加载域工具放行 — 完整 schema 注入请求 (喂到嘴边)
+                            it.name in loadedDomainToolNames
                     }
                     // v3.6.10: 不再整体重排 — 构建顺序 = 框架(固定) + invoke_tools +
                     // 已加载域(加载顺序, 域内名字序) — 新域追加尾部前缀稳定 (缓存命中)
