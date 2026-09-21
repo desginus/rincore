@@ -108,7 +108,14 @@ object DynamicTools {
     fun getMcpTools(): List<Tool> {
         mcpToolsDirty = false  // v3.15.1: 拉取即消费最新列表, 清脏
         val mcp = mcpManager ?: return emptyList()
-        return mcp.getAllAvailableTools().map { (serverId, serverName, tool) ->
+        return mcp.getAllAvailableTools()
+            // v4.7.12: 序列思考工具彻底删除 (用户定版: 已有 Task tool, 该工具无
+            // 实际用途且多次被模型吸附) — 无论 MCP 侧是否仍配置, 一律不回传。
+            .filterNot { (_, serverName, tool) ->
+                val n = (serverName + tool.name).lowercase()
+                n.contains("sequentialthinking") || n.contains("sequential_thinking")
+            }
+            .map { (serverId, serverName, tool) ->
             Tool(
                 name = "mcp__${sanitize(serverName)}__${sanitize(tool.name)}",
                 description = tool.description ?: "",

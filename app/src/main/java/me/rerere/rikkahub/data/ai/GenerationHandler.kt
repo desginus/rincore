@@ -616,8 +616,6 @@ class GenerationHandler(
             // v3.11.30 (DL-1/DL-2): 同工具+同参数幂等命中 → 复用上次成功结果,
             // 不计数不执行 (正常推进不撞熔断; 同参重复提交直接返回, 不空转烧配额)
             val idempotentCache = HashMap<String, List<UIMessagePart>>()
-            val thinkingSeenSignatures = HashSet<String>()
-            var thinkingSequenceClosed = false
             val executedTools = arrayListOf<UIMessagePart.Tool>()
             toolsToProcess.forEach { tool ->
                 when (tool.approvalState) {
@@ -679,54 +677,28 @@ class GenerationHandler(
                             // 因此自持。四道门全走 error 通路 (进既有失败聚合计数):
                             // ① 空/占位内容 ② 序号越界 ③ 已宣告终结仍续调 ④ 同参重复
                             // v3.11.24: args 顶层必为 JsonObject 才可抽样校验
-                            val argsMap = args as? kotlinx.serialization.json.JsonObject
-                            val thinkingNameMatch = tool.toolName.contains("sequential", ignoreCase = true) ||
-                                tool.toolName.contains("think", ignoreCase = true)
-                            val thinkingArgsMatch = argsMap?.containsKey("thoughtNumber") == true
-                            val isThinkingInvoke = thinkingNameMatch || thinkingArgsMatch
-                            // v4.7.11: name/参数错位检测 — 现场 (GLM): 模型想调思考工具,
-                            // 但工具名填成了管理类工具 (manage_domain 等), 参数却是思考结构
-                            // (thought/thoughtNumber/...)。此前这类调用只做思考协议校验,
-                            // 然后按 name 执行错误工具 → 报错 → 修参数被吸循环。
-                            // 现在直接返回明确更正指引, 不做错误执行。
-                            if (thinkingArgsMatch && !thinkingNameMatch) {
-                                error("Error: 工具名与参数结构不匹配 — 参数是思考工具的结构 (thought/thoughtNumber/...), 但工具名是 '${tool.toolName}'。" +
-                                    "如果你想进行结构化思考, 请直接调用思考工具 (名字含 sequentialthinking/think 的工具, 如 mcp__sequentialthinking); 若它当前不可直接调用, 先用 invoke_tools 加载其所在域。" +
-                                    "如果你想使用 '${tool.toolName}', 请按它的参数结构 (查看工具定义) 重新组织调用。")
-                            }
-                            if (isThinkingInvoke && argsMap != null) {
-                                val thought = argsMap["thought"]?.let { j ->
-                                    (j as? JsonPrimitive)?.content.orEmpty()
-                                }.orEmpty().trim()
-                                if (thought.length < 12) {
-                                    error("Error: thinking tool rejected — thought is empty or placeholder (${thought.length} chars). " +
-                                        "Provide substantive reasoning content, or stop calling this tool and act directly (search/calendar/answer).")
+                            // v4.7.12: 管理三件套意图门控 — 用户实证: GLM 在普通任务中持续
+                            // 误用 move_tool_to_domain (把搜索工具"移到搜索域"以为这样才
+                            // 可用, 连续多轮复现); 报错尾注教育 (v4.7.10) 与防吸引导均无效 —
+                            // 只有物理拦截能打断。机制: 检查对话中用户消息是否包含管理意图
+                            // 关键词; 不含则拒绝执行并返回引导 (错误进既有失败聚合, 叠加防吸)。
+                            // (v3.11.24 思考工具协议校验段随序列思考工具彻底删除 — v4.7.12)
+                            val manageGateTools = setOf("move_tool_to_domain", "manage_domain", "manage_mcp_servers")
+                            if (tool.toolName in manageGateTools) {
+                                val userText = messages.filter { it.role == MessageRole.USER }
+                                    .flatMap { msg -> msg.parts }
+                                    .filterIsInstance<UIMessagePart.Text>()
+                                    .joinToString(" ") { p -> p.text }
+                                val hasManageIntent = listOf(
+                                    "域", "管理", "移动", "移到", "挪", "整理", "归类", "挂载",
+                                    "分组", "子域", "MCP", "mcp", "连接", "插件", "安装", "技能", "skill",
+                                ).any { kw -> userText.contains(kw, ignoreCase = true) }
+                                if (!hasManageIntent) {
+                                    error("Error: 已拦截 — 本工具 (${tool.toolName}) 仅响应用户明确的管理指令" +
+                                        " (例如\"把某工具移到某域\"\"连接某MCP服务器\"), 当前对话中用户没有此类指令。" +
+                                        "如果你只是想使用某个工具 (如搜索/查询), 直接调用它即可 — " +
+                                        "所有已加载工具都可以直接调用, 无需移动或注册。请回到用户的原始任务继续。")
                                 }
-                                val thoughtNumber = argsMap["thoughtNumber"]?.let { j ->
-                                    (j as? JsonPrimitive)?.content?.toIntOrNull()
-                                }
-                                val totalThoughts = argsMap["totalThoughts"]?.let { j ->
-                                    (j as? JsonPrimitive)?.content?.toIntOrNull()
-                                }
-                                if (thoughtNumber != null && totalThoughts != null && totalThoughts > 0 && thoughtNumber > totalThoughts) {
-                                    error("Error: thinking tool rejected — thoughtNumber=$thoughtNumber exceeds totalThoughts=$totalThoughts. " +
-                                        "Correct the indexes, or declare a fresh reasoning block with a larger totalThoughts.")
-                                }
-                                val nextNeeded = argsMap["nextThoughtNeeded"]?.let { j ->
-                                    (j as? JsonPrimitive)?.content?.lowercase()
-                                }
-                                if (thinkingSequenceClosed && nextNeeded != "true") {
-                                    error("Error: thinking tool rejected — a previous call already declared nextThoughtNeeded=false " +
-                                        "(reasoning finished). Resuming the closed sequence adds no information. " +
-                                        "If a NEW reasoning need truly arises, state it in normal text and proceed with real actions.")
-                                }
-                                if (nextNeeded == "false") thinkingSequenceClosed = true
-                                val signature = tool.toolName + "|" + tool.input
-                                if (!thinkingSeenSignatures.add(signature)) {
-                                    error("Error: thinking tool rejected — identical call already made (client dedup). " +
-                                        "The previous result is still in context; repeating it is a no-op.")
-                                }
-                                CallTracer.event("TOOL", "thinking_guard_pass", "tool=${tool.toolName}")
                             }
                             // v3.11.24 (F2): 同工具累计连调预算 — 成功空转同属退化
                             // (区别于 v3.11.18 的同键失败聚合)。> 6 次物理拦截。

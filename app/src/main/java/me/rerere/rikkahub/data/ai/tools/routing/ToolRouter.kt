@@ -182,7 +182,7 @@ class ToolRouter(
         "wikipedia" to "搜索/搜索引擎",
         "trustedsearch" to "搜索/政策搜索",
         "thinkingmethodology" to "辅助推理/方法论",
-        "sequentialthinking" to "辅助推理/序列思考",
+        // v4.7.12: sequentialthinking 映射随序列思考工具彻底删除
     )
 
     fun classifyTool(tool: Tool): String = classifyByName(tool.name, tool.description)
