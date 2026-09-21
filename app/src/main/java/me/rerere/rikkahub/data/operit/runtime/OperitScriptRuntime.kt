@@ -277,18 +277,181 @@ class OperitScriptRuntime(
                         ok { put("data", kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive(1)))) }
                     }
                 }
-                // 原生记忆无文件夹维度 — 诚实返回 0 条移动 (不假装成功)
-                "memory.move" -> ok { put("data", kotlinx.serialization.json.JsonArray(emptyList())) }
-                // 原生记忆无图谱链接 — 诚实降级 (返回空集, 模型可感知该能力未启用)
-                "memory.link" -> ok { put("data", kotlinx.serialization.json.JsonPrimitive(false)) }
-                "memory.queryLinks" -> ok { put("data", kotlinx.serialization.json.JsonArray(emptyList())) }
-                "memory.updateLink" -> ok { put("data", kotlinx.serialization.json.JsonPrimitive(false)) }
-                "memory.deleteLink" -> ok { put("data", kotlinx.serialization.json.JsonArray(emptyList())) }
+                // v4.7.2: move 实现 — content 首行的（folder）标记改写, 零新存储
+                "memory.move" -> {
+                    val p = memParams(args) ?: return err("missing params")
+                    val repo = memoryRepositoryProvider() ?: return err("memory bridge unavailable")
+                    migrateOrphanMemories(repo)
+                    val targetFolder = (p["targetFolderPath"] as? String)?.takeIf { it.isNotBlank() }
+                    val sourceFolder = (p["sourceFolderPath"] as? String)?.takeIf { it.isNotBlank() }
+                    @Suppress("UNCHECKED_CAST")
+                    val titles = (p["titles"] as? List<String>)?.filter { it.isNotBlank() }
+                    if (targetFolder == null && sourceFolder == null && titles.isNullOrEmpty()) {
+                        return err("targetFolderPath / sourceFolderPath / titles 至少提供一个")
+                    }
+                    val all = kotlinx.coroutines.runBlocking { repo.getGlobalMemories() }
+                    val targets = all.filter { mem ->
+                        val firstLine = mem.content.lineSequence().firstOrNull() ?: ""
+                        val memTitle = Regex("^【(.+?)】").find(firstLine)?.groupValues?.get(1) ?: ""
+                        val memFolder = Regex("^【.+?】(?:（(.+?)）)?").find(firstLine)?.groupValues?.get(1)
+                        when {
+                            !titles.isNullOrEmpty() -> memTitle in titles
+                            sourceFolder != null -> memFolder == sourceFolder
+                            else -> false
+                        }
+                    }
+                    var moved = 0
+                    for (mem in targets) {
+                        val lines = mem.content.split("\n").toMutableList()
+                        if (lines.isEmpty()) continue
+                        val titleLine = lines[0]
+                        val baseTitle = Regex("^【(.+?)】").find(titleLine)?.groupValues?.get(1) ?: continue
+                        val newFirst = if (targetFolder != null) "【$baseTitle】（$targetFolder）" else "【$baseTitle】"
+                        if (newFirst != titleLine) {
+                            lines[0] = newFirst
+                            kotlinx.coroutines.runBlocking { repo.updateContent(mem.id, lines.joinToString("\n")) }
+                            moved++
+                        }
+                    }
+                    ok {
+                        put("data", kotlinx.serialization.json.JsonArray((1..moved).map { JsonPrimitive(it) }))
+                    }
+                }
+                // v4.7.2: 图谱链接四件套 — JSON 文件存储 (filesRoot/memory_links.json),
+                // 避免 Room 迁移 (v4.6.5 教训); 节点按 title 定位到原生记忆 ID
+                "memory.link" -> {
+                    val p = memParams(args) ?: return err("missing params")
+                    val repo = memoryRepositoryProvider() ?: return err("memory bridge unavailable")
+                    migrateOrphanMemories(repo)
+                    val sourceTitle = p["sourceTitle"] as? String ?: return err("sourceTitle required")
+                    val targetTitle = p["targetTitle"] as? String ?: return err("targetTitle required")
+                    val linksFile = linksFile()
+                    val (sid, tid) = resolveLinkIds(repo, sourceTitle, targetTitle)
+                        ?: return err("NODE_NOT_FOUND: 源或目标记忆不存在")
+                    synchronized(linksLock) {
+                        val links = loadLinks(linksFile).toMutableList()
+                        if (links.any { it["s"] == sid && it["t"] == tid }) {
+                            ok { put("data", JsonPrimitive(true)) } // 幂等: 已存在视为成功
+                        } else {
+                            links.add(buildJsonObject {
+                                put("s", JsonPrimitive(sid)); put("t", JsonPrimitive(tid))
+                                put("type", JsonPrimitive(p["linkType"] as? String ?: "related"))
+                                put("weight", JsonPrimitive((p["weight"] as? Number)?.toDouble() ?: 1.0))
+                                (p["description"] as? String)?.takeIf { it.isNotBlank() }?.let { put("desc", JsonPrimitive(it)) }
+                                put("ts", JsonPrimitive(System.currentTimeMillis()))
+                            })
+                            saveLinks(linksFile, links)
+                            ok { put("data", JsonPrimitive(true)) }
+                        }
+                    }
+                }
+                "memory.queryLinks" -> {
+                    val p = memParams(args) ?: return err("missing params")
+                    val repo = memoryRepositoryProvider() ?: return err("memory bridge unavailable")
+                    val sourceTitle = (p["sourceTitle"] as? String)?.takeIf { it.isNotBlank() }
+                    val targetTitle = (p["targetTitle"] as? String)?.takeIf { it.isNotBlank() }
+                    val sid = sourceTitle?.let { findMemoryId(repo, it) }
+                    val tid = targetTitle?.let { findMemoryId(repo, it) }
+                    if (sourceTitle != null && sid == null) {
+                        ok { put("data", kotlinx.serialization.json.JsonArray(emptyList())) }
+                    } else {
+                        val filtered = loadLinks(linksFile()).filter { link ->
+                            (sid == null || link["s"] == JsonPrimitive(sid)) &&
+                                (tid == null || link["t"] == JsonPrimitive(tid))
+                        }
+                        ok { put("data", kotlinx.serialization.json.JsonArray(filtered)) }
+                    }
+                }
+                "memory.updateLink" -> {
+                    val p = memParams(args) ?: return err("missing params")
+                    val repo = memoryRepositoryProvider() ?: return err("memory bridge unavailable")
+                    val sourceTitle = p["sourceTitle"] as? String ?: return err("sourceTitle required")
+                    val targetTitle = p["targetTitle"] as? String ?: return err("targetTitle required")
+                    val (sid, tid) = resolveLinkIds(repo, sourceTitle, targetTitle)
+                        ?: return err("NODE_NOT_FOUND: 源或目标记忆不存在")
+                    val linksFile = linksFile()
+                    synchronized(linksLock) {
+                        val links = loadLinks(linksFile).toMutableList()
+                        val idx = links.indexOfFirst { it["s"] == JsonPrimitive(sid) && it["t"] == JsonPrimitive(tid) }
+                        if (idx < 0) {
+                            ok { put("data", JsonPrimitive(false)) }
+                        } else {
+                            val updated = buildJsonObject {
+                                links[idx].forEach { (k, v) -> put(k, v) }
+                                (p["newLinkType"] as? String)?.let { put("type", JsonPrimitive(it)) }
+                                (p["weight"] as? Number)?.let { put("weight", JsonPrimitive(it.toDouble())) }
+                            }
+                            links[idx] = updated
+                            saveLinks(linksFile, links)
+                            ok { put("data", JsonPrimitive(true)) }
+                        }
+                    }
+                }
+                "memory.deleteLink" -> {
+                    val p = memParams(args) ?: return err("missing params")
+                    val repo = memoryRepositoryProvider() ?: return err("memory bridge unavailable")
+                    val sourceTitle = p["sourceTitle"] as? String ?: return err("sourceTitle required")
+                    val targetTitle = p["targetTitle"] as? String ?: return err("targetTitle required")
+                    val (sid, tid) = resolveLinkIds(repo, sourceTitle, targetTitle)
+                        ?: return err("NODE_NOT_FOUND: 源或目标记忆不存在")
+                    val linksFile = linksFile()
+                    synchronized(linksLock) {
+                        val links = loadLinks(linksFile)
+                        val kept = links.filterNot { it["s"] == JsonPrimitive(sid) && it["t"] == JsonPrimitive(tid) }
+                        saveLinks(linksFile, kept)
+                        ok {
+                            put("data", kotlinx.serialization.json.JsonArray(
+                                (1..(links.size - kept.size)).map { JsonPrimitive(it) }
+                            ))
+                        }
+                    }
+                }
                 else -> err("capability not implemented in RinCore runtime yet: $name")
             }
         } catch (e: Throwable) {
             err(e.message ?: e.toString())
         }
+    }
+
+    // ═══ v4.7.2: 图谱链接 JSON 文件存储 (filesRoot/memory_links.json) ═══
+    private val linksLock = Any()
+
+    private fun linksFile(): java.io.File =
+        java.io.File(filesRootProvider(), "memory_links.json")
+
+    private fun loadLinks(f: java.io.File): List<kotlinx.serialization.json.JsonObject> =
+        runCatching {
+            val arr = json.parseToJsonElement(f.readText())
+                .let { (it as? kotlinx.serialization.json.JsonObject)?.get("links") }
+                as? kotlinx.serialization.json.JsonArray ?: kotlinx.serialization.json.JsonArray(emptyList())
+            arr.mapNotNull { it as? kotlinx.serialization.json.JsonObject }
+        }.getOrDefault(emptyList())
+
+    private fun saveLinks(f: java.io.File, links: List<kotlinx.serialization.json.JsonObject>) {
+        val tmp = java.io.File(f.parentFile, f.name + ".tmp")
+        tmp.writeText(buildJsonObject {
+            put("links", kotlinx.serialization.json.JsonArray(links))
+        }.toString())
+        if (!tmp.renameTo(f)) {
+            f.writeText(tmp.readText()); tmp.delete()
+        }
+    }
+
+    private fun findMemoryId(
+        repo: me.rerere.rikkahub.data.repository.MemoryRepository,
+        title: String,
+    ): Long? = kotlinx.coroutines.runBlocking {
+        repo.getGlobalMemories().firstOrNull { it.content.startsWith("【$title】") }?.id
+    }
+
+    private fun resolveLinkIds(
+        repo: me.rerere.rikkahub.data.repository.MemoryRepository,
+        sourceTitle: String,
+        targetTitle: String,
+    ): Pair<Long, Long>? {
+        val sid = findMemoryId(repo, sourceTitle) ?: return null
+        val tid = findMemoryId(repo, targetTitle) ?: return null
+        return sid to tid
     }
 
     // v4.7.2: 存量迁移 — v4.6.7 桥把插件创建的记忆写到 assistantId="" 下,

@@ -167,7 +167,7 @@ const ExtendedMemoryTools = (function () {
             sourceFolderPath: params.source_folder_path,
             callerCardId: resolveCallerCardId(),
         });
-        return { success: result.length > 0, message: result.length > 0 ? '记忆移动完成' : '未移动任何记忆 (原生记忆无文件夹维度, 能力未启用)', data: result };
+        return { success: result.length > 0, message: result.length > 0 ? '记忆移动完成 (' + result.length + ' 条)' : '未找到匹配的记忆 (标题列表/来源文件夹均无命中)', data: result };
     }
     async function link_memories(params) {
         const result = await Tools.Memory.link({
