@@ -438,6 +438,7 @@ class GenerationHandler(
 
             // Skip generation if we have approved/denied tool calls to handle
             if (pendingTools.isEmpty()) {
+                val sizeBefore = messages.size  // v4.7.3: 空流判定基线 — 本轮是否产生新 assistant
                 CallTracer.event("SEND", "pre_api", "Calling generateInternal: model=${model.id}, provider=${provider.javaClass.simpleName}")
                 // v4.7.2: 请求序列取证 — 每条消息的 role/内容规模/tool_calls 数,
                 // GLM 空回复类问题直接核对上游收到的消息序列
@@ -523,26 +524,19 @@ class GenerationHandler(
 
                 // G3 平台空流重试: 流式正常结束但模型未产出任何内容
                 // (无文本/无思考/无工具调用) — 平台偶发空流, 重试一次
+                // v4.7.3: 空回复判定根修 — 空流时 generateInternal 不追加 assistant 消息,
+                // messages.last() 是上一轮的 (含内容) → 旧判定永远 false → 重试永不触发
+                // (这就是"重试绝对没有触发"的真正机制)。改为本轮 size 对比 + last 内容双判。
+                val grew = messages.size > sizeBefore
                 val lastMsg = messages.lastOrNull()
-                // v4.7.2: 空回复判定加非空条件 — 空字符串 Text/空 Reasoning 不算内容
-                // (GLM 实证: finish=stop + completion=117 但零内容 delta, 旧判定被
-                // 某环节塞入的空 Text 短路, 重试永不触发)
-                val emptyResponse = lastMsg != null && lastMsg.role == MessageRole.ASSISTANT &&
-                    lastMsg.parts.none {
+                val lastHasContent = lastMsg != null && lastMsg.role == MessageRole.ASSISTANT &&
+                    lastMsg.parts.any {
                         (it is UIMessagePart.Text && it.text.isNotBlank()) ||
                             (it is UIMessagePart.Reasoning && it.reasoning.isNotBlank()) ||
                             it is UIMessagePart.Tool
                     }
-                if (emptyResponse) {
-                    CallTracer.event("TRACE", "empty_detail", "parts=${lastMsg.parts.map { p ->
-                        when (p) {
-                            is UIMessagePart.Text -> "Text(${p.text.length})"
-                            is UIMessagePart.Reasoning -> "Reasoning(${p.reasoning.length})"
-                            is UIMessagePart.Tool -> "Tool(${p.toolName})"
-                            else -> p::class.simpleName
-                        }
-                    }}")
-                }
+                val emptyResponse = !grew || (lastMsg != null && !lastHasContent)
+                CallTracer.event("TRACE", "empty_check", "grew=$grew sizeBefore=$sizeBefore sizeAfter=${messages.size} lastHasContent=$lastHasContent emptyResponse=$emptyResponse")
                 if (emptyResponse && emptyRetryCount < 2) {
                     emptyRetryCount++
                     CallTracer.event("RETRY", "empty_stream", "Empty assistant response, retrying once (step=$stepIndex)")
