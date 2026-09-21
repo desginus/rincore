@@ -974,20 +974,10 @@ class ChatCompletionsAPI(
         tools: List<UIMessagePart.Tool>,
         reasoningPart: UIMessagePart.Reasoning?,
     ): JsonObject? {
-        // v4.5.18: 判定整段重写 — "模型输出→非法 assistant 消息"系统修复。
-        // 病灶: 模型某轮只输出思考 (正文为空, 含 think 标签全文被剥离入思考
-        // 的场景), 消息存为 Reasoning+空正文; 下一轮序列化后 content=null +
-        // reasoning_content + 无 tool_calls, 被严格上游拒收:
-        // [invalid_request_error] Invalid assistant message: content or
-        // tool_calls must be set (Console Go 实证; 历史上多次同类 —
-        // "模型正常输出, 继续对话发现用不了")。
-        // 处理矩阵 (OpenAI 规范: 无 tool_calls 时 content 必须为有效内容):
-        //   有效正文            → 正常发送
-        //   正文空 + 有思考 + 无工具 → 思考提升为正文兜底 (content 恒非空,
-        //                        保内容不丢; 对齐"思考即输出"的网关语义)
-        //   全空 + 无工具        → 跳过 (返回 null, 该消息不参与请求)
-        //   有 tool_calls       → content 允许 null, 空正文不再引发拒收
-        // 另: 无用的 part (空文本/空 URL 图) 统一在入口过滤, 不再全量下发。
+        // v4.7.4: 整段重写对齐原版 2.5.3 — v4.5.18 把 content="" 改成 content=null
+        // (有 tool_calls 时) 是 GLM 空回复的根因。原版 content="" 对全场景安全
+        // (原版验证: GLM + opencode.ai 长对话缓存 99%+ 正常)。
+        // v4.5.18 的"思考提升为正文"和"content=null"分支全部退役。
         val usableContent = contentParts.filter { part ->
             when (part) {
                 is UIMessagePart.Text -> part.text.isNotBlank()
@@ -1002,57 +992,51 @@ class ChatCompletionsAPI(
         return buildJsonObject {
             put("role", "assistant")
 
-            // v3.6.53: reasoning_content 回传完全对齐原版 RikkaHub — hasReasoning 就回传
-            // (所有模型、所有轮, 不区分 tool-call/plain)。原版超长对话缓存 99%+ 验证:
-            // reasoning_content 字段时有时无会破坏 token 序列前缀稳定性。
+            // reasoning_content — 对齐原版: hasReasoning 即回传
             if (hasReasoning) {
                 put("reasoning_content", reasoningPart.reasoning)
             }
 
-            // content — 无 tool_calls 时必须有有效内容 (上游硬校验)
+            // content — 对齐原版 2.5.3: 空内容时 content="" (非 null)
+            // v4.5.18 改成 JsonNull 导致 GLM 对 content:null + tool_calls 的
+            // assistant 消息触发异常路径输出空回复 (finish=stop + 零 delta)。
+            // 原版 content="" 对所有上游安全 (含 Console Go / opencode.ai)。
             when {
+                usableContent.size == 1 && usableContent[0] is UIMessagePart.Text -> {
+                    put("content", (usableContent[0] as UIMessagePart.Text).text)
+                }
                 usableContent.isNotEmpty() -> {
-                    if (usableContent.size == 1 && usableContent[0] is UIMessagePart.Text) {
-                        put("content", (usableContent[0] as UIMessagePart.Text).text)
-                    } else {
-                        putJsonArray("content") {
-                            usableContent.forEach { part ->
-                                when (part) {
-                                    is UIMessagePart.Text -> {
-                                        add(buildJsonObject {
-                                            put("type", "text")
-                                            put("text", part.text)
-                                        })
-                                    }
-
-                                    is UIMessagePart.Image -> {
-                                        add(buildJsonObject {
-                                            part.encodeBase64().onSuccess { encodedImage ->
-                                                put("type", "image_url")
-                                                put("image_url", buildJsonObject {
-                                                    put("url", encodedImage.base64)
-                                                })
-                                            }.onFailure { e ->
-                                                Log.w(TAG, "encode user image failed: ${part.url}", e)
-                                                put("type", "text")
-                                                put("text", "[图片编码失败: ${part.url} — 需要查看时调用 read_image 工具传入该路径]")
-                                            }
-                                        })
-                                    }
-
-                                    else -> {}
+                    putJsonArray("content") {
+                        usableContent.forEach { part ->
+                            when (part) {
+                                is UIMessagePart.Text -> {
+                                    add(buildJsonObject {
+                                        put("type", "text")
+                                        put("text", part.text)
+                                    })
                                 }
+                                is UIMessagePart.Image -> {
+                                    add(buildJsonObject {
+                                        part.encodeBase64().onSuccess { encodedImage ->
+                                            put("type", "image_url")
+                                            put("image_url", buildJsonObject {
+                                                put("url", encodedImage.base64)
+                                            })
+                                        }.onFailure { e ->
+                                            Log.w(TAG, "encode user image failed: ${part.url}", e)
+                                            put("type", "text")
+                                            put("text", "[图片编码失败: ${part.url} — 需要查看时调用 read_image 工具传入该路径]")
+                                        }
+                                    })
+                                }
+                                else -> {}
                             }
                         }
                     }
                 }
-                tools.isEmpty() && hasReasoning -> {
-                    // 纯思考消息: 思考提升为正文 — content 或 tool_calls 必须至少有一
-                    put("content", reasoningPart.reasoning)
-                }
                 else -> {
-                    // 有 tool_calls: content null 为 OpenAI 规范允许形态
-                    put("content", JsonNull)
+                    // 空内容 (有 tool_calls 或纯思考) — content="" 对齐原版
+                    put("content", "")
                 }
             }
 
@@ -1064,11 +1048,7 @@ class ChatCompletionsAPI(
                             put("id", tool.toolCallId)
                             put("type", "function")
                             put("function", buildJsonObject {
-                                // v4.7.2: 恢复回放 name — 2.5.3 的移除适配 OpenCode Zen,
-                                // 但 Console Go 强校验回放必须带 name ("missing field 'name'"
-                                // / "function.name must not be empty" 用户实证)。全通道取交集。
                                 put("name", tool.toolName)
-                                // 使用 inputAsJson() 归一化，避免流式中断导致的残缺 JSON 被发送
                                 put("arguments", tool.inputAsJson().toString())
                             })
                         })
