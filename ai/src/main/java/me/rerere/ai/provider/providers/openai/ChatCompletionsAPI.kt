@@ -337,6 +337,14 @@ class ChatCompletionsAPI(
                                         var delta = parseMessage(message)
                                         if (delta.parts.any { it is UIMessagePart.Tool }) hasToolCalls = true
                                         if (delta.parts.any { it is UIMessagePart.Text }) hasTextContent = true
+                                        // v4.7.2: chunk 级取证 — 流的每一步可回溯 (用户复现时
+                                        // trace 直接显示 GLM 流的真实形态, 不再靠推断)
+                                        TraceLogger.log(
+                                            "SSE",
+                                            "chunk #$eventCount finish=${finishReason ?: "-"} " +
+                                                "parts=${delta.parts.map { it::class.simpleName }} " +
+                                                "tc=${(choice["delta"] as? JsonObject)?.get("tool_calls")?.let { (it as? JsonArray)?.size } ?: 0}"
+                                        )
                                         // v4.3.0: 增量流 id 回填 (tool_calls index 归属)
                                         val tcArr = (choice["delta"] as? JsonObject)?.get("tool_calls") as? JsonArray
                                         if (tcArr != null) {
@@ -366,13 +374,16 @@ class ChatCompletionsAPI(
                                                 index = 0,
                                                 delta = delta,
                                                 message = null,
-                                                finishReason = lastFinishReason ?: "unknown",
+                                                finishReason = finishReason ?: "unknown",
                                             )
                                         )
                                     }
                                 }
                             }
                             val usage = parseTokenUsage(payload["usage"] as? JsonObject)
+                            usage?.let {
+                                TraceLogger.log("SSE", "usage chunk#$eventCount completion=${it.completionTokens} prompt=${it.promptTokens}")
+                            }
                             val messageChunk = MessageChunk(
                                 id = chunkId,
                                 model = chunkModel,
