@@ -409,13 +409,16 @@ class ToolRouter(
         val display = displayName(domain)
         val desc = getTriggerDescription(domain)
         val keywords = getKeywords(domain)
-        // v3.5.57: 关键词完整展示, 不截断 (此前 8+等N个 与 search_domains 反查
-        // 不一致 — 静态声明与动态数据必须完全同步)
-        val kwText = if (keywords.isEmpty()) "" else " [触发: ${keywords.joinToString("、")}]"
+        // v4.7.15 (用户定版): 域的两个条目正式定性 — [触发描述]=功能解释 (自然语言);
+        // [触发条件]=关键词 (可被 search_domains 搜索; 不同关键词之间用空格隔开)。
+        // v3.5.57: 关键词完整展示, 不截断 (与 search_domains 反查一致)
+        val descPart = if (desc.isBlank()) "" else "[触发描述] $desc"
+        val kwPart = if (keywords.isEmpty()) "" else "[触发条件] ${keywords.joinToString(" ")}"
+        val metaText = listOf(descPart, kwPart).filter { it.isNotEmpty() }.joinToString(" ")
 
         // 统一域标签格式 (v3.5.52): 路径（显示名）— 与 UI/List Domains/invoke_tools 同格式
         val nameText = "`${formatDomainLabel(domain)}`"
-        return "$indent**$nameText** — $desc$kwText"
+        return if (metaText.isEmpty()) "$indent**$nameText**" else "$indent**$nameText** — $metaText"
     }
 
     /**
@@ -541,8 +544,11 @@ class ToolRouter(
                                             val nameText = router.formatDomainLabel(ck)
                                             val desc = router.getTriggerDescription(ck)
                                             val keywords = router.getKeywords(ck)
-                                            val kwText = if (keywords.isEmpty()) "" else " [触发: ${keywords.joinToString("、")}]"
-                                            appendLine("- **`$nameText`**: $desc$kwText")
+                                            // v4.7.15: [触发描述]=功能解释 / [触发条件]=关键词 (空格分隔)
+                                            val descPart = if (desc.isBlank()) "" else "[触发描述] $desc"
+                                            val kwPart = if (keywords.isEmpty()) "" else "[触发条件] ${keywords.joinToString(" ")}"
+                                            val metaText = listOf(descPart, kwPart).filter { it.isNotEmpty() }.joinToString(" ")
+                                            appendLine("- **`$nameText`**: $metaText")
                                         }
                                     }
                                     if (directTools.isNotEmpty()) {

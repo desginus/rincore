@@ -139,8 +139,11 @@ private fun createSearchDomainsTool(
                 val nameText = "`${router.formatDomainLabel(domain)}`"
                 val desc = router.getTriggerDescription(domain)
                 val kws = router.getKeywords(domain)
-                val kwText = if (kws.isEmpty()) "" else " [触发: ${kws.joinToString("、")}]"
-                "- $nameText — $desc$kwText"
+                // v4.7.15: [触发描述]=功能解释 / [触发条件]=关键词 (空格分隔, 可被本工具搜索)
+                val descPart = if (desc.isBlank()) "" else "[触发描述] $desc"
+                val kwPart = if (kws.isEmpty()) "" else "[触发条件] ${kws.joinToString(" ")}"
+                val metaText = listOf(descPart, kwPart).filter { it.isNotEmpty() }.joinToString(" ")
+                "- $nameText — $metaText"
             }
             listOf(UIMessagePart.Text(
                 "匹配 '$query' 的域 (${lines.size} 个):\n" + lines.joinToString("\n")
@@ -420,12 +423,14 @@ private fun deleteDomainTool(
                 val subTotal = view.subtreeCounts[root] ?: rootCount
                 val subNote = if (subs.isNotEmpty() && subTotal != rootCount) "（含子域共 $subTotal 个）" else ""
                 val rootKw = router.getKeywords(root)
-                val kwText = if (rootKw.isEmpty()) "" else " [触发: ${rootKw.joinToString("、")}]"
+                // v4.7.15: [触发条件]=关键词 (空格分隔)
+                val kwText = if (rootKw.isEmpty()) "" else " [触发条件] ${rootKw.joinToString(" ")}"
                 appendLine("- ${router.formatDomainLabel(root)} [${rootCount}个工具]$subNote$kwText")
                 for (sub in subs) {
                     val subCount = view.counts[sub] ?: 0
                     val subKw = router.getKeywords(sub)
-                    val subKwText = if (subKw.isEmpty()) "" else " [触发: ${subKw.joinToString("、")}]"
+                    // v4.7.15: [触发条件]=关键词 (空格分隔)
+                    val subKwText = if (subKw.isEmpty()) "" else " [触发条件] ${subKw.joinToString(" ")}"
                     appendLine("  - ${router.formatDomainLabel(sub)} [${subCount}个工具]$subKwText")
                 }
             }
