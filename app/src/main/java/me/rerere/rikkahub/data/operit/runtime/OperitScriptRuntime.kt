@@ -212,20 +212,36 @@ class OperitScriptRuntime(
                     val p = memParams(args) ?: return err("missing params")
                     val repo = memoryRepositoryProvider() ?: return err("memory bridge unavailable")
                     val title = p["title"] as? String ?: return err("title required")
+                    migrateOrphanMemories(repo)
                     val folder = (p["folderPath"] as? String)?.takeIf { it.isNotBlank() }
-                    val full = buildString {
-                        append("【").append(title).append("】")
-                        if (folder != null) append("（").append(folder).append("）")
-                        append("\n").append(p["content"] as? String ?: "")
-                    }
-                    val mem = kotlinx.coroutines.runBlocking { repo.addMemory("", full) }
-                    ok {
-                        put("data", kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive(mem.id))))
+                    // v4.7.2: 标题唯一性校验 (用户实证: 相同标题重复创建返回新 ID 不报重复)
+                    val existing = kotlinx.coroutines.runBlocking { repo.getGlobalMemories() }
+                        .firstOrNull { it.content.startsWith("【$title】") }
+                    if (existing != null) {
+                        ok {
+                            put("data", kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive(existing.id))))
+                            put("already_exists", JsonPrimitive(true))
+                        }
+                    } else {
+                        val full = buildString {
+                            append("【").append(title).append("】")
+                            if (folder != null) append("（").append(folder).append("）")
+                            append("\n").append(p["content"] as? String ?: "")
+                        }
+                        // v4.7.2 根修: 写入 GLOBAL_MEMORY_ID — 此前写 assistantId="" 而
+                        // update/delete 按 "__global__" 检索, 两个数据源永不相遇
+                        val mem = kotlinx.coroutines.runBlocking {
+                            repo.addMemory(me.rerere.rikkahub.data.repository.MemoryRepository.GLOBAL_MEMORY_ID, full)
+                        }
+                        ok {
+                            put("data", kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive(mem.id))))
+                        }
                     }
                 }
                 "memory.update" -> {
                     val p = memParams(args) ?: return err("missing params")
                     val repo = memoryRepositoryProvider() ?: return err("memory bridge unavailable")
+                    migrateOrphanMemories(repo)
                     val oldTitle = p["oldTitle"] as? String ?: return err("oldTitle required")
                     val newTitle = (p["newTitle"] as? String)?.takeIf { it.isNotBlank() } ?: oldTitle
                     val folder = (p["folderPath"] as? String)?.takeIf { it.isNotBlank() }
@@ -249,6 +265,7 @@ class OperitScriptRuntime(
                 "memory.delete" -> {
                     val p = memParams(args) ?: return err("missing params")
                     val repo = memoryRepositoryProvider() ?: return err("memory bridge unavailable")
+                    migrateOrphanMemories(repo)
                     val title = p["title"] as? String ?: return err("title required")
                     val target = kotlinx.coroutines.runBlocking {
                         repo.getGlobalMemories().firstOrNull { it.content.startsWith("【$title】") }
@@ -271,6 +288,21 @@ class OperitScriptRuntime(
             }
         } catch (e: Throwable) {
             err(e.message ?: e.toString())
+        }
+    }
+
+    // v4.7.2: 存量迁移 — v4.6.7 桥把插件创建的记忆写到 assistantId="" 下,
+    // 而检索按 "__global__", 永不相遇。懒迁移: 读 "" 记录逐条重建到 __global__,
+    // 空列表直接返回 (幂等, 无锁竞态风险)。
+    private fun migrateOrphanMemories(repo: me.rerere.rikkahub.data.repository.MemoryRepository) {
+        runCatching {
+            val orphans = kotlinx.coroutines.runBlocking { repo.getMemoriesOfAssistant("") }
+            orphans.forEach { mem ->
+                kotlinx.coroutines.runBlocking {
+                    repo.addMemory(me.rerere.rikkahub.data.repository.MemoryRepository.GLOBAL_MEMORY_ID, mem.content)
+                    repo.deleteMemory(mem.id)
+                }
+            }
         }
     }
 

@@ -148,14 +148,14 @@ const ExtendedMemoryTools = (function () {
             tags: params.tags,
             callerCardId: resolveCallerCardId(),
         });
-        return { success: result.length > 0, message: '记忆更新完成', data: result };
+        return { success: result.length > 0, message: result.length > 0 ? '记忆更新完成' : '未找到对应记忆 (标题不存在, NODE_NOT_FOUND)', data: result };
     }
     async function delete_memory(params) {
         const result = await Tools.Memory.deleteMemory({
             title: params.title,
             callerCardId: resolveCallerCardId(),
         });
-        return { success: result.length > 0, message: '记忆删除完成', data: result };
+        return { success: result.length > 0, message: result.length > 0 ? '记忆删除完成' : '未找到对应记忆 (标题不存在, NODE_NOT_FOUND)', data: result };
     }
     async function move_memory(params) {
         const titles = params.titles
@@ -167,7 +167,7 @@ const ExtendedMemoryTools = (function () {
             sourceFolderPath: params.source_folder_path,
             callerCardId: resolveCallerCardId(),
         });
-        return { success: result.length > 0, message: '记忆移动完成', data: result };
+        return { success: result.length > 0, message: result.length > 0 ? '记忆移动完成' : '未移动任何记忆 (原生记忆无文件夹维度, 能力未启用)', data: result };
     }
     async function link_memories(params) {
         const result = await Tools.Memory.link({
@@ -178,7 +178,7 @@ const ExtendedMemoryTools = (function () {
             description: params.description,
             callerCardId: resolveCallerCardId(),
         });
-        return { success: !!result, message: '记忆链接创建完成', data: result };
+        return { success: !!result, message: !!result ? '记忆链接创建完成' : '链接创建失败 (原生记忆无图谱链接能力, 能力未启用)', data: result };
     }
     async function query_memory_links(params) {
         const result = await Tools.Memory.queryLinks({
@@ -189,7 +189,7 @@ const ExtendedMemoryTools = (function () {
             limit: params.limit,
             callerCardId: resolveCallerCardId(),
         });
-        return { success: !!result, message: '记忆链接查询完成', data: result };
+        return { success: !!result, message: '记忆链接查询完成 (原生记忆无图谱链接, 恒返回空)', data: result };
     }
     async function update_memory_link(params) {
         const result = await Tools.Memory.updateLink({
@@ -202,7 +202,7 @@ const ExtendedMemoryTools = (function () {
             description: params.description,
             callerCardId: resolveCallerCardId(),
         });
-        return { success: !!result, message: '记忆链接更新完成', data: result };
+        return { success: !!result, message: result === true ? '记忆链接更新完成' : '链接更新失败 (图谱链接能力未启用)', data: result };
     }
     async function delete_memory_link(params) {
         const result = await Tools.Memory.deleteLink({
@@ -212,7 +212,7 @@ const ExtendedMemoryTools = (function () {
             linkType: params.link_type,
             callerCardId: resolveCallerCardId(),
         });
-        return { success: result.length > 0, message: '记忆链接删除完成', data: result };
+        return { success: result.length > 0, message: result.length > 0 ? '记忆链接删除完成' : '链接删除失败 (图谱链接能力未启用)', data: result };
     }
     async function update_user_preferences(params) {
         const toolParams = {};

@@ -357,7 +357,8 @@ fun createTaskTool(): Tool = Tool(
                 upActionNow == TaskStateStore.lastObservedActionCounter
             TaskStateStore.stalledStreak = if (upStalledNow) TaskStateStore.stalledStreak + 1 else 0
             TaskStateStore.lastObservedActionCounter = upActionNow
-            val upActionStalled = upStalledNow && TaskStateStore.stalledStreak >= 2
+            // v4.7.2 放松 (用户定版): 连续 3 次纯任务操作合法 — "做完之后统一打对号"
+            val upActionStalled = upStalledNow && TaskStateStore.stalledStreak >= 4
             TaskStateStore.noOpStreak = 0
 
             TaskStateStore.version += 1
@@ -372,7 +373,7 @@ fun createTaskTool(): Tool = Tool(
                 if (stale.isNotEmpty()) {
                     append("⚠️ 「${stale.first().title.take(24)}」已连续 ${TaskStateStore.staleProgressCounts[stale.first().id]} 次更新保持 in_progress 而无完成推进, 疑似空转 — 先完成它或如实回退状态。 ")
                 }
-                if (upActionStalled) append("⚠️ 自上次清单更新以来未执行任何实际动作 (外部工具调用记录未推进)。清单不会自行推进任务 — 立即执行当前进行中任务, 再回来更新状态。 ")
+                if (upActionStalled) append("提示: 自上次清单更新以来未观察到其他工具执行 (连续多次)。若确有实际进展请继续; 若在做完一批后统一打对号属正常节奏, 可忽略本提示。 ")
             }.takeIf { it.isNotBlank() }
             return@Tool listOf(UIMessagePart.Text(
                 JsonInstant.encodeToString(buildJsonObject {
@@ -542,7 +543,7 @@ fun createTaskTool(): Tool = Tool(
             actionNow == TaskStateStore.lastObservedActionCounter
         TaskStateStore.stalledStreak = if (stalledNow) TaskStateStore.stalledStreak + 1 else 0
         TaskStateStore.lastObservedActionCounter = actionNow
-        val actionStalled = stalledNow && TaskStateStore.stalledStreak >= 2
+        val actionStalled = stalledNow && TaskStateStore.stalledStreak >= 4
 
         // ST-1: removed 报告; ST-2: 回退警示; DL-2: 振荡检测
         val removed = TaskStateStore.snapshot.map { it.id }.filter { newId -> parsed.none { it.id == newId } }
@@ -576,7 +577,7 @@ fun createTaskTool(): Tool = Tool(
                 val t = staleTasks.first()
                 append("⚠️ 「${t.title.take(24)}」已连续 ${TaskStateStore.staleProgressCounts[t.id]} 次清单更新保持 in_progress 而无完成推进, 疑似空转 — 先完成它或如实回退状态。 ")
             }
-            if (actionStalled) append("⚠️ 自上次清单更新以来未执行任何实际动作 (外部工具调用记录未推进)。清单不会自行推进任务 — 立即执行当前进行中任务, 再回来更新状态。 ")
+            if (actionStalled) append("提示: 自上次清单更新以来未观察到其他工具执行 (连续多次)。若确有实际进展请继续; 若在做完一批后统一打对号属正常节奏, 可忽略本提示。 ")
         }.takeIf { it.isNotBlank() }
 
         val hint = hintFor(firstInProgressTitle, inProgress, completed, total, extra)
