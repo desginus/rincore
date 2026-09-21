@@ -1408,13 +1408,6 @@ class GenerationHandler(
                 if (!isServer) throw e
                 Log.w(TAG, "HttpException 5xx fallback — converting to IOException for retry chain: ${e.message}")
                 throw java.io.IOException(e.message ?: "server error", e)
-            } catch (e: me.rerere.ai.provider.providers.openai.OpenCodeStreamUnconfirmedException) {
-                // v3.8.32: OpenCode Zen 无完成信号关流 (ox 系等) — 服务端已完成或
-                // 中途掐断在信号层面无法区分。保留已生成内容 (已随 chunk 流入
-                // messages), 不回滚不重试, 交上层明确报错 — 杜绝静默截断。
-                Log.w(TAG, "stream unconfirmed (${e.message}) — keep partial content, no retry")
-                onUpdateMessages(messages)
-                throw e
             } catch (e: java.io.IOException) {
                 // 4.0.0 重写: 重试策略全部收敛至 RetryPolicy.kt (策略对象模式),
                 // 本处只保留职责原语: 分类 → 判决 → 回滚/delay/continue 或 终态抛出。
