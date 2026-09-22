@@ -6,6 +6,11 @@ package me.rerere.rikkahub.ui.pages.setting
  * ───────────────────────────────────────────────────────────────*/
 import android.content.ClipData
 import androidx.compose.foundation.Canvas
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -433,8 +438,7 @@ private fun CustomThemeEditSheet(
                     text = stringResource(R.string.setting_theme_page_primary_color),
                     style = MaterialTheme.typography.titleSmall,
                 )
-                PresetColorRow(
-                    colors = PresetThemeColors,
+                HueSliderRow(
                     selectedArgb = currentTheme.primaryColorArgb,
                     onSelect = { currentTheme = currentTheme.copy(primaryColorArgb = it) },
                 )
@@ -443,8 +447,7 @@ private fun CustomThemeEditSheet(
                     text = stringResource(R.string.setting_theme_page_secondary_color),
                     style = MaterialTheme.typography.titleSmall,
                 )
-                PresetColorRow(
-                    colors = PresetThemeColors,
+                HueSliderRow(
                     selectedArgb = currentTheme.secondaryColorArgb,
                     onSelect = { currentTheme = currentTheme.copy(secondaryColorArgb = it) },
                 )
@@ -453,8 +456,7 @@ private fun CustomThemeEditSheet(
                     text = stringResource(R.string.setting_theme_page_tertiary_color),
                     style = MaterialTheme.typography.titleSmall,
                 )
-                PresetColorRow(
-                    colors = PresetThemeColors,
+                HueSliderRow(
                     selectedArgb = currentTheme.tertiaryColorArgb,
                     onSelect = { currentTheme = currentTheme.copy(tertiaryColorArgb = it) },
                 )
@@ -535,68 +537,51 @@ private fun ImportThemeDialog(
     )
 }
 
-// v4.8.8: 预设色板 — 直接点选固定色, 不再使用 HSL 调色盘 (用户定版:
-// "直接让用户去选择最后展示的3个颜色, 而不是去搭配素材调色盘")。
-private val PresetThemeColors = listOf(
-    0xFF2563EB, // 蓝
-    0xFF0891B2, // 青
-    0xFF0D9488, // 蓝绿
-    0xFF16A34A, // 绿
-    0xFF65A30D, // 橄榄
-    0xFF8A6A16, // 琥珀
-    0xFFEA580C, // 橙
-    0xFFDC2626, // 红
-    0xFFE11D48, // 玫红
-    0xFF8B7D9B, // 莫兰迪紫
-    0xFF7C3AED, // 紫
-    0xFF78716C, // 棕灰
-    0xFF565A61, // 中性灰
-    0xFF16181D, // 近黑
-    0xFFFFFFFF, // 白
-)
+// v4.8.9: 色相渐变条 — 拖动/点击高效选色 (用户定版: "弄成颜色条, 可以
+// 高效搭配组合"); 替换 v4.8.8 的固定色块行。饱和/亮度固定为柔和档
+// (S=0.62, L=0.55), 色调任意拖选。
 
-/**
- * v4.8.8: 预设色板选择行 — 主色/辅色/点缀色三处统一为"点选固定色块"。
- * 选中态: 主色描边 + 对勾; 未选态: 细描边。
- */
+/** 色相分数 (0..1) → 柔和主题色 ARGB。 */
+private fun hueFractionToArgb(frac: Float): Long {
+    val hue = frac.coerceIn(0f, 1f) * 360f
+    return Color.hsl(hue, 0.62f, 0.55f).toArgb().toLong() and 0xFFFFFFFFL
+}
+
 @Composable
-private fun PresetColorRow(
-    colors: List<Long>,
+private fun HueSliderRow(
     selectedArgb: Long?,
     onSelect: (Long) -> Unit,
 ) {
-    Row(
+    val hueColors = remember {
+        List(25) { i -> Color.hsl((i * 15f) % 360f, 0.62f, 0.55f) }
+    }
+    Canvas(
         modifier = Modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        colors.forEach { argb ->
-            val isSelected = selectedArgb != null && (selectedArgb and 0xFFFFFFFFL) == argb
-            Box(
-                modifier = Modifier
-                    .size(34.dp)
-                    .clip(CircleShape)
-                    .background(Color(argb.toInt()))
-                    .border(
-                        width = if (isSelected) 2.5.dp else 1.dp,
-                        color = if (isSelected) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.outlineVariant,
-                        shape = CircleShape,
-                    )
-                    .clickable { onSelect(argb) },
-                contentAlignment = Alignment.Center,
-            ) {
-                if (isSelected) {
-                    Icon(
-                        HugeIcons.Tick01,
-                        null,
-                        tint = if (argb == 0xFFFFFFFF) Color(0xFF16181D) else Color.White,
-                        modifier = Modifier.size(16.dp),
-                    )
+            .height(40.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .pointerInput(Unit) {
+                detectTapGestures { offset ->
+                    onSelect(hueFractionToArgb(offset.x / size.width))
                 }
             }
+            .pointerInput(Unit) {
+                detectDragGestures { change, _ ->
+                    onSelect(hueFractionToArgb(change.position.x / size.width))
+                }
+            },
+    ) {
+        drawRoundRect(
+            brush = Brush.horizontalGradient(colors = hueColors),
+            cornerRadius = CornerRadius(size.height / 2f),
+        )
+        if (selectedArgb != null) {
+            val selArgb = selectedArgb.toInt()
+            val hsl = FloatArray(3).also { ColorUtils.colorToHSL(selArgb, it) }
+            val x = (hsl[0].coerceIn(0f, 360f) / 360f) * size.width
+            val cy = size.height / 2f
+            drawCircle(Color.White, radius = size.height * 0.40f, center = Offset(x, cy))
+            drawCircle(Color(selArgb), radius = size.height * 0.32f, center = Offset(x, cy))
         }
     }
 }

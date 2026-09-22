@@ -471,6 +471,7 @@ private fun ChatPageContent(
             bottomBar = {
                 val messageQueue by vm.messageQueue.collectAsStateWithLifecycle()
                 val voiceState by vm.voiceSession.state.collectAsStateWithLifecycle()
+                val compressBlocking by vm.compressing.collectAsStateWithLifecycle()
                 ChatInput(
                     hazeState = hazeState,
                     onStartVoiceMode = onStartVoiceMode,
@@ -483,6 +484,7 @@ private fun ChatPageContent(
                     onFinishEditQueuedMessage = vm::finishEditQueuedMessage,
                     onResumeMessageQueue = vm::resumeMessageQueue,
                     loading = loadingJob != null,
+                    sendBlocked = compressBlocking,
                     settings = setting,
                     completionProviders = completionProviders,
                     onCancelClick = {
@@ -554,33 +556,6 @@ private fun ChatPageContent(
             // "后台运行", 此条随本对话可见; 切走其他对话/工作区完全自由。
             val compressing by vm.compressing.collectAsStateWithLifecycle()
             Box(modifier = Modifier.fillMaxSize()) {
-            if (compressing) {
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(innerPadding)
-                        .padding(top = 8.dp),
-                    shape = RoundedCornerShape(50),
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    tonalElevation = 4.dp,
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .clickable { vm.cancelCompress() }
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Text("正在压缩上下文…", style = MaterialTheme.typography.labelMedium)
-                        // v4.8.8: 取消入口 — 点击整条取消压缩
-                        Icon(
-                            HugeIcons.Cancel01, null,
-                            modifier = Modifier.size(14.dp),
-                        )
-                    }
-                }
-            }
             ChatList(
                 innerPadding = innerPadding,
                 hazeState = hazeState,
@@ -656,6 +631,35 @@ private fun ChatPageContent(
                     vm.saveConversationAsync()
                 },
             )
+            // v4.8.9: 提示条移至 ChatList 之后声明 — Compose Box 中后声明者绘制在上层,
+            // 此前在 ChatList 前声明导致被消息列表覆盖 (用户实证"小弹窗被消息覆盖")。
+            if (compressing) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(innerPadding)
+                        .padding(top = 8.dp),
+                    shape = RoundedCornerShape(50),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    tonalElevation = 4.dp,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .clickable { vm.cancelCompress() }
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Text("正在压缩上下文…", style = MaterialTheme.typography.labelMedium)
+                        // v4.8.8: 取消入口 — 点击整条取消压缩
+                        Icon(
+                            HugeIcons.Cancel01, null,
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
+                }
+            }
             }
         }
         } // LocalHazeState provider 闭合

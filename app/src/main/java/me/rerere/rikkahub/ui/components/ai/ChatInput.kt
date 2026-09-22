@@ -129,6 +129,8 @@ import androidx.compose.runtime.setValue
 fun ChatInput(
     state: ChatInputState,
     loading: Boolean,
+    // v4.8.9: 压缩中禁止发送 (防打断压缩 — 用户定版); 由 ChatPage 传入
+    sendBlocked: Boolean = false,
     settings: Settings,
     modifier: Modifier = Modifier,
     completionProviders: List<ChatCompletionProvider> = emptyList(),
@@ -330,6 +332,7 @@ fun ChatInput(
                                     SendButton(
                                         loading = loading,
                                         empty = state.isEmpty(),
+                                        blocked = sendBlocked,
                                         onClick = { sendMessage() },
                                         onLongClick = { sendMessageWithoutAnswer() },
                                     )
@@ -393,6 +396,7 @@ fun ChatInput(
                                     SendButton(
                                         loading = loading,
                                         empty = state.isEmpty(),
+                                        blocked = sendBlocked,
                                         onClick = { sendMessage() },
                                         onLongClick = { sendMessageWithoutAnswer() },
                                     )
@@ -416,19 +420,21 @@ fun ChatInput(
 private fun SendButton(
     loading: Boolean,
     empty: Boolean,
+    blocked: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val showStop = loading && empty
+    // v4.8.9: blocked (压缩中) — 视觉禁用 (灰) + 点击无效
     val containerColor = when {
         showStop -> MaterialTheme.colorScheme.errorContainer
-        empty -> MaterialTheme.colorScheme.surfaceContainerHigh
+        blocked || empty -> MaterialTheme.colorScheme.surfaceContainerHigh
         else -> MaterialTheme.colorScheme.primary
     }
     val contentColor = when {
         showStop -> MaterialTheme.colorScheme.onErrorContainer
-        empty -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+        blocked || empty -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
         else -> MaterialTheme.colorScheme.onPrimary
     }
     Box(
@@ -438,7 +444,7 @@ private fun SendButton(
             .testTag("chat_send_button")
             .clip(CircleShape)
             .combinedClickable(
-                enabled = showStop || !empty,
+                enabled = (showStop || !empty) && !blocked,
                 onClick = onClick,
                 onLongClick = onLongClick,
             )

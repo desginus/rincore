@@ -213,6 +213,8 @@ class ChatVM(
      */
     fun handleMessageSend(content: List<UIMessagePart>,answer: Boolean = true) {
         if (content.isEmptyInputMessage()) return
+        // v4.8.9: 压缩中禁止发送 (防打断压缩 — 用户定版); UI 层按钮已禁用, 此处兜底
+        if (_compressing.value) return
         analytics.logEvent("ai_send_message", null)
 
         // v3.6.13: 延迟自动回复 — 开启时发送不触发模型回复 (消息排队,
