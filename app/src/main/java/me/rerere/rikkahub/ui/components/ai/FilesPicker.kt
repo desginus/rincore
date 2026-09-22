@@ -143,6 +143,51 @@ internal fun FilesPicker(
             .fillMaxWidth()
             .padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // v4.8.7: 压缩留存管理上移 — 由原第二/三行之间挪至工具栏最顶部
+        // (用户定版: 位置统一管理; 仅当存在压缩留存/压缩上下文时显示, 否则无此 UI)。
+        // v3.8.13: 压缩后显示, 点击弹出留存位点列表 (查看原文 / 从此位点恢复, 级联撤销)
+        val retentions = conversation.compressRetentions
+        if (retentions.isNotEmpty() || conversation.compressedContext != null) {
+            var showRetentionDialog by remember { mutableStateOf(false) }
+            Surface(
+                onClick = { showRetentionDialog = true },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    Icon(
+                        HugeIcons.ArrowTurnBackward,
+                        null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "上下文压缩管理",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+            if (showRetentionDialog) {
+                CompressRetentionDialog(
+                    retentions = retentions,
+                    hasLegacy = conversation.compressedContext != null && retentions.isEmpty(),
+                    legacyNodes = conversation.compressedContext?.savedMessageNodes,
+                    onRestore = { index ->
+                        onRestoreCompressAt(index)
+                        showRetentionDialog = false
+                    },
+                    onDismiss = { showRetentionDialog = false },
+                )
+            }
+        }
+
         // Row 1: 照片, 技能, 上传文件, 拍照
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -196,49 +241,6 @@ internal fun FilesPicker(
             }, modifier = Modifier.weight(1f))
         }
 
-        // v3.8.13: 压缩留存管理 — 压缩后显示, 点击弹出留存位点列表
-        // (查看原文 / 从此位点恢复, 级联撤销其后的压缩)
-        val retentions = conversation.compressRetentions
-        if (retentions.isNotEmpty() || conversation.compressedContext != null) {
-            var showRetentionDialog by remember { mutableStateOf(false) }
-            Surface(
-                onClick = { showRetentionDialog = true },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
-                ) {
-                    Icon(
-                        HugeIcons.ArrowTurnBackward,
-                        null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "上下文压缩管理",
-                        color = MaterialTheme.colorScheme.onSurface,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-            }
-            if (showRetentionDialog) {
-                CompressRetentionDialog(
-                    retentions = retentions,
-                    hasLegacy = conversation.compressedContext != null && retentions.isEmpty(),
-                    legacyNodes = conversation.compressedContext?.savedMessageNodes,
-                    onRestore = { index ->
-                        onRestoreCompressAt(index)
-                        showRetentionDialog = false
-                    },
-                    onDismiss = { showRetentionDialog = false },
-                )
-            }
-        }
         val boundWorkspace = remember(workspaces, assistant.workspaceId) {
             workspaces.find { it.id == assistant.workspaceId?.toString() }
         }

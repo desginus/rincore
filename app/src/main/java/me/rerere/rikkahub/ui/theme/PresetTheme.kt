@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import me.rerere.rikkahub.ui.theme.presets.AutumnThemePreset
 import me.rerere.rikkahub.ui.theme.presets.BlackThemePreset
 import me.rerere.rikkahub.ui.theme.presets.ClaudeThemePreset
+import me.rerere.rikkahub.ui.theme.presets.DefaultThemePreset
 import me.rerere.rikkahub.ui.theme.presets.MinimalThemePreset
 import me.rerere.rikkahub.ui.theme.presets.OceanThemePreset
 import me.rerere.rikkahub.ui.theme.presets.SakuraThemePreset
@@ -33,6 +34,8 @@ val PresetThemes by lazy {
         AutumnThemePreset,
         BlackThemePreset,
         MinimalThemePreset,
+        // v4.8.7: 「默认」— 极简白同构色板, tertiary 系换莫兰迪紫
+        DefaultThemePreset,
         ClaudeThemePreset,
     )
 }
