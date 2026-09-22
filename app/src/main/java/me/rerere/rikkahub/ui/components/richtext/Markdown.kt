@@ -322,6 +322,26 @@ private fun splitStableSegments(content: String): List<String> {
     return out
 }
 
+/**
+ * v4.7.25: Markdown 解析结果全进程 LRU 缓存 — "只渲染一次"根治。
+ * 同一内容 (整消息或分段) 全程仅解析一次: 再次组合 (进入对话 / 滚动回收
+ * 重建 / 页面返回) 时首帧同步命中, 直接呈现最终 AST — 无"纯文本→AST"
+ * 过渡 → 消除消息抽动。写入门槛: 单条 >128KB 不缓存 (防巨型文本占内存)。
+ */
+private object MarkdownParseCache {
+    private const val MAX_ENTRIES = 128
+    private const val MAX_KEY_CHARS = 128 * 1024
+    private val cache = object : LinkedHashMap<String, MarkdownParseResult>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MarkdownParseResult>?): Boolean =
+            size > MAX_ENTRIES
+    }
+    fun get(key: String): MarkdownParseResult? = synchronized(cache) { cache[key] }
+    fun put(key: String, value: MarkdownParseResult) {
+        if (key.length > MAX_KEY_CHARS) return
+        synchronized(cache) { cache[key] = value }
+    }
+}
+
 @Composable
 private fun MarkdownBlockCore(
     content: String,
@@ -333,15 +353,19 @@ private fun MarkdownBlockCore(
     // LazyColumn 滑动回收重建条目时反复同步解析 → 滑动卡顿不跟手。
     // v3.6.84: 回滚 v3.6.81 live 流式降级 — 用户要求输出一点渲染一点,
     // 流式期间必须持续解析渲染, 不得攒到完成后统一渲染
-    var (data, setData) = remember { mutableStateOf<MarkdownParseResult?>(null) }
+    // v4.7.25: 初值直接查缓存 — 命中时首帧即最终形态 (无过渡抽动)
+    var (data, setData) = remember { mutableStateOf(MarkdownParseCache.get(content)) }
 
     // 监听内容变化，重新解析AST树
     // 这里在后台线程解析AST树, 防止频繁更新的时候掉帧
+    // v4.7.25: 解析前先查缓存 (命中零解析直接返回) — 同一内容全进程只解析一次
     val updatedContent by rememberUpdatedState(content)
     LaunchedEffect(Unit) {
         snapshotFlow { updatedContent }
             .distinctUntilChanged()
-            .mapLatest { parseMarkdown(it) }
+            .mapLatest { c ->
+                MarkdownParseCache.get(c) ?: parseMarkdown(c).also { MarkdownParseCache.put(c, it) }
+            }
             .catch { exception -> exception.printStackTrace() }
             .flowOn(Dispatchers.Default)
             .collect { setData(it) }
