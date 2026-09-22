@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+# rin — RinCore 沙箱回连工具 (软件-沙箱一体化桥客户端)
+# 通过 loopback HTTP 桥 (127.0.0.1:17526) 调用 RinCore 软件侧能力:
+#   通知 / 吐司 / 剪贴板 / AI / 打开 / 分享 / 信息 / 日志
+# 用法: rin <命令> [参数]   |  rin help
+import json
+import os
+import sys
+import urllib.request
+
+BRIDGE = os.environ.get("RIN_BRIDGE_URL", "http://127.0.0.1:17526")
+TOKEN_FILE = os.environ.get("RIN_TOKEN_FILE", "/workspace/.rin-bridge/token")
+
+USAGE = """rin — RinCore 沙箱回连工具
+
+命令:
+  rin health                       探测桥连通性
+  rin info                         设备/软件信息 (JSON)
+  rin notify <标题> [内容...]      发系统通知 (可后台, 息屏可见)
+  rin toast <内容...>              应用内轻提示
+  rin clip get                     读取剪贴板
+  rin clip set <文本...>           写入剪贴板
+  rin ai <提示...>                 调用当前模型处理 (直接输出回复文本)
+  rin ai -                         从 stdin 读取提示 (管道友好)
+  rin ai --system <系统> <提示...> 带系统提示
+  rin open <url或uri>              打开链接 / 唤起其他应用
+  rin share <文本...>              调起系统分享面板
+  rin log <文本...>                写 RinCore 日志 (调试)
+
+示例:
+  rin notify "任务完成" "爬虫已抓取 1200 条"
+  result=$(rin ai "用一句话总结: $(cat data.txt)")
+  cat log.txt | rin ai - | tee summary.md
+"""
+
+
+def _token():
+    try:
+        with open(TOKEN_FILE, "r") as f:
+            return f.read().strip()
+    except Exception:
+        return ""
+
+
+def _call(path, payload=None, timeout=300):
+    url = BRIDGE + path
+    if payload is None:
+        req = urllib.request.Request(url, method="GET")
+    else:
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request(url, data=data, method="POST")
+    req.add_header("Content-Type", "application/json")
+    req.add_header("X-Rin-Token", _token())
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e)}
+
+
+def _fail(msg):
+    sys.stderr.write("rin: %s\n" % msg)
+    return 1
+
+
+def main():
+    args = sys.argv[1:]
+    if not args or args[0] in ("help", "-h", "--help"):
+        sys.stdout.write(USAGE)
+        return 0
+
+    cmd = args[0]
+    rest = args[1:]
+
+    if cmd == "health":
+        r = _call("/health", None, timeout=10)
+        print(json.dumps(r, ensure_ascii=False))
+        return 0 if r.get("ok") else 1
+
+    if cmd == "info":
+        r = _call("/info", None, timeout=10)
+        print(json.dumps(r, ensure_ascii=False, indent=2))
+        return 0 if r.get("ok") else 1
+
+    if cmd == "notify":
+        if not rest:
+            return _fail("notify 需要标题")
+        title = rest[0]
+        body = " ".join(rest[1:]) if len(rest) > 1 else ""
+        r = _call("/notify", {"title": title, "body": body})
+        return 0 if r.get("ok") else _fail(r.get("error", "notify failed"))
+
+    if cmd == "toast":
+        if not rest:
+            return _fail("toast 需要内容")
+        r = _call("/toast", {"text": " ".join(rest)})
+        return 0 if r.get("ok") else _fail(r.get("error", "toast failed"))
+
+    if cmd == "clip":
+        if not rest:
+            return _fail("clip 需要 get 或 set")
+        if rest[0] == "get":
+            r = _call("/clipboard", {"op": "get"})
+            if r.get("ok"):
+                sys.stdout.write(r.get("text", ""))
+                return 0
+            return _fail(r.get("error", "clip get failed"))
+        if rest[0] == "set":
+            r = _call("/clipboard", {"op": "set", "text": " ".join(rest[1:])})
+            return 0 if r.get("ok") else _fail(r.get("error", "clip set failed"))
+        return _fail("clip 需要 get 或 set")
+
+    if cmd == "ai":
+        system = None
+        if rest and rest[0] == "--system":
+            if len(rest) < 3:
+                return _fail("ai --system 需要 <系统> <提示>")
+            system = rest[1]
+            prompt = " ".join(rest[2:])
+        elif rest and rest[0] == "-":
+            prompt = sys.stdin.read()
+        else:
+            prompt = " ".join(rest)
+        if not prompt.strip():
+            return _fail("ai 需要提示文本 (或 - 从 stdin 读取)")
+        payload = {"prompt": prompt}
+        if system:
+            payload["system"] = system
+        r = _call("/ai", payload, timeout=int(os.environ.get("RIN_TIMEOUT", "300")))
+        if r.get("ok"):
+            sys.stdout.write(r.get("text", ""))
+            sys.stdout.write("\n")
+            return 0
+        return _fail(r.get("error", "ai failed"))
+
+    if cmd == "open":
+        if not rest:
+            return _fail("open 需要目标 url/uri")
+        r = _call("/open", {"target": rest[0]})
+        return 0 if r.get("ok") else _fail(r.get("error", "open failed"))
+
+    if cmd == "share":
+        if not rest:
+            return _fail("share 需要文本")
+        r = _call("/share", {"text": " ".join(rest)})
+        return 0 if r.get("ok") else _fail(r.get("error", "share failed"))
+
+    if cmd == "log":
+        r = _call("/log", {"text": " ".join(rest)})
+        return 0 if r.get("ok") else _fail(r.get("error", "log failed"))
+
+    return _fail("未知命令: %s (试 rin help)" % cmd)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
