@@ -68,6 +68,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.dokar.sonner.ToastType
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.ui.UIMessagePart
@@ -98,6 +100,7 @@ import me.rerere.rikkahub.ui.components.ai.rememberChatAttachmentPickerActions
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.context.Navigator
+import me.rerere.rikkahub.ui.components.richtext.prewarmMarkdownCache
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.useEditState
@@ -240,6 +243,18 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
                     if (existing.isBlank()) decodedText else "$existing\n$decodedText"
                 )
             }
+        }
+    }
+
+    // v4.8.1: 进入对话预解析预热 — 后台批量解析最近消息 Markdown 填缓存,
+    // 首帧组合命中缓存零解析, 消除进入瞬间的集中解析卡顿 (用户: 渲染负担过重)。
+    LaunchedEffect(conversation.id) {
+        val texts = conversation.messageNodes.asReversed().take(30)
+            .flatMap { node -> node.messages }
+            .flatMap { msg -> msg.parts.filterIsInstance<UIMessagePart.Text>() }
+            .map { it.text }
+        if (texts.isNotEmpty()) {
+            withContext(Dispatchers.Default) { prewarmMarkdownCache(texts) }
         }
     }
 

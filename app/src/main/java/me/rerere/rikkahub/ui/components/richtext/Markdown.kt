@@ -130,6 +130,11 @@ val THINKING_REGEX = Regex("<think>([\\s\\S]*?)(?:</think>|$)", RegexOption.DOT_
 private val CODE_BLOCK_REGEX = Regex("```[\\s\\S]*?```|`[^`\n]*`", RegexOption.DOT_MATCHES_ALL)
 private val BREAK_LINE_REGEX = Regex("(?i)<br\\s*/?>")
 private val LATEX_BLOCK_LINE_BREAK_REGEX = Regex("""[ \t]*\r?\n[ \t]*""")
+// v4.8.1: 热路径正则预编译 — 原为 preProcess 内每次调用现场 Regex() 构造 (JVM 每次
+// 编译 pattern), 进入对话首帧集中解析时是主要 CPU 开销之一; 提为顶层常量仅编译一次。
+private val MATH_SEG_REGEX = Regex("\\$\\$[\\s\\S]*?\\$\\$|\\$[^$\\n]*\\$")
+private val SINGLE_TILDE_REGEX = Regex("(?<!~)~(?!~)")
+private val MATH_RESTORE_REGEX = Regex("\\u0000MATH(\\d+)\\u0000")
 
 // 预处理markdown内容
 private fun preProcess(content: String): String {
@@ -173,20 +178,19 @@ private fun preProcess(content: String): String {
     // v4.5.14: 公式段区分 — 公式语境统一转 LaTeX 标准命令 \sim
     // (jlatexmath 对 Unicode ∼ 的支持未验证, \sim 是核心符号必支持),
     // 文本语境保持 ∼ 字符; 代码块内 $ 段不占位 (isInCodeBlock 原样)。
-    val mathSegRegex = Regex("\\$\\$[\\s\\S]*?\\$\\$|\\$[^$\\n]*\\$")
     val mathSegs = mutableListOf<String>()
-    val withMathPlaceholder = mathSegRegex.replace(result) { m ->
+    val withMathPlaceholder = MATH_SEG_REGEX.replace(result) { m ->
         if (isInCodeBlock(m.range.first)) m.value
         else {
             mathSegs.add(m.value)
             "\u0000MATH${mathSegs.size - 1}\u0000"
         }
     }
-    val textDone = Regex("(?<!~)~(?!~)").replace(withMathPlaceholder) { m ->
+    val textDone = SINGLE_TILDE_REGEX.replace(withMathPlaceholder) { m ->
         if (isInCodeBlock(m.range.first)) m.value else "\u223C"
     }
-    result = Regex("\u0000MATH(\\d+)\u0000").replace(textDone) { m ->
-        mathSegs[m.groupValues[1].toInt()].replace(Regex("(?<!~)~(?!~)"), "\\sim")
+    result = MATH_RESTORE_REGEX.replace(textDone) { m ->
+        mathSegs[m.groupValues[1].toInt()].replace(SINGLE_TILDE_REGEX, "\\sim")
     }
 
     return result
@@ -247,6 +251,42 @@ private data class MarkdownParseResult(
     val hasHtml: Boolean,
 )
 
+/**
+ * v4.8.1: 解析结果 LRU 缓存 — 使"进入对话/滚动历史不卡顿"与"无抽动"同时成立:
+ * 命中时首帧同步即终态 (零解析零过渡); 未命中时首帧同步解析 (对齐原版形态,
+ * 无占位过渡) 并写缓存 — 同一内容全进程只付出一次同步解析成本。
+ */
+private object MarkdownParseCache {
+    private const val MAX_ENTRIES = 128
+    private const val MAX_KEY_CHARS = 128 * 1024
+    private val cache = object : LinkedHashMap<String, MarkdownParseResult>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MarkdownParseResult>?): Boolean =
+            size > MAX_ENTRIES
+    }
+    fun get(key: String): MarkdownParseResult? = synchronized(cache) { cache[key] }
+    fun put(key: String, value: MarkdownParseResult) {
+        if (key.length > MAX_KEY_CHARS) return
+        synchronized(cache) { cache[key] = value }
+    }
+    fun parseWithCache(content: String): MarkdownParseResult =
+        get(content) ?: parseMarkdown(content).also { put(content, it) }
+}
+
+/**
+ * v4.8.1: 预解析预热 — 进入对话时后台批量解析最近消息文本填缓存, 使首帧组合
+ * (LazyColumn 可见项) 命中缓存零解析, 消除进入瞬间的集中解析卡顿。
+ * 解析为纯函数 (同输入同输出), 后台填充安全; 已在缓存中的不重复解析。
+ * 调用方负责后台线程 (Dispatchers.Default)。
+ */
+fun prewarmMarkdownCache(texts: List<String>) {
+    for (t in texts) {
+        if (t.isBlank() || t.length > 128 * 1024) continue
+        if (MarkdownParseCache.get(t) == null) {
+            MarkdownParseCache.put(t, parseMarkdown(t))
+        }
+    }
+}
+
 private fun ASTNode.containsHtml(): Boolean {
     if (type == MarkdownElementTypes.HTML_BLOCK || type == MarkdownTokenTypes.HTML_TAG) return true
     return children.any { it.containsHtml() }
@@ -269,7 +309,9 @@ fun MarkdownBlock(
     style: TextStyle = LocalTextStyle.current,
     onClickCitation: (String) -> Unit = {}
 ) {
-    var (data, setData) = remember { mutableStateOf(parseMarkdown(content)) }
+    // v4.8.1: 首帧查缓存 (命中零解析) — 未命中同步解析并写缓存 (对齐原版首帧终态,
+    // 无占位过渡); 消除进入对话/滚动历史时的重复解析卡顿。
+    var (data, setData) = remember { mutableStateOf(MarkdownParseCache.parseWithCache(content)) }
 
     // 监听内容变化，重新解析AST树
     // 这里在后台线程解析AST树, 防止频繁更新的时候掉帧
@@ -277,7 +319,7 @@ fun MarkdownBlock(
     LaunchedEffect(Unit) {
         snapshotFlow { updatedContent }
             .distinctUntilChanged()
-            .mapLatest { parseMarkdown(it) }
+            .mapLatest { MarkdownParseCache.parseWithCache(it) }
             .catch { exception -> exception.printStackTrace() }
             .flowOn(Dispatchers.Default)
             .collect { setData(it) }

@@ -203,7 +203,11 @@ class RikkaHubApp : Application() {
         startWebServerIfEnabled()
         // v4.8.0: 沙箱一体化桥 — 无条件启动 (loopback only, 端口 17526),
         // 供沙箱内进程/脚本 (rin 命令) 回连软件侧能力 (通知/AI/剪贴板/打开/分享).
-        runCatching { me.rerere.rikkahub.sandbox.SandboxBridgeServer.start(this) }
+        // v4.8.1: 挪 IO 后台线程 — token 文件 IO + Ktor 初始化不再阻塞主线程
+        // (用户实证: v4.8.0 启动首页黑屏/卡顿; 铁律"主线程禁 file IO")。
+        get<AppScope>().launch(Dispatchers.IO) {
+            runCatching { me.rerere.rikkahub.sandbox.SandboxBridgeServer.start(this@RikkaHubApp) }
+        }
         startWorkflowRegistry()
 
         // AgentRun boot recovery — flip stranded in-flight runs to process_lost
