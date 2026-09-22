@@ -55,7 +55,8 @@ object RinGlass {
      * blurRadius 4dp: 4.3 时代参数 (v3.6.82 起: 8->4dp, 120Hz GPU 采样开销优化),
      * 即用户认可的"原生款"。
      */
-    val blurStyle: HazeBlurStyle = HazeBlurStyle.Material3 {
+    @Composable
+    fun blurStyle(): HazeBlurStyle = HazeBlurStyle.Material3 {
         blurRadius(4.dp)
     }
 
@@ -76,6 +77,7 @@ object RinGlass {
  * @param blurEnabled 用户设置 displaySetting.enableBlurEffect; false = 半透明回退
  * @param shape 裁剪形状 (玻璃必须与容器同 shape, 否则模糊溢出)
  */
+@Composable
 fun Modifier.rinGlass(
     hazeState: HazeState?,
     blurEnabled: Boolean = true,
@@ -85,7 +87,7 @@ fun Modifier.rinGlass(
     .then(
         if (blurEnabled && hazeState != null) Modifier.hazeBlur(
             input = HazeInput.Sources(hazeState),
-            style = RinGlass.blurStyle,
+            style = RinGlass.blurStyle(),
         ) else Modifier
     )
     .background(

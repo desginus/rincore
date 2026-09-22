@@ -154,7 +154,7 @@ fun ChatInput(
     val hazeTintColor = MaterialTheme.colorScheme.surfaceContainerLow
     // v4.7.22: 玻璃规格收敛到 RinGlass 单一来源 (4.3 时代原生款: hazeBlur 4dp)。
     // 全 app 玻璃件 (输入框/弹窗/悬浮工具条/附件面板) 共用同一规格, 防参数漂移。
-    val inputHazeStyle = RinGlass.blurStyle
+    val inputHazeStyle = RinGlass.blurStyle()
     val assistant = settings.getCurrentAssistant()
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current

@@ -911,6 +911,12 @@ class ChatCompletionsAPI(
             "api.moonshot.cn" -> obj {
                 put("thinking", buildJsonObject {
                     put("type", if (!level.isEnabled) "disabled" else "enabled")
+                    // v4.5.31 (#1586) 实现恢复: K2.6 思考开启时 keep=all (保留式思考);
+                    // K2.5 不支持 keep 参数 — 仅对 k2.6 且 enabled 时发送。
+                    // (该修复在 v4.7.7 流处理链回滚时被误一并回退, 此处恢复)
+                    if (level.isEnabled && params.model.modelId.contains("k2.6", ignoreCase = true)) {
+                        put("keep", "all")
+                    }
                 })
             }
             "api.deepseek.com", "opencode.ai" -> {
