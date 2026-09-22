@@ -47,7 +47,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.key
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
@@ -259,16 +258,10 @@ private fun parseMarkdown(content: String): MarkdownParseResult {
     return MarkdownParseResult(preprocessed, astTree, astTree.containsHtml())
 }
 
-/** v4.7.23: 流式分段阈值 — 超长内容启用稳定段分离渲染 */
-private const val STREAM_SPLIT_THRESHOLD = 1200
-
-/**
- * v4.7.23: 流式稳定段分离 —
- * 已完成段落 (以空行 \n\n 为界, 避开未闭合代码围栏) 用内容做 key 独立渲染:
- * 流式增量到来时, 已完成的段落键不变 → 跳过重组/重解析 ("渲染完了就定下");
- * 仅活动尾段 (及刚增长的一段) 参与流式解析渲染。
- * 短内容 (< 阈值) 走原单块路径, 行为分毫不变。
- */
+// v4.7.26: 渲染流程完全对齐原版 RikkaHub (用户定版) —
+// 首帧同步解析 (parseMarkdown 直接作 remember 初值), 首帧即最终 AST,
+// 无"纯文本占位 -> 异步替换"过渡。v4.7.23 分段 / v4.7.25 缓存方案整体撤除
+// (原版形态无进入对话/滚动历史抽动)。
 @Composable
 fun MarkdownBlock(
     content: String,
@@ -276,107 +269,21 @@ fun MarkdownBlock(
     style: TextStyle = LocalTextStyle.current,
     onClickCitation: (String) -> Unit = {}
 ) {
-    if (content.length > STREAM_SPLIT_THRESHOLD) {
-        val segments = remember(content) { splitStableSegments(content) }
-        Column(modifier = modifier) {
-            segments.forEachIndexed { index, segment ->
-                val isLast = index == segments.lastIndex
-                key(if (isLast) "stream-active" else "stable-$index-${segment.hashCode()}") {
-                    MarkdownBlockCore(
-                        content = segment,
-                        modifier = Modifier.fillMaxWidth(),
-                        style = style,
-                        onClickCitation = onClickCitation,
-                    )
-                }
-            }
-        }
-    } else {
-        MarkdownBlockCore(content, modifier, style, onClickCitation)
-    }
-}
-
-/**
- * 稳定段拆分器 — 单遍扫描 O(n):
- * 以空行 (\n\n) 为段界; 代码围栏 (``` / ~~~) 内的空行不拆 (结构安全)。
- * 最后一个返回段 = 活动段 (可能含未闭合围栏), 其余均为语义完整段。
- */
-private fun splitStableSegments(content: String): List<String> {
-    val out = mutableListOf<String>()
-    var start = 0
-    var index = 0
-    var inFence = false
-    while (index < content.length) {
-        when {
-            !inFence && content.startsWith("```", index) -> { inFence = true; index += 3; continue }
-            inFence && content.startsWith("```", index) -> { inFence = false; index += 3; continue }
-            !inFence && content.startsWith("~~~", index) -> { inFence = true; index += 3; continue }
-            inFence && content.startsWith("~~~", index) -> { inFence = false; index += 3; continue }
-            !inFence && content.startsWith("\n\n", index) -> {
-                out.add(content.substring(start, index + 2)); start = index + 2; index += 2; continue
-            }
-        }
-        index++
-    }
-    if (start < content.length) out.add(content.substring(start))
-    return out
-}
-
-/**
- * v4.7.25: Markdown 解析结果全进程 LRU 缓存 — "只渲染一次"根治。
- * 同一内容 (整消息或分段) 全程仅解析一次: 再次组合 (进入对话 / 滚动回收
- * 重建 / 页面返回) 时首帧同步命中, 直接呈现最终 AST — 无"纯文本→AST"
- * 过渡 → 消除消息抽动。写入门槛: 单条 >128KB 不缓存 (防巨型文本占内存)。
- */
-private object MarkdownParseCache {
-    private const val MAX_ENTRIES = 128
-    private const val MAX_KEY_CHARS = 128 * 1024
-    private val cache = object : LinkedHashMap<String, MarkdownParseResult>(64, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MarkdownParseResult>?): Boolean =
-            size > MAX_ENTRIES
-    }
-    fun get(key: String): MarkdownParseResult? = synchronized(cache) { cache[key] }
-    fun put(key: String, value: MarkdownParseResult) {
-        if (key.length > MAX_KEY_CHARS) return
-        synchronized(cache) { cache[key] = value }
-    }
-}
-
-@Composable
-private fun MarkdownBlockCore(
-    content: String,
-    modifier: Modifier = Modifier,
-    style: TextStyle = LocalTextStyle.current,
-    onClickCitation: (String) -> Unit = {}
-) {
-    // v3.6.69: 初次解析异步化 — 此前首帧同步 parseMarkdown 阻塞主线程,
-    // LazyColumn 滑动回收重建条目时反复同步解析 → 滑动卡顿不跟手。
-    // v3.6.84: 回滚 v3.6.81 live 流式降级 — 用户要求输出一点渲染一点,
-    // 流式期间必须持续解析渲染, 不得攒到完成后统一渲染
-    // v4.7.25: 初值直接查缓存 — 命中时首帧即最终形态 (无过渡抽动)
-    var (data, setData) = remember { mutableStateOf(MarkdownParseCache.get(content)) }
+    var (data, setData) = remember { mutableStateOf(parseMarkdown(content)) }
 
     // 监听内容变化，重新解析AST树
     // 这里在后台线程解析AST树, 防止频繁更新的时候掉帧
-    // v4.7.25: 解析前先查缓存 (命中零解析直接返回) — 同一内容全进程只解析一次
     val updatedContent by rememberUpdatedState(content)
     LaunchedEffect(Unit) {
         snapshotFlow { updatedContent }
             .distinctUntilChanged()
-            .mapLatest { c ->
-                MarkdownParseCache.get(c) ?: parseMarkdown(c).also { MarkdownParseCache.put(c, it) }
-            }
+            .mapLatest { parseMarkdown(it) }
             .catch { exception -> exception.printStackTrace() }
             .flowOn(Dispatchers.Default)
             .collect { setData(it) }
     }
 
-    val parsed = data
-    if (parsed == null) {
-        // v3.6.72: 后台解析中显示纯文本 — 此前空占位导致消息高度塌陷,
-        // 发送后消息短暂消失再出现 (3.6.69 异步化引入)
-        Text(text = content, style = style, modifier = modifier)
-    } else if (parsed.hasHtml) {
+    if (data.hasHtml) {
         MarkdownNew(
             content = content,
             modifier = modifier,
@@ -388,9 +295,9 @@ private fun MarkdownBlockCore(
             Column(
                 modifier = modifier.padding(horizontal = 4.dp)
             ) {
-                parsed.astTree.children.fastForEach { child ->
+                data.astTree.children.fastForEach { child ->
                     MarkdownNode(
-                        node = child, content = parsed.preprocessed, onClickCitation = onClickCitation
+                        node = child, content = data.preprocessed, onClickCitation = onClickCitation
                     )
                 }
             }
