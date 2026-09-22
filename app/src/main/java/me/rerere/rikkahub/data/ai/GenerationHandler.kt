@@ -201,7 +201,13 @@ class GenerationHandler(
         /** v4.3.10 (BUG15 v2): 图片预算判定常量 — 端点硬上限 8 张 (单张 16MiB/总量 64MiB),
          *  用户定版预算=8 张。降级标记持久写入 Image.metadata["budget_dropped"],
          *  随消息落盘, 降级不可逆 → 前缀在已降级位置恒定。 */
-        private const val IMAGE_BUDGET_COUNT = 8
+        private const val IMAGE_BUDGET_COUNT = 8  // (保留: 仅供诊断语义参考)
+        // v4.7.24: 图片数量限制精细化管理 (用户定版):
+        //  - 仅 GLM 网关 (模型/Provider 字段含 GLM 且含 OpenCode/Command Code) 限制 6 张
+        //    (GLM 网关硬限 8 张 [too_many_images], 6 留安全余量);
+        //  - 其他所有模型不做数量限制 (放弃原全局 8 张预算)。
+        //  字节限制 (单张/总量 5MiB) 保留用于防请求体炸 (网关 TCP payload)。
+        private const val GLM_GATEWAY_IMAGE_LIMIT = 6
         // v4.5.19: 单张/总量预算从 16M/64M 收紧到 5MiB —
         // Console Go 实测: 4 张 ~1.84M 字符的图被其按 ~47x 系数计
         // (86.6MB/张, 总 330MiB > 256MiB 预算被拒 "Request exceeds TCP
@@ -974,6 +980,28 @@ class GenerationHandler(
         return if (lines.isEmpty()) emptyMap() else mapOf("sse_diag" to lines.joinToString(" | "))
     }
     /**
+     * v4.7.24: GLM 网关判定 (图片数量限制的适用范围)。
+     * 用户定版语义: "模型字段中含有 GLM 与 OpenCode 或 Command Code 这样的字段,
+     * 达成 1+1" — 即 GLM 族 且 经 OpenCode/CC 网关通道, 才限 6 张;
+     * 其余模型无数量限制。判定在 modelId / provider 名称 / baseUrl 三处现场任意
+     * 命中即可 (用户对 provider 的命名习惯各异, 宽匹配防漏)。
+     */
+    private fun isGlmGatewayModel(model: me.rerere.ai.provider.Model, provider: me.rerere.ai.provider.ProviderSetting): Boolean {
+        val haystack = buildString {
+            append(model.modelId.lowercase()).append(' ')
+            append(model.displayName.lowercase()).append(' ')
+            append(provider.name.lowercase()).append(' ')
+            if (provider is me.rerere.ai.provider.ProviderSetting.OpenAI) {
+                append(provider.baseUrl.lowercase())
+            }
+        }
+        val hasGlm = haystack.contains("glm") || haystack.contains("bigmodel") || haystack.contains("zhipu")
+        val hasGateway = haystack.contains("opencode") || haystack.contains("opencode.ai") ||
+            haystack.contains("command") || haystack.contains("claude")
+        return hasGlm && hasGateway
+    }
+
+    /**
      * v4.3.10 (BUG15 v2): 图片预算判定+持久标记 — 未标记图中从最新往旧保留
      * IMAGE_BUDGET_COUNT 张 (count/size 预算), 超额的写 budget_dropped 标记。
      * 标记随消息落盘持久化 (重启不丢), 降级不可逆 → 请求前缀在已降级位置
@@ -981,7 +1009,7 @@ class GenerationHandler(
      * 只改 Image.metadata, 内容零改动, UI 渲染不受影响; 请求构造时
      * ChatCompletionsAPI.applyImageMarkers 消费标记替换为占位文本。
      */
-    private fun applyImageBudgetMarking(messages: List<UIMessage>): List<UIMessage> {
+    private fun applyImageBudgetMarking(messages: List<UIMessage>, countLimit: Int): List<UIMessage> {
         // v4.3.11 (BUG17): Slot key=(mi, pi, oi) — pi 永远是真实 part 索引 (普通图 oi=-1,
         // Tool.output 图 oi>=0 且 pi=Tool 的 part 索引)。v4.3.10 曾用 pi=-1 哨兵存
         // Tool 图, imageAt 先 parts[pi] 越界 → 用户发 PDF 即崩溃。统一真实索引后
@@ -1023,11 +1051,11 @@ class GenerationHandler(
             }
             s.copy(bytes = bytes)
         }
-        if (sized.size <= IMAGE_BUDGET_COUNT && sized.sumOf { it.bytes } <= IMAGE_BUDGET_TOTAL_BYTES) return messages
+        if (sized.size <= countLimit && sized.sumOf { it.bytes } <= IMAGE_BUDGET_TOTAL_BYTES) return messages
         val kept = mutableSetOf<Triple<Int, Int, Int>>()
         var total = 0L
         for (s in sized.asReversed()) {
-            if (kept.size >= IMAGE_BUDGET_COUNT) break
+            if (kept.size >= countLimit) break
             if (s.bytes > IMAGE_BUDGET_SINGLE_BYTES) continue
             if (total + s.bytes > IMAGE_BUDGET_TOTAL_BYTES) continue
             kept.add(s.key)
@@ -1095,9 +1123,13 @@ class GenerationHandler(
         // v4.5.6: 图片上传模式分流 — compat (旧形态) 承诺"不转移、不降级",
         // 预算持久标记必须整体跳过 (否则工具图/user 图仍会被降级占位, 与
         // SettingClientPage 的描述不符); classic 维持预算闭环。
+        // v4.7.24: 数量上限按模型判定 — 仅 GLM 网关 (GLM 字段 + OpenCode/CC 字段)
+        // 限 6 张; 其他模型无数量限制 (字节限制仍在 applyImageBudgetMarking 内)
+        val imageCountLimit = if (isGlmGatewayModel(model, provider)) GLM_GATEWAY_IMAGE_LIMIT
+            else Int.MAX_VALUE
         val markedMessages: List<UIMessage> =
             if (settings.imageUploadMode == "compat") effectiveMessages
-            else applyImageBudgetMarking(effectiveMessages)
+            else applyImageBudgetMarking(effectiveMessages, imageCountLimit)
 
         // 4.0.7: abilities 根本修复 — 自定义模型 (listModels 不带 abilities,
         // UI 未编辑过的) abilities 恒空 → 思考控制/工具门控全哑。注册表按
