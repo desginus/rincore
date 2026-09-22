@@ -80,3 +80,28 @@ private class WorkspaceImageFetcher(
         )
     }
 }
+
+/**
+ * v4.8.2: 构建带"文件版本"缓存键的 ImageRequest —
+ * workspace 本地图 (workspace:// / file:///data/.../files/... / /workspace/...) 的
+ * memory/disk cache key 附加宿主文件 mtime+size。模型改图覆盖同一路径后 key 变化
+ * → 强制重新解码, 不再命中旧缓存 (修复"改完仍显示旧图")。
+ * 请求级 key 优先级最高, 独立于 Keyer 链; 非 workspace 图零行为变化。
+ */
+fun buildVersionedImageRequest(
+    context: android.content.Context,
+    model: String?,
+    configure: (coil3.request.ImageRequest.Builder.() -> Unit)? = null,
+): coil3.request.ImageRequest {
+    val builder = coil3.request.ImageRequest.Builder(context).data(model)
+    configure?.invoke(builder)
+    if (model != null && isWorkspaceUri(model)) {
+        val f = WorkspaceImageResolver.resolve(model)
+        if (f != null) {
+            val vKey = "ws:" + f.absolutePath + ":" + f.lastModified() + ":" + f.length()
+            builder.memoryCacheKey(vKey)
+            builder.diskCacheKey(vKey)
+        }
+    }
+    return builder.build()
+}
