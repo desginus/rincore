@@ -6,8 +6,10 @@ package me.rerere.rikkahub.ui.pages.setting
  * ───────────────────────────────────────────────────────────────*/
 import android.content.ClipData
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -431,41 +433,30 @@ private fun CustomThemeEditSheet(
                     text = stringResource(R.string.setting_theme_page_primary_color),
                     style = MaterialTheme.typography.titleSmall,
                 )
-                ColorPickerRow(
-                    color = Color(currentTheme.primaryColorArgb.toInt()),
-                    onColorChange = {
-                        currentTheme = currentTheme.copy(primaryColorArgb = it.toArgb().toLong() and 0xFFFFFFFFL)
-                    }
+                PresetColorRow(
+                    colors = PresetThemeColors,
+                    selectedArgb = currentTheme.primaryColorArgb,
+                    onSelect = { currentTheme = currentTheme.copy(primaryColorArgb = it) },
                 )
 
                 Text(
                     text = stringResource(R.string.setting_theme_page_secondary_color),
                     style = MaterialTheme.typography.titleSmall,
                 )
-                ColorPickerRow(
-                    color = if (currentTheme.secondaryColorArgb != null) {
-                        Color(currentTheme.secondaryColorArgb!!.toInt())
-                    } else {
-                        Color(currentTheme.generateColorScheme(false).secondary.toArgb())
-                    },
-                    onColorChange = {
-                        currentTheme = currentTheme.copy(secondaryColorArgb = it.toArgb().toLong() and 0xFFFFFFFFL)
-                    }
+                PresetColorRow(
+                    colors = PresetThemeColors,
+                    selectedArgb = currentTheme.secondaryColorArgb,
+                    onSelect = { currentTheme = currentTheme.copy(secondaryColorArgb = it) },
                 )
 
                 Text(
                     text = stringResource(R.string.setting_theme_page_tertiary_color),
                     style = MaterialTheme.typography.titleSmall,
                 )
-                ColorPickerRow(
-                    color = if (currentTheme.tertiaryColorArgb != null) {
-                        Color(currentTheme.tertiaryColorArgb!!.toInt())
-                    } else {
-                        Color(currentTheme.generateColorScheme(false).tertiary.toArgb())
-                    },
-                    onColorChange = {
-                        currentTheme = currentTheme.copy(tertiaryColorArgb = it.toArgb().toLong() and 0xFFFFFFFFL)
-                    }
+                PresetColorRow(
+                    colors = PresetThemeColors,
+                    selectedArgb = currentTheme.tertiaryColorArgb,
+                    onSelect = { currentTheme = currentTheme.copy(tertiaryColorArgb = it) },
                 )
 
                 ThemePreview(currentTheme)
@@ -544,137 +535,70 @@ private fun ImportThemeDialog(
     )
 }
 
+// v4.8.8: 预设色板 — 直接点选固定色, 不再使用 HSL 调色盘 (用户定版:
+// "直接让用户去选择最后展示的3个颜色, 而不是去搭配素材调色盘")。
+private val PresetThemeColors = listOf(
+    0xFF2563EB, // 蓝
+    0xFF0891B2, // 青
+    0xFF0D9488, // 蓝绿
+    0xFF16A34A, // 绿
+    0xFF65A30D, // 橄榄
+    0xFF8A6A16, // 琥珀
+    0xFFEA580C, // 橙
+    0xFFDC2626, // 红
+    0xFFE11D48, // 玫红
+    0xFF8B7D9B, // 莫兰迪紫
+    0xFF7C3AED, // 紫
+    0xFF78716C, // 棕灰
+    0xFF565A61, // 中性灰
+    0xFF16181D, // 近黑
+    0xFFFFFFFF, // 白
+)
+
+/**
+ * v4.8.8: 预设色板选择行 — 主色/辅色/点缀色三处统一为"点选固定色块"。
+ * 选中态: 主色描边 + 对勾; 未选态: 细描边。
+ */
 @Composable
-private fun ColorPickerRow(
-    color: Color,
-    onColorChange: (Color) -> Unit,
+private fun PresetColorRow(
+    colors: List<Long>,
+    selectedArgb: Long?,
+    onSelect: (Long) -> Unit,
 ) {
-    val hsl = remember(color) {
-        FloatArray(3).also { ColorUtils.colorToHSL(color.toArgb(), it) }
-    }
-    var hue by remember(color) { mutableFloatStateOf(hsl[0]) }
-    var saturation by remember(color) { mutableFloatStateOf(hsl[1]) }
-    var lightness by remember(color) { mutableFloatStateOf(hsl[2]) }
-    var hslCode by remember(color) { mutableStateOf(formatHslCode(hsl[0], hsl[1], hsl[2])) }
-    var hslCodeError by remember(color) { mutableStateOf(false) }
-
-    fun updateColor(newHue: Float, newSaturation: Float, newLightness: Float) {
-        hue = newHue
-        saturation = newSaturation
-        lightness = newLightness
-        hslCode = formatHslCode(newHue, newSaturation, newLightness)
-        hslCodeError = false
-        onColorChange(Color(ColorUtils.HSLToColor(floatArrayOf(newHue, newSaturation, newLightness))))
-    }
-
-    Column(
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Canvas(
+        colors.forEach { argb ->
+            val isSelected = selectedArgb != null && (selectedArgb and 0xFFFFFFFFL) == argb
+            Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(34.dp)
                     .clip(CircleShape)
+                    .background(Color(argb.toInt()))
+                    .border(
+                        width = if (isSelected) 2.5.dp else 1.dp,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.outlineVariant,
+                        shape = CircleShape,
+                    )
+                    .clickable { onSelect(argb) },
+                contentAlignment = Alignment.Center,
             ) {
-                drawCircle(color = color)
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("H", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(16.dp))
-                    Slider(
-                        value = hue,
-                        onValueChange = {
-                            updateColor(it, saturation, lightness)
-                        },
-                        valueRange = 0f..360f,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("S", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(16.dp))
-                    Slider(
-                        value = saturation,
-                        onValueChange = {
-                            updateColor(hue, it, lightness)
-                        },
-                        valueRange = 0f..1f,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("L", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(16.dp))
-                    Slider(
-                        value = lightness,
-                        onValueChange = {
-                            updateColor(hue, saturation, it)
-                        },
-                        valueRange = 0f..1f,
-                        modifier = Modifier.weight(1f),
+                if (isSelected) {
+                    Icon(
+                        HugeIcons.Tick01,
+                        null,
+                        tint = if (argb == 0xFFFFFFFF) Color(0xFF16181D) else Color.White,
+                        modifier = Modifier.size(16.dp),
                     )
                 }
             }
         }
-
-        OutlinedTextField(
-            value = hslCode,
-            onValueChange = { value ->
-                hslCode = value
-                val parsedHsl = parseHslCode(value)
-                hslCodeError = parsedHsl == null
-                if (parsedHsl != null) {
-                    hue = parsedHsl[0]
-                    saturation = parsedHsl[1]
-                    lightness = parsedHsl[2]
-                    onColorChange(Color(ColorUtils.HSLToColor(parsedHsl)))
-                }
-            },
-            label = { Text("HSL") },
-            placeholder = { Text("hsl(267 36% 48%)") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            isError = hslCodeError,
-            supportingText = if (hslCodeError) {
-                { Text("Use hsl(267 36% 48%)") }
-            } else {
-                null
-            },
-        )
     }
-}
-
-private val hslNumberRegex = Regex("""[-+]?\d*\.?\d+""")
-
-private fun parseHslCode(value: String): FloatArray? {
-    val values = buildList {
-        for (match in hslNumberRegex.findAll(value)) {
-            add(match.value.toFloatOrNull() ?: return null)
-            if (size == 3) break
-        }
-    }
-
-    if (values.size != 3) return null
-
-    val hue = values[0].coerceIn(0f, 360f)
-    val saturation = parseHslPercentOrFraction(values[1]) ?: return null
-    val lightness = parseHslPercentOrFraction(values[2]) ?: return null
-
-    return floatArrayOf(hue, saturation, lightness)
-}
-
-private fun parseHslPercentOrFraction(value: Float): Float? {
-    if (!value.isFinite()) return null
-    return if (value > 1f) {
-        (value / 100f).coerceIn(0f, 1f)
-    } else {
-        value.coerceIn(0f, 1f)
-    }
-}
-
-private fun formatHslCode(hue: Float, saturation: Float, lightness: Float): String {
-    return "hsl(${hue.roundToInt()} ${(saturation * 100).roundToInt()}% ${(lightness * 100).roundToInt()}%)"
 }
 
 @Composable

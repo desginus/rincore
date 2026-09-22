@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyListState
@@ -564,12 +565,19 @@ private fun ChatPageContent(
                     tonalElevation = 4.dp,
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .clickable { vm.cancelCompress() }
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                         Text("正在压缩上下文…", style = MaterialTheme.typography.labelMedium)
+                        // v4.8.8: 取消入口 — 点击整条取消压缩
+                        Icon(
+                            HugeIcons.Cancel01, null,
+                            modifier = Modifier.size(14.dp),
+                        )
                     }
                 }
             }

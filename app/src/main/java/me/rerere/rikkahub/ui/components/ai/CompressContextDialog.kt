@@ -20,7 +20,6 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,10 +27,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Job
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.ui.OutlinedNumberInput
-import me.rerere.rikkahub.ui.components.ui.RabbitLoadingIndicator
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
@@ -49,17 +46,6 @@ fun CompressContextDialog(
     var keepRecentMessages by remember { mutableIntStateOf(defaultKeep) }
     val canCompress = defaultKeep > 0
     val tokenOptions = listOf(500, 1000, 2000, 4000)
-    var currentJob by remember { mutableStateOf<Job?>(null) }
-    val isLoading = currentJob?.isActive == true
-
-    // Monitor job completion
-    LaunchedEffect(currentJob) {
-        currentJob?.join()
-        if (currentJob?.isCompleted == true && currentJob?.isCancelled == false) {
-            onDismiss()
-        }
-        currentJob = null
-    }
 
     AlertDialog(
         onDismissRequest = {
@@ -76,20 +62,7 @@ fun CompressContextDialog(
             Column(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                if (isLoading) {
-                    // Loading state
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RabbitLoadingIndicator(
-                            modifier = Modifier.size(32.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(stringResource(R.string.chat_page_compressing))
-                    }
-                } else {
+                run {
                     Text(stringResource(R.string.chat_page_compress_context_desc))
 
                     // Token size selector
@@ -154,29 +127,22 @@ fun CompressContextDialog(
             }
         },
         confirmButton = {
-            if (isLoading) {
-                TextButton(onClick = {
-                    currentJob?.cancel()
-                    currentJob = null
-                }) {
-                    Text(stringResource(R.string.cancel))
+            // v4.8.8: 确认即关 — 压缩在后台执行 (Job 挂 VM scope), 弹窗不进入
+            // "压缩中"状态 (全屏模态压制从此不再出现); 进行中状态由对话页内
+            // 非模态提示条呈现 (可随时取消), 用户可自由操作其他对话/页面。
+            TextButton(
+                enabled = canCompress,
+                onClick = {
+                    onConfirm(additionalPrompt, selectedTokens, keepRecentMessages)
+                    onDismiss()
                 }
-            } else {
-                TextButton(
-                    enabled = canCompress,
-                    onClick = {
-                        currentJob = onConfirm(additionalPrompt, selectedTokens, keepRecentMessages)
-                    }
-                ) {
-                    Text(stringResource(R.string.confirm))
-                }
+            ) {
+                Text(stringResource(R.string.confirm))
             }
         },
         dismissButton = {
-            if (!isLoading) {
-                TextButton(onClick = onDismiss) {
-                    Text(stringResource(R.string.cancel))
-                }
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
             }
         }
     )

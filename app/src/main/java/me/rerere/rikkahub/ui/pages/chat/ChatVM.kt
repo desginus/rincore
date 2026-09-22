@@ -254,8 +254,11 @@ class ChatVM(
     private val _compressing = MutableStateFlow(false)
     val compressing: StateFlow<Boolean> = _compressing.asStateFlow()
 
+    // v4.8.8: 压缩任务引用 — 供页内提示条取消
+    private var compressJob: kotlinx.coroutines.Job? = null
+
     fun handleCompressContext(additionalPrompt: String, targetTokens: Int, keepRecentMessages: Int): Job {
-        return viewModelScope.launch {
+        val job = viewModelScope.launch {
             _compressing.value = true
             try {
                 chatService.compressConversation(
@@ -269,8 +272,18 @@ class ChatVM(
                 }
             } finally {
                 _compressing.value = false
+                compressJob = null
             }
         }
+        compressJob = job
+        return job
+    }
+
+    /** v4.8.8: 取消进行中的压缩 (页内提示条取消按钮) */
+    fun cancelCompress() {
+        compressJob?.cancel()
+        compressJob = null
+        _compressing.value = false
     }
 
     // v3.8.13: 从留存位点恢复 (旧单次撤销改为位点管理)
