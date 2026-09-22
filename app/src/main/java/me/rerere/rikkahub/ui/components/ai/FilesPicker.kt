@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -44,6 +45,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
@@ -281,8 +283,10 @@ internal fun FilesPicker(
                 modifier = Modifier.weight(1f).alpha(if (cwdReady) 1f else 0.4f),
                 icon = { Icon(HugeIcons.Folder01, null) },
                 text = {
+                    val cwdRaw = assistant.workspaceCwd
                     Text(
-                        text = if (cwdReady) (assistant.workspaceCwd ?: stringResource(R.string.chat_quick_cwd))
+                        // v4.8.3: 显示名净化 — 屏蔽 /workspace/ 基础前缀与各段 KEEP- 前缀
+                        text = if (cwdReady && !cwdRaw.isNullOrBlank()) cwdDisplayName(cwdRaw)
                                else stringResource(R.string.chat_quick_cwd),
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
@@ -456,6 +460,18 @@ fun FilePickButton(onClick: () -> Unit = {}, modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * v4.8.3: CWD 显示名净化 — 屏蔽 /workspace/ 基础前缀; 各路径段再屏蔽 KEEP- 前缀
+ * (目录分类标记, 展示无意义)。解析失败时回退原文本。
+ */
+private fun cwdDisplayName(raw: String): String {
+    val trimmed = raw.trim().removePrefix("/workspace/").removePrefix("workspace/").trimStart('/')
+    if (trimmed.isEmpty()) return raw.trim()
+    return trimmed.split('/').joinToString("/") { seg ->
+        seg.removePrefix("KEEP-").ifEmpty { seg }
+    }
+}
+
 @Composable
 private fun BigIconTextButton(
     modifier: Modifier = Modifier,
@@ -516,46 +532,24 @@ fun WorkspaceFilePickButton(onClick: () -> Unit = {}, modifier: Modifier = Modif
     }
 }
 
-// v3.6.74: 本地工具入口移除, 该位置改为延时自动回复入口
-// v3.6.76: 开关不在面板直显, 点进去在对话框内交互 (整齐)
+// v3.6.74: 本地工具入口移除, 该位置改为延时回复入口
+// v4.8.3: 交互重构 (用户定版) — 单点直接切换 (原"弹窗 + 完成"模式退役);
+// 更名"延时回复"; 触发态时钟图标变蓝 (一眼可辨的状态指示)。
 @Composable
 fun DeferAutoReplySwitch(
     deferAutoReply: Boolean,
     onToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var showDialog by remember { mutableStateOf(false) }
     BigIconTextButton(modifier = modifier, icon = {
-        Icon(HugeIcons.Clock02, null)
-    }, text = {
-        Text("延时自动回复")
-    }) {
-        showDialog = true
-    }
-    if (showDialog) {
-        AlertDialog(
-            onDismissRequest = { showDialog = false },
-            title = { Text("延时自动回复") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "开启后发送消息不会立即触发模型回复, 消息排队等待发送。",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("开启延时自动回复")
-                        Spacer(modifier = Modifier.weight(1f))
-                        Switch(
-                            checked = deferAutoReply,
-                            onCheckedChange = onToggle,
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showDialog = false }) { Text("完成") }
-            },
+        Icon(
+            HugeIcons.Clock02, null,
+            tint = if (deferAutoReply) Color(0xFF2196F3) else LocalContentColor.current,
         )
+    }, text = {
+        Text("延时回复")
+    }) {
+        onToggle(!deferAutoReply)
     }
 }
 

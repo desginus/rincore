@@ -281,6 +281,14 @@ fun ChatInput(
 
                     )
 
+                    // v4.8.3: 发送键/思考键互换 — 开启时两键位置与图标对调,
+                    // 防止生成中误触右下角打断键导致生成中断。判定在此提取,
+                    // 左侧 scroll 区与最右侧两处渲染点共用。
+                    val swapKeys = settings.swapSendReasoningKeys
+                    val reasoningModel = settings.getCurrentChatModel()
+                    val hasReasoning = reasoningModel != null &&
+                        (reasoningModel.abilities + ModelRegistry.MODEL_ABILITIES.getData(reasoningModel.modelId))
+                            .contains(ModelAbility.REASONING)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -305,17 +313,24 @@ fun ChatInput(
 
                             // Reasoning
                             // 4.1.2: 门控与发送侧同源 — 注册表差集合并后的 abilities
-                            val model = settings.getCurrentChatModel()
-                            if (model != null && (model.abilities + ModelRegistry.MODEL_ABILITIES.getData(model.modelId))
-                                    .contains(ModelAbility.REASONING)
-                            ) {
-                                ReasoningButton(
-                                    reasoningLevel = assistant.reasoningLevel,
-                                    onUpdateReasoningLevel = {
-                                        onUpdateAssistant(assistant.copy(reasoningLevel = it))
-                                    },
-                                    onlyIcon = true,
-                                )
+                            // v4.8.3: 互换开启时此位为发送(打断)键, 思考键去右下角
+                            if (hasReasoning) {
+                                if (!swapKeys) {
+                                    ReasoningButton(
+                                        reasoningLevel = assistant.reasoningLevel,
+                                        onUpdateReasoningLevel = {
+                                            onUpdateAssistant(assistant.copy(reasoningLevel = it))
+                                        },
+                                        onlyIcon = true,
+                                    )
+                                } else {
+                                    SendButton(
+                                        loading = loading,
+                                        empty = state.isEmpty(),
+                                        onClick = { sendMessage() },
+                                        onLongClick = { sendMessageWithoutAnswer() },
+                                    )
+                                }
                             }
 
                         }
@@ -361,12 +376,24 @@ fun ChatInput(
                                 enter = fadeIn() + scaleIn(),
                                 exit = fadeOut() + scaleOut(),
                             ) {
-                                SendButton(
-                                    loading = loading,
-                                    empty = state.isEmpty(),
-                                    onClick = { sendMessage() },
-                                    onLongClick = { sendMessageWithoutAnswer() },
-                                )
+                                // v4.8.3: 互换开启时右下角为思考键 (误触改变思考深度,
+                                // 不会打断生成); 模型不支持思考时兜底仍为发送键。
+                                if (swapKeys && hasReasoning) {
+                                    ReasoningButton(
+                                        reasoningLevel = assistant.reasoningLevel,
+                                        onUpdateReasoningLevel = {
+                                            onUpdateAssistant(assistant.copy(reasoningLevel = it))
+                                        },
+                                        onlyIcon = true,
+                                    )
+                                } else {
+                                    SendButton(
+                                        loading = loading,
+                                        empty = state.isEmpty(),
+                                        onClick = { sendMessage() },
+                                        onLongClick = { sendMessageWithoutAnswer() },
+                                    )
+                                }
                             }
                     }
                 }

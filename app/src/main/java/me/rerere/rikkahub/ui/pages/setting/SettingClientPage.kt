@@ -139,6 +139,32 @@ fun SettingClientPage(vm: SettingVM = koinViewModel()) {
                     }
                 }
             }
+            item {
+                // v4.8.3: 发送键/思考键切换 — 防生成中误触右下角打断键
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("发送键、思考键切换", style = MaterialTheme.typography.titleMedium)
+                            }
+                            Switch(
+                                checked = settings.swapSendReasoningKeys,
+                                onCheckedChange = { vm.updateSettings(settings.copy(swapSendReasoningKeys = it)) },
+                            )
+                        }
+                        Text(
+                            "开启后，发送键（模型生成中的打断键）与思考深度调节键互换位置与图标 — " +
+                                "右下角变为思考键，避免生成过程中误触打断模型输出。关闭时保持原布局。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                }
+            }
         }
     }
 }
