@@ -116,6 +116,20 @@ private fun hintFor(firstInProgress: String?, inProgress: Int, completed: Int, t
     else merged.take(MAX_HINT_CHARS - 12) + "…(另有 ${merged.length - MAX_HINT_CHARS + 12} 字符)"
 }
 
+/** v4.7.17: 清单 JSON 数组 — UI 任务卡片数据源。update/no-op 响应携带,
+ * 保证每次任务操作 (创建/推进/完成) 的卡片都能渲染完整清单 (用户实证:
+ * 此前只有 replace 带清单, update 后卡片退化为普通工具条目)。 */
+private fun tasksJsonOf(snapshot: List<TaskItem>): JsonArray = buildJsonArray {
+    snapshot.forEach { t ->
+        add(buildJsonObject {
+            put("id", t.id)
+            put("title", t.title)
+            put("status", t.status)
+            if (t.activeForm != null) put("activeForm", t.activeForm)
+        })
+    }
+}
+
 /**
  * 任务清单工具 — 全量替换模式 + get/clear。
  * 每次调用以完整清单替换; 响应只回进度与变更摘要 (轻量, <1KB)。
@@ -312,6 +326,7 @@ fun createTaskTool(): Tool = Tool(
                         put("changed", false)
                         put("no_op_streak", streak)
                         put("version", TaskStateStore.version)
+                        put("tasks", tasksJsonOf(TaskStateStore.snapshot))
                         put("hint", (if (streak >= 2)
                             "⚠️ 你已连续 $streak 次提交无变化的状态更新。清单是记账, 不是推进 — 停止更新, 立即执行当前进行中任务的真实动作。"
                         else
@@ -380,6 +395,7 @@ fun createTaskTool(): Tool = Tool(
                     put("ok", true)
                     put("version", TaskStateStore.version)
                     put("updated", idRaw)
+                    put("tasks", tasksJsonOf(updated))
                     put("progress", buildJsonObject {
                         put("total", updated.size)
                         put("completed", upCompleted)

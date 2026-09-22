@@ -433,6 +433,16 @@ class GenerationHandler(
 
             val toolsToProcess: List<UIMessagePart.Tool>
 
+            // v4.7.17 (发热修复): 视觉变换前缀缓存 — 此前每次 onUpdateMessages
+            // (50ms 节流) 都对全量 messages 跑 visualTransforms; 长对话下这是
+            // 流式期间最大的重复 CPU 负载 (SoC 发热源)。3 个 output transformer
+            // 均为 per-message 独立变换 (ThinkTag/Regex 逐条 map; Base64Image
+            // 仅 onGenerationFinish) → 按"实例身份"复用未变化前缀的变换结果,
+            // 只对变化尾部重算 (典型流式 = 仅最后 1 条)。前缀不连续 (跨轮重建)
+            // 时自动退化全量, 正确性不受影响。
+            var visualTransformCacheIn: List<UIMessage> = emptyList()
+            var visualTransformCacheOut: List<UIMessage> = emptyList()
+
             // Skip generation if we have approved/denied tool calls to handle
             if (pendingTools.isEmpty()) {
                 CallTracer.event("SEND", "pre_api", "Calling generateInternal: model=${model.id}, provider=${provider.javaClass.simpleName}")
@@ -449,17 +459,33 @@ class GenerationHandler(
                             assistant = assistant,
                             settings = settings
                         )
-                        emit(
-                            GenerationChunk.Messages(
-                                messages.visualTransforms(
-                                    transformers = outputTransformers,
-                                    context = context,
-                                    model = model,
-                                    assistant = assistant,
-                                    settings = settings
-                                )
-                            )
+                        // v4.7.17 (发热修复): 视觉变换增量 — 前缀按实例身份复用,
+                        // 只变换变化尾部 (详见 visualTransformCache 声明处注释)。
+                        suspend fun visualOf(input: List<UIMessage>) = input.visualTransforms(
+                            transformers = outputTransformers,
+                            context = context,
+                            model = model,
+                            assistant = assistant,
+                            settings = settings
                         )
+                        val input = messages
+                        var prefixLen = 0
+                        while (prefixLen < input.size && prefixLen < visualTransformCacheIn.size &&
+                            input[prefixLen] === visualTransformCacheIn[prefixLen]
+                        ) prefixLen++
+                        val visualResult = when {
+                            prefixLen == input.size && input.size == visualTransformCacheIn.size ->
+                                visualTransformCacheOut
+                            prefixLen == visualTransformCacheIn.size ->
+                                if (prefixLen == 0) visualOf(input)
+                                else visualTransformCacheOut.subList(0, prefixLen) + visualOf(
+                                    input.subList(prefixLen, input.size)
+                                )
+                            else -> visualOf(input)
+                        }
+                        visualTransformCacheIn = input
+                        visualTransformCacheOut = visualResult
+                        emit(GenerationChunk.Messages(visualResult))
                     },
                     transformers = inputTransformers,
                     model = model,
