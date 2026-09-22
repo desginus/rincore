@@ -290,10 +290,11 @@ class WorkspaceRepository(
     }
 
     /**
-     * v4.5.3: 文件夹打包为 zip (纯 Kotlin, 纯文件 IO)。
-     * v4.5.2 的 Rootfs 内 python3 打包方案废弃: 依赖 Rootfs 内解释器 (部分镜像
-     * 缺失), 且临时产物落在工作区文件列表内污染视图。改为直接经文件系统递归
-     * 读目录流式写 zip — 无临时文件、无外部依赖、失败路径清晰。
+     * v4.8.5: 文件夹打包为 zip — 完整导出重写。
+     * v4.5.3 版本经 manager.listFiles 递归, 而 listFiles 内部 take(maxListEntries=500)
+     * 截断 — 单层超 500 条目即静默丢失 (用户实证: 解压后内容丢失/破损)。
+     * 现改走 WorkspaceManager.exportFolderToZip: 直接宿主文件树递归, 全量条目 +
+     * mtime 保留 + 空目录/空文件完整; 返回打包文件数。
      */
     suspend fun exportFolderZip(
         id: String,
@@ -303,30 +304,13 @@ class WorkspaceRepository(
     ): Long = withContext(Dispatchers.IO) {
         val workspace = dao.getById(id) ?: error("Workspace not found: $id")
         manager.ensureWorkspace(workspace.root)
-        val root = workspace.root
-        var total = 0L
-        java.util.zip.ZipOutputStream(outputStream).use { zip ->
-            fun walk(dirPath: String, prefix: String) {
-                val entries = manager.listFiles(root = root, path = dirPath, area = area)
-                for (e in entries) {
-                    if (e.isDirectory) {
-                        val dirEntry = prefix + e.name + "/"
-                        zip.putNextEntry(java.util.zip.ZipEntry(dirEntry))
-                        zip.closeEntry()
-                        walk(e.path, dirEntry)
-                    } else {
-                        val entryName = prefix + e.name
-                        zip.putNextEntry(java.util.zip.ZipEntry(entryName))
-                        manager.exportFile(root = root, path = e.path, area = area, outputStream = zip)
-                        zip.closeEntry()
-                        total += 1L
-                    }
-                }
-            }
-            walk(folderPath, "")
-        }
-        require(total > 0) { "文件夹为空, 没有可打包的文件" }
-        total
+        val stats = manager.exportFolderToZip(
+            root = workspace.root,
+            folderPath = folderPath,
+            area = area,
+            outputStream = outputStream,
+        )
+        stats.files
     }
 
     /** v4.5.2: 工作区 shell 命令执行 (VM 层文件夹打包等工具用途) */

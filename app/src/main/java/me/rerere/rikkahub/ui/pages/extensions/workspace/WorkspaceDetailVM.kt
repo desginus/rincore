@@ -337,16 +337,32 @@ class WorkspaceDetailVM(
                         ensureActive()
                         var destination: Uri? = null
                         try {
-                            val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(
-                                entry.name.substringAfterLast('.', "").lowercase()
-                            ) ?: "application/octet-stream"
-                            val document = DocumentsContract.createDocument(resolver, parent, mime, entry.name)
-                                ?: error("无法创建目标文件")
-                            destination = document
-                            val output = resolver.openOutputStream(document) ?: error("无法打开目标文件")
-                            output.use { repository.exportFile(id = id, area = area, path = entry.path, outputStream = it) }
-                            succeeded++
-                            destination = null
+                            if (entry.isDirectory) {
+                                // v4.8.5: 文件夹 → 递归打包 .zip。旧实现走 exportFile 对目录
+                                // 抛 "Path is not a file" — 批量导出中的文件夹全部失败 (内容丢失实证)。
+                                val zipName = entry.name.trimEnd('/') + ".zip"
+                                val document = DocumentsContract.createDocument(
+                                    resolver, parent, "application/zip", zipName
+                                ) ?: error("无法创建目标文件")
+                                destination = document
+                                val output = resolver.openOutputStream(document) ?: error("无法打开目标文件")
+                                output.use {
+                                    repository.exportFolderZip(id = id, area = area, folderPath = entry.path, outputStream = it)
+                                }
+                                succeeded++
+                                destination = null
+                            } else {
+                                val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(
+                                    entry.name.substringAfterLast('.', "").lowercase()
+                                ) ?: "application/octet-stream"
+                                val document = DocumentsContract.createDocument(resolver, parent, mime, entry.name)
+                                    ?: error("无法创建目标文件")
+                                destination = document
+                                val output = resolver.openOutputStream(document) ?: error("无法打开目标文件")
+                                output.use { repository.exportFile(id = id, area = area, path = entry.path, outputStream = it) }
+                                succeeded++
+                                destination = null
+                            }
                         } catch (error: CancellationException) {
                             throw error
                         } catch (error: Exception) {

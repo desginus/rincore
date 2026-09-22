@@ -120,6 +120,66 @@ class WorkspaceManager(
     }
 
     /**
+     * v4.8.5: 文件夹完整导出为 zip — 彻底重写 (用户实证: 旧实现导出后解压内容丢失/破损)。
+     *
+     * 旧实现缺陷 (根因链):
+     *  ① 递归依赖 fileSystem.list — 其内部 take(maxListEntries=500) 截断:
+     *     单层超过 500 个条目时, 超出部分静默丢失 (内容丢失的直接根因);
+     *  ② zip 条目无时间戳 — 解压后 mtime 全丢 (破损感来源之一);
+     *  ③ 深层空目录依赖列表层遍历, 易漏。
+     *
+     * 新实现: 直接对宿主文件树递归 (rootDir.listFiles), 不经过 UI 列表层 —
+     * 条目数只受磁盘限制; 每个条目带 mtime; 空目录/空文件/中文名 (UTF-8 EFS)
+     * 全部保留; 失败向上抛 (不产出半损 zip)。底层流生命周期由 use 管理
+     * (zip.close 连带关闭 outputStream — 与旧行为一致, 调用方不再 close)。
+     */
+    fun exportFolderToZip(
+        root: String,
+        folderPath: String,
+        area: WorkspaceStorageArea = WorkspaceStorageArea.FILES,
+        outputStream: OutputStream,
+    ): FolderZipStats {
+        val base = fileSystem.resolve(areaDir(root, area), folderPath)
+        require(base.exists()) { "Folder does not exist: $folderPath" }
+        require(base.isDirectory) { "Path is not a directory: $folderPath" }
+
+        var files = 0L
+        var dirs = 0L
+        var bytes = 0L
+        java.util.zip.ZipOutputStream(outputStream).use { zip ->
+            fun walk(dir: File, prefix: String) {
+                val children = dir.listFiles()
+                    ?.filter { !it.name.startsWith(".l2s.") }   // proot link2symlink 影子条目
+                    ?.sortedWith(compareBy<File> { !it.isDirectory }.thenBy { it.name.lowercase() })
+                    ?: return
+                for (child in children) {
+                    val name = prefix + child.name
+                    if (child.isDirectory) {
+                        val de = java.util.zip.ZipEntry("$name/")
+                        de.time = child.lastModified()
+                        zip.putNextEntry(de)
+                        zip.closeEntry()
+                        dirs++
+                        walk(child, "$name/")
+                    } else {
+                        val fe = java.util.zip.ZipEntry(name)
+                        fe.time = child.lastModified()
+                        zip.putNextEntry(fe)
+                        child.inputStream().use { it.copyTo(zip) }
+                        zip.closeEntry()
+                        files++
+                        bytes += child.length()
+                    }
+                }
+            }
+            walk(base, "")
+        }
+        return FolderZipStats(files = files, dirs = dirs, bytes = bytes)
+    }
+
+    data class FolderZipStats(val files: Long, val dirs: Long, val bytes: Long)
+
+    /**
      * 把 Rootfs 内的绝对路径映射到宿主机上的真实文件。
      *
      * bind mount 的 source 本身就是 Android 侧的普通目录, 因此 /skills 这类挂载路径
