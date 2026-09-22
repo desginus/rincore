@@ -702,6 +702,15 @@ class GenerationHandler(
                             }.getOrElse {
                                 error("Invalid tool arguments JSON for ${tool.toolName}: ${it.message}")
                             }
+                            // v4.7.22: 上游非法结构防御 — 拒绝处理。
+                            // ① 占位符识别: 参数解析已在别处失败时 (inputAsJson 占位符
+                            //    标记流), 直接拒绝执行, 防止占位符被当作参数消费;
+                            // ② 顶层类型: 工具参数必须是 JSON 对象, 数组/标量 = 非法结构。
+                            if (args is kotlinx.serialization.json.JsonObject &&
+                                args["_invalidStructure"] != null) {
+                                error("Error: 上游返回的工具参数结构非法, 已自动拒绝执行 (${tool.toolName})。" +
+                                    "请不要重放相同内容, 修正参数结构后重新调用。")
+                            }
                             // v3.11.24 (F2): 思考类工具运行时协议校验 — 工具描述里的
                             // 协议约束此前零执行位 (5 类违规全部 success), 退化循环
                             // 因此自持。四道门全走 error 通路 (进既有失败聚合计数):

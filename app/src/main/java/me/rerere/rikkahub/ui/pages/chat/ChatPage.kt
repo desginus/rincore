@@ -88,6 +88,8 @@ import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.ui.components.ai.ChatAttachmentPickerActions
 import me.rerere.rikkahub.ui.components.motion.LocalHazeState
+import me.rerere.rikkahub.ui.components.motion.rinGlass
+import me.rerere.rikkahub.ui.components.motion.rinGlassHighlight
 import me.rerere.rikkahub.ui.components.ai.ChatInput
 import me.rerere.rikkahub.ui.components.ai.FilesPicker
 import me.rerere.rikkahub.ui.components.ai.completion.WorkspaceCompletionProvider
@@ -637,7 +639,17 @@ private fun ChatFilesPickerSheet(
         sheetState = filesSheetState,
         onDismissRequest = { dismissAll() },
         scrimColor = Color.Transparent,
+        // v4.7.22 统一体验: 面板容器全透明, 玻璃由内容层 RinGlass 承载
+        // (与输入框/弹窗同一渲染规格 — 柔光玻璃视觉语言)
+        containerColor = Color.Transparent,
     ) {
+        val pickerShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .rinGlass(hazeState = LocalHazeState.current, shape = pickerShape)
+                .rinGlassHighlight(pickerShape),
+        ) {
         FilesPicker(
             conversation = conversation,
             state = inputState,
@@ -693,6 +705,7 @@ private fun ChatFilesPickerSheet(
                 }
             } else null,
         )
+        } // 玻璃承载 Column 闭合 (v4.7.22 统一玻璃)
     }
 }
 

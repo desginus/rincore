@@ -8,6 +8,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import me.rerere.ai.util.json
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -205,7 +206,18 @@ sealed class UIMessagePart {
         /** Parse input string as JsonElement */
         fun inputAsJson(): JsonElement = runCatching {
             json.parseToJsonElement(input.ifBlank { "{}" })
-        }.getOrElse { JsonObject(emptyMap()) }
+        }.getOrElse {
+            // v4.7.22: 上游非法结构防御 — 拒绝按原样处理该结果。
+            // 无法解析的参数不静默变空对象 (空对象会被部分工具当作缺省参数执行),
+            // 而是替换为确定性占位符: 下游 (执行/显示/回传) 统一识别
+            // _invalidStructure 并拒绝执行; _raw 保留原文截断供诊断。
+            JsonObject(
+                mapOf(
+                    "_invalidStructure" to JsonPrimitive(true),
+                    "_raw" to JsonPrimitive(input.take(500)),
+                )
+            )
+        }
 
         fun merge(other: Tool): Tool {
             return Tool(

@@ -95,6 +95,7 @@ import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Fullscreen
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.ui.components.motion.RinGlass
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
@@ -151,10 +152,9 @@ fun ChatInput(
 ) {
     val toaster = LocalToaster.current
     val hazeTintColor = MaterialTheme.colorScheme.surfaceContainerLow
-    val inputHazeStyle = HazeBlurStyle.Material3 {
-        // v3.6.82: 8dp -> 4dp, 进一步降低 120Hz 下 GPU 模糊采样开销
-        blurRadius(4.dp)
-    }
+    // v4.7.22: 玻璃规格收敛到 RinGlass 单一来源 (4.3 时代原生款: hazeBlur 4dp)。
+    // 全 app 玻璃件 (输入框/弹窗/悬浮工具条/附件面板) 共用同一规格, 防参数漂移。
+    val inputHazeStyle = RinGlass.blurStyle
     val assistant = settings.getCurrentAssistant()
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
@@ -239,13 +239,11 @@ fun ChatInput(
                     .fillMaxWidth()
                     .clip(containerShape)
                     .then(
-                        // 4.1.5 对齐原版: 删除生成中模糊降级 (v3.11.31/34 的
-                        // `&& !loading` 降级在 haze 2.0 下已无必要, 且是用户
-                        // 实测"输入条显示为同色底"的直接原因 — 原版恒模糊)
+                        // 4.7.22 输入框显示逻辑 (全状态单一形态, 见 RinGlass 规格表):
+                        //   模糊开启 -> hazeBlur(4dp) + 透明底; 关闭 -> 半透明纯色底。
+                        //   生成中/键盘弹出/空或有内容/语音/编辑 — 一律同上, 不变形。
+                        //   (4.1.5: 生成中降级已删除 — 原版恒模糊; v4.7.11: 双类型已回滚)
                         if (settings.displaySetting.enableBlurEffect) {
-                            // v4.7.11: 回滚 v4.7.0 移植的 模糊/玻璃 双类型 — 恢复单一模糊
-                            // (用户: 玻璃效果太丑; 回滚到 v4.5.27 形态。backgroundEffectType
-                            // 字段保留在 DisplaySetting (DataStore 废弃字段兼容), 不再参与渲染)
                             Modifier.hazeBlur(
                                 input = HazeInput.Sources(hazeState),
                                 style = inputHazeStyle,

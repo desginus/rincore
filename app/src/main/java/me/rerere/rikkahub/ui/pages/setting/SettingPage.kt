@@ -162,10 +162,15 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                                 selectedOption = colorMode,
                                 onOptionSelected = {
                                     colorMode = it
+                                    // v4.7.22 返回层级加固: 原 inclusive=true 会连当前
+                                    // Setting 一起弹出再重推 (深层路径下导致"返回跳级"
+                                    // 观感)。改为非 inclusive + singleTop: 仅清掉 Setting
+                                    // 之上的残留, 当前页保持, 返回行为永远是上一级。
                                     navController.navigate(Screen.Setting) {
                                         popUpTo(Screen.Setting) {
-                                            inclusive = true
+                                            inclusive = false
                                         }
+                                        launchSingleTop = true
                                     }
                                 },
                                 optionToString = {

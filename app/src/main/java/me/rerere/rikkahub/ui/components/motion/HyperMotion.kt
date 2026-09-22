@@ -12,7 +12,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -27,18 +26,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.blur.HazeBlurStyle
-import dev.chrisbanes.haze.blur.hazeBlur
-import dev.chrisbanes.haze.blur.material3.Material3
 import androidx.compose.runtime.getValue
 
 /**
@@ -68,8 +62,11 @@ object HyperMotionSpec {
 }
 
 /**
- * 柔光玻璃面板 — 半透明表面 + 高光描边 (澎湃 4 玻璃质感):
- * 深色模式 alpha 高些保对比度, 浅色模式偏通透。
+ * 柔光玻璃面板 — 半透明表面 + 高光描边 (澎湃 4 玻璃质感)。
+ *
+ * 4.7.22 统一: 渲染规格收敛到 RinGlass 单一来源 (与输入框同一款:
+ * hazeBlur 4dp + 透明底 + 白色 14% 高光描边)。有 haze source 时真模糊;
+ * 无 source (非聊天场景) 回退半透明底。全 app 弹窗玻璃由此处保证一致。
  */
 @Composable
 fun HyperGlassPanel(
@@ -77,29 +74,11 @@ fun HyperGlassPanel(
     shape: Shape = RoundedCornerShape(24.dp),
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val surfaceAlpha = 0.88f
-    val highlightAlpha = 0.14f
-    // 4.1.5: 真柔光玻璃 — 有 haze source 时 blur + 透明底 (模糊透出背景),
-    // 无 source (非聊天场景) 时回退半透明底
     val hazeState = LocalHazeState.current
     Column(
         modifier = modifier
-            .clip(shape)
-            .then(
-                if (hazeState != null) Modifier.hazeBlur(
-                    input = HazeInput.Sources(hazeState),
-                    style = HazeBlurStyle.Material3 { },
-                ) else Modifier
-            )
-            .background(
-                if (hazeState != null) Color.Transparent
-                else MaterialTheme.colorScheme.surface.copy(alpha = surfaceAlpha)
-            )
-            .border(
-                width = 1.dp,
-                color = Color.White.copy(alpha = highlightAlpha),
-                shape = shape,
-            ),
+            .rinGlass(hazeState = hazeState, shape = shape)
+            .rinGlassHighlight(shape),
         content = content,
     )
 }

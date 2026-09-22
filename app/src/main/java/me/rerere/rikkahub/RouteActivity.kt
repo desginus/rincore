@@ -480,7 +480,7 @@ class RouteActivity : ComponentActivity() {
                             rememberViewModelStoreNavEntryDecorator(),
                         ),
                         modifier = Modifier.fillMaxSize(),
-                        onBack = { backStack.removeLastOrNull() },
+                        onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } },
                         transitionSpec = {
                             if (backStack.size == 1) fadeIn() togetherWith fadeOut()
                             else {
@@ -648,7 +648,7 @@ class RouteActivity : ComponentActivity() {
                             }
 
                             entry<Screen.SettingPlugins> {
-                                SettingPluginsPage(onBack = { backStack.removeLastOrNull() })
+                                SettingPluginsPage(onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } })
                             }
 
 
@@ -659,13 +659,13 @@ class RouteActivity : ComponentActivity() {
                                 SettingCallTracePage()
                             }
                             entry<Screen.SettingAlarms> {
-                                AlarmSettingsPage(onBack = { backStack.removeLastOrNull() })
+                                AlarmSettingsPage(onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } })
                             }
                             entry<Screen.SettingPermissions> {
-                                SettingPermissionsPage(onBack = { backStack.removeLastOrNull() })
+                                SettingPermissionsPage(onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } })
                             }
                             entry<Screen.Workflows> {
-                                WorkflowsScreen(onBack = { backStack.removeLastOrNull() })
+                                WorkflowsScreen(onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } })
                             }
                             entry<Screen.SettingSkillsEcosystem> {
                                 SettingSkillsEcosystemPage()
@@ -716,12 +716,12 @@ class RouteActivity : ComponentActivity() {
                             }
                             entry<Screen.OperitUi> {
                                 me.rerere.rikkahub.ui.pages.operitui.OperitUiPage(
-                                    onBack = { backStack.removeLastOrNull() },
+                                    onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } },
                                 )
                             }
                             entry<Screen.OperitEco> {
                                 me.rerere.rikkahub.ui.pages.operiteco.OperitEcoPage(
-                                    onBack = { backStack.removeLastOrNull() },
+                                    onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } },
                                 )
                             }
                             entry<Screen.MarketDetail> { key ->
