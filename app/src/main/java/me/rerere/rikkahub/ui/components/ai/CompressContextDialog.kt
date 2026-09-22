@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
+import kotlinx.coroutines.Job
 import me.rerere.rikkahub.ui.components.ui.OutlinedNumberInput
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
