@@ -14,6 +14,8 @@ print_tool() {
         echo "       (re-open the app so workspace provisioning re-injects it)"
     fi
 }
+print_tool officecli "full Office suite for AI: read / edit / render / batch / template merge (.docx .xlsx .pptx)" \
+    'officecli view <f> text|screenshot|html|issues · officecli add|set|remove|move <f> <path> ... · officecli batch <f> --commands "[{...}]" · officecli merge <f> data.json'
 print_tool office-edit "edit EXISTING .docx/.pptx/.xlsx without losing formatting (patches only touched parts; atomic)" \
     'office-edit docx|pptx read <file> · office-edit docx|pptx replace <file> "old" "new" · office-edit xlsx read <file> / office-edit xlsx set <file> <sheet> <cell> "value"'
 print_tool apply-patch "Codex-style multi-file patch applier; hunks located by context, whole patch is one transaction" \
@@ -50,8 +52,16 @@ else
 fi
 
 echo ""
+echo "=== Notes ==="
+echo "  [!] LibreOffice / soffice: NOT available in this sandbox (proot has no standard"
+echo "      /proc mount - LibreOffice aborts at startup; unfixable in-sandbox)."
+echo "      \"soffice\" / \"libreoffice\" commands hit shims that explain this. For document"
+echo "      preview/rendering use: officecli view <file> screenshot  (or html)."
+
+echo ""
 echo "=== Workflow hints ==="
 echo "  1. Read a file before editing it."
-echo "  2. Code/text edits -> apply-patch; existing Office files -> office-edit; build new files -> python3 / pandoc."
+echo "  2. Office documents -> officecli (full suite); tiny in-place swaps -> office-edit;"
+echo "     code/text edits -> apply-patch; format conversion -> pandoc; programmatic build -> python3."
 echo "  3. After a successful apply-patch, do NOT re-read the file — the tool result is authoritative."
 echo "  4. Run office-check before delivering any .docx/.pptx/.xlsx."
