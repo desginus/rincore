@@ -168,6 +168,8 @@ class RikkaHubApp : Application() {
                     commandCodeEnabled = st.commandCodeWarmEnabled,
                     opencodeEnabled = st.opencodeWarmEnabled,
                 )
+                // v4.7.18: 网络切换监听 — 接口变化时清理连接池 (防旧连接复用断流)
+                ConnectionWarmer.startNetworkMonitor(this@RikkaHubApp)
             }
         }, "warmup-user-providers").start()
         this.createNotificationChannel()

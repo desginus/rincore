@@ -654,6 +654,28 @@ class ChatService(
         runCatching { if (wl.isHeld) wl.release() }
     }
 
+    // v4.7.18: 生成时 WifiLock — 防息屏后 WiFi 射频休眠导致的中途断流
+    // (用户: 电脑上同类断流与网卡有关; 手机对应物 = WiFi 省电射频休眠。
+    //  生成期间保持 WiFi 高性能模式, 流式读取不被打断)
+    @Suppress("DEPRECATION")
+    private fun acquireGenWifiLock(): android.net.wifi.WifiManager.WifiLock? {
+        return runCatching {
+            val wm = context.getSystemService(android.net.wifi.WifiManager::class.java) ?: return null
+            val wl = wm.createWifiLock(
+                android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                "rincore:generation"
+            )
+            wl.setReferenceCounted(false)
+            wl.acquire()
+            wl
+        }.getOrNull()
+    }
+
+    private fun releaseGenWifiLock(wl: android.net.wifi.WifiManager.WifiLock?) {
+        if (wl == null) return
+        runCatching { if (wl.isHeld) wl.release() }
+    }
+
     private suspend fun handleMessageComplete(
         conversationId: Uuid,
         messageRange: ClosedRange<Int>? = null
@@ -666,6 +688,8 @@ class ChatService(
 
         // v3.6.15: 生成保活 — 切后台时 CPU/网络读稳定 (onCompletion 释放)
         val genWakeLock = acquireGenWakeLock()
+        // v4.7.18: WiFi 射频保活 (防息屏射频休眠断流; onCompletion 释放)
+        val genWifiLock = acquireGenWifiLock()
 
         // 4.1.3 TTFT: 生成前预热整体移除 — 两点结构性缺陷:
         //   a) 与主请求并发, 同 key 请求被网关串行化 (v3.12.6 用户实测),
@@ -823,6 +847,8 @@ class ChatService(
 
                     // v3.6.15: 生成结束释放 WakeLock (NonCancellable 内 — 取消态也执行)
                     releaseGenWakeLock(genWakeLock)
+                    // v4.7.18: 释放 WifiLock
+                    releaseGenWifiLock(genWifiLock)
 
                     // 生成结束：取消 Live Update 通知，后台时发送完成通知
                     appEventBus.emit(

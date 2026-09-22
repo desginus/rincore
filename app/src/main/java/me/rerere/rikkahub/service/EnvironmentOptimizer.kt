@@ -26,6 +26,33 @@ import java.util.concurrent.ConcurrentHashMap
  * 用户的首次请求将跳过 DNS 查询和 TCP 握手, 延迟降低 200-500ms。
  */
 object ConnectionWarmer {
+    // v4.7.18: 网络切换监听 — 网络可用性变化 (WiFi↔蜂窝切换/抖动恢复) 时
+    // 清理连接池。用户实证: 电脑上同类断流与网卡有关; 手机对应场景 = 网络
+    // 接口切换后旧连接已死, 复用即断流。
+    @Volatile
+    private var networkMonitorRegistered = false
+
+    fun startNetworkMonitor(context: android.content.Context) {
+        if (networkMonitorRegistered) return
+        runCatching {
+            val cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
+                as? android.net.ConnectivityManager ?: return
+            val cb = object : android.net.ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: android.net.Network) {
+                    Log.i(TAG, "network available — evicting connection pools")
+                    me.rerere.ai.provider.ProviderManager.evictAllPools()
+                }
+                override fun onLost(network: android.net.Network) {
+                    Log.i(TAG, "network lost — evicting connection pools")
+                    me.rerere.ai.provider.ProviderManager.evictAllPools()
+                }
+            }
+            cm.registerDefaultNetworkCallback(cb)
+            networkMonitorRegistered = true
+            Log.i(TAG, "network monitor started")
+        }.onFailure { Log.w(TAG, "network monitor failed: ${it.message}") }
+    }
+
     private const val TAG = "ConnectionWarmer"
     // v3.6.45: per-host warmed — 避免重复预热同一 host, 但支持多 host 预热
     private val warmedHosts = ConcurrentHashMap.newKeySet<String>()

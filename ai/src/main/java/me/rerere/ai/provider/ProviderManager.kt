@@ -25,6 +25,8 @@ class ProviderManager(
     private val providers = mutableMapOf<String, Provider<*>>()
 
     init {
+        // v4.7.18: 主 client 静态引用 — 供 evictAllPools (断流重试/网络切换清理)
+        primaryClient = client
         // 注册默认Provider
         registerProvider("openai", OpenAIProvider(client, context, proxyRoute, opencodeClient))
         registerProvider("google", GoogleProvider(client, context, proxyRoute))
@@ -74,5 +76,20 @@ class ProviderManager(
         /** v3.10.5: OpenCode 网关独立连接池 (keepalive 300s), DataSourceModule 注入 */
         @Volatile
         var opencodeClient: OkHttpClient? = null
+
+        /** v4.7.18: 主 client 静态引用 — 断流场景连接池清理用 */
+        @Volatile
+        private var primaryClient: OkHttpClient? = null
+
+        /**
+         * v4.7.18: 全域连接池清理 — 断流重试 / 网络切换 (WiFi↔蜂窝、抖动恢复)
+         * 时调用。断流多由连接层失效引起 (网络抖动/僵尸连接/网卡问题); 复用
+         * 失效连接会让重试直接失败。清理后重试 = 全新连接, 一次成功。
+         */
+        fun evictAllPools() {
+            runCatching { primaryClient?.connectionPool?.evictAll() }
+            runCatching { claudeClient?.connectionPool?.evictAll() }
+            runCatching { opencodeClient?.connectionPool?.evictAll() }
+        }
     }
 }

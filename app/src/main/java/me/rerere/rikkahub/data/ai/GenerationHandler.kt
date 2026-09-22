@@ -1475,6 +1475,10 @@ class GenerationHandler(
                             is RetryPhase.Stream -> retry.stream++
                             else -> {}
                         }
+                        // v4.7.18: 重试前清理连接池 — 断流多为连接层失效 (网络抖动/
+                        // 僵尸连接/网卡问题), 复用陈旧连接会让重试立即再失败; 清理后
+                        // 重试走全新连接, 配合退避 delay 显著提高恢复成功率。
+                        me.rerere.ai.provider.ProviderManager.evictAllPools()
                         if (verdict.delayMs > 0) kotlinx.coroutines.delay(verdict.delayMs)
                         Log.w(TAG, "stream retry $verdict.logDetail (budget ${System.currentTimeMillis() - retryBudgetStartMs}ms): ${e.message}")
                         CallTracer.event("RETRY", "stream_retry",
