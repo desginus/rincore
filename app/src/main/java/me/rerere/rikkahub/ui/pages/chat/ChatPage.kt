@@ -192,7 +192,14 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
     }
 
     // 初始化输入状态（处理传入的 files 和 text 参数）
+    // v4.7.23: 一次性消费 + 追加语义 —
+    //   ① vm.shareArgsConsumed: 首帧消费后置位, 页面重建 (抽屉→设置→返回) 不再重复
+    //      填充 (修复"已发送的分享文档幽灵重现");
+    //   ② 附件/文本追加到现有输入, 不覆盖 (修复"分享文档抹除输入框已有内容")。
     LaunchedEffect(files, text) {
+        if (vm.shareArgsConsumed) return@LaunchedEffect
+        if (files.isEmpty() && text.isNullOrEmpty()) return@LaunchedEffect
+        vm.shareArgsConsumed = true
         if (files.isNotEmpty()) {
             val localFiles = filesManager.createChatFilesByContents(files)
             val contentTypes = files.mapNotNull { file ->
@@ -223,11 +230,15 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
                     }
                 }
             }
-            inputState.messageContent = parts
+            // 追加而非替换 (不抹除用户已写内容)
+            inputState.messageContent = inputState.messageContent + parts
         }
         text?.base64Decode()?.let { decodedText ->
             if (decodedText.isNotEmpty()) {
-                inputState.setMessageText(decodedText)
+                val existing = inputState.textContent.text.toString()
+                inputState.setMessageText(
+                    if (existing.isBlank()) decodedText else "$existing\n$decodedText"
+                )
             }
         }
     }

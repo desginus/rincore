@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -121,10 +121,12 @@ fun WorkspaceCwdPickerSheet(
 
             HorizontalDivider()
 
+            // v4.7.23: 布局稳定化 — 原 heightIn(max=350) 在加载前后高度跳变
+            // (空->有内容), 打开后"抽动一下/按钮下移"。改固定高度: 打开即终态布局。
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 350.dp),
+                    .height(350.dp),
             ) {
                 val dirs = entries.filter { it.isDirectory }
                 items(dirs, key = { it.path }) { entry ->

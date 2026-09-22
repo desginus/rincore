@@ -122,9 +122,10 @@ import androidx.compose.runtime.setValue
 import me.rerere.rikkahub.utils.plus
 
 @Composable
-fun WorkspaceDetailPage(id: String, initialTab: Int = 0) {
+fun WorkspaceDetailPage(id: String, initialTab: Int = 0, initialPath: String? = null) {
     val navController = LocalNavController.current
-    val vm: WorkspaceDetailVM = koinViewModel(parameters = { parametersOf(id) })
+    // v4.7.23: initialPath — "应用文件"入口的默认浏览目录 (对话 CWD); 其他入口为 null (顶层)
+    val vm: WorkspaceDetailVM = koinViewModel(parameters = { parametersOf(id, initialPath ?: "") })
     val state by vm.state.collectAsStateWithLifecycle()
     val installProgress by vm.installProgress.collectAsStateWithLifecycle()
     val installError by vm.installError.collectAsStateWithLifecycle()

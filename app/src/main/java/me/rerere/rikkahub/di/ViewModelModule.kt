@@ -75,6 +75,7 @@ val viewModelModule = module {
     viewModel<WorkspaceDetailVM> {
         WorkspaceDetailVM(
             id = it.get(),
+            initialPath = it.get(),
             repository = get(),
         )
     }

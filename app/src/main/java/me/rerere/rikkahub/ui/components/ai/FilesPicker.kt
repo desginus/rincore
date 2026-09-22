@@ -172,7 +172,15 @@ internal fun FilesPicker(
                 val targetId = wsId ?: firstWsId
                 onDismiss()
                 if (targetId != null) {
-                    navController.navigate(Screen.WorkspaceDetail(targetId, initialTab = 1))
+                    // v4.7.23: "应用文件"进入的默认目录 = 当前对话 CWD (用户定版);
+                    // 需要顶层时用户在页面内点返回键逐级上溯。
+                    navController.navigate(
+                        Screen.WorkspaceDetail(
+                            targetId,
+                            initialTab = 1,
+                            initialPath = assistant.workspaceCwd,
+                        )
+                    )
                 } else {
                     navController.navigate(Screen.Workspaces)
                 }

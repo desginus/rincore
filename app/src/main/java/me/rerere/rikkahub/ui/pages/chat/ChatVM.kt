@@ -63,6 +63,10 @@ class ChatVM(
     private val _conversationId: Uuid = Uuid.parse(id)
     val conversation: StateFlow<Conversation> = chatService.getConversationFlow(_conversationId)
     var chatListInitialized by mutableStateOf(false) // 聊天列表是否已经滚动到底部
+    // v4.7.23: 分享/深链一次性输入参数消费标记 — 首个组合消费后置位。
+    // 防止页面重建 (抽屉→设置→返回) 时重复消费 back stack 的 files/text,
+    // 导致"已完成发送的分享文档幽灵重现"。
+    var shareArgsConsumed by mutableStateOf(false)
 
     // 聊天输入状态 - 保存在 ViewModel 中避免 TransactionTooLargeException
     val inputState = ChatInputState()

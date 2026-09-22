@@ -70,7 +70,7 @@ import androidx.compose.runtime.setValue
 
 @Composable
 fun WorkspaceTerminalPage(id: String) {
-    val vm: WorkspaceDetailVM = koinViewModel(parameters = { parametersOf(id) })
+    val vm: WorkspaceDetailVM = koinViewModel(parameters = { parametersOf(id, "") })  // v4.7.23: 共享 VM 第二参 initialPath
     val state by vm.state.collectAsStateWithLifecycle()
     val sessionManager: WorkspaceTerminalSessionManager = koinInject()
     val root = state.workspace?.root

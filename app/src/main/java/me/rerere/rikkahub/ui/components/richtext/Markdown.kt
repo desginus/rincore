@@ -47,6 +47,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.key
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
@@ -258,8 +259,71 @@ private fun parseMarkdown(content: String): MarkdownParseResult {
     return MarkdownParseResult(preprocessed, astTree, astTree.containsHtml())
 }
 
+/** v4.7.23: 流式分段阈值 — 超长内容启用稳定段分离渲染 */
+private const val STREAM_SPLIT_THRESHOLD = 1200
+
+/**
+ * v4.7.23: 流式稳定段分离 —
+ * 已完成段落 (以空行 \n\n 为界, 避开未闭合代码围栏) 用内容做 key 独立渲染:
+ * 流式增量到来时, 已完成的段落键不变 → 跳过重组/重解析 ("渲染完了就定下");
+ * 仅活动尾段 (及刚增长的一段) 参与流式解析渲染。
+ * 短内容 (< 阈值) 走原单块路径, 行为分毫不变。
+ */
 @Composable
 fun MarkdownBlock(
+    content: String,
+    modifier: Modifier = Modifier,
+    style: TextStyle = LocalTextStyle.current,
+    onClickCitation: (String) -> Unit = {}
+) {
+    if (content.length > STREAM_SPLIT_THRESHOLD) {
+        val segments = remember(content) { splitStableSegments(content) }
+        Column(modifier = modifier) {
+            segments.forEachIndexed { index, segment ->
+                val isLast = index == segments.lastIndex
+                key(if (isLast) "stream-active" else "stable-$index-${segment.hashCode()}") {
+                    MarkdownBlockCore(
+                        content = segment,
+                        modifier = Modifier.fillMaxWidth(),
+                        style = style,
+                        onClickCitation = onClickCitation,
+                    )
+                }
+            }
+        }
+    } else {
+        MarkdownBlockCore(content, modifier, style, onClickCitation)
+    }
+}
+
+/**
+ * 稳定段拆分器 — 单遍扫描 O(n):
+ * 以空行 (\n\n) 为段界; 代码围栏 (``` / ~~~) 内的空行不拆 (结构安全)。
+ * 最后一个返回段 = 活动段 (可能含未闭合围栏), 其余均为语义完整段。
+ */
+private fun splitStableSegments(content: String): List<String> {
+    val out = mutableListOf<String>()
+    var start = 0
+    var index = 0
+    var inFence = false
+    while (index < content.length) {
+        when {
+            !inFence && content.startsWith("```", index) -> { inFence = true; index += 3; continue }
+            inFence && content.startsWith("```", index) -> { inFence = false; index += 3; continue }
+            !inFence && content.startsWith("~~~", index) -> { inFence = true; index += 3; continue }
+            inFence && content.startsWith("~~~", index) -> { inFence = false; index += 3; continue }
+            !inFence && content.startsWith("\n\n", index) -> {
+                out.add(content.substring(start, index + 2)); start = index + 2; index += 2; continue
+            }
+        }
+        index++
+    }
+    if (start < content.length) out.add(content.substring(start))
+    return out
+}
+
+@Composable
+private fun MarkdownBlockCore(
     content: String,
     modifier: Modifier = Modifier,
     style: TextStyle = LocalTextStyle.current,

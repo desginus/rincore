@@ -33,9 +33,16 @@ import me.rerere.workspace.WorkspaceStorageArea
 
 class WorkspaceDetailVM(
     private val id: String,
+    initialPath: String,
     private val repository: WorkspaceRepository,
 ) : ViewModel() {
-    private val _state = MutableStateFlow(WorkspaceDetailState())
+    // v4.7.23: 初始浏览目录 — "应用文件"入口传对话 CWD (绝对 /workspace/... 前缀),
+    // 转为 state 内的相对路径; 其他入口传空串 = 顶层。
+    private val _state = MutableStateFlow(
+        WorkspaceDetailState(
+            path = initialPath.removePrefix("/workspace/").removePrefix("/workspace").removePrefix("/"),
+        )
+    )
     val state = _state.asStateFlow()
 
     private val _terminalState = MutableStateFlow(WorkspaceTerminalState())
