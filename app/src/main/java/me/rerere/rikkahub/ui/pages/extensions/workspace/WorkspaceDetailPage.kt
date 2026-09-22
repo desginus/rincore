@@ -219,6 +219,15 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0, initialPath: String? = 
                                 contentDescription = "新建",
                             )
                         }
+                        // v4.8.4: 文件传输中 (上传/导出) — 圆形加载指示, 完成即消失
+                        if (state.activeTransfers > 0) {
+                            Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(22.dp),
+                                    strokeWidth = 2.5.dp,
+                                )
+                            }
+                        }
                         IconButton(onClick = { filePicker.launch(arrayOf("*/*")) }) {
                             Icon(
                                 HugeIcons.FileImport,

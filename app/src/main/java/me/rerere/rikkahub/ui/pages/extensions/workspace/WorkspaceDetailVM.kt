@@ -152,18 +152,24 @@ class WorkspaceDetailVM(
 
     fun importFile(inputStream: InputStream, fileName: String) {
         viewModelScope.launch {
-            runCatching {
-                repository.importFile(
-                    id = id,
-                    area = state.value.area,
-                    destinationPath = state.value.path,
-                    fileName = fileName,
-                    inputStream = inputStream,
-                )
-            }.onSuccess {
-                refresh()
-            }.onFailure { error ->
-                _state.update { it.copy(error = error.message ?: "导入文件失败") }
+            // v4.8.4: 传输计数包裹 — 上传期间 UI 显示圆形加载指示
+            _state.update { it.copy(activeTransfers = it.activeTransfers + 1) }
+            try {
+                runCatching {
+                    repository.importFile(
+                        id = id,
+                        area = state.value.area,
+                        destinationPath = state.value.path,
+                        fileName = fileName,
+                        inputStream = inputStream,
+                    )
+                }.onSuccess {
+                    refresh()
+                }.onFailure { error ->
+                    _state.update { it.copy(error = error.message ?: "导入文件失败") }
+                }
+            } finally {
+                _state.update { it.copy(activeTransfers = (it.activeTransfers - 1).coerceAtLeast(0)) }
             }
         }
     }
@@ -175,18 +181,24 @@ class WorkspaceDetailVM(
 
     fun exportFile(entry: WorkspaceFileEntry, outputStream: OutputStream) {
         viewModelScope.launch {
-            runCatching {
-                // v4.5.7: exportFile 契约变更 — 不再关闭传入流, 由调用方管理
-                outputStream.use { output ->
-                    repository.exportFile(
-                        id = id,
-                        area = state.value.area,
-                        path = entry.path,
-                        outputStream = output,
-                    )
+            // v4.8.4: 传输计数包裹 — 导出期间 UI 显示圆形加载指示
+            _state.update { it.copy(activeTransfers = it.activeTransfers + 1) }
+            try {
+                runCatching {
+                    // v4.5.7: exportFile 契约变更 — 不再关闭传入流, 由调用方管理
+                    outputStream.use { output ->
+                        repository.exportFile(
+                            id = id,
+                            area = state.value.area,
+                            path = entry.path,
+                            outputStream = output,
+                        )
+                    }
+                }.onFailure { error ->
+                    _state.update { it.copy(error = error.message ?: "导出文件失败") }
                 }
-            }.onFailure { error ->
-                _state.update { it.copy(error = error.message ?: "导出文件失败") }
+            } finally {
+                _state.update { it.copy(activeTransfers = (it.activeTransfers - 1).coerceAtLeast(0)) }
             }
         }
     }
@@ -251,15 +263,21 @@ class WorkspaceDetailVM(
 
     fun exportFolder(entry: WorkspaceFileEntry, outputStream: OutputStream) {
         viewModelScope.launch {
-            runCatching {
-                repository.exportFolderZip(
-                    id = id,
-                    area = state.value.area,
-                    folderPath = entry.path,
-                    outputStream = outputStream,
-                )
-            }.onFailure { error ->
-                _state.update { it.copy(error = error.message ?: "导出文件夹失败: " + (error.message ?: "")) }
+            // v4.8.4: 传输计数包裹 — 文件夹导出期间 UI 显示圆形加载指示
+            _state.update { it.copy(activeTransfers = it.activeTransfers + 1) }
+            try {
+                runCatching {
+                    repository.exportFolderZip(
+                        id = id,
+                        area = state.value.area,
+                        folderPath = entry.path,
+                        outputStream = outputStream,
+                    )
+                }.onFailure { error ->
+                    _state.update { it.copy(error = error.message ?: "导出文件夹失败: " + (error.message ?: "")) }
+                }
+            } finally {
+                _state.update { it.copy(activeTransfers = (it.activeTransfers - 1).coerceAtLeast(0)) }
             }
         }
     }
@@ -532,6 +550,9 @@ data class WorkspaceDetailState(
     val selectionMode: Boolean = false,
     val selectedPaths: Set<String> = emptySet(),
     val exporting: Boolean = false,
+    // v4.8.4: 文件传输计数 (上传/单文件导出/文件夹导出进行中 > 0) —
+    // UI 据此显示圆形加载指示 (传输完成即消失)
+    val activeTransfers: Int = 0,
     val exportCompleted: Int = 0,
     val exportTotal: Int = 0,
     val exportResult: String? = null,

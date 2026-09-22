@@ -130,6 +130,10 @@ internal fun FilesPicker(
     val provider = settings.getCurrentChatModel()?.findProvider(providers = settings.providers)
     val navController = LocalNavController.current
     val workspaceRepository: WorkspaceRepository = koinInject()
+    // v4.8.4: 记忆数据 (判断"存在真实记忆条目"用于状态着色)
+    val memoryRepository: me.rerere.rikkahub.data.repository.MemoryRepository = koinInject()
+    val memories by memoryRepository.getMemoriesOfAssistantFlow(assistant.id.toString())
+        .collectAsStateWithLifecycle(initialValue = emptyList())
     val workspaces by workspaceRepository.listFlow().collectAsState(initial = emptyList())
     val workspaceId = assistant.workspaceId?.toString()
     val inputState = state
@@ -251,6 +255,13 @@ internal fun FilesPicker(
                 .sortedByDescending { it.startedAtMs }
         }
         val cwdReady = boundWorkspace != null && boundWorkspace.shellStatus == WorkspaceShellStatus.READY.name
+        // v4.8.4: 状态警示色判定 (与延时回复触发态同色 #2196F3) —
+        // ① 对话 token 总数 > 100k → 提醒可压缩; ② 子代理运行/等待中;
+        // ③ 记忆开启且有真实条目数据 (关闭则保持原状)
+        val memoryActive = assistant.enableMemory && memories.isNotEmpty()
+        val conversationTokens = conversation.messageNodes.sumOf { node -> node.currentMessage.usage?.totalTokens ?: 0 }
+        val tokensHot = conversationTokens > 100_000
+        val subAgentsActive = conversationRuns.any { it.status == SubAgentStatus.RUNNING || it.status == SubAgentStatus.PENDING }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly,
@@ -258,7 +269,13 @@ internal fun FilesPicker(
             // 1. 子代理详情 — 对话子代理的唯一展示窗口
             BigIconTextButton(
                 modifier = Modifier.weight(1f),
-                icon = { Icon(HugeIcons.AiBrain01, null) },
+                icon = {
+                    // v4.8.4: 有运行中/等待中的子代理 → 图标变蓝示警
+                    Icon(
+                        HugeIcons.AiBrain01, null,
+                        tint = if (subAgentsActive) Color(0xFF2196F3) else LocalContentColor.current,
+                    )
+                },
                 text = {
                     Text(
                         text = if (conversationRuns.any { it.status == SubAgentStatus.RUNNING || it.status == SubAgentStatus.PENDING }) {
@@ -272,7 +289,13 @@ internal fun FilesPicker(
             // 2. 模型记忆 — 直接路由当前助手记忆管理页 (无顶部选项卡)
             BigIconTextButton(
                 modifier = Modifier.weight(1f),
-                icon = { Icon(HugeIcons.Book02, null) },
+                icon = {
+                    // v4.8.4: 记忆开启且有真实条目 → 图标变蓝; 记忆关闭保持原状
+                    Icon(
+                        HugeIcons.Book02, null,
+                        tint = if (memoryActive) Color(0xFF2196F3) else LocalContentColor.current,
+                    )
+                },
                 text = { Text(stringResource(R.string.chat_quick_memory), maxLines = 1) },
             ) {
                 onDismiss()
@@ -295,7 +318,13 @@ internal fun FilesPicker(
             // 4. 当前上下文对话条数 — 压缩按条数计算, 这里给模型可见的条数统计 (只读)
             BigIconTextButton(
                 modifier = Modifier.weight(1f),
-                icon = { Icon(HugeIcons.BubbleChatQuestion, null) },
+                icon = {
+                    // v4.8.4: 对话 token 总数 > 100k → 图标变蓝 (提醒可压缩)
+                    Icon(
+                        HugeIcons.BubbleChatQuestion, null,
+                        tint = if (tokensHot) Color(0xFF2196F3) else LocalContentColor.current,
+                    )
+                },
                 text = {
                     Text(
                         text = stringResource(R.string.chat_quick_context_count_value, conversation.messageNodes.size),

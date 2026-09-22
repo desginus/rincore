@@ -300,6 +300,9 @@ fun ChatInput(
                             modifier = Modifier
                                 .weight(1f)
                                 .horizontalScroll(rememberScrollState()),
+                            // v4.8.4: 垂直居中 (互换后发送键置于此位, 内层默认 Top 对齐
+                            // 使大尺寸发送键视觉上移; 居中后与标准位置同高)
+                            verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
                             // Model Picker
