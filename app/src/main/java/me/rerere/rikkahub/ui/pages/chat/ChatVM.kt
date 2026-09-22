@@ -15,7 +15,9 @@ import me.rerere.rikkahub.data.firebase.StubAnalytics
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -247,16 +249,26 @@ class ChatVM(
         }
     }
 
+    // v4.8.6: 压缩进行中状态 — 页内提示用 (压缩弹窗关闭后"后台运行"语义下,
+    // 用户回来仍可见压缩仍在进行; 只随本 VM (本对话) 存在, 切走其他页面自由)
+    private val _compressing = MutableStateFlow(false)
+    val compressing: StateFlow<Boolean> = _compressing.asStateFlow()
+
     fun handleCompressContext(additionalPrompt: String, targetTokens: Int, keepRecentMessages: Int): Job {
         return viewModelScope.launch {
-            chatService.compressConversation(
-                _conversationId,
-                conversation.value,
-                additionalPrompt,
-                targetTokens,
-                keepRecentMessages
-            ).onFailure {
-                chatService.addError(it, title = context.getString(R.string.error_title_compress_conversation))
+            _compressing.value = true
+            try {
+                chatService.compressConversation(
+                    _conversationId,
+                    conversation.value,
+                    additionalPrompt,
+                    targetTokens,
+                    keepRecentMessages
+                ).onFailure {
+                    chatService.addError(it, title = context.getString(R.string.error_title_compress_conversation))
+                }
+            } finally {
+                _compressing.value = false
             }
         }
     }

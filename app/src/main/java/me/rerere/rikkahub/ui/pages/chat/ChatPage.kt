@@ -12,6 +12,13 @@ import androidx.activity.compose.BackHandler
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Alignment
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -542,6 +549,30 @@ private fun ChatPageContent(
             },
             containerColor = Color.Transparent,
         ) { innerPadding ->
+            // v4.8.6: 压缩中页内提示 (非模态, 仅作用于本对话) — 压缩弹窗可关闭
+            // "后台运行", 此条随本对话可见; 切走其他对话/工作区完全自由。
+            val compressing by vm.compressing.collectAsStateWithLifecycle()
+            Box(modifier = Modifier.fillMaxSize()) {
+            if (compressing) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(innerPadding)
+                        .padding(top = 8.dp),
+                    shape = RoundedCornerShape(50),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    tonalElevation = 4.dp,
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Text("正在压缩上下文…", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
             ChatList(
                 innerPadding = innerPadding,
                 hazeState = hazeState,
@@ -617,6 +648,7 @@ private fun ChatPageContent(
                     vm.saveConversationAsync()
                 },
             )
+            }
         }
         } // LocalHazeState provider 闭合
 

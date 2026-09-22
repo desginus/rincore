@@ -63,9 +63,11 @@ fun CompressContextDialog(
 
     AlertDialog(
         onDismissRequest = {
-            if (!isLoading) {
-                onDismiss()
-            }
+            // v4.8.6: 压缩进行中也可关闭 — "后台运行"语义 (Job 挂在 VM scope,
+            // 关闭弹窗不影响压缩继续; 完成后自动应用, 失败走全局错误提示)。
+            // 此前 loading 时点击外部/返回均无效且弹窗阻塞全景交互 (用户实证:
+            // "处于压缩状态时整个应用无法进行任何交互")。
+            onDismiss()
         },
         title = {
             Text(stringResource(R.string.chat_page_compress_context_title))

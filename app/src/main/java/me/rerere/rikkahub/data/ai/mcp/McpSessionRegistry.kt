@@ -142,7 +142,11 @@ internal class McpSessionRegistry(
 
             val mustReconnect = !hasSameConnectionParameters(existing.config, newConfig)
             existing.config = newConfig
-            if (mustReconnect) {
+            // v4.8.6: 补连 (修复"重启后永久断联") —
+            // 既有 session 但从未连上 (client == null 且无重连任务在跑) 时必须补连:
+            // 此前仅配置变化才重连, 启动首连失败 (如更新版本后首启、沙箱初始化中)
+            // 后即使后续 settings emit 也永不重试 → 所有 MCP 表现为永久断联。
+            if (mustReconnect || (existing.client == null && existing.reconnectJob?.isActive != true)) {
                 appScope.launch { addClient(newConfig) }
             }
         }
@@ -276,6 +280,12 @@ internal class McpSessionRegistry(
                     ConnectResult.NeedsAuthorization
                 } else {
                     statusStore.update(config.id, McpStatus.Error.from(e))
+                    // v4.8.6: 首次连接失败也进入重连链 — 此前只有"已连接后断开"
+                    // (onClose/onError) 才触发重连; 启动首连失败 (沙箱初始化中/
+                    // 瞬时网络抖动) 直接永久 Error (用户实证"重启后断联")。
+                    // sourceClient = null: 连接失败路径 session.client 仍为 null,
+                    // 传 sdkClient 会被"sourceClient !== session.client"校验跳过重连。
+                    requestReconnect(config.id, sourceClient = null, retryAfterFailure = true)
                     ConnectResult.Failed
                 }
             }
