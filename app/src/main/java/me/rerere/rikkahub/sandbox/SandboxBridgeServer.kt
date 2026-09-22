@@ -243,8 +243,8 @@ object SandboxBridgeServer {
     private fun authorized(header: String?): Boolean = header != null && token.isNotEmpty() && header == token
 
     private fun parseBody(raw: String): JsonObject = runCatching {
-        JsonInstant.parseToJsonElement(raw) as? JsonObject ?: JsonObject(emptyMap())
-    }.getOrDefault(JsonObject(emptyMap()))
+        JsonInstant.parseToJsonElement(raw) as? JsonObject ?: JsonObject(emptyMap<String, kotlinx.serialization.json.JsonElement>())
+    }.getOrDefault(JsonObject(emptyMap<String, kotlinx.serialization.json.JsonElement>()))
 
     private fun okJson(ok: Boolean): String = buildJsonObject { put("ok", ok) }.toString()
 
@@ -315,7 +315,8 @@ object SandboxBridgeServer {
         val settings = settingsStore.settingsFlow.value
         val model = settings.getCurrentChatModel() ?: error("no chat model configured")
         val providerSetting = model.findProvider(settings.providers) ?: error("provider not found for model")
-        val provider = ProviderManager.getProviderByType(providerSetting)
+        val providerManager: ProviderManager = GlobalContext.get().get()
+        val provider = providerManager.getProviderByType(providerSetting)
         val messages = buildList {
             if (!system.isNullOrBlank()) {
                 add(UIMessage(role = MessageRole.SYSTEM, parts = listOf(UIMessagePart.Text(system))))
