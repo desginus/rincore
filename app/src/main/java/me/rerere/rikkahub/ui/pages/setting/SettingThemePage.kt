@@ -2,8 +2,8 @@ package me.rerere.rikkahub.ui.pages.setting
 
 
 /* ───【域 F·主题渲染】SettingThemePage.kt
- * 职责: 主题设置页 (预设列表/自定义编辑/HueSliderRow 色相条 v4.8.9)
- * 常用改动: 新预设注册链 → PresetTheme.kt + strings; 自定义交互 → HueSliderRow
+ * 职责: 主题设置页 (预设列表/自定义编辑/HSL 三通道调色 v4.8.18)
+ * 常用改动: 新预设注册链 → PresetTheme.kt + strings; 自定义交互 → HslChannelSliders
  * 问题定位: 主题显示异常/自定义色不对 → 本文件 + Theme.kt
  * 基线: 原版移植 + 自研 (色相条/预设) | 地图: docs/APP_MAP.md §F | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
@@ -441,7 +441,7 @@ private fun CustomThemeEditSheet(
                     text = stringResource(R.string.setting_theme_page_primary_color),
                     style = MaterialTheme.typography.titleSmall,
                 )
-                HueSliderRow(
+                HslChannelSliders(
                     selectedArgb = currentTheme.primaryColorArgb,
                     onSelect = { currentTheme = currentTheme.copy(primaryColorArgb = it) },
                 )
@@ -450,7 +450,7 @@ private fun CustomThemeEditSheet(
                     text = stringResource(R.string.setting_theme_page_secondary_color),
                     style = MaterialTheme.typography.titleSmall,
                 )
-                HueSliderRow(
+                HslChannelSliders(
                     selectedArgb = currentTheme.secondaryColorArgb,
                     onSelect = { currentTheme = currentTheme.copy(secondaryColorArgb = it) },
                 )
@@ -459,7 +459,7 @@ private fun CustomThemeEditSheet(
                     text = stringResource(R.string.setting_theme_page_tertiary_color),
                     style = MaterialTheme.typography.titleSmall,
                 )
-                HueSliderRow(
+                HslChannelSliders(
                     selectedArgb = currentTheme.tertiaryColorArgb,
                     onSelect = { currentTheme = currentTheme.copy(tertiaryColorArgb = it) },
                 )
@@ -540,52 +540,94 @@ private fun ImportThemeDialog(
     )
 }
 
-// v4.8.9: 色相渐变条 — 拖动/点击高效选色 (用户定版: "弄成颜色条, 可以
-// 高效搭配组合"); 替换 v4.8.8 的固定色块行。饱和/亮度固定为柔和档
-// (S=0.62, L=0.55), 色调任意拖选。
+// v4.8.18: HSL 三通道调色 (用户定版: "亮度、饱和度，这都是需要看的。
+// 而且颜色怎么只能选这些色域？把色域开得更广") — 每色三个通道条:
+//   ① 色相 (全色相环 0..360°, 渐变基于当前 S/L 实时渲染)
+//   ② 饱和度 (0..100%, 灰→艳)
+//   ③ 亮度 (0..100%, 黑→白)
+// 任何 H/S/L 组合可达, 色域全开 (原 v4.8.9 只开色相, S/L 固定柔和档)。
 
-/** 色相分数 (0..1) → 柔和主题色 ARGB。 */
-private fun hueFractionToArgb(frac: Float): Long {
-    val hue = frac.coerceIn(0f, 1f) * 360f
-    return Color.hsl(hue, 0.62f, 0.55f).toArgb().toLong() and 0xFFFFFFFFL
+/** HSL 安全转 ARGB (越界收敛)。 */
+private fun hslToArgbSafe(h: Float, s: Float, l: Float): Long {
+    return Color.hsl(
+        h.coerceIn(0f, 360f),
+        s.coerceIn(0f, 1f),
+        l.coerceIn(0f, 1f)
+    ).toArgb().toLong() and 0xFFFFFFFFL
 }
 
 @Composable
-private fun HueSliderRow(
+private fun HslChannelSliders(
     selectedArgb: Long?,
     onSelect: (Long) -> Unit,
 ) {
-    val hueColors = remember {
-        List(25) { i -> Color.hsl((i * 15f) % 360f, 0.62f, 0.55f) }
+    val hsl = FloatArray(3).also {
+        if (selectedArgb != null) {
+            ColorUtils.colorToHSL(selectedArgb.toInt(), it)
+        } else {
+            it[0] = 220f; it[1] = 0.62f; it[2] = 0.55f
+        }
     }
+    val hue = hsl[0]; val sat = hsl[1]; val lum = hsl[2]
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        // ① 色相条 — 当前 S/L 下的全色相环
+        ChannelSlider(
+            fraction = (hue / 360f).coerceIn(0f, 1f),
+            gradient = (0..24).map { i ->
+                Color.hsl((i * 15f) % 360f, sat.coerceAtLeast(0.02f), lum.coerceIn(0.06f, 0.94f))
+            },
+            thumbColor = hslToArgbSafe(hue, sat, lum).toInt(),
+            onFractionChange = { onSelect(hslToArgbSafe(it * 360f, sat, lum)) },
+        )
+        // ② 饱和度条 — (h, 0, l) → (h, 1, l)
+        ChannelSlider(
+            fraction = sat.coerceIn(0f, 1f),
+            gradient = listOf(Color.hsl(hue, 0f, lum), Color.hsl(hue, 1f, lum.coerceIn(0.06f, 0.94f))),
+            thumbColor = hslToArgbSafe(hue, sat, lum).toInt(),
+            onFractionChange = { onSelect(hslToArgbSafe(hue, it, lum)) },
+        )
+        // ③ 亮度条 — 黑 → 本色 → 白
+        ChannelSlider(
+            fraction = lum.coerceIn(0f, 1f),
+            gradient = listOf(Color.hsl(hue, sat, 0f), Color.hsl(hue, sat, 0.5f), Color.hsl(hue, sat, 1f)),
+            thumbColor = hslToArgbSafe(hue, sat, lum).toInt(),
+            onFractionChange = { onSelect(hslToArgbSafe(hue, sat, it)) },
+        )
+    }
+}
+
+@Composable
+private fun ChannelSlider(
+    fraction: Float,
+    gradient: List<Color>,
+    thumbColor: Int,
+    onFractionChange: (Float) -> Unit,
+) {
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
-            .height(40.dp)
-            .clip(RoundedCornerShape(20.dp))
+            .height(26.dp)
+            .clip(RoundedCornerShape(13.dp))
             .pointerInput(Unit) {
                 detectTapGestures { offset ->
-                    onSelect(hueFractionToArgb(offset.x / size.width))
+                    onFractionChange((offset.x / size.width).coerceIn(0f, 1f))
                 }
             }
             .pointerInput(Unit) {
                 detectDragGestures { change, _ ->
-                    onSelect(hueFractionToArgb(change.position.x / size.width))
+                    onFractionChange((change.position.x / size.width).coerceIn(0f, 1f))
                 }
             },
     ) {
         drawRoundRect(
-            brush = Brush.horizontalGradient(colors = hueColors),
+            brush = Brush.horizontalGradient(colors = gradient),
             cornerRadius = CornerRadius(size.height / 2f),
         )
-        if (selectedArgb != null) {
-            val selArgb = selectedArgb.toInt()
-            val hsl = FloatArray(3).also { ColorUtils.colorToHSL(selArgb, it) }
-            val x = (hsl[0].coerceIn(0f, 360f) / 360f) * size.width
-            val cy = size.height / 2f
-            drawCircle(Color.White, radius = size.height * 0.40f, center = Offset(x, cy))
-            drawCircle(Color(selArgb), radius = size.height * 0.32f, center = Offset(x, cy))
-        }
+        val x = fraction.coerceIn(0f, 1f) * size.width
+        val cy = size.height / 2f
+        drawCircle(Color.White, radius = size.height * 0.42f, center = Offset(x, cy))
+        drawCircle(Color(thumbColor), radius = size.height * 0.30f, center = Offset(x, cy))
     }
 }
 
