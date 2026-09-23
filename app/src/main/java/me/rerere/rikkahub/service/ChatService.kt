@@ -1232,6 +1232,12 @@ class ChatService(
     }
 
     private fun checkFilesDelete(newConversation: Conversation, oldConversation: Conversation) {
+        // v4.8.19 性能: 快路径 — 文件清单未变时跳过全部扫描。流式期间每 50ms 的
+        // updateConversation 绝大多数只改消息 (files 不变); 此时代数上可证
+        // deletedFiles 必为空: deletedFiles = old.files - (new.files + queued),
+        // 当 new.files == old.files 时差集恒空, 原扫描 (队列 flatMap + URI 转换)
+        // 属纯浪费。文件删除仅发生在消息编辑/删除等显式路径 (files 会被更新)。
+        if (newConversation.files == oldConversation.files) return
         val session = sessionManager.get(newConversation.id)
         val queuedFiles = (session?.messageQueue?.state?.value?.messages.orEmpty() +
                 listOfNotNull(session?.submittingMessage))
