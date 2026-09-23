@@ -33,16 +33,18 @@ internal fun releaseGenWakeLock(wl: android.os.PowerManager.WakeLock?) {
 }
 
 /**
- * v4.7.18: 生成时 WifiLock — 防息屏后 WiFi 射频休眠导致的中途断流
- * (用户: 电脑上同类断流与网卡有关; 手机对应物 = WiFi 省电射频休眠。
- *  生成期间保持 WiFi 高性能模式, 流式读取不被打断)。
+ * v4.7.18: 生成时 WifiLock — 防息屏后 WiFi 射频休眠导致的中途断流。
+ * v4.8.21 省电降级: HIGH_PERF → FULL。HIGH_PERF 禁止 WiFi 驱动级省电 (PSM),
+ * 是整机功耗大头; 而"射频完全休眠断流"的防护 FULL 档已足够 (同样保持射频
+ * on), 且 4.8.20 前台服务已保证进程网络不被系统冻结 — 三层防护 (前台服务 +
+ * FULL WifiLock + WakeLock) 覆盖断流场景, 无需最高功耗档位。
  */
 @Suppress("DEPRECATION")
 internal fun acquireGenWifiLock(context: Context): android.net.wifi.WifiManager.WifiLock? {
     return runCatching {
         val wm = context.getSystemService(android.net.wifi.WifiManager::class.java) ?: return null
         val wl = wm.createWifiLock(
-            android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+            android.net.wifi.WifiManager.WIFI_MODE_FULL,
             "rincore:generation"
         )
         wl.setReferenceCounted(false)

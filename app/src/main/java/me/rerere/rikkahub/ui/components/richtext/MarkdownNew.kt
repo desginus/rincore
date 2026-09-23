@@ -166,9 +166,14 @@ fun MarkdownNew(
     style: TextStyle = LocalTextStyle.current,
     onClickCitation: (String) -> Unit = {},
 ) {
-    var html by remember {
+    // v4.8.21 性能: Jsoup.parse 从主线程移入后台流 — 原实现 remember(html) 内
+    // 每 50ms 在**主线程**全量解析 HTML (流式期间主线程持续负载大头)。现与
+    // HTML 生成同在 Dispatchers.Default 完成; 首帧同步保留 (原版形态: 首帧即
+    // 终态无过渡感, v4.7.26 教训 — 不引入占位/异步替换)。
+    var document by remember {
         mutableStateOf(
-            value = generateMarkdownHtml(content),
+            runCatching { Jsoup.parse(generateMarkdownHtml(content)) }
+                .getOrElse { Jsoup.parse("") },
         )
     }
 
@@ -176,14 +181,13 @@ fun MarkdownNew(
     LaunchedEffect(Unit) {
         snapshotFlow { updatedContent }
             .distinctUntilChanged()
-            .mapLatest { generateMarkdownHtml(it) }
+            .mapLatest {
+                val html = generateMarkdownHtml(it)
+                runCatching { Jsoup.parse(html) }.getOrElse { Jsoup.parse("") }
+            }
             .catch { it.printStackTrace() }
             .flowOn(Dispatchers.Default)
-            .collect { html = it }
-    }
-
-    val document = remember(html) {
-        runCatching { Jsoup.parse(html) }.getOrElse { Jsoup.parse("") }
+            .collect { document = it }
     }
 
     ProvideTextStyle(style) {
