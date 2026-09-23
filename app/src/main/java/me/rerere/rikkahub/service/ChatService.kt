@@ -638,47 +638,7 @@ class ChatService(
 
     // ---- 处理消息补全 ----
 
-    // v3.6.15: 生成时 PARTIAL WakeLock — 切后台/锁屏时 CPU 保持,
-    // 网络读不因 Doze 挂起 (SSE 流式稳定); 15min 超时兜底防泄漏
-    private fun acquireGenWakeLock(): android.os.PowerManager.WakeLock? {
-        return runCatching {
-            val pm = context.getSystemService(android.os.PowerManager::class.java) ?: return null
-            val wl = pm.newWakeLock(
-                android.os.PowerManager.PARTIAL_WAKE_LOCK,
-                "rincore:generation"
-            )
-            wl.setReferenceCounted(false)
-            wl.acquire(15 * 60 * 1000L)
-            wl
-        }.getOrNull()
-    }
-
-    private fun releaseGenWakeLock(wl: android.os.PowerManager.WakeLock?) {
-        if (wl == null) return
-        runCatching { if (wl.isHeld) wl.release() }
-    }
-
-    // v4.7.18: 生成时 WifiLock — 防息屏后 WiFi 射频休眠导致的中途断流
-    // (用户: 电脑上同类断流与网卡有关; 手机对应物 = WiFi 省电射频休眠。
-    //  生成期间保持 WiFi 高性能模式, 流式读取不被打断)
-    @Suppress("DEPRECATION")
-    private fun acquireGenWifiLock(): android.net.wifi.WifiManager.WifiLock? {
-        return runCatching {
-            val wm = context.getSystemService(android.net.wifi.WifiManager::class.java) ?: return null
-            val wl = wm.createWifiLock(
-                android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF,
-                "rincore:generation"
-            )
-            wl.setReferenceCounted(false)
-            wl.acquire()
-            wl
-        }.getOrNull()
-    }
-
-    private fun releaseGenWifiLock(wl: android.net.wifi.WifiManager.WifiLock?) {
-        if (wl == null) return
-        runCatching { if (wl.isHeld) wl.release() }
-    }
+    // (4.8.12: WakeLock/WifiLock 保活四函数移至 GenerationKeepAlive.kt — 保活体系独立文件)
 
     private suspend fun handleMessageComplete(
         conversationId: Uuid,
@@ -691,9 +651,9 @@ class ChatService(
         val model = settings.findModelById(assistant.chatModelId ?: settings.chatModelId) ?: return
 
         // v3.6.15: 生成保活 — 切后台时 CPU/网络读稳定 (onCompletion 释放)
-        val genWakeLock = acquireGenWakeLock()
+        val genWakeLock = acquireGenWakeLock(context)
         // v4.7.18: WiFi 射频保活 (防息屏射频休眠断流; onCompletion 释放)
-        val genWifiLock = acquireGenWifiLock()
+        val genWifiLock = acquireGenWifiLock(context)
 
         // 4.1.3 TTFT: 生成前预热整体移除 — 两点结构性缺陷:
         //   a) 与主请求并发, 同 key 请求被网关串行化 (v3.12.6 用户实测),
