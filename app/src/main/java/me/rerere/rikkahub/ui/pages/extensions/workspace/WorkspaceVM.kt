@@ -1,3 +1,4 @@
+/* 【域 D·工作区沙箱】 | 地图: docs/APP_MAP.md §D */
 package me.rerere.rikkahub.ui.pages.extensions.workspace
 
 /* ───【原版对齐】WorkspaceVM.kt | 差异 ±4 行 (基线 2.5.1)

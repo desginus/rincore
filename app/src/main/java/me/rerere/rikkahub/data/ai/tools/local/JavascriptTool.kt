@@ -1,3 +1,4 @@
+/* 【域 C·工具系统】 | 地图: docs/APP_MAP.md §C */
 package me.rerere.rikkahub.data.ai.tools.local
 
 /* ───【原版对齐】JavascriptTool.kt | 与 2.5.1 逐字节一致

@@ -1,3 +1,4 @@
+/* 【域 F·主题渲染】 — UI 组件 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.ui.permission
 
 /* ───【原版对齐】RememberPermissionState.kt | 与 2.5.1 逐字节一致

@@ -1,3 +1,4 @@
+/* 【域 J·Web 服务】 — 页面 | 地图: docs/APP_MAP.md §J */
 package me.rerere.rikkahub.ui.pages.webview
 
 /* ───【原版对齐】WebViewPage.kt | 与 2.5.1 逐字节一致

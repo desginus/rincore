@@ -14,6 +14,7 @@
  * 5. 缓存安全: layer1 只依赖静态配置 (配置决定, 无运行时数据);
  *    tools 数组稳定 (invoke_tools 子树一次性加载)。
  */
+/* 【域 C·工具系统】 | 地图: docs/APP_MAP.md §C */
 package me.rerere.rikkahub.data.ai.tools.routing
 
 

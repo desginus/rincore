@@ -1,3 +1,4 @@
+/* 【域 B·AI 传输】 | 地图: docs/APP_MAP.md §B */
 package me.rerere.rikkahub.data.ai.transformers
 
 /* ───【原版对齐】TemplateTransformer.kt | 差异 ±3 行 (基线 2.5.1)

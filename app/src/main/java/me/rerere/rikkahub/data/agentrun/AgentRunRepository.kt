@@ -1,3 +1,4 @@
+/* 【域 G·自动化】 — AgentRun | 地图: docs/APP_MAP.md §G */
 package me.rerere.rikkahub.data.agentrun
 
 

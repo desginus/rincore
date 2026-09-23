@@ -1,3 +1,4 @@
+/* 【域 F·主题渲染】 — UI 组件 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.motion
 
 /* ───【自研】HyperMotion.kt | 原版 2.5.1 无此文件

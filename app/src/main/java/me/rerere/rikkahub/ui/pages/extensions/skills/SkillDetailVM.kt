@@ -1,3 +1,4 @@
+/* 【域 A·对话核心】 — 页面 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.pages.extensions.skills
 
 /* ───【原版对齐】SkillDetailVM.kt | 与 2.5.1 逐字节一致

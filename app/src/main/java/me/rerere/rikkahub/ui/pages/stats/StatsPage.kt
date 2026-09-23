@@ -1,3 +1,4 @@
+/* 【域 I·数据存储】 — 页面 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.ui.pages.stats
 
 /* ───【原版对齐】StatsPage.kt | 与 2.5.1 逐字节一致

@@ -1,3 +1,4 @@
+/* 【域 E·设置体系】 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.ui.pages.setting.components
 
 /* ───【原版对齐】PresetThemeButton.kt | 与 2.5.1 逐字节一致

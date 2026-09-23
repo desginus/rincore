@@ -1,3 +1,4 @@
+/* 【域 D·工作区沙箱】 | 地图: docs/APP_MAP.md §D */
 package me.rerere.rikkahub.ui.pages.extensions.workspace
 
 /* ───【自研】DocumentPreview.kt | 原版 2.5.1 无此文件

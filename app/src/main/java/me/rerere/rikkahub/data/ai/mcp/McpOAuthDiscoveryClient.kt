@@ -1,3 +1,4 @@
+/* 【域 B·AI 传输】 — MCP | 地图: docs/APP_MAP.md §B */
 package me.rerere.rikkahub.data.ai.mcp
 
 /* ───【原版对齐】McpOAuthDiscoveryClient.kt | 与 2.5.1 逐字节一致

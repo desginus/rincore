@@ -9,6 +9,7 @@
  *
  * 问题定位: SETTINGS 报错/首条非 system → 查本文件 + MessageProtocol
  */
+/* 【域 B·AI 传输】 | 地图: docs/APP_MAP.md §B */
 package me.rerere.rikkahub.data.ai.transformers
 
 

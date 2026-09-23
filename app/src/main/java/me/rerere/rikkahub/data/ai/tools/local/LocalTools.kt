@@ -7,6 +7,7 @@
  *
  * 问题定位: 本地工具缺失/开关不生效 → 查本文件 + LocalToolOption + 对应工具文件
  */
+/* 【域 C·工具系统】 | 地图: docs/APP_MAP.md §C */
 package me.rerere.rikkahub.data.ai.tools.local
 
 

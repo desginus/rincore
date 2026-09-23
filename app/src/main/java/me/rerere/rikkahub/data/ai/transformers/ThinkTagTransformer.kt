@@ -1,3 +1,4 @@
+/* 【域 B·AI 传输】 | 地图: docs/APP_MAP.md §B */
 package me.rerere.rikkahub.data.ai.transformers
 
 /* ───【原版对齐】ThinkTagTransformer.kt | 差异 ±15 行 (基线 2.5.1)

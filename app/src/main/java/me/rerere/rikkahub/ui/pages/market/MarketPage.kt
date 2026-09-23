@@ -1,3 +1,4 @@
+/* 【域 K·生态扩展】 | 地图: docs/APP_MAP.md §K */
 package me.rerere.rikkahub.ui.pages.market
 
 

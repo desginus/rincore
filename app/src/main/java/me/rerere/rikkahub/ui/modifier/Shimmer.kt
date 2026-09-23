@@ -1,3 +1,4 @@
+/* 【域 L·基础设施】 — UI 基础 | 地图: docs/APP_MAP.md §L */
 package me.rerere.rikkahub.ui.modifier
 
 /* ───【原版对齐】Shimmer.kt | 与 2.5.1 逐字节一致

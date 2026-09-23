@@ -1,3 +1,4 @@
+/* 【域 I·数据存储】 — 页面 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.ui.pages.usage
 
 /* ───【自研】UsagePage.kt — OpenCode 用量查询页 (v3.8.2)

@@ -8,6 +8,7 @@
  *   3. Invoke Tools 帮助内容 (buildHelpText)
  * 三个 Tab 应显示完全一致的域树/计数 — 任何差异即信源分裂 bug。
  */
+/* 【域 E·设置体系】 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.ui.pages.setting
 
 

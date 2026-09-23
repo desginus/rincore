@@ -1,3 +1,4 @@
+/* 【域 G·自动化】 — 定时任务 | 地图: docs/APP_MAP.md §G */
 package me.rerere.rikkahub.service
 
 

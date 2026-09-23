@@ -1,3 +1,4 @@
+/* 【域 A·对话核心】 — 页面 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.pages.imggen
 
 /* ───【原版对齐】ImgGenPage.kt | 差异 ±16 行 (基线 2.5.1)

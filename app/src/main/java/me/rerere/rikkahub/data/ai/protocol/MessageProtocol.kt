@@ -1,4 +1,5 @@
 @file:Suppress("DEPRECATION") // ToolCall/ToolResult 序列化兼容必需
+/* 【域 B·AI 传输】 | 地图: docs/APP_MAP.md §B */
 package me.rerere.rikkahub.data.ai.protocol
 
 

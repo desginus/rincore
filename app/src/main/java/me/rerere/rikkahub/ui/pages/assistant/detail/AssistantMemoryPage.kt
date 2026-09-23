@@ -1,3 +1,4 @@
+/* 【域 E·设置体系】 — 页面 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
 /* ───【原版对齐】AssistantMemoryPage.kt | 差异 ±24 行 (基线 2.5.1)

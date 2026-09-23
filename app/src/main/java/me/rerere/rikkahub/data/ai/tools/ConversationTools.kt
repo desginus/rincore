@@ -1,3 +1,4 @@
+/* 【域 C·工具系统】 | 地图: docs/APP_MAP.md §C */
 package me.rerere.rikkahub.data.ai.tools
 
 /* ───【原版对齐】ConversationTools.kt | 与 2.5.1 逐字节一致

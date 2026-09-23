@@ -1,3 +1,4 @@
+/* 【域 I·数据存储】 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.data.favorite
 
 /* ───【原版对齐】NodeFavoriteAdapter.kt | 与 2.5.1 逐字节一致

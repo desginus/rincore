@@ -7,6 +7,7 @@
  *
  * 问题定位: MCP 工具不出现/冷启动 token 高 → 查本文件 + GenerationHandler
  */
+/* 【域 C·工具系统】 — 生态/插件 | 地图: docs/APP_MAP.md §C */
 package me.rerere.rikkahub.ecosystem.tools
 
 

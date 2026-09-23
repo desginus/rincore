@@ -1,3 +1,4 @@
+/* 【域 I·数据存储】 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.data.db.fts
 
 /* ───【原版对齐】MessageFtsManager.kt | 差异 ±2 行 (基线 2.5.1)

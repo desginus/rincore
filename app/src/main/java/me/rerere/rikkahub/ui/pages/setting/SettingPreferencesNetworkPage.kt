@@ -1,3 +1,4 @@
+/* 【域 E·设置体系】 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.ui.pages.setting
 
 /* ───【原版对齐】SettingPreferencesNetworkPage.kt | 差异 ±278 行 (基线 2.5.1)

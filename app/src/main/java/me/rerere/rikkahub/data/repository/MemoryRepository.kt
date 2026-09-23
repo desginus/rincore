@@ -1,3 +1,4 @@
+/* 【域 I·数据存储】 — 仓库层 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.data.repository
 
 /* ───【原版对齐】MemoryRepository.kt | 差异 ±41 行 (基线 2.5.1)

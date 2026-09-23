@@ -1,3 +1,4 @@
+/* 【域 D·工作区沙箱】 — 文件/技能 | 地图: docs/APP_MAP.md §D */
 package me.rerere.rikkahub.data.files
 
 /* ───【原版对齐】SkillFrontmatterParser.kt | 差异 ±59 行 (基线 2.5.1)

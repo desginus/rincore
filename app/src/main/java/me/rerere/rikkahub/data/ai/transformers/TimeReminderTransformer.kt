@@ -6,6 +6,7 @@
  *
  * 问题定位: 缓存断层与时间注入相关 → 查本文件注入位置与时戳取值
  */
+/* 【域 B·AI 传输】 | 地图: docs/APP_MAP.md §B */
 package me.rerere.rikkahub.data.ai.transformers
 
 

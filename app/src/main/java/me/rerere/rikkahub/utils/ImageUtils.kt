@@ -1,5 +1,6 @@
 @file:Suppress("unused")
 
+/* 【域 L·基础设施】 | 地图: docs/APP_MAP.md §L */
 package me.rerere.rikkahub.utils
 
 /* ───【原版对齐】ImageUtils.kt | 与 2.5.1 逐字节一致

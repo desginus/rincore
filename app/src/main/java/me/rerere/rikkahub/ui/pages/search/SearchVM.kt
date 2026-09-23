@@ -1,3 +1,4 @@
+/* 【域 H·语音搜索】 — 页面 | 地图: docs/APP_MAP.md §H */
 package me.rerere.rikkahub.ui.pages.search
 
 /* ───【原版对齐】SearchVM.kt | 与 2.5.1 逐字节一致

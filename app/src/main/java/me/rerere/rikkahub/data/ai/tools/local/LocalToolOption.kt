@@ -1,3 +1,4 @@
+/* 【域 C·工具系统】 | 地图: docs/APP_MAP.md §C */
 package me.rerere.rikkahub.data.ai.tools.local
 
 /* ───【原版对齐】LocalToolOption.kt | 差异 ±52 行 (基线 2.5.1)

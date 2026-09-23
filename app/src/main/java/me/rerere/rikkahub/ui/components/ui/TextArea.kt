@@ -1,3 +1,4 @@
+/* 【域 F·主题渲染】 — UI 组件 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.ui
 
 /* ───【原版对齐】TextArea.kt | 差异 ±2 行 (基线 2.5.1)

@@ -1,3 +1,4 @@
+/* 【域 C·工具系统】 | 地图: docs/APP_MAP.md §C */
 package me.rerere.rikkahub.data.ai.tools
 
 /* ───【自研】ReadImageTool.kt | v4.3.7 (BUG15 配套)

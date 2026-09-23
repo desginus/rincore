@@ -1,4 +1,5 @@
 @file:Suppress("DEPRECATION") // getParcelableExtra 平台 API 无替代
+/* 【域 L·基础设施】 | 地图: docs/APP_MAP.md §L */
 package me.rerere.rikkahub.ui.activity
 
 

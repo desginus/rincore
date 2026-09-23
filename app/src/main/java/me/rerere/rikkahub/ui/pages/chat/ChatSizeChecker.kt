@@ -1,3 +1,4 @@
+/* 【域 A·对话核心】 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.pages.chat
 
 /* ───【原版对齐】ChatSizeChecker.kt | 与 2.5.1 逐字节一致

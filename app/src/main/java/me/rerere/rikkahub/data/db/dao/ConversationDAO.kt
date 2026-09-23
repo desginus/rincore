@@ -1,3 +1,4 @@
+/* 【域 I·数据存储】 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.data.db.dao
 
 /* ───【原版对齐】ConversationDAO.kt | 差异 ±51 行 (基线 2.5.1)

@@ -1,3 +1,4 @@
+/* 【域 H·语音搜索】 | 地图: docs/APP_MAP.md §H */
 package me.rerere.rikkahub.browser
 
 

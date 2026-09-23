@@ -1,3 +1,4 @@
+/* 【域 B·AI 传输】 | 地图: docs/APP_MAP.md §B */
 package me.rerere.rikkahub.data.ai.transformers
 
 /* ───【自研】CCImageCompatTransformer.kt | 原版 2.5.1 无此文件

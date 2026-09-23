@@ -1,3 +1,4 @@
+/* 【域 J·Web 服务】 | 地图: docs/APP_MAP.md §J */
 package me.rerere.rikkahub.web.dto
 
 

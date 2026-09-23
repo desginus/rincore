@@ -1,3 +1,4 @@
+/* 【域 J·Web 服务】 | 地图: docs/APP_MAP.md §J */
 package me.rerere.rikkahub.web.routes
 
 /* ───【原版对齐】AIIconRoutes.kt | 与 2.5.1 逐字节一致

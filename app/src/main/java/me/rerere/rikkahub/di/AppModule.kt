@@ -6,6 +6,7 @@
  *
  * 问题定位: 闪退 NoDefinitionFoundException → 查本文件是否缺注册
  */
+/* 【域 E·设置体系】 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.di
 
 

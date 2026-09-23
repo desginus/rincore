@@ -1,3 +1,4 @@
+/* 【域 L·基础设施】 — UI 基础 | 地图: docs/APP_MAP.md §L */
 package me.rerere.rikkahub.ui.hooks
 
 /* ───【原版对齐】ChatInputState.kt | 差异 ±4 行 (基线 2.5.1)

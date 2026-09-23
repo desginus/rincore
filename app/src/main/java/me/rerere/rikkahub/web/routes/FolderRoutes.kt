@@ -1,3 +1,4 @@
+/* 【域 J·Web 服务】 | 地图: docs/APP_MAP.md §J */
 package me.rerere.rikkahub.web.routes
 
 /* ───【原版对齐】FolderRoutes.kt | 差异 ±2 行 (基线 2.5.1)

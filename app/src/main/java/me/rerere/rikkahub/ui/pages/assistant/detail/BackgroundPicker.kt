@@ -1,3 +1,4 @@
+/* 【域 E·设置体系】 — 页面 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
 /* ───【原版对齐】BackgroundPicker.kt | 与 2.5.1 逐字节一致

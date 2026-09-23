@@ -1,3 +1,4 @@
+/* 【域 F·主题渲染】 — 消息/文档渲染 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.message
 
 /* ───【原版对齐】ChatMessageTranslation.kt | 与 2.5.1 逐字节一致

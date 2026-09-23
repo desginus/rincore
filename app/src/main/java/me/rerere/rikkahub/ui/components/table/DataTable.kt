@@ -1,5 +1,6 @@
 @file:Suppress("unused")
 
+/* 【域 F·主题渲染】 — UI 组件 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.table
 
 /* ───【原版对齐】DataTable.kt | 与 2.5.1 逐字节一致

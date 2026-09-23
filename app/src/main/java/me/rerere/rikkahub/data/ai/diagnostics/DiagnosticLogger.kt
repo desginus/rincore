@@ -6,6 +6,7 @@
  *
  * 问题定位: 需要诊断数据 → 查本文件输出格式
  */
+/* 【域 B·AI 传输】 | 地图: docs/APP_MAP.md §B */
 package me.rerere.rikkahub.data.ai.diagnostics
 
 

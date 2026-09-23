@@ -1,3 +1,4 @@
+/* 【域 A·对话核心】 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.pages.chat
 
 /* ───【原版对齐】ConversationList.kt | 差异 ±4 行 (基线 2.5.1)

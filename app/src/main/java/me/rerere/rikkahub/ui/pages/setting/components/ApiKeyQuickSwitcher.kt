@@ -1,3 +1,4 @@
+/* 【域 E·设置体系】 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.ui.pages.setting.components
 
 /* ───【自研】ApiKeyQuickSwitcher.kt | 原版 2.5.1 无此文件
