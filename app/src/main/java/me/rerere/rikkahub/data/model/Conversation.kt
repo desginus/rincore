@@ -91,6 +91,21 @@ data class Conversation(
     }
 
     fun updateCurrentMessages(messages: List<UIMessage>): Conversation {
+        // v4.8.15 性能: 快路径 (流式热路径) — 流式期间绝大多数 node 的当前消息
+        // 引用未变, 仅尾部 1 条在动; 逐条同一性检查 (引用相等) 可跳过全部 node
+        // 重建 (原实现每 50ms 对全部 N node 做 copy + messages.toMutableList)。
+        run {
+            var same = this.messageNodes.size == messages.size
+            if (same) {
+                for (i in messages.indices) {
+                    if (this.messageNodes[i].currentMessage !== messages[i]) {
+                        same = false
+                        break
+                    }
+                }
+            }
+            if (same) return this
+        }
         val newNodes = this.messageNodes.toMutableList()
 
         messages.forEachIndexed { index, message ->
