@@ -1244,8 +1244,12 @@ class GenerationHandler(
         }
 
         val buildInternalMs = System.currentTimeMillis() - startMs
-        val totalChars = internalMessages.sumOf { msg ->
-            msg.parts.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }
+        // v4.8.19 性能: 单遍无分配 (原每轮 filterIsInstance 分配中间列表)
+        var totalChars = 0
+        for (msg in internalMessages) {
+            for (p in msg.parts) {
+                if (p is UIMessagePart.Text) totalChars += p.text.length
+            }
         }
         val estTotalTokens = totalChars / 2.5
         Log.i(TAG, "Request total: ${internalMessages.size} messages, ${totalChars}c (~${estTotalTokens.toInt()}t), internalBuild=${buildInternalMs}ms")
@@ -1305,9 +1309,14 @@ class GenerationHandler(
             var repetitionCheckedLen = 0
             try {
             // v3.11.4: 工具轮次诊断 — 运行日志页 SSE 现场可区分首轮/工具轮请求
-            val toolRound = internalMessages.flatMap { m -> m.parts }
-                .filterIsInstance<me.rerere.ai.ui.UIMessagePart.Tool>()
-                .count { it.output.isNotEmpty() }
+            // v4.8.19 性能: 单遍无分配统计 (原 flatMap + filterIsInstance 每轮
+            // 分配两个中间列表, 长会话 × 256 轮工具循环属纯浪费)
+            var toolRound = 0
+            for (m in internalMessages) {
+                for (p in m.parts) {
+                    if (p is me.rerere.ai.ui.UIMessagePart.Tool && p.output.isNotEmpty()) toolRound++
+                }
+            }
             me.rerere.ai.util.TraceLogger.log(
                 "SSE", "round: toolResultCount=$toolRound messages=${internalMessages.size}"
             )

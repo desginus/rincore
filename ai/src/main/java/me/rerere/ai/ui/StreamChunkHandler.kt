@@ -73,13 +73,18 @@ class StreamChunkHandler(private val model: Model? = null) {
     fun handle(messages: List<UIMessage>, chunk: StreamChunk): List<UIMessage> {
         require(messages.isNotEmpty()) { "messages must not be empty" }
 
-        val targetMessages = if (messages.last().role != MessageRole.ASSISTANT) {
-            messages + UIMessage(modelId = model?.id, role = MessageRole.ASSISTANT, parts = emptyList())
+        // v4.8.19 性能: 单次列表复制 — 原"新建 assistant 消息"路径做两次复制
+        // (messages + newMsg, 再 dropLast(1) + updated)。合并为直接
+        // messages + append(newMsg, chunk), 语义等价:
+        // (messages + newMsg).dropLast(1) + append(newMsg, chunk)
+        //   == messages + append(newMsg, chunk)。
+        val last = messages.last()
+        return if (last.role != MessageRole.ASSISTANT) {
+            val newMsg = UIMessage(modelId = model?.id, role = MessageRole.ASSISTANT, parts = emptyList())
+            messages + append(newMsg, chunk)
         } else {
-            messages
+            messages.dropLast(1) + append(last, chunk)
         }
-        val updatedMessage = append(targetMessages.last(), chunk)
-        return targetMessages.dropLast(1) + updatedMessage
     }
 
     private fun append(message: UIMessage, chunk: StreamChunk): UIMessage = with(message) {

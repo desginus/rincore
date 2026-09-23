@@ -107,10 +107,19 @@ data class Conversation(
             if (same) return this
         }
         val newNodes = this.messageNodes.toMutableList()
+        var anyChanged = false
 
         messages.forEachIndexed { index, message ->
-            val node = newNodes
-                .getOrElse(index) { message.toMessageNode() }
+            // v4.8.19 性能: 逐 node 引用短路 — currentMessage 引用相同则该 node
+            // 完全无需重建 (流式场景仅尾部 1-2 条变化, 中间 N-2 个 node 全部命中;
+            // 原实现对每个 node 无条件 toMutableList + copy, 长会话 O(N) 全量重建)。
+            val existing = if (index <= newNodes.lastIndex) newNodes[index] else null
+            if (existing != null && existing.currentMessage === message) {
+                return@forEachIndexed
+            }
+            anyChanged = true
+
+            val node = existing ?: message.toMessageNode()
 
             val newMessages = node.messages.toMutableList()
             var newMessageIndex = node.selectIndex
@@ -132,6 +141,8 @@ data class Conversation(
                 newNodes[index] = newNode
             }
         }
+
+        if (!anyChanged) return this
 
         return this.copy(
             messageNodes = newNodes
