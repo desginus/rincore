@@ -93,6 +93,12 @@ import androidx.compose.runtime.setValue
 private val INLINE_LATEX_REGEX = Regex("\\\\\\((.+?)\\\\\\)")
 private val BLOCK_LATEX_REGEX = Regex("\\\\\\[(.+?)\\\\\\]", RegexOption.DOT_MATCHES_ALL)
 private val CODE_BLOCK_REGEX = Regex("```[\\s\\S]*?```|`[^`\n]*`", RegexOption.DOT_MATCHES_ALL)
+// v4.8.17: 预编译 + 与 Markdown.kt 全链对齐 (原为 preProcess 内现场 Regex 构造;
+// 同包同名常量因文件级 private 作用域不可跨文件复用, 此文件独立定义)
+private val MATH_SEG_REGEX = Regex("\\$\\$[\\s\\S]*?\\$\\$|\\$[^$\\n]*\\$")
+private val SINGLE_TILDE_REGEX = Regex("(?<!~)~(?!~)")
+private val MATH_RESTORE_REGEX = Regex("\\u0000MATH(\\d+)\\u0000")
+private val INTRAWORD_UNDERSCORE_REGEX = Regex("(?<=[A-Za-z0-9])_(?=[A-Za-z0-9])")
 
 private fun preProcess(content: String): String {
     val codeBlocks = mutableListOf<IntRange>()
