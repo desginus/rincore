@@ -269,6 +269,13 @@ class GenerationHandler(
         // manage_mcp_servers 执行后 DynamicTools 置脏, 下一步检测到才刷新。
         var mcpToolsSnapshot = DynamicTools.getMcpTools()
 
+        // v4.8.14: layer1 缓存状态 (跨 step 复用, 见下方构建处)
+        var layer1CacheKey: List<Tool>? = null
+        var layer1CacheVal: String? = null
+        // v4.8.14: 域工具名集缓存状态
+        var domainNamesCacheDomains: List<String>? = null
+        var domainNamesCacheTools: List<Tool>? = null
+        var domainNamesCacheVal: Set<String> = emptySet()
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
             CallTracer.event("STEP", "step_$stepIndex", "Step $stepIndex begin, ${tools.size} tools loaded, messages=${messages.size}")
@@ -297,8 +304,18 @@ class GenerationHandler(
             // 失踪 — 用户实测 Bug; 全量池不影响 layer1 静态性, 缓存前缀稳定)
             val allDomainTools = (domainTools + frameworkTools + currentMcpTools).distinctBy { it.name }
 
+            // v4.8.14 性能: layer1 构建缓存 — buildLayer1 对全量工具分类+格式化
+            // (446 工具级字符串构建), 同一生成链内 allDomainTools 不变时应复用。
+            // 原实现每轮 step 重算, 256 轮工具循环下线性累积。
             val layer1Prompt = if (useLayered) {
-                toolRouter.buildLayer1(allDomainTools)
+                if (layer1CacheKey === allDomainTools) {
+                    layer1CacheVal
+                } else {
+                    toolRouter.buildLayer1(allDomainTools).also {
+                        layer1CacheKey = allDomainTools
+                        layer1CacheVal = it
+                    }
+                }
             } else {
                 null
             }
@@ -306,9 +323,21 @@ class GenerationHandler(
             // v3.8.27: 顶层白名单 — 已加载域工具的合法名集合 (域内工具),
             // 顶层 tools 只放行: 批准框架 + 豁免 + 引擎工具 + 本集合成员
             // 技能/插件等任何工具未经 invoke_tools 加载绝不暴露在请求顶层
+            // v4.8.14 性能: loadedDomainToolNames 缓存 — 原实现每轮对全部已加载域
+            // 遍历 446 工具过滤 (flatMap+map+toSet)。缓存键 = 已加载域列表 + 工具池
+            // 身份 (域加载/工具池变化时自动重算)。
             val loadedDomainToolNames: Set<String> = if (useLayered) {
-                loadedDomains.flatMap { toolRouter.getDomainTools(it, allDomainTools) }
-                    .map { it.name }.toSet()
+                val domainsNow = loadedDomains.toList()
+                if (domainNamesCacheDomains == domainsNow && domainNamesCacheTools === allDomainTools) {
+                    domainNamesCacheVal
+                } else {
+                    loadedDomains.flatMap { toolRouter.getDomainTools(it, allDomainTools) }
+                        .map { it.name }.toSet().also {
+                            domainNamesCacheDomains = domainsNow
+                            domainNamesCacheTools = allDomainTools
+                            domainNamesCacheVal = it
+                        }
+                }
             } else emptySet()
 
             val toolsInternal = if (useLayered) {
@@ -1104,6 +1133,9 @@ class GenerationHandler(
             // v3.5.58 缓存核验: 请求体前缀指纹 (stable system+tools 序列化稳定)
             // v4.3.5 (BUG14): 组件级漂移自诊断 — fp 相同=前缀稳定 (缓存低在网关侧);
             // fp 变化=客户端前缀漂移, 组件摘要直接指出漂移源 (stable/volatile/工具名单)
+            // v4.8.14: segHash 记忆化状态 (单轮 step 生命周期, 见下方 segHash 实现)
+            var segHashLastInput: String? = null
+            var segHashLastOutput: String = ""
             try {
                 // v4.3.10: 历史稳定性摘要 — 排除尾部 2 条 (每轮合法追加), 若更早的
                 // 历史被改写 (压缩/截断/降级文本变化), 摘要变化 → fp_drift 直接指出
@@ -1123,13 +1155,28 @@ class GenerationHandler(
                 // v4.5.4: fp 分量化 — 此前只打各段长度, 长度相同而内容变化时
                 // (如记忆条目 update) drift 归因失明, 全落在 hist 上。各段带短
                 // hash 后 drift 直接指认变化段。
+                // v4.8.14 性能: segHash 记忆化 — stableSystem/volatileSystem 在同一
+                // 生成链的每轮 step 中内容恒定, 原实现每轮对二者做 SHA-256 (含大
+                // system 字符串) 属重复计算。按内容缓存, 变化时自动重算。
                 val segHash: (String) -> String = { s ->
-                    java.security.MessageDigest.getInstance("SHA-256")
-                        .digest(s.toByteArray()).take(4).joinToString("") { "%02x".format(it) }
+                    if (s == segHashLastInput) segHashLastOutput
+                    else {
+                        val out = java.security.MessageDigest.getInstance("SHA-256")
+                            .digest(s.toByteArray()).take(4).joinToString("") { "%02x".format(it) }
+                        segHashLastInput = s
+                        segHashLastOutput = out
+                        out
+                    }
                 }
+                // v4.8.14 性能: 诊断摘要轻量化 — 原 hist 段对全部消息 ID 做
+                // joinToString + SHA-256 (长会话 O(M) 字符串构建, 256 轮工具循环
+                // 下线性累积)。改用 size+sum+首尾 ID 组合的 O(1) 摘要, 诊断语义
+                // 等效 (ID 序变化/数量变化/内容长度变化均可检出)。
+                val histEdge = (histStable.firstOrNull()?.id?.toString() ?: "") +
+                    "|" + (histStable.lastOrNull()?.id?.toString() ?: "")
                 val parts = "stable=${stableSystem.length}c#${segHash(stableSystem)} " +
                     "volatile=${volatileSystem.length}c#${segHash(volatileSystem)} " +
-                    "ntools=${tools.size} toolsHash=${tools.joinToString { it.name }.hashCode()} hist=${histStable.size}m/${histSum}c#${segHash(histStable.joinToString("|") { m -> m.id.toString() })}"
+                    "ntools=${tools.size} toolsHash=${tools.joinToString { it.name }.hashCode()} hist=${histStable.size}m/${histSum}c#${histEdge.hashCode()}"
                 val key = conversationId?.toString() ?: "global"
                 val prev = lastCacheFp.put(key, fp)
                 when {
