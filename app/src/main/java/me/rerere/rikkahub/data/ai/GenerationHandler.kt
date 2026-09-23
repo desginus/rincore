@@ -1,4 +1,7 @@
 /**
+ * 【域 B·AI 传输】生成编排器 (地图: docs/APP_MAP.md §B)
+ * 常用改动: 图片限制 → applyImageBudgetMarking (GLM 网关 6 张); 重试 → 重试链; 协议 → MessageProtocol.enforce
+ * 问题定位: 连接中断/工具调用异常/冷启动 token 高 → 本文件 + protocol + transformers
  * 生成编排器（AI 传输链核心）— 模块: A. 传输链
  *
  * 职责:

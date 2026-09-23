@@ -9,8 +9,11 @@
 package me.rerere.rikkahub.ecosystem
 
 
-/* ───【自研】EcosystemManager.kt — 原版无此文件
- * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+/* ───【域 K·生态扩展】EcosystemManager.kt
+ * 职责: 插件/生态管理
+ * 常用改动: 生态扫描 → EcosystemScanner; 桥接 → EcosystemBridge
+ * 问题定位: 插件不加载/生态异常 → 本文件
+ * 基线: 自研 | 地图: docs/APP_MAP.md §K | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 import android.content.Context
 import android.util.Log

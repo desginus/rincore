@@ -1,10 +1,10 @@
 package me.rerere.rikkahub.sandbox
 
-/* ───【自研】SandboxBridgeServer.kt — 原版无此文件
- * 沙箱一体化桥 (v4.8.0):
- *   沙箱内进程 (模型脚本 / 服务 / CLI) 通过 loopback HTTP 回连 RinCore,
- *   调用软件侧能力 (通知 / 吐司 / 剪贴板 / AI / 打开 / 分享 / 信息)。
- *   配对客户端: rootfs /usr/local/bin/rin (bash+curl 脚本, 随内置工具注入)。
+/* ───【域 D·工作区沙箱】SandboxBridgeServer.kt
+ * 职责: 沙箱→软件桥 (loopback 17526 + token; rin CLI 对端)
+ * 常用改动: 新桥接口 → 路由注册; 启动 → get<AppScope>().launch(IO)
+ * 问题定位: rin 命令无响应/桥 401 → 本文件
+ * 基线: 自研 (v4.8.0) — 原版无此文件 | 地图: docs/APP_MAP.md §D | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 
 import android.app.NotificationChannel

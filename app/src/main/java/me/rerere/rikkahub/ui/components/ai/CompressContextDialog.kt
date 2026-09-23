@@ -1,8 +1,11 @@
 package me.rerere.rikkahub.ui.components.ai
 
 
-/* ───【原版对齐】CompressContextDialog.kt | 差异 ±7 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+/* ───【域 A·对话核心】CompressContextDialog.kt
+ * 职责: 压缩配置弹窗 (确认即关 — 无压缩态弹窗, v4.8.8 定版)
+ * 常用改动: 参数项 → 表单区; 确认行为 → confirmButton (onConfirm + onDismiss)
+ * 问题定位: 压缩弹窗阻塞全屏 → 本文件 (勿回退 loading 弹窗)
+ * 基线: 原版移植 + 自研调整 | 地图: docs/APP_MAP.md §A | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column

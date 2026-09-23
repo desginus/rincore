@@ -3,6 +3,10 @@
  * 审计结论: 异常上报 (catch → addError → UI) ✓; 无主线程阻塞/GlobalScope ✓;
  * 前台服务生命周期 (setJob/startForeground/stopSelf) ✓。残余风险: 无。
  * ───────────────────────────────────────────────────────────────*/
+ * 【域 A·对话核心】会话编排服务 (地图: docs/APP_MAP.md §A)
+ * 职责: 工具池构建 + 生成编排(GenerationHandler) + 流式落盘 + 审批/通知 + 压缩执行
+ * 常用改动: 发送 → sendMessage; 压缩 → compressConversation; 队列 → dispatchNextQueuedMessage
+ * 问题定位: 回答丢失/切后台/工具不出现 → 本文件
  * 会话编排服务 — 模块: B. 会话与存储
  *
  * 职责:

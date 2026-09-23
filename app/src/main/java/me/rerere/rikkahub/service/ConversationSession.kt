@@ -1,8 +1,11 @@
 package me.rerere.rikkahub.service
 
 
-/* ───【原版对齐】ConversationSession.kt | 2.5.3 对齐 (v4.7.2)
- * state 封装 + 互斥初始化 + 元数据先内存后落库 (防旧快照覆盖流式输出)
+/* ───【域 A·对话核心】ConversationSession.kt
+ * 职责: 单会话运行时 (Job/消息队列/互斥初始化/状态封装)
+ * 常用改动: 会话状态 → state/setJob; 中断 → cancel
+ * 问题定位: 流式输出被旧快照覆盖/状态丢失 → 本文件
+ * 基线: 原版 2.5.3 对齐 (v4.7.2) | 地图: docs/APP_MAP.md §A | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope

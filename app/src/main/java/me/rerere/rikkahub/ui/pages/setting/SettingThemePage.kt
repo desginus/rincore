@@ -1,8 +1,11 @@
 package me.rerere.rikkahub.ui.pages.setting
 
 
-/* ───【原版对齐】SettingThemePage.kt | 差异 ±42 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+/* ───【域 F·主题渲染】SettingThemePage.kt
+ * 职责: 主题设置页 (预设列表/自定义编辑/HueSliderRow 色相条 v4.8.9)
+ * 常用改动: 新预设注册链 → PresetTheme.kt + strings; 自定义交互 → HueSliderRow
+ * 问题定位: 主题显示异常/自定义色不对 → 本文件 + Theme.kt
+ * 基线: 原版移植 + 自研 (色相条/预设) | 地图: docs/APP_MAP.md §F | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 import android.content.ClipData
 import androidx.compose.foundation.Canvas

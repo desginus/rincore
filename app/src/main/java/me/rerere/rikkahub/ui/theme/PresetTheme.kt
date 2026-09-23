@@ -1,7 +1,10 @@
 package me.rerere.rikkahub.ui.theme
 
-/* ───【原版对齐】PresetTheme.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+/* ───【域 F·主题渲染】PresetTheme.kt
+ * 职责: 预设主题注册表 (PresetThemes 列表 + findPresetTheme/findThemeById)
+ * 常用改动: 新预设注册 → 列表 + import (色板抄 MinimalTheme 全色板)
+ * 问题定位: 主题 id 找不到回退 Sakura → 本文件
+ * 基线: 与 2.5.1 逐字节一致 + 自研注册 (DefaultTheme) | 地图: docs/APP_MAP.md §F | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 
 import androidx.compose.material3.ColorScheme

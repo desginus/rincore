@@ -1,10 +1,11 @@
 package me.rerere.rikkahub.data.repository
 
 
-/* ───【原版对齐】WorkspaceRepository | 差异 +113 行
- * 来源: 原版移植 + 自研 (工作区仓库增强)
- * 差异: launchProcess 常驻 (v3.5.27)、refreshDshSkillRoots、
- *       getAllWorkspaces、工具审批等自研
+/* ───【域 D·工作区沙箱】WorkspaceRepository.kt
+ * 职责: 工作区仓库层 (DAO + WorkspaceManager 封装)
+ * 常用改动: 文件操作 → exportFile/exportFolderZip (批量加计数); 沙箱 → launchProcess/executeCommand
+ * 问题定位: 工作区数据异常/导出问题 → 本文件
+ * 基线: 原版移植 + 自研 | 差异 +113 行 | 地图: docs/APP_MAP.md §D | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 import android.content.Context
 import android.util.Log

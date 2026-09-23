@@ -1,8 +1,9 @@
 /**
-/* ───【技术债审计 v3.19.0】
- * 审计结论: SSOT 单向流 (settingsFlow) ✓; @Serializable 双端兼容 ✓;
- * 废弃字段保留策略 (userAgent @Deprecated) ✓。残余风险: 大 JSON 首帧
- * 反序列化在主线程一次 (启动关键路径, 实测 <50ms 可接受)。
+/* ───【域 E·设置体系】PreferencesStore.kt
+ * 职责: 双 Store 同文件: PreferencesStore (布尔偏好) + SettingsStore (SSOT settingsFlow)
+ * 常用改动: 新开关 → booleanPreferencesKey+双写+读; 新设置项 → Settings 字段 (改结构需四投影验证)
+ * 问题定位: 设置不生效/重启丢失/四投影不一致 → 本文件
+ * 基线: 技术债审计 v3.19.0 ✓ | 自研演进 | 地图: docs/APP_MAP.md §E | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
  * 偏好存储 + SettingsStore (SSOT) — 模块: B. 会话与存储
  *

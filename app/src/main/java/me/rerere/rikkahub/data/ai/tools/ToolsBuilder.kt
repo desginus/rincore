@@ -14,8 +14,11 @@
 package me.rerere.rikkahub.data.ai.tools
 
 
-/* ───【自研】ToolsBuilder.kt — 原版无此文件
- * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+/* ───【域 C·工具系统】ToolsBuilder.kt
+ * 职责: 工具池构建 (全信源统一 — 客户端计数器/域管理/模型侧同源)
+ * 常用改动: 工具注册 → buildPreviewTools; 域过滤 → filter
+ * 问题定位: 工具计数不一致/工具不出现 → 本文件
+ * 基线: 自研 (v3.5.41 统一) | 地图: docs/APP_MAP.md §C | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 import me.rerere.ai.core.Tool
 import me.rerere.rikkahub.data.ai.mcp.McpManager

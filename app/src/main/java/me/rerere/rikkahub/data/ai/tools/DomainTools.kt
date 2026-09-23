@@ -9,8 +9,11 @@
 package me.rerere.rikkahub.data.ai.tools
 
 
-/* ───【自研】DomainTools.kt — 原版无此文件
- * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+/* ───【域 C·工具系统】DomainTools.kt
+ * 职责: 工具域路由 (search_domains/invoke_tools)
+ * 常用改动: 域匹配 → getKeywords/getTriggerDescription; 域信息格式 → domainInfo (v4.7.15 定版)
+ * 问题定位: 域分类错误/触发词不响应 → 本文件
+ * 基线: 自研 | 地图: docs/APP_MAP.md §C | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray

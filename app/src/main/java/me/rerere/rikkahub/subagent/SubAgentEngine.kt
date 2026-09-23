@@ -1,8 +1,11 @@
 package me.rerere.rikkahub.subagent
 
 
-/* ───【自研】SubAgentEngine.kt — 原版无此文件
- * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+/* ───【域 G·自动化】SubAgentEngine.kt
+ * 职责: 子代理引擎 (运行/状态上报)
+ * 常用改动: 运行 → run; 状态 → runs flow (UI 蓝标依赖)
+ * 问题定位: 子代理卡死/状态不更新 → 本文件
+ * 基线: 自研 | 地图: docs/APP_MAP.md §G | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 import android.util.Log
 import kotlinx.coroutines.Dispatchers

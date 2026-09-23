@@ -5,11 +5,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 RinCore is a native Android AI assistant, independently maintained as a fork of RikkaHub 2.4.5.
-Built with Jetpack Compose, Kotlin, Material Design 3. Current version: v3.9.2 (single product line).
+Built with Jetpack Compose, Kotlin, Material Design 3. Current version: v4.8.9 (single product line).
 
-Before making ANY code change, read `.claude/skills/rincore-project-brief/SKILL.md` and
-`.claude/skills/rincore-dev-process/SKILL.md`. All historical knowledge lives in
-`docs/ecosystem/` and the `.claude/skills/` knowledge base.
+Before making ANY code change, read `docs/APP_MAP.md` (12-domain map: where each
+feature lives, which files to touch for a given requirement, historical pitfalls) and
+`.claude/skills/rincore-project-brief/SKILL.md`. All historical knowledge lives in
+`docs/ecosystem/` and the `.claude/skills/` knowledge base (changelog / bug-record /
+decisions / roadmap).
 
 ## Module Structure
 

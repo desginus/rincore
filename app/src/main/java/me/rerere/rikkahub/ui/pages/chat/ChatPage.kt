@@ -1,11 +1,11 @@
 package me.rerere.rikkahub.ui.pages.chat
 
 
-/* ───【原版对齐】ChatPage | 差异 +107 行
- * 来源: 原版移植 + 自研 (延时回复/插件等)
- * 功能: 聊天主页面
- * 差异: 延时自动回复、
- *       SettingPlugins 导航等自研
+/* ───【域 A·对话核心】ChatPage.kt
+ * 职责: 对话页组装 (Scaffold/顶栏/输入接线/压缩提示条/分享文档消费)
+ * 常用改动: 压缩提示条 → "正在压缩上下文"块; 分享文档 → shareArgsConsumed; 顶栏 → TopBar 调用
+ * 问题定位: 页面卡顿/压缩 UI 异常/分享文档幽灵重现 → 本文件 (渲染细节在 components/message)
+ * 基线: 原版移植 + 自研 (延时回复/插件等) | 差异 +107 行 | 地图: docs/APP_MAP.md §A | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 import android.net.Uri
 import androidx.activity.compose.BackHandler

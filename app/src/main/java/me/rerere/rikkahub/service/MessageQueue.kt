@@ -1,7 +1,10 @@
 package me.rerere.rikkahub.service
 
-/* ───【原版对齐】MessageQueue.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+/* ───【域 A·对话核心】MessageQueue.kt
+ * 职责: 消息发送队列 (延时回复依赖)
+ * 常用改动: 队列行为 → enqueue/takeNext/remove
+ * 问题定位: 消息顺序错乱/队列卡死 → 本文件
+ * 基线: 与 2.5.1 逐字节一致 | 地图: docs/APP_MAP.md §A | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 
 import kotlinx.coroutines.CompletableDeferred

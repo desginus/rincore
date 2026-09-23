@@ -1,7 +1,10 @@
 package me.rerere.rikkahub.data.ai.mcp
 
-/* ───【原版对齐】McpSessionRegistry.kt | 差异 ±72 行 (基线 2.5.1)
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+/* ───【域 B·AI 传输】McpSessionRegistry.kt
+ * 职责: MCP 会话 (连接/重连/stdio 桥/状态机; v4.8.6 补连定版)
+ * 常用改动: 连接 → connectSession; 重连 → requestReconnect (sourceClient=null 陷阱, 见 v4.8.6); stdio → createTransport
+ * 问题定位: MCP 断联/"连接关闭"/重启后不可用 → 本文件
+ * 基线: 原版 2.5.1 + 自研 (viaWorkspace stdio) | 差异 ±72 行 | 地图: docs/APP_MAP.md §B | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 
 import android.util.Log

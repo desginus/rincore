@@ -1,9 +1,11 @@
 package me.rerere.rikkahub.ui.pages.extensions.workspace
 
 
-/* ───【原版对齐】WorkspaceDetailVM | 差异 +77 行
- * 来源: 原版移植 + 自研 (工作区状态管理)
- * 差异: rootfs 安装/Shell 状态自研状态机
+/* ───【域 D·工作区沙箱】WorkspaceDetailVM.kt
+ * 职责: 文件操作 VM (导入/导出/分享/重命名/批量/压缩包)
+ * 常用改动: 新文件操作 → 记得 activeTransfers 计数包裹 (用户可见加载条); 分享 → shareFile/shareFolder
+ * 问题定位: 导出无反馈/分享无响应 → 本文件
+ * 基线: 原版移植 + 自研 (分享/批量/传输计数) | 地图: docs/APP_MAP.md §D | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 import android.content.ContentResolver
 import android.net.Uri
@@ -205,24 +207,31 @@ class WorkspaceDetailVM(
 
     fun shareFile(entry: WorkspaceFileEntry, cacheDir: File, onReady: (File) -> Unit) {
         viewModelScope.launch {
-            runCatching {
-                val dir = File(cacheDir, "workspace_share").apply { mkdirs() }
-                val file = File(dir, entry.name)
-                file.outputStream().use { output ->
-                    repository.exportFile(
-                        id = id,
-                        area = state.value.area,
-                        path = entry.path,
-                        outputStream = output,
-                    )
+            // v4.8.10: 分享准备期间传输计数 +1 — 顶部圆形加载指示 (用户可感知
+            // "正在准备分享", 此前无任何状态反馈, 打包大文件夹时疑似卡死)。
+            _state.update { it.copy(activeTransfers = it.activeTransfers + 1) }
+            try {
+                runCatching {
+                    val dir = File(cacheDir, "workspace_share").apply { mkdirs() }
+                    val file = File(dir, entry.name)
+                    file.outputStream().use { output ->
+                        repository.exportFile(
+                            id = id,
+                            area = state.value.area,
+                            path = entry.path,
+                            outputStream = output,
+                        )
+                    }
+                    file
+                }.onSuccess { file ->
+                    runCatching { onReady(file) }.onFailure { error ->
+                        _state.update { it.copy(error = "分享启动失败: " + (error.message ?: error.toString())) }
+                    }
+                }.onFailure { error ->
+                    _state.update { it.copy(error = error.message ?: "分享文件失败") }
                 }
-                file
-            }.onSuccess { file ->
-                runCatching { onReady(file) }.onFailure { error ->
-                    _state.update { it.copy(error = "分享启动失败: " + (error.message ?: error.toString())) }
-                }
-            }.onFailure { error ->
-                _state.update { it.copy(error = error.message ?: "分享文件失败") }
+            } finally {
+                _state.update { it.copy(activeTransfers = (it.activeTransfers - 1).coerceAtLeast(0)) }
             }
         }
     }
@@ -234,29 +243,36 @@ class WorkspaceDetailVM(
      */
     fun shareFolder(entry: WorkspaceFileEntry, cacheDir: File, onReady: (File) -> Unit) {
         viewModelScope.launch {
-            runCatching {
-                val dir = File(cacheDir, "workspace_share").apply { mkdirs() }
-                val zipName = entry.name.trimEnd('/') + ".zip"
-                val file = File(dir, zipName)
-                val count = file.outputStream().use { output ->
-                    repository.exportFolderZip(
-                        id = id,
-                        area = state.value.area,
-                        folderPath = entry.path,
-                        outputStream = output,
-                    )
+            // v4.8.10: 分享准备期间传输计数 +1 — 顶部圆形加载指示。文件夹分享
+            // 需先完整打包 zip (大目录耗时数秒~数十秒), 此前无状态反馈 (用户实证)。
+            _state.update { it.copy(activeTransfers = it.activeTransfers + 1) }
+            try {
+                runCatching {
+                    val dir = File(cacheDir, "workspace_share").apply { mkdirs() }
+                    val zipName = entry.name.trimEnd('/') + ".zip"
+                    val file = File(dir, zipName)
+                    val count = file.outputStream().use { output ->
+                        repository.exportFolderZip(
+                            id = id,
+                            area = state.value.area,
+                            folderPath = entry.path,
+                            outputStream = output,
+                        )
+                    }
+                    require(file.length() > 0) { "打包产物为空" }
+                    android.util.Log.i("WorkspaceShare", "folder zip ready: " + file.absolutePath + " bytes=" + file.length() + " entries=" + count)
+                    file
+                }.onSuccess { file ->
+                    // v4.5.10: onReady (FileProvider/Intent) 的异常必须可见 —
+                    // 此前 onSuccess 回调抛错被协程吞掉, 表现为"点分享没反应"
+                    runCatching { onReady(file) }.onFailure { error ->
+                        _state.update { it.copy(error = "分享启动失败: " + (error.message ?: error.toString())) }
+                    }
+                }.onFailure { error ->
+                    _state.update { it.copy(error = error.message ?: "分享文件夹失败: " + (error.message ?: "")) }
                 }
-                require(file.length() > 0) { "打包产物为空" }
-                android.util.Log.i("WorkspaceShare", "folder zip ready: " + file.absolutePath + " bytes=" + file.length() + " entries=" + count)
-                file
-            }.onSuccess { file ->
-                // v4.5.10: onReady (FileProvider/Intent) 的异常必须可见 —
-                // 此前 onSuccess 回调抛错被协程吞掉, 表现为"点分享没反应"
-                runCatching { onReady(file) }.onFailure { error ->
-                    _state.update { it.copy(error = "分享启动失败: " + (error.message ?: error.toString())) }
-                }
-            }.onFailure { error ->
-                _state.update { it.copy(error = error.message ?: "分享文件夹失败: " + (error.message ?: "")) }
+            } finally {
+                _state.update { it.copy(activeTransfers = (it.activeTransfers - 1).coerceAtLeast(0)) }
             }
         }
     }

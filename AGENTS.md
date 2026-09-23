@@ -47,9 +47,11 @@
 - **workspace**: Sandboxed per-workspace file system and shell execution environment exposed to the AI as tools
 - **web-ui**: Web management interface (TypeScript)
 
-RinCore 当前版本 v3.9.2，单产品线（包名 me.rincore.app）。任何代码修改前加载
-`.claude/skills/rincore-project-brief/SKILL.md` 与 `rincore-dev-process`；历史知识见
-`docs/ecosystem/`。B 线 WaterHub 已废弃移除，不再涉及。
+RinCore 当前版本 v4.8.9，单产品线（包名 me.rincore.app）。任何代码修改前加载
+`.claude/skills/rincore-project-brief/SKILL.md`；历史知识见 `docs/ecosystem/` 与
+`.claude/skills/` 知识库（changelog / bug-record / decisions / roadmap）。
+**入口必读**: `docs/APP_MAP.md` — 12 功能域地图 + 需求→改动索引 + 历史教训索引。
+B 线 WaterHub 已废弃移除，不再涉及。
 
 ## Concepts
 

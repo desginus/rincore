@@ -1,8 +1,11 @@
 package me.rerere.rikkahub.ui.components.ai
 
 
-/* ───【原版对齐】ChatInput.kt | 差异 ±45 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+/* ───【域 A·对话核心】ChatInput.kt
+ * 职责: 输入区 (发送/思考键/消息队列卡片/语音/附件入口)
+ * 常用改动: 发送键状态 → SendButton (blocked=压缩中禁发, v4.8.9); 键位互换 → swapKeys; 语音 → VoiceMode
+ * 问题定位: 发送键异常/输入区布局错位 → 本文件
+ * 基线: 原版移植 + 自研 (键位互换/发送禁用) | 差异 ±45 行 | 地图: docs/APP_MAP.md §A | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 
 import androidx.compose.animation.AnimatedVisibility

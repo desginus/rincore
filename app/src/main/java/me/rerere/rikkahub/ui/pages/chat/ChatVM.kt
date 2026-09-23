@@ -1,10 +1,11 @@
 package me.rerere.rikkahub.ui.pages.chat
 
 
-/* ───【原版对齐】ChatVM | 差异 +56 行
- * 来源: 原版移植 + 自研 (settings 投影)
- * 功能: 聊天页 ViewModel
- * 差异: enableWebSearch/currentChatModel 投影与自研状态
+/* ───【域 A·对话核心】ChatVM.kt
+ * 职责: 对话 VM — 发送/编辑/删除/压缩/重新生成/恢复位点
+ * 常用改动: 发送逻辑 → handleMessageSend (含压缩中禁发兜底); 压缩 → handleCompressContext/cancelCompress; 恢复 → restoreCompressAt
+ * 问题定位: 发送无响应/压缩异常/编辑丢失 → 本文件
+ * 基线: 原版移植 + 自研 (settings 投影) | 差异 +56 行 | 地图: docs/APP_MAP.md §A | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 import android.app.Application
 import androidx.compose.runtime.mutableStateOf

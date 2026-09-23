@@ -1,7 +1,10 @@
 package me.rerere.rikkahub.service
 
-/* ───【自研】ContextCompressor.kt | 原版 2.5.1 无此文件
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+/* ───【域 A·对话核心】ContextCompressor.kt
+ * 职责: 压缩留存量计算/推荐保留条数
+ * 常用改动: 推荐算法 → recommendedKeepMessages
+ * 问题定位: 压缩保留条数异常 → 本文件
+ * 基线: 自研 (v3.8.28) | 地图: docs/APP_MAP.md §A | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 
 import me.rerere.ai.core.MessageRole

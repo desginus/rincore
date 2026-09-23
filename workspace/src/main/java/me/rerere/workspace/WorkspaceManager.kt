@@ -1,8 +1,11 @@
 package me.rerere.workspace
 
 
-/* ───【原版对齐】WorkspaceManager.kt | 差异 ±27 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+/* ───【域 D·工作区沙箱】WorkspaceManager.kt
+ * 职责: 沙箱门面 (文件/导出 exportFolderToZip/launchProcess)
+ * 常用改动: 导出 → exportFolderToZip (直接文件树, 勿复用 listFiles — 有 500 截断); 启动 → launchProcess
+ * 问题定位: 导出丢失/沙箱启动失败 → 本文件
+ * 基线: 原版移植 + 自研 (导出/launchProcess) | 差异 ±27 行 | 地图: docs/APP_MAP.md §D | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 import java.io.File
 import java.io.InputStream
