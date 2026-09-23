@@ -47,8 +47,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -103,6 +107,21 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    // 4.8.22: 后台任务保护 — 电池优化豁免状态 (从系统设置返回后自动刷新)
+    val powerManager = remember { context.getSystemService(android.os.PowerManager::class.java) }
+    var batteryExempt by remember {
+        mutableStateOf(powerManager?.isIgnoringBatteryOptimizations(context.packageName) ?: true)
+    }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                batteryExempt = powerManager?.isIgnoringBatteryOptimizations(context.packageName) ?: true
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val toaster = LocalToaster.current
     var proxyTesting by remember { mutableStateOf(false) }
     // v3.9.15: 部分开启 — 模型勾选弹窗
@@ -299,6 +318,45 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
                                     )
                                 },
                             )
+                        },
+                    )
+                }
+            }
+            // 4.8.22: 后台任务保护 — 电池优化豁免 (系统级防冻结/防杀;
+            // 配合生成保活前台服务, 后台长任务不被澎湃 OS 等激进省电中断)
+            item {
+                CardGroup(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    title = { Text("后台任务保护") },
+                ) {
+                    item(
+                        headlineContent = { Text("电池优化豁免") },
+                        supportingContent = {
+                            Text(
+                                if (batteryExempt) {
+                                    "已豁免 — 系统不会在后台限制本应用"
+                                } else {
+                                    "未豁免 — 后台任务可能被系统冻结或杀死，建议开启"
+                                }
+                            )
+                        },
+                        trailingContent = {
+                            if (!batteryExempt) {
+                                TextButton(
+                                    onClick = {
+                                        runCatching {
+                                            context.startActivity(
+                                                android.content.Intent(
+                                                    android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                                    android.net.Uri.parse("package:${context.packageName}")
+                                                )
+                                            )
+                                        }
+                                    }
+                                ) { Text("开启") }
+                            } else {
+                                Text("已开启")
+                            }
                         },
                     )
                 }

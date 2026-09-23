@@ -1292,6 +1292,9 @@ class GenerationHandler(
             // 断流自动恢复 (v3.5.46 根治): 输出中连接中断 (切后台网络切换/
             // NAT 超时/平台断流 — IOException) → 回滚本次已输出内容 → 自动重试。
             // 用户核心诉求: 一直保持连接, 不自己中断。重试请求消息相同 → 缓存命中。
+            // 4.8.22: 网络恢复等待预算 (per-request 安全阀 — 防网络闪断循环
+            // 无限挂起; 等待网络恢复本身不消耗重试次数, 由本预算限总时长)
+            var networkWaitBudgetMs = 15 * 60 * 1000L
             streamLoop@ while (true) {
             // v3.11.10: 重试预算在首次断流时刻重置起算 — 旧实现从流启动计时,
             // 含"流启动→断流"的静默期; 平台首包就静默时 watchdog 60s 单次
@@ -1433,6 +1436,29 @@ class GenerationHandler(
                 onUpdateMessages(messages)
                 throw e
             } catch (e: java.io.IOException) {
+                // 4.8.22 后台稳定性强化: 设备级离线时挂起等待网络恢复 — 不消耗
+                // 重试次数 (网络切换/信号盲区/后台网络冻结的恢复窗口内自动续连;
+                // 用户诉求: 一直保持连接, 不自己中断)。恢复后清池 + 立即重试。
+                if (networkWaitBudgetMs > 0 && isDeviceOffline()) {
+                    val waitStart = System.currentTimeMillis()
+                    processingStatus.value = "网络已断开，正在等待网络恢复…"
+                    val restored = awaitNetworkRestore(
+                        kotlin.math.min(10 * 60 * 1000L, networkWaitBudgetMs)
+                    )
+                    val waitedMs = System.currentTimeMillis() - waitStart
+                    networkWaitBudgetMs -= waitedMs
+                    processingStatus.value = null
+                    if (restored) {
+                        me.rerere.ai.provider.ProviderManager.evictAllPools()
+                        Log.w(TAG, "network restored after ${waitedMs}ms — retry without consuming budget")
+                        CallTracer.event("RETRY", "network_restored", "waitMs=$waitedMs")
+                        retry.receivedAnyData = false
+                        messages = preStreamMessages
+                        onUpdateMessages(messages)
+                        continue@streamLoop
+                    }
+                    Log.w(TAG, "network wait timeout (${waitedMs}ms) — fallback to normal retry chain")
+                }
                 // 4.0.0 重写: 重试策略全部收敛至 RetryPolicy.kt (策略对象模式),
                 // 本处只保留职责原语: 分类 → 判决 → 回滚/delay/continue 或 终态抛出。
                 // 数值与文案逐字保留, 行为与旧嵌套链完全等价。
@@ -1504,6 +1530,33 @@ class GenerationHandler(
             }
             onUpdateMessages(messages)
         }
+    }
+
+    /**
+     * 4.8.22: 设备级离线判定 — 无默认网络或无 INTERNET 能力。
+     * 只有"设备确实离线"才进入网络恢复等待; 在线但服务端不可达
+     * (连接重置/网关故障) 走正常重试链, 避免把服务端故障误判为网络问题。
+     */
+    private fun isDeviceOffline(): Boolean {
+        return runCatching {
+            val cm = context.getSystemService(android.net.ConnectivityManager::class.java)
+                ?: return@runCatching false
+            val network = cm.activeNetwork ?: return@runCatching true
+            val caps = cm.getNetworkCapabilities(network) ?: return@runCatching true
+            !caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        }.getOrDefault(false)
+    }
+
+    /**
+     * 4.8.22: 等待网络恢复 (2s 轮询); 返回是否已恢复。
+     */
+    private suspend fun awaitNetworkRestore(maxWaitMs: Long): Boolean {
+        val deadline = System.currentTimeMillis() + maxWaitMs
+        while (System.currentTimeMillis() < deadline) {
+            if (!isDeviceOffline()) return true
+            kotlinx.coroutines.delay(2000)
+        }
+        return !isDeviceOffline()
     }
 
     // invoke_tools 输出 exempt from truncation (工具列表必须完整)

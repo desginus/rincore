@@ -12,7 +12,11 @@ import android.content.Context
 
 /**
  * v3.6.15: 生成时 PARTIAL WakeLock — 切后台/锁屏时 CPU 保持,
- * 网络读不因 Doze 挂起 (SSE 流式稳定); 15min 超时兜底防泄漏。
+ * 网络读不因 Doze 挂起 (SSE 流式稳定)。
+ * v4.8.22 长任务加固: 超时 15min → 60min — 15min 对"长时间多工具调用"
+ * (256 轮上限, 可远超 15 分钟) 会在任务中途失效导致 CPU 休眠断流;
+ * 60min 覆盖所有实际任务时长; release 在 NonCancellable 收尾可靠执行
+ * (取消/异常态也释放), 进程死亡系统自动释放 — 超时仅最后兜底。
  */
 internal fun acquireGenWakeLock(context: Context): android.os.PowerManager.WakeLock? {
     return runCatching {
@@ -22,7 +26,7 @@ internal fun acquireGenWakeLock(context: Context): android.os.PowerManager.WakeL
             "rincore:generation"
         )
         wl.setReferenceCounted(false)
-        wl.acquire(15 * 60 * 1000L)
+        wl.acquire(60 * 60 * 1000L)
         wl
     }.getOrNull()
 }
