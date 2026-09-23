@@ -136,7 +136,7 @@ class _GFMLexer : GeneratedLexer {
         } else yytext().toString().substring(1)
 
     private fun isBlockTag(tagName: String): Boolean {
-        return HtmlHelper.BLOCK_TAGS.contains(tagName.toLowerCase())
+        return HtmlHelper.BLOCK_TAGS.contains(tagName.lowercase())
     }
 
     private fun canInline(): Boolean {
