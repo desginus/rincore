@@ -654,6 +654,9 @@ class ChatService(
         val genWakeLock = acquireGenWakeLock(context)
         // v4.7.18: WiFi 射频保活 (防息屏射频休眠断流; onCompletion 释放)
         val genWifiLock = acquireGenWifiLock(context)
+        // 4.8.20: 前台服务保活 — 进程优先级提升 (切后台不被冻结/断网; 生成期间
+        // 系统级持续性的唯一正确解 — WakeLock/WifiLock 只保 CPU/射频)
+        GenerationForegroundService.acquire(context, conversationId.toString())
 
         // 4.1.3 TTFT: 生成前预热整体移除 — 两点结构性缺陷:
         //   a) 与主请求并发, 同 key 请求被网关串行化 (v3.12.6 用户实测),
@@ -813,6 +816,8 @@ class ChatService(
                     releaseGenWakeLock(genWakeLock)
                     // v4.7.18: 释放 WifiLock
                     releaseGenWifiLock(genWifiLock)
+                    // 4.8.20: 释放前台服务保活 (3s 防抖 — regenerate 瞬态不误停)
+                    GenerationForegroundService.release(context, conversationId.toString())
 
                     // 生成结束：取消 Live Update 通知，后台时发送完成通知
                     appEventBus.emit(

@@ -1487,5 +1487,7 @@
 <string name="imggen_page_select_image">Select image</string>
 <string name="workspace_detail_compatibility_mode">Compatibility mode</string>
 <string name="workspace_detail_compatibility_mode_desc">Try enabling this if the terminal fails to start. It may reduce performance. Applies to new terminal tabs and subsequent commands.</string>
+    <string name="generation_service_notification_title">AI 正在执行任务</string>
+    <string name="generation_service_notification_text">任务在后台持续运行中，点击返回应用</string>
 </resources>
 
