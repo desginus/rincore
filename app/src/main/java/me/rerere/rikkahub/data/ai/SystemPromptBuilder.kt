@@ -1,8 +1,11 @@
 package me.rerere.rikkahub.data.ai
 
 
-/* ───【自研】SystemPromptBuilder.kt — 原版无此文件
- * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+/* ───【域 B·AI 传输】SystemPromptBuilder.kt
+ * 职责: 系统提示词组装 (缓存锚点+框架工具+记忆+注入)
+ * 常用改动: 提示词结构 → build; 注入 → PromptInjection
+ * 问题定位: 提示词不生效/缓存失效 → 本文件 + prompts/
+ * 基线: 自研 | 地图: docs/APP_MAP.md §B | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 /**
  * Single place for assembling the system prompt that is sent to every provider.

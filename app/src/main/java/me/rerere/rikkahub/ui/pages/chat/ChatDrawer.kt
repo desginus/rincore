@@ -1,8 +1,11 @@
 package me.rerere.rikkahub.ui.pages.chat
 
 
-/* ───【原版对齐】ChatDrawer.kt | 差异 ±21 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+/* ───【域 A·对话核心】ChatDrawer.kt
+ * 职责: 对话抽屉 (会话列表/文件夹/助手切换/新建)
+ * 常用改动: 入口导航 → navigate 调用; 新建归属 → drawerVm.selectedFolderId
+ * 问题定位: 抽屉内容/新建归属错误 → 本文件 + ChatDrawerVM
+ * 基线: 原版移植 + 自研 (文件夹/入口) | 地图: docs/APP_MAP.md §A | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.clickable

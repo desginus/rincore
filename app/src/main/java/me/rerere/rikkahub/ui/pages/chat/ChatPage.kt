@@ -11,6 +11,8 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Alignment
 import androidx.compose.material3.CircularProgressIndicator
@@ -390,6 +392,10 @@ private fun ChatPageContent(
     // v3.8.9: 分享面板 (外部 Activity) 返回后 Haze 模糊纹理失效成黑框,
     // 进设置再返回能恢复 (导航触发重组), 分享返回不触发任何重组。
     // ON_RESUME 递增 tick 强制背景重组, 重建模糊纹理。
+    // v4.8.11: 扩展自愈 — 用户实证"输入框液态玻璃偶发静默消失, 打开抽屉进设置
+    // 再返回才恢复"(= 需要一次强制重绘重建纹理)。除 ON_RESUME 外新增两个恢复触发:
+    //   ① 软键盘显隐 (IME inset 变化 = 窗口表面重配, beta01 下偶发纹理丢失);
+    //   ② 周期心跳兜底 (失效后最多 5 分钟自动恢复; 代价 = 一次背景重绘, 可忽略)。
     var hazeRebuildTick by remember { mutableStateOf(0) }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -400,6 +406,16 @@ private fun ChatPageContent(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    // v4.8.11 ①: 键盘显隐触发重建
+    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    LaunchedEffect(imeVisible) { hazeRebuildTick++ }
+    // v4.8.11 ②: 周期心跳兜底 (5 分钟)
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(5 * 60 * 1000L)
+            hazeRebuildTick++
+        }
     }
     val assistant = setting.getCurrentAssistant()
     var showFilesSheet by remember { mutableStateOf(false) }

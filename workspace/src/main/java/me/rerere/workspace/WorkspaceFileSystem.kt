@@ -1,5 +1,12 @@
 package me.rerere.workspace
 
+/* ───【域 D·工作区沙箱】WorkspaceFileSystem.kt
+ * 职责: 文件系统 (路径解析/列表[含 500 条截断语义-仅供 UI 层]/读写/搜索/glob)
+ * 常用改动: 文件语义 → list (take maxListEntries — 导出器勿复用); 容量限制 → WorkspaceConfig
+ * 问题定位: 路径逃逸报错/列表截断/读写失败 → 本文件
+ * 基线: 原版移植 + 自研 | 地图: docs/APP_MAP.md §D | 历史: .claude/skills/rincore-bug-record
+ * ───────────────────────────────────────────────────────────────*/
+
 
 import java.io.File
 import java.io.InputStream

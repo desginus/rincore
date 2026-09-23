@@ -1,10 +1,11 @@
 package me.rerere.rikkahub
 
 
-/* ───【原版对齐】RikkaHubApp | 差异 +71 行
- * 来源: 原版移植 + 自研 (启动流程扩展)
- * 差异: DSH 技能根刷新 + 插件扫描注册 (v3.6.85-86)、崩溃日志
- *       持久化等自研启动步骤
+/* ───【域 L·基础设施】RikkaHubApp.kt
+ * 职责: Application 启动装配 (Koin/崩溃捕获/桥服务/后台任务)
+ * 常用改动: 启动顺序 → onCreate; 崩点定位 → CrashHandler 最先
+ * 问题定位: 启动闪退/黑屏 → 本文件 (先查启动链)
+ * 基线: 原版移植 + 自研 (CrashHandler/桥) | 地图: docs/APP_MAP.md §L | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 import android.app.Application
 import android.content.Intent

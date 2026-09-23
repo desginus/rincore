@@ -1,7 +1,10 @@
 package me.rerere.rikkahub.ui.theme
 
-/* ───【原版对齐】Theme.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+/* ───【域 F·主题渲染】Theme.kt
+ * 职责: 主题装配 (预设/自定义解析 → ColorScheme 应用)
+ * 常用改动: 主题解析 → findThemeById; 应用 → RikkaHubTheme
+ * 问题定位: 主题不生效/id 回退 → 本文件 + PresetTheme
+ * 基线: 原版移植 + 自研 | 地图: docs/APP_MAP.md §F | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 
 import android.app.Activity

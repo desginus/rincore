@@ -1,9 +1,11 @@
 package me.rerere.rikkahub.data.ai.tools
 
 
-/* ───【原版对齐】WorkspaceTools | 差异 +65 行
- * 来源: 原版移植 + 自研 (工作区工具增强)
- * 差异: 工具审批默认值 (v3.6.13)、CWD 支持等自研
+/* ───【域 C·工具系统】WorkspaceTools.kt
+ * 职责: 工作区工具 (read/write/edit/shell/show 五件套)
+ * 常用改动: 工具行为 → 各 Tool 定义; 引导 → WorkspaceReminderTransformer
+ * 问题定位: 工作区工具报错/路径问题 → 本文件 + WorkspaceManager
+ * 基线: 自研 | 地图: docs/APP_MAP.md §C | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive

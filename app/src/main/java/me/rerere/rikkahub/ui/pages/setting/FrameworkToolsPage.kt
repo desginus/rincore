@@ -6,6 +6,7 @@ package me.rerere.rikkahub.ui.pages.setting
  * 支持把工具"移进被管理的域"或"移回顶层"的移动操作 —
  * demotedFrameworkTools 记录被域接管的框架工具 (GenerationHandler 注入判定同源)。
  * ───────────────────────────────────────────────────────────────*/
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -102,6 +103,8 @@ fun FrameworkToolsPage(
             )
         },
     ) { pad ->
+        // v4.8.11: 返回层级修复 — 内嵌子页面拦截系统返回, 先回上一级
+        BackHandler { onBack() }
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = pad + PaddingValues(horizontal = 16.dp, vertical = 8.dp),

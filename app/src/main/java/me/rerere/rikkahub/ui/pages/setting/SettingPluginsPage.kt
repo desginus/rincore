@@ -4,6 +4,7 @@ package me.rerere.rikkahub.ui.pages.setting
 /* ───【自研】SettingPluginsPage.kt — 原版无此文件
  * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
  * ───────────────────────────────────────────────────────────────*/
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -77,6 +78,8 @@ fun SettingPluginsPage(
     val refreshing = remember { androidx.compose.runtime.mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
+        // v4.8.11: 返回层级修复 — 内嵌子页面拦截系统返回, 先回上一级
+        BackHandler { onBack() }
         TopAppBar(
             title = { Text("插件") },
             navigationIcon = {

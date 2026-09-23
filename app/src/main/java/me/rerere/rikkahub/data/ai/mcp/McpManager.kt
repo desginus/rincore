@@ -1,7 +1,10 @@
 package me.rerere.rikkahub.data.ai.mcp
 
-/* ───【原版对齐】McpManager.kt | 差异 ±14 行 (基线 2.5.1)
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+/* ───【域 B·AI 传输】McpManager.kt
+ * 职责: MCP 门面 (状态聚合/调用转发/reconcile 触发)
+ * 常用改动: 连接触发 → init collect reconcile; 状态 → syncingStatus
+ * 问题定位: MCP 状态异常 → 本文件 + McpSessionRegistry
+ * 基线: 原版移植 + 自研 | 地图: docs/APP_MAP.md §B | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 
 import android.content.Context

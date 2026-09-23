@@ -1,8 +1,11 @@
 package me.rerere.rikkahub.ui.pages.chat
 
 
-/* ───【原版对齐】ChatList.kt | 差异 ±6 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+/* ───【域 A·对话核心】ChatList.kt
+ * 职责: 消息列表渲染 (滚动/多版本消息/长按菜单/预览与搜索)
+ * 常用改动: 消息渲染 → 本文件 itemsIndexed; 滚动 → chatListState; 菜单 → 长按块
+ * 问题定位: 滚动抽动/渲染异常 (先 diff 上游对齐) → 本文件 + components/message
+ * 基线: 原版移植 + 自研 (TTS/搜索) | 地图: docs/APP_MAP.md §A | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Tick01

@@ -1,8 +1,11 @@
 package me.rerere.workspace
 
 
-/* ───【原版对齐】ProotShellRunner.kt | 差异 ±33 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+/* ───【域 D·工作区沙箱】ProotShellRunner.kt
+ * 职责: proot 命令构造/常驻进程/MCP stdio 桥启动
+ * 常用改动: 启动 → launchProcess; 命令构造 → buildCommand (env -i 真空)
+ * 问题定位: 沙箱启动失败/proot 报错 → 本文件
+ * 基线: 原版移植 + 自研 (常驻进程) | 地图: docs/APP_MAP.md §D | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 import java.io.File
 

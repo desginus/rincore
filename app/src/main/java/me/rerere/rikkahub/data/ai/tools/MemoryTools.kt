@@ -1,8 +1,11 @@
 package me.rerere.rikkahub.data.ai.tools
 
 
-/* ───【原版对齐】MemoryTools.kt | 差异 ±3 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+/* ───【域 C·工具系统】MemoryTools.kt
+ * 职责: 记忆工具 (增删改查/链接)
+ * 常用改动: 工具行为 → MemoryTools 各方法; 存储 → EnhancedMemoryRepository
+ * 问题定位: 记忆不生效 → 本文件 + 注入链
+ * 基线: 自研 | 地图: docs/APP_MAP.md §C | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.add

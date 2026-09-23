@@ -4,6 +4,7 @@ package me.rerere.rikkahub.ui.pages.setting
 /* ───【自研】SettingAdvancedPage.kt — 原版无此文件
  * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
  * ───────────────────────────────────────────────────────────────*/
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -80,6 +81,8 @@ fun SettingAdvancedPage(
             )
         },
     ) { padding ->
+        // v4.8.11: 返回层级修复 — 内嵌子页面拦截系统返回, 先回上一级
+        BackHandler { onBack() }
         Column(
             modifier = Modifier
                 .fillMaxSize()
