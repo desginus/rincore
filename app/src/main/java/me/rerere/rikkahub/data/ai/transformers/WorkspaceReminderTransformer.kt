@@ -156,6 +156,8 @@ private fun buildWorkspacePrompt(workspace: WorkspaceEntity, cwd: String? = null
     appendLine("    If spire.doc is missing: `pip3 install --break-system-packages spire.doc` (~25MB, one-time). For .docx use officecli / python-docx as usual.")
     appendLine("  - `markitdown` (built-in): universal reader — converts docx/xlsx/pptx/pdf/html to clean Markdown for your context: `markitdown <file>`.")
     appendLine("    Use it to READ arbitrary documents as text (tables become md tables); use officecli when you need to edit/render.")
+    appendLine("  - `pdfmd` (built-in): PDF -> Markdown for LLM context — `pdfmd <f.pdf> [-o out.md]` (scanned pages auto-OCR via tesseract; stdout is pure md).")
+    appendLine("    If pymupdf4llm is missing: `pip3 install --break-system-packages pymupdf4llm` (~10MB, one-time).")
     appendLine("  - `pandoc`: universal converter — `pandoc input.md -o output.docx` (md/html/docx/epub; PDF via `--pdf-engine=xelatex`).")
     appendLine("  - `python3` libraries: python-docx / python-pptx / openpyxl / pandas / reportlab / PyMuPDF — programmatic generation and PDF processing.")
     appendLine("    Extra libraries can be installed on demand: `pip3 install --break-system-packages <pkg>` (e.g. markitdown --upgrade, pymupdf4llm).")

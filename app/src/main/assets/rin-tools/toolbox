@@ -24,6 +24,8 @@ print_tool office-check "delivery QA — structural check + leftover placeholder
     'office-check <file.docx|.pptx|.xlsx>'
 print_tool doc ".doc (Word 97-2003) read / edit — wraps Spire.Doc with proot fixes (auto setarch -R + evaluation-notice scrub)" \
     'doc read <f.doc> · doc replace <f.doc> "old" "new" [-o out.doc]  (requires: pip3 install --break-system-packages spire.doc)'
+print_tool pdfmd "PDF -> Markdown for LLM context (pymupdf4llm wrapper; auto OCR for scanned pages)" \
+    'pdfmd <f.pdf> [-o out.md]  (requires: pip3 install --break-system-packages pymupdf4llm)'
 
 echo ""
 echo "=== Environment ==="
