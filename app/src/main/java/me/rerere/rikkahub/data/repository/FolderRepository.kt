@@ -27,6 +27,11 @@ class FolderRepository(
         return folderDAO.getFolderById(id.toString())?.toFolder()
     }
 
+    /** 4.8.25: 响应式查询 (CWD 变更自动刷新)。 */
+    fun getFolderFlow(id: Uuid): Flow<Folder?> {
+        return folderDAO.getFolderByIdFlow(id.toString()).map { it?.toFolder() }
+    }
+
     suspend fun createFolder(assistantId: Uuid, name: String, cwd: String? = null): Folder {
         val folder = Folder(
             assistantId = assistantId,

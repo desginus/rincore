@@ -56,10 +56,15 @@ fun WorkspaceCwdPickerSheet(
     currentCwd: String?,
     onSelectCwd: (String?) -> Unit,
     onDismiss: () -> Unit,
+    // 4.8.25: 根限制 (绝对路径) — 浏览不可越界到该目录之上, 且无 currentCwd 时
+    // 以该目录为起点; null = 工作区根 (无限制, 原行为)。项目包 CWD 选择传
+    // 助手 CWD (语义: "只能当前助手已有的 CWD 空间内设置子 CWD")。
+    rootPath: String? = null,
 ) {
     val workspaceRepository: WorkspaceRepository = koinInject()
+    val rootRel = remember(rootPath) { fromAbsolutePath(rootPath) }
 
-    var browsePath by remember { mutableStateOf(fromAbsolutePath(currentCwd)) }
+    var browsePath by remember { mutableStateOf(fromAbsolutePath(currentCwd).ifBlank { rootRel }) }
     var entries by remember { mutableStateOf<List<WorkspaceFileEntry>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
 
@@ -103,9 +108,11 @@ fun WorkspaceCwdPickerSheet(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 IconButton(
-                    enabled = browsePath.isNotBlank(),
+                    // 4.8.25: 根限制 — 到达 rootRel 时禁用返回 (不可越界)
+                    enabled = browsePath.isNotBlank() && browsePath != rootRel,
                     onClick = {
-                        browsePath = browsePath.substringBeforeLast('/', missingDelimiterValue = "")
+                        val parent = browsePath.substringBeforeLast('/', missingDelimiterValue = "")
+                        browsePath = if (parent.length < rootRel.length) rootRel else parent
                     },
                 ) {
                     Icon(HugeIcons.ArrowTurnBackward, contentDescription = null)

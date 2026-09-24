@@ -22,6 +22,10 @@ interface FolderDAO {
     @Query("SELECT * FROM conversation_folder WHERE id = :id")
     suspend fun getFolderById(id: String): FolderEntity?
 
+    // 4.8.25: 响应式查询 (CWD 变更自动刷新消费方)
+    @Query("SELECT * FROM conversation_folder WHERE id = :id")
+    fun getFolderByIdFlow(id: String): Flow<FolderEntity?>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(folder: FolderEntity)
 

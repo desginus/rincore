@@ -44,6 +44,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -95,6 +96,9 @@ import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.workspace.WorkspaceShellStatus
 import org.koin.compose.koinInject
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlin.uuid.Uuid
 import me.rerere.hugeicons.stroke.ArrowTurnBackward
 import androidx.compose.foundation.rememberScrollState
@@ -133,6 +137,15 @@ internal fun FilesPicker(
     val workspaceRepository: WorkspaceRepository = koinInject()
     // v4.8.4: 记忆数据 (判断"存在真实记忆条目"用于状态着色)
     val memoryRepository: me.rerere.rikkahub.data.repository.MemoryRepository = koinInject()
+    // 4.8.25: 项目包 CWD — 对话所属项目包 cwd 优先 (项目包锚定), 否则助手级。
+    // 响应式: 抽屉里修改项目包 CWD 后此处自动刷新。
+    val folderRepository: me.rerere.rikkahub.data.repository.FolderRepository = koinInject()
+    val folderCwd by remember(conversation.folderId) {
+        conversation.folderId?.let { fid -> folderRepository.getFolderFlow(fid).map { it?.cwd } }
+            ?: flowOf(null)
+    }.collectAsStateWithLifecycle(initialValue = null)
+    val effectiveCwd = folderCwd ?: assistant.workspaceCwd
+    val pickerScope = rememberCoroutineScope()
     val memories by memoryRepository.getMemoriesOfAssistantFlow(assistant.id.toString())
         .collectAsStateWithLifecycle(initialValue = emptyList())
     val workspaces by workspaceRepository.listFlow().collectAsState(initial = emptyList())
@@ -230,7 +243,8 @@ internal fun FilesPicker(
                         Screen.WorkspaceDetail(
                             targetId,
                             initialTab = 1,
-                            initialPath = assistant.workspaceCwd,
+                            // 4.8.25: 项目包 CWD 优先 (与执行 CWD 一致)
+                            initialPath = effectiveCwd,
                         )
                     )
                 } else {
@@ -309,7 +323,7 @@ internal fun FilesPicker(
                 modifier = Modifier.weight(1f).alpha(if (cwdReady) 1f else 0.4f),
                 icon = { Icon(HugeIcons.Folder01, null) },
                 text = {
-                    val cwdRaw = assistant.workspaceCwd
+                    val cwdRaw = effectiveCwd
                     Text(
                         // v4.8.3: 显示名净化 — 屏蔽 /workspace/ 基础前缀与各段 KEEP- 前缀
                         text = if (cwdReady && !cwdRaw.isNullOrBlank()) cwdDisplayName(cwdRaw)
@@ -339,10 +353,19 @@ internal fun FilesPicker(
         if (showCwdSheet && boundWorkspace != null && boundWorkspace.shellStatus == WorkspaceShellStatus.READY.name) {
             WorkspaceCwdPickerSheet(
                 workspaceId = boundWorkspace.id,
-                currentCwd = assistant.workspaceCwd,
+                currentCwd = effectiveCwd,
+                // 4.8.25: 项目包对话 — 限制在助手 CWD 空间内 (同抽屉项目包设置口径);
+                // 聊天 — 无限制 (原行为, 助手级 CWD 可在整个工作区选择)
+                rootPath = if (conversation.folderId != null) assistant.workspaceCwd else null,
                 onSelectCwd = { newCwd ->
-                    // v4.5.23: 写入助手级 CWD (settings 持久化) — 整个助手全部对话生效
-                    onUpdateAssistant(assistant.copy(workspaceCwd = newCwd))
+                    val fid = conversation.folderId
+                    if (fid != null) {
+                        // 项目包对话: 写入项目包 CWD (仅该包生效)
+                        pickerScope.launch { folderRepository.updateCwd(fid, newCwd) }
+                    } else {
+                        // v4.5.23: 写入助手级 CWD (settings 持久化) — 整个助手全部对话生效
+                        onUpdateAssistant(assistant.copy(workspaceCwd = newCwd))
+                    }
                 },
                 onDismiss = { showCwdSheet = false },
             )

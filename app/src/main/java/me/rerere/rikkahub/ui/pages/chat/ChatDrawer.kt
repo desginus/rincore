@@ -673,10 +673,13 @@ fun ChatDrawerContent(
     // 4.8.24 项目包 CWD 选择器 (复用工作区目录选择; 限定助手 CWD 空间内)
     val assistantWorkspaceIdForCwd = settings.getCurrentAssistant().workspaceId?.toString()
     if (assistantWorkspaceIdForCwd != null) {
+        // 4.8.25: rootPath = 助手 CWD — 项目包 CWD 只能在当前助手 CWD 空间内选择
+        val assistantCwdForPicker = settings.getCurrentAssistant().workspaceCwd
         if (cwdPickerForNew) {
             WorkspaceCwdPickerSheet(
                 workspaceId = assistantWorkspaceIdForCwd,
                 currentCwd = createPackCwd,
+                rootPath = assistantCwdForPicker,
                 onSelectCwd = {
                     createPackCwd = it
                     cwdPickerForNew = false
@@ -688,6 +691,7 @@ fun ChatDrawerContent(
             WorkspaceCwdPickerSheet(
                 workspaceId = assistantWorkspaceIdForCwd,
                 currentCwd = folder.cwd,
+                rootPath = assistantCwdForPicker,
                 onSelectCwd = {
                     drawerVm.updateFolderCwd(folder.id, it)
                     cwdPickerForFolder = null
@@ -980,9 +984,12 @@ private fun ProjectPackBar(
         } else {
             Spacer(Modifier.weight(1f))
         }
-        // 最右: 新建 / 设置 / 折叠-展开
-        PackBarIconButton(icon = HugeIcons.FolderAdd, onClick = onCreate)
-        PackBarIconButton(icon = HugeIcons.Settings01, onClick = onSettings)
+        // 最右: 折叠态 [新建][设置][展开]; 展开态仅 [折叠] — 位置腾给项目包列表
+        // (4.8.25 用户定版: 展开时新建/设置不展示)
+        if (!expanded) {
+            PackBarIconButton(icon = HugeIcons.FolderAdd, onClick = onCreate)
+            PackBarIconButton(icon = HugeIcons.Settings01, onClick = onSettings)
+        }
         PackBarIconButton(
             icon = if (expanded) HugeIcons.ArrowRight01 else HugeIcons.ArrowLeft01,
             onClick = onToggleExpand,
