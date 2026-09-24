@@ -387,42 +387,57 @@ class RikkaHubApp : Application() {
     }
 
     private fun createNotificationChannel() {
+        // 4.8.23: 每个渠道独立防护 — 单个渠道创建失败不应导致应用启动崩溃
+        // (4.8.20 generation_foreground 渠道缺 setName 被系统侧非空校验拒绝,
+        // IllegalArgumentException 发生在 Application.onCreate → 启动即崩的教训)。
+        // 渠道 name 是系统强校验项: 任何新渠道必须 setName (非空)。
         val notificationManager = NotificationManagerCompat.from(this)
-        val chatCompletedChannel = NotificationChannelCompat
-            .Builder(
-                CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID,
-                NotificationManagerCompat.IMPORTANCE_HIGH
-            )
-            .setName(getString(R.string.notification_channel_chat_completed))
-            .setVibrationEnabled(true)
-            .build()
-        notificationManager.createNotificationChannel(chatCompletedChannel)
 
-        val chatLiveUpdateChannel = NotificationChannelCompat
-            .Builder(
-                CHAT_LIVE_UPDATE_NOTIFICATION_CHANNEL_ID,
-                NotificationManagerCompat.IMPORTANCE_LOW
-            )
-            .setName(getString(R.string.notification_channel_chat_live_update))
-            .setVibrationEnabled(false)
-            .build()
-        notificationManager.createNotificationChannel(chatLiveUpdateChannel)
+        runCatching {
+            val chatCompletedChannel = NotificationChannelCompat
+                .Builder(
+                    CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID,
+                    NotificationManagerCompat.IMPORTANCE_HIGH
+                )
+                .setName(getString(R.string.notification_channel_chat_completed))
+                .setVibrationEnabled(true)
+                .build()
+            notificationManager.createNotificationChannel(chatCompletedChannel)
+        }.onFailure { Log.e(TAG, "channel chat_completed failed", it) }
 
-        val webServerChannel = NotificationChannelCompat
-            .Builder(WEB_SERVER_NOTIFICATION_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_LOW)
-            .setName(getString(R.string.notification_channel_web_server))
-            .setVibrationEnabled(false)
-            .setShowBadge(false)
-            .build()
-        notificationManager.createNotificationChannel(webServerChannel)
+        runCatching {
+            val chatLiveUpdateChannel = NotificationChannelCompat
+                .Builder(
+                    CHAT_LIVE_UPDATE_NOTIFICATION_CHANNEL_ID,
+                    NotificationManagerCompat.IMPORTANCE_LOW
+                )
+                .setName(getString(R.string.notification_channel_chat_live_update))
+                .setVibrationEnabled(false)
+                .build()
+            notificationManager.createNotificationChannel(chatLiveUpdateChannel)
+        }.onFailure { Log.e(TAG, "channel chat_live_update failed", it) }
 
-        // 4.8.20: 生成保活前台服务渠道 (静默低打扰 — 任务在后台持续运行)
-        val generationForegroundChannel = NotificationChannelCompat
-            .Builder(GENERATION_FOREGROUND_NOTIFICATION_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_LOW)
-            .setVibrationEnabled(false)
-            .setShowBadge(false)
-            .build()
-        notificationManager.createNotificationChannel(generationForegroundChannel)
+        runCatching {
+            val webServerChannel = NotificationChannelCompat
+                .Builder(WEB_SERVER_NOTIFICATION_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_LOW)
+                .setName(getString(R.string.notification_channel_web_server))
+                .setVibrationEnabled(false)
+                .setShowBadge(false)
+                .build()
+            notificationManager.createNotificationChannel(webServerChannel)
+        }.onFailure { Log.e(TAG, "channel web_server failed", it) }
+
+        runCatching {
+            // 4.8.20: 生成保活前台服务渠道 (静默低打扰 — 任务在后台持续运行)
+            // 4.8.23: 补 setName — 原缺 name 被系统校验拒绝致启动崩溃 (根因修复)
+            val generationForegroundChannel = NotificationChannelCompat
+                .Builder(GENERATION_FOREGROUND_NOTIFICATION_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_LOW)
+                .setName(getString(R.string.notification_channel_generation_foreground))
+                .setVibrationEnabled(false)
+                .setShowBadge(false)
+                .build()
+            notificationManager.createNotificationChannel(generationForegroundChannel)
+        }.onFailure { Log.e(TAG, "channel generation_foreground failed", it) }
     }
 
     override fun onTerminate() {
