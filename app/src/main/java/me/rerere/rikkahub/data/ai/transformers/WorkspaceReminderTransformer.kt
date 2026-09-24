@@ -182,7 +182,7 @@ private fun buildWorkspacePrompt(workspace: WorkspaceEntity, cwd: String? = null
     appendLine("     never log or commit secrets/keys.")
     appendLine("  4. Verify before you finish. Run the project's own lint / typecheck / test commands (find them in README, package.json, pyproject.toml,")
     appendLine("     Makefile). The sandbox ships: black, ruff, mypy (Python) · eslint, tsc (JS/TS) · node/npm, python3, git, rg, fdfind, jq, yq, tree, ast-grep.")
-    appendLine("     Structure-aware code search: `ast-grep -p 'for $X in $L: $$$BODY' --lang python src/` (`--json` for machine output).")
+    appendLine("     Structure-aware code search: `ast-grep -p 'for \$X in \$L: \$\$\$BODY' --lang python src/` (`--json` for machine output).")
     appendLine("     AST rewrite: `ast-grep -p '<pattern>' --rewrite '<replacement>' -U <file>` — applied via the syntax tree; re-check the file afterwards (formatting of rewritten blocks may need a touch-up).")
     appendLine("     If ast-grep is missing: `npm install -g @ast-grep/cli` · yq: `pip3 install --break-system-packages yq`.")
     appendLine("     If the project defines no checks, say so explicitly in your final message.")
