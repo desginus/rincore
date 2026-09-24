@@ -427,14 +427,16 @@ private fun ChatPageContent(
     val allowAudioVideoAttachments =
         setting.getCurrentChatModel()?.findProvider(setting.providers) is ProviderSetting.Google
 
-    val completionProviders = remember(assistant.workspaceId, assistant.workspaceCwd, workspaceRepository) {
+    // 4.8.24: 项目包 CWD — 对话所属项目包 cwd 优先 (项目包锚定), 否则助手级
+    val conversationFolderCwd by vm.conversationFolderCwd.collectAsStateWithLifecycle()
+    val effectiveCwd = conversationFolderCwd ?: assistant.workspaceCwd
+    val completionProviders = remember(assistant.workspaceId, effectiveCwd, workspaceRepository) {
         assistant.workspaceId?.let { workspaceId ->
             listOf(
                 WorkspaceCompletionProvider(
                     workspaceId = workspaceId.toString(),
                     repository = workspaceRepository,
-                    // v4.5.23: CWD 助手级 (原会话级退役)
-                    currentCwd = assistant.workspaceCwd,
+                    currentCwd = effectiveCwd,
                 )
             )
         }.orEmpty()

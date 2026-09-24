@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -38,6 +39,7 @@ import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.NodeFavoriteTarget
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.FavoriteRepository
+import me.rerere.rikkahub.data.repository.FolderRepository
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.ui.hooks.writeStringPreference
@@ -62,9 +64,17 @@ class ChatVM(
     private val analytics: StubAnalytics = StubAnalytics,
     private val filesManager: FilesManager,
     private val favoriteRepository: FavoriteRepository,
+    private val folderRepository: FolderRepository,
 ) : ViewModel() {
     private val _conversationId: Uuid = Uuid.parse(id)
     val conversation: StateFlow<Conversation> = chatService.getConversationFlow(_conversationId)
+
+    // 4.8.24 项目包 CWD — 对话所属项目包的 cwd (项目包锚定; null = 未设置/聊天默认)
+    val conversationFolderCwd: StateFlow<String?> = conversation
+        .map { it.folderId }
+        .distinctUntilChanged()
+        .map { fid -> fid?.let { runCatching { folderRepository.getFolderById(it)?.cwd }.getOrNull() } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
     var chatListInitialized by mutableStateOf(false) // 聊天列表是否已经滚动到底部
     // v4.7.23: 分享/深链一次性输入参数消费标记 — 首个组合消费后置位。
     // 防止页面重建 (抽屉→设置→返回) 时重复消费 back stack 的 files/text,

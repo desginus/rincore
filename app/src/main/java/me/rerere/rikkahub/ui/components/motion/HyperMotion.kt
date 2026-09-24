@@ -22,9 +22,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -116,11 +118,17 @@ fun HyperDialog(
                 scaleOut(targetScale = HyperMotionSpec.EXIT_TO_SCALE),
         ) {
             HyperGlassPanel(modifier = modifier) {
-                if (title != null) {
-                    Box(Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp)) { title() }
-                }
-                if (text != null) {
-                    Box(Modifier.padding(horizontal = 24.dp, vertical = 16.dp)) { text() }
+                // 4.8.24 深色可读性修复: 弹窗 title/text 强制主题前景色 —
+                // LocalContentColor 继承链在 Dialog/玻璃面板链上不可靠 (调用点
+                // 继承到错误值 → 深色模式正文黑字不可读; 按钮因显式主题色无恙)。
+                // 显式提供 onSurface 保证深浅主题下正文始终可读。
+                CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
+                    if (title != null) {
+                        Box(Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp)) { title() }
+                    }
+                    if (text != null) {
+                        Box(Modifier.padding(horizontal = 24.dp, vertical = 16.dp)) { text() }
+                    }
                 }
                 if (confirmButton != null || dismissButton != null) {
                     Row(

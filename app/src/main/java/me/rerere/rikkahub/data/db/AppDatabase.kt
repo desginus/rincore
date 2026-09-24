@@ -64,7 +64,7 @@ import me.rerere.rikkahub.utils.JsonInstant
         WorkflowRunEntity::class,
         SubAgentRunEntity::class,
     ],
-    version = 30,
+    version = 31,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -136,6 +136,14 @@ object TokenUsageConverter {
 val MIGRATION_29_30 = object : androidx.room.migration.Migration(29, 30) {
     override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE workspaces ADD COLUMN shell_compatibility_mode INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+/** 4.8.24: 项目包 CWD 字段 (30+ schema json 缺失, 手写迁移 — 同 29_30 先例)。
+ *  nullable TEXT 列直接 ADD COLUMN (无 NOT NULL/默认值需求)。 */
+val MIGRATION_30_31 = object : androidx.room.migration.Migration(30, 31) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE conversation_folder ADD COLUMN cwd TEXT")
     }
 }
 

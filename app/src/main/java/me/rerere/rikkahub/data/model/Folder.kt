@@ -17,4 +17,6 @@ data class Folder(
     val name: String,
     val sortIndex: Int = 0,
     val createAt: Instant = Instant.now(),
+    // 4.8.24 项目包 CWD (工作目录, 工作区相对路径) — null = 未设置
+    val cwd: String? = null,
 )

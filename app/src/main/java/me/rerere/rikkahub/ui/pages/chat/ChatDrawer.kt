@@ -9,6 +9,13 @@ package me.rerere.rikkahub.ui.pages.chat
  * ───────────────────────────────────────────────────────────────*/
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.IconButton
+import me.rerere.hugeicons.stroke.Settings01
+import me.rerere.hugeicons.stroke.ArrowLeft01
+import me.rerere.hugeicons.stroke.ArrowRight01
+import me.rerere.rikkahub.ui.components.ai.WorkspaceCwdPickerSheet
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -163,6 +170,12 @@ fun ChatDrawerContent(
     var showCreateFolderDialog by remember { mutableStateOf(false) }
     var folderToRename by remember { mutableStateOf<Folder?>(null) }
     var folderToDelete by remember { mutableStateOf<Folder?>(null) }
+    // 4.8.24 项目包: 折叠状态 (启动默认折叠), 设置弹窗, CWD 选择
+    var packBarExpanded by remember { mutableStateOf(false) }
+    var showPackSettingsDialog by remember { mutableStateOf(false) }
+    var createPackCwd by remember { mutableStateOf<String?>(null) }
+    var cwdPickerForNew by remember { mutableStateOf(false) }
+    var cwdPickerForFolder by remember { mutableStateOf<Folder?>(null) }
 
     // Menu popup 状态
 
@@ -259,11 +272,17 @@ fun ChatDrawerContent(
                 )
             }
 
-            FolderBar(
+            ProjectPackBar(
                 folders = folders,
                 selectedFolderId = selectedFolderId,
+                expanded = packBarExpanded,
+                onToggleExpand = { packBarExpanded = !packBarExpanded },
                 onSelect = { drawerVm.selectFolder(it) },
-                onCreate = { showCreateFolderDialog = true },
+                onCreate = {
+                    createPackCwd = null
+                    showCreateFolderDialog = true
+                },
+                onSettings = { showPackSettingsDialog = true },
                 onRename = { folderToRename = it },
                 onDelete = { folderToDelete = it },
             )
@@ -527,24 +546,46 @@ fun ChatDrawerContent(
     }
 
     // 新建文件夹对话框
+    // 4.8.24 新建项目包 (名称 + CWD 锚定)
     if (showCreateFolderDialog) {
         var name by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showCreateFolderDialog = false },
-            title = { Text(stringResource(R.string.chat_page_create_folder)) },
+            title = { Text("新建项目包") },
             text = {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    placeholder = { Text(stringResource(R.string.chat_page_folder_name)) }
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = { Text(stringResource(R.string.chat_page_folder_name)) }
+                    )
+                    Surface(
+                        onClick = { cwdPickerForNew = true },
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(HugeIcons.Folder01, null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = createPackCwd ?: "未设置 CWD（使用助手默认目录）",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        drawerVm.createFolder(name)
+                        drawerVm.createFolder(name, createPackCwd)
                         showCreateFolderDialog = false
                     },
                     enabled = name.isNotBlank()
@@ -556,6 +597,103 @@ fun ChatDrawerContent(
                 }
             }
         )
+    }
+
+    // 4.8.24 项目包设置弹窗 (管理: CWD / 重命名 / 删除)
+    if (showPackSettingsDialog) {
+        AlertDialog(
+            onDismissRequest = { showPackSettingsDialog = false },
+            title = { Text("项目包设置") },
+            text = {
+                if (folders.isEmpty()) {
+                    Text("暂无项目包。项目包让同一助手执行不同方向的命令（独立 CWD 锚定），点击 + 新建。")
+                } else {
+                    Column(
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        folders.forEach { folder ->
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(folder.name, style = MaterialTheme.typography.bodyMedium)
+                                        Text(
+                                            folder.cwd ?: "未设置 CWD",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    IconButton(onClick = { cwdPickerForFolder = folder }) {
+                                        Icon(
+                                            HugeIcons.Folder01,
+                                            contentDescription = "设置 CWD",
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    }
+                                    IconButton(onClick = {
+                                        showPackSettingsDialog = false
+                                        folderToRename = folder
+                                    }) {
+                                        Icon(
+                                            HugeIcons.PencilEdit01,
+                                            contentDescription = "重命名",
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    }
+                                    IconButton(onClick = {
+                                        showPackSettingsDialog = false
+                                        folderToDelete = folder
+                                    }) {
+                                        Icon(
+                                            HugeIcons.Delete01,
+                                            contentDescription = "删除",
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showPackSettingsDialog = false }) { Text("完成") }
+            },
+        )
+    }
+
+    // 4.8.24 项目包 CWD 选择器 (复用工作区目录选择; 限定助手 CWD 空间内)
+    val assistantWorkspaceIdForCwd = settings.getCurrentAssistant().workspaceId?.toString()
+    if (assistantWorkspaceIdForCwd != null) {
+        if (cwdPickerForNew) {
+            WorkspaceCwdPickerSheet(
+                workspaceId = assistantWorkspaceIdForCwd,
+                currentCwd = createPackCwd,
+                onSelectCwd = {
+                    createPackCwd = it
+                    cwdPickerForNew = false
+                },
+                onDismiss = { cwdPickerForNew = false },
+            )
+        }
+        cwdPickerForFolder?.let { folder ->
+            WorkspaceCwdPickerSheet(
+                workspaceId = assistantWorkspaceIdForCwd,
+                currentCwd = folder.cwd,
+                onSelectCwd = {
+                    drawerVm.updateFolderCwd(folder.id, it)
+                    cwdPickerForFolder = null
+                },
+                onDismiss = { cwdPickerForFolder = null },
+            )
+        }
     }
 
     // 重命名文件夹对话框
@@ -766,70 +904,106 @@ private fun DrawerAction(
     }
 }
 
+/**
+ * 4.8.24: 项目包栏 — 文件夹 → 项目包。
+ * 折叠态: [聊天] ... [新建][设置][展开]; 展开态: [聊天] [项目包列表(可横滑)] [新建][设置][折叠]。
+ * 项目包 = 同一助手执行不同方向的命令 (锚定独立 CWD); 「聊天」= 全助手权限默认空间。
+ */
 @Composable
-private fun FolderBar(
+private fun ProjectPackBar(
     folders: List<Folder>,
     selectedFolderId: Uuid?,
+    expanded: Boolean,
+    onToggleExpand: () -> Unit,
     onSelect: (Uuid?) -> Unit,
     onCreate: () -> Unit,
+    onSettings: () -> Unit,
     onRename: (Folder) -> Unit,
     onDelete: (Folder) -> Unit,
 ) {
-    LazyRow(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        item {
-            FolderChip(
-                label = stringResource(R.string.chat_page_folder_default),
-                selected = selectedFolderId == null,
-                onClick = { onSelect(null) },
-                onLongClick = {},
-            )
-        }
-        items(folders) { folder ->
-            var menuExpanded by remember { mutableStateOf(false) }
-            Box {
-                FolderChip(
-                    label = folder.name,
-                    icon = HugeIcons.Folder01,
-                    selected = selectedFolderId == folder.id,
-                    onClick = { onSelect(folder.id) },
-                    onLongClick = { menuExpanded = true },
-                )
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.chat_page_rename)) },
-                        leadingIcon = { Icon(HugeIcons.PencilEdit01, null) },
-                        onClick = {
-                            onRename(folder)
-                            menuExpanded = false
+        // 「聊天」— 默认入口 (全助手权限 CWD)
+        FolderChip(
+            label = stringResource(R.string.chat_page_folder_default),
+            selected = selectedFolderId == null,
+            onClick = { onSelect(null) },
+            onLongClick = {},
+        )
+        if (expanded) {
+            // 项目包列表 (可横滑 — "右滑显示项目包列表")
+            LazyRow(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                items(folders) { folder ->
+                    var menuExpanded by remember { mutableStateOf(false) }
+                    Box {
+                        FolderChip(
+                            label = folder.name,
+                            icon = HugeIcons.Folder01,
+                            selected = selectedFolderId == folder.id,
+                            onClick = { onSelect(folder.id) },
+                            onLongClick = { menuExpanded = true },
+                        )
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.chat_page_rename)) },
+                                leadingIcon = { Icon(HugeIcons.PencilEdit01, null) },
+                                onClick = {
+                                    onRename(folder)
+                                    menuExpanded = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.chat_page_delete)) },
+                                leadingIcon = { Icon(HugeIcons.Delete01, null) },
+                                onClick = {
+                                    onDelete(folder)
+                                    menuExpanded = false
+                                }
+                            )
                         }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.chat_page_delete)) },
-                        leadingIcon = { Icon(HugeIcons.Delete01, null) },
-                        onClick = {
-                            onDelete(folder)
-                            menuExpanded = false
-                        }
-                    )
+                    }
                 }
             }
+        } else {
+            Spacer(Modifier.weight(1f))
         }
-        item {
-            FolderChip(
-                label = stringResource(R.string.chat_page_folder_add),
-                icon = HugeIcons.FolderAdd,
-                selected = false,
-                onClick = onCreate,
-                onLongClick = {},
+        // 最右: 新建 / 设置 / 折叠-展开
+        PackBarIconButton(icon = HugeIcons.FolderAdd, onClick = onCreate)
+        PackBarIconButton(icon = HugeIcons.Settings01, onClick = onSettings)
+        PackBarIconButton(
+            icon = if (expanded) HugeIcons.ArrowRight01 else HugeIcons.ArrowLeft01,
+            onClick = onToggleExpand,
+        )
+    }
+}
+
+@Composable
+private fun PackBarIconButton(icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        modifier = Modifier
+            .size(32.dp)
+            .clickable(onClick = onClick),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

@@ -31,6 +31,10 @@ interface FolderDAO {
     @Query("UPDATE conversation_folder SET name = :name WHERE id = :id")
     suspend fun rename(id: String, name: String)
 
+    // 4.8.24: 项目包 CWD 更新
+    @Query("UPDATE conversation_folder SET cwd = :cwd WHERE id = :id")
+    suspend fun updateCwd(id: String, cwd: String?)
+
     @Delete
     suspend fun delete(folder: FolderEntity)
 

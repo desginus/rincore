@@ -171,12 +171,19 @@ class ChatDrawerVM(
         _selectedFolderId.value = folderId
     }
 
-    fun createFolder(name: String) {
+    fun createFolder(name: String, cwd: String? = null) {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return
         viewModelScope.launch {
             val assistantId = assistantIdFlow.first()
-            folderRepo.createFolder(assistantId, trimmed)
+            folderRepo.createFolder(assistantId, trimmed, cwd)
+        }
+    }
+
+    /** 4.8.24: 更新项目包 CWD (项目包锚定目录)。 */
+    fun updateFolderCwd(folderId: Uuid, cwd: String?) {
+        viewModelScope.launch {
+            folderRepo.updateCwd(folderId, cwd)
         }
     }
 
