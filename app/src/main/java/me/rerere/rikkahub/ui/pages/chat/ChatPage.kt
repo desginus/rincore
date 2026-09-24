@@ -427,6 +427,16 @@ private fun ChatPageContent(
     val allowAudioVideoAttachments =
         setting.getCurrentChatModel()?.findProvider(setting.providers) is ProviderSetting.Google
 
+    // 4.8.26: 空对话跟随当前项目包选区 — "选项目包 → 发消息"语境正确:
+    // 空对话 (= 草稿, 无任何消息) 的归属随抽屉选区实时同步; 有消息的对话不动
+    // (历史归属定格; 开新方向请用顶部栏新建对话, 新建归属同样跟随选区)。
+    val drawerSelectedFolderId by drawerVm.selectedFolderId.collectAsStateWithLifecycle()
+    LaunchedEffect(conversation.id, drawerSelectedFolderId, conversation.messageNodes.isEmpty()) {
+        if (conversation.messageNodes.isEmpty() && conversation.folderId != drawerSelectedFolderId) {
+            vm.moveConversationToFolder(conversation.id, drawerSelectedFolderId)
+        }
+    }
+
     // 4.8.24: 项目包 CWD — 对话所属项目包 cwd 优先 (项目包锚定), 否则助手级
     val conversationFolderCwd by vm.conversationFolderCwd.collectAsStateWithLifecycle()
     val effectiveCwd = conversationFolderCwd ?: assistant.workspaceCwd

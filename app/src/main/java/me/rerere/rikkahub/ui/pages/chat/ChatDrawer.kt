@@ -926,6 +926,7 @@ private fun ProjectPackBar(
     onRename: (Folder) -> Unit,
     onDelete: (Folder) -> Unit,
 ) {
+    val selectedFolder = folders.find { it.id == selectedFolderId }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -933,15 +934,14 @@ private fun ProjectPackBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        // 「聊天」— 默认入口 (全助手权限 CWD)
-        FolderChip(
-            label = stringResource(R.string.chat_page_folder_default),
-            selected = selectedFolderId == null,
-            onClick = { onSelect(null) },
-            onLongClick = {},
-        )
         if (expanded) {
-            // 项目包列表 (可横滑 — "右滑显示项目包列表")
+            // 展开态: 显示所有 — 「聊天」+ 全部项目包 (可横滑)
+            FolderChip(
+                label = stringResource(R.string.chat_page_folder_default),
+                selected = selectedFolderId == null,
+                onClick = { onSelect(null) },
+                onLongClick = {},
+            )
             LazyRow(
                 modifier = Modifier.weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -982,16 +982,25 @@ private fun ProjectPackBar(
                 }
             }
         } else {
+            // 折叠态: 显示当前选区 (「聊天」或选中的项目包, 4.8.26 用户定版);
+            // 点击 → 自动展开 (想切换时展开选择)
+            FolderChip(
+                label = selectedFolder?.name ?: stringResource(R.string.chat_page_folder_default),
+                icon = if (selectedFolder != null) HugeIcons.Folder01 else null,
+                selected = true,
+                onClick = { onToggleExpand() },
+                onLongClick = {},
+            )
             Spacer(Modifier.weight(1f))
         }
-        // 最右: 折叠态 [新建][设置][展开]; 展开态仅 [折叠] — 位置腾给项目包列表
-        // (4.8.25 用户定版: 展开时新建/设置不展示)
+        // 最右: 折叠态 [新建][设置][展开→]; 展开态仅 [折叠←] — 位置腾给项目包列表
+        // (4.8.25: 展开时新建/设置不展示; 4.8.26: 箭头方向修正 — 原左右反了)
         if (!expanded) {
             PackBarIconButton(icon = HugeIcons.FolderAdd, onClick = onCreate)
             PackBarIconButton(icon = HugeIcons.Settings01, onClick = onSettings)
         }
         PackBarIconButton(
-            icon = if (expanded) HugeIcons.ArrowRight01 else HugeIcons.ArrowLeft01,
+            icon = if (expanded) HugeIcons.ArrowLeft01 else HugeIcons.ArrowRight01,
             onClick = onToggleExpand,
         )
     }

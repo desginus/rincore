@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
@@ -74,8 +75,14 @@ class ChatDrawerVM(
         .map { it.assistantId }
         .distinctUntilChanged()
 
-    // 当前选中的文件夹筛选，null 表示「未归类」视图
-    private val _selectedFolderId = MutableStateFlow<Uuid?>(null)
+    // 当前选中的项目包，null 表示「聊天」视图。
+    // 4.8.26: SavedStateHandle 持久化 — Activity 重建 (切后台被系统回收/配置变化)
+    // 后选区不丢失 (用户实证: 切后台回来从项目包跳回聊天); 全新启动无 saved
+    // state, 仍默认「聊天」。
+    private val _selectedFolderId = MutableStateFlow(
+        savedStateHandle.get<String>("selectedFolderId")
+            ?.let { runCatching { Uuid.parse(it) }.getOrNull() }
+    )
     val selectedFolderId: StateFlow<Uuid?> = _selectedFolderId.asStateFlow()
 
     // 当前助手的文件夹列表（Room Flow，增删改自动刷新）
@@ -153,11 +160,14 @@ class ChatDrawerVM(
     val scrollOffset: Int get() = savedStateHandle["scrollOffset"] ?: 0
 
     init {
-        // 助手切换时重置文件夹筛选，回到「聊天」视图，
-        // 避免继续显示上一个助手文件夹内的会话（文件夹是助手内分组）
+        // 助手切换时重置项目包选区，回到「聊天」视图，
+        // 避免继续显示上一个助手项目包内的会话（项目包是助手内分组）。
+        // 4.8.26: drop(1) — 跳过首次发射 (VM 创建/重建时的当前值), 仅响应
+        // 助手"切换"事件; 原实现首次发射也重置, 致 Activity 重建后选区丢失。
         viewModelScope.launch {
-            assistantIdFlow.collect {
+            assistantIdFlow.drop(1).collect {
                 _selectedFolderId.value = null
+                savedStateHandle["selectedFolderId"] = null
             }
         }
     }
@@ -169,6 +179,7 @@ class ChatDrawerVM(
 
     fun selectFolder(folderId: Uuid?) {
         _selectedFolderId.value = folderId
+        savedStateHandle["selectedFolderId"] = folderId?.toString()
     }
 
     fun createFolder(name: String, cwd: String? = null) {
@@ -207,6 +218,7 @@ class ChatDrawerVM(
             chatService.deleteFolder(folderId)
             if (_selectedFolderId.value == folderId) {
                 _selectedFolderId.value = null
+                savedStateHandle["selectedFolderId"] = null
             }
         }
         return true

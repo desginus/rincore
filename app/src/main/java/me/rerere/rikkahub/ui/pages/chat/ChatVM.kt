@@ -383,6 +383,13 @@ class ChatVM(
         }
     }
 
+    /** 4.8.26: 空对话归属同步 (项目包选区跟随 — "选项目包 → 发消息"语境正确)。 */
+    fun moveConversationToFolder(conversationId: Uuid, folderId: Uuid?) {
+        viewModelScope.launch {
+            chatService.moveConversationToFolder(conversationId, folderId)
+        }
+    }
+
     fun moveConversationToAssistant(conversation: Conversation, targetAssistantId: Uuid) {
         viewModelScope.launch {
             val conversationFull = conversationRepo.getConversationById(conversation.id) ?: return@launch
