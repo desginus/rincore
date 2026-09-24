@@ -68,6 +68,10 @@ class ConversationSession(
         initialized = true
     }
 
+    /** 4.8.27: 是否已完成 DB 加载 — 发送路径归属同步守卫
+     *  (防加载窗口期误判: 未初始化时 state 是空对话初始值, 不可据此判定归属)。 */
+    fun isInitialized(): Boolean = initialized
+
     // 2.5.3: 元数据先应用到最新内存状态；落库只更新对应列，不能用旧消息快照覆盖流式输出。
     internal suspend fun updateMetadata(
         update: (Conversation) -> Conversation,

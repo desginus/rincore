@@ -234,7 +234,23 @@ class ChatVM(
         // 这里再读一次 flow.value 保证最新值。仍读旧值期间不可能出现:
         // updateSync 在主线程同步完成, 同线程后续消息必见新值。
         val effectiveAnswer = if (settingsStore.settingsFlow.value.deferAutoReply) false else answer
-        chatService.sendMessage(_conversationId, content, effectiveAnswer)
+        // 4.8.27: 空对话归属同步 — 发送时执行 (判定可靠; 根治 v4.8.26 加载
+        // 窗口期误判: 误判会抢先写 session 致 DB 加载被丢弃)。
+        // 守卫: 会话须已完成 DB 加载 (isConversationInitialized) — 加载中
+        // 的 state 是空对话初始值, 不可据此判定归属 (极端边缘防护)。
+        // 归属更新完成后才入队发送, 保证生成链读取正确 folderId (effectiveWorkspaceCwd)。
+        val targetFolder = ProjectPackSelection.selectedFolderId.value
+        val conv = conversation.value
+        val shouldSyncFolder = chatService.isConversationInitialized(conv.id) &&
+            conv.messageNodes.isEmpty() && conv.folderId != targetFolder
+        if (shouldSyncFolder) {
+            viewModelScope.launch {
+                chatService.moveConversationToFolder(conv.id, targetFolder)
+                chatService.sendMessage(_conversationId, content, effectiveAnswer)
+            }
+        } else {
+            chatService.sendMessage(_conversationId, content, effectiveAnswer)
+        }
     }
 
     fun handleMessageEdit(parts: List<UIMessagePart>, messageId: Uuid) {
@@ -383,12 +399,6 @@ class ChatVM(
         }
     }
 
-    /** 4.8.26: 空对话归属同步 (项目包选区跟随 — "选项目包 → 发消息"语境正确)。 */
-    fun moveConversationToFolder(conversationId: Uuid, folderId: Uuid?) {
-        viewModelScope.launch {
-            chatService.moveConversationToFolder(conversationId, folderId)
-        }
-    }
 
     fun moveConversationToAssistant(conversation: Conversation, targetAssistantId: Uuid) {
         viewModelScope.launch {

@@ -160,6 +160,8 @@ class ChatDrawerVM(
     val scrollOffset: Int get() = savedStateHandle["scrollOffset"] ?: 0
 
     init {
+        // 4.8.27: 同步全局选区状态 (跨 VM 只读 — ChatVM 发送时归属同步用)
+        ProjectPackSelection.selectedFolderId.value = _selectedFolderId.value
         // 助手切换时重置项目包选区，回到「聊天」视图，
         // 避免继续显示上一个助手项目包内的会话（项目包是助手内分组）。
         // 4.8.26: drop(1) — 跳过首次发射 (VM 创建/重建时的当前值), 仅响应
@@ -168,6 +170,7 @@ class ChatDrawerVM(
             assistantIdFlow.drop(1).collect {
                 _selectedFolderId.value = null
                 savedStateHandle["selectedFolderId"] = null
+                ProjectPackSelection.selectedFolderId.value = null
             }
         }
     }
@@ -180,6 +183,7 @@ class ChatDrawerVM(
     fun selectFolder(folderId: Uuid?) {
         _selectedFolderId.value = folderId
         savedStateHandle["selectedFolderId"] = folderId?.toString()
+        ProjectPackSelection.selectedFolderId.value = folderId
     }
 
     fun createFolder(name: String, cwd: String? = null) {
@@ -219,6 +223,7 @@ class ChatDrawerVM(
             if (_selectedFolderId.value == folderId) {
                 _selectedFolderId.value = null
                 savedStateHandle["selectedFolderId"] = null
+                ProjectPackSelection.selectedFolderId.value = null
             }
         }
         return true

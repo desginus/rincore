@@ -1215,6 +1215,10 @@ class ChatService(
      * 后续任意 saveConversation(id, state.value) 会用整对象把 folder_id 覆盖回旧值，导致移动丢失。
      * 先改内存可确保这段窗口内的整对象保存也带上新 folderId。
      */
+    /** 4.8.27: 会话是否已完成 DB 加载 (发送路径归属同步守卫)。 */
+    fun isConversationInitialized(conversationId: Uuid): Boolean =
+        sessionManager.get(conversationId)?.isInitialized() == true
+
     suspend fun moveConversationToFolder(conversationId: Uuid, folderId: Uuid?) {
         if (sessionManager.get(conversationId) != null) {
             updateConversationState(conversationId) { it.copy(folderId = folderId) }
