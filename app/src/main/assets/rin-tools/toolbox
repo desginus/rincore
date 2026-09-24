@@ -24,8 +24,8 @@ print_tool office-check "delivery QA — structural check + leftover placeholder
     'office-check <file.docx|.pptx|.xlsx>'
 print_tool doc ".doc (Word 97-2003) read / edit — wraps Spire.Doc with proot fixes (auto setarch -R + evaluation-notice scrub)" \
     'doc read <f.doc> · doc replace <f.doc> "old" "new" [-o out.doc]  (requires: pip3 install --break-system-packages spire.doc)'
-print_tool pdf "PDF in its native form — render pages to PNG for viewing (default), or extract text (--text/--ocr)" \
-    'pdf <f.pdf> (pages -> PNG) · pdf <f.pdf> --text · pdf <f.pdf> --ocr  (built-in, uses PyMuPDF)'
+print_tool pdf "read a PDF as-is — prints the embedded text layer by default; --png renders pages for viewing; --ocr for scans" \
+    'pdf <f.pdf> · pdf <f.pdf> --png · pdf <f.pdf> --ocr  (built-in, uses PyMuPDF; never writes into your folder)'
 
 echo ""
 echo "=== Environment ==="
@@ -54,6 +54,16 @@ PYEOF
 else
     echo "  python3  : MISSING — office-edit / apply-patch / office-check need it"
     echo "             install: apt-get update && apt-get install -y python3 python3-pip"
+fi
+if command -v ast-grep >/dev/null 2>&1; then
+    echo "  ast-grep : $(ast-grep --version 2>/dev/null | head -1) — structure-aware code search/replace"
+else
+    echo "  ast-grep : not installed (optional; install: npm install -g @ast-grep/cli)"
+fi
+if command -v yq >/dev/null 2>&1; then
+    echo "  yq       : ready (YAML processing)"
+else
+    echo "  yq       : not installed (optional; install: pip3 install --break-system-packages yq)"
 fi
 if command -v pandoc >/dev/null 2>&1; then
     echo "  pandoc   : $(pandoc --version 2>/dev/null | head -1) ($(command -v pandoc))"

@@ -1,30 +1,39 @@
 #!/usr/bin/env python3
-"""pdf — work with a PDF in its native form.
+"""pdf — read a PDF without altering anything.
 
-Default: render every page to PNG — view the pages exactly as they are
-(highest fidelity; a multimodal model reads rendered pages better than any
-text conversion). Text extraction stays available for search / exact quoting.
+Default: print the embedded text layer — if the PDF carries its own text,
+that IS the document's data and you read it as-is. Scanned PDFs (no text
+layer) print a hint instead of guessing.
+Nothing is ever written next to your document: --png renders into a temp
+folder (/tmp/rin-pdf-pages) purely for viewing; --ocr extracts text from
+scans only when text is explicitly needed.
 
 Usage:
-  pdf <file.pdf>            render pages to PNG (prints the file paths)
-  pdf <file.pdf> --text     print the embedded text layer
-  pdf <file.pdf> --ocr      print OCR text (scanned PDFs; only when text is
-                            explicitly required — viewing pages is preferred)
+  pdf <file.pdf>            print the embedded text layer
+  pdf <file.pdf> --png      render pages to PNG in /tmp/rin-pdf-pages (view them)
+  pdf <file.pdf> --ocr      OCR text extraction (scanned PDFs, explicit need)
 """
 import os
 import sys
+
+PNG_DIR = "/tmp/rin-pdf-pages"
 
 
 def render_png(src: str) -> None:
     import pymupdf
 
+    os.makedirs(PNG_DIR, exist_ok=True)
+    base = os.path.splitext(os.path.basename(src))[0]
     doc = pymupdf.open(src)
-    base = os.path.splitext(os.path.abspath(src))[0]
+    made = []
     for i, page in enumerate(doc):
-        out = f"{base}-page{i + 1}.png"
+        out = os.path.join(PNG_DIR, f"{base}-page{i + 1}.png")
         page.get_pixmap(dpi=150).save(out)
-        print(out)
+        made.append(out)
     doc.close()
+    for p in made:
+        print(p)
+    print(f"({len(made)} page(s) rendered for viewing)", file=sys.stderr)
 
 
 def extract_text(src: str, ocr: bool) -> None:
@@ -44,7 +53,9 @@ def extract_text(src: str, ocr: bool) -> None:
     if parts:
         print("\n\n".join(parts))
     else:
-        print("(no text layer — scanned PDF. Render the pages and view them instead: pdf <file.pdf>)")
+        print("(no text layer — scanned PDF)")
+        print("view the pages instead:  pdf <file.pdf> --png")
+        print("or force OCR text:       pdf <file.pdf> --ocr")
 
 
 def main() -> None:
@@ -53,12 +64,12 @@ def main() -> None:
         print(__doc__)
         return
     src = args[0]
-    if "--text" in args:
-        extract_text(src, ocr=False)
+    if "--png" in args:
+        render_png(src)
     elif "--ocr" in args:
         extract_text(src, ocr=True)
     else:
-        render_png(src)
+        extract_text(src, ocr=False)
 
 
 if __name__ == "__main__":
