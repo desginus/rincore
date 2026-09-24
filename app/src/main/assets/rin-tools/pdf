@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+"""pdf — work with a PDF in its native form.
+
+Default: render every page to PNG — view the pages exactly as they are
+(highest fidelity; a multimodal model reads rendered pages better than any
+text conversion). Text extraction stays available for search / exact quoting.
+
+Usage:
+  pdf <file.pdf>            render pages to PNG (prints the file paths)
+  pdf <file.pdf> --text     print the embedded text layer
+  pdf <file.pdf> --ocr      print OCR text (scanned PDFs; only when text is
+                            explicitly required — viewing pages is preferred)
+"""
+import os
+import sys
+
+
+def render_png(src: str) -> None:
+    import pymupdf
+
+    doc = pymupdf.open(src)
+    base = os.path.splitext(os.path.abspath(src))[0]
+    for i, page in enumerate(doc):
+        out = f"{base}-page{i + 1}.png"
+        page.get_pixmap(dpi=150).save(out)
+        print(out)
+    doc.close()
+
+
+def extract_text(src: str, ocr: bool) -> None:
+    import pymupdf
+
+    doc = pymupdf.open(src)
+    parts = []
+    for i, page in enumerate(doc):
+        if ocr:
+            textpage = page.get_textpage_ocr(full=True, dpi=200)
+            t = page.get_text(textpage=textpage)
+        else:
+            t = page.get_text()
+        if t.strip():
+            parts.append(f"=== page {i + 1} ===\n{t.strip()}")
+    doc.close()
+    if parts:
+        print("\n\n".join(parts))
+    else:
+        print("(no text layer — scanned PDF. Render the pages and view them instead: pdf <file.pdf>)")
+
+
+def main() -> None:
+    args = sys.argv[1:]
+    if not args or args[0] in ("-h", "--help"):
+        print(__doc__)
+        return
+    src = args[0]
+    if "--text" in args:
+        extract_text(src, ocr=False)
+    elif "--ocr" in args:
+        extract_text(src, ocr=True)
+    else:
+        render_png(src)
+
+
+if __name__ == "__main__":
+    main()
