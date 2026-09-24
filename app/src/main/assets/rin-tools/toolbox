@@ -22,13 +22,15 @@ print_tool apply-patch "Codex-style multi-file patch applier; hunks located by c
     "apply-patch <<'PATCH' ... *** Begin Patch / *** Update File: <path> / @@ <context> / -old / +new / *** End Patch ... PATCH"
 print_tool office-check "delivery QA — structural check + leftover placeholder scan for .docx/.pptx/.xlsx" \
     'office-check <file.docx|.pptx|.xlsx>'
+print_tool doc ".doc (Word 97-2003) read / edit — wraps Spire.Doc with proot fixes (auto setarch -R + evaluation-notice scrub)" \
+    'doc read <f.doc> · doc replace <f.doc> "old" "new" [-o out.doc]  (requires: pip3 install --break-system-packages spire.doc)'
 
 echo ""
 echo "=== Environment ==="
 if command -v python3 >/dev/null 2>&1; then
     echo "  python3  : $(python3 --version 2>&1) ($(command -v python3))"
     python3 - <<'PYEOF'
-mods = ["docx", "openpyxl", "pptx", "reportlab", "pandas"]
+mods = ["docx", "openpyxl", "pptx", "reportlab", "pandas", "markitdown"]
 missing = []
 for m in mods:
     try:
@@ -39,7 +41,13 @@ if missing:
     print("  py libs  : missing: " + ", ".join(missing))
     print("             install: pip3 install " + " ".join(missing))
 else:
-    print("  py libs  : python-docx / openpyxl / python-pptx / reportlab / pandas — all ready")
+        print("  py libs  : python-docx / openpyxl / python-pptx / reportlab / pandas / markitdown — all ready")
+try:
+    __import__("spire.doc")
+    print("  spire.doc: ready (.doc read/edit via the `doc` wrapper)")
+except Exception:
+    print("  spire.doc: not installed — optional; for .doc read/edit run:")
+    print("             pip3 install --break-system-packages spire.doc   (~25MB, one-time)")
 PYEOF
 else
     echo "  python3  : MISSING — office-edit / apply-patch / office-check need it"

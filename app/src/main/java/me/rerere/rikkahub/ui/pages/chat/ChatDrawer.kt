@@ -517,8 +517,9 @@ fun ChatDrawerContent(
                             onClick = { doMove(folder.id) },
                             modifier = Modifier.fillMaxWidth(),
                             shape = MaterialTheme.shapes.medium,
+                            // 4.8.28: 选中态统一 secondaryContainer (深色可辨)
                             color = if (isCurrent) {
-                                MaterialTheme.colorScheme.surfaceVariant
+                                MaterialTheme.colorScheme.secondaryContainer
                             } else {
                                 MaterialTheme.colorScheme.surface
                             },
@@ -537,6 +538,7 @@ fun ChatDrawerContent(
                                     style = MaterialTheme.typography.titleMedium,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
+                                    color = if (isCurrent) MaterialTheme.colorScheme.onSecondaryContainer else androidx.compose.ui.graphics.Color.Unspecified,
                                 )
                             }
                         }
@@ -1076,8 +1078,9 @@ private fun AssistantItem(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
+        // 4.8.28: 选中态统一 secondaryContainer (深色可辨)
         color = if (isCurrentAssistant) {
-            MaterialTheme.colorScheme.surfaceVariant
+            MaterialTheme.colorScheme.secondaryContainer
         } else {
             MaterialTheme.colorScheme.surface
         },

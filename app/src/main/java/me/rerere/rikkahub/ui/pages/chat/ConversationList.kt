@@ -239,8 +239,11 @@ private fun ConversationItem(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val focusManager = LocalFocusManager.current
+    // 4.8.28: 选中态高对比修复 — surfaceColorAtElevation(8dp) 在深色主题下与
+    // 背景几乎无差 ("深色模式标注看不清", 用户实证); 改用 Material3 标准选中色
+    // secondaryContainer (深/浅色主题下均清晰可辨)。
     val backgroundColor = if (selected) {
-        MaterialTheme.colorScheme.surfaceColorAtElevation(8.dp)
+        MaterialTheme.colorScheme.secondaryContainer
     } else {
         Color.Transparent
     }
@@ -271,7 +274,8 @@ private fun ConversationItem(
             Text(
                 text = conversation.title.ifBlank { stringResource(id = R.string.chat_page_new_message) },
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else Color.Unspecified,
             )
             Spacer(Modifier.weight(1f))
 
