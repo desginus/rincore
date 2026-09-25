@@ -32,4 +32,6 @@ data class FolderEntity(
     val sortIndex: Int = 0,
     @ColumnInfo("create_at")
     val createAt: Long,
+    @ColumnInfo("cwd")
+    val cwd: String? = null,
 )
