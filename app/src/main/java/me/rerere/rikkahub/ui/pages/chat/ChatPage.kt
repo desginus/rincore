@@ -256,19 +256,25 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
         }
     }
 
-    // v4.8.1: 进入对话预解析预热 — 后台批量解析最近消息 Markdown 填缓存。
-    // v4.8.32 (性能收口): ①只预热当前选中版本 — node.messages 含全部分支版本,
-    // 非选中版本根本不会被渲染, 原实现为其白付解析成本; ②延迟 400ms 起跑 —
-    // 进入瞬间主线程正忙于首帧同步解析 + 列表布局, 立即抢占 CPU 核心反而拉长
-    // 可感知卡顿 (用户: 切换对话卡)。让首帧先行, 背景再填缓存。
+    // v4.8.1: 进入对话预解析预热 — 后台批量解析消息 Markdown 填缓存。
+    // v4.8.42: 全量扩容 + 分片让出 — 用户实证"往上翻每到一个新条目抽动/卡"
+    // (原实现只预热最近 30 条 — 往上翻的历史消息几乎全部未命中缓存, 每条
+    // 现场付同步解析+测量成本)。现改为: 从近到远全量预热, 每片 20 条并在
+    // 片间 yield 让出后台线程 (不长时间独占 CPU 核心); 200ms 起跑让首帧
+    // 先行。解析为纯函数 (同输入同输出), 重复填安全, 命中即跳过。
     LaunchedEffect(conversation.id) {
-        val texts = conversation.messageNodes.asReversed().take(30)
+        val texts = conversation.messageNodes.asReversed()
             .mapNotNull { node -> node.messages.getOrNull(node.selectIndex) }
             .flatMap { msg -> msg.parts.filterIsInstance<UIMessagePart.Text>() }
             .map { it.text }
         if (texts.isNotEmpty()) {
-            delay(400)
-            withContext(Dispatchers.Default) { prewarmMarkdownCache(texts) }
+            delay(200)
+            withContext(Dispatchers.Default) {
+                for (chunk in texts.chunked(20)) {
+                    prewarmMarkdownCache(chunk)
+                    kotlinx.coroutines.yield()
+                }
+            }
         }
     }
 

@@ -267,7 +267,10 @@ private data class MarkdownParseResult(
  * 无占位过渡) 并写缓存 — 同一内容全进程只付出一次同步解析成本。
  */
 private object MarkdownParseCache {
-    private const val MAX_ENTRIES = 128
+    // v4.8.42: 128 → 256 — 配合全量预热扩容: 长对话往上翻超过 128 条时,
+    // LRU 淘汰导致反复未命中 (滚动到已见消息仍现场解析); 256 × 单条 AST
+    // 内存可控 (~MB 级), 覆盖绝大多数对话深度。
+    private const val MAX_ENTRIES = 256
     private const val MAX_KEY_CHARS = 128 * 1024
     private val cache = object : LinkedHashMap<String, MarkdownParseResult>(64, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MarkdownParseResult>?): Boolean =
