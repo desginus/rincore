@@ -1,4 +1,3 @@
-/* 【域 F·主题渲染】 — UI 组件 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.ui
 
 /* ───【原版对齐】ChainOfThought.kt | 与 2.5.1 逐字节一致
@@ -42,7 +41,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.util.fastForEachIndexed
+import androidx.compose.ui.util.fastForEach
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowDown01
 import me.rerere.hugeicons.stroke.ArrowRight01
@@ -153,21 +152,23 @@ fun <T> ChainOfThought(
                 }
 
                 val lineColor = MaterialTheme.colorScheme.outlineVariant
-                // 2.5.4 移植: 每个步骤只绘制自己的连线分段并在节点处留空 —
-                // 取代"单条贯穿线 + 节点背景遮盖"的旧形态 (线段与节点自然
-                // 衔接, 无遮盖色块; 首/尾步自动省略外侧线段)。
-                Column {
-                    visibleSteps.fastForEachIndexed { index, step ->
-                        val isFirst = index == 0
-                        val isLast = index == visibleSteps.lastIndex
-                        val scope = remember(isFirst, isLast, lineColor) {
-                            ChainOfThoughtScopeImpl(
-                                isFirst = isFirst,
-                                isLast = isLast,
-                                lineColor = lineColor,
-                            )
+                val scope = remember { ChainOfThoughtScopeImpl() }
+                Box(
+                    modifier = Modifier.drawBehind {
+                        val x = 12.dp.toPx()
+                        val offsetPx = 18.dp.toPx()
+                        drawLine(
+                            color = lineColor,
+                            start = Offset(x, offsetPx),
+                            end = Offset(x, size.height - offsetPx),
+                            strokeWidth = 1.dp.toPx()
+                        )
+                    }
+                ) {
+                    Column {
+                        visibleSteps.fastForEach { step ->
+                            scope.content(step)
                         }
-                        scope.content(step)
                     }
                 }
             }
@@ -231,11 +232,7 @@ interface ChainOfThoughtScope {
     )
 }
 
-private class ChainOfThoughtScopeImpl(
-    private val isFirst: Boolean,
-    private val isLast: Boolean,
-    private val lineColor: Color,
-) : ChainOfThoughtScope {
+private class ChainOfThoughtScopeImpl : ChainOfThoughtScope {
     @Composable
     override fun ChainOfThoughtStep(
         icon: @Composable (() -> Unit)?,
@@ -247,9 +244,6 @@ private class ChainOfThoughtScopeImpl(
     ) {
         var expanded by remember { mutableStateOf(false) }
         ChainOfThoughtStepContent(
-            isFirst = isFirst,
-            isLast = isLast,
-            lineColor = lineColor,
             icon = icon,
             label = label,
             extra = extra,
@@ -275,9 +269,6 @@ private class ChainOfThoughtScopeImpl(
         content: @Composable (() -> Unit)?
     ) {
         ChainOfThoughtStepContent(
-            isFirst = isFirst,
-            isLast = isLast,
-            lineColor = lineColor,
             icon = icon,
             label = label,
             extra = extra,
@@ -292,9 +283,6 @@ private class ChainOfThoughtScopeImpl(
 
     @Composable
     private fun ChainOfThoughtStepContent(
-        isFirst: Boolean,
-        isLast: Boolean,
-        lineColor: Color,
         icon: @Composable (() -> Unit)?,
         label: @Composable (() -> Unit),
         extra: @Composable (() -> Unit)?,
@@ -320,30 +308,6 @@ private class ChainOfThoughtScopeImpl(
             // Label 行：Icon + Label + Extra + 指示器
             Row(
                 modifier = Modifier
-                    .drawBehind {
-                        // 2.5.4 移植: 本步骤的连线上/下分段 (节点 20.dp 区域留空);
-                        // 首步无上段、尾步无下段。
-                        val x = 12.dp.toPx()
-                        val centerY = size.height / 2
-                        val gap = 10.dp.toPx()
-                        val strokeWidth = 1.dp.toPx()
-                        if (!isFirst) {
-                            drawLine(
-                                color = lineColor,
-                                start = Offset(x, 0f),
-                                end = Offset(x, centerY - gap),
-                                strokeWidth = strokeWidth,
-                            )
-                        }
-                        if (!isLast) {
-                            drawLine(
-                                color = lineColor,
-                                start = Offset(x, centerY + gap),
-                                end = Offset(x, size.height),
-                                strokeWidth = strokeWidth,
-                            )
-                        }
-                    }
                     .then(
                         if (shouldFillMaxWidth) {
                             Modifier.fillMaxWidth()
@@ -374,9 +338,9 @@ private class ChainOfThoughtScopeImpl(
                     contentAlignment = Alignment.Center,
                 ) {
                     Box(
-                        // 2.5.4 移植: 不再需要背景遮盖 — 连线已在节点处天然留空
-                        // (见 Row.drawBehind 分段绘制)。
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier
+                            .size(20.dp)
+                            .background(LocalCardColor.current),
                         contentAlignment = Alignment.Center,
                     ) {
                         if (icon != null) {
@@ -437,18 +401,6 @@ private class ChainOfThoughtScopeImpl(
             if (contentVisible && hasContent) {
                 Box(
                     modifier = Modifier
-                        .drawBehind {
-                            // 2.5.4 移植: 内容区左侧连线续段 (尾步不画)
-                            if (!isLast) {
-                                val x = 12.dp.toPx()
-                                drawLine(
-                                    color = lineColor,
-                                    start = Offset(x, 0f),
-                                    end = Offset(x, size.height),
-                                    strokeWidth = 1.dp.toPx(),
-                                )
-                            }
-                        }
                         .then(
                             if (shouldFillMaxWidth) {
                                 Modifier.fillMaxWidth()
