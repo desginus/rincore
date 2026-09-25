@@ -78,8 +78,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.dokar.sonner.ToastType
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.ui.UIMessagePart
@@ -110,7 +108,6 @@ import me.rerere.rikkahub.ui.components.ai.rememberChatAttachmentPickerActions
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.context.Navigator
-import me.rerere.rikkahub.ui.components.richtext.prewarmMarkdownCache
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.useEditState
@@ -252,28 +249,6 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
                 inputState.setMessageText(
                     if (existing.isBlank()) decodedText else "$existing\n$decodedText"
                 )
-            }
-        }
-    }
-
-    // v4.8.1: 进入对话预解析预热 — 后台批量解析消息 Markdown 填缓存。
-    // v4.8.42: 全量扩容 + 分片让出 — 用户实证"往上翻每到一个新条目抽动/卡"
-    // (原实现只预热最近 30 条 — 往上翻的历史消息几乎全部未命中缓存, 每条
-    // 现场付同步解析+测量成本)。现改为: 从近到远全量预热, 每片 20 条并在
-    // 片间 yield 让出后台线程 (不长时间独占 CPU 核心); 200ms 起跑让首帧
-    // 先行。解析为纯函数 (同输入同输出), 重复填安全, 命中即跳过。
-    LaunchedEffect(conversation.id) {
-        val texts = conversation.messageNodes.asReversed()
-            .mapNotNull { node -> node.messages.getOrNull(node.selectIndex) }
-            .flatMap { msg -> msg.parts.filterIsInstance<UIMessagePart.Text>() }
-            .map { it.text }
-        if (texts.isNotEmpty()) {
-            delay(200)
-            withContext(Dispatchers.Default) {
-                for (chunk in texts.chunked(20)) {
-                    prewarmMarkdownCache(chunk)
-                    kotlinx.coroutines.yield()
-                }
             }
         }
     }

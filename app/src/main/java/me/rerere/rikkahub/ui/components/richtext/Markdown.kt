@@ -261,45 +261,6 @@ private data class MarkdownParseResult(
     val hasHtml: Boolean,
 )
 
-/**
- * v4.8.1: 解析结果 LRU 缓存 — 使"进入对话/滚动历史不卡顿"与"无抽动"同时成立:
- * 命中时首帧同步即终态 (零解析零过渡); 未命中时首帧同步解析 (对齐原版形态,
- * 无占位过渡) 并写缓存 — 同一内容全进程只付出一次同步解析成本。
- */
-private object MarkdownParseCache {
-    // v4.8.42: 128 → 256 — 配合全量预热扩容: 长对话往上翻超过 128 条时,
-    // LRU 淘汰导致反复未命中 (滚动到已见消息仍现场解析); 256 × 单条 AST
-    // 内存可控 (~MB 级), 覆盖绝大多数对话深度。
-    private const val MAX_ENTRIES = 256
-    private const val MAX_KEY_CHARS = 128 * 1024
-    private val cache = object : LinkedHashMap<String, MarkdownParseResult>(64, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MarkdownParseResult>?): Boolean =
-            size > MAX_ENTRIES
-    }
-    fun get(key: String): MarkdownParseResult? = synchronized(cache) { cache[key] }
-    fun put(key: String, value: MarkdownParseResult) {
-        if (key.length > MAX_KEY_CHARS) return
-        synchronized(cache) { cache[key] = value }
-    }
-    fun parseWithCache(content: String): MarkdownParseResult =
-        get(content) ?: parseMarkdown(content).also { put(content, it) }
-}
-
-/**
- * v4.8.1: 预解析预热 — 进入对话时后台批量解析最近消息文本填缓存, 使首帧组合
- * (LazyColumn 可见项) 命中缓存零解析, 消除进入瞬间的集中解析卡顿。
- * 解析为纯函数 (同输入同输出), 后台填充安全; 已在缓存中的不重复解析。
- * 调用方负责后台线程 (Dispatchers.Default)。
- */
-fun prewarmMarkdownCache(texts: List<String>) {
-    for (t in texts) {
-        if (t.isBlank() || t.length > 128 * 1024) continue
-        if (MarkdownParseCache.get(t) == null) {
-            MarkdownParseCache.put(t, parseMarkdown(t))
-        }
-    }
-}
-
 private fun ASTNode.containsHtml(): Boolean {
     if (type == MarkdownElementTypes.HTML_BLOCK || type == MarkdownTokenTypes.HTML_TAG) return true
     return children.any { it.containsHtml() }
@@ -322,9 +283,7 @@ fun MarkdownBlock(
     style: TextStyle = LocalTextStyle.current,
     onClickCitation: (String) -> Unit = {}
 ) {
-    // v4.8.1: 首帧查缓存 (命中零解析) — 未命中同步解析并写缓存 (对齐原版首帧终态,
-    // 无占位过渡); 消除进入对话/滚动历史时的重复解析卡顿。
-    var (data, setData) = remember { mutableStateOf(MarkdownParseCache.parseWithCache(content)) }
+    var (data, setData) = remember { mutableStateOf(parseMarkdown(content)) }
 
     // 监听内容变化，重新解析AST树
     // 这里在后台线程解析AST树, 防止频繁更新的时候掉帧
@@ -332,7 +291,7 @@ fun MarkdownBlock(
     LaunchedEffect(Unit) {
         snapshotFlow { updatedContent }
             .distinctUntilChanged()
-            .mapLatest { MarkdownParseCache.parseWithCache(it) }
+            .mapLatest { parseMarkdown(it) }
             .catch { exception -> exception.printStackTrace() }
             .flowOn(Dispatchers.Default)
             .collect { setData(it) }

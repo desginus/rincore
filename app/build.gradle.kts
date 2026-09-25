@@ -24,7 +24,7 @@ android {
 // 比较 — 相同 code + 相同签名 = 任意替换安装 (升/降/同级均可)。
 // versionName 正常递增用于显示与归档; 发版只改 versionName。
 versionCode = 9999
-versionName = "4.8.42"
+versionName = "4.8.43"
 
             testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -175,8 +175,8 @@ dependencies {
     implementation(libs.koin.compose)
     implementation(libs.koin.androidx.workmanager)
 
-    // jetbrains markdown parser (vendored: 0.7.14 + CJK fix — 见 :markdown 模块)
-    implementation(project(":markdown"))
+    // jetbrains markdown parser
+    implementation(libs.jetbrains.markdown)
 
     // okhttp
     implementation(libs.okhttp)
