@@ -402,13 +402,15 @@ private fun ChatPageContent(
         setting.getCurrentChatModel()?.findProvider(setting.providers) is ProviderSetting.Google
 
     // 4.8.24: 项目包 CWD — 对话所属项目包 cwd 优先 (项目包锚定), 否则助手级
-    val completionProviders = remember(assistant.workspaceId, assistant.workspaceCwd, workspaceRepository) {
+    val conversationFolderCwd by vm.conversationFolderCwd.collectAsStateWithLifecycle()
+    val effectiveCwd = conversationFolderCwd ?: assistant.workspaceCwd
+    val completionProviders = remember(assistant.workspaceId, effectiveCwd, workspaceRepository) {
         assistant.workspaceId?.let { workspaceId ->
             listOf(
                 WorkspaceCompletionProvider(
                     workspaceId = workspaceId.toString(),
                     repository = workspaceRepository,
-                    currentCwd = assistant.workspaceCwd,
+                    currentCwd = effectiveCwd,
                 )
             )
         }.orEmpty()

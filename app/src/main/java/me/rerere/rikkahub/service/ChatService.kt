@@ -722,7 +722,11 @@ class ChatService(
             checkInvalidMessages(conversationId)
             val conversation = getConversationFlow(conversationId).value
 
-            val effectiveWorkspaceCwd = assistant.workspaceCwd
+            // 4.8.24 项目包 CWD 解析 — 对话所属项目包 cwd 优先 (项目包锚定),
+            // 否则助手级 CWD; 「聊天」(无项目包) = 全助手权限默认空间
+            val effectiveWorkspaceCwd = runCatching {
+                conversation.folderId?.let { fid -> folderRepository.getFolderById(fid)?.cwd }
+            }.getOrNull() ?: assistant.workspaceCwd
 
             // start generating
             val session = sessionManager.getOrCreate(conversationId)

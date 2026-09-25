@@ -96,6 +96,8 @@ import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.workspace.WorkspaceShellStatus
 import org.koin.compose.koinInject
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlin.uuid.Uuid
 import me.rerere.hugeicons.stroke.ArrowTurnBackward
@@ -139,7 +141,15 @@ internal fun FilesPicker(
     val chatService: me.rerere.rikkahub.service.ChatService = koinInject()
     val generationJob by chatService.getGenerationJobStateFlow(conversation.id)
         .collectAsStateWithLifecycle(initialValue = null)
-    val effectiveCwd = assistant.workspaceCwd
+    // 4.8.25: 项目包 CWD — 对话所属项目包 cwd 优先 (项目包锚定), 否则助手级。
+    // 响应式: 抽屉里修改项目包 CWD 后此处自动刷新。
+    val folderRepository: me.rerere.rikkahub.data.repository.FolderRepository = koinInject()
+    val folderCwd by remember(conversation.folderId) {
+        conversation.folderId?.let { fid -> folderRepository.getFolderFlow(fid).map { it?.cwd } }
+            ?: flowOf(null)
+    }.collectAsStateWithLifecycle(initialValue = null)
+    val effectiveCwd = folderCwd ?: assistant.workspaceCwd
+    val pickerScope = rememberCoroutineScope()
     val memories by memoryRepository.getMemoriesOfAssistantFlow(assistant.id.toString())
         .collectAsStateWithLifecycle(initialValue = emptyList())
     val workspaces by workspaceRepository.listFlow().collectAsState(initial = emptyList())
@@ -348,9 +358,18 @@ internal fun FilesPicker(
             WorkspaceCwdPickerSheet(
                 workspaceId = boundWorkspace.id,
                 currentCwd = effectiveCwd,
+                // 4.8.25: 项目包对话 — 限制在助手 CWD 空间内 (同抽屉项目包设置口径);
+                // 聊天 — 无限制 (原行为, 助手级 CWD 可在整个工作区选择)
+                rootPath = if (conversation.folderId != null) assistant.workspaceCwd else null,
                 onSelectCwd = { newCwd ->
-                    // v4.5.23: 写入助手级 CWD (settings 持久化) — 整个助手全部对话生效
-                    onUpdateAssistant(assistant.copy(workspaceCwd = newCwd))
+                    val fid = conversation.folderId
+                    if (fid != null) {
+                        // 项目包对话: 写入项目包 CWD (仅该包生效)
+                        pickerScope.launch { folderRepository.updateCwd(fid, newCwd) }
+                    } else {
+                        // v4.5.23: 写入助手级 CWD (settings 持久化) — 整个助手全部对话生效
+                        onUpdateAssistant(assistant.copy(workspaceCwd = newCwd))
+                    }
                 },
                 onDismiss = { showCwdSheet = false },
             )
