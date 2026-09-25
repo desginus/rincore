@@ -58,8 +58,8 @@ internal fun mapExifOrientationToTransform(orientation: Int): ExifTransformType 
 // 每一轮都会重来一遍, 是"工具返回结果后恢复输出等待过大"的重要构成 (多图
 // 会话尤甚)。按 路径+mtime+size 键缓存; 图片被编辑/覆盖后 mtime/size 变化
 // 自动失效 (与 Coil 工作区图缓存同一失效语义)。
-private val imageEncodeCache = object : LinkedHashMap<String, Pair<String, String>>(16, 0.75f, true) {
-    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<String, String>>) = size > 16
+private val imageEncodeCache = object : LinkedHashMap<String, Pair<String, String>>(24, 0.75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<String, String>>) = size > 24
 }
 private val imageEncodeCacheLock = Any()
 

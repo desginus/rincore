@@ -149,10 +149,12 @@ val dataSourceModule = module {
             .writeTimeout(120, TimeUnit.SECONDS) // 对齐 v2.9.8 — 大请求体写入宽容
             .pingInterval(30, TimeUnit.SECONDS) // 对齐 v2.9.8
             .connectionPool(
-                // 12 连接对齐 v2.9.8; keepalive 60s — DeepSeek 服务端空闲关闭快,
-                // 长 keepalive 导致连接池复用陈旧连接 → unexpected end of stream
-                // (工具执行 60s+ 后请求必触发, 近几版才出现)
-                ConnectionPool(12, 60, TimeUnit.SECONDS)
+                // 12 连接对齐 v2.9.8; v4.8.35: keepalive 60s → 180s — 当时 60s 的
+                // 前提是"无心跳保活时池里陈旧连接必死" (长 keepalive 复用陈旧连接
+                // → unexpected end of stream, 工具执行 60s+ 后必触发)。4.8.34 起
+                // 全 provider 家族均有 60s 心跳同池刷新, 池内连接持续被使用/保鲜;
+                // 180s 长窗口作为心跳偶发失败的缓冲 (心跳抖动一次不至于清连接)。
+                ConnectionPool(12, 180, TimeUnit.SECONDS)
             )
             .dispatcher(dispatcher)
             .socketFactory(BufferedSocketFactory)
@@ -227,7 +229,7 @@ val dataSourceModule = module {
             .readTimeout(3, TimeUnit.MINUTES)
             .writeTimeout(120, TimeUnit.SECONDS)
             .pingInterval(30, TimeUnit.SECONDS)
-            .connectionPool(ConnectionPool(12, 60, TimeUnit.SECONDS))
+            .connectionPool(ConnectionPool(12, 180, TimeUnit.SECONDS))
             .dispatcher(dispatcher)
             .socketFactory(BufferedSocketFactory)
             .followSslRedirects(true)

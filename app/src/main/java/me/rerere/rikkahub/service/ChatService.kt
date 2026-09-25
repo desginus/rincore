@@ -669,6 +669,14 @@ class ChatService(
                     baseUrl = chatProvider.baseUrl,
                     apiKey = chatProvider.apiKey,
                 )
+            } else if (chatProvider is ProviderSetting.Google && chatProvider.baseUrl.isNotBlank()) {
+                // v4.8.35: Google 家族同样纳入心跳 (全家族覆盖)
+                ConnectionWarmer.ensureProviderKeepAlive(
+                    appScope = appScope,
+                    client = httpClient,
+                    baseUrl = chatProvider.baseUrl,
+                    apiKey = chatProvider.apiKey,
+                )
             }
         }
 

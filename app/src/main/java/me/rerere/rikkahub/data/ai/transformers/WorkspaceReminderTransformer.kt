@@ -59,7 +59,11 @@ class WorkspaceReminderTransformer(
  */
 private data class AgentsCacheEntry(val size: Long, val content: String, val at: Long)
 private val agentsCache = java.util.concurrent.ConcurrentHashMap<String, AgentsCacheEntry>()
-private const val AGENTS_CACHE_TTL_MS = 10_000L
+// v4.8.35: TTL 10s → 120s — 原 10s 意在"文件编辑后最多 10s 生效", 但代价是
+// 每 10s 一次 size 探测 (Room 查询 + 沙箱文件操作) 横跨生成链每轮 step 反复
+// 命中; 120s 大幅降低探测频率 (文件变更最迟 2 分钟生效, 该语义与对话天然
+// 对齐 — 新一轮请求自然读到最新)。
+private const val AGENTS_CACHE_TTL_MS = 120_000L
 
 /**
  * 2.5.2/2.5.3 移植: AGENTS.md 读取 — /root/.agents、/workspace 根、会话当前目录三处。

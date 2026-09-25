@@ -25,7 +25,13 @@ import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.uuid.Uuid
 
-private const val IDLE_TIMEOUT_MS = 5_000L
+// v4.8.35: 会话空闲回收 5s → 30 分钟 (用户定版: 保活类时间大幅延长)。
+// 原 5s 语义: UI 引用归零 (离开对话页) 5 秒即移出内存 — 切走再回来需
+// 全量重建 (DB 加载 + 状态装载 + 预热), 高频切换场景反复付重建成本。
+// 30 分钟: 会话 (消息内存态/处理状态/队列) 常驻, 切走切回即开即用;
+// 正在生成的会话不回收 (原 !isGenerating 守卫保留); 内存代价 = 每活跃
+// 会话一份消息列表, 数十 MB 量级, 移动端可接受。
+private const val IDLE_TIMEOUT_MS = 30 * 60_000L
 
 class ConversationSession(
     val id: Uuid,
