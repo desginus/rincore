@@ -57,12 +57,7 @@ fun ImagePreviewDialog(
                 pagerState = state,
                 imageLoader = { index ->
                     // v4.8.2: 大图预览同样走版本键请求 (改图覆盖后显示新图)
-                    val painter = rememberAsyncImagePainter(
-                        me.rerere.rikkahub.ui.components.richtext.buildVersionedImageRequest(
-                            context = LocalContext.current,
-                            model = images[index],
-                        )
-                    )
+                    val painter = rememberAsyncImagePainter(images[index])
                     return@ImagePager Pair(painter, painter.intrinsicSize)
                 },
             )

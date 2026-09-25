@@ -722,11 +722,7 @@ class ChatService(
             checkInvalidMessages(conversationId)
             val conversation = getConversationFlow(conversationId).value
 
-            // 4.8.24 项目包 CWD 解析 — 对话所属项目包 cwd 优先 (项目包锚定),
-            // 否则助手级 CWD; 「聊天」(无项目包) = 全助手权限默认空间
-            val effectiveWorkspaceCwd = runCatching {
-                conversation.folderId?.let { fid -> folderRepository.getFolderById(fid)?.cwd }
-            }.getOrNull() ?: assistant.workspaceCwd
+            val effectiveWorkspaceCwd = assistant.workspaceCwd
 
             // start generating
             val session = sessionManager.getOrCreate(conversationId)
@@ -749,8 +745,6 @@ class ChatService(
                 conversationSystemPrompt = conversation.customSystemPrompt,
                 conversationModeInjectionIds = conversation.modeInjectionIds,
                 conversationLorebookIds = conversation.lorebookIds,
-                // 4.8.24 项目包 CWD 解析 — 对话所属项目包 cwd 优先 (项目包锚定),
-                // 否则助手级 CWD; 「聊天」(无项目包) = 全助手权限默认空间
                 workspaceCwd = effectiveWorkspaceCwd,
                 conversationLoadedDomains = conversation.loadedDomains,
                 // v3.11.27: 子代理会话 ([Sub-agent] 标题) 不注入用户自定义 prompt

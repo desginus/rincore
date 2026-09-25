@@ -12,7 +12,6 @@ import androidx.activity.compose.BackHandler
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Alignment
 import androidx.compose.material3.CircularProgressIndicator
@@ -392,16 +391,6 @@ private fun ChatPageContent(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    // v4.8.11 ①: 键盘显隐触发重建
-    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-    LaunchedEffect(imeVisible) { hazeRebuildTick++ }
-    // v4.8.11 ②: 周期心跳兜底 (5 分钟)
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(5 * 60 * 1000L)
-            hazeRebuildTick++
-        }
-    }
     val assistant = setting.getCurrentAssistant()
     var showFilesSheet by remember { mutableStateOf(false) }
     val attachmentPickerActions = rememberChatAttachmentPickerActions(
@@ -413,15 +402,13 @@ private fun ChatPageContent(
         setting.getCurrentChatModel()?.findProvider(setting.providers) is ProviderSetting.Google
 
     // 4.8.24: 项目包 CWD — 对话所属项目包 cwd 优先 (项目包锚定), 否则助手级
-    val conversationFolderCwd by vm.conversationFolderCwd.collectAsStateWithLifecycle()
-    val effectiveCwd = conversationFolderCwd ?: assistant.workspaceCwd
-    val completionProviders = remember(assistant.workspaceId, effectiveCwd, workspaceRepository) {
+    val completionProviders = remember(assistant.workspaceId, assistant.workspaceCwd, workspaceRepository) {
         assistant.workspaceId?.let { workspaceId ->
             listOf(
                 WorkspaceCompletionProvider(
                     workspaceId = workspaceId.toString(),
                     repository = workspaceRepository,
-                    currentCwd = effectiveCwd,
+                    currentCwd = assistant.workspaceCwd,
                 )
             )
         }.orEmpty()
