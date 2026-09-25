@@ -650,6 +650,28 @@ class ChatService(
             ?: settings.getCurrentAssistant()
         val model = settings.findModelById(assistant.chatModelId ?: settings.chatModelId) ?: return
 
+        // v4.8.34: 当前 provider 心跳确保 — 工具执行期间连接禁止空闲冷却
+        // (此前仅 opencode/CC host 有心跳; DeepSeek 等直连 provider 在长工具
+        //  执行后连接变冷, "工具结束→恢复输出"多付连接重建/半死等待)。
+        runCatching {
+            val chatProvider = model.findProvider(settings.providers)
+            if (chatProvider is ProviderSetting.OpenAI && chatProvider.baseUrl.isNotBlank()) {
+                ConnectionWarmer.ensureProviderKeepAlive(
+                    appScope = appScope,
+                    client = httpClient,
+                    baseUrl = chatProvider.baseUrl,
+                    apiKey = chatProvider.apiKey,
+                )
+            } else if (chatProvider is ProviderSetting.Claude && chatProvider.baseUrl.isNotBlank()) {
+                ConnectionWarmer.ensureProviderKeepAlive(
+                    appScope = appScope,
+                    client = httpClient,
+                    baseUrl = chatProvider.baseUrl,
+                    apiKey = chatProvider.apiKey,
+                )
+            }
+        }
+
         // v3.6.15: 生成保活 — 切后台时 CPU/网络读稳定 (onCompletion 释放)
         val genWakeLock = acquireGenWakeLock(context)
         // v4.7.18: WiFi 射频保活 (防息屏射频休眠断流; onCompletion 释放)
@@ -761,7 +783,10 @@ class ChatService(
                     add(me.rerere.rikkahub.ecosystem.tools.SlashCommandRouter)
                 },
                 outputTransformers = outputTransformers,
-                tools = buildAssistantToolPool(
+                // v4.8.34 (性能): 工具池构建移出主线程 — handleMessageComplete 在
+                // AppScope(Main) 执行, buildAssistantToolPool 含 文件遍历/MCP 汇总/
+                // 域分类/技能扫描 等纯构建 (发送瞬间主线程重活之一), 移 Default。
+                tools = withContext(Dispatchers.Default) { buildAssistantToolPool(
                     filesRoot = context.filesDir,
                     settings = settings,
                     assistant = assistant,
@@ -775,7 +800,7 @@ class ChatService(
                     workspaceRepository = workspaceRepository,
                     pluginManager = pluginManager,
                     operitToolProvider = operitToolProvider,
-                ).let { pool ->
+                ) }.let { pool ->
                     // MCP 服务器名合法性检查 (对齐原逻辑)
                     // v3.6.96: 不弹窗阻塞 — 历史残留的非法名称服务器 (如测试遗留
                     // 含连字符名) 此前每次消息处理都弹"无效服务器名"错误, 一条

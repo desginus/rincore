@@ -150,6 +150,53 @@ object ConnectionWarmer {
     @Volatile private var keepAliveJob: kotlinx.coroutines.Job? = null
     @Volatile private var keepAliveKey: String? = null
 
+    // v4.8.34: 通用 per-host 心跳池 — 覆盖"当前对话正在使用的 provider"
+    // (此前仅 opencode/CC 两个 host 有心跳; DeepSeek 等直连 provider 在工具
+    //  执行期间连接空闲被服务端/中间设备关闭, 下一轮请求需重建连接 (或更糟:
+    //  复用半死连接被 watchdog 60s 判死后重试) — "工具结束→恢复输出"的
+    //  额外延迟来源之一)。按 host 幂等管理, 同 host 不重复起 job。
+    private val keepAliveJobs = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
+
+    /**
+     * v4.8.34: 确保某个 provider baseUrl 有 45s 心跳 (幂等)。
+     * 由生成开始时调用 (当前对话确定的 provider) — 工具执行期间连接保持新鲜,
+     * 工具结束后的下一轮请求直接复用热连接。
+     */
+    fun ensureProviderKeepAlive(
+        appScope: kotlinx.coroutines.CoroutineScope,
+        client: OkHttpClient,
+        baseUrl: String,
+        apiKey: String? = null,
+    ) {
+        val trimmed = baseUrl.trimEnd('/')
+        if (trimmed.isBlank()) return
+        val existing = keepAliveJobs[trimmed]
+        if (existing?.isActive == true) return
+        val host = runCatching { java.net.URI(trimmed).host }.getOrNull() ?: return
+        keepAliveJobs[trimmed] = appScope.launch {
+            while (isActive) {
+                kotlinx.coroutines.delay(45_000L)
+                runCatching {
+                    val warmClient = client.newBuilder()
+                        .connectTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
+                        .readTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
+                        .writeTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
+                        .build()
+                    val reqBuilder = okhttp3.Request.Builder()
+                        .url(trimmed + "/models").get()
+                    if (!apiKey.isNullOrBlank()) {
+                        reqBuilder.addHeader("Authorization", "Bearer $apiKey")
+                    }
+                    warmClient.newCall(reqBuilder.build()).execute().use { }
+                }.onFailure {
+                    Log.w(TAG, "keepalive(ensure) $host: ${it.message}")
+                }
+                Log.d(TAG, "keepalive(ensure) $host ok (pool fresh)")
+            }
+        }
+        Log.i(TAG, "Provider keepalive ensured: $host (45s interval, same-pool)")
+    }
+
     fun startProviderKeepAlive(
         appScope: kotlinx.coroutines.CoroutineScope,
         httpClient: OkHttpClient,
