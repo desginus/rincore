@@ -246,7 +246,30 @@ class ResponseAPI(
                     e.printStackTrace()
                 } finally {
                     TraceLogger.dumpAndLog(TAG, exception ?: Exception("Unknown"), 60)
-                    close(exception)
+                    // v4.8.39 场景分流 (用户定版: 局限于 OpenCode 提供的 Response API 里的 grok):
+                    // OpenCode 网关对 grok 的上游调用存在已知瞬时故障 — 网关返回
+                    // "Upstream response was not valid JSON" / "Upstream request failed" /
+                    // "Endpoint is unavailable" 等 server_error (社区实证: 网关侧问题,
+                    // 重试可恢复; 非请求/鉴权问题)。当前这些错误经 parseErrorDetail 变为
+                    // HttpException, 且无 [5xx] 标记 — GenerationHandler 的 HttpException
+                    // 分支 (仅 5xx 特征转重试) 不匹配 → 直接终态报错, 零重试。
+                    // 修复: 仅此场景 (host==opencode.ai 且模型为 grok 系) 且错误属上述
+                    // 瞬时特征时, 包装为 IOException 交由上层重试链 (发起池/流中断三轮链)。
+                    // 隔离保证: 其他任何通道/模型的异常路径与行为完全不变。
+                    val hostForScenario = runCatching { providerSetting.baseUrl.toHttpUrl().host }.getOrNull()
+                    val isOpencodeGrokScenario = hostForScenario == "opencode.ai" &&
+                        params.model.modelId.contains("grok", ignoreCase = true)
+                    val msgForScenario = exception?.message.orEmpty()
+                    val isUpstreamTransient = msgForScenario.contains("Upstream response was not valid JSON", ignoreCase = true) ||
+                        msgForScenario.contains("Upstream request failed", ignoreCase = true) ||
+                        msgForScenario.contains("Endpoint is unavailable", ignoreCase = true)
+                    val toClose: Throwable? = if (isOpencodeGrokScenario && isUpstreamTransient) {
+                        Log.w(TAG, "onFailure: opencode+grok upstream transient — converting to IOException for retry chain: $msgForScenario")
+                        java.io.IOException("OpenCode upstream transient (grok): $msgForScenario", exception)
+                    } else {
+                        exception
+                    }
+                    close(toClose)
                 }
             }
 
