@@ -87,6 +87,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastForEach
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -331,12 +332,22 @@ fun MarkdownBlock(
     val updatedContent by rememberUpdatedState(content)
     LaunchedEffect(Unit) {
         var lastParsed = content
+        var lastParseMs = 0L
         while (true) {
             snapshotFlow { updatedContent }.first { it != lastParsed }
+            // v4.8.37: 合并窗口 + 自适应节流 (与 MarkdownNew 同修) — 长上下文下
+            // 每次更新立即上屏会令 解析+树重建 成本超过内容生成速率, 更新追赶失败
+            // → 主线程被占满、UI 卡死。间隔 = 上轮解析耗时×2 (下限 60/上限 800ms),
+            // 短内容零延迟。
+            val throttleMs = if (lastParsed.length < 1500) 0L
+                else (lastParseMs * 2).coerceIn(60L, 2_000L)
+            if (throttleMs > 0) delay(throttleMs)
             val toParse = updatedContent
+            val parseStart = System.currentTimeMillis()
             val parsed = withContext(Dispatchers.Default) {
                 MarkdownParseCache.parseWithCache(toParse)
             }
+            lastParseMs = System.currentTimeMillis() - parseStart
             setData(parsed)
             lastParsed = toParse
         }
