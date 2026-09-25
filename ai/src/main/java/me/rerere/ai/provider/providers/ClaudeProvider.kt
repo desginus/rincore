@@ -199,14 +199,18 @@ class ClaudeProvider(
         // AtomicReference: object expression (EventSourceListener) 内写捕获
         // 局部 var 受限 (JVM 匿名类 effectively-final), 引用容器绕过
         var attemptedMinimal = false
-        val requestBodyRef =
-            java.util.concurrent.atomic.AtomicReference(
-                buildMessageRequest(providerSetting, messages, params, stream = true)
-            )
+        // v4.8.33 (性能): 请求体构建 + 序列化移出主线程 (与 CC 通道同修) —
+        // buildMessageRequest 含全量消息转换与图片编码, 序列化几百 KB 级,
+        // 本 callbackFlow 收集上下文为 AppScope(Main), 每轮工具调用后重来一遍。
+        val initialBody = withContext(Dispatchers.Default) {
+            buildMessageRequest(providerSetting, messages, params, stream = true)
+        }
+        val requestBodyRef = java.util.concurrent.atomic.AtomicReference(initialBody)
+        val initialBodyJson = withContext(Dispatchers.Default) { json.encodeToString(initialBody) }
         val request = Request.Builder()
             .url("${providerSetting.baseUrl}/messages")
             .headers(params.customHeaders.toHeaders())
-            .post(json.encodeToString(requestBodyRef.get()).toRequestBody("application/json".toMediaType()))
+            .post(initialBodyJson.toRequestBody("application/json".toMediaType()))
             .addHeader("x-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
             .addHeader("anthropic-version", ANTHROPIC_VERSION)
             .addHeader("Content-Type", "application/json")
@@ -216,7 +220,9 @@ class ClaudeProvider(
 
         val bodyJson = requestBodyRef.get()
         val messagesArray = bodyJson["messages"]?.jsonArray
-        Log.d(TAG, "streamText: model=${bodyJson["model"]}, messages=${messagesArray?.size ?: 0}, bodyChars=${json.encodeToString(bodyJson).length}")
+        // v4.8.33: 删 bodyChars 全量序列化 — release 下 Log 参数同样求值, 每轮
+        // 请求百 KB 级序列化只为一个日志数字 (与 CC 通道 4.1.3 教训同类, 此处漏网)。
+        Log.d(TAG, "streamText: model=${bodyJson["model"]}, messages=${messagesArray?.size ?: 0}")
 
         val hasData = java.util.concurrent.atomic.AtomicBoolean(false)
         val streamStartMs = System.currentTimeMillis()

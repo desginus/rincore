@@ -40,7 +40,8 @@ class SystemPromptBuilder {
             if (assistantPrompt.isNotBlank()) append(assistantPrompt)
             if (toolPrompts.isNotEmpty()) {
                 if (isNotEmpty()) appendLine()
-                appendLine("Tool cost guidance: prefer low-cost text tools before expensive visual or broad tools. Use read_window_tree/browser_get_text before screenshots when text is enough, and avoid repeating high-cost tools unless the state likely changed.")
+                // v4.8.33: 删 "Tool cost guidance" 段 — fork 残留 (read_window_tree 等
+                // 工具名在本项目不存在或半失真), 对模型为噪音且每轮随请求发送。
                 toolPrompts.forEachIndexed { index, toolPrompt ->
                     if (index > 0) appendLine()
                     append(toolPrompt)

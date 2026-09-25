@@ -18,6 +18,7 @@ import android.util.Log
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.channels.onFailure
@@ -148,17 +149,22 @@ class ResponseAPI(
         messages: List<UIMessage>,
         params: TextGenerationParams
     ): Flow<MessageChunk> = callbackFlow {
-        val requestBody = buildRequestBody(
-            providerSetting = providerSetting,
-            messages = messages,
-            params = params,
-            stream = true,
-        )
-        logReasoningItems(requestBody)
+        // v4.8.33 (性能): 与 CC/Claude 通道同修 — 构建 + 序列化移出主线程
+        // (callbackFlow 收集上下文 = AppScope Main; 构建含全量消息转换与图片编码)。
+        val (requestBody, requestBodyJson) = withContext(Dispatchers.Default) {
+            val body = buildRequestBody(
+                providerSetting = providerSetting,
+                messages = messages,
+                params = params,
+                stream = true,
+            )
+            logReasoningItems(body)
+            body to json.encodeToString(body)
+        }
         val request = Request.Builder()
             .url("${providerSetting.baseUrl}${providerSetting.responsesPath}")
             .headers(params.customHeaders.toHeaders())
-            .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
+            .post(requestBodyJson.toRequestBody("application/json".toMediaType()))
             .addHeader(
                 "Authorization",
                 "Bearer ${keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())}"

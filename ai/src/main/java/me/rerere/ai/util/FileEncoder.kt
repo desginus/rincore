@@ -53,6 +53,16 @@ internal fun mapExifOrientationToTransform(orientation: Int): ExifTransformType 
     else -> ExifTransformType.NONE
 }
 
+// v4.8.33 (性能): 图片编码缓存 — 此前每次请求构建对全部历史图片重复执行
+// 读盘 + 解码 + EXIF 归一化 + JPEG 压缩 + base64 (CPU 密集), 在流式工具的
+// 每一轮都会重来一遍, 是"工具返回结果后恢复输出等待过大"的重要构成 (多图
+// 会话尤甚)。按 路径+mtime+size 键缓存; 图片被编辑/覆盖后 mtime/size 变化
+// 自动失效 (与 Coil 工作区图缓存同一失效语义)。
+private val imageEncodeCache = object : LinkedHashMap<String, Pair<String, String>>(16, 0.75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<String, String>>) = size > 16
+}
+private val imageEncodeCacheLock = Any()
+
 fun UIMessagePart.Image.encodeBase64(withPrefix: Boolean = true): Result<EncodedImage> = runCatching {
     when {
         this.url.startsWith("file://") -> {
@@ -63,8 +73,14 @@ fun UIMessagePart.Image.encodeBase64(withPrefix: Boolean = true): Result<Encoded
                 throw IllegalArgumentException("File does not exist: ${this.url}")
             }
             val mimeType = file.guessMimeType().getOrThrow()
-            // 统一进行压缩处理
-            val (encoded, outputMimeType) = file.compressAndEncode(mimeType)
+            // v4.8.33: 缓存命中零成本 (键含 mtime+size, 图片变更自动失效)
+            val cacheKey = "$filePath|${file.lastModified()}|${file.length()}"
+            val cached = synchronized(imageEncodeCacheLock) { imageEncodeCache[cacheKey] }
+            val (encoded, outputMimeType) = cached ?: run {
+                val result = file.compressAndEncode(mimeType)
+                synchronized(imageEncodeCacheLock) { imageEncodeCache[cacheKey] = result }
+                result
+            }
             EncodedImage(
                 base64 = if (withPrefix) "data:$outputMimeType;base64,$encoded" else encoded,
                 mimeType = outputMimeType
