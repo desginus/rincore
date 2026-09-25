@@ -208,14 +208,14 @@ class ChatCompletionsAPI(
         // 转换与图片编码 (解码/压缩/base64), 序列化在几百 KB 时 50-300ms —
         // 每轮工具调用后重新执行, 直接表现为"工具返回后恢复输出等待过大"。
         // 两者均为纯计算 (无主线程依赖), 打包进 Dispatchers.Default。
-        val requestBodyJson = withContext(Dispatchers.Default) {
+        val (requestBody, requestBodyJson) = withContext(Dispatchers.Default) {
             val body = buildChatCompletionRequest(
                 messages = messages,
                 params = params,
                 providerSetting = providerSetting,
                 stream = true,
             )
-            json.encodeToString(body)
+            body to json.encodeToString(body)
         }
 
         val request = Request.Builder()
