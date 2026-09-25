@@ -40,6 +40,7 @@ import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -1053,7 +1054,14 @@ class GenerationHandler(
         if (modelWithAbilities.abilities != model.abilities) {
             Log.i(TAG, "Abilities resolved: ${model.modelId} ${model.abilities} → ${modelWithAbilities.abilities}")
         }
-        var internalMessages = buildList {
+        // 4.8.32 (性能): 请求组装段整体移入 Dispatchers.Default — 此前完全在
+        // 主线程执行 (AppScope=Main): system prompt 拼装 / tools prompt / 变换链 /
+        // 记忆注入 / 指纹诊断 / enforce。每轮 step 重复执行, 长会话与工具循环时
+        // 直接抢占主线程 (发送瞬间/流式期间的卡顿源之一)。
+        // 段内无主线程依赖: CallTracer.event 有 mutex, lastCacheFp/Parts 为
+        // ConcurrentHashMap, transforms 为 suspend 纯数据链。
+        val internalMessages = withContext(Dispatchers.Default) {
+        var built: List<UIMessage> = buildList {
             val sysPromptLen: Int
             val memPromptLen: Int
             val toolsPromptLen: Int
@@ -1225,9 +1233,9 @@ class GenerationHandler(
             val tailMemoryPrompt = buildMemoryPrompt(memories = memories)
             if (tailMemoryPrompt.isNotBlank()) {
                 val memBlock = "\n\n<memory>\n" + tailMemoryPrompt + "\n</memory>"
-                val lastUserIdx = internalMessages.indexOfLast { it.role == MessageRole.USER }
-                internalMessages = if (lastUserIdx >= 0) {
-                    val target = internalMessages[lastUserIdx]
+                val lastUserIdx = built.indexOfLast { it.role == MessageRole.USER }
+                built = if (lastUserIdx >= 0) {
+                    val target = built[lastUserIdx]
                     val parts = target.parts.toMutableList()
                     val ti = parts.indexOfLast { it is UIMessagePart.Text }
                     if (ti >= 0) {
@@ -1236,9 +1244,9 @@ class GenerationHandler(
                     } else {
                         parts.add(UIMessagePart.Text(memBlock.trim()))
                     }
-                    internalMessages.toMutableList().also { it[lastUserIdx] = target.copy(parts = parts) }
+                    built.toMutableList().also { it[lastUserIdx] = target.copy(parts = parts) }
                 } else {
-                    internalMessages + UIMessage.user(tailMemoryPrompt)
+                    built + UIMessage.user(tailMemoryPrompt)
                 }
             }
         }
@@ -1246,20 +1254,21 @@ class GenerationHandler(
         val buildInternalMs = System.currentTimeMillis() - startMs
         // v4.8.19 性能: 单遍无分配 (原每轮 filterIsInstance 分配中间列表)
         var totalChars = 0
-        for (msg in internalMessages) {
+        for (msg in built) {
             for (p in msg.parts) {
                 if (p is UIMessagePart.Text) totalChars += p.text.length
             }
         }
         val estTotalTokens = totalChars / 2.5
-        Log.i(TAG, "Request total: ${internalMessages.size} messages, ${totalChars}c (~${estTotalTokens.toInt()}t), internalBuild=${buildInternalMs}ms")
+        Log.i(TAG, "Request total: ${built.size} messages, ${totalChars}c (~${estTotalTokens.toInt()}t), internalBuild=${buildInternalMs}ms")
 
         // 协议层: 发送前结构性保证 (首条 system + tool 配对) — 幂等, 合规消息零修改
-        val protocolMessages = MessageProtocol.enforce(internalMessages)
-        if (protocolMessages != internalMessages) {
-            Log.i(TAG, "MessageProtocol: 消息序列已修复 (${internalMessages.size} → ${protocolMessages.size})")
+        val protocolMessages = MessageProtocol.enforce(built)
+        if (protocolMessages != built) {
+            Log.i(TAG, "MessageProtocol: 消息序列已修复 (${built.size} → ${protocolMessages.size})")
         }
-        internalMessages = protocolMessages
+        protocolMessages
+        }
 
         // v3.6.34: 流式基准 = 原始消息 (关键) — 压缩包只进请求 (internalMessages),
         // 流式累积/onUpdateMessages 回写必须用原始消息, 否则 UI 消息被替换成压缩包

@@ -31,6 +31,9 @@ class SkillManager(
     // v3.6.12: 技能扫描加固 — 单文件解析失败只跳过该技能 (不全缺);
     // 整体扫描失败 (IO) 用上次成功缓存 — 防止 tools 数组偶发缺技能 → 请求前缀断裂
     private var cachedSkills: List<SkillMetadata>? = null
+    // v4.8.32 (性能): 技能正文缓存 (mtime 键) — readSkillBody 原为每次同步读盘,
+    // 被生成链每轮 step 调用 (forcedSkills 注入), 长工具循环下反复主线程 IO。
+    private val skillBodyCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, String>>()
 
     // v3.6.85: DeepSeek Harness (DSH) 插件生态兼容 — 额外技能根
     // (workspace 的 .dsh/skills 与 .agents/skills), 技能名加前缀
@@ -112,12 +115,19 @@ class SkillManager(
     /** 技能增删后清缓存 (安装/删除/导入时调用) */
     fun invalidateSkillsCache() {
         cachedSkills = null
+        skillBodyCache.clear()
     }
 
     fun readSkillBody(skillName: String): String? {
         val skillFile = resolveSkillDir(skillName)?.resolve("SKILL.md") ?: return null
         if (!skillFile.exists()) return null
-        return SkillFrontmatterParser.extractBody(skillFile.readText())
+        // v4.8.32: mtime 键缓存 — 文件未变时零 IO (生成链每轮调用点)
+        val mtime = skillFile.lastModified()
+        val cached = skillBodyCache[skillName]
+        if (cached != null && cached.first == mtime) return cached.second
+        val body = SkillFrontmatterParser.extractBody(skillFile.readText())
+        skillBodyCache[skillName] = mtime to body
+        return body
     }
 
     fun readSkillContent(skillName: String): String? {

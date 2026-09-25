@@ -137,6 +137,10 @@ internal fun FilesPicker(
     val workspaceRepository: WorkspaceRepository = koinInject()
     // v4.8.4: 记忆数据 (判断"存在真实记忆条目"用于状态着色)
     val memoryRepository: me.rerere.rikkahub.data.repository.MemoryRepository = koinInject()
+    // v4.8.32: 生成态 — 生成中禁止压缩 (用户定版: 按钮灰化 + 逻辑守卫双保险)
+    val chatService: me.rerere.rikkahub.service.ChatService = koinInject()
+    val generationJob by chatService.getGenerationJobStateFlow(conversation.id)
+        .collectAsStateWithLifecycle(initialValue = null)
     // 4.8.25: 项目包 CWD — 对话所属项目包 cwd 优先 (项目包锚定), 否则助手级。
     // 响应式: 抽屉里修改项目包 CWD 后此处自动刷新。
     val folderRepository: me.rerere.rikkahub.data.repository.FolderRepository = koinInject()
@@ -253,7 +257,7 @@ internal fun FilesPicker(
             }, modifier = Modifier.weight(1f))
             CompressButton(onClick = {
                 onShowCompressDialogChange(true)
-            }, modifier = Modifier.weight(1f))
+            }, enabled = generationJob == null, modifier = Modifier.weight(1f))
         }
 
         val boundWorkspace = remember(workspaces, assistant.workspaceId) {
@@ -532,13 +536,16 @@ private fun BigIconTextButton(
     modifier: Modifier = Modifier,
     icon: @Composable () -> Unit,
     text: @Composable () -> Unit,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
+            .alpha(if (enabled) 1f else 0.38f)
             .clickable(
+                enabled = enabled,
                 interactionSource = interactionSource, indication = LocalIndication.current, onClick = onClick
             )
             .semantics {
@@ -649,12 +656,12 @@ private fun McpButton(
 }
 
 @Composable
-private fun CompressButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun CompressButton(onClick: () -> Unit, enabled: Boolean = true, modifier: Modifier = Modifier) {
     BigIconTextButton(modifier = modifier, icon = {
         Icon(HugeIcons.Package01, null)
     }, text = {
         Text("压缩历史")
-    }) {
+    }, enabled = enabled) {
         onClick()
     }
 }

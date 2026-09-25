@@ -287,6 +287,19 @@ class ChatVM(
     private var compressJob: kotlinx.coroutines.Job? = null
 
     fun handleCompressContext(additionalPrompt: String, targetTokens: Int, keepRecentMessages: Int): Job {
+        // v4.8.32: 生成中禁止压缩 (用户定版) — 生成期间消息流式变化, 压缩会与
+        // 生成链写同一会话对象 (后写的全量保存覆盖对方), 且压缩本身是重操作,
+        // 与流式渲染抢占资源。UI 层按钮已随生成态灰化, 此处兜底 (对话框已打开
+        // 期间生成启动等边缘路径)。
+        if (chatService.isConversationGenerating(_conversationId)) {
+            return viewModelScope.launch {
+                chatService.addError(
+                    IllegalStateException("正在生成回复，生成期间无法压缩。请等待完成后再试。"),
+                    conversationId = _conversationId,
+                    title = context.getString(R.string.error_title_compress_conversation)
+                )
+            }
+        }
         val job = viewModelScope.launch {
             _compressing.value = true
             try {

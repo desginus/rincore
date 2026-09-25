@@ -1219,6 +1219,10 @@ class ChatService(
     fun isConversationInitialized(conversationId: Uuid): Boolean =
         sessionManager.get(conversationId)?.isInitialized() == true
 
+    /** 4.8.32: 该会话是否正在生成 (压缩入口守卫 — 生成中禁止压缩)。 */
+    fun isConversationGenerating(conversationId: Uuid): Boolean =
+        sessionManager.get(conversationId)?.isGenerating == true
+
     suspend fun moveConversationToFolder(conversationId: Uuid, folderId: Uuid?) {
         if (sessionManager.get(conversationId) != null) {
             updateConversationState(conversationId) { it.copy(folderId = folderId) }

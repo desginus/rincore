@@ -256,14 +256,18 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
         }
     }
 
-    // v4.8.1: 进入对话预解析预热 — 后台批量解析最近消息 Markdown 填缓存,
-    // 首帧组合命中缓存零解析, 消除进入瞬间的集中解析卡顿 (用户: 渲染负担过重)。
+    // v4.8.1: 进入对话预解析预热 — 后台批量解析最近消息 Markdown 填缓存。
+    // v4.8.32 (性能收口): ①只预热当前选中版本 — node.messages 含全部分支版本,
+    // 非选中版本根本不会被渲染, 原实现为其白付解析成本; ②延迟 400ms 起跑 —
+    // 进入瞬间主线程正忙于首帧同步解析 + 列表布局, 立即抢占 CPU 核心反而拉长
+    // 可感知卡顿 (用户: 切换对话卡)。让首帧先行, 背景再填缓存。
     LaunchedEffect(conversation.id) {
         val texts = conversation.messageNodes.asReversed().take(30)
-            .flatMap { node -> node.messages }
+            .mapNotNull { node -> node.messages.getOrNull(node.selectIndex) }
             .flatMap { msg -> msg.parts.filterIsInstance<UIMessagePart.Text>() }
             .map { it.text }
         if (texts.isNotEmpty()) {
+            delay(400)
             withContext(Dispatchers.Default) { prewarmMarkdownCache(texts) }
         }
     }
