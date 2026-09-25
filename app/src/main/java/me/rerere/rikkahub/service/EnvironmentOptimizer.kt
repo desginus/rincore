@@ -9,6 +9,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.util.Log
 import okhttp3.OkHttpClient
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
@@ -173,7 +174,10 @@ object ConnectionWarmer {
         val existing = keepAliveJobs[trimmed]
         if (existing?.isActive == true) return
         val host = runCatching { java.net.URI(trimmed).host }.getOrNull() ?: return
-        keepAliveJobs[trimmed] = appScope.launch {
+        // v4.8.38: launch(Dispatchers.IO) — 循环体内 newCall().execute() 是同步
+        // 阻塞网络调用; AppScope 的默认调度器为 Main, 原实现在主线程每 60s 阻塞
+        // 一次 (网络差时数秒), 即"预热连接"引发的周期性卡顿源。统一移入 IO。
+        keepAliveJobs[trimmed] = appScope.launch(Dispatchers.IO) {
             while (isActive) {
                 // v4.8.35: 60s 间隔 (原 45s) — 服务端空闲断连窗口 ~100s,
                 // 60s 留 40s 余量下尽量减少唤醒次数; 超 100s 连接必被服务端
@@ -221,7 +225,7 @@ object ConnectionWarmer {
         keepAliveJob?.cancel()
         keepAliveKey = baseUrl
         val host = runCatching { java.net.URI(baseUrl).host }.getOrNull() ?: return
-        keepAliveJob = appScope.launch {
+        keepAliveJob = appScope.launch(Dispatchers.IO) {
             while (isActive) {
                 kotlinx.coroutines.delay(60_000L)
                 runCatching {

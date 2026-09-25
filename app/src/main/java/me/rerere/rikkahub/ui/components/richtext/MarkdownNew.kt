@@ -68,9 +68,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastForEach
 import androidx.core.graphics.toColorInt
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.mapLatest
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Tick01
 import me.rerere.rikkahub.ui.components.table.DataTable
@@ -178,48 +179,15 @@ fun MarkdownNew(
 
     val updatedContent by rememberUpdatedState(content)
     LaunchedEffect(Unit) {
-        // v4.8.36 (流式显示速度修复): 调度从 mapLatest 改为"单飞行解析 + 最新推进"。
-        // 原实现: snapshotFlow.mapLatest { 完整解析 }。mapLatest 在新内容到达时
-        // 取消上一个解析 — 但本解析为纯 CPU 段 (正则/分词/HTML 生成/Jsoup 均无
-        // 挂起点), 取消无法中断执行: 每批内容到来都启动一次完整解析 (旧的继续
-        // 白跑), 且"最新那次"总在完成前被下一批取消 → 结果被拒 → document 长久
-        // 不更新, 用户感知"模型输出很快但显示很慢/大段跳跃" (解析耗时 > 内容
-        // 更新间隔时必现 — 长消息流式后期的典型症状)。
-        // 新调度: 恒定只跑一个解析; 每份内容都被完整处理一次, 完成即提交并立即
-        // 推进到最新内容 — 显示节奏 = 解析速度上限, 无取消浪费、无并行抢核。
-        // 视觉形态不变 (首帧同步解析保留、完整解析、无占位/无分段)。
-        var lastParsed = content
-        var lastParseMs = 0L
-        while (true) {
-            // 等待内容变化 (挂起点 — 页面离开时在此响应取消)
-            snapshotFlow { updatedContent }.first { it != lastParsed }
-            // v4.8.37: 合并窗口 + 自适应节流 — 4.8.36 的"每次解析完成立即上屏"在
-            // 长上下文下将 解析+全量树重建 的成本推到超过内容生成速率, 更新永久
-            // 追赶失败 → 主线程被连续更新占满, UI 彻底卡死 (用户实证: 上下文积攒
-            // 到一定程度后无法输出/无法发消息)。现在: 变更后先等一拍 (长内容才等,
-            // 间隔 = 上轮解析耗时×2, 下限 60ms 上限 800ms) 让一次解析覆盖尽量多
-            // 新增; 保证主线程在两次更新之间留出 ≈2 倍解析时间的空闲窗口, 滚动/
-            // 输入/发送始终可响应。短内容 (<1500 字符) 零延迟保持流畅。
-            val throttleMs = if (lastParsed.length < 1500) 0L
-                else (lastParseMs * 2).coerceIn(60L, 2_000L)
-            if (throttleMs > 0) delay(throttleMs)
-            val toParse = updatedContent
-            val parseStart = System.currentTimeMillis()
-            val doc = withContext(Dispatchers.Default) {
-                val html = runCatching { generateMarkdownHtml(toParse) }.getOrElse { "" }
+        snapshotFlow { updatedContent }
+            .distinctUntilChanged()
+            .mapLatest {
+                val html = generateMarkdownHtml(it)
                 runCatching { Jsoup.parse(html) }.getOrElse { Jsoup.parse("") }
             }
-            lastParseMs = System.currentTimeMillis() - parseStart
-            document = doc
-            lastParsed = toParse
-            // 诊断 (低频): 长内容的解析耗时 — 若仍偏慢, 用其定位渲染成本
-            if (toParse.length > 3_000) {
-                android.util.Log.i(
-                    "MarkdownStream",
-                    "new len=${toParse.length} parseMs=$lastParseMs throttleMs=$throttleMs",
-                )
-            }
-        }
+            .catch { it.printStackTrace() }
+            .flowOn(Dispatchers.Default)
+            .collect { document = it }
     }
 
     ProvideTextStyle(style) {

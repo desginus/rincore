@@ -87,9 +87,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastForEach
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -323,34 +324,15 @@ fun MarkdownBlock(
     var (data, setData) = remember { mutableStateOf(MarkdownParseCache.parseWithCache(content)) }
 
     // 监听内容变化，重新解析AST树
-    // v4.8.36 (流式显示速度修复): 调度从 mapLatest 改为"单飞行解析 + 最新推进"
-    // (与 MarkdownNew 同修)。mapLatest 对纯 CPU 解析段的"取消"无效 — 每批内容
-    // 到来都启动完整解析 (旧的白跑), 最新那次总在完成前被下一批取消 → 结果被
-    // 拒 → 长时间不更新, 用户感知"输出快但显示慢/大段跳跃"。新调度: 恒定一个
-    // 解析在跑, 每份内容完整处理一次, 完成即提交并立即推进到最新。视觉形态
-    // 不变 (首帧同步保留、无占位/无分段)。
+    // 这里在后台线程解析AST树, 防止频繁更新的时候掉帧
     val updatedContent by rememberUpdatedState(content)
     LaunchedEffect(Unit) {
-        var lastParsed = content
-        var lastParseMs = 0L
-        while (true) {
-            snapshotFlow { updatedContent }.first { it != lastParsed }
-            // v4.8.37: 合并窗口 + 自适应节流 (与 MarkdownNew 同修) — 长上下文下
-            // 每次更新立即上屏会令 解析+树重建 成本超过内容生成速率, 更新追赶失败
-            // → 主线程被占满、UI 卡死。间隔 = 上轮解析耗时×2 (下限 60/上限 800ms),
-            // 短内容零延迟。
-            val throttleMs = if (lastParsed.length < 1500) 0L
-                else (lastParseMs * 2).coerceIn(60L, 2_000L)
-            if (throttleMs > 0) delay(throttleMs)
-            val toParse = updatedContent
-            val parseStart = System.currentTimeMillis()
-            val parsed = withContext(Dispatchers.Default) {
-                MarkdownParseCache.parseWithCache(toParse)
-            }
-            lastParseMs = System.currentTimeMillis() - parseStart
-            setData(parsed)
-            lastParsed = toParse
-        }
+        snapshotFlow { updatedContent }
+            .distinctUntilChanged()
+            .mapLatest { MarkdownParseCache.parseWithCache(it) }
+            .catch { exception -> exception.printStackTrace() }
+            .flowOn(Dispatchers.Default)
+            .collect { setData(it) }
     }
 
     if (data.hasHtml) {
