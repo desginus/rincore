@@ -87,10 +87,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastForEach
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -324,15 +322,24 @@ fun MarkdownBlock(
     var (data, setData) = remember { mutableStateOf(MarkdownParseCache.parseWithCache(content)) }
 
     // 监听内容变化，重新解析AST树
-    // 这里在后台线程解析AST树, 防止频繁更新的时候掉帧
+    // v4.8.36 (流式显示速度修复): 调度从 mapLatest 改为"单飞行解析 + 最新推进"
+    // (与 MarkdownNew 同修)。mapLatest 对纯 CPU 解析段的"取消"无效 — 每批内容
+    // 到来都启动完整解析 (旧的白跑), 最新那次总在完成前被下一批取消 → 结果被
+    // 拒 → 长时间不更新, 用户感知"输出快但显示慢/大段跳跃"。新调度: 恒定一个
+    // 解析在跑, 每份内容完整处理一次, 完成即提交并立即推进到最新。视觉形态
+    // 不变 (首帧同步保留、无占位/无分段)。
     val updatedContent by rememberUpdatedState(content)
     LaunchedEffect(Unit) {
-        snapshotFlow { updatedContent }
-            .distinctUntilChanged()
-            .mapLatest { MarkdownParseCache.parseWithCache(it) }
-            .catch { exception -> exception.printStackTrace() }
-            .flowOn(Dispatchers.Default)
-            .collect { setData(it) }
+        var lastParsed = content
+        while (true) {
+            snapshotFlow { updatedContent }.first { it != lastParsed }
+            val toParse = updatedContent
+            val parsed = withContext(Dispatchers.Default) {
+                MarkdownParseCache.parseWithCache(toParse)
+            }
+            setData(parsed)
+            lastParsed = toParse
+        }
     }
 
     if (data.hasHtml) {

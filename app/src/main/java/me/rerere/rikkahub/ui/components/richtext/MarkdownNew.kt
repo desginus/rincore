@@ -68,10 +68,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastForEach
 import androidx.core.graphics.toColorInt
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.first
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Tick01
 import me.rerere.rikkahub.ui.components.table.DataTable
@@ -179,15 +177,28 @@ fun MarkdownNew(
 
     val updatedContent by rememberUpdatedState(content)
     LaunchedEffect(Unit) {
-        snapshotFlow { updatedContent }
-            .distinctUntilChanged()
-            .mapLatest {
-                val html = generateMarkdownHtml(it)
+        // v4.8.36 (流式显示速度修复): 调度从 mapLatest 改为"单飞行解析 + 最新推进"。
+        // 原实现: snapshotFlow.mapLatest { 完整解析 }。mapLatest 在新内容到达时
+        // 取消上一个解析 — 但本解析为纯 CPU 段 (正则/分词/HTML 生成/Jsoup 均无
+        // 挂起点), 取消无法中断执行: 每批内容到来都启动一次完整解析 (旧的继续
+        // 白跑), 且"最新那次"总在完成前被下一批取消 → 结果被拒 → document 长久
+        // 不更新, 用户感知"模型输出很快但显示很慢/大段跳跃" (解析耗时 > 内容
+        // 更新间隔时必现 — 长消息流式后期的典型症状)。
+        // 新调度: 恒定只跑一个解析; 每份内容都被完整处理一次, 完成即提交并立即
+        // 推进到最新内容 — 显示节奏 = 解析速度上限, 无取消浪费、无并行抢核。
+        // 视觉形态不变 (首帧同步解析保留、完整解析、无占位/无分段)。
+        var lastParsed = content
+        while (true) {
+            // 等待内容变化 (挂起点 — 页面离开时在此响应取消)
+            snapshotFlow { updatedContent }.first { it != lastParsed }
+            val toParse = updatedContent
+            val doc = withContext(Dispatchers.Default) {
+                val html = runCatching { generateMarkdownHtml(toParse) }.getOrElse { "" }
                 runCatching { Jsoup.parse(html) }.getOrElse { Jsoup.parse("") }
             }
-            .catch { it.printStackTrace() }
-            .flowOn(Dispatchers.Default)
-            .collect { document = it }
+            document = doc
+            lastParsed = toParse
+        }
     }
 
     ProvideTextStyle(style) {
