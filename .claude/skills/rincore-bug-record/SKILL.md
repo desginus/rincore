@@ -497,3 +497,21 @@ fallthrough 到 linuxDir (../linux/x.png), 文件实际在 ../files/。
 - **四形状实证链**: 15:37 内嵌拒 → 16:07 同 user 消息混排 (image+tool_result) 拒 (REQ_META 证实重定位已生效) → 16:42 拆独立 user 消息产生连续三条 user 拒 (角色交替硬校验) → 终态: qwen 兼容层唯一安全形状四条 = 纯 tool_result user / text+image 混合 user / assistant(text+tool_use) / assistant(text)
 - **终态修复**: ①CC content 只留文本 (空补占位) + 图片经 addToolImagesAsUserMessage 拆独立后继 user 消息 (常规+Cherry 共用); ②Anthropic normalizeConsecutiveToolImageUsers 后处理: 工具图 user 与后继 user 相邻→图块并入其 content 头部; 否则前插 assistant 占位文本恢复交替; ③报错细化: 极简错误体识别转可读诊断, REQ_META 增补 tool_result 内嵌块统计 innerNonText
 - **教训**: ①原生 API 正常+网关异常 ⇒ 差异必在请求构造的字节级形状, 逐形状实证排除而非猜测协议; ②网关对消息结构校验是 shape-level 不是语义级 (官方合法形状照拒); ③拆分/重定位消息必须做全序列后处理规范化 (角色交替/纯块序列约束), 局部拆分必然引入新违规; ④极简错误体 ({"model":...}) 是网关挂起/拒绝的指纹, 必须转可读诊断; ⑤REQ_META 顶层块统计看不到嵌套块, 定位嵌套问题需 innerNonText 类统计; ⑥用户锚定"问题在工具返回本身"时, 先查该数据的完整序列化路径 (格式/位置/包装), 不要跳到压缩/传输等远端因素
+
+### B119. OpenCode Response API + grok "Upstream response was not valid JSON" (v4.8.39 场景分流 · ⚠️ 存档)
+- **现象**: OpenCode 提供的 Response API 通道 + grok 模型, 生成时报
+  `消息生成失败: Upstream response was not valid JSON` (HttpException; 栈: ResponseAPI.onFailure → ErrorParser.parseErrorDetail)。用户判定为**必现性**(非偶发)问题。
+- **根因链**: OpenCode 网关调用 grok 上游瞬时故障时返回 server_error (错误体即该文案);
+  经 ErrorParser 提取为 HttpException 且无 [5xx] 标记 → GenerationHandler 的
+  HttpException 分支 (仅 5xx 特征转重试) 不匹配 → **零重试直接终态** (客户端侧缺陷)。
+- **社区实证**: anomalyco/opencode #40194 (同款报错, 网关侧瞬时/上游限制; 其他模型正常),
+  #43163 (Go 网关对 grok 返回 Endpoint is unavailable), #43732 (Zen Go Responses 对
+  grok 返回非规范 JSON truncation:"", 破坏严格客户端) — 均网关/上游侧问题。
+- **已做处置 (v4.8.39, 场景分流)**: ResponseAPI.onFailure 终态处, 仅
+  `host==opencode.ai && modelId 含 grok` 且错误属三类瞬时特征
+  (Upstream response was not valid JSON / Upstream request failed / Endpoint is
+  unavailable) 时, 包装为 java.io.IOException → 上层重试链 (发起池 4 / 三轮链 18)。
+  隔离保证: 其他通道/模型行为不变。设计原则: 错误类型分流放"产生错误的通道层"包装,
+  不动 GenerationHandler 全局分支。
+- **状态**: ⚠️ **存档待观察** (用户裁定"改不了就不改")。若 v4.8.39 后仍必现 —
+  说明属网关持续性故障/场景性拒答, 重试链无法恢复, 客户端侧止步于此 (不再投入)。

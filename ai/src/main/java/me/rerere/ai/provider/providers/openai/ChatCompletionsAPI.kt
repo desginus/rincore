@@ -852,10 +852,13 @@ class ChatCompletionsAPI(
                     }
                 })
             }
-            "dashscope.aliyuncs.com" -> obj {
-                // 阿里云百炼
-                put("enable_thinking", level.isEnabled)
-                if (level != ReasoningLevel.AUTO) put("thinking_budget", level.budgetTokens)
+            "dashscope.aliyuncs.com" -> {
+                // 2.5.4 移植: 百炼新 API — 原 enable_thinking/thinking_budget
+                // 已废弃, 统一 reasoning_effort (无档时不发); 关闭思考 (OFF→none)
+                // 直传, 使"关闭"真正生效。
+                if (level != ReasoningLevel.AUTO) {
+                    obj { put("reasoning_effort", level.effort) }
+                } else null
             }
             "ark.cn-beijing.volces.com" -> obj {
                 // 豆包 (火山)
@@ -1003,9 +1006,10 @@ class ChatCompletionsAPI(
             }
 
             else -> {
-                // OpenAI 官方: completions API 只支持 low/medium/high
+                // 2.5.4 移植: 关闭思考直传 — 原实现把 OFF(none) 映射成 "low",
+                // "关闭"实际仍在低档思考; 新语义下 none 原样发送, 真正关闭。
                 if (level != ReasoningLevel.AUTO) {
-                    obj { put("reasoning_effort", if (level.effort == "none") "low" else level.effort) }
+                    obj { put("reasoning_effort", level.effort) }
                 } else null
             }
         }
