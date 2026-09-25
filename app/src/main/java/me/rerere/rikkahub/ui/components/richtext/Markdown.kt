@@ -87,6 +87,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastForEach
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
@@ -308,6 +309,24 @@ private fun parseMarkdown(content: String): MarkdownParseResult {
     return MarkdownParseResult(preprocessed, astTree, astTree.containsHtml())
 }
 
+/**
+ * v4.8.38 (CPU 并行空转修复): 可取消解析 (与 MarkdownNew 同修)。
+ * 缓存命中零解析直接返回; 未命中走"检查点版"解析 — 被 mapLatest 取消的旧
+ * 任务在阶段边界立即退出 (原实现在纯 CPU 段无视取消, 白跑到底并抢占 CPU)。
+ * 调度与更新语义零变化; prewarm/首帧仍走原同步 parseWithCache/parseMarkdown。
+ */
+private suspend fun parseMarkdownCancellable(content: String): MarkdownParseResult {
+    MarkdownParseCache.get(content)?.let { return it }
+    yield()
+    val preprocessed = preProcess(content)
+    yield()
+    val astTree = parser.buildMarkdownTreeFromString(preprocessed)
+    yield()
+    val result = MarkdownParseResult(preprocessed, astTree, astTree.containsHtml())
+    MarkdownParseCache.put(content, result)
+    return result
+}
+
 // v4.7.26: 渲染流程完全对齐原版 RikkaHub (用户定版) —
 // 首帧同步解析 (parseMarkdown 直接作 remember 初值), 首帧即最终 AST,
 // 无"纯文本占位 -> 异步替换"过渡。v4.7.23 分段 / v4.7.25 缓存方案整体撤除
@@ -329,7 +348,7 @@ fun MarkdownBlock(
     LaunchedEffect(Unit) {
         snapshotFlow { updatedContent }
             .distinctUntilChanged()
-            .mapLatest { MarkdownParseCache.parseWithCache(it) }
+            .mapLatest { parseMarkdownCancellable(it) }
             .catch { exception -> exception.printStackTrace() }
             .flowOn(Dispatchers.Default)
             .collect { setData(it) }

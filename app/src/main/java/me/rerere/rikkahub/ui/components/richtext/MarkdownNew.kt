@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastForEach
 import androidx.core.graphics.toColorInt
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
@@ -157,6 +158,28 @@ private fun generateMarkdownHtml(content: String): String {
     return HtmlGenerator(preprocessed, tree, flavour).generateHtml()
 }
 
+/**
+ * v4.8.38 (CPU 并行空转修复): 可取消解析管线。
+ *
+ * 背景: 流式更新走 mapLatest — 新内容到达会取消上一轮解析。但解析整体是纯
+ * CPU 段 (preProcess 正则 / 语法树构建 / HTML 生成 / Jsoup 均无挂起点),
+ * 协程取消对它无效: 被取消的旧任务继续跑完 (白跑), 与最新任务并行抢核 —
+ * 流式期间持续浪费 CPU (用户报告: CPU 并行空转占用)。
+ *
+ * 本函数在阶段边界插入 yield 取消检查点: 被取消的任务在最近检查点立即退出,
+ * 只保留最新任务继续。调度与更新语义零变化 — mapLatest 行为、上屏时机、首帧
+ * 同步解析 (remember 初值走原 generateMarkdownHtml)、渲染结构完全一致;
+ * 唯一差异 = 被取消任务提前释放 CPU (不再空转)。
+ */
+private suspend fun generateMarkdownHtmlCancellable(content: String): String {
+    yield()
+    val preprocessed = preProcess(content)
+    yield()
+    val tree = parser.buildMarkdownTreeFromString(preprocessed)
+    yield()
+    return HtmlGenerator(preprocessed, tree, flavour).generateHtml()
+}
+
 // ---- Main composable ----
 
 @Composable
@@ -182,7 +205,8 @@ fun MarkdownNew(
         snapshotFlow { updatedContent }
             .distinctUntilChanged()
             .mapLatest {
-                val html = generateMarkdownHtml(it)
+                val html = generateMarkdownHtmlCancellable(it)
+                yield()
                 runCatching { Jsoup.parse(html) }.getOrElse { Jsoup.parse("") }
             }
             .catch { it.printStackTrace() }
