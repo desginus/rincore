@@ -260,6 +260,7 @@ private data class MarkdownParseResult(
     val preprocessed: String,
     val astTree: ASTNode,
     val hasHtml: Boolean,
+)
 
 /**
  * v4.8.49 回植 (原 v4.8.1/42): 解析结果 LRU 缓存 — 命中时首帧同步即终态
