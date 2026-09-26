@@ -12,6 +12,7 @@ import androidx.activity.compose.BackHandler
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Alignment
 import androidx.compose.material3.CircularProgressIndicator
@@ -390,6 +391,16 @@ private fun ChatPageContent(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    // v4.8.11 ①: 键盘显隐触发重建
+    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    LaunchedEffect(imeVisible) { hazeRebuildTick++ }
+    // v4.8.11 ②: 周期心跳兜底 (5 分钟)
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(5 * 60 * 1000L)
+            hazeRebuildTick++
+        }
     }
     val assistant = setting.getCurrentAssistant()
     var showFilesSheet by remember { mutableStateOf(false) }

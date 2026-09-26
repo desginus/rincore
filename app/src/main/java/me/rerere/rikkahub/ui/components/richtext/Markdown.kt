@@ -137,6 +137,12 @@ private val MATH_SEG_REGEX = Regex("\\$\\$[\\s\\S]*?\\$\\$|\\$[^$\\n]*\\$")
 private val SINGLE_TILDE_REGEX = Regex("(?<!~)~(?!~)")
 private val MATH_RESTORE_REGEX = Regex("\\u0000MATH(\\d+)\\u0000")
 
+// v4.8.17: 词内下划线保护 — 用户实证 M_O / xF_y 类文本渲染异常 (下划线被
+// 强调解析破坏, 而 yF_x 等孤立下划线反而正常)。修复: 字母/数字之间的 `_`
+// 替换为全角下划线 ＿ (U+FF3F) — 视觉等效、不参与 ASCII 强调定界解析、
+// 复制仍可见。`_em_` 类正常强调 (下划线外侧为空白/标点) 不受影响。
+private val INTRAWORD_UNDERSCORE_REGEX = Regex("(?<=[A-Za-z0-9])_(?=[A-Za-z0-9])")
+
 // 预处理markdown内容
 private fun preProcess(content: String): String {
     // 先找出所有代码块的位置
@@ -190,7 +196,11 @@ private fun preProcess(content: String): String {
     val textDone = SINGLE_TILDE_REGEX.replace(withMathPlaceholder) { m ->
         if (isInCodeBlock(m.range.first)) m.value else "\u223C"
     }
-    result = MATH_RESTORE_REGEX.replace(textDone) { m ->
+    // v4.8.17: 词内下划线 → 全角下划线 (公式段已占位, 不受影响; 代码块内原样)
+    val underscoreDone = INTRAWORD_UNDERSCORE_REGEX.replace(textDone) { m ->
+        if (isInCodeBlock(m.range.first)) m.value else "＿"
+    }
+    result = MATH_RESTORE_REGEX.replace(underscoreDone) { m ->
         mathSegs[m.groupValues[1].toInt()].replace(SINGLE_TILDE_REGEX, "\\sim")
     }
 

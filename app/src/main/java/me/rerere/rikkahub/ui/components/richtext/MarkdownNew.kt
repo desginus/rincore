@@ -98,6 +98,7 @@ private val CODE_BLOCK_REGEX = Regex("```[\\s\\S]*?```|`[^`\n]*`", RegexOption.D
 private val MATH_SEG_REGEX = Regex("\\$\\$[\\s\\S]*?\\$\\$|\\$[^$\\n]*\\$")
 private val SINGLE_TILDE_REGEX = Regex("(?<!~)~(?!~)")
 private val MATH_RESTORE_REGEX = Regex("\\u0000MATH(\\d+)\\u0000")
+private val INTRAWORD_UNDERSCORE_REGEX = Regex("(?<=[A-Za-z0-9])_(?=[A-Za-z0-9])")
 
 private fun preProcess(content: String): String {
     val codeBlocks = mutableListOf<IntRange>()
@@ -131,7 +132,11 @@ private fun preProcess(content: String): String {
     val textDone = SINGLE_TILDE_REGEX.replace(withMathPlaceholder) { m ->
         if (isInCodeBlock(m.range.first)) m.value else "\u223C"
     }
-    result = MATH_RESTORE_REGEX.replace(textDone) { m ->
+    // v4.8.17: 词内下划线 → 全角下划线 (与 Markdown.kt 同款修复)
+    val underscoreDone = INTRAWORD_UNDERSCORE_REGEX.replace(textDone) { m ->
+        if (isInCodeBlock(m.range.first)) m.value else "＿"
+    }
+    result = MATH_RESTORE_REGEX.replace(underscoreDone) { m ->
         mathSegs[m.groupValues[1].toInt()].replace(SINGLE_TILDE_REGEX, "\\sim")
     }
 
