@@ -8,6 +8,7 @@ package me.rerere.rikkahub.service.warm
  * 基线: v4.8.50 自研 (取代 v4.8.1-4.8.42 的进入时批量预热形态)
  * ───────────────────────────────────────────────────────────────*/
 
+import android.content.Context
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -18,10 +19,13 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
+import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.ui.components.richtext.warmMarkdownCache
@@ -58,14 +62,31 @@ object WarmPipeline {
     )
 
     /** 应用启动时调用 (幂等)。 */
-    fun startOnAppStart() {
+    fun startOnAppStart(context: Context) {
         if (!started.compareAndSet(false, true)) return
+        val app = context.applicationContext
         scope.launch { consumeRequests() }
+        // v4.8.51: 壁纸预载 — 与首屏并行起跑 (修复"先进黑屏后出壁纸": 首帧
+        // 组合前把壁纸推进内存缓存, 与 Background.kt 请求同键直接命中)。
+        scope.launch { runCatching { warmBackgroundImage(app) } }
         scope.launch {
             delay(STARTUP_DELAY_MS)
             runCatching { warmRecentConversation() }
                 .onFailure { android.util.Log.w("WarmPipeline", "startup warm skipped", it) }
         }
+    }
+
+    /** v4.8.51: 壁纸预载 — 键与 Background.kt 保持一致 (assistant-bg::<url>)。 */
+    private fun warmBackgroundImage(context: Context) {
+        val assistant = GlobalContext.get().get<SettingsStore>().settingsFlow.value.getCurrentAssistant()
+        val bg = assistant.background ?: return
+        val dm = context.resources.displayMetrics
+        val request = coil3.request.ImageRequest.Builder(context)
+            .data(bg)
+            .size(dm.widthPixels, dm.heightPixels)
+            .memoryCacheKey("assistant-bg::" + bg)
+            .build()
+        coil3.SingletonImageLoader.get(context).enqueue(request)
     }
 
     /** 会话进入/滚动停稳时调用: 预热 [center] 周边 (单位 = 消息节点索引)。 */
@@ -117,14 +138,24 @@ object WarmPipeline {
 
     /** 分时执行: 逐条预热正文; 每 BATCH 条让渡一次; 生成中即时退出 (避让流式)。 */
     private suspend fun warmSliced(conversation: Conversation, order: List<Int>) {
+        // v4.8.51: 预热键必须与渲染键一致 — ChatMessage 渲染前对 part.text 先做
+        // replaceRegexes(visual=true), 预热同步该变换, 否则键不匹配命中率为零。
+        val assistant = runCatching {
+            GlobalContext.get().get<SettingsStore>().settingsFlow.value.getCurrentAssistant()
+        }.getOrNull()
         var worked = 0
         for (idx in order) {
             if (worked == 0 && isGenerating(conversation.id)) return
             val node = conversation.messageNodes.getOrNull(idx) ?: continue
             val message = node.messages.getOrNull(node.selectIndex) ?: continue
+            val scope = if (message.role == MessageRole.USER) AssistantAffectScope.USER
+            else AssistantAffectScope.ASSISTANT
             for (part in message.parts) {
                 if (part is UIMessagePart.Text && part.text.isNotBlank()) {
-                    warmMarkdownCache(part.text)
+                    val display = runCatching {
+                        part.text.replaceRegexes(assistant = assistant, scope = scope, visual = true)
+                    }.getOrDefault(part.text)
+                    warmMarkdownCache(display)
                 }
             }
             worked++

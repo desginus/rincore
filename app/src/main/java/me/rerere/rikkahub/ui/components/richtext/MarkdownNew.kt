@@ -157,6 +157,42 @@ private fun generateMarkdownHtml(content: String): String {
     return HtmlGenerator(preprocessed, tree, flavour).generateHtml()
 }
 
+/**
+ * v4.8.51: HTML/文档记忆化 — 纯函数记忆化, 行为零变化。
+ * store=true 仅用于"首次进入组合"路径 (每项生命周期一次); 内容变化路径
+ * (流式中间态) 只读不写, 不污染缓存。文档缓存限 32 条且仅收 ≤200K html。
+ */
+private object MarkdownHtmlMemo {
+    private const val MAX_HTML = 64
+    private const val MAX_DOC = 32
+    private const val MAX_DOC_HTML_CHARS = 200_000
+    private val htmlCache = object : LinkedHashMap<String, String>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?): Boolean =
+            size > MAX_HTML
+    }
+    private val docCache =
+        object : LinkedHashMap<String, org.jsoup.nodes.Document>(16, 0.75f, true) {
+            override fun removeEldestEntry(
+                eldest: MutableMap.MutableEntry<String, org.jsoup.nodes.Document>?
+            ): Boolean =
+                size > MAX_DOC
+        }
+
+    fun documentFor(content: String, store: Boolean): org.jsoup.nodes.Document {
+        synchronized(docCache) { docCache[content] }?.let { return it }
+        val html = synchronized(htmlCache) { htmlCache[content] }
+            ?: runCatching { generateMarkdownHtml(content) }.getOrElse { "" }
+        val doc = runCatching { Jsoup.parse(html) }.getOrElse { Jsoup.parse("") }
+        if (store && html.isNotEmpty()) {
+            synchronized(htmlCache) { htmlCache[content] = html }
+            if (html.length <= MAX_DOC_HTML_CHARS) {
+                synchronized(docCache) { docCache[content] = doc }
+            }
+        }
+        return doc
+    }
+}
+
 // ---- Main composable ----
 
 @Composable
@@ -171,20 +207,14 @@ fun MarkdownNew(
     // HTML 生成同在 Dispatchers.Default 完成; 首帧同步保留 (原版形态: 首帧即
     // 终态无过渡感, v4.7.26 教训 — 不引入占位/异步替换)。
     var document by remember {
-        mutableStateOf(
-            runCatching { Jsoup.parse(generateMarkdownHtml(content)) }
-                .getOrElse { Jsoup.parse("") },
-        )
+        mutableStateOf(MarkdownHtmlMemo.documentFor(content, store = true))
     }
 
     val updatedContent by rememberUpdatedState(content)
     LaunchedEffect(Unit) {
         snapshotFlow { updatedContent }
             .distinctUntilChanged()
-            .mapLatest {
-                val html = generateMarkdownHtml(it)
-                runCatching { Jsoup.parse(html) }.getOrElse { Jsoup.parse("") }
-            }
+            .mapLatest { MarkdownHtmlMemo.documentFor(it, store = false) }
             .catch { it.printStackTrace() }
             .flowOn(Dispatchers.Default)
             .collect { document = it }

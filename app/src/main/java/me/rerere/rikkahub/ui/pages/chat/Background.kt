@@ -6,6 +6,7 @@ package me.rerere.rikkahub.ui.pages.chat
  * ───────────────────────────────────────────────────────────────*/
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -29,8 +30,13 @@ fun AssistantBackground(setting: Settings, modifier: Modifier) {
         val backgroundColor = MaterialTheme.colorScheme.background
         val backgroundOpacity = assistant.backgroundOpacity.coerceIn(0f, 1f)
         Box(modifier = modifier) {
+            // v4.8.51: 显式内存缓存键 — 与 WarmPipeline 壁纸预载同键 (assistant-bg::),
+            // 启动预载命中后首帧即显示壁纸 (修复"先进黑屏后出壁纸")。
             AsyncImage(
-                model = assistant.background,
+                model = coil3.request.ImageRequest.Builder(LocalContext.current)
+                    .data(assistant.background)
+                    .memoryCacheKey("assistant-bg::" + assistant.background)
+                    .build(),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier

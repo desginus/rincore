@@ -282,6 +282,11 @@ private object MarkdownParseCache {
     fun parseWithCache(content: String): MarkdownParseResult =
         get(content) ?: parseMarkdown(content).also { put(content, it) }
 
+    /** v4.8.51: 只读解析 — 内容变化路径专用 (命中读缓存; 未命中现场解析但不
+     *  写回 — 变化路径多为流式中间态, 写回只会挤掉稳定内容)。 */
+    fun parseTransient(content: String): MarkdownParseResult =
+        get(content) ?: parseMarkdown(content)
+
     /** v4.8.50: 未命中才解析 (预热专用; 命中零成本跳过)。 */
     fun warmIfAbsent(content: String) {
         if (content.length > MAX_KEY_CHARS) return
@@ -330,7 +335,7 @@ fun MarkdownBlock(
     LaunchedEffect(Unit) {
         snapshotFlow { updatedContent }
             .distinctUntilChanged()
-            .mapLatest { MarkdownParseCache.parseWithCache(it) }
+            .mapLatest { MarkdownParseCache.parseTransient(it) }
             .catch { exception -> exception.printStackTrace() }
             .flowOn(Dispatchers.Default)
             .collect { setData(it) }

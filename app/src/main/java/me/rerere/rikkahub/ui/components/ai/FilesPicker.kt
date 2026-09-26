@@ -280,8 +280,14 @@ internal fun FilesPicker(
         // ① 对话 token 总数 > 100k → 提醒可压缩; ② 子代理运行/等待中;
         // ③ 记忆开启且有真实条目数据 (关闭则保持原状)
         val memoryActive = assistant.enableMemory && memories.isNotEmpty()
-        val conversationTokens = conversation.messageNodes.sumOf { node -> node.currentMessage.usage?.totalTokens ?: 0 }
-        val tokensHot = conversationTokens > 100_000
+        // v4.8.51 修复 (用户实证): 上下文占用 = 最后一条带 usage 消息的 totalTokens
+        // (该次请求的全上下文 tokens)。原实现对全部消息 totalTokens 求和 — 每条
+        // 消息的该值都是"当时累计上下文", 求和严重放大, 小几十 K 上下文即误触
+        // 100K 阈值变蓝。
+        val currentContextTokens = conversation.messageNodes.asReversed()
+            .firstNotNullOfOrNull { node -> node.messages.getOrNull(node.selectIndex)?.usage?.totalTokens }
+            ?: 0
+        val tokensHot = currentContextTokens > 100_000
         val subAgentsActive = conversationRuns.any { it.status == SubAgentStatus.RUNNING || it.status == SubAgentStatus.PENDING }
         Row(
             modifier = Modifier.fillMaxWidth(),
