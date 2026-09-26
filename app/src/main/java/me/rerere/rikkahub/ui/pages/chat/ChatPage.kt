@@ -80,6 +80,7 @@ import com.dokar.sonner.ToastType
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNot
@@ -127,6 +128,7 @@ import me.rerere.ai.provider.ProviderManager
 import me.rerere.rikkahub.service.ConnectionWarmer
 import me.rerere.rikkahub.service.warm.WarmPipeline
 import org.koin.core.parameter.parametersOf
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.uuid.Uuid
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
