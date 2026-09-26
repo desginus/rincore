@@ -581,6 +581,26 @@ class ChatCompletionsAPI(
                     Log.w(TAG, "server error ${response?.code} — wrapping as IOException for retry chain")
                     exception = IOException("[${response?.code}] ${exception.message}", exception)
                 }
+
+                // v4.8.54: 聚合网关上游瞬时错误场景分流 (与 v4.8.39 ResponseAPI 同款, 用户实证
+                // 扩展至 CC 通道): "Upstream request failed: Invalid request parameters. Please
+                // check your input and try again." — OpenCode 网关对上游调用的失败包装 (社区
+                // 实证网关侧问题, 重试可恢复)。此类错误常带 4xx (不满足上面 5xx 条件), 需在
+                // 此包装为 IOException 交上层重试链, 否则直接终态弹错。
+                // 隔离: 仅聚合网关 (opencode.ai / api.commandcode.ai) 且消息属瞬时家族时生效。
+                if (exception != null && exception !is IOException) {
+                    val hostForScenario = runCatching { providerSetting.baseUrl.toHttpUrl().host }.getOrNull()
+                    val isAggregateHost = hostForScenario == "opencode.ai" || hostForScenario == "api.commandcode.ai"
+                    val msgForScenario = exception.message.orEmpty()
+                    val isUpstreamTransient =
+                        msgForScenario.contains("Upstream request failed", ignoreCase = true) ||
+                            msgForScenario.contains("Upstream response was not valid JSON", ignoreCase = true) ||
+                            msgForScenario.contains("Endpoint is unavailable", ignoreCase = true)
+                    if (isAggregateHost && isUpstreamTransient) {
+                        Log.w(TAG, "onFailure: aggregate-gateway upstream transient — converting to IOException for retry chain: $msgForScenario")
+                        exception = IOException("Aggregate gateway upstream transient: $msgForScenario", exception)
+                    }
+                }
                 close(exception)
             }
 
