@@ -258,6 +258,10 @@ class GenerationHandler(
 
         // G3 平台空流重试计数 (每次生成仅重试一次)
         var emptyRetryCount = 0
+        // v4.8.55: 输出长度截断自动续写状态 — per-generation 局部对象 (与 RetryState
+        // 同模式, 经参数传入 generateInternal; 子代理并发生成互不串扰)。每次生成
+        // 上限 MAX_LENGTH_CONTINUATIONS 轮; 正文截断与工具截断共用计数。
+        val lengthContinuationState = LengthContinuationState()
         // v3.15.1: 重试状态 per-request 局部对象 (根除 v3.11.33 教训的残余形态 —
         // 类成员在子代理并发生成时互相偷预算/归零互踩; 局部 val 经参数传入
         // generateInternal, 并发安全)。
@@ -471,6 +475,7 @@ class GenerationHandler(
                     assistant = assistant,
                     settings = settings,
                     retry = retry,
+                    lengthContinuationState = lengthContinuationState,
                     messages = messages,
                     onUpdateMessages = {
                         messages = it.transforms(
@@ -530,6 +535,11 @@ class GenerationHandler(
                     "generateInternal returned, messages=${messages.size}",
                     metrics = sseDiagMetrics()
                 )
+                // v4.8.55: 长度截断自动续写产生的相邻 Text 分片合并 — 续写内容与
+                // 原段拼接为一段连续文本 (渲染无接缝)
+                if (lengthContinuationState.continuationsDone > 0) {
+                    messages = mergeAdjacentTextParts(messages)
+                }
                 messages = messages.visualTransforms(
                     transformers = outputTransformers,
                     context = context,
@@ -563,6 +573,49 @@ class GenerationHandler(
                     messages = messages.dropLast(1)
                     continue
                 }
+
+                // v4.8.55: 输出长度截断自动续写 (用户实证 GLM-5.3-flash "输出异常
+                // 中断、无报错" 的根治) — finish_reason=length 的纯正文截断此前零
+                // 处理: 无续写、无提示, 对话静默收尾。机制: 下一轮请求级注入续写
+                // 引导 (不落盘不显示), 流式内容经 StreamChunkHandler 直接续写进
+                // 同一条 assistant 消息, 用户侧无新气泡、无引导气泡, 输出无缝接续。
+                // 覆盖两种截断形态: ① 纯正文截断 → 引导从断点续写; ② 工具调用
+                // 截断且修复后无待执行工具 → 引导模型读到错误输出并用更小分段重试
+                // (补齐 v4.5.2 反馈链在"全部调用被截断"场景的静默断点)。
+                // 上限 MAX_LENGTH_CONTINUATIONS 次; 耗尽仍截断 → 明确报错
+                // (杜绝静默截断; 内容已全部保留)。
+                if (lengthContinuationState.lastRoundLengthCut) {
+                    val tailMsg = messages.lastOrNull()
+                    val hasVisibleText = tailMsg?.parts?.any {
+                        it is UIMessagePart.Text && it.text.isNotBlank()
+                    } == true
+                    val hasAnyTool = tailMsg?.parts?.any { it is UIMessagePart.Tool } == true
+                    val noPendingTools = tailMsg?.getTools()?.none { !it.isExecuted } == true
+                    val eligible = (hasVisibleText && !hasAnyTool) ||
+                        (lengthContinuationState.lastRoundToolRepaired && hasAnyTool && noPendingTools)
+                    if (eligible) {
+                        if (lengthContinuationState.continuationsDone < MAX_LENGTH_CONTINUATIONS) {
+                            lengthContinuationState.continuationsDone++
+                            lengthContinuationState.pendingNudge = true
+                            CallTracer.event(
+                                "RETRY", "length_continue",
+                                "finish_reason=length — auto-continue ${lengthContinuationState.continuationsDone}/$MAX_LENGTH_CONTINUATIONS (text=$hasVisibleText repairedTools=${lengthContinuationState.lastRoundToolRepaired})"
+                            )
+                            onUpdateMessages(messages)
+                            continue
+                        } else {
+                            CallTracer.event(
+                                "FINISH", "length_exhausted",
+                                "已自动续写 $MAX_LENGTH_CONTINUATIONS 次仍被长度上限截断 (text=$hasVisibleText tools=$hasAnyTool)"
+                            )
+                            throw java.io.IOException(
+                                "输出达到长度上限 (max_tokens) 且自动续写 $MAX_LENGTH_CONTINUATIONS 次后仍被截断 — 已保留全部已生成内容"
+                            )
+                        }
+                    }
+                }
+                lengthContinuationState.lastRoundLengthCut = false
+                lengthContinuationState.lastRoundToolRepaired = false
 
                 val tools = messages.last().getTools().filter { !it.isExecuted }
                 if (tools.isEmpty()) {
@@ -1000,6 +1053,7 @@ class GenerationHandler(
         assistant: Assistant,
         settings: Settings,
         retry: RetryState,
+        lengthContinuationState: LengthContinuationState,
         messages: List<UIMessage>,
         onUpdateMessages: suspend (List<UIMessage>) -> Unit,
         transformers: List<MessageTransformer>,
@@ -1060,7 +1114,7 @@ class GenerationHandler(
         // 直接抢占主线程 (发送瞬间/流式期间的卡顿源之一)。
         // 段内无主线程依赖: CallTracer.event 有 mutex, lastCacheFp/Parts 为
         // ConcurrentHashMap, transforms 为 suspend 纯数据链。
-        val internalMessages = withContext(Dispatchers.Default) {
+        var internalMessages = withContext(Dispatchers.Default) {
         var built: List<UIMessage> = buildList {
             val sysPromptLen: Int
             val memPromptLen: Int
@@ -1269,6 +1323,13 @@ class GenerationHandler(
         }
         protocolMessages
         }
+        // v4.8.55: 正文长度截断自动续写 — 请求级注入续写引导 (仅本次请求: 不落盘、
+        // 不显示; 流式内容续写进同一条 assistant 消息, 用户侧无新气泡无引导气泡)。
+        if (lengthContinuationState.pendingNudge) {
+            lengthContinuationState.pendingNudge = false
+            internalMessages = internalMessages + UIMessage.user(LENGTH_CONTINUATION_NUDGE)
+            Log.i(TAG, "length-continuation nudge injected (request-only)")
+        }
 
         // v3.6.34: 流式基准 = 原始消息 (关键) — 压缩包只进请求 (internalMessages),
         // 流式累积/onUpdateMessages 回写必须用原始消息, 否则 UI 消息被替换成压缩包
@@ -1304,6 +1365,10 @@ class GenerationHandler(
             // 4.8.22: 网络恢复等待预算 (per-request 安全阀 — 防网络闪断循环
             // 无限挂起; 等待网络恢复本身不消耗重试次数, 由本预算限总时长)
             var networkWaitBudgetMs = 15 * 60 * 1000L
+            // v4.8.55: 本轮 finish_reason=length 截断标记 (自动续写判据; 每轮重置 —
+            // 写入 per-generation 状态对象, 供 generateText 侧决策)
+            lengthContinuationState.lastRoundLengthCut = false
+            lengthContinuationState.lastRoundToolRepaired = false
             streamLoop@ while (true) {
             // v3.11.10: 重试预算在首次断流时刻重置起算 — 旧实现从流启动计时,
             // 含"流启动→断流"的静默期; 平台首包就静默时 watchdog 60s 单次
@@ -1354,7 +1419,16 @@ class GenerationHandler(
                 // 预填结构化错误 output, 模型下一轮看到错误自动改用更小分段,
                 // 对话连续, 用户无感。截断检测依据 provider 层 truncatedByLength。
                 if (chunk is me.rerere.ai.ui.StreamChunk.Finish && chunk.finishReason == "length") {
-                    messages = repairLengthTruncatedToolCalls(messages)
+                    val (repairedMessages, repairedAny) = repairLengthTruncatedToolCalls(messages)
+                    messages = repairedMessages
+                    lengthContinuationState.lastRoundLengthCut = true
+                    lengthContinuationState.lastRoundToolRepaired = repairedAny
+                } else if (chunk is me.rerere.ai.ui.StreamChunk.TextDelta ||
+                    chunk is me.rerere.ai.ui.StreamChunk.ReasoningDelta
+                ) {
+                    // v4.8.55: 心跳类 length 误标撤销 (后续仍有输出 = 流未真截断)
+                    lengthContinuationState.lastRoundLengthCut = false
+                    lengthContinuationState.lastRoundToolRepaired = false
                 }
                 // v3.15.1: 收到任何流数据即置位 — StreamChunk 判据 (Finish 之外均视为有效数据)
                 if (chunk !is me.rerere.ai.ui.StreamChunk.Finish) retry.receivedAnyData = true
@@ -1698,13 +1772,16 @@ internal class ClientGenerationGuardException(message: String) : RuntimeExceptio
 
 /** v4.5.2: 修复 finish_reason=length 截断的工具调用 — input JSON 解析失败的
  *  未执行调用预填结构化错误 output (isExecuted 随 output 非空成立), 防止残缺
- *  参数照常执行 (文件写一半), 同时把失败原因与正确出路 (分段) 反馈给模型。 */
-private fun repairLengthTruncatedToolCalls(messages: List<UIMessage>): List<UIMessage> {
-    val last = messages.lastOrNull() ?: return messages
+ *  参数照常执行 (文件写一半), 同时把失败原因与正确出路 (分段) 反馈给模型。
+ *  v4.8.55: 返回 (修复后消息, 是否发生修复) — 供自动续写判定。 */
+private fun repairLengthTruncatedToolCalls(messages: List<UIMessage>): Pair<List<UIMessage>, Boolean> {
+    val last = messages.lastOrNull() ?: return messages to false
+    var repairedAny = false
     val repaired = last.parts.map { part ->
         if (part is UIMessagePart.Tool && part.output.isEmpty() && part.input.isNotBlank()) {
             val parses = runCatching { kotlinx.serialization.json.Json.parseToJsonElement(part.input) }.isSuccess
             if (!parses) {
+                repairedAny = true
                 part.copy(output = listOf(UIMessagePart.Text(
                     "[调用未执行: 模型输出达到长度上限 (max_tokens), 本次工具调用的参数在传输中被截断。" +
                     "请把同样的任务拆成多个更小的调用完成 — 例如分段写入文件 (先写主体, 再追加剩余部分), " +
@@ -1713,7 +1790,49 @@ private fun repairLengthTruncatedToolCalls(messages: List<UIMessage>): List<UIMe
             } else part
         } else part
     }
-    return if (repaired != last.parts) {
+    return (if (repaired != last.parts) {
         messages.dropLast(1) + last.copy(parts = repaired)
+    } else messages) to repairedAny
+}
+
+/** v4.8.55: 长度截断自动续写状态 — per-generation 局部对象 (与 RetryState 同模式:
+ *  经参数传入 generateInternal, 子代理并发生成互不串扰)。
+ *  - continuationsDone: 已自动续写轮数 (上限 MAX_LENGTH_CONTINUATIONS)
+ *  - pendingNudge: 下一轮请求是否注入续写引导 (请求级, 不落盘不显示)
+ *  - lastRoundLengthCut / lastRoundToolRepaired: generateInternal 流结束时写回
+ *    的本轮结论 (generateText 侧自动续写决策判据) */
+private class LengthContinuationState {
+    var continuationsDone = 0
+    var pendingNudge = false
+    var lastRoundLengthCut = false
+    var lastRoundToolRepaired = false
+}
+
+// v4.8.55: 长度截断自动续写上限 (正文与工具截断共用; 3 次 ≈ 单回答最多 4×max_tokens)
+private const val MAX_LENGTH_CONTINUATIONS = 3
+
+// v4.8.55: 续写引导 — 请求级注入 (不落盘不显示; 覆盖正文截断与工具截断两种指引)
+private const val LENGTH_CONTINUATION_NUDGE =
+    "（系统自动续写）上一条输出因长度上限被截断。请接着未完成的部分继续：工具调用参数若被截断，" +
+    "请把任务拆成更小分段重新调用；正文若被截断，请直接从断点处继续输出，不要重复已输出内容，不要重新开头。"
+
+/** v4.8.55: 合并末条 assistant 消息中的相邻 Text 分片 (长度截断自动续写产生多
+ *  分片 → 拼接为连续文本, 渲染无接缝; 图片/工具/思考等 part 作为边界不动)。 */
+private fun mergeAdjacentTextParts(messages: List<UIMessage>): List<UIMessage> {
+    val last = messages.lastOrNull() ?: return messages
+    if (last.role != MessageRole.ASSISTANT ||
+        last.parts.count { it is UIMessagePart.Text } < 2
+    ) return messages
+    val merged = ArrayList<UIMessagePart>(last.parts.size)
+    for (p in last.parts) {
+        val prev = merged.lastOrNull()
+        if (p is UIMessagePart.Text && prev is UIMessagePart.Text) {
+            merged[merged.size - 1] = prev.copy(text = prev.text + p.text)
+        } else {
+            merged.add(p)
+        }
+    }
+    return if (merged.size != last.parts.size) {
+        messages.dropLast(1) + last.copy(parts = merged)
     } else messages
 }
