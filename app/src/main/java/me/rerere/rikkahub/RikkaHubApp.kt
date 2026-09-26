@@ -176,6 +176,12 @@ class RikkaHubApp : Application() {
         }, "warmup-user-providers").start()
         this.createNotificationChannel()
 
+        // v4.8.50: 预热管线 — 铺展瞬时高负载 (启动预热 + 会话预热消费者;
+        // 只填充解析缓存, 不改变任何可见渲染行为)。
+        get<AppScope>().launch(Dispatchers.IO) {
+            runCatching { me.rerere.rikkahub.service.warm.WarmPipeline.startOnAppStart() }
+        }
+
         // set cursor window size to 32MB
         DatabaseUtil.setCursorWindowSize(32 * 1024 * 1024)
 

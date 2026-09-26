@@ -281,6 +281,22 @@ private object MarkdownParseCache {
     }
     fun parseWithCache(content: String): MarkdownParseResult =
         get(content) ?: parseMarkdown(content).also { put(content, it) }
+
+    /** v4.8.50: 未命中才解析 (预热专用; 命中零成本跳过)。 */
+    fun warmIfAbsent(content: String) {
+        if (content.length > MAX_KEY_CHARS) return
+        if (synchronized(cache) { cache.containsKey(content) }) return
+        put(content, parseMarkdown(content))
+    }
+}
+
+/**
+ * v4.8.50: 预热入口 (WarmPipeline 调用) — 只填充缓存, 已缓存则零成本跳过;
+ * 由调用方负责后台线程; 不触碰任何可见状态 (渲染连续性零破坏)。
+ */
+fun warmMarkdownCache(content: String) {
+    if (content.isBlank()) return
+    MarkdownParseCache.warmIfAbsent(content)
 }
 
 private fun ASTNode.containsHtml(): Boolean {

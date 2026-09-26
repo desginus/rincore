@@ -52,6 +52,7 @@ import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -76,8 +77,13 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 
 import com.dokar.sonner.ToastType
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNot
+import kotlinx.coroutines.flow.map
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.ui.UIMessagePart
@@ -119,11 +125,13 @@ import kotlinx.coroutines.delay
 import okhttp3.OkHttpClient
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.rikkahub.service.ConnectionWarmer
+import me.rerere.rikkahub.service.warm.WarmPipeline
 import org.koin.core.parameter.parametersOf
 import kotlin.uuid.Uuid
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
+@OptIn(FlowPreview::class)
 @Composable
 fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, folderId: Uuid? = null) {
     val vm: ChatVM = koinViewModel(
@@ -254,6 +262,19 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
     }
 
     val chatListState = rememberLazyListState()
+    // v4.8.50: 铺展架构 — 进入对话后周边预热 + 滚动停稳补热。
+    // 只填充解析缓存; 渲染保持原版形态 (首帧即终态), 连续性零破坏。
+    LaunchedEffect(conversation.id) {
+        delay(400) // 让首帧/首屏先行, 之后后台分时铺展
+        val current = vm.conversation.value
+        WarmPipeline.warmAround(current, current.messageNodes.lastIndex)
+        snapshotFlow { chatListState.isScrollInProgress to chatListState.firstVisibleItemIndex }
+            .filterNot { it.first }
+            .map { it.second }
+            .distinctUntilChanged()
+            .debounce(1_200.milliseconds)
+            .collect { index -> WarmPipeline.warmAround(vm.conversation.value, index) }
+    }
     LaunchedEffect(nodeId, conversation.messageNodes.size) {
         if (!vm.chatListInitialized && conversation.messageNodes.isNotEmpty()) {
             if (nodeId != null) {
