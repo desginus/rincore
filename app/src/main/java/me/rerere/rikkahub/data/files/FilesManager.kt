@@ -289,59 +289,85 @@ class FilesManager(
     }
 
     @OptIn(ExperimentalEncodingApi::class)
-    suspend fun saveMessageImage(activityContext: Context, image: String) = withContext(Dispatchers.IO) {
-        val activity = requireNotNull(activityContext.getActivity()) { "Activity not found" }
+    suspend fun saveMessageImage(activityContext: Context, image: String): Boolean = withContext(Dispatchers.IO) {
+        val activity = activityContext.getActivity()
+        if (activity == null) {
+            Log.e("FilesManager", "saveMessageImage: activity not found")
+            return@withContext false
+        }
         when {
             image.startsWith("data:image") -> {
                 val byteArray = Base64.decode(image.substringAfter("base64,").toByteArray())
                 val bitmap = BitmapFactory.decodeByteArray(byteArray, 0, byteArray.size)
-                activityContext.exportImage(activity, bitmap)
+                if (bitmap == null) {
+                    Log.e("FilesManager", "saveMessageImage: data:image decode failed")
+                    false
+                } else activityContext.exportImage(activity, bitmap)
             }
 
-            // v4.5.16: workspace 形态优先 — 本地生成图片/模型引用图片的标准
-            // 渲染 URL (file:///data/data/.../workspaces/<UUID>/files/...,
-            // workspace://..., /workspace/...) 此前落 file:/else 分支:
-            // file:///data/data 因别名字节不通, workspace:// 直接报
-            // "Invalid image format"。统一经 WorkspaceImageResolver 解析为
-            // 真实宿主文件 (内部处理别名与 proot 穿透) 再导出。
+            // v4.5.16: workspace 形态优先 — 本地生成图片/模型引用图片的标准渲染
+            // URL 统一经 WorkspaceImageResolver 解析为真实宿主文件再导出。
+            // v4.8.53: 解析失败不再静默 (此前 → "提示成功但相册没有" 假成功)。
             me.rerere.rikkahub.utils.isWorkspaceUri(image) -> {
                 val resolved = me.rerere.rikkahub.utils.WorkspaceImageResolver.resolve(image)
                 if (resolved != null) {
                     activityContext.exportImageFile(activity, resolved)
                 } else {
-                    android.util.Log.w("FilesManager", "saveMessageImage: workspace image unresolved: $image")
+                    Log.w("FilesManager", "saveMessageImage: workspace image unresolved: $image")
+                    false
                 }
             }
 
             image.startsWith("file:") -> {
-                val file = image.toUri().toFile()
-                activityContext.exportImageFile(activity, file)
+                val file = runCatching { image.toUri().toFile() }.getOrNull()
+                if (file == null || !file.exists()) {
+                    Log.e("FilesManager", "saveMessageImage: file not found: $image")
+                    false
+                } else activityContext.exportImageFile(activity, file)
             }
 
             image.startsWith("/") -> {
-                activityContext.exportImageFile(activity, File(image))
+                val file = File(image)
+                if (!file.exists()) {
+                    Log.e("FilesManager", "saveMessageImage: file not found: $image")
+                    false
+                } else activityContext.exportImageFile(activity, file)
             }
-
 
             image.startsWith("http") -> {
                 runCatching {
                     val url = URL(image)
                     val connection = url.openConnection() as HttpURLConnection
-                    connection.connect()
-
-                    if (connection.responseCode == HttpURLConnection.HTTP_OK) {
-                        val bitmap = BitmapFactory.decodeStream(connection.inputStream)
-                        activityContext.exportImage(activity, bitmap)
-                    } else {
-                        Log.e(
-                            TAG,
-                            "saveMessageImage: Failed to download image from $image, response code: ${connection.responseCode}"
-                        )
+                    connection.connectTimeout = 15_000
+                    connection.readTimeout = 30_000
+                    try {
+                        connection.connect()
+                        if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+                            val bitmap = BitmapFactory.decodeStream(connection.inputStream)
+                            if (bitmap == null) {
+                                Log.e("FilesManager", "saveMessageImage: http decode failed: $image")
+                                false
+                            } else activityContext.exportImage(activity, bitmap)
+                        } else {
+                            Log.e(
+                                "FilesManager",
+                                "saveMessageImage: http ${connection.responseCode}: $image"
+                            )
+                            false
+                        }
+                    } finally {
+                        runCatching { connection.disconnect() }
                     }
-                }.getOrNull()
+                }.getOrElse { t ->
+                    Log.e("FilesManager", "saveMessageImage: http failed: $image", t)
+                    false
+                }
             }
 
-            else -> error("Invalid image format")
+            else -> {
+                Log.e("FilesManager", "saveMessageImage: unsupported format: $image")
+                false
+            }
         }
     }
 

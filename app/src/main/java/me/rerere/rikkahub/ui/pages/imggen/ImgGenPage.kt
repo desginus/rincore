@@ -742,17 +742,20 @@ private fun ImageGalleryScreen(
                                             IconButton(
                                                 onClick = {
                                                     scope.launch {
-                                                        try {
+                                                        // v4.8.53: 按真实结果提示 (同 ImagePreviewDialog 的假成功修复)
+                                                        val ok = runCatching {
                                                             filesManager.saveMessageImage(context, "file://${it.filePath}")
+                                                        }.onFailure { it.printStackTrace() }.getOrDefault(false)
+                                                        if (ok) {
                                                             toaster.show(
                                                                 message = context.getString(R.string.imggen_page_image_saved_success),
                                                                 type = ToastType.Success
                                                             )
-                                                        } catch (e: Exception) {
+                                                        } else {
                                                             toaster.show(
                                                                 message = context.getString(
                                                                     R.string.imggen_page_save_failed,
-                                                                    e.message
+                                                                    "save returned false"
                                                                 ),
                                                                 type = ToastType.Error
                                                             )

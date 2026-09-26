@@ -77,17 +77,17 @@ fun ImagePreviewDialog(
                 IconButton(
                     onClick = {
                         lifecycleOwner.lifecycleScope.launch {
-                            runCatching {
-                                toaster.show("正在保存")
-                                val imgUrl = images[state.currentPage]
-                                filesManager.saveMessageImage(context, imgUrl)
+                            toaster.show("正在保存")
+                            val imgUrl = images[state.currentPage]
+                            // v4.8.53: 按真实结果提示 (原实现无条件"已保存" —
+                            // 保存链静默失败时即"提示成功但相册没有"的假成功)
+                            val ok = runCatching { filesManager.saveMessageImage(context, imgUrl) }
+                                .onFailure { it.printStackTrace() }
+                                .getOrDefault(false)
+                            if (ok) {
                                 toaster.show(message = "已保存图片", type = ToastType.Success)
-                            }.onFailure {
-                                it.printStackTrace()
-                                toaster.show(
-                                    message = it.toString(),
-                                    type = ToastType.Error
-                                )
+                            } else {
+                                toaster.show(message = "保存失败 (详情见运行日志)", type = ToastType.Error)
                             }
                         }
                     }

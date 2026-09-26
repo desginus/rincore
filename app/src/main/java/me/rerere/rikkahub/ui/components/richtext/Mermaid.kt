@@ -61,24 +61,34 @@ fun Mermaid(
         MermaidInterface(
             onExportImage = { base64Image ->
                 runCatching {
-                    activity?.let {
+                    // v4.8.53: 按真实结果提示 (原实现无条件"导出成功")
+                    val ok = activity?.let { act ->
                         try {
                             val imageBytes = Base64.decode(base64Image, Base64.DEFAULT)
                             val bitmap =
                                 BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
-                            context.exportImage(
-                                it,
+                            if (bitmap == null) false
+                            else context.exportImage(
+                                act,
                                 bitmap,
                                 "mermaid_${System.currentTimeMillis()}.png"
                             )
                         } catch (e: Exception) {
                             e.printStackTrace()
+                            false
                         }
+                    } ?: false
+                    if (ok) {
+                        toaster.show(
+                            context.getString(R.string.mermaid_export_success),
+                            type = ToastType.Success
+                        )
+                    } else {
+                        toaster.show(
+                            context.getString(R.string.mermaid_export_failed),
+                            type = ToastType.Error
+                        )
                     }
-                    toaster.show(
-                        context.getString(R.string.mermaid_export_success),
-                        type = ToastType.Success
-                    )
                 }.onFailure {
                     it.printStackTrace()
                     toaster.show(
