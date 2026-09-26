@@ -601,7 +601,6 @@ class GenerationHandler(
                                 "RETRY", "length_continue",
                                 "finish_reason=length — auto-continue ${lengthContinuationState.continuationsDone}/$MAX_LENGTH_CONTINUATIONS (text=$hasVisibleText repairedTools=${lengthContinuationState.lastRoundToolRepaired})"
                             )
-                            onUpdateMessages(messages)
                             continue
                         } else {
                             CallTracer.event(
