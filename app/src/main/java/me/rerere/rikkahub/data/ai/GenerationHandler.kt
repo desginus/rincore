@@ -1210,8 +1210,15 @@ class GenerationHandler(
                     }
                 } }
                 val histFp = "${histStable.size}:${histSum}"
+                // v4.8.57: tools 全量签名 (名称+描述+入参 schema) — 原仅名称哈希, schema/
+                // 描述漂移 (MCP 更新/工具定义变化) 时 fp_stable 假象 (缓存被打断却归因
+                // 不到); Tool 含函数字段不可直接 hashCode, 显式取稳定字段。
+                val toolsSig = tools.joinToString("|") { t ->
+                    t.name + "#" + t.description + "#" +
+                        runCatching { t.parameters() }.getOrNull().toString()
+                }
                 val fp = java.security.MessageDigest.getInstance("SHA-256")
-                    .digest((cacheFpSystem + tools.joinToString { it.name } + "|" + histFp).toByteArray())
+                    .digest((cacheFpSystem + toolsSig + "|" + histFp).toByteArray())
                     .take(8).joinToString("") { "%02x".format(it) }
                 // v4.5.4: fp 分量化 — 此前只打各段长度, 长度相同而内容变化时
                 // (如记忆条目 update) drift 归因失明, 全落在 hist 上。各段带短
@@ -1233,11 +1240,13 @@ class GenerationHandler(
                 // joinToString + SHA-256 (长会话 O(M) 字符串构建, 256 轮工具循环
                 // 下线性累积)。改用 size+sum+首尾 ID 组合的 O(1) 摘要, 诊断语义
                 // 等效 (ID 序变化/数量变化/内容长度变化均可检出)。
+                // v4.8.57: 中位 ID 纳入 (首/中/尾) — 中段消息被改写时可检出
                 val histEdge = (histStable.firstOrNull()?.id?.toString() ?: "") +
+                    "|" + (histStable.getOrNull(histStable.size / 2)?.id?.toString() ?: "") +
                     "|" + (histStable.lastOrNull()?.id?.toString() ?: "")
                 val parts = "stable=${stableSystem.length}c#${segHash(stableSystem)} " +
                     "volatile=${volatileSystem.length}c#${segHash(volatileSystem)} " +
-                    "ntools=${tools.size} toolsHash=${tools.joinToString { it.name }.hashCode()} hist=${histStable.size}m/${histSum}c#${histEdge.hashCode()}"
+                    "ntools=${tools.size} toolsHash=${toolsSig.hashCode()} hist=${histStable.size}m/${histSum}c#${histEdge.hashCode()}"
                 val key = conversationId?.toString() ?: "global"
                 val prev = lastCacheFp.put(key, fp)
                 when {
@@ -1328,6 +1337,27 @@ class GenerationHandler(
             lengthContinuationState.pendingNudge = false
             internalMessages = internalMessages + UIMessage.user(LENGTH_CONTINUATION_NUDGE)
             Log.i(TAG, "length-continuation nudge injected (request-only)")
+        }
+
+        // v4.8.57: 最终 system 指纹 (fp2, 变换后实测) — 原 fp 在 buildList 内计算, 早于
+        // .transforms (工作区提醒系统追加/模板/注入链), 变换导致的 system 字节漂移此前
+        // 是诊断盲区 (fp_stable 但缓存被打断 → 归因失明; 用户实证"缓存极不稳定")。
+        // fp2 对最终发送形态的 system 全文取指纹; fp_stable + fp2_drift = 变换层漂移,
+        // fp2_stable + 低命中 = 网关/上游侧 (路由/TTL/缓存生成状态)。
+        runCatching {
+            val sysText = internalMessages.firstOrNull { it.role == MessageRole.SYSTEM }
+                ?.parts?.filterIsInstance<UIMessagePart.Text>()?.joinToString("") { it.text } ?: ""
+            val d = java.security.MessageDigest.getInstance("SHA-256").digest(sysText.toByteArray())
+            val sysH = d.take(4).joinToString("") { "%02x".format(it) }
+            val fp2 = d.take(8).joinToString("") { "%02x".format(it) }
+            val key2 = (conversationId?.toString() ?: "global") + ":final"
+            val prev2 = lastCacheFp.put(key2, fp2)
+            when {
+                prev2 == null -> CallTracer.event("CACHE", "fp2_init", "fp2=$fp2 | sys=${sysText.length}c#${sysH}")
+                prev2 == fp2 -> CallTracer.event("CACHE", "fp2_stable", "fp2=$fp2 unchanged | sys=${sysText.length}c#${sysH}")
+                else -> CallTracer.event("CACHE", "fp2_drift",
+                    "FINAL SYSTEM CHANGED prev=$prev2 now=$fp2 | sys=${sysText.length}c#${sysH}")
+            }
         }
 
         // v3.6.34: 流式基准 = 原始消息 (关键) — 压缩包只进请求 (internalMessages),

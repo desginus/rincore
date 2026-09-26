@@ -142,6 +142,7 @@ fun ChatList(
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onToggleFavorite: ((MessageNode) -> Unit)? = null,
     onConversationSystemPromptChange: ((String?) -> Unit)? = null,
+    folderCwd: String? = null,
 ) {
     AnimatedContent(
         targetState = previewMode,
@@ -184,6 +185,7 @@ fun ChatList(
                 onToolAnswer = onToolAnswer,
                 onToggleFavorite = onToggleFavorite,
                 onConversationSystemPromptChange = onConversationSystemPromptChange,
+                folderCwd = folderCwd,
             )
         }
     }
@@ -214,6 +216,7 @@ private fun ChatListNormal(
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onToggleFavorite: ((MessageNode) -> Unit)? = null,
     onConversationSystemPromptChange: ((String?) -> Unit)? = null,
+    folderCwd: String? = null,
 ) {
     val scope = rememberCoroutineScope()
     val loadingState by rememberUpdatedState(loading)
@@ -341,6 +344,7 @@ private fun ChatListNormal(
                             node = node,
                             model = node.currentMessage.modelId?.let(modelById::get),
                             assistant = assistant,
+                            folderCwd = folderCwd,
                             loading = loading && index == lastMessageIndex,
                             onRegenerate = {
                                 onRegenerate(node.currentMessage)

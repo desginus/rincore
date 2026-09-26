@@ -115,6 +115,7 @@ fun ChatMessage(
     loading: Boolean = false,
     model: Model? = null,
     assistant: Assistant? = null,
+    folderCwd: String? = null,
     lastMessage: Boolean = false,
     onFork: () -> Unit,
     onRegenerate: () -> Unit,
@@ -222,6 +223,7 @@ fun ChatMessage(
         EditedFilesList(
             parts = message.parts,
             assistant = assistant,
+            folderCwd = folderCwd,
         )
 
         ProvideTextStyle(textStyle) {

@@ -50,6 +50,8 @@ import me.rerere.hugeicons.stroke.Share08
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
+import me.rerere.rikkahub.ui.context.LocalToaster
+import com.dokar.sonner.ToastType
 import me.rerere.rikkahub.ui.components.RenderKind
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -71,9 +73,16 @@ private val WORKSPACE_FILE_TOOL_NAMES = setOf("workspace_show_file")
 internal fun EditedFilesList(
     parts: List<UIMessagePart>,
     assistant: Assistant?,
+    folderCwd: String? = null,
 ) {
     val workspaceId = assistant?.workspaceId?.toString() ?: return
-    val cwdRel = remember(assistant) { editedFilesCwd(assistant) }
+    // v4.8.57: 多候选 CWD (项目包优先 → 助手级) — 文件可能在项目包 CWD 下生成,
+    // 此前仅用助手级 cwd 解析 → 错位 → "File does not exist" / "读取文件失败"
+    // (用户实证: 某助手项目包内的胶囊窗文件无法分享/渲染)。与 v4.8.25 effectiveCwd
+    // 口径一致: 项目包优先, 助手级兜底; 导出层再做无 cwd 兜底。
+    val cwdCandidates = remember(assistant, folderCwd) {
+        listOfNotNull(normalizeCwdRel(folderCwd), normalizeCwdRel(assistant?.workspaceCwd)).distinct()
+    }
     val editedFiles = remember(parts) {
         parts.filterIsInstance<UIMessagePart.Tool>()
             .filter { it.toolName in WORKSPACE_FILE_TOOL_NAMES && it.isExecuted }
@@ -86,6 +95,7 @@ internal fun EditedFilesList(
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val toaster = LocalToaster.current
     val workspaceRepository: WorkspaceRepository = koinInject()
 
     var selectedPath by remember { mutableStateOf<String?>(null) }
@@ -105,8 +115,13 @@ internal fun EditedFilesList(
         scope.launch {
             runCatching {
                 outputStream.use { output ->
-                    exportScopedFile(workspaceRepository, workspaceId, path, cwdRel, output)
+                    exportScopedFile(workspaceRepository, workspaceId, path, cwdCandidates, output)
                 }
+            }.onFailure { e ->
+                toaster.show(
+                    message = "导出失败: ${e.message?.take(120) ?: "未知错误"}",
+                    type = ToastType.Error,
+                )
             }
         }
     }
@@ -213,7 +228,7 @@ internal fun EditedFilesList(
                                 val dir = File(context.cacheDir, "workspace_share").apply { mkdirs() }
                                 val file = File(dir, p.substringAfterLast('/'))
                                 file.outputStream().use { output ->
-                                    exportScopedFile(workspaceRepository, workspaceId, p, cwdRel, output)
+                                    exportScopedFile(workspaceRepository, workspaceId, p, cwdCandidates, output)
                                 }
                                 val uri = FileProvider.getUriForFile(
                                     context,
@@ -226,6 +241,11 @@ internal fun EditedFilesList(
                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
                                 context.startActivity(Intent.createChooser(intent, null))
+                            }.onFailure { e ->
+                                toaster.show(
+                                    message = "分享失败: ${e.message?.take(120) ?: "未知错误"}",
+                                    type = ToastType.Error,
+                                )
                             }
                         }
                     },
@@ -264,7 +284,7 @@ internal fun EditedFilesList(
                                         dir.mkdirs()
                                         val file = File(dir, renderFileName)
                                         file.outputStream().use { output ->
-                                            exportScopedFile(workspaceRepository, workspaceId, p, cwdRel, output)
+                                            exportScopedFile(workspaceRepository, workspaceId, p, cwdCandidates, output)
                                         }
                                         val taskDir = File(dir, "task")
                                         renderResult = RenderEngine.render(file, taskDir, renderFileName)
@@ -334,27 +354,36 @@ private fun resolveWorkspacePath(path: String, cwdRel: String? = null): Pair<Wor
     }
 }
 
-/** v4.5.27: 助手 cwd 归一化 (同 WorkspaceTools 口径), null/空 = 无约束 */
-private fun editedFilesCwd(assistant: Assistant?): String? {
-    val raw = assistant?.workspaceCwd?.trim('/') ?: return null
-    val rel = (if (raw == "workspace") "" else raw.removePrefix("workspace/")).trim('/')
+/** v4.8.57: CWD 归一化 (同 WorkspaceTools 口径), null/空 = 无约束。
+ *  接受助手级 workspaceCwd 与项目包 cwd (含 "/workspace/xxx" 绝对形态)。 */
+private fun normalizeCwdRel(raw: String?): String? {
+    val trimmed = raw?.trim('/') ?: return null
+    val rel = (if (trimmed == "workspace") "" else trimmed.removePrefix("workspace/")).trim('/')
     return rel.ifBlank { null }
 }
 
-/** v4.5.27: 带 CWD 的导出 — 先按助手文件夹解析; 失败回退无 cwd 解析 (历史文件兼容) */
+/** v4.8.57: 多候选 CWD 导出 — 依次尝试 (项目包 cwd → 助手 cwd → 无 cwd 兜底),
+ *  首个命中即成功; 全部失败抛最后错误。失败均为写前解析失败 (require exists),
+ *  重试无部分写入风险。根因: 文件可能在项目包 CWD 下生成, 单助手级 cwd 解析
+ *  错位 → "File does not exist" (用户实证胶囊窗分享/渲染失败)。 */
 private suspend fun exportScopedFile(
     repository: WorkspaceRepository,
     workspaceId: String,
     path: String,
-    cwdRel: String?,
+    cwdCandidates: List<String>,
     output: java.io.OutputStream,
 ) {
-    val (area, rel) = resolveWorkspacePath(path, cwdRel)
-    try {
-        repository.exportFile(workspaceId, area, rel, output)
-    } catch (e: Exception) {
-        val (fallbackArea, fallbackRel) = resolveWorkspacePath(path, null)
-        if (fallbackRel == rel) throw e
-        repository.exportFile(workspaceId, fallbackArea, fallbackRel, output)
+    var lastError: Exception? = null
+    val attempted = HashSet<String>()
+    for (cwd in cwdCandidates + listOf("")) {
+        val (area, rel) = resolveWorkspacePath(path, cwd.ifEmpty { null })
+        if (!attempted.add("${area.name}|$rel")) continue
+        try {
+            repository.exportFile(workspaceId, area, rel, output)
+            return
+        } catch (e: Exception) {
+            lastError = e
+        }
     }
+    throw lastError ?: IllegalStateException("导出失败: 无法解析文件路径: $path")
 }

@@ -586,6 +586,7 @@ private fun ChatPageContent(
                 innerPadding = innerPadding,
                 hazeState = hazeState,
                 conversation = conversation,
+                folderCwd = conversationFolderCwd,
                 state = chatListState,
                 loading = loadingJob != null,
                 processingStatus = processingStatus,
