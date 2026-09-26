@@ -260,7 +260,27 @@ private data class MarkdownParseResult(
     val preprocessed: String,
     val astTree: ASTNode,
     val hasHtml: Boolean,
-)
+
+/**
+ * v4.8.49 回植 (原 v4.8.1/42): 解析结果 LRU 缓存 — 命中时首帧同步即终态
+ * (零解析零过渡); 未命中时首帧同步解析 (对齐原版形态) 并写缓存。容量 256
+ * (v4.8.42 状态); 预热机制不再恢复 — 缓存独立生效, 无进入时后台风暴。
+ */
+private object MarkdownParseCache {
+    private const val MAX_ENTRIES = 256
+    private const val MAX_KEY_CHARS = 128 * 1024
+    private val cache = object : LinkedHashMap<String, MarkdownParseResult>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MarkdownParseResult>?): Boolean =
+            size > MAX_ENTRIES
+    }
+    fun get(key: String): MarkdownParseResult? = synchronized(cache) { cache[key] }
+    fun put(key: String, value: MarkdownParseResult) {
+        if (key.length > MAX_KEY_CHARS) return
+        synchronized(cache) { cache[key] = value }
+    }
+    fun parseWithCache(content: String): MarkdownParseResult =
+        get(content) ?: parseMarkdown(content).also { put(content, it) }
+}
 
 private fun ASTNode.containsHtml(): Boolean {
     if (type == MarkdownElementTypes.HTML_BLOCK || type == MarkdownTokenTypes.HTML_TAG) return true
@@ -284,7 +304,8 @@ fun MarkdownBlock(
     style: TextStyle = LocalTextStyle.current,
     onClickCitation: (String) -> Unit = {}
 ) {
-    var (data, setData) = remember { mutableStateOf(parseMarkdown(content)) }
+    // v4.8.49 回植: 首帧查缓存 (命中零解析) — 未命中同步解析并写缓存 (对齐原版首帧终态)。
+    var (data, setData) = remember { mutableStateOf(MarkdownParseCache.parseWithCache(content)) }
 
     // 监听内容变化，重新解析AST树
     // 这里在后台线程解析AST树, 防止频繁更新的时候掉帧
@@ -292,7 +313,7 @@ fun MarkdownBlock(
     LaunchedEffect(Unit) {
         snapshotFlow { updatedContent }
             .distinctUntilChanged()
-            .mapLatest { parseMarkdown(it) }
+            .mapLatest { MarkdownParseCache.parseWithCache(it) }
             .catch { exception -> exception.printStackTrace() }
             .flowOn(Dispatchers.Default)
             .collect { setData(it) }

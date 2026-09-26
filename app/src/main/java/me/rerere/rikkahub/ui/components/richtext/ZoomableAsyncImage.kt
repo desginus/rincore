@@ -73,12 +73,13 @@ fun ZoomableAsyncImage(
     val context = LocalContext.current
     val placeholder = if (LocalDarkMode.current) R.drawable.placeholder_dark else R.drawable.placeholder
     val export = LocalExportContext.current
-    val coilModel = ImageRequest.Builder(context)
-        .data(model)
-        .placeholder(placeholder)
-        .crossfade(false)
-        .allowHardware(!export)
-        .build()
+    // v4.8.2: workspace 图经 buildVersionedImageRequest — 缓存键含文件 mtime+size,
+    // 同名覆盖 (模型改图) 后强制重新加载, 不再命中旧缓存。
+    val coilModel = buildVersionedImageRequest(context, model) {
+        placeholder(placeholder)
+        crossfade(false)
+        allowHardware(!export)
+    }
     var loading by remember { mutableStateOf(false) }
 
     if (workspaceFetch && (workspaceFailed || workspaceDead)) {
