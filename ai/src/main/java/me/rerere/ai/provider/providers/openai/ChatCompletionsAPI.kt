@@ -119,6 +119,23 @@ import kotlin.time.Clock
  */
 class OpenCodeStreamUnconfirmedException(message: String) : IOException(message)
 
+/** v4.8.56: 掐断疑点判定 — "usage/cost 纯尾包 + 尾部无收尾标点即关流"。
+ *  v4.5.12 实证: opencode 网关会在 usage 心跳后随即中断流 (旧启发式把它掩盖为
+ *  正常完成); 该形态与 grok 正常完结 (usage 尾包) 相同故 grok 豁免; 仅在有
+ *  正文时判定。命中 → 合成 Finish(length) 走 GH 自动续写 (无缝续接, 上限 3 次)。 */
+private fun isOpencodeCloseSuspect(
+    lastChunkWasUsageOnly: Boolean,
+    hasTextContent: Boolean,
+    textTail: String,
+    modelId: String,
+): Boolean {
+    if (!lastChunkWasUsageOnly || !hasTextContent) return false
+    if (modelId.contains("grok", ignoreCase = true)) return false
+    val tail = textTail.trimEnd()
+    if (tail.isBlank()) return false
+    return tail.last() !in "。！？.!?；;’”』」）)】`~…—"
+}
+
 private const val TAG = "ChatCompletionsAPI"
 
 class ChatCompletionsAPI(
@@ -275,6 +292,9 @@ class ChatCompletionsAPI(
         // v3.6.75: finish_reason=stop/length 已收到即视为完成 — 部分中转 (VPN 代理/
         // Go 订阅) 不发送 [DONE] 直接断开, 此前被误判为断流 → 回滚重试 → 多轮重复回复
         val gotFinish = java.util.concurrent.atomic.AtomicBoolean(false)
+        // v4.8.56: "最后数据事件为 usage/cost 纯尾包"跟踪 — 掐断疑点判定用
+        // (usage 尾包后随即关流 = 网关掐断的已知形态; 见 onClosed 疑点判据)
+        val lastChunkWasUsageOnly = java.util.concurrent.atomic.AtomicBoolean(false)
         // v4.5.12: 完成归因 — 流结束时记录显式 finish_reason (stop/length),
         // 中断现场日志可直接确证结束来源, 不再只有"正常收尾"一笔带过
         var lastFinishReason: String? = null
@@ -429,6 +449,7 @@ class ChatCompletionsAPI(
                                     }
                                     text?.takeIf { it.isNotBlank() }?.let {
                                         hasTextContent = true
+                                        lastChunkWasUsageOnly.set(false)
                                         textTail = if (it.length > 80) it.takeLast(80) else it
                                         // v4.5.12: usage 心跳后仍收到正文 → 撤销完成
                                         // 标记 (流实际还在输出, usage 是中途统计行)
@@ -445,10 +466,12 @@ class ChatCompletionsAPI(
                                     // v3.8.42: 流中思考保持思考链实时显示 (不再提升为正文);
                                     // 缓冲全文, 仅当流结束仍无 content 时才正文化补发
                                     reasoningRaw?.takeIf { it.isNotBlank() }?.let {
+                                        lastChunkWasUsageOnly.set(false)
                                         reasoningBuffer.append(it)
                                     }
                                 } else {
                                     reasoningRaw?.takeIf { it.isNotBlank() }?.let {
+                                        lastChunkWasUsageOnly.set(false)
                                         reasoningTail = if (it.length > 80) it.takeLast(80) else it
                                         // v4.5.12: usage 心跳后仍收到思考 → 撤销完成标记
                                         if (gotFinish.get()) gotFinish.set(false)
@@ -457,7 +480,10 @@ class ChatCompletionsAPI(
                                 if (message != null) {
                                     var delta = parseMessage(message)
                                     // v4.5.20: 流中一旦出现工具 part 即标记 (工具回合识别的兜底)
-                                    if (delta.parts.any { it is UIMessagePart.Tool }) hasToolCalls = true
+                                    if (delta.parts.any { it is UIMessagePart.Tool }) {
+                                        hasToolCalls = true
+                                        lastChunkWasUsageOnly.set(false)
+                                    }
                                     // v4.3.0: 增量流 id 回填 — tool part 与 tool_calls 数组
                                     // 元素一一对应 (forEach add), 按元素的 index 归属:
                                     // id 非空记录映射; id 空从映射取回填, 无映射保持空串
@@ -512,7 +538,15 @@ class ChatCompletionsAPI(
                             val chunkHasRealDelta =
                                 !chunkDelta?.get("content")?.jsonPrimitive?.contentOrNull.isNullOrBlank() ||
                                 !chunkDelta?.get("reasoning_content")?.jsonPrimitive?.contentOrNull.isNullOrBlank()
-                            if (!chunkHasRealDelta) gotFinish.set(true)
+                            lastChunkWasUsageOnly.set(!chunkHasRealDelta)
+                            // v4.8.56 (用户实证"续写不触发/静默截断"): opencode 网关的
+                            // "usage/cost 结尾行"与"上游死亡前的最后 usage 报告"形态完全
+                            // 相同 — 无法据此区分"正常完结"与"被掐断"。opencode 一律不置
+                            // 完成标记, 交 onClosed 详细判据 (truncated 疑点 → 合成
+                            // Finish(length) 自动续写; 完整 → 照常完成)。
+                            // v4.5.12 的心跳否决只覆盖"usage 后仍有内容"场景 — 掐断紧随
+                            // usage 时仍会被旧启发式掩盖 (本轮实锤)。非 opencode 维持原行为。
+                            if (!chunkHasRealDelta && !isOpencode) gotFinish.set(true)
                         }
 
                         val messageChunk = MessageChunk(
@@ -630,12 +664,41 @@ class ChatCompletionsAPI(
                         // 进重试链自动恢复。实证: glm-5.3-flash 142s 全思考被关 /
                         // deepseek-flash 空流 events=1 被关, 均被旧逻辑静默"完成"。
                         val truncated = !lastEventParsed || looksTruncated(textTail) || looksTruncated(reasoningTail)
-                        if (truncated) {
-                            val why = if (!lastEventParsed) "mid-event truncation"
-                            else "content ends truncated (tail=\"${textTail.take(40)}\")"
-                            Log.w(TAG, "onClosed: opencode.ai truncated ($why, model=${params.model.modelId} events=$eventCount) — keep partial content, notify user\nlast: ${dumpLastEvents()}")
-                            TraceLogger.log("SSE", "zen truncated close — keep data, notify user (events=$eventCount $why)")
-                            close(OpenCodeStreamUnconfirmedException("OpenCode 输出被截断，已保留已生成内容"))
+                        // v4.8.56: 截断/掐断升级为"自动续写" — 合成 Finish(length)
+                        // 复用 GH 的续写机制 (无缝续进同一条消息/上限 3 次/耗尽明确
+                        // 报错), 取代旧的"保留内容 + 通知"止步形态。掐断疑点判定补齐
+                        // "usage 尾包后随即关流"场景 (v4.5.12 实证形态; grok 正常完结
+                        // 同为 usage 尾包故豁免; [DONE]/finish_reason 场景不进入本判据)。
+                        val usageTailSuspect = isOpencodeCloseSuspect(
+                            lastChunkWasUsageOnly.get(),
+                            hasTextContent,
+                            textTail,
+                            params.model.modelId,
+                        )
+                        if (truncated || usageTailSuspect) {
+                            val why = when {
+                                truncated && !lastEventParsed -> "mid-event truncation"
+                                truncated -> "content ends truncated (tail=\"${textTail.take(40)}\")"
+                                else -> "usage-tail suspect close (tail=\"${textTail.take(40)}\")"
+                            }
+                            Log.w(TAG, "onClosed: opencode.ai cut detected ($why, model=${params.model.modelId} events=$eventCount) — synthetic length finish, auto-continue\nlast: ${dumpLastEvents()}")
+                            TraceLogger.log("SSE", "zen cut detected — synthetic length finish, auto-continue (events=$eventCount $why)")
+                            trySend(
+                                MessageChunk(
+                                    id = "",
+                                    model = params.model.modelId,
+                                    choices = listOf(
+                                        UIMessageChoice(
+                                            index = 0,
+                                            delta = UIMessage(role = MessageRole.ASSISTANT, parts = emptyList()),
+                                            message = null,
+                                            finishReason = "length",
+                                        )
+                                    ),
+                                    usage = null,
+                                )
+                            ).onFailure { e -> Log.w(TAG, "onClosed: synthetic length finish dropped (${e?.message})") }
+                            close()
                         } else if (!hasTextContent && reasoningBuffer.isNotBlank()) {
                             // 无 content: 缓冲思考提升为正文补发 (思考链已实时显示过,
                             // 补发使正文区完整 — 与 opencode 将 reasoning_content 当正文一致)
@@ -688,7 +751,9 @@ class ChatCompletionsAPI(
                         close(IOException("SSE 流在完成前被服务器关闭"))
                     }
                 } else {
-                    TraceLogger.log("SSE", "stream closed by server")
+                    // v4.8.56: 显式完成明细入 trace — 用户导出日志可直接区分
+                    // [DONE] / 真 finish_reason 来源与内容尾部
+                    TraceLogger.log("SSE", "stream closed by server (completed=${completed.get()} finishReason=$lastFinishReason events=$eventCount hasText=$hasTextContent tail=\"${textTail.take(40)}\")")
                     close()
                 }
             }
