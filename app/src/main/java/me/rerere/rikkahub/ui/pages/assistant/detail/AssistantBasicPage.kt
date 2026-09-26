@@ -470,24 +470,23 @@ HorizontalDivider()
                 }
             )
 
-            if (!assistant.useGradientBackground) {
-                HorizontalDivider()
+            HorizontalDivider()
 
-                BackgroundPicker(
-                    modifier = Modifier.padding(8.dp),
-                    background = assistant.background,
-                    backgroundOpacity = assistant.backgroundOpacity,
-                    onUpdate = { background ->
-                        onUpdate(
-                            assistant.copy(
-                                background = background
-                            )
+            // v4.8.52: 壁纸与动态背景可同时使用 (动态在后光效, 壁纸在上)
+            BackgroundPicker(
+                modifier = Modifier.padding(8.dp),
+                background = assistant.background,
+                backgroundOpacity = assistant.backgroundOpacity,
+                onUpdate = { background ->
+                    onUpdate(
+                        assistant.copy(
+                            background = background
                         )
-                    }
-                )
-            }
+                    )
+                }
+            )
 
-            if (!assistant.useGradientBackground && assistant.background != null) {
+            if (assistant.background != null) {
                 val backgroundOpacity = assistant.backgroundOpacity.coerceIn(0f, 1f)
                 HorizontalDivider()
                 FormItem(
