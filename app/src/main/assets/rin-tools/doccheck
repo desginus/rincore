@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+# doccheck — PDF layout diagnostics for delivery QA (RinCore builtin, v4.8.60).
+# Per-page: ink coverage %, text char count, image blocks. Flags sparse/blank
+# pages and inconsistent image widths (the "one huge / one tiny figure" issue).
+# Outputs: text report (stdout) + thumbnails contact sheet PNG (flagged outlined).
+import sys, os, json
+
+
+def main():
+    args = sys.argv[1:]
+    if not args or args[0] in ("-h", "--help"):
+        print("usage: doccheck <file.pdf> [-o <outdir>] [--dpi N] [--sparse PCT] [--json]")
+        print("  example: doccheck lesson.pdf            # report + /tmp/rin-doccheck/doccheck_sheet.png")
+        print("  sparse flag: ink coverage percent below PCT (default 2.5)")
+        sys.exit(0)
+    path = args[0]
+    outdir = "/tmp/rin-doccheck"
+    dpi = 60
+    sparse_pct = 2.5
+    want_json = False
+    i = 1
+    while i < len(args):
+        a = args[i]
+        if a == "-o" and i + 1 < len(args):
+            outdir = args[i + 1]; i += 2
+        elif a == "--dpi" and i + 1 < len(args):
+            dpi = max(20, min(150, int(args[i + 1]))); i += 2
+        elif a == "--sparse" and i + 1 < len(args):
+            sparse_pct = float(args[i + 1]); i += 2
+        elif a == "--json":
+            want_json = True; i += 1
+        else:
+            i += 1
+    if not os.path.isfile(path):
+        print(f"doccheck: file not found: {path}")
+        sys.exit(2)
+
+    import pymupdf
+    from PIL import Image, ImageDraw
+
+    os.makedirs(outdir, exist_ok=True)
+    doc = pymupdf.open(path)
+    pages = []
+    thumbs = []
+    for pno in range(doc.page_count):
+        page = doc[pno]
+        pix = page.get_pixmap(dpi=dpi, colorspace=pymupdf.csGRAY)
+        img = Image.frombytes("L", (pix.width, pix.height), pix.samples)
+        hist = img.histogram()
+        total = pix.width * pix.height
+        dark = sum(hist[:245])
+        ink = dark * 100.0 / max(1, total)
+        text = page.get_text().strip()
+        infos = page.get_image_info()
+        widths = sorted(round(b["bbox"][2] - b["bbox"][0]) for b in infos) if infos else []
+        pages.append({
+            "page": pno + 1,
+            "ink_pct": round(ink, 2),
+            "text_chars": len(text),
+            "images": len(infos),
+            "image_widths_pt": widths,
+        })
+        tw = 240
+        th = max(1, int(pix.height * tw / max(1, pix.width)))
+        thumbs.append(img.resize((tw, th)))
+
+    # image-width consistency across the whole document
+    all_w = [w for p in pages for w in p["image_widths_pt"] if w > 0]
+    cons = None
+    if len(all_w) >= 2:
+        lo, hi = min(all_w), max(all_w)
+        cons = {"min": lo, "max": hi, "ratio": round(hi / max(1, lo), 2), "flag": hi / max(1, lo) > 2.0}
+
+    flagged = []
+    for p in pages:
+        reasons = []
+        if p["ink_pct"] < sparse_pct and p["images"] == 0:
+            reasons.append("SPARSE")
+        if p["ink_pct"] < 0.15 and p["text_chars"] < 10 and p["images"] == 0:
+            reasons.append("BLANK")
+        p["flag"] = "+".join(reasons)
+        if reasons:
+            flagged.append(p["page"])
+
+    # contact sheet
+    cols = min(5, max(1, len(thumbs)))
+    rows = (len(thumbs) + cols - 1) // cols
+    pad, label_h = 8, 16
+    cell_w = 240 + pad * 2
+    cell_h = (max(t.height for t in thumbs) if thumbs else 100) + pad * 2 + label_h
+    sheet = Image.new("RGB", (cols * cell_w, max(1, rows) * cell_h), (245, 245, 245))
+    dr = ImageDraw.Draw(sheet)
+    for idx, t in enumerate(thumbs):
+        r, c = divmod(idx, cols)
+        x, y = c * cell_w + pad, r * cell_h + pad
+        sheet.paste(t, (x, y))
+        p = pages[idx]
+        color = (220, 40, 40) if p["flag"] else (110, 110, 110)
+        if p["flag"]:
+            dr.rectangle([x - 2, y - 2, x + t.width + 2, y + t.height + 2], outline=color, width=3)
+        dr.text((x, y + t.height + 2), f"p{p['page']} ink={p['ink_pct']}% {p['flag']}", fill=color)
+    sheet_path = os.path.join(outdir, "doccheck_sheet.png")
+    sheet.save(sheet_path)
+
+    result = {
+        "file": os.path.basename(path),
+        "pages": len(pages),
+        "sparse_list": flagged,
+        "image_width_consistency": cons,
+        "per_page": pages,
+        "sheet": sheet_path,
+    }
+    if want_json:
+        print(json.dumps(result, ensure_ascii=False, indent=1))
+    else:
+        print(f"doccheck: {path}")
+        print(f"  pages = {len(pages)}   flagged = {flagged if flagged else 'none'}")
+        for p in pages:
+            flag = f"  <<< {p['flag']}" if p["flag"] else ""
+            print(f"  p{p['page']:>3}: ink={p['ink_pct']:>5}%  text={p['text_chars']:>6}ch  images={p['images']}{flag}")
+        if cons:
+            state = "INCONSISTENT" if cons["flag"] else "ok"
+            print(f"  image widths: min={cons['min']}pt max={cons['max']}pt ratio={cons['ratio']}x  [{state}]")
+        print(f"  sheet: {sheet_path}")
+
+
+if __name__ == "__main__":
+    main()

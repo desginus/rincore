@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -57,11 +58,17 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import android.content.ClipData
+import android.widget.Toast
 import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Settings02
@@ -189,7 +196,6 @@ fun UsagePage(onBack: () -> Unit = {}) {
                         UsageKeyCard(
                             key = k,
                             data = usages[k]?.let { openCodeMiniCard(it) },
-                            isActive = k == activeKey,
                             loading = loading,
                             onClick = { selectedKey = k },
                         )
@@ -306,19 +312,15 @@ fun UsagePage(onBack: () -> Unit = {}) {
 private fun UsageKeyCard(
     key: String,
     data: UsageMiniCardData?,
-    isActive: Boolean,
     loading: Boolean,
     onClick: () -> Unit,
 ) {
+    // v4.8.60 (用户定版): 取消"使用中"标记 — 内容重写后所有密钥同权展示
     Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = if (isActive) {
-                MaterialTheme.colorScheme.primaryContainer
-            } else {
-                MaterialTheme.colorScheme.surfaceContainerHigh
-            },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
     ) {
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
@@ -326,16 +328,8 @@ private fun UsageKeyCard(
                 Text(
                     maskKey(key),
                     style = MaterialTheme.typography.titleSmall,
-                    color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
-                if (isActive) {
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "使用中",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
                 Spacer(Modifier.weight(1f))
                 if (data == null) {
                     if (loading) {
@@ -511,6 +505,10 @@ private fun KeyCardDialog(
 ) {
     val scope = rememberCoroutineScope()
     var keyInput by remember { mutableStateOf(initialInput) }
+    // v4.8.60 (用户定版): 「查看」弹层 — 显示完整密钥 (可选文本 + 一键复制)
+    var viewingKey by remember { mutableStateOf<String?>(null) }
+    val clipboard = LocalClipboard.current
+    val context = LocalContext.current
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -525,46 +523,33 @@ private fun KeyCardDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Text(
-                    "已存密钥：点击卡片切换，删除后不再保留",
+                    "已存密钥：「查看」显示完整密钥；删除后不再保留",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                // v4.8.60 (用户定版): 取消"使用中"标记与点击切换 — 每个条目
+                // 「查看」(完整密钥) + 「删除」; 查看位于删除左侧
                 savedKeys.forEach { savedKey ->
-                    val isActive = savedKey == currentKey
                     Card(
-                        onClick = {
-                            if (!isActive) {
-                                scope.launch {
-                                    settingsStore.update { it.copy(opencodeApiKey = savedKey) }
-                                }
-                            }
-                        },
                         colors = CardDefaults.cardColors(
-                            containerColor = if (isActive) {
-                                MaterialTheme.colorScheme.primaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.surfaceContainerHigh
-                            },
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         ),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Row(
-                            Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    maskKey(savedKey),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                )
-                                if (isActive) {
-                                    Text(
-                                        "使用中",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.primary,
-                                    )
-                                }
+                            Text(
+                                maskKey(savedKey),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            TextButton(onClick = { viewingKey = savedKey }) {
+                                Text("查看")
                             }
                             TextButton(onClick = {
                                 scope.launch {
@@ -603,6 +588,30 @@ private fun KeyCardDialog(
             TextButton(onClick = onDismiss) { Text("取消") }
         },
     )
+
+    // v4.8.60: 完整密钥查看弹层 (可选文本 + 复制)
+    viewingKey?.let { vk ->
+        AlertDialog(
+            onDismissRequest = { viewingKey = null },
+            title = { Text("完整密钥") },
+            text = {
+                SelectionContainer {
+                    Text(vk, style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("api_key", vk)))
+                    }
+                    Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
+                }) { Text("复制") }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewingKey = null }) { Text("关闭") }
+            },
+        )
+    }
 }
 
 // v3.12.5: 全密钥渐变 (Command Code 同源 ARGB)

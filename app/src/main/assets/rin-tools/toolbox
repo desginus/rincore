@@ -26,6 +26,10 @@ print_tool doc ".doc (Word 97-2003) read / edit — wraps Spire.Doc with proot f
     'doc read <f.doc> · doc replace <f.doc> "old" "new" [-o out.doc]  (requires: pip3 install --break-system-packages spire.doc)'
 print_tool pdf "read a PDF as-is — prints the embedded text layer by default; --png renders pages for viewing; --ocr for scans" \
     'pdf <f.pdf> · pdf <f.pdf> --png · pdf <f.pdf> --ocr  (built-in, uses PyMuPDF; never writes into your folder)'
+print_tool doccheck "PDF layout diagnostics — per-page ink coverage / text / images; flags sparse-blank pages + inconsistent figure widths; writes a thumbnails sheet PNG" \
+    'doccheck <f.pdf> [-o outdir] [--sparse 2.5] [--json] — open the sheet to review page balance before delivery'
+print_tool blockscan "image region analysis for scans / handwriting — row+column projection into numbered bands/blocks; annotated PNG + per-block crops" \
+    'blockscan <img> [--row-gap 6] [--col-gap 20] [--crops] — locate each region without repeated visual guessing'
 
 echo ""
 echo "=== Environment ==="
@@ -72,11 +76,27 @@ else
 fi
 
 echo ""
+echo "=== Document chain (check here BEFORE concluding a capability is missing) ==="
+for t in weasyprint img2pdf pdftoppm pdfinfo qpdf gs convert tesseract playwright; do
+    if command -v "$t" >/dev/null 2>&1; then
+        echo "  [ok] $t"
+    else
+        echo "  [MISSING] $t  (install on demand, e.g. pip3 install --break-system-packages cairosvg)"
+    fi
+done
+if command -v tesseract >/dev/null 2>&1; then
+    echo "  tesseract langs: $(tesseract --list-langs 2>/dev/null | tail -n +2 | tr '\n' ' ')"
+fi
+echo "  tips: HTML->PDF = weasyprint <f.html> <out.pdf> · SVG->PNG = convert (basic) or cairosvg (complex) ·"
+echo "        PDF pages->PNG = pdftoppm -png <f.pdf> out · page QA = doccheck · scan regions = blockscan"
+
+echo ""
 echo "=== Notes ==="
 echo "  [!] LibreOffice / soffice: NOT available in this sandbox (proot has no standard"
 echo "      /proc mount - LibreOffice aborts at startup; unfixable in-sandbox)."
 echo "      \"soffice\" / \"libreoffice\" commands hit shims that explain this. For document"
 echo "      preview/rendering use: officecli view <file> screenshot  (or html)."
+echo "  [!] python3 writes __pycache__ (stale-import bugs) — run one-off scripts as: python3 -B script.py"
 
 echo ""
 echo "=== Workflow hints ==="

@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+# blockscan — image region analysis for scans / handwriting (RinCore builtin, v4.8.60).
+# Splits an image into content bands (row projection) and horizontal blocks
+# (column projection per band); writes an annotated PNG with numbered boxes and
+# optional per-band crops. Use it to locate "which region is which problem"
+# without repeated visual guessing / crop swapping.
+import sys, os
+
+
+def main():
+    args = sys.argv[1:]
+    if not args or args[0] in ("-h", "--help"):
+        print("usage: blockscan <image> [--row-gap N] [--col-gap N] [--min-h N] [-o outdir] [--crops] [--json]")
+        print("  bands = vertical groups separated by blank rows; blocks = segments inside a band")
+        print("  outputs: annotated PNG + (--crops) per-block crops under /tmp/rin-blockscan")
+        sys.exit(0)
+    path = args[0]
+    row_gap, col_gap, min_h = 6, 20, 8
+    outdir = "/tmp/rin-blockscan"
+    crops = False
+    want_json = False
+    i = 1
+    while i < len(args):
+        a = args[i]
+        if a == "--row-gap" and i + 1 < len(args):
+            row_gap = int(args[i + 1]); i += 2
+        elif a == "--col-gap" and i + 1 < len(args):
+            col_gap = int(args[i + 1]); i += 2
+        elif a == "--min-h" and i + 1 < len(args):
+            min_h = int(args[i + 1]); i += 2
+        elif a == "-o" and i + 1 < len(args):
+            outdir = args[i + 1]; i += 2
+        elif a == "--crops":
+            crops = True; i += 1
+        elif a == "--json":
+            want_json = True; i += 1
+        else:
+            i += 1
+    if not os.path.isfile(path):
+        print(f"blockscan: file not found: {path}")
+        sys.exit(2)
+
+    import numpy as np
+    from PIL import Image, ImageDraw
+
+    os.makedirs(outdir, exist_ok=True)
+    base = os.path.splitext(os.path.basename(path))[0]
+    img = Image.open(path).convert("L")
+    W, H = img.size
+    scale = 1.0
+    if W > 2200:
+        scale = 2200.0 / W
+        img_small = img.resize((int(W * scale), int(H * scale)))
+    else:
+        img_small = img
+    a = np.asarray(img_small)
+    ink = a < 180
+
+    rows_any = ink.any(axis=1)
+    bands = []
+    in_b, start, gap = False, 0, 0
+    for y, h in enumerate(rows_any):
+        if h:
+            if not in_b:
+                in_b, start = True, y
+            gap = 0
+        else:
+            if in_b:
+                gap += 1
+                if gap >= row_gap:
+                    bands.append((start, y - gap)); in_b = False
+    if in_b:
+        bands.append((start, len(rows_any) - 1))
+    bands = [(s, e) for (s, e) in bands if (e - s) >= min_h]
+
+    report_bands = []
+    for bi, (s, e) in enumerate(bands):
+        seg_any = ink[s:e + 1].any(axis=0)
+        segs = []
+        in_s, st, g = False, 0, 0
+        for x, v in enumerate(seg_any):
+            if v:
+                if not in_s:
+                    in_s, st = True, x
+                g = 0
+            else:
+                if in_s:
+                    g += 1
+                    if g >= col_gap:
+                        segs.append((st, x - g)); in_s = False
+        if in_s:
+            segs.append((st, len(seg_any) - 1))
+        segs = [(x0, x1) for (x0, x1) in segs if (x1 - x0) >= 4]
+        report_bands.append({
+            "band": bi + 1,
+            "y": [int(s / scale), int(e / scale)],
+            "blocks": [
+                {"x": [int(x0 / scale), int(x1 / scale)],
+                 "w": int((x1 - x0) / scale), "h": int((e - s) / scale)}
+                for (x0, x1) in segs
+            ],
+        })
+
+    out = Image.open(path).convert("RGB")
+    dr = ImageDraw.Draw(out)
+    palette = [(220, 60, 60), (60, 130, 220), (40, 160, 90), (200, 140, 30), (150, 70, 180), (30, 170, 170)]
+    for bi, band in enumerate(report_bands):
+        col = palette[bi % len(palette)]
+        y0, y1 = band["y"]
+        dr.rectangle([2, max(0, y0 - 2), out.width - 3, min(out.height - 1, y1 + 2)], outline=col, width=3)
+        dr.text((6, max(0, y0 - 14)), f"B{band['band']}", fill=col)
+        for bl in band["blocks"]:
+            x0, x1 = bl["x"]
+            dr.rectangle(
+                [max(0, x0 - 2), max(0, y0 - 2), min(out.width - 1, x1 + 2), min(out.height - 1, y1 + 2)],
+                outline=col, width=1,
+            )
+    png = os.path.join(outdir, f"{base}_blocks.png")
+    out.save(png)
+
+    crop_files = []
+    if crops:
+        full = Image.open(path)
+        for band in report_bands:
+            y0, y1 = band["y"]
+            for k, bl in enumerate(band["blocks"]):
+                x0, x1 = bl["x"]
+                cf = os.path.join(outdir, f"{base}_b{band['band']}_{k + 1}.png")
+                full.crop((max(0, x0 - 4), max(0, y0 - 4), min(full.width, x1 + 4), min(full.height, y1 + 4))).save(cf)
+                crop_files.append(cf)
+
+    if want_json:
+        import json
+        print(json.dumps({"file": os.path.basename(path), "size": [W, H],
+                          "bands": report_bands, "annotated": png, "crops": crop_files},
+                         ensure_ascii=False, indent=1))
+    else:
+        print(f"blockscan: {path}  ({W}x{H})")
+        for band in report_bands:
+            ys, ye = band["y"]
+            bx = ", ".join(f"x{b['x'][0]}-{b['x'][1]}({b['w']}x{b['h']})" for b in band["blocks"])
+            print(f"  B{band['band']}: y {ys}-{ye}  blocks[{len(band['blocks'])}]: {bx}")
+        print(f"  annotated: {png}")
+        if crop_files:
+            print(f"  crops[{len(crop_files)}]: {outdir}/")
+
+
+if __name__ == "__main__":
+    main()
