@@ -59,7 +59,6 @@ import me.rerere.rikkahub.ui.components.render.RenderEngine
 import me.rerere.rikkahub.ui.components.render.RenderResult
 import me.rerere.rikkahub.ui.components.render.RenderViewDialog
 import me.rerere.rikkahub.ui.components.detectRenderKind
-import me.rerere.workspace.WorkspaceStorageArea
 import org.koin.compose.koinInject
 import java.io.File
 import androidx.compose.runtime.getValue
@@ -337,23 +336,6 @@ internal fun EditedFilesList(
     }
 }
 
-private fun resolveWorkspacePath(path: String, cwdRel: String? = null): Pair<WorkspaceStorageArea, String> {
-    val trimmed = path.trimEnd('/')
-    return if (trimmed == "/workspace" || trimmed.startsWith("/workspace/")) {
-        val rel = trimmed.removePrefix("/workspace").trimStart('/')
-        // v4.5.27: CWD 专一空间 — 模型视角路径映射到助手文件夹;
-        // 已含 cwd 前缀 (历史惯性) 的不再二次拼接。
-        val scoped = when {
-            cwdRel.isNullOrEmpty() || rel.isEmpty() -> rel
-            rel == cwdRel || rel.startsWith("$cwdRel/") -> rel
-            else -> "$cwdRel/$rel"
-        }
-        WorkspaceStorageArea.FILES to scoped
-    } else {
-        WorkspaceStorageArea.LINUX to trimmed.trimStart('/')
-    }
-}
-
 /** v4.8.57: CWD 归一化 (同 WorkspaceTools 口径), null/空 = 无约束。
  *  接受助手级 workspaceCwd 与项目包 cwd (含 "/workspace/xxx" 绝对形态)。 */
 private fun normalizeCwdRel(raw: String?): String? {
@@ -362,10 +344,11 @@ private fun normalizeCwdRel(raw: String?): String? {
     return rel.ifBlank { null }
 }
 
-/** v4.8.57: 多候选 CWD 导出 — 依次尝试 (项目包 cwd → 助手 cwd → 无 cwd 兜底),
- *  首个命中即成功; 全部失败抛最后错误。失败均为写前解析失败 (require exists),
- *  重试无部分写入风险。根因: 文件可能在项目包 CWD 下生成, 单助手级 cwd 解析
- *  错位 → "File does not exist" (用户实证胶囊窗分享/渲染失败)。 */
+/** v4.8.58: 多候选 CWD + Rootfs 语义导出 — 与 workspace_show_file 工具侧解析
+ *  完全同源 (支持 /workspace、bind mount 与 Rootfs 内部路径; cwd 作用域同源)。
+ *  此前走区域限定解析 (files/linux 二选一) + 仅助手级 cwd — 工具可见的文件
+ *  点击时可能 "File does not exist" (用户实证: HTML 文件分享/渲染失效)。
+ *  失败均为写前解析失败 (require exists 先行), 多候选重试无部分写入风险。 */
 private suspend fun exportScopedFile(
     repository: WorkspaceRepository,
     workspaceId: String,
@@ -376,13 +359,13 @@ private suspend fun exportScopedFile(
     var lastError: Exception? = null
     val attempted = HashSet<String>()
     for (cwd in cwdCandidates + listOf("")) {
-        val (area, rel) = resolveWorkspacePath(path, cwd.ifEmpty { null })
-        if (!attempted.add("${area.name}|$rel")) continue
+        if (!attempted.add(cwd)) continue
         try {
-            repository.exportFile(workspaceId, area, rel, output)
+            repository.exportRootfsFile(workspaceId, path, output, cwd.ifEmpty { null })
             return
         } catch (e: Exception) {
             lastError = e
+            android.util.Log.i("EditedFiles", "export attempt failed (cwd=\"$cwd\" path=$path): ${e.message}")
         }
     }
     throw lastError ?: IllegalStateException("导出失败: 无法解析文件路径: $path")

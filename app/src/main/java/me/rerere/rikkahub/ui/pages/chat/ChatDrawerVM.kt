@@ -35,6 +35,13 @@ import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.FolderRepository
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.utils.toLocalString
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.uuid.Uuid
@@ -89,6 +96,12 @@ class ChatDrawerVM(
     val folders: StateFlow<List<Folder>> = assistantIdFlow
         .flatMapLatest { folderRepo.getFoldersOfAssistant(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // v4.8.58: 项目包点击统计 (智能排序数据源) — Settings 持久化 JSON (重启不丢)
+    val packClickStatsJson: StateFlow<String> = settingsStore.settingsFlow
+        .map { it.projectPackClickStats }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
     val conversations: Flow<PagingData<ConversationListItem>> =
         combine(assistantIdFlow, _selectedFolderId) { assistantId, folderId ->
@@ -184,6 +197,38 @@ class ChatDrawerVM(
         _selectedFolderId.value = folderId
         savedStateHandle["selectedFolderId"] = folderId?.toString()
         ProjectPackSelection.selectedFolderId.value = folderId
+        // v4.8.58: 智能排序 — 真实记录点击 (仅项目包; 「聊天」不计)
+        if (folderId != null) recordPackClick(folderId)
+    }
+
+    /** v4.8.58: 记录一次项目包点击 (真统计) — 追加时间戳 + 剪枝 (3 天外真删)。 */
+    fun recordPackClick(folderId: Uuid) {
+        viewModelScope.launch {
+            runCatching {
+                val validIds = folders.first().map { it.id }.toSet()
+                settingsStore.update { s ->
+                    s.copy(projectPackClickStats = bumpPackStats(s.projectPackClickStats, folderId, validIds))
+                }
+            }
+        }
+    }
+
+    /** v4.8.58: 剪枝入口 — 目录变更/进入抽屉时调用; 有过期或僵尸条目才写回 (真删),
+     *  数据无变化零写入 (不打扰 settings 修订号)。 */
+    fun prunePackStats(folders: List<Folder>) {
+        viewModelScope.launch {
+            runCatching {
+                val validIds = folders.map { it.id }.toSet()
+                val current = settingsStore.settingsFlow.first().projectPackClickStats
+                val pruned = prunePackStatsJson(current, validIds)
+                if (pruned != current) {
+                    settingsStore.update { s ->
+                        if (s.projectPackClickStats == pruned) s
+                        else s.copy(projectPackClickStats = pruned)
+                    }
+                }
+            }
+        }
     }
 
     fun createFolder(name: String, cwd: String? = null) {
@@ -246,3 +291,126 @@ class ChatDrawerVM(
         }
     }
 }
+
+/* ===================== v4.8.58: 项目包点击统计与智能排序 ===================== */
+
+/** 统计保留窗口: 3 天 (过期的点击事件真删) */
+private const val PACK_STATS_RETENTION_MS = 3L * 24 * 60 * 60 * 1000
+
+/** 解析统计 JSON: {"<folderUuid>":[epochMs,...]} — 容错, 坏数据返回空表 */
+internal fun parsePackStats(json: String): MutableMap<String, MutableList<Long>> {
+    if (json.isBlank()) return mutableMapOf()
+    return runCatching {
+        val obj = Json.parseToJsonElement(json) as? JsonObject ?: return mutableMapOf()
+        val out = mutableMapOf<String, MutableList<Long>>()
+        for ((k, v) in obj) {
+            val arr = v as? kotlinx.serialization.json.JsonArray ?: continue
+            val list = arr.mapNotNull { it.jsonPrimitive.contentOrNull?.toLongOrNull() }.toMutableList()
+            if (list.isNotEmpty()) out[k] = list
+        }
+        out
+    }.getOrDefault(mutableMapOf())
+}
+
+internal fun encodePackStats(map: Map<String, List<Long>>): String {
+    if (map.isEmpty()) return ""
+    return buildJsonObject {
+        for ((k, list) in map) {
+            put(k, buildJsonArray { list.forEach { add(JsonPrimitive(it)) } })
+        }
+    }.toString()
+}
+
+/** 剪枝: 3 天外事件删除 + 已删目录条目整体移除 + 空条目移除 (编码前) */
+private fun pruneParsedStats(
+    json: String,
+    validFolderIds: Set<Uuid>,
+    nowMs: Long,
+): MutableMap<String, MutableList<Long>> {
+    val cutoff = nowMs - PACK_STATS_RETENTION_MS
+    val out = mutableMapOf<String, MutableList<Long>>()
+    for ((k, list) in parsePackStats(json)) {
+        val id = runCatching { Uuid.parse(k) }.getOrNull() ?: continue
+        if (id !in validFolderIds) continue
+        val kept = list.filter { it >= cutoff }
+        if (kept.isNotEmpty()) out[k] = kept.sorted().toMutableList()
+    }
+    return out
+}
+
+/** 点击记录: 剪枝 + 追加当前时间戳 (真统计, 真删过期) */
+internal fun bumpPackStats(
+    currentJson: String,
+    folderId: Uuid,
+    validFolderIds: Set<Uuid>,
+    nowMs: Long = System.currentTimeMillis(),
+): String {
+    val parsed = pruneParsedStats(currentJson, validFolderIds, nowMs)
+    val key = folderId.toString()
+    val list = parsed[key] ?: mutableListOf()
+    list.add(nowMs)
+    parsed[key] = list
+    return encodePackStats(parsed)
+}
+
+/** 剪枝入口 (无变化也返回等值字符串, 调用方据此判断是否写回) */
+internal fun prunePackStatsJson(
+    currentJson: String,
+    validFolderIds: Set<Uuid>,
+    nowMs: Long = System.currentTimeMillis(),
+): String = encodePackStats(pruneParsedStats(currentJson, validFolderIds, nowMs))
+
+/**
+ * v4.8.58 (用户定版): 项目包智能推荐排序。
+ * 合成顺序: ① 本次选中的项目包 (走选区缓存, 不再计算) →
+ *         ② 最近 3 次被点击的项目包 (事件级去重, 每个项目包最多计一次) →
+ *         ③ 3 天内被点击次数降序 (并列取最近一次点击更晚者) →
+ *         ④ 其余保持默认顺序 (稳定排序)。
+ * 数据源: Settings 持久化 JSON (只含 3 天内事件; 过期在写入/剪枝时真删)。
+ */
+internal fun rankProjectPacks(
+    folders: List<Folder>,
+    selectedFolderId: Uuid?,
+    statsJson: String,
+    nowMs: Long = System.currentTimeMillis(),
+): List<Folder> {
+    if (folders.size <= 1) return folders
+    val cutoff = nowMs - PACK_STATS_RETENTION_MS
+    val existing = folders.map { it.id }.toSet()
+    data class Ev(val id: Uuid, val ts: Long)
+    val events = parsePackStats(statsJson).entries.flatMap { (k, list) ->
+        val id = runCatching { Uuid.parse(k) }.getOrNull() ?: return@flatMap emptyList()
+        list.filter { it >= cutoff }.map { Ev(id, it) }
+    }.sortedByDescending { it.ts }
+
+    // ② 最近 3 次 (去重)
+    val tier2 = LinkedHashSet<Uuid>()
+    for (e in events) {
+        if (e.id in existing) tier2.add(e.id)
+        if (tier2.size >= 3) break
+    }
+    // ③ 3 天频次 (tie: 最近一次更晚优先)
+    val counts = HashMap<Uuid, Int>()
+    val lastTs = HashMap<Uuid, Long>()
+    for (e in events) {
+        counts[e.id] = (counts[e.id] ?: 0) + 1
+        if ((lastTs[e.id] ?: 0L) < e.ts) lastTs[e.id] = e.ts
+    }
+    val tier3 = folders.map { it.id }
+        .filter { (counts[it] ?: 0) > 0 }
+        .sortedWith(
+            compareByDescending<Uuid> { counts[it] ?: 0 }
+                .thenByDescending { lastTs[it] ?: 0L }
+        )
+
+    // 合成: 去重放置, 未命中者按默认顺序稳定排在后面
+    val order = LinkedHashMap<Uuid, Int>()
+    fun place(id: Uuid) {
+        if (id !in order) order[id] = order.size
+    }
+    selectedFolderId?.let { place(it) }   // ① 本次选中 (缓存)
+    tier2.forEach { place(it) }           // ② 最近 3 次
+    tier3.forEach { place(it) }           // ③ 3 天频次
+    return folders.sortedBy { order[it.id] ?: Int.MAX_VALUE }
+}
+

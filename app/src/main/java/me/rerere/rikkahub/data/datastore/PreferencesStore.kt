@@ -131,6 +131,8 @@ class SettingsStore(
         val DEFER_AUTO_REPLY = booleanPreferencesKey("defer_auto_reply")
         // v4.8.3: 发送键/思考键互换 — 防生成中误触右下角打断键
         val SWAP_SEND_REASONING_KEYS = booleanPreferencesKey("swap_send_reasoning_keys")
+        // v4.8.58: 项目包点击统计 (智能排序数据源; 3 天外过期真删) — JSON 字符串
+        val PROJECT_PACK_CLICK_STATS = stringPreferencesKey("project_pack_click_stats")
         // v4.5.17: 仿 OpenCode 请求模式 — 对 opencode.ai 网关按模型协议映射
         // (Chat Completions / Responses / Anthropic / Google) 自动选择传输协议
         val OPENCODE_REQUEST_MODE = booleanPreferencesKey("opencode_request_mode")
@@ -230,6 +232,7 @@ class SettingsStore(
                 preferences[ENABLE_WEB_SEARCH] = settings.enableWebSearch
                 preferences[DEFER_AUTO_REPLY] = settings.deferAutoReply
                 preferences[SWAP_SEND_REASONING_KEYS] = settings.swapSendReasoningKeys
+            preferences[PROJECT_PACK_CLICK_STATS] = settings.projectPackClickStats
                 preferences[OPENCODE_REQUEST_MODE] = settings.opencodeRequestMode
                 preferences[FAVORITE_MODELS] = JsonInstant.encodeToString(settings.favoriteModels)
                 preferences[SELECT_MODEL] = settings.chatModelId.toString()
@@ -322,6 +325,7 @@ class SettingsStore(
                 enableWebSearch = preferences[ENABLE_WEB_SEARCH] == true,
                 deferAutoReply = preferences[DEFER_AUTO_REPLY] == true,
                 swapSendReasoningKeys = preferences[SWAP_SEND_REASONING_KEYS] == true,
+                projectPackClickStats = preferences[PROJECT_PACK_CLICK_STATS] ?: "",
                 opencodeRequestMode = preferences[OPENCODE_REQUEST_MODE] == true,
                 favoriteModels = preferences[FAVORITE_MODELS]?.let {
                     JsonInstant.decodeFromString(it)
@@ -589,6 +593,7 @@ class SettingsStore(
             preferences[ENABLE_WEB_SEARCH] = settings.enableWebSearch
             preferences[DEFER_AUTO_REPLY] = settings.deferAutoReply
             preferences[SWAP_SEND_REASONING_KEYS] = settings.swapSendReasoningKeys
+            preferences[PROJECT_PACK_CLICK_STATS] = settings.projectPackClickStats
             preferences[OPENCODE_REQUEST_MODE] = settings.opencodeRequestMode
             preferences[FAVORITE_MODELS] = JsonInstant.encodeToString(settings.favoriteModels)
             preferences[SELECT_MODEL] = settings.chatModelId.toString()
@@ -772,6 +777,9 @@ data class Settings(
     // v4.8.3: 发送键/思考键切换 — 开启后互换发送(打断)键与思考深度键的位置与图标,
     // 防止生成中误触右下角打断键导致中断
     val swapSendReasoningKeys: Boolean = false,
+    // v4.8.58: 项目包点击统计 (智能排序数据源) — JSON: {"<folderUuid>":[epochMs,...]};
+    // 仅保留 3 天内事件 (过期真删), 由 ChatDrawerVM 维护
+    val projectPackClickStats: String = "",
     // v4.5.17: 仿 OpenCode 请求模式 — 对齐 OpenCode 客户端对 opencode.ai 网关
     // 的每模型协议分派 (models.dev npm 同源), 使 Responses/Anthropic/Google
     // 专属模型可用; 关闭时零行为变化

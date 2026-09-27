@@ -55,6 +55,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -128,6 +129,16 @@ fun ChatDrawerContent(
     val conversations = drawerVm.conversations.collectAsLazyPagingItems()
     val folders by drawerVm.folders.collectAsStateWithLifecycle()
     val selectedFolderId by drawerVm.selectedFolderId.collectAsStateWithLifecycle()
+    // v4.8.58 (用户定版): 项目包智能推荐排序 — 本次选中(缓存) → 最近 3 次去重 →
+    // 3 天频次 → 默认序; 数据源 = 持久化点击统计 (过期真删见 LaunchedEffect)
+    val packClickStats by drawerVm.packClickStatsJson.collectAsStateWithLifecycle()
+    val rankedFolders = remember(folders, selectedFolderId, packClickStats) {
+        rankProjectPacks(folders, selectedFolderId, packClickStats)
+    }
+    // v4.8.58: 过期统计真删 — 目录变更/数据过期时写回 (无变化不写)
+    LaunchedEffect(folders) {
+        drawerVm.prunePackStats(folders)
+    }
     val conversationListState = rememberLazyListState(
         initialFirstVisibleItemIndex = drawerVm.scrollIndex,
         initialFirstVisibleItemScrollOffset = drawerVm.scrollOffset,
@@ -278,16 +289,30 @@ fun ChatDrawerContent(
                 selectedFolderId = selectedFolderId,
                 expanded = packBarExpanded,
                 onToggleExpand = { packBarExpanded = !packBarExpanded },
-                onSelect = { drawerVm.selectFolder(it) },
                 onCreate = {
                     createPackCwd = null
                     showCreateFolderDialog = true
                 },
                 onSettings = { showPackSettingsDialog = true },
-                onRename = { folderToRename = it },
-                onDelete = { folderToDelete = it },
             )
 
+            // v4.8.58 (用户定版): 展开态 — 对话记录区替换为竖向项目包列表 (智能排序,
+            // UI 对齐对话行); 折叠态 — 正常对话记录。选中项目包后自动折叠返回。
+            if (packBarExpanded) {
+                ProjectPackList(
+                    folders = rankedFolders,
+                    selectedFolderId = selectedFolderId,
+                    onSelect = { id ->
+                        drawerVm.selectFolder(id)
+                        packBarExpanded = false
+                    },
+                    onRename = { folderToRename = it },
+                    onDelete = { folderToDelete = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                )
+            } else {
             ConversationList(
                 current = current,
                 conversations = conversations,
@@ -323,6 +348,7 @@ fun ChatDrawerContent(
                     showMoveToFolderSheet = true
                 }
             )
+            }
 
             // 助手选择器
             AssistantPicker(
@@ -922,12 +948,11 @@ private fun ProjectPackBar(
     selectedFolderId: Uuid?,
     expanded: Boolean,
     onToggleExpand: () -> Unit,
-    onSelect: (Uuid?) -> Unit,
     onCreate: () -> Unit,
     onSettings: () -> Unit,
-    onRename: (Folder) -> Unit,
-    onDelete: (Folder) -> Unit,
 ) {
+    // v4.8.58 (用户定版): 展开不再横向铺项目包图标 — 项目包列表已移入对话记录区
+    // (竖向, 智能排序); 顶栏固定为 [当前选区(点击=展开/折叠)] + [新建][设置][箭头]。
     val selectedFolder = folders.find { it.id == selectedFolderId }
     Row(
         modifier = Modifier
@@ -936,71 +961,16 @@ private fun ProjectPackBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        if (expanded) {
-            // 展开态: 显示所有 — 「聊天」+ 全部项目包 (可横滑)
-            FolderChip(
-                label = stringResource(R.string.chat_page_folder_default),
-                selected = selectedFolderId == null,
-                onClick = { onSelect(null) },
-                onLongClick = {},
-            )
-            LazyRow(
-                modifier = Modifier.weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                items(folders) { folder ->
-                    var menuExpanded by remember { mutableStateOf(false) }
-                    Box {
-                        FolderChip(
-                            label = folder.name,
-                            icon = HugeIcons.Folder01,
-                            selected = selectedFolderId == folder.id,
-                            onClick = { onSelect(folder.id) },
-                            onLongClick = { menuExpanded = true },
-                        )
-                        DropdownMenu(
-                            expanded = menuExpanded,
-                            onDismissRequest = { menuExpanded = false },
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.chat_page_rename)) },
-                                leadingIcon = { Icon(HugeIcons.PencilEdit01, null) },
-                                onClick = {
-                                    onRename(folder)
-                                    menuExpanded = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.chat_page_delete)) },
-                                leadingIcon = { Icon(HugeIcons.Delete01, null) },
-                                onClick = {
-                                    onDelete(folder)
-                                    menuExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-        } else {
-            // 折叠态: 显示当前选区 (「聊天」或选中的项目包, 4.8.26 用户定版);
-            // 点击 → 自动展开 (想切换时展开选择)
-            FolderChip(
-                label = selectedFolder?.name ?: stringResource(R.string.chat_page_folder_default),
-                icon = if (selectedFolder != null) HugeIcons.Folder01 else null,
-                selected = true,
-                onClick = { onToggleExpand() },
-                onLongClick = {},
-            )
-            Spacer(Modifier.weight(1f))
-        }
-        // 最右: 折叠态 [新建][设置][展开→]; 展开态仅 [折叠←] — 位置腾给项目包列表
-        // (4.8.25: 展开时新建/设置不展示; 4.8.26: 箭头方向修正 — 原左右反了)
-        if (!expanded) {
-            PackBarIconButton(icon = HugeIcons.FolderAdd, onClick = onCreate)
-            PackBarIconButton(icon = HugeIcons.Settings01, onClick = onSettings)
-        }
+        FolderChip(
+            label = selectedFolder?.name ?: stringResource(R.string.chat_page_folder_default),
+            icon = if (selectedFolder != null) HugeIcons.Folder01 else null,
+            selected = true,
+            onClick = { onToggleExpand() },
+            onLongClick = {},
+        )
+        Spacer(Modifier.weight(1f))
+        PackBarIconButton(icon = HugeIcons.FolderAdd, onClick = onCreate)
+        PackBarIconButton(icon = HugeIcons.Settings01, onClick = onSettings)
         PackBarIconButton(
             icon = if (expanded) HugeIcons.ArrowLeft01 else HugeIcons.ArrowRight01,
             onClick = onToggleExpand,
@@ -1064,6 +1034,123 @@ private fun FolderChip(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+    }
+}
+
+/** v4.8.58 (用户定版): 展开态竖向项目包列表 — 排列 UI 对齐对话记录行 (同款 pill
+ *  圆角/内边距/选中色 secondaryContainer/长按菜单); 排序走智能推荐 (rankProjectPacks)。 */
+@Composable
+private fun ProjectPackList(
+    folders: List<Folder>,
+    selectedFolderId: Uuid?,
+    onSelect: (Uuid?) -> Unit,
+    onRename: (Folder) -> Unit,
+    onDelete: (Folder) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    LazyColumn(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        // 「聊天」入口 (未归类对话视图)
+        item(key = "pack_row_chat") {
+            PackRow(
+                label = stringResource(R.string.chat_page_folder_default),
+                icon = null,
+                selected = selectedFolderId == null,
+                onClick = { onSelect(null) },
+            )
+        }
+        items(folders, key = { it.id.toString() }) { folder ->
+            PackRow(
+                label = folder.name,
+                icon = HugeIcons.Folder01,
+                selected = selectedFolderId == folder.id,
+                onClick = { onSelect(folder.id) },
+                onRename = { onRename(folder) },
+                onDelete = { onDelete(folder) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun PackRow(
+    label: String,
+    icon: ImageVector?,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onRename: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    val hasMenu = onRename != null || onDelete != null
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Surface(
+            shape = RoundedCornerShape(50f),
+            color = if (selected) {
+                MaterialTheme.colorScheme.secondaryContainer
+            } else {
+                Color.Transparent
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = { if (hasMenu) menuExpanded = true },
+                ),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (icon != null) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    text = label,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
+                    else Color.Unspecified,
+                )
+                Spacer(Modifier.weight(1f))
+            }
+        }
+        if (hasMenu) {
+            DropdownMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false },
+            ) {
+                onRename?.let { cb ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.chat_page_rename)) },
+                        leadingIcon = { Icon(HugeIcons.PencilEdit01, null) },
+                        onClick = {
+                            menuExpanded = false
+                            cb()
+                        },
+                    )
+                }
+                onDelete?.let { cb ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.chat_page_delete)) },
+                        leadingIcon = { Icon(HugeIcons.Delete01, null) },
+                        onClick = {
+                            menuExpanded = false
+                            cb()
+                        },
+                    )
+                }
+            }
         }
     }
 }
