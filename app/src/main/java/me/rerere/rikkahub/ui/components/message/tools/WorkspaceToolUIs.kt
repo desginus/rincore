@@ -27,7 +27,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
@@ -248,8 +252,16 @@ object ShowFileToolUI : ToolUIRenderer {
 
     @Composable
     override fun title(context: ToolUIContext): String {
+        // v4.8.61: 多文件 (paths 数组) — 单文件沿用原样; 多文件显示首名 + 数量
         val path = context.arguments.getStringContent("path")
-        return if (path != null) stringResource(R.string.tool_ui_show_file, path) else stringResource(R.string.tool_ui_show_file_default)
+        if (path != null) return stringResource(R.string.tool_ui_show_file, path)
+        val paths = (context.arguments as? JsonObject)?.get("paths") as? JsonArray
+        val first = paths?.firstOrNull()?.jsonPrimitive?.contentOrNull
+        return when {
+            first == null -> stringResource(R.string.tool_ui_show_file_default)
+            paths.size() > 1 -> stringResource(R.string.tool_ui_show_file, "$first (+${paths.size() - 1})")
+            else -> stringResource(R.string.tool_ui_show_file, first)
+        }
     }
 }
 

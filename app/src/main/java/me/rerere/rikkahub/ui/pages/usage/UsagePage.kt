@@ -23,12 +23,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -230,6 +233,12 @@ fun UsagePage(onBack: () -> Unit = {}) {
                         title = { Text(maskKey(key)) },
                         navigationIcon = {
                             TextButton(onClick = { selectedKey = null }) { Text("返回") }
+                        },
+                        actions = {
+                            // v4.8.61: 详情内直达刷新 (并行查询, 全密钥一起更新)
+                            TextButton(onClick = { scope.launch { doQuery(force = true) } }) {
+                                Text("刷新")
+                            }
                         },
                     )
                     if (data == null) {
@@ -529,6 +538,14 @@ private fun KeyCardDialog(
                 )
                 // v4.8.60 (用户定版): 取消"使用中"标记与点击切换 — 每个条目
                 // 「查看」(完整密钥) + 「删除」; 查看位于删除左侧
+                // v4.8.61 (用户硬规则): 列表弹窗必须可滑 + 高度限制 —
+                // 密钥多时该栏会超出屏幕, 竖滚 + 320dp 上限
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 320.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                 savedKeys.forEach { savedKey ->
                     Card(
                         colors = CardDefaults.cardColors(
@@ -565,6 +582,7 @@ private fun KeyCardDialog(
                             }
                         }
                     }
+                }
                 }
             }
         },

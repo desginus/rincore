@@ -7,6 +7,7 @@ package me.rerere.rikkahub.data.ai.tools
  * 问题定位: 工作区工具报错/路径问题 → 本文件 + WorkspaceManager
  * 基线: 自研 | 地图: docs/APP_MAP.md §C | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -345,55 +346,107 @@ private fun createShowFileTool(
 ) = Tool(
     name = "workspace_show_file",
     description = """
-        Present an existing workspace file to the user as a file chip attached to the conversation.
+        Present existing workspace files to the user as file chips attached to the conversation.
         Use this for documents, reports, or other downloadable files that the user may want to export/share.
+        Show several at once with `paths` (array) — do NOT call this tool repeatedly for separate files.
         Do NOT use this for images that should appear inline in the chat bubble — inline images are handled
         automatically via render_url in workspace_read_file / workspace_write_file / workspace_shell results.
-        The file must already exist — writing a file does NOT show it automatically; call this tool explicitly.
+        The files must already exist — writing a file does NOT show it automatically; call this tool explicitly.
     """.trimIndent().replace("\n", " "),
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
-                putPathProperty(required = true)
+                put("path", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Absolute path inside Rootfs. Use /workspace for the workspace files area.")
+                })
+                put("paths", buildJsonObject {
+                    put("type", "array")
+                    put("items", buildJsonObject { put("type", "string") })
+                    put("description", "Multiple files to present at once (alternative to `path`).")
+                })
             },
-            required = listOf("path"),
+            required = emptyList(),
         )
     },
     needsApproval = { needsApproval("workspace_show_file") },
     execute = {
-        val path = normalizeScopedPath(it.jsonObject.absolutePath("path"), cwd)
+        val json = it.jsonObject
+        // v4.8.61 (用户需求): 多文件递交 — `paths` 数组与单 `path` 二选一 (一次分组
+        // 展示多文件, 免去反复单发); 单文件路径保持原行为 (不存在直接抛异常)
+        val rawPaths = buildList {
+            json["path"]?.jsonPrimitive?.contentOrNull?.takeIf { v -> v.isNotBlank() }?.let { add(it) }
+            (json["paths"] as? JsonArray)?.forEach { e ->
+                e.jsonPrimitive.contentOrNull?.takeIf { v -> v.isNotBlank() }?.let { add(it) }
+            }
+        }.distinct()
+        if (rawPaths.isEmpty()) error("path or paths is required")
         val cwdRel = workspaceCwdRel(cwd)
-        val size = workspaceRepository.rootfsFileSize(workspaceId, path, cwdRel) // 不存在则抛异常
-        // v4.7.2: 递交回执附带最近版本信息 (write 的覆盖快照) — size 有变化时提示差异
-        var prevVersion: String? = null
-        var prevSize: Long? = null
-        runCatching {
-            val dir = path.substringBeforeLast('/')
-            val name = path.substringAfterLast('/')
-            val r = workspaceRepository.executeCommand(
-                workspaceId,
-                "ls -1t '$dir/.versions' 2>/dev/null | grep -F '${name}.' | head -1",
-                cwdRel.orEmpty(),
-                WorkspaceManager.DEFAULT_COMMAND_TIMEOUT_MS,
-            )
-            val latest = r.stdout?.trim()?.takeIf { it.isNotEmpty() } ?: return@runCatching
-            prevVersion = "$dir/.versions/$latest"
-            runCatching { prevSize = workspaceRepository.rootfsFileSize(workspaceId, "$dir/.versions/$latest", cwdRel) }
+
+        fun absoluteOf(raw: String): String {
+            val p = raw.replace('\\', '/').trim()
+            require(p.isNotBlank()) { "path is required" }
+            require(p.startsWith("/")) { "path must be an absolute path inside Rootfs" }
+            require(!p.contains('\u0000')) { "path contains invalid character" }
+            return p
         }
-        listOf(
-            UIMessagePart.Text(
-                buildJsonObject {
-                    put("path", path)
-                    put("size", size)
-                    put("status", "shown")
-                    prevVersion?.let { put("previous_version", it) }
-                    prevSize?.let {
-                        put("previous_size", it)
-                        if (it != size) put("note", "size differs from previous version ($it → $size)")
+
+        // v4.7.2: 递交回执附带最近版本信息 (write 的覆盖快照) — size 有变化时提示差异
+        fun versionInfo(path: String): Pair<String?, Long?> {
+            var prevVersion: String? = null
+            var prevSize: Long? = null
+            runCatching {
+                val dir = path.substringBeforeLast('/')
+                val name = path.substringAfterLast('/')
+                val r = workspaceRepository.executeCommand(
+                    workspaceId,
+                    "ls -1t '$dir/.versions' 2>/dev/null | grep -F '${name}.' | head -1",
+                    cwdRel.orEmpty(),
+                    WorkspaceManager.DEFAULT_COMMAND_TIMEOUT_MS,
+                )
+                val latest = r.stdout?.trim()?.takeIf { it.isNotEmpty() } ?: return@runCatching
+                prevVersion = "$dir/.versions/$latest"
+                runCatching { prevSize = workspaceRepository.rootfsFileSize(workspaceId, "$dir/.versions/$latest", cwdRel) }
+            }
+            return prevVersion to prevSize
+        }
+
+        fun entryOf(rawPath: String): JsonObject {
+            val path = normalizeScopedPath(absoluteOf(rawPath), cwd)
+            val size = workspaceRepository.rootfsFileSize(workspaceId, path, cwdRel) // 不存在则抛异常
+            val (prevVersion, prevSize) = versionInfo(path)
+            return buildJsonObject {
+                put("path", path)
+                put("size", size)
+                put("status", "shown")
+                prevVersion?.let { put("previous_version", it) }
+                prevSize?.let {
+                    put("previous_size", it)
+                    if (it != size) put("note", "size differs from previous version ($it → $size)")
+                }
+            }
+        }
+
+        if (rawPaths.size == 1) {
+            // 单文件: 原行为 (解析失败/不存在直接抛异常)
+            listOf(UIMessagePart.Text(entryOf(rawPaths[0]).toString()))
+        } else {
+            // 多文件: 逐个独立成败, 失败以 error 条目回报 (不阻断其余)
+            val files = rawPaths.map { rp ->
+                runCatching { entryOf(rp) }.getOrElse { e ->
+                    buildJsonObject {
+                        put("path", rp)
+                        put("status", "error")
+                        put("error", e.message ?: "failed")
                     }
-                }.toString()
+                }
+            }
+            listOf(
+                UIMessagePart.Text(
+                    buildJsonObject { put("files", buildJsonArray { files.forEach { add(it) } }) }.toString()
+                )
             )
-        )
+        }
     },
 )
 

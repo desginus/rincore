@@ -10,12 +10,13 @@ import sys, os
 def main():
     args = sys.argv[1:]
     if not args or args[0] in ("-h", "--help"):
-        print("usage: blockscan <image> [--row-gap N] [--col-gap N] [--min-h N] [-o outdir] [--crops] [--json]")
+        print("usage: blockscan <image> [--row-gap N] [--col-gap N] [--min-h N] [--thresh N] [-o outdir] [--crops] [--json]")
+        print("  --thresh: ink pixel threshold 0-255 (default 180; raise for faded scans)")
         print("  bands = vertical groups separated by blank rows; blocks = segments inside a band")
         print("  outputs: annotated PNG + (--crops) per-block crops under /tmp/rin-blockscan")
         sys.exit(0)
     path = args[0]
-    row_gap, col_gap, min_h = 6, 20, 8
+    row_gap, col_gap, min_h, thresh = 6, 20, 8, 180
     outdir = "/tmp/rin-blockscan"
     crops = False
     want_json = False
@@ -28,6 +29,8 @@ def main():
             col_gap = int(args[i + 1]); i += 2
         elif a == "--min-h" and i + 1 < len(args):
             min_h = int(args[i + 1]); i += 2
+        elif a == "--thresh" and i + 1 < len(args):
+            thresh = max(1, min(255, int(args[i + 1]))); i += 2
         elif a == "-o" and i + 1 < len(args):
             outdir = args[i + 1]; i += 2
         elif a == "--crops":
@@ -54,7 +57,7 @@ def main():
     else:
         img_small = img
     a = np.asarray(img_small)
-    ink = a < 180
+    ink = a < thresh
 
     rows_any = ink.any(axis=1)
     bands = []

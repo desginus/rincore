@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.ui.UIMessagePart
@@ -85,8 +86,13 @@ internal fun EditedFilesList(
     val editedFiles = remember(parts) {
         parts.filterIsInstance<UIMessagePart.Tool>()
             .filter { it.toolName in WORKSPACE_FILE_TOOL_NAMES && it.isExecuted }
-            .mapNotNull { tool ->
-                (tool.inputAsJson() as? JsonObject)?.get("path")?.jsonPrimitive?.contentOrNull
+            .flatMap { tool ->
+                // v4.8.61: 支持多文件递交 — path 单值 + paths 数组并集
+                val obj = tool.inputAsJson() as? JsonObject ?: return@flatMap emptyList()
+                val single = obj["path"]?.jsonPrimitive?.contentOrNull
+                val multi = (obj["paths"] as? JsonArray)?.mapNotNull { it.jsonPrimitive.contentOrNull }
+                    ?: emptyList()
+                (listOfNotNull(single) + multi)
             }
             .distinct()
     }
