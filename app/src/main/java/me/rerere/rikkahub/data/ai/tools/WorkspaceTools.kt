@@ -392,7 +392,7 @@ private fun createShowFileTool(
         }
 
         // v4.7.2: 递交回执附带最近版本信息 (write 的覆盖快照) — size 有变化时提示差异
-        fun versionInfo(path: String): Pair<String?, Long?> {
+        suspend fun versionInfo(path: String): Pair<String?, Long?> {
             var prevVersion: String? = null
             var prevSize: Long? = null
             runCatching {
@@ -411,7 +411,7 @@ private fun createShowFileTool(
             return prevVersion to prevSize
         }
 
-        fun entryOf(rawPath: String): JsonObject {
+        suspend fun entryOf(rawPath: String): JsonObject {
             val path = normalizeScopedPath(absoluteOf(rawPath), cwd)
             val size = workspaceRepository.rootfsFileSize(workspaceId, path, cwdRel) // 不存在则抛异常
             val (prevVersion, prevSize) = versionInfo(path)

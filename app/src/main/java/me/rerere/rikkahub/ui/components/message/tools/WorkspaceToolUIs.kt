@@ -259,7 +259,7 @@ object ShowFileToolUI : ToolUIRenderer {
         val first = paths?.firstOrNull()?.jsonPrimitive?.contentOrNull
         return when {
             first == null -> stringResource(R.string.tool_ui_show_file_default)
-            paths.size() > 1 -> stringResource(R.string.tool_ui_show_file, "$first (+${paths.size() - 1})")
+            paths.size > 1 -> stringResource(R.string.tool_ui_show_file, "$first (+${paths.size - 1})")
             else -> stringResource(R.string.tool_ui_show_file, first)
         }
     }
