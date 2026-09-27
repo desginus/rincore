@@ -1,12 +1,18 @@
 /* 【域 I·数据存储】 — 页面 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.ui.pages.usage
 
-/* ───【自研】UsagePage.kt — OpenCode 用量查询页 (v3.8.2)
- * 4 个环形图: 滚动窗口(5h)/本周/本月/重置倒计时, 颜色取系统 UI 色
- * 单密钥: 竖列全屏; 多密钥: 卡片布局 (卡内 2x2 横排)
- * 非焦点密钥仅在其 3 个用量均有空余 (percent<100) 时显示
- * 右上角卡包: 密钥保存/切换/删除; 每次进入自动查询 + 下拉刷新
+/* ───【自研】UsagePage.kt — 用量查询页 (v4.8.59 整页重写 — 用户定版)
+ * v3.8.2 初版 → v4.8.59 重写: 旧实现的问题 (用户实证) —
+ *   ① 密钥族分两套页面 (sk→OpenCode 页 / user_→Command Code 页), 交互不一致,
+ *      不同厂商密钥在大小视窗下无法正常运行;
+ *   ② 视图模式切换 (cards/focus) 渲染分支与数据过滤错位, 满额密钥消失;
+ *   ③ 返回失效 (RouteActivity 未接 onBack, 默认空 lambda);
+ *   ④ 查询慢 — 逐密钥串行 HTTP, 无缓存, 每次进页全量等待。
+ * 新交互 (用户定版): 进入即列表 — 全部密钥均为小卡片 (点击进详情);
+ *   点击卡片弹出详细信息 = 原"大卡片全视图"形态 (环形大卡 ×4, 呈现不变);
+ *   返回键/按钮只关闭详情弹层; 查询并行化 + 内存缓存直出 + 60s 新鲜窗口。
  * ───────────────────────────────────────────────────────────────*/
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +36,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -38,9 +45,11 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -51,243 +60,225 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.FileView
 import me.rerere.hugeicons.stroke.Settings02
-import me.rerere.hugeicons.stroke.View
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.usage.CommandCodeUsageApi
-import me.rerere.rikkahub.data.usage.UsageMiniCardData
-import me.rerere.rikkahub.data.usage.openCodeMiniCard
 import me.rerere.rikkahub.data.usage.UsageApi
+import me.rerere.rikkahub.data.usage.UsageMiniCardData
+import me.rerere.rikkahub.data.usage.UsageQuery
+import me.rerere.rikkahub.data.usage.openCodeMiniCard
 import org.koin.compose.koinInject
 import java.time.Instant
-import java.time.ZoneId
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 
 @Composable
 fun UsagePage(onBack: () -> Unit = {}) {
     val settingsStore = koinInject<SettingsStore>()
     val settings by settingsStore.settingsFlow.collectAsState()
-    val apiKey = settings.opencodeApiKey
-    // v3.12.2: Key 前缀分流 — user_ 开头 = Command Code key, 走对齐版
-    // Command Code 用量监测 (同位置同交互); 其余 (sk 开头) = OpenCode 原逻辑
-    // v3.12.5: 决定性修复 — 真实 key 格式是 user_ (小写下划线), 旧判据
-    // startsWith("User") 大小写敏感永不命中 → Command Code key 一直走
-    // OpenCode 分支查 OpenCode 端点 → 必然失败且显示 OpenCode 分支旧文案。
-    // 这就是 "key 完全正常但查询失败且文案不变" 的根因。
-    if (apiKey.startsWith("user_", ignoreCase = true)) {
-        CommandCodeUsagePage(onBack)
-        return
-    }
-    val savedKeys = settings.opencodeApiKeys
-
     val scope = rememberCoroutineScope()
-    var usages by remember { mutableStateOf<Map<String, UsageApi.UsageResult?>>(emptyMap()) }
-    // v3.13.2: 跨族密钥查询结果 (本页为 OpenCode 族, user_ 密钥存这里)
-    var error by remember { mutableStateOf<String?>(null) }
-    var loading by remember { mutableStateOf(false) }
-    var showKeyDialog by remember { mutableStateOf(false) }
-    var keyInput by remember { mutableStateOf(apiKey) }
 
-    suspend fun doQuery() {
-        if (apiKey.isBlank()) {
-            error = "未配置 API Key，点击右上角卡包后自动查询"
+    val activeKey = settings.opencodeApiKey
+    val savedKeys = settings.opencodeApiKeys
+    val allKeys = remember(activeKey, savedKeys) {
+        (listOf(activeKey) + savedKeys).filter { it.isNotBlank() }.distinct()
+    }
+
+    // v4.8.59 重写: 缓存直出 (进入即显) + 后台并行刷新; 查询失败保留旧数据
+    var usages by remember { mutableStateOf(UsageQuery.snapshot()) }
+    var loading by remember { mutableStateOf(false) }
+    var errorText by remember { mutableStateOf<String?>(null) }
+    var selectedKey by remember { mutableStateOf<String?>(null) }
+    var showKeyDialog by remember { mutableStateOf(false) }
+
+    suspend fun doQuery(force: Boolean) {
+        if (allKeys.isEmpty()) {
             usages = emptyMap()
+            errorText = null
             return
         }
+        // 非强制时: 全部密钥均在新鲜窗口内 → 零网络 (进入页面秒开)
+        if (!force && allKeys.all { UsageQuery.hasFresh(it) }) return
         loading = true
-        // 查询卡包内全部密钥 (焦点密钥 + 历史密钥), 供多密钥卡片展示
-        // v3.13.2: 跨族分流 — user_ 开头是 Command Code key, 用 CC Api 查
-        // (旧逻辑全走 OpenCode Api, 跨族 key 必失败被滤, 卡片视图看不到)
-        val keys = (listOf(apiKey) + savedKeys).distinct()
-        val ccKeys = keys.filter { it.startsWith("user_", ignoreCase = true) }
-        val ocKeys = keys.filter { !it.startsWith("user_", ignoreCase = true) }
-        // v3.22.0: 数据链统一 — OC 直查, CC 查后转 OC 形状, 同入 usages 单 map
-        val ocResults = ocKeys.associateWith { UsageApi.fetchUsage(it) }
-        val ccResults = ccKeys.mapNotNull { k ->
-            CommandCodeUsageApi.fetchUsage(k)?.result?.let { k to it.toOcShape() }
-        }.toMap()
-        usages = ocResults + ccResults
-        // v3.19.0: 报错敏感性 (用户定版: 有问题先报错) — 部分密钥查询失败
-        // 不再静默 (此前失败 key 直接从卡片消失无任何提示)
-        // v3.22.0: 数据链统一后按统一 map 统计
-        val ocFailed = ocKeys.count { usages[it] == null }
-        val ccFailed = ccKeys.count { usages[it] == null }
-        val partialFail = listOfNotNull(
-            if (ocFailed > 0) "OpenCode $ocFailed 张" else null,
-            if (ccFailed > 0) "CC $ccFailed 张" else null,
-        ).joinToString("、")
-        error = if (usages[apiKey] == null) {
-            "查询失败，请检查 API Key 或网络后下拉重试"
-        } else if (partialFail.isNotEmpty()) {
-            "部分密钥查询失败（$partialFail），其余已显示"
-        } else {
-            null
+        val results = UsageQuery.fetchAll(allKeys)
+        // 失败保留旧数据 (旧值仍展示; 刷新成功即覆盖)
+        usages = buildMap {
+            for (k in allKeys) {
+                val r = results[k]
+                if (r != null) put(k, r) else usages[k]?.let { prev -> put(k, prev) }
+            }
+        }
+        val failed = allKeys.filter { results[it] == null }
+        errorText = when {
+            failed.isEmpty() -> null
+            failed.size == allKeys.size -> "查询失败，请检查密钥或网络后下拉重试"
+            else -> "部分密钥查询失败：${failed.joinToString("、") { maskKey(it) }}"
         }
         loading = false
     }
 
-    // 进入页面自动查询一次; API Key 变化 (切换/删除) 时重新查询
-    LaunchedEffect(apiKey, savedKeys) { doQuery() }
+    // 进入页面: 缓存直出; 存在非新鲜密钥时才自动刷新 (并行)
+    LaunchedEffect(allKeys) { doQuery(force = false) }
 
-    // v3.18.0: 密钥统一保存收口 (用户定版: 密钥就是密钥, 不分 OpenCode/
-    // CC 卡包) — 当前 key 不在卡包时自动收编, 根治概率性"没被判成保存态":
-    // 卡包弹窗手动保存走双写正常, 但任何其他路径 (备份恢复/迁移/其他入口)
-    // 只写 opencodeApiKey 单槽时卡包漏收, 本兜底统一收口
-    LaunchedEffect(apiKey) {
-        if (apiKey.isNotBlank() && apiKey !in savedKeys) {
-            settingsStore.update { it.copy(opencodeApiKeys = (listOf(apiKey) + it.opencodeApiKeys).distinct()) }
+    // v3.18.0: 密钥统一保存收口 (保留) — 当前 key 不在卡包时自动收编
+    LaunchedEffect(activeKey) {
+        if (activeKey.isNotBlank() && activeKey !in savedKeys) {
+            settingsStore.update { it.copy(opencodeApiKeys = (listOf(activeKey) + it.opencodeApiKeys).distinct()) }
         }
     }
 
     val pullState = rememberPullToRefreshState()
 
-    // 非焦点密钥: 3 个用量均有空余 (percent<100) 才显示; null 视为未满
-    // v3.13.2: 统一小卡数据 (本族 + 跨族 Command Code 密钥), 卡片视图全展示
-    // v3.22.0: 数据链统一 — 其他密钥全部从统一 usages map 取 (CC 已转 OC 形状)
-    val otherVisible = (savedKeys.filter { it != apiKey }
-        .mapNotNull { k -> usages[k]?.let { k to openCodeMiniCard(it) } })
-        .filter { (_, d) -> listOf(d.p5, d.pw, d.pm).all { p -> p == null || p < 100 } }
-    // v3.22.0: 数据链统一后单焦点抽象 (CC 已在入口转为 OC 形状)
-    val focal = usages[apiKey]
-    // v3.18.0: 视图渲染完全由 usageViewMode 决定, 与 otherVisible 解耦
-    // (旧实现 showCards 依赖 otherVisible.isNotEmpty — 其他卡用量全满被滤
-    // 空时 cards 模式错误落入大窗分支, 视图状态与渲染结果错位)
-    // cards 模式 = 焦点小卡 + 其他小卡 (其他为空时仅焦点小卡, 仍是卡片形态)
-    // focus 模式 = 仅焦点密钥完整形态 (UsageRingCard 竖列大窗)
-    val isCardsMode = settings.usageViewMode == "cards"
+    Column(Modifier.fillMaxSize()) {
+        TopAppBar(
+            title = { Text("用量查询") },
+            navigationIcon = {
+                TextButton(onClick = onBack) { Text("返回") }
+            },
+            actions = {
+                IconButton(onClick = { showKeyDialog = true }) {
+                    Icon(HugeIcons.Settings02, "API Key 卡包")
+                }
+            },
+        )
 
-    Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize()) {
-            TopAppBar(
-                title = { Text("用量查询") },
-                navigationIcon = {
-                    TextButton(onClick = onBack) { Text("返回") }
-                },
-                actions = {
-                    IconButton(onClick = {
-                        val next = if (settings.usageViewMode == "cards") "focus" else "cards"
-                        scope.launch {
-                            settingsStore.update { it.copy(usageViewMode = next) }
-                        }
-                    }) {
-                        // 图标即当前模式: 多卡片=FileView(多视图), 焦点=View(单一视图)
-                        Icon(
-                            imageVector = if (settings.usageViewMode == "cards") HugeIcons.FileView else HugeIcons.View,
-                            contentDescription = "切换多卡片/焦点视图",
-                        )
-                    }
-                    IconButton(onClick = {
-                        keyInput = apiKey
-                        showKeyDialog = true
-                    }) {
-                        Icon(HugeIcons.Settings02, "API Key 卡包")
-                    }
-                },
-            )
-
-            PullToRefreshBox(
-                isRefreshing = loading,
-                onRefresh = { scope.launch { doQuery() } },
-                state = pullState,
+        PullToRefreshBox(
+            isRefreshing = loading,
+            onRefresh = { scope.launch { doQuery(force = true) } },
+            state = pullState,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            LazyColumn(
                 modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    if (apiKey.isBlank()) {
-                        item {
-                            Card(Modifier.fillMaxWidth()) {
-                                Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("未配置 API Key", style = MaterialTheme.typography.titleMedium)
-                                    Spacer(Modifier.height(8.dp))
-                                    Text(
-                                        "点击右上角卡包填写 API Key 后，页面将实时动态查询",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-                        }
-                    } else if (error != null && focal == null) {
-                        android.util.Log.w(
-                            "UsageView",
-                            "branch=error mode=${settings.usageViewMode} usages=${usages.size} err=$error",
-                        )
-                        item {
-                            Card(Modifier.fillMaxWidth()) {
-                                Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(error ?: "", style = MaterialTheme.typography.bodyMedium)
-                                }
-                            }
-                        }
-                    } else if (focal != null) {
-                        // v3.21.0: 渲染分支诊断 (数据链统一后仍保留定位能力)
-                        android.util.Log.i(
-                            "UsageView",
-                            "branch=focal mode=${settings.usageViewMode} usages=${usages.size}",
-                        )
-                        if (isCardsMode) {
-                            // ── 多卡片视图: 焦点卡 + 其他密钥卡 (其他为空仅焦点卡) ──
-                            item {
-                                KeyUsageCard(
-                                    key = apiKey,
-                                    card = openCodeMiniCard(focal),
-                                    isActive = true,
+                if (allKeys.isEmpty()) {
+                    item {
+                        Card(Modifier.fillMaxWidth()) {
+                            Column(
+                                Modifier.padding(20.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                Text("未配置 API Key", style = MaterialTheme.typography.titleMedium)
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    "点击右上角卡包填写 API Key 后自动查询（sk- 或 user_ 开头）",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
-                            items(otherVisible, key = { it.first }) { (k, d) ->
-                                KeyUsageCard(
-                                    key = k,
-                                    card = d,
-                                    isActive = false,
+                        }
+                    }
+                } else {
+                    errorText?.let { msg ->
+                        item {
+                            Card(Modifier.fillMaxWidth()) {
+                                Text(
+                                    msg,
+                                    Modifier.padding(12.dp),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
                                 )
                             }
-                        } else {
-                            // ── 焦点视图: 仅焦点密钥完整形态 (竖列大窗, CC/OC 统一形状) ──
-                            val activeUsage = focal
+                        }
+                    }
+                    items(allKeys, key = { it }) { k ->
+                        UsageKeyCard(
+                            key = k,
+                            data = usages[k]?.let { openCodeMiniCard(it) },
+                            isActive = k == activeKey,
+                            loading = loading,
+                            onClick = { selectedKey = k },
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (showKeyDialog) {
+        KeyCardDialog(
+            settingsStore = settingsStore,
+            currentKey = activeKey,
+            savedKeys = savedKeys,
+            initialInput = activeKey,
+            onDismiss = { showKeyDialog = false },
+        )
+    }
+
+    // v4.8.59: 详情弹层 (大卡片全视图, 呈现与旧焦点视图一致) — 自带返回处理:
+    // 系统返回键 / 返回按钮均只关闭弹层 (修复旧版"返回 UI 失效")
+    selectedKey?.let { key ->
+        val data = usages[key]
+        BackHandler { selectedKey = null }
+        Dialog(
+            onDismissRequest = { selectedKey = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Column(Modifier.fillMaxSize()) {
+                    TopAppBar(
+                        title = { Text(maskKey(key)) },
+                        navigationIcon = {
+                            TextButton(onClick = { selectedKey = null }) { Text("返回") }
+                        },
+                    )
+                    if (data == null) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator()
+                                Spacer(Modifier.height(12.dp))
+                                Text(
+                                    "数据加载中或暂不可用，关闭后下拉重试",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                        ) {
                             item {
-                                // v3.12.5: 全密钥统一渐变配色 — 环与主色按用量
-                                // 绿→黄→橙→红 (Command Code 同源 usageColorArgb)
                                 UsageRingCard(
                                     title = "滚动窗口",
                                     subtitle = "近 5 小时用量",
-                                    percent = activeUsage.rolling.percent?.toFloat() ?: 0f,
-                                    resetAt = activeUsage.rolling.resetsAt,
-                                    color = usageGradientColor(activeUsage.rolling.percent ?: 0),
+                                    percent = data.rolling.percent?.toFloat() ?: 0f,
+                                    resetAt = data.rolling.resetsAt,
+                                    color = usageGradientColor(data.rolling.percent ?: 0),
                                 )
                             }
                             item {
                                 UsageRingCard(
                                     title = "本周",
                                     subtitle = "周限额用量",
-                                    percent = activeUsage.weekly.percent?.toFloat() ?: 0f,
-                                    resetAt = activeUsage.weekly.resetsAt,
-                                    color = usageGradientColor(activeUsage.weekly.percent ?: 0),
+                                    percent = data.weekly.percent?.toFloat() ?: 0f,
+                                    resetAt = data.weekly.resetsAt,
+                                    color = usageGradientColor(data.weekly.percent ?: 0),
                                 )
                             }
                             item {
                                 UsageRingCard(
                                     title = "本月",
                                     subtitle = "月限额用量",
-                                    percent = activeUsage.monthly.percent?.toFloat() ?: 0f,
-                                    resetAt = activeUsage.monthly.resetsAt,
-                                    color = usageGradientColor(activeUsage.monthly.percent ?: 0),
+                                    percent = data.monthly.percent?.toFloat() ?: 0f,
+                                    resetAt = data.monthly.resetsAt,
+                                    color = usageGradientColor(data.monthly.percent ?: 0),
                                 )
                             }
                             item {
-                                val resetInfo = nearestReset(activeUsage)
+                                val resetInfo = nearestReset(data)
                                 // v3.12.8: 重置倒计时颜色与其他三卡相反 (用户定版):
                                 // 刚用完 (等待久) 红 → 临近重置 (额度恢复) 绿
                                 val resetColor = Color(
                                     CommandCodeUsageApi.resetColorArgb(
                                         (100f - resetInfo.elapsedPercent).let { p ->
-                                            val nearest = nearestResetWindowMs(activeUsage)
+                                            val nearest = nearestResetWindowMs(data)
                                             (nearest * (p / 100f)).toLong()
                                         },
                                         5 * 60 * 60 * 1000L,
@@ -303,61 +294,24 @@ fun UsagePage(onBack: () -> Unit = {}) {
                                 )
                             }
                         }
-                    } else {
-                        item {
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.Center,
-                            ) {
-                                CircularProgressIndicator()
-                            }
-                        }
                     }
                 }
             }
         }
     }
-
-    if (showKeyDialog) {
-        KeyCardDialog(
-            settingsStore = settingsStore,
-            currentKey = apiKey,
-            savedKeys = savedKeys,
-            initialInput = keyInput,
-            onDismiss = { showKeyDialog = false },
-        )
-    }
 }
 
-// v3.22.0: 数据链统一 (用户定版: CC 数据按 OC 模式解析, 二者零差别,
-// 唯一变化=数据从哪个 API 来) — CC 结果在数据入口即转换为 OC 形状,
-// 下游渲染 (大窗/cards/错误判定) 只认一种形状, 族分流代码全部删除
-private fun CommandCodeUsageApi.CommandCodeUsageResult.toOcShape(): UsageApi.UsageResult {
-    val iso = { ms: Long? -> ms?.let { java.time.Instant.ofEpochMilli(it).toString() } }
-    return UsageApi.UsageResult(
-        rolling = UsageApi.WindowUsage(
-            percent = fiveHour?.percent,
-            resetsAt = iso(fiveHour?.resetAtMs),
-        ),
-        weekly = UsageApi.WindowUsage(
-            percent = weekly?.percent,
-            resetsAt = iso(weekly?.resetAtMs),
-        ),
-        monthly = UsageApi.WindowUsage(
-            percent = monthlyUsedPercent,
-            resetsAt = currentPeriodEnd,
-        ),
-    )
-}
-
-// ── 多密钥卡片 (2x2 横排 4 用量) ──
+// ── 小卡片 (列表形态; 点击进详情) — v4.8.59 重写 ──
 @Composable
-private fun KeyUsageCard(
+private fun UsageKeyCard(
     key: String,
-    card: UsageMiniCardData,
+    data: UsageMiniCardData?,
     isActive: Boolean,
+    loading: Boolean,
+    onClick: () -> Unit,
 ) {
     Card(
+        onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = if (isActive) {
@@ -382,20 +336,34 @@ private fun KeyUsageCard(
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
+                Spacer(Modifier.weight(1f))
+                if (data == null) {
+                    if (loading) {
+                        CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text(
+                            "查询失败",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
             }
-            Spacer(Modifier.height(10.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                MiniRing(card.p5 ?: 0, "5h", usageGradientColor(card.p5 ?: 0))
-                MiniRing(card.pw ?: 0, "周", usageGradientColor(card.pw ?: 0))
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                MiniRing(card.pm ?: 0, "月", usageGradientColor(card.pm ?: 0))
-                // 重置环红→绿 (与三环反向, v3.12.8 用户定版)
-                MiniRing(
-                    card.resetElapsedPct, "重置",
-                    Color(CommandCodeUsageApi.resetColorArgb(card.resetRemainingMs ?: 0L, card.resetWindowMs)),
-                )
+            if (data != null) {
+                Spacer(Modifier.height(10.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    MiniRing(data.p5 ?: 0, "5h", usageGradientColor(data.p5 ?: 0))
+                    MiniRing(data.pw ?: 0, "周", usageGradientColor(data.pw ?: 0))
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    MiniRing(data.pm ?: 0, "月", usageGradientColor(data.pm ?: 0))
+                    // 重置环红→绿 (与三环反向, v3.12.8 用户定版)
+                    MiniRing(
+                        data.resetElapsedPct, "重置",
+                        Color(CommandCodeUsageApi.resetColorArgb(data.resetRemainingMs ?: 0L, data.resetWindowMs)),
+                    )
+                }
             }
         }
     }

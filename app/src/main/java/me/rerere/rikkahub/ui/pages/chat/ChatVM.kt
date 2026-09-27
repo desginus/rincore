@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -69,6 +70,12 @@ class ChatVM(
     private val _conversationId: Uuid = Uuid.parse(id)
     val conversation: StateFlow<Conversation> = chatService.getConversationFlow(_conversationId)
 
+    // v4.8.59: 空对话"开启时归属"快照 — 对话打开那一刻的项目包选区。
+    // 发送时优先采用: 在项目包 A 下打开的空对话始终归 A (此后切换选区不改写
+    // 归属 — 用户实证根修); 在「聊天」下打开则快照为空 → 发送时跟随当前
+    // 选区 (v4.8.26 流程保留: 选项目包→直接发消息→归该项目包)。
+    private var packAtOpen: Uuid? = null
+
     // 4.8.24 项目包 CWD — 对话所属项目包的 cwd (项目包锚定; null = 未设置/聊天默认)
     val conversationFolderCwd: StateFlow<String?> = conversation
         .map { it.folderId }
@@ -109,6 +116,15 @@ class ChatVM(
         // 初始化对话
         viewModelScope.launch {
             chatService.initializeConversation(_conversationId, folderId)
+        }
+
+        // v4.8.59: 捕获"开启时归属" (仅一次; 待 DB 加载完成判定可靠 — 加载
+        // 窗口期的空初始值不可作判据, 与 v4.8.27 双重守卫同思路)
+        viewModelScope.launch {
+            val conv = conversation.first { chatService.isConversationInitialized(it.id) }
+            if (conv.messageNodes.isEmpty() && conv.folderId == null) {
+                packAtOpen = ProjectPackSelection.selectedFolderId.value
+            }
         }
 
         // 记住对话ID, 方便下次启动恢复
@@ -239,8 +255,15 @@ class ChatVM(
         // 守卫: 会话须已完成 DB 加载 (isConversationInitialized) — 加载中
         // 的 state 是空对话初始值, 不可据此判定归属 (极端边缘防护)。
         // 归属更新完成后才入队发送, 保证生成链读取正确 folderId (effectiveWorkspaceCwd)。
-        val targetFolder = ProjectPackSelection.selectedFolderId.value
         val conv = conversation.value
+        // v4.8.59: 归属目标 — 空对话优先"开启时快照" (在项目包下打开的空对话
+        // 始终归该项目包, 之后切换选区不改写 — 用户实证根修); 快照为空 (聊天
+        // 下打开) 或已有归属时维持既有逻辑 (当前选区 / 已定归属不改)。
+        val targetFolder = if (conv.folderId == null) {
+            packAtOpen ?: ProjectPackSelection.selectedFolderId.value
+        } else {
+            conv.folderId
+        }
         val shouldSyncFolder = chatService.isConversationInitialized(conv.id) &&
             conv.messageNodes.isEmpty() && conv.folderId != targetFolder
         if (shouldSyncFolder) {

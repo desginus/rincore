@@ -561,7 +561,9 @@ class RouteActivity : ComponentActivity() {
                             }
 
                             entry<Screen.Usage> {
-                                me.rerere.rikkahub.ui.pages.usage.UsagePage()
+                                me.rerere.rikkahub.ui.pages.usage.UsagePage(
+                                    onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } },
+                                )
                             }
 
                             entry<Screen.Setting> {

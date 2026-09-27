@@ -13,8 +13,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.IconButton
 import me.rerere.hugeicons.stroke.Settings01
-import me.rerere.hugeicons.stroke.ArrowLeft01
-import me.rerere.hugeicons.stroke.ArrowRight01
+import me.rerere.hugeicons.stroke.ArrowDown01
+import me.rerere.hugeicons.stroke.ArrowUp01
 import me.rerere.rikkahub.ui.components.ai.WorkspaceCwdPickerSheet
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -972,7 +972,8 @@ private fun ProjectPackBar(
         PackBarIconButton(icon = HugeIcons.FolderAdd, onClick = onCreate)
         PackBarIconButton(icon = HugeIcons.Settings01, onClick = onSettings)
         PackBarIconButton(
-            icon = if (expanded) HugeIcons.ArrowLeft01 else HugeIcons.ArrowRight01,
+            // v4.8.59 (用户定版): 展开/收起指示改为上下方向
+            icon = if (expanded) HugeIcons.ArrowUp01 else HugeIcons.ArrowDown01,
             onClick = onToggleExpand,
         )
     }
