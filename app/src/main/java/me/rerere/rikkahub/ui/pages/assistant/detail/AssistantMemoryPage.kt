@@ -1,13 +1,10 @@
 /* 【域 E·设置体系】 — 页面 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.ui.pages.assistant.detail
-
-/* ───【原版对齐】AssistantMemoryPage.kt | 差异 ±24 行 (基线 2.5.1)
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+/* ───【原版对齐】AssistantMemoryPage.kt | 基线 2.5.5 (v4.8.64 适配移植)
+ * 来源: 原版 2.5.5 适配移植 (ItemActionMenu 统一操作 + 记忆卡片交互统一)
  * ───────────────────────────────────────────────────────────────*/
 
-
 import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.PencilEdit01
 import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.Delete01
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +21,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeFlexibleTopAppBar
@@ -35,9 +33,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -52,14 +52,14 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
+import me.rerere.rikkahub.ui.components.ui.ItemAction
+import me.rerere.rikkahub.ui.components.ui.ItemActionMenu
 import me.rerere.rikkahub.ui.components.ui.RikkaConfirmDialog
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.theme.CustomColors
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 
 @Composable
 fun AssistantMemoryPage(id: String) {
@@ -111,7 +111,7 @@ private fun AssistantMemoryContent(
     onDeleteMemory: (AssistantMemory) -> Unit,
 ) {
     val memoryDialogState = useEditState<AssistantMemory> {
-        if (it.id == 0L) {
+        if (it.id == 0) {
             onAddMemory(it)
         } else {
             onUpdateMemory(it)
@@ -119,7 +119,6 @@ private fun AssistantMemoryContent(
     }
     var pendingDeleteMemory by remember { mutableStateOf<AssistantMemory?>(null) }
 
-    // 4.1.0: 自定义时间提醒间隔
     var showTimeReminderIntervalDialog by remember(assistant.id) { mutableStateOf(false) }
     var timeReminderIntervalInput by remember(assistant.id) { mutableStateOf("") }
 
@@ -149,12 +148,12 @@ private fun AssistantMemoryContent(
                         showTimeReminderIntervalDialog = false
                     },
                 ) {
-                    Text(stringResource(R.string.common_save))
+                    Text(stringResource(R.string.assistant_page_save))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showTimeReminderIntervalDialog = false }) {
-                    Text(stringResource(R.string.common_cancel))
+                    Text(stringResource(R.string.assistant_page_cancel))
                 }
             },
         )
@@ -274,6 +273,9 @@ private fun AssistantMemoryContent(
                     )
                 }
             )
+        }
+
+        CardGroup {
             item(
                 headlineContent = { Text(stringResource(R.string.assistant_page_time_reminder)) },
                 supportingContent = {
@@ -294,7 +296,6 @@ private fun AssistantMemoryContent(
                     )
                 }
             )
-            // 4.1.0: 自定义时间提醒间隔 (2.5.1 移植)
             if (assistant.enableTimeReminder) {
                 item(
                     headlineContent = { Text(stringResource(R.string.assistant_page_time_reminder_interval)) },
@@ -376,6 +377,7 @@ private fun MemoryItem(
     onDeleteMemory: (AssistantMemory) -> Unit
 ) {
     Card(
+        onClick = { onEditMemory(memory) },
         modifier = Modifier.fillMaxWidth(),
         colors = CustomColors.cardColorsOnSurfaceContainer
     ) {
@@ -392,25 +394,21 @@ private fun MemoryItem(
             ) {
                 Text(
                     text = memory.content,
-
                     maxLines = 5,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-            IconButton(
-                onClick = { onEditMemory(memory) }
-            ) {
-                Icon(HugeIcons.PencilEdit01, null)
-            }
-            IconButton(
-                onClick = { onDeleteMemory(memory) }
-            ) {
-                Icon(
-                    HugeIcons.Delete01,
-                    stringResource(R.string.assistant_page_delete)
+            ItemActionMenu(
+                actions = listOf(
+                    ItemAction(
+                        text = stringResource(R.string.delete),
+                        icon = HugeIcons.Delete01,
+                        destructive = true,
+                        onClick = { onDeleteMemory(memory) },
+                    ),
                 )
-            }
+            )
         }
     }
 }

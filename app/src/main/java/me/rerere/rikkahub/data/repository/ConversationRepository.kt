@@ -298,6 +298,13 @@ class ConversationRepository(
         return conversationDAO.existsById(uuid.toString())
     }
 
+    // v4.8.64 (2.5.5 移植): 数据恢复页 — 聊天记录中的助手分布 (含已从设置消失的助手)
+    suspend fun countConversationsByAssistant(): Map<Uuid, Int> {
+        return conversationDAO.countByAssistant().mapNotNull { row ->
+            runCatching { Uuid.parse(row.assistantId) }.getOrNull()?.let { it to row.count }
+        }.toMap()
+    }
+
     suspend fun countConversations(): Int {
         return conversationDAO.countAll()
     }

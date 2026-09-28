@@ -22,10 +22,39 @@ class SkillManager(
         private const val TAG = "SkillManager"
     }
 
+    // v4.8.64 (2.5.5 移植): 内置技能解压 (assets → filesDir/builtin_skills), 每进程只检查一次
+    private val builtinLock = Any()
+
+    @Volatile
+    private var builtinExtracted = false
+
     fun getSkillsDir(): File {
         val dir = context.filesDir.resolve(FileFolders.SKILLS)
         if (!dir.exists()) dir.mkdirs()
         return dir
+    }
+
+    // v4.8.64 (2.5.5 移植): 内置技能目录
+    fun getBuiltinSkillsDir(): File {
+        val dir = context.filesDir.resolve(FileFolders.BUILTIN_SKILLS)
+        if (!dir.exists()) dir.mkdirs()
+        return dir
+    }
+
+    /**
+     * 确保内置技能已从 assets 解压到 [getBuiltinSkillsDir]，每个进程只检查一次。
+     */
+    fun ensureBuiltinSkillsExtracted() {
+        if (builtinExtracted) return
+        synchronized(builtinLock) {
+            if (builtinExtracted) return
+            runCatching {
+                BuiltinSkills.extractIfNeeded(context, getBuiltinSkillsDir())
+            }.onFailure {
+                Log.w(TAG, "ensureBuiltinSkillsExtracted: Failed to extract builtin skills", it)
+            }
+            builtinExtracted = true
+        }
     }
 
     // v3.6.12: 技能扫描加固 — 单文件解析失败只跳过该技能 (不全缺);
@@ -57,25 +86,41 @@ class SkillManager(
 
     fun listSkills(): List<SkillMetadata> {
         return try {
-            val skillsDir = getSkillsDir()
-            val result = skillsDir.listFiles()
-                ?.filter { it.isDirectory }
-                ?.mapNotNull { dir ->
-                    try {
-                        val skillFile = dir.resolve("SKILL.md")
-                        if (!skillFile.exists()) null else parseSkillFile(skillFile, dir)
-                    } catch (_: Exception) {
-                        null
-                    }
-                }
-                ?: emptyList()
-            cachedSkills = result + scanDshSkills()
-            cachedSkills ?: emptyList()
+            // v4.8.64 (2.5.5 移植): 用户技能 + 额外根 (DSH/插件) + 内置技能 —
+            // 同名时用户侧 (含额外根) 覆盖内置; 内置技能只读 (builtin=true)。
+            val local = listSkillsIn(getSkillsDir(), builtin = false) + scanDshSkills()
+            val localNames = local.mapTo(HashSet()) { it.name }
+            val result = local + listBuiltinSkills().filter { it.name !in localNames }
+            cachedSkills = result
+            result
         } catch (e: Exception) {
             Log.w(TAG, "listSkills scan failed: ${e.message}, using cached ${cachedSkills?.size ?: 0}")
             cachedSkills ?: emptyList()
         }
     }
+
+    /** 列出某根下的技能 (跳过隐藏目录 — 原子写入残留的 .<name>.staging 等; SKILL.md 缺失跳过) — 2.5.5 */
+    private fun listSkillsIn(root: File, builtin: Boolean): List<SkillMetadata> {
+        return root.listFiles()
+            ?.filter { it.isDirectory && !it.name.startsWith(".") }
+            ?.mapNotNull { dir ->
+                try {
+                    val skillFile = dir.resolve("SKILL.md")
+                    if (!skillFile.exists()) null else parseSkillFile(skillFile, dir, builtin)
+                } catch (_: Exception) {
+                    null
+                }
+            }
+            ?: emptyList()
+    }
+
+    private fun listBuiltinSkills(): List<SkillMetadata> {
+        ensureBuiltinSkillsExtracted()
+        return listSkillsIn(getBuiltinSkillsDir(), builtin = true)
+    }
+
+    /** v4.8.64 (2.5.5 移植): 按名查找 (含内置; 详情页只读判定用) */
+    fun findSkill(name: String): SkillMetadata? = listSkills().firstOrNull { it.name == name }
 
     /** 扫描额外根技能 (bundle 格式: <root>/<name>/SKILL.md, 与 DSH 官方发现格式一致) */
     private fun scanDshSkills(): List<SkillMetadata> {
@@ -154,19 +199,33 @@ class SkillManager(
         // v3.6.85/86: 额外源技能 (dsh__/plugin__) 为只读, 禁止通过技能管理删除
         if (extraSkillRoots.any { name.startsWith(it.prefix) }) return@withContext false
         val skillDir = resolveSkillDir(name) ?: return@withContext false
+        // v4.8.64 (2.5.5 移植): 目录不存在时 deleteRecursively 也返回 true, 需提前拦截,
+        // 避免误清理内置技能的启用状态
+        if (!skillDir.exists()) return@withContext false
         val deleted = skillDir.deleteRecursively()
         if (deleted) {
+            // v4.8.64 (2.5.5 移植): 删除的是覆盖内置技能的同名用户技能时, 内置技能会重新
+            // 生效 — 保留启用状态与域挂载 (仅无内置兜底时才清理)
+            val shadowsBuiltin = listBuiltinSkills().any { it.name == name }
             settingsStore.update { settings ->
                 settings.copy(
-                    assistants = settings.assistants.map { assistant ->
-                        if (assistant.enabledSkills.contains(name)) {
-                            assistant.copy(enabledSkills = assistant.enabledSkills - name)
-                        } else {
-                            assistant
+                    assistants = if (shadowsBuiltin) {
+                        settings.assistants
+                    } else {
+                        settings.assistants.map { assistant ->
+                            if (assistant.enabledSkills.contains(name)) {
+                                assistant.copy(enabledSkills = assistant.enabledSkills - name)
+                            } else {
+                                assistant
+                            }
                         }
                     },
                     // 孤儿清理: skill 删除后, toolDomainOverrides 中 skill:名 挂载条目一并清除
-                    toolDomainOverrides = settings.toolDomainOverrides.filterKeys { it != "skill:$name" }
+                    toolDomainOverrides = if (shadowsBuiltin) {
+                        settings.toolDomainOverrides
+                    } else {
+                        settings.toolDomainOverrides.filterKeys { it != "skill:$name" }
+                    }
                 )
             }
         }
@@ -204,9 +263,20 @@ class SkillManager(
         invalidateSkillsCache() // v3.6.12: 保存后清扫描缓存
         val skillDir = resolveSkillDir(skillName) ?: return false
         val target = SkillPaths.resolveSkillFile(skillDir, relativePath) ?: return false
-        target.parentFile?.mkdirs()
-        target.writeText(content)
-        return true
+        val parent = target.parentFile ?: return false
+        // v4.8.64 (2.5.5 移植): 先写同目录临时文件再 rename 覆盖, 避免写到一半失败时损坏原文件;
+        // IO 异常 (如 mkdirs 失败导致 FileNotFoundException) 转为返回 false, 不向调用方抛出
+        val tempFile = parent.resolve(".${target.name}.tmp")
+        return try {
+            if (!parent.exists() && !parent.mkdirs()) return false
+            tempFile.writeText(content)
+            tempFile.renameTo(target)
+        } catch (e: Exception) {
+            Log.w(TAG, "saveSkillFile: Failed to save $skillName/$relativePath", e)
+            false
+        } finally {
+            if (tempFile.exists()) tempFile.delete()
+        }
     }
 
     fun saveSkillFilesAtomically(skillName: String, files: Map<String, String>): Boolean {
@@ -295,7 +365,7 @@ class SkillManager(
         return null
     }
 
-    private fun parseSkillFile(skillFile: File, skillDir: File): SkillMetadata? {
+    private fun parseSkillFile(skillFile: File, skillDir: File, builtin: Boolean = false): SkillMetadata? {
         return runCatching {
             val content = skillFile.readText()
             val frontmatter = SkillFrontmatterParser.parse(content)
@@ -307,6 +377,7 @@ class SkillManager(
                 compatibility = frontmatter["compatibility"],
                 allowedTools = frontmatter["allowed-tools"]?.split(" ")?.filter { it.isNotBlank() } ?: emptyList(),
                 skillDir = skillDir,
+                builtin = builtin,
             )
         }.getOrElse {
             Log.w(TAG, "parseSkillFile: Failed to parse ${skillFile.absolutePath}", it)
@@ -321,6 +392,8 @@ data class SkillMetadata(
     val compatibility: String? = null,
     val allowedTools: List<String> = emptyList(),
     val skillDir: File,
+    /** v4.8.64 (2.5.5 移植): 内置技能 (assets 解压), 只读 */
+    val builtin: Boolean = false,
 ) {
     val skillFile: File get() = skillDir.resolve("SKILL.md")
 }

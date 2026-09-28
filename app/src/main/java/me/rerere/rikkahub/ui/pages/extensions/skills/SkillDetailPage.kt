@@ -1,8 +1,7 @@
 /* 【域 A·对话核心】 — 页面 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.pages.extensions.skills
-
-/* ───【原版对齐】SkillDetailPage.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+/* ───【原版对齐】SkillDetailPage.kt | 基线 2.5.5 (v4.8.64 移植: 内置技能只读 readOnly 全链 + 文件树重构配套)
+ * 来源: 原版 2.5.5 适配移植 | 差异: 仅工程标注
  * ───────────────────────────────────────────────────────────────*/
 
 import androidx.compose.animation.AnimatedVisibility
@@ -37,10 +36,12 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -53,6 +54,7 @@ import me.rerere.rikkahub.R
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.composables.icons.lucide.ChevronDown
 import com.composables.icons.lucide.ChevronRight
+import com.composables.icons.lucide.Eye
 import com.composables.icons.lucide.FilePen
 import com.composables.icons.lucide.FileText
 import com.composables.icons.lucide.Folder
@@ -64,10 +66,8 @@ import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.RikkaConfirmDialog
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.CustomColors
-import org.koin.androidx.compose.koinViewModel
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import me.rerere.rikkahub.utils.plus
+import org.koin.androidx.compose.koinViewModel
 
 @Composable
 fun SkillDetailPage(skillName: String) {
@@ -75,6 +75,7 @@ fun SkillDetailPage(skillName: String) {
     LaunchedEffect(skillName) { vm.init(skillName) }
 
     val tree by vm.tree.collectAsStateWithLifecycle()
+    val readOnly by vm.readOnly.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val toaster = LocalToaster.current
 
@@ -104,7 +105,7 @@ fun SkillDetailPage(skillName: String) {
         },
         floatingActionButton = {
             AnimatedVisibility(
-                visible = fabVisible,
+                visible = fabVisible && !readOnly,
                 enter = fadeIn() + scaleIn(),
                 exit = fadeOut() + scaleOut(),
             ) {
@@ -125,6 +126,7 @@ fun SkillDetailPage(skillName: String) {
             FileTree(
                 nodes = tree,
                 depth = 0,
+                readOnly = readOnly,
                 onEdit = { editingFile = it },
                 onDelete = { deleteTarget = it },
             )
@@ -134,6 +136,7 @@ fun SkillDetailPage(skillName: String) {
     editingFile?.let { skillFile ->
         EditFileDialog(
             skillFile = skillFile,
+            readOnly = readOnly,
             initialContent = remember(skillFile.relativePath) { vm.readFile(skillFile) },
             onDismiss = { editingFile = null },
             onConfirm = { content ->
@@ -180,6 +183,7 @@ fun SkillDetailPage(skillName: String) {
 private fun FileTree(
     nodes: List<SkillFileNode>,
     depth: Int,
+    readOnly: Boolean,
     onEdit: (SkillFile) -> Unit,
     onDelete: (SkillFile) -> Unit,
 ) {
@@ -188,6 +192,7 @@ private fun FileTree(
             is SkillFileNode.FileNode -> FileItem(
                 skillFile = node.skillFile,
                 depth = depth,
+                readOnly = readOnly,
                 onEdit = { onEdit(node.skillFile) },
                 onDelete = { onDelete(node.skillFile) },
             )
@@ -195,6 +200,7 @@ private fun FileTree(
             is SkillFileNode.DirNode -> DirItem(
                 node = node,
                 depth = depth,
+                readOnly = readOnly,
                 onEdit = onEdit,
                 onDelete = onDelete,
             )
@@ -206,6 +212,7 @@ private fun FileTree(
 private fun FileItem(
     skillFile: SkillFile,
     depth: Int,
+    readOnly: Boolean,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -226,7 +233,7 @@ private fun FileItem(
                 tint = MaterialTheme.colorScheme.primary,
             )
             Text(
-                text = skillFile.file.name,
+                text = skillFile.name,
                 style = MaterialTheme.typography.bodyMedium,
                 fontFamily = FontFamily.Monospace,
                 modifier = Modifier
@@ -234,18 +241,18 @@ private fun FileItem(
                     .padding(start = 8.dp),
             )
             Text(
-                text = "${skillFile.file.length()} B",
+                text = "${skillFile.size} B",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             IconButton(onClick = onEdit, modifier = Modifier.size(36.dp)) {
                 Icon(
-                    imageVector = Lucide.FilePen,
-                    contentDescription = stringResource(R.string.edit),
+                    imageVector = if (readOnly) Lucide.Eye else Lucide.FilePen,
+                    contentDescription = if (readOnly) null else stringResource(R.string.edit),
                     modifier = Modifier.size(16.dp),
                 )
             }
-            if (skillFile.relativePath != "SKILL.md") {
+            if (!readOnly && skillFile.relativePath != "SKILL.md") {
                 IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
                     Icon(
                         imageVector = Lucide.Trash2,
@@ -263,6 +270,7 @@ private fun FileItem(
 private fun DirItem(
     node: SkillFileNode.DirNode,
     depth: Int,
+    readOnly: Boolean,
     onEdit: (SkillFile) -> Unit,
     onDelete: (SkillFile) -> Unit,
 ) {
@@ -306,6 +314,7 @@ private fun DirItem(
                     FileTree(
                         nodes = node.children,
                         depth = depth + 1,
+                        readOnly = readOnly,
                         onEdit = onEdit,
                         onDelete = onDelete,
                     )
@@ -318,11 +327,12 @@ private fun DirItem(
 @Composable
 private fun EditFileDialog(
     skillFile: SkillFile,
+    readOnly: Boolean,
     initialContent: String,
     onDismiss: () -> Unit,
     onConfirm: (content: String) -> Unit,
 ) {
-    var content by rememberSaveable(skillFile.relativePath) { mutableStateOf(initialContent) }
+    var content by remember(skillFile.relativePath) { mutableStateOf(initialContent) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -331,6 +341,7 @@ private fun EditFileDialog(
             OutlinedTextField(
                 value = content,
                 onValueChange = { content = it },
+                readOnly = readOnly,
                 label = { Text(stringResource(R.string.skill_detail_page_content)) },
                 minLines = 10,
                 maxLines = 20,
@@ -339,10 +350,16 @@ private fun EditFileDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(content) }) { Text(stringResource(R.string.skill_detail_page_save)) }
+            if (readOnly) {
+                TextButton(onClick = onDismiss) { Text("Close") }
+            } else {
+                TextButton(onClick = { onConfirm(content) }) { Text(stringResource(R.string.skill_detail_page_save)) }
+            }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+            if (!readOnly) {
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+            }
         },
     )
 }

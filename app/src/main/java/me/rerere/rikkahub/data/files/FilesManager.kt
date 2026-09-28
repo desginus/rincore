@@ -547,6 +547,7 @@ class FilesManager(
 object FileFolders {
     const val UPLOAD = "upload"
     const val SKILLS = "skills"
+    const val BUILTIN_SKILLS = "builtin_skills" // v4.8.64 (2.5.5 移植): 内置技能 (assets 解压)
     const val FONTS = "fonts"
     const val TOOL_OUTPUTS = "tool_outputs"
 }

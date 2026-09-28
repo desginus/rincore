@@ -25,20 +25,25 @@ package me.rerere.rikkahub.data.datastore
  * ───────────────────────────────────────────────────────────────*/
 import android.content.Context
 import android.util.Log
+import androidx.datastore.core.CorruptionException
+import androidx.datastore.core.DataStore
 import androidx.datastore.core.IOException
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
+import androidx.datastore.preferences.preferencesDataStoreFile
 import io.pebbletemplates.pebble.PebbleEngine
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
@@ -75,20 +80,49 @@ import me.rerere.search.SearchServiceOptions
 import me.rerere.tts.provider.TTSProviderSetting
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
+import java.io.File
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.uuid.Uuid
 
 private const val TAG = "PreferencesStore"
 
-private val Context.settingsStore by preferencesDataStore(
-    name = "settings",
-    produceMigrations = { context ->
-        listOf(
+// v4.8.64 (2.5.5 适配移植): 设置读取失败时绝不再回退为空配置 — 旧实现 emit(emptyPreferences())
+// 会把默认值当成用户数据写回, 一次性覆盖全部设置 (上游 70b382f5 同一修复, 适配我们的迁移列表)。
+private const val SETTINGS_STORE_NAME = "settings"
+
+// 读取失败时的最大重试次数
+private const val READ_MAX_RETRIES = 3
+
+@Volatile
+private var settingsDataStore: DataStore<Preferences>? = null
+
+// 进程内单例, 同一文件只能存在一个 DataStore 实例
+private val Context.settingsStore: DataStore<Preferences>
+    get() = settingsDataStore ?: synchronized(SettingsStore::class) {
+        settingsDataStore ?: createSettingsDataStore(applicationContext).also { settingsDataStore = it }
+    }
+
+private fun createSettingsDataStore(context: Context): DataStore<Preferences> {
+    val file = context.preferencesDataStoreFile(SETTINGS_STORE_NAME)
+    return PreferenceDataStoreFactory.create(
+        corruptionHandler = ReplaceFileCorruptionHandler { exception ->
+            // 文件已损坏无法解析, 先留一份原文件用于排查/抢救, 再重建为空
+            Log.e(TAG, "Settings datastore corrupted, resetting", exception)
+            runCatching {
+                file.copyTo(File(file.parentFile, "${file.name}.corrupt-${System.currentTimeMillis()}"))
+            }.onFailure {
+                Log.e(TAG, "Failed to backup corrupted settings file", it)
+            }
+            emptyPreferences()
+        },
+        migrations = listOf(
             PreferenceStoreV1Migration(),
             PreferenceStoreV2Migration(),
             PreferenceStoreV3Migration()
-        )
-    }
-)
+        ),
+        produceFile = { file },
+    )
+}
 
 
 @Serializable
@@ -314,12 +348,16 @@ class SettingsStore(
     private val dataStore = context.settingsStore
 
     val settingsFlowRaw = dataStore.data
-        .catch { exception ->
-            if (exception is IOException) {
-                emit(emptyPreferences())
-            } else {
-                throw exception
+        .retryWhen { cause, attempt ->
+            // v4.8.64 (2.5.5 移植): 读取失败绝不能回退为空配置 (默认值会被当成用户
+            // 数据写回, 覆盖全部设置); 偶发 IO 错误重试, 仍失败向上抛出。
+            val shouldRetry =
+                cause is IOException && cause !is CorruptionException && attempt < READ_MAX_RETRIES
+            if (shouldRetry) {
+                Log.w(TAG, "Failed to read settings, retrying (${attempt + 1}/$READ_MAX_RETRIES)", cause)
+                delay((100L shl attempt.toInt()).milliseconds)
             }
+            shouldRetry
         }.map { preferences ->
             Settings(
                 enableWebSearch = preferences[ENABLE_WEB_SEARCH] == true,
@@ -675,6 +713,16 @@ class SettingsStore(
             update(newSettings)
             return result
         }
+    }
+
+    // v4.8.64 (2.5.5 移植): 只原子地修改单个 key, 不能用 update() 写回整份快照
+    suspend fun incrementLaunchCount(): Int {
+        var count = 0
+        dataStore.edit { preferences ->
+            count = (preferences[LAUNCH_COUNT] ?: 0) + 1
+            preferences[LAUNCH_COUNT] = count
+        }
+        return count
     }
 
     suspend fun updateAssistant(assistantId: Uuid) {

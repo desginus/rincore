@@ -104,6 +104,10 @@ interface ConversationDAO {
     @Query("SELECT COUNT(*) FROM conversationentity")
     suspend fun countAll(): Int
 
+    // v4.8.64 (2.5.5 移植): 数据恢复页 — 聊天记录引用的助手分布
+    @Query("SELECT assistant_id AS assistantId, COUNT(*) AS count FROM conversationentity GROUP BY assistant_id")
+    suspend fun countByAssistant(): List<AssistantConversationCount>
+
     @Query(
         "SELECT strftime('%Y-%m-%d', create_at/1000, 'unixepoch', 'localtime') AS day, " +
             "COUNT(*) AS count " +
@@ -115,3 +119,6 @@ interface ConversationDAO {
 }
 
 data class ConversationDayCount(val day: String, val count: Int)
+
+// v4.8.64 (2.5.5 移植): 数据恢复页配套
+data class AssistantConversationCount(val assistantId: String, val count: Int)

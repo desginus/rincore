@@ -1381,5 +1381,13 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
 <string name="imggen_page_select_image">选择图片</string>
 <string name="workspace_detail_compatibility_mode">兼容模式</string>
 <string name="workspace_detail_compatibility_mode_desc">如果终端无法启动，请尝试启用此功能。这可能会降低性能。适用于新的终端标签页及后续命令。</string>
+  <string name="common_delete_confirm_message">确定要删除“%s”吗？此操作无法撤销。</string>
+  <string name="skills_page_search_placeholder">搜索技能</string>
+  <string name="skills_page_search_no_result">没有匹配的技能</string>
+  <string name="safe_mode_enter_app">进入应用</string>
+  <string name="workspace_terminal_tab">终端 %1$d</string>
+  <string name="workspace_terminal_new_tab">新建终端标签页</string>
+  <string name="workspace_terminal_close_tab">关闭终端 %1$d</string>
+  <string name="workspace_terminal_no_tabs">没有打开的终端标签页</string>
 </resources>
 

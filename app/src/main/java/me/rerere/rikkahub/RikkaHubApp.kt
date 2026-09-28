@@ -25,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import me.rerere.rikkahub.data.agentrun.AgentRunBootRecovery
 import me.rerere.rikkahub.data.ai.tools.local.AgentWorkspace
 import me.rerere.rikkahub.data.files.FileFolders
+import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.data.log.LogSessionStore
 import java.io.File
 import kotlinx.coroutines.SupervisorJob
@@ -207,6 +208,12 @@ class RikkaHubApp : Application() {
         // sync upload files to DB
         syncManagedFiles()
 
+        // v4.8.64 (2.5.5 移植): 安装/更新后从 assets 解压内置技能 (IO 线程)
+        extractBuiltinSkills()
+
+        // v4.8.64 (2.5.5 移植): 启动计数 — 原子自增 (不再经 update() 整快照回写)
+        incrementLaunchCount()
+
         // Start WebServer if enabled in settings
         startWebServerIfEnabled()
         // v4.8.0: 沙箱一体化桥 — 无条件启动 (loopback only, 端口 17526),
@@ -327,6 +334,23 @@ class RikkaHubApp : Application() {
                 if (dir.exists()) {
                     dir.deleteRecursively()
                 }
+            }
+        }
+    }
+
+    private fun extractBuiltinSkills() {
+        get<AppScope>().launch(Dispatchers.IO) {
+            get<SkillManager>().ensureBuiltinSkillsExtracted()
+        }
+    }
+
+    private fun incrementLaunchCount() {
+        get<AppScope>().launch {
+            runCatching {
+                val count = get<SettingsStore>().incrementLaunchCount()
+                Log.i(TAG, "incrementLaunchCount: $count")
+            }.onFailure {
+                Log.e(TAG, "incrementLaunchCount failed", it)
             }
         }
     }
