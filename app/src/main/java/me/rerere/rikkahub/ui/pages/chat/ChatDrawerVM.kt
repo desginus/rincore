@@ -219,24 +219,27 @@ class ChatDrawerVM(
         ProjectPackSelection.selectedFolderId.value = folderId
     }
 
-    /** v4.8.58: 记录一次项目包点击 (真统计) — 追加时间戳 + 剪枝 (3 天外真删)。 */
+    /** v4.8.58/63: 记录一次项目包点击 (真统计) — 追加时间戳 + 过期剪枝。
+     *  v4.8.63 修复: 不再以"当时列表"做目录存在性删除 (瞬时空列表曾全量误删);
+     *  目录存在性删除统一下放到周期剪枝 (以全助手全量目录为全集)。 */
     fun recordPackClick(folderId: Uuid) {
         viewModelScope.launch {
             runCatching {
-                val validIds = folders.first().map { it.id }.toSet()
                 settingsStore.update { s ->
-                    s.copy(projectPackClickStats = bumpPackStats(s.projectPackClickStats, folderId, validIds))
+                    s.copy(projectPackClickStats = bumpPackStats(s.projectPackClickStats, folderId))
                 }
             }
         }
     }
 
-    /** v4.8.58: 剪枝入口 — 目录变更/进入抽屉时调用; 有过期或僵尸条目才写回 (真删),
-     *  数据无变化零写入 (不打扰 settings 修订号)。 */
-    fun prunePackStats(folders: List<Folder>) {
+    /** v4.8.58/63: 周期剪枝入口 — 目录变更/进入抽屉时调用。
+     *  v4.8.63 修复: 目录全集 = 全部助手的全部项目包 (此前用当前助手目录 →
+     *  切换助手时误删其他助手的历史统计 → 排序静默回退, 用户感知"没有持久化");
+     *  至有过期/僵尸条目才写回, 无变化零写入 (不打扰 settings 修订号)。 */
+    fun prunePackStats() {
         viewModelScope.launch {
             runCatching {
-                val validIds = folders.map { it.id }.toSet()
+                val validIds = folderRepo.getAllFolderIds()
                 val current = settingsStore.settingsFlow.first().projectPackClickStats
                 val pruned = prunePackStatsJson(current, validIds)
                 if (pruned != current) {
@@ -343,10 +346,20 @@ class ChatDrawerVM(
     }
 }
 
-/* ===================== v4.8.58: 项目包点击统计与智能排序 ===================== */
+/* ===================== v4.8.58/63: 项目包点击统计与智能排序 ===================== */
 
-/** 统计保留窗口: 3 天 (过期的点击事件真删) */
-private const val PACK_STATS_RETENTION_MS = 3L * 24 * 60 * 60 * 1000
+/** v4.8.63 (用户定版): 统计窗口 — "最多 3 天内的数据"按北京时间 (Asia/Shanghai)
+ *  自然日计: 保留 今天 + 前 2 天的全部点击 (cutoff = 前天 00:00 北京时间)。
+ *  数据源 = Settings 持久化 (DataStore projectPackClickStats), 非内存缓存。 */
+private val PACK_STATS_ZONE: java.time.ZoneId = java.time.ZoneId.of("Asia/Shanghai")
+
+private fun packStatsCutoff(nowMs: Long): Long =
+    java.time.ZonedDateTime.ofInstant(java.time.Instant.ofEpochMilli(nowMs), PACK_STATS_ZONE)
+        .toLocalDate()
+        .minusDays(2)
+        .atStartOfDay(PACK_STATS_ZONE)
+        .toInstant()
+        .toEpochMilli()
 
 /** 解析统计 JSON: {"<folderUuid>":[epochMs,...]} — 容错, 坏数据返回空表 */
 internal fun parsePackStats(json: String): MutableMap<String, MutableList<Long>> {
@@ -372,31 +385,36 @@ internal fun encodePackStats(map: Map<String, List<Long>>): String {
     }.toString()
 }
 
-/** 剪枝: 3 天外事件删除 + 已删目录条目整体移除 + 空条目移除 (编码前) */
+/** 剪枝 (编码前): 过期事件删除 (北京时间 3 天窗口) + 已删目录条目移除 + 空条目移除。
+ *  v4.8.63: validFolderIds 为空 = "目录集合未知" (瞬时态) — 绝不按存在性删数据;
+ *  传入非空时必须是"全部助手的全量目录" (跨助手不误删)。 */
 private fun pruneParsedStats(
     json: String,
     validFolderIds: Set<Uuid>,
     nowMs: Long,
 ): MutableMap<String, MutableList<Long>> {
-    val cutoff = nowMs - PACK_STATS_RETENTION_MS
+    val cutoff = packStatsCutoff(nowMs)
     val out = mutableMapOf<String, MutableList<Long>>()
     for ((k, list) in parsePackStats(json)) {
-        val id = runCatching { Uuid.parse(k) }.getOrNull() ?: continue
-        if (id !in validFolderIds) continue
         val kept = list.filter { it >= cutoff }
-        if (kept.isNotEmpty()) out[k] = kept.sorted().toMutableList()
+        if (kept.isEmpty()) continue
+        if (validFolderIds.isNotEmpty()) {
+            val id = runCatching { Uuid.parse(k) }.getOrNull() ?: continue
+            if (id !in validFolderIds) continue
+        }
+        out[k] = kept.sorted().toMutableList()
     }
     return out
 }
 
-/** 点击记录: 剪枝 + 追加当前时间戳 (真统计, 真删过期) */
+/** 点击记录: 过期剪枝 (纯时间窗口) + 追加当前时间戳。
+ *  v4.8.63: 不做目录存在性删除 (防瞬时列表误删); 该职责归周期剪枝 (全量目录全集)。 */
 internal fun bumpPackStats(
     currentJson: String,
     folderId: Uuid,
-    validFolderIds: Set<Uuid>,
     nowMs: Long = System.currentTimeMillis(),
 ): String {
-    val parsed = pruneParsedStats(currentJson, validFolderIds, nowMs)
+    val parsed = pruneParsedStats(currentJson, emptySet(), nowMs)
     val key = folderId.toString()
     val list = parsed[key] ?: mutableListOf()
     list.add(nowMs)
@@ -412,12 +430,13 @@ internal fun prunePackStatsJson(
 ): String = encodePackStats(pruneParsedStats(currentJson, validFolderIds, nowMs))
 
 /**
- * v4.8.58 (用户定版): 项目包智能推荐排序。
+ * v4.8.58/63 (用户定版): 项目包智能推荐排序。
  * 合成顺序: ① 本次选中的项目包 (走选区缓存, 不再计算) →
  *         ② 最近 3 次被点击的项目包 (事件级去重, 每个项目包最多计一次) →
- *         ③ 3 天内被点击次数降序 (并列取最近一次点击更晚者) →
+ *         ③ 3 天内 (北京时间自然日窗口) 被点击次数降序 (并列取最近一次更晚者) →
  *         ④ 其余保持默认顺序 (稳定排序)。
- * 数据源: Settings 持久化 JSON (只含 3 天内事件; 过期在写入/剪枝时真删)。
+ * 数据源: Settings 持久化 (DataStore projectPackClickStats — 非内存缓存);
+ * 只含 3 天窗口内事件 (过期在写入/剪枝时真删)。
  */
 internal fun rankProjectPacks(
     folders: List<Folder>,
@@ -426,7 +445,7 @@ internal fun rankProjectPacks(
     nowMs: Long = System.currentTimeMillis(),
 ): List<Folder> {
     if (folders.size <= 1) return folders
-    val cutoff = nowMs - PACK_STATS_RETENTION_MS
+    val cutoff = packStatsCutoff(nowMs)
     val existing = folders.map { it.id }.toSet()
     data class Ev(val id: Uuid, val ts: Long)
     val events = parsePackStats(statsJson).entries.flatMap { (k, list) ->

@@ -1471,6 +1471,9 @@ class ChatService(
             customSystemPrompt = currentConversation.customSystemPrompt,
             modeInjectionIds = currentConversation.modeInjectionIds,
             lorebookIds = currentConversation.lorebookIds,
+            // v4.8.63 (用户实证修复, bug-High): 分支必须继承原对话的文件夹归属 —
+            // 此前漏传 folderId, 新分支永远掉进「默认聊天」而非原项目包
+            folderId = currentConversation.folderId,
         )
 
         saveConversation(forkConversation.id, forkConversation)

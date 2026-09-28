@@ -142,9 +142,10 @@ fun ChatDrawerContent(
     val rankedFolders = remember(folders, selectedFolderId, packClickStats) {
         rankProjectPacks(folders, selectedFolderId, packClickStats)
     }
-    // v4.8.58: 过期统计真删 — 目录变更/数据过期时写回 (无变化不写)
+    // v4.8.58/63: 过期统计真删 — 目录变更时写回 (无变化不写); 剪枝内部以
+    // 全助手全量目录为存在性全集 (v4.8.63 修复跨助手误删)
     LaunchedEffect(folders) {
-        drawerVm.prunePackStats(folders)
+        drawerVm.prunePackStats()
     }
     val conversationListState = rememberLazyListState(
         initialFirstVisibleItemIndex = drawerVm.scrollIndex,

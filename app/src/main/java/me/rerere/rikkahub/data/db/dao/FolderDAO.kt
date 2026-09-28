@@ -19,6 +19,10 @@ interface FolderDAO {
     @Query("SELECT * FROM conversation_folder WHERE assistant_id = :assistantId ORDER BY sort_index ASC, create_at ASC")
     fun getFoldersOfAssistant(assistantId: String): Flow<List<FolderEntity>>
 
+    /** v4.8.63: 全部助手的项目包 id 全集 (统计剪枝用 — 跨助手不误删) */
+    @Query("SELECT id FROM conversation_folder")
+    suspend fun getAllFolderIds(): List<String>
+
     @Query("SELECT * FROM conversation_folder WHERE id = :id")
     suspend fun getFolderById(id: String): FolderEntity?
 

@@ -27,6 +27,10 @@ class FolderRepository(
         return folderDAO.getFolderById(id.toString())?.toFolder()
     }
 
+    /** v4.8.63: 全部助手的项目包 id 全集 (统计剪枝用) */
+    suspend fun getAllFolderIds(): Set<Uuid> =
+        folderDAO.getAllFolderIds().mapNotNull { runCatching { Uuid.parse(it) }.getOrNull() }.toSet()
+
     /** 4.8.25: 响应式查询 (CWD 变更自动刷新)。 */
     fun getFolderFlow(id: Uuid): Flow<Folder?> {
         return folderDAO.getFolderByIdFlow(id.toString()).map { it?.toFolder() }

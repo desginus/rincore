@@ -454,14 +454,6 @@ internal class McpSessionRegistry(
         clientInfo = Implementation(name = config.commonOptions.name, version = "1.0")
     )
 
-    /** v4.5.27: 当前助手的 CWD (归一为相对 files 的子路径; 空串 = 无约束)。
-     *  MCP stdio 沙箱进程的 /workspace 挂载源与之对齐, 与文件工具同源。 */
-    private fun currentAssistantCwdRel(): String {
-        val cwd = settingsStore.settingsFlow.value.getCurrentAssistant().workspaceCwd ?: return ""
-        val raw = cwd.trim('/')
-        return (if (raw == "workspace") "" else raw.removePrefix("workspace/")).trim('/')
-    }
-
     private suspend fun createTransport(config: McpServerConfig): AbstractTransport = when (config) {
         is McpServerConfig.SseTransportServer -> SseClientTransport(
             urlString = config.url,
@@ -477,6 +469,11 @@ internal class McpSessionRegistry(
 
         // v3.11.2 兼容分支: STDIO — workspace 沙箱启动 (viaWorkspace)
         // 或直接本地进程, 失败自动回退沙箱。状态机与图标与原版完全一致。
+        // v4.8.63 (用户明确): MCP 服务不受任何 CWD 约束 — 项目包/助手 CWD 只用于
+        // 模型产物的整理规划, 不是沙箱锁; stdio 进程一律以工作区全量视图启动
+        // (cwd="", /workspace = 完整 files 区), 否则 MCP 基础设施目录不可达 →
+        // 进程起不来 → 连接超时 (用户实证: 绑定非当前助手/设置项目包后无法连接;
+        // v4.5.27 的"助手 CWD 作用域对齐"于此撤销)。
         is McpServerConfig.StdioTransportServer -> {
             check(config.command.isNotBlank()) { "stdio mode requires: command" }
             val cmdParts = config.command.split(Regex("\\s+")).filter { it.isNotBlank() }
@@ -484,7 +481,7 @@ internal class McpSessionRegistry(
                 val repo = workspaceRepository
                     ?: throw IllegalStateException("viaWorkspace stdio requires WorkspaceRepository")
                 val p = runCatching {
-                    repo.launchProcess(config.workspaceId, config.command, currentAssistantCwdRel())
+                    repo.launchProcess(config.workspaceId, config.command, "")
                 }.getOrElse { e ->
                     Log.e("McpSessionRegistry", "viaWorkspace launch failed: ${e.message}")
                     throw IllegalStateException("workspace 启动 MCP 服务器失败: ${e.message}", e)
@@ -496,16 +493,17 @@ internal class McpSessionRegistry(
                     ProcessBuilder(cmdParts + config.args).start()
                 } catch (e: java.io.IOException) {
                     Log.w("McpSessionRegistry", "direct stdio launch failed: ${e.message}, falling back to workspace")
-                    val workspaceId = settingsStore.settingsFlow.value
-                        .getCurrentAssistant().workspaceId
-                    if (workspaceId == null) throw e
-                    val wp = workspaceRepository?.launchProcess(workspaceId.toString(), config.command, currentAssistantCwdRel())
+                    // 目标 workspace: 配置指定优先 (绑定助手/基础设施所在), 无则回退当前助手
+                    val workspaceId = config.workspaceId.takeIf { it.isNotBlank() }
+                        ?: settingsStore.settingsFlow.value.getCurrentAssistant().workspaceId?.toString()
+                        ?: throw e
+                    val wp = workspaceRepository?.launchProcess(workspaceId, config.command, "")
                         ?: throw e
                     runCatching {
                         settingsStore.update { cur ->
                             cur.copy(mcpServers = cur.mcpServers.map { s ->
                                 if (s.id == config.id && s is McpServerConfig.StdioTransportServer) {
-                                    s.copy(viaWorkspace = true, workspaceId = workspaceId.toString())
+                                    s.copy(viaWorkspace = true, workspaceId = workspaceId)
                                 } else s
                             })
                         }
