@@ -33,6 +33,10 @@ interface ConversationDAO {
     @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, folder_id as folderId FROM conversationentity WHERE assistant_id = :assistantId AND folder_id = '' AND title NOT LIKE '[Sub-agent]%' ORDER BY is_pinned DESC, update_at DESC")
     fun getUnfiledConversationsOfAssistantPaging(assistantId: String): PagingSource<Int, LightConversationEntity>
 
+    /** v4.8.62: 未归类对话计数 (进入助手的落地逻辑用; 与分页查询同口径, 排除子代理) */
+    @Query("SELECT COUNT(*) FROM conversationentity WHERE assistant_id = :assistantId AND folder_id = '' AND title NOT LIKE '[Sub-agent]%'")
+    suspend fun countUnfiledConversationsOfAssistant(assistantId: String): Int
+
     @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, folder_id as folderId FROM conversationentity WHERE folder_id = :folderId AND title NOT LIKE '[Sub-agent]%' ORDER BY is_pinned DESC, update_at DESC")
     fun getConversationsOfFolderPaging(folderId: String): PagingSource<Int, LightConversationEntity>
 

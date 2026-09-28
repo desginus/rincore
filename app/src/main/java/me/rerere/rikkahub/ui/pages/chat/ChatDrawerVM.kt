@@ -103,6 +103,15 @@ class ChatDrawerVM(
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
+    // v4.8.62 (用户定版): 项目包绿色任务标记 — 有正在执行任务的对话的项目包集合。
+    // 任务流变化 (开始/结束) 与目录变化即刷新; 包内核查走会话内存快照 (权威)。
+    val packsWithRunning: StateFlow<Set<Uuid>> = combine(
+        chatService.getConversationJobs(),
+        folders,
+    ) { _, foldersNow ->
+        foldersNow.map { it.id }.filter { chatService.hasGeneratingConversationInFolder(it) }.toSet()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
     val conversations: Flow<PagingData<ConversationListItem>> =
         combine(assistantIdFlow, _selectedFolderId) { assistantId, folderId ->
             assistantId to folderId
@@ -175,6 +184,8 @@ class ChatDrawerVM(
     init {
         // 4.8.27: 同步全局选区状态 (跨 VM 只读 — ChatVM 发送时归属同步用)
         ProjectPackSelection.selectedFolderId.value = _selectedFolderId.value
+        // v4.8.62: 全新进入 (无恢复选区) → 运行落地逻辑
+        if (_selectedFolderId.value == null) runLandingCheck()
         // 助手切换时重置项目包选区，回到「聊天」视图，
         // 避免继续显示上一个助手项目包内的会话（项目包是助手内分组）。
         // 4.8.26: drop(1) — 跳过首次发射 (VM 创建/重建时的当前值), 仅响应
@@ -184,6 +195,8 @@ class ChatDrawerVM(
                 _selectedFolderId.value = null
                 savedStateHandle["selectedFolderId"] = null
                 ProjectPackSelection.selectedFolderId.value = null
+                // v4.8.62: 助手切换 → 对新助手运行落地逻辑
+                runLandingCheck()
             }
         }
     }
@@ -194,11 +207,16 @@ class ChatDrawerVM(
     }
 
     fun selectFolder(folderId: Uuid?) {
+        applySelection(folderId)
+        // v4.8.58: 智能排序 — 真实记录点击 (仅项目包; 「聊天」不计)
+        if (folderId != null) recordPackClick(folderId)
+    }
+
+    /** v4.8.62: 选区应用 (与点击统计分离 — 落地逻辑复用, 非用户点击不计) */
+    private fun applySelection(folderId: Uuid?) {
         _selectedFolderId.value = folderId
         savedStateHandle["selectedFolderId"] = folderId?.toString()
         ProjectPackSelection.selectedFolderId.value = folderId
-        // v4.8.58: 智能排序 — 真实记录点击 (仅项目包; 「聊天」不计)
-        if (folderId != null) recordPackClick(folderId)
     }
 
     /** v4.8.58: 记录一次项目包点击 (真统计) — 追加时间戳 + 剪枝 (3 天外真删)。 */
@@ -226,6 +244,39 @@ class ChatDrawerVM(
                         if (s.projectPackClickStats == pruned) s
                         else s.copy(projectPackClickStats = pruned)
                     }
+                }
+            }
+        }
+    }
+
+    // v4.8.62 (用户定版): 进入助手时的落地逻辑 —
+    //   ① 存在未归类(聊天)对话 或 无项目包 → 一切正常 (不干预);
+    //   ② 无未归类对话且存在项目包: 唯一项目包有正在执行任务的对话 → 直接选中
+    //      该项目包 (显示其对话列表); 否则 → 进入项目包选择 (抽屉展开态)。
+    // 触发: 全新进入 (无恢复选区) 与助手切换; Activity 重建不重复触发。
+    private val _landingExpand = MutableStateFlow<Boolean?>(null)
+    val landingExpand: StateFlow<Boolean?> = _landingExpand.asStateFlow()
+
+    private fun runLandingCheck() {
+        viewModelScope.launch {
+            runCatching {
+                val assistantId = assistantIdFlow.first()
+                val foldersNow = folderRepo.getFoldersOfAssistant(assistantId).first()
+                if (foldersNow.isEmpty()) {
+                    _landingExpand.value = null
+                    return@runCatching
+                }
+                val unfiled = conversationRepo.countUnfiledConversationsOfAssistant(assistantId)
+                if (unfiled > 0) {
+                    _landingExpand.value = null
+                    return@runCatching
+                }
+                val running = foldersNow.filter { chatService.hasGeneratingConversationInFolder(it.id) }
+                if (running.size == 1) {
+                    applySelection(running[0].id) // 非用户点击, 不计智能排序统计
+                    _landingExpand.value = false
+                } else {
+                    _landingExpand.value = true
                 }
             }
         }

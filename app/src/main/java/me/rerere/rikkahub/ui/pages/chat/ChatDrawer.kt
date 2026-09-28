@@ -31,7 +31,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.semantics.semantics
+import me.rerere.rikkahub.ui.theme.extendColors
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -132,6 +136,8 @@ fun ChatDrawerContent(
     // v4.8.58 (用户定版): 项目包智能推荐排序 — 本次选中(缓存) → 最近 3 次去重 →
     // 3 天频次 → 默认序; 数据源 = 持久化点击统计 (过期真删见 LaunchedEffect)
     val packClickStats by drawerVm.packClickStatsJson.collectAsStateWithLifecycle()
+    // v4.8.62: 项目包任务绿点数据 (含正在执行对话的项目包)
+    val packsWithRunning by drawerVm.packsWithRunning.collectAsStateWithLifecycle()
     val rankedFolders = remember(folders, selectedFolderId, packClickStats) {
         rankProjectPacks(folders, selectedFolderId, packClickStats)
     }
@@ -184,6 +190,15 @@ fun ChatDrawerContent(
     var folderToDelete by remember { mutableStateOf<Folder?>(null) }
     // 4.8.24 项目包: 折叠状态 (启动默认折叠), 设置弹窗, CWD 选择
     var packBarExpanded by remember { mutableStateOf(false) }
+    // v4.8.62: 进入助手落地 — 项目包选择(true)/任务包直达(false) 应用一次
+    val landingExpand by drawerVm.landingExpand.collectAsStateWithLifecycle()
+    LaunchedEffect(landingExpand) {
+        when (landingExpand) {
+            true -> packBarExpanded = true
+            false -> packBarExpanded = false
+            null -> {}
+        }
+    }
     var showPackSettingsDialog by remember { mutableStateOf(false) }
     var createPackCwd by remember { mutableStateOf<String?>(null) }
     var cwdPickerForNew by remember { mutableStateOf(false) }
@@ -302,6 +317,7 @@ fun ChatDrawerContent(
                 ProjectPackList(
                     folders = rankedFolders,
                     selectedFolderId = selectedFolderId,
+                    packsWithRunning = packsWithRunning,
                     onSelect = { id ->
                         drawerVm.selectFolder(id)
                         packBarExpanded = false
@@ -1045,6 +1061,7 @@ private fun FolderChip(
 private fun ProjectPackList(
     folders: List<Folder>,
     selectedFolderId: Uuid?,
+    packsWithRunning: Set<Uuid>,
     onSelect: (Uuid?) -> Unit,
     onRename: (Folder) -> Unit,
     onDelete: (Folder) -> Unit,
@@ -1060,6 +1077,7 @@ private fun ProjectPackList(
                 label = stringResource(R.string.chat_page_folder_default),
                 icon = null,
                 selected = selectedFolderId == null,
+                running = false,
                 onClick = { onSelect(null) },
             )
         }
@@ -1068,6 +1086,7 @@ private fun ProjectPackList(
                 label = folder.name,
                 icon = HugeIcons.Folder01,
                 selected = selectedFolderId == folder.id,
+                running = folder.id in packsWithRunning,
                 onClick = { onSelect(folder.id) },
                 onRename = { onRename(folder) },
                 onDelete = { onDelete(folder) },
@@ -1081,6 +1100,7 @@ private fun PackRow(
     label: String,
     icon: ImageVector?,
     selected: Boolean,
+    running: Boolean,
     onClick: () -> Unit,
     onRename: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
@@ -1124,6 +1144,20 @@ private fun PackRow(
                     else Color.Unspecified,
                 )
                 Spacer(Modifier.weight(1f))
+                // v4.8.62 (用户定版): 与对话行同款绿色任务标记 —
+                // 包内存在正在执行任务的对话时, 行右侧亮起
+                AnimatedVisibility(visible = running) {
+                    Box(
+                        modifier = Modifier
+                            .padding(start = 6.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.extendColors.green6)
+                            .size(4.dp)
+                            .semantics {
+                                contentDescription = "Loading"
+                            }
+                    )
+                }
             }
         }
         if (hasMenu) {

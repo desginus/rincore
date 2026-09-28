@@ -95,6 +95,10 @@ class ConversationRepository(
         }
     }
 
+    /** v4.8.62: 未归类对话计数 (落地逻辑判定; 与分页查询同口径) */
+    suspend fun countUnfiledConversationsOfAssistant(assistantId: Uuid): Int =
+        conversationDAO.countUnfiledConversationsOfAssistant(assistantId.toString())
+
     fun getConversationsOfFolderPaging(folderId: Uuid): Flow<PagingData<Conversation>> = Pager(
         config = PagingConfig(
             pageSize = PAGE_SIZE,
