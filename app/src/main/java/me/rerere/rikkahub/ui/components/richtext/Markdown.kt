@@ -256,9 +256,18 @@ private fun MarkdownPreview() {
     }
 }
 
+/** v4.8.68: 渲染源块 — 顶层 AST 节点 + 其所属内容串 (节点偏移与内容串自洽)。 */
+private class MarkdownNodeSource(val node: ASTNode, val content: String)
+
+/**
+ * v4.8.68 (CS 安卓端速度方案落地): 解析结果 = 顶层渲染块列表。
+ * 稳定块跨 tick 复用同一 AST 实例与同一内容串 (块级缓存命中),
+ * Compose strong skipping 据此跳过稳定块重组 — 每 tick 只有尾部块
+ * 付出解析/渲染成本 (对齐 CS streamdown "只为变化的尾部工作")。
+ * 渲染树仍为整段单一结构 — 视觉与 v4.7.26 定版形态完全一致。
+ */
 private data class MarkdownParseResult(
-    val preprocessed: String,
-    val astTree: ASTNode,
+    val blocks: List<MarkdownNodeSource>,
     val hasHtml: Boolean,
 )
 
@@ -268,31 +277,120 @@ private data class MarkdownParseResult(
  * (v4.8.42 状态); 预热机制不再恢复 — 缓存独立生效, 无进入时后台风暴。
  */
 private object MarkdownParseCache {
-    private const val MAX_ENTRIES = 256
-    private const val MAX_KEY_CHARS = 128 * 1024
-    private val cache = object : LinkedHashMap<String, MarkdownParseResult>(64, 0.75f, true) {
+    // 整段缓存 (settled 首帧/回访零解析; 容量沿用 256/128k)
+    private const val MAX_WHOLE_ENTRIES = 256
+    private const val MAX_WHOLE_KEY_CHARS = 128 * 1024
+    private val wholeCache = object : LinkedHashMap<String, MarkdownParseResult>(64, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MarkdownParseResult>?): Boolean =
-            size > MAX_ENTRIES
+            size > MAX_WHOLE_ENTRIES
     }
-    fun get(key: String): MarkdownParseResult? = synchronized(cache) { cache[key] }
-    fun put(key: String, value: MarkdownParseResult) {
-        if (key.length > MAX_KEY_CHARS) return
-        synchronized(cache) { cache[key] = value }
-    }
-    fun parseWithCache(content: String): MarkdownParseResult =
-        get(content) ?: parseMarkdown(content).also { put(content, it) }
 
-    /** v4.8.51: 只读解析 — 内容变化路径专用 (命中读缓存; 未命中现场解析但不
-     *  写回 — 变化路径多为流式中间态, 写回只会挤掉稳定内容)。 */
+    // 块级缓存 (流式尾部工作的载体; 块远小于整段, 容量放大)
+    private const val MAX_BLOCK_ENTRIES = 2048
+    private const val MAX_BLOCK_KEY_CHARS = 64 * 1024
+    private const val MAX_SPLIT_BLOCKS = 512
+    private val blockCache = object : LinkedHashMap<String, MarkdownParseResult>(256, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MarkdownParseResult>?): Boolean =
+            size > MAX_BLOCK_ENTRIES
+    }
+
+    fun getWhole(key: String): MarkdownParseResult? = synchronized(wholeCache) { wholeCache[key] }
+    fun putWhole(key: String, value: MarkdownParseResult) {
+        if (key.length > MAX_WHOLE_KEY_CHARS) return
+        synchronized(wholeCache) { wholeCache[key] = value }
+    }
+    fun getBlock(key: String): MarkdownParseResult? = synchronized(blockCache) { blockCache[key] }
+    fun putBlock(key: String, value: MarkdownParseResult) {
+        if (key.length > MAX_BLOCK_KEY_CHARS) return
+        synchronized(blockCache) { blockCache[key] = value }
+    }
+
+    /** 首帧/预热: 整段命中零解析; 未命中走块级管线 (全部块写回)。 */
+    fun parseWithCache(content: String): MarkdownParseResult =
+        getWhole(content) ?: parseViaBlocks(content, writeBackAll = true).also { putWhole(content, it) }
+
+    /** 流式 tick: 整段命中零成本; 未命中走块级管线 — 尾块不写回
+     *  (中间态防缓存污染, v4.8.51 语义在块粒度延续)。 */
     fun parseTransient(content: String): MarkdownParseResult =
-        get(content) ?: parseMarkdown(content)
+        getWhole(content) ?: parseViaBlocks(content, writeBackAll = false)
 
     /** v4.8.50: 未命中才解析 (预热专用; 命中零成本跳过)。 */
     fun warmIfAbsent(content: String) {
-        if (content.length > MAX_KEY_CHARS) return
-        if (synchronized(cache) { cache.containsKey(content) }) return
-        put(content, parseMarkdown(content))
+        if (content.length > MAX_WHOLE_KEY_CHARS) return
+        if (synchronized(wholeCache) { wholeCache.containsKey(content) }) return
+        putWhole(content, parseViaBlocks(content, writeBackAll = true))
     }
+
+    /**
+     * v4.8.68: 块级解析管线 — 按顶层块切分后逐块取缓存:
+     * 稳定块命中 (零解析, 复用同实例), 仅尾块现场解析;
+     * 输出 = 各块顶层节点平铺 (节点与各自内容串偏移自洽, 无需位移)。
+     * 单块 / 超块数 → 整段解析 (与旧路径等价)。
+     */
+    private fun parseViaBlocks(content: String, writeBackAll: Boolean): MarkdownParseResult {
+        val parts = splitMarkdownBlocks(content)
+        if (parts.size <= 1 || parts.size > MAX_SPLIT_BLOCKS) {
+            return parseFull(content)
+        }
+        val out = ArrayList<MarkdownNodeSource>(parts.size * 2)
+        var hasHtml = false
+        for ((index, block) in parts.withIndex()) {
+            val isLast = index == parts.lastIndex
+            val blockResult = getBlock(block) ?: run {
+                val parsed = parseFull(block)
+                if (writeBackAll || !isLast) putBlock(block, parsed)
+                parsed
+            }
+            out.addAll(blockResult.blocks)
+            hasHtml = hasHtml || blockResult.hasHtml
+        }
+        return MarkdownParseResult(out, hasHtml)
+    }
+}
+
+/**
+ * v4.8.68: 按顶层块边界 (空行) 切分。fence (```/~~~)、行式数学块 ($$) 与
+ * LaTeX 块 (\[ / \]) 内部不切分; 连续空行并入边界。
+ * 流式追加时已完成块内容串逐字稳定 → 块级缓存恒定命中。
+ */
+private fun splitMarkdownBlocks(text: String): List<String> {
+    if (text.isEmpty()) return emptyList()
+    val blocks = ArrayList<String>()
+    val current = StringBuilder()
+    var fenceOpen = false
+    var fenceChar = ' '
+    fun flush() {
+        if (current.isNotEmpty()) {
+            blocks.add(current.toString().trimEnd('\r', '\n'))
+            current.setLength(0)
+        }
+    }
+    for (line in text.split('\n')) {
+        val trimmed = line.trim()
+        val fenceDelim = when {
+            trimmed.startsWith("```") -> '`'
+            trimmed.startsWith("~~~") -> '~'
+            trimmed == "$$" -> '$'
+            trimmed == "\\[" -> '['
+            trimmed == "\\]" -> ']'
+            else -> null
+        }
+        if (fenceDelim != null) {
+            when (fenceDelim) {
+                '[' -> if (!fenceOpen) { fenceOpen = true; fenceChar = '[' }
+                ']' -> if (fenceOpen && fenceChar == '[') fenceOpen = false
+                else -> if (!fenceOpen) {
+                    fenceOpen = true
+                    fenceChar = fenceDelim
+                } else if (fenceChar == fenceDelim) {
+                    fenceOpen = false
+                }
+            }
+        }
+        if (!fenceOpen && line.isBlank()) flush() else current.append(line).append('\n')
+    }
+    flush()
+    return blocks
 }
 
 /**
@@ -309,16 +407,21 @@ private fun ASTNode.containsHtml(): Boolean {
     return children.any { it.containsHtml() }
 }
 
-private fun parseMarkdown(content: String): MarkdownParseResult {
+private fun parseFull(content: String): MarkdownParseResult {
     val preprocessed = preProcess(content)
     val astTree = parser.buildMarkdownTreeFromString(preprocessed)
-    return MarkdownParseResult(preprocessed, astTree, astTree.containsHtml())
+    // v4.8.68: 顶层节点平铺为渲染源块 (content = 本段预处理串, 偏移自洽)
+    val blocks = astTree.children.map { MarkdownNodeSource(it, preprocessed) }
+    return MarkdownParseResult(blocks, astTree.containsHtml())
 }
 
 // v4.7.26: 渲染流程完全对齐原版 RikkaHub (用户定版) —
 // 首帧同步解析 (parseMarkdown 直接作 remember 初值), 首帧即最终 AST,
 // 无"纯文本占位 -> 异步替换"过渡。v4.7.23 分段 / v4.7.25 缓存方案整体撤除
 // (原版形态无进入对话/滚动历史抽动)。
+// v4.8.68: 渲染形态保持不变 (单树/首帧同步/同节点同边距); 解析层块级化 —
+// 稳定块跨 tick 复用实例 (块级缓存命中 + strong skipping 跳过重组),
+// 每 tick 仅尾部块付出解析/渲染成本 (CS streamdown 同款语义, 无组件级分块)。
 @Composable
 fun MarkdownBlock(
     content: String,
@@ -353,9 +456,9 @@ fun MarkdownBlock(
             Column(
                 modifier = modifier.padding(horizontal = 4.dp)
             ) {
-                data.astTree.children.fastForEach { child ->
+                data.blocks.fastForEach { source ->
                     MarkdownNode(
-                        node = child, content = data.preprocessed, onClickCitation = onClickCitation
+                        node = source.node, content = source.content, onClickCitation = onClickCitation
                     )
                 }
             }
