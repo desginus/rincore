@@ -87,7 +87,6 @@ import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
-import me.rerere.rikkahub.ui.components.richtext.SplitMarkdownBlock
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.richtext.buildMarkdownPreviewHtml
 import me.rerere.rikkahub.ui.components.webview.WebViewContentCache
@@ -104,7 +103,6 @@ import me.rerere.rikkahub.utils.openUrl
 import me.rerere.rikkahub.utils.urlDecode
 import java.util.Locale
 import kotlin.time.Duration.Companion.milliseconds
-import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
@@ -115,42 +113,7 @@ import androidx.compose.runtime.setValue
 private fun Modifier.contentSizeAnimated(loading: Boolean): Modifier =
     animateContentSize()
 
-/** v4.8.65 (CS 安卓端移植): live-tail 文本保持器 — 持有"最后上屏文本"。
- *  普通字段而非 Compose 状态: 冻结期间零状态写入、零无效重组。 */
-internal class LiveTailTextHolder {
-    var shown: String = ""
-    var initialized: Boolean = false
-}
 
-/**
- * v4.8.65 (CS 安卓端移植): live-tail 视野门控包装 —
- * 流式尾部不在视野内时冻结上屏文本: 不执行正则变换、不触发 Markdown 解析与建树,
- * 仅保留最后一次可见内容; 回屏 (或生成完成) 时一次性追赶最新文本。
- * 语义对齐 CS 安卓端: 不为"没人看得见的内容"重复解析与重排版。
- */
-@Composable
-internal fun LiveTailMarkdownBlock(
-    rawText: String,
-    isStreaming: Boolean,
-    liveTailState: State<Boolean>?,
-    transform: (String) -> String,
-    modifier: Modifier = Modifier,
-    style: TextStyle = LocalTextStyle.current,
-    onClickCitation: (String) -> Unit = {},
-) {
-    val holder = remember { LiveTailTextHolder() }
-    val isHeld = isStreaming && liveTailState != null && !liveTailState.value
-    if (!holder.initialized || !isHeld) {
-        holder.initialized = true
-        holder.shown = transform(rawText)
-    }
-    SplitMarkdownBlock(
-        content = holder.shown,
-        modifier = modifier,
-        style = style,
-        onClickCitation = onClickCitation,
-    )
-}
 
 /**
  * v4.8.66 (CS 安卓端移植): 过程折叠披露行 —
@@ -212,9 +175,6 @@ fun ChatMessage(
     assistant: Assistant? = null,
     folderCwd: String? = null,
     lastMessage: Boolean = false,
-    // v4.8.65 (CS 安卓端移植): live-tail 视野门控数据源 — 仅流式消息需要;
-    // null = 不启用门控 (非聊天列表场景)
-    liveTailState: State<Boolean>? = null,
     onFork: () -> Unit,
     onRegenerate: () -> Unit,
     onEdit: () -> Unit,
@@ -275,7 +235,6 @@ fun ChatMessage(
                 parts = message.parts,
                 annotations = message.annotations,
                 loading = loading,
-                liveTailState = liveTailState,
                 model = model,
                 onToolApproval = onToolApproval,
                 onToolAnswer = onToolAnswer,
@@ -383,7 +342,6 @@ private fun MessagePartsBlock(
     parts: List<UIMessagePart>,
     annotations: List<UIMessageAnnotation>,
     loading: Boolean,
-    liveTailState: State<Boolean>? = null,
     onToolApproval: ((toolCallId: String, approved: Boolean, reason: String) -> Unit)? = null,
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onUserMessageClick: (() -> Unit)? = null,
@@ -429,28 +387,18 @@ private fun MessagePartsBlock(
     // Render parts in original order (group thinking/tool as chain-of-thought)
     val groupedParts = remember(parts) { parts.groupMessageParts() }
 
-    // v4.8.66 (CS 安卓端移植): 过程/正文切分 — 最后一个非空文本 = 正文;
-    // 之前的中途叙述/思考/工具 = 过程区 (完成态整体折叠为"用时 N 秒"披露)。
+    // v4.8.66 (CS 移植) + v4.8.67 (用户定版修正): 过程折叠只收"思考与工具调用" —
+    // 中途正文 (哪怕很短) 一律留在正文区原位渲染, 不再裹入过程记录。
     // 生成中不折叠 (实时展示, 与原行为一致); 仅完成态启用。
     val isAssistantRole = role == MessageRole.ASSISTANT
-    val resultTextIndex = remember(parts) {
-        if (!isAssistantRole) -1
-        else parts.indexOfLast { it is UIMessagePart.Text && it.text.isNotBlank() }
-    }
-    val useProcessFold = isAssistantRole && !loading && resultTextIndex >= 0
-    val processParts = remember(parts, useProcessFold, resultTextIndex) {
+    val useProcessFold = isAssistantRole && !loading
+    val processParts = remember(parts, useProcessFold) {
         if (!useProcessFold) emptyList()
-        else parts.filterIndexed { index, part ->
-            index < resultTextIndex &&
-                (part is UIMessagePart.Text || part is UIMessagePart.Reasoning || part is UIMessagePart.Tool)
-        }
+        else parts.filter { it is UIMessagePart.Reasoning || it is UIMessagePart.Tool }
     }
-    val bodyParts = remember(parts, useProcessFold, resultTextIndex) {
+    val bodyParts = remember(parts, useProcessFold) {
         if (!useProcessFold) emptyList()
-        else parts.filterIndexed { index, part ->
-            !(index < resultTextIndex &&
-                (part is UIMessagePart.Text || part is UIMessagePart.Reasoning || part is UIMessagePart.Tool))
-        }
+        else parts.filterNot { it is UIMessagePart.Reasoning || it is UIMessagePart.Tool }
     }
     val processBlocks = remember(processParts) { processParts.groupMessageParts() }
     val bodyBlocks = remember(bodyParts) { bodyParts.groupMessageParts() }
@@ -484,7 +432,6 @@ private fun MessagePartsBlock(
                                         model = model,
                                         assistant = assistant,
                                         collapsedAdaptiveWidth = isReasoningOnlyBlock,
-                                        liveTailState = liveTailState,
                                     )
                                 }
                             }
@@ -537,34 +484,24 @@ private fun MessagePartsBlock(
                                         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = settings.displaySetting.bubbleOpacity),
                                     ) {
                                         Column(modifier = Modifier.padding(8.dp)) {
-                                            LiveTailMarkdownBlock(
-                                                rawText = part.text,
-                                                isStreaming = loading,
-                                                liveTailState = liveTailState,
-                                                transform = { text ->
-                                                    text.replaceRegexes(
-                                                        assistant = assistant,
-                                                        scope = AssistantAffectScope.ASSISTANT,
-                                                        visual = true,
-                                                    )
-                                                },
-                                                onClickCitation = handleClickCitation,
+                                            MarkdownBlock(
+                                                content = part.text.replaceRegexes(
+                                                    assistant = assistant,
+                                                    scope = AssistantAffectScope.ASSISTANT,
+                                                    visual = true,
+                                                ),
+                                                onClickCitation = handleClickCitation
                                             )
                                         }
                                     }
                                 } else {
-                                    LiveTailMarkdownBlock(
-                                        rawText = part.text,
-                                        isStreaming = loading,
-                                        liveTailState = liveTailState,
-                                        transform = { text ->
-                                            text.replaceRegexes(
-                                                assistant = assistant,
-                                                scope = AssistantAffectScope.ASSISTANT,
-                                                visual = true,
-                                            )
-                                        },
-                                        onClickCitation = handleClickCitation,
+                                    MarkdownBlock(
+                                        content = part.text.replaceRegexes(
+                                            assistant = assistant,
+                                            scope = AssistantAffectScope.ASSISTANT,
+                                            visual = true,
+                                        ),
+                                        onClickCitation = handleClickCitation
                                     )
                                 }
                             }

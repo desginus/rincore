@@ -25,7 +25,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.State
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -137,8 +136,6 @@ private fun ReasoningContent(
     scrollState: ScrollState,
     fadeHeight: Float,
     loading: Boolean,
-    // v4.8.65 (CS 移植): live-tail 视野门控透传
-    liveTailState: State<Boolean>? = null,
 ) {
     val isPreview = expandState == ReasoningCardState.Preview
     val reasoningTextStyle = MaterialTheme.typography.bodySmall.copy(
@@ -179,17 +176,12 @@ private fun ReasoningContent(
             }
     ) {
         val reasoningContent = @Composable {
-            LiveTailMarkdownBlock(
-                rawText = reasoning.reasoning,
-                isStreaming = loading,
-                liveTailState = liveTailState,
-                transform = { text ->
-                    text.replaceRegexes(
-                        assistant = assistant,
-                        scope = AssistantAffectScope.ASSISTANT,
-                        visual = true,
-                    )
-                },
+            MarkdownBlock(
+                content = reasoning.reasoning.replaceRegexes(
+                    assistant = assistant,
+                    scope = AssistantAffectScope.ASSISTANT,
+                    visual = true,
+                ),
                 style = reasoningTextStyle,
                 modifier = Modifier.fillMaxSize(),
             )
@@ -213,8 +205,6 @@ fun ChainOfThoughtScope.ChatMessageReasoningStep(
     assistant: Assistant?,
     fadeHeight: Float = 64f,
     collapsedAdaptiveWidth: Boolean = false,
-    // v4.8.65 (CS 移植): live-tail 视野门控 — 思考内容同样受"尾部不可见即冻结"约束
-    liveTailState: State<Boolean>? = null,
 ) {
     val (state, loading) = rememberReasoningState(reasoning)
     val thinkingTitle = reasoning.reasoning.extractThinkingTitle()
@@ -262,7 +252,6 @@ fun ChainOfThoughtScope.ChatMessageReasoningStep(
         content = {
             ReasoningContent(
                 reasoning = reasoning,
-                liveTailState = liveTailState,
                 assistant = assistant,
                 expandState = state.expandState,
                 scrollState = state.scrollState,
