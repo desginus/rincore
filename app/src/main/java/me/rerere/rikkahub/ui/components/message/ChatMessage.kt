@@ -51,6 +51,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
@@ -98,6 +99,7 @@ import me.rerere.rikkahub.utils.openUrl
 import me.rerere.rikkahub.utils.urlDecode
 import java.util.Locale
 import kotlin.time.Duration.Companion.milliseconds
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
@@ -108,6 +110,43 @@ import androidx.compose.runtime.setValue
 private fun Modifier.contentSizeAnimated(loading: Boolean): Modifier =
     animateContentSize()
 
+/** v4.8.65 (CS 安卓端移植): live-tail 文本保持器 — 持有"最后上屏文本"。
+ *  普通字段而非 Compose 状态: 冻结期间零状态写入、零无效重组。 */
+internal class LiveTailTextHolder {
+    var shown: String = ""
+    var initialized: Boolean = false
+}
+
+/**
+ * v4.8.65 (CS 安卓端移植): live-tail 视野门控包装 —
+ * 流式尾部不在视野内时冻结上屏文本: 不执行正则变换、不触发 Markdown 解析与建树,
+ * 仅保留最后一次可见内容; 回屏 (或生成完成) 时一次性追赶最新文本。
+ * 语义对齐 CS 安卓端: 不为"没人看得见的内容"重复解析与重排版。
+ */
+@Composable
+internal fun LiveTailMarkdownBlock(
+    rawText: String,
+    isStreaming: Boolean,
+    liveTailState: State<Boolean>?,
+    transform: (String) -> String,
+    modifier: Modifier = Modifier,
+    style: TextStyle = LocalTextStyle.current,
+    onClickCitation: (String) -> Unit = {},
+) {
+    val holder = remember { LiveTailTextHolder() }
+    val isHeld = isStreaming && liveTailState != null && !liveTailState.value
+    if (!holder.initialized || !isHeld) {
+        holder.initialized = true
+        holder.shown = transform(rawText)
+    }
+    MarkdownBlock(
+        content = holder.shown,
+        modifier = modifier,
+        style = style,
+        onClickCitation = onClickCitation,
+    )
+}
+
 @Composable
 fun ChatMessage(
     node: MessageNode,
@@ -117,6 +156,9 @@ fun ChatMessage(
     assistant: Assistant? = null,
     folderCwd: String? = null,
     lastMessage: Boolean = false,
+    // v4.8.65 (CS 安卓端移植): live-tail 视野门控数据源 — 仅流式消息需要;
+    // null = 不启用门控 (非聊天列表场景)
+    liveTailState: State<Boolean>? = null,
     onFork: () -> Unit,
     onRegenerate: () -> Unit,
     onEdit: () -> Unit,
@@ -177,6 +219,7 @@ fun ChatMessage(
                 parts = message.parts,
                 annotations = message.annotations,
                 loading = loading,
+                liveTailState = liveTailState,
                 model = model,
                 onToolApproval = onToolApproval,
                 onToolAnswer = onToolAnswer,
@@ -284,6 +327,7 @@ private fun MessagePartsBlock(
     parts: List<UIMessagePart>,
     annotations: List<UIMessageAnnotation>,
     loading: Boolean,
+    liveTailState: State<Boolean>? = null,
     onToolApproval: ((toolCallId: String, approved: Boolean, reason: String) -> Unit)? = null,
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onUserMessageClick: (() -> Unit)? = null,
@@ -349,6 +393,7 @@ private fun MessagePartsBlock(
                                         model = model,
                                         assistant = assistant,
                                         collapsedAdaptiveWidth = isReasoningOnlyBlock,
+                                        liveTailState = liveTailState,
                                     )
                                 }
                             }
@@ -401,24 +446,34 @@ private fun MessagePartsBlock(
                                         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = settings.displaySetting.bubbleOpacity),
                                     ) {
                                         Column(modifier = Modifier.padding(8.dp)) {
-                                            MarkdownBlock(
-                                                content = part.text.replaceRegexes(
-                                                    assistant = assistant,
-                                                    scope = AssistantAffectScope.ASSISTANT,
-                                                    visual = true,
-                                                ),
-                                                onClickCitation = handleClickCitation
+                                            LiveTailMarkdownBlock(
+                                                rawText = part.text,
+                                                isStreaming = loading,
+                                                liveTailState = liveTailState,
+                                                transform = { text ->
+                                                    text.replaceRegexes(
+                                                        assistant = assistant,
+                                                        scope = AssistantAffectScope.ASSISTANT,
+                                                        visual = true,
+                                                    )
+                                                },
+                                                onClickCitation = handleClickCitation,
                                             )
                                         }
                                     }
                                 } else {
-                                    MarkdownBlock(
-                                        content = part.text.replaceRegexes(
-                                            assistant = assistant,
-                                            scope = AssistantAffectScope.ASSISTANT,
-                                            visual = true,
-                                        ),
-                                        onClickCitation = handleClickCitation
+                                    LiveTailMarkdownBlock(
+                                        rawText = part.text,
+                                        isStreaming = loading,
+                                        liveTailState = liveTailState,
+                                        transform = { text ->
+                                            text.replaceRegexes(
+                                                assistant = assistant,
+                                                scope = AssistantAffectScope.ASSISTANT,
+                                                visual = true,
+                                            )
+                                        },
+                                        onClickCitation = handleClickCitation,
                                     )
                                 }
                             }

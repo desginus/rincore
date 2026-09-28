@@ -63,6 +63,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -115,6 +116,13 @@ import me.rerere.rikkahub.utils.plus
 private const val TAG = "ChatList"
 private const val LoadingIndicatorKey = "LoadingIndicator"
 private const val ScrollBottomKey = "ScrollBottomKey"
+
+@Composable
+/** v4.8.65 (CS 安卓端移植): live-tail 可见性迟滞状态 — 延后隐藏 (320dp) 防边界抖动,
+ *  提前恢复 (160dp) 以免用户看见"追赶渲染"。普通字段, 不触发重组。 */
+private class LiveTailHysteresis {
+    var lastValue: Boolean = true
+}
 
 @Composable
 fun ChatList(
@@ -280,6 +288,29 @@ private fun ChatListNormal(
     }
     val lastMessageIndex = conversation.messageNodes.lastIndex
 
+    // v4.8.65 (CS 安卓端移植): live-tail 视野门控数据源 — 列表增长端 (流式消息尾部)
+    // 距视口底部距离的可见性判定 (含迟滞余量); 下游冻结逻辑见 ChatMessage.LiveTailMarkdownBlock。
+    val liveTailDensity = LocalDensity.current
+    val liveTailRevealPx = with(liveTailDensity) { 160.dp.roundToPx() }
+    val liveTailHidePx = with(liveTailDensity) { 320.dp.roundToPx() }
+    val liveTailHysteresis = remember(state) { LiveTailHysteresis() }
+    val liveTailState = remember(state, liveTailRevealPx, liveTailHidePx) {
+        derivedStateOf {
+            val info = state.layoutInfo
+            val lastIndex = info.totalItemsCount - 1
+            val last = info.visibleItemsInfo.lastOrNull()
+            val distanceFromEnd = if (last != null && last.index == lastIndex) {
+                (last.offset + last.size) - info.viewportEndOffset - info.afterContentPadding
+            } else {
+                Int.MAX_VALUE
+            }
+            val marginPx = if (liveTailHysteresis.lastValue) liveTailHidePx else liveTailRevealPx
+            val visible = distanceFromEnd <= marginPx
+            liveTailHysteresis.lastValue = visible
+            visible
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize(),
@@ -375,6 +406,7 @@ private fun ChatListNormal(
                             onToolApproval = onToolApproval,
                             onToolAnswer = onToolAnswer,
                             lastMessage = index == lastMessageIndex,
+                            liveTailState = liveTailState,
                         )
                     }
                 }
