@@ -54,8 +54,8 @@ import javax.net.SocketFactory
 val dataSourceModule = module {
     single {
         SettingsStore(context = get(), scope = get())
-        single { me.rerere.rikkahub.data.datastore.DraftStore(context = get()) }
     }
+    single { me.rerere.rikkahub.data.datastore.DraftStore(context = get()) }
 
     single {
         val context: Context = get()

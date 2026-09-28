@@ -257,7 +257,7 @@ private fun MarkdownPreview() {
 }
 
 /** v4.8.68: 渲染源块 — 顶层 AST 节点 + 其所属内容串 (节点偏移与内容串自洽)。 */
-private class MarkdownNodeSource(val node: ASTNode, val content: String)
+internal class MarkdownNodeSource(val node: ASTNode, val content: String)
 
 /**
  * v4.8.68 (CS 安卓端速度方案落地): 解析结果 = 顶层渲染块列表。
@@ -266,7 +266,7 @@ private class MarkdownNodeSource(val node: ASTNode, val content: String)
  * 付出解析/渲染成本 (对齐 CS streamdown "只为变化的尾部工作")。
  * 渲染树仍为整段单一结构 — 视觉与 v4.7.26 定版形态完全一致。
  */
-private data class MarkdownParseResult(
+internal data class MarkdownParseResult(
     val blocks: List<MarkdownNodeSource>,
     val hasHtml: Boolean,
 )
@@ -276,6 +276,19 @@ private data class MarkdownParseResult(
  * (零解析零过渡); 未命中时首帧同步解析 (对齐原版形态) 并写缓存。容量 256
  * (v4.8.42 状态); 预热机制不再恢复 — 缓存独立生效, 无进入时后台风暴。
  */
+/**
+ * v4.8.70: 增量切分状态 (per MarkdownBlock 实例持有, remember 生命周期) —
+ * 只扫新增完整行; 已定稿块结果直接携带 (零重扫零重查)。
+ */
+internal class SplitState {
+    var lastContent: String? = null
+    var consumed: Int = 0
+    var blockStart: Int = 0
+    var fenceOpen = false
+    var fenceChar = ' '
+    val finalized = ArrayList<MarkdownParseResult>()
+}
+
 private object MarkdownParseCache {
     // 整段缓存 (settled 首帧/回访零解析; 容量沿用 256/128k)
     private const val MAX_WHOLE_ENTRIES = 256
@@ -294,35 +307,25 @@ private object MarkdownParseCache {
             size > MAX_BLOCK_ENTRIES
     }
 
-    fun getWhole(key: String): MarkdownParseResult? = synchronized(wholeCache) { wholeCache[key] }
-    fun putWhole(key: String, value: MarkdownParseResult) {
+    internal fun getWhole(key: String): MarkdownParseResult? = synchronized(wholeCache) { wholeCache[key] }
+    internal fun putWhole(key: String, value: MarkdownParseResult) {
         if (key.length > MAX_WHOLE_KEY_CHARS) return
         synchronized(wholeCache) { wholeCache[key] = value }
     }
-    fun getBlock(key: String): MarkdownParseResult? = synchronized(blockCache) { blockCache[key] }
-    fun putBlock(key: String, value: MarkdownParseResult) {
+    internal fun getBlock(key: String): MarkdownParseResult? = synchronized(blockCache) { blockCache[key] }
+    internal fun putBlock(key: String, value: MarkdownParseResult) {
         if (key.length > MAX_BLOCK_KEY_CHARS) return
         synchronized(blockCache) { blockCache[key] = value }
     }
 
-    /** v4.8.70: 增量切分状态 (per MarkdownBlock 实例持有, remember 生命周期) */
-    private class SplitState {
-        var lastContent: String? = null
-        var consumed: Int = 0
-        var blockStart: Int = 0
-        var fenceOpen = false
-        var fenceChar = ' '
-        val finalized = ArrayList<MarkdownParseResult>()
-    }
-
-    fun newState() = SplitState()
+    internal fun newState(): SplitState = SplitState()
 
     /** 首帧/预热: 整段命中零解析; 未命中走块级管线 (全部块写回)。 */
-    fun parseWithCache(content: String): MarkdownParseResult =
+    internal fun parseWithCache(content: String): MarkdownParseResult =
         getWhole(content) ?: parseViaBlocks(content, writeBackAll = true).also { putWhole(content, it) }
 
     /** 流式 tick (旧形态, 无状态): 整段命中零成本; 未命中走块级管线 — 尾块不写回。 */
-    fun parseTransient(content: String): MarkdownParseResult =
+    internal fun parseTransient(content: String): MarkdownParseResult =
         getWhole(content) ?: parseViaBlocks(content, writeBackAll = false)
 
     /**
@@ -331,7 +334,7 @@ private object MarkdownParseCache {
      * 仅未定稿尾块现场解析 (不写回)。内容非追加 (startsWith 失败) 时全量重建。
      * 60x 目标载体: 每 tick 成本 = O(新增) + O(尾块), 与全文长度解耦。
      */
-    fun parseTransient(content: String, state: SplitState): MarkdownParseResult {
+    internal fun parseTransient(content: String, state: SplitState): MarkdownParseResult {
         val prev = state.lastContent
         val appendOnly = prev != null && content.length >= prev.length && content.startsWith(prev)
         if (!appendOnly) {
