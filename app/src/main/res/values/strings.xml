@@ -1493,5 +1493,7 @@
     <string name="common_delete_confirm_message">Are you sure you want to delete "%s"? This action cannot be undone.</string>
     <string name="skills_page_search_placeholder">Search skills</string>
     <string name="skills_page_search_no_result">No matching skills</string>
+  <string name="chat_process_duration">Took %1$d s</string>
+  <string name="chat_process_title">Process</string>
 </resources>
 

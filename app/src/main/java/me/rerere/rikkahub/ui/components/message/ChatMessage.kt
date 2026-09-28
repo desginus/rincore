@@ -38,9 +38,11 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Size
@@ -73,6 +75,8 @@ import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.isEmptyUIMessage
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.ArrowDown01
+import me.rerere.hugeicons.stroke.ArrowUp01
 import me.rerere.hugeicons.stroke.File02
 import me.rerere.hugeicons.stroke.MusicNote03
 import me.rerere.hugeicons.stroke.Video01
@@ -83,6 +87,7 @@ import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
+import me.rerere.rikkahub.ui.components.richtext.SplitMarkdownBlock
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.richtext.buildMarkdownPreviewHtml
 import me.rerere.rikkahub.ui.components.webview.WebViewContentCache
@@ -139,12 +144,63 @@ internal fun LiveTailMarkdownBlock(
         holder.initialized = true
         holder.shown = transform(rawText)
     }
-    MarkdownBlock(
+    SplitMarkdownBlock(
         content = holder.shown,
         modifier = modifier,
         style = style,
         onClickCitation = onClickCitation,
     )
+}
+
+/**
+ * v4.8.66 (CS 安卓端移植): 过程折叠披露行 —
+ * 完成态把"正文之外的过程" (思考/工具/中途叙述) 折叠为一行 (用时 N 秒 / 过程记录),
+ * 点击展开显示原渲染链。
+ */
+@Composable
+private fun ProcessDisclosureRow(
+    containerColor: Color,
+    durationSeconds: Int,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = containerColor,
+            onClick = onToggle,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = if (durationSeconds > 0) {
+                        stringResource(R.string.chat_process_duration, durationSeconds)
+                    } else {
+                        stringResource(R.string.chat_process_title)
+                    },
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    imageVector = if (expanded) HugeIcons.ArrowUp01 else HugeIcons.ArrowDown01,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        AnimatedVisibility(visible = expanded) {
+            Column(modifier = Modifier.padding(top = 4.dp)) {
+                content()
+            }
+        }
+    }
 }
 
 @Composable
@@ -372,7 +428,42 @@ private fun MessagePartsBlock(
 
     // Render parts in original order (group thinking/tool as chain-of-thought)
     val groupedParts = remember(parts) { parts.groupMessageParts() }
-    groupedParts.fastForEach { block ->
+
+    // v4.8.66 (CS 安卓端移植): 过程/正文切分 — 最后一个非空文本 = 正文;
+    // 之前的中途叙述/思考/工具 = 过程区 (完成态整体折叠为"用时 N 秒"披露)。
+    // 生成中不折叠 (实时展示, 与原行为一致); 仅完成态启用。
+    val isAssistantRole = role == MessageRole.ASSISTANT
+    val resultTextIndex = remember(parts) {
+        if (!isAssistantRole) -1
+        else parts.indexOfLast { it is UIMessagePart.Text && it.text.isNotBlank() }
+    }
+    val useProcessFold = isAssistantRole && !loading && resultTextIndex >= 0
+    val processParts = remember(parts, useProcessFold, resultTextIndex) {
+        if (!useProcessFold) emptyList()
+        else parts.filterIndexed { index, part ->
+            index < resultTextIndex &&
+                (part is UIMessagePart.Text || part is UIMessagePart.Reasoning || part is UIMessagePart.Tool)
+        }
+    }
+    val bodyParts = remember(parts, useProcessFold, resultTextIndex) {
+        if (!useProcessFold) emptyList()
+        else parts.filterIndexed { index, part ->
+            !(index < resultTextIndex &&
+                (part is UIMessagePart.Text || part is UIMessagePart.Reasoning || part is UIMessagePart.Tool))
+        }
+    }
+    val processBlocks = remember(processParts) { processParts.groupMessageParts() }
+    val bodyBlocks = remember(bodyParts) { bodyParts.groupMessageParts() }
+    // 过程时长 (正文输出之外): 思考段时长求和 (工具计时字段待接入, 缺省回退标题)
+    val processDurationSeconds = remember(parts, loading) {
+        if (loading) 0
+        else parts.filterIsInstance<UIMessagePart.Reasoning>()
+            .sumOf { reasoning -> reasoning.finishedAt?.let { (it - reasoning.createdAt).inWholeSeconds } ?: 0L }
+            .coerceIn(0L, Int.MAX_VALUE.toLong())
+            .toInt()
+    }
+
+    val renderPartBlock: @Composable (MessagePartBlock) -> Unit = { block ->
         when (block) {
             is MessagePartBlock.ThinkingBlock -> {
                 if (block.steps.isNotEmpty()) {
@@ -638,6 +729,23 @@ private fun MessagePartsBlock(
                 }
             }
         }
+    }
+
+    // v4.8.66 (CS 移植): 完成态过程折叠 — 过程区整体折叠为"用时 N 秒"披露行;
+    // 展开后即原有渲染链 (思考/工具/中途叙述)。折叠时过程内容不组合 (零渲染成本)。
+    if (useProcessFold && processBlocks.isNotEmpty()) {
+        var processExpanded by rememberSaveable { mutableStateOf(false) }
+        ProcessDisclosureRow(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = settings.displaySetting.bubbleOpacity),
+            durationSeconds = processDurationSeconds,
+            expanded = processExpanded,
+            onToggle = { processExpanded = !processExpanded },
+        ) {
+            processBlocks.fastForEach(renderPartBlock)
+        }
+        bodyBlocks.fastForEach(renderPartBlock)
+    } else {
+        groupedParts.fastForEach(renderPartBlock)
     }
 
     // Annotations (always rendered at the end)

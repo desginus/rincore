@@ -1389,5 +1389,7 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="workspace_terminal_new_tab">新建终端标签页</string>
   <string name="workspace_terminal_close_tab">关闭终端 %1$d</string>
   <string name="workspace_terminal_no_tabs">没有打开的终端标签页</string>
+  <string name="chat_process_duration">用时 %1$d 秒</string>
+  <string name="chat_process_title">过程记录</string>
 </resources>
 

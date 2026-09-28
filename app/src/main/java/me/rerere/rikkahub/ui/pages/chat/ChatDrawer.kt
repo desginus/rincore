@@ -65,6 +65,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
@@ -208,8 +209,12 @@ fun ChatDrawerContent(
 
     // Menu popup 状态
 
+    // v4.8.66 (CS 安卓端移植): 抽屉宽度 = min(400dp, 屏宽-64dp) — 右侧留一条
+    // 可点击关闭的对话露边条 (front 型覆盖滑动; 对齐 CS appSidebar 参数 400/64)。
+    val drawerScreenWidth = LocalConfiguration.current.screenWidthDp.dp
+    val drawerSheetWidth = minOf(400.dp, drawerScreenWidth - 64.dp)
     ModalDrawerSheet(
-        modifier = Modifier.width(300.dp)
+        modifier = Modifier.width(drawerSheetWidth)
     ) {
         Column(
             modifier = Modifier.padding(8.dp),
