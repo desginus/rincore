@@ -402,12 +402,20 @@ private fun MessagePartsBlock(
     }
     val processBlocks = remember(processParts) { processParts.groupMessageParts() }
     val bodyBlocks = remember(bodyParts) { bodyParts.groupMessageParts() }
-    // 过程时长 (正文输出之外): 思考段时长求和 (工具计时字段待接入, 缺省回退标题)
+    // 过程时长 (正文输出之外) — v4.8.70: 思考段 + 工具执行段求和 (CS ProcessGroupPart
+    // 全过程时长语义; 工具计时来自 GenerationHandler 执行现场打点)
     val processDurationSeconds = remember(parts, loading) {
         if (loading) 0
-        else parts.filterIsInstance<UIMessagePart.Reasoning>()
-            .sumOf { reasoning -> reasoning.finishedAt?.let { (it - reasoning.createdAt).inWholeSeconds } ?: 0L }
-            .coerceIn(0L, Int.MAX_VALUE.toLong())
+        else (
+            parts.filterIsInstance<UIMessagePart.Reasoning>()
+                .sumOf { reasoning -> reasoning.finishedAt?.let { (it - reasoning.createdAt).inWholeSeconds } ?: 0L } +
+            parts.filterIsInstance<UIMessagePart.Tool>()
+                .sumOf { t ->
+                    val st = t.startedAt
+                    val en = t.finishedAt
+                    if (st != null && en != null && en > st) (en - st) / 1000 else 0L
+                }
+            ).coerceIn(0L, Int.MAX_VALUE.toLong())
             .toInt()
     }
 

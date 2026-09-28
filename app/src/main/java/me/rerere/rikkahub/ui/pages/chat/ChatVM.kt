@@ -44,6 +44,10 @@ import me.rerere.rikkahub.data.repository.FolderRepository
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.ui.hooks.writeStringPreference
+import me.rerere.rikkahub.data.datastore.DraftStore
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.delay
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.UpdateChecker
@@ -66,6 +70,7 @@ class ChatVM(
     private val filesManager: FilesManager,
     private val favoriteRepository: FavoriteRepository,
     private val folderRepository: FolderRepository,
+    private val draftStore: DraftStore,
 ) : ViewModel() {
     private val _conversationId: Uuid = Uuid.parse(id)
     val conversation: StateFlow<Conversation> = chatService.getConversationFlow(_conversationId)
@@ -113,6 +118,24 @@ class ChatVM(
         // 添加对话引用
         chatService.addConversationReference(_conversationId)
 
+        // v4.8.70: 会话草稿持久化 — VM 重建/进程重启后恢复 (仅输入为空时注入);
+        // 输入变化 1s 防抖落盘 (collectLatest 取消式, 连续输入只落最终值); onCleared 兜底 flush
+        viewModelScope.launch {
+            val draft = draftStore.load(_conversationId)
+            if (draft.isNotEmpty() && inputState.textContent.text.isBlank() &&
+                inputState.messageContent.isEmpty() && !inputState.isEditing()
+            ) {
+                inputState.setMessageText(draft)
+            }
+        }
+        viewModelScope.launch {
+            snapshotFlow { inputState.textContent.text.toString() }
+                .collectLatest { text ->
+                    delay(1000)
+                    draftStore.save(_conversationId, text)
+                }
+        }
+
         // 初始化对话
         viewModelScope.launch {
             chatService.initializeConversation(_conversationId, folderId)
@@ -132,6 +155,8 @@ class ChatVM(
     }
 
     override fun onCleared() {
+        // v4.8.70: 草稿兜底落盘 (发送后文本为空 → save 内部转 clear)
+        draftStore.saveNow(_conversationId, inputState.textContent.text.toString())
         voiceSession.stop()
         super.onCleared()
         // 移除对话引用

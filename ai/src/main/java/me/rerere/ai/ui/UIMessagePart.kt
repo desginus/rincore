@@ -192,7 +192,11 @@ sealed class UIMessagePart {
         val input: String,
         val output: List<UIMessagePart> = emptyList(),
         val approvalState: ToolApprovalState = ToolApprovalState.Auto,
-        override var metadata: JsonObject? = null
+        override var metadata: JsonObject? = null,
+        // v4.8.70: 执行计时 (epoch ms) — GenerationHandler 执行现场打点。
+        // null = 未现场执行 (审批拒绝/熔断拦截/缓存回放)。数据源: 过程折叠"用时"与工具卡耗时。
+        val startedAt: Long? = null,
+        val finishedAt: Long? = null
     ) : UIMessagePart() {
         /** Whether the tool has been executed (has output) */
         val isExecuted: Boolean get() = output.isNotEmpty()

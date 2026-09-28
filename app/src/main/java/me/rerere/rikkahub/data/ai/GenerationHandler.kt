@@ -852,6 +852,8 @@ class GenerationHandler(
                                 return@runCatching
                             }
                             Log.i(TAG, "generateText: executing tool ${toolDef.name} with args: $args")
+                            // v4.8.70: 执行计时打点 (工具卡耗时 + 过程折叠"用时"全精度)
+                            val toolStartAt = System.currentTimeMillis()
                             CallTracer.event("TOOL", "exec_${toolDef.name}", "Executing ${toolDef.name}, args=${tool.input.length}c")
                             // 工具执行超时兜底: 工具挂起(网络/IO)时不永久卡住,
                             // 超时返回错误结果让模型继续 (修复: ChatCompletions 工具调用后一直加载)
@@ -877,6 +879,7 @@ class GenerationHandler(
                                     throw e
                                 }
                             }
+                            val toolEndAt = System.currentTimeMillis()
                             val hasShellAccess = toolsInternal.any { it.name == "workspace_shell" }
                             val truncated = maybeTruncateToolOutput(tool.toolCallId, result, hasShellAccess, tool.toolName)
                             // v3.11.17: 连续相同失败熔断 — 判据: 结果文本以失败形态开头
@@ -949,7 +952,9 @@ class GenerationHandler(
                                 mapOf("tool" to toolDef.name, "parts" to "${result.size}"))
                             idempotentCache[idemKey] = finalOutput
                             executedTools += tool.copy(
-                                output = finalOutput
+                                output = finalOutput,
+                                startedAt = toolStartAt,
+                                finishedAt = toolEndAt
                             )
                             // v4.5.21: 真实行动计数 — 非 task_tool 工具的成功执行。
                             // 任务清单空转检测的事实依据 (清单更新 vs 真实动作的比例)。

@@ -60,6 +60,16 @@ val DEFAULT_PROVIDERS = listOf(
         builtIn = true
     ),
     ProviderSetting.OpenAI(
+        // v4.8.70: CS provider-registry 移植 — OpenCode Go (zen go 网关;
+        // 我方按模型分协议路由已覆盖 qwen→Anthropic 直传 / CC→ChatCompletions)
+        id = Uuid.parse("3f9d2c81-7a4e-4b6d-9c25-8e10f5a6b3d7"),
+        name = "OpenCode Go",
+        baseUrl = "https://opencode.ai/zen/go/v1",
+        apiKey = "",
+        enabled = false,
+        builtIn = true
+    ),
+    ProviderSetting.OpenAI(
         id = Uuid.parse("3dfd6f9b-f9d9-417f-80c1-ff8d77184191"),
         name = "火山引擎",
         baseUrl = "https://ark.cn-beijing.volces.com/api/v3",

@@ -105,6 +105,13 @@ fun ChainOfThoughtScope.ChatMessageToolStep(
     val isDenied = tool.approvalState is ToolApprovalState.Denied
     val images = tool.output.filterIsInstance<UIMessagePart.Image>()
 
+    // v4.8.70: 工具执行耗时 (完成态显示) — 数据源 startedAt/finishedAt
+    val toolDurationLabel = remember(tool.startedAt, tool.finishedAt) {
+        val st = tool.startedAt
+        val en = tool.finishedAt
+        if (st != null && en != null && en >= st) String.format("%.1f s", (en - st) / 1000.0) else null
+    }
+
     // 摘要由注册的渲染器决定; 图片输出与拒绝原因为所有工具通用
     val hasExtraContent = renderer.hasSummary(context) || isDenied || images.isNotEmpty()
 
@@ -126,14 +133,26 @@ fun ChainOfThoughtScope.ChatMessageToolStep(
             }
         },
         label = {
-            Text(
-                text = renderer.title(context),
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.shimmer(isLoading = loading),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = renderer.title(context),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.shimmer(isLoading = loading),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (toolDurationLabel != null) {
+                    Text(
+                        text = toolDurationLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline,
+                    )
+                }
+            }
         },
         extra = if (isPending && onToolApproval != null) {
             {

@@ -213,7 +213,10 @@ fun locationTool(context: Context): Tool = Tool(
         val payload: JsonObject = when {
             priority == null -> errorPayload("unknown accuracy: $accuracyStr")
             !PermissionHelper.hasRuntime(context, listOf(Manifest.permission.ACCESS_FINE_LOCATION)) ->
-                errorPayload("permission ACCESS_FINE_LOCATION not granted")
+                errorPayload(
+                    "定位权限未授予。请把这个原因转告用户: 打开本应用 设置→权限管理, 开启「精确位置」权限后即可定位。" +
+                        "在用户确认已开启之前, 不要自动重复调用本工具。"
+                )
             else -> {
                 val lm = context.getSystemService(LocationManager::class.java)
                 if (lm == null) {

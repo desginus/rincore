@@ -305,14 +305,107 @@ private object MarkdownParseCache {
         synchronized(blockCache) { blockCache[key] = value }
     }
 
+    /** v4.8.70: 增量切分状态 (per MarkdownBlock 实例持有, remember 生命周期) */
+    private class SplitState {
+        var lastContent: String? = null
+        var consumed: Int = 0
+        var blockStart: Int = 0
+        var fenceOpen = false
+        var fenceChar = ' '
+        val finalized = ArrayList<MarkdownParseResult>()
+    }
+
+    fun newState() = SplitState()
+
     /** 首帧/预热: 整段命中零解析; 未命中走块级管线 (全部块写回)。 */
     fun parseWithCache(content: String): MarkdownParseResult =
         getWhole(content) ?: parseViaBlocks(content, writeBackAll = true).also { putWhole(content, it) }
 
-    /** 流式 tick: 整段命中零成本; 未命中走块级管线 — 尾块不写回
-     *  (中间态防缓存污染, v4.8.51 语义在块粒度延续)。 */
+    /** 流式 tick (旧形态, 无状态): 整段命中零成本; 未命中走块级管线 — 尾块不写回。 */
     fun parseTransient(content: String): MarkdownParseResult =
         getWhole(content) ?: parseViaBlocks(content, writeBackAll = false)
+
+    /**
+     * v4.8.70: 增量解析 (流式 tick 专用) — 切分状态机, 每 tick 只扫新增完整行 (O(δ)):
+     * 已定稿块直接携带缓存结果 (零重扫零重查, 实例跨 tick 复用 → strong skipping 跳过);
+     * 仅未定稿尾块现场解析 (不写回)。内容非追加 (startsWith 失败) 时全量重建。
+     * 60x 目标载体: 每 tick 成本 = O(新增) + O(尾块), 与全文长度解耦。
+     */
+    fun parseTransient(content: String, state: SplitState): MarkdownParseResult {
+        val prev = state.lastContent
+        val appendOnly = prev != null && content.length >= prev.length && content.startsWith(prev)
+        if (!appendOnly) {
+            state.lastContent = null
+            state.finalized.clear()
+            state.consumed = 0
+            state.blockStart = 0
+            state.fenceOpen = false
+            state.fenceChar = ' '
+        }
+        var pos = state.consumed
+        val len = content.length
+        while (pos < len) {
+            val nl = content.indexOf('\n', pos)
+            if (nl < 0) break // 末尾不完整行: 留待下次 (fence 判定只在完整行上做一次)
+            val lineStart = pos
+            val line = content.substring(lineStart, nl)
+            pos = nl + 1
+            val trimmed = line.trim()
+            val fenceDelim = when {
+                trimmed.startsWith("```") -> '`'
+                trimmed.startsWith("~~~") -> '~'
+                trimmed == "$$" -> '$'
+                trimmed == "\\[" -> '['
+                trimmed == "\\]" -> ']'
+                else -> null
+            }
+            if (fenceDelim != null) {
+                when (fenceDelim) {
+                    '[' -> if (!state.fenceOpen) { state.fenceOpen = true; state.fenceChar = '[' }
+                    ']' -> if (state.fenceOpen && state.fenceChar == '[') state.fenceOpen = false
+                    else -> if (!state.fenceOpen) {
+                        state.fenceOpen = true
+                        state.fenceChar = fenceDelim
+                    } else if (state.fenceChar == fenceDelim) {
+                        state.fenceOpen = false
+                    }
+                }
+            }
+            if (!state.fenceOpen && trimmed.isEmpty()) {
+                if (lineStart > state.blockStart) {
+                    val blockText = content.substring(state.blockStart, lineStart).trimEnd('\r', '\n')
+                    if (blockText.isNotEmpty()) {
+                        val r = getBlock(blockText) ?: parseFull(blockText).also { putBlock(blockText, it) }
+                        state.finalized.add(r)
+                    }
+                }
+                state.blockStart = pos
+            }
+        }
+        state.consumed = pos
+        state.lastContent = content
+        if (state.finalized.size > MAX_SPLIT_BLOCKS) {
+            state.lastContent = null
+            state.finalized.clear()
+            return parseFull(content)
+        }
+        val out = ArrayList<MarkdownNodeSource>(state.finalized.size * 2 + 2)
+        var hasHtml = false
+        for (r in state.finalized) {
+            out.addAll(r.blocks)
+            hasHtml = hasHtml || r.hasHtml
+        }
+        if (state.blockStart < content.length) {
+            val tailBlock = content.substring(state.blockStart).trimEnd('\r', '\n')
+            if (tailBlock.isNotEmpty()) {
+                val r = parseFull(tailBlock)
+                out.addAll(r.blocks)
+                hasHtml = hasHtml || r.hasHtml
+            }
+        }
+        if (out.isEmpty()) return parseFull(content)
+        return MarkdownParseResult(out, hasHtml)
+    }
 
     /** v4.8.50: 未命中才解析 (预热专用; 命中零成本跳过)。 */
     fun warmIfAbsent(content: String) {
@@ -431,6 +524,8 @@ fun MarkdownBlock(
 ) {
     // v4.8.49 回植: 首帧查缓存 (命中零解析) — 未命中同步解析并写缓存 (对齐原版首帧终态)。
     var (data, setData) = remember { mutableStateOf(MarkdownParseCache.parseWithCache(content)) }
+    // v4.8.70: 增量切分状态 — 与本 MarkdownBlock 实例同生命周期
+    val splitState = remember { MarkdownParseCache.newState() }
 
     // 监听内容变化，重新解析AST树
     // 这里在后台线程解析AST树, 防止频繁更新的时候掉帧
@@ -438,7 +533,7 @@ fun MarkdownBlock(
     LaunchedEffect(Unit) {
         snapshotFlow { updatedContent }
             .distinctUntilChanged()
-            .mapLatest { MarkdownParseCache.parseTransient(it) }
+            .mapLatest { MarkdownParseCache.parseTransient(it, splitState) }
             .catch { exception -> exception.printStackTrace() }
             .flowOn(Dispatchers.Default)
             .collect { setData(it) }
