@@ -130,15 +130,15 @@ private fun ProcessDisclosureRow(
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Surface(
-            shape = RoundedCornerShape(12.dp),
+            // v4.8.71 (用户定版): 胶囊窗 — 大圆角胶囊形态 (非方框), 宽度包内容
+            shape = RoundedCornerShape(percent = 50),
             color = containerColor,
             onClick = onToggle,
-            modifier = Modifier.fillMaxWidth(),
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
                     text = if (durationSeconds > 0) {
@@ -148,7 +148,6 @@ private fun ProcessDisclosureRow(
                     },
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
                 )
                 Icon(
                     imageVector = if (expanded) HugeIcons.ArrowUp01 else HugeIcons.ArrowDown01,
@@ -391,33 +390,11 @@ private fun MessagePartsBlock(
     // 中途正文 (哪怕很短) 一律留在正文区原位渲染, 不再裹入过程记录。
     // 生成中不折叠 (实时展示, 与原行为一致); 仅完成态启用。
     val isAssistantRole = role == MessageRole.ASSISTANT
+    // v4.8.71 (用户定版): 分段过程折叠 — 不再把全部过程汇总到顶部, 而是按输出
+    // 顺序逐段呈现: [思考+工具]→[用时胶囊] [正文] [思考+工具]→[用时胶囊] [正文]…
+    // 每段胶囊只包住它自己那一段"正文之外"的过程 (块级切段; groupMessageParts
+    // 已把连续 思考/工具 归并为单个 ThinkingBlock)。生成中不折叠, 与现行为零差异。
     val useProcessFold = isAssistantRole && !loading
-    val processParts = remember(parts, useProcessFold) {
-        if (!useProcessFold) emptyList()
-        else parts.filter { it is UIMessagePart.Reasoning || it is UIMessagePart.Tool }
-    }
-    val bodyParts = remember(parts, useProcessFold) {
-        if (!useProcessFold) emptyList()
-        else parts.filterNot { it is UIMessagePart.Reasoning || it is UIMessagePart.Tool }
-    }
-    val processBlocks = remember(processParts) { processParts.groupMessageParts() }
-    val bodyBlocks = remember(bodyParts) { bodyParts.groupMessageParts() }
-    // 过程时长 (正文输出之外) — v4.8.70: 思考段 + 工具执行段求和 (CS ProcessGroupPart
-    // 全过程时长语义; 工具计时来自 GenerationHandler 执行现场打点)
-    val processDurationSeconds = remember(parts, loading) {
-        if (loading) 0
-        else (
-            parts.filterIsInstance<UIMessagePart.Reasoning>()
-                .sumOf { reasoning -> reasoning.finishedAt?.let { (it - reasoning.createdAt).inWholeSeconds } ?: 0L } +
-            parts.filterIsInstance<UIMessagePart.Tool>()
-                .sumOf { t ->
-                    val st = t.startedAt
-                    val en = t.finishedAt
-                    if (st != null && en != null && en > st) (en - st) / 1000 else 0L
-                }
-            ).coerceIn(0L, Int.MAX_VALUE.toLong())
-            .toInt()
-    }
 
     val renderPartBlock: @Composable (MessagePartBlock) -> Unit = { block ->
         when (block) {
@@ -676,19 +653,36 @@ private fun MessagePartsBlock(
         }
     }
 
-    // v4.8.66 (CS 移植): 完成态过程折叠 — 过程区整体折叠为"用时 N 秒"披露行;
-    // 展开后即原有渲染链 (思考/工具/中途叙述)。折叠时过程内容不组合 (零渲染成本)。
-    if (useProcessFold && processBlocks.isNotEmpty()) {
-        var processExpanded by rememberSaveable { mutableStateOf(false) }
-        ProcessDisclosureRow(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = settings.displaySetting.bubbleOpacity),
-            durationSeconds = processDurationSeconds,
-            expanded = processExpanded,
-            onToggle = { processExpanded = !processExpanded },
-        ) {
-            processBlocks.forEach { block -> renderPartBlock(block) }
+    // v4.8.71: 分段折叠渲染 — 过程块各自折叠为"用时 N 秒"胶囊 (原位), 正文块原位直渲。
+    if (useProcessFold) {
+        groupedParts.forEachIndexed { blockIndex, block ->
+            if (block is MessagePartBlock.ThinkingBlock) {
+                var segmentExpanded by rememberSaveable(blockIndex) { mutableStateOf(false) }
+                val segmentDuration = remember(block) {
+                    block.steps.sumOf { step ->
+                        when (step) {
+                            is ThinkingStep.ReasoningStep ->
+                                step.reasoning.finishedAt?.let { (it - step.reasoning.createdAt).inWholeSeconds } ?: 0L
+                            is ThinkingStep.ToolStep -> {
+                                val st = step.tool.startedAt
+                                val en = step.tool.finishedAt
+                                if (st != null && en != null && en > st) (en - st) / 1000 else 0L
+                            }
+                        }
+                    }.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+                }
+                ProcessDisclosureRow(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = settings.displaySetting.bubbleOpacity),
+                    durationSeconds = segmentDuration,
+                    expanded = segmentExpanded,
+                    onToggle = { segmentExpanded = !segmentExpanded },
+                ) {
+                    renderPartBlock(block)
+                }
+            } else {
+                renderPartBlock(block)
+            }
         }
-        bodyBlocks.forEach { block -> renderPartBlock(block) }
     } else {
         groupedParts.forEach { block -> renderPartBlock(block) }
     }

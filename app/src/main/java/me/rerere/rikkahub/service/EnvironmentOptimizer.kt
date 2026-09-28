@@ -148,8 +148,6 @@ object ConnectionWarmer {
     // 发送时零握手零冷连, 且主请求与心跳碰撞窗口 <1s (心跳请求耗时)。
     // 开关沿用 opencodeWarmEnabled/commandCodeWarmEnabled (语义升级为保活)。
     // ─────────────────────────────────────────────────────────────
-    @Volatile private var keepAliveJob: kotlinx.coroutines.Job? = null
-    @Volatile private var keepAliveKey: String? = null
 
     // v4.8.34: 通用 per-host 心跳池 — 覆盖"当前对话正在使用的 provider"
     // (此前仅 opencode/CC 两个 host 有心跳; DeepSeek 等直连 provider 在工具
@@ -179,10 +177,9 @@ object ConnectionWarmer {
         // 一次 (网络差时数秒), 即"预热连接"引发的周期性卡顿源。统一移入 IO。
         keepAliveJobs[trimmed] = appScope.launch(Dispatchers.IO) {
             while (isActive) {
-                // v4.8.35: 60s 间隔 (原 45s) — 服务端空闲断连窗口 ~100s,
-                // 60s 留 40s 余量下尽量减少唤醒次数; 超 100s 连接必被服务端
-                // 关闭, 心跳即失效 (故 3-5 分钟间隔在技术上不可行)。
-                kotlinx.coroutines.delay(60_000L)
+                // v4.8.71 (用户定版): 先 ping 后计时 — 启动/生成开始即建立热连接
+                // ("开应用直接拉心跳, 首次延迟不是连接延迟"), 首 ping 不再等 60s;
+                // 之后 60s 间隔维持 (服务端空闲断连窗口 ~100s, 60s 留 40s 余量)。
                 runCatching {
                     val warmClient = client.newBuilder()
                         .connectTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
@@ -199,6 +196,7 @@ object ConnectionWarmer {
                     Log.w(TAG, "keepalive(ensure) $host: ${it.message}")
                 }
                 Log.d(TAG, "keepalive(ensure) $host ok (pool fresh)")
+                kotlinx.coroutines.delay(60_000L)
             }
         }
         Log.i(TAG, "Provider keepalive ensured: $host (60s interval, same-pool)")
@@ -212,38 +210,20 @@ object ConnectionWarmer {
         commandCodeEnabled: Boolean,
         opencodeEnabled: Boolean,
     ) {
-        val target = when {
-            apiKey.startsWith("user_", ignoreCase = true) && commandCodeEnabled ->
-                "https://api.commandcode.ai/provider/v1" to (opencodeClient ?: httpClient)
-            apiKey.startsWith("sk", ignoreCase = true) && opencodeEnabled ->
-                "https://opencode.ai/zen/go/v1" to (opencodeClient ?: httpClient)
-            else -> null
-        } ?: return
-        val (baseUrl, client) = target
-        // 开关/环境变化 → 重启心跳
-        if (keepAliveKey == baseUrl && keepAliveJob?.isActive == true) return
-        keepAliveJob?.cancel()
-        keepAliveKey = baseUrl
-        val host = runCatching { java.net.URI(baseUrl).host }.getOrNull() ?: return
-        keepAliveJob = appScope.launch(Dispatchers.IO) {
-            while (isActive) {
-                kotlinx.coroutines.delay(60_000L)
-                runCatching {
-                    val warmClient = client.newBuilder()
-                        .connectTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
-                        .readTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
-                        .writeTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
-                        .build()
-                    val req = okhttp3.Request.Builder()
-                        .url(baseUrl.trimEnd('/') + "/models").get().build()
-                    warmClient.newCall(req).execute().use { }
-                }.onFailure {
-                    Log.w(TAG, "keepalive $host: ${it.message}")
-                }
-                Log.d(TAG, "keepalive $host ok (pool fresh)")
-            }
+        // v4.8.71 (用户定版): 双供应商常驻心跳 — OpenCode 与 Command Code 各自独立,
+        // 互不踩踏 (原实现单槽 keepAliveJob: 两者只能其一; 且首个 ping 延迟 60s —
+        // "开应用执行任务"的首请求仍付完整连接延迟)。现改为: 启动即 ping
+        // (见 ensureProviderKeepAlive '先 ping 后计时') + 双 host 并行常驻;
+        // per-host 幂等 (keepAliveJobs), 重复调用零成本。
+        val client = opencodeClient ?: httpClient
+        if (commandCodeEnabled) {
+            val key = apiKey.takeIf { it.startsWith("user_", ignoreCase = true) }
+            ensureProviderKeepAlive(appScope, client, "https://api.commandcode.ai/provider/v1", key)
         }
-        Log.i(TAG, "Provider keepalive started: $host (60s interval, same-pool)")
+        if (opencodeEnabled) {
+            val key = apiKey.takeIf { it.startsWith("sk", ignoreCase = true) }
+            ensureProviderKeepAlive(appScope, client, "https://opencode.ai/zen/go/v1", key)
+        }
     }
 
     /**
