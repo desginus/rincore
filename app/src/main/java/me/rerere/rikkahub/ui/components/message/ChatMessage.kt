@@ -741,11 +741,11 @@ private fun MessagePartsBlock(
             expanded = processExpanded,
             onToggle = { processExpanded = !processExpanded },
         ) {
-            processBlocks.fastForEach(renderPartBlock)
+            processBlocks.forEach { block -> renderPartBlock(block) }
         }
-        bodyBlocks.fastForEach(renderPartBlock)
+        bodyBlocks.forEach { block -> renderPartBlock(block) }
     } else {
-        groupedParts.fastForEach(renderPartBlock)
+        groupedParts.forEach { block -> renderPartBlock(block) }
     }
 
     // Annotations (always rendered at the end)
