@@ -117,7 +117,6 @@ private const val TAG = "ChatList"
 private const val LoadingIndicatorKey = "LoadingIndicator"
 private const val ScrollBottomKey = "ScrollBottomKey"
 
-@Composable
 /** v4.8.65 (CS 安卓端移植): live-tail 可见性迟滞状态 — 延后隐藏 (320dp) 防边界抖动,
  *  提前恢复 (160dp) 以免用户看见"追赶渲染"。普通字段, 不触发重组。 */
 private class LiveTailHysteresis {

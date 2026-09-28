@@ -137,6 +137,8 @@ private fun ReasoningContent(
     scrollState: ScrollState,
     fadeHeight: Float,
     loading: Boolean,
+    // v4.8.65 (CS 移植): live-tail 视野门控透传
+    liveTailState: State<Boolean>? = null,
 ) {
     val isPreview = expandState == ReasoningCardState.Preview
     val reasoningTextStyle = MaterialTheme.typography.bodySmall.copy(
@@ -260,6 +262,7 @@ fun ChainOfThoughtScope.ChatMessageReasoningStep(
         content = {
             ReasoningContent(
                 reasoning = reasoning,
+                liveTailState = liveTailState,
                 assistant = assistant,
                 expandState = state.expandState,
                 scrollState = state.scrollState,
