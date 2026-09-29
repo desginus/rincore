@@ -110,6 +110,9 @@ private data class RetryState(
     var init: Int = 0,
     /** 本轮是否收到过任何流数据 (collect 置位) — 发起/流中断判据 */
     var receivedAnyData: Boolean = false,
+    /** v4.8.76: 上一轮 API 活动时间戳 (epoch ms) — OC/CC 轮间探活的 gap 判据;
+     *  per-generation 持有 (generateInternal 每轮独立调用, 局部变量无法跨轮)。 */
+    var lastApiRoundAt: Long = 0L,
 )
 
 private const val TAG = "GenerationHandler"
@@ -283,9 +286,6 @@ class GenerationHandler(
         var domainNamesCacheDomains: List<String>? = null
         var domainNamesCacheTools: List<Tool>? = null
         var domainNamesCacheVal: Set<String> = emptySet()
-        // v4.8.76: 轮间探活时间戳 (跨工具轮持有 — 原声明在轮内, 每轮重置致 gap 恒为 0,
-        // OC/CC 探活从未触发; 审计修复)
-        var lastApiRoundAt = 0L
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
             CallTracer.event("STEP", "step_$stepIndex", "Step $stepIndex begin, ${tools.size} tools loaded, messages=${messages.size}")
@@ -1414,8 +1414,8 @@ class GenerationHandler(
             // 模型久久不开口"); 快速重试 (gap 小) 不触发, 零额外开销。
             run {
                 val nowAt = System.currentTimeMillis()
-                val gapMs = if (lastApiRoundAt > 0) nowAt - lastApiRoundAt else 0L
-                lastApiRoundAt = nowAt
+                val gapMs = if (retry.lastApiRoundAt > 0) nowAt - retry.lastApiRoundAt else 0L
+                retry.lastApiRoundAt = nowAt
                 if (gapMs > 15_000L) {
                     val pokeBase = ((provider as? ProviderSetting.OpenAI)?.baseUrl
                         ?: (provider as? ProviderSetting.Claude)?.baseUrl)
