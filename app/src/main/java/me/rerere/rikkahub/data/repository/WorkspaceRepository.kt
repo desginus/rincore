@@ -463,23 +463,24 @@ class WorkspaceRepository(
     ): WorkspaceCommandResult {
         val workspace = dao.getById(id) ?: error("Workspace not found: $id")
         // runInterruptible 让协程取消转化为线程中断，从而打断阻塞的 Process.waitFor 并杀掉进程
-        return runInterruptible(Dispatchers.IO) {
+        // v4.8.74: shell 耗时观测 — >500ms 写运行日志 (提速核实依据);
+        // runInterruptible 块非挂起上下文, 计时采集与事件上报分离 (报告在块外)。
+        val t0 = System.currentTimeMillis()
+        val result = runInterruptible(Dispatchers.IO) {
             manager.ensureWorkspace(workspace.root)
-            // v4.8.74: shell 耗时观测 — >500ms 写运行日志 (提速核实依据)
-            val t0 = System.currentTimeMillis()
-            val result = manager.executeCommand(
+            manager.executeCommand(
                 workspace.root, command, cwd, timeoutMillis, stdin,
                 shellCompatibilityMode = workspace.shellCompatibilityMode,
             )
-            val costMs = System.currentTimeMillis() - t0
-            if (costMs > 500) {
-                me.rerere.rikkahub.data.ai.CallTracer.event(
-                    "WS", "exec_ms",
-                    "ms=$costMs exit=${result.exitCode} timeout=${result.timedOut} cmd=${command.take(80)}"
-                )
-            }
-            result
         }
+        val costMs = System.currentTimeMillis() - t0
+        if (costMs > 500) {
+            me.rerere.rikkahub.data.ai.CallTracer.event(
+                "WS", "exec_ms",
+                "ms=$costMs exit=${result.exitCode} timeout=${result.timedOut} cmd=${command.take(80)}"
+            )
+        }
+        return result
     }
 
     /**
