@@ -657,11 +657,12 @@ private fun MessagePartsBlock(
         val lastBodyIndex = groupedParts.indexOfLast { it !is MessagePartBlock.ThinkingBlock }
         groupedParts.forEachIndexed { blockIndex, block ->
             if (block is MessagePartBlock.ThinkingBlock) {
-                // v4.8.75 (用户定版): 含 ask_user 的过程段永不折叠 — 问答卡保持可见可交互。
-                val containsAskUser = block.steps.any {
-                    it is ThinkingStep.ToolStep && it.tool.toolName == "ask_user"
+                // v4.8.76 (用户定版修正): 仅"未回答"的 ask_user 阻止折叠 — 等候回答期间
+                // 问答卡保持展开可交互; 已回答/已取消后该段正常折叠。
+                val hasUnansweredAskUser = block.steps.any {
+                    it is ThinkingStep.ToolStep && it.tool.toolName == "ask_user" && it.tool.isPending
                 }
-                val foldThisSegment = (!loading || blockIndex < lastBodyIndex) && !containsAskUser
+                val foldThisSegment = (!loading || blockIndex < lastBodyIndex) && !hasUnansweredAskUser
                 if (foldThisSegment) {
                     var segmentExpanded by rememberSaveable(blockIndex) { mutableStateOf(false) }
                     val segmentDuration = remember(block) {

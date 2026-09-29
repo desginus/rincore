@@ -317,6 +317,26 @@ private fun FileContentPreview(path: String?, code: String) {
 }
 
 /**
+ * v4.8.76: 后台任务 (workspace_job) — 标题显示动作与命令/任务号预览。
+ */
+object JobToolUI : ToolUIRenderer {
+    private const val TITLE_MAX_CHARS = 40
+
+    override val toolName: String = "workspace_job"
+
+    @Composable
+    override fun title(context: ToolUIContext): String {
+        val action = context.arguments.getStringContent("action") ?: "job"
+        val detail = context.arguments.getStringContent("command")?.takeIf { it.isNotBlank() }
+            ?: context.arguments.getStringContent("job_id")
+        val preview = detail?.replace("\n", " ")?.trim()?.let {
+            if (it.length > TITLE_MAX_CHARS) it.take(TITLE_MAX_CHARS) + "…" else it
+        }
+        return if (preview.isNullOrBlank()) "后台任务 · $action" else "后台任务 · $action · $preview"
+    }
+}
+
+/**
  * 工作空间执行 Shell: 摘要显示退出状态与输出首部, 详情为命令 + stdout/stderr
  */
 object ShellToolUI : ToolUIRenderer {

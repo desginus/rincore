@@ -38,6 +38,7 @@ val FRAMEWORK_TOOL_SET = setOf(
     "invoke_tools",
     "search_domains",
     "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file", "workspace_show_file",
+    "workspace_job", // v4.8.76: 后台任务原语 (审计: 4.8.72 漏入框架集 — 此前仅域内可见, 模型顶层调不到)
     // v4.6.1: 代码探索双件套 (只读搜索, 框架工具)
     "workspace_grep", "workspace_glob",
     // v4.7.10: 管理工具保留顶层 (用户定版: 框架工具必须在顶层 —

@@ -283,6 +283,9 @@ class GenerationHandler(
         var domainNamesCacheDomains: List<String>? = null
         var domainNamesCacheTools: List<Tool>? = null
         var domainNamesCacheVal: Set<String> = emptySet()
+        // v4.8.76: 轮间探活时间戳 (跨工具轮持有 — 原声明在轮内, 每轮重置致 gap 恒为 0,
+        // OC/CC 探活从未触发; 审计修复)
+        var lastApiRoundAt = 0L
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
             CallTracer.event("STEP", "step_$stepIndex", "Step $stepIndex begin, ${tools.size} tools loaded, messages=${messages.size}")
@@ -1405,7 +1408,6 @@ class GenerationHandler(
             // 写入 per-generation 状态对象, 供 generateText 侧决策)
             lengthContinuationState.lastRoundLengthCut = false
             lengthContinuationState.lastRoundToolRepaired = false
-            var lastApiRoundAt = 0L
             streamLoop@ while (true) {
             // v4.8.74 (OC/CC 定向): 距上轮 >15s (工具长执行后) 先轻量探活再发真实请求 —
             // 半死连接 4s 内剔除+清池 (否则真实请求整段等 readTimeout, 用户感知"工具后
