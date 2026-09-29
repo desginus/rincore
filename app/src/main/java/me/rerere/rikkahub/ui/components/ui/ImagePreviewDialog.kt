@@ -87,6 +87,11 @@ fun ImagePreviewDialog(
                             if (ok) {
                                 toaster.show(message = "已保存图片", type = ToastType.Success)
                             } else {
+                                // v4.8.73: 失败写入运行日志 (此前仅 logcat — 用户查运行日志为空,
+                                // "详情见运行日志"名不副实)
+                                me.rerere.rikkahub.data.ai.CallTracer.event(
+                                    "SAVE", "save_image_failed", "url=${imgUrl.take(200)}"
+                                )
                                 toaster.show(message = "保存失败 (详情见运行日志)", type = ToastType.Error)
                             }
                         }

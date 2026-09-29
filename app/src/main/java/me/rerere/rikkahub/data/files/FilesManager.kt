@@ -314,6 +314,10 @@ class FilesManager(
                     activityContext.exportImageFile(activity, resolved)
                 } else {
                     Log.w("FilesManager", "saveMessageImage: workspace image unresolved: $image")
+                    // v4.8.73: 同步写运行日志 (与"详情见运行日志"提示对齐)
+                    me.rerere.rikkahub.data.ai.CallTracer.event(
+                        "SAVE", "workspace_image_unresolved", "image=${image.take(200)}"
+                    )
                     false
                 }
             }

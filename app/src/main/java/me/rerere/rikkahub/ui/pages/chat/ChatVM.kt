@@ -48,6 +48,7 @@ import me.rerere.rikkahub.data.datastore.DraftStore
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flatMapLatest
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.UpdateChecker
@@ -82,10 +83,16 @@ class ChatVM(
     private var packAtOpen: Uuid? = null
 
     // 4.8.24 项目包 CWD — 对话所属项目包的 cwd (项目包锚定; null = 未设置/聊天默认)
+    // v4.8.73: 改订阅项目包行 flow — 原实现仅在会话流重发射时一次性重读, 导致
+    // 设置/重置项目包 CWD 后 UI 无反应 (重置 = 写 null, 永不刷新 → "无法取消重置")。
+    @kotlin.OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val conversationFolderCwd: StateFlow<String?> = conversation
         .map { it.folderId }
         .distinctUntilChanged()
-        .map { fid -> fid?.let { runCatching { folderRepository.getFolderById(it)?.cwd }.getOrNull() } }
+        .flatMapLatest { fid ->
+            if (fid == null) kotlinx.coroutines.flow.flowOf(null)
+            else folderRepository.getFolderFlow(fid).map { it?.cwd }
+        }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
     var chatListInitialized by mutableStateOf(false) // 聊天列表是否已经滚动到底部
     // v4.7.23: 分享/深链一次性输入参数消费标记 — 首个组合消费后置位。

@@ -390,11 +390,9 @@ private fun MessagePartsBlock(
     // 中途正文 (哪怕很短) 一律留在正文区原位渲染, 不再裹入过程记录。
     // 生成中不折叠 (实时展示, 与原行为一致); 仅完成态启用。
     val isAssistantRole = role == MessageRole.ASSISTANT
-    // v4.8.71 (用户定版): 分段过程折叠 — 不再把全部过程汇总到顶部, 而是按输出
-    // 顺序逐段呈现: [思考+工具]→[用时胶囊] [正文] [思考+工具]→[用时胶囊] [正文]…
-    // 每段胶囊只包住它自己那一段"正文之外"的过程 (块级切段; groupMessageParts
-    // 已把连续 思考/工具 归并为单个 ThinkingBlock)。生成中不折叠, 与现行为零差异。
-    val useProcessFold = isAssistantRole && !loading
+    // v4.8.73 (用户定版): 实时分段包裹 — 每完成一段就裹一段:
+    // 生成中, 凡其后已出现正文的过程段立即折叠为胶囊 (阶段一结束即包裹);
+    // 活动尾段 (其后尚无正文) 保持展开正常显示; 完成后全部折叠。以此往复。
 
     val renderPartBlock: @Composable (MessagePartBlock) -> Unit = { block ->
         when (block) {
@@ -653,30 +651,37 @@ private fun MessagePartsBlock(
         }
     }
 
-    // v4.8.71: 分段折叠渲染 — 过程块各自折叠为"用时 N 秒"胶囊 (原位), 正文块原位直渲。
-    if (useProcessFold) {
+    // v4.8.73: 实时分段包裹渲染 — 已完成阶段立即折叠为"用时 N 秒"胶囊 (原位);
+    // 活动尾段展开正常显示; 完成后全部折叠。以此往复。
+    if (isAssistantRole) {
+        val lastBodyIndex = groupedParts.indexOfLast { it !is MessagePartBlock.ThinkingBlock }
         groupedParts.forEachIndexed { blockIndex, block ->
             if (block is MessagePartBlock.ThinkingBlock) {
-                var segmentExpanded by rememberSaveable(blockIndex) { mutableStateOf(false) }
-                val segmentDuration = remember(block) {
-                    block.steps.sumOf { step ->
-                        when (step) {
-                            is ThinkingStep.ReasoningStep ->
-                                step.reasoning.finishedAt?.let { (it - step.reasoning.createdAt).inWholeSeconds } ?: 0L
-                            is ThinkingStep.ToolStep -> {
-                                val st = step.tool.startedAt
-                                val en = step.tool.finishedAt
-                                if (st != null && en != null && en > st) (en - st) / 1000 else 0L
+                val foldThisSegment = !loading || blockIndex < lastBodyIndex
+                if (foldThisSegment) {
+                    var segmentExpanded by rememberSaveable(blockIndex) { mutableStateOf(false) }
+                    val segmentDuration = remember(block) {
+                        block.steps.sumOf { step ->
+                            when (step) {
+                                is ThinkingStep.ReasoningStep ->
+                                    step.reasoning.finishedAt?.let { (it - step.reasoning.createdAt).inWholeSeconds } ?: 0L
+                                is ThinkingStep.ToolStep -> {
+                                    val st = step.tool.startedAt
+                                    val en = step.tool.finishedAt
+                                    if (st != null && en != null && en > st) (en - st) / 1000 else 0L
+                                }
                             }
-                        }
-                    }.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
-                }
-                ProcessDisclosureRow(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = settings.displaySetting.bubbleOpacity),
-                    durationSeconds = segmentDuration,
-                    expanded = segmentExpanded,
-                    onToggle = { segmentExpanded = !segmentExpanded },
-                ) {
+                        }.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+                    }
+                    ProcessDisclosureRow(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = settings.displaySetting.bubbleOpacity),
+                        durationSeconds = segmentDuration,
+                        expanded = segmentExpanded,
+                        onToggle = { segmentExpanded = !segmentExpanded },
+                    ) {
+                        renderPartBlock(block)
+                    }
+                } else {
                     renderPartBlock(block)
                 }
             } else {

@@ -238,6 +238,23 @@ object WorkspaceImageResolver {
                 )
             }
         }
+        // v4.8.73: 双前缀自愈 — 历史消息/工具产物可能携带 "A/A/x" 形态 (cwd 叠加),
+        // 精确路径全 miss 时尝试去掉重复首段一次; 仅新增命中路径, 不改既有语义。
+        run {
+            val segs = rel.trim('/').split('/')
+            if (segs.size > 2 && segs[0].isNotEmpty() && segs[0] == segs[1]) {
+                val collapsed = "/" + segs.drop(1).joinToString("/")
+                val collapsedRootfs = me.rerere.workspace.WorkspaceManager.ROOTFS_WORKSPACE_DIR + collapsed
+                for (ws in workspaces) {
+                    val hit = manager.resolveRootfsFileSafe(ws.root, collapsedRootfs)
+                    if (hit != null) {
+                        android.util.Log.i(TAG, "dedup hit: $rel -> $collapsed")
+                        cachedRoot = ws.root
+                        return WorkspaceResolveResult(hit, "ok")
+                    }
+                }
+            }
+        }
         android.util.Log.w(
             TAG,
             "miss path=$rootfsPath reason=not_found " +

@@ -861,7 +861,14 @@ private fun buildRenderUrl(workspaceId: String, path: String, cwd: String? = nul
     val hostRel = me.rerere.rikkahub.utils.normalizeHostWorkspacePath(path)?.removePrefix("/workspace/")
     val rel = hostRel ?: run {
         val base = path.trimStart('/').removePrefix("workspace/").removePrefix("/workspace/")
-        if (cwd.isNullOrEmpty()) base else "$cwd/$base"
+        when {
+            cwd.isNullOrEmpty() -> base
+            // v4.8.73: 双前缀自愈 — base 已含 cwd 前缀 (模型把 host 渲染地址换算回
+            // /workspace/<cwd>/... 形态再传参) 时不再叠加; 叠加 = 地址解析全失败
+            // (渲染占位 + 保存失败 — "地址渲染法图片出问题"的根因之一)。
+            base == cwd || base.startsWith("$cwd/") -> base
+            else -> "$cwd/$base"
+        }
     }
     return "file:///data/data/me.rincore.app/files/workspaces/$workspaceId/files/$rel"
 }
