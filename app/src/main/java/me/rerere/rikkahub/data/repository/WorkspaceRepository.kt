@@ -325,6 +325,39 @@ class WorkspaceRepository(
         manager.executeCommand(root = workspace.root, command = command, cwd = cwd)
     }
 
+    // ── v4.8.72: 后台任务直通 (workspace_job 工具) ──
+    suspend fun startJob(id: String, command: String, cwd: String, jobId: String) = withContext(Dispatchers.IO) {
+        val workspace = dao.getById(id) ?: error("Workspace not found: $id")
+        manager.ensureWorkspace(workspace.root)
+        manager.startJob(workspace.root, command, cwd, jobId)
+    }
+
+    suspend fun jobStatus(id: String, jobId: String): WorkspaceManager.JobStatus? = withContext(Dispatchers.IO) {
+        val workspace = dao.getById(id) ?: error("Workspace not found: $id")
+        manager.jobStatus(workspace.root, jobId)
+    }
+
+    suspend fun jobLogTail(id: String, jobId: String, maxBytes: Int = 6000): String = withContext(Dispatchers.IO) {
+        val workspace = dao.getById(id) ?: error("Workspace not found: $id")
+        val f = manager.jobLogFile(workspace.root, jobId)
+        if (!f.exists()) "" else runCatching {
+            java.io.FileInputStream(f).use { ins ->
+                var toSkip = (f.length() - maxBytes).coerceAtLeast(0L)
+                while (toSkip > 0) {
+                    val n = ins.skip(toSkip)
+                    if (n <= 0) break
+                    toSkip -= n
+                }
+                String(ins.readBytes(), Charsets.UTF_8)
+            }
+        }.getOrDefault("")
+    }
+
+    suspend fun killJob(id: String, jobId: String): Int = withContext(Dispatchers.IO) {
+        val workspace = dao.getById(id) ?: error("Workspace not found: $id")
+        manager.jobKill(workspace.root, jobId)
+    }
+
     /** 按 Rootfs 内绝对路径读取文件大小, 支持 /workspace、bind mount 与 Rootfs 内部路径。
      *  v4.5.27: cwd 非空时 /workspace 解析到助手级子目录 (CWD 专一空间)。 */
     suspend fun rootfsFileSize(

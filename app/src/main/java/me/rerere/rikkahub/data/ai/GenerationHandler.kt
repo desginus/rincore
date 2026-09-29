@@ -165,7 +165,9 @@ class GenerationHandler(
 
     companion object {
         /** 工具执行超时 (ms): 工具挂起时返回超时错误, 不阻塞整个生成流程 */
-        private const val TOOL_EXECUTION_TIMEOUT_MS = 60_000L
+        // v4.8.72 (用户定版): 60s → 700s — 生成类接口实际耗时 70s 起;
+        // 命令预算放宽到 600s (workspace_shell 上限) 之上再留 100s 余量 (沙箱启动/脚本开销)。
+        private const val TOOL_EXECUTION_TIMEOUT_MS = 700_000L
 
         /** v3.11.24 断流重试风暴硬顶 (ms): 45s。
          *  语义修正 — 旧值 10s 把"正常生成数分钟后断流"误判为预算耗尽

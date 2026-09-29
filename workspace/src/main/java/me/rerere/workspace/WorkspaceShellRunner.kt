@@ -32,6 +32,8 @@ data class WorkspaceShellContext(
     val stdin: ByteArray? = null,
     val bindMounts: List<WorkspaceBindMount> = emptyList(),
     val shellCompatibilityMode: Boolean = false,
+    // v4.8.72: 后台任务原语 — false 时省略 --kill-on-exit (proot 退出后子进程存活)
+    val killOnExit: Boolean = true,
 )
 
 class HostShellRunner : WorkspaceShellRunner {

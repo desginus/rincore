@@ -48,6 +48,7 @@ val WorkspaceToolDefaultApprovals: Map<String, Boolean> = mapOf(
     "workspace_edit_file" to false,
     "workspace_show_file" to false,
     "workspace_shell" to false, // v3.6.13: 默认直接执行 (用户: 不弹批复)
+    "workspace_job" to false,   // v4.8.72: 后台任务原语 (默认直接执行)
     "workspace_grep" to false,  // v4.6.1: 只读搜索, 免审批
     "workspace_glob" to false,  // v4.6.1: 只读搜索, 免审批
 )
@@ -94,6 +95,8 @@ private fun createWorkspaceToolsWithApprovals(
         createEditFileTool(workspaceId, ::needsApproval, workspaceRepository, cwd),
         createShowFileTool(workspaceId, ::needsApproval, workspaceRepository, cwd),
         createShellTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
+        // v4.8.72: 后台任务原语 (长任务跨调用存活; 沙箱实例隔离下的唯一可靠状态源)
+        createJobTool(workspaceId, ::needsApproval, workspaceRepository),
         // v4.6.1: 代码探索双件套 (对齐 Claude Code 的 Grep/Glob 设计 —
         // 专用工具优于 shell 拼接: 结构化输出/统一截断/免审批只读)
         createGrepTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
@@ -610,6 +613,110 @@ private fun createGlobTool(
     },
 )
 
+private fun createJobTool(
+    workspaceId: String,
+    needsApproval: (String) -> Boolean,
+    workspaceRepository: WorkspaceRepository,
+) = Tool(
+    name = "workspace_job",
+    description = "Durable background jobs in the sandbox. Each workspace_shell call is a fresh isolated proot instance whose processes die when the call ends — long tasks MUST run as jobs to survive. " +
+        "action=start launches a job and returns a job_id; action=status returns state (running/done/dead), exit code and log tail; action=kill stops it. " +
+        "Logs persist at /workspace/.rin-jobs/<job_id>.log. Never use ps/pgrep from a new shell call to judge a job (instances are isolated — it will look dead while running).",
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                put("action", buildJsonObject {
+                    put("type", "string")
+                    put("description", "start | status | kill")
+                    put("enum", buildJsonArray {
+                        add(JsonPrimitive("start"))
+                        add(JsonPrimitive("status"))
+                        add(JsonPrimitive("kill"))
+                    })
+                })
+                put("command", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Shell command to run in background (required for action=start)")
+                })
+                put("cwd", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Working directory relative to the workspace files root (optional for start)")
+                })
+                put("job_id", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Job id returned by action=start (required for status/kill)")
+                })
+            },
+            required = listOf("action"),
+        )
+    },
+    needsApproval = { needsApproval("workspace_job") },
+    execute = { input ->
+        val params = input.jsonObject
+        val action = params.string("action") ?: error("action is required")
+        when (action) {
+            "start" -> {
+                val command = params.string("command") ?: error("command is required for action=start")
+                val cwd = workspaceCwdRel(params.string("cwd")).orEmpty()
+                val jobId = "j" + java.lang.Long.toHexString(System.currentTimeMillis()) +
+                    java.lang.Long.toHexString(System.nanoTime() % 0x10000L)
+                workspaceRepository.startJob(workspaceId, command, cwd, jobId)
+                listOf(
+                    UIMessagePart.Text(
+                        buildJsonObject {
+                            put("job_id", jobId)
+                            put("status", "started")
+                            put("log_path", "/workspace/.rin-jobs/$jobId.log")
+                            put("note", "Durable job — keeps running after this call. Check with workspace_job {action:status, job_id}.")
+                        }.toString()
+                    )
+                )
+            }
+            "status" -> {
+                val jobId = params.string("job_id") ?: error("job_id is required for action=status")
+                val status = workspaceRepository.jobStatus(workspaceId, jobId)
+                val logTail = workspaceRepository.jobLogTail(workspaceId, jobId)
+                listOf(
+                    UIMessagePart.Text(
+                        buildJsonObject {
+                            put("job_id", jobId)
+                            if (status == null) {
+                                put("state", "unknown")
+                                put("note", "No such job id (not started here or jobs dir cleaned).")
+                            } else {
+                                put("state", status.state)
+                                status.exitCode?.let { put("exit_code", it) }
+                                if (status.pids.isNotEmpty()) {
+                                    put("pids", buildJsonArray { status.pids.forEach { add(JsonPrimitive(it)) } })
+                                }
+                                put("log_tail", logTail)
+                            }
+                        }.toString()
+                    )
+                )
+            }
+            "kill" -> {
+                val jobId = params.string("job_id") ?: error("job_id is required for action=kill")
+                val killed = workspaceRepository.killJob(workspaceId, jobId)
+                listOf(
+                    UIMessagePart.Text(
+                        buildJsonObject {
+                            put("job_id", jobId)
+                            put("killed_pids", killed)
+                            put(
+                                "note",
+                                if (killed > 0) "SIGKILL sent to all matched processes."
+                                else "No live process matched — job may have already finished."
+                            )
+                        }.toString()
+                    )
+                )
+            }
+            else -> error("unknown action: $action (use start|status|kill)")
+        }
+    },
+)
+
 private fun createShellTool(
     workspaceId: String,
     needsApproval: (String) -> Boolean,
@@ -623,7 +730,8 @@ private fun createShellTool(
         if (!defaultCwd.isNullOrBlank()) {
             append("Defaults to '$defaultCwd'. ")
         }
-        append("Requires Rootfs to be installed and ready.")
+        append("Requires Rootfs to be installed and ready. ")
+        append("Each call runs in a fresh isolated proot instance — processes started here die when the call ends; for long tasks (minutes) use workspace_job (durable background jobs) instead.")
     },
     parameters = {
         InputSchema.Obj(
@@ -647,7 +755,7 @@ private fun createShellTool(
                     put("type", "integer")
                     put(
                         "description",
-                        "Command timeout in seconds. Defaults to 30, max $SHELL_TIMEOUT_MAX_SECONDS."
+                        "Command timeout in seconds. Defaults to 600, max $SHELL_TIMEOUT_MAX_SECONDS."
                     )
                 })
             },

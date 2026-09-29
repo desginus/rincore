@@ -352,6 +352,109 @@ class WorkspaceManager(
         )
     }
 
+    // ── v4.8.72: 后台任务原语 (用户定版: 长任务必须有后台/异步能力) ──
+    // 独立 proot (killOnExit=false) 启动脚本; proot 退出后任务继续存活;
+    // 存活判定不依赖沙箱内 ps (每实例隔离) — /proc 环境标记扫描 (同 UID 可见)。
+
+    data class JobStatus(
+        val id: String,
+        val state: String,   // running | done | dead
+        val exitCode: Int?,
+        val pids: List<Int>,
+    )
+
+    private fun jobsDir(root: String): File = File(filesDir(root), ".rin-jobs").apply { mkdirs() }
+
+    fun jobLogFile(root: String, jobId: String): File = File(jobsDir(root), "$jobId.log")
+
+    /** 启动后台任务 — 脚本落地规避全部 shell 引号问题; 返回即已脱离调用实例。 */
+    fun startJob(root: String, command: String, cwd: String, jobId: String) {
+        require(command.isNotBlank()) { "Command is required" }
+        val cwdRel = cwd.trim().trim('/')
+        val script = buildString {
+            append("#!/bin/bash\n")
+            if (cwdRel.isNotEmpty()) {
+                append("cd \"/workspace/").append(cwdRel).append("\" || exit 1\n")
+            } else {
+                append("cd /workspace || exit 1\n")
+            }
+            append("export RIN_JOB_ID=").append(jobId).append('\n')
+            append(command).append('\n')
+            append("_rin_rc=\$?\n")
+            append("echo \"\$_rin_rc\" > \"/workspace/.rin-jobs/").append(jobId).append(".exit\"\n")
+        }
+        File(jobsDir(root), "$jobId.sh").writeText(script)
+        val inner = "nohup bash /workspace/.rin-jobs/$jobId.sh > /workspace/.rin-jobs/$jobId.log 2>&1 < /dev/null & echo RINJOB_STARTED $jobId"
+        val process = shellRunner.launchProcess(
+            WorkspaceShellContext(
+                root = root,
+                command = inner,
+                cwd = "",
+                filesDir = filesDir(root),
+                linuxDir = linuxDir(root),
+                tempDir = tempDir(root),
+                workingDir = filesDir(root),
+                timeoutMillis = 30_000L,
+                stdin = null,
+                bindMounts = bindMounts,
+                killOnExit = false,
+            )
+        ) ?: error("proot 不可用, 后台任务无法启动")
+        runCatching {
+            process.waitFor(30, java.util.concurrent.TimeUnit.SECONDS)
+            process.destroy()
+        }
+    }
+
+    fun jobStatus(root: String, jobId: String): JobStatus? {
+        val dir = jobsDir(root)
+        if (!File(dir, "$jobId.sh").exists()) return null
+        val exitCode = File(dir, "$jobId.exit")
+            .takeIf { it.exists() }?.readText()?.trim()?.toIntOrNull()
+        val pids = if (exitCode == null) scanJobPids(jobId) else emptyList()
+        val state = when {
+            exitCode != null -> "done"
+            pids.isNotEmpty() -> "running"
+            else -> "dead"
+        }
+        return JobStatus(jobId, state, exitCode, pids)
+    }
+
+    fun jobKill(root: String, jobId: String): Int {
+        var killed = 0
+        for (pid in scanJobPids(jobId)) {
+            runCatching {
+                Runtime.getRuntime().exec(arrayOf("kill", "-9", pid.toString())).waitFor()
+                killed++
+            }
+        }
+        return killed
+    }
+
+    /** /proc 扫描: RIN_JOB_ID=<id> 环境标记 (覆盖全部子孙进程) 或脚本路径命令行。
+     *  同 UID 进程可见 — 跨沙箱实例唯一可靠的存活判据 (ps 看不到 != 已死)。 */
+    private fun scanJobPids(jobId: String): List<Int> {
+        val marker = "RIN_JOB_ID=$jobId"
+        val cmdMarker = ".rin-jobs/$jobId.sh"
+        val out = ArrayList<Int>()
+        val procs = File("/proc").listFiles() ?: return out
+        for (p in procs) {
+            val pid = p.name.toIntOrNull() ?: continue
+            val envText = runCatching {
+                String(File(p, "environ").readBytes(), Charsets.ISO_8859_1)
+            }.getOrNull()
+            if (envText != null && envText.split('\u0000').any { it == marker }) {
+                out.add(pid)
+                continue
+            }
+            val cmdText = runCatching {
+                String(File(p, "cmdline").readBytes(), Charsets.ISO_8859_1)
+            }.getOrNull() ?: continue
+            if (cmdText.contains(cmdMarker)) out.add(pid)
+        }
+        return out
+    }
+
     private fun requireValidRoot(root: String) {
         require(root.matches(ROOT_NAME_REGEX)) {
             "Invalid workspace root name: $root"
@@ -380,7 +483,7 @@ class WorkspaceManager(
         private const val FILES_DIR = "files"
         private const val LINUX_DIR = "linux"
         private const val TEMP_DIR = "tmp"
-        const val DEFAULT_COMMAND_TIMEOUT_MS = 30_000L
+        const val DEFAULT_COMMAND_TIMEOUT_MS = 600_000L
 
         /** Rootfs 内工作区文件区的挂载点 */
         const val ROOTFS_WORKSPACE_DIR = "/workspace"

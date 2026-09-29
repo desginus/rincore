@@ -76,7 +76,11 @@ class ProotShellRunner(
             proot.absolutePath,
             "--root-id",
             "--link2symlink",
-            "--kill-on-exit",
+        )
+        // v4.8.72: 后台任务支持 — killOnExit=false 时省略 --kill-on-exit;
+        // detached 子进程在 proot 退出后继续存活 (前台调用默认保持原语义)。
+        if (context.killOnExit) command += "--kill-on-exit"
+        command += listOf(
             "-r",
             context.linuxDir.absolutePath,
             "-w",
