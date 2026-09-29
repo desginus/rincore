@@ -1,13 +1,15 @@
 /* 【域 A·对话核心】 — 页面 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.pages.extensions.skills
-/* ───【原版对齐】SkillsPage.kt | 基线 2.5.5 (v4.8.64 移植: 技能搜索 (字符串化) + ItemActionMenu 统一操作; 自研 v3.6.104 搜索由上游版本收敛)
- * 来源: 原版 2.5.5 适配移植 | 差异: 仅工程标注
- * ───────────────────────────────────────────────────────────────*/
 
+
+/* ───【原版对齐】SkillsPage.kt | 差异 ±21 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,13 +17,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,16 +35,15 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,30 +52,31 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Add01
-import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Download01
 import me.rerere.hugeicons.stroke.FileImport
+import me.rerere.hugeicons.stroke.MoreVertical
 import me.rerere.hugeicons.stroke.Puzzle
-import me.rerere.hugeicons.stroke.Search01
+import me.rerere.hugeicons.stroke.GlobalSearch
+import me.rerere.hugeicons.stroke.Cancel01
+import me.rerere.hugeicons.stroke.Flash
 import me.rerere.rikkahub.data.files.SkillFrontmatterParser
 import me.rerere.rikkahub.data.files.SkillMetadata
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.ui.components.nav.BackButton
-import me.rerere.rikkahub.ui.components.ui.ItemAction
-import me.rerere.rikkahub.ui.components.ui.ItemActionMenu
 import me.rerere.rikkahub.ui.components.ui.RikkaConfirmDialog
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.CustomColors
-import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import me.rerere.rikkahub.utils.plus
 
 @Composable
 fun SkillsPage() {
@@ -87,16 +90,12 @@ fun SkillsPage() {
     var showAddDialog by rememberSaveable { mutableStateOf(false) }
     var showImportDialog by rememberSaveable { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<SkillMetadata?>(null) }
+    // v3.6.104: 技能搜索 — 快速查询特定 Skill
     var searchQuery by rememberSaveable { mutableStateOf("") }
     val filteredSkills = remember(skills, searchQuery) {
-        if (searchQuery.isBlank()) {
-            skills
-        } else {
-            skills.filter { skill ->
-                skill.name.contains(searchQuery, ignoreCase = true) ||
-                    skill.description.contains(searchQuery, ignoreCase = true)
-            }
-        }
+        val q = searchQuery.trim().lowercase()
+        if (q.isEmpty()) skills
+        else skills.filter { it.name.lowercase().contains(q) || it.description.lowercase().contains(q) }
     }
     val fileImportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -138,7 +137,23 @@ fun SkillsPage() {
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (skills.isEmpty()) {
+            // v3.6.104: 搜索框 (页面上方)
+            item {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("搜索技能（名称 / 描述）") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    leadingIcon = { Icon(HugeIcons.GlobalSearch, null, Modifier.size(16.dp)) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) { Icon(HugeIcons.Cancel01, null) }
+                        }
+                    },
+                )
+            }
+            if (filteredSkills.isEmpty()) {
                 item {
                     Column(
                         modifier = Modifier
@@ -167,46 +182,15 @@ fun SkillsPage() {
                 }
             }
 
-            if (skills.isNotEmpty()) {
-                item(key = "search") {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text(stringResource(R.string.skills_page_search_placeholder)) },
-                        leadingIcon = {
-                            Icon(HugeIcons.Search01, contentDescription = null)
-                        },
-                        trailingIcon = {
-                            if (searchQuery.isNotEmpty()) {
-                                IconButton(onClick = { searchQuery = "" }) {
-                                    Icon(HugeIcons.Cancel01, contentDescription = "Clear")
-                                }
-                            }
-                        },
-                        singleLine = true,
-                        shape = CircleShape,
-                    )
-                }
-            }
-
-            if (skills.isNotEmpty() && filteredSkills.isEmpty()) {
-                item(key = "no_result") {
-                    Text(
-                        text = stringResource(R.string.skills_page_search_no_result),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 32.dp),
-                        textAlign = TextAlign.Center,
-                    )
-                }
-            }
-
             items(filteredSkills, key = { it.skillDir.absolutePath }) { skill ->
+                val enabled = vm.isSkillEnabled(skill.name)
+                val forced = vm.isSkillForced(skill.name)
                 SkillCard(
                     skill = skill,
+                    enabled = enabled,
+                    forced = forced,
+                    onToggle = { vm.toggleSkill(skill.name) },
+                    onToggleForced = { vm.toggleForcedSkill(skill.name) },
                     onClick = { navController.navigate(Screen.SkillDetail(skill.name)) },
                     onDelete = { deleteTarget = skill },
                 )
@@ -287,9 +271,15 @@ fun SkillsPage() {
 @Composable
 private fun SkillCard(
     skill: SkillMetadata,
+    enabled: Boolean = true,
+    forced: Boolean = false,
+    onToggle: () -> Unit = {},
+    onToggleForced: () -> Unit = {},
     onClick: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    var menuExpanded by remember { mutableStateOf(false) }
+
     Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
@@ -298,14 +288,15 @@ private fun SkillCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = if (skill.builtin) 16.dp else 4.dp),
+                .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 imageVector = HugeIcons.Puzzle,
                 contentDescription = null,
                 modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.primary,
+                tint = if (enabled) MaterialTheme.colorScheme.primary
+                       else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
             )
             Column(
                 modifier = Modifier
@@ -316,6 +307,8 @@ private fun SkillCard(
                 Text(
                     text = skill.name,
                     style = MaterialTheme.typography.titleSmallEmphasized,
+                    color = if (enabled) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
                 )
                 Text(
                     text = skill.description,
@@ -323,13 +316,6 @@ private fun SkillCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                 )
-                if (skill.builtin) {
-                    Text(
-                        text = "Built-in",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.secondary,
-                    )
-                }
                 if (!skill.compatibility.isNullOrBlank()) {
                     Text(
                         text = skill.compatibility,
@@ -338,18 +324,51 @@ private fun SkillCard(
                     )
                 }
             }
-            // 内置技能只读，不提供删除
-            if (!skill.builtin) {
-                ItemActionMenu(
-                    actions = listOf(
-                        ItemAction(
-                            text = stringResource(R.string.delete),
-                            icon = HugeIcons.Delete01,
-                            destructive = true,
-                            onClick = onDelete,
-                        ),
+            Switch(
+                checked = enabled,
+                onCheckedChange = { onToggle() },
+                modifier = Modifier.padding(end = 8.dp),
+            )
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(
+                        imageVector = HugeIcons.MoreVertical,
+                        contentDescription = stringResource(R.string.skills_page_more_actions),
                     )
-                )
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false },
+                ) {
+                    // v3.6.105: 对话开始时强制启动
+                    DropdownMenuItem(
+                        text = { Text(if (forced) "取消对话开始时强制启动" else "对话开始时强制启动") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = if (forced) HugeIcons.Cancel01 else HugeIcons.Flash,
+                                contentDescription = null,
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onToggleForced()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = HugeIcons.Delete01,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onDelete()
+                        },
+                    )
+                }
             }
         }
     }
@@ -404,11 +423,12 @@ private fun SkillImportSheetItem(
 ) {
     ListItem(
         leadingContent = icon,
-        headlineContent = { Text(text) },
         modifier = Modifier
             .clip(MaterialTheme.shapes.large)
             .clickable(onClick = onClick),
-    )
+) {
+               Text(text)
+           }
 }
 
 @Composable

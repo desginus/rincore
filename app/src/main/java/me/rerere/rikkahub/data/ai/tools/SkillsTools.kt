@@ -18,9 +18,6 @@ import me.rerere.rikkahub.data.files.SkillFrontmatterParser
 import me.rerere.rikkahub.data.files.SkillMetadata
 import me.rerere.rikkahub.data.files.SkillPaths
 
-// v4.8.64 (2.5.5 适配移植): 与 Agent Skills 规范的 description 上限一致 — 渲染给模型前截断
-private const val MAX_SKILL_DESCRIPTION_LENGTH = 1024
-
 fun createSkillTools(
     allSkills: List<SkillMetadata>,
     enabledSkills: Set<String>? = null, // v3.10.4: 恢复助手级过滤 — null=全量(存量兼容), 非null=按名单
@@ -42,9 +39,7 @@ fun createSkillTools(
     val skillTools = available.map { skill ->
         Tool(
             name = sanitizeSkillToolName(skill.name), // skill_<清洗名> — 含空格/特殊字符的 skill 名需清洗为合法工具名
-            // v4.8.64 (2.5.5 适配): description 限长 (第三方来源的技能元数据不膨胀/不注入)
-            description = skill.description.take(MAX_SKILL_DESCRIPTION_LENGTH)
-                .ifBlank { "Load and apply the '${skill.name}' skill's instructions." },
+            description = skill.description.ifBlank { "Load and apply the '${skill.name}' skill's instructions." },
             parameters = {
                 InputSchema.Obj(
                     properties = buildJsonObject {
@@ -110,8 +105,7 @@ fun createSkillTools(
                 // 实时查询 (修复: 新增 Skill 无需重启, 立即可用)
                 // v3.6.92: 同样去掉 enabledSkills 过滤 — 存在即可用
                 val liveAvailable = skillProvider()
-                // v4.8.64 (2.5.5 移植): 模型可能照抄转义后的名称，两种形式都接受
-                val skill = liveAvailable.firstOrNull { s -> s.name == name || s.name.escapeXml() == name }
+                val skill = liveAvailable.firstOrNull { s -> s.name == name }
                     ?: error("Skill '$name' is not available. Available skills: ${liveAvailable.joinToString { it.name }}")
                 val path = it.jsonObject["path"]?.jsonPrimitive?.content
                 val content = if (path.isNullOrBlank()) {
@@ -136,15 +130,4 @@ fun sanitizeSkillToolName(skillName: String): String {
         .trim('_')
     // skill__<名> — 第一字段类别(skill), 第二字段分类字段(skill 名), 与 mcp__服务器__工具 同构
     return "skill__$sanitized"
-}
-
-private fun String.escapeXml(): String = buildString(length) {
-    for (c in this@escapeXml) {
-        when (c) {
-            '&' -> append("&amp;")
-            '<' -> append("&lt;")
-            '>' -> append("&gt;")
-            else -> append(c)
-        }
-    }
 }

@@ -1,7 +1,8 @@
 /* 【域 A·对话核心】 — 页面 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.pages.extensions.skills
-/* ───【原版对齐】SkillDetailVM.kt | 基线 2.5.5 (v4.8.64 移植: readOnly 只读判定 + 文件树由 walkTopDown 扁平清单构建; SkillFile 改为 relativePath+size)
- * 来源: 原版 2.5.5 适配移植 | 差异: 仅工程标注
+
+/* ───【原版对齐】SkillDetailVM.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
  * ───────────────────────────────────────────────────────────────*/
 
 import androidx.lifecycle.ViewModel
@@ -13,15 +14,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.files.SkillFrontmatterParser
 import me.rerere.rikkahub.data.files.SkillManager
-import me.rerere.rikkahub.data.files.SkillMetadata
-import me.rerere.rikkahub.data.files.SkillPaths
+import java.io.File
 
 data class SkillFile(
+    val file: File,
     val relativePath: String,
-    val size: Long,
-) {
-    val name: String get() = relativePath.substringAfterLast('/')
-}
+)
 
 sealed class SkillFileNode {
     data class FileNode(val skillFile: SkillFile) : SkillFileNode()
@@ -39,11 +37,7 @@ class SkillDetailVM(
     private val _tree = MutableStateFlow<List<SkillFileNode>>(emptyList())
     val tree = _tree.asStateFlow()
 
-    private val _readOnly = MutableStateFlow(false)
-    val readOnly = _readOnly.asStateFlow()
-
     private var skillName = ""
-    private var skill: SkillMetadata? = null
 
     fun init(name: String) {
         if (skillName == name) return
@@ -53,47 +47,29 @@ class SkillDetailVM(
 
     fun loadFiles() {
         viewModelScope.launch(Dispatchers.IO) {
-            val skill = skillManager.findSkill(skillName) ?: return@launch
-            this@SkillDetailVM.skill = skill
-            _readOnly.value = skill.builtin
-            val files = skill.skillDir.walkTopDown()
-                .filter { it.isFile }
-                .map { SkillFile(it.relativeTo(skill.skillDir).invariantSeparatorsPath, it.length()) }
-                .toList()
-            _tree.value = buildTree(files, prefix = "")
+            val dir = skillManager.getSkillDir(skillName) ?: return@launch
+            _tree.value = buildTree(dir, dir)
         }
     }
 
-    private fun buildTree(files: List<SkillFile>, prefix: String): List<SkillFileNode> {
-        val (direct, nested) = files.partition { !it.relativePath.removePrefix(prefix).contains('/') }
-        val dirs = nested
-            .groupBy { it.relativePath.removePrefix(prefix).substringBefore('/') }
-            .toSortedMap()
-            .map { (dirName, children) ->
-                val dirPath = prefix + dirName
-                SkillFileNode.DirNode(dirName, dirPath, buildTree(children, "$dirPath/"))
-            }
-        val fileNodes = direct
-            .sortedWith(compareBy({ it.relativePath != "SKILL.md" }, { it.name }))
-            .map { SkillFileNode.FileNode(it) }
-        return dirs + fileNodes
+    private fun buildTree(root: File, dir: File): List<SkillFileNode> {
+        val items = dir.listFiles()?.toList() ?: return emptyList()
+        val files = items
+            .filter { it.isFile }
+            .sortedWith(compareBy({ it.name != "SKILL.md" }, { it.name }))
+            .map { f -> SkillFileNode.FileNode(SkillFile(f, f.relativeTo(root).path)) }
+        val dirs = items
+            .filter { it.isDirectory }
+            .sortedBy { it.name }
+            .map { d -> SkillFileNode.DirNode(d.name, d.relativeTo(root).path, buildTree(root, d)) }
+        return dirs + files
     }
 
-    fun readFile(skillFile: SkillFile): String {
-        val skillDir = skill?.skillDir ?: return ""
-        return SkillPaths.resolveSkillFile(skillDir, skillFile.relativePath)
-            ?.takeIf { it.exists() }
-            ?.readText()
-            .orEmpty()
-    }
+    fun readFile(skillFile: SkillFile): String = skillFile.file.readText()
 
     // Returns null on success, error message on failure
     fun saveFile(relativePath: String, content: String, onResult: (String?) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
-            if (_readOnly.value) {
-                withContext(Dispatchers.Main) { onResult("内置技能不可修改") }
-                return@launch
-            }
             if (relativePath == "SKILL.md") {
                 val name = SkillFrontmatterParser.parse(content)["name"]
                 if (name != skillName) {
@@ -109,7 +85,7 @@ class SkillDetailVM(
 
     fun deleteFile(skillFile: SkillFile, onResult: (Boolean) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
-            val success = !_readOnly.value && skillManager.deleteSkillFile(skillName, skillFile.relativePath)
+            val success = skillManager.deleteSkillFile(skillName, skillFile.relativePath)
             if (success) loadFiles()
             withContext(Dispatchers.Main) { onResult(success) }
         }

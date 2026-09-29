@@ -1405,7 +1405,29 @@ class GenerationHandler(
             // 写入 per-generation 状态对象, 供 generateText 侧决策)
             lengthContinuationState.lastRoundLengthCut = false
             lengthContinuationState.lastRoundToolRepaired = false
+            var lastApiRoundAt = 0L
             streamLoop@ while (true) {
+            // v4.8.74 (OC/CC 定向): 距上轮 >15s (工具长执行后) 先轻量探活再发真实请求 —
+            // 半死连接 4s 内剔除+清池 (否则真实请求整段等 readTimeout, 用户感知"工具后
+            // 模型久久不开口"); 快速重试 (gap 小) 不触发, 零额外开销。
+            run {
+                val nowAt = System.currentTimeMillis()
+                val gapMs = if (lastApiRoundAt > 0) nowAt - lastApiRoundAt else 0L
+                lastApiRoundAt = nowAt
+                if (gapMs > 15_000L) {
+                    val pokeBase = ((provider as? ProviderSetting.OpenAI)?.baseUrl
+                        ?: (provider as? ProviderSetting.Claude)?.baseUrl)
+                        ?.takeIf { it.contains("opencode.ai") || it.contains("commandcode.ai") }
+                    if (pokeBase != null) {
+                        val pokeKey = (provider as? ProviderSetting.OpenAI)?.apiKey
+                            ?: (provider as? ProviderSetting.Claude)?.apiKey
+                        val ok = runCatching {
+                            me.rerere.rikkahub.service.ConnectionWarmer.pokeProviderHost(pokeBase, pokeKey)
+                        }.getOrDefault(false)
+                        CallTracer.event("CONN", "poke", "host=$pokeBase gapMs=$gapMs ok=$ok")
+                    }
+                }
+            }
             // v3.11.10: 重试预算在首次断流时刻重置起算 — 旧实现从流启动计时,
             // 含"流启动→断流"的静默期; 平台首包就静默时 watchdog 60s 单次
             // 已耗尽全部预算, 进入 catch 时连第一次重试都不满足条件,

@@ -202,6 +202,39 @@ object ConnectionWarmer {
         Log.i(TAG, "Provider keepalive ensured: $host (60s interval, same-pool)")
     }
 
+    @Volatile
+    private var mainClient: OkHttpClient? = null
+
+    /**
+     * v4.8.74: OC/CC 定向探活 — 工具长执行后、真实请求发起前调用 (单次 GET /models,
+     * 4s 短超时)。半死连接在此被剔除 + 清池, 真实请求不再整段等 readTimeout —
+     * "工具返回后模型久久不开口"的客户端侧主因修复。成功返回 true 不清池。
+     */
+    suspend fun pokeProviderHost(baseUrl: String, apiKey: String?): Boolean {
+        val trimmed = baseUrl.trimEnd('/')
+        if (trimmed.isBlank()) return false
+        val isOcCc = trimmed.contains("opencode.ai") || trimmed.contains("commandcode.ai")
+        val client = (if (isOcCc) me.rerere.ai.provider.ProviderManager.opencodeClient else null)
+            ?: mainClient ?: return false
+        return runCatching {
+            val warmClient = client.newBuilder()
+                .connectTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
+                .writeTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
+                .build()
+            val reqBuilder = okhttp3.Request.Builder().url(trimmed + "/models").get()
+            if (!apiKey.isNullOrBlank()) reqBuilder.addHeader("Authorization", "Bearer $apiKey")
+            warmClient.newCall(reqBuilder.build()).execute().use { true }
+        }.getOrElse { e ->
+            runCatching { client.connectionPool.evictAll() }
+            Log.w(TAG, "poke fail ($trimmed): ${e.message} — pool evicted")
+            me.rerere.rikkahub.data.ai.CallTracer.event(
+                "CONN", "poke_failed", "host=$trimmed err=${e.message?.take(120)}"
+            )
+            false
+        }
+    }
+
     fun startProviderKeepAlive(
         appScope: kotlinx.coroutines.CoroutineScope,
         httpClient: OkHttpClient,
@@ -210,6 +243,7 @@ object ConnectionWarmer {
         commandCodeEnabled: Boolean,
         opencodeEnabled: Boolean,
     ) {
+        mainClient = httpClient
         // v4.8.71 (用户定版): 双供应商常驻心跳 — OpenCode 与 Command Code 各自独立,
         // 互不踩踏 (原实现单槽 keepAliveJob: 两者只能其一; 且首个 ping 延迟 60s —
         // "开应用执行任务"的首请求仍付完整连接延迟)。现改为: 启动即 ping

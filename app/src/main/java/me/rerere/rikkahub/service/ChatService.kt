@@ -655,27 +655,31 @@ class ChatService(
         //  执行后连接变冷, "工具结束→恢复输出"多付连接重建/半死等待)。
         runCatching {
             val chatProvider = model.findProvider(settings.providers)
-            if (chatProvider is ProviderSetting.OpenAI && chatProvider.baseUrl.isNotBlank()) {
+            val baseUrl = when (chatProvider) {
+                is ProviderSetting.OpenAI -> chatProvider.baseUrl
+                is ProviderSetting.Claude -> chatProvider.baseUrl
+                is ProviderSetting.Google -> chatProvider.baseUrl
+                else -> null
+            }
+            val apiKey = when (chatProvider) {
+                is ProviderSetting.OpenAI -> chatProvider.apiKey
+                is ProviderSetting.Claude -> chatProvider.apiKey
+                is ProviderSetting.Google -> chatProvider.apiKey
+                else -> null
+            }
+            if (!baseUrl.isNullOrBlank()) {
+                // v4.8.74: OC/CC 使用长保活池 — 与主请求同池 (原实现恒用 primary,
+                // OC/CC 心跳一直打错池 = 长池连接无人刷新, "工具后恢复慢"的另一半根因)
+                val client = if (baseUrl.contains("opencode.ai") || baseUrl.contains("commandcode.ai")) {
+                    me.rerere.ai.provider.ProviderManager.opencodeClient ?: httpClient
+                } else {
+                    httpClient
+                }
                 ConnectionWarmer.ensureProviderKeepAlive(
                     appScope = appScope,
-                    client = httpClient,
-                    baseUrl = chatProvider.baseUrl,
-                    apiKey = chatProvider.apiKey,
-                )
-            } else if (chatProvider is ProviderSetting.Claude && chatProvider.baseUrl.isNotBlank()) {
-                ConnectionWarmer.ensureProviderKeepAlive(
-                    appScope = appScope,
-                    client = httpClient,
-                    baseUrl = chatProvider.baseUrl,
-                    apiKey = chatProvider.apiKey,
-                )
-            } else if (chatProvider is ProviderSetting.Google && chatProvider.baseUrl.isNotBlank()) {
-                // v4.8.35: Google 家族同样纳入心跳 (全家族覆盖)
-                ConnectionWarmer.ensureProviderKeepAlive(
-                    appScope = appScope,
-                    client = httpClient,
-                    baseUrl = chatProvider.baseUrl,
-                    apiKey = chatProvider.apiKey,
+                    client = client,
+                    baseUrl = baseUrl,
+                    apiKey = apiKey,
                 )
             }
         }

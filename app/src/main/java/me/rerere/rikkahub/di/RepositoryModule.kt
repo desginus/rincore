@@ -62,11 +62,6 @@ val repositoryModule = module {
                     source = File(context.filesDir, FileFolders.SKILLS).apply { mkdirs() },
                     target = "/skills",
                 ),
-                // v4.8.64 (2.5.5 移植): 内置技能挂载 (只读源), 附属脚本可在 workspace 直接执行
-                WorkspaceBindMount(
-                    source = File(context.filesDir, FileFolders.BUILTIN_SKILLS).apply { mkdirs() },
-                    target = "/builtin_skills",
-                ),
                 WorkspaceBindMount(
                     source = File(context.filesDir, FileFolders.TOOL_OUTPUTS).apply { mkdirs() },
                     target = "/tool_outputs",

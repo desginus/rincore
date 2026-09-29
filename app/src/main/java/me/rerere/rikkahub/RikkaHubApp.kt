@@ -208,9 +208,6 @@ class RikkaHubApp : Application() {
         // sync upload files to DB
         syncManagedFiles()
 
-        // v4.8.64 (2.5.5 移植): 安装/更新后从 assets 解压内置技能 (IO 线程)
-        extractBuiltinSkills()
-
         // v4.8.64 (2.5.5 移植): 启动计数 — 原子自增 (不再经 update() 整快照回写)
         incrementLaunchCount()
 
@@ -338,11 +335,6 @@ class RikkaHubApp : Application() {
         }
     }
 
-    private fun extractBuiltinSkills() {
-        get<AppScope>().launch(Dispatchers.IO) {
-            get<SkillManager>().ensureBuiltinSkillsExtracted()
-        }
-    }
 
     private fun incrementLaunchCount() {
         get<AppScope>().launch {

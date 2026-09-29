@@ -22,6 +22,20 @@ class ProotShellRunner(
     private val nativeLibraryDir: File,
     private val patcher: RootfsPatcher = RootfsPatcher(),
 ) : WorkspaceShellRunner {
+    // v4.8.74: rootfs patch 节流 — 原每次 shell 调用跑全套 etc 检查 (resolv/hosts/
+    // locale/groups/tmp 读盘+比较), 属每次调用的重复性开销; 进程内每 rootfs 10 分钟
+    // 至多一次 (DNS/网络变更仍能在窗口内收敛; 冷启动首调必定执行)。
+    private val lastPatchedAtMs = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    private fun patchThrottled(linuxDir: File) {
+        val now = System.currentTimeMillis()
+        val key = linuxDir.absolutePath
+        val last = lastPatchedAtMs[key] ?: 0L
+        if (now - last < 10 * 60 * 1000L) return
+        lastPatchedAtMs[key] = now
+        patcher.patch(linuxDir)
+    }
+
     override fun execute(context: WorkspaceShellContext): WorkspaceCommandResult {
         val process = launchProcess(context)
             ?: return WorkspaceCommandResult(
@@ -42,7 +56,7 @@ class ProotShellRunner(
         if (!loader.isFile) return null
 
         context.tempDir.mkdirs()
-        patcher.patch(context.linuxDir)
+        patchThrottled(context.linuxDir)
         return ProcessBuilder(buildCommand(context, proot))
             .directory(context.filesDir)
             .redirectErrorStream(false)
