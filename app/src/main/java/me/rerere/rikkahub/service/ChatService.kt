@@ -422,8 +422,14 @@ class ChatService(
         val session = sessionManager.get(conversationId) ?: return null
         synchronized(session) {
             // A pending tool approval is still part of the current turn.
+            // v4.8.75 (用户定版): ask_user 等候期豁免 — 模型通过 ask_user 等用户回答时,
+            // 用户可直接发送消息 (消息即刻出队正常发送; 未回答的 ask_user 会在发送链首部
+            // 由 finishInterruptedPendingTools 以 cancelled 落底, 协议安全)。
+            // 其余待批工具 (真实审批) 仍阻塞队列 — 审批未了结的轮次不可被新消息插队。
             if (session.getJob() != null || session.state.value.currentMessages.any { message ->
-                    message.parts.any { it is UIMessagePart.Tool && it.isPending }
+                    message.parts.any {
+                        it is UIMessagePart.Tool && it.isPending && it.toolName != "ask_user"
+                    }
                 }) return null
             val next = session.messageQueue.takeNext() ?: return null
             session.submittingMessage = next

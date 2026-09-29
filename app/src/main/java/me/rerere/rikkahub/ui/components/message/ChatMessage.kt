@@ -657,7 +657,11 @@ private fun MessagePartsBlock(
         val lastBodyIndex = groupedParts.indexOfLast { it !is MessagePartBlock.ThinkingBlock }
         groupedParts.forEachIndexed { blockIndex, block ->
             if (block is MessagePartBlock.ThinkingBlock) {
-                val foldThisSegment = !loading || blockIndex < lastBodyIndex
+                // v4.8.75 (用户定版): 含 ask_user 的过程段永不折叠 — 问答卡保持可见可交互。
+                val containsAskUser = block.steps.any {
+                    it is ThinkingStep.ToolStep && it.tool.toolName == "ask_user"
+                }
+                val foldThisSegment = (!loading || blockIndex < lastBodyIndex) && !containsAskUser
                 if (foldThisSegment) {
                     var segmentExpanded by rememberSaveable(blockIndex) { mutableStateOf(false) }
                     val segmentDuration = remember(block) {
