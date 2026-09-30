@@ -75,14 +75,11 @@ import androidx.compose.ui.window.DialogProperties
 import android.content.ClipData
 import android.widget.Toast
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.async
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Settings02
 import me.rerere.hugeicons.stroke.ArrowUp01
 import me.rerere.hugeicons.stroke.ArrowDown01
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.ai.provider.ProviderManager
 import me.rerere.rikkahub.data.usage.CommandCodeUsageApi
 import me.rerere.rikkahub.data.usage.UsageApi
 import me.rerere.rikkahub.data.usage.UsageMiniCardData
@@ -110,14 +107,10 @@ fun UsagePage(onBack: () -> Unit = {}) {
     var errorText by remember { mutableStateOf<String?>(null) }
     var selectedKey by remember { mutableStateOf<String?>(null) }
     var showKeyDialog by remember { mutableStateOf(false) }
-    // v4.8.78: 空密钥折叠组展开态 + 提供商余额 (数字形态)
+    // v4.8.78: 空密钥折叠组展开态
     var showNoSub by remember { mutableStateOf(false) }
-    var providerBalances by remember { mutableStateOf<List<ProviderBalanceEntry>>(emptyList()) }
-    val providerManager = koinInject<ProviderManager>()
 
     suspend fun doQuery(force: Boolean) {
-        // v4.8.78: 提供商余额 (每提供商一个密钥, 数字展示 — 无环形图) 独立刷新
-        providerBalances = fetchProviderBalances(providerManager, settings.providers)
         if (allKeys.isEmpty()) {
             usages = emptyMap()
             errorText = null
@@ -228,19 +221,6 @@ fun UsagePage(onBack: () -> Unit = {}) {
                                 expanded = showNoSub,
                                 onToggle = { showNoSub = !showNoSub },
                             )
-                        }
-                    }
-                    // v4.8.78: 提供商余额 (数字余额直接呈现 — 无环形图)
-                    if (providerBalances.isNotEmpty()) {
-                        item(key = "__provider_balance_header__") {
-                            Text(
-                                "提供商余额",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        items(providerBalances, key = { "pb_" + it.providerId }) { entry ->
-                            ProviderBalanceRow(entry)
                         }
                     }
                 }
@@ -847,67 +827,3 @@ private fun NoSubscriptionFold(
     }
 }
 
-// ── v4.8.78: 提供商余额行 (数字余额直接呈现) ──
-@Composable
-private fun ProviderBalanceRow(entry: ProviderBalanceEntry) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        ),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(entry.name, style = MaterialTheme.typography.titleSmall)
-                Text(
-                    entry.maskedKey,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Text(
-                text = entry.balance ?: "查询失败",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = if (entry.balance != null) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.error
-                },
-            )
-        }
-    }
-}
-
-private data class ProviderBalanceEntry(
-    val providerId: String,
-    val name: String,
-    val maskedKey: String,
-    val balance: String?,
-)
-
-/** v4.8.78: 已配置且启用余额查询的提供商密钥, 并行查询 (数字余额形态)。 */
-private suspend fun fetchProviderBalances(
-    providerManager: ProviderManager,
-    providers: List<me.rerere.ai.provider.ProviderSetting>,
-): List<ProviderBalanceEntry> {
-    val targets = providers
-        .filterIsInstance<me.rerere.ai.provider.ProviderSetting.OpenAI>()
-        .filter { it.balanceOption.enabled && it.apiKey.isNotBlank() }
-    if (targets.isEmpty()) return emptyList()
-    return kotlinx.coroutines.coroutineScope {
-        targets.map { p ->
-            async(kotlinx.coroutines.Dispatchers.IO) {
-                val balance = runCatching {
-                    providerManager.getProviderByType(p).getBalance(p)
-                }.getOrNull()
-                ProviderBalanceEntry(p.id.toString(), p.name, maskKey(p.apiKey), balance)
-            }
-        }.awaitAll().sortedBy { it.name }
-    }
-}

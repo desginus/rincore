@@ -72,11 +72,18 @@ object UsageQuery {
         }
     }
 
-    /** CC 空密钥判据 — 各窗口全空且套餐/额度字段全无信息。 */
-    private fun CommandCodeUsageApi.CommandCodeUsageResult.isEffectivelyEmpty(): Boolean =
-        fiveHour == null && weekly == null &&
-            monthlyRemaining == 0.0 && purchasedCredits == 0.0 && freeCredits == 0.0 &&
-            planId == null && currentPeriodEnd == null && monthlyTotal == null
+    /**
+     * CC 空密钥判据 (v4.8.79 修正 — 按用户实见特征): 账户真实但无套餐时, 用户能看到的
+     * 唯一特征 = 重置倒计时"未知" (任一窗口都没有有效重置时间), 且各项额度全为 0。
+     * 旧判据要求字段"全缺" (fiveHour/weekly==null) — 实测空套餐响应仍带窗口对象,
+     * 从未命中 (用户: "套餐还是被展示")。反例保护: 按量付费/有余额账户 (credits>0)
+     * 或任一窗口有重置时间 → 不折叠。
+     */
+    private fun CommandCodeUsageApi.CommandCodeUsageResult.isEffectivelyEmpty(): Boolean {
+        val noResets = fiveHour?.resetAtMs == null && weekly?.resetAtMs == null && currentPeriodEnd == null
+        val noCredits = monthlyRemaining <= 0.0 && purchasedCredits <= 0.0 && freeCredits <= 0.0
+        return noResets && noCredits
+    }
 }
 
 /** 单密钥查询三态 (v4.8.78) */
