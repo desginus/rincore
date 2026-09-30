@@ -1293,6 +1293,19 @@ class ChatService(
         folderRepository.deleteFolder(folderId)
     }
 
+    /**
+     * v4.8.77: 项目包移出为助手 — 包内全部对话转为新助手对话记录。
+     * 先同步活跃 session 内存态 (assistantId + folderId), 再库级批量转移, 最后删包 —
+     * 否则活跃 session 后续整对象保存会写回旧 assistantId/folderId (同 deleteFolder 教训)。
+     */
+    suspend fun extractFolderAsAssistant(folderId: Uuid, newAssistantId: Uuid) {
+        sessionManager.snapshot()
+            .filter { it.state.value.folderId == folderId }
+            .forEach { updateConversationState(it.id) { c -> c.copy(assistantId = newAssistantId, folderId = null) } }
+        conversationRepo.reassignFolderConversations(folderId, newAssistantId)
+        folderRepository.deleteFolder(folderId)
+    }
+
     private fun checkFilesDelete(newConversation: Conversation, oldConversation: Conversation) {
         // v4.8.19 性能: 快路径 — 文件清单未变时跳过全部扫描。流式期间每 50ms 的
         // updateConversation 绝大多数只改消息 (files 不变); 此时代数上可证

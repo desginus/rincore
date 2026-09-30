@@ -30,6 +30,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.getAssistantById
+import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.model.Folder
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.FolderRepository
@@ -299,6 +301,35 @@ class ChatDrawerVM(
         viewModelScope.launch {
             folderRepo.updateCwd(folderId, cwd)
         }
+    }
+
+    /**
+     * v4.8.77: 项目包移出为助手 — 新助手继承源助手全部配置, 名称=项目包名,
+     * CWD=包 CWD (未设置则随源助手 — 转移前后 CWD 绑定不变);
+     * 包内全部对话转移为新助手对话记录, 原助手不再保留该项目包。
+     * 生成中的包拒绝操作 (与删除同守卫)。
+     */
+    fun extractFolderAsAssistant(folder: Folder): Boolean {
+        if (chatService.hasGeneratingConversationInFolder(folder.id)) return false
+        viewModelScope.launch {
+            val settings = settingsStore.settingsFlow.first()
+            val source = settings.getAssistantById(folder.assistantId) ?: settings.getCurrentAssistant()
+            val newAssistant = source.copy(
+                id = Uuid.random(),
+                name = folder.name,
+                workspaceCwd = folder.cwd ?: source.workspaceCwd,
+            )
+            settingsStore.update(
+                settings.copy(assistants = settings.assistants + newAssistant)
+            )
+            chatService.extractFolderAsAssistant(folder.id, newAssistant.id)
+            if (_selectedFolderId.value == folder.id) {
+                _selectedFolderId.value = null
+                savedStateHandle["selectedFolderId"] = null
+                ProjectPackSelection.selectedFolderId.value = null
+            }
+        }
+        return true
     }
 
     fun renameFolder(folderId: Uuid, name: String) {

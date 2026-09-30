@@ -96,6 +96,11 @@ class ConversationRepository(
     }
 
     /** v4.8.62: 未归类对话计数 (落地逻辑判定; 与分页查询同口径) */
+    /** v4.8.77: 项目包移出为助手 — 包内全部对话批量转移给新助手。 */
+    suspend fun reassignFolderConversations(folderId: Uuid, assistantId: Uuid) {
+        conversationDAO.reassignFolderConversations(folderId.toString(), assistantId.toString())
+    }
+
     suspend fun countUnfiledConversationsOfAssistant(assistantId: Uuid): Int =
         conversationDAO.countUnfiledConversationsOfAssistant(assistantId.toString())
 

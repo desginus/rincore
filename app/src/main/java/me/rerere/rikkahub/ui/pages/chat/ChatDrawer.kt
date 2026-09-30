@@ -191,6 +191,7 @@ fun ChatDrawerContent(
     var showCreateFolderDialog by remember { mutableStateOf(false) }
     var folderToRename by remember { mutableStateOf<Folder?>(null) }
     var folderToDelete by remember { mutableStateOf<Folder?>(null) }
+    var folderToExtract by remember { mutableStateOf<Folder?>(null) }
     // 4.8.24 项目包: 折叠状态 (启动默认折叠), 设置弹窗, CWD 选择
     var packBarExpanded by remember { mutableStateOf(false) }
     // v4.8.62: 进入助手落地 — 项目包选择(true)/任务包直达(false) 应用一次
@@ -701,6 +702,16 @@ fun ChatDrawerContent(
                                     }
                                     IconButton(onClick = {
                                         showPackSettingsDialog = false
+                                        folderToExtract = folder
+                                    }) {
+                                        Icon(
+                                            HugeIcons.Share03,
+                                            contentDescription = "移出为助手",
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    }
+                                    IconButton(onClick = {
+                                        showPackSettingsDialog = false
                                         folderToDelete = folder
                                     }) {
                                         Icon(
@@ -803,6 +814,37 @@ fun ChatDrawerContent(
             },
             dismissButton = {
                 TextButton(onClick = { folderToDelete = null }) {
+                    Text(stringResource(R.string.chat_page_cancel))
+                }
+            }
+        )
+    }
+
+    // v4.8.77: 项目包移出为助手 — 确认 (包内对话全部转移给新助手, CWD 绑定保持)
+    folderToExtract?.let { folder ->
+        AlertDialog(
+            onDismissRequest = { folderToExtract = null },
+            title = { Text("移出为助手") },
+            text = {
+                Text(
+                    "将项目包「${folder.name}」合并为新助手：包内全部对话将转移为该助手的对话记录，" +
+                        "CWD 保持「${folder.cwd ?: "默认"}」不变；原助手不再保留该项目包。"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (drawerVm.extractFolderAsAssistant(folder)) {
+                            folderToExtract = null
+                            conversations.refresh()
+                        } else {
+                            toaster.show(context.getString(R.string.chat_page_delete_folder_generating), type = ToastType.Warning)
+                        }
+                    }
+                ) { Text("移出") }
+            },
+            dismissButton = {
+                TextButton(onClick = { folderToExtract = null }) {
                     Text(stringResource(R.string.chat_page_cancel))
                 }
             }

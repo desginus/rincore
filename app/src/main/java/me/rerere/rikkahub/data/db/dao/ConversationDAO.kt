@@ -101,6 +101,10 @@ interface ConversationDAO {
     @Query("UPDATE conversationentity SET folder_id = '' WHERE folder_id = :folderId")
     suspend fun clearFolder(folderId: String)
 
+    // v4.8.77: 项目包移出为助手 — 批量转移包内对话到新助手 (清空 folder 归属)
+    @Query("UPDATE conversationentity SET assistant_id = :assistantId, folder_id = '' WHERE folder_id = :folderId")
+    suspend fun reassignFolderConversations(folderId: String, assistantId: String)
+
     @Query("SELECT COUNT(*) FROM conversationentity")
     suspend fun countAll(): Int
 
