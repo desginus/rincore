@@ -14,6 +14,8 @@ package me.rerere.rikkahub.ui.pages.usage
  * ───────────────────────────────────────────────────────────────*/
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -73,13 +75,18 @@ import androidx.compose.ui.window.DialogProperties
 import android.content.ClipData
 import android.widget.Toast
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.awaitAll
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Settings02
+import me.rerere.hugeicons.stroke.ArrowUp01
+import me.rerere.hugeicons.stroke.ArrowDown01
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.ai.provider.ProviderManager
 import me.rerere.rikkahub.data.usage.CommandCodeUsageApi
 import me.rerere.rikkahub.data.usage.UsageApi
 import me.rerere.rikkahub.data.usage.UsageMiniCardData
 import me.rerere.rikkahub.data.usage.UsageQuery
+import me.rerere.rikkahub.data.usage.KeyQueryState
 import me.rerere.rikkahub.data.usage.openCodeMiniCard
 import org.koin.compose.koinInject
 import java.time.Instant
@@ -102,8 +109,14 @@ fun UsagePage(onBack: () -> Unit = {}) {
     var errorText by remember { mutableStateOf<String?>(null) }
     var selectedKey by remember { mutableStateOf<String?>(null) }
     var showKeyDialog by remember { mutableStateOf(false) }
+    // v4.8.78: 空密钥折叠组展开态 + 提供商余额 (数字形态)
+    var showNoSub by remember { mutableStateOf(false) }
+    var providerBalances by remember { mutableStateOf<List<ProviderBalanceEntry>>(emptyList()) }
+    val providerManager = koinInject<ProviderManager>()
 
     suspend fun doQuery(force: Boolean) {
+        // v4.8.78: 提供商余额 (每提供商一个密钥, 数字展示 — 无环形图) 独立刷新
+        providerBalances = fetchProviderBalances(providerManager, settings.providers)
         if (allKeys.isEmpty()) {
             usages = emptyMap()
             errorText = null
@@ -120,7 +133,8 @@ fun UsagePage(onBack: () -> Unit = {}) {
                 if (r != null) put(k, r) else usages[k]?.let { prev -> put(k, prev) }
             }
         }
-        val failed = allKeys.filter { results[it] == null }
+        // v4.8.78: 仅真失败计数 (空密钥 = 无套餐 → 折叠组, 不进错误横幅)
+        val failed = allKeys.filter { results[it] is KeyQueryState.Failed }
         errorText = when {
             failed.isEmpty() -> null
             failed.size == allKeys.size -> "查询失败，请检查密钥或网络后下拉重试"
@@ -195,13 +209,38 @@ fun UsagePage(onBack: () -> Unit = {}) {
                             }
                         }
                     }
-                    items(allKeys, key = { it }) { k ->
+                    val visibleKeys = allKeys.filter { usages[it] !is KeyQueryState.NoSubscription }
+                    val noSubKeys = allKeys.filter { usages[it] is KeyQueryState.NoSubscription }
+                    items(visibleKeys, key = { it }) { k ->
                         UsageKeyCard(
                             key = k,
-                            data = usages[k]?.let { openCodeMiniCard(it) },
+                            data = (usages[k] as? KeyQueryState.Ok)?.data?.let { openCodeMiniCard(it) },
                             loading = loading,
                             onClick = { selectedKey = k },
                         )
+                    }
+                    // v4.8.78: 无套餐密钥折叠组 (不展示明细卡; 展开仅列密钥)
+                    if (noSubKeys.isNotEmpty()) {
+                        item(key = "__no_sub_fold__") {
+                            NoSubscriptionFold(
+                                keys = noSubKeys,
+                                expanded = showNoSub,
+                                onToggle = { showNoSub = !showNoSub },
+                            )
+                        }
+                    }
+                    // v4.8.78: 提供商余额 (数字余额直接呈现 — 无环形图)
+                    if (providerBalances.isNotEmpty()) {
+                        item(key = "__provider_balance_header__") {
+                            Text(
+                                "提供商余额",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        items(providerBalances, key = { "pb_" + it.providerId }) { entry ->
+                            ProviderBalanceRow(entry)
+                        }
                     }
                 }
             }
@@ -221,7 +260,8 @@ fun UsagePage(onBack: () -> Unit = {}) {
     // v4.8.59: 详情弹层 (大卡片全视图, 呈现与旧焦点视图一致) — 自带返回处理:
     // 系统返回键 / 返回按钮均只关闭弹层 (修复旧版"返回 UI 失效")
     selectedKey?.let { key ->
-        val data = usages[key]
+        val state = usages[key]
+        val data = (state as? KeyQueryState.Ok)?.data
         BackHandler { selectedKey = null }
         Dialog(
             onDismissRequest = { selectedKey = null },
@@ -244,13 +284,22 @@ fun UsagePage(onBack: () -> Unit = {}) {
                     if (data == null) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                CircularProgressIndicator()
-                                Spacer(Modifier.height(12.dp))
-                                Text(
-                                    "数据加载中或暂不可用，关闭后下拉重试",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                                // v4.8.78: 空密钥 (无套餐) 直达提示; 其余保持加载/不可用提示
+                                if (state is KeyQueryState.NoSubscription) {
+                                    Text(
+                                        "该密钥当前无套餐（查询无可显示信息）",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                } else {
+                                    CircularProgressIndicator()
+                                    Spacer(Modifier.height(12.dp))
+                                    Text(
+                                        "数据加载中或暂不可用，关闭后下拉重试",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
                         }
                     } else {
@@ -737,4 +786,127 @@ private fun formatRemaining(iso: String): String = runCatching {
 private fun maskKey(key: String): String {
     if (key.length <= 8) return key
     return key.take(6) + "..." + key.takeLast(4)
+}
+
+// ── v4.8.78: 无套餐 (空密钥) 折叠组 — 不展示明细卡, 展开仅列出密钥 ──
+@Composable
+private fun NoSubscriptionFold(
+    keys: List<String>,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onToggle)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "空密钥 · 无套餐 (${keys.size})",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.weight(1f))
+                Icon(
+                    if (expanded) HugeIcons.ArrowUp01 else HugeIcons.ArrowDown01,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, end = 12.dp, bottom = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    keys.forEach { k ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(maskKey(k), style = MaterialTheme.typography.bodySmall)
+                            Spacer(Modifier.weight(1f))
+                            Text(
+                                "无套餐",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── v4.8.78: 提供商余额行 (数字余额直接呈现) ──
+@Composable
+private fun ProviderBalanceRow(entry: ProviderBalanceEntry) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(entry.name, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    entry.maskedKey,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                text = entry.balance ?: "查询失败",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = if (entry.balance != null) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.error
+                },
+            )
+        }
+    }
+}
+
+private data class ProviderBalanceEntry(
+    val providerId: String,
+    val name: String,
+    val maskedKey: String,
+    val balance: String?,
+)
+
+/** v4.8.78: 已配置且启用余额查询的提供商密钥, 并行查询 (数字余额形态)。 */
+private suspend fun fetchProviderBalances(
+    providerManager: ProviderManager,
+    providers: List<me.rerere.ai.provider.ProviderSetting>,
+): List<ProviderBalanceEntry> {
+    val targets = providers
+        .filterIsInstance<me.rerere.ai.provider.ProviderSetting.OpenAI>()
+        .filter { it.balanceOption.enabled && it.apiKey.isNotBlank() }
+    if (targets.isEmpty()) return emptyList()
+    return kotlinx.coroutines.coroutineScope {
+        targets.map { p ->
+            kotlinx.coroutines.async(kotlinx.coroutines.Dispatchers.IO) {
+                val balance = runCatching {
+                    providerManager.getProviderByType(p).getBalance(p)
+                }.getOrNull()
+                ProviderBalanceEntry(p.id.toString(), p.name, maskKey(p.apiKey), balance)
+            }
+        }.awaitAll().sortedBy { it.name }
+    }
 }

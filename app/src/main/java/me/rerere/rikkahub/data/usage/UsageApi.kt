@@ -35,8 +35,18 @@ object UsageApi {
         val monthly: WindowUsage,
     )
 
-    suspend fun fetchUsage(apiKey: String): UsageResult? = withContext(Dispatchers.IO) {
-        if (apiKey.isBlank()) return@withContext null
+    /** v4.8.78: 详细结果 — 携带 HTTP 状态码供空密钥分类
+     *  (服务端可达但拒绝 (4xx) = 无套餐; 网络异常/5xx = 真失败) */
+    data class UsageOutcome(
+        val result: UsageResult?,
+        val httpCode: Int?,
+        val error: String?,
+    )
+
+    suspend fun fetchUsage(apiKey: String): UsageResult? = fetchUsageDetailed(apiKey).result
+
+    suspend fun fetchUsageDetailed(apiKey: String): UsageOutcome = withContext(Dispatchers.IO) {
+        if (apiKey.isBlank()) return@withContext UsageOutcome(null, null, "密钥为空")
         runCatching {
             val request = Request.Builder()
                 .url(USAGE_URL)
@@ -46,10 +56,12 @@ object UsageApi {
             client.newCall(request).execute().use { resp ->
                 if (!resp.isSuccessful) {
                     Log.w(TAG, "usage http ${resp.code}")
-                    return@use null
+                    return@use UsageOutcome(null, resp.code, "HTTP ${resp.code}")
                 }
-                val body = resp.body?.string() ?: return@use null
-                val usage = JSONObject(body).optJSONObject("usage") ?: return@use null
+                val body = resp.body?.string()
+                if (body.isNullOrBlank()) return@use UsageOutcome(null, resp.code, "响应为空")
+                val usage = runCatching { JSONObject(body).optJSONObject("usage") }.getOrNull()
+                if (usage == null) return@use UsageOutcome(null, resp.code, "响应缺少 usage 字段")
                 fun parseWindow(key: String): WindowUsage {
                     val w = usage.optJSONObject(key)
                         ?: return WindowUsage(null, null)
@@ -58,15 +70,19 @@ object UsageApi {
                         resetsAt = w.optString("resetsAt").takeIf { it.isNotBlank() },
                     )
                 }
-                UsageResult(
-                    rolling = parseWindow("rolling"),
-                    weekly = parseWindow("weekly"),
-                    monthly = parseWindow("monthly"),
+                return@use UsageOutcome(
+                    result = UsageResult(
+                        rolling = parseWindow("rolling"),
+                        weekly = parseWindow("weekly"),
+                        monthly = parseWindow("monthly"),
+                    ),
+                    httpCode = resp.code,
+                    error = null,
                 )
             }
         }.getOrElse { e ->
             Log.e(TAG, "fetchUsage failed: ${e.message}")
-            null
+            UsageOutcome(null, null, "${e.javaClass.simpleName}: ${e.message ?: "网络异常"}")
         }
     }
 }

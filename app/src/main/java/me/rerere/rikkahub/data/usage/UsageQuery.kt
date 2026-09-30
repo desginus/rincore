@@ -20,37 +20,73 @@ object UsageQuery {
     /** 缓存新鲜窗口: 60s 内进入页面不重复查询 (下拉刷新始终强制) */
     const val FRESH_MS = 60_000L
 
-    private data class Entry(val result: UsageApi.UsageResult, val at: Long)
+    private data class Entry(val state: KeyQueryState, val at: Long)
     private val cache = java.util.concurrent.ConcurrentHashMap<String, Entry>()
 
+    /** 密钥族分流: user_ = Command Code; 其余 (含 OC 新格式 oc-sk-) = OpenCode */
     fun isCcKey(key: String) = key.startsWith("user_", ignoreCase = true)
 
     /** 内存快照 (进入页面即显; 查询失败时保留旧数据用) */
-    fun snapshot(): Map<String, UsageApi.UsageResult> =
-        cache.entries.associate { it.key to it.value.result }
+    fun snapshot(): Map<String, KeyQueryState> =
+        cache.entries.associate { it.key to it.value.state }
 
     fun hasFresh(key: String): Boolean =
         cache[key]?.let { System.currentTimeMillis() - it.at < FRESH_MS } == true
 
-    /** 并行查询全部密钥; 每个密钥独立成败 (失败=null, 不影响其他) */
-    suspend fun fetchAll(keys: List<String>): Map<String, UsageApi.UsageResult?> = coroutineScope {
+    /** 并行查询全部密钥; 每个密钥独立三态 (Ok / NoSubscription / Failed) */
+    suspend fun fetchAll(keys: List<String>): Map<String, KeyQueryState> = coroutineScope {
         keys.distinct().map { k ->
             async(Dispatchers.IO) {
-                val r = runCatching {
-                    if (isCcKey(k)) {
-                        CommandCodeUsageApi.fetchUsage(k)?.result?.toOcShape()
-                    } else {
-                        UsageApi.fetchUsage(k)
-                    }
-                }.getOrElse { e ->
+                val state = runCatching { queryOne(k) }.getOrElse { e ->
                     Log.w(TAG, "fetch ${k.take(6)}… failed: ${e.message}")
-                    null
+                    KeyQueryState.Failed(e.message)
                 }
-                if (r != null) cache[k] = Entry(r, System.currentTimeMillis())
-                k to r
+                cache[k] = Entry(state, System.currentTimeMillis())
+                k to state
             }
         }.awaitAll().toMap()
     }
+
+    /**
+     * v4.8.78 空密钥分类 (用户定版): 账户真实但当前无套餐 —
+     *  CC: 无信息 (各窗口/套餐字段全空) 或 HTTP 4xx → NoSubscription;
+     *  OC: 服务端可达但拒绝 (HTTP 4xx, "查询失败"表象) → NoSubscription;
+     *  网络异常/5xx → Failed (保留"查询失败"展示, 不误折叠)。
+     */
+    private suspend fun queryOne(key: String): KeyQueryState {
+        return if (isCcKey(key)) {
+            val outcome = CommandCodeUsageApi.fetchUsage(key)
+            when {
+                outcome.result != null && outcome.result.isEffectivelyEmpty() -> KeyQueryState.NoSubscription
+                outcome.result != null -> KeyQueryState.Ok(outcome.result.toOcShape())
+                outcome.error?.startsWith("HTTP 4") == true -> KeyQueryState.NoSubscription
+                else -> KeyQueryState.Failed(outcome.error)
+            }
+        } else {
+            val outcome = UsageApi.fetchUsageDetailed(key)
+            when {
+                outcome.result != null -> KeyQueryState.Ok(outcome.result)
+                outcome.httpCode != null && outcome.httpCode in 400..499 -> KeyQueryState.NoSubscription
+                else -> KeyQueryState.Failed(outcome.error)
+            }
+        }
+    }
+
+    /** CC 空密钥判据 — 各窗口全空且套餐/额度字段全无信息。 */
+    private fun CommandCodeUsageApi.CommandCodeUsageResult.isEffectivelyEmpty(): Boolean =
+        fiveHour == null && weekly == null &&
+            monthlyRemaining == 0.0 && purchasedCredits == 0.0 && freeCredits == 0.0 &&
+            planId == null && currentPeriodEnd == null && monthlyTotal == null
+}
+
+/** 单密钥查询三态 (v4.8.78) */
+sealed class KeyQueryState {
+    data class Ok(val data: UsageApi.UsageResult) : KeyQueryState()
+
+    /** 空密钥 — 账户真实但当前无套餐; UI 折叠展示, 不出明细卡 */
+    data object NoSubscription : KeyQueryState()
+
+    data class Failed(val reason: String?) : KeyQueryState()
 }
 
 /** v3.22.0 数据链统一 (迁自 UsagePage): CC 结果按 OC 形状解析, 下游零差别 */
