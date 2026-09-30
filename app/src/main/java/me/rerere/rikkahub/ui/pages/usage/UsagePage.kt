@@ -76,6 +76,7 @@ import android.content.ClipData
 import android.widget.Toast
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.async
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Settings02
 import me.rerere.hugeicons.stroke.ArrowUp01
@@ -901,7 +902,7 @@ private suspend fun fetchProviderBalances(
     if (targets.isEmpty()) return emptyList()
     return kotlinx.coroutines.coroutineScope {
         targets.map { p ->
-            kotlinx.coroutines.async(kotlinx.coroutines.Dispatchers.IO) {
+            async(kotlinx.coroutines.Dispatchers.IO) {
                 val balance = runCatching {
                     providerManager.getProviderByType(p).getBalance(p)
                 }.getOrNull()
