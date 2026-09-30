@@ -78,6 +78,7 @@ import me.rerere.hugeicons.stroke.ChartColumn
 import me.rerere.hugeicons.stroke.Clock02
 import me.rerere.hugeicons.stroke.Puzzle
 import me.rerere.hugeicons.stroke.Delete01
+import me.rerere.hugeicons.stroke.Share03
 import me.rerere.hugeicons.stroke.Folder01
 import me.rerere.hugeicons.stroke.FolderAdd
 import me.rerere.hugeicons.stroke.InLove
