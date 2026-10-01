@@ -27,12 +27,18 @@ import me.rerere.rikkahub.ui.theme.CustomColors
 import org.koin.compose.koinInject
 import me.rerere.rikkahub.utils.plus
 
-private const val TOP_LEVEL_LABEL = "顶层直连"
 private const val ALL_LABEL = "全部"
+private const val TOP_LEVEL_LABEL = "顶层直连"
+private const val AUTO_LABEL = "自动归类"
 
 /**
- * 工具列表 —— 逐工具查看/调整归属（v4.8.83 重写）。
- * 归属只有两种状态：属于某个工具区，或顶层直连（始终注入、不参与归类）。
+ * 工具列表 —— 逐个/批量调整工具归属（v4.8.85 重写）。
+ *
+ * 归属只有三种状态，且**移动即生效**（下一次发送立即按新归属组装请求）：
+ *  · 顶层直连 —— 始终注入请求体，模型每轮都能直接调用（"框架工具"）
+ *  · 某工具区 —— 模型经 invoke_tools 加载该区后才看到（省 token）
+ *  · 自动归类 —— 按关键词自动落到某个工具区（清除手动归属）
+ * v4.8.85 新增：多选批量归属（一次挪一堆）、效果提示、目标区筛选。
  */
 @Composable
 fun SettingToolListPage(
@@ -52,10 +58,14 @@ fun SettingToolListPage(
     var searchQuery by remember { mutableStateOf("") }
     var filterZone by remember { mutableStateOf(ALL_LABEL) }
     var selectedTool by remember { mutableStateOf<ToolPreview?>(null) }
+    var multiSelect by remember { mutableStateOf(false) }
+    var selectedNames by remember { mutableStateOf(emptySet<String>()) }
+    var bulkPicker by remember { mutableStateOf(false) }
+    var zoneQuery by remember { mutableStateOf("") }
 
     val allTools: List<ToolPreview> = remember(settings, globalRevision) {
         runCatching {
-            buildPreviewTools(
+            buildToolList(
                 settings, localTools, skillManager, mcpManager,
                 conversationRepo = conversationRepo,
                 settingsStore = settingsStore,
@@ -68,15 +78,41 @@ fun SettingToolListPage(
     val zoneMap = remember(settings, globalRevision, allTools) { router.zoneMap(allTools.asShellTools()) }
     val topLevelNames = remember(settings) { topLevelToolSetOf(settings) }
 
-    // 工具 → 归属（工具区 id 或 顶层直连）
     val ownerMap: Map<String, String> = remember(zoneMap, topLevelNames) {
         buildMap {
             zoneMap.classified.forEach { (zoneId, tools) -> tools.forEach { put(it.name, zoneId) } }
             topLevelNames.forEach { put(it, TOP_LEVEL_LABEL) }
         }
     }
-
     val topLevelCount = allTools.count { it.name in topLevelNames }
+
+    /** 唯一的归属写入口 —— 单工具与批量共用，规则只有一份 */
+    fun applyOwnership(names: Collection<String>, target: String) {
+        if (names.isEmpty()) return
+        var s = settings
+        val links = s.toolZoneLinks.toMutableMap()
+        val additions = s.topLevelAdditions.toMutableSet()
+        val removals = s.topLevelRemovals.toMutableSet()
+        names.forEach { name ->
+            if (name in CORE_MATRIX_TOOLS) return@forEach // 核心件恒在顶层，不接受改归属
+            when (target) {
+                TOP_LEVEL_LABEL -> {
+                    links.remove(name); additions.add(name); removals.remove(name)
+                }
+                AUTO_LABEL -> {
+                    links.remove(name); additions.remove(name); removals.remove(name)
+                }
+                else -> {
+                    links[name] = target
+                    additions.remove(name)
+                    if (name in topLevelNames) removals.add(name) else removals.remove(name)
+                }
+            }
+        }
+        s = s.copy(toolZoneLinks = links, topLevelAdditions = additions, topLevelRemovals = removals)
+        vm.updateSettings(s)
+    }
+
     val filtered = remember(allTools, searchQuery, filterZone, ownerMap) {
         allTools.filter { t ->
             val q = searchQuery.lowercase()
@@ -84,9 +120,17 @@ fun SettingToolListPage(
             when (filterZone) {
                 ALL_LABEL -> true
                 TOP_LEVEL_LABEL -> t.name in topLevelNames
+                AUTO_LABEL -> t.name !in settings.toolZoneLinks && t.name !in topLevelNames
                 else -> ownerMap[t.name] == filterZone
             }
         }
+    }
+
+    /** 效果说明 —— 让"移动之后到底发生了啥"一眼可见 */
+    fun effectOf(target: String): String = when (target) {
+        TOP_LEVEL_LABEL -> "顶层直连：始终注入请求体，模型每一轮都能直接调用（不省 token）。"
+        AUTO_LABEL -> "自动归类：清掉手动归属，按关键词自动落到某个工具区。"
+        else -> "工具区：模型经 invoke_tools 加载「$target」后才看到它（省 token）。"
     }
 
     Scaffold(
@@ -95,6 +139,17 @@ fun SettingToolListPage(
             TopAppBar(
                 title = { Text("工具列表") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(HugeIcons.ArrowLeft01, null) } },
+                actions = {
+                    IconButton(onClick = {
+                        multiSelect = !multiSelect
+                        if (!multiSelect) selectedNames = emptySet()
+                    }) {
+                        Icon(
+                            HugeIcons.ListChecks, "多选批量",
+                            tint = if (multiSelect) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+                        )
+                    }
+                },
                 colors = CustomColors.topBarColors,
             )
         },
@@ -109,6 +164,14 @@ fun SettingToolListPage(
                     trailingIcon = {
                         if (searchQuery.isNotEmpty()) IconButton(onClick = { searchQuery = "" }) { Icon(HugeIcons.Cancel01, null) }
                     },
+                )
+            }
+            if (multiSelect) {
+                Text(
+                    "多选模式：点工具即勾选，下方批量改动归属。核心件（${CORE_MATRIX_TOOLS.joinToString(" / ")}）恒在顶层，不参与改动。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 16.dp),
                 )
             }
             LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -128,12 +191,18 @@ fun SettingToolListPage(
                                 label = { Text("$TOP_LEVEL_LABEL($topLevelCount)") },
                             )
                         }
+                        item {
+                            FilterChip(
+                                selected = filterZone == AUTO_LABEL,
+                                onClick = { filterZone = AUTO_LABEL },
+                                label = { Text(AUTO_LABEL) },
+                            )
+                        }
                         items(zoneMap.allIds) { zoneId ->
-                            val count = zoneMap.counts[zoneId] ?: 0
                             FilterChip(
                                 selected = filterZone == zoneId,
                                 onClick = { filterZone = zoneId },
-                                label = { Text("${router.displayNameOf(zoneId)}($count)") },
+                                label = { Text("${router.displayNameOf(zoneId)}(${zoneMap.counts[zoneId] ?: 0})") },
                             )
                         }
                     }
@@ -142,8 +211,27 @@ fun SettingToolListPage(
 
                 items(filtered) { tool ->
                     val owner = ownerMap[tool.name] ?: router.classify(tool.name, tool.description)
-                    Card(Modifier.fillMaxWidth().clickable { selectedTool = tool }) {
-                        Row(Modifier.padding(12.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    val isChecked = tool.name in selectedNames
+                    val isCore = tool.name in CORE_MATRIX_TOOLS
+                    Card(
+                        Modifier.fillMaxWidth().clickable {
+                            if (multiSelect) {
+                                if (isCore) return@clickable
+                                selectedNames = if (isChecked) selectedNames - tool.name else selectedNames + tool.name
+                            } else {
+                                selectedTool = tool
+                            }
+                        },
+                    ) {
+                        Row(
+                            Modifier.padding(12.dp).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (multiSelect) {
+                                Checkbox(checked = isChecked, onCheckedChange = null, enabled = !isCore)
+                                Spacer(Modifier.width(8.dp))
+                            }
                             Column(Modifier.weight(1f)) {
                                 Text(tool.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(
@@ -162,7 +250,21 @@ fun SettingToolListPage(
                                     }
                                 }
                             }
-                            Icon(HugeIcons.ArrowRight01, null, modifier = Modifier.size(16.dp))
+                            if (!multiSelect) Icon(HugeIcons.ArrowRight01, null, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+            }
+
+            if (multiSelect) {
+                Surface(tonalElevation = 3.dp) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Text("已选 ${selectedNames.size} 个工具", style = MaterialTheme.typography.labelMedium)
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            val on = selectedNames.isNotEmpty()
+                            TextButton(enabled = on, onClick = { zoneQuery = ""; bulkPicker = true }) { Text("移入工具区…") }
+                            TextButton(enabled = on, onClick = { applyOwnership(selectedNames, TOP_LEVEL_LABEL); selectedNames = emptySet() }) { Text("移回顶层") }
+                            TextButton(enabled = on, onClick = { applyOwnership(selectedNames, AUTO_LABEL); selectedNames = emptySet() }) { Text("交回自动") }
                         }
                     }
                 }
@@ -170,12 +272,54 @@ fun SettingToolListPage(
         }
     }
 
+    // ── 批量：选目标工具区（带筛选） ──
+    if (bulkPicker) {
+        AlertDialog(
+            onDismissRequest = { bulkPicker = false },
+            title = { Text("把 ${selectedNames.size} 个工具移到…") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = zoneQuery, onValueChange = { zoneQuery = it },
+                        label = { Text("筛选工具区") }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    val options = zoneMap.allIds.filter {
+                        zoneQuery.isBlank() || router.label(it).contains(zoneQuery, ignoreCase = true)
+                    }
+                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 340.dp)) {
+                        items(options) { zoneId ->
+                            Column(
+                                Modifier.fillMaxWidth().clickable {
+                                    applyOwnership(selectedNames, zoneId)
+                                    selectedNames = emptySet()
+                                    bulkPicker = false
+                                }.padding(vertical = 10.dp),
+                            ) {
+                                Text(router.label(zoneId), style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    "${zoneMap.counts[zoneId] ?: 0} 个工具 · ${router.descriptionOf(zoneId).take(30)}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { bulkPicker = false }) { Text("取消") } },
+        )
+    }
+
+    // ── 单工具归属 ──
     selectedTool?.let { tool ->
         val currentOwner = ownerMap[tool.name] ?: TOP_LEVEL_LABEL
         val isCore = tool.name in CORE_MATRIX_TOOLS
         var target by remember(tool.name) { mutableStateOf(if (isCore) TOP_LEVEL_LABEL else currentOwner) }
         var editDesc by remember(tool.name) { mutableStateOf(settings.toolDescriptionOverrides[tool.name] ?: tool.description) }
         var editName by remember(tool.name) { mutableStateOf(settings.toolNameOverrides[tool.name] ?: "") }
+        var pickQuery by remember(tool.name) { mutableStateOf("") }
 
         AlertDialog(
             onDismissRequest = { selectedTool = null },
@@ -185,12 +329,7 @@ fun SettingToolListPage(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                 ) {
-                    Text("归属: $target", fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "顶层直连 = 始终注入请求体、不参与工具区归类；进工具区 = 经 invoke_tools 加载。使用任何工具都无需先移动它。",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Text("当前归属: $currentOwner", fontWeight = FontWeight.SemiBold)
                     HorizontalDivider()
                     OutlinedTextField(
                         value = editName, onValueChange = { editName = it },
@@ -204,10 +343,15 @@ fun SettingToolListPage(
                         modifier = Modifier.fillMaxWidth(), maxLines = 4,
                         supportingText = { Text("留空恢复默认。") },
                     )
+                    HorizontalDivider()
                     Text("移动到:", style = MaterialTheme.typography.labelSmall)
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { target = TOP_LEVEL_LABEL }) {
                         RadioButton(selected = target == TOP_LEVEL_LABEL, onClick = { target = TOP_LEVEL_LABEL })
                         Text(TOP_LEVEL_LABEL)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { target = AUTO_LABEL }) {
+                        RadioButton(selected = target == AUTO_LABEL, onClick = { target = AUTO_LABEL })
+                        Text(AUTO_LABEL)
                     }
                     if (isCore) {
                         Text(
@@ -216,37 +360,30 @@ fun SettingToolListPage(
                             color = MaterialTheme.colorScheme.error,
                         )
                     } else {
-                        zoneMap.allIds.forEach { zoneId ->
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { target = zoneId }) {
-                                RadioButton(selected = target == zoneId, onClick = { target = zoneId })
-                                Text(router.label(zoneId))
+                        OutlinedTextField(
+                            value = pickQuery, onValueChange = { pickQuery = it },
+                            label = { Text("筛选工具区") }, singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        zoneMap.allIds
+                            .filter { pickQuery.isBlank() || router.label(it).contains(pickQuery, ignoreCase = true) }
+                            .forEach { zoneId ->
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { target = zoneId }) {
+                                    RadioButton(selected = target == zoneId, onClick = { target = zoneId })
+                                    Text(router.label(zoneId))
+                                }
                             }
-                        }
                     }
+                    Text(effectOf(target), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
+                    applyOwnership(listOf(tool.name), if (isCore) TOP_LEVEL_LABEL else target)
                     var s = settings
-                    val links = s.toolZoneLinks.toMutableMap()
-                    val additions = s.topLevelAdditions.toMutableSet()
-                    val removals = s.topLevelRemovals.toMutableSet()
-                    val effectiveTarget = if (isCore) TOP_LEVEL_LABEL else target
-                    if (effectiveTarget == TOP_LEVEL_LABEL) {
-                        links.remove(tool.name)
-                        additions.add(tool.name)
-                        removals.remove(tool.name)
-                    } else {
-                        links[tool.name] = effectiveTarget
-                        additions.remove(tool.name)
-                        if (tool.name in topLevelNames) removals.add(tool.name) else removals.remove(tool.name)
-                    }
-                    s = s.copy(toolZoneLinks = links, topLevelAdditions = additions, topLevelRemovals = removals)
-
                     val descMap = s.toolDescriptionOverrides.toMutableMap()
                     if (editDesc.isNotBlank() && editDesc != tool.description) descMap[tool.name] = editDesc else descMap.remove(tool.name)
                     s = s.copy(toolDescriptionOverrides = descMap)
-
                     val nameMap = s.toolNameOverrides.toMutableMap()
                     val newName = editName.trim()
                     if (newName.isNotBlank() && newName.all { ch -> ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch == '_' || ch == '-' }) {
@@ -265,11 +402,9 @@ fun SettingToolListPage(
                         tool.name in settings.topLevelAdditions || tool.name in settings.topLevelRemovals
                     ) {
                         TextButton(onClick = {
+                            applyOwnership(listOf(tool.name), AUTO_LABEL)
                             var s = settings
-                            s = s.copy(toolZoneLinks = s.toolZoneLinks.toMutableMap().also { it.remove(tool.name) })
                             s = s.copy(toolDescriptionOverrides = s.toolDescriptionOverrides.toMutableMap().also { it.remove(tool.name) })
-                            s = s.copy(topLevelAdditions = s.topLevelAdditions - tool.name)
-                            s = s.copy(topLevelRemovals = s.topLevelRemovals - tool.name)
                             vm.updateSettings(s)
                             selectedTool = null
                         }) { Text("恢复自动归类") }

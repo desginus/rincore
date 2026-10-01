@@ -2,7 +2,6 @@
 package me.rerere.rikkahub.ui.pages.setting
 
 import me.rerere.rikkahub.data.ai.tools.buildAssistantToolPool
-import me.rerere.rikkahub.data.ai.tools.topLevelToolSetOf
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
@@ -11,10 +10,16 @@ import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 data class ToolPreview(val name: String, val description: String)
 
 /**
- * 视图工具池 —— 与模型侧完全同源（buildAssistantToolPool），再按 settings 的顶层集合
- * 剔除顶层直连工具。工具矩阵页 / 工具列表 / 对照页 全部消费它，保证「UI 计数 == 模型侧口径」。
+ * 全量工具清单 —— 与模型侧完全同源（buildAssistantToolPool）。
+ *
+ * v4.8.85 修正：**这里不再过滤顶层工具**。此前在构建处就滤掉顶层工具，导致
+ * 「工具矩阵页的顶层直连段」永远为空、「工具列表」里根本看不到框架工具 ——
+ * 用户因此"决定不了哪些工具是框架工具"（想移也找不到）。
+ *
+ * 顶层 / 工具区的切分只有一处：[me.rerere.rikkahub.data.ai.tools.routing.ZoneRouter]
+ * （zoneMap 内部按顶层集合剔除并统计）。设置页一律拿全量清单，交给同一处切分。
  */
-fun buildPreviewTools(
+fun buildToolList(
     settings: Settings,
     localTools: me.rerere.rikkahub.data.ai.tools.local.LocalTools,
     skillManager: me.rerere.rikkahub.data.files.SkillManager,
@@ -40,8 +45,7 @@ fun buildPreviewTools(
     } catch (_: Exception) {
         emptyList()
     }
-    val topLevel = topLevelToolSetOf(settings)
-    return pool.filter { it.name !in topLevel }.map { ToolPreview(it.name, it.description) }
+    return pool.map { ToolPreview(it.name, it.description) }
 }
 
 /** ToolPreview → 真实 Tool 壳（仅用于交给 ZoneRouter 归类，不执行） */

@@ -592,6 +592,17 @@ private fun ChatPageContent(
                 processingStatus = processingStatus,
                 previewMode = previewMode,
                 settings = setting,
+                // v4.8.85 极简模式：本对话不注入任何工具（开关在速览页搜索框右侧）
+                minimalMode = setting.minimalModeConversations.contains(conversation.id.toString()),
+                onToggleMinimalMode = {
+                    val cid = conversation.id.toString()
+                    val cur = setting.minimalModeConversations
+                    vm.updateSettings(
+                        setting.copy(
+                            minimalModeConversations = if (cid in cur) cur - cid else cur + cid
+                        )
+                    )
+                },
                 errors = errors,
                 onDismissError = onDismissError,
                 onClearAllErrors = onClearAllErrors,

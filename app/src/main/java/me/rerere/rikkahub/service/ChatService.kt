@@ -761,6 +761,8 @@ class ChatService(
                 conversationLorebookIds = conversation.lorebookIds,
                 workspaceCwd = effectiveWorkspaceCwd,
                 conversationLoadedDomains = conversation.loadedDomains,
+                // v4.8.85 极简模式: 该对话不注入任何工具（纯文本对话）
+                minimalMode = settings.minimalModeConversations.contains(conversation.id.toString()),
                 // v3.11.27: 子代理会话 ([Sub-agent] 标题) 不注入用户自定义 prompt
                 skipAssistantPrompt = conversation.title.startsWith("[Sub-agent]"),
                 toolPoolProvider = {

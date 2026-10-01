@@ -71,7 +71,7 @@ fun SettingZonePage(
 
     val previewTools = remember(settings, globalRevision) {
         runCatching {
-            buildPreviewTools(
+            buildToolList(
                 settings, localTools, skillManager, mcpManager,
                 conversationRepo = conversationRepo,
                 settingsStore = settingsStore,

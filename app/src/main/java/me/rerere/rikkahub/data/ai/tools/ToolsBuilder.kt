@@ -4,7 +4,7 @@
  * 用户要求: 客户端计数器 / 工具矩阵管理 / 模型侧工具池 / Invoke Tools /
  * List Domains / 工具返回结果 全部同源。
  *
- * 此前: 域管理页 buildPreviewTools 为硬编码列表 (漏 search/conversation/
+ * 此前: 域管理页的工具清单为硬编码列表 (漏 search/conversation/
  * workspace 条件工具 + 生态/动态), 与模型侧 tools 数组差约 48 个 → 三套计数
  * (446/350+/398) 互不一致。
  *
@@ -16,7 +16,7 @@ package me.rerere.rikkahub.data.ai.tools
 
 /* ───【域 C·工具系统】ToolsBuilder.kt
  * 职责: 工具池构建 (全信源统一 — 客户端计数器/域管理/模型侧同源)
- * 常用改动: 工具注册 → buildPreviewTools; 域过滤 → filter
+ * 常用改动: 工具注册 → 本函数; 顶层/工具区切分 → ZoneRouter
  * 问题定位: 工具计数不一致/工具不出现 → 本文件
  * 基线: 自研 (v3.5.41 统一) | 地图: docs/APP_MAP.md §C | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/

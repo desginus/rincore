@@ -16,6 +16,7 @@ import me.rerere.hugeicons.stroke.ArrowUpDouble
 import me.rerere.hugeicons.stroke.CursorPointer01
 import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Cancel01
+import me.rerere.hugeicons.stroke.Feather
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -43,6 +44,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.LazyListState
@@ -57,6 +59,7 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -143,6 +146,9 @@ fun ChatList(
     onToggleFavorite: ((MessageNode) -> Unit)? = null,
     onConversationSystemPromptChange: ((String?) -> Unit)? = null,
     folderCwd: String? = null,
+    // v4.8.85 极简模式：本对话不注入任何工具（开关在速览页搜索框右侧）
+    minimalMode: Boolean = false,
+    onToggleMinimalMode: () -> Unit = {},
 ) {
     AnimatedContent(
         targetState = previewMode,
@@ -158,6 +164,8 @@ fun ChatList(
                 settings = settings,
                 hazeState = hazeState,
                 onJumpToMessage = onJumpToMessage,
+                minimalMode = minimalMode,
+                onToggleMinimalMode = onToggleMinimalMode,
                 animatedVisibilityScope = this@AnimatedContent,
             )
         } else {
@@ -610,7 +618,9 @@ private fun ChatListPreview(
     settings: Settings,
     hazeState: HazeState,
     animatedVisibilityScope: AnimatedVisibilityScope,
-    onJumpToMessage: (Int) -> Unit
+    onJumpToMessage: (Int) -> Unit,
+    minimalMode: Boolean = false,
+    onToggleMinimalMode: () -> Unit = {},
 ) {
     var searchQuery by remember { mutableStateOf("") }
 
@@ -630,36 +640,52 @@ private fun ChatListPreview(
             .fillMaxSize()
             .hazeSource(state = hazeState),
     ) {
-        // 搜索框
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
+        // 搜索框 + 极简模式开关（v4.8.85：把搜索框右侧那一块划出来做开关，点击即切换）
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
-            placeholder = { Text(stringResource(R.string.history_page_search)) },
-            leadingIcon = {
-                Icon(
-                    imageVector = HugeIcons.Search01,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp)
-                )
-            },
-            trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { searchQuery = "" }) {
-                        Icon(
-                            imageVector = HugeIcons.Cancel01,
-                            contentDescription = "Clear",
-                            modifier = Modifier.size(20.dp)
-                        )
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier.weight(1f),
+                placeholder = { Text(stringResource(R.string.history_page_search)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = HugeIcons.Search01,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(
+                                imageVector = HugeIcons.Cancel01,
+                                contentDescription = "Clear",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
-                }
-            },
-            singleLine = true,
-            shape = CircleShape,
-            maxLines = 1,
-        )
+                },
+                singleLine = true,
+                shape = CircleShape,
+                maxLines = 1,
+            )
+            Spacer(Modifier.width(4.dp))
+            // 极简模式：开启 = 本对话不注入任何工具。选中色与「加号工具栏」里的开关一致
+            // (FilesPicker 的 active tint = Color(0xFF2196F3))。
+            IconButton(onClick = onToggleMinimalMode) {
+                Icon(
+                    imageVector = HugeIcons.Feather,
+                    contentDescription = if (minimalMode) "极简模式已开启（本对话不注入任何工具）" else "极简模式（本对话不注入任何工具）",
+                    tint = if (minimalMode) Color(0xFF2196F3) else LocalContentColor.current,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
 
         // 消息预览
         LazyColumn(

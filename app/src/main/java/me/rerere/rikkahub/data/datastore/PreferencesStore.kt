@@ -328,6 +328,7 @@ class SettingsStore(
                 preferences[TOP_LEVEL_ADDITIONS] = JsonInstant.encodeToString(settings.topLevelAdditions)
                 preferences[TOP_LEVEL_REMOVALS] = JsonInstant.encodeToString(settings.topLevelRemovals)
                 preferences[TOOL_ZONE_SEEDED] = true
+                preferences[MINIMAL_MODE_CONVERSATIONS] = JsonInstant.encodeToString(settings.minimalModeConversations)
                 preferences[TOOL_DESCRIPTION_OVERRIDES] = JsonInstant.encodeToString(settings.toolDescriptionOverrides)
                 preferences[CLASSIFIER_PROMPT] = settings.classifierPrompt
                 // v3.6.102 工具改名 (自研)
@@ -354,6 +355,7 @@ class SettingsStore(
         val TOP_LEVEL_ADDITIONS = stringPreferencesKey("top_level_additions")
         val TOP_LEVEL_REMOVALS = stringPreferencesKey("top_level_removals")
         val TOOL_ZONE_SEEDED = booleanPreferencesKey("tool_zone_seeded")
+        val MINIMAL_MODE_CONVERSATIONS = stringPreferencesKey("minimal_mode_conversations")
         // ── 旧「工具域」键：v4.8.83 起只读一次用于迁移，不再写入（保存时清除）──
         val DOMAIN_NAME_OVERRIDES = stringPreferencesKey("domain_name_overrides")
         val HIDDEN_DOMAINS = stringPreferencesKey("hidden_domains")
@@ -521,6 +523,7 @@ class SettingsStore(
                 topLevelAdditions = zoneTopLevelAdd,
                 topLevelRemovals = zoneTopLevelRemove,
                 toolZoneSeeded = true,
+                minimalModeConversations = preferences[MINIMAL_MODE_CONVERSATIONS]?.let { runCatching { JsonInstant.decodeFromString<Set<String>>(it) }.getOrDefault(emptySet()) } ?: emptySet(),
                 toolDescriptionOverrides = preferences[TOOL_DESCRIPTION_OVERRIDES]?.let { JsonInstant.decodeFromString(it) } ?: emptyMap(),
                 classifierPrompt = preferences[CLASSIFIER_PROMPT] ?: "",
             )
@@ -717,6 +720,7 @@ class SettingsStore(
             preferences[TOP_LEVEL_ADDITIONS] = JsonInstant.encodeToString(settings.topLevelAdditions)
             preferences[TOP_LEVEL_REMOVALS] = JsonInstant.encodeToString(settings.topLevelRemovals)
             preferences[TOOL_ZONE_SEEDED] = true
+            preferences[MINIMAL_MODE_CONVERSATIONS] = JsonInstant.encodeToString(settings.minimalModeConversations)
             preferences[TOOL_DESCRIPTION_OVERRIDES] = JsonInstant.encodeToString(settings.toolDescriptionOverrides)
             preferences[CLASSIFIER_PROMPT] = settings.classifierPrompt
             // 旧「工具域」键一次性清除 (迁移已完成, 不再保留墓碑)
@@ -911,6 +915,9 @@ data class Settings(
     val topLevelAdditions: Set<String> = emptySet(), // 额外提升到顶层的工具（始终注入请求体）
     val topLevelRemovals: Set<String> = emptySet(), // 从顶层降级到工具区的工具
     val toolZoneSeeded: Boolean = false, // 出厂模板是否已播种（迁移幂等标记）
+    /** v4.8.85 极简模式：这些对话不注入任何工具（连 MCP/记忆/任务清单都不注入），纯文本对话。
+     *  按对话持久化（DataStore，非 Room 表 → 无迁移风险）；对话删除后残留 id 无副作用。 */
+    val minimalModeConversations: Set<String> = emptySet(),
     val toolDescriptionOverrides: Map<String, String> = emptyMap(), // 工具名→自定义描述。覆盖原始Tool描述
     val toolNameOverrides: Map<String, String> = emptyMap(), // v3.6.102: 工具改名 — 原工具名→新工具名 (汉语名工具改为字母数字, 模型才能识别)
     val classifierPrompt: String = "", // 工具自动分类提示词。空=使用默认
