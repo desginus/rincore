@@ -1,14 +1,14 @@
 /**
  * 工具池构建 — 全信源统一 (v3.5.41)
  *
- * 用户要求: 客户端计数器 / 工具域分类管理 / 模型侧工具池 / Invoke Tools /
+ * 用户要求: 客户端计数器 / 工具矩阵管理 / 模型侧工具池 / Invoke Tools /
  * List Domains / 工具返回结果 全部同源。
  *
  * 此前: 域管理页 buildPreviewTools 为硬编码列表 (漏 search/conversation/
  * workspace 条件工具 + 生态/动态), 与模型侧 tools 数组差约 48 个 → 三套计数
  * (446/350+/398) 互不一致。
  *
- * 本函数为唯一工具池构建入口: ChatService (模型侧) 与 SettingDomainPage
+ * 本函数为唯一工具池构建入口: ChatService (模型侧) 与 设置页工具矩阵/工具列表
  * (UI 预览) 共用, 输出完全一致 (配置驱动, 无运行时状态 — 缓存安全)。
  */
 package me.rerere.rikkahub.data.ai.tools
@@ -29,38 +29,23 @@ import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.ai.tools.createReadImageTool
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
+import me.rerere.rikkahub.data.ai.tools.routing.DEFAULT_TOP_LEVEL_TOOLS
 import me.rerere.rikkahub.data.ai.tools.ToolInvocationContext
 
-/** 框架工具集 — 注入请求体但不参与视图计数/分类 (对齐 v3.5.34 稳定版缓存口径)。
- *  框架工具 (invoke_tools/search_domains/workspace 等) 由分层注入独立携带,
- *  视图统计只反映用户域工具 — 帮助/List Domains/UI 全链路同口径 */
-val FRAMEWORK_TOOL_SET = setOf(
-    "invoke_tools",
-    "search_domains",
-    "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file", "workspace_show_file",
-    "workspace_job", // v4.8.76: 后台任务原语 (审计: 4.8.72 漏入框架集 — 此前仅域内可见, 模型顶层调不到)
-    // v4.6.1: 代码探索双件套 (只读搜索, 框架工具)
-    "workspace_grep", "workspace_glob",
-    // v4.7.10: 管理工具保留顶层 (用户定版: 框架工具必须在顶层 —
-    // 吸住问题用防吸机制解决, 不靠移除工具)
-    "manage_domain", "list_domains", "move_tool_to_domain",
-    // v3.6.91: clawhub_install/clawhub_search 移出框架集 — 归系统域经
-    // invoke_tools(系统) 加载 (用户: 框架工具 8→6, 只保留实际常用的)
-    "manage_mcp_servers", "plugin_install",
-    // v4.3.7: 图片预算闭环件 — 占位图的重取通道 (始终可用, 免审批)
-    "read_image",
-    // v3.11.24: 任务清单 (Cherry Studio Agent 任务功能移植) — 框架工具,
-    // 不参与视图统计; 任务随 tool output 存会话消息, 零 DB
-    "task_tool",
-)
+/**
+ * 顶层直连工具 —— 始终注入请求体、不参与工具区归类与统计的集合。
+ *
+ * v4.8.83 重写（取代旧的"框架工具 + 移出域管理 + 移进域"三套集合）:
+ *   实际生效集合 = 出厂模板 `DEFAULT_TOP_LEVEL_TOOLS` + 用户提升 − 用户降级。
+ * 模板是常量，所以后续版本新增的顶层工具会自动出现在老用户设备上；用户的显式
+ * 提升/降级以小集合形式叠加 —— 一个开关，一个含义，注入链直接照此执行。
+ */
+fun topLevelToolSetOf(settings: Settings): Set<String> =
+    (DEFAULT_TOP_LEVEL_TOOLS + settings.topLevelAdditions) - settings.topLevelRemovals
 
-/** 动态框架集 — 静态框架工具 + 用户移出域管理的工具 (v3.6.90)。
- *  豁免工具与框架工具同等行为: 始终注入请求体, 不并入域分类/统计。 */
-fun frameworkSetOf(settings: Settings): Set<String> =
-    FRAMEWORK_TOOL_SET + settings.exemptFromDomainTools
-
-/** 视图工具池 — 全量池排除框架工具 (统一口径: 帮助/List Domains/UI 同源) */
-fun viewPoolOf(pool: List<Tool>): List<Tool> = pool.filter { it.name !in FRAMEWORK_TOOL_SET }
+/** 视图工具池 — 全量池排除顶层直连工具（帮助 / 工具矩阵地图 / 列表 / 对照页 同口径） */
+fun viewPoolOf(settings: Settings, pool: List<Tool>): List<Tool> =
+    pool.filter { it.name !in topLevelToolSetOf(settings) }
 
 /** 全量工具池 — 模型侧与 UI 侧唯一数据源 (配置驱动, 无运行时状态) */
 fun buildAssistantToolPool(
@@ -141,11 +126,9 @@ fun buildAssistantToolPool(
         val operitTools = operitToolProvider?.createScriptTools() ?: emptyList()
         if (operitTools.isNotEmpty()) addAll(operitTools)
     }
-    // AI 域管理工具 — 单一源头: list/search/move 的 execute 实时构建
-    // 与模型侧完全同源的完整工具池 (此前 knownToolNames 默认空集 → List
-    // Domains 返回 0 / Search Domains 分类空 — v3.5.43 根治)
+    // 工具矩阵管理工具 — 单一源头: list/search/move 的 execute 实时构建与模型侧完全同源的完整工具池
     if (assistant.useLayeredTools) {
-        addAll(createDomainTools(settingsStore) {
+        addAll(createZoneTools(settingsStore) {
             val s = settingsStore.settingsFlow.value
             val a = s.getCurrentAssistant()
             buildAssistantToolPool(

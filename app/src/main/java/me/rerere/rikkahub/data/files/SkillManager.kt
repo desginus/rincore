@@ -165,8 +165,8 @@ class SkillManager(
                             assistant
                         }
                     },
-                    // 孤儿清理: skill 删除后, toolDomainOverrides 中 skill:名 挂载条目一并清除
-                    toolDomainOverrides = settings.toolDomainOverrides.filterKeys { it != "skill:$name" }
+                    // 孤儿清理: skill 删除后, toolZoneLinks 中 skill:名 挂载条目一并清除
+                    toolZoneLinks = settings.toolZoneLinks.filterKeys { it != "skill:$name" }
                 )
             }
         }
@@ -176,7 +176,7 @@ class SkillManager(
     /**
      * v4.8.81: 一键清空 — 删除主技能目录下全部技能 (额外只读源 dsh__/plugin__ 保留)。
      * 复用单删语义: 删除后清理 enabledSkills (pruneOrphanedEnabledSkills — 只读源
-     * 仍在盘上故保留其名) 与 toolDomainOverrides 孤儿条目。返回删除技能数。
+     * 仍在盘上故保留其名) 与 toolZoneLinks 孤儿条目。返回删除技能数。
      */
     suspend fun deleteAllSkills(): Int = withContext(Dispatchers.IO) {
         invalidateSkillsCache()
@@ -189,15 +189,15 @@ class SkillManager(
         }
         // 孤儿清理: 全清后主源技能名全部失效; 只读源仍在盘上, 由 prune 保留
         pruneOrphanedEnabledSkills()
-        // toolDomainOverrides: 清除 skill: 前缀且已不在盘上的挂载条目
+        // toolZoneLinks: 清除 skill: 前缀且已不在盘上的挂载条目
         val existing = listSkills().mapTo(HashSet()) { it.name }
         settingsStore.update { settings ->
-            val cleaned = settings.toolDomainOverrides.filterKeys { key ->
+            val cleaned = settings.toolZoneLinks.filterKeys { key ->
                 if (!key.startsWith("skill:")) true
                 else key.removePrefix("skill:") in existing
             }
-            if (cleaned.size != settings.toolDomainOverrides.size) {
-                settings.copy(toolDomainOverrides = cleaned)
+            if (cleaned.size != settings.toolZoneLinks.size) {
+                settings.copy(toolZoneLinks = cleaned)
             } else settings
         }
         deleted

@@ -114,7 +114,7 @@ private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding:
     var showDomainPage by remember { mutableStateOf(false) }
 
     if (showDomainPage) {
-        SettingDomainPage(
+        SettingZonePage(
             settings = settings,
             vm = vm,
             onBack = { showDomainPage = false },

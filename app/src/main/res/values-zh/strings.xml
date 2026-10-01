@@ -1304,10 +1304,10 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="chat_page_delete_folder_generating">此文件夹中有对话仍在生成中，请停止后再删除。</string>
   <string name="setting_model_page_routing_model">工具路由模型</string>
   <string name="setting_model_page_routing_model_desc">为工具路由表生成优化的模型。未设置时使用静态模板。</string>
-  <string name="setting_model_page_domain_override">工具域分类</string>
-  <string name="setting_model_page_domain_override_desc">查看和修改工具类别分配、新建分类、编辑触发描述</string>
-  <string name="setting_page_domain_management">工具域分类管理</string>
-  <string name="setting_page_domain_management_desc">管理工具类别：新建分类、修改触发描述、手动调整工具归属</string>
+  <string name="setting_model_page_domain_override">工具矩阵</string>
+  <string name="setting_model_page_domain_override_desc">管理工具区与工具归属（顶层直连 / 进工具区）</string>
+  <string name="setting_page_domain_management">工具矩阵</string>
+  <string name="setting_page_domain_management_desc">管理工具区：新建/删除/改名、编辑触发描述与条件、调整工具归属</string>
 
     <string name="setting_files_page_cleaned_toast">已清理</string>
     <string name="setting_files_page_clean_failed_toast">清理失败</string>

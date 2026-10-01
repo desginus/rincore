@@ -54,6 +54,9 @@ import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
+import me.rerere.rikkahub.data.ai.tools.routing.LegacyZoneConfig
+import me.rerere.rikkahub.data.ai.tools.routing.ToolZone
+import me.rerere.rikkahub.data.ai.tools.routing.migrateToZones
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_COMPRESS_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_OCR_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_SUGGESTION_PROMPT
@@ -126,12 +129,16 @@ private fun createSettingsDataStore(context: Context): DataStore<Preferences> {
 }
 
 
+/**
+ * 旧「工具域」的自定义域记录 —— 仅 v4.8.83 迁移期读取，迁移后不再写入。
+ * 新体系用 [me.rerere.rikkahub.data.ai.tools.routing.ToolZone]（id 即身份，无 parent 字段）。
+ */
 @Serializable
-data class CustomDomain(
+data class LegacyCustomDomain(
     val name: String = "",
     val description: String = "",
     val keywords: List<String> = emptyList(),
-    val parent: String? = null, // 父域路径，null=顶级域
+    val parent: String? = null,
 )
 class SettingsStore(
     context: Context,
@@ -314,20 +321,23 @@ class SettingsStore(
                 preferences[BACKUP_REMINDER_CONFIG] = JsonInstant.encodeToString(settings.backupReminderConfig)
                 preferences[LAUNCH_COUNT] = settings.launchCount
                 preferences[SPONSOR_ALERT_DISMISSED_AT] = settings.sponsorAlertDismissedAt
-                // 工具路由 (自研)
-                preferences[TOOL_DOMAIN_OVERRIDES] = JsonInstant.encodeToString(settings.toolDomainOverrides)
-                preferences[CUSTOM_DOMAIN_DESCRIPTIONS] = JsonInstant.encodeToString(settings.customDomainDescriptions)
-                preferences[CUSTOM_DOMAINS] = JsonInstant.encodeToString(settings.customDomains)
-                preferences[CUSTOM_DOMAIN_KEYWORDS] = JsonInstant.encodeToString(settings.customDomainKeywords)
+                // 工具矩阵 (自研 v4.8.83 重写)
+                preferences[TOOL_ZONES] = JsonInstant.encodeToString(settings.toolZones)
+                preferences[TOOL_ZONE_LINKS] = JsonInstant.encodeToString(settings.toolZoneLinks)
+                preferences[HIDDEN_ZONES] = JsonInstant.encodeToString(settings.hiddenZones)
+                preferences[TOP_LEVEL_ADDITIONS] = JsonInstant.encodeToString(settings.topLevelAdditions)
+                preferences[TOP_LEVEL_REMOVALS] = JsonInstant.encodeToString(settings.topLevelRemovals)
+                preferences[TOOL_ZONE_SEEDED] = true
                 preferences[TOOL_DESCRIPTION_OVERRIDES] = JsonInstant.encodeToString(settings.toolDescriptionOverrides)
-                preferences[DOMAIN_NAME_OVERRIDES] = JsonInstant.encodeToString(settings.domainNameOverrides)
-                preferences[HIDDEN_DOMAINS] = JsonInstant.encodeToString(settings.hiddenDomains)
-                preferences[REMOVED_BUILTIN_DOMAINS] = JsonInstant.encodeToString(settings.removedBuiltinDomains)
-                preferences[EXEMPT_FROM_DOMAIN_TOOLS] = JsonInstant.encodeToString(settings.exemptFromDomainTools)
-                preferences[DEMOTED_FRAMEWORK_TOOLS] = JsonInstant.encodeToString(settings.demotedFrameworkTools)
                 preferences[CLASSIFIER_PROMPT] = settings.classifierPrompt
                 // v3.6.102 工具改名 (自研)
                 preferences[TOOL_NAME_OVERRIDES] = JsonInstant.encodeToString(settings.toolNameOverrides)
+                // 旧「工具域」键一次性清除 (迁移已完成, 不再保留墓碑)
+                listOf(
+                    TOOL_DOMAIN_OVERRIDES, CUSTOM_DOMAIN_DESCRIPTIONS, CUSTOM_DOMAINS, CUSTOM_DOMAIN_KEYWORDS,
+                    DOMAIN_NAME_OVERRIDES, HIDDEN_DOMAINS, REMOVED_BUILTIN_DOMAINS,
+                    EXEMPT_FROM_DOMAIN_TOOLS, DEMOTED_FRAMEWORK_TOOLS,
+                ).forEach { preferences.remove(it) }
             }
         }
 
@@ -337,6 +347,14 @@ class SettingsStore(
         val CUSTOM_DOMAINS = stringPreferencesKey("custom_domains")
         val CUSTOM_DOMAIN_KEYWORDS = stringPreferencesKey("custom_domain_keywords")
         val TOOL_DESCRIPTION_OVERRIDES = stringPreferencesKey("tool_description_overrides")
+        // ── 工具矩阵（v4.8.83）──
+        val TOOL_ZONES = stringPreferencesKey("tool_zones")
+        val TOOL_ZONE_LINKS = stringPreferencesKey("tool_zone_links")
+        val HIDDEN_ZONES = stringPreferencesKey("hidden_zones")
+        val TOP_LEVEL_ADDITIONS = stringPreferencesKey("top_level_additions")
+        val TOP_LEVEL_REMOVALS = stringPreferencesKey("top_level_removals")
+        val TOOL_ZONE_SEEDED = booleanPreferencesKey("tool_zone_seeded")
+        // ── 旧「工具域」键：v4.8.83 起只读一次用于迁移，不再写入（保存时清除）──
         val DOMAIN_NAME_OVERRIDES = stringPreferencesKey("domain_name_overrides")
         val HIDDEN_DOMAINS = stringPreferencesKey("hidden_domains")
         val REMOVED_BUILTIN_DOMAINS = stringPreferencesKey("removed_builtin_domains")
@@ -360,6 +378,29 @@ class SettingsStore(
             }
             shouldRetry
         }.map { preferences ->
+            // ── 工具矩阵（v4.8.83 重写）──
+            // 首次加载/升级: 把旧「工具域」九件套一次性迁移成工具区模型。幂等 —— 迁移完成后
+            // 保存侧写死 toolZoneSeeded=true 并清除旧键，此后只读新键，绝不重复迁移复活已删的区。
+            val legacyZones = if (preferences[TOOL_ZONE_SEEDED] == true) null else LegacyZoneConfig(
+                customDomains = preferences[CUSTOM_DOMAINS]?.let { runCatching { JsonInstant.decodeFromString<List<LegacyCustomDomain>>(it) }.getOrDefault(emptyList()) } ?: emptyList(),
+                toolDomainOverrides = preferences[TOOL_DOMAIN_OVERRIDES]?.let { runCatching { JsonInstant.decodeFromString<Map<String, String>>(it) }.getOrDefault(emptyMap()) } ?: emptyMap(),
+                customDomainDescriptions = preferences[CUSTOM_DOMAIN_DESCRIPTIONS]?.let { runCatching { JsonInstant.decodeFromString<Map<String, String>>(it) }.getOrDefault(emptyMap()) } ?: emptyMap(),
+                customDomainKeywords = preferences[CUSTOM_DOMAIN_KEYWORDS]?.let { runCatching { JsonInstant.decodeFromString<Map<String, List<String>>>(it) }.getOrDefault(emptyMap()) } ?: emptyMap(),
+                domainNameOverrides = preferences[DOMAIN_NAME_OVERRIDES]?.let { runCatching { JsonInstant.decodeFromString<Map<String, String>>(it) }.getOrDefault(emptyMap()) } ?: emptyMap(),
+                hiddenDomains = preferences[HIDDEN_DOMAINS]?.let { runCatching { JsonInstant.decodeFromString<Set<String>>(it) }.getOrDefault(emptySet()) } ?: emptySet(),
+                removedBuiltinDomains = preferences[REMOVED_BUILTIN_DOMAINS]?.let { runCatching { JsonInstant.decodeFromString<Set<String>>(it) }.getOrDefault(emptySet()) } ?: emptySet(),
+                exemptFromDomainTools = preferences[EXEMPT_FROM_DOMAIN_TOOLS]?.let { runCatching { JsonInstant.decodeFromString<Set<String>>(it) }.getOrDefault(emptySet()) } ?: emptySet(),
+            ).migrateToZones()
+            val zoneSeed = legacyZones?.zones
+                ?: preferences[TOOL_ZONES]?.let { runCatching { JsonInstant.decodeFromString<List<ToolZone>>(it) }.getOrDefault(emptyList()) } ?: emptyList()
+            val zoneLinks = legacyZones?.links
+                ?: preferences[TOOL_ZONE_LINKS]?.let { runCatching { JsonInstant.decodeFromString<Map<String, String>>(it) }.getOrDefault(emptyMap()) } ?: emptyMap()
+            val zoneHidden = legacyZones?.hiddenZones
+                ?: preferences[HIDDEN_ZONES]?.let { runCatching { JsonInstant.decodeFromString<Set<String>>(it) }.getOrDefault(emptySet()) } ?: emptySet()
+            val zoneTopLevelAdd = legacyZones?.topLevelAdditions
+                ?: preferences[TOP_LEVEL_ADDITIONS]?.let { runCatching { JsonInstant.decodeFromString<Set<String>>(it) }.getOrDefault(emptySet()) } ?: emptySet()
+            val zoneTopLevelRemove = if (legacyZones != null) emptySet()
+                else preferences[TOP_LEVEL_REMOVALS]?.let { runCatching { JsonInstant.decodeFromString<Set<String>>(it) }.getOrDefault(emptySet()) } ?: emptySet()
             Settings(
                 enableWebSearch = preferences[ENABLE_WEB_SEARCH] == true,
                 deferAutoReply = preferences[DEFER_AUTO_REPLY] == true,
@@ -474,16 +515,13 @@ class SettingsStore(
                 } ?: BackupReminderConfig(),
                 launchCount = preferences[LAUNCH_COUNT] ?: 0,
                 sponsorAlertDismissedAt = preferences[SPONSOR_ALERT_DISMISSED_AT] ?: 0,
-                toolDomainOverrides = preferences[TOOL_DOMAIN_OVERRIDES]?.let { JsonInstant.decodeFromString(it) } ?: emptyMap(),
-                customDomainDescriptions = preferences[CUSTOM_DOMAIN_DESCRIPTIONS]?.let { JsonInstant.decodeFromString(it) } ?: emptyMap(),
-                customDomains = preferences[CUSTOM_DOMAINS]?.let { JsonInstant.decodeFromString(it) } ?: emptyList(),
-                customDomainKeywords = preferences[CUSTOM_DOMAIN_KEYWORDS]?.let { JsonInstant.decodeFromString(it) } ?: emptyMap(),
+                toolZones = zoneSeed,
+                toolZoneLinks = zoneLinks,
+                hiddenZones = zoneHidden,
+                topLevelAdditions = zoneTopLevelAdd,
+                topLevelRemovals = zoneTopLevelRemove,
+                toolZoneSeeded = true,
                 toolDescriptionOverrides = preferences[TOOL_DESCRIPTION_OVERRIDES]?.let { JsonInstant.decodeFromString(it) } ?: emptyMap(),
-                domainNameOverrides = preferences[DOMAIN_NAME_OVERRIDES]?.let { JsonInstant.decodeFromString(it) } ?: emptyMap(),
-                hiddenDomains = preferences[HIDDEN_DOMAINS]?.let { JsonInstant.decodeFromString(it) } ?: emptySet(),
-                removedBuiltinDomains = preferences[REMOVED_BUILTIN_DOMAINS]?.let { JsonInstant.decodeFromString(it) } ?: emptySet(),
-                exemptFromDomainTools = preferences[EXEMPT_FROM_DOMAIN_TOOLS]?.let { JsonInstant.decodeFromString(it) } ?: emptySet(),
-                demotedFrameworkTools = preferences[DEMOTED_FRAMEWORK_TOOLS]?.let { JsonInstant.decodeFromString(it) } ?: emptySet(),
                 classifierPrompt = preferences[CLASSIFIER_PROMPT] ?: "",
             )
         }
@@ -513,22 +551,10 @@ class SettingsStore(
                     ttsProviders.add(defaultTTSProvider.copyProvider())
                 }
             }
-            // 旧数据迁移: customDomains 的 name 含 "/" 且 parent=null →
-            // 拆分 parent + 短名 (历史 create 允许传 '搜索/自定义子域' 完整路径,
-            // 不拆分会导致 fullPath 双重叠加/视图分裂)
-            val normalizedDomains = it.customDomains.map { cd ->
-                if (cd.parent == null && cd.name.contains("/")) {
-                    cd.copy(
-                        parent = cd.name.substringBeforeLast("/"),
-                        name = cd.name.substringAfterLast("/"),
-                    )
-                } else cd
-            }
             it.copy(
                 providers = providers,
                 assistants = assistants,
                 ttsProviders = ttsProviders,
-                customDomains = normalizedDomains,
             )
         }
         .map { settings ->
@@ -684,18 +710,21 @@ class SettingsStore(
             preferences[LAUNCH_COUNT] = settings.launchCount
             preferences[SPONSOR_ALERT_DISMISSED_AT] = settings.sponsorAlertDismissedAt
 
-            // 工具路由
-            preferences[TOOL_DOMAIN_OVERRIDES] = JsonInstant.encodeToString(settings.toolDomainOverrides)
-            preferences[CUSTOM_DOMAIN_DESCRIPTIONS] = JsonInstant.encodeToString(settings.customDomainDescriptions)
-            preferences[CUSTOM_DOMAINS] = JsonInstant.encodeToString(settings.customDomains)
-            preferences[CUSTOM_DOMAIN_KEYWORDS] = JsonInstant.encodeToString(settings.customDomainKeywords)
+            // 工具矩阵 (自研 v4.8.83 重写)
+            preferences[TOOL_ZONES] = JsonInstant.encodeToString(settings.toolZones)
+            preferences[TOOL_ZONE_LINKS] = JsonInstant.encodeToString(settings.toolZoneLinks)
+            preferences[HIDDEN_ZONES] = JsonInstant.encodeToString(settings.hiddenZones)
+            preferences[TOP_LEVEL_ADDITIONS] = JsonInstant.encodeToString(settings.topLevelAdditions)
+            preferences[TOP_LEVEL_REMOVALS] = JsonInstant.encodeToString(settings.topLevelRemovals)
+            preferences[TOOL_ZONE_SEEDED] = true
             preferences[TOOL_DESCRIPTION_OVERRIDES] = JsonInstant.encodeToString(settings.toolDescriptionOverrides)
-            preferences[DOMAIN_NAME_OVERRIDES] = JsonInstant.encodeToString(settings.domainNameOverrides)
-            preferences[HIDDEN_DOMAINS] = JsonInstant.encodeToString(settings.hiddenDomains)
-            preferences[REMOVED_BUILTIN_DOMAINS] = JsonInstant.encodeToString(settings.removedBuiltinDomains)
-            preferences[EXEMPT_FROM_DOMAIN_TOOLS] = JsonInstant.encodeToString(settings.exemptFromDomainTools)
-            preferences[DEMOTED_FRAMEWORK_TOOLS] = JsonInstant.encodeToString(settings.demotedFrameworkTools)
             preferences[CLASSIFIER_PROMPT] = settings.classifierPrompt
+            // 旧「工具域」键一次性清除 (迁移已完成, 不再保留墓碑)
+            listOf(
+                TOOL_DOMAIN_OVERRIDES, CUSTOM_DOMAIN_DESCRIPTIONS, CUSTOM_DOMAINS, CUSTOM_DOMAIN_KEYWORDS,
+                DOMAIN_NAME_OVERRIDES, HIDDEN_DOMAINS, REMOVED_BUILTIN_DOMAINS,
+                EXEMPT_FROM_DOMAIN_TOOLS, DEMOTED_FRAMEWORK_TOOLS,
+            ).forEach { preferences.remove(it) }
         }
     }
 
@@ -875,16 +904,14 @@ data class Settings(
     val launchCount: Int = 0,
     val sponsorAlertDismissedAt: Int = 0,
     val routingModelId: Uuid? = null, // 路由表生成模型。null=用静态模板
-    val toolDomainOverrides: Map<String, String> = emptyMap(), // 工具名→强制域名。用户手动覆盖自动分类
-    val customDomainDescriptions: Map<String, String> = emptyMap(), // 域名→自定义触发描述。覆盖 ToolDomain 默认值
-    val customDomains: List<CustomDomain> = emptyList(), // 用户自定义的域（新建分类）
-    val customDomainKeywords: Map<String, List<String>> = emptyMap(), // 域名→自定义关键词。覆盖内置域关键词
+    // ── 工具矩阵（v4.8.83 重写：工具区声明即全部，内置/自定义不再区分）──
+    val toolZones: List<ToolZone> = emptyList(), // 全部工具区（出厂模板首启播种一次，之后完全归用户）
+    val toolZoneLinks: Map<String, String> = emptyMap(), // 工具名 / skill:名 → 工具区 id（手动归属；空=自动归类）
+    val hiddenZones: Set<String> = emptySet(), // 不在模型侧场景地图出现的工具区（保留归类与显式加载能力）
+    val topLevelAdditions: Set<String> = emptySet(), // 额外提升到顶层的工具（始终注入请求体）
+    val topLevelRemovals: Set<String> = emptySet(), // 从顶层降级到工具区的工具
+    val toolZoneSeeded: Boolean = false, // 出厂模板是否已播种（迁移幂等标记）
     val toolDescriptionOverrides: Map<String, String> = emptyMap(), // 工具名→自定义描述。覆盖原始Tool描述
-    val domainNameOverrides: Map<String, String> = emptyMap(), // 域名→自定义显示名称
-    val hiddenDomains: Set<String> = emptySet(), // 用户隐藏的域（内置域不删除但可隐藏）
-    val removedBuiltinDomains: Set<String> = emptySet(), // 用户删除的内置域预设
-    val exemptFromDomainTools: Set<String> = emptySet(), // 移出域管理的工具名集合 — 与框架工具一样始终注入请求体, 不并入域分类
-    val demotedFrameworkTools: Set<String> = emptySet(), // v4.6.5: 被移进域管理的框架工具 (从顶层框架集降级, 由域路由接管)
     val toolNameOverrides: Map<String, String> = emptyMap(), // v3.6.102: 工具改名 — 原工具名→新工具名 (汉语名工具改为字母数字, 模型才能识别)
     val classifierPrompt: String = "", // 工具自动分类提示词。空=使用默认
 ) {

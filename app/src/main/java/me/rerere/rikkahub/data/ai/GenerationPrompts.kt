@@ -15,7 +15,7 @@ import me.rerere.rikkahub.utils.JsonInstantPretty
 
 /**
  * 缓存锚点 — 最小化静态规则块。
- * 不含任何工具名/技能名 — 工具调度由 ToolRouter.buildLayer1() 动态生成。
+ * 不含任何工具名/技能名 — 工具调度由 ZoneRouter.buildMatrixMap() 动态生成。
  */
 internal fun buildCacheAnchor(modelName: String) = """
 ## Current Model

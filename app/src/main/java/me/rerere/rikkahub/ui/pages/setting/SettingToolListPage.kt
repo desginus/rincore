@@ -1,10 +1,6 @@
 /* 【域 E·设置体系】 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.ui.pages.setting
 
-
-/* ───【自研】SettingToolListPage.kt — 原版无此文件
- * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -22,140 +18,146 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.*
-import me.rerere.rikkahub.data.ai.mcp.McpManager
-import me.rerere.rikkahub.data.ai.tools.local.LocalTools
-import me.rerere.rikkahub.data.ai.tools.routing.ToolDomain
-import me.rerere.rikkahub.data.ai.tools.routing.ToolRouter
-import me.rerere.rikkahub.data.repository.ConversationRepository
-import me.rerere.rikkahub.data.repository.WorkspaceRepository
-import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.ai.tools.topLevelToolSetOf
+import me.rerere.rikkahub.data.ai.tools.zoneRouterOf
 import me.rerere.rikkahub.data.datastore.Settings
-import me.rerere.rikkahub.data.files.SkillManager
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.ui.theme.CustomColors
 import org.koin.compose.koinInject
 import me.rerere.rikkahub.utils.plus
 
+private const val TOP_LEVEL_LABEL = "顶层直连"
+private const val ALL_LABEL = "全部"
+
+/**
+ * 工具列表 —— 逐工具查看/调整归属（v4.8.83 重写）。
+ * 归属只有两种状态：属于某个工具区，或顶层直连（始终注入、不参与归类）。
+ */
 @Composable
 fun SettingToolListPage(
     settings: Settings,
     vm: SettingVM,
     onBack: () -> Unit,
 ) {
-    val skillManager: SkillManager = koinInject()
-    val localTools: LocalTools = koinInject()
-    val mcpManager: McpManager = koinInject()
-    val conversationRepo: ConversationRepository = koinInject()
+    val skillManager: me.rerere.rikkahub.data.files.SkillManager = koinInject()
+    val localTools: me.rerere.rikkahub.data.ai.tools.local.LocalTools = koinInject()
+    val mcpManager: me.rerere.rikkahub.data.ai.mcp.McpManager = koinInject()
+    val conversationRepo: me.rerere.rikkahub.data.repository.ConversationRepository = koinInject()
     val settingsStore: SettingsStore = koinInject()
-    val workspaceRepository: WorkspaceRepository = koinInject()
+    val workspaceRepository: me.rerere.rikkahub.data.repository.WorkspaceRepository = koinInject()
     val operitToolProvider: me.rerere.rikkahub.data.operit.runtime.OperitToolProvider = koinInject()
+    val globalRevision by settingsStore.settingsRevision.collectAsState()
+
     var searchQuery by remember { mutableStateOf("") }
-    var filterDomain by remember { mutableStateOf("全部") }
+    var filterZone by remember { mutableStateOf(ALL_LABEL) }
     var selectedTool by remember { mutableStateOf<ToolPreview?>(null) }
 
-    val router = remember(settings) {
-        ToolRouter(settings.toolDomainOverrides, settings.customDomainDescriptions,
-            settings.customDomains, settings.customDomainKeywords,
-            settings.domainNameOverrides, settings.hiddenDomains, settings.removedBuiltinDomains,
-            exemptFromDomainTools = settings.exemptFromDomainTools)
-    }
-
-    // 完整工具清单——与实际对话注入一致
-    val allTools: List<ToolPreview> = remember(settings) {
-        buildPreviewTools(
-            settings, localTools, skillManager, mcpManager,
-            conversationRepo = conversationRepo,
-            settingsStore = settingsStore,
-            workspaceRepository = workspaceRepository,
-            operitToolProvider = operitToolProvider,
-        )
-    }
-
-    // v3.8.24: 统一信息源头 — 移动目标列表/筛选 chips 与域分类管理页完全同源
-    // (unifiedDomainView.tree, 即 layer1/invoke_tools/list_domains 同一上游)。
-    // 不再自拼 ToolDomain.entries + customDomains (会翻出历史遗留/空壳幽灵域)。
-    // tree 已含: 已删/隐藏域过滤(isValidDomain) + 内置空壳剔除 + 自定义空域
-    // 保留 + 路径排序。下游老老实实用上游最新信息。
-    val allToolsAsTools = remember(allTools) {
-        allTools.map {
-            me.rerere.ai.core.Tool(
-                name = it.name,
-                description = it.description,
-                parameters = { me.rerere.ai.core.InputSchema.Obj(kotlinx.serialization.json.buildJsonObject {}) },
-                execute = { listOf(me.rerere.ai.ui.UIMessagePart.Text("")) },
+    val allTools: List<ToolPreview> = remember(settings, globalRevision) {
+        runCatching {
+            buildPreviewTools(
+                settings, localTools, skillManager, mcpManager,
+                conversationRepo = conversationRepo,
+                settingsStore = settingsStore,
+                workspaceRepository = workspaceRepository,
+                operitToolProvider = operitToolProvider,
             )
-        }
+        }.getOrDefault(emptyList())
     }
-    val unifiedView = remember(allToolsAsTools, settings) { router.unifiedDomainView(allToolsAsTools) }
-    // 根域 + 子域 (tree 已排序: 前缀聚合, 根在前子域随后)
-    val allDomainNames = remember(unifiedView) {
-        buildList {
-            for ((root, subs) in unifiedView.tree) {
-                add(root)
-                if (subs.isNotEmpty()) addAll(subs.sorted())
-            }
+    val router = remember(settings, globalRevision) { zoneRouterOf(settings) }
+    val zoneMap = remember(settings, globalRevision, allTools) { router.zoneMap(allTools.asShellTools()) }
+    val topLevelNames = remember(settings) { topLevelToolSetOf(settings) }
+
+    // 工具 → 归属（工具区 id 或 顶层直连）
+    val ownerMap: Map<String, String> = remember(zoneMap, topLevelNames) {
+        buildMap {
+            zoneMap.classified.forEach { (zoneId, tools) -> tools.forEach { put(it.name, zoneId) } }
+            topLevelNames.forEach { put(it, TOP_LEVEL_LABEL) }
         }
-    }
-    // 预计算 工具名→域 一次 (unifiedView.classified 同源), 点击筛选零重分类 → 无卡顿
-    val toolDomainMap: Map<String, String> = remember(unifiedView) {
-        unifiedView.classified.flatMap { (domain, ts) -> ts.map { it.name to domain } }.toMap()
     }
 
-    val filtered = remember(allTools, searchQuery, filterDomain, toolDomainMap) {
+    val topLevelCount = allTools.count { it.name in topLevelNames }
+    val filtered = remember(allTools, searchQuery, filterZone, ownerMap) {
         allTools.filter { t ->
             val q = searchQuery.lowercase()
             if (q.isNotEmpty() && !t.name.lowercase().contains(q) && !t.description.lowercase().contains(q)) return@filter false
-            if (filterDomain == "全部") return@filter true
-            val d = toolDomainMap[t.name] ?: return@filter true
-            d == filterDomain || d.startsWith("$filterDomain/")
+            when (filterZone) {
+                ALL_LABEL -> true
+                TOP_LEVEL_LABEL -> t.name in topLevelNames
+                else -> ownerMap[t.name] == filterZone
+            }
         }
     }
 
     Scaffold(
         containerColor = CustomColors.topBarColors.containerColor,
-        topBar = { TopAppBar(title = { Text("工具列表") }, navigationIcon = { IconButton(onClick = onBack) { Icon(HugeIcons.ArrowLeft01, null) } }, colors = CustomColors.topBarColors) },
+        topBar = {
+            TopAppBar(
+                title = { Text("工具列表") },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(HugeIcons.ArrowLeft01, null) } },
+                colors = CustomColors.topBarColors,
+            )
+        },
     ) { pad ->
         BackHandler { onBack() }
         Column(Modifier.fillMaxSize().padding(pad)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = searchQuery, onValueChange = { searchQuery = it }, label = { Text("搜索") },
+                OutlinedTextField(
+                    value = searchQuery, onValueChange = { searchQuery = it }, label = { Text("搜索") },
                     modifier = Modifier.weight(1f), singleLine = true,
                     leadingIcon = { Icon(HugeIcons.GlobalSearch, null, modifier = Modifier.size(16.dp)) },
-                    trailingIcon = { if (searchQuery.isNotEmpty()) IconButton(onClick = { searchQuery = "" }) { Icon(HugeIcons.Cancel01, null) } })
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) IconButton(onClick = { searchQuery = "" }) { Icon(HugeIcons.Cancel01, null) }
+                    },
+                )
             }
             LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 item {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        item { FilterChip(selected = filterDomain == "全部", onClick = { filterDomain = "全部" }, label = { Text("全部(${allTools.size})") }) }
-                        items(allDomainNames) { dn ->
-                            val count = toolDomainMap.count { (name, d) -> d == dn || d.startsWith("$dn/") }
-                            FilterChip(selected = filterDomain == dn, onClick = { filterDomain = dn }, label = { Text("${router.displayName(dn)}($count)") })
+                        item {
+                            FilterChip(
+                                selected = filterZone == ALL_LABEL,
+                                onClick = { filterZone = ALL_LABEL },
+                                label = { Text("$ALL_LABEL(${allTools.size})") },
+                            )
+                        }
+                        item {
+                            FilterChip(
+                                selected = filterZone == TOP_LEVEL_LABEL,
+                                onClick = { filterZone = TOP_LEVEL_LABEL },
+                                label = { Text("$TOP_LEVEL_LABEL($topLevelCount)") },
+                            )
+                        }
+                        items(zoneMap.allIds) { zoneId ->
+                            val count = zoneMap.counts[zoneId] ?: 0
+                            FilterChip(
+                                selected = filterZone == zoneId,
+                                onClick = { filterZone = zoneId },
+                                label = { Text("${router.displayNameOf(zoneId)}($count)") },
+                            )
                         }
                     }
                 }
-                item { Text("${filtered.size}个工具", style = MaterialTheme.typography.bodySmall) }
+                item { Text("${filtered.size} 个工具", style = MaterialTheme.typography.bodySmall) }
 
                 items(filtered) { tool ->
-                    val domain = toolDomainMap[tool.name] ?: router.classifyPreview(tool.name, settings.toolDescriptionOverrides[tool.name] ?: tool.description)
-                    val displayDomain = domain.substringBefore("/")
-                    Card(Modifier.fillMaxWidth().clickable {
-                        selectedTool = tool
-                    }) {
+                    val owner = ownerMap[tool.name] ?: router.classify(tool.name, tool.description)
+                    Card(Modifier.fillMaxWidth().clickable { selectedTool = tool }) {
                         Row(Modifier.padding(12.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(tool.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text((settings.toolDescriptionOverrides[tool.name] ?: tool.description).take(80), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    (settings.toolDescriptionOverrides[tool.name] ?: tool.description).take(80),
+                                    style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     AssistChip(
-                                        onClick = { filterDomain = domain },
-                                        label = { Text(displayDomain, style = MaterialTheme.typography.labelSmall) },
-                                        modifier = Modifier.height(24.dp)
+                                        onClick = { filterZone = owner },
+                                        label = { Text(if (owner == TOP_LEVEL_LABEL) TOP_LEVEL_LABEL else router.label(owner), style = MaterialTheme.typography.labelSmall) },
+                                        modifier = Modifier.height(24.dp),
                                     )
-                                    if (tool.name in settings.exemptFromDomainTools) {
-                                        AssistChip(
-                                            onClick = {},
-                                            label = { Text("已移出域管理", style = MaterialTheme.typography.labelSmall) },
-                                            modifier = Modifier.height(24.dp)
-                                        )
+                                    if (tool.name in settings.toolZoneLinks) {
+                                        AssistChip(onClick = {}, label = { Text("手动归属", style = MaterialTheme.typography.labelSmall) }, modifier = Modifier.height(24.dp))
                                     }
                                 }
                             }
@@ -167,58 +169,48 @@ fun SettingToolListPage(
         }
     }
 
-    // 工具操作对话框
-    if (selectedTool != null) {
-        val tool = selectedTool!!
-        var moveTarget by remember(tool) {
-            val fullDomain = settings.toolDomainOverrides[tool.name] ?: (toolDomainMap[tool.name] ?: tool.name)
-            mutableStateOf(fullDomain)
-        }
-        var editDescText by remember(tool) { mutableStateOf(settings.toolDescriptionOverrides[tool.name] ?: tool.description) }
-        var exemptChecked by remember(tool) { mutableStateOf(tool.name in settings.exemptFromDomainTools) }
-        var editNameText by remember(tool) { mutableStateOf(settings.toolNameOverrides[tool.name] ?: "") }
+    selectedTool?.let { tool ->
+        val currentOwner = ownerMap[tool.name] ?: TOP_LEVEL_LABEL
+        var target by remember(tool.name) { mutableStateOf(currentOwner) }
+        var editDesc by remember(tool.name) { mutableStateOf(settings.toolDescriptionOverrides[tool.name] ?: tool.description) }
+        var editName by remember(tool.name) { mutableStateOf(settings.toolNameOverrides[tool.name] ?: "") }
+
         AlertDialog(
             onDismissRequest = { selectedTool = null },
             title = { Text(tool.name) },
             text = {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.verticalScroll(rememberScrollState())
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
                 ) {
-                    Text("当前分类: ${moveTarget}", fontWeight = FontWeight.SemiBold)
-                    OutlinedTextField(
-                        value = editNameText,
-                        onValueChange = { editNameText = it },
-                        label = { Text("工具名称（改名）") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        supportingText = { Text("留空保持原名。仅允许字母、数字、下划线、连字符 — 汉语名工具模型难以识别，建议改为英文名。") },
+                    Text("归属: $target", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "顶层直连 = 始终注入请求体、不参与工具区归类；进工具区 = 经 invoke_tools 加载。使用任何工具都无需先移动它。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("移出域管理", fontWeight = FontWeight.SemiBold)
-                            Text(
-                                "开启后该工具不再并入工具域分类，与框架工具一样始终暴露在请求中，不参与域统计。",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Switch(checked = exemptChecked, onCheckedChange = { exemptChecked = it })
-                    }
                     HorizontalDivider()
                     OutlinedTextField(
-                        value = editDescText,
-                        onValueChange = { editDescText = it },
+                        value = editName, onValueChange = { editName = it },
+                        label = { Text("工具名称（改名）") },
+                        modifier = Modifier.fillMaxWidth(), singleLine = true,
+                        supportingText = { Text("留空保持原名。仅允许字母、数字、下划线、连字符。") },
+                    )
+                    OutlinedTextField(
+                        value = editDesc, onValueChange = { editDesc = it },
                         label = { Text("工具描述") },
-                        modifier = Modifier.fillMaxWidth(),
-                        maxLines = 4,
-                        supportingText = { Text("修改后影响自动分类。留空恢复默认。") }
+                        modifier = Modifier.fillMaxWidth(), maxLines = 4,
+                        supportingText = { Text("留空恢复默认。") },
                     )
                     Text("移动到:", style = MaterialTheme.typography.labelSmall)
-                    allDomainNames.forEach { dn ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = moveTarget == dn, onClick = { moveTarget = dn })
-                            Text(dn, Modifier.clickable { moveTarget = dn })
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { target = TOP_LEVEL_LABEL }) {
+                        RadioButton(selected = target == TOP_LEVEL_LABEL, onClick = { target = TOP_LEVEL_LABEL })
+                        Text(TOP_LEVEL_LABEL)
+                    }
+                    zoneMap.allIds.forEach { zoneId ->
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { target = zoneId }) {
+                            RadioButton(selected = target == zoneId, onClick = { target = zoneId })
+                            Text(router.label(zoneId))
                         }
                     }
                 }
@@ -226,43 +218,54 @@ fun SettingToolListPage(
             confirmButton = {
                 TextButton(onClick = {
                     var s = settings
-                    val m = s.toolDomainOverrides.toMutableMap()
-                    m[tool.name] = moveTarget; s = s.copy(toolDomainOverrides = m)
-                    val dm = s.toolDescriptionOverrides.toMutableMap()
-                    if (editDescText.isNotBlank() && editDescText != tool.description) dm[tool.name] = editDescText
-                    else dm.remove(tool.name)
-                    s = s.copy(toolDescriptionOverrides = dm)
-                    // v3.6.90: 移出域管理开关 — 豁免集增减
-                    val em = s.exemptFromDomainTools.toMutableSet()
-                    if (exemptChecked) em.add(tool.name) else em.remove(tool.name)
-                    s = s.copy(exemptFromDomainTools = em)
-                    // v3.6.102: 工具改名 — 仅合法名写入 (非法输入静默忽略)
-                    val nm = s.toolNameOverrides.toMutableMap()
-                    val newName = editNameText.trim()
-                    if (newName.isNotBlank() && newName.all { ch -> ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch == '_' || ch == '-' }) {
-                        nm[tool.name] = newName
-                    } else if (newName.isBlank()) {
-                        nm.remove(tool.name)
+                    val links = s.toolZoneLinks.toMutableMap()
+                    val additions = s.topLevelAdditions.toMutableSet()
+                    val removals = s.topLevelRemovals.toMutableSet()
+                    if (target == TOP_LEVEL_LABEL) {
+                        links.remove(tool.name)
+                        additions.add(tool.name)
+                        removals.remove(tool.name)
+                    } else {
+                        links[tool.name] = target
+                        additions.remove(tool.name)
+                        if (tool.name in topLevelNames) removals.add(tool.name) else removals.remove(tool.name)
                     }
-                    s = s.copy(toolNameOverrides = nm)
+                    s = s.copy(toolZoneLinks = links, topLevelAdditions = additions, topLevelRemovals = removals)
+
+                    val descMap = s.toolDescriptionOverrides.toMutableMap()
+                    if (editDesc.isNotBlank() && editDesc != tool.description) descMap[tool.name] = editDesc else descMap.remove(tool.name)
+                    s = s.copy(toolDescriptionOverrides = descMap)
+
+                    val nameMap = s.toolNameOverrides.toMutableMap()
+                    val newName = editName.trim()
+                    if (newName.isNotBlank() && newName.all { ch -> ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch == '_' || ch == '-' }) {
+                        nameMap[tool.name] = newName
+                    } else if (newName.isBlank()) {
+                        nameMap.remove(tool.name)
+                    }
+                    s = s.copy(toolNameOverrides = nameMap)
                     vm.updateSettings(s)
                     selectedTool = null
                 }) { Text("保存") }
             },
             dismissButton = {
                 Row {
-                    if (tool.name in settings.toolDomainOverrides || tool.name in settings.toolDescriptionOverrides) {
+                    if (tool.name in settings.toolZoneLinks || tool.name in settings.toolDescriptionOverrides ||
+                        tool.name in settings.topLevelAdditions || tool.name in settings.topLevelRemovals
+                    ) {
                         TextButton(onClick = {
                             var s = settings
-                            s = s.copy(toolDomainOverrides = s.toolDomainOverrides.toMutableMap().also { it.remove(tool.name) })
+                            s = s.copy(toolZoneLinks = s.toolZoneLinks.toMutableMap().also { it.remove(tool.name) })
                             s = s.copy(toolDescriptionOverrides = s.toolDescriptionOverrides.toMutableMap().also { it.remove(tool.name) })
+                            s = s.copy(topLevelAdditions = s.topLevelAdditions - tool.name)
+                            s = s.copy(topLevelRemovals = s.topLevelRemovals - tool.name)
                             vm.updateSettings(s)
                             selectedTool = null
-                        }) { Text("清除所有覆盖") }
+                        }) { Text("恢复自动归类") }
                     }
                     TextButton(onClick = { selectedTool = null }) { Text("取消") }
                 }
-            }
+            },
         )
     }
 }

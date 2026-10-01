@@ -108,7 +108,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
     }
 
     if (showDomainPage) {
-        SettingDomainPage(
+        SettingZonePage(
             settings = settings,
             vm = vm,
             onBack = { showDomainPage = false },

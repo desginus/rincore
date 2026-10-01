@@ -801,7 +801,7 @@ class ChatService(
                 outputTransformers = outputTransformers,
                 // v4.8.34 (性能): 工具池构建移出主线程 — handleMessageComplete 在
                 // AppScope(Main) 执行, buildAssistantToolPool 含 文件遍历/MCP 汇总/
-                // 域分类/技能扫描 等纯构建 (发送瞬间主线程重活之一), 移 Default。
+                // 工具区归类/技能扫描 等纯构建 (发送瞬间主线程重活之一), 移 Default。
                 tools = withContext(Dispatchers.Default) { buildAssistantToolPool(
                     filesRoot = context.filesDir,
                     settings = settings,

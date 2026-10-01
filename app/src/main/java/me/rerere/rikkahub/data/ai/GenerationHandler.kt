@@ -6,7 +6,7 @@
  *
  * 职责:
  *  - 消息组装: system(缓存锚点+提示+层1概览+框架工具+记忆) + 历史 + 新消息
- *  - 分层路由: frameworkTools / domainTools 分离 + 域懒加载 (MCP 走 allDomainTools 池)
+ *  - 分层路由: 顶层直连工具 / 工具区工具 分离 + 工具区懒加载 (MCP 走全量池)
  *  - 协议强制: 发送前 MessageProtocol.enforce (首条 system + tool 配对)
  *  - 流式输出: GenerationChunk 回调 → 上层落盘
  *
@@ -26,7 +26,7 @@ package me.rerere.rikkahub.data.ai
  *        2. 消息原样发送零改动 (v3.6.74 降维方向废弃);
  *        3. 豁免工具机制 (v3.6.90 移出域管理 = 框架工具同级);
  *        4. UI 节流 100ms; 5. 断流自动重试 5 次
- * 逻辑: FRAMEWORK_TOOL_SET + exemptFromDomainTools 始终注入;
+ * 逻辑: 顶层直连工具集 (出厂模板 + 用户提升 − 用户降级) 始终注入;
  *       loadedDomains LinkedHashSet 保序 (缓存前缀稳定)
  * 与原版主要差异:
  *   1. 原版每 chunk 直发无节流 — RinCore 100ms 批处理
@@ -81,12 +81,12 @@ import me.rerere.rikkahub.data.ai.transformers.onGenerationFinish
 import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.ecosystem.tools.DynamicTools
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
-import me.rerere.rikkahub.data.ai.tools.FRAMEWORK_TOOL_SET
+import me.rerere.rikkahub.data.ai.tools.topLevelToolSetOf
 import me.rerere.rikkahub.data.ai.tools.createTaskTool
 import me.rerere.rikkahub.data.ai.tools.repetitionSampleCount
 import me.rerere.rikkahub.data.ai.tools.repetitionTailCount
 import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
-import me.rerere.rikkahub.data.ai.tools.routing.ToolRouter
+import me.rerere.rikkahub.data.ai.tools.routing.ZoneRouter
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
@@ -117,8 +117,8 @@ private data class RetryState(
 
 private const val TAG = "GenerationHandler"
 
-/** 框架层工具名 — 不参与域分类, 分层模式下直接注入 */
-// FRAMEWORK_TOOL_SET 共享于 ToolsBuilder (v3.5.52 对齐稳定版口径)
+/** 顶层直连工具名 — 不参与工具区归类, 分层模式下直接注入 */
+// 顶层直连工具集口径统一于 ToolsBuilder.topLevelToolSetOf (v4.8.83)
 private const val MAX_TOOL_OUTPUT_CHARS = 32 * 1024
 private const val TOOL_OUTPUT_PREVIEW_CHARS = 4 * 1024
 
@@ -253,10 +253,12 @@ class GenerationHandler(
             conversationLoadedDomains?.let { addAll(it) }
         }
 
-        // 分离框架工具与用户域工具 (v3.6.90: 含用户移出域管理的豁免工具)
-        val exemptSet = settings.exemptFromDomainTools
-        val domainTools = tools.filter { it.name !in FRAMEWORK_TOOL_SET && it.name !in exemptSet }
-        val frameworkTools = tools.filter { it.name in FRAMEWORK_TOOL_SET || it.name in exemptSet }
+        // 顶层直连工具 vs 工具区工具 —— 唯一判据 = settings 的顶层集合（出厂模板 + 提升 − 降级）。
+        // v4.8.83: 旧的三套集合（框架 / 移出域管理 / 移进域）合并为这一个，且注入链真正消费它；
+        // 旧 demotedFrameworkTools 只被 UI 读写、注入链从不消费 —— "移进域"是死配置，已删除。
+        val topLevelSet = topLevelToolSetOf(settings)
+        val domainTools = tools.filter { it.name !in topLevelSet }
+        val frameworkTools = tools.filter { it.name in topLevelSet }
         // v4.7.8: 每轮工具池构建的巨串日志删除 (441 工具排序+拼接 — 热路径开销)
 
         // Skill 已拆分为独立工具 (skill_<name>)，无需集中提取 skillListText
@@ -290,17 +292,13 @@ class GenerationHandler(
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
             CallTracer.event("STEP", "step_$stepIndex", "Step $stepIndex begin, ${tools.size} tools loaded, messages=${messages.size}")
 
-            // Bug #2 修复: 每步重建 ToolRouter，读取最新 settings
+            // 每步重建路由器，读取最新 settings（工具区声明随时可改，下一步立即生效）
             val currentSettings = settingsStore.settingsFlow.value
-            val toolRouter = ToolRouter(
-                overrides = currentSettings.toolDomainOverrides,
-                customDescriptions = currentSettings.customDomainDescriptions,
-                customDomains = currentSettings.customDomains,
-                customKeywords = currentSettings.customDomainKeywords,
-                domainNameOverrides = currentSettings.domainNameOverrides,
-                hiddenDomains = currentSettings.hiddenDomains,
-                removedBuiltinDomains = currentSettings.removedBuiltinDomains,
-                exemptFromDomainTools = currentSettings.exemptFromDomainTools,
+            val toolRouter = ZoneRouter(
+                zones = currentSettings.toolZones,
+                links = currentSettings.toolZoneLinks,
+                hiddenZones = currentSettings.hiddenZones,
+                topLevelTools = topLevelToolSetOf(currentSettings),
             )
             // 每步刷新 MCP 工具 (支持 manage_mcp_servers 运行时添加) — 合并到域池走懒加载,
             // 不直接注入函数定义 (813af56d 移植: Token 65K → ~6K)
@@ -314,14 +312,14 @@ class GenerationHandler(
             // 失踪 — 用户实测 Bug; 全量池不影响 layer1 静态性, 缓存前缀稳定)
             val allDomainTools = (domainTools + frameworkTools + currentMcpTools).distinctBy { it.name }
 
-            // v4.8.14 性能: layer1 构建缓存 — buildLayer1 对全量工具分类+格式化
+            // v4.8.14 性能: layer1 构建缓存 — buildMatrixMap 对全量工具分类+格式化
             // (446 工具级字符串构建), 同一生成链内 allDomainTools 不变时应复用。
             // 原实现每轮 step 重算, 256 轮工具循环下线性累积。
             val layer1Prompt = if (useLayered) {
                 if (layer1CacheKey === allDomainTools) {
                     layer1CacheVal
                 } else {
-                    toolRouter.buildLayer1(allDomainTools).also {
+                    toolRouter.buildMatrixMap(allDomainTools).also {
                         layer1CacheKey = allDomainTools
                         layer1CacheVal = it
                     }
@@ -341,7 +339,7 @@ class GenerationHandler(
                 if (domainNamesCacheDomains == domainsNow && domainNamesCacheTools === allDomainTools) {
                     domainNamesCacheVal
                 } else {
-                    loadedDomains.flatMap { toolRouter.getDomainTools(it, allDomainTools) }
+                    loadedDomains.flatMap { toolRouter.toolsOf(it, allDomainTools) }
                         .map { it.name }.toSet().also {
                             domainNamesCacheDomains = domainsNow
                             domainNamesCacheTools = allDomainTools
@@ -387,7 +385,7 @@ class GenerationHandler(
                     // 已加载前缀不变 → 缓存前缀稳定 (v3.5.58 sorted 曾致加载新域
                     // 后全量重排, 前缀断裂, 上百K只缓存十几K)
                     for (domain in loadedDomains) {
-                        addAll(toolRouter.getDomainTools(domain, allDomainTools))
+                        addAll(toolRouter.toolsOf(domain, allDomainTools))
                     }
                     // skill 工具不分层直注 — 全量加载禁止 (用户铁律)。
                     // skill_<name> 工具经 invoke_tools("技能") 加载后直接可用 (D8),
@@ -399,13 +397,13 @@ class GenerationHandler(
                     // 恢复。v4.5.12 的"域内工具严禁进顶层"被推翻: 断点实证 —
                     // invoke_tools 返回的是文本描述而非函数 schema, 模型不敢直接
                     // 调用仅存在于文字里的 mcp__ 工具, 触发"还没启用/需要注册"的
-                    // 错误心智模型 → 被 move_tool_to_domain 吸住。现改为: 域工具
+                    // 错误心智模型 → 被 move_tool_to_zone 吸住。现改为: 区工具
                     // 经 invoke_tools 加载后, 完整函数定义直接出现在请求 tools 数组
                     // (从"让模型自己找"变为"喂到嘴边")。
                     // 缓存影响: loadedDomains 为 LinkedHashSet 保序 (v3.6.10),
                     // 新域追加尾部, 已加载前缀不变 → 缓存前缀在追加点前保持。
                     .also { built ->
-                        val approved = FRAMEWORK_TOOL_SET + exemptSet +
+                        val approved = topLevelSet +
                             setOf("memory_tool", "invoke_tools") + loadedDomainToolNames
                         val leaked = built.filter { it.name !in approved }
                         if (leaked.isNotEmpty()) {
@@ -413,16 +411,16 @@ class GenerationHandler(
                         }
                     }
                     .filter {
-                        it.name in FRAMEWORK_TOOL_SET || it.name in exemptSet ||
+                        it.name in topLevelSet ||
                             it.name == "memory_tool" || it.name == "invoke_tools" ||
-                            // v4.7.14: 已加载域工具放行 — 完整 schema 注入请求 (喂到嘴边)
+                            // 已加载工具区的工具放行 — 完整 schema 注入请求 (喂到嘴边)
                             it.name in loadedDomainToolNames
                     }
                     // v3.6.10: 不再整体重排 — 构建顺序 = 框架(固定) + invoke_tools +
                     // 已加载域(加载顺序, 域内名字序) — 新域追加尾部前缀稳定 (缓存命中)
                     .also { built ->
                         val mcpCount = built.count { it.name.startsWith("mcp__") }
-                        val frameworkCount = built.count { it.name in FRAMEWORK_TOOL_SET }
+                        val frameworkCount = built.count { it.name in topLevelSet }
                         Log.i(TAG, "toolsInternal (layered): ${built.size} total" +
                             " (mcp=$mcpCount framework=$frameworkCount domain=${built.size - mcpCount - frameworkCount})")
                     }
@@ -795,24 +793,24 @@ class GenerationHandler(
                             // ① 空/占位内容 ② 序号越界 ③ 已宣告终结仍续调 ④ 同参重复
                             // v3.11.24: args 顶层必为 JsonObject 才可抽样校验
                             // v4.7.12: 管理三件套意图门控 — 用户实证: GLM 在普通任务中持续
-                            // 误用 move_tool_to_domain (把搜索工具"移到搜索域"以为这样才
+                            // 误用 move_tool_to_zone (把搜索工具"移到搜索区"以为这样才
                             // 可用, 连续多轮复现); 报错尾注教育 (v4.7.10) 与防吸引导均无效 —
                             // 只有物理拦截能打断。机制: 检查对话中用户消息是否包含管理意图
                             // 关键词; 不含则拒绝执行并返回引导 (错误进既有失败聚合, 叠加防吸)。
                             // (v3.11.24 思考工具协议校验段随序列思考工具彻底删除 — v4.7.12)
-                            val manageGateTools = setOf("move_tool_to_domain", "manage_domain", "manage_mcp_servers")
+                            val manageGateTools = setOf("move_tool_to_zone", "manage_zone", "manage_mcp_servers")
                             if (tool.toolName in manageGateTools) {
                                 val userText = messages.filter { it.role == MessageRole.USER }
                                     .flatMap { msg -> msg.parts }
                                     .filterIsInstance<UIMessagePart.Text>()
                                     .joinToString(" ") { p -> p.text }
                                 val hasManageIntent = listOf(
-                                    "域", "管理", "移动", "移到", "挪", "整理", "归类", "挂载",
-                                    "分组", "子域", "MCP", "mcp", "连接", "插件", "安装", "技能", "skill",
+                                    "域", "工具区", "工具矩阵", "管理", "移动", "移到", "挪", "整理", "归类", "挂载",
+                                    "分组", "子域", "子区", "MCP", "mcp", "连接", "插件", "安装", "技能", "skill",
                                 ).any { kw -> userText.contains(kw, ignoreCase = true) }
                                 if (!hasManageIntent) {
                                     error("Error: 已拦截 — 本工具 (${tool.toolName}) 仅响应用户明确的管理指令" +
-                                        " (例如\"把某工具移到某域\"\"连接某MCP服务器\"), 当前对话中用户没有此类指令。" +
+                                        " (例如\"把某工具移到某工具区\"\"连接某MCP服务器\"), 当前对话中用户没有此类指令。" +
                                         "如果你只是想使用某个工具 (如搜索/查询), 直接调用它即可 — " +
                                         "所有已加载工具都可以直接调用, 无需移动或注册。请回到用户的原始任务继续。")
                                 }
@@ -1163,7 +1161,7 @@ class GenerationHandler(
             // 框架工具 systemPrompt (瘦身 — v2.9.4/v3.5.1: 其余工具描述在请求 tools 数组,
             // 全量注入会导致工具池膨胀时冷启动 system 70K+ tokens)
             val toolPrompts = tools
-                .filter { it.name in FRAMEWORK_TOOL_SET && it.name != "invoke_tools" }
+                .filter { it.name in topLevelToolSetOf(settings) && it.name != "invoke_tools" }
                 .map { tool -> tool.systemPrompt(model, effectiveMessages) }
                 .filter { it.isNotBlank() }
             toolsPromptLen = toolPrompts.sumOf { it.length }
