@@ -826,7 +826,10 @@ class GenerationHandler(
                                     "MCP", "mcp", "连接", "插件", "安装", "技能", "skill",
                                 )
                                 val zoneNameHit = settingsStore.settingsFlow.value.toolZones.any { z ->
-                                    listOf(z.id, z.shortName, z.displayName).any { n -> n.isNotBlank() && userText.contains(n) }
+                                    // 内联 shortName/displayName（routing 包的扩展属性，跨包需 import；
+                                    // 这里直接算，避免引入同名扩展与 model.displayName 相冲）
+                                    val names = listOf(z.id, z.id.substringAfterLast('/'), z.title)
+                                    names.any { n -> n.isNotBlank() && userText.contains(n) }
                                 }
                                 val toolNameHit = allDomainTools.any { t -> t.name.length >= 6 && userText.contains(t.name) }
                                 val hasManageIntent = zoneNameHit || toolNameHit ||
