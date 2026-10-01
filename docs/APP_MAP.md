@@ -105,20 +105,23 @@ Completions/Response API)、MCP 客户端、提示词组装、消息变换器。
 | 文件 | 职责 |
 |---|---|
 | `data/ai/tools/ToolsBuilder.kt` | 请求 tools 数组组装 (分层动态注入) |
-| `data/ai/tools/DomainTools.kt` | 工具域路由 (search_domains/invoke_tools) |
+| `data/ai/tools/ZoneTools.kt` | 工具矩阵管理工具 (manage_zone/list_zones/search_zones/move_tool_to_zone) |
+| `data/ai/tools/routing/ToolZone.kt` | 工具区模型 + 出厂模板 + 顶层工具模板 |
+| `data/ai/tools/routing/ZoneRouter.kt` | 工具区路由（分类/区图/invoke_tools）单一事实源 |
+| `data/ai/tools/routing/ToolZoneMigration.kt` | 旧「工具域」→ 工具区一次性迁移 |
 | `data/ai/tools/WorkspaceTools.kt` | 工作区五件套 (read/write/edit/shell/show) |
 | `data/ai/tools/TaskTools.kt` | task_tool (任务清单卡片) |
 | `ecosystem/EcosystemManager.kt` | 插件/生态管理 |
 | `ecosystem/tools/DynamicTools.kt` | 动态工具池 |
 | `subagent/SubAgentEngine.kt` | 子代理引擎 |
-| `ui/pages/setting/SettingDomainPage.kt` | 工具域管理 UI (触发描述/条件) |
+| `ui/pages/setting/SettingZonePage.kt` | 工具矩阵页 (工具区增删改/隐藏 + 顶层直连工具 + 恢复出厂) |
 
 **分层注入铁律**: 系统提示词只放 7 个框架工具; 其余工具在请求 tools 数组;
 MCP 工具静态声明 (配置决定), 连接惰性 (首次调用才连)。
 
 **常见改动**:
 - 新工具 → `data/ai/tools/` 新建 + 注册 + 引导文案 (WorkspaceReminderTransformer)
-- 工具域行为 → `DomainTools.kt` + `SettingDomainPage.kt`
+- 工具区行为 → `ZoneTools.kt` + `ZoneRouter.kt` + `SettingZonePage.kt`
 - 工具审批 → `ToolInvocationContext` + 设置页
 
 **历史**: 序列思考工具彻底删除 (v4.7.12) / 管理三件套意图门控 (v4.7.12) /
@@ -278,7 +281,7 @@ Haze 锁 `2.0.0-beta01` (rc 版本有格栅伪影); 玻璃层用 `RinGlass` 单�
 | 工作区文件操作 | `WorkspaceDetailVM.kt` (操作加 activeTransfers 包裹) |
 | 文件夹导出/分享 | `WorkspaceManager.exportFolderToZip` + `WorkspaceDetailVM` |
 | 加 AI 工具 | `data/ai/tools/` 新建 + 注册 + 引导 (WorkspaceReminderTransformer) |
-| 改工具域/路由 | `DomainTools.kt` + `SettingDomainPage.kt` |
+| 改工具区/路由 | `ZoneTools.kt` + `ZoneRouter.kt` + `SettingZonePage.kt` |
 | MCP 相关 | `data/ai/mcp/McpSessionRegistry.kt` (连接/重连/stdio 桥) |
 | Provider/请求体 | `ai/` provider + `data/ai/providers/` (注意协议分派) |
 | 渲染问题 (Markdown/文档) | 先 diff 上游 RikkaHub 对齐 (渲染铁律), 再看 `ui/components/message/` |
