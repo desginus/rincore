@@ -131,6 +131,12 @@ fun SettingZonePage(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Text(
+                    "工具区即模型看到的分类：描述=这个区是干什么的，触发条件=关键词。隐藏只影响是否出现在模型每轮地图里（省 token），" +
+                        "帮助与关键词反查仍能找到并加载它。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             itemsIndexed(nonEmptyRoots) { _, root ->
@@ -585,12 +591,16 @@ private fun TopLevelSection(
                         Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(name, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
-                                if (!isDefault(name)) {
+                                if (name in me.rerere.rikkahub.data.ai.tools.routing.CORE_MATRIX_TOOLS) {
+                                    Text("工具矩阵核心件 · 必须留在顶层", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                                } else if (!isDefault(name)) {
                                     Text("用户提升到顶层", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                                 }
                             }
-                            TextButton(onClick = { onMove(name) }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
-                                Text("移进工具区", style = MaterialTheme.typography.labelSmall)
+                            if (name !in me.rerere.rikkahub.data.ai.tools.routing.CORE_MATRIX_TOOLS) {
+                                TextButton(onClick = { onMove(name) }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                                    Text("移进工具区", style = MaterialTheme.typography.labelSmall)
+                                }
                             }
                         }
                     }
@@ -627,7 +637,7 @@ private fun NewZoneDialog(
                 OutlinedTextField(desc, { desc = it }, label = { Text("触发描述(可选)") }, maxLines = 2,
                     supportingText = { Text("这一区负责什么 — 模型据此判断") })
                 OutlinedTextField(kws, { kws = it }, label = { Text("触发条件(可选, 逗号分隔)") },
-                    supportingText = { Text("关键词，用于自动归类与被 search_zones 反查") })
+                    supportingText = { Text("关键词，用于自动归类与关键词反查") })
             }
         },
         confirmButton = {

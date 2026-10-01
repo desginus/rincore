@@ -18,6 +18,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.*
+import me.rerere.rikkahub.data.ai.tools.routing.CORE_MATRIX_TOOLS
 import me.rerere.rikkahub.data.ai.tools.topLevelToolSetOf
 import me.rerere.rikkahub.data.ai.tools.zoneRouterOf
 import me.rerere.rikkahub.data.datastore.Settings
@@ -171,7 +172,8 @@ fun SettingToolListPage(
 
     selectedTool?.let { tool ->
         val currentOwner = ownerMap[tool.name] ?: TOP_LEVEL_LABEL
-        var target by remember(tool.name) { mutableStateOf(currentOwner) }
+        val isCore = tool.name in CORE_MATRIX_TOOLS
+        var target by remember(tool.name) { mutableStateOf(if (isCore) TOP_LEVEL_LABEL else currentOwner) }
         var editDesc by remember(tool.name) { mutableStateOf(settings.toolDescriptionOverrides[tool.name] ?: tool.description) }
         var editName by remember(tool.name) { mutableStateOf(settings.toolNameOverrides[tool.name] ?: "") }
 
@@ -207,10 +209,18 @@ fun SettingToolListPage(
                         RadioButton(selected = target == TOP_LEVEL_LABEL, onClick = { target = TOP_LEVEL_LABEL })
                         Text(TOP_LEVEL_LABEL)
                     }
-                    zoneMap.allIds.forEach { zoneId ->
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { target = zoneId }) {
-                            RadioButton(selected = target == zoneId, onClick = { target = zoneId })
-                            Text(router.label(zoneId))
+                    if (isCore) {
+                        Text(
+                            "「${tool.name}」是工具矩阵核心件，必须留在顶层 —— 移出后模型将无法加载任何工具区。",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    } else {
+                        zoneMap.allIds.forEach { zoneId ->
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { target = zoneId }) {
+                                RadioButton(selected = target == zoneId, onClick = { target = zoneId })
+                                Text(router.label(zoneId))
+                            }
                         }
                     }
                 }
@@ -221,12 +231,13 @@ fun SettingToolListPage(
                     val links = s.toolZoneLinks.toMutableMap()
                     val additions = s.topLevelAdditions.toMutableSet()
                     val removals = s.topLevelRemovals.toMutableSet()
-                    if (target == TOP_LEVEL_LABEL) {
+                    val effectiveTarget = if (isCore) TOP_LEVEL_LABEL else target
+                    if (effectiveTarget == TOP_LEVEL_LABEL) {
                         links.remove(tool.name)
                         additions.add(tool.name)
                         removals.remove(tool.name)
                     } else {
-                        links[tool.name] = target
+                        links[tool.name] = effectiveTarget
                         additions.remove(tool.name)
                         if (tool.name in topLevelNames) removals.add(tool.name) else removals.remove(tool.name)
                     }

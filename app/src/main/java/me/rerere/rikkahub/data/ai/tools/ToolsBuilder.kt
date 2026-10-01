@@ -29,6 +29,7 @@ import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.ai.tools.createReadImageTool
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
+import me.rerere.rikkahub.data.ai.tools.routing.CORE_MATRIX_TOOLS
 import me.rerere.rikkahub.data.ai.tools.routing.DEFAULT_TOP_LEVEL_TOOLS
 import me.rerere.rikkahub.data.ai.tools.ToolInvocationContext
 
@@ -39,9 +40,11 @@ import me.rerere.rikkahub.data.ai.tools.ToolInvocationContext
  *   实际生效集合 = 出厂模板 `DEFAULT_TOP_LEVEL_TOOLS` + 用户提升 − 用户降级。
  * 模板是常量，所以后续版本新增的顶层工具会自动出现在老用户设备上；用户的显式
  * 提升/降级以小集合形式叠加 —— 一个开关，一个含义，注入链直接照此执行。
+ * v4.8.84: 末尾再并入 CORE_MATRIX_TOOLS（invoke_tools / manage_zone）—— 结构性不变式，
+ * 即使配置被写坏，工具矩阵的两个入口也一定在顶层。
  */
 fun topLevelToolSetOf(settings: Settings): Set<String> =
-    (DEFAULT_TOP_LEVEL_TOOLS + settings.topLevelAdditions) - settings.topLevelRemovals
+    (DEFAULT_TOP_LEVEL_TOOLS + settings.topLevelAdditions) - settings.topLevelRemovals + CORE_MATRIX_TOOLS
 
 /** 视图工具池 — 全量池排除顶层直连工具（帮助 / 工具矩阵地图 / 列表 / 对照页 同口径） */
 fun viewPoolOf(settings: Settings, pool: List<Tool>): List<Tool> =

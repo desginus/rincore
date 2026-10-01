@@ -3,7 +3,7 @@
  *
  * 同一份 ZoneMap 渲染三个面向模型的输出：
  *   1. 系统提示里的工具矩阵地图（buildMatrixMap）
- *   2. list_zones 的内容
+ *   2. 工具区总览（invoke_tools("帮助") 的数据源之一）
  *   3. invoke_tools("帮助") 的内容（buildHelpText）
  * 三者必须完全一致 —— 任何差异即信源分裂。页顶另做算术自校验：
  * Σ(各区直接工具数) + 顶层直连工具数 == 工具池总数。
@@ -121,7 +121,7 @@ fun SettingToolComparePage(
     }
 }
 
-/** list_zones 渲染 —— 与 ZoneTools.listZonesTool 同一逻辑（同源） */
+/** 工具区总览渲染 —— 与 invoke_tools("帮助") 同一数据源（同源） */
 private fun renderListZonesText(view: ZoneRouter.ZoneMap, router: ZoneRouter): String = buildString {
     appendLine("可用工具区 (共 ${view.counts.size} 个, ${view.roots.size} 个顶级):")
     for (root in view.roots) {

@@ -280,14 +280,23 @@ class GenerationHandler(
         // DeepSeek 前缀缓存每步全灭 (缓存键含 tools 序列)。快照后循环内复用;
         // manage_mcp_servers 执行后 DynamicTools 置脏, 下一步检测到才刷新。
         var mcpToolsSnapshot = DynamicTools.getMcpTools()
+        // v4.8.84: 全量池（顶层 + 区工具 + MCP）提到循环外，只在 MCP 变更时重建。
+        // 旧实现每步 `(domainTools + frameworkTools + mcp)` 都 new 一个 List，而下方所有缓存
+        // 都用引用比较（===）判定命中 → **恒不命中 = 死缓存**，矩阵地图每步全量重算。
+        var allDomainTools: List<Tool> = (domainTools + frameworkTools + mcpToolsSnapshot).distinctBy { it.name }
 
-        // v4.8.14: layer1 缓存状态 (跨 step 复用, 见下方构建处)
-        var layer1CacheKey: List<Tool>? = null
-        var layer1CacheVal: String? = null
-        // v4.8.14: 域工具名集缓存状态
+        // v4.8.84: 矩阵地图缓存 —— 键 = 工具区配置（结构相等）+ 工具池（引用相等）。
+        // 只按工具池做键是错的：会话中途用 manage_zone 改了工具区，地图必须立即反映。
+        var matrixCacheCfg: List<Any?>? = null
+        var matrixCacheTools: List<Tool>? = null
+        var matrixCacheVal: String? = null
+        // 已加载区的工具名集缓存状态
         var domainNamesCacheDomains: List<String>? = null
         var domainNamesCacheTools: List<Tool>? = null
         var domainNamesCacheVal: Set<String> = emptySet()
+        // v4.8.84: 已加载工具区**逐步**持久化 —— 旧实现只在"本轮无工具调用"的收尾点发射，
+        // 中途被打断/取消就整轮加载丢失（下轮模型以为工具还在，实际不在请求数组里）。
+        var loadedEmitted: List<String> = loadedDomains.toList()
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
             CallTracer.event("STEP", "step_$stepIndex", "Step $stepIndex begin, ${tools.size} tools loaded, messages=${messages.size}")
@@ -305,23 +314,30 @@ class GenerationHandler(
             // v3.15.1: 快照复用 — 仅 manage_mcp_servers 置脏后才重新拉取
             if (DynamicTools.isDirty()) {
                 mcpToolsSnapshot = DynamicTools.getMcpTools()
+                allDomainTools = (domainTools + frameworkTools + mcpToolsSnapshot).distinctBy { it.name }
             }
             val currentMcpTools = mcpToolsSnapshot
-            // v3.5.56 回归全量: 含框架工具 — 系统域/workspace 等必须可见可下钻
-            // (v3.5.52 过滤框架 → 触发词指向的系统域展开为空 + workspace 5 工具
-            // 失踪 — 用户实测 Bug; 全量池不影响 layer1 静态性, 缓存前缀稳定)
-            val allDomainTools = (domainTools + frameworkTools + currentMcpTools).distinctBy { it.name }
 
-            // v4.8.14 性能: layer1 构建缓存 — buildMatrixMap 对全量工具分类+格式化
-            // (446 工具级字符串构建), 同一生成链内 allDomainTools 不变时应复用。
-            // 原实现每轮 step 重算, 256 轮工具循环下线性累积。
-            val layer1Prompt = if (useLayered) {
-                if (layer1CacheKey === allDomainTools) {
-                    layer1CacheVal
+            // v4.8.84: 已加载工具区有变化就立刻持久化（被打断/取消也不丢）
+            val loadedNow = loadedDomains.toList()
+            if (useLayered && loadedNow != loadedEmitted && loadedNow.isNotEmpty()) {
+                loadedEmitted = loadedNow
+                emit(GenerationChunk.LoadedDomains(loadedNow))
+            }
+
+            // v4.8.84 性能: 矩阵地图缓存 —— 工具区配置 + 工具池 双键
+            val zoneCfgKey: List<Any?> = listOf(
+                currentSettings.toolZones, currentSettings.toolZoneLinks,
+                currentSettings.hiddenZones, topLevelToolSetOf(currentSettings),
+            )
+            val matrixPrompt = if (useLayered) {
+                if (matrixCacheCfg == zoneCfgKey && matrixCacheTools === allDomainTools) {
+                    matrixCacheVal
                 } else {
                     toolRouter.buildMatrixMap(allDomainTools).also {
-                        layer1CacheKey = allDomainTools
-                        layer1CacheVal = it
+                        matrixCacheCfg = zoneCfgKey
+                        matrixCacheTools = allDomainTools
+                        matrixCacheVal = it
                     }
                 }
             } else {
@@ -397,7 +413,7 @@ class GenerationHandler(
                     // 恢复。v4.5.12 的"域内工具严禁进顶层"被推翻: 断点实证 —
                     // invoke_tools 返回的是文本描述而非函数 schema, 模型不敢直接
                     // 调用仅存在于文字里的 mcp__ 工具, 触发"还没启用/需要注册"的
-                    // 错误心智模型 → 被 move_tool_to_zone 吸住。现改为: 区工具
+                    // 错误心智模型 → 被管理工具吸住。现改为: 区工具
                     // 经 invoke_tools 加载后, 完整函数定义直接出现在请求 tools 数组
                     // (从"让模型自己找"变为"喂到嘴边")。
                     // 缓存影响: loadedDomains 为 LinkedHashSet 保序 (v3.6.10),
@@ -529,7 +545,7 @@ class GenerationHandler(
                     skipAssistantPrompt = skipAssistantPrompt,
                     conversationLorebookIds = conversationLorebookIds,
                     workspaceCwd = workspaceCwd,
-                    layer1Prompt = layer1Prompt,
+                    layer1Prompt = matrixPrompt,
                     // v3.20.0: 会话 ID 恢复透传 (x-opencode-session 官方强制)
                     conversationId = conversationId,
                 )
@@ -792,27 +808,34 @@ class GenerationHandler(
                             // 因此自持。四道门全走 error 通路 (进既有失败聚合计数):
                             // ① 空/占位内容 ② 序号越界 ③ 已宣告终结仍续调 ④ 同参重复
                             // v3.11.24: args 顶层必为 JsonObject 才可抽样校验
-                            // v4.7.12: 管理三件套意图门控 — 用户实证: GLM 在普通任务中持续
-                            // 误用 move_tool_to_zone (把搜索工具"移到搜索区"以为这样才
-                            // 可用, 连续多轮复现); 报错尾注教育 (v4.7.10) 与防吸引导均无效 —
-                            // 只有物理拦截能打断。机制: 检查对话中用户消息是否包含管理意图
-                            // 关键词; 不含则拒绝执行并返回引导 (错误进既有失败聚合, 叠加防吸)。
-                            // (v3.11.24 思考工具协议校验段随序列思考工具彻底删除 — v4.7.12)
-                            val manageGateTools = setOf("move_tool_to_zone", "manage_zone", "manage_mcp_servers")
+                            // v4.8.84: 门控判据重写 —— 旧版关键词表过窄，"把搜索区的备注改成X"
+                            // 这种明确指令也会被拦（现场 bug）。新判据 = 意图关键词 ∪ 命中某个
+                            // 工具区名/显示名 ∪ 命中某个工具名(≥6 字符，避免短词误命中)。
+                            // 只有三者全不沾才拦截 —— 既不误伤合法请求，又能打断无关任务里的误用循环。
+                            val manageGateTools = setOf("manage_zone", "manage_mcp_servers")
                             if (tool.toolName in manageGateTools) {
                                 val userText = messages.filter { it.role == MessageRole.USER }
                                     .flatMap { msg -> msg.parts }
                                     .filterIsInstance<UIMessagePart.Text>()
                                     .joinToString(" ") { p -> p.text }
-                                val hasManageIntent = listOf(
-                                    "域", "工具区", "工具矩阵", "管理", "移动", "移到", "挪", "整理", "归类", "挂载",
-                                    "分组", "子域", "子区", "MCP", "mcp", "连接", "插件", "安装", "技能", "skill",
-                                ).any { kw -> userText.contains(kw, ignoreCase = true) }
+                                val intentKeywords = listOf(
+                                    "管理", "新建", "创建", "添加", "增加", "删除", "删掉", "去掉", "移除",
+                                    "移动", "移到", "放到", "挪", "整理", "归类", "归入", "挂载", "分组",
+                                    "修改", "改成", "改为", "改名", "重命名", "备注", "描述", "触发", "关键词",
+                                    "矩阵", "工具区", "子区", "区域", "分区", "顶层", "归属",
+                                    "MCP", "mcp", "连接", "插件", "安装", "技能", "skill",
+                                )
+                                val zoneNameHit = settingsStore.settingsFlow.value.toolZones.any { z ->
+                                    listOf(z.id, z.shortName, z.displayName).any { n -> n.isNotBlank() && userText.contains(n) }
+                                }
+                                val toolNameHit = allDomainTools.any { t -> t.name.length >= 6 && userText.contains(t.name) }
+                                val hasManageIntent = zoneNameHit || toolNameHit ||
+                                    intentKeywords.any { kw -> userText.contains(kw, ignoreCase = true) }
                                 if (!hasManageIntent) {
-                                    error("Error: 已拦截 — 本工具 (${tool.toolName}) 仅响应用户明确的管理指令" +
-                                        " (例如\"把某工具移到某工具区\"\"连接某MCP服务器\"), 当前对话中用户没有此类指令。" +
+                                    error("Error: 已拦截 — 本工具 (${tool.toolName}) 仅响应用户明确的工具矩阵管理指令" +
+                                        " (例如\"把某工具归入某区\"\"改一下某区的备注\"\"连接某MCP服务器\"), 当前对话中用户没有此类指令。" +
                                         "如果你只是想使用某个工具 (如搜索/查询), 直接调用它即可 — " +
-                                        "所有已加载工具都可以直接调用, 无需移动或注册。请回到用户的原始任务继续。")
+                                        "所有工具都可以直接调用, 无需移动或注册。请回到用户的原始任务继续。")
                                 }
                             }
                             // v3.11.24 (F2): 同工具累计连调预算 — 成功空转同属退化

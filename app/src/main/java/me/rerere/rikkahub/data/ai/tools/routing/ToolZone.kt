@@ -24,7 +24,7 @@ data class ToolZone(
     val title: String = "",
     /** 触发描述 —— 功能解释（自然语言），呈现给模型。 */
     val description: String = "",
-    /** 触发条件 —— 关键词（可被 search_zones 反查，也用于自动归类）。 */
+    /** 触发条件 —— 关键词（用于自动归类，也可被 `invoke_tools(关键词)` 反查）。 */
     val keywords: List<String> = emptyList(),
 )
 
@@ -166,19 +166,28 @@ val DEFAULT_TOOL_ZONES: List<ToolZone> = listOf(
     // 12. 系统（工具矩阵自身的元工具）
     ToolZone(
         "系统", "系统", "内部系统工具（仅用户明确要求管理工具区/MCP/插件时使用）", listOf(
-            "manage_zone", "manage_mcp_servers", "list_zones", "move_tool", "clawhub", "plugin_install",
+            "manage_zone", "manage_mcp_servers", "invoke_tools", "clawhub", "plugin_install",
         )
     ),
 )
 
-/** 出厂顶层工具集（始终注入请求体、不参与工具区归类的工具）—— 用户可增（提升）可减（降级）。 */
+/**
+ * 工具矩阵核心件 —— 永远留在顶层，不可移出（移出 = 整个矩阵失联，模型再也加载不到任何工具区）。
+ * 这是结构性不变式：即使配置被写坏，[me.rerere.rikkahub.data.ai.tools.topLevelToolSetOf] 也会兜回来。
+ */
+val CORE_MATRIX_TOOLS: Set<String> = setOf("invoke_tools", "manage_zone")
+
+/**
+ * 出厂顶层工具集（始终注入请求体、不参与工具区归类的工具）。
+ * v4.8.84: 工具矩阵自身只保留两个入口 —— `invoke_tools`（加载/反查）与 `manage_zone`（管理）。
+ * 旧的 search_zones / list_zones / move_tool_to_zone 三件套已合并进去（顶层工具越少 = 每轮请求越省）。
+ */
 val DEFAULT_TOP_LEVEL_TOOLS: Set<String> = setOf(
     "invoke_tools",
-    "search_zones",
+    "manage_zone",
     "workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file", "workspace_show_file",
     "workspace_job",
     "workspace_grep", "workspace_glob",
-    "manage_zone", "list_zones", "move_tool_to_zone",
     "manage_mcp_servers", "plugin_install",
     "read_image",
     "task_tool",
