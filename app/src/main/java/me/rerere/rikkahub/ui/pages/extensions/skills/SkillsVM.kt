@@ -125,6 +125,15 @@ class SkillsVM(
         }
     }
 
+    /** v4.8.81: 一键清空 — 删除全部自建技能 (只读源保留), 回调删除数。 */
+    fun deleteAllSkills(onDone: (Int) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val count = skillManager.deleteAllSkills()
+            _skills.value = skillManager.listSkills()
+            withContext(Dispatchers.Main) { onDone(count) }
+        }
+    }
+
     fun getSkillsDir() = skillManager.getSkillsDir()
 
     fun importSkillFromFile(context: Context, uri: Uri, onResult: (Boolean, String) -> Unit) {

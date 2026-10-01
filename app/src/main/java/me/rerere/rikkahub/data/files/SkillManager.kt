@@ -174,6 +174,36 @@ class SkillManager(
     }
 
     /**
+     * v4.8.81: 一键清空 — 删除主技能目录下全部技能 (额外只读源 dsh__/plugin__ 保留)。
+     * 复用单删语义: 删除后清理 enabledSkills (pruneOrphanedEnabledSkills — 只读源
+     * 仍在盘上故保留其名) 与 toolDomainOverrides 孤儿条目。返回删除技能数。
+     */
+    suspend fun deleteAllSkills(): Int = withContext(Dispatchers.IO) {
+        invalidateSkillsCache()
+        val skillsDir = getSkillsDir()
+        val dirs = skillsDir.listFiles()?.filter { it.isDirectory } ?: emptyList()
+        val skillDirs = dirs.filter { it.resolve("SKILL.md").exists() }.toSet()
+        var deleted = 0
+        for (dir in dirs) {
+            if (dir.deleteRecursively() && dir in skillDirs) deleted++
+        }
+        // 孤儿清理: 全清后主源技能名全部失效; 只读源仍在盘上, 由 prune 保留
+        pruneOrphanedEnabledSkills()
+        // toolDomainOverrides: 清除 skill: 前缀且已不在盘上的挂载条目
+        val existing = listSkills().mapTo(HashSet()) { it.name }
+        settingsStore.update { settings ->
+            val cleaned = settings.toolDomainOverrides.filterKeys { key ->
+                if (!key.startsWith("skill:")) true
+                else key.removePrefix("skill:") in existing
+            }
+            if (cleaned.size != settings.toolDomainOverrides.size) {
+                settings.copy(toolDomainOverrides = cleaned)
+            } else settings
+        }
+        deleted
+    }
+
+    /**
      * 清理所有助手 enabledSkills 中已不存在于磁盘的技能名。
      *
      * 当用户在 App 外直接删除 /skills/ 目录下的技能时，不会走 [deleteSkill] 的清理逻辑，

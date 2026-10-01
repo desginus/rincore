@@ -59,6 +59,7 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Download01
+import me.rerere.hugeicons.stroke.Eraser
 import me.rerere.hugeicons.stroke.FileImport
 import me.rerere.hugeicons.stroke.MoreVertical
 import me.rerere.hugeicons.stroke.Puzzle
@@ -90,6 +91,8 @@ fun SkillsPage() {
     var showAddDialog by rememberSaveable { mutableStateOf(false) }
     var showImportDialog by rememberSaveable { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<SkillMetadata?>(null) }
+    // v4.8.81: 一键清空确认
+    var showClearAllDialog by remember { mutableStateOf(false) }
     // v3.6.104: 技能搜索 — 快速查询特定 Skill
     var searchQuery by rememberSaveable { mutableStateOf("") }
     val filteredSkills = remember(skills, searchQuery) {
@@ -115,6 +118,12 @@ fun SkillsPage() {
             LargeFlexibleTopAppBar(
                 title = { Text(stringResource(R.string.skills_page_title)) },
                 navigationIcon = { BackButton() },
+                actions = {
+                    // v4.8.81: 一键清空 (右上角) — 删除全部自建技能, 只读源保留
+                    IconButton(onClick = { showClearAllDialog = true }) {
+                        Icon(HugeIcons.Eraser, contentDescription = "清空全部技能")
+                    }
+                },
                 scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
             )
@@ -265,6 +274,23 @@ fun SkillsPage() {
         onDismiss = { deleteTarget = null },
     ) {
         Text(stringResource(R.string.skills_page_delete_message, deleteTarget?.name ?: ""))
+    }
+
+    // v4.8.81: 一键清空 — 删除全部自建技能 (内置/只读源技能保留)
+    RikkaConfirmDialog(
+        show = showClearAllDialog,
+        title = "清空全部技能",
+        confirmText = stringResource(R.string.delete),
+        dismissText = stringResource(R.string.cancel),
+        onConfirm = {
+            showClearAllDialog = false
+            vm.deleteAllSkills { count ->
+                toaster.show(if (count > 0) "已清空 $count 个技能" else "没有可清空的技能")
+            }
+        },
+        onDismiss = { showClearAllDialog = false },
+    ) {
+        Text("将删除全部自建技能（内置/只读源技能保留），此操作不可恢复。")
     }
 }
 

@@ -89,6 +89,7 @@ import me.rerere.hugeicons.stroke.AlertCircle
 import me.rerere.hugeicons.stroke.ArrowDown01
 import me.rerere.hugeicons.stroke.ArrowUp01
 import me.rerere.hugeicons.stroke.Delete01
+import me.rerere.hugeicons.stroke.Eraser
 import me.rerere.hugeicons.stroke.FileImport
 import me.rerere.hugeicons.stroke.McpServer
 import me.rerere.hugeicons.stroke.MessageBlocked
@@ -142,6 +143,8 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
             ))
     }
     var showImportDialog by remember { mutableStateOf(false) }
+    // v4.8.81: 一键清空确认
+    var showClearAllConfirm by remember { mutableStateOf(false) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(
         topBar = {
@@ -153,6 +156,14 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                     BackButton()
                 },
                 actions = {
+                    // v4.8.81: 一键清空 (导入左侧) — 删除全部 MCP 服务器配置
+                    // (settings 流驱动 reconcile, 移除即自动断开连接)
+                    IconButton(
+                        onClick = { showClearAllConfirm = true },
+                        enabled = mcpConfigs.isNotEmpty(),
+                    ) {
+                        Icon(HugeIcons.Eraser, contentDescription = "清空全部 MCP 服务器")
+                    }
                     IconButton(
                         onClick = {
                             showImportDialog = true
@@ -247,6 +258,21 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                 showImportDialog = false
             }
         )
+    }
+
+    // v4.8.81: 一键清空 — 删除全部 MCP 服务器配置
+    RikkaConfirmDialog(
+        show = showClearAllConfirm,
+        title = "清空全部 MCP 服务器",
+        confirmText = stringResource(R.string.delete),
+        dismissText = stringResource(R.string.cancel),
+        onConfirm = {
+            showClearAllConfirm = false
+            vm.updateSettings(settings.copy(mcpServers = emptyList()))
+        },
+        onDismiss = { showClearAllConfirm = false },
+    ) {
+        Text("将删除全部 ${mcpConfigs.size} 个 MCP 服务器配置，此操作不可恢复。")
     }
 }
 
