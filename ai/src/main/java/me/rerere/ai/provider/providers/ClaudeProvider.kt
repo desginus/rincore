@@ -39,6 +39,7 @@ import me.rerere.ai.provider.resolveProxy
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.TokenUsage
+import me.rerere.ai.core.effectiveParameters
 import me.rerere.ai.provider.ClaudePromptCacheTtl
 import me.rerere.ai.provider.ImageGenerationParams
 import me.rerere.ai.provider.Model
@@ -629,7 +630,7 @@ class ClaudeProvider(
                         add(buildJsonObject {
                             put("name", tool.name)
                             put("description", tool.description)
-                            put("input_schema", json.encodeToJsonElement(tool.parameters()))
+                            put("input_schema", json.encodeToJsonElement(tool.effectiveParameters()))
                         })
                     }
                 }

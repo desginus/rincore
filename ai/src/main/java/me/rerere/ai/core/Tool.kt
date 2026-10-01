@@ -29,5 +29,16 @@ sealed class InputSchema {
     data class Obj(
         val properties: JsonObject,
         val required: List<String>? = null,
+        // v4.8.80: MCP 原始 schema 透传 — $defs/$schema 关键字。
+        // 修复悬空 $ref: 旧转换丢弃 $defs, 出站 schema 的 "$ref": "#/$defs/X"
+        // 指向不存在目标 → 严格网关 400 "Pointer '/$defs/X' does not exist"。
+        @SerialName("\$defs") val defs: JsonObject? = null,
+        @SerialName("\$schema") val schema: String? = null,
     ) : InputSchema()
 }
+
+/** v4.8.80: 出站 schema 兜底 — parameters 缺省 (null) 时给最小合法对象 schema;
+ *  修复严格网关 zod 校验 "Invalid input: expected record, received null"
+ *  (此前默认 lambda { null } 的工具直接把 "parameters": null 发出去)。 */
+fun Tool.effectiveParameters(): InputSchema =
+    parameters() ?: InputSchema.Obj(properties = JsonObject(emptyMap()))

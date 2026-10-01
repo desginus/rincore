@@ -38,6 +38,7 @@ import me.rerere.ai.provider.resolveProxy
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.TokenUsage
+import me.rerere.ai.core.effectiveParameters
 import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
@@ -473,7 +474,7 @@ class GoogleProvider(
                                     put("description", JsonPrimitive(tool.description))
                                     put(
                                         key = "parameters",
-                                        element = json.encodeToJsonElement(tool.parameters())
+                                        element = json.encodeToJsonElement(tool.effectiveParameters())
                                             .removeElements(
                                                 listOf(
                                                     "const",
