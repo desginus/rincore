@@ -115,13 +115,13 @@ import org.intellij.markdown.flavours.gfm.GFMTokenTypes
 import org.intellij.markdown.parser.MarkdownParser
 import kotlin.time.Clock
 
-private val flavour by lazy {
+internal val flavour by lazy {
     GFMFlavourDescriptor(
         makeHttpsAutoLinks = true, useSafeLinks = true
     )
 }
 
-private val parser by lazy {
+internal val parser by lazy {
     MarkdownParser(flavour)
 }
 
@@ -143,8 +143,9 @@ private val MATH_RESTORE_REGEX = Regex("\\u0000MATH(\\d+)\\u0000")
 // 复制仍可见。`_em_` 类正常强调 (下划线外侧为空白/标点) 不受影响。
 private val INTRAWORD_UNDERSCORE_REGEX = Regex("(?<=[A-Za-z0-9])_(?=[A-Za-z0-9])")
 
-// 预处理markdown内容
-private fun preProcess(content: String): String {
+// v4.8.86: preProcess / flavour / parser 提升为 internal —— 它们是**两条渲染路径的唯一实现**
+// (MarkdownNew.kt 里那份副本已删除; 副本此前还漂移过: 内部没用自己声明的预编译正则)。
+internal fun preProcess(content: String): String {
     // 先找出所有代码块的位置
     val codeBlocks = mutableListOf<IntRange>()
     CODE_BLOCK_REGEX.findAll(content).forEach { match ->
@@ -277,46 +278,33 @@ internal data class MarkdownParseResult(
  * (v4.8.42 状态); 预热机制不再恢复 — 缓存独立生效, 无进入时后台风暴。
  */
 /**
- * v4.8.70: 增量切分状态 (per MarkdownBlock 实例持有, remember 生命周期) —
- * 只扫新增完整行; 已定稿块结果直接携带 (零重扫零重查)。
+ * v4.8.86: 增量切分状态 (per MarkdownBlock 实例持有, remember 生命周期)。
+ * 与 HTML 路径**共用** [BlockScanner]（块边界规则的唯一定义处）。
+ * prefix = 超过块数上限时零解析并入的早期块（旧实现在此处回退全量解析 → 长消息每 tick 全量重解析）。
  */
 internal class SplitState {
-    var lastContent: String? = null
-    var consumed: Int = 0
-    var blockStart: Int = 0
-    var fenceOpen = false
-    var fenceChar = ' '
+    val scanner = BlockScanner()
     val finalized = ArrayList<MarkdownParseResult>()
+    val prefix = ArrayList<MarkdownParseResult>()
 }
 
 private object MarkdownParseCache {
-    // 整段缓存 (settled 首帧/回访零解析; 容量沿用 256/128k)
-    private const val MAX_WHOLE_ENTRIES = 256
-    private const val MAX_WHOLE_KEY_CHARS = 128 * 1024
-    private val wholeCache = object : LinkedHashMap<String, MarkdownParseResult>(64, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MarkdownParseResult>?): Boolean =
-            size > MAX_WHOLE_ENTRIES
-    }
-
-    // 块级缓存 (流式尾部工作的载体; 块远小于整段, 容量放大)
-    private const val MAX_BLOCK_ENTRIES = 2048
-    private const val MAX_BLOCK_KEY_CHARS = 64 * 1024
+    // v4.8.86: 缓存改为**字符预算**淘汰。
+    // 旧实现按条数 (整段 256 条 / 块 2048 条) 且单键上限 128K/64K —— 理论上可堆积
+    // 数十兆的 AST 与预处理串, 长会话下是 GC 抖动的来源。预算按"键长"计, 因为
+    // AST 结果的内存主项就是它引用的那份预处理串; 单条超预算一半直接不收。
+    private const val WHOLE_BUDGET_CHARS = 1_000_000
+    private const val BLOCK_BUDGET_CHARS = 1_500_000
+    private const val MAX_SINGLE_KEY_CHARS = 200_000
     private const val MAX_SPLIT_BLOCKS = 512
-    private val blockCache = object : LinkedHashMap<String, MarkdownParseResult>(256, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MarkdownParseResult>?): Boolean =
-            size > MAX_BLOCK_ENTRIES
-    }
 
-    internal fun getWhole(key: String): MarkdownParseResult? = synchronized(wholeCache) { wholeCache[key] }
-    internal fun putWhole(key: String, value: MarkdownParseResult) {
-        if (key.length > MAX_WHOLE_KEY_CHARS) return
-        synchronized(wholeCache) { wholeCache[key] = value }
-    }
-    internal fun getBlock(key: String): MarkdownParseResult? = synchronized(blockCache) { blockCache[key] }
-    internal fun putBlock(key: String, value: MarkdownParseResult) {
-        if (key.length > MAX_BLOCK_KEY_CHARS) return
-        synchronized(blockCache) { blockCache[key] = value }
-    }
+    private val wholeCache = TextBudgetLru<MarkdownParseResult>(WHOLE_BUDGET_CHARS)
+    private val blockCache = TextBudgetLru<MarkdownParseResult>(BLOCK_BUDGET_CHARS)
+
+    internal fun getWhole(key: String): MarkdownParseResult? = wholeCache.get(key)
+    internal fun putWhole(key: String, value: MarkdownParseResult) = wholeCache.put(key, value)
+    internal fun getBlock(key: String): MarkdownParseResult? = blockCache.get(key)
+    internal fun putBlock(key: String, value: MarkdownParseResult) = blockCache.put(key, value)
 
     internal fun newState(): SplitState = SplitState()
 
@@ -324,82 +312,39 @@ private object MarkdownParseCache {
     internal fun parseWithCache(content: String): MarkdownParseResult =
         getWhole(content) ?: parseViaBlocks(content, writeBackAll = true).also { putWhole(content, it) }
 
-    /** 流式 tick (旧形态, 无状态): 整段命中零成本; 未命中走块级管线 — 尾块不写回。 */
-    internal fun parseTransient(content: String): MarkdownParseResult =
-        getWhole(content) ?: parseViaBlocks(content, writeBackAll = false)
-
     /**
-     * v4.8.70: 增量解析 (流式 tick 专用) — 切分状态机, 每 tick 只扫新增完整行 (O(δ)):
-     * 已定稿块直接携带缓存结果 (零重扫零重查, 实例跨 tick 复用 → strong skipping 跳过);
-     * 仅未定稿尾块现场解析 (不写回)。内容非追加 (startsWith 失败) 时全量重建。
-     * 60x 目标载体: 每 tick 成本 = O(新增) + O(尾块), 与全文长度解耦。
+     * v4.8.86: 增量解析（流式 tick 专用）—— 扫描器只扫新增完整行 (O(δ)):
+     *  · 已定稿块直接携带缓存结果（零重扫零重查, 节点实例跨 tick 复用 → strong skipping 跳过重组）;
+     *  · 仅未定稿尾块现场解析（不写回, 不污染缓存）;
+     *  · **块数超上限不再回退全量解析** —— 旧实现在此处 reset + parseFull(全文), 于是
+     *    长消息一旦越过阈值就变成"每一分片全量重解析"(preProcess 8 趟正则 + 全量 AST),
+     *    这正是"上下文长了以后输出忽然变慢"的主因; 现改为把最早的若干块**零解析并入前缀槽**。
+     * 内容非追加 (编辑/重新生成) 时扫描器自动从头重扫。
      */
     internal fun parseTransient(content: String, state: SplitState): MarkdownParseResult {
-        val prev = state.lastContent
-        val appendOnly = prev != null && content.length >= prev.length && content.startsWith(prev)
-        if (!appendOnly) {
-            state.lastContent = null
-            state.finalized.clear()
-            state.consumed = 0
-            state.blockStart = 0
-            state.fenceOpen = false
-            state.fenceChar = ' '
+        for (range in state.scanner.advance(content)) {
+            val blockText = content.substring(range.first, range.last + 1).trimEnd('\r', '\n')
+            if (blockText.isEmpty()) continue
+            state.finalized.add(getBlock(blockText) ?: parseFull(blockText).also { putBlock(blockText, it) })
         }
-        var pos = state.consumed
-        val len = content.length
-        while (pos < len) {
-            val nl = content.indexOf('\n', pos)
-            if (nl < 0) break // 末尾不完整行: 留待下次 (fence 判定只在完整行上做一次)
-            val lineStart = pos
-            val line = content.substring(lineStart, nl)
-            pos = nl + 1
-            val trimmed = line.trim()
-            val fenceDelim = when {
-                trimmed.startsWith("```") -> '`'
-                trimmed.startsWith("~~~") -> '~'
-                trimmed == "$$" -> '$'
-                trimmed == "\\[" -> '['
-                trimmed == "\\]" -> ']'
-                else -> null
-            }
-            if (fenceDelim != null) {
-                when (fenceDelim) {
-                    '[' -> if (!state.fenceOpen) { state.fenceOpen = true; state.fenceChar = '[' }
-                    ']' -> if (state.fenceOpen && state.fenceChar == '[') state.fenceOpen = false
-                    else -> if (!state.fenceOpen) {
-                        state.fenceOpen = true
-                        state.fenceChar = fenceDelim
-                    } else if (state.fenceChar == fenceDelim) {
-                        state.fenceOpen = false
-                    }
-                }
-            }
-            if (!state.fenceOpen && trimmed.isEmpty()) {
-                if (lineStart > state.blockStart) {
-                    val blockText = content.substring(state.blockStart, lineStart).trimEnd('\r', '\n')
-                    if (blockText.isNotEmpty()) {
-                        val r = getBlock(blockText) ?: parseFull(blockText).also { putBlock(blockText, it) }
-                        state.finalized.add(r)
-                    }
-                }
-                state.blockStart = pos
-            }
-        }
-        state.consumed = pos
-        state.lastContent = content
         if (state.finalized.size > MAX_SPLIT_BLOCKS) {
-            state.lastContent = null
-            state.finalized.clear()
-            return parseFull(content)
+            val mergeCount = state.finalized.size - MAX_SPLIT_BLOCKS / 2
+            state.prefix.addAll(state.finalized.subList(0, mergeCount))
+            state.finalized.subList(0, mergeCount).clear()
         }
-        val out = ArrayList<MarkdownNodeSource>(state.finalized.size * 2 + 2)
+        val out = ArrayList<MarkdownNodeSource>(state.prefix.size + state.finalized.size * 2 + 2)
         var hasHtml = false
+        for (r in state.prefix) {
+            out.addAll(r.blocks)
+            hasHtml = hasHtml || r.hasHtml
+        }
         for (r in state.finalized) {
             out.addAll(r.blocks)
             hasHtml = hasHtml || r.hasHtml
         }
-        if (state.blockStart < content.length) {
-            val tailBlock = content.substring(state.blockStart).trimEnd('\r', '\n')
+        val tailStart = state.scanner.blockStart
+        if (tailStart < content.length) {
+            val tailBlock = content.substring(tailStart).trimEnd('\r', '\n')
             if (tailBlock.isNotEmpty()) {
                 val r = parseFull(tailBlock)
                 out.addAll(r.blocks)
@@ -410,10 +355,11 @@ private object MarkdownParseCache {
         return MarkdownParseResult(out, hasHtml)
     }
 
+
     /** v4.8.50: 未命中才解析 (预热专用; 命中零成本跳过)。 */
     fun warmIfAbsent(content: String) {
-        if (content.length > MAX_WHOLE_KEY_CHARS) return
-        if (synchronized(wholeCache) { wholeCache.containsKey(content) }) return
+        if (content.length > MAX_SINGLE_KEY_CHARS) return
+        if (getWhole(content) != null) return
         putWhole(content, parseViaBlocks(content, writeBackAll = true))
     }
 
@@ -445,47 +391,23 @@ private object MarkdownParseCache {
 }
 
 /**
- * v4.8.68: 按顶层块边界 (空行) 切分。fence (```/~~~)、行式数学块 ($$) 与
- * LaTeX 块 (\[ / \]) 内部不切分; 连续空行并入边界。
+ * v4.8.86: 按顶层块边界切分 —— 边界规则与增量扫描**共用** [BlockScanner]（唯一定义处）。
+ * 旧实现自带一份围栏判定（与扫描器那份重复），加上 MarkdownNew 的副本，同一规则曾有三份。
  * 流式追加时已完成块内容串逐字稳定 → 块级缓存恒定命中。
  */
 private fun splitMarkdownBlocks(text: String): List<String> {
     if (text.isEmpty()) return emptyList()
-    val blocks = ArrayList<String>()
-    val current = StringBuilder()
-    var fenceOpen = false
-    var fenceChar = ' '
-    fun flush() {
-        if (current.isNotEmpty()) {
-            blocks.add(current.toString().trimEnd('\r', '\n'))
-            current.setLength(0)
-        }
+    val scanner = BlockScanner()
+    val ranges = scanner.advance(text)
+    val blocks = ArrayList<String>(ranges.size + 1)
+    for (r in ranges) {
+        val b = text.substring(r.first, r.last + 1).trimEnd('\r', '\n')
+        if (b.isNotEmpty()) blocks.add(b)
     }
-    for (line in text.split('\n')) {
-        val trimmed = line.trim()
-        val fenceDelim = when {
-            trimmed.startsWith("```") -> '`'
-            trimmed.startsWith("~~~") -> '~'
-            trimmed == "$$" -> '$'
-            trimmed == "\\[" -> '['
-            trimmed == "\\]" -> ']'
-            else -> null
-        }
-        if (fenceDelim != null) {
-            when (fenceDelim) {
-                '[' -> if (!fenceOpen) { fenceOpen = true; fenceChar = '[' }
-                ']' -> if (fenceOpen && fenceChar == '[') fenceOpen = false
-                else -> if (!fenceOpen) {
-                    fenceOpen = true
-                    fenceChar = fenceDelim
-                } else if (fenceChar == fenceDelim) {
-                    fenceOpen = false
-                }
-            }
-        }
-        if (!fenceOpen && line.isBlank()) flush() else current.append(line).append('\n')
+    if (scanner.blockStart < text.length) {
+        val tail = text.substring(scanner.blockStart).trimEnd('\r', '\n')
+        if (tail.isNotEmpty()) blocks.add(tail)
     }
-    flush()
     return blocks
 }
 

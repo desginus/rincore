@@ -88,111 +88,6 @@ import org.jsoup.nodes.TextNode
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
-// ---- Preprocessing (mirrors Markdown.kt logic) ----
-
-private val INLINE_LATEX_REGEX = Regex("\\\\\\((.+?)\\\\\\)")
-private val BLOCK_LATEX_REGEX = Regex("\\\\\\[(.+?)\\\\\\]", RegexOption.DOT_MATCHES_ALL)
-private val CODE_BLOCK_REGEX = Regex("```[\\s\\S]*?```|`[^`\n]*`", RegexOption.DOT_MATCHES_ALL)
-// v4.8.17: 预编译 + 与 Markdown.kt 全链对齐 (原为 preProcess 内现场 Regex 构造;
-// 同包同名常量因文件级 private 作用域不可跨文件复用, 此文件独立定义)
-private val MATH_SEG_REGEX = Regex("\\$\\$[\\s\\S]*?\\$\\$|\\$[^$\\n]*\\$")
-private val SINGLE_TILDE_REGEX = Regex("(?<!~)~(?!~)")
-private val MATH_RESTORE_REGEX = Regex("\\u0000MATH(\\d+)\\u0000")
-private val INTRAWORD_UNDERSCORE_REGEX = Regex("(?<=[A-Za-z0-9])_(?=[A-Za-z0-9])")
-
-private fun preProcess(content: String): String {
-    val codeBlocks = mutableListOf<IntRange>()
-    CODE_BLOCK_REGEX.findAll(content).forEach { codeBlocks.add(it.range) }
-    fun isInCodeBlock(pos: Int) = codeBlocks.any { pos in it }
-
-    var result = INLINE_LATEX_REGEX.replace(content) { m ->
-        if (isInCodeBlock(m.range.first)) m.value else "$" + m.groupValues[1] + "$"
-    }
-    result = BLOCK_LATEX_REGEX.replace(result) { m ->
-        if (isInCodeBlock(m.range.first)) m.value else "$$" + m.groupValues[1] + "$$"
-    }
-    
-    // v4.5.11: 单波浪号改用字符替换而非转义 — ①fork 解析器对 \~ 转义支持
-    // 不可靠, 转义后仍可能被当删除线渲染 (贯穿线); ②公式内 ~ 会被破坏
-    // (\~ 是 LaTeX 重音符), jlatexmath 失败后公式回退纯文本显示。
-    // 替换为 Unicode 近似号 ∼ (U+223C): 不触发删除线; 文本语境 (~30%)
-    // 显示波浪号本身; ~~text~~ 双波浪删除线保留; 代码块内原样。
-    // v4.5.14: 公式段区分 — 公式语境统一转 LaTeX 标准命令 \sim
-    // (jlatexmath 对 Unicode ∼ 的支持未验证, \sim 是核心符号必支持),
-    // 文本语境保持 ∼ 字符; 代码块内 $ 段不占位 (isInCodeBlock 原样)。
-    val mathSegRegex = Regex("\\$\\$[\\s\\S]*?\\$\\$|\\$[^$\\n]*\\$")
-    val mathSegs = mutableListOf<String>()
-    val withMathPlaceholder = mathSegRegex.replace(result) { m ->
-        if (isInCodeBlock(m.range.first)) m.value
-        else {
-            mathSegs.add(m.value)
-            "\u0000MATH${mathSegs.size - 1}\u0000"
-        }
-    }
-    val textDone = SINGLE_TILDE_REGEX.replace(withMathPlaceholder) { m ->
-        if (isInCodeBlock(m.range.first)) m.value else "\u223C"
-    }
-    // v4.8.17: 词内下划线 → 全角下划线 (与 Markdown.kt 同款修复)
-    val underscoreDone = INTRAWORD_UNDERSCORE_REGEX.replace(textDone) { m ->
-        if (isInCodeBlock(m.range.first)) m.value else "＿"
-    }
-    result = MATH_RESTORE_REGEX.replace(underscoreDone) { m ->
-        mathSegs[m.groupValues[1].toInt()].replace(SINGLE_TILDE_REGEX, "\\sim")
-    }
-
-    return result
-}
-
-// ---- HTML generation ----
-
-private val flavour by lazy {
-    GFMFlavourDescriptor(makeHttpsAutoLinks = true, useSafeLinks = true)
-}
-
-private val parser by lazy { MarkdownParser(flavour) }
-
-private fun generateMarkdownHtml(content: String): String {
-    val preprocessed = preProcess(content)
-    val tree = parser.buildMarkdownTreeFromString(preprocessed)
-    return HtmlGenerator(preprocessed, tree, flavour).generateHtml()
-}
-
-/**
- * v4.8.51: HTML/文档记忆化 — 纯函数记忆化, 行为零变化。
- * store=true 仅用于"首次进入组合"路径 (每项生命周期一次); 内容变化路径
- * (流式中间态) 只读不写, 不污染缓存。文档缓存限 32 条且仅收 ≤200K html。
- */
-private object MarkdownHtmlMemo {
-    private const val MAX_HTML = 64
-    private const val MAX_DOC = 32
-    private const val MAX_DOC_HTML_CHARS = 200_000
-    private val htmlCache = object : LinkedHashMap<String, String>(16, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?): Boolean =
-            size > MAX_HTML
-    }
-    private val docCache =
-        object : LinkedHashMap<String, org.jsoup.nodes.Document>(16, 0.75f, true) {
-            override fun removeEldestEntry(
-                eldest: MutableMap.MutableEntry<String, org.jsoup.nodes.Document>?
-            ): Boolean =
-                size > MAX_DOC
-        }
-
-    fun documentFor(content: String, store: Boolean): org.jsoup.nodes.Document {
-        synchronized(docCache) { docCache[content] }?.let { return it }
-        val html = synchronized(htmlCache) { htmlCache[content] }
-            ?: runCatching { generateMarkdownHtml(content) }.getOrElse { "" }
-        val doc = runCatching { Jsoup.parse(html) }.getOrElse { Jsoup.parse("") }
-        if (store && html.isNotEmpty()) {
-            synchronized(htmlCache) { htmlCache[content] = html }
-            if (html.length <= MAX_DOC_HTML_CHARS) {
-                synchronized(docCache) { docCache[content] = doc }
-            }
-        }
-        return doc
-    }
-}
-
 // ---- Main composable ----
 
 @Composable
@@ -202,27 +97,27 @@ fun MarkdownNew(
     style: TextStyle = LocalTextStyle.current,
     onClickCitation: (String) -> Unit = {},
 ) {
-    // v4.8.21 性能: Jsoup.parse 从主线程移入后台流 — 原实现 remember(html) 内
-    // 每 50ms 在**主线程**全量解析 HTML (流式期间主线程持续负载大头)。现与
-    // HTML 生成同在 Dispatchers.Default 完成; 首帧同步保留 (原版形态: 首帧即
-    // 终态无过渡感, v4.7.26 教训 — 不引入占位/异步替换)。
-    var document by remember {
-        mutableStateOf(MarkdownHtmlMemo.documentFor(content, store = true))
-    }
+    // v4.8.86 重构: 解析从"每 tick 整段重解析"改为**增量文档**（MarkdownStream.HtmlStreamRenderer）。
+    // 旧实现每次内容变化都跑 preProcess + 全量 AST + HtmlGenerator + Jsoup.parse（O(全文)），
+    // 外加主线程整棵 DOM 重建 —— 长消息每写一个字付一次全额成本，"输出忽然变慢"的主因之一。
+    // 现每 tick 只解析尾块；定稿块解析一次后节点实例跨 tick 稳定 → Compose strong skipping 跳过重组。
+    // 调度形态完全不变（首帧同步 + 之后 Dispatchers.Default/mapLatest）：不改变"何时上屏"。
+    val renderer = remember { HtmlStreamRenderer() }
+    var nodes by remember { mutableStateOf(renderer.nodes(content)) }
 
     val updatedContent by rememberUpdatedState(content)
     LaunchedEffect(Unit) {
         snapshotFlow { updatedContent }
             .distinctUntilChanged()
-            .mapLatest { MarkdownHtmlMemo.documentFor(it, store = false) }
+            .mapLatest { renderer.nodes(it) }
             .catch { it.printStackTrace() }
             .flowOn(Dispatchers.Default)
-            .collect { document = it }
+            .collect { nodes = it }
     }
 
     ProvideTextStyle(style) {
         Column(modifier = modifier.padding(start = 4.dp)) {
-            document.body().childNodes().fastForEach { node ->
+            nodes.fastForEach { node ->
                 HtmlBodyNode(node = node, onClickCitation = onClickCitation)
             }
         }
