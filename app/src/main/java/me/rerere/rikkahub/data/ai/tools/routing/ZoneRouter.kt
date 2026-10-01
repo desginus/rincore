@@ -125,14 +125,20 @@ class ZoneRouter(
     private fun keywordZone(text: String): String? = tree.allIds
         .mapNotNull { tree.get(it) }
         .filter { it.keywords.isNotEmpty() }
-        .sortedByDescending { id ->
-            var depth = 0
-            var cur = tree.get(id)?.parentId
-            while (cur != null && depth < 64) { depth++; cur = tree.get(cur)?.parentId }
-            depth
-        }
+        .sortedByDescending { zone -> depthOf(zone.id) }
         .firstOrNull { z -> z.keywords.any { kw -> kw.isNotBlank() && text.contains(kw.lowercase()) } }
         ?.id
+
+    /** 层级深度（根 = 0）。父链不可达时按当前深度收束，绝不递归爆栈。 */
+    private fun depthOf(id: String): Int {
+        var depth = 0
+        var cur = tree.get(id)?.parentId
+        while (cur != null && depth < 64) {
+            depth++
+            cur = tree.get(cur)?.parentId
+        }
+        return depth
+    }
 
     // ═══════════ 3. 统一视图 — 全部消费方的唯一数据源 ═══════════
 
