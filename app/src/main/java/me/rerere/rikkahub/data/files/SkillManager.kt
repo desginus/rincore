@@ -12,6 +12,7 @@ import android.util.Log
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import me.rerere.rikkahub.data.ai.tools.sanitizeSkillToolName
 import me.rerere.rikkahub.data.datastore.SettingsStore
 
 class SkillManager(
@@ -165,8 +166,10 @@ class SkillManager(
                             assistant
                         }
                     },
-                    // 孤儿清理: skill 删除后, toolZoneLinks 中 skill:名 挂载条目一并清除
-                    toolZoneLinks = settings.toolZoneLinks.filterKeys { it != "skill:$name" }
+                    // 孤儿清理: skill 删除后, toolZoneLinks 中该技能的挂载条目一并清除。
+                    // v4.8.87: 归属键 = **完整工具名** `skill__<净化名>`（与 SkillsTools 同一净化函数），
+                    // 不再用 `skill:<原名>` —— 键不同源曾导致挂载点被误判孤儿删除。
+                    toolZoneLinks = settings.toolZoneLinks.filterKeys { it != sanitizeSkillToolName(name) }
                 )
             }
         }
@@ -189,12 +192,11 @@ class SkillManager(
         }
         // 孤儿清理: 全清后主源技能名全部失效; 只读源仍在盘上, 由 prune 保留
         pruneOrphanedEnabledSkills()
-        // toolZoneLinks: 清除 skill: 前缀且已不在盘上的挂载条目
-        val existing = listSkills().mapTo(HashSet()) { it.name }
+        // toolZoneLinks: 清除技能挂载中已不在盘上的条目（键即完整工具名，同源判定）
+        val existing = listSkills().mapTo(HashSet()) { sanitizeSkillToolName(it.name) }
         settingsStore.update { settings ->
             val cleaned = settings.toolZoneLinks.filterKeys { key ->
-                if (!key.startsWith("skill:")) true
-                else key.removePrefix("skill:") in existing
+                !key.startsWith("skill__") || key in existing
             }
             if (cleaned.size != settings.toolZoneLinks.size) {
                 settings.copy(toolZoneLinks = cleaned)

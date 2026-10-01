@@ -21,7 +21,7 @@ import me.rerere.rikkahub.data.ai.tools.routing.FALLBACK_ZONE_ID
 import me.rerere.rikkahub.data.ai.tools.routing.ToolZone
 import me.rerere.rikkahub.data.ai.tools.routing.ZoneRouter
 import me.rerere.rikkahub.data.ai.tools.routing.restoreDefaultZones
-import me.rerere.rikkahub.data.ai.tools.routing.zonePathOf
+import me.rerere.rikkahub.data.ai.tools.routing.ZoneOps
 import me.rerere.rikkahub.data.ai.tools.topLevelToolSetOf
 import me.rerere.rikkahub.data.ai.tools.zoneRouterOf
 import me.rerere.rikkahub.data.datastore.Settings
@@ -63,6 +63,8 @@ fun SettingZonePage(
     var deleteConfirm by remember { mutableStateOf<String?>(null) }
     var managingSubZones by remember { mutableStateOf<String?>(null) }
     var movingTool by remember { mutableStateOf<String?>(null) }
+    /** 操作回执：与模型侧同源（都来自 ZoneOps）—— 校验失败时如实提示，绝不静默吞掉 */
+    var zoneNotice by remember { mutableStateOf<String?>(null) }
 
     if (showToolList) {
         SettingToolListPage(settings, vm) { showToolList = false }
@@ -175,23 +177,31 @@ fun SettingZonePage(
     // ── 新建 / 新建子区 ──
     if (showNewZone) {
         NewZoneDialog(
-            parent = newZoneParent,
+            parentLabel = newZoneParent?.let { router.label(it) },
             onDismiss = { showNewZone = false },
-            onCreate = { path, title, desc, keywords ->
-                if (settings.toolZones.none { it.id == path }) {
-                    vm.updateSettings(
-                        settings.copy(
-                            toolZones = settings.toolZones + ToolZone(
-                                id = path,
-                                title = title,
-                                description = desc,
-                                keywords = keywords,
-                            )
-                        )
-                    )
-                }
+            onCreate = { zoneName, title, desc, keywords ->
+                val res = ZoneOps.create(
+                    settings,
+                    name = zoneName,
+                    parentId = newZoneParent,
+                    title = title,
+                    description = desc,
+                    keywords = keywords,
+                )
+                if (res.ok) vm.updateSettings(res.settings)
+                zoneNotice = res.message
                 showNewZone = false
             },
+        )
+    }
+
+    // ── 操作回执（与模型侧同一套 ZoneOps 文案） ──
+    zoneNotice?.let { msg ->
+        AlertDialog(
+            onDismissRequest = { zoneNotice = null },
+            title = { Text("工具矩阵") },
+            text = { Text(msg, style = MaterialTheme.typography.bodySmall) },
+            confirmButton = { TextButton(onClick = { zoneNotice = null }) { Text("知道了") } },
         )
     }
 
@@ -202,64 +212,38 @@ fun SettingZonePage(
             zone = zone,
             onDismiss = { editingZone = null },
             onSave = { title, desc, keywords ->
-                vm.updateSettings(
-                    settings.copy(
-                        toolZones = settings.toolZones.map {
-                            if (it.id == id) it.copy(title = title, description = desc, keywords = keywords) else it
-                        }
-                    )
-                )
+                val res = ZoneOps.update(settings, id, title = title, description = desc, keywords = keywords)
+                if (res.ok) vm.updateSettings(res.settings)
+                zoneNotice = res.message
                 editingZone = null
             },
         )
     }
 
-    // ── 删除确认（明确告知影响面 —— 删除真的会删掉） ──
+    // ── 删除确认（规则只有一条：只删这一个区，子区自动上移一级） ──
     deleteConfirm?.let { id ->
         val id2 = router.resolve(id) ?: id
-        val children = settings.toolZones.filter { it.id.startsWith("$id2/") }
-        val linked = settings.toolZoneLinks.count { it.value == id2 || it.value.startsWith("$id2/") }
-        val parentId = id2.substringBeforeLast('/', "")
-        val parentExists = settings.toolZones.any { it.id == parentId }
+        val children = zoneMap.children[id2].orEmpty()
+        val linked = settings.toolZoneLinks.count { it.value == id2 }
         AlertDialog(
             onDismissRequest = { deleteConfirm = null },
             title = { Text("删除工具区") },
             text = {
                 Text(
                     buildString {
-                        append("删除「").append(router.label(id2)).append("」？\n\n")
-                        if (children.isNotEmpty()) append("· 连带删除子区 ${children.size} 个\n")
-                        append("· ")
-                        if (linked > 0) {
-                            append("$linked 个手动归属的工具将")
-                            append(if (parentExists) "迁移到父区（不会被打散）\n" else "交回自动归类\n")
-                        } else {
-                            append("没有手动归属的工具\n")
-                        }
-                        append("· 该区的描述/触发条件一并删除，不可恢复\n\n")
-                        append("（与旧版本不同：这里删了就是真的删了，列表会立刻消失。）")
+                        append("删除「${router.label(id2)}」？\n\n")
+                        append("· 其 ${children.size} 个子区自动上移一级（不连带删除）\n")
+                        append("· 归属到该区的 $linked 个手动挂载交回自动归类\n")
+                        append("· 该区的描述/触发条件一并删除，不可恢复")
                     },
                     style = MaterialTheme.typography.bodySmall,
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
-                    val doomed = setOf(id2) + children.map { it.id }.toSet()
-                    val target = parentId.takeIf { parentExists }
-                    val newLinks = settings.toolZoneLinks.mapNotNull { (tool, zone) ->
-                        when {
-                            zone !in doomed -> tool to zone
-                            target != null -> tool to target
-                            else -> null
-                        }
-                    }.toMap()
-                    vm.updateSettings(
-                        settings.copy(
-                            toolZones = settings.toolZones.filter { it.id !in doomed },
-                            toolZoneLinks = newLinks,
-                            hiddenZones = settings.hiddenZones - doomed,
-                        )
-                    )
+                    val res = ZoneOps.delete(settings, id2)
+                    if (res.ok) vm.updateSettings(res.settings)
+                    zoneNotice = res.message
                     deleteConfirm = null
                 }) { Text("确认删除", color = MaterialTheme.colorScheme.error) }
             },
@@ -269,9 +253,7 @@ fun SettingZonePage(
 
     // ── 子区管理 ──
     managingSubZones?.let { parentId ->
-        val subs = settings.toolZones.filter { it.id.startsWith("$parentId/") }
-            .map { it.id }
-            .filter { it.substringBeforeLast('/') == parentId }
+        val subs = zoneMap.children[parentId].orEmpty()
         AlertDialog(
             onDismissRequest = { managingSubZones = null },
             title = { Text("子区: ${router.label(parentId)}") },
@@ -350,13 +332,9 @@ fun SettingZonePage(
                     item {
                         Row(
                             Modifier.fillMaxWidth().clickable {
-                                vm.updateSettings(
-                                    settings.copy(
-                                        toolZoneLinks = settings.toolZoneLinks - tool,
-                                        topLevelAdditions = settings.topLevelAdditions + tool,
-                                        topLevelRemovals = settings.topLevelRemovals - tool,
-                                    )
-                                )
+                                val res = ZoneOps.assign(settings, tool, ZoneOps.TARGET_TOP_LEVEL)
+                                if (res.ok) vm.updateSettings(res.settings)
+                                zoneNotice = res.message
                                 movingTool = null
                             }.padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -365,13 +343,9 @@ fun SettingZonePage(
                     items(zoneOptions) { zoneId ->
                         Row(
                             Modifier.fillMaxWidth().clickable {
-                                vm.updateSettings(
-                                    settings.copy(
-                                        toolZoneLinks = settings.toolZoneLinks + (tool to zoneId),
-                                        topLevelAdditions = settings.topLevelAdditions - tool,
-                                        topLevelRemovals = settings.topLevelRemovals + listOf(tool).filter { it in topLevelNames },
-                                    )
-                                )
+                                val res = ZoneOps.assign(settings, tool, zoneId)
+                                if (res.ok) vm.updateSettings(res.settings)
+                                zoneNotice = res.message
                                 movingTool = null
                             }.padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -612,25 +586,24 @@ private fun TopLevelSection(
 
 @Composable
 private fun NewZoneDialog(
-    parent: String?,
+    parentLabel: String?,
     onDismiss: () -> Unit,
-    onCreate: (path: String, title: String, description: String, keywords: List<String>) -> Unit,
+    onCreate: (name: String, title: String, description: String, keywords: List<String>) -> Unit,
 ) {
     var name by remember { mutableStateOf("") }
     var title by remember { mutableStateOf("") }
     var desc by remember { mutableStateOf("") }
     var kws by remember { mutableStateOf("") }
-    val path = zonePathOf(parent, name)
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (parent == null) "新建工具区" else "在「$parent」下新建子区") },
+        title = { Text(if (parentLabel == null) "新建工具区" else "在「$parentLabel」下新建子区") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     name, { name = it },
                     label = { Text("名称") },
                     singleLine = true,
-                    supportingText = { Text("完整路径: $path （id 创建后不变，用 invoke_tools 加载它）") },
+                    supportingText = { Text("段名（不含 '/'，层级由父区决定）。路径由层级自动派生") },
                 )
                 OutlinedTextField(title, { title = it }, label = { Text("显示名(可选)") }, singleLine = true,
                     supportingText = { Text("留空则显示路径末段") })
@@ -645,7 +618,7 @@ private fun NewZoneDialog(
                 enabled = name.isNotBlank(),
                 onClick = {
                     onCreate(
-                        path,
+                        name.trim(),
                         title.trim(),
                         desc.trim(),
                         kws.split(",", "，").map { it.trim().lowercase() }.filter { it.isNotBlank() },

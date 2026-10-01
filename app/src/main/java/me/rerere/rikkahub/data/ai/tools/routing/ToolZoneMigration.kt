@@ -1,20 +1,45 @@
 /**
- * 旧「工具域」配置 → 新「工具区」配置的一次性迁移（v4.8.83）。
+ * 工具矩阵迁移（v4.8.87 重写）。
  *
- * 旧体系有 9 个平行配置面（customDomains / removedBuiltinDomains / hiddenDomains /
- * toolDomainOverrides / customDomainDescriptions / customDomainKeywords /
- * domainNameOverrides / exemptFromDomainTools / demotedFrameworkTools），
- * 新体系收敛为 5 个：toolZones / toolZoneLinks / hiddenZones / topLevelAdditions /
- * topLevelRemovals（+ toolZoneSeeded 幂等标记）。
- *
- * 迁移原则: 精确保留「实际生效过」的语义，丢弃「从未生效」的死配置。
- *  - 旧的 demotedFrameworkTools 只被 UI 读写、注入链从未消费（框架工具即使被"移进域"
- *    仍顶层注入）→ 迁移时丢弃（保留实际行为），用户可在新界面一键真正移进工具区。
+ * 四件事，各管一段，互不越界：
+ *  A. [projectZoneModel] —— 模型投影 v1(`id`=路径) → v2(id 不透明 / name / parentId)。
+ *     纯投影：只把"路径里隐含的层级"显式化成 name+parentId，**不改 id、不增删区**。
+ *  B. [migrateToZones] —— 旧「工具域」九件套 → 工具区（首启一次）。
+ *  C. [migrateLinkKeys] —— 归属键同源化：`skill:<名>` → 完整工具名 `skill__<净化名>`。
+ *     上一版模型侧写 `skill:<净化名>`、SkillManager 清理侧比 `skill:<原始目录名>`，
+ *     键不同源 ⇒ 挂载点被当孤儿删掉 ⇒ 归类回落"老家"（用户实证 bug）。
+ *  D. [restoreDefaultZones] —— 恢复出厂：按**固定 id** 幂等补齐缺失的模板区，只增不删。
  */
 /* 【域 C·工具系统】 | 地图: docs/APP_MAP.md §C */
 package me.rerere.rikkahub.data.ai.tools.routing
 
+import me.rerere.rikkahub.data.ai.tools.sanitizeSkillToolName
 import me.rerere.rikkahub.data.datastore.LegacyCustomDomain
+
+// ═══════════ A. 模型投影（一次性，幂等） ═══════════
+
+/** 当前工具区模型版本（v1 = id 即路径；v2 = id 不透明 + name/parentId 引用） */
+const val ZONE_MODEL_VERSION_CURRENT = 2
+
+/**
+ * 把 v1 数据（id 即路径、没有 name/parentId）投影成 v2（name + parentId 显式化）。
+ *  · 只补空字段：已有 name/parentId 的原样保留（用户改名/移动过的区不会被"按路径复位"）。
+ *  · 父区通过**旧 id 精确相等**解析（v1 里 id 就是路径，这是唯一正确的解析方式）。
+ *  · 解析不到父区 ⇒ 该区就是根区（不会产生孤儿）。
+ */
+fun projectZoneModel(zones: List<ToolZone>): List<ToolZone> {
+    val ids = zones.map { it.id }.filter { it.isNotBlank() }.toSet()
+    return zones.map { z ->
+        val name = z.name.ifBlank { z.id.substringAfterLast('/') }
+        val parent = z.parentId
+            ?.takeIf { it.isNotBlank() && it != z.id && it in ids }
+            ?: z.id.substringBeforeLast('/', "")
+                .takeIf { it.isNotBlank() && it != z.id && it in ids }
+        if (name == z.name && parent == z.parentId) z else z.copy(name = name, parentId = parent)
+    }
+}
+
+// ═══════════ B. 旧「工具域」→ 工具区（首启一次） ═══════════
 
 /** 旧体系原始配置（仅迁移期读取，迁移完成后新字段完全取代） */
 data class LegacyZoneConfig(
@@ -56,12 +81,13 @@ fun LegacyZoneConfig.migrateToZones(): MigratedZoneConfig {
             )
         }
 
-    // 2. 旧自定义区 → 普通区（同一身份即 id）
+    // 2. 旧自定义区 → 普通区（此阶段 id 仍是旧路径；层级由 projectZoneModel 显式化）
     val custom = customDomains
         .map { cd ->
             val id = legacyPath(cd)
             ToolZone(
                 id = id,
+                name = id.substringAfterLast('/'),
                 title = domainNameOverrides[id].orEmpty(),
                 description = customDomainDescriptions[id] ?: cd.description,
                 keywords = customDomainKeywords[id] ?: cd.keywords,
@@ -69,7 +95,7 @@ fun LegacyZoneConfig.migrateToZones(): MigratedZoneConfig {
         }
         .filter { it.id.isNotBlank() }
 
-    val zones = (seeded + custom).distinctBy { it.id }
+    val zones = projectZoneModel((seeded + custom).distinctBy { it.id })
     val ids = zones.map { it.id }.toSet()
 
     // 3. 旧覆盖层 value 可能是短名/双叠路径 → 归一到真实 id；指不到任何区的丢弃
@@ -87,9 +113,30 @@ fun LegacyZoneConfig.migrateToZones(): MigratedZoneConfig {
     )
 }
 
-/** 恢复出厂工具区：只补回「缺失的模板区」，不动用户自建区、不覆盖用户改过的区。 */
+// ═══════════ C. 归属键同源化 ═══════════
+
+/**
+ * `skill:<名>` → `skill__<净化名>`（完整工具名，与 SkillManager/SkillsTools 同一套命名）。
+ * 非 skill 键原样保留；已经是工具名的键幂等不变。
+ */
+fun migrateLinkKeys(links: Map<String, String>): Map<String, String> {
+    var changed = false
+    val out = LinkedHashMap<String, String>(links.size)
+    for ((key, value) in links) {
+        val newKey = if (key.startsWith("skill:")) {
+            sanitizeSkillToolName(key.removePrefix("skill:"))
+        } else key
+        if (newKey != key) changed = true
+        out[newKey] = value
+    }
+    return if (changed) out else links
+}
+
+// ═══════════ D. 恢复出厂工具区 ═══════════
+
+/** 只补回「缺失的模板区」（按固定 id 判定），不动用户自建区、不覆盖用户改过的区。 */
 fun restoreDefaultZones(current: List<ToolZone>): List<ToolZone> {
     val have = current.map { it.id }.toSet()
     val missing = DEFAULT_TOOL_ZONES.filter { it.id !in have }
-    return current + missing
+    return if (missing.isEmpty()) current else current + missing
 }

@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.*
 import me.rerere.rikkahub.data.ai.tools.routing.CORE_MATRIX_TOOLS
+import me.rerere.rikkahub.data.ai.tools.routing.ZoneOps
 import me.rerere.rikkahub.data.ai.tools.topLevelToolSetOf
 import me.rerere.rikkahub.data.ai.tools.zoneRouterOf
 import me.rerere.rikkahub.data.datastore.Settings
@@ -61,6 +62,8 @@ fun SettingToolListPage(
     var multiSelect by remember { mutableStateOf(false) }
     var selectedNames by remember { mutableStateOf(emptySet<String>()) }
     var bulkPicker by remember { mutableStateOf(false) }
+    /** 操作回执（与模型侧同一套 ZoneOps 文案） */
+    var notice by remember { mutableStateOf<String?>(null) }
     var zoneQuery by remember { mutableStateOf("") }
 
     val allTools: List<ToolPreview> = remember(settings, globalRevision) {
@@ -86,31 +89,28 @@ fun SettingToolListPage(
     }
     val topLevelCount = allTools.count { it.name in topLevelNames }
 
-    /** 唯一的归属写入口 —— 单工具与批量共用，规则只有一份 */
+    /**
+     * 归属写入口 —— **委托 [ZoneOps]**（与模型侧同一套校验与回执，不再自带第二套规则）。
+     * 批量就是循环调用同一个操作；核心件保护、顶层/自动语义全在 ZoneOps 里。
+     */
     fun applyOwnership(names: Collection<String>, target: String) {
         if (names.isEmpty()) return
-        var s = settings
-        val links = s.toolZoneLinks.toMutableMap()
-        val additions = s.topLevelAdditions.toMutableSet()
-        val removals = s.topLevelRemovals.toMutableSet()
-        names.forEach { name ->
-            if (name in CORE_MATRIX_TOOLS) return@forEach // 核心件恒在顶层，不接受改归属
-            when (target) {
-                TOP_LEVEL_LABEL -> {
-                    links.remove(name); additions.add(name); removals.remove(name)
-                }
-                AUTO_LABEL -> {
-                    links.remove(name); additions.remove(name); removals.remove(name)
-                }
-                else -> {
-                    links[name] = target
-                    additions.remove(name)
-                    if (name in topLevelNames) removals.add(name) else removals.remove(name)
-                }
-            }
+        val mapped = when (target) {
+            TOP_LEVEL_LABEL -> ZoneOps.TARGET_TOP_LEVEL
+            AUTO_LABEL -> ZoneOps.TARGET_AUTO
+            else -> target
         }
-        s = s.copy(toolZoneLinks = links, topLevelAdditions = additions, topLevelRemovals = removals)
+        var s = settings
+        val messages = ArrayList<String>(names.size)
+        var okCount = 0
+        names.forEach { name ->
+            val res = ZoneOps.assign(s, name, mapped)
+            s = res.settings
+            if (res.ok) okCount++
+            messages.add(res.message)
+        }
         vm.updateSettings(s)
+        notice = if (messages.size == 1) messages.first() else "已处理 $okCount/${messages.size} 个工具：${messages.first()}"
     }
 
     val filtered = remember(allTools, searchQuery, filterZone, ownerMap) {
@@ -270,6 +270,15 @@ fun SettingToolListPage(
                 }
             }
         }
+    }
+
+    notice?.let { msg ->
+        AlertDialog(
+            onDismissRequest = { notice = null },
+            title = { Text("工具矩阵") },
+            text = { Text(msg, style = MaterialTheme.typography.bodySmall) },
+            confirmButton = { TextButton(onClick = { notice = null }) { Text("知道了") } },
+        )
     }
 
     // ── 批量：选目标工具区（带筛选） ──

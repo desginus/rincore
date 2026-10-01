@@ -56,7 +56,10 @@ import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.tools.routing.LegacyZoneConfig
 import me.rerere.rikkahub.data.ai.tools.routing.ToolZone
+import me.rerere.rikkahub.data.ai.tools.routing.ZONE_MODEL_VERSION_CURRENT
+import me.rerere.rikkahub.data.ai.tools.routing.migrateLinkKeys
 import me.rerere.rikkahub.data.ai.tools.routing.migrateToZones
+import me.rerere.rikkahub.data.ai.tools.routing.projectZoneModel
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_COMPRESS_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_OCR_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_SUGGESTION_PROMPT
@@ -329,6 +332,7 @@ class SettingsStore(
                 preferences[TOP_LEVEL_REMOVALS] = JsonInstant.encodeToString(settings.topLevelRemovals)
                 preferences[TOOL_ZONE_SEEDED] = true
                 preferences[MINIMAL_MODE_CONVERSATIONS] = JsonInstant.encodeToString(settings.minimalModeConversations)
+                preferences[ZONE_MODEL_VERSION] = settings.zoneModelVersion
                 preferences[TOOL_DESCRIPTION_OVERRIDES] = JsonInstant.encodeToString(settings.toolDescriptionOverrides)
                 preferences[CLASSIFIER_PROMPT] = settings.classifierPrompt
                 // v3.6.102 工具改名 (自研)
@@ -356,6 +360,7 @@ class SettingsStore(
         val TOP_LEVEL_REMOVALS = stringPreferencesKey("top_level_removals")
         val TOOL_ZONE_SEEDED = booleanPreferencesKey("tool_zone_seeded")
         val MINIMAL_MODE_CONVERSATIONS = stringPreferencesKey("minimal_mode_conversations")
+        val ZONE_MODEL_VERSION = intPreferencesKey("zone_model_version")
         // ── 旧「工具域」键：v4.8.83 起只读一次用于迁移，不再写入（保存时清除）──
         val DOMAIN_NAME_OVERRIDES = stringPreferencesKey("domain_name_overrides")
         val HIDDEN_DOMAINS = stringPreferencesKey("hidden_domains")
@@ -403,6 +408,11 @@ class SettingsStore(
                 ?: preferences[TOP_LEVEL_ADDITIONS]?.let { runCatching { JsonInstant.decodeFromString<Set<String>>(it) }.getOrDefault(emptySet()) } ?: emptySet()
             val zoneTopLevelRemove = if (legacyZones != null) emptySet()
                 else preferences[TOP_LEVEL_REMOVALS]?.let { runCatching { JsonInstant.decodeFromString<Set<String>>(it) }.getOrDefault(emptySet()) } ?: emptySet()
+            // v4.8.87: 模型投影（一次性，幂等）—— 把 v1「id 即路径」显式化为 name+parentId；
+            // 同时把归属键统一成完整工具名（`skill:<名>` → `skill__<净化名>`，与 SkillManager 同源）。
+            val zoneModelStale = (preferences[ZONE_MODEL_VERSION] ?: 0) < ZONE_MODEL_VERSION_CURRENT
+            val fixedZones = if (zoneModelStale) projectZoneModel(zoneSeed) else zoneSeed
+            val fixedLinks = if (zoneModelStale) migrateLinkKeys(zoneLinks) else zoneLinks
             Settings(
                 enableWebSearch = preferences[ENABLE_WEB_SEARCH] == true,
                 deferAutoReply = preferences[DEFER_AUTO_REPLY] == true,
@@ -517,8 +527,9 @@ class SettingsStore(
                 } ?: BackupReminderConfig(),
                 launchCount = preferences[LAUNCH_COUNT] ?: 0,
                 sponsorAlertDismissedAt = preferences[SPONSOR_ALERT_DISMISSED_AT] ?: 0,
-                toolZones = zoneSeed,
-                toolZoneLinks = zoneLinks,
+                toolZones = fixedZones,
+                toolZoneLinks = fixedLinks,
+                zoneModelVersion = ZONE_MODEL_VERSION_CURRENT,
                 hiddenZones = zoneHidden,
                 topLevelAdditions = zoneTopLevelAdd,
                 topLevelRemovals = zoneTopLevelRemove,
@@ -616,6 +627,9 @@ class SettingsStore(
                 quickMessages = settings.quickMessages.distinctBy { it.id },
             )
         }
+        // v4.8.87: 工具矩阵归一化（只修不增）—— 悬空父引用 / 重复 id / 失效挂载在这里被修掉，
+        // 修完的数据才是全应用（UI 与模型侧）看到的唯一事实。
+        .map { me.rerere.rikkahub.data.ai.tools.routing.ZoneOps.normalize(it) }
         .onEach {
             get<PebbleEngine>().templateCache.invalidateAll()
         }
@@ -721,6 +735,7 @@ class SettingsStore(
             preferences[TOP_LEVEL_REMOVALS] = JsonInstant.encodeToString(settings.topLevelRemovals)
             preferences[TOOL_ZONE_SEEDED] = true
             preferences[MINIMAL_MODE_CONVERSATIONS] = JsonInstant.encodeToString(settings.minimalModeConversations)
+            preferences[ZONE_MODEL_VERSION] = settings.zoneModelVersion
             preferences[TOOL_DESCRIPTION_OVERRIDES] = JsonInstant.encodeToString(settings.toolDescriptionOverrides)
             preferences[CLASSIFIER_PROMPT] = settings.classifierPrompt
             // 旧「工具域」键一次性清除 (迁移已完成, 不再保留墓碑)
@@ -918,6 +933,8 @@ data class Settings(
     /** v4.8.85 极简模式：这些对话不注入任何工具（连 MCP/记忆/任务清单都不注入），纯文本对话。
      *  按对话持久化（DataStore，非 Room 表 → 无迁移风险）；对话删除后残留 id 无副作用。 */
     val minimalModeConversations: Set<String> = emptySet(),
+    /** v4.8.87 工具区模型版本（v2 = id 不透明 + name/parentId）—— 一次性投影的幂等标记 */
+    val zoneModelVersion: Int = ZONE_MODEL_VERSION_CURRENT,
     val toolDescriptionOverrides: Map<String, String> = emptyMap(), // 工具名→自定义描述。覆盖原始Tool描述
     val toolNameOverrides: Map<String, String> = emptyMap(), // v3.6.102: 工具改名 — 原工具名→新工具名 (汉语名工具改为字母数字, 模型才能识别)
     val classifierPrompt: String = "", // 工具自动分类提示词。空=使用默认
