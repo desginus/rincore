@@ -506,18 +506,21 @@ private fun createGrepTool(
         val patternArg = pattern.shellQuote()
         val globArg = glob?.let { " --glob ${it.shellQuote()}" } ?: ""
         val grepInclude = glob?.let { " --include=${it.shellQuote()}" } ?: ""
+        // v4.8.82: 多取 1 行 —— 只按 head -n N 判定时 "恰好 N 条" 会被误报成已截断,
+        // 模型据此反复换 pattern 重搜纯属浪费。取 N+1 才能区分"正好 N 条"与"不止 N 条"。
+        val fetchLimit = maxResults + 1
         val command = """
             if command -v rg >/dev/null 2>&1; then
-              rg --line-number --no-heading --color never -e $patternArg$globArg -- $pathArg 2>/dev/null | head -n $maxResults
+              rg --line-number --no-heading --color never -e $patternArg$globArg -- $pathArg 2>/dev/null | head -n $fetchLimit
             else
-              grep -rn -I -e $patternArg$grepInclude -- $pathArg 2>/dev/null | head -n $maxResults
+              grep -rn -I -e $patternArg$grepInclude -- $pathArg 2>/dev/null | head -n $fetchLimit
             fi
             exit 0
         """.trimIndent()
         val result = workspaceRepository.executeCommand(workspaceId, command, defaultCwd.orEmpty())
         val output = (result.stdout ?: "").trim()
         val lines = if (output.isBlank()) emptyList() else output.split('\n')
-        val truncated = lines.size >= maxResults
+        val truncated = lines.size > maxResults
         listOf(
             UIMessagePart.Text(
                 buildJsonObject {
@@ -529,7 +532,7 @@ private fun createGrepTool(
                         put("truncated", true)
                         put("note", "Showing first $maxResults matches; refine pattern/glob for more precision.")
                     }
-                    put("text", output)
+                    put("text", lines.take(maxResults).joinToString("\n"))
                 }.toString()
             )
         )
@@ -584,18 +587,20 @@ private fun createGlobTool(
         val pathArg = searchPath.shellQuote()
         val patternArg = pattern.shellQuote()
         // mtime 倒序 (find -printf 不支持时降级为原序) — 全路径输出
+        // v4.8.82: 同 grep — 多取 1 行以精确区分"正好 N 个"与"不止 N 个"
+        val fetchLimit = maxResults + 1
         val command = """
             if find $pathArg -maxdepth 0 -printf '' 2>/dev/null; then
-              find $pathArg -type f -name $patternArg -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -n $maxResults | cut -d' ' -f2-
+              find $pathArg -type f -name $patternArg -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -n $fetchLimit | cut -d' ' -f2-
             else
-              find $pathArg -type f -name $patternArg 2>/dev/null | head -n $maxResults
+              find $pathArg -type f -name $patternArg 2>/dev/null | head -n $fetchLimit
             fi
             exit 0
         """.trimIndent()
         val result = workspaceRepository.executeCommand(workspaceId, command, defaultCwd.orEmpty())
         val output = (result.stdout ?: "").trim()
         val lines = if (output.isBlank()) emptyList() else output.split('\n')
-        val truncated = lines.size >= maxResults
+        val truncated = lines.size > maxResults
         listOf(
             UIMessagePart.Text(
                 buildJsonObject {
@@ -606,7 +611,7 @@ private fun createGlobTool(
                         put("truncated", true)
                         put("note", "Showing newest $maxResults files; refine pattern for more precision.")
                     }
-                    put("text", output)
+                    put("text", lines.take(maxResults).joinToString("\n"))
                 }.toString()
             )
         )
@@ -791,7 +796,24 @@ private fun createShellTool(
                     put("stdout", result.stdout)
                     put("stderr", result.stderr)
                     put("timedOut", result.timedOut)
-                    if (result.truncated) put("truncated", true)
+                    // v4.8.82: 超限/超时都要显式讲清"你看到的不是全部" —— 否则模型会把
+                    // 被省略的中段 (恰恰是编译报错所在) 当作"命令没报错", 直接下错误结论。
+                    if (result.truncated) {
+                        put("truncated", true)
+                        put("omittedChars", result.omittedChars)
+                        put(
+                            "note",
+                            "输出超限: 已保留开头与结尾, 中间省略 ${result.omittedChars} 字符。" +
+                                "完整输出请重定向到文件 (cmd > log 2>&1) 后用 workspace_read_file 分页读取。"
+                        )
+                    }
+                    if (result.timedOut) {
+                        put(
+                            "hint",
+                            "命令超时被强杀, 上面的输出是中途截断的残段, 可能不完整。" +
+                                "分钟级长任务请改用 workspace_job (action=start/status/kill)。"
+                        )
+                    }
                     if (silentFailure) put(
                         "warning",
                         "exitCode=0 but stderr contains error output — a multi-part script may have partially executed (earlier steps done, later steps skipped). Verify actual effects before proceeding."

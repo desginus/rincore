@@ -1,8 +1,8 @@
 package me.rerere.workspace
 
 
-/* ───【原版对齐】WorkspaceShellRunner.kt | 差异 ±15 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+/* ───【自研改动】WorkspaceShellRunner.kt | 差异 +55/-25 行
+ * 来源: 原版移植 + v4.8.82 自研改写 (输出截断策略: 头+尾双保留)
  * ───────────────────────────────────────────────────────────────*/
 import java.io.File
 import java.io.IOException
@@ -57,8 +57,16 @@ class HostShellRunner : WorkspaceShellRunner {
         if (File("/system/bin/sh").exists()) "/system/bin/sh" else "/bin/sh"
 }
 
-// 单个流保留的最大字符数, 防止命令疯狂输出导致 OOM 或撑爆 LLM 上下文
+// 单个流回给模型的最大字符数, 防止命令疯狂输出导致 OOM 或撑爆 LLM 上下文
 const val MAX_OUTPUT_CHARS = 128 * 1024
+
+// v4.8.82: 头 + 尾 双保留 —— 编译器/构建器把错误与总结打在**尾部**, 只留开头会把
+// 最关键的报错整段丢掉 (开头多为下载进度/守护进程启动一类噪声)。中段省略并显式回报省略量。
+// OUTPUT_HEAD_CHARS + OUTPUT_TAIL_CHARS + 省略标记 <= MAX_OUTPUT_CHARS。
+private const val OUTPUT_HEAD_CHARS = 48 * 1024
+private const val OUTPUT_TAIL_CHARS = 76 * 1024
+private const val OMIT_MARKER_HEAD = "\n... [已省略中间 "
+private const val OMIT_MARKER_TAIL = " 字符] ...\n"
 
 fun Process.readResult(timeoutMillis: Long, stdin: ByteArray? = null): WorkspaceCommandResult {
     val stdout = StreamCollector(inputStream)
@@ -78,6 +86,7 @@ fun Process.readResult(timeoutMillis: Long, stdin: ByteArray? = null): Workspace
             stderr = stderr.text(),
             timedOut = !finished,
             truncated = stdout.truncated || stderr.truncated,
+            omittedChars = stdout.omittedChars + stderr.omittedChars,
         )
     } catch (e: InterruptedException) {
         // 调用方线程被中断（如协程取消时的 runInterruptible），杀掉进程避免命令继续执行
@@ -111,15 +120,36 @@ private class StreamWriter(
     fun join(millis: Long) = thread.join(millis)
 }
 
+/**
+ * v4.8.82 改写: 头 + 尾 双保留。
+ * 旧实现只保留前 maxChars 个字符, 超出即丢弃 —— 对编译/构建类命令等于"把报错扔掉、
+ * 只留下开头一片进度噪声"(Gradle/CMake/pip/npm 的错误与总结都在尾部)。
+ * 新实现: 前 OUTPUT_HEAD_CHARS 字符 + 末尾 OUTPUT_TAIL_CHARS 字符环形缓冲,
+ * 中段丢弃并记录省略量, 由 text() 在省略处插入显式标记。
+ */
 private class StreamCollector(
     stream: InputStream,
-    private val maxChars: Int = MAX_OUTPUT_CHARS,
+    private val headChars: Int = OUTPUT_HEAD_CHARS,
+    private val tailChars: Int = OUTPUT_TAIL_CHARS,
 ) {
-    private val builder = StringBuilder()
+    private val head = StringBuilder()
 
+    /** 末尾 tailChars 个字符的环形缓冲 */
+    private val ring = CharArray(tailChars)
+    private var ringPos = 0
+    private var ringLen = 0
+
+    /** 本流读到的总字符数 (含被省略的中段) */
     @Volatile
-    var truncated = false
+    var totalChars = 0L
         private set
+
+    val truncated: Boolean
+        get() = synchronized(this) { totalChars > (headChars + tailChars).toLong() }
+
+    /** 被省略的字符数 (头+尾之外的中段) */
+    val omittedChars: Long
+        get() = synchronized(this) { (totalChars - headChars - ringLen).coerceAtLeast(0L) }
 
     private val thread = Thread {
         try {
@@ -129,15 +159,7 @@ private class StreamCollector(
                     val read = reader.read(buffer)
                     if (read < 0) break
                     // 超出上限后继续读到 EOF 并丢弃，否则管道写满会阻塞子进程导致其无法退出
-                    synchronized(builder) {
-                        val remaining = maxChars - builder.length
-                        if (remaining > 0) {
-                            builder.append(buffer, 0, minOf(read, remaining))
-                        }
-                        if (read > remaining) {
-                            truncated = true
-                        }
-                    }
+                    synchronized(this) { collect(buffer, read) }
                 }
             }
         } catch (_: IOException) {
@@ -150,7 +172,46 @@ private class StreamCollector(
         start()
     }
 
+    private fun collect(buffer: CharArray, read: Int) {
+        var offset = 0
+        val headRoom = headChars - head.length
+        if (headRoom > 0) {
+            val n = minOf(read, headRoom)
+            head.append(buffer, 0, n)
+            offset = n
+        }
+        while (offset < read) {
+            ring[ringPos] = buffer[offset]
+            ringPos = (ringPos + 1) % tailChars
+            if (ringLen < tailChars) ringLen++
+            offset++
+        }
+        totalChars += read
+    }
+
     fun join(millis: Long) = thread.join(millis)
 
-    fun text(): String = synchronized(builder) { builder.toString() }
+    /** 未超限 -> 完整内容; 超限 -> 开头 + 省略标记 + 结尾。总长不超过 MAX_OUTPUT_CHARS。 */
+    fun text(): String = synchronized(this) {
+        val headStr = head.toString()
+        val rest = totalChars - headStr.length
+        if (rest <= 0L) {
+            headStr
+        } else {
+            val omitted = (rest - ringLen).coerceAtLeast(0L)
+            buildString {
+                append(headStr)
+                if (omitted > 0L) {
+                    append(OMIT_MARKER_HEAD).append(omitted).append(OMIT_MARKER_TAIL)
+                }
+                if (ringLen > 0) {
+                    var i = ((ringPos - ringLen) % tailChars + tailChars) % tailChars
+                    repeat(ringLen) {
+                        append(ring[i])
+                        i = (i + 1) % tailChars
+                    }
+                }
+            }
+        }
+    }
 }

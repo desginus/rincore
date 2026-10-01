@@ -147,7 +147,27 @@ class ExampleUnitTest {
 
         assertEquals(0, result.exitCode)
         assertTrue(result.truncated)
-        assertEquals(MAX_OUTPUT_CHARS, result.stdout.length)
+        // v4.8.82: 头 + 尾 双保留 —— 回传不超过上限, 开头与结尾都在, 省略处带显式标记
+        assertTrue(result.stdout.length <= MAX_OUTPUT_CHARS)
+        assertTrue(result.stdout.startsWith("a"))
+        assertTrue(result.stdout.endsWith("a"))
+        assertTrue(result.stdout.contains("已省略中间"))
+        assertTrue(result.omittedChars > 0L)
+        assertTrue(result.stdout.count { it == 'a' } < 300000)
+    }
+
+    @Test
+    fun commandOutputBelowLimitIsKeptVerbatim() {
+        val baseDir = Files.createTempDirectory("workspace-no-truncate-test").toFile()
+        val manager = WorkspaceManager(baseDir)
+        val root = "test-workspace"
+        manager.ensureWorkspace(root)
+
+        val result = manager.executeCommand(root, "printf 'hello'")
+
+        assertEquals("hello", result.stdout)
+        assertFalse(result.truncated)
+        assertEquals(0L, result.omittedChars)
     }
 
     @Test
