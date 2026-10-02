@@ -424,6 +424,7 @@ class RouteActivity : ComponentActivity() {
                     is AppEvent.OpenUsageAccessSettings -> this@RouteActivity.openUsageAccessSettings()
                     is AppEvent.ChatGenerationUpdate -> Unit // 由 ChatNotificationManager 消费
                     is AppEvent.ChatGenerationEnded -> Unit // 由 ChatNotificationManager 消费
+                    is AppEvent.SubAgentFinished -> Unit // v4.8.88: 由 ChatNotificationManager 消费（子代理独立频道）
                 }
             }
         }
