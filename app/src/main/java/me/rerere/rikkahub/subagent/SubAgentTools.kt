@@ -69,10 +69,16 @@ fun subagentDispatchTool(
 
         IMPORTANT (v3.11.28): dispatch is ALWAYS asynchronous — it returns immediately
         with the run's current status (pending/running) and the task keeps executing in
-        the background. It never blocks for the result. To collect the outcome, poll
-        with subagent_get (and subagent_list to enumerate) until the run reaches a
-        terminal status, then read the result field. run_in_background only hints the
+        the background. It never blocks for the result. To collect the outcome, call
+        subagent_get with wait_seconds (blocks up to 45s until terminal — one call instead
+        of many polls; use subagent_list to enumerate). run_in_background only hints the
         scheduling priority; the return contract is identical either way.
+
+        Budget (v4.8.88): each conversation has a sub-agent token budget (default 100K,
+        adjustable via the gauge button in the chat overview). When it is exhausted the
+        dispatch is REFUSED **and all running sub-agents of that conversation are
+        stopped**. Do not retry blindly — tell the user and suggest raising/clearing the
+        budget in the chat overview.
 
         Concurrency caps: each assistant has its own (default 3, configurable 1-8) and
         there's a global cap of 16 across all assistants. Over-cap dispatches fail with
@@ -180,11 +186,16 @@ fun subagentListTool(registry: SubAgentRegistry): Tool = Tool(
 
 fun subagentGetTool(registry: SubAgentRegistry): Tool = Tool(
     name = "subagent_get",
-    description = "Fetch the full run record for a sub-agent by id. Read-only.".trimIndent(),
+    description = """
+        Fetch the full run record for a sub-agent by id. Read-only.
+        Optional wait_seconds (0-45): blocks until the run reaches a terminal status or the
+        wait elapses — prefer this over repeated instant polls (saves round-trips).
+    """.trimIndent().replace("\n", " "),
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
                 put("id", buildJsonObject { put("type", "string") })
+                put("wait_seconds", buildJsonObject { put("type", "integer") })
             },
             required = listOf("id"),
         )
@@ -192,6 +203,16 @@ fun subagentGetTool(registry: SubAgentRegistry): Tool = Tool(
     execute = { args ->
         val id = args.jsonObject["id"]?.jsonPrimitive?.contentOrNull
             ?: return@Tool errEnv("invalid_id", "id is required")
+        // v4.8.88: 长轮询 —— 一次调用顶多次轮询；上限 45s 低于工具 60s 执行超时兜底
+        val wait = (args.jsonObject["wait_seconds"]?.jsonPrimitive?.intOrNull ?: 0).coerceIn(0, 45)
+        if (wait > 0) {
+            val deadline = System.currentTimeMillis() + wait * 1000L
+            while (System.currentTimeMillis() < deadline) {
+                val cur = registry.get(id) ?: break
+                if (cur.status != SubAgentStatus.PENDING && cur.status != SubAgentStatus.RUNNING) break
+                kotlinx.coroutines.delay(600)
+            }
+        }
         val run = registry.get(id)
             ?: return@Tool errEnv("unknown_id", "no sub-agent run with id $id")
         listOf(UIMessagePart.Text(encodeRun(run).toString()))

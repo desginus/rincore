@@ -22,6 +22,7 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.CHAT_LIVE_UPDATE_NOTIFICATION_CHANNEL_ID
+import me.rerere.rikkahub.SUBAGENT_COMPLETED_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.RouteActivity
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -36,6 +37,9 @@ import kotlin.uuid.Uuid
 // Live Update 通知节流间隔：流式输出每个chunk都会触发一次更新，
 // notify() 是 binder IPC 且系统本身会对高频更新限流，必须在应用侧节流
 private const val LIVE_UPDATE_NOTIFICATION_THROTTLE_MS = 1000L
+
+/** v4.8.88: 子代理通知 id 基址（远离主模型完成(1)与 Live Update(hash+10000) 的取值域） */
+private const val SUBAGENT_NOTIFICATION_ID_BASE = 300_000
 
 /**
  * 订阅 [AppEventBus] 上的聊天生成事件，负责后台生成相关的系统通知
@@ -81,6 +85,7 @@ class ChatNotificationManager(
                 when (event) {
                     is AppEvent.ChatGenerationUpdate -> handleGenerationUpdate(event)
                     is AppEvent.ChatGenerationEnded -> handleGenerationEnded(event)
+                    is AppEvent.SubAgentFinished -> handleSubAgentFinished(event) // v4.8.88
                     else -> {}
                 }
             }
@@ -107,7 +112,60 @@ class ChatNotificationManager(
         val contentPreview = event.contentPreview ?: return
         if (isForeground) return
         if (!settingsStore.settingsFlow.value.displaySetting.enableNotificationOnMessageGeneration) return
+        // v4.8.88: 子代理会话不弹"聊天完成" —— 由引擎的 SubAgentFinished 走独立频道弹子代理提示
+        if (event.isSubAgent) return
         sendGenerationDoneNotification(event.conversationId, event.senderName, contentPreview)
+    }
+
+    /**
+     * v4.8.88: 子代理终态通知 —— 独立频道 / 独立文案 / 跳回父对话。
+     * 用户定版：子代理任务完成弹子代理的提示，主模型弹主模型的，两者在通知系统里分开。
+     */
+    private fun handleSubAgentFinished(event: AppEvent.SubAgentFinished) {
+        if (isForeground) return
+        if (!settingsStore.settingsFlow.value.displaySetting.enableNotificationOnMessageGeneration) return
+        sendSubAgentNotification(event)
+    }
+
+    private fun sendSubAgentNotification(event: AppEvent.SubAgentFinished) {
+        val tokens = formatTokenCount(event.tokensIn + event.tokensOut)
+        val body: String = when (event.status) {
+            "SUCCEEDED" -> {
+                val preview = event.resultPreview?.takeIf { it.isNotBlank() }
+                val suffix = context.getString(R.string.notification_subagent_done, tokens)
+                if (preview == null) suffix else "$preview\n$suffix"
+            }
+            "TIMED_OUT" -> context.getString(R.string.notification_subagent_timeout, tokens)
+            "CANCELLED" -> {
+                if (event.error?.contains("预算") == true) {
+                    context.getString(R.string.notification_subagent_budget)
+                } else return // 用户主动取消：不打扰
+            }
+            else -> context.getString(
+                R.string.notification_subagent_failed,
+                (event.error ?: "unknown").take(120)
+            )
+        }
+        val parentUuid = event.parentConversationId?.let { runCatching { Uuid.parse(it) }.getOrNull() }
+        context.sendNotification(
+            channelId = SUBAGENT_COMPLETED_NOTIFICATION_CHANNEL_ID,
+            notificationId = SUBAGENT_NOTIFICATION_ID_BASE + (event.runId.hashCode() and 0x3FFFF)
+        ) {
+            title = context.getString(R.string.notification_subagent_title, event.label)
+            content = body
+            autoCancel = true
+            useDefaults = true
+            useBigTextStyle = true
+            category = NotificationCompat.CATEGORY_STATUS
+            if (parentUuid != null) contentIntent = getPendingIntent(context, parentUuid)
+        }
+    }
+
+    /** 1.2k / 3.4M 形式的紧凑计数 */
+    private fun formatTokenCount(tokens: Long): String = when {
+        tokens >= 1_000_000 -> String.format(java.util.Locale.US, "%.1fM", tokens / 1_000_000.0)
+        tokens >= 1_000 -> String.format(java.util.Locale.US, "%.1fk", tokens / 1_000.0)
+        else -> tokens.toString()
     }
 
     private fun sendGenerationDoneNotification(

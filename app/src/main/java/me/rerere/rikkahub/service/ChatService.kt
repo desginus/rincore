@@ -877,6 +877,10 @@ class ChatService(
                             senderName = senderName,
                             contentPreview = updatedConversation.currentMessages.lastOrNull()
                                 ?.toText()?.take(50)?.trim() ?: "",
+                            // v4.8.88: 子代理会话的完成通知与主模型分流（引擎单独发子代理通知）
+                            isSubAgent = updatedConversation.title.startsWith(
+                                me.rerere.rikkahub.subagent.SUBAGENT_TITLE_PREFIX
+                            ),
                         )
                     )
                 }
@@ -914,7 +918,16 @@ class ChatService(
             }
         }.onFailure {
             // 兜底取消 Live Update 通知（生成开始前失败时 onCompletion 不会执行）
-            appEventBus.tryEmit(AppEvent.ChatGenerationEnded(conversationId, senderName, null))
+            appEventBus.tryEmit(
+                AppEvent.ChatGenerationEnded(
+                    conversationId,
+                    senderName,
+                    null,
+                    isSubAgent = getConversationFlow(conversationId).value.title.startsWith(
+                        me.rerere.rikkahub.subagent.SUBAGENT_TITLE_PREFIX
+                    ),
+                )
+            )
 
             it.printStackTrace()
             // 错误上下文记录 (运行日志页可见) — 定位 'required settings preferences not received'

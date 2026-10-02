@@ -603,6 +603,8 @@ private fun ChatPageContent(
                         )
                     )
                 },
+                // v4.8.88: 子代理预算（速览页弹窗直接回写 Settings）
+                onUpdateSettings = { updated -> vm.updateSettings(updated) },
                 errors = errors,
                 onDismissError = onDismissError,
                 onClearAllErrors = onClearAllErrors,

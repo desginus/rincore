@@ -1391,5 +1391,20 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="workspace_terminal_no_tabs">没有打开的终端标签页</string>
   <string name="chat_process_duration">用时 %1$d 秒</string>
   <string name="chat_process_title">过程记录</string>
+
+  <!-- v4.8.88: 子代理通知分流 + 子代理预算弹窗 -->
+  <string name="notification_channel_subagent">子代理动态</string>
+  <string name="notification_subagent_title">子代理 · %1$s</string>
+  <string name="notification_subagent_done">已完成 · 消耗 %1$s tokens</string>
+  <string name="notification_subagent_failed">失败：%1$s</string>
+  <string name="notification_subagent_timeout">超时终止（%1$s tokens）</string>
+  <string name="notification_subagent_budget">已熔断：超出子代理 Token 预算</string>
+  <string name="subagent_budget_title">子代理预算</string>
+  <string name="subagent_budget_used">本对话已用 %1$s / %2$s tokens</string>
+  <string name="subagent_budget_limit_label">上限（千 tokens）</string>
+  <string name="subagent_budget_hint">超出后：终止正在运行的子代理、禁止新派发，并告知模型。默认 100K。</string>
+  <string name="subagent_budget_save">保存</string>
+  <string name="subagent_budget_reset">清零本对话</string>
+  <string name="subagent_budget_icon">子代理预算</string>
 </resources>
 

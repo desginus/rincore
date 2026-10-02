@@ -36,6 +36,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
 import io.pebbletemplates.pebble.PebbleEngine
@@ -333,6 +334,9 @@ class SettingsStore(
                 preferences[TOOL_ZONE_SEEDED] = true
                 preferences[MINIMAL_MODE_CONVERSATIONS] = JsonInstant.encodeToString(settings.minimalModeConversations)
                 preferences[ZONE_MODEL_VERSION] = settings.zoneModelVersion
+                preferences[SUBAGENT_TOKEN_BUDGET] = settings.subagentTokenBudget
+                preferences[SUBAGENT_TOKEN_USAGE] = JsonInstant.encodeToString(settings.subagentTokenUsage)
+                preferences[PRESET_SKILLS_SEED_VERSION] = settings.presetSkillsSeedVersion
                 preferences[TOOL_DESCRIPTION_OVERRIDES] = JsonInstant.encodeToString(settings.toolDescriptionOverrides)
                 preferences[CLASSIFIER_PROMPT] = settings.classifierPrompt
                 // v3.6.102 工具改名 (自研)
@@ -361,6 +365,10 @@ class SettingsStore(
         val TOOL_ZONE_SEEDED = booleanPreferencesKey("tool_zone_seeded")
         val MINIMAL_MODE_CONVERSATIONS = stringPreferencesKey("minimal_mode_conversations")
         val ZONE_MODEL_VERSION = intPreferencesKey("zone_model_version")
+        // v4.8.88: 子代理预算（每对话 Token 上限/已用）与预设技能播种版本
+        val SUBAGENT_TOKEN_BUDGET = longPreferencesKey("subagent_token_budget")
+        val SUBAGENT_TOKEN_USAGE = stringPreferencesKey("subagent_token_usage")
+        val PRESET_SKILLS_SEED_VERSION = intPreferencesKey("preset_skills_seed_version")
         // ── 旧「工具域」键：v4.8.83 起只读一次用于迁移，不再写入（保存时清除）──
         val DOMAIN_NAME_OVERRIDES = stringPreferencesKey("domain_name_overrides")
         val HIDDEN_DOMAINS = stringPreferencesKey("hidden_domains")
@@ -530,6 +538,11 @@ class SettingsStore(
                 toolZones = fixedZones,
                 toolZoneLinks = fixedLinks,
                 zoneModelVersion = ZONE_MODEL_VERSION_CURRENT,
+                subagentTokenBudget = preferences[SUBAGENT_TOKEN_BUDGET] ?: 100_000L,
+                subagentTokenUsage = preferences[SUBAGENT_TOKEN_USAGE]?.let {
+                    runCatching { JsonInstant.decodeFromString<Map<String, Long>>(it) }.getOrDefault(emptyMap())
+                } ?: emptyMap(),
+                presetSkillsSeedVersion = preferences[PRESET_SKILLS_SEED_VERSION] ?: 0,
                 hiddenZones = zoneHidden,
                 topLevelAdditions = zoneTopLevelAdd,
                 topLevelRemovals = zoneTopLevelRemove,
@@ -736,6 +749,9 @@ class SettingsStore(
             preferences[TOOL_ZONE_SEEDED] = true
             preferences[MINIMAL_MODE_CONVERSATIONS] = JsonInstant.encodeToString(settings.minimalModeConversations)
             preferences[ZONE_MODEL_VERSION] = settings.zoneModelVersion
+            preferences[SUBAGENT_TOKEN_BUDGET] = settings.subagentTokenBudget
+            preferences[SUBAGENT_TOKEN_USAGE] = JsonInstant.encodeToString(settings.subagentTokenUsage)
+            preferences[PRESET_SKILLS_SEED_VERSION] = settings.presetSkillsSeedVersion
             preferences[TOOL_DESCRIPTION_OVERRIDES] = JsonInstant.encodeToString(settings.toolDescriptionOverrides)
             preferences[CLASSIFIER_PROMPT] = settings.classifierPrompt
             // 旧「工具域」键一次性清除 (迁移已完成, 不再保留墓碑)
@@ -935,6 +951,15 @@ data class Settings(
     val minimalModeConversations: Set<String> = emptySet(),
     /** v4.8.87 工具区模型版本（v2 = id 不透明 + name/parentId）—— 一次性投影的幂等标记 */
     val zoneModelVersion: Int = ZONE_MODEL_VERSION_CURRENT,
+    /**
+     * v4.8.88 子代理预算：一个对话通过子代理最多能消耗的 Token（默认 100K）。
+     * 超出即熔断：终止正在运行的子代理 + 禁止新派发 + 告知模型。
+     */
+    val subagentTokenBudget: Long = 100_000L,
+    /** v4.8.88 每对话已消耗的子代理 Token（conversationId → tokens）。UI 可清零。 */
+    val subagentTokenUsage: Map<String, Long> = emptyMap(),
+    /** v4.8.88 预设技能播种版本（0=未播种；只增不复活用户删掉的技能） */
+    val presetSkillsSeedVersion: Int = 0,
     val toolDescriptionOverrides: Map<String, String> = emptyMap(), // 工具名→自定义描述。覆盖原始Tool描述
     val toolNameOverrides: Map<String, String> = emptyMap(), // v3.6.102: 工具改名 — 原工具名→新工具名 (汉语名工具改为字母数字, 模型才能识别)
     val classifierPrompt: String = "", // 工具自动分类提示词。空=使用默认

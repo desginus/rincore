@@ -64,6 +64,8 @@ import org.koin.core.context.startKoin
 private const val TAG = "RikkaHubApp"
 
 const val CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID = "chat_completed"
+/** v4.8.88: 子代理完成通知独立频道（与主模型聊天完成分开，可单独管控） */
+const val SUBAGENT_COMPLETED_NOTIFICATION_CHANNEL_ID = "subagent_completed"
 const val CHAT_LIVE_UPDATE_NOTIFICATION_CHANNEL_ID = "chat_live_update"
 const val WEB_SERVER_NOTIFICATION_CHANNEL_ID = "web_server"
 const val GENERATION_FOREGROUND_NOTIFICATION_CHANNEL_ID = "generation_foreground"
@@ -192,6 +194,11 @@ class RikkaHubApp : Application() {
         // Init QuickJS native library
         QuickJSLoader.init()
         AgentWorkspace.init(this)
+
+        // v4.8.88: 预设技能播种（出厂「习题辅导」能力包）— 一次性+版本化；只补缺失、不复活已删
+        get<AppScope>().launch(Dispatchers.IO) {
+            runCatching { get<me.rerere.rikkahub.data.files.SkillManager>().seedPresetSkills() }
+        }
 
         // delete temp files
         deleteTempFiles()
@@ -426,6 +433,19 @@ class RikkaHubApp : Application() {
                 .build()
             notificationManager.createNotificationChannel(chatCompletedChannel)
         }.onFailure { Log.e(TAG, "channel chat_completed failed", it) }
+
+        runCatching {
+            // v4.8.88: 子代理完成独立频道 — 与主模型聊天完成分开管控（名称必设，缺则系统拒收）
+            val subagentChannel = NotificationChannelCompat
+                .Builder(
+                    SUBAGENT_COMPLETED_NOTIFICATION_CHANNEL_ID,
+                    NotificationManagerCompat.IMPORTANCE_DEFAULT
+                )
+                .setName(getString(R.string.notification_channel_subagent))
+                .setVibrationEnabled(false)
+                .build()
+            notificationManager.createNotificationChannel(subagentChannel)
+        }.onFailure { Log.e(TAG, "channel subagent_completed failed", it) }
 
         runCatching {
             val chatLiveUpdateChannel = NotificationChannelCompat

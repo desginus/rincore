@@ -17,6 +17,7 @@ import me.rerere.hugeicons.stroke.CursorPointer01
 import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Feather
+import me.rerere.hugeicons.stroke.Gauge
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -55,6 +56,7 @@ import dev.chrisbanes.haze.hazeSource
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.Icon
@@ -63,6 +65,7 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
@@ -149,6 +152,8 @@ fun ChatList(
     // v4.8.85 极简模式：本对话不注入任何工具（开关在速览页搜索框右侧）
     minimalMode: Boolean = false,
     onToggleMinimalMode: () -> Unit = {},
+    // v4.8.88 子代理预算：读/改设置（速览页搜索框右侧、极简模式左边）
+    onUpdateSettings: (Settings) -> Unit = {},
 ) {
     AnimatedContent(
         targetState = previewMode,
@@ -166,6 +171,7 @@ fun ChatList(
                 onJumpToMessage = onJumpToMessage,
                 minimalMode = minimalMode,
                 onToggleMinimalMode = onToggleMinimalMode,
+                onUpdateSettings = onUpdateSettings,
                 animatedVisibilityScope = this@AnimatedContent,
             )
         } else {
@@ -621,8 +627,11 @@ private fun ChatListPreview(
     onJumpToMessage: (Int) -> Unit,
     minimalMode: Boolean = false,
     onToggleMinimalMode: () -> Unit = {},
+    onUpdateSettings: (Settings) -> Unit = {},
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    // v4.8.88: 子代理预算弹窗开关
+    var showBudgetDialog by remember { mutableStateOf(false) }
 
     // 过滤消息，同时保留原始 index 避免后续 O(n) indexOf 查找
     val filteredMessages = remember(conversation.messageNodes, searchQuery) {
@@ -675,6 +684,14 @@ private fun ChatListPreview(
                 maxLines = 1,
             )
             Spacer(Modifier.width(4.dp))
+            // v4.8.88 子代理预算：点开查看/调整本对话的 Token 上限与用量（超出即熔断）
+            IconButton(onClick = { showBudgetDialog = true }) {
+                Icon(
+                    imageVector = HugeIcons.Gauge,
+                    contentDescription = stringResource(R.string.subagent_budget_icon),
+                    modifier = Modifier.size(22.dp),
+                )
+            }
             // 极简模式：开启 = 本对话不注入任何工具。选中色与「加号工具栏」里的开关一致
             // (FilesPicker 的 active tint = Color(0xFF2196F3))。
             IconButton(onClick = onToggleMinimalMode) {
@@ -685,6 +702,60 @@ private fun ChatListPreview(
                     modifier = Modifier.size(22.dp),
                 )
             }
+        }
+
+        // ── v4.8.88 子代理预算弹窗（与模型侧同一份 Settings 数据）──
+        if (showBudgetDialog) {
+            val convId = conversation.id.toString()
+            val usedTokens = settings.subagentTokenUsage[convId] ?: 0L
+            val limitTokens = settings.subagentTokenBudget
+            var limitText by remember(limitTokens) { mutableStateOf((limitTokens / 1000).toString()) }
+            AlertDialog(
+                onDismissRequest = { showBudgetDialog = false },
+                title = { Text(stringResource(R.string.subagent_budget_title)) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            stringResource(
+                                R.string.subagent_budget_used,
+                                formatBudgetTokens(usedTokens),
+                                formatBudgetTokens(limitTokens),
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        OutlinedTextField(
+                            value = limitText,
+                            onValueChange = { limitText = it },
+                            label = { Text(stringResource(R.string.subagent_budget_limit_label)) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text(
+                            stringResource(R.string.subagent_budget_hint),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val k = limitText.trim().toLongOrNull()?.coerceIn(1L, 100_000L)
+                        if (k != null) {
+                            onUpdateSettings(settings.copy(subagentTokenBudget = k * 1000L))
+                        }
+                        showBudgetDialog = false
+                    }) { Text(stringResource(R.string.subagent_budget_save)) }
+                },
+                dismissButton = {
+                    Row {
+                        TextButton(onClick = {
+                            onUpdateSettings(settings.copy(subagentTokenUsage = settings.subagentTokenUsage - convId))
+                            showBudgetDialog = false
+                        }) { Text(stringResource(R.string.subagent_budget_reset)) }
+                        TextButton(onClick = { showBudgetDialog = false }) { Text("取消") }
+                    }
+                },
+            )
         }
 
         // 消息预览
@@ -882,4 +953,11 @@ private fun BoxScope.MessageJumper(
             }
         }
     }
+}
+
+/** v4.8.88: 1.2k / 3.4M 形式的紧凑 Token 计数（预算弹窗用） */
+private fun formatBudgetTokens(tokens: Long): String = when {
+    tokens >= 1_000_000 -> "%.1fM".format(tokens / 1_000_000.0)
+    tokens >= 1_000 -> "%.1fk".format(tokens / 1_000.0)
+    else -> tokens.toString()
 }

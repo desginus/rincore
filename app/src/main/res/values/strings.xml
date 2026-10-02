@@ -1495,5 +1495,20 @@
     <string name="skills_page_search_no_result">No matching skills</string>
   <string name="chat_process_duration">Took %1$d s</string>
   <string name="chat_process_title">Process</string>
+
+  <!-- v4.8.88: 子代理通知分流 + 子代理预算弹窗 -->
+  <string name="notification_channel_subagent">Sub-agent updates</string>
+  <string name="notification_subagent_title">Sub-agent · %1$s</string>
+  <string name="notification_subagent_done">Finished · %1$s tokens</string>
+  <string name="notification_subagent_failed">Failed: %1$s</string>
+  <string name="notification_subagent_timeout">Timed out (%1$s tokens)</string>
+  <string name="notification_subagent_budget">Stopped: sub-agent token budget exceeded</string>
+  <string name="subagent_budget_title">Sub-agent budget</string>
+  <string name="subagent_budget_used">This chat: %1$s / %2$s tokens</string>
+  <string name="subagent_budget_limit_label">Limit (thousand tokens)</string>
+  <string name="subagent_budget_hint">When exceeded: running sub-agents are stopped, new dispatches are blocked, and the model is told. Default 100K.</string>
+  <string name="subagent_budget_save">Save</string>
+  <string name="subagent_budget_reset">Reset usage</string>
+  <string name="subagent_budget_icon">Sub-agent budget</string>
 </resources>
 

@@ -48,6 +48,9 @@ enum class SubAgentStatus {
     CANCELLED,
 }
 
+/** v4.8.88: 子代理会话标题前缀 —— 全应用唯一判据（ChatService/通知/引擎共用）。 */
+const val SUBAGENT_TITLE_PREFIX = "[Sub-agent]"
+
 object SubAgentDefaults {
     const val DEFAULT_TIMEOUT_SECONDS = 300
     const val MAX_TIMEOUT_SECONDS = 1800
@@ -58,6 +61,9 @@ object SubAgentDefaults {
     const val MIN_PER_ASSISTANT_CAP = 1
     const val MAX_PER_ASSISTANT_CAP = 8
     const val REGISTRY_LRU_CAP = 50
+
+    /** v4.8.88: 子代理预算看门狗轮询间隔（毫秒）—— 越界不超过一次轮询+一个模型轮次 */
+    const val BUDGET_POLL_MS = 6_000L
 
     /** Default system prompt used when the assistant's per-sub-agent prompt is empty. */
     val DEFAULT_SYSTEM_PROMPT = """

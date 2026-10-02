@@ -9,6 +9,7 @@ package me.rerere.rikkahub.subagent
  * ───────────────────────────────────────────────────────────────*/
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -22,9 +23,13 @@ import me.rerere.rikkahub.data.agentrun.AgentRunRepository
 import me.rerere.rikkahub.data.agentrun.AgentRunStatus
 import me.rerere.rikkahub.data.ai.tools.HeadlessConversations
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.event.AppEvent
+import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.service.ChatService
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.uuid.Uuid
 
 private const val TAG = "SubAgentEngine"
@@ -88,6 +93,21 @@ class SubAgentEngine(
      */
     private val ledgerIds = java.util.concurrent.ConcurrentHashMap<String, String>()
 
+    /** v4.8.88: 子代理预算（每对话 Token 上限，默认 100K；超出即熔断）。 */
+    private val budget = SubAgentBudget(settingsStore)
+
+    /**
+     * v4.8.88: 用量水位（runId → 已计入的 tokens）。
+     * 看门狗与终态都会对同一个 run 结算 —— 用"只加增量"的水位口径避免重复记账。
+     */
+    private val countedIn = ConcurrentHashMap<String, Long>()
+    private val countedOut = ConcurrentHashMap<String, Long>()
+
+    /** v4.8.88: 事件总线（懒解析，避免 DI 环；与 chatService 同模式）。 */
+    private val eventBus: AppEventBus by lazy {
+        org.koin.java.KoinJavaComponent.getKoin().get<AppEventBus>()
+    }
+
     sealed class DispatchResult {
         data class Ok(val run: SubAgentRun) : DispatchResult()
         data class Reject(val error: String, val detail: String) : DispatchResult()
@@ -132,6 +152,17 @@ class SubAgentEngine(
             return@withContext DispatchResult.Reject(
                 "assistant_cap_reached",
                 "this assistant's max_concurrent_sub_agents cap of $perAssistantCap is reached"
+            )
+        }
+
+        // v4.8.88: 子代理预算闸门 —— 熔断后禁止新派发，并把原因明说给模型
+        val budgetChatId = parentChatId
+        if (budgetChatId != null && budget.isExhausted(budgetChatId)) {
+            return@withContext DispatchResult.Reject(
+                "subagent_budget_exceeded",
+                "本对话的子代理 Token 预算已用尽（已用 ${budget.used(budgetChatId)} / 上限 ${budget.limit()}）。" +
+                    "已熔断：正在运行的子代理已终止、新的派发被禁止。" +
+                    "请向用户说明情况，并建议在对话速览页的「子代理预算」里提高上限或清零后重试。"
             )
         }
 
@@ -213,10 +244,11 @@ class SubAgentEngine(
             id = Uuid.random(),
             assistantId = parentAsstUuid,
             newConversation = true,
-        ).copy(title = "[Sub-agent] ${request.label?.take(40) ?: request.task.take(40)}")
+        ).copy(title = "$SUBAGENT_TITLE_PREFIX ${request.label?.take(40) ?: request.task.take(40)}")
         conversationRepo.insertConversation(conv)
         chatService.initializeConversation(conv.id)
         HeadlessConversations.mark(conv.id)
+        val budgetKilled = AtomicBoolean(false)
         try {
             // Prepend a wrap-up instruction. Some models naturally write a summary paragraph
             // after their tool-call sequence; others stop after the last tool result and emit
@@ -229,22 +261,43 @@ class SubAgentEngine(
                 append("When you have finished, end with one short paragraph in plain text that summarises what you did and what you found. Do NOT stop on a tool call — finish with assistant text. The dispatcher harvests only your final text reply, so this paragraph is the entire response the parent sees.")
             }
             chatService.sendMessage(conv.id, listOf(UIMessagePart.Text(taskWithWrapup)))
+            // v4.8.88 预算看门狗：每 6s 把"本次运行"的消耗增量记进预算并检查上限；
+            // 超限即熔断 —— 终止该对话全部在跑子代理（含自己），由 catch 收尾（NonCancellable 兜底）。
+            val watchdog = if (parentChatId != null) appScope.launch(Dispatchers.IO) {
+                while (true) {
+                    delay(SubAgentDefaults.BUDGET_POLL_MS)
+                    val st = registry.get(runId)?.status ?: break
+                    if (st != SubAgentStatus.RUNNING && st != SubAgentStatus.PENDING) break
+                    runCatching { syncUsage(runId, conv.id, parentChatId) }
+                    runCatching { budget.flushIfDue(parentChatId) }
+                    if (budget.isExhausted(parentChatId)) {
+                        budgetKilled.set(true)
+                        runCatching { budget.flush(parentChatId) }
+                        registry.cancelAllForParent(parentChatId)
+                        break
+                    }
+                }
+            } else null
             // The naive form `withTimeoutOrNull { …first { it == null } }` followed by a
             // `finished == null` check is BROKEN: `.first { it == null }` returns the matched
             // value — which IS null on successful completion (the Job? went to null when the
             // LLM finished). So `finished == null` was true on BOTH timeout AND success, and
             // every sub-agent looked TIMED_OUT despite actually finishing. Use a Unit sentinel
             // so the two outcomes are distinguishable.
-            val completed: Unit? = withTimeoutOrNull(request.timeoutSeconds * 1000L) {
-                chatService.getGenerationJobStateFlow(conv.id).first { it == null }
-                Unit
+            val completed: Unit? = try {
+                withTimeoutOrNull(request.timeoutSeconds * 1000L) {
+                    chatService.getGenerationJobStateFlow(conv.id).first { it == null }
+                    Unit
+                }
+            } finally {
+                watchdog?.cancel()
             }
             if (completed == null) {
                 // v3.11.30: 超时也统计已消耗 token (任务被杀但计费已发生)
-                val (tIn, tOut) = harvestTokenUsage(conv.id)
-                val trips = harvestTripCount(conv.id)
-                registry.update(runId) { it.copy(tokensIn = it.tokensIn + tIn, tokensOut = it.tokensOut + tOut, tripCount = trips) }
+                runCatching { syncUsage(runId, conv.id, parentChatId) }
+                runCatching { budget.flush(parentChatId) }
                 markTerminal(runId, SubAgentStatus.TIMED_OUT, "exceeded ${request.timeoutSeconds}-second cap")
+                notifyTerminal(runId)
                 return
             }
             // Harvest the assistant's final text from the conversation. Best-effort —
@@ -254,18 +307,16 @@ class SubAgentEngine(
             val finalText = harvestFinalText(conv.id)
             // v3.11.35: token/轮次统计补齐 — v3.11.30 时该块因脚本中断未落盘,
             // 成功路径从未填充 tokensIn/Out (详情页 tokens 恒不显示的根因)。
-            val (tIn, tOut) = harvestTokenUsage(conv.id)
-            val trips = harvestTripCount(conv.id)
+            runCatching { syncUsage(runId, conv.id, parentChatId) }
+            runCatching { budget.flush(parentChatId) }
             registry.update(runId) {
                 it.copy(
                     status = SubAgentStatus.SUCCEEDED,
                     result = finalText,
                     finishedAtMs = System.currentTimeMillis(),
-                    tokensIn = it.tokensIn + tIn,
-                    tokensOut = it.tokensOut + tOut,
-                    tripCount = trips,
                 )
             }
+            notifyTerminal(runId)
             ledgerIds.remove(runId)?.let {
                 agentRunRepo.markTerminal(it, AgentRunStatus.succeeded)
             }
@@ -273,13 +324,25 @@ class SubAgentEngine(
             Log.w(TAG, "sub-agent run failed", t)
             // CancellationException → CANCELLED, anything else → FAILED.
             val terminal = if (t is kotlinx.coroutines.CancellationException) SubAgentStatus.CANCELLED else SubAgentStatus.FAILED
-            runCatching {
-                val (tIn, tOut) = harvestTokenUsage(conv.id)
-                val trips = harvestTripCount(conv.id)
-                registry.update(runId) { it.copy(tokensIn = it.tokensIn + tIn, tokensOut = it.tokensOut + tOut, tripCount = trips) }
+            val killedByBudget = budgetKilled.get()
+            // 取消态下挂起调用会立即再次抛出取消异常 —— 收尾三件事必须 NonCancellable 兜住：
+            // 补账（syncUsage）/ 落盘 / **真正停掉底层生成**，缺一个都会造成"看起来停了、其实还在烧"。
+            withContext(kotlinx.coroutines.NonCancellable) {
+                runCatching { syncUsage(runId, conv.id, parentChatId) }
+                // v4.8.88 修复：旧实现只取消"等待协程"；sendMessage 是 fire-and-forget，
+                // 底层生成从未被停止 —— 取消/熔断后 LLM 继续跑、token 继续烧。
+                runCatching { chatService.stopGeneration(conv.id) }
+                runCatching { budget.flush(parentChatId) }
             }
-            markTerminal(runId, terminal, "${t::class.simpleName}: ${t.message.orEmpty()}")
+            val errText = if (killedByBudget) {
+                "已超出子代理 Token 预算（上限 ${budget.limit()} tokens），本次运行被熔断终止"
+            } else "${t::class.simpleName}: ${t.message.orEmpty()}"
+            markTerminal(runId, terminal, errText)
+            // 终态通知：用户主动取消会被 notifyTerminal 内部过滤；失败/超时/熔断都提醒
+            notifyTerminal(runId)
         } finally {
+            countedIn.remove(runId)
+            countedOut.remove(runId)
             HeadlessConversations.unmark(conv.id)
             registry.clearJob(runId)
         }
@@ -324,38 +387,73 @@ class SubAgentEngine(
      * to 5 minutes for the parent to be idle before posting. After 5 minutes we post anyway
      * — better to interrupt than to silently lose the completion.
      */
-    /**
-     * v3.11.35: 实际轮次 = 会话内 assistant 消息条数 (每条 assistant 回复为一轮)。
-     */
-    private suspend fun harvestTripCount(conversationId: Uuid): Int {
-        return runCatching {
-            val conv = conversationRepo.getConversationById(conversationId)
-            conv?.messageNodes?.count { node ->
-                node.messages.getOrNull(node.selectIndex)?.role?.name.equals("assistant", ignoreCase = true)
-            } ?: 0
-        }.getOrDefault(0)
-    }
+    /** 一次会话读取同时拿 用量 + 轮次（v4.8.88：旧实现分两次读盘）。 */
+    private data class UsageSnap(val tIn: Long, val tOut: Long, val trips: Int)
 
-    /**
-     * v3.11.30: 聚合子代理会话全部 assistant 消息的 TokenUsage。
-     * 口径 = 账单 (每轮 promptTokens + completionTokens 合计), 多轮各自计费不合并。
-     */
-    private suspend fun harvestTokenUsage(conversationId: Uuid): Pair<Long, Long> {
+    private suspend fun snapshotUsage(conversationId: Uuid): UsageSnap {
         return runCatching {
             val conv = conversationRepo.getConversationById(conversationId)
             var tIn = 0L
             var tOut = 0L
+            var trips = 0
             conv?.messageNodes?.forEach { node ->
+                // 轮次口径：当前选中分支的 assistant 消息条数（与旧 harvestTripCount 一致）
+                if (node.messages.getOrNull(node.selectIndex)?.role?.name.equals("assistant", ignoreCase = true)) trips++
+                // 计费口径：节点内全部消息的 usage（重生成分支各自计费，多轮不合并）
                 node.messages.forEach { msg ->
                     val usage = msg.usage ?: return@forEach
                     if (usage.promptTokens > 0) tIn += usage.promptTokens
                     if (usage.completionTokens > 0) tOut += usage.completionTokens
                 }
             }
-            tIn to tOut
+            UsageSnap(tIn, tOut, trips)
         }.getOrElse {
-            Log.w(TAG, "harvestTokenUsage failed for $conversationId", it)
-            0L to 0L
+            Log.w(TAG, "snapshotUsage failed for $conversationId", it)
+            UsageSnap(0L, 0L, 0)
+        }
+    }
+
+    /**
+     * v4.8.88: 用量结算（唯一入口）—— 只把**新增量**写进 run 记录并记入预算，
+     * 看门狗与终态反复调用也不会重复计账。
+     */
+    private suspend fun syncUsage(runId: String, convId: Uuid, parentChatId: String?) {
+        val snap = snapshotUsage(convId)
+        val dIn = (snap.tIn - (countedIn[runId] ?: 0L)).coerceAtLeast(0L)
+        val dOut = (snap.tOut - (countedOut[runId] ?: 0L)).coerceAtLeast(0L)
+        if (dIn == 0L && dOut == 0L && snap.trips == registry.get(runId)?.tripCount) return
+        if (dIn > 0L || dOut > 0L) {
+            countedIn[runId] = snap.tIn
+            countedOut[runId] = snap.tOut
+        }
+        registry.update(runId) {
+            it.copy(tokensIn = it.tokensIn + dIn, tokensOut = it.tokensOut + dOut, tripCount = snap.trips)
+        }
+        if (parentChatId != null && (dIn > 0L || dOut > 0L)) {
+            budget.add(parentChatId, dIn + dOut)
+        }
+    }
+
+    /**
+     * v4.8.88: 终态事件 —— 通知系统据此分流（子代理的弹子代理提示，主模型弹主模型提示）。
+     * 用户主动取消不打扰；预算熔断的 CANCELLED 带原因字样，照常通知。
+     */
+    private fun notifyTerminal(runId: String) {
+        val run = registry.get(runId) ?: return
+        if (run.status == SubAgentStatus.CANCELLED && run.error?.contains("预算") != true) return
+        runCatching {
+            eventBus.tryEmit(
+                AppEvent.SubAgentFinished(
+                    runId = run.id,
+                    parentConversationId = run.parentChatId,
+                    label = run.label,
+                    status = run.status.name,
+                    error = run.error,
+                    resultPreview = run.result?.take(160),
+                    tokensIn = run.tokensIn,
+                    tokensOut = run.tokensOut,
+                )
+            )
         }
     }
 

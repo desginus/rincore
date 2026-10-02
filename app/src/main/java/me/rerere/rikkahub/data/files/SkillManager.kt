@@ -21,12 +21,70 @@ class SkillManager(
 ) {
     companion object {
         private const val TAG = "SkillManager"
+
+        /** v4.8.88: 出厂预设技能资产根（assets/preset-skills/<技能名>/…） */
+        private const val PRESET_ASSET_ROOT = "preset-skills"
+
+        /** 预设技能版本 —— 新版在此 +1，只补缺失文件，绝不覆盖用户改动/复活已删技能 */
+        private const val PRESET_SKILLS_VERSION = 1
     }
 
     fun getSkillsDir(): File {
         val dir = context.filesDir.resolve(FileFolders.SKILLS)
         if (!dir.exists()) dir.mkdirs()
         return dir
+    }
+
+    /**
+     * v4.8.88: 出厂预设技能播种（当前只有「习题辅导 physics-tutor」能力包）。
+     *
+     * 纪律（与工具区同一条）：
+     *  · **一次性 + 版本化** —— 已播种过就永不再跑；版本升级只补缺失文件；
+     *  · **绝不复活** —— 用户删掉的预设技能不会因为重启而回来；
+     *  · **绝不覆盖** —— 已存在的文件（含用户改动）原样保留；
+     *  · 播种后把技能加入所有助手的 enabledSkills（技能工具按需经 `invoke_tools` 加载，常驻成本≈0）。
+     */
+    suspend fun seedPresetSkills(): Int = withContext(Dispatchers.IO) {
+        val settings = settingsStore.settingsFlow.value
+        if (settings.presetSkillsSeedVersion >= PRESET_SKILLS_VERSION) return@withContext 0
+        val skillDirs = runCatching {
+            context.assets.list(PRESET_ASSET_ROOT)?.toList().orEmpty()
+        }.getOrDefault(emptyList())
+        var copied = 0
+        for (dirName in skillDirs) {
+            val dest = getSkillsDir().resolve(dirName)
+            if (dest.exists()) continue
+            if (copyAssetTree("$PRESET_ASSET_ROOT/$dirName", dest)) copied++
+        }
+        invalidateSkillsCache()
+        settingsStore.update { st ->
+            st.copy(
+                presetSkillsSeedVersion = PRESET_SKILLS_VERSION,
+                assistants = st.assistants.map { a ->
+                    a.copy(enabledSkills = a.enabledSkills + skillDirs)
+                },
+            )
+        }
+        Log.i(TAG, "preset skills seeded v$PRESET_SKILLS_VERSION: copied=$copied dirs=$skillDirs")
+        copied
+    }
+
+    /** 递归复制 assets 子树（目录/文件由 list() 是否为空判定）。 */
+    private fun copyAssetTree(assetPath: String, dest: File): Boolean = runCatching {
+        val children = context.assets.list(assetPath).orEmpty()
+        if (children.isEmpty()) {
+            dest.parentFile?.mkdirs()
+            context.assets.open(assetPath).use { input ->
+                dest.outputStream().use { output -> input.copyTo(output) }
+            }
+        } else {
+            dest.mkdirs()
+            for (child in children) copyAssetTree("$assetPath/$child", dest.resolve(child))
+        }
+        true
+    }.getOrElse {
+        Log.w(TAG, "copy preset asset failed: $assetPath", it)
+        false
     }
 
     // v3.6.12: 技能扫描加固 — 单文件解析失败只跳过该技能 (不全缺);
