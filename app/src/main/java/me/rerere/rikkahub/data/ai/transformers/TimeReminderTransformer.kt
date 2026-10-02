@@ -21,6 +21,8 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.utils.toLocalDateTime
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import java.time.format.TextStyle
 import java.util.Locale
 import kotlin.time.toJavaInstant
@@ -63,7 +65,8 @@ internal fun applyTimeReminder(
     }
     if (hasReminder) return messages
     val result = mutableListOf<UIMessage>()
-    val tz = TimeZone.currentSystemDefault()
+    // v4.8.91 (用户定版): 模型看到的时间恒为东八区 — 不随设备时区漂移
+    val tz = TimeZone.of("Asia/Shanghai")
 
     var firstUserFound = false
     for (i in messages.indices) {
@@ -119,9 +122,14 @@ private fun mergeTimeReminder(
 
 private fun buildTimeReminderContent(gapSeconds: Long?, instant: Instant): String {
     val javaInstant = instant.toJavaInstant()
-    val dayOfWeek = javaInstant.atZone(ZoneId.systemDefault()).dayOfWeek
+    // v4.8.91: 固定东八区展示（此前 systemDefault — 设备时区漂移时模型会看到非北京时间）
+    val cnZone = ZoneId.of("Asia/Shanghai")
+    val dayOfWeek = javaInstant.atZone(cnZone).dayOfWeek
         .getDisplayName(TextStyle.FULL, Locale.getDefault())
-    val timeStr = javaInstant.toLocalDateTime()
+    val timeStr = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)
+        .withLocale(Locale.getDefault())
+        .withZone(cnZone)
+        .format(javaInstant)
     return if (gapSeconds != null) {
         val gapText = formatGap(gapSeconds)
         "<time_reminder>Current time: $dayOfWeek, $timeStr ($gapText since last message)</time_reminder>"

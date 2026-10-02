@@ -118,7 +118,8 @@ class FilesManager(
             runCatching {
                 val sourceName = getFileNameFromUri(uri) ?: uri.lastPathSegment ?: "file"
                 val sourceMime = getFileMimeType(uri)
-                val fileName = buildUuidFileName(displayName = sourceName, mimeType = sourceMime)
+                // v4.8.91: 上传一律时间码命名（<码>_<原名>.ext），码即文件名前缀
+                val fileName = FileUtils.buildUploadFileName(dir, displayName = sourceName, mimeType = sourceMime)
                 val file = dir.resolve(fileName)
                 if (!file.exists()) {
                     file.createNewFile()
@@ -157,7 +158,7 @@ class FilesManager(
             dir.mkdirs()
         }
         byteArrays.forEach { byteArray ->
-            val fileName = buildUuidFileName(displayName = "image.png", mimeType = "image/png")
+            val fileName = FileUtils.buildUploadFileName(dir, displayName = "image.png", mimeType = "image/png")
             val file = dir.resolve(fileName)
             if (!file.exists()) {
                 file.createNewFile()
@@ -241,7 +242,7 @@ class FilesManager(
         if (!dir.exists()) {
             dir.mkdirs()
         }
-        val fileName = buildUuidFileName(displayName = "pasted_text.txt", mimeType = "text/plain")
+        val fileName = FileUtils.buildUploadFileName(dir, displayName = "pasted_text.txt", mimeType = "text/plain")
         val file = dir.resolve(fileName)
         file.writeText(text)
         trackManagedFile(
@@ -476,7 +477,13 @@ class FilesManager(
         if (!dir.exists()) {
             dir.mkdirs()
         }
-        return File(dir, FileUtils.buildUuidFileName(displayName = displayName, mimeType = mimeType))
+        // v4.8.91: upload 目录统一时间码命名；其它目录保持 uuid 命名
+        val name = if (folder == FileFolders.UPLOAD) {
+            FileUtils.buildUploadFileName(dir, displayName = displayName, mimeType = mimeType)
+        } else {
+            FileUtils.buildUuidFileName(displayName = displayName, mimeType = mimeType)
+        }
+        return File(dir, name)
     }
 
     private fun buildUuidFileName(displayName: String?, mimeType: String?): String =

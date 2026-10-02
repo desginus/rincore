@@ -45,7 +45,7 @@ object DocumentAsPromptTransformer : InputMessageTransformer {
                                 val content = readDocumentContent(document)
                                 val file = resolveUploadFile(document)
                                 val path = file?.let { "/upload/" + it.name }
-                                val code = file?.let { UploadCodes.codeOf("upload/" + it.name) }
+                                val code = file?.let { UploadCodes.codeForFileName(it.name) }
                                 val attrs = buildString {
                                     append(" name=\"").append(document.fileName).append('"')
                                     if (code != null) append(" code=\"").append(code).append('"')
@@ -72,7 +72,7 @@ object DocumentAsPromptTransformer : InputMessageTransformer {
                         documents.forEach { document ->
                             val file = resolveUploadFile(document)
                             val path = file?.let { "/upload/" + it.name }
-                            val code = file?.let { UploadCodes.codeOf("upload/" + it.name) }
+                            val code = file?.let { UploadCodes.codeForFileName(it.name) }
                             remove(document)
                             val attrs = buildString {
                                 append(" name=\"").append(document.fileName).append('"')

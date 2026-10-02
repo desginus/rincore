@@ -638,15 +638,6 @@ private fun MessagePartsBlock(
                                         overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.widthIn(max = 200.dp)
                                     )
-                                    // v4.8.90: 上传码（模型凭码 upload_fetch 直取，用户也可凭码引用）
-                                    me.rerere.rikkahub.data.files.UploadCodes.codeForLocation(part.url)?.let { code ->
-                                        Text(
-                                            text = code,
-                                            maxLines = 1,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f),
-                                        )
-                                    }
                                 }
                             }
                         }

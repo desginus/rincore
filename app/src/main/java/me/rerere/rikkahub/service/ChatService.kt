@@ -103,6 +103,7 @@ import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.ai.transformers.ThinkTagTransformer
 import me.rerere.rikkahub.data.ai.transformers.TimeReminderTransformer
 import me.rerere.rikkahub.data.ai.transformers.ToolMentionTransformer
+import me.rerere.rikkahub.data.ai.transformers.UploadsListingTransformer
 import me.rerere.rikkahub.data.ai.transformers.WorkspaceReminderTransformer
 import me.rerere.rikkahub.data.event.AppEvent
 import me.rerere.rikkahub.data.event.AppEventBus
@@ -162,6 +163,8 @@ private val inputTransformers by lazy {
         TimeReminderTransformer,
         PromptInjectionTransformer,
         PlaceholderTransformer,
+        // v4.8.91: 本对话上传清单 —— 必须在 DocumentAsPromptTransformer 之前（文档 part 会被其转换/移除）
+        UploadsListingTransformer,
         DocumentAsPromptTransformer,
         OcrTransformer,
         // v4.3.6 (BUG15): 死代码接线 — v3.13.7 的 tool 结果图片重定位修复从未

@@ -173,6 +173,14 @@ class RouteActivity : ComponentActivity() {
     private val settingsStore by inject<SettingsStore>()
     private var navStack: MutableList<NavKey>? = null
 
+    // v4.8.91 TTFT: 冷启动/回前台即预热"当前对话模型"的连接（幂等、非阻塞）——
+    // 用户打开软件看一会儿再发消息时，连接仍是热的（服务端 ~100s 空闲断连吃不到我们）。
+    private val warmupLifecycleObserver = object : androidx.lifecycle.DefaultLifecycleObserver {
+        override fun onResume(owner: androidx.lifecycle.LifecycleOwner) {
+            me.rerere.rikkahub.service.ProviderWarmup.warmCurrentChatModel()
+        }
+    }
+
     // Volume key listener registry — last registered handler wins
     internal val volumeKeyListeners = mutableListOf<(isVolumeUp: Boolean) -> Boolean>()
 
@@ -198,6 +206,8 @@ class RouteActivity : ComponentActivity() {
             finish()
             return
         }
+        // v4.8.91 TTFT: 进入前台即预热连接（观察者幂等注册）
+        lifecycle.addObserver(warmupLifecycleObserver)
         setContent {
             RikkahubTheme {
                 setSingletonImageLoaderFactory { context ->

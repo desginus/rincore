@@ -83,6 +83,29 @@ object ConnectionWarmer {
         }, "warmup-$host").start()
     }
 
+    /**
+     * v4.8.91: 自动选池的保活入口 —— 供 UI 侧（冷启动/回前台/进入对话）调用。
+     * OC/CC 走长保活池（与主请求同池），其余走主 client；均幂等、非阻塞。
+     */
+    fun ensureProviderKeepAliveAuto(
+        appScope: kotlinx.coroutines.CoroutineScope,
+        baseUrl: String,
+        apiKey: String? = null,
+    ) {
+        val trimmed = baseUrl.trimEnd('/')
+        if (trimmed.isBlank()) return
+        val host = runCatching { java.net.URI(trimmed).host }.getOrNull() ?: return
+        val isLongLived = host == "opencode.ai" || host == "api.commandcode.ai"
+        val client = if (isLongLived) {
+            me.rerere.ai.provider.ProviderManager.opencodeClient ?: mainClient
+        } else {
+            mainClient ?: runCatching {
+                org.koin.core.context.GlobalContext.get().get<okhttp3.OkHttpClient>()
+            }.getOrNull()
+        } ?: return
+        ensureProviderKeepAlive(appScope, client, trimmed, apiKey)
+    }
+
     /** 预热所有已配置的 API 端点 */
     fun warmConfiguredProviders(context: Context, baseUrls: List<String>) {
         val hosts = baseUrls.mapNotNull { url ->

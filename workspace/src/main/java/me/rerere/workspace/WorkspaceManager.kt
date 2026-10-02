@@ -153,7 +153,8 @@ class WorkspaceManager(
             fun walk(dir: File, prefix: String) {
                 val children = dir.listFiles()
                     ?.filter { !it.name.startsWith(".l2s.") }   // proot link2symlink 影子条目
-                    ?.sortedWith(compareBy<File> { !it.isDirectory }.thenBy { it.name.lowercase() })
+                    // v4.8.91: 与列表同口径 —— 创建先后
+                    ?.sortedWith(compareBy<File> { it.lastModified() }.thenBy { it.name.lowercase() })
                     ?: return
                 for (child in children) {
                     val name = prefix + child.name

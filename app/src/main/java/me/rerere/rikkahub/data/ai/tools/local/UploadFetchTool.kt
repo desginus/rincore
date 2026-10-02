@@ -28,16 +28,17 @@ import java.io.File
 
 fun createUploadFetchTool(filesRoot: File): Tool = Tool(
     name = "upload_fetch",
-    description = "Resolve a user-uploaded file by its **upload code** (8 chars like `K3F9Q2M7`, " +
-        "shown as code=\"...\" in <UploadFile> tags) and return its exact sandbox path under /upload. " +
-        "Use this instead of browsing /upload blindly whenever you need an uploaded file's path. " +
+    description = "Resolve a user-uploaded file by its **upload code** and return its exact sandbox path. " +
+        "New uploads use a 12-digit time code (MMddHHmm+seq, e.g. `1003002901`) which is also the " +
+        "filename prefix under /upload; legacy files use an 8-char code. The code is shown as " +
+        "code=\"...\" in <UploadFile> tags. Use this instead of browsing /upload blindly. " +
         "Also lists the most recent uploads when nothing matches. Read-only.",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
                 put("code", buildJsonObject {
                     put("type", "string")
-                    put("description", "上传码（8 位，如 K3F9Q2M7）。与 query 二选一。")
+                    put("description", "上传码（新文件为 12 位时间码如 1003002901；历史文件为 8 位码）。与 query 二选一。")
                 })
                 put("query", buildJsonObject {
                     put("type", "string")
@@ -60,7 +61,7 @@ fun createUploadFetchTool(filesRoot: File): Tool = Tool(
             .orEmpty()
 
         fun describe(f: File) = buildJsonObject {
-            put("code", UploadCodes.codeOf("${FileFolders.UPLOAD}/${f.name}"))
+            put("code", UploadCodes.codeForFileName(f.name))
             put("name", f.name)
             put("path", "/upload/${f.name}")
             put("size_bytes", f.length())
@@ -72,7 +73,7 @@ fun createUploadFetchTool(filesRoot: File): Tool = Tool(
             !codeRaw.isNullOrBlank() -> {
                 val norm = UploadCodes.normalize(codeRaw)
                 val matches = files.filter {
-                    UploadCodes.codeOf("${FileFolders.UPLOAD}/${it.name}") == norm
+                    UploadCodes.codeForFileName(it.name) == norm
                 }
                 when {
                     matches.size == 1 -> listOf(UIMessagePart.Text(buildJsonObject {

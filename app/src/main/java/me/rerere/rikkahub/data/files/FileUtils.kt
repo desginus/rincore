@@ -21,6 +21,28 @@ object FileUtils {
     private const val TAG = "FileUtils"
 
     fun buildUuidFileName(displayName: String?, mimeType: String?): String {
+        return "${Uuid.random()}.${resolveExtension(displayName, mimeType)}"
+    }
+
+    /**
+     * v4.8.91: 上传文件的命名 —— `<上传码>_<清洗后的原文件名>.<ext>`。
+     * 上传码 = 时间码（月日时分 + 两位补位，东八区，见 [UploadCodes]）；
+     * 前缀即码 ⇒ 沙箱里一眼可读，upload_fetch / Prompt 直接解析，无需任何映射表。
+     */
+    fun buildUploadFileName(dir: File, displayName: String?, mimeType: String?): String {
+        val ext = resolveExtension(displayName, mimeType)
+        val rawBase = displayName?.takeIf { it.isNotBlank() } ?: "file"
+        val base = rawBase
+            .substringBeforeLast('.', rawBase)
+            .replace(Regex("[\\\\/:*?\"<>|\\u0000-\\u001F]"), "_")
+            .replace(Regex("\\s+"), "_")
+            .trim('_', '.', ' ')
+            .take(60)
+            .ifBlank { "file" }
+        return "${UploadCodes.nextCode(dir)}_$base.$ext"
+    }
+
+    private fun resolveExtension(displayName: String?, mimeType: String?): String {
         val extFromName = displayName
             ?.substringAfterLast('.', "")
             ?.takeIf { it.isNotBlank() && it != displayName }
@@ -29,8 +51,7 @@ object FileUtils {
             ?.let { MimeTypeMap.getSingleton().getExtensionFromMimeType(it.lowercase()) }
             ?.takeIf { it.isNotBlank() }
             ?.lowercase()
-        val ext = extFromName ?: extFromMime ?: "bin"
-        return "${Uuid.random()}.$ext"
+        return extFromName ?: extFromMime ?: "bin"
     }
 
     fun buildRelativePath(folder: String, file: File): String =

@@ -107,7 +107,8 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
                 dir.listFiles()
                     .orEmpty()
                     .filter { !it.name.startsWith(".l2s.") }
-                    .sortedWith(compareBy<File> { !it.isDirectory }.thenBy { it.name.lowercase() })
+                    // v4.8.91: 与工作区列表同口径 —— 创建先后
+                    .sortedWith(compareBy<File> { it.lastModified() }.thenBy { it.name.lowercase() })
                     .forEach { addFileRow(cursor, parent.root, it) }
             }
         }

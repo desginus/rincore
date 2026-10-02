@@ -27,7 +27,9 @@ class WorkspaceFileSystem(
         return dir.listFiles()
             .orEmpty()
             .filter { !it.name.startsWith(".l2s.") }
-            .sortedWith(compareBy<File> { !it.isDirectory }.thenBy { it.name.lowercase() })
+            // v4.8.91 (用户定版): 默认排序 = 创建先后（时间戳升序，名字做稳定次键），
+            // 替代此前的"目录优先+按名"混沌序；改名/移动产生的顺序变化由后续手动排序另议。
+            .sortedWith(compareBy<File> { it.lastModified() }.thenBy { it.name.lowercase() })
             .take(config.maxListEntries)
             .map { it.toEntry(root) }
     }
