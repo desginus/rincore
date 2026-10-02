@@ -72,6 +72,8 @@ fun SettingZonePage(
         return
     }
 
+    // v4.8.90: LocalContext 必须在 composable 上下文先取（不能在 runCatching lambda 内读）
+    val filesRootForTools = LocalContext.current.applicationContext.filesDir
     val previewTools = remember(settings, globalRevision) {
         runCatching {
             buildToolList(
@@ -81,7 +83,7 @@ fun SettingZonePage(
                 workspaceRepository = workspaceRepository,
                 operitToolProvider = operitToolProvider,
                 // v4.8.90: 与模型侧同口径（read_image / upload_fetch 也进 UI 清单）
-                filesRoot = LocalContext.current.applicationContext.filesDir,
+                filesRoot = filesRootForTools,
             )
         }.getOrDefault(emptyList())
     }
