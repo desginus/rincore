@@ -137,6 +137,8 @@ fun ChatInput(
     settings: Settings,
     modifier: Modifier = Modifier,
     completionProviders: List<ChatCompletionProvider> = emptyList(),
+    // v4.8.90: `/@` 工具矩阵选择器数据源（null = 不启用；懒构建，只在呼出时调用）
+    toolPickerProvider: (suspend () -> ToolMatrixPickerData?)? = null,
     onUpdateChatModel: (Model) -> Unit,
     onUpdateAssistant: (Assistant) -> Unit,
     onUpdateSearchService: (Int) -> Unit,
@@ -282,6 +284,7 @@ fun ChatInput(
                     TextInputRow(
                         state = state,
                         completionProviders = completionProviders,
+                        toolPickerProvider = toolPickerProvider,
                         onSendMessage = { sendMessage() },
 
                     )
@@ -496,6 +499,7 @@ private fun ActionIconButton(
 private fun TextInputRow(
     state: ChatInputState,
     completionProviders: List<ChatCompletionProvider>,
+    toolPickerProvider: (suspend () -> ToolMatrixPickerData?)? = null,
     onSendMessage: () -> Unit,
 ) {
     val settings = LocalSettings.current
@@ -534,6 +538,8 @@ private fun TextInputRow(
         var isFocused by remember { mutableStateOf(false) }
         var isFullScreen by remember { mutableStateOf(false) }
         var completionList by remember { mutableStateOf<ChatCompletionList?>(null) }
+        // v4.8.90: /@ 工具矩阵选择器状态（打开时记录触发位置与下钻栈）
+        var toolPicker by remember { mutableStateOf<ToolPickerState?>(null) }
         val receiveContentListener = remember(
             settings.displaySetting.pasteLongTextAsFile, settings.displaySetting.pasteLongTextThreshold
         ) {
@@ -571,9 +577,10 @@ private fun TextInputRow(
             }
         }
 
-        LaunchedEffect(completionProviders, isFocused) {
-            if (!isFocused || completionProviders.isEmpty()) {
+        LaunchedEffect(completionProviders, toolPickerProvider, isFocused) {
+            if (!isFocused || (completionProviders.isEmpty() && toolPickerProvider == null)) {
                 completionList = null
+                toolPicker = null
                 return@LaunchedEffect
             }
 
@@ -583,6 +590,30 @@ private fun TextInputRow(
                     selection = state.textContent.selection,
                 )
             }.collectLatest { context ->
+                // ── v4.8.90: `/@` 工具矩阵选择器 ──
+                // 触发：光标恰在 `/@` 之后；与「空格 @」workspace 补全天然分流（@ 前是 '/' 不是边界符）。
+                val slashAt = detectToolMention(context.text, context.cursor)
+                if (slashAt == null || toolPickerProvider == null) {
+                    if (toolPicker != null) toolPicker = null
+                } else {
+                    val opened = toolPicker
+                    if (opened == null || opened.triggerStart != slashAt) {
+                        val data = try {
+                            toolPickerProvider()
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                            null
+                        }
+                        toolPicker = data?.let { ToolPickerState(it, slashAt) }
+                    }
+                }
+                // 选择器开着时，常规补全让位（视觉互斥，防止两个弹层叠罗汉）
+                if (toolPicker != null) {
+                    completionList = null
+                    return@collectLatest
+                }
+
                 val lists = completionProviders.mapNotNull { provider ->
                     try {
                         provider.complete(context)
@@ -608,6 +639,29 @@ private fun TextInputRow(
                     list.copy(items = mergedItems)
                 }
             }
+        }
+
+        // v4.8.90: /@ 工具矩阵选择器弹层（根区 → 子区 → 工具，可上下滑动）
+        toolPicker?.let { picker ->
+            ToolMatrixPickerPopup(
+                data = picker.data,
+                zoneStack = picker.zoneStack,
+                onPush = { id -> toolPicker = picker.copy(zoneStack = picker.zoneStack + id) },
+                onBack = {
+                    toolPicker = if (picker.zoneStack.isEmpty()) null
+                    else picker.copy(zoneStack = picker.zoneStack.dropLast(1))
+                },
+                onPick = { tool ->
+                    // 收回弹层 + 在输入栏留下 `@工具名 `（模型据此精确调用该工具）
+                    val end = state.textContent.selection.max.coerceAtLeast(picker.triggerStart + 2)
+                    state.applyCompletion(
+                        TextRange(picker.triggerStart, end),
+                        ChatCompletionItem(label = tool.name, insertText = "@${tool.name} "),
+                    )
+                    toolPicker = null
+                },
+                onDismiss = { toolPicker = null },
+            )
         }
 
         completionList?.takeIf { it.items.isNotEmpty() }?.let { list ->
@@ -759,6 +813,24 @@ private fun ChatInputState.applyCompletion(
         selection = TextRange(start + item.insertText.length)
     }
 }
+
+/**
+ * v4.8.90: `/@` 触发检测 —— 光标恰在 `/@` 两个字符之后。
+ * 与 WorkspaceCompletionProvider 的「空格 @」互不冲突：那边要求 @ 前是边界符
+ * （空格/括号/引号），这里的 @ 前是 '/'，两边各走各的。
+ */
+private fun detectToolMention(text: String, cursor: Int): Int? {
+    if (cursor < 2 || cursor > text.length) return null
+    if (text[cursor - 1] != '@' || text[cursor - 2] != '/') return null
+    return cursor - 2
+}
+
+/** v4.8.90: /@ 选择器会话状态（数据 + 触发位置 + 下钻栈） */
+private data class ToolPickerState(
+    val data: ToolMatrixPickerData,
+    val triggerStart: Int,
+    val zoneStack: List<String> = emptyList(),
+)
 
 @Composable
 private fun QuickMessageButton(

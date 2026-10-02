@@ -229,5 +229,6 @@ val DEFAULT_TOP_LEVEL_TOOLS: Set<String> = setOf(
     "workspace_grep", "workspace_glob",
     "manage_mcp_servers", "plugin_install",
     "read_image",
+    "upload_fetch", // v4.8.90: 上传码直取 —— 顶层常驻，任何对话都能直接定位用户上传的文件
     "task_tool",
 )

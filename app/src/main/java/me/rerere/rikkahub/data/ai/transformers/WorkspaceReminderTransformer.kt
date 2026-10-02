@@ -196,6 +196,8 @@ private fun buildWorkspacePrompt(workspace: WorkspaceEntity, cwd: String? = null
     appendLine("- The skills directory is mounted at `/skills`. Each skill is a subdirectory `/skills/<skill-name>/` containing a `SKILL.md` (with `name` and `description` frontmatter) plus any supporting files. Read a skill's `SKILL.md` before using it, and follow its instructions.")
     appendLine("- Keep the /workspace root tidy: create a dedicated subfolder per task/project and put its files there, instead of dumping loose files and directories at the root.")
     appendLine("- Files the user uploaded are mounted at `/upload`. Treat `/upload` as READ-ONLY: read uploaded files from `/upload/<file-name>`, but never modify, overwrite, or delete anything there. If you need to change an uploaded file, copy it into `/workspace` first and edit the copy.")
+    // v4.8.90: 上传码直取 —— 物理名是随机 ID, 禁止"猜路径"; 码是唯一稳定引用
+    appendLine("- Every attachment also carries an **upload code** (8 chars like `K3F9Q2M7`, shown as `code=\"...\"` in its <UploadFile> tag). When the user refers to a file by code, or you need an uploaded file whose exact path you don't know, call `upload_fetch` with the code — it returns the precise `/upload/...` path directly. Never guess /upload paths or browse that folder blindly.")
     // v4.5.27: 助手级 CWD = 该助手的专一空间, 物理隔离在挂载层实现 —
     // 该文件夹即沙箱内 /workspace 根 (proot 挂载 + 文件工具解析同源), 外部目录不可见/不可达。
     val rawCwd = cwd?.trim('/').orEmpty()

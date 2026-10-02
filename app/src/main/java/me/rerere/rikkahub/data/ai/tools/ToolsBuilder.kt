@@ -28,6 +28,7 @@ import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.ai.tools.createReadImageTool
+import me.rerere.rikkahub.data.ai.tools.local.createUploadFetchTool
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
 import me.rerere.rikkahub.data.ai.tools.routing.CORE_MATRIX_TOOLS
 import me.rerere.rikkahub.data.ai.tools.routing.DEFAULT_TOP_LEVEL_TOOLS
@@ -70,6 +71,8 @@ fun buildAssistantToolPool(
 ): List<Tool> = buildList {
     // v4.3.7: 图片预算闭环件 — 占位图按需重取 (默认 null 不注入, 仅 ChatService 主链路注入)
     filesRoot?.let { add(createReadImageTool(it)) }
+    // v4.8.90: 上传码直取 —— 与 read_image 同一注入条件（filesRoot = context.filesDir）
+    filesRoot?.let { add(createUploadFetchTool(it)) }
     // v3.11.25: 任务清单工具 (Cherry Studio Agent 任务功能移植) — 框架工具, 静态
     add(createTaskTool())
     if (settings.enableWebSearch) {

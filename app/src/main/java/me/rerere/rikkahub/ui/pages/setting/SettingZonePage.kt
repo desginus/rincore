@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -79,6 +80,8 @@ fun SettingZonePage(
                 settingsStore = settingsStore,
                 workspaceRepository = workspaceRepository,
                 operitToolProvider = operitToolProvider,
+                // v4.8.90: 与模型侧同口径（read_image / upload_fetch 也进 UI 清单）
+                filesRoot = LocalContext.current.applicationContext.filesDir,
             )
         }.getOrDefault(emptyList())
     }

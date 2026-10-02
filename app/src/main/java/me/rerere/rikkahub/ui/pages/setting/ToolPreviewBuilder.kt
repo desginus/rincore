@@ -28,6 +28,9 @@ fun buildToolList(
     settingsStore: SettingsStore,
     workspaceRepository: me.rerere.rikkahub.data.repository.WorkspaceRepository? = null,
     operitToolProvider: me.rerere.rikkahub.data.operit.runtime.OperitToolProvider? = null,
+    // v4.8.90: 与模型侧同口径 —— 传 filesDir 后 read_image / upload_fetch 也出现在 UI 清单,
+    // 否则 UI 工具池比模型侧少这两个工具（对照页与区计数天然对不上）
+    filesRoot: java.io.File? = null,
 ): List<ToolPreview> {
     val assistant = settings.getCurrentAssistant()
     val pool = try {
@@ -41,6 +44,7 @@ fun buildToolList(
             settingsStore = settingsStore,
             workspaceRepository = workspaceRepository,
             operitToolProvider = operitToolProvider,
+            filesRoot = filesRoot,
         )
     } catch (_: Exception) {
         emptyList()

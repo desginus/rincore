@@ -102,6 +102,7 @@ import me.rerere.rikkahub.data.ai.transformers.RegexOutputTransformer
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.ai.transformers.ThinkTagTransformer
 import me.rerere.rikkahub.data.ai.transformers.TimeReminderTransformer
+import me.rerere.rikkahub.data.ai.transformers.ToolMentionTransformer
 import me.rerere.rikkahub.data.ai.transformers.WorkspaceReminderTransformer
 import me.rerere.rikkahub.data.event.AppEvent
 import me.rerere.rikkahub.data.event.AppEventBus
@@ -167,6 +168,8 @@ private val inputTransformers by lazy {
         // 注册进 transformer 链, 一直未生效 (内部自带 ccImageCompat+user_ key
         // 双重 opt-in 检查, 注册本身无副作用)
         CCImageCompatTransformer,
+        // v4.8.90: 输入栏 /@ 插入的 `@工具名` → 系统提示级"精确调用"意图（无提及零注入）
+        ToolMentionTransformer,
     )
 }
 

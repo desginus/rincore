@@ -146,14 +146,30 @@ class ZoneRouter(
         /** 区 id → 直接工具（不含顶层工具；含 0 工具的空区 key） */
         val classified: Map<String, List<Tool>>,
         val roots: List<String>,
+        /** **全深度**子区表（含每个区 id 的直接子区；叶子 → 空表） */
         val children: Map<String, List<String>>,
         val counts: Map<String, Int>,
         val subtreeCounts: Map<String, Int>,
         val topLevel: List<Tool>,
         val visibleIds: Set<String>,
     ) {
-        /** 全部区 id（根 + 子，声明顺序） */
-        val allIds: List<String> get() = roots.flatMap { listOf(it) + children[it].orEmpty() }
+        /**
+         * 全部区 id（全深度 DFS：根 → 其子树深度优先，声明顺序）。
+         * v4.8.90 修复：旧实现只展开「根 + 一层子区」，三级及更深的子区在
+         * 搜索/筛选/移动弹窗/删除弹窗里**全部失联**（不显示、无法选为移动目标）。
+         */
+        val allIds: List<String>
+            get() {
+                val out = ArrayList<String>(children.size)
+                val seen = HashSet<String>()
+                fun visit(id: String) {
+                    if (!seen.add(id)) return
+                    out.add(id)
+                    children[id].orEmpty().forEach { visit(it) }
+                }
+                roots.forEach { visit(it) }
+                return out
+            }
     }
 
     fun zoneMap(tools: List<Tool>): ZoneMap {
@@ -166,7 +182,8 @@ class ZoneRouter(
 
         val counts = grouped.mapValues { it.value.size }
         val roots = tree.roots()
-        val children = roots.associateWith { tree.childrenOf(it) }
+        // v4.8.90: 全深度子区表（旧实现只映射根的直接子区，三级子区对消费方不可见）
+        val children = tree.allIds.associateWith { tree.childrenOf(it) }
         val subtreeCounts = roots.associateWith { root ->
             tree.subtreeIds(root).sumOf { counts[it] ?: 0 }
         }

@@ -18,6 +18,7 @@ import me.rerere.document.DocxParser
 import me.rerere.document.EpubParser
 import me.rerere.document.PdfParser
 import me.rerere.document.PptxParser
+import me.rerere.rikkahub.data.files.UploadCodes
 import java.io.File
 
 object DocumentAsPromptTransformer : InputMessageTransformer {
@@ -42,9 +43,15 @@ object DocumentAsPromptTransformer : InputMessageTransformer {
                         if (documents.isNotEmpty()) {
                             documents.forEach { document ->
                                 val content = readDocumentContent(document)
-                                val path = resolveWorkspacePath(document)
-                                val pathAttr = path?.let { " path=\"" + it + "\"" } ?: ""
-                                val prompt = "<UploadFile name=\"" + document.fileName + "\"" + pathAttr + ">\n" +
+                                val file = resolveUploadFile(document)
+                                val path = file?.let { "/upload/" + it.name }
+                                val code = file?.let { UploadCodes.codeOf("upload/" + it.name) }
+                                val attrs = buildString {
+                                    append(" name=\"").append(document.fileName).append('"')
+                                    if (code != null) append(" code=\"").append(code).append('"')
+                                    if (path != null) append(" path=\"").append(path).append('"')
+                                }
+                                val prompt = "<UploadFile" + attrs + ">\n" +
                                     "```\n" + content + "\n```\n" +
                                     "</UploadFile>"
                                 add(0, UIMessagePart.Text(prompt))
@@ -63,17 +70,31 @@ object DocumentAsPromptTransformer : InputMessageTransformer {
                     val documents = filterIsInstance<UIMessagePart.Document>()
                     if (documents.isNotEmpty()) {
                         documents.forEach { document ->
-                            val path = resolveWorkspacePath(document)
-                                ?: "/upload/" + document.fileName
+                            val file = resolveUploadFile(document)
+                            val path = file?.let { "/upload/" + it.name }
+                            val code = file?.let { UploadCodes.codeOf("upload/" + it.name) }
                             remove(document)
-                            add(
-                                0,
-                                UIMessagePart.Text(
-                                    "<UploadFile name=\"" + document.fileName + "\" path=\"" + path + "\">\n" +
-                                        "[文件未内联到上下文。完整内容在工作区路径: " + path + " — 需要查看时调用 workspace_read_file 工具传入该路径]\n" +
-                                        "</UploadFile>"
-                                ),
-                            )
+                            val attrs = buildString {
+                                append(" name=\"").append(document.fileName).append('"')
+                                if (code != null) append(" code=\"").append(code).append('"')
+                                if (path != null) append(" path=\"").append(path).append('"')
+                            }
+                            val body = buildString {
+                                append("<UploadFile").append(attrs).append(">")
+                                if (path != null && code != null) {
+                                    append("\n[文件未内联到上下文。完整内容在工作区路径: ").append(path)
+                                    append(" — 需要查看时调用 workspace_read_file 工具传入该路径]")
+                                    append("\n[上传码 ").append(code)
+                                    append("：之后任何时候都可用 upload_fetch(code) 直取该文件，无需翻找 /upload。]")
+                                } else {
+                                    // v4.8.90 修复: 旧实现在解析失败时回退到 "/upload/<原文件名>" —— 物理名其实是
+                                    // 随机 ID, 该路径根本不存在, 模型越查越找不到。现在如实说明并给出补救路径。
+                                    append("\n[该附件未能解析到工作区 /upload（历史或特殊来源的附件）。")
+                                    append("如需读取请调用 upload_fetch（用上传码，或先向用户索取），或请用户重新发送该文件。]")
+                                }
+                                append("\n</UploadFile>")
+                            }
+                            add(0, UIMessagePart.Text(body))
                         }
                     }
                 }
@@ -97,11 +118,11 @@ object DocumentAsPromptTransformer : InputMessageTransformer {
     }
 
     // 上传文件保存在 filesDir/upload 下, 该目录通过 proot 挂载到 workspace 的 /upload
-    // 返回文件在 workspace 内的绝对路径, 便于 AI 用 workspace 工具直接读取原始文件
-    private fun resolveWorkspacePath(document: UIMessagePart.Document): String? {
+    // 解析出物理文件（供拼路径 + 派生上传码）；解析不到返回 null —— 调用方绝不编造路径。
+    private fun resolveUploadFile(document: UIMessagePart.Document): File? {
         val file = runCatching { document.url.toUri().toFile() }.getOrNull() ?: return null
         if (file.parentFile?.name != "upload") return null
-        return "/upload/" + file.name
+        return file
     }
 
     private fun readDocumentContent(document: UIMessagePart.Document): String {

@@ -44,6 +44,7 @@ import me.rerere.hugeicons.stroke.Files02
 import me.rerere.hugeicons.stroke.MusicNote03
 import me.rerere.hugeicons.stroke.Video01
 import me.rerere.rikkahub.data.files.FilesManager
+import me.rerere.rikkahub.data.files.UploadCodes
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import org.koin.compose.koinInject
 import androidx.compose.runtime.getValue
@@ -137,6 +138,8 @@ internal fun MediaFileInputRow(
                             displayNameByRelativePath = displayNameByRelativePath,
                             displayNameByFileName = displayNameByFileName
                         ),
+                        // v4.8.90: 上传码可见 —— 用户可凭码随时让模型 upload_fetch 直取
+                        code = UploadCodes.codeForLocation(part.url),
                         leading = { AttachmentLeadingIcon(icon = HugeIcons.Files02) },
                         onRemove = { removePart(part, part.url) }
                     )
@@ -153,6 +156,7 @@ private fun AttachmentChip(
     title: String,
     leading: @Composable () -> Unit,
     onRemove: () -> Unit,
+    code: String? = null,
 ) {
     Surface(
         shape = RoundedCornerShape(18.dp),
@@ -176,6 +180,14 @@ private fun AttachmentChip(
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.widthIn(min = 40.dp, max = 180.dp),
             )
+            if (!code.isNullOrBlank()) {
+                Text(
+                    text = code,
+                    maxLines = 1,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Box(
                 modifier = Modifier
                     .clip(CircleShape)

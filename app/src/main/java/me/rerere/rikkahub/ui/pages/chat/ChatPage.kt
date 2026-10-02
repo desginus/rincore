@@ -111,6 +111,10 @@ import me.rerere.rikkahub.ui.components.motion.rinGlassHighlight
 import me.rerere.rikkahub.ui.components.ai.ChatInput
 import me.rerere.rikkahub.ui.components.ai.FilesPicker
 import me.rerere.rikkahub.ui.components.ai.completion.WorkspaceCompletionProvider
+import me.rerere.rikkahub.ui.components.ai.ToolMatrixPickerData
+import me.rerere.rikkahub.ui.components.ai.buildToolMatrixPickerData
+import me.rerere.rikkahub.ui.pages.setting.asShellTools
+import me.rerere.rikkahub.ui.pages.setting.buildToolList
 import me.rerere.rikkahub.ui.components.ai.rememberChatAttachmentPickerActions
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
@@ -395,6 +399,13 @@ private fun ChatPageContent(
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val workspaceRepository: WorkspaceRepository = koinInject()
+    // v4.8.90: /@ 工具矩阵选择器 —— 与设置页/模型侧同一 buildToolList 口径
+    val localToolsForPicker: me.rerere.rikkahub.data.ai.tools.local.LocalTools = koinInject()
+    val skillManagerForPicker: me.rerere.rikkahub.data.files.SkillManager = koinInject()
+    val mcpManagerForPicker: me.rerere.rikkahub.data.ai.mcp.McpManager = koinInject()
+    val conversationRepoForPicker: me.rerere.rikkahub.data.repository.ConversationRepository = koinInject()
+    val settingsStoreForPicker: me.rerere.rikkahub.data.datastore.SettingsStore = koinInject()
+    val operitToolProviderForPicker: me.rerere.rikkahub.data.operit.runtime.OperitToolProvider = koinInject()
     var previewMode by rememberSaveable { mutableStateOf(false) }
     val hazeState = rememberHazeState()
     // v3.8.9: 分享面板 (外部 Activity) 返回后 Haze 模糊纹理失效成黑框,
@@ -448,6 +459,31 @@ private fun ChatPageContent(
                 )
             )
         }.orEmpty()
+    }
+
+    // v4.8.90: /@ 选择器数据源 —— **懒构建**：只在用户真敲出 `/@` 时才跑一次全量工具池
+    val pickerFilesRoot = LocalContext.current.applicationContext.filesDir
+    val toolPickerProvider: suspend () -> ToolMatrixPickerData? = remember(
+        setting, localToolsForPicker, skillManagerForPicker, mcpManagerForPicker,
+        conversationRepoForPicker, settingsStoreForPicker, workspaceRepository, operitToolProviderForPicker,
+        pickerFilesRoot,
+    ) {
+        {
+            runCatching {
+                val previews = buildToolList(
+                    settings = setting,
+                    localTools = localToolsForPicker,
+                    skillManager = skillManagerForPicker,
+                    mcpManager = mcpManagerForPicker,
+                    conversationRepo = conversationRepoForPicker,
+                    settingsStore = settingsStoreForPicker,
+                    workspaceRepository = workspaceRepository,
+                    operitToolProvider = operitToolProviderForPicker,
+                    filesRoot = pickerFilesRoot,
+                )
+                buildToolMatrixPickerData(settings = setting, tools = previews.asShellTools())
+            }.getOrNull()
+        }
     }
 
     TTSAutoPlay(vm = vm, setting = setting, conversation = conversation)
@@ -513,6 +549,7 @@ private fun ChatPageContent(
                     sendBlocked = compressBlocking,
                     settings = setting,
                     completionProviders = completionProviders,
+                    toolPickerProvider = toolPickerProvider,
                     onCancelClick = {
                         vm.stopGeneration()
                     },
