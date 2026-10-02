@@ -36,7 +36,30 @@ object ZoneOps {
         /** 是否真的施加了改动（校验失败时 = false，settings 原样返回） */
         val ok: Boolean = true,
         val verify: ((Settings) -> Boolean)? = null,
-    )
+    ) {
+        /**
+         * 事务内串联：两个操作在**同一次**读-改-写里完成（成员函数 —— 任何持有 Res 的地方直接 `acc then { }`）。
+         *
+         * 为什么必须有它：v4.8.88 之前 UI 把"改归属"和"改描述"拆成两次 `vm.updateSettings(快照)`，
+         * 两次都从同一个旧快照出发 —— 后写把前写顶掉，用户看到"弹窗说移好了、实际没动"
+         * （假成功根因）。任何"一次动作改多处"都必须用本组合器，禁止拆成多次整快照写。
+         */
+        infix fun then(next: (Settings) -> Res): Res {
+            if (!ok) return this
+            val r = next(settings)
+            return Res(
+                settings = r.settings,
+                message = listOf(message, r.message).filter { it.isNotBlank() }.joinToString(" "),
+                // ok = 「没有校验失败」。某一步"本来就已是目标状态"（无字段变化）不是失败 ——
+                // 否则"移入区+清一个不存在的覆盖"会被误报成未生效（假失败的另一种形态）。
+                ok = ok && r.ok,
+                verify = { after -> (verify?.invoke(after) ?: true) && (r.verify?.invoke(after) ?: true) },
+            )
+        }
+    }
+
+    /** 校验失败 = 什么都没改（ok=false 是"没生效"的机器判据；回执文案照给） */
+    private fun fail(s: Settings, msg: String) = Res(s, msg, ok = false, verify = null)
 
     // ═══════════ 不变式维护（只修不增） ═══════════
 
@@ -89,12 +112,12 @@ object ZoneOps {
     ): Res {
         val tree = ZoneTree(s.toolZones)
         val cleanName = name.trim().trim('/')
-        if (cleanName.isBlank()) return Res(s, "创建失败：工具区名不能为空。")
-        if ('/' in cleanName) return Res(s, "创建失败：名字里不能带 '/' —— 层级请用 parent 指定；若想建在路径下，请先建好父区。")
+        if (cleanName.isBlank()) return fail(s, "创建失败：工具区名不能为空。")
+        if ('/' in cleanName) return fail(s, "创建失败：名字里不能带 '/' —— 层级请用 parent 指定；若想建在路径下，请先建好父区。")
         val pid = parentId?.trim()?.takeIf { it.isNotBlank() }?.let { tree.resolve(it) }
         if (parentId != null && parentId.isNotBlank() && pid == null) {
             val cands = tree.resolveCandidates(parentId)
-            return Res(
+            return fail(
                 s,
                 if (cands.size > 1) "创建失败：父区「$parentId」有多个候选：" + cands.joinToString("、") { tree.label(it) }
                 else "创建失败：父区「$parentId」不存在。可用根区：" + tree.roots().joinToString("、") { tree.label(it) },
@@ -102,7 +125,7 @@ object ZoneOps {
         }
         if (tree.nameTaken(pid, cleanName)) {
             val where = pid?.let { "「${tree.label(it)}」下" } ?: "根区"
-            return Res(s, "创建失败：$where 已存在名为「$cleanName」的工具区（同级重名）。")
+            return fail(s, "创建失败：$where 已存在名为「$cleanName」的工具区（同级重名）。")
         }
         val zone = ToolZone(
             id = newZoneId(tree.ids),
@@ -137,17 +160,17 @@ object ZoneOps {
         keywords: List<String>? = null,
     ): Res {
         val tree = ZoneTree(s.toolZones)
-        val zone = tree.get(id) ?: return Res(s, "更新失败：工具区不存在（id $id）。")
+        val zone = tree.get(id) ?: return fail(s, "更新失败：工具区不存在（id $id）。")
         val applied = ArrayList<String>(4)
 
         var newName = zone.name
         if (name != null) {
             val clean = name.trim().trim('/')
-            if (clean.isBlank()) return Res(s, "更新失败：名字不能为空。")
-            if ('/' in clean) return Res(s, "更新失败：名字里不能带 '/'。")
+            if (clean.isBlank()) return fail(s, "更新失败：名字不能为空。")
+            if ('/' in clean) return fail(s, "更新失败：名字里不能带 '/'。")
             val newParent = if (move) parentId else zone.parentId
             if (clean != zone.name && tree.nameTaken(newParent, clean, selfId = zone.id)) {
-                return Res(s, "更新失败：同级已存在名为「$clean」的工具区。")
+                return fail(s, "更新失败：同级已存在名为「$clean」的工具区。")
             }
             newName = clean
             applied.add("名字→$clean")
@@ -157,12 +180,12 @@ object ZoneOps {
         if (move) {
             val pid = parentId?.trim()?.takeIf { it.isNotBlank() }?.let { tree.resolve(it) }
             if (parentId != null && parentId.isNotBlank() && pid == null) {
-                return Res(s, "移动失败：目标父区「$parentId」不存在。")
+                return fail(s, "移动失败：目标父区「$parentId」不存在。")
             }
-            if (pid == zone.id) return Res(s, "移动失败：不能把工具区移到自己下面。")
-            if (pid != null && tree.isDescendant(pid, zone.id)) return Res(s, "移动失败：不能移到自己的子孙区下面。")
+            if (pid == zone.id) return fail(s, "移动失败：不能把工具区移到自己下面。")
+            if (pid != null && tree.isDescendant(pid, zone.id)) return fail(s, "移动失败：不能移到自己的子孙区下面。")
             if (pid != null && tree.nameTaken(pid, newName, selfId = zone.id)) {
-                return Res(s, "移动失败：目标处已有同名工具区「$newName」。")
+                return fail(s, "移动失败：目标处已有同名工具区「$newName」。")
             }
             newParent = pid
             applied.add(if (pid == null) "移到根区" else "移到「${tree.label(pid)}」")
@@ -171,7 +194,7 @@ object ZoneOps {
         if (title != null) applied.add("显示名")
         if (description != null) applied.add("触发描述")
         if (keywords != null) applied.add("触发条件")
-        if (applied.isEmpty()) return Res(s, "未提供要修改的字段（name/parent/title/description/keywords 至少一个）。")
+        if (applied.isEmpty()) return fail(s, "未提供要修改的字段（name/parent/title/description/keywords 至少一个）。")
 
         val next = s.copy(
             toolZones = s.toolZones.map { z ->
@@ -210,8 +233,8 @@ object ZoneOps {
      */
     fun delete(s: Settings, id: String): Res {
         val tree = ZoneTree(s.toolZones)
-        val zone = tree.get(id) ?: return Res(s, "删除失败：工具区不存在。")
-        if (id == FALLBACK_ZONE_ID) return Res(s, "「$FALLBACK_ZONE_ID」是兜底工具区，不能删除（未归类工具的归宿）。")
+        val zone = tree.get(id) ?: return fail(s, "删除失败：工具区不存在。")
+        if (id == FALLBACK_ZONE_ID) return fail(s, "「$FALLBACK_ZONE_ID」是兜底工具区，不能删除（未归类工具的归宿）。")
         val children = tree.childrenOf(id)
         val newParent = zone.parentId?.takeIf { it in tree.ids && it != id }
         var moved = 0
@@ -241,9 +264,9 @@ object ZoneOps {
      */
     fun assign(s: Settings, toolName: String, target: String): Res {
         val tool = toolName.trim()
-        if (tool.isBlank()) return Res(s, "归属失败：工具名为空。")
+        if (tool.isBlank()) return fail(s, "归属失败：工具名为空。")
         if (tool in CORE_MATRIX_TOOLS) {
-            return Res(s, "「$tool」是工具矩阵核心件，必须留在顶层（移出后模型将无法加载任何工具区）。")
+            return fail(s, "「$tool」是工具矩阵核心件，必须留在顶层（移出后模型将无法加载任何工具区）。")
         }
         val tree = ZoneTree(s.toolZones)
         val isTop = target.trim() == TARGET_TOP_LEVEL
@@ -289,4 +312,74 @@ object ZoneOps {
             },
         )
     }
+    // ═══════════ 事务组合器与矩阵其它写（全部走同一事务口径） ═══════════
+
+    /** 工具描述覆盖（与归属同一事务）；description 空 = 恢复原始描述 */
+    fun setToolDescription(s: Settings, tool: String, description: String?): Res {
+        val clean = description?.trim()?.takeIf { it.isNotBlank() }
+        val map = LinkedHashMap(s.toolDescriptionOverrides)
+        if (clean == null) map.remove(tool) else map[tool] = clean
+        val next = s.copy(toolDescriptionOverrides = map)
+        return Res(
+            next,
+            when {
+                clean == null && tool !in s.toolDescriptionOverrides -> "「$tool」描述本就是原始状态。"
+                clean == null -> "已恢复「$tool」的原始描述。"
+                else -> "已更新「$tool」的描述。"
+            },
+            ok = next !== s,
+            verify = { after -> after.toolDescriptionOverrides[tool] == clean },
+        )
+    }
+
+    /** 工具别名覆盖（与归属同一事务）；alias 空 = 清除别名 */
+    fun setToolAlias(s: Settings, tool: String, alias: String?): Res {
+        val clean = alias?.trim().orEmpty()
+        if (clean.isNotEmpty() && !clean.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it == '_' || it == '-' }) {
+            return fail(s, "别名不合法（只允许字母/数字/下划线/连字符）：$clean")
+        }
+        val map = LinkedHashMap(s.toolNameOverrides)
+        if (clean.isBlank()) map.remove(tool) else map[tool] = clean
+        val next = s.copy(toolNameOverrides = map)
+        return Res(
+            next,
+            when {
+                clean.isBlank() && tool !in s.toolNameOverrides -> "「$tool」本就没有别名。"
+                clean.isBlank() -> "已清除「$tool」的别名。"
+                s.toolNameOverrides[tool] == clean -> "「$tool」别名本来就是 $clean。"
+                else -> "已把「$tool」的别名设为 $clean。"
+            },
+            ok = next !== s,
+            verify = { after -> after.toolNameOverrides[tool] == clean.takeIf { it.isNotBlank() } },
+        )
+    }
+
+    /** 工具区显示/隐藏（隐藏 = 不进地图省 token，仍可加载；与其它矩阵写同一事务口径） */
+    fun setHidden(s: Settings, id: String, hidden: Boolean): Res {
+        val tree = ZoneTree(s.toolZones)
+        if (tree.get(id) == null) return fail(s, "隐藏失败：工具区不存在。")
+        val next = s.copy(hiddenZones = if (hidden) s.hiddenZones + id else s.hiddenZones - id)
+        return Res(
+            next,
+            if (hidden) "已隐藏工具区「${tree.label(id)}」（不出现在地图里，仍可加载使用）。"
+            else "已取消隐藏「${tree.label(id)}」。",
+            ok = next !== s,
+            verify = { after -> (id in after.hiddenZones) == hidden },
+        )
+    }
+
+    /** 恢复出厂工具区（只增不删；与其它矩阵写同一事务口径） */
+    fun restoreDefaults(s: Settings): Res {
+        val next = s.copy(toolZones = restoreDefaultZones(s.toolZones))
+        val added = next.toolZones.size - s.toolZones.size
+        return Res(
+            next,
+            if (added == 0) "出厂工具区齐全，无需恢复。" else "已补回 $added 个缺失的出厂工具区（只增不删，不动自建区）。",
+            ok = next !== s,
+            verify = { after ->
+                DEFAULT_TOOL_ZONES.all { d -> after.toolZones.any { it.id == d.id } }
+            },
+        )
+    }
+
 }

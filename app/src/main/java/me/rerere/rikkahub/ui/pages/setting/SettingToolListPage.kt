@@ -90,27 +90,33 @@ fun SettingToolListPage(
     val topLevelCount = allTools.count { it.name in topLevelNames }
 
     /**
-     * 归属写入口 —— **委托 [ZoneOps]**（与模型侧同一套校验与回执，不再自带第二套规则）。
-     * 批量就是循环调用同一个操作；核心件保护、顶层/自动语义全在 ZoneOps 里。
+     * 归属写入口 —— 委托 [ZoneOps]，并且**整批放进同一个事务**（v4.8.89）。
+     * 一次动作只写一次：拆成多次整快照写会互相回退（"假弹窗"根因）。
+     * 核心件恒在顶层，先剔除；失败即停并如实报告（事务语义）。
      */
     fun applyOwnership(names: Collection<String>, target: String) {
         if (names.isEmpty()) return
+        val movable = names.filter { it !in me.rerere.rikkahub.data.ai.tools.routing.CORE_MATRIX_TOOLS }
+        if (movable.isEmpty()) {
+            notice = "所选工具都含核心件（invoke_tools / manage_zone），它们必须留在顶层。"
+            return
+        }
         val mapped = when (target) {
             TOP_LEVEL_LABEL -> ZoneOps.TARGET_TOP_LEVEL
             AUTO_LABEL -> ZoneOps.TARGET_AUTO
             else -> target
         }
-        var s = settings
-        val messages = ArrayList<String>(names.size)
-        var okCount = 0
-        names.forEach { name ->
-            val res = ZoneOps.assign(s, name, mapped)
-            s = res.settings
-            if (res.ok) okCount++
-            messages.add(res.message)
-        }
-        vm.updateSettings(s)
-        notice = if (messages.size == 1) messages.first() else "已处理 $okCount/${messages.size} 个工具：${messages.first()}"
+        vm.applyZoneOp(
+            { cur ->
+                var acc = ZoneOps.Res(cur, "")
+                movable.forEach { name -> acc = acc then { ZoneOps.assign(it, name, mapped) } }
+                acc.copy(
+                    message = if (movable.size <= 3 || !acc.ok) acc.message.trim()
+                    else "已处理 ${movable.size} 个工具。"
+                )
+            },
+            onDone = { msg -> notice = msg },
+        )
     }
 
     val filtered = remember(allTools, searchQuery, filterZone, ownerMap) {
@@ -388,20 +394,29 @@ fun SettingToolListPage(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    applyOwnership(listOf(tool.name), if (isCore) TOP_LEVEL_LABEL else target)
-                    var s = settings
-                    val descMap = s.toolDescriptionOverrides.toMutableMap()
-                    if (editDesc.isNotBlank() && editDesc != tool.description) descMap[tool.name] = editDesc else descMap.remove(tool.name)
-                    s = s.copy(toolDescriptionOverrides = descMap)
-                    val nameMap = s.toolNameOverrides.toMutableMap()
-                    val newName = editName.trim()
-                    if (newName.isNotBlank() && newName.all { ch -> ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch == '_' || ch == '-' }) {
-                        nameMap[tool.name] = newName
-                    } else if (newName.isBlank()) {
-                        nameMap.remove(tool.name)
+                    // v4.8.89: 归属 / 描述 / 别名 必须在**同一个事务**里完成 ——
+                    // 旧实现是两次整快照写（同一旧基线），后写必然把归属变更顶掉（假弹窗根因）。
+                    val toolName = tool.name
+                    val ownershipTarget = if (isCore) ZoneOps.TARGET_TOP_LEVEL else when (target) {
+                        TOP_LEVEL_LABEL -> ZoneOps.TARGET_TOP_LEVEL
+                        AUTO_LABEL -> ZoneOps.TARGET_AUTO
+                        else -> target
                     }
-                    s = s.copy(toolNameOverrides = nameMap)
-                    vm.updateSettings(s)
+                    val descValue = editDesc.trim().takeIf { it.isNotBlank() && it != tool.description }
+                    val aliasRaw = editName.trim()
+                    val aliasValid = aliasRaw.isEmpty() || aliasRaw.all { ch ->
+                        ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch == '_' || ch == '-'
+                    }
+                    vm.applyZoneOp(
+                        { cur ->
+                            var acc = if (isCore) ZoneOps.Res(cur, "")
+                            else ZoneOps.assign(cur, toolName, ownershipTarget)
+                            acc = acc then { ZoneOps.setToolDescription(it, toolName, descValue) }
+                            if (aliasValid) acc = acc then { ZoneOps.setToolAlias(it, toolName, aliasRaw) }
+                            acc.copy(message = acc.message.trim().ifBlank { "已保存。" })
+                        },
+                        onDone = { msg -> notice = msg },
+                    )
                     selectedTool = null
                 }) { Text("保存") }
             },
@@ -411,10 +426,15 @@ fun SettingToolListPage(
                         tool.name in settings.topLevelAdditions || tool.name in settings.topLevelRemovals
                     ) {
                         TextButton(onClick = {
-                            applyOwnership(listOf(tool.name), AUTO_LABEL)
-                            var s = settings
-                            s = s.copy(toolDescriptionOverrides = s.toolDescriptionOverrides.toMutableMap().also { it.remove(tool.name) })
-                            vm.updateSettings(s)
+                            val toolName = tool.name
+                            vm.applyZoneOp(
+                                { cur ->
+                                    var acc = ZoneOps.assign(cur, toolName, ZoneOps.TARGET_AUTO)
+                                    acc = acc then { ZoneOps.setToolDescription(it, toolName, null) }
+                                    acc.copy(message = acc.message.trim().ifBlank { "已恢复自动归类。" })
+                                },
+                                onDone = { msg -> notice = msg },
+                            )
                             selectedTool = null
                         }) { Text("恢复自动归类") }
                     }

@@ -104,9 +104,7 @@ fun SettingZonePage(
                 actions = {
                     TextButton(
                         onClick = {
-                            vm.updateSettings(
-                                settings.copy(toolZones = restoreDefaultZones(settings.toolZones))
-                            )
+                            vm.applyZoneOp({ cur -> ZoneOps.restoreDefaults(cur) }, onDone = { zoneNotice = it })
                         },
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                     ) {
@@ -151,9 +149,8 @@ fun SettingZonePage(
                     onDelete = { deleteConfirm = it },
                     onManageSubZones = { managingSubZones = it },
                     onToggleHidden = { id ->
-                        val hs = settings.hiddenZones.toMutableSet()
-                        if (id in hs) hs.remove(id) else hs.add(id)
-                        vm.updateSettings(settings.copy(hiddenZones = hs))
+                        val hidden = id !in settings.hiddenZones
+                        vm.applyZoneOp({ cur -> ZoneOps.setHidden(cur, id, hidden) }, onDone = { zoneNotice = it })
                     },
                     onAddSubZone = { parent -> newZoneParent = parent; showNewZone = true },
                     onShowToolList = { showToolList = true },
@@ -180,16 +177,17 @@ fun SettingZonePage(
             parentLabel = newZoneParent?.let { router.label(it) },
             onDismiss = { showNewZone = false },
             onCreate = { zoneName, title, desc, keywords ->
-                val res = ZoneOps.create(
-                    settings,
-                    name = zoneName,
-                    parentId = newZoneParent,
-                    title = title,
-                    description = desc,
-                    keywords = keywords,
+                vm.applyZoneOp(
+                    { cur -> ZoneOps.create(
+                        cur,
+                        name = zoneName,
+                        parentId = newZoneParent,
+                        title = title,
+                        description = desc,
+                        keywords = keywords,
+                    ) },
+                    onDone = { zoneNotice = it },
                 )
-                if (res.ok) vm.updateSettings(res.settings)
-                zoneNotice = res.message
                 showNewZone = false
             },
         )
@@ -212,9 +210,10 @@ fun SettingZonePage(
             zone = zone,
             onDismiss = { editingZone = null },
             onSave = { title, desc, keywords ->
-                val res = ZoneOps.update(settings, id, title = title, description = desc, keywords = keywords)
-                if (res.ok) vm.updateSettings(res.settings)
-                zoneNotice = res.message
+                vm.applyZoneOp(
+                    { cur -> ZoneOps.update(cur, id, title = title, description = desc, keywords = keywords) },
+                    onDone = { zoneNotice = it },
+                )
                 editingZone = null
             },
         )
@@ -241,9 +240,7 @@ fun SettingZonePage(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    val res = ZoneOps.delete(settings, id2)
-                    if (res.ok) vm.updateSettings(res.settings)
-                    zoneNotice = res.message
+                    vm.applyZoneOp({ cur -> ZoneOps.delete(cur, id2) }, onDone = { zoneNotice = it })
                     deleteConfirm = null
                 }) { Text("确认删除", color = MaterialTheme.colorScheme.error) }
             },
@@ -291,9 +288,8 @@ fun SettingZonePage(
                             }
                             IconButton(
                                 onClick = {
-                                    val hs = settings.hiddenZones.toMutableSet()
-                                    if (subId in hs) hs.remove(subId) else hs.add(subId)
-                                    vm.updateSettings(settings.copy(hiddenZones = hs))
+                                    val hidden = subId !in settings.hiddenZones
+                                    vm.applyZoneOp({ cur -> ZoneOps.setHidden(cur, subId, hidden) }, onDone = { zoneNotice = it })
                                 },
                                 modifier = Modifier.size(28.dp),
                             ) { Icon(if (subId in settings.hiddenZones) HugeIcons.ViewOff else HugeIcons.View, "隐藏", modifier = Modifier.size(15.dp)) }
@@ -332,9 +328,10 @@ fun SettingZonePage(
                     item {
                         Row(
                             Modifier.fillMaxWidth().clickable {
-                                val res = ZoneOps.assign(settings, tool, ZoneOps.TARGET_TOP_LEVEL)
-                                if (res.ok) vm.updateSettings(res.settings)
-                                zoneNotice = res.message
+                                vm.applyZoneOp(
+                                    { cur -> ZoneOps.assign(cur, tool, ZoneOps.TARGET_TOP_LEVEL) },
+                                    onDone = { zoneNotice = it },
+                                )
                                 movingTool = null
                             }.padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -343,9 +340,7 @@ fun SettingZonePage(
                     items(zoneOptions) { zoneId ->
                         Row(
                             Modifier.fillMaxWidth().clickable {
-                                val res = ZoneOps.assign(settings, tool, zoneId)
-                                if (res.ok) vm.updateSettings(res.settings)
-                                zoneNotice = res.message
+                                vm.applyZoneOp({ cur -> ZoneOps.assign(cur, tool, zoneId) }, onDone = { zoneNotice = it })
                                 movingTool = null
                             }.padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,

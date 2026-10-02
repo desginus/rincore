@@ -662,7 +662,16 @@ class SettingsStore(
         settingsRevision.value = settingsRevision.value + 1
     }
 
+    /**
+     * v4.8.89: 整快照写**必须持锁** —— 此前它不持锁，与 `update {}` / `updateWithResult` 的
+     * 原子读-改-写交错时互相回退（"回执说已更新却没写进去"的另一半根因）。
+     */
     suspend fun update(settings: Settings) {
+        settingsMutex.withLock { updateLocked(settings) }
+    }
+
+    /** 无锁实现 —— 仅供已持锁的调用方（update {} / updateWithResult）使用。 */
+    private suspend fun updateLocked(settings: Settings) {
         if(settings.init) {
             Log.w(TAG, "Cannot update dummy settings")
             return
@@ -767,7 +776,7 @@ class SettingsStore(
         // 原子读-改-写: 并行操作(create/delete/rename/move)基于最新值,
         // 避免丢失更新 (此前并行 create 丢域 / rename+delete 竞态)
         settingsMutex.withLock {
-            update(fn(settingsFlow.value))
+            updateLocked(fn(settingsFlow.value))
         }
     }
 
@@ -775,7 +784,7 @@ class SettingsStore(
     suspend fun <T> updateWithResult(fn: (Settings) -> Pair<Settings, T>): T {
         settingsMutex.withLock {
             val (newSettings, result) = fn(settingsFlow.value)
-            update(newSettings)
+            updateLocked(newSettings)
             return result
         }
     }

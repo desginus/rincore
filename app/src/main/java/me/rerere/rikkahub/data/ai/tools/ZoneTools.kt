@@ -44,12 +44,20 @@ fun createZoneTools(
     toolPoolProvider: () -> List<Tool> = { emptyList() },
 ): List<Tool> = listOf(manageZoneTool(settingsStore, toolPoolProvider))
 
-/** 原子施加 + **写后校验**：校验不过就如实报告（这就是"假成功"的根治点）。 */
+/**
+ * 原子施加 + **写后校验**：校验不过就如实报告（这就是"假成功"的根治点）。
+ *
+ * v4.8.89: 校验对象从"重读 settingsFlow"改为"**刚施加的值**" —— updateWithResult 返回时
+ * 内存与磁盘都已落定，重读流会被任何并发写夹层误判成"未通过"（用户实证的假失败）。
+ */
 private suspend fun runZoneOp(settingsStore: SettingsStore, op: (Settings) -> ZoneOps.Res): String {
     val res = settingsStore.updateWithResult { s -> val r = op(s); r.settings to r }
-    val after = settingsStore.settingsFlow.value
-    val ok = res.verify?.invoke(after) ?: (after == res.settings)
-    return if (ok) res.message else "操作未真正生效（写后校验未通过）：${res.message}"
+    val verified = res.verify?.invoke(res.settings) ?: true
+    return when {
+        !res.ok -> "操作未生效：${res.message}"                    // 校验失败：原因已在文案里
+        !verified -> "操作未生效（写后校验未通过）：${res.message}"
+        else -> res.message
+    }
 }
 
 private fun manageZoneTool(
