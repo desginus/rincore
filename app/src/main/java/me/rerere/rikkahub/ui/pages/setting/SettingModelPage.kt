@@ -111,16 +111,8 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
 
 @Composable
 private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding: PaddingValues) {
-    var showDomainPage by remember { mutableStateOf(false) }
-
-    if (showDomainPage) {
-        SettingZonePage(
-            settings = settings,
-            vm = vm,
-            onBack = { showDomainPage = false },
-        )
-        return
-    }
+    // v4.8.93 (用户定版): 「工具矩阵」入口与「工具路由模型」设置项已删除 ——
+    // 工具矩阵在设置主页有唯一入口（此处为重复 UI）；routingModelId 字段保留（后端消费，未设=静态模板）。
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = contentPadding + PaddingValues(horizontal = 16.dp),
@@ -180,28 +172,6 @@ private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding:
                 providers = settings.providers,
                 onSelect = { vm.updateSettings(settings.copy(compressModelId = it.id)) },
             )
-        }
-        item {
-            ModelSettingItem(
-                title = stringResource(R.string.setting_model_page_routing_model),
-                description = stringResource(R.string.setting_model_page_routing_model_desc),
-                modelId = settings.routingModelId,
-                providers = settings.providers,
-                onSelect = { vm.updateSettings(settings.copy(routingModelId = it.id)) },
-                onClear = { vm.updateSettings(settings.copy(routingModelId = null)) },
-            )
-        }
-        item {
-            CardGroup(title = { Text(stringResource(R.string.setting_model_page_domain_override)) }) {
-                item(
-                    onClick = { showDomainPage = true },
-                    headlineContent = { Text(stringResource(R.string.setting_model_page_domain_override)) },
-                    supportingContent = { Text(stringResource(R.string.setting_model_page_domain_override_desc)) },
-                    trailingContent = {
-                        Icon(HugeIcons.ArrowRight01, contentDescription = null, modifier = Modifier.size(16.dp))
-                    },
-                )
-            }
         }
     }
 }

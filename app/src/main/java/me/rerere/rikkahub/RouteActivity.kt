@@ -151,6 +151,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingWebPage
 import me.rerere.rikkahub.ui.pages.setting.scheduledjobs.ScheduledJobsScreen
 import me.rerere.rikkahub.ui.pages.setting.scheduledjobs.ScheduledJobDetailScreen
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerPage
+import me.rerere.rikkahub.ui.pages.imggen.ImageGenPage
 import me.rerere.rikkahub.ui.pages.translator.TranslatorPage
 import me.rerere.rikkahub.ui.pages.stats.StatsPage
 import me.rerere.rikkahub.ui.pages.webview.WebViewPage
@@ -527,6 +528,11 @@ class RouteActivity : ComponentActivity() {
                                 TranslatorPage()
                             }
 
+                            // v4.8.93: 图像生成页接线恢复（抽屉「图像生成」入口）
+                            entry<Screen.ImageGen> {
+                                ImageGenPage()
+                            }
+
                             entry<Screen.History> {
                                 HistoryPage()
                             }
@@ -821,6 +827,10 @@ sealed interface Screen : NavKey {
     // 4.1.0: AI 翻译页 (2.5.1 移植)
     @Serializable
     data object Translator : Screen
+
+    // v4.8.93: AI 图像生成页 (2.5.6 接线恢复)
+    @Serializable
+    data object ImageGen : Screen
 
     @Serializable
     data object History : Screen

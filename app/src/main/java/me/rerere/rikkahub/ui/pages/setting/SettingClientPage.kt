@@ -113,33 +113,8 @@ fun SettingClientPage(vm: SettingVM = koinViewModel()) {
                     }
                 }
             }
-            item {
-                // v4.5.17: 仿 OpenCode 请求模式 — 对 opencode.ai 网关按模型协议映射
-                // (与 OpenCode 客户端同源: models.dev 每模型 npm 决定传输协议)
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("仿 OpenCode 请求模式", style = MaterialTheme.typography.titleMedium)
-                            }
-                            Switch(
-                                checked = settings.opencodeRequestMode,
-                                onCheckedChange = { vm.updateSettings(settings.copy(opencodeRequestMode = it)) },
-                            )
-                        }
-                        Text(
-                            "开启后，发往 OpenCode 网关 (opencode.ai) 的请求严格对齐 OpenCode 客户端：按每个模型的传输协议 (Chat Completions / Responses / Anthropic / Google) 自动分派，" +
-                                "使 Zen/Go 上仅支持 Responses 或 Anthropic 等协议的模型可用。关闭时请求行为与现在完全一致。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 8.dp),
-                        )
-                    }
-                }
-            }
+            // v4.8.93 (用户定版): 「仿 OpenCode 请求模式」UI 已删除 ——
+            // 设置字段 opencodeRequestMode 保留（后端消费不变，默认关），仅不再提供入口。
             item {
                 // v4.8.3: 发送键/思考键切换 — 防生成中误触右下角打断键
                 Card(modifier = Modifier.fillMaxWidth()) {
