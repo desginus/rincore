@@ -6,6 +6,7 @@
 package me.rerere.rikkahub.ui.components.ai
 
 import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -49,6 +50,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -70,6 +72,7 @@ import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.ArrowDown01
 import me.rerere.hugeicons.stroke.ArrowRight01
 import me.rerere.hugeicons.stroke.Brain02
 import me.rerere.hugeicons.stroke.Cancel01
@@ -89,6 +92,7 @@ import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.components.ui.icons.HeartIcon
 import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.rikkahub.ui.hooks.rememberSharedPreferenceString
 import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.utils.toDp
 import org.koin.compose.koinInject
@@ -333,6 +337,20 @@ private fun ColumnScope.ModelList(
 
     var searchKeywords by remember { mutableStateOf("") }
 
+    // 折叠的供应商（持久化），搜索时全部展开
+    var collapsedProvidersPref by rememberSharedPreferenceString("model_list_collapsed_providers", "")
+    val collapsedProviders = remember(collapsedProvidersPref) {
+        collapsedProvidersPref.orEmpty().split(",").filter { it.isNotBlank() }.toSet()
+    }
+    fun isCollapsed(provider: ProviderSetting): Boolean =
+        searchKeywords.isBlank() && provider.id.toString() in collapsedProviders
+
+    fun toggleCollapsed(provider: ProviderSetting) {
+        val id = provider.id.toString()
+        collapsedProvidersPref = (if (id in collapsedProviders) collapsedProviders - id else collapsedProviders + id)
+            .joinToString(",")
+    }
+
     val typeFilteredModelsByProvider = remember(providers, modelType) {
         providers.associate { provider ->
             provider.id to provider.models.fastFilter { it.type == modelType }
@@ -344,6 +362,12 @@ private fun ColumnScope.ModelList(
             provider.id to provider.models.fastFilter {
                 it.type == modelType && it.displayName.contains(searchKeywords, true)
             }
+        }
+    }
+
+    val visibleModelsByProvider = remember(providers, searchFilteredModelsByProvider, collapsedProviders, searchKeywords) {
+        providers.associate { provider ->
+            provider.id to if (isCollapsed(provider)) emptyList() else searchFilteredModelsByProvider[provider.id].orEmpty()
         }
     }
 
@@ -379,11 +403,14 @@ private fun ColumnScope.ModelList(
             position += 1 // provider header
             val models = typeFilteredModelsByProvider[provider.id].orEmpty()
             val modelIndex = models.indexOfFirst { it.id == currentModel }
+            val collapsed = isCollapsed(provider)
             if (modelIndex >= 0) {
+                // 折叠时定位到供应商标题
+                if (collapsed) return@remember position - 1
                 position += modelIndex
                 return@remember position
             }
-            position += models.size
+            if (!collapsed) position += models.size
         }
 
         0
@@ -421,7 +448,7 @@ private fun ColumnScope.ModelList(
     }
     val haptic = LocalHapticFeedback.current
 
-    val providerPositions = remember(providers, favoriteModels, searchFilteredModelsByProvider) {
+    val providerPositions = remember(providers, favoriteModels, visibleModelsByProvider) {
         var currentIndex = 0
         if (providers.isEmpty()) {
             currentIndex = 1 // no providers item
@@ -434,7 +461,7 @@ private fun ColumnScope.ModelList(
         providers.map { provider ->
             val position = currentIndex
             currentIndex += 1 // provider header
-            currentIndex += searchFilteredModelsByProvider[provider.id].orEmpty().size
+            currentIndex += visibleModelsByProvider[provider.id].orEmpty().size
             provider.id to position
         }.toMap()
     }
@@ -557,13 +584,25 @@ private fun ColumnScope.ModelList(
         }
 
         providers.fastForEach { providerSetting ->
+            val collapsed = isCollapsed(providerSetting)
             stickyHeader(key = "header:${providerSetting.id}") {
                 Row(
                     modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(MaterialTheme.shapes.small)
+                        .clickable { toggleCollapsed(providerSetting) }
                         .padding(horizontal = 8.dp)
                         .padding(bottom = 4.dp, top = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
+                    Icon(
+                        imageVector = if (collapsed) HugeIcons.ArrowRight01 else HugeIcons.ArrowDown01,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+
                     Text(
                         text = providerSetting.name,
                         style = MaterialTheme.typography.labelMedium,
@@ -581,7 +620,7 @@ private fun ColumnScope.ModelList(
             }
 
             items(
-                items = searchFilteredModelsByProvider[providerSetting.id].orEmpty(),
+                items = visibleModelsByProvider[providerSetting.id].orEmpty(),
                 key = { it.id }
             ) { model ->
                 val favorite = settings.value.favoriteModels.contains(model.id)

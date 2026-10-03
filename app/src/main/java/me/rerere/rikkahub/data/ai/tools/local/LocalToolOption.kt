@@ -1,7 +1,7 @@
 /* 【域 C·工具系统】 | 地图: docs/APP_MAP.md §C */
 package me.rerere.rikkahub.data.ai.tools.local
 
-/* ───【原版对齐】LocalToolOption.kt | 差异 ±52 行 (基线 2.5.1)
+/* ───【原版对齐】LocalToolOption.kt | 差异 ±53 行 (基线 2.5.1; v4.8.94 图表工具链 +ChartDisplay)
  * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
  * ───────────────────────────────────────────────────────────────*/
 
@@ -20,6 +20,7 @@ sealed class LocalToolOption {
     @Serializable @SerialName("ask_user") data object AskUser : LocalToolOption()
     @Serializable @SerialName("screen_time") data object ScreenTime : LocalToolOption()
     @Serializable @SerialName("calendar") data object Calendar : LocalToolOption()
+    @Serializable @SerialName("chart_display") data object ChartDisplay : LocalToolOption()
     @Serializable @SerialName("cron_jobs") data object CronJobs : LocalToolOption()
     @Serializable @SerialName("toast_notification") data object ToastAndNotification : LocalToolOption()
     @Serializable @SerialName("sub_agents") data object SubAgents : LocalToolOption()

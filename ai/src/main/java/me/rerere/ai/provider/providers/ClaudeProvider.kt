@@ -66,7 +66,7 @@ import me.rerere.ai.util.TraceLogger
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.parseErrorDetail
 import me.rerere.ai.util.stringSafe
-import me.rerere.ai.util.toHeaders
+import me.rerere.ai.util.mergeCustomHeaders
 import me.rerere.common.http.await
 import me.rerere.common.http.jsonPrimitiveOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -95,6 +95,7 @@ class ClaudeProvider(
         withContext(Dispatchers.IO) {
             val request = Request.Builder()
                 .url("${providerSetting.baseUrl}/models")
+                .headers(providerSetting.mergeCustomHeaders())
                 .addHeader("x-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
                 .addHeader("anthropic-version", ANTHROPIC_VERSION)
                 .get()
@@ -143,7 +144,7 @@ class ClaudeProvider(
             attempts++
             val request = Request.Builder()
                 .url("${providerSetting.baseUrl}/messages")
-                .headers(params.customHeaders.toHeaders())
+                .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
                 .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
                 .addHeader("x-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
                 .addHeader("anthropic-version", ANTHROPIC_VERSION)
@@ -210,7 +211,7 @@ class ClaudeProvider(
         val initialBodyJson = withContext(Dispatchers.Default) { json.encodeToString(initialBody) }
         val request = Request.Builder()
             .url("${providerSetting.baseUrl}/messages")
-            .headers(params.customHeaders.toHeaders())
+            .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
             .post(initialBodyJson.toRequestBody("application/json".toMediaType()))
             .addHeader("x-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
             .addHeader("anthropic-version", ANTHROPIC_VERSION)
@@ -379,7 +380,7 @@ class ClaudeProvider(
                     )
                     val retryRequest = Request.Builder()
                         .url("${providerSetting.baseUrl}/messages")
-                        .headers(params.customHeaders.toHeaders())
+                        .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
                         .post(json.encodeToString(requestBodyRef.get()).toRequestBody("application/json".toMediaType()))
                         .addHeader("x-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
                         .addHeader("anthropic-version", ANTHROPIC_VERSION)

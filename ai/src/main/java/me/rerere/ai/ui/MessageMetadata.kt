@@ -54,6 +54,9 @@ enum class ServerToolProtocol {
 
     @SerialName("anthropic_messages")
     ANTHROPIC_MESSAGES,
+
+    @SerialName("google_interactions")
+    GOOGLE_INTERACTIONS,
 }
 
 /**
@@ -91,6 +94,18 @@ data class OpenRouterReasoningMetadata(
 @Serializable
 data class GoogleThoughtMetadata(
     val thoughtSignature: String? = null,
+) : PartMetadata
+
+/**
+ * Google Interactions API 的 thought / function_call step 签名，无状态多轮时需要原样回传。
+ *
+ * 与 [GoogleThoughtMetadata] 使用不同的 key，避免在 generateContent 与 Interactions 之间切换时
+ * 把一种协议的签名发给另一种协议。
+ */
+@Serializable
+data class GoogleInteractionsMetadata(
+    @SerialName("interactions_signature")
+    val signature: String? = null,
 ) : PartMetadata
 
 /**

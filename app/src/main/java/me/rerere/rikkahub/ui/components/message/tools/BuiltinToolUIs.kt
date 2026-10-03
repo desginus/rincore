@@ -65,6 +65,9 @@ import me.rerere.hugeicons.stroke.QuillWrite01
 import me.rerere.hugeicons.stroke.Refresh01
 import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Calendar03
+import me.rerere.hugeicons.stroke.ChartColumn
+import me.rerere.hugeicons.stroke.ChartLineData01
+import me.rerere.hugeicons.stroke.ChartScatter
 import me.rerere.hugeicons.stroke.CalendarAdd01
 import me.rerere.hugeicons.stroke.SmartPhone01
 import me.rerere.hugeicons.stroke.Time02
@@ -566,6 +569,27 @@ object CalendarCreateToolUI : ToolUIRenderer {
     override fun title(context: ToolUIContext): String {
         val eventTitle = context.arguments.getStringContent("title") ?: ""
         return stringResource(R.string.chat_message_tool_calendar_create, eventTitle)
+    }
+}
+
+object ChartDisplayToolUI : ToolUIRenderer {
+    override val toolName: String = "chart_display"
+
+    override fun icon(context: ToolUIContext): ImageVector =
+        when (context.arguments.getStringContent("style")) {
+            "bar" -> HugeIcons.ChartColumn
+            "scatter" -> HugeIcons.ChartScatter
+            else -> HugeIcons.ChartLineData01
+        }
+
+    @Composable
+    override fun title(context: ToolUIContext): String {
+        val chartTitle = context.arguments.getStringContent("title")
+        return if (chartTitle.isNullOrBlank()) {
+            stringResource(R.string.chat_message_tool_chart_display)
+        } else {
+            stringResource(R.string.chat_message_tool_chart_display_with_title, chartTitle)
+        }
     }
 }
 

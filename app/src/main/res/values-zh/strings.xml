@@ -60,6 +60,7 @@
   <string name="assistant_page_chat_background_desc">设置助手聊天页面的背景图片</string>
   <string name="assistant_page_chat_model">聊天模型</string>
   <string name="assistant_page_chat_model_desc">设置助手的默认聊天模型，如果不设置，则使用全局默认聊天模型</string>
+  <string name="assistant_page_clone_with_memories">同时复制记忆</string>
   <string name="assistant_page_clone">复制</string>
   <string name="assistant_page_confirm">确定</string>
   <string name="assistant_page_context_message_count">上下文消息数量: %d</string>
@@ -283,6 +284,7 @@
   <string name="chat_page_export_format">导出格式</string>
   <string name="chat_page_export_image">导出为图片</string>
   <string name="chat_page_export_image_desc">将对话导出为PNG图片</string>
+  <string name="chat_page_export_include_reasoning">导出思维过程</string>
   <string name="chat_page_export_image_expand_reasoning">展开思维过程</string>
   <string name="chat_page_export_markdown">Markdown</string>
   <string name="chat_page_export_markdown_desc">将对话导出为markdown文件</string>
@@ -1281,6 +1283,8 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="permission_calendar_write_desc">代表您创建日历事件</string>
   <string name="assistant_page_local_tools_calendar_title">日历</string>
   <string name="assistant_page_local_tools_calendar_desc">让AI查询和创建日历事件</string>
+  <string name="assistant_page_local_tools_chart_display_title">图表显示</string>
+  <string name="assistant_page_local_tools_chart_display_desc">让 AI 显示折线图、柱状图和散点图</string>
   <string name="assistant_page_local_tools_alarm_title">闹钟</string>
   <string name="assistant_page_local_tools_alarm_desc">让 AI 创建、查看、删除设备闹钟。</string>
   <string name="assistant_page_local_tools_workflows_title">工作流</string>
@@ -1295,6 +1299,12 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="assistant_page_local_tools_system_intents_desc">允许 AI 打开系统原生应用（地图等）并自动填入你的请求</string>
   <string name="chat_message_tool_calendar_query">查询日历事件</string>
   <string name="chat_message_tool_calendar_create">创建事件: %1$s</string>
+  <string name="chat_message_tool_chart_display">显示图表</string>
+  <string name="chat_message_tool_chart_display_with_title">显示图表：%1$s</string>
+  <string name="chart_mode_chart">图表</string>
+  <string name="chart_mode_table">表格</string>
+  <string name="chart_series">系列</string>
+  <string name="chart_series_name">系列 %1$d</string>
   <string name="chat_page_move_to_folder">移动到文件夹</string>
   <string name="chat_page_remove_from_folder">移出文件夹</string>
   <string name="chat_page_create_folder">新建文件夹</string>

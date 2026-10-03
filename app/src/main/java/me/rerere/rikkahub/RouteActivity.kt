@@ -168,6 +168,7 @@ import androidx.compose.runtime.setValue
 
 private const val TAG = "RouteActivity"
 private const val ACTION_TRANSLATE = "me.rerere.rikkahub.action.TRANSLATE"
+private const val ACTION_IMAGE_GEN = "me.rerere.rikkahub.action.IMAGE_GEN"
 
 class RouteActivity : ComponentActivity() {
     private val okHttpClient by inject<OkHttpClient>()
@@ -266,6 +267,11 @@ class RouteActivity : ComponentActivity() {
                 backStack.add(Screen.Translator)
                 return@LaunchedEffect
             }
+            if (action == ACTION_IMAGE_GEN) {
+                handled = true
+                backStack.add(Screen.ImageGen)
+                return@LaunchedEffect
+            }
             val isSpecialAction = action in setOf(
                 Intent.ACTION_SEND,
                 Intent.ACTION_SEND_MULTIPLE,
@@ -361,6 +367,9 @@ class RouteActivity : ComponentActivity() {
         super.onNewIntent(intent)
         if (intent.action == ACTION_TRANSLATE) {
             navStack?.add(Screen.Translator)
+        }
+        if (intent.action == ACTION_IMAGE_GEN) {
+            navStack?.add(Screen.ImageGen)
         }
         // Navigate to the chat screen if a conversation ID is provided
         intent.getStringExtra("conversationId")?.let { text ->

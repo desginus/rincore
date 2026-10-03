@@ -15,6 +15,7 @@ import me.rerere.hugeicons.stroke.Tools
 import me.rerere.hugeicons.stroke.Share01
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Cancel01
+import me.rerere.hugeicons.stroke.Settings03
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -145,7 +146,7 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
     val provider = settings.providers.find { it.id == id } ?: return
-    val pager = rememberPagerState { 2 }
+    val pager = rememberPagerState { 3 }
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val context = LocalContext.current
@@ -229,6 +230,16 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                         }
                     }
                 )
+                NavigationBarItem(
+                    selected = pager.currentPage == 2,
+                    label = { Text(stringResource(id = R.string.setting_provider_page_advanced_settings)) },
+                    icon = { Icon(HugeIcons.Settings03, null) },
+                    onClick = {
+                        scope.launch {
+                            pager.animateScrollToPage(2)
+                        }
+                    }
+                )
             }
         }
     ) {
@@ -257,6 +268,13 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
 
                 1 -> {
                     SettingProviderModelPage(
+                        provider = provider,
+                        onEdit = onEdit
+                    )
+                }
+
+                2 -> {
+                    SettingProviderAdvancedPage(
                         provider = provider,
                         onEdit = onEdit
                     )
@@ -390,6 +408,28 @@ private fun SettingProviderModelPage(
         providerSetting = provider,
         onUpdateProvider = onEdit
     )
+}
+
+@Composable
+private fun SettingProviderAdvancedPage(
+    provider: ProviderSetting,
+    onEdit: (ProviderSetting) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .imePadding()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        CustomHeaders(
+            headers = provider.customHeaders,
+            onUpdate = { headers ->
+                onEdit(provider.copyProvider(customHeaders = headers))
+            }
+        )
+    }
 }
 
 @Composable

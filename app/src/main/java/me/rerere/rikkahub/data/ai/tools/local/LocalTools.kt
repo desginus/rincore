@@ -11,7 +11,7 @@
 package me.rerere.rikkahub.data.ai.tools.local
 
 
-/* ───【原版对齐】LocalTools | 差异 +171 行
+/* ───【原版对齐】LocalTools | 差异 +176 行
  * 来源: 原版移植 + 自研 (本地工具集合扩展)
  * 差异: 自研本地工具 (定时任务/AgentRun 等)
  * ───────────────────────────────────────────────────────────────*/
@@ -58,6 +58,7 @@ class LocalTools(
     val screenTimeTool by lazy { buildScreenTimeTool(context, eventBus) }
     val calendarQueryTool by lazy { buildCalendarQueryTool(context) }
     val calendarCreateTool by lazy { buildCalendarCreateTool(context) }
+    val chartDisplayTool by lazy { buildChartDisplayTool() }
     val costGuardTool by lazy { checkTokenUsageTool(settingsStore, conversationRepo) }
 
     fun getTools(
@@ -99,6 +100,9 @@ class LocalTools(
             tools.add(calendarQueryTool)
             tools.add(calendarCreateTool)
             tools.add(createCalendarEventTool(context))
+        }
+        if (options.contains(LocalToolOption.ChartDisplay)) {
+            tools.add(chartDisplayTool)
         }
         if (options.contains(LocalToolOption.CronJobs)) {
             val knownToolNamesProvider: () -> List<String> = {

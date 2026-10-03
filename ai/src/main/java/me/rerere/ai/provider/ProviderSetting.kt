@@ -41,6 +41,7 @@ sealed class ProviderSetting {
     abstract val models: List<Model>
     abstract val balanceOption: BalanceOption
     abstract val savedKeys: List<SavedApiKey>
+    abstract val customHeaders: List<CustomHeader>
 
     abstract val builtIn: Boolean
     abstract val description: @Composable() () -> Unit
@@ -57,6 +58,7 @@ sealed class ProviderSetting {
         models: List<Model> = this.models,
         balanceOption: BalanceOption = this.balanceOption,
         savedKeys: List<SavedApiKey> = this.savedKeys,
+        customHeaders: List<CustomHeader> = this.customHeaders,
         builtIn: Boolean = this.builtIn,
         description: @Composable (() -> Unit) = this.description,
         shortDescription: @Composable (() -> Unit) = this.shortDescription,
@@ -80,6 +82,7 @@ sealed class ProviderSetting {
         var responsesPath: String = "/responses", // 4.1.0: 自定义 Responses API 路径 (2.5.0 移植)
         var includeHistoryReasoning: Boolean = true,
         override var savedKeys: List<SavedApiKey> = emptyList(),
+        override val customHeaders: List<CustomHeader> = emptyList(),
     ) : ProviderSetting() {
         override fun addModel(model: Model): ProviderSetting {
             return copy(models = models + model)
@@ -110,6 +113,7 @@ sealed class ProviderSetting {
             models: List<Model>,
             balanceOption: BalanceOption,
             savedKeys: List<SavedApiKey>,
+            customHeaders: List<CustomHeader>,
             builtIn: Boolean,
             description: @Composable (() -> Unit),
             shortDescription: @Composable (() -> Unit),
@@ -123,7 +127,8 @@ sealed class ProviderSetting {
                 description = description,
                 balanceOption = balanceOption,
                 shortDescription = shortDescription,
-                savedKeys = savedKeys
+                savedKeys = savedKeys,
+                customHeaders = customHeaders,
             )
         }
     }
@@ -142,12 +147,14 @@ sealed class ProviderSetting {
         var apiKey: String = "",
         var baseUrl: String = "https://generativelanguage.googleapis.com/v1beta",
         var vertexAI: Boolean = false,
+        var useInteractionsApi: Boolean = false, // ignored when vertex AI is enabled
         var useServiceAccount: Boolean = false,
         var privateKey: String = "", // only for vertex AI service account
         var serviceAccountEmail: String = "", // only for vertex AI service account
         var location: String = "us-central1", // only for vertex AI service account
         var projectId: String = "", // only for vertex AI service account
         override var savedKeys: List<SavedApiKey> = emptyList(),
+        override val customHeaders: List<CustomHeader> = emptyList(),
     ) : ProviderSetting() {
         override fun addModel(model: Model): ProviderSetting {
             return copy(models = models + model)
@@ -178,6 +185,7 @@ sealed class ProviderSetting {
             models: List<Model>,
             balanceOption: BalanceOption,
             savedKeys: List<SavedApiKey>,
+            customHeaders: List<CustomHeader>,
             builtIn: Boolean,
             description: @Composable (() -> Unit),
             shortDescription: @Composable (() -> Unit),
@@ -191,7 +199,8 @@ sealed class ProviderSetting {
                 description = description,
                 shortDescription = shortDescription,
                 balanceOption = balanceOption,
-                savedKeys = savedKeys
+                savedKeys = savedKeys,
+                customHeaders = customHeaders,
             )
         }
     }
@@ -212,6 +221,7 @@ sealed class ProviderSetting {
         var promptCaching: Boolean = false,
         var promptCacheTtl: ClaudePromptCacheTtl = ClaudePromptCacheTtl.FIVE_MINUTES,
         override var savedKeys: List<SavedApiKey> = emptyList(),
+        override val customHeaders: List<CustomHeader> = emptyList(),
     ) : ProviderSetting() {
         override fun addModel(model: Model): ProviderSetting {
             return copy(models = models + model)
@@ -242,6 +252,7 @@ sealed class ProviderSetting {
             models: List<Model>,
             balanceOption: BalanceOption,
             savedKeys: List<SavedApiKey>,
+            customHeaders: List<CustomHeader>,
             builtIn: Boolean,
             description: @Composable (() -> Unit),
             shortDescription: @Composable (() -> Unit),
@@ -256,6 +267,7 @@ sealed class ProviderSetting {
                 description = description,
                 shortDescription = shortDescription,
                 savedKeys = savedKeys,
+                customHeaders = customHeaders,
             )
         }
     }

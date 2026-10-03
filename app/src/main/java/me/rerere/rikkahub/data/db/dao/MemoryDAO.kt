@@ -47,6 +47,9 @@ interface MemoryDAO {
     @Insert
     suspend fun insertMemory(memory: MemoryEntity): Long
 
+    @Insert
+    suspend fun insertMemories(memories: List<MemoryEntity>)
+
     @Update
     suspend fun updateMemory(memory: MemoryEntity)
 

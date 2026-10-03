@@ -60,6 +60,7 @@
   <string name="assistant_page_chat_background_desc">設定助手聊天頁面的背景圖片</string>
   <string name="assistant_page_chat_model">聊天模型</string>
   <string name="assistant_page_chat_model_desc">設定助手的預設聊天模型，如果不設定，則使用全域預設聊天模型</string>
+  <string name="assistant_page_clone_with_memories">同時複製記憶</string>
   <string name="assistant_page_clone">複製</string>
   <string name="assistant_page_confirm">確定</string>
   <string name="assistant_page_context_message_count">上下文訊息數量: %d</string>
@@ -281,6 +282,7 @@
   <string name="chat_page_export_format">匯出格式</string>
   <string name="chat_page_export_image">匯出為圖片</string>
   <string name="chat_page_export_image_desc">將對話匯出為PNG圖片</string>
+  <string name="chat_page_export_include_reasoning">匯出思維過程</string>
   <string name="chat_page_export_image_expand_reasoning">展開思維過程</string>
   <string name="chat_page_export_markdown">Markdown</string>
   <string name="chat_page_export_markdown_desc">將對話匯出為markdown檔案</string>
@@ -1244,8 +1246,16 @@
   <string name="permission_calendar_write_desc">代您建立日曆活動</string>
   <string name="assistant_page_local_tools_calendar_title">日曆</string>
   <string name="assistant_page_local_tools_calendar_desc">讓AI查詢和建立行事曆事件</string>
+  <string name="assistant_page_local_tools_chart_display_title">圖表顯示</string>
+  <string name="assistant_page_local_tools_chart_display_desc">讓 AI 顯示折線圖、長條圖和散佈圖</string>
   <string name="chat_message_tool_calendar_query">查詢日曆事件</string>
   <string name="chat_message_tool_calendar_create">建立事件: %1$s</string>
+  <string name="chat_message_tool_chart_display">顯示圖表</string>
+  <string name="chat_message_tool_chart_display_with_title">顯示圖表：%1$s</string>
+  <string name="chart_mode_chart">圖表</string>
+  <string name="chart_mode_table">表格</string>
+  <string name="chart_series">數列</string>
+  <string name="chart_series_name">數列 %1$d</string>
   <string name="chat_page_move_to_folder">移至資料夾</string>
   <string name="chat_page_remove_from_folder">從資料夾移除</string>
   <string name="chat_page_create_folder">新資料夾</string>
