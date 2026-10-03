@@ -660,6 +660,15 @@ private fun TextInputRow(
                     )
                     toolPicker = null
                 },
+                onPickZone = { zone ->
+                    // v4.8.92: 选整个工具区 —— 留下 `@完整路径`，模型据此 invoke_tools 加载/使用该区
+                    val end = state.textContent.selection.max.coerceAtLeast(picker.triggerStart + 2)
+                    state.applyCompletion(
+                        TextRange(picker.triggerStart, end),
+                        ChatCompletionItem(label = zone.id, insertText = "@${zone.id} "),
+                    )
+                    toolPicker = null
+                },
                 onDismiss = { toolPicker = null },
             )
         }

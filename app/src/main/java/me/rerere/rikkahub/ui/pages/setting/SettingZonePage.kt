@@ -21,7 +21,6 @@ import me.rerere.hugeicons.stroke.*
 import me.rerere.rikkahub.data.ai.tools.routing.FALLBACK_ZONE_ID
 import me.rerere.rikkahub.data.ai.tools.routing.ToolZone
 import me.rerere.rikkahub.data.ai.tools.routing.ZoneRouter
-import me.rerere.rikkahub.data.ai.tools.routing.restoreDefaultZones
 import me.rerere.rikkahub.data.ai.tools.routing.ZoneOps
 import me.rerere.rikkahub.data.ai.tools.topLevelToolSetOf
 import me.rerere.rikkahub.data.ai.tools.zoneRouterOf
@@ -107,16 +106,8 @@ fun SettingZonePage(
                 title = { Text("工具矩阵") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(HugeIcons.ArrowLeft01, null) } },
                 actions = {
-                    TextButton(
-                        onClick = {
-                            vm.applyZoneOp({ cur -> ZoneOps.restoreDefaults(cur) }, onDone = { zoneNotice = it })
-                        },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                    ) {
-                        Icon(HugeIcons.Refresh01, "恢复出厂工具区", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(4.dp))
-                        Text("恢复出厂", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                    }
+                    // v4.8.92 (用户定版): 「恢复出厂」按钮已移除 —— 误触会把已删的模板区整批复活,
+                    // 对用户精心裁剪过的矩阵是不可逆破坏; 缺失模板区可由用户手动重建。
                     IconButton(onClick = { showToolList = true }) { Icon(HugeIcons.View, "工具列表") }
                     IconButton(onClick = { newZoneParent = null; showNewZone = true }) { Icon(HugeIcons.Add01, "新建") }
                 },

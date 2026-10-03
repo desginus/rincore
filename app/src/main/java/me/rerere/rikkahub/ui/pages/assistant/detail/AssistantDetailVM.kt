@@ -28,6 +28,7 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Tag
+import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import kotlin.uuid.Uuid
@@ -41,6 +42,7 @@ class AssistantDetailVM(
     private val filesManager: FilesManager,
     private val skillManager: SkillManager,
     private val workspaceRepository: WorkspaceRepository,
+    private val conversationRepository: ConversationRepository,
 ) : ViewModel() {
     private val assistantId = Uuid.parse(id)
 
@@ -82,6 +84,30 @@ class AssistantDetailVM(
         .stateIn(
             scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = emptyList()
         )
+
+    /** v4.8.92: 该助手名下的全部单对话记忆（管理页「单对话记忆」视图用；与写入桶同口径）。 */
+    val conversationMemories = assistant
+        .flatMapLatest { currentAssistant ->
+            val scopeId = if (currentAssistant.useGlobalMemory) {
+                MemoryRepository.GLOBAL_MEMORY_ID
+            } else {
+                assistantId.toString()
+            }
+            memoryRepository.getConversationMemoriesOfAssistantFlow(scopeId)
+        }
+        .stateIn(
+            scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = emptyList()
+        )
+
+    /** v4.8.92: 对话标题（来源标签/分组头展示；已删除对话返回 null）。 */
+    suspend fun conversationTitle(conversationId: String): String? = runCatching {
+        conversationRepository.getConversationById(Uuid.parse(conversationId))?.title
+    }.getOrNull()
+
+    /** v4.8.92: 创建单对话记忆时的归属对话候选。 */
+    suspend fun recentConversations() = runCatching {
+        conversationRepository.getRecentConversations(assistantId, limit = 50)
+    }.getOrDefault(emptyList())
 
     val providers = settingsStore
         .settingsFlow
@@ -192,7 +218,11 @@ class AssistantDetailVM(
             }
             memoryRepository.addMemory(
                 assistantId = memoryAssistantId,
-                content = memory.content
+                content = memory.content,
+                // v4.8.92: 单对话记忆 —— 在「单对话记忆」视图创建时带归属对话；
+                // 助手级记忆记录来源对话（UI 小标签）。
+                conversationId = memory.conversationId,
+                sourceConversationId = memory.conversationId ?: memory.sourceConversationId,
             )
         }
     }

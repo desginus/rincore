@@ -32,6 +32,9 @@ data class Assistant(
     val streamOutput: Boolean = true,
     val enableMemory: Boolean = false,
     val useGlobalMemory: Boolean = false, // 使用全局共享记忆而非助手隔离记忆
+    // v4.8.92: 单对话记忆模式 — 开启后新记忆只挂载到当前对话（仅在该对话内可见，随对话删除）；
+    // 作为助手基础设定持久化（DataStore），开/关只对本助手生效。
+    val conversationScopedMemory: Boolean = false,
     val enableRecentChatsReference: Boolean = false,
     val messageTemplate: String = "{{ message }}",
     val presetMessages: List<UIMessage> = emptyList(),
@@ -79,6 +82,10 @@ data class QuickMessage(
 data class AssistantMemory(
     val id: Long,
     val content: String = "",
+    // v4.8.92: 非空 = 单对话记忆（仅在该对话内可见；对话删除即销毁）
+    val conversationId: String? = null,
+    // v4.8.92: 助手级记忆的来源对话（UI 小标签；不参与可见性判定）
+    val sourceConversationId: String? = null,
 )
 
 @Serializable

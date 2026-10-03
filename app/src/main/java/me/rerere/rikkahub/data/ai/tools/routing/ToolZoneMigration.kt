@@ -8,7 +8,7 @@
  *  C. [migrateLinkKeys] —— 归属键同源化：`skill:<名>` → 完整工具名 `skill__<净化名>`。
  *     上一版模型侧写 `skill:<净化名>`、SkillManager 清理侧比 `skill:<原始目录名>`，
  *     键不同源 ⇒ 挂载点被当孤儿删掉 ⇒ 归类回落"老家"（用户实证 bug）。
- *  D. [restoreDefaultZones] —— 恢复出厂：按**固定 id** 幂等补齐缺失的模板区，只增不删。
+ *  D. （v4.8.92 已移除「恢复出厂」入口与实现 —— 误触会复活用户已删的模板区。）
  */
 /* 【域 C·工具系统】 | 地图: docs/APP_MAP.md §C */
 package me.rerere.rikkahub.data.ai.tools.routing
@@ -132,11 +132,3 @@ fun migrateLinkKeys(links: Map<String, String>): Map<String, String> {
     return if (changed) out else links
 }
 
-// ═══════════ D. 恢复出厂工具区 ═══════════
-
-/** 只补回「缺失的模板区」（按固定 id 判定），不动用户自建区、不覆盖用户改过的区。 */
-fun restoreDefaultZones(current: List<ToolZone>): List<ToolZone> {
-    val have = current.map { it.id }.toSet()
-    val missing = DEFAULT_TOOL_ZONES.filter { it.id !in have }
-    return if (missing.isEmpty()) current else current + missing
-}

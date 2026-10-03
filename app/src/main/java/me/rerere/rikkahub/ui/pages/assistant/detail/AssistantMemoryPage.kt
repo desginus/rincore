@@ -36,6 +36,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.material3.FilterChip
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -70,6 +72,8 @@ fun AssistantMemoryPage(id: String) {
     )
     val assistant by vm.assistant.collectAsStateWithLifecycle()
     val memories by vm.memories.collectAsStateWithLifecycle()
+    // v4.8.92: 单对话记忆（管理视图 + 来源标签标题解析）
+    val conversationMemories by vm.conversationMemories.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
@@ -92,6 +96,9 @@ fun AssistantMemoryPage(id: String) {
             innerPadding = innerPadding,
             assistant = assistant,
             memories = memories,
+            conversationMemories = conversationMemories,
+            loadTitle = { vm.conversationTitle(it) },
+            loadRecentConversations = { vm.recentConversations() },
             onUpdateAssistant = { vm.update(it) },
             onDeleteMemory = { vm.deleteMemory(it) },
             onAddMemory = { vm.addMemory(it) },
@@ -105,6 +112,9 @@ private fun AssistantMemoryContent(
     innerPadding: PaddingValues,
     assistant: Assistant,
     memories: List<AssistantMemory>,
+    conversationMemories: List<AssistantMemory>,
+    loadTitle: suspend (String) -> String?,
+    loadRecentConversations: suspend () -> List<me.rerere.rikkahub.data.model.Conversation>,
     onUpdateAssistant: (Assistant) -> Unit,
     onAddMemory: (AssistantMemory) -> Unit,
     onUpdateMemory: (AssistantMemory) -> Unit,
@@ -118,6 +128,22 @@ private fun AssistantMemoryContent(
         }
     }
     var pendingDeleteMemory by remember { mutableStateOf<AssistantMemory?>(null) }
+
+    // v4.8.92: 记忆范围管理 —— [整个助手] / [单对话记忆]
+    var manageConversationScope by remember { mutableStateOf(false) }
+    var showConversationPicker by remember { mutableStateOf(false) }
+    // 对话标题缓存（来源标签 / 分组头；已删除对话 → 显示"已删除的对话"）
+    val memoryTitles by produceState<Map<String, String>>(
+        initialValue = emptyMap(), memories, conversationMemories,
+    ) {
+        val ids = (
+            memories.mapNotNull { it.sourceConversationId } +
+                conversationMemories.mapNotNull { it.conversationId }
+            ).toSet()
+        val map = HashMap<String, String>()
+        ids.forEach { cid -> loadTitle(cid)?.let { t -> map[cid] = t } }
+        value = map
+    }
 
     var showTimeReminderIntervalDialog by remember(assistant.id) { mutableStateOf(false) }
     var timeReminderIntervalInput by remember(assistant.id) { mutableStateOf("") }
@@ -202,6 +228,47 @@ private fun AssistantMemoryContent(
         )
     }
 
+    // v4.8.92: 新建单对话记忆 → 先选归属对话
+    if (showConversationPicker) {
+        val recentConversations by produceState<List<me.rerere.rikkahub.data.model.Conversation>>(
+            initialValue = emptyList(),
+        ) {
+            value = runCatching { loadRecentConversations() }.getOrDefault(emptyList())
+        }
+        AlertDialog(
+            onDismissRequest = { showConversationPicker = false },
+            title = { Text("选择归属对话") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    recentConversations.forEach { conv ->
+                        TextButton(
+                            onClick = {
+                                showConversationPicker = false
+                                memoryDialogState.open(
+                                    AssistantMemory(0, "", conversationId = conv.id.toString())
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                text = conv.title.ifBlank { "新对话" },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    if (recentConversations.isEmpty()) {
+                        Text("没有可用对话", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showConversationPicker = false }) { Text("取消") }
+            },
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -250,6 +317,25 @@ private fun AssistantMemoryContent(
                             )
                         },
                         enabled = assistant.enableMemory
+                    )
+                }
+            )
+            item(
+                headlineContent = { Text("单对话记忆") },
+                supportingContent = {
+                    Text("开启后，新记忆只挂载到当前对话：仅在该对话内可见，对话删除即销毁。")
+                },
+                trailingContent = {
+                    Switch(
+                        checked = assistant.conversationScopedMemory,
+                        onCheckedChange = {
+                            onUpdateAssistant(
+                                assistant.copy(
+                                    conversationScopedMemory = it
+                                )
+                            )
+                        },
+                        enabled = assistant.enableMemory,
                     )
                 }
             )
@@ -324,7 +410,12 @@ private fun AssistantMemoryContent(
 
             IconButton(
                 onClick = {
-                    memoryDialogState.open(AssistantMemory(0, ""))
+                    if (manageConversationScope) {
+                        // 单对话记忆：先选归属对话
+                        showConversationPicker = true
+                    } else {
+                        memoryDialogState.open(AssistantMemory(0, ""))
+                    }
                 },
                 modifier = Modifier.align(Alignment.CenterEnd)
             ) {
@@ -335,16 +426,67 @@ private fun AssistantMemoryContent(
             }
         }
 
-        memories.fastForEach { memory ->
-            key(memory.id) {
-                MemoryItem(
-                    memory = memory,
-                    onEditMemory = {
-                        memoryDialogState.open(it)
-                    },
-                    onDeleteMemory = {
-                        pendingDeleteMemory = it
+        // v4.8.92: 范围切换 —— 分别管理「整个助手」与「单对话记忆」
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FilterChip(
+                selected = !manageConversationScope,
+                onClick = { manageConversationScope = false },
+                label = { Text("整个助手") },
+            )
+            FilterChip(
+                selected = manageConversationScope,
+                onClick = { manageConversationScope = true },
+                label = { Text("单对话记忆") },
+            )
+        }
+
+        if (!manageConversationScope) {
+            memories.fastForEach { memory ->
+                key(memory.id) {
+                    MemoryItem(
+                        memory = memory,
+                        tag = memory.sourceConversationId?.let { sid ->
+                            memoryTitles[sid]?.let { "来自「$it」" } ?: "来自已删除的对话"
+                        },
+                        onEditMemory = {
+                            memoryDialogState.open(it)
+                        },
+                        onDeleteMemory = {
+                            pendingDeleteMemory = it
+                        }
+                    )
+                }
+            }
+        } else {
+            // 单对话记忆：按归属对话分组（组头 = 对话标题；已删除 → 明示）
+            conversationMemories.groupBy { it.conversationId }.forEach { (cid, list) ->
+                val title = cid?.let { memoryTitles[it] } ?: "已删除的对话"
+                Text(
+                    text = "$title（${list.size}）",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+                list.fastForEach { memory ->
+                    key(memory.id) {
+                        MemoryItem(
+                            memory = memory,
+                            tag = "仅在该对话内可见",
+                            onEditMemory = { memoryDialogState.open(it) },
+                            onDeleteMemory = { pendingDeleteMemory = it }
+                        )
                     }
+                }
+            }
+            if (conversationMemories.isEmpty()) {
+                Text(
+                    text = "还没有单对话记忆。点右上角 + 选择归属对话后创建。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp),
                 )
             }
         }
@@ -373,6 +515,7 @@ private fun AssistantMemoryContent(
 @Composable
 private fun MemoryItem(
     memory: AssistantMemory,
+    tag: String? = null,
     onEditMemory: (AssistantMemory) -> Unit,
     onDeleteMemory: (AssistantMemory) -> Unit
 ) {
@@ -398,6 +541,14 @@ private fun MemoryItem(
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
                 )
+                // v4.8.92: 小标签（来源对话 / 单对话可见性说明）
+                tag?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
+                    )
+                }
             }
             ItemActionMenu(
                 actions = listOf(

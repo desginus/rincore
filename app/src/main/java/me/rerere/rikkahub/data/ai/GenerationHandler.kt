@@ -383,13 +383,31 @@ class GenerationHandler(
                         buildMemoryTools(
                             json = json,
                             onCreation = { content ->
-                                memoryRepo.addMemory(memoryAssistantId, content)
+                                // v4.8.92: 单对话记忆模式开启时新记忆只挂载到当前对话；
+                                // 未开启则挂到助手，并记录来源对话（UI 小标签）。
+                                val convId = conversationId?.toString()
+                                memoryRepo.addMemory(
+                                    assistantId = memoryAssistantId,
+                                    content = content,
+                                    conversationId = convId.takeIf { assistant.conversationScopedMemory },
+                                    sourceConversationId = convId,
+                                )
                             },
                             onUpdate = { id, content ->
-                                memoryRepo.updateContent(id, content)
+                                // v4.8.92: 守卫 —— 其它对话的单对话记忆不可被模型修改
+                                memoryRepo.updateContentChecked(
+                                    id = id,
+                                    content = content,
+                                    allowedAssistantId = memoryAssistantId,
+                                    currentConversationId = conversationId?.toString(),
+                                )
                             },
                             onDelete = { id ->
-                                memoryRepo.deleteMemory(id)
+                                memoryRepo.deleteMemoryChecked(
+                                    id = id,
+                                    allowedAssistantId = memoryAssistantId,
+                                    currentConversationId = conversationId?.toString(),
+                                )
                             }
                         ).let(this::addAll)
                     }
@@ -458,13 +476,31 @@ class GenerationHandler(
                         buildMemoryTools(
                             json = json,
                             onCreation = { content ->
-                                memoryRepo.addMemory(memoryAssistantId, content)
+                                // v4.8.92: 单对话记忆模式开启时新记忆只挂载到当前对话；
+                                // 未开启则挂到助手，并记录来源对话（UI 小标签）。
+                                val convId = conversationId?.toString()
+                                memoryRepo.addMemory(
+                                    assistantId = memoryAssistantId,
+                                    content = content,
+                                    conversationId = convId.takeIf { assistant.conversationScopedMemory },
+                                    sourceConversationId = convId,
+                                )
                             },
                             onUpdate = { id, content ->
-                                memoryRepo.updateContent(id, content)
+                                // v4.8.92: 守卫 —— 其它对话的单对话记忆不可被模型修改
+                                memoryRepo.updateContentChecked(
+                                    id = id,
+                                    content = content,
+                                    allowedAssistantId = memoryAssistantId,
+                                    currentConversationId = conversationId?.toString(),
+                                )
                             },
                             onDelete = { id ->
-                                memoryRepo.deleteMemory(id)
+                                memoryRepo.deleteMemoryChecked(
+                                    id = id,
+                                    allowedAssistantId = memoryAssistantId,
+                                    currentConversationId = conversationId?.toString(),
+                                )
                             }
                         ).let(this::addAll)
                     }

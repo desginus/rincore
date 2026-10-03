@@ -11,7 +11,7 @@
   <string name="asr_button_stop">停止</string>
   <string name="assistant_detail_basic_desc">配置名称、头像、模型和参数</string>
   <string name="assistant_detail_extensions_desc">管理提示词注入、世界书和技能等扩展</string>
-  <string name="assistant_detail_local_tools_desc">启用本地工具（如 JavaScript 引擎）</string>
+  <string name="assistant_detail_local_tools_desc">启用本地功能（如 JavaScript 引擎）</string>
   <string name="assistant_detail_mcp_desc">为助手配置 MCP 服务器工具</string>
   <string name="assistant_detail_memory_desc">管理助手记忆和最近的聊天引用</string>
   <string name="assistant_detail_prompt_desc">设置系统提示、消息模板和正则规则</string>
@@ -131,7 +131,7 @@
   <string name="assistant_page_system_prompt">系统提示词</string>
   <string name="assistant_page_tab_basic">基础设定</string>
   <string name="assistant_page_tab_extensions">扩展管理</string>
-  <string name="assistant_page_tab_local_tools">本地工具</string>
+  <string name="assistant_page_tab_local_tools">本地设置</string>
   <string name="assistant_page_tab_mcp">MCP</string>
   <string name="assistant_page_tab_memory">记忆</string>
   <string name="assistant_page_tab_prompt">提示词</string>
@@ -1281,6 +1281,10 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="permission_calendar_write_desc">代表您创建日历事件</string>
   <string name="assistant_page_local_tools_calendar_title">日历</string>
   <string name="assistant_page_local_tools_calendar_desc">让AI查询和创建日历事件</string>
+  <string name="assistant_page_local_tools_alarm_title">闹钟</string>
+  <string name="assistant_page_local_tools_alarm_desc">让 AI 创建、查看、删除设备闹钟。</string>
+  <string name="assistant_page_local_tools_workflows_title">工作流</string>
+  <string name="assistant_page_local_tools_workflows_desc">让 AI 创建、编辑并运行保存好的多步工作流。</string>
   <string name="assistant_page_local_tools_cron_jobs_title">定时任务</string>
   <string name="assistant_page_local_tools_cron_jobs_desc">创建定时后台任务 — AI 可安排周期性自动执行的作业</string>
   <string name="assistant_page_local_tools_toast_notification_title">提示与通知</string>
@@ -1402,7 +1406,7 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="subagent_budget_title">子代理预算</string>
   <string name="subagent_budget_used">本对话已用 %1$s / %2$s tokens</string>
   <string name="subagent_budget_limit_label">上限（千 tokens）</string>
-  <string name="subagent_budget_hint">超出后：终止正在运行的子代理、禁止新派发，并告知模型。默认 100K。</string>
+  <string name="subagent_budget_hint">本对话已用 = 本对话全部子代理的累计消耗（含进行中的）。清零只重置本对话的计数；上限对所有对话生效。超出后：终止正在运行的子代理、禁止新派发，并告知模型。默认 100K。</string>
   <string name="subagent_budget_save">保存</string>
   <string name="subagent_budget_reset">清零本对话</string>
   <string name="subagent_budget_icon">子代理预算</string>

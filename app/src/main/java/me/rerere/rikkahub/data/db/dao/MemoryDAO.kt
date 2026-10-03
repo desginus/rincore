@@ -14,11 +14,26 @@ import me.rerere.rikkahub.data.db.entity.MemoryEntity
 
 @Dao
 interface MemoryDAO {
-    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId ORDER BY id ASC")
+    // v4.8.92: 助手级记忆 = 排除单对话记忆（conversation_id IS NULL）—— 单对话记忆绝不出现在
+    // 其它对话的注入与"整个助手"列表里（用户定版：其它对话无法观测/修改/阅读）。
+    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId AND conversation_id IS NULL ORDER BY id ASC")
     fun getMemoriesOfAssistantFlow(assistantId: String): Flow<List<MemoryEntity>>
 
-    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId ORDER BY id ASC")
+    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId AND conversation_id IS NULL ORDER BY id ASC")
     suspend fun getMemoriesOfAssistant(assistantId: String): List<MemoryEntity>
+
+    // ── v4.8.92: 单对话记忆 ──
+    @Query("SELECT * FROM memoryentity WHERE conversation_id = :conversationId ORDER BY id ASC")
+    fun getMemoriesOfConversationFlow(conversationId: String): Flow<List<MemoryEntity>>
+
+    @Query("SELECT * FROM memoryentity WHERE conversation_id = :conversationId ORDER BY id ASC")
+    suspend fun getMemoriesOfConversation(conversationId: String): List<MemoryEntity>
+
+    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId AND conversation_id IS NOT NULL ORDER BY conversation_id ASC, id ASC")
+    fun getConversationMemoriesOfAssistantFlow(assistantId: String): Flow<List<MemoryEntity>>
+
+    @Query("DELETE FROM memoryentity WHERE conversation_id = :conversationId")
+    suspend fun deleteMemoriesOfConversation(conversationId: String)
 
     @Query("SELECT * FROM memoryentity")
     fun getAllMemoriesFlow(): Flow<List<MemoryEntity>>

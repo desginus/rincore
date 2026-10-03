@@ -38,9 +38,11 @@ import me.rerere.ai.core.Tool
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowLeft01
 import me.rerere.hugeicons.stroke.ArrowRight01
+import me.rerere.hugeicons.stroke.AtSign
 import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Folder01
 import me.rerere.hugeicons.stroke.Wrench01
+import me.rerere.rikkahub.data.ai.tools.routing.toolOriginOf
 import me.rerere.rikkahub.data.ai.tools.zoneRouterOf
 import me.rerere.rikkahub.data.datastore.Settings
 
@@ -109,6 +111,7 @@ fun ToolMatrixPickerPopup(
     onPush: (String) -> Unit,
     onBack: () -> Unit,
     onPick: (ToolPickerTool) -> Unit,
+    onPickZone: (ToolPickerZone) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val currentZone = zoneStack.lastOrNull()
@@ -202,6 +205,16 @@ fun ToolMatrixPickerPopup(
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
+                        // v4.8.92: 选「区」—— 插入 @完整路径（提示模型加载/使用整个区），
+                        // 与"点行进区"（下钻）并存：AtSign = 选此区，其它区域 = 下钻。
+                        IconButton(onClick = { onPickZone(zone) }) {
+                            Icon(
+                                imageVector = HugeIcons.AtSign,
+                                contentDescription = "选择此工具区",
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                         Icon(
                             imageVector = HugeIcons.ArrowRight01,
                             contentDescription = null,
@@ -245,6 +258,12 @@ fun ToolMatrixPickerPopup(
                                 )
                             }
                         }
+                        // v4.8.92: 来源标签（技能/MCP/插件/系统/本地）—— Skill 与 MCP 的统一展示口径
+                        Text(
+                            text = toolOriginOf(tool.rawName).label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                        )
                     }
                 }
                 if (zones.isEmpty() && tools.isEmpty()) {

@@ -64,7 +64,7 @@ import me.rerere.rikkahub.utils.JsonInstant
         WorkflowRunEntity::class,
         SubAgentRunEntity::class,
     ],
-    version = 31,
+    version = 32,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -129,6 +129,16 @@ object TokenUsageConverter {
     @TypeConverter
     fun toTokenUsage(usage: String): TokenUsage? {
         return JsonInstant.decodeFromString(usage)
+    }
+}
+
+/**
+ * 4.8.92: 单对话记忆字段 (31+ schema json 缺失, 手写迁移 — 同 30_31 先例)。
+ *  两列均 nullable TEXT 直接 ADD COLUMN; 历史记忆 conversation_id = NULL → 仍是助手级, 行为不变。 */
+val MIGRATION_31_32 = object : androidx.room.migration.Migration(31, 32) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE memoryentity ADD COLUMN conversation_id TEXT")
+        db.execSQL("ALTER TABLE memoryentity ADD COLUMN source_conversation_id TEXT")
     }
 }
 

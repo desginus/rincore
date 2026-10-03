@@ -97,6 +97,8 @@ import androidx.compose.ui.util.fastCoerceAtLeast
 import androidx.compose.ui.zIndex
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import org.koin.compose.koinInject
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.R
@@ -632,6 +634,9 @@ private fun ChatListPreview(
     var searchQuery by remember { mutableStateOf("") }
     // v4.8.88: 子代理预算弹窗开关
     var showBudgetDialog by remember { mutableStateOf(false) }
+    // v4.8.92: 预算面板直连引擎（显示含未落盘的真实用量；清零走 SubAgentBudget.reset）
+    val subAgentEngine: me.rerere.rikkahub.subagent.SubAgentEngine = koinInject()
+    val budgetScope = rememberCoroutineScope()
 
     // 过滤消息，同时保留原始 index 避免后续 O(n) indexOf 查找
     val filteredMessages = remember(conversation.messageNodes, searchQuery) {
@@ -707,7 +712,9 @@ private fun ChatListPreview(
         // ── v4.8.88 子代理预算弹窗（与模型侧同一份 Settings 数据）──
         if (showBudgetDialog) {
             val convId = conversation.id.toString()
-            val usedTokens = settings.subagentTokenUsage[convId] ?: 0L
+            // v4.8.92: 真实已用 = 落盘值 + 未落盘增量（跑动中的子代理数字实时动）
+            val liveUsage by subAgentEngine.budget.liveUsageFlow.collectAsStateWithLifecycle()
+            val usedTokens = (settings.subagentTokenUsage[convId] ?: 0L) + (liveUsage[convId] ?: 0L)
             val limitTokens = settings.subagentTokenBudget
             var limitText by remember(limitTokens) { mutableStateOf((limitTokens / 1000).toString()) }
             AlertDialog(
@@ -749,7 +756,8 @@ private fun ChatListPreview(
                 dismissButton = {
                     Row {
                         TextButton(onClick = {
-                            onUpdateSettings(settings.copy(subagentTokenUsage = settings.subagentTokenUsage - convId))
+                            // v4.8.92: 清零 = 未落盘 + 已落盘一起清（此前只清落盘 → 假清零）
+                            budgetScope.launch { subAgentEngine.budget.reset(convId) }
                             showBudgetDialog = false
                         }) { Text(stringResource(R.string.subagent_budget_reset)) }
                         TextButton(onClick = { showBudgetDialog = false }) { Text("取消") }

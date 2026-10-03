@@ -59,6 +59,7 @@ val viewModelModule = module {
             filesManager = get(),
             skillManager = get(),
             workspaceRepository = get(),
+            conversationRepository = get(),
         )
     }
     viewModelOf(::TranslatorVM)

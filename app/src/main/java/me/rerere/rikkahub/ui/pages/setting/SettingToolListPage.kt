@@ -23,6 +23,7 @@ import me.rerere.rikkahub.data.ai.tools.routing.CORE_MATRIX_TOOLS
 import me.rerere.rikkahub.data.ai.tools.routing.ZoneOps
 import me.rerere.rikkahub.data.ai.tools.topLevelToolSetOf
 import me.rerere.rikkahub.data.ai.tools.zoneRouterOf
+import me.rerere.rikkahub.data.ai.tools.routing.toolOriginOf
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.ui.theme.CustomColors
@@ -254,6 +255,12 @@ fun SettingToolListPage(
                                     AssistChip(
                                         onClick = { filterZone = owner },
                                         label = { Text(if (owner == TOP_LEVEL_LABEL) TOP_LEVEL_LABEL else router.label(owner), style = MaterialTheme.typography.labelSmall) },
+                                        modifier = Modifier.height(24.dp),
+                                    )
+                                    // v4.8.92: 来源标签（技能/MCP/插件/系统/本地）—— 与 /@ 选择器同口径
+                                    AssistChip(
+                                        onClick = {},
+                                        label = { Text(toolOriginOf(tool.name).label, style = MaterialTheme.typography.labelSmall) },
                                         modifier = Modifier.height(24.dp),
                                     )
                                     if (tool.name in settings.toolZoneLinks) {

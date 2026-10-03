@@ -107,6 +107,9 @@ fun buildMemoryTools(
             - Existing relevant record: `edit` + `id` + `content`
             - Outdated/irrelevant record: `delete` + `id`
             Memories will automatically appear in the <memories> tag in later conversations.
+            New memories follow the assistant's memory scope setting: assistant-wide by default;
+            when 单对话记忆 (conversation-scoped memory) is on, they are mounted to the CURRENT
+            conversation only — visible/editable there, and destroyed with that conversation.
             Do not store sensitive information (e.g., ethnicity, religion, sexual orientation, political views, sex life, criminal records).
             You may store: preferred name, preferences, plans, work-related notes, chat style preferences, first chat time, etc.
             Do not show memory content directly in the conversation unless the user explicitly asks.

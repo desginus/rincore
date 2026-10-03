@@ -368,18 +368,4 @@ object ZoneOps {
         )
     }
 
-    /** 恢复出厂工具区（只增不删；与其它矩阵写同一事务口径） */
-    fun restoreDefaults(s: Settings): Res {
-        val next = s.copy(toolZones = restoreDefaultZones(s.toolZones))
-        val added = next.toolZones.size - s.toolZones.size
-        return Res(
-            next,
-            if (added == 0) "出厂工具区齐全，无需恢复。" else "已补回 $added 个缺失的出厂工具区（只增不删，不动自建区）。",
-            ok = next !== s,
-            verify = { after ->
-                DEFAULT_TOOL_ZONES.all { d -> after.toolZones.any { it.id == d.id } }
-            },
-        )
-    }
-
 }

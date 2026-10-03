@@ -231,7 +231,7 @@ item(
                         onClick = { navController.navigate(Screen.AssistantLocalTool(defaultAssistant.id.toString())) },
                         leadingContent = { Icon(HugeIcons.BookOpen01, null) },
                         supportingContent = { Text("当前默认：${defaultAssistant.name}") },
-                        headlineContent = { Text("本地工具") },
+                        headlineContent = { Text("本地设置") },
                     )
 
                 }

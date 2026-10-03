@@ -795,10 +795,16 @@ class ChatService(
                         else pool.filter { tool -> invalidNames.none { bad -> tool.name.startsWith("mcp__${bad}__") } }
                     }
                 },
-                memories = if (assistant.useGlobalMemory) {
-                    memoryRepository.getGlobalMemories()
-                } else {
-                    memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
+                memories = run {
+                    val base = if (assistant.useGlobalMemory) {
+                        memoryRepository.getGlobalMemories()
+                    } else {
+                        memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
+                    }
+                    // v4.8.92: 单对话记忆 —— 只在"它所属的对话"里注入（其它对话不可观测）
+                    base + runCatching {
+                        memoryRepository.getMemoriesOfConversation(conversation.id.toString())
+                    }.getOrDefault(emptyList())
                 },
                 inputTransformers = buildList {
                     addAll(inputTransformers)

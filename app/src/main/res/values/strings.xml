@@ -131,7 +131,7 @@
   <string name="assistant_page_system_prompt">System Prompt</string>
   <string name="assistant_page_tab_basic">Basic Settings</string>
   <string name="assistant_page_tab_extensions">Extensions</string>
-  <string name="assistant_page_tab_local_tools">Local Tools</string>
+  <string name="assistant_page_tab_local_tools">Local Settings</string>
   <string name="assistant_page_tab_mcp">MCP</string>
   <string name="assistant_page_tab_memory">Memory</string>
   <string name="assistant_page_tab_prompt">Prompts</string>
@@ -1360,6 +1360,10 @@
   <string name="tool_ui_screen_time_total">Total screen time</string>
   <string name="assistant_page_local_tools_calendar_title">Calendar</string>
   <string name="assistant_page_local_tools_calendar_desc">让 AI 查询和创建日历日程（直接创建 + 打开日历预填确认）</string>
+  <string name="assistant_page_local_tools_alarm_title">闹钟</string>
+  <string name="assistant_page_local_tools_alarm_desc">让 AI 创建、查看、删除设备闹钟。</string>
+  <string name="assistant_page_local_tools_workflows_title">工作流</string>
+  <string name="assistant_page_local_tools_workflows_desc">让 AI 创建、编辑并运行保存好的多步工作流。</string>
   <string name="assistant_page_local_tools_cron_jobs_title">Cron Jobs</string>
   <string name="assistant_page_local_tools_cron_jobs_desc">Schedule recurring tasks — the AI can create timed jobs that run in the background</string>
   <string name="assistant_page_local_tools_toast_notification_title">Toast &amp; Notification</string>
@@ -1506,7 +1510,7 @@
   <string name="subagent_budget_title">Sub-agent budget</string>
   <string name="subagent_budget_used">This chat: %1$s / %2$s tokens</string>
   <string name="subagent_budget_limit_label">Limit (thousand tokens)</string>
-  <string name="subagent_budget_hint">When exceeded: running sub-agents are stopped, new dispatches are blocked, and the model is told. Default 100K.</string>
+  <string name="subagent_budget_hint">Usage counts every sub-agent this chat has consumed (including in-flight). Reset only clears THIS chat's counter; the limit applies to all chats. When exceeded: running sub-agents are stopped, new dispatches are blocked, and the model is told. Default 100K.</string>
   <string name="subagent_budget_save">Save</string>
   <string name="subagent_budget_reset">Reset usage</string>
   <string name="subagent_budget_icon">Sub-agent budget</string>

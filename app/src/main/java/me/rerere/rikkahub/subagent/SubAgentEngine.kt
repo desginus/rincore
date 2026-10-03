@@ -93,8 +93,8 @@ class SubAgentEngine(
      */
     private val ledgerIds = java.util.concurrent.ConcurrentHashMap<String, String>()
 
-    /** v4.8.88: 子代理预算（每对话 Token 上限，默认 100K；超出即熔断）。 */
-    private val budget = SubAgentBudget(settingsStore)
+    /** v4.8.88: 子代理预算（每对话 Token 上限，默认 100K；超出即熔断）。v4.8.92: 公开给 UI（预算面板读 live / 清零）。 */
+    val budget = SubAgentBudget(settingsStore)
 
     /**
      * v4.8.88: 用量水位（runId → 已计入的 tokens）。
