@@ -327,6 +327,8 @@
   <string name="emoji_picker_select_skin_tone">選擇膚色</string>
   <string name="error_title_compress_conversation">對話壓縮失敗</string>
   <string name="error_title_generate_title">自動產生標題失敗</string>
+  <string name="error_fast_model_not_found">找不到快速模型。請在設定中選擇一個。</string>
+  <string name="error_fast_model_provider_not_found">找不到快速模型的供應商</string>
   <string name="error_title_generation">訊息產生失敗</string>
   <string name="error_title_operation">操作失敗</string>
   <string name="error_title_regenerate_message">訊息重新產生失敗</string>

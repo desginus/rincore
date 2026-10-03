@@ -61,6 +61,7 @@
   <string name="assistant_page_chat_model">Модель чата</string>
   <string name="assistant_page_chat_model_desc">Установить модель чата по умолчанию для ассистента. Если не задано, будет использована глобальная модель чата по умолчанию</string>
   <string name="assistant_page_clone">Клонировать</string>
+  <string name="assistant_page_clone_with_memories">Также копировать память</string>
   <string name="assistant_page_confirm">Подтвердить</string>
   <string name="assistant_page_context_message_count">Размер контекстных сообщений: %d</string>
   <string name="assistant_page_context_message_desc">Управляет количеством исторических сообщений, отправляемых модели в качестве контекста. Сообщения, превышающие это число, будут игнорироваться; будут сохранены только последние N сообщений, что позволяет экономить токены</string>
@@ -281,6 +282,7 @@
   <string name="chat_page_export_format">Формат экспорта</string>
   <string name="chat_page_export_image">Экспортировать как изображение</string>
   <string name="chat_page_export_image_desc">Экспортировать переписку как изображение PNG</string>
+  <string name="chat_page_export_include_reasoning">Экспорт рассуждений</string>
   <string name="chat_page_export_image_expand_reasoning">Развернуть рассуждение</string>
   <string name="chat_page_export_markdown">Markdown</string>
   <string name="chat_page_export_markdown_desc">Экспортировать разговор как файл Markdown</string>
@@ -325,6 +327,8 @@
   <string name="emoji_picker_select_skin_tone">Выберите тон кожи</string>
   <string name="error_title_compress_conversation">Сжатие переписки не удалось</string>
   <string name="error_title_generate_title">Не удалось автоматически сгенерировать заголовок</string>
+  <string name="error_fast_model_not_found">Быстрая модель не найдена. Пожалуйста, выберите её в настройках.</string>
+  <string name="error_fast_model_provider_not_found">Провайдер быстрой модели не найден</string>
   <string name="error_title_generation">Ошибка генерации сообщения</string>
   <string name="error_title_operation">Операция не выполнена</string>
   <string name="error_title_regenerate_message">Не удалось повторно сгенерировать сообщение</string>
@@ -1246,8 +1250,16 @@
   <string name="permission_calendar_write_desc">Создавать события календаря от вашего имени</string>
   <string name="assistant_page_local_tools_calendar_title">Календарь</string>
   <string name="assistant_page_local_tools_calendar_desc">Позволяет ИИ запрашивать и создавать события календаря</string>
+  <string name="assistant_page_local_tools_chart_display_title">Отображение диаграмм</string>
+  <string name="assistant_page_local_tools_chart_display_desc">Разрешить ИИ отображать линейные, столбчатые и точечные диаграммы</string>
   <string name="chat_message_tool_calendar_query">Запросить события календаря</string>
   <string name="chat_message_tool_calendar_create">Создать событие: %1$s</string>
+  <string name="chat_message_tool_chart_display">Показать диаграмму</string>
+  <string name="chat_message_tool_chart_display_with_title">Показать диаграмму: %1$s</string>
+  <string name="chart_mode_chart">Диаграмма</string>
+  <string name="chart_mode_table">Таблица</string>
+  <string name="chart_series">Ряд</string>
+  <string name="chart_series_name">Ряд %1$d</string>
   <string name="chat_page_move_to_folder">Переместить в папку</string>
   <string name="chat_page_remove_from_folder">Убрать из папки</string>
   <string name="chat_page_create_folder">Новая папка</string>

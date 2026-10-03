@@ -61,6 +61,7 @@
   <string name="assistant_page_chat_model">チャットモデル</string>
   <string name="assistant_page_chat_model_desc">アシスタントのデフォルトチャットモデルを設定します。設定しない場合は、グローバルデフォルトチャットモデルが使用されます</string>
   <string name="assistant_page_clone">複製</string>
+  <string name="assistant_page_clone_with_memories">記憶もコピー</string>
   <string name="assistant_page_confirm">確認</string>
   <string name="assistant_page_context_message_count">コンテキストメッセージサイズ: %d</string>
   <string name="assistant_page_context_message_desc">モデルに送信される履歴メッセージの数を制御します。この数を超えるメッセージは無視され、最新のN個のメッセージのみが保持されます。これによりトークンを節約できます</string>
@@ -281,6 +282,7 @@
   <string name="chat_page_export_format">エクスポート形式</string>
   <string name="chat_page_export_image">画像としてエクスポート</string>
   <string name="chat_page_export_image_desc">会話をPNG画像としてエクスポート</string>
+  <string name="chat_page_export_include_reasoning">思考過程を出力</string>
   <string name="chat_page_export_image_expand_reasoning">思考過程を展開</string>
   <string name="chat_page_export_markdown">Markdown</string>
   <string name="chat_page_export_markdown_desc">会話をmarkdownファイルとしてエクスポート</string>
@@ -325,6 +327,8 @@
   <string name="emoji_picker_select_skin_tone">肌の色を選択</string>
   <string name="error_title_compress_conversation">会話の圧縮に失敗しました</string>
   <string name="error_title_generate_title">自動タイトル生成に失敗しました</string>
+  <string name="error_fast_model_not_found">高速モデルが見つかりません。設定で選択してください。</string>
+  <string name="error_fast_model_provider_not_found">高速モデルのプロバイダーが見つかりません</string>
   <string name="error_title_generation">メッセージ生成に失敗しました</string>
   <string name="error_title_operation">操作に失敗しました</string>
   <string name="error_title_regenerate_message">メッセージの再生成に失敗しました</string>
@@ -1246,8 +1250,16 @@ mDNSアドレス: .localホスト名を使用し、IPを知らなくても同じ
   <string name="permission_calendar_write_desc">あなたに代わってカレンダーイベントを作成します</string>
   <string name="assistant_page_local_tools_calendar_title">カレンダー</string>
   <string name="assistant_page_local_tools_calendar_desc">AIにカレンダーイベントの検索と作成を許可します</string>
+  <string name="assistant_page_local_tools_chart_display_title">チャート表示</string>
+  <string name="assistant_page_local_tools_chart_display_desc">AIに折れ線グラフ、棒グラフ、散布図を表示させる</string>
   <string name="chat_message_tool_calendar_query">カレンダーイベントを照会</string>
   <string name="chat_message_tool_calendar_create">イベントを作成: %1$s</string>
+  <string name="chat_message_tool_chart_display">グラフを表示</string>
+  <string name="chat_message_tool_chart_display_with_title">グラフを表示: %1$s</string>
+  <string name="chart_mode_chart">チャート</string>
+  <string name="chart_mode_table">表</string>
+  <string name="chart_series">系列</string>
+  <string name="chart_series_name">系列 %1$d</string>
   <string name="chat_page_move_to_folder">フォルダに移動</string>
   <string name="chat_page_remove_from_folder">フォルダから削除</string>
   <string name="chat_page_create_folder">新規フォルダ</string>

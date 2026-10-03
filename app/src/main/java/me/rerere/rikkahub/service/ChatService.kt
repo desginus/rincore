@@ -1097,8 +1097,10 @@ class ChatService(
 
         runCatching {
             val settings = settingsStore.settingsFlow.first()
-            val model = settings.findModelById(settings.fastModelId) ?: return
-            val provider = model.findProvider(settings.providers) ?: return
+            val model = settings.findModelById(settings.fastModelId)
+                ?: throw IllegalStateException(context.getString(R.string.error_fast_model_not_found))
+            val provider = model.findProvider(settings.providers)
+                ?: throw IllegalStateException(context.getString(R.string.error_fast_model_provider_not_found))
 
             val providerHandler = providerManager.getProviderByType(provider)
             val result = providerHandler.generateText(

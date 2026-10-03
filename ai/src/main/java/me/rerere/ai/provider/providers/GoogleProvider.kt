@@ -147,6 +147,7 @@ class GoogleProvider(
                 providerSetting = providerSetting,
                 request = Request.Builder()
                     .url(url)
+                    .headers(providerSetting.mergeCustomHeaders())
                     .get()
                     .build()
             )

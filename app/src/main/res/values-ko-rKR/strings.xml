@@ -61,6 +61,7 @@
   <string name="assistant_page_chat_model">채팅 모델</string>
   <string name="assistant_page_chat_model_desc">어시스턴트의 기본 채팅 모델 설정. 미설정 시 전역 기본 채팅 모델 사용</string>
   <string name="assistant_page_clone">복제</string>
+  <string name="assistant_page_clone_with_memories">기억도 함께 복사</string>
   <string name="assistant_page_confirm">확인</string>
   <string name="assistant_page_context_message_count">컨텍스트 메시지 수: %d</string>
   <string name="assistant_page_context_message_desc">과거 메시지 중 몇 개를 모델에 컨텍스트로 보낼지 제어. 이 수를 초과한 메시지는 무시되고 가장 최근 N개 메시지만 유지되어 토큰을 절약할 수 있습니다</string>
@@ -281,6 +282,7 @@
   <string name="chat_page_export_format">내보내기 형식</string>
   <string name="chat_page_export_image">이미지로 내보내기</string>
   <string name="chat_page_export_image_desc">대화를 PNG 이미지로 내보내기</string>
+  <string name="chat_page_export_include_reasoning">사고 과정 내보내기</string>
   <string name="chat_page_export_image_expand_reasoning">사고 과정 확장</string>
   <string name="chat_page_export_markdown">Markdown</string>
   <string name="chat_page_export_markdown_desc">대화를 마크다운 파일로 내보내기</string>
@@ -325,6 +327,8 @@
   <string name="emoji_picker_select_skin_tone">스킨 톤 선택</string>
   <string name="error_title_compress_conversation">대화 압축 실패</string>
   <string name="error_title_generate_title">자동 제목 생성 실패</string>
+  <string name="error_fast_model_not_found">빠른 모델을 찾을 수 없습니다. 설정에서 하나를 선택해 주세요.</string>
+  <string name="error_fast_model_provider_not_found">빠른 모델의 제공자를 찾을 수 없습니다</string>
   <string name="error_title_generation">메시지 생성 실패</string>
   <string name="error_title_operation">작업 실패</string>
   <string name="error_title_regenerate_message">메시지 재생성 실패</string>
@@ -1246,8 +1250,16 @@ mDNS 주소: .local 호스트네임을 사용하며, IP를 몰라도 같은 네�
   <string name="permission_calendar_write_desc">사용자를 대신하여 캘린더 이벤트를 생성합니다</string>
   <string name="assistant_page_local_tools_calendar_title">캘린더</string>
   <string name="assistant_page_local_tools_calendar_desc">AI가 캘린더 이벤트를 조회하고 생성할 수 있도록 합니다</string>
+  <string name="assistant_page_local_tools_chart_display_title">차트 표시</string>
+  <string name="assistant_page_local_tools_chart_display_desc">AI가 꺾은선형, 막대형, 산점도 차트를 표시하도록 허용</string>
   <string name="chat_message_tool_calendar_query">캘린더 일정 조회</string>
   <string name="chat_message_tool_calendar_create">일정 생성: %1$s</string>
+  <string name="chat_message_tool_chart_display">차트 표시</string>
+  <string name="chat_message_tool_chart_display_with_title">차트 표시: %1$s</string>
+  <string name="chart_mode_chart">차트</string>
+  <string name="chart_mode_table">표</string>
+  <string name="chart_series">계열</string>
+  <string name="chart_series_name">계열 %1$d</string>
   <string name="chat_page_move_to_folder">폴더로 이동</string>
   <string name="chat_page_remove_from_folder">폴더에서 제거</string>
   <string name="chat_page_create_folder">새 폴더</string>
