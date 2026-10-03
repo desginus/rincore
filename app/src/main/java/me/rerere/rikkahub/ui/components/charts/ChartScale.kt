@@ -1,5 +1,5 @@
 /* 【域 F·主题渲染】 — 消息/文档渲染 | 地图: docs/APP_MAP.md §F */
-package app.src.main.java.me.rerere.rikkahub.ui.components.charts
+package me.rerere.rikkahub.ui.components.charts
 
 /* ───【原版对齐】ChartScale.kt | 与 2.5.6 逐字节一致（v4.8.94 图表工具链移植）
  * 基线: 原版 2.5.6

@@ -1,5 +1,5 @@
 /* 【域 C·工具系统】 — 本地工具 | 地图: docs/APP_MAP.md §C */
-package app.src.main.java.me.rerere.rikkahub.data.ai.tools.local
+package me.rerere.rikkahub.data.ai.tools.local
 
 /* ───【原版对齐】ChartDisplayTool.kt | 与 2.5.6 逐字节一致（v4.8.94 图表工具链移植）
  * 基线: 原版 2.5.6
