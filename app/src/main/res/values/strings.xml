@@ -1510,7 +1510,7 @@
   <string name="subagent_budget_title">Sub-agent budget</string>
   <string name="subagent_budget_used">This chat: %1$s / %2$s tokens</string>
   <string name="subagent_budget_limit_label">Limit (thousand tokens)</string>
-  <string name="subagent_budget_hint">Usage counts every sub-agent this chat has consumed (including in-flight). Reset only clears THIS chat's counter; the limit applies to all chats. When exceeded: running sub-agents are stopped, new dispatches are blocked, and the model is told. Default 100K.</string>
+  <string name="subagent_budget_hint">Usage counts every sub-agent this chat has consumed (including in-flight). Reset only clears the counter of THIS chat; the limit applies to all chats. When exceeded: running sub-agents are stopped, new dispatches are blocked, and the model is told. Default 100K.</string>
   <string name="subagent_budget_save">Save</string>
   <string name="subagent_budget_reset">Reset usage</string>
   <string name="subagent_budget_icon">Sub-agent budget</string>
