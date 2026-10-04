@@ -227,6 +227,9 @@ class RikkaHubApp : Application() {
         get<AppScope>().launch(Dispatchers.IO) {
             runCatching { me.rerere.rikkahub.sandbox.SandboxBridgeServer.start(this@RikkaHubApp) }
         }
+        // v4.8.98: 沙箱预热 — 启动即后台把 proot/rootfs patch 走一遍 (30 分钟窗口节流),
+        // 首个 workspace 工具调用不再付冷启动成本 (软件-沙箱一体化的"常驻感")。
+        runCatching { me.rerere.rikkahub.service.SandboxPrewarmer.warmAsync(get<AppScope>()) }
         startWorkflowRegistry()
 
         // AgentRun boot recovery — flip stranded in-flight runs to process_lost

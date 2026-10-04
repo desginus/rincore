@@ -1082,6 +1082,18 @@ class GenerationHandler(
                 }
             }
 
+            // v4.8.98: 工具执行完成的瞬间后台预探活 (不阻塞) — 下一轮请求前的
+            // "半死连接剔除"在消息组装期并行完成, 工具后模型开口不再等探活。
+            run {
+                val pokeBase = ((provider as? ProviderSetting.OpenAI)?.baseUrl
+                    ?: (provider as? ProviderSetting.Claude)?.baseUrl)
+                val pokeKey = (provider as? ProviderSetting.OpenAI)?.apiKey
+                    ?: (provider as? ProviderSetting.Claude)?.apiKey
+                if (pokeBase != null) {
+                    runCatching { me.rerere.rikkahub.service.ConnectionWarmer.pokeAsync(pokeBase, pokeKey) }
+                }
+            }
+
             // v3.6.74: 上下文降维方向废弃 — 工具输出原样保留, 不做压缩
             val compressedTools = executedTools
 
@@ -1494,7 +1506,9 @@ class GenerationHandler(
                         val pokeKey = (provider as? ProviderSetting.OpenAI)?.apiKey
                             ?: (provider as? ProviderSetting.Claude)?.apiKey
                         val ok = runCatching {
-                            me.rerere.rikkahub.service.ConnectionWarmer.pokeProviderHost(pokeBase, pokeKey)
+                            // v4.8.98: 仅在非新鲜时等待 — 最近心跳/探活成功 (≤70s) 零等待;
+                            // 工具后已发起的后台预探活在此 join (上限 1.5s)
+                            me.rerere.rikkahub.service.ConnectionWarmer.awaitPokeIfStale(pokeBase, pokeKey)
                         }.getOrDefault(false)
                         CallTracer.event("CONN", "poke", "host=$pokeBase gapMs=$gapMs ok=$ok")
                     }

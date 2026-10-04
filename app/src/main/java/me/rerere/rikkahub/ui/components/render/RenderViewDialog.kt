@@ -27,6 +27,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -173,6 +174,9 @@ internal fun HtmlPagesContent(
     isDark: Boolean,
 ) {
     var webView by remember { mutableStateOf<WebView?>(null) }
+    // v4.8.98: factory 只跑一次 — onPageFinished 闭包若直接捕获 isDark 会固化初值
+    // (深色切换按钮形同虚设); 用 rememberUpdatedState 让回调总读当前值。
+    val currentDark by rememberUpdatedState(isDark)
 
     AndroidView(
         factory = { context ->
@@ -187,10 +191,14 @@ internal fun HtmlPagesContent(
                 settings.setSupportZoom(true)
                 settings.builtInZoomControls = true
                 settings.displayZoomControls = false
+                // v4.8.98: 宽视口 + 整页适配 — 幻灯片页 (viewport=画布宽) 打开即完整显示
+                // 整张幻灯片; 竖屏/横屏旋转后 WebView 重排自动重新适配。
+                settings.useWideViewPort = true
+                settings.loadWithOverviewMode = true
                 webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView?, url: String?) {
                         view?.evaluateJavascript(
-                            "document.documentElement.classList.toggle('dark', $isDark)",
+                            "document.documentElement.classList.toggle('dark', $currentDark)",
                             null,
                         )
                     }
@@ -204,5 +212,13 @@ internal fun HtmlPagesContent(
     LaunchedEffect(webView, workDir, pageIndex) {
         val pageFile = File(workDir, "page${pageIndex + 1}.html")
         webView?.loadUrl(Uri.fromFile(pageFile).toString())
+    }
+
+    // v4.8.98: 深色切换即时生效 (旧实现只在新页面加载完成时应用一次, 按钮当场无效)
+    LaunchedEffect(webView, isDark, pageIndex) {
+        webView?.evaluateJavascript(
+            "document.documentElement.classList.toggle('dark', $isDark)",
+            null,
+        )
     }
 }

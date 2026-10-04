@@ -69,6 +69,8 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.shape.RoundedCornerShape
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
@@ -1327,20 +1329,36 @@ private fun WorkspaceFilePreviewDialog(
             }
             // 其他文件：统一走渲染机 (docx/xlsx/pptx/pdf/txt/md/代码/音视频等)
             !entry.isDirectory && file != null -> {
-                val renderResult = remember(file.absolutePath) {
-                    val taskDir = File(file.parentFile, "render_task_${System.currentTimeMillis()}")
-                    runCatching { RenderEngine.render(file, taskDir, entry.name) }
-                        .getOrElse { RenderResult.Unsupported(entry.name, "无法解析该文档内容") }
+                // v4.8.98: 渲染移出主线程 — 旧实现 remember 内同步跑 zip/XML 解析, 大文档卡帧;
+                // 任务目录改 cacheDir 且每次重建, 不再向工作区写 render_task_* 残留。
+                val context = LocalContext.current
+                val renderResult by produceState<RenderResult?>(initialValue = null, file.absolutePath) {
+                    value = withContext(Dispatchers.IO) {
+                        runCatching {
+                            val taskDir = File(context.cacheDir, "workspace_render_preview").apply {
+                                deleteRecursively()
+                                mkdirs()
+                            }
+                            RenderEngine.render(file, taskDir, entry.name)
+                        }.getOrElse { RenderResult.Unsupported(entry.name, "无法解析该文档内容") }
+                    }
                 }
                 val unsupportedMessage = when {
                     ext in DocumentPreview.BINARY_LEGACY_EXTS ->
                         "旧版 Office 二进制格式暂不支持预览，建议导出后用 WPS/Office 打开"
                     else -> "无法解析该文档内容"
                 }
-                WorkspaceRenderContent(
-                    renderResult = renderResult,
-                    fallbackMessage = unsupportedMessage,
-                )
+                val rr = renderResult
+                if (rr != null) {
+                    WorkspaceRenderContent(
+                        renderResult = rr,
+                        fallbackMessage = unsupportedMessage,
+                    )
+                } else {
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                }
             }
             !entry.isDirectory && file == null -> {
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {

@@ -110,9 +110,21 @@ pre { font-family: monospace; white-space: pre-wrap; word-break: break-word; fon
 img { max-width: 100%; height: auto; display: block; margin: 4px 0; }
 """
 
-internal fun buildPage(title: String, bodyHtml: String): String =
-    "<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>" +
-        "<title>$title</title><style>$RENDER_CSS</style></head><body>$bodyHtml</body></html>"
+internal fun buildPage(
+    title: String,
+    bodyHtml: String,
+    viewportWidth: Int? = null,
+    bodyStyle: String? = null,
+): String {
+    // v4.8.98: viewportWidth 非空 = 幻灯片页 — 以画布宽度为布局宽, 配合 WebView
+    // useWideViewPort/loadWithOverviewMode 整页适配 (打开即完整显示整张幻灯片, 旋转自适应)。
+    val viewport = if (viewportWidth != null) "width=$viewportWidth"
+    else "width=device-width, initial-scale=1"
+    return "<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='$viewport'>" +
+        "<title>$title</title><style>$RENDER_CSS</style></head><body" +
+        (if (bodyStyle != null) " style='$bodyStyle'" else "") +
+        ">$bodyHtml</body></html>"
+}
 
 internal fun writeFile(file: File, content: String) {
     file.parentFile?.mkdirs()
@@ -186,8 +198,10 @@ internal class XlsxExtractor : DocumentExtractor {
         val map = readZipMap(input)
         val shared = map["xl/sharedStrings.xml"]?.toString(Charsets.UTF_8)?.let { parseSharedStrings(it) }
             ?: emptyList()
-        val cellFills = map["xl/styles.xml"]?.toString(Charsets.UTF_8)?.let { parseCellFills(it) }
-            ?: emptyList()
+        val stylesXml = map["xl/styles.xml"]?.toString(Charsets.UTF_8)
+        val cellFills = stylesXml?.let { parseCellFills(it) } ?: emptyList()
+        // v4.8.98: 单元格字号保真 (cellXfs → fontId → fonts/sz), 展示真实字号
+        val cellFonts = stylesXml?.let { parseCellFontSizes(it) } ?: emptyList()
         val sheetFiles = map.keys
             .filter { it.startsWith("xl/worksheets/sheet") && it.endsWith(".xml") }
             .sortedBy { it.filter { c -> c.isDigit() }.toIntOrNull() ?: Int.MAX_VALUE }
@@ -197,7 +211,7 @@ internal class XlsxExtractor : DocumentExtractor {
         }
         for ((index, entry) in sheetFiles.withIndex()) {
             val sheetXml = map[entry]?.toString(Charsets.UTF_8) ?: continue
-            val html = buildSheetHtml(sheetXml, shared, cellFills)
+            val html = buildSheetHtml(sheetXml, shared, cellFills, cellFonts)
             writeFile(
                 File(outDir, "page${index + 1}.html"),
                 buildPage(input.name + " - Sheet ${index + 1}", html),
@@ -208,6 +222,66 @@ internal class XlsxExtractor : DocumentExtractor {
 }
 
 /** styles.xml: 提取 cellXfs s 属性 -> 填充色, 返回 fill 颜色数组 (等长 xfs) */
+/** v4.8.98: styles.xml → 每个 cellXf 的字号 (半磅); 无定义/系统默认返回 null */
+internal fun parseCellFontSizes(stylesXml: String): List<Int?> {
+    return try {
+        val factory = XmlPullParserFactory.newInstance()
+        factory.isNamespaceAware = false
+        // ① fonts: 每个 <font> 的 <sz val="N"/> 按序
+        val fontSizes = mutableListOf<Int?>()
+        run {
+            val parser = factory.newPullParser()
+            parser.setInput(stylesXml.reader())
+            var inFonts = false
+            var inFont = false
+            var ev = parser.eventType
+            while (ev != XmlPullParser.END_DOCUMENT) {
+                if (ev == XmlPullParser.START_TAG) {
+                    when {
+                        parser.isTag("fonts") -> inFonts = true
+                        parser.isTag("font") && inFonts -> { inFont = true; fontSizes.add(null) }
+                        parser.isTag("sz") && inFont -> {
+                            val v = parser.attr("val")?.toDoubleOrNull()?.toInt()
+                            if (v != null && fontSizes.isNotEmpty()) fontSizes[fontSizes.size - 1] = v
+                        }
+                    }
+                } else if (ev == XmlPullParser.END_TAG) {
+                    when {
+                        parser.isTag("font") -> inFont = false
+                        parser.isTag("fonts") -> inFonts = false
+                    }
+                }
+                ev = parser.next()
+            }
+        }
+        // ② cellXfs: xf 按序取 fontId → 字号
+        val xfSizes = mutableListOf<Int?>()
+        run {
+            val parser = factory.newPullParser()
+            parser.setInput(stylesXml.reader())
+            var inXfs = false
+            var ev = parser.eventType
+            while (ev != XmlPullParser.END_DOCUMENT) {
+                if (ev == XmlPullParser.START_TAG) {
+                    when {
+                        parser.isTag("cellXfs") -> inXfs = true
+                        parser.isTag("xf") && inXfs -> {
+                            val fontId = parser.attr("fontId")?.toIntOrNull() ?: 0
+                            xfSizes.add(fontSizes.getOrNull(fontId))
+                        }
+                    }
+                } else if (ev == XmlPullParser.END_TAG && parser.isTag("cellXfs")) {
+                    inXfs = false
+                }
+                ev = parser.next()
+            }
+        }
+        xfSizes
+    } catch (_: Exception) {
+        emptyList()
+    }
+}
+
 internal fun parseCellFills(stylesXml: String): List<String?> {
     val result = mutableListOf<String?>()
     try {
@@ -414,7 +488,12 @@ internal fun colToNum(col: String): Int {
     return n
 }
 
-internal fun buildSheetHtml(sheetXml: String, shared: List<String>, cellFills: List<String?>): String {
+internal fun buildSheetHtml(
+    sheetXml: String,
+    shared: List<String>,
+    cellFills: List<String?>,
+    cellFonts: List<Int?> = emptyList(),
+): String {
     // v3.9.8: 表格按内容宽度 (max-content), 窄表满宽, 超宽横向滚动, 不再强压竖屏
     val sb = StringBuilder("<table style='table-layout:auto;width:max-content;min-width:100%;white-space:nowrap;border-collapse:collapse'>")
     val (merged, mergeStarts) = parseMergeRanges(sheetXml)
@@ -472,7 +551,13 @@ internal fun buildSheetHtml(sheetXml: String, shared: List<String>, cellFills: L
                                 // 被合并格, 跳过
                             } else {
                                 val fill = cellFills.getOrNull(cellStyle)
-                                val style = if (fill != null) " style='background-color:$fill'" else ""
+                                // v4.8.98: 字号保真 (sz 半磅 → pt)
+                                val fsz = cellFonts.getOrNull(cellStyle)
+                                val styleCss = buildString {
+                                    if (fill != null) append("background-color:$fill;")
+                                    if (fsz != null && fsz > 0) append("font-size:${fsz / 2.0}pt;")
+                                }
+                                val style = if (styleCss.isNotEmpty()) " style='$styleCss'" else ""
                                 val span = mergeStarts["$cellCol:$rowIndex"]
                                 val spanAttr = if (span != null) {
                                     val (cs, rs) = span
@@ -495,11 +580,32 @@ internal fun buildSheetHtml(sheetXml: String, shared: List<String>, cellFills: L
     return sb.toString()
 }
 
+/** v4.8.98: presentation.xml 的 sldSz — 幻灯片真实画布 (EMU); 缺省 16:9 */
+internal fun parseSlideSize(presentationXml: String?): Pair<Long, Long> {
+    if (presentationXml == null) return 12192000L to 6858000L
+    return runCatching {
+        val parser = XmlPullParserFactory.newInstance().apply { isNamespaceAware = false }.newPullParser()
+        parser.setInput(presentationXml.reader())
+        var ev = parser.eventType
+        while (ev != XmlPullParser.END_DOCUMENT) {
+            if (ev == XmlPullParser.START_TAG && parser.isTag("sldSz")) {
+                val cx = parser.attr("cx")?.toLongOrNull() ?: 12192000L
+                val cy = parser.attr("cy")?.toLongOrNull() ?: 6858000L
+                return@runCatching cx to cy
+            }
+            ev = parser.next()
+        }
+        12192000L to 6858000L
+    }.getOrDefault(12192000L to 6858000L)
+}
+
 /** PPTX: 每页幻灯片一页 — 形状级渲染 (v3.9.8):
  * 背景色/形状位置/填充色/字号/颜色/粗体/图片/表格 近似还原 */
 internal class PptxExtractor : DocumentExtractor {
     override fun extract(input: File, outDir: File): Int {
         val map = readZipMap(input)
+        // v4.8.98: 幻灯片画布取 presentation.xml 的 sldSz (4:3 / 16:9 / 自定义), 缺省回退 16:9
+        val (canvasW, canvasH) = parseSlideSize(map["ppt/presentation.xml"]?.toString(Charsets.UTF_8))
         val slideFiles = map.keys
             .filter { it.startsWith("ppt/slides/slide") && it.endsWith(".xml") }
             .sortedBy { it.filter { c -> c.isDigit() }.toIntOrNull() ?: Int.MAX_VALUE }
@@ -511,10 +617,15 @@ internal class PptxExtractor : DocumentExtractor {
         for ((index, entry) in slideFiles.withIndex()) {
             val slideXml = map[entry]?.toString(Charsets.UTF_8) ?: continue
             val rels = parseRelMap(map["ppt/slides/_rels/${entry.substringAfterLast('/')}.rels"]?.toString(Charsets.UTF_8))
-            val html = buildSlideHtml(slideXml, rels, map, assets)
+            val html = buildSlideHtml(slideXml, rels, map, assets, canvasW, canvasH)
             writeFile(
                 File(outDir, "page${index + 1}.html"),
-                buildPage(input.name + " - 第 ${index + 1} 页", html),
+                buildPage(
+                    input.name + " - 第 ${index + 1} 页",
+                    html,
+                    viewportWidth = emuToPx(canvasW).coerceAtLeast(320),
+                    bodyStyle = "margin:0;padding:0;background:#ffffff;",
+                ),
             )
         }
         return slideFiles.size
@@ -759,11 +870,12 @@ internal fun buildSlideHtml(
     }
     sb.append("</div>")
     if (!found) sb.append("<p style='color:#888'>本页无文本或图片内容</p>")
-    // v3.9.11: PPT 容器固定 1280x720px, 在手机 360px viewport 下看不到内容
-    //   加横向滚动包装层让用户左右滑动 + WebView 双指缩放看清细节
+    // v4.8.98: 画布 = 幻灯片真实尺寸 (presentation.xml sldSz); 页面 viewport 按画布宽声明,
+    // WebView 整页适配 (useWideViewPort + loadWithOverviewMode) —— 竖屏/横屏都完整显示
+    // 整张幻灯片。旧实现: 固定 1280 宽 + 横向滚动包装, 手机上只显左半, 需右滑且旋转无效。
     val container = StringBuilder()
-    container.append("<div style='width:100%;overflow:auto;-webkit-overflow-scrolling:touch'>")
-    container.append("<div style='position:relative;width:${emuToPx(slideW)}px;height:${emuToPx(slideH)}px;")
+    container.append("<div style='width:100%;'>")
+    container.append("<div style='position:relative;width:${emuToPx(slideW)}px;height:${emuToPx(slideH)}px;margin:0 auto;")
     if (bgColor != null) container.append("background-color:$bgColor;")
     container.append("'>").append(sb)
     container.append("</div></div>")

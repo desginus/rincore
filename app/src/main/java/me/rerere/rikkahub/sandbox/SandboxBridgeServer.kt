@@ -202,6 +202,32 @@ object SandboxBridgeServer {
                         }.isSuccess
                         call.respondText(okJson(ok), io.ktor.http.ContentType.Application.Json)
                     }
+                    // v4.8.98: 软件-沙箱一体化 — 沙箱内 `rin render <path>` 直接在应用
+                    // 原生渲染弹窗中打开工作区文档 (docx/xlsx/pptx/pdf/图片等, 渲染机统一处理)
+                    post("/render") {
+                        if (!authorized(call.request.headers["X-Rin-Token"])) {
+                            call.respondText(errJson("unauthorized"), io.ktor.http.ContentType.Application.Json, HttpStatusCode.Unauthorized); return@post
+                        }
+                        val body = parseBody(call.receiveText())
+                        val path = body["path"]?.jsonPrimitive?.contentOrNull
+                            ?: return@post call.respondText(
+                                errJson("missing path"), io.ktor.http.ContentType.Application.Json, HttpStatusCode.BadRequest,
+                            )
+                        val resolved = me.rerere.rikkahub.utils.WorkspaceImageResolver.resolveDetailed(path, imageOnly = false)
+                        val file = resolved.file
+                            ?: return@post call.respondText(
+                                errJson("not_found: ${resolved.reason}"), io.ktor.http.ContentType.Application.Json, HttpStatusCode.NotFound,
+                            )
+                        val ok = runCatching {
+                            val intent = Intent(app, me.rerere.rikkahub.RouteActivity::class.java).apply {
+                                action = "me.rerere.rikkahub.action.RENDER_FILE"
+                                putExtra("render_path", file.absolutePath)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                            }
+                            app.startActivity(intent)
+                        }.isSuccess
+                        call.respondText(okJson(ok), io.ktor.http.ContentType.Application.Json)
+                    }
                     post("/share") {
                         if (!authorized(call.request.headers["X-Rin-Token"])) {
                             call.respondText(errJson("unauthorized"), io.ktor.http.ContentType.Application.Json, HttpStatusCode.Unauthorized); return@post

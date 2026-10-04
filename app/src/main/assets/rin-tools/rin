@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # rin — RinCore 沙箱回连工具 (软件-沙箱一体化桥客户端)
 # 通过 loopback HTTP 桥 (127.0.0.1:17526) 调用 RinCore 软件侧能力:
-#   通知 / 吐司 / 剪贴板 / AI / 打开 / 分享 / 信息 / 日志
+#   通知 / 吐司 / 剪贴板 / AI / 打开 / 分享 / 渲染 / 信息 / 日志
 # 用法: rin <命令> [参数]   |  rin help
 import json
 import os
@@ -25,6 +25,7 @@ USAGE = """rin — RinCore 沙箱回连工具
   rin ai --system <系统> <提示...> 带系统提示
   rin open <url或uri>              打开链接 / 唤起其他应用
   rin share <文本...>              调起系统分享面板
+  rin render <工作区路径>          用应用原生渲染器打开文档 (docx/xlsx/pptx/pdf/图片)
   rin log <文本...>                写 RinCore 日志 (调试)
 
 示例:
@@ -138,6 +139,12 @@ def main():
             return _fail("open 需要目标 url/uri")
         r = _call("/open", {"target": rest[0]})
         return 0 if r.get("ok") else _fail(r.get("error", "open failed"))
+
+    if cmd == "render":
+        if not rest:
+            return _fail("render 需要工作区文件路径 (如 /workspace/out.pptx)")
+        r = _call("/render", {"path": rest[0]})
+        return 0 if r.get("ok") else _fail(r.get("error", "render failed"))
 
     if cmd == "share":
         if not rest:

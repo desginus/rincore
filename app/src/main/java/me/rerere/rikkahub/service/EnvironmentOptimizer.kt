@@ -203,7 +203,7 @@ object ConnectionWarmer {
                 // v4.8.71 (用户定版): 先 ping 后计时 — 启动/生成开始即建立热连接
                 // ("开应用直接拉心跳, 首次延迟不是连接延迟"), 首 ping 不再等 60s;
                 // 之后 60s 间隔维持 (服务端空闲断连窗口 ~100s, 60s 留 40s 余量)。
-                runCatching {
+                val warmOk = runCatching {
                     val warmClient = client.newBuilder()
                         .connectTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
                         .readTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
@@ -217,7 +217,9 @@ object ConnectionWarmer {
                     warmClient.newCall(reqBuilder.build()).execute().use { }
                 }.onFailure {
                     Log.w(TAG, "keepalive(ensure) $host: ${it.message}")
-                }
+                }.isSuccess
+                // v4.8.98: 心跳成功打点 — 轮首探活据此判断"最近热", 热则零等待放行
+                if (warmOk) markWarm(trimmed)
                 Log.d(TAG, "keepalive(ensure) $host ok (pool fresh)")
                 kotlinx.coroutines.delay(60_000L)
             }
@@ -239,7 +241,7 @@ object ConnectionWarmer {
         val isOcCc = trimmed.contains("opencode.ai") || trimmed.contains("commandcode.ai")
         val client = (if (isOcCc) me.rerere.ai.provider.ProviderManager.opencodeClient else null)
             ?: mainClient ?: return false
-        return runCatching {
+        val ok = runCatching {
             val warmClient = client.newBuilder()
                 .connectTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
                 .readTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
@@ -256,6 +258,52 @@ object ConnectionWarmer {
             )
             false
         }
+        if (ok) markWarm(trimmed)
+        return ok
+    }
+
+    // ── v4.8.98: 工具后探活二阶段 — "工具返回后模型久久不开口"的剩余等待消除 ──
+    // 旧行为: 每轮请求前若 gap>15s 同步探活 (最长 4s) — 长工具后每轮都付这份等待。
+    // 新行为: 工具完成瞬间先发后台预探活 (与消息组装并行); 轮首仅在"非最近热"时等待。
+    private val lastWarmAtMs = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val pokeJobs = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
+
+    /** 进程级作用域 (生成开始时经 startProviderKeepAlive 注入, 供后台预探活使用) */
+    @Volatile
+    private var appScopeRef: kotlinx.coroutines.CoroutineScope? = null
+
+    private fun markWarm(host: String) {
+        lastWarmAtMs[host] = System.currentTimeMillis()
+    }
+
+    /** 最近 70s 内心跳/探活成功过 — 连接池被视为新鲜 (服务端空闲断连窗口 ~100s, 留余量) */
+    private fun isRecentlyWarm(host: String): Boolean =
+        System.currentTimeMillis() - (lastWarmAtMs[host] ?: 0L) < 70_000L
+
+    /** 工具执行完成的瞬间调用 (不阻塞): 后台预探活 — 下一轮请求发起前通常已完成。 */
+    fun pokeAsync(baseUrl: String, apiKey: String?) {
+        val trimmed = baseUrl.trimEnd('/')
+        if (trimmed.isBlank()) return
+        if (!(trimmed.contains("opencode.ai") || trimmed.contains("commandcode.ai"))) return
+        if (isRecentlyWarm(trimmed)) return
+        val scope = appScopeRef ?: return
+        if (pokeJobs[trimmed]?.isActive == true) return
+        pokeJobs[trimmed] = scope.launch(Dispatchers.IO) {
+            runCatching { pokeProviderHost(trimmed, apiKey) }
+        }
+    }
+
+    /** 轮首调用: 仅在非新鲜时等待 — 最近热直接放行 (零等待); 有在途预探活则 join
+     *  (上限 maxJoinMs); 都没有才同步探活 (保留半死连接剔除语义)。 */
+    suspend fun awaitPokeIfStale(baseUrl: String, apiKey: String?, maxJoinMs: Long = 1500L): Boolean {
+        val trimmed = baseUrl.trimEnd('/')
+        if (trimmed.isBlank()) return false
+        if (isRecentlyWarm(trimmed)) return true
+        pokeJobs[trimmed]?.takeIf { it.isActive }?.let { job ->
+            kotlinx.coroutines.withTimeoutOrNull(maxJoinMs) { job.join() }
+            if (isRecentlyWarm(trimmed)) return true
+        }
+        return pokeProviderHost(trimmed, apiKey)
     }
 
     fun startProviderKeepAlive(
@@ -267,6 +315,8 @@ object ConnectionWarmer {
         opencodeEnabled: Boolean,
     ) {
         mainClient = httpClient
+        // v4.8.98: 存进程级作用域 — 工具完成瞬间的后台预探活 (pokeAsync) 使用
+        appScopeRef = appScope
         // v4.8.71 (用户定版): 双供应商常驻心跳 — OpenCode 与 Command Code 各自独立,
         // 互不踩踏 (原实现单槽 keepAliveJob: 两者只能其一; 且首个 ping 延迟 60s —
         // "开应用执行任务"的首请求仍付完整连接延迟)。现改为: 启动即 ping

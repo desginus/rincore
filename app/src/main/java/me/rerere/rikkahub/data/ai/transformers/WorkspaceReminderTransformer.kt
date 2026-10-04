@@ -148,7 +148,7 @@ private fun buildWorkspacePrompt(workspace: WorkspaceEntity, cwd: String? = null
     appendLine("  `rin notify \"title\" \"body\"` system notification (reaches the user even in background) · `rin toast \"text\"` in-app toast · `rin clip get|set <text>` clipboard.")
     appendLine("  `rin ai \"prompt\"` asks the current model and prints the reply (pipe-friendly: `cat data.csv | rin ai -` · `rin ai --system \"You are a summarizer\" ...`) —")
     appendLine("    use it to summarize / classify / translate / extract inside scripts without reimplementing NLP locally.")
-    appendLine("  `rin open <url-or-uri>` opens a link or another app · `rin share <text>` system share sheet · `rin info` device info · `rin log <text>` writes app log.")
+    appendLine("  `rin open <url-or-uri>` opens a link or another app · `rin share <text>` system share sheet · `rin render <workspace-path>` opens a document (pptx/docx/xlsx/pdf/images) in the app's native renderer · `rin info` device info · `rin log <text>` writes app log.")
     appendLine("- Office/document toolchain — the core of this app. The principle: work on the document AS IT IS (native form), edit surgically, never rebuild from scratch:")
     appendLine("  - VIEW a document (default for reading / analysis / answering questions):")
     appendLine("    `officecli view <f> screenshot` renders docx/xlsx/pptx to PNG — open the image and look at the REAL layout (better than any text extraction).")

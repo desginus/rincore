@@ -169,6 +169,8 @@ import androidx.compose.runtime.setValue
 private const val TAG = "RouteActivity"
 private const val ACTION_TRANSLATE = "me.rerere.rikkahub.action.TRANSLATE"
 private const val ACTION_IMAGE_GEN = "me.rerere.rikkahub.action.IMAGE_GEN"
+// v4.8.98: 沙箱 rin render → 应用原生渲染弹窗 (软件-沙箱一体化)
+private const val ACTION_RENDER_FILE = "me.rerere.rikkahub.action.RENDER_FILE"
 
 class RouteActivity : ComponentActivity() {
     private val okHttpClient by inject<OkHttpClient>()
@@ -234,6 +236,7 @@ class RouteActivity : ComponentActivity() {
                         }
                         .build()
                 }
+                me.rerere.rikkahub.ui.components.render.RenderRequestHost()
                 AppRoutes()
             }
         }
@@ -270,6 +273,13 @@ class RouteActivity : ComponentActivity() {
             if (action == ACTION_IMAGE_GEN) {
                 handled = true
                 backStack.add(Screen.ImageGen)
+                return@LaunchedEffect
+            }
+            if (action == ACTION_RENDER_FILE) {
+                handled = true
+                intent?.getStringExtra("render_path")?.let {
+                    me.rerere.rikkahub.ui.components.render.RenderRequestBus.request(it)
+                }
                 return@LaunchedEffect
             }
             val isSpecialAction = action in setOf(
@@ -370,6 +380,11 @@ class RouteActivity : ComponentActivity() {
         }
         if (intent.action == ACTION_IMAGE_GEN) {
             navStack?.add(Screen.ImageGen)
+        }
+        if (intent.action == ACTION_RENDER_FILE) {
+            intent.getStringExtra("render_path")?.let {
+                me.rerere.rikkahub.ui.components.render.RenderRequestBus.request(it)
+            }
         }
         // Navigate to the chat screen if a conversation ID is provided
         intent.getStringExtra("conversationId")?.let { text ->
