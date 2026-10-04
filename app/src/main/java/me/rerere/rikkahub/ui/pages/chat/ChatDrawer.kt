@@ -77,6 +77,7 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ChartColumn
 import me.rerere.hugeicons.stroke.Clock02
 import me.rerere.hugeicons.stroke.Image02
+import me.rerere.hugeicons.stroke.Video01
 import me.rerere.hugeicons.stroke.LanguageCircle
 import me.rerere.hugeicons.stroke.Sparkles
 import me.rerere.hugeicons.stroke.Puzzle
@@ -458,6 +459,15 @@ fun ChatDrawerContent(
                             onClick = {
                                 showMenuPopup = false
                                 navController.navigate(Screen.ImageGen)
+                            }
+                        )
+                        // v4.8.100: 视频生成（翻译 / 图像 / 视频 完整三件套）
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.chat_page_menu_video_generation)) },
+                            leadingIcon = { Icon(HugeIcons.Video01, null) },
+                            onClick = {
+                                showMenuPopup = false
+                                navController.navigate(Screen.VideoGen)
                             }
                         )
                     }

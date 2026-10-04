@@ -58,6 +58,19 @@ interface DocumentExtractor {
 /** 渲染机 */
 object RenderEngine {
 
+    /**
+     * v4.8.100: 智能渲染入口 — docx/pptx/xlsx 优先走沙箱 officecli 真渲染
+     * (背景/版式/表格/形状/图片全保真); rootfs 未装或渲染失败时回落内建提取器。
+     * 新增调用点一律使用本函数 (不要直接调 render)。
+     */
+    suspend fun renderSmart(input: File, workDir: File, title: String): RenderResult {
+        val ext = input.name.substringAfterLast('.', "").lowercase()
+        if (ext == "docx" || ext == "pptx" || ext == "xlsx") {
+            OfficeCliHtmlRenderer.render(input, workDir, title)?.let { return it }
+        }
+        return render(input, workDir, title)
+    }
+
     fun render(input: File, workDir: File, title: String): RenderResult {
         workDir.mkdirs()
         val ext = input.name.substringAfterLast('.', "").lowercase()

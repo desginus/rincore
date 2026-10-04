@@ -152,6 +152,7 @@ import me.rerere.rikkahub.ui.pages.setting.scheduledjobs.ScheduledJobsScreen
 import me.rerere.rikkahub.ui.pages.setting.scheduledjobs.ScheduledJobDetailScreen
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerPage
 import me.rerere.rikkahub.ui.pages.imggen.ImageGenPage
+import me.rerere.rikkahub.ui.pages.videogen.VideoGenPage
 import me.rerere.rikkahub.ui.pages.translator.TranslatorPage
 import me.rerere.rikkahub.ui.pages.stats.StatsPage
 import me.rerere.rikkahub.ui.pages.webview.WebViewPage
@@ -557,6 +558,11 @@ class RouteActivity : ComponentActivity() {
                                 ImageGenPage()
                             }
 
+                            // v4.8.100: 视频生成页（抽屉「功能折叠」入口 — 翻译/图像/视频三件套）
+                            entry<Screen.VideoGen> {
+                                VideoGenPage()
+                            }
+
                             entry<Screen.History> {
                                 HistoryPage()
                             }
@@ -855,6 +861,9 @@ sealed interface Screen : NavKey {
     // v4.8.93: AI 图像生成页 (2.5.6 接线恢复)
     @Serializable
     data object ImageGen : Screen
+
+    // v4.8.100: 视频生成 (mediagen — OpenAI/火山/阿里/MiniMax 视频模型)
+    data object VideoGen : Screen
 
     @Serializable
     data object History : Screen

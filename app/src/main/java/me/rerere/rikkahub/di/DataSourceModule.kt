@@ -113,6 +113,17 @@ val dataSourceModule = module {
     }
 
     single { McpManager(settingsStore = get(), appScope = get(), filesManager = get(), workspaceRepository = getOrNull()) }
+    // v4.8.100: 媒体生成管理器 (mediagen — 图像/视频统一; 视频生成数据面)。
+    // 读超时拉长: 三家图像接口为同步长请求 (分钟级), 视频为异步轮询。派生 client 共享连接池。
+    single {
+        me.rerere.mediagen.provider.MediaGenerationManager(
+            get<OkHttpClient>().newBuilder()
+                .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(10, java.util.concurrent.TimeUnit.MINUTES)
+                .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                .build()
+        )
+    }
 
     single {
         GenerationHandler(

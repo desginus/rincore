@@ -322,7 +322,7 @@ internal fun EditedFilesList(
                                             exportResolvedFile(workspaceRepository, workspaceId, resolved, output)
                                         }
                                         val taskDir = File(dir, "task")
-                                        renderResult = RenderEngine.render(file, taskDir, resolvedName)
+                                        renderResult = RenderEngine.renderSmart(file, taskDir, resolvedName)
                                     }.onFailure {
                                         renderResult = RenderResult.Unsupported(
                                             renderFileName.ifBlank { entry2.raw.substringAfterLast('/') },

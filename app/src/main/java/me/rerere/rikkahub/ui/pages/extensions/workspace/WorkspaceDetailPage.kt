@@ -1339,7 +1339,7 @@ private fun WorkspaceFilePreviewDialog(
                                 deleteRecursively()
                                 mkdirs()
                             }
-                            RenderEngine.render(file, taskDir, entry.name)
+                            RenderEngine.renderSmart(file, taskDir, entry.name)
                         }.getOrElse { RenderResult.Unsupported(entry.name, "无法解析该文档内容") }
                     }
                 }

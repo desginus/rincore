@@ -52,7 +52,7 @@ fun RenderRequestHost() {
                     deleteRecursively()
                     mkdirs()
                 }
-                RenderEngine.render(file, taskDir, file.name)
+                RenderEngine.renderSmart(file, taskDir, file.name)
             }.getOrElse { RenderResult.Unsupported(File(current).name, "无法解析该文档内容") }
         }
     }

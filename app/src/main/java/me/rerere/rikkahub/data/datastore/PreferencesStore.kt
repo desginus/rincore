@@ -1001,6 +1001,8 @@ data class NetworkSetting(
     val cherryCompatMode: Boolean = false,
     // v3.9.15: 勾选走代理的模型 id (modelId 字符串) 列表
     val proxyModelIds: List<String> = emptyList(),
+    // v4.8.100: 媒体生成提供商 (mediagen 模块 — 图像/视频统一抽象; 供视频生成功能消费)
+    val mediaGenerationProviders: List<me.rerere.mediagen.provider.MediaGenerationProviderSetting> = emptyList(),
 )
 
 @Serializable

@@ -64,6 +64,7 @@ import me.rerere.hugeicons.stroke.Sun01
 import me.rerere.hugeicons.stroke.Package
 import me.rerere.hugeicons.stroke.Sorting01
 import me.rerere.hugeicons.stroke.Tools
+import me.rerere.hugeicons.stroke.Video01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
@@ -92,12 +93,23 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
     var showDomainPage by remember { mutableStateOf(false) }
     // v3.6.16: 高级功能统一入口 (搜索/语音/Web/扩展/权限/工具对照聚合)
     var showAdvancedPage by remember { mutableStateOf(false) }
+    // v4.8.100: 媒体生成 (图像/视频提供商配置)
+    var showMediaGenPage by remember { mutableStateOf(false) }
     var showBuiltinToolsPage by remember { mutableStateOf(false) }
 
     if (showAdvancedPage) {
         SettingAdvancedPage(
             settings = settings,
             onBack = { showAdvancedPage = false },
+        )
+        return
+    }
+
+    if (showMediaGenPage) {
+        SettingMediaGenPage(
+            settings = settings,
+            vm = vm,
+            onBack = { showMediaGenPage = false },
         )
         return
     }
@@ -252,6 +264,13 @@ item(
                         leadingContent = { Icon(HugeIcons.Brain02, null) },
                         supportingContent = { Text(stringResource(R.string.setting_page_providers_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_providers)) },
+                    )
+                    // v4.8.100: 媒体生成 — 图像/视频生成提供商 (mediagen)
+                    item(
+                        onClick = { showMediaGenPage = true },
+                        leadingContent = { Icon(HugeIcons.Video01, null) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_media_gen_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_media_gen)) },
                     )
                     // v3.6.16: 搜索/语音/Web 服务已移至「高级功能」统一入口
                 }
