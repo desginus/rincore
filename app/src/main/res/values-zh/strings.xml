@@ -1,11 +1,8 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <resources>
-  <string name="about_page_github">Github</string>
-  <string name="about_page_license">License</string>
   <string name="about_page_system">系统</string>
   <string name="about_page_title">关于</string>
   <string name="about_page_version">版本</string>
-  <string name="about_page_website">官网</string>
   <string name="add">添加</string>
   <string name="asr_button_content_description">语音识别</string>
   <string name="asr_button_stop">停止</string>
@@ -37,7 +34,6 @@
   <string name="assistant_importer_read_json_failed">读取JSON失败</string>
   <string name="assistant_importer_unsupported_file_type">不支持的文件类型: %s</string>
   <string name="assistant_importer_unsupported_spec">不支持的规格: %s</string>
-  <string name="assistant_page_actions">操作</string>
   <string name="assistant_page_add">添加</string>
   <string name="assistant_page_add_body">添加 Body</string>
   <string name="assistant_page_add_header">添加 Header</string>
@@ -50,12 +46,10 @@
   <string name="assistant_page_background_opacity_desc">调整聊天背景图显示透明度</string>
   <string name="assistant_page_background_opacity_value">透明度：%1$d%%</string>
   <string name="assistant_page_background_set">已设置背景图片</string>
-  <string name="assistant_page_balanced">平衡</string>
   <string name="assistant_page_body_key">Body Key</string>
   <string name="assistant_page_body_value">Body 值 (JSON)</string>
   <string name="assistant_page_cancel">取消</string>
   <string name="assistant_page_change_background">更换背景图片</string>
-  <string name="assistant_page_chaotic">混乱 (危险)</string>
   <string name="assistant_page_chat_background">聊天背景</string>
   <string name="assistant_page_chat_background_desc">设置助手聊天页面的背景图片</string>
   <string name="assistant_page_chat_model">聊天模型</string>
@@ -63,11 +57,6 @@
   <string name="assistant_page_clone_with_memories">同时复制记忆</string>
   <string name="assistant_page_clone">复制</string>
   <string name="assistant_page_confirm">确定</string>
-  <string name="assistant_page_context_message_count">上下文消息数量: %d</string>
-  <string name="assistant_page_context_message_desc">控制多少条历史消息会被作为上下文发送给模型, 超过此数量的消息会被忽略，只有最近的N条消息会被保留，可以节省token</string>
-  <string name="assistant_page_context_message_size">上下文消息数量</string>
-  <string name="assistant_page_context_message_unlimited">无限制的上下文消息</string>
-  <string name="assistant_page_creative">创造</string>
   <string name="assistant_page_current_assistant">当前助手</string>
   <string name="assistant_page_custom_bodies">自定义 Body</string>
   <string name="assistant_page_custom_headers">自定义 Headers</string>
@@ -128,7 +117,6 @@
   <string name="assistant_page_select_from_gallery">从相册选择</string>
   <string name="assistant_page_stream_output">流式输出</string>
   <string name="assistant_page_stream_output_desc">是否启用消息的流式输出</string>
-  <string name="assistant_page_strict">严谨</string>
   <string name="assistant_page_system_prompt">系统提示词</string>
   <string name="assistant_page_tab_basic">基础设定</string>
   <string name="assistant_page_tab_extensions">扩展管理</string>
@@ -151,7 +139,6 @@
   <string name="assistant_page_time_reminder_desc">在间隔较大的消息前自动插入时间提醒，帮助 AI 理解对话间隔</string>
   <string name="assistant_page_title">助手设置</string>
   <string name="assistant_page_top_p">Top P</string>
-  <string name="assistant_page_top_p_value">Top P: %s</string>
   <string name="assistant_page_top_p_warning">请不要修改此值, 除非你知道自己在做什么</string>
   <string name="assistant_page_use_assistant_avatar">使用助手头像</string>
   <string name="assistant_page_use_assistant_avatar_desc">在聊天中使用助手头像和名字而不是模型头像和名字</string>
@@ -225,8 +212,6 @@
   <string name="backup_page_webdav_backup">WebDAV备份</string>
   <string name="backup_page_webdav_backup_files">WebDav备份文件列表</string>
   <string name="backup_page_webdav_server_address">WebDAV 服务器地址</string>
-  <string name="built_in_search_description">是否启用模型内置的搜索功能</string>
-  <string name="built_in_search_title">模型内置搜索</string>
   <string name="calculating">计算中...</string>
   <string name="cancel">取消</string>
   <string name="cancel_edit">取消编辑</string>
@@ -271,7 +256,6 @@
   <string name="chat_page_compress_not_enough_messages">消息数量不足，无法压缩。请减少保留的消息数量或添加更多消息。</string>
   <string name="chat_page_compress_target_tokens">目标Token大小</string>
   <string name="chat_page_compress_warning">⚠️ 压缩上下文将重置当前对话中的所有消息</string>
-  <string name="chat_page_compressing">正在压缩...</string>
   <string name="chat_page_conversation_system_prompt">对话系统提示</string>
   <string name="chat_page_conversation_system_prompt_clear">清除</string>
   <string name="chat_page_conversation_system_prompt_hint">覆盖此对话的助手系统提示</string>
@@ -293,7 +277,6 @@
   <string name="chat_page_history">聊天历史</string>
   <string name="chat_page_menu_ai_translator">AI翻译</string>
   <string name="chat_page_menu_image_generation">图像生成</string>
-  <string name="chat_page_message_count">%d 条消息</string>
   <string name="chat_page_move_to_assistant">移至助手</string>
   <string name="chat_page_new_chat">新聊天</string>
   <string name="chat_page_new_message">新消息</string>
@@ -385,11 +368,6 @@
   <string name="history_page_title">聊天历史</string>
   <string name="history_page_undo">撤销</string>
   <string name="history_page_unpin">取消置顶</string>
-  <string name="imggen_page_aspect_ratio">图片比例</string>
-  <string name="imggen_page_aspect_ratio_desc">选择生成图片的宽高比</string>
-  <string name="imggen_page_aspect_ratio_landscape">16:9 横屏</string>
-  <string name="imggen_page_aspect_ratio_portrait">9:16 竖屏</string>
-  <string name="imggen_page_aspect_ratio_square">1:1 正方形</string>
   <string name="imggen_page_cancel">取消</string>
   <string name="imggen_page_cancel_generation_message">您确定要取消图片生成吗？</string>
   <string name="imggen_page_cancel_generation_title">取消生成</string>
@@ -400,8 +378,6 @@
   <string name="imggen_page_generation_count">生成数量</string>
   <string name="imggen_page_generation_count_desc">每次生成的图片数量</string>
   <string name="imggen_page_image_saved_success">图片已保存到相册</string>
-  <string name="imggen_page_model_selection">模型选择</string>
-  <string name="imggen_page_model_selection_desc">选择用于图片生成的AI模型</string>
   <string name="imggen_page_no_generated_images">暂无生成的图片</string>
   <string name="imggen_page_prompt_placeholder">描述您想要生成的图片...</string>
   <string name="imggen_page_save">保存</string>
@@ -530,16 +506,10 @@
   <string name="quick_messages_page_empty_title">无快速消息</string>
   <string name="quick_messages_page_untitled">无标题</string>
   <string name="reasoning_auto">自动</string>
-  <string name="reasoning_auto_desc">让模型自动决定推理级别。</string>
-  <string name="reasoning_custom">自定义推理预算</string>
   <string name="reasoning_heavy">较高</string>
-  <string name="reasoning_heavy_desc">模型将使用大量推理来回答问题。</string>
   <string name="reasoning_light">低</string>
-  <string name="reasoning_light_desc">模型将使用少量推理来回答问题。</string>
   <string name="reasoning_medium">中等</string>
-  <string name="reasoning_medium_desc">模型将使用更多推理来回答问题。</string>
   <string name="reasoning_off">关闭</string>
-  <string name="reasoning_off_desc">关闭推理功能，模型将直接回答问题。</string>
   <string name="reasoning_picker_hint">并非所有模型都支持深度调整。请参考模型和提供商文档。</string>
   <string name="reasoning_picker_title">调整模型思考深度</string>
   <string name="reasoning_xhigh">高</string>
@@ -547,7 +517,6 @@
   <string name="regenerate">重新生成</string>
   <string name="regenerate_confirm_message">确定要重新生成此消息吗？</string>
   <string name="render_with_webview">网页视图渲染</string>
-  <string name="rikkahub_provider_description">官方免费 AI 服务，使用用户赞助资金为新用户提供部分免费模型作为备用，无需 API 密钥。有严格速率限制，如已购买自有服务商，请尽量使用自有服务商。</string>
   <string name="safe_mode_assistants">助手</string>
   <string name="safe_mode_copy">复制</string>
   <string name="safe_mode_crash_report">崩溃报告</string>
@@ -594,7 +563,6 @@
   <string name="search_page_sort_relevance">相关性</string>
   <string name="search_page_title">搜索消息</string>
   <string name="search_page_untitled">无标题</string>
-  <string name="search_picker_title">搜索设置</string>
   <string name="select_and_copy">选择复制</string>
   <string name="send">发送</string>
   <string name="setting_asr_configure_api_key">API密钥</string>
@@ -678,9 +646,6 @@
   <string name="setting_display_page_enable_auto_scroll_title">自动滚动</string>
   <string name="setting_display_page_enable_blur_effect_desc">在聊天输入栏启用模糊效果</string>
   <string name="setting_display_page_enable_blur_effect_title">启用模糊效果</string>
-  <string name="setting_display_page_background_effect_type">背景效果类型</string>
-  <string name="setting_display_page_background_effect_blur">模糊</string>
-  <string name="setting_display_page_background_effect_glass">玻璃</string>
   <string name="setting_display_page_enable_latex_rendering_desc">使用 LaTeX 语法渲染数学表达式和公式</string>
   <string name="setting_display_page_enable_latex_rendering_title">启用 LaTeX 渲染</string>
   <string name="setting_display_page_enable_message_generation_haptic_effect_desc">消息生成时启用触觉反馈效果</string>
@@ -718,7 +683,6 @@
   <string name="setting_display_page_show_user_avatar_title">显示用户头像</string>
   <string name="setting_display_page_skip_crop_image_desc">导入图片或拍照后跳过裁剪界面</string>
   <string name="setting_display_page_skip_crop_image_title">跳过图片编辑</string>
-  <string name="setting_display_page_title">显示设置</string>
   <string name="setting_display_page_tts_only_read_quoted_desc">启用后，TTS 仅朗读引号（包括 ""、\'\'、「」、『』）内的内容</string>
   <string name="setting_display_page_tts_only_read_quoted_title">TTS仅朗读引用内容</string>
   <string name="setting_display_page_tts_read_outside_brackets_desc">启用后，TTS将不朗读括号内的内容</string>
@@ -728,11 +692,8 @@
   <string name="setting_display_page_volume_key_scroll_desc">使用音量键翻页，非常适合电子墨水屏</string>
   <string name="setting_display_page_volume_key_scroll_ratio">滚动幅度</string>
   <string name="setting_display_page_volume_key_scroll_title">音量键翻页</string>
-  <string name="setting_files_page_cancel_action">取消</string>
-  <string name="setting_files_page_delete_action">删除</string>
   <string name="setting_files_page_delete_content_description">删除</string>
   <string name="setting_files_page_delete_failed_toast">删除失败</string>
-  <string name="setting_files_page_delete_file_title">删除文件</string>
   <string name="setting_files_page_deleted_toast">已删除</string>
   <string name="setting_files_page_folder_upload">上传</string>
   <string name="setting_files_page_no_files">无文件</string>
@@ -777,23 +738,15 @@
   <string name="setting_model_page_chat_model_desc">全局默认的聊天模型</string>
   <string name="setting_model_page_compress_model">压缩模型</string>
   <string name="setting_model_page_compress_model_desc">用于压缩对话历史的模型</string>
-  <string name="setting_model_page_compress_prompt_vars">变量：{content}、{target_tokens}、{additional_context}</string>
   <string name="setting_model_page_ocr_model">OCR 模型</string>
   <string name="setting_model_page_ocr_model_desc">用于图像光学字符识别的模型</string>
-  <string name="setting_model_page_ocr_prompt_vars">变量：图像数据：{images}</string>
-  <string name="setting_model_page_prompt">提示词</string>
   <string name="setting_model_page_reset_to_default">重置为默认</string>
   <string name="setting_model_page_suggestion_model">聊天建议模型</string>
   <string name="setting_model_page_suggestion_model_desc">用于生成聊天建议的模型。未设置时使用快速模型</string>
-  <string name="setting_model_page_suggestion_prompt_vars">变量: 对话内容: {content}, 语言: {locale}</string>
   <string name="setting_model_page_title">模型设置</string>
-  <string name="setting_model_page_title_model">标题总结模型</string>
-  <string name="setting_model_page_title_model_desc">用于总结对话标题的模型。未设置时使用快速模型</string>
   <string name="setting_model_page_translate_model">翻译模型</string>
   <string name="setting_model_page_translate_model_desc">用于翻译功能的模型</string>
-  <string name="setting_model_page_translate_prompt_vars">变量: 原始文本: {source_text}, 目标语言: {target_lang}</string>
   <string name="setting_page_about">关于</string>
-  <string name="setting_page_about_desc">关于本APP</string>
   <string name="setting_page_assistant">助手</string>
   <string name="setting_page_assistant_desc">设置个性化助手 (智能体)</string>
   <string name="setting_page_built_in_tools">内置工具</string>
@@ -816,23 +769,11 @@
   <string name="setting_page_config_api_title">请配置API和模型</string>
   <string name="setting_page_data_backup">数据备份</string>
   <string name="setting_page_data_backup_desc">备份和恢复应用数据</string>
-  <string name="setting_page_data_settings">数据设置</string>
   <string name="setting_page_default_model">默认模型和提示词</string>
   <string name="setting_page_default_model_desc">设置各个功能的默认模型</string>
-  <string name="setting_page_display_setting">显示设置</string>
-  <string name="setting_page_display_setting_desc">管理显示设置</string>
-  <string name="setting_page_documentation">使用文档</string>
-  <string name="setting_page_documentation_desc">查看应用使用说明和帮助文档</string>
   <string name="setting_page_dynamic_color">动态颜色</string>
   <string name="setting_page_dynamic_color_desc">是否基于壁纸动态生成 app 主题配色</string>
-  <string name="setting_page_extensions">扩展管理</string>
-  <string name="setting_page_extensions_desc">管理提示词注入、技能等扩展</string>
-  <string name="setting_page_general_settings">通用设置</string>
-  <string name="setting_page_interaction_notification_settings">互动与通知</string>
-  <string name="setting_page_mcp">MCP</string>
-  <string name="setting_page_mcp_desc">配置MCP服务器</string>
   <string name="setting_page_message_display_settings">消息显示</string>
-  <string name="setting_page_model_and_services">模型与服务</string>
   <string name="setting_page_no_share_app">找不到分享应用</string>
   <string name="setting_page_providers">提供商</string>
   <string name="setting_page_providers_desc">配置AI提供商</string>
@@ -841,7 +782,6 @@
   <string name="setting_page_search_add_provider">添加提供商</string>
   <string name="setting_page_search_common_options">通用选项</string>
   <string name="setting_page_search_config">配置</string>
-  <string name="setting_page_search_delete_provider">删除提供商</string>
   <string name="setting_page_search_result_size">结果数量</string>
   <string name="setting_page_search_service">搜索服务</string>
   <string name="setting_page_search_service_desc">设置搜索服务</string>
@@ -955,7 +895,6 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_provider_page_scan_error">错误: %s</string>
   <string name="setting_provider_page_scan_qr_code">扫描二维码</string>
   <string name="setting_provider_page_search_providers">搜索提供商</string>
-  <string name="setting_provider_page_recommend">推荐提供商</string>
   <string name="setting_provider_page_select_all">全选（%1$d）</string>
   <string name="setting_provider_page_select_from_gallery">从相册选择</string>
   <string name="setting_provider_page_service_account_email">服务账户邮箱</string>
@@ -978,13 +917,10 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_tts_page_base_url_placeholder">https://api.openai.com/v1</string>
   <string name="setting_tts_page_default_name">系统TTS</string>
   <string name="setting_tts_page_edit_provider">编辑提供商</string>
-  <string name="setting_tts_page_emotion">情感</string>
-  <string name="setting_tts_page_emotion_description">语音合成的情感风格</string>
   <string name="setting_tts_page_model">模型</string>
   <string name="setting_tts_page_model_description">要使用的TTS模型</string>
   <string name="setting_tts_page_model_placeholder_gemini">gemini-2.5-flash-preview-tts</string>
   <string name="setting_tts_page_model_placeholder_openai">gpt-4o-mini-tts</string>
-  <string name="setting_tts_page_more_options_content_description">更多选项</string>
   <string name="setting_tts_page_name">名称</string>
   <string name="setting_tts_page_name_description">此TTS提供商的自定义名称</string>
   <string name="setting_tts_page_name_placeholder">输入提供商名称</string>
@@ -1008,7 +944,6 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_tts_page_speed">语速</string>
   <string name="setting_tts_page_speed_description">语音合成速度 (0.25 - 4.0)</string>
   <string name="setting_tts_page_test_text">你好，这是文字转语音测试。</string>
-  <string name="setting_tts_page_title">语音合成</string>
   <string name="setting_tts_page_voice">语音</string>
   <string name="setting_tts_page_voice_description">用于语音合成的声音</string>
   <string name="setting_tts_page_voice_id">语音 ID</string>
@@ -1020,8 +955,6 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="share">分享</string>
   <string name="share_handler_page_title">选择一个助手处理分享</string>
   <string name="shortcut_take_picture">拍照提问</string>
-  <string name="silicon_flow_description">**全球领先的 AI 能力提供商，加速 AGI 普惠人类。**</string>
-  <string name="silicon_flow_website">官网: [https://cloud.siliconflow.cn/](https://cloud.siliconflow.cn/i/u1Ia4Ycf)</string>
   <string name="skill_detail_page_content">内容</string>
   <string name="skill_detail_page_create">创建</string>
   <string name="skill_detail_page_delete_confirm">确定要删除文件“%s”吗？</string>
@@ -1110,11 +1043,8 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="update_card_new_version_found">发现新版本 %s</string>
   <string name="update_card_unknown_error">未知错误</string>
   <string name="upload_file">上传文件</string>
-  <string name="use_web_search">网络搜索</string>
   <string name="user_default_name">用户</string>
   <string name="video">视频</string>
-  <string name="web_search_disabled">已禁用网页搜索</string>
-  <string name="web_search_enabled">已启用网页搜索</string>
   <string name="setting_theme_page_import_theme">导入</string>
   <string name="setting_theme_page_export_success">主题 JSON 已复制到剪贴板</string>
   <string name="setting_theme_page_import_success">主题导入成功</string>
@@ -1130,9 +1060,6 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_page_preferences_general_desc">交互行为、滚动、输入设置</string>
   <string name="setting_page_preferences_network">网络</string>
   <string name="setting_page_preferences_network_desc">自定义客户端标识、代理、连接测试</string>
-  <string name="setting_page_preferences_network_user_agent">User-Agent</string>
-  <string name="setting_page_preferences_network_user_agent_placeholder">自定义 UA, 例如 Mozilla/5.0 ...</string>
-  <string name="setting_page_preferences_network_user_agent_desc">自定义 User-Agent 请求头。留空则不发送自定义 UA</string>
   <string name="setting_page_preferences_network_proxy">代理</string>
   <string name="setting_page_preferences_network_proxy_enable">启用代理</string>
   <string name="setting_page_preferences_network_proxy_partial">部分开启</string>
@@ -1150,11 +1077,6 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="skills_page_add_manually">手动添加</string>
   <string name="setting_model_page_tab_model">模型</string>
   <string name="setting_model_page_tab_prompt">提示词</string>
-  <string name="setting_model_page_prompt_translation">翻译</string>
-  <string name="setting_model_page_prompt_title">标题生成</string>
-  <string name="setting_model_page_prompt_suggestion">聊天回复建议</string>
-  <string name="setting_model_page_prompt_ocr">OCR识别</string>
-  <string name="setting_model_page_prompt_compress">上下文压缩</string>
   <string name="setting_display_page_bubble_opacity_title">气泡不透明度</string>
   <string name="setting_provider_page_include_history_reasoning">回传历史思考过程</string>
   <string name="setting_model_page_fast_model">快速模型</string>
@@ -1164,7 +1086,6 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="assistant_page_gradient_background_desc">在聊天页面使用动态渐变背景</string>
   <string name="assistant_page_workspace">工作区</string>
   <string name="assistant_page_workspace_desc">绑定后，Agent 可以使用此工作区的文件和沙盒功能</string>
-  <string name="assistant_page_workspace_unbound">未绑定</string>
   <string name="workspace_page_title">工作区</string>
   <string name="workspace_page_create">创建工作区</string>
   <string name="workspace_page_rename">重命名工作区</string>
@@ -1192,12 +1113,9 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="workspace_detail_enable_shell_desc">允许此工作区使用本地Rootfs运行终端环境</string>
   <string name="workspace_detail_tool_approval">工具审批</string>
   <string name="workspace_detail_tool_approval_desc">启用后，AI 调用此工具前需要用户确认</string>
-  <string name="workspace_detail_tool_list_files">列出文件</string>
   <string name="workspace_detail_tool_read_file">读取文件</string>
   <string name="workspace_detail_tool_write_file">写入文件</string>
   <string name="workspace_detail_tool_edit_file">编辑文件</string>
-  <string name="workspace_detail_tool_delete_file">删除文件</string>
-  <string name="workspace_detail_tool_move_file">移动文件</string>
   <string name="workspace_detail_tool_shell">执行命令</string>
   <string name="workspace_detail_install_rootfs_desc">将下载 tar.gz 并解压到 %s 的 Linux 目录。</string>
   <string name="workspace_detail_download_url">tar.gz 下载链接</string>
@@ -1211,8 +1129,6 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="workspace_detail_downloading">正在下载 %1$s%2$s</string>
   <string name="workspace_detail_extracting">提取 %1$d 个项目%2$s</string>
   <string name="workspace_detail_install_complete">安装完成</string>
-  <string name="workspace_terminal_title">终端</string>
-  <string name="workspace_terminal_title_with_name">%s · 终端</string>
   <string name="workspace_terminal_not_installed">请先安装 Rootfs</string>
   <string name="workspace_terminal_loading">正在加载工作区…</string>
   <string name="workspace_terminal_exited">终端已退出</string>
@@ -1249,15 +1165,6 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="chat_quick_cwd">工作区目录</string>
   <string name="chat_quick_context_count">上下文条数</string>
   <string name="chat_quick_context_count_value">当前 %d 条对话</string>
-  <string name="tool_ui_list_files">列表：%s</string>
-  <string name="tool_ui_list_files_default">列出文件</string>
-  <string name="tool_ui_list_files_empty">空</string>
-  <string name="tool_ui_list_files_items">%1$d 项: %2$s</string>
-  <string name="tool_ui_delete_file">删除: %s</string>
-  <string name="tool_ui_delete_file_default">删除文件</string>
-  <string name="tool_ui_deleted">已删除 %s</string>
-  <string name="tool_ui_delete_failed">删除 %s 失败</string>
-  <string name="tool_ui_move_file">移动文件</string>
   <string name="tool_ui_shell">Shell: %s</string>
   <string name="tool_ui_shell_default">Shell</string>
   <string name="tool_ui_shell_timeout">timeout</string>
@@ -1268,10 +1175,8 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="tool_ui_file">文件</string>
   <string name="workspace_page_name_duplicate">名称已存在</string>
   <string name="setting_mcp_page_name_invalid">名称只能包含英文字母和数字</string>
-  <string name="error_mcp_invalid_server_name">无效的MCP服务器名称（仅允许字母数字字符）：%1$s</string>
   <string name="log_page_record_requests">记录请求</string>
   <string name="log_page_record_requests_desc">捕获请求标头、正文和响应元数据</string>
-  <string name="assistant_page_context_message_truncation_warning">限制上下文可能导致频繁的上下文截断，并阻止提示词缓存</string>
   <string name="chat_message_tool_recent_chats">查看最近的对话</string>
   <string name="chat_message_tool_conversation_search">搜索历史：%1$s</string>
   <string name="assistant_page_local_tools_screen_time_title">屏幕时间</string>
@@ -1309,26 +1214,19 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="chart_series_name">系列 %1$d</string>
   <string name="chat_page_move_to_folder">移动到文件夹</string>
   <string name="chat_page_remove_from_folder">移出文件夹</string>
-  <string name="chat_page_create_folder">新建文件夹</string>
   <string name="chat_page_folder_name">文件夹名称</string>
   <string name="chat_page_rename_folder">重命名文件夹</string>
   <string name="chat_page_delete_folder">删除文件夹</string>
   <string name="chat_page_rename">重命名</string>
   <string name="chat_page_folder_default">聊天</string>
-  <string name="chat_page_folder_add">新建</string>
   <string name="chat_page_delete_folder_confirm">删除文件夹 "%1$s"？其中的对话不会被删除，只会从文件夹中移除。</string>
   <string name="chat_page_delete_folder_generating">此文件夹中有对话仍在生成中，请停止后再删除。</string>
-  <string name="setting_model_page_routing_model">工具路由模型</string>
-  <string name="setting_model_page_routing_model_desc">为工具路由表生成优化的模型。未设置时使用静态模板。</string>
-  <string name="setting_model_page_domain_override">工具矩阵</string>
-  <string name="setting_model_page_domain_override_desc">管理工具区与工具归属（顶层直连 / 进工具区）</string>
   <string name="setting_page_domain_management">工具矩阵</string>
   <string name="setting_page_domain_management_desc">管理工具区：新建/删除/改名、编辑触发描述与条件、调整工具归属</string>
 
     <string name="setting_files_page_cleaned_toast">已清理</string>
     <string name="setting_files_page_clean_failed_toast">清理失败</string>
     <string name="setting_files_page_clean_title">清理文件</string>
-    <string name="setting_files_page_clean_confirmation">确定要删除此目录下的所有文件吗？此操作不可撤销。</string>
     <string name="setting_files_page_clean_action">清理</string>
     <string name="setting_files_page_clean_all">全部文件</string>
     <string name="setting_files_page_clean_older_than_days">%1$d 天前</string>
@@ -1372,9 +1270,6 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
 <string name="chat_page_voice_tools_before_resume">请先处理工具确认，再继续语音模式</string>
 <string name="chat_page_voice_generation_failed">模型生成失败。请在聊天中查看错误。</string>
 <string name="chat_page_voice_queue_paused">消息队列已暂停。请解决问题后重新启动语音模式。</string>
-<string name="setting_page_asr_silence_duration">静音判停时长</string>
-<string name="setting_page_asr_silence_duration_desc">连续静音达到此时长后结束一句话，推荐 800–1000 毫秒。</string>
-<string name="setting_page_asr_milliseconds">毫秒</string>
 <string name="workspace_terminal_close_confirm_title">关闭终端 %1$d？</string>
 <string name="workspace_terminal_close_confirm_message">关闭此标签页将终止其中仍在运行的任何进程。</string>
 <string name="workspace_terminal_close">关闭</string>
@@ -1398,8 +1293,6 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
 <string name="workspace_detail_compatibility_mode">兼容模式</string>
 <string name="workspace_detail_compatibility_mode_desc">如果终端无法启动，请尝试启用此功能。这可能会降低性能。适用于新的终端标签页及后续命令。</string>
   <string name="common_delete_confirm_message">确定要删除“%s”吗？此操作无法撤销。</string>
-  <string name="skills_page_search_placeholder">搜索技能</string>
-  <string name="skills_page_search_no_result">没有匹配的技能</string>
   <string name="safe_mode_enter_app">进入应用</string>
   <string name="workspace_terminal_tab">终端 %1$d</string>
   <string name="workspace_terminal_new_tab">新建终端标签页</string>
@@ -1422,5 +1315,14 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="subagent_budget_save">保存</string>
   <string name="subagent_budget_reset">清零本对话</string>
   <string name="subagent_budget_icon">子代理预算</string>
+  <string name="setting_model_page_compress_prompt_vars">变量：{content}、{target_tokens}、{additional_context}</string>
+  <string name="setting_model_page_ocr_prompt_vars">变量：图像数据：{images}</string>
+  <string name="setting_model_page_prompt">提示词</string>
+  <string name="setting_model_page_prompt_compress">上下文压缩</string>
+  <string name="setting_model_page_prompt_ocr">OCR识别</string>
+  <string name="setting_model_page_prompt_suggestion">聊天回复建议</string>
+  <string name="setting_model_page_prompt_title">标题生成</string>
+  <string name="setting_model_page_prompt_translation">翻译</string>
+  <string name="setting_model_page_suggestion_prompt_vars">变量: 对话内容: {content}, 语言: {locale}</string>
+  <string name="setting_model_page_translate_prompt_vars">变量: 原始文本: {source_text}, 目标语言: {target_lang}</string>
 </resources>
-

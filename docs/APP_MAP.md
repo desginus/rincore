@@ -2,7 +2,7 @@
 
 > **给 AI 的读法**: 拿到本仓库先读本文件。它告诉你 — 每块代码在哪、干什么、
 > 用户提某类需求时改哪些文件、该问题历史上是否出现过。
-> 版本基线: v4.8.9 (2026-09-23)。大规模改动后请同步更新对应卡片。
+> 版本基线: v4.8.97 (2026-10-04)。大规模改动后请同步更新对应卡片。
 >
 > 配套历史知识 (必读): `.claude/skills/` 下 `rincore-project-brief`(架构基线) /
 > `rincore-changelog`(版本史) / `rincore-bug-record`(Bug 根因) /
@@ -14,18 +14,18 @@
 
 | # | 功能域 | 职责一句话 | 主目录 | 规模 |
 |---|--------|-----------|--------|------|
-| A | 对话核心 | 会话状态机、生成管线、消息队列、压缩 | `ui/pages/chat` + `service/` + `data/model/` | 40f/52K |
-| B | AI 传输 | Provider 抽象、SSE、请求体协议、MCP | `ai/` 模块 + `data/ai/` | 122f/27K |
-| C | 工具系统 | 工具定义/注入/域路由/插件/子代理 | `data/ai/tools/` + `ecosystem/` + `subagent/` | 65f/9K |
-| D | 工作区沙箱 | Rootfs、文件工具、MCP stdio 桥、桥接服务 | `workspace/` 模块 + `sandbox/` + `data/repository/` | 30f/8K |
-| E | 设置体系 | 全部设置页 + DataStore 持久化 + DI | `ui/pages/setting/` + `data/datastore/` + `di/` | 57f/15K |
-| F | 主题渲染 | 配色主题、Markdown/代码/文档渲染、动效 | `ui/theme/` + `highlight/` + `document/` + `ui/components/` | 185f/60K |
-| G | 自动化 | 工作流引擎、定时任务、消息队列调度 | `workflow/` + `service/Cron*` + `data/alarm/` | 30f/5K |
-| H | 语音搜索 | TTS/ASR、搜索服务、内置浏览器 | `speech/` + `search/` + `browser/` + `openclaw/` | 65f/9K |
-| I | 数据存储 | Room 数据库、同步、收藏、统计、备份导出 | `data/db/` + `data/sync/` + `data/export/` | 60f/8K |
-| J | Web 服务 | 嵌入式 Ktor 服务器 + Web 管理界面 | `web/` 模块 + `web-ui/` + `app/web/` | 15f/2K |
-| K | 生态扩展 | 插件生态、应用市场、Operit 兼容层 | `ecosystem/` + `data/operit/` + `ui/pages/market` 等 | 30f/4K |
-| L | 基础设施 | 工具函数、通用扩展、OAuth、权限、日志 | `utils/` + `common/` + `oauth/` + `data/log/` | 45f/5K |
+| A | 对话核心 | 会话状态机、生成管线、消息队列、压缩 | `ui/pages/chat` + `service/` + `data/model/` | 77f/23K |
+| B | AI 传输 | Provider 抽象、SSE、请求体协议、MCP | `ai/` 模块 + `data/ai/` | 38f/6K |
+| C | 工具系统 | 工具定义/注入/域路由/插件/子代理/图表工具 | `data/ai/tools/` + `ecosystem/` + `subagent/` | 64f/13K |
+| D | 工作区沙箱 | Rootfs、文件工具、MCP stdio 桥、桥接服务 | `workspace/` 模块 + `sandbox/` + `data/repository/` | 20f/7K |
+| E | 设置体系 | 全部设置页 + DataStore 持久化 + DI | `ui/pages/setting/` + `data/datastore/` + `di/` | 71f/24K |
+| F | 主题渲染 | 配色主题、Markdown/文档渲染、图表卡、动效 | `ui/theme/` + `highlight/` + `document/` + `ui/components/` | 109f/25K |
+| G | 自动化 | 工作流引擎、定时任务、消息队列调度 | `workflow/` + `service/Cron*` + `data/alarm/` | 41f/6K |
+| H | 语音搜索 | TTS/ASR、搜索服务、内置浏览器 | `speech/` + `search/` + `browser/` + `openclaw/` | 14f/1K |
+| I | 数据存储 | Room 数据库、同步、记忆、用量/统计、备份导出 | `data/db/` + `data/usage/` + `ui/pages/stats` | 88f/11K |
+| J | Web 服务 | 嵌入式 Ktor 服务器 + Web 管理界面 | `web/` 模块 + `web-ui/` + `app/web/` | 14f/2K |
+| K | 生态扩展 | 插件生态、应用市场、Operit 兼容层 | `ecosystem/` + `data/operit/` + `ui/pages/market` 等 | 19f/4K |
+| L | 基础设施 | 工具函数、通用扩展、OAuth、权限、日志 | `utils/` + `common/` + `oauth/` + `data/log/` | 58f/6K |
 
 ---
 
@@ -81,6 +81,7 @@ Completions/Response API)、MCP 客户端、提示词组装、消息变换器。
 | `data/ai/transformers/` | 消息变换器 (12f: ThinkTag/Regex/Base64Image/WorkspaceReminder...) |
 | `data/ai/mcp/McpSessionRegistry.kt` | MCP 会话 (连接/重连/stdio 桥/状态机) |
 | `data/ai/mcp/McpManager.kt` | MCP 门面 + reconcile 触发 |
+| `ai/.../providers/google/InteractionsAPI.kt` | Gemini Interactions API (v4.8.94; 客户端已锁 ProtocolEra.Legacy, 见 B122) |
 | `data/ai/prompts/` | 系统提示词组装 (PromptAssembler) |
 | `data/ai/GenerationHandler.kt` | 生成管线执行 (流式组装/图片预算/重试链) |
 
@@ -95,7 +96,8 @@ Completions/Response API)、MCP 客户端、提示词组装、消息变换器。
 - MCP 连接/状态 → `McpSessionRegistry` (reconcile 补连 + 失败重连链, v4.8.6 定版)
 
 **历史**: MCP 重启断联根治 (v4.8.6) / thinking 字段语义结构根修 (v4.8.10) /
-断流重试三件套 (v4.8.7) / GLM 图片限制 6 张 (v4.7.24)。
+断流重试三件套 (v4.8.7) / GLM 图片限制 6 张 (v4.7.24) / MCP stdio 回归修复
+(v4.8.96 — fork SDK 探测触发 stderr FATAL 停机; 锁 ProtocolEra.Legacy + stderr 永不 FATAL, bug-record B122)。
 
 ### C. 工具系统 (Tools)
 
@@ -111,10 +113,13 @@ Completions/Response API)、MCP 客户端、提示词组装、消息变换器。
 | `data/ai/tools/routing/ToolZoneMigration.kt` | 旧「工具域」→ 工具区一次性迁移 |
 | `data/ai/tools/WorkspaceTools.kt` | 工作区五件套 (read/write/edit/shell/show) |
 | `data/ai/tools/TaskTools.kt` | task_tool (任务清单卡片) |
+| `data/ai/tools/local/ChartDisplayTool.kt` | chart_display 图表工具 (聊天内交互图表卡, v4.8.94) |
+| `data/ai/tools/routing/ZoneOps.kt` | 工具矩阵唯一事务写入口 (v4.8.89, 写后校验对施加值判定) |
+| `data/ai/tools/routing/ToolOrigin.kt` | 工具来源标签 (技能/MCP/插件/系统/本地 单一来源) |
 | `ecosystem/EcosystemManager.kt` | 插件/生态管理 |
 | `ecosystem/tools/DynamicTools.kt` | 动态工具池 |
 | `subagent/SubAgentEngine.kt` | 子代理引擎 |
-| `ui/pages/setting/SettingZonePage.kt` | 工具矩阵页 (工具区增删改/隐藏 + 顶层直连工具 + 恢复出厂) |
+| `ui/pages/setting/SettingZonePage.kt` | 工具矩阵页 (工具区增删改/隐藏 + 顶层直连工具; 「恢复出厂」已按用户定版移除 v4.8.92) |
 
 **分层注入铁律**: 系统提示词只放 7 个框架工具; 其余工具在请求 tools 数组;
 MCP 工具静态声明 (配置决定), 连接惰性 (首次调用才连)。
@@ -193,9 +198,10 @@ MCP 工具静态声明 (配置决定), 连接惰性 (首次调用才连)。
 | `ui/theme/CustomTheme.kt` | 自定义主题 (主/辅/点缀三色生成, 色相条选择) |
 | `ui/pages/setting/SettingThemePage.kt` | 主题设置页 (HueSliderRow 色相条) |
 | `ui/components/message/MarkdownBlock` 相关 | Markdown 渲染 (首帧同步解析, 勿异步化) |
+| `ui/components/charts/` (ChartCard/Plot/Table/Spec/Scale) | 聊天内图表卡渲染 (chart_display 配套, v4.8.94) |
 | `ui/components/render/DocumentRenderEngine.kt` | 文档渲染调度 (HTML/PDF/DOCX/XLSX) |
 | `highlight/` 模块 | 代码高亮实现 |
-| `ui/components/ui/WorkspaceImageFetch.kt` | 图片加载 (缓存键含 mtime+size) |
+| `ui/components/richtext/WorkspaceImageFetch.kt` | 图片加载 (缓存键含 mtime+size; Coil 接入见 RouteActivity) |
 
 **渲染铁律**: Markdown 首帧同步解析 (对齐原版, 勿改异步/占位/分段);
 Haze 锁 `2.0.0-beta01` (rc 版本有格栅伪影); 玻璃层用 `RinGlass` 单一来源。
@@ -234,11 +240,37 @@ Haze 锁 `2.0.0-beta01` (rc 版本有格栅伪影); 玻璃层用 `RinGlass` 单�
 **职责**: Room 数据库、WebDAV 同步、收藏、用量统计、备份导出、日志。
 
 **关键文件**: `data/db/` (43f: AppDatabase/DAO/实体 — **改动需迁移, 最高危**),
-`data/sync/` (11f), `data/favorite/`, `data/usage/`, `data/export/`,
-`data/log/`, `ui/pages/backup/`, `ui/pages/usage/`。
+`data/sync/` (11f), `data/favorite/`,
+`data/usage/` (UsageQuery: 60s 新鲜窗口 + 抽屉预热 v4.8.96),
+`ui/pages/usage/UsagePage.kt`、`ui/pages/stats/` (StatsPage/StatsVM/**StatsCache** — v4.8.96 缓存直出即开),
+`data/repository/MemoryRepository.kt` + `data/db/dao/MemoryDAO.kt` (记忆: 助手级/单对话, v4.8.92),
+`data/export/`, `data/log/`, `ui/pages/backup/`。
 
 **铁律**: Room 升级是启动链最高危改动 (v4.6.5 闪退实证) — 无法本地验证时
-宁用文件存储绕过; 记忆类数据已走 JSON 文件 (EnhancedMemoryRepository)。
+宁用文件存储绕过; 记忆数据走 Room (MemoryEntity + MemoryRepository, v4.8.92 起支持单对话记忆 conversation_id)。
+
+### 缓存与新鲜窗口总览 (v4.8.97 全库核实)
+
+> 缓存铁律: 键必须含"内容版本" (mtime+size / 内容 hash); 必须有界 (LRU/预算/计数);
+> 跨进程不可见的缓存必须有失效入口; 新鲜窗口只用于"可容忍短暂陈旧"的场景。
+
+| 缓存 | 位置 | 键 / 失效 | 边界 |
+|---|---|---|---|
+| Markdown 解析 | `ui/components/richtext/Markdown.kt` | 内容串; 字符预算 LRU (整段 1M/块 1.5M) | v4.8.86 预算制 |
+| 图片编码 | `ai/util/FileEncoder.kt` | 路径+mtime+size | LRU 24 (v4.8.33) |
+| Workspace 图 (Coil) | `ui/components/richtext/WorkspaceImageFetch.kt` | Keyer/请求级 key 含 mtime+size (v4.8.2) | Coil 内存/磁盘默认 |
+| OCR 结果 | `data/ai/transformers/OcrTransformer.kt` | 图 URL; 磁盘持久 + 3 天过期 | LRU 64 (SingleFileCacheStore) |
+| WebView 内容 | `ui/components/webview/WebViewContentCache.kt` | 内容 sha256; 7 天过期 | store 时清扫 |
+| 技能扫描/正文 | `data/files/SkillManager.kt` | 正文 mtime 键; invalidateSkillsCache() 全清 | 数量=技能数 |
+| 用量查询 | `data/usage/UsageQuery.kt` | 密钥; 60s 新鲜窗口; 下拉强制刷新 | 数量=密钥数 |
+| 统计 | `ui/pages/stats/StatsCache.kt` | 进程级; 10s 新鲜窗口 + Mutex 串行 | 单条 (v4.8.96) |
+| 余额文本 | `ui/components/ai/ProviderBalanceText.kt` | provider id + balanceOption hash; 10 分钟 | 数量=提供商数 |
+| Vertex 令牌 | `ai/.../vertex/ServiceAccountTokenProvider.kt` | 账号+scopes; 过期前 5 分钟缓冲 | 数量=账号数 |
+| 助手正则 | `data/model/Assistant.kt` | 模式串; 不过期 | 数量=助手数 |
+| 预热管线 | `service/warm/WarmPipeline.kt` | 只写 MarkdownParseCache, 可见行为零变化 | — |
+
+**核实结论 (v4.8.97)**: 全部缓存有界且有失效策略, 未发现无界泄漏; 本轮清理 1 个
+死缓存 (`WorkspaceImageResolver.cachedRoot` — 无任何调用方的陈旧根缓存)。
 
 ### J. Web 服务 (Web)
 
@@ -290,6 +322,10 @@ Haze 锁 `2.0.0-beta01` (rc 版本有格栅伪影); 玻璃层用 `RinGlass` 单�
 | 定时任务 | `service/Cron*` + `ui/pages/setting/scheduledjobs/` |
 | 状态栏/通知 | `service/ChatNotificationManager.kt` + 通知设置页 |
 | 备份/导出数据 | `data/export/` + `ui/pages/backup/` |
+| 用量查询/统计页 | `data/usage/UsageQuery.kt` + `ui/pages/usage/UsagePage.kt`; `ui/pages/stats/` (缓存直出+抽屉预热, v4.8.96) |
+| 图表工具 (chart_display) | `data/ai/tools/local/ChartDisplayTool.kt` + `ui/components/charts/` + `BuiltinToolUIs.kt` |
+| 记忆 (助手级/单对话) | `data/repository/MemoryRepository.kt` + `data/db/dao/MemoryDAO.kt` + `AssistantMemoryPage.kt` |
+| 缓存问题 | 先查 §2.5 缓存总览 — 键是否含内容版本 / 是否有失效入口 / 是否有界 |
 
 ---
 
@@ -325,5 +361,5 @@ Haze 锁 `2.0.0-beta01` (rc 版本有格栅伪影); 玻璃层用 `RinGlass` 单�
 
 ---
 
-*最后更新: v4.8.9 (2026-09-23)。新版本发布时, 若新增/重划功能域或改动
+*最后更新: v4.8.97 (2026-10-04)。新版本发布时, 若新增/重划功能域或改动
 关键文件职责, 请同步本文件与对应 skill。*

@@ -36,6 +36,7 @@ import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Key01
 import me.rerere.hugeicons.stroke.PencilEdit01
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.utils.maskApiKey
 import org.koin.compose.koinInject
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -194,7 +195,7 @@ private fun ApiKeySwitcherDialog(
                                         )
                                     }
                                     Text(
-                                        text = maskKey(item.key),
+                                        text = maskApiKey(item.key),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -240,8 +241,3 @@ private fun ApiKeySwitcherDialog(
     )
 }
 
-private fun maskKey(key: String): String = if (key.length <= 8) {
-    "****"
-} else {
-    key.take(4) + "****" + key.takeLast(4)
-}

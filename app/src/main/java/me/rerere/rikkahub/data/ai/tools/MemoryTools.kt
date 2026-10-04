@@ -3,7 +3,7 @@ package me.rerere.rikkahub.data.ai.tools
 
 /* ───【域 C·工具系统】MemoryTools.kt
  * 职责: 记忆工具 (增删改查/链接)
- * 常用改动: 工具行为 → MemoryTools 各方法; 存储 → EnhancedMemoryRepository
+ * 常用改动: 工具行为 → MemoryTools 各方法; 存储 → data/repository/MemoryRepository.kt (Room: MemoryEntity)
  * 问题定位: 记忆不生效 → 本文件 + 注入链
  * 基线: 自研 | 地图: docs/APP_MAP.md §C | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/

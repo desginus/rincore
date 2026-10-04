@@ -1,11 +1,8 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <resources>
-  <string name="about_page_github">GitHub</string>
-  <string name="about_page_license">Лицензия</string>
   <string name="about_page_system">Система</string>
   <string name="about_page_title">О приложении</string>
   <string name="about_page_version">Версия</string>
-  <string name="about_page_website">Веб-сайт</string>
   <string name="add">Добавить</string>
   <string name="asr_button_content_description">Распознавание речи</string>
   <string name="asr_button_stop">Стоп</string>
@@ -37,7 +34,6 @@
   <string name="assistant_importer_read_json_failed">Не удалось прочитать JSON</string>
   <string name="assistant_importer_unsupported_file_type">Неподдерживаемый тип файла: %s</string>
   <string name="assistant_importer_unsupported_spec">Неподдерживаемая спецификация: %s</string>
-  <string name="assistant_page_actions">Действия</string>
   <string name="assistant_page_add">Добавить</string>
   <string name="assistant_page_add_body">Добавить текст</string>
   <string name="assistant_page_add_header">Добавить заголовок</string>
@@ -50,12 +46,10 @@
   <string name="assistant_page_background_opacity_desc">Настройте видимость фонового изображения чата</string>
   <string name="assistant_page_background_opacity_value">Прозрачность: %1$d%%</string>
   <string name="assistant_page_background_set">Фоновое изображение установлено</string>
-  <string name="assistant_page_balanced">Сбалансированный</string>
   <string name="assistant_page_body_key">Ключ тела</string>
   <string name="assistant_page_body_value">Значение тела (JSON)</string>
   <string name="assistant_page_cancel">Отмена</string>
   <string name="assistant_page_change_background">Изменить фоновое изображение</string>
-  <string name="assistant_page_chaotic">Хаотичный (Опасный)</string>
   <string name="assistant_page_chat_background">Фон чата</string>
   <string name="assistant_page_chat_background_desc">Установить фоновое изображение для страницы чата с ассистентом</string>
   <string name="assistant_page_chat_model">Модель чата</string>
@@ -63,11 +57,6 @@
   <string name="assistant_page_clone">Клонировать</string>
   <string name="assistant_page_clone_with_memories">Также копировать память</string>
   <string name="assistant_page_confirm">Подтвердить</string>
-  <string name="assistant_page_context_message_count">Размер контекстных сообщений: %d</string>
-  <string name="assistant_page_context_message_desc">Управляет количеством исторических сообщений, отправляемых модели в качестве контекста. Сообщения, превышающие это число, будут игнорироваться; будут сохранены только последние N сообщений, что позволяет экономить токены</string>
-  <string name="assistant_page_context_message_size">Размер контекстного сообщения</string>
-  <string name="assistant_page_context_message_unlimited">Неограниченные контекстные сообщения</string>
-  <string name="assistant_page_creative">Творческий</string>
   <string name="assistant_page_current_assistant">Текущий ассистент</string>
   <string name="assistant_page_custom_bodies">Пользовательский контекст</string>
   <string name="assistant_page_custom_headers">Пользовательские заголовки</string>
@@ -128,7 +117,6 @@
   <string name="assistant_page_select_from_gallery">Выбрать из галереи</string>
   <string name="assistant_page_stream_output">Потоковый вывод</string>
   <string name="assistant_page_stream_output_desc">Включить потоковый вывод сообщений</string>
-  <string name="assistant_page_strict">Строгий</string>
   <string name="assistant_page_system_prompt">Системный промпт</string>
   <string name="assistant_page_tab_basic">Основные настройки</string>
   <string name="assistant_page_tab_extensions">Расширения</string>
@@ -151,7 +139,6 @@
   <string name="assistant_page_time_reminder_desc">Автоматически добавлять напоминания о времени перед сообщениями с большими интервалами, чтобы помочь ИИ понимать паузы в разговоре</string>
   <string name="assistant_page_title">Настройки ассистента</string>
   <string name="assistant_page_top_p">Top P</string>
-  <string name="assistant_page_top_p_value">Top P: %s</string>
   <string name="assistant_page_top_p_warning">Пожалуйста, не изменяйте это значение, если не уверены в своих действиях</string>
   <string name="assistant_page_use_assistant_avatar">Использовать аватар ассистента</string>
   <string name="assistant_page_use_assistant_avatar_desc">Использовать аватар и имя ассистента вместо аватара и имени модели в чатах</string>
@@ -223,8 +210,6 @@
   <string name="backup_page_webdav_backup">Резервное копирование WebDAV</string>
   <string name="backup_page_webdav_backup_files">Файлы резервного копирования WebDAV</string>
   <string name="backup_page_webdav_server_address">Адрес сервера WebDAV</string>
-  <string name="built_in_search_description">Включить встроенную функцию поиска модели</string>
-  <string name="built_in_search_title">Встроенный поиск</string>
   <string name="calculating">Вычисление...</string>
   <string name="cancel">Отмена</string>
   <string name="cancel_edit">Отменить редактирование</string>
@@ -269,7 +254,6 @@
   <string name="chat_page_compress_not_enough_messages">Недостаточно сообщений для сжатия. Уменьшите количество сохраняемых сообщений или добавьте больше сообщений.</string>
   <string name="chat_page_compress_target_tokens">Целевой размер токенов</string>
   <string name="chat_page_compress_warning">⚠️ Сжатие контекста приведёт к сбросу всех сообщений в текущем диалоге</string>
-  <string name="chat_page_compressing">Сжатие...</string>
   <string name="chat_page_conversation_system_prompt">Системный запрос для беседы</string>
   <string name="chat_page_conversation_system_prompt_clear">Очистить</string>
   <string name="chat_page_conversation_system_prompt_hint">Переопределить системный промпт ассистента для этого разговора</string>
@@ -291,7 +275,6 @@
   <string name="chat_page_history">История чата</string>
   <string name="chat_page_menu_ai_translator">AI-переводчик</string>
   <string name="chat_page_menu_image_generation">Генерация изображений</string>
-  <string name="chat_page_message_count">%d сообщений</string>
   <string name="chat_page_move_to_assistant">Перейти к ассистенту</string>
   <string name="chat_page_new_chat">Новый чат</string>
   <string name="chat_page_new_message">Новое сообщение</string>
@@ -383,11 +366,6 @@
   <string name="history_page_title">История чатов</string>
   <string name="history_page_undo">Отменить</string>
   <string name="history_page_unpin">Открепить</string>
-  <string name="imggen_page_aspect_ratio">Соотношение сторон изображения</string>
-  <string name="imggen_page_aspect_ratio_desc">Выберите соотношение сторон для сгенерированных изображений</string>
-  <string name="imggen_page_aspect_ratio_landscape">16:9 Альбомная</string>
-  <string name="imggen_page_aspect_ratio_portrait">9:16 Портрет</string>
-  <string name="imggen_page_aspect_ratio_square">1:1 Квадрат</string>
   <string name="imggen_page_cancel">Отмена</string>
   <string name="imggen_page_cancel_generation_message">Вы уверены, что хотите отменить генерацию изображения?</string>
   <string name="imggen_page_cancel_generation_title">Отменить генерацию</string>
@@ -398,8 +376,6 @@
   <string name="imggen_page_generation_count">Количество генераций</string>
   <string name="imggen_page_generation_count_desc">Количество изображений для генерации за раз</string>
   <string name="imggen_page_image_saved_success">Изображение сохранено в галерею</string>
-  <string name="imggen_page_model_selection">Выбор модели</string>
-  <string name="imggen_page_model_selection_desc">Выберите модель ИИ для генерации изображений</string>
   <string name="imggen_page_no_generated_images">Нет сгенерированных изображений</string>
   <string name="imggen_page_prompt_placeholder">Опишите изображение, которое хотите сгенерировать…</string>
   <string name="imggen_page_save">Сохранить</string>
@@ -528,23 +504,16 @@
   <string name="quick_messages_page_empty_title">Нет быстрых сообщений</string>
   <string name="quick_messages_page_untitled">Без названия</string>
   <string name="reasoning_auto">Авто</string>
-  <string name="reasoning_auto_desc">Позволить модели автоматически определить уровень рассуждений.</string>
-  <string name="reasoning_custom">Пользовательский бюджет рассуждений</string>
   <string name="reasoning_heavy">Высокая</string>
-  <string name="reasoning_heavy_desc">Модель будет использовать большое количество рассуждений для ответа на вопросы.</string>
   <string name="reasoning_light">Низкий</string>
-  <string name="reasoning_light_desc">Модель будет использовать небольшое количество рассуждений для ответа на вопросы.</string>
   <string name="reasoning_medium">Средний</string>
-  <string name="reasoning_medium_desc">Модель будет использовать более глубокое рассуждение для ответа на вопросы.</string>
   <string name="reasoning_off">Выключено</string>
-  <string name="reasoning_off_desc">Отключить функцию обоснования, модель будет отвечать на вопросы напрямую.</string>
   <string name="reasoning_picker_hint">Не все модели поддерживают настройку глубины. См. документацию модели и провайдера.</string>
   <string name="reasoning_picker_title">Настроить глубину мышления модели</string>
   <string name="reasoning_xhigh">Очень высокий</string>
   <string name="regenerate">Сгенерировать заново</string>
   <string name="regenerate_confirm_message">Вы уверены, что хотите перегенерировать это сообщение?</string>
   <string name="render_with_webview">Отображать в WebView</string>
-  <string name="rikkahub_provider_description">Официальный бесплатный AI-сервис, использующий средства спонсоров для предоставления новым пользователям бесплатных моделей в качестве резерва; API-ключ не требуется. Действуют строгие ограничения по частоте запросов. Если у вас есть собственный провайдер, используйте его по возможности.</string>
   <string name="safe_mode_assistants">Помощники</string>
   <string name="safe_mode_copy">Копировать</string>
   <string name="safe_mode_crash_report">Отчёт о сбое</string>
@@ -591,7 +560,6 @@
   <string name="search_page_sort_relevance">По релевантности</string>
   <string name="search_page_title">Поиск сообщений</string>
   <string name="search_page_untitled">Без названия</string>
-  <string name="search_picker_title">Поиск настроек</string>
   <string name="select_and_copy">Выделить и скопировать</string>
   <string name="send">Отправить</string>
   <string name="setting_asr_configure_api_key">Ключ API</string>
@@ -684,7 +652,6 @@
   <string name="setting_display_page_show_user_avatar_title">Показывать аватар пользователя</string>
   <string name="setting_display_page_skip_crop_image_desc">Пропустить обрезку после импорта изображений или съёмки</string>
   <string name="setting_display_page_skip_crop_image_title">Пропустить редактирование изображения</string>
-  <string name="setting_display_page_title">Настройки отображения</string>
   <string name="setting_display_page_tts_only_read_quoted_desc">Если включено, TTS читает только текст в кавычках</string>
   <string name="setting_display_page_tts_only_read_quoted_title">TTS читать только цитированный контент</string>
   <string name="setting_display_page_use_app_icon_style_loading_indicator_desc">Использовать анимированный значок приложения вместо стандартного круглого индикатора загрузки</string>
@@ -692,11 +659,8 @@
   <string name="setting_display_page_volume_key_scroll_desc">Прокрутка страниц клавишами громкости, идеально для экранов электронных чернил</string>
   <string name="setting_display_page_volume_key_scroll_ratio">Величина прокрутки</string>
   <string name="setting_display_page_volume_key_scroll_title">Прокрутка страниц клавишами громкости</string>
-  <string name="setting_files_page_cancel_action">Отмена</string>
-  <string name="setting_files_page_delete_action">Удалить</string>
   <string name="setting_files_page_delete_content_description">Удалить</string>
   <string name="setting_files_page_delete_failed_toast">Не удалось удалить</string>
-  <string name="setting_files_page_delete_file_title">Удалить файл</string>
   <string name="setting_files_page_deleted_toast">Удалено</string>
   <string name="setting_files_page_folder_upload">Загрузить</string>
   <string name="setting_files_page_no_files">Нет файлов</string>
@@ -739,23 +703,15 @@
   <string name="setting_model_page_chat_model_desc">Глобальная модель чата по умолчанию</string>
   <string name="setting_model_page_compress_model">Сжать модель</string>
   <string name="setting_model_page_compress_model_desc">Модель для сжатия истории разговоров</string>
-  <string name="setting_model_page_compress_prompt_vars">Переменные: {content}, {target_tokens}, {additional_context}</string>
   <string name="setting_model_page_ocr_model">Модель OCR</string>
   <string name="setting_model_page_ocr_model_desc">Модель, используемая для оптического распознавания текста на изображениях</string>
-  <string name="setting_model_page_ocr_prompt_vars">Переменные: Данные изображения: {images}</string>
-  <string name="setting_model_page_prompt">Промпт</string>
   <string name="setting_model_page_reset_to_default">Сбросить до значения по умолчанию</string>
   <string name="setting_model_page_suggestion_model">Модель предложений чата</string>
   <string name="setting_model_page_suggestion_model_desc">Модель для генерации предложений в чате. Если не задана, используется быстрая модель</string>
-  <string name="setting_model_page_suggestion_prompt_vars">Переменные: Содержание разговора: {content}, Язык: {locale}</string>
   <string name="setting_model_page_title">Настройки модели</string>
-  <string name="setting_model_page_title_model">Модель сводки заголовков</string>
-  <string name="setting_model_page_title_model_desc">Модель для генерации заголовков бесед. Если не задана, используется быстрая модель</string>
   <string name="setting_model_page_translate_model">Модель перевода</string>
   <string name="setting_model_page_translate_model_desc">Модель, используемая для функций перевода</string>
-  <string name="setting_model_page_translate_prompt_vars">Переменные: Исходный текст: {source_text}, Целевой язык: {target_lang}</string>
   <string name="setting_page_about">О приложении</string>
-  <string name="setting_page_about_desc">Об этом приложении</string>
   <string name="setting_page_assistant">Ассистент</string>
   <string name="setting_page_assistant_desc">Настроить персонализированных ассистентов (агентов)</string>
   <string name="setting_page_built_in_tools">Встроенные инструменты</string>
@@ -778,23 +734,11 @@
   <string name="setting_page_config_api_title">Настройте API и модель</string>
   <string name="setting_page_data_backup">Резервное копирование данных</string>
   <string name="setting_page_data_backup_desc">Резервное копирование и восстановление данных приложения</string>
-  <string name="setting_page_data_settings">Настройки данных</string>
   <string name="setting_page_default_model">Модель и промпт по умолчанию</string>
   <string name="setting_page_default_model_desc">Установить модели по умолчанию для каждой функции</string>
-  <string name="setting_page_display_setting">Настройки отображения</string>
-  <string name="setting_page_display_setting_desc">Управление настройками отображения</string>
-  <string name="setting_page_documentation">Документация</string>
-  <string name="setting_page_documentation_desc">Просмотрите инструкции по использованию приложения и справочную документацию</string>
   <string name="setting_page_dynamic_color">Динамический цвет</string>
   <string name="setting_page_dynamic_color_desc">Динамически создавать цвета темы приложения на основе обоев</string>
-  <string name="setting_page_extensions">Расширения</string>
-  <string name="setting_page_extensions_desc">Управление внедрением подсказок, навыками и другими возможностями</string>
-  <string name="setting_page_general_settings">Общие настройки</string>
-  <string name="setting_page_interaction_notification_settings">Взаимодействие и уведомления</string>
-  <string name="setting_page_mcp">MCP</string>
-  <string name="setting_page_mcp_desc">Настроить серверы MCP</string>
   <string name="setting_page_message_display_settings">Отображение сообщений</string>
-  <string name="setting_page_model_and_services">Модели и службы</string>
   <string name="setting_page_no_share_app">Приложение для обмена не найдено</string>
   <string name="setting_page_providers">Провайдеры</string>
   <string name="setting_page_providers_desc">Настроить поставщиков ИИ</string>
@@ -803,7 +747,6 @@
   <string name="setting_page_search_add_provider">Добавить поставщика</string>
   <string name="setting_page_search_common_options">Общие параметры</string>
   <string name="setting_page_search_config">Конфигурация</string>
-  <string name="setting_page_search_delete_provider">Удалить поставщика</string>
   <string name="setting_page_search_result_size">Размер результата</string>
   <string name="setting_page_search_service">Служба поиска</string>
   <string name="setting_page_search_service_desc">Настроить службу поиска</string>
@@ -917,7 +860,6 @@
   <string name="setting_provider_page_scan_error">Ошибка: %s</string>
   <string name="setting_provider_page_scan_qr_code">Сканировать QR-код</string>
   <string name="setting_provider_page_search_providers">Поиск поставщиков</string>
-  <string name="setting_provider_page_recommend">Рекомендуемые поставщики</string>
   <string name="setting_provider_page_select_all">Выбрать все (%1$d)</string>
   <string name="setting_provider_page_select_from_gallery">Выбрать из галереи</string>
   <string name="setting_provider_page_service_account_email">Электронная почта служебной учётной записи</string>
@@ -940,13 +882,10 @@
   <string name="setting_tts_page_base_url_placeholder">https://api.openai.com/v1</string>
   <string name="setting_tts_page_default_name">Системный TTS</string>
   <string name="setting_tts_page_edit_provider">Редактировать поставщика</string>
-  <string name="setting_tts_page_emotion">Эмоция</string>
-  <string name="setting_tts_page_emotion_description">Эмоциональный стиль для синтеза речи</string>
   <string name="setting_tts_page_model">Модель</string>
   <string name="setting_tts_page_model_description">Модель TTS для использования</string>
   <string name="setting_tts_page_model_placeholder_gemini">gemini-2.5-flash-preview-tts</string>
   <string name="setting_tts_page_model_placeholder_openai">gpt-4o-mini-tts</string>
-  <string name="setting_tts_page_more_options_content_description">Дополнительные параметры</string>
   <string name="setting_tts_page_name">Имя</string>
   <string name="setting_tts_page_name_description">Пользовательское имя для этого поставщика TTS</string>
   <string name="setting_tts_page_name_placeholder">Введите имя поставщика</string>
@@ -967,7 +906,6 @@
   <string name="setting_tts_page_speed">Скорость</string>
   <string name="setting_tts_page_speed_description">Скорость речи (0,25–4,0)</string>
   <string name="setting_tts_page_test_text">Здравствуйте, это тест преобразования текста в речь.</string>
-  <string name="setting_tts_page_title">Преобразование текста в речь</string>
   <string name="setting_tts_page_voice">Голос</string>
   <string name="setting_tts_page_voice_description">Голос для синтеза речи</string>
   <string name="setting_tts_page_voice_id">ID голоса</string>
@@ -979,8 +917,6 @@
   <string name="share">Поделиться</string>
   <string name="share_handler_page_title">Выбрать ассистента</string>
   <string name="shortcut_take_picture">Сделать фото и спросить</string>
-  <string name="silicon_flow_description">**Ведущий мировой поставщик ИИ-возможностей, ускоряющий AGI на благо человечества.**</string>
-  <string name="silicon_flow_website">Веб-сайт: [https://cloud.siliconflow.cn/](https://cloud.siliconflow.cn/i/u1Ia4Ycf)</string>
   <string name="skill_detail_page_content">Контент</string>
   <string name="skill_detail_page_create">Создать</string>
   <string name="skill_detail_page_delete_confirm">Вы уверены, что хотите удалить файл "%s"?</string>
@@ -1068,11 +1004,8 @@
   <string name="update_card_new_version_found">Найдена новая версия %s</string>
   <string name="update_card_unknown_error">Неизвестная ошибка</string>
   <string name="upload_file">Загрузить файл</string>
-  <string name="use_web_search">Веб-поиск</string>
   <string name="user_default_name">Пользователь</string>
   <string name="video">Видео</string>
-  <string name="web_search_disabled">Веб-поиск отключён</string>
-  <string name="web_search_enabled">Веб-поиск включён</string>
   <string name="setting_theme_page_import_theme">Импорт</string>
   <string name="setting_theme_page_export_success">JSON темы скопирован в буфер обмена</string>
   <string name="setting_theme_page_import_success">Тема успешно импортирована</string>
@@ -1099,11 +1032,6 @@
   <string name="skills_page_add_manually">Добавить вручную</string>
   <string name="setting_model_page_tab_model">Модель</string>
   <string name="setting_model_page_tab_prompt">Промпты</string>
-  <string name="setting_model_page_prompt_translation">Перевод</string>
-  <string name="setting_model_page_prompt_title">Генерация заголовка</string>
-  <string name="setting_model_page_prompt_suggestion">Подсказки ответов в чате</string>
-  <string name="setting_model_page_prompt_ocr">OCR распознавание</string>
-  <string name="setting_model_page_prompt_compress">Сжатие контекста</string>
   <string name="setting_display_page_bubble_opacity_title">Прозрачность пузырьков</string>
   <string name="setting_provider_page_include_history_reasoning">Отправлять историю рассуждений</string>
   <string name="setting_model_page_fast_model">Быстрая модель</string>
@@ -1113,7 +1041,6 @@
   <string name="assistant_page_gradient_background_desc">Использовать динамический градиентный фон на странице чата</string>
   <string name="assistant_page_workspace">Рабочая область</string>
   <string name="assistant_page_workspace_desc">После привязки Agent может использовать файлы и возможности sandbox этого рабочего пространства.</string>
-  <string name="assistant_page_workspace_unbound">Не привязано</string>
   <string name="workspace_page_title">Рабочее пространство</string>
   <string name="workspace_page_create">Создать рабочее пространство</string>
   <string name="workspace_page_rename">Переименовать рабочее пространство</string>
@@ -1141,12 +1068,9 @@
   <string name="workspace_detail_enable_shell_desc">Разрешить этой рабочей области запускать терминальное окружение, используя локальный Rootfs</string>
   <string name="workspace_detail_tool_approval">Подтверждение инструментов</string>
   <string name="workspace_detail_tool_approval_desc">Если включено, перед вызовом этого инструмента ИИ требуется подтверждение пользователя.</string>
-  <string name="workspace_detail_tool_list_files">Список файлов</string>
   <string name="workspace_detail_tool_read_file">Читать файл</string>
   <string name="workspace_detail_tool_write_file">Записать файл</string>
   <string name="workspace_detail_tool_edit_file">Редактировать файл</string>
-  <string name="workspace_detail_tool_delete_file">Удалить файл</string>
-  <string name="workspace_detail_tool_move_file">Переместить файл</string>
   <string name="workspace_detail_tool_shell">Выполнить команду</string>
   <string name="workspace_detail_install_rootfs_desc">Загрузит tar.gz и распакует в каталог Linux %s.</string>
   <string name="workspace_detail_download_url">URL для скачивания tar.gz</string>
@@ -1160,8 +1084,6 @@
   <string name="workspace_detail_downloading">Загрузка %1$s%2$s</string>
   <string name="workspace_detail_extracting">Извлечение %1$d элементов%2$s</string>
   <string name="workspace_detail_install_complete">Установка завершена</string>
-  <string name="workspace_terminal_title">Терминал</string>
-  <string name="workspace_terminal_title_with_name">%s · Терминал</string>
   <string name="workspace_terminal_not_installed">Пожалуйста, сначала установите Rootfs</string>
   <string name="workspace_terminal_loading">Загрузка рабочего пространства…</string>
   <string name="workspace_terminal_exited">Терминал завершен</string>
@@ -1191,15 +1113,6 @@
   <string name="tool_ui_read_file_default">Читать файл</string>
   <string name="tool_ui_write_file">Записать: %s</string>
   <string name="tool_ui_write_file_default">Записать файл</string>
-  <string name="tool_ui_list_files">Список: %s</string>
-  <string name="tool_ui_list_files_default">Список файлов</string>
-  <string name="tool_ui_list_files_empty">Пусто</string>
-  <string name="tool_ui_list_files_items">%1$d файлов: %2$s</string>
-  <string name="tool_ui_delete_file">Удалить: %s</string>
-  <string name="tool_ui_delete_file_default">Удалить файл</string>
-  <string name="tool_ui_deleted">Удалено %s</string>
-  <string name="tool_ui_delete_failed">Не удалось удалить %s</string>
-  <string name="tool_ui_move_file">Переместить файл</string>
   <string name="tool_ui_shell">Shell: %s</string>
   <string name="tool_ui_shell_default">Shell</string>
   <string name="tool_ui_shell_timeout">timeout</string>
@@ -1212,7 +1125,6 @@
   <string name="backup_page_s3_path_style_desc">Используйте endpoint/bucket/object. Отключите, чтобы использовать bucket.endpoint/object.</string>
   <string name="workspace_page_name_duplicate">Такое имя уже существует</string>
   <string name="setting_mcp_page_name_invalid">Имя может содержать только латинские буквы и цифры</string>
-  <string name="error_mcp_invalid_server_name">Недопустимое имя сервера MCP (допускаются только буквенно-цифровые символы): %1$s</string>
   <string name="setting_asr_configure_base_url">Base URL</string>
   <string name="setting_asr_configure_sample_rate">Частота дискретизации</string>
   <string name="setting_asr_configure_segment_duration">Длительность сегмента</string>
@@ -1236,7 +1148,6 @@
   <string name="setting_asr_configure_step_hotwords_desc">Список горячих слов через запятую для повышения точности распознавания имён собственных и терминов предметной области</string>
   <string name="log_page_record_requests">Записывать запросы</string>
   <string name="log_page_record_requests_desc">Записывать заголовки запросов, тела и метаданные ответов</string>
-  <string name="assistant_page_context_message_truncation_warning">Ограничение контекста может привести к частому усечению контекста и предотвратить кэширование промптов</string>
   <string name="chat_message_tool_recent_chats">Посмотреть недавние чаты</string>
   <string name="chat_message_tool_conversation_search">История поиска: %1$s</string>
   <string name="assistant_page_local_tools_screen_time_title">Экранное время</string>
@@ -1262,13 +1173,11 @@
   <string name="chart_series_name">Ряд %1$d</string>
   <string name="chat_page_move_to_folder">Переместить в папку</string>
   <string name="chat_page_remove_from_folder">Убрать из папки</string>
-  <string name="chat_page_create_folder">Новая папка</string>
   <string name="chat_page_folder_name">Имя папки</string>
   <string name="chat_page_rename_folder">Переименовать папку</string>
   <string name="chat_page_delete_folder">Удалить папку</string>
   <string name="chat_page_rename">Переименовать</string>
   <string name="chat_page_folder_default">Чат</string>
-  <string name="chat_page_folder_add">Новая</string>
   <string name="chat_page_delete_folder_confirm">Удалить папку "%1$s"? Беседы внутри не будут удалены, только исключены из папки.</string>
   <string name="chat_page_delete_folder_generating">Некоторые беседы в этой папке все еще генерируются. Пожалуйста, остановите их перед удалением.</string>
 
@@ -1309,9 +1218,6 @@
 <string name="chat_page_voice_tools_before_resume">Обработайте ожидающие запросы на одобрение использования инструментов, прежде чем возобновить голосовой режим.</string>
 <string name="chat_page_voice_generation_failed">Не удалось сгенерировать ответ модели. Проверьте ошибку в чате.</string>
 <string name="chat_page_voice_queue_paused">Очередь сообщений приостановлена. Устраните проблему, затем перезапустите голосовой режим.</string>
-<string name="setting_page_asr_silence_duration">Длительность паузы окончания высказывания</string>
-<string name="setting_page_asr_silence_duration_desc">Высказывание завершается после непрерывной паузы указанной длительности. Рекомендуется: 800–1000 мс.</string>
-<string name="setting_page_asr_milliseconds">мс</string>
 <string name="workspace_terminal_close_confirm_title">Закрыть терминал %1$d?</string>
 <string name="workspace_terminal_close_confirm_message">Закрытие этой вкладки приведет к завершению всех процессов, которые все еще в ней выполняются.</string>
 <string name="workspace_terminal_close">Закрыть</string>
@@ -1334,5 +1240,14 @@
 <string name="imggen_page_select_image">Выбрать изображение</string>
 <string name="workspace_detail_compatibility_mode">Режим совместимости</string>
 <string name="workspace_detail_compatibility_mode_desc">Попробуйте включить это, если терминал не запускается. Это может снизить производительность. Применяется к новым вкладкам терминала и последующим командам.</string>
+  <string name="setting_model_page_compress_prompt_vars">Переменные: {content}, {target_tokens}, {additional_context}</string>
+  <string name="setting_model_page_ocr_prompt_vars">Переменные: Данные изображения: {images}</string>
+  <string name="setting_model_page_prompt">Промпт</string>
+  <string name="setting_model_page_prompt_compress">Сжатие контекста</string>
+  <string name="setting_model_page_prompt_ocr">OCR распознавание</string>
+  <string name="setting_model_page_prompt_suggestion">Подсказки ответов в чате</string>
+  <string name="setting_model_page_prompt_title">Генерация заголовка</string>
+  <string name="setting_model_page_prompt_translation">Перевод</string>
+  <string name="setting_model_page_suggestion_prompt_vars">Переменные: Содержание разговора: {content}, Язык: {locale}</string>
+  <string name="setting_model_page_translate_prompt_vars">Переменные: Исходный текст: {source_text}, Целевой язык: {target_lang}</string>
 </resources>
-

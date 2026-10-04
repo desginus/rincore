@@ -84,6 +84,7 @@ import me.rerere.rikkahub.data.usage.CommandCodeUsageApi
 import me.rerere.rikkahub.data.usage.UsageApi
 import me.rerere.rikkahub.data.usage.UsageMiniCardData
 import me.rerere.rikkahub.data.usage.UsageQuery
+import me.rerere.rikkahub.utils.maskApiKey
 import me.rerere.rikkahub.data.usage.KeyQueryState
 import me.rerere.rikkahub.data.usage.openCodeMiniCard
 import org.koin.compose.koinInject
@@ -132,7 +133,7 @@ fun UsagePage(onBack: () -> Unit = {}) {
         errorText = when {
             failed.isEmpty() -> null
             failed.size == allKeys.size -> "查询失败，请检查密钥或网络后下拉重试"
-            else -> "部分密钥查询失败：${failed.joinToString("、") { maskKey(it) }}"
+            else -> "部分密钥查询失败：${failed.joinToString("、") { maskApiKey(it) }}"
         }
         loading = false
     }
@@ -251,7 +252,7 @@ fun UsagePage(onBack: () -> Unit = {}) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 Column(Modifier.fillMaxSize()) {
                     TopAppBar(
-                        title = { Text(maskKey(key)) },
+                        title = { Text(maskApiKey(key)) },
                         navigationIcon = {
                             TextButton(onClick = { selectedKey = null }) { Text("返回") }
                         },
@@ -365,7 +366,7 @@ private fun UsageKeyCard(
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    maskKey(key),
+                    maskApiKey(key),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
@@ -588,7 +589,7 @@ private fun KeyCardDialog(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                maskKey(savedKey),
+                                maskApiKey(savedKey),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.weight(1f),
@@ -764,11 +765,6 @@ private fun formatRemaining(iso: String): String = runCatching {
 }.getOrElse { iso }
 
 // 密钥脱敏显示 (sk-abc...xyz)
-private fun maskKey(key: String): String {
-    if (key.length <= 8) return key
-    return key.take(6) + "..." + key.takeLast(4)
-}
-
 // ── v4.8.78: 无套餐 (空密钥) 折叠组 — 不展示明细卡, 展开仅列出密钥 ──
 @Composable
 private fun NoSubscriptionFold(
@@ -812,7 +808,7 @@ private fun NoSubscriptionFold(
                 ) {
                     keys.forEach { k ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(maskKey(k), style = MaterialTheme.typography.bodySmall)
+                            Text(maskApiKey(k), style = MaterialTheme.typography.bodySmall)
                             Spacer(Modifier.weight(1f))
                             Text(
                                 "无套餐",

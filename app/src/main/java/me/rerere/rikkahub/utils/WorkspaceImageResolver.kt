@@ -165,26 +165,6 @@ fun resolveWorkspaceRelPath(raw: String): String? {
 object WorkspaceImageResolver {
     private const val TAG = "WorkspaceImage"
 
-    @Volatile
-    private var cachedRoot: String? = null
-
-    /** 取默认 workspace root (首个; 仅用于日志诊断) */
-    fun currentRoot(): String? {
-        cachedRoot?.let { return it }
-        return runCatching {
-            val koin = org.koin.core.context.GlobalContext.get()
-            val repo = koin.get<me.rerere.rikkahub.data.repository.WorkspaceRepository>()
-            val ws = runCatching { kotlinx.coroutines.runBlocking { repo.getAllWorkspaces() } }
-                .getOrNull()?.firstOrNull()
-            ws?.root?.also { cachedRoot = it }
-        }.getOrNull()
-    }
-
-    /** 强制下次重新读 root (workspace 删除/新建后调用) */
-    fun invalidateRoot() {
-        cachedRoot = null
-    }
-
     /**
      * 全链路解析: 返回 (宿主文件, "ok") 或 (null, 失败环节标签)。
      * 失败环节: empty_input / prefix_not_recognized / invalid_path / no_workspace /
@@ -228,7 +208,6 @@ object WorkspaceImageResolver {
                         "ok ws=${ws.root.take(8)} host=${hit.canonicalPath} " +
                         "mtime=${hit.lastModified()} size=${hit.length()}"
                 )
-                cachedRoot = ws.root
                 return WorkspaceResolveResult(hit, "ok")
             }
             // 记录最后尝试的宿主猜测路径 (linuxDir 误落诊断用)
@@ -249,7 +228,6 @@ object WorkspaceImageResolver {
                     val hit = manager.resolveRootfsFileSafe(ws.root, collapsedRootfs)
                     if (hit != null) {
                         android.util.Log.i(TAG, "dedup hit: $rel -> $collapsed")
-                        cachedRoot = ws.root
                         return WorkspaceResolveResult(hit, "ok")
                     }
                 }
