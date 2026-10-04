@@ -972,6 +972,8 @@ data class Settings(
     val toolDescriptionOverrides: Map<String, String> = emptyMap(), // 工具名→自定义描述。覆盖原始Tool描述
     val toolNameOverrides: Map<String, String> = emptyMap(), // v3.6.102: 工具改名 — 原工具名→新工具名 (汉语名工具改为字母数字, 模型才能识别)
     val classifierPrompt: String = "", // 工具自动分类提示词。空=使用默认
+    // v4.8.100: 媒体生成提供商 (mediagen 模块 — 图像/视频统一抽象; 供视频生成功能消费)
+    val mediaGenerationProviders: List<me.rerere.mediagen.provider.MediaGenerationProviderSetting> = emptyList(),
 ) {
     companion object {
         // 构造一个用于初始化的settings, 但它不能用于保存，防止使用初始值存储
@@ -1001,8 +1003,6 @@ data class NetworkSetting(
     val cherryCompatMode: Boolean = false,
     // v3.9.15: 勾选走代理的模型 id (modelId 字符串) 列表
     val proxyModelIds: List<String> = emptyList(),
-    // v4.8.100: 媒体生成提供商 (mediagen 模块 — 图像/视频统一抽象; 供视频生成功能消费)
-    val mediaGenerationProviders: List<me.rerere.mediagen.provider.MediaGenerationProviderSetting> = emptyList(),
 )
 
 @Serializable
