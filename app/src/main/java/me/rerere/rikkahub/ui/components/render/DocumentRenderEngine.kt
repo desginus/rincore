@@ -670,10 +670,12 @@ internal fun buildSlideHtml(
     rels: Map<String, String>,
     map: Map<String, ByteArray>,
     assetsDir: File,
+    canvasW: Long = 12192000L,
+    canvasH: Long = 6858000L,
 ): String {
     val sb = StringBuilder()
-    var slideW = 12192000L
-    var slideH = 6858000L
+    var slideW = canvasW
+    var slideH = canvasH
     var bgColor: String? = null
     var found = false
     try {
