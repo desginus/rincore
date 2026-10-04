@@ -124,6 +124,11 @@ import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.utils.base64Decode
 import me.rerere.rikkahub.utils.navigateToChatPage
+import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.db.dao.ConversationDAO
+import me.rerere.rikkahub.data.db.dao.MessageNodeDAO
+import me.rerere.rikkahub.data.usage.UsageQuery
+import me.rerere.rikkahub.ui.pages.stats.StatsCache
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 import kotlinx.coroutines.delay
@@ -173,6 +178,18 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
         if (drawerState.isOpen) {
             focusManager.clearFocus(force = true)
             softwareKeyboardController?.hide()
+        }
+    }
+
+    // v4.8.96 (用户定版): 抽屉打开瞬间预热 —— 用量查询 / 统计页后台先算,
+    // 用户点进对应页面时直接出结果 (缓存直出), 不再看到加载过程。
+    val conversationDaoForWarm: ConversationDAO = koinInject()
+    val messageNodeDaoForWarm: MessageNodeDAO = koinInject()
+    val settingsStoreForWarm: SettingsStore = koinInject()
+    LaunchedEffect(drawerState.isOpen) {
+        if (drawerState.isOpen) {
+            scope.launch { runCatching { UsageQuery.prefetch(settingsStoreForWarm.settingsFlow.value) } }
+            scope.launch { runCatching { StatsCache.refresh(conversationDaoForWarm, messageNodeDaoForWarm, settingsStoreForWarm) } }
         }
     }
 

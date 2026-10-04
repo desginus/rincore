@@ -1,26 +1,22 @@
 /* 【域 I·数据存储】 — 页面 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.ui.pages.stats
 
-/* ───【原版对齐】StatsVM.kt | 与 2.5.6 逐字节一致（v4.8.93 整体复刻）
- * 基线: 原版 2.5.6
+/* ───【原版对齐 + v4.8.96 即开优化】StatsVM.kt
+ * 基线: 原版 2.5.6 (计算逻辑逐字节对齐, 抽至 StatsCache)
+ * v4.8.96 (用户定版): 缓存直出 —— 点开即统计页, 不再有加载过程;
+ *                     计算走 StatsCache (抽屉预热共用), 后台刷新覆盖。
  * ───────────────────────────────────────────────────────────────*/
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.db.dao.ConversationDAO
 import me.rerere.rikkahub.data.db.dao.MessageNodeDAO
-import me.rerere.rikkahub.data.db.dao.getMessageCountPerDay
-import me.rerere.rikkahub.data.db.dao.getTokenStats
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import java.time.DayOfWeek
 import java.time.LocalDate
-import java.time.temporal.TemporalAdjusters
 
 data class AppStats(
     val isLoading: Boolean = true,
@@ -43,46 +39,11 @@ class StatsVM(
     val stats = _stats.asStateFlow()
 
     init {
-        viewModelScope.launch { loadStats() }
-    }
-
-    private suspend fun loadStats() {
-        delay(50)
-
-        val today = LocalDate.now()
-
-        // 热力图起始日期（52 周前的周日），格式 "yyyy-MM-dd" 直接与 JSON 中的 LocalDateTime 前缀比较
-        val startDate = today
-            .with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY))
-            .minusWeeks(52)
-            .toString()
-
-        // 基于用户消息的 createdAt 统计每日活跃消息数，SQLite 侧 GROUP BY，返回 ≤371 行
-        val conversationsPerDay = withContext(Dispatchers.IO) {
-            messageNodeDAO
-                .getMessageCountPerDay(startDate)
-                .mapNotNull { entry ->
-                    runCatching { LocalDate.parse(entry.day) to entry.count }.getOrNull()
-                }
-                .toMap()
+        // v4.8.96: 缓存直出 — 有上次结果 (含抽屉预热结果) 先秒显, 随后后台刷新覆盖
+        StatsCache.cached?.let { _stats.value = it }
+        viewModelScope.launch {
+            delay(50)
+            StatsCache.refresh(conversationDAO, messageNodeDAO, settingsStore)?.let { _stats.value = it }
         }
-
-        val totalConversations = conversationDAO.countAll()
-
-        // json_each() + json_extract() 在 SQLite 侧聚合，不再加载完整 JSON 到 Kotlin
-        val tokenStats = messageNodeDAO.getTokenStats()
-
-        val launchCount = settingsStore.settingsFlow.value.launchCount
-
-        _stats.value = AppStats(
-            isLoading = false,
-            totalConversations = totalConversations,
-            totalMessages = tokenStats.totalMessages,
-            totalPromptTokens = tokenStats.promptTokens,
-            totalCompletionTokens = tokenStats.completionTokens,
-            totalCachedTokens = tokenStats.cachedTokens,
-            conversationsPerDay = conversationsPerDay,
-            launchCount = launchCount,
-        )
     }
 }

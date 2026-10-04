@@ -9,6 +9,7 @@ package me.rerere.rikkahub.data.usage
  *       ④ CC 结果 → OC 形状统一 (v3.22.0 数据链统一延续, 下游零差别)。
  * ───────────────────────────────────────────────────────────────*/
 import android.util.Log
+import me.rerere.rikkahub.data.datastore.Settings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -32,6 +33,15 @@ object UsageQuery {
 
     fun hasFresh(key: String): Boolean =
         cache[key]?.let { System.currentTimeMillis() - it.at < FRESH_MS } == true
+
+    /** v4.8.96: 抽屉打开瞬间预热 — 后台先查一轮, 用户点进页面时命中新鲜窗口即秒开。 */
+    suspend fun prefetch(settings: Settings) {
+        val keys = (listOf(settings.opencodeApiKey) + settings.opencodeApiKeys)
+            .filter { it.isNotBlank() }
+            .distinct()
+        if (keys.isEmpty() || keys.all { hasFresh(it) }) return
+        fetchAll(keys)
+    }
 
     /** 并行查询全部密钥; 每个密钥独立三态 (Ok / NoSubscription / Failed) */
     suspend fun fetchAll(keys: List<String>): Map<String, KeyQueryState> = coroutineScope {

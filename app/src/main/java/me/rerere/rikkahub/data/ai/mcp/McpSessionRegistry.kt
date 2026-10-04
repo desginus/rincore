@@ -11,9 +11,12 @@ import android.util.Log
 import io.ktor.client.HttpClient
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.util.StringValues
+import io.modelcontextprotocol.kotlin.sdk.ExperimentalMcpApi
 import io.modelcontextprotocol.kotlin.sdk.client.Client
+import io.modelcontextprotocol.kotlin.sdk.client.ClientOptions
 import io.modelcontextprotocol.kotlin.sdk.client.SseClientTransport
 import io.modelcontextprotocol.kotlin.sdk.client.StreamableHttpClientTransport
+import io.modelcontextprotocol.kotlin.sdk.client.ProtocolEra
 import io.modelcontextprotocol.kotlin.sdk.client.StdioClientTransport
 import kotlinx.io.asSink
 import kotlinx.io.asSource
@@ -448,8 +451,14 @@ internal class McpSessionRegistry(
             .onFailure { Log.w(TAG, "Failed to close MCP client $serverName", it) }
     }
 
+    // v4.8.96: 修复 fork SDK 的 server/discover 探测导致 stdio 连接失败 ——
+    // 探测请求会让老服务器把 "unknown method" 记到 stderr（含 "error"），触发传输层
+    // FATAL 停机 → "Connection closed"。强制 Legacy 纪元 = 恢复官方 0.15.0 的
+    // initialize 握手流程（本地复现验证: Auto=FAIL / Legacy=OK）。
+    @OptIn(ExperimentalMcpApi::class)
     private fun createSdkClient(config: McpServerConfig): Client = Client(
-        clientInfo = Implementation(name = config.commonOptions.name, version = "1.0")
+        Implementation(name = config.commonOptions.name, version = "1.0"),
+        ClientOptions().apply { protocolEra = ProtocolEra.Legacy },
     )
 
     private suspend fun createTransport(config: McpServerConfig): AbstractTransport = when (config) {
@@ -516,8 +525,11 @@ internal class McpSessionRegistry(
                 output = process.outputStream.asSink().buffered(),
                 error = process.errorStream.asSource().buffered(),
             ) { line ->
+                // v4.8.96: 永不返回 FATAL —— FATAL 会 stopProcessing 直接停掉整个传输。
+                // 真实服务器在 stderr 打含 "error" 的良性日志很常见（如对未知方法的告警），
+                // 旧分类器会误杀连接（本次 stdio 回归的放大器）；进程真死由 EOF/onClose 正常处理。
                 when {
-                    line.contains("error", ignoreCase = true) -> StdioClientTransport.StderrSeverity.FATAL
+                    line.contains("error", ignoreCase = true) -> StdioClientTransport.StderrSeverity.WARNING
                     line.contains("warning", ignoreCase = true) -> StdioClientTransport.StderrSeverity.WARNING
                     else -> StdioClientTransport.StderrSeverity.INFO
                 }
