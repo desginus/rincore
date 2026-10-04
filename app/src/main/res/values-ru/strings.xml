@@ -1250,7 +1250,6 @@
   <string name="setting_model_page_prompt_translation">Перевод</string>
   <string name="setting_model_page_suggestion_prompt_vars">Переменные: Содержание разговора: {content}, Язык: {locale}</string>
   <string name="setting_model_page_translate_prompt_vars">Переменные: Исходный текст: {source_text}, Целевой язык: {target_lang}</string>
-  <string name="chat_page_menu_video_generation">Генерация видео</string>
   <string name="video_gen_title">Генерация видео</string>
   <string name="video_gen_prompt_hint">Опишите желаемое видео</string>
   <string name="video_gen_duration">Длительность</string>

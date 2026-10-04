@@ -1250,7 +1250,6 @@ mDNSアドレス: .localホスト名を使用し、IPを知らなくても同じ
   <string name="setting_model_page_prompt_translation">翻訳</string>
   <string name="setting_model_page_suggestion_prompt_vars">変数: 会話内容: {content}, 言語: {locale}</string>
   <string name="setting_model_page_translate_prompt_vars">変数: 原文テキスト: {source_text}, 対象言語: {target_lang}</string>
-  <string name="chat_page_menu_video_generation">動画生成</string>
   <string name="video_gen_title">動画生成</string>
   <string name="video_gen_prompt_hint">生成したい動画を説明</string>
   <string name="video_gen_duration">長さ</string>

@@ -1325,7 +1325,6 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_model_page_prompt_translation">翻译</string>
   <string name="setting_model_page_suggestion_prompt_vars">变量: 对话内容: {content}, 语言: {locale}</string>
   <string name="setting_model_page_translate_prompt_vars">变量: 原始文本: {source_text}, 目标语言: {target_lang}</string>
-  <string name="chat_page_menu_video_generation">视频生成</string>
   <string name="video_gen_title">视频生成</string>
   <string name="video_gen_prompt_hint">描述你想生成的视频</string>
   <string name="video_gen_duration">时长</string>

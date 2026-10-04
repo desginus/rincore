@@ -76,10 +76,6 @@ import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ChartColumn
 import me.rerere.hugeicons.stroke.Clock02
-import me.rerere.hugeicons.stroke.Image02
-import me.rerere.hugeicons.stroke.Video01
-import me.rerere.hugeicons.stroke.LanguageCircle
-import me.rerere.hugeicons.stroke.Sparkles
 import me.rerere.hugeicons.stroke.Puzzle
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Share03
@@ -184,8 +180,6 @@ fun ChatDrawerContent(
         )
     }
 
-    // v4.8.93: 恢复原版「AI翻译 / 图像生成」选择入口（当年被用量查询替换掉的部分）
-    var showMenuPopup by remember { mutableStateOf(false) }
     // 移动对话状态
     var showMoveToAssistantSheet by remember { mutableStateOf(false) }
     var conversationToMove by remember { mutableStateOf<Conversation?>(null) }
@@ -427,51 +421,6 @@ fun ChatDrawerContent(
                         navController.navigate(Screen.Usage)
                     },
                 )
-
-                // v4.8.93 (用户定版): 恢复原版「AI翻译 / 图像生成」选择入口
-                Box {
-                    DrawerAction(
-                        icon = {
-                            Icon(HugeIcons.Sparkles, "Menu")
-                        },
-                        label = {
-                            Text(stringResource(R.string.menu))
-                        },
-                        onClick = {
-                            showMenuPopup = true
-                        },
-                    )
-                    DropdownMenu(
-                        expanded = showMenuPopup,
-                        onDismissRequest = { showMenuPopup = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.chat_page_menu_ai_translator)) },
-                            leadingIcon = { Icon(HugeIcons.LanguageCircle, null) },
-                            onClick = {
-                                showMenuPopup = false
-                                navController.navigate(Screen.Translator)
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.chat_page_menu_image_generation)) },
-                            leadingIcon = { Icon(HugeIcons.Image02, null) },
-                            onClick = {
-                                showMenuPopup = false
-                                navController.navigate(Screen.ImageGen)
-                            }
-                        )
-                        // v4.8.100: 视频生成（翻译 / 图像 / 视频 完整三件套）
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.chat_page_menu_video_generation)) },
-                            leadingIcon = { Icon(HugeIcons.Video01, null) },
-                            onClick = {
-                                showMenuPopup = false
-                                navController.navigate(Screen.VideoGen)
-                            }
-                        )
-                    }
-                }
 
                 DrawerAction(
                     icon = {

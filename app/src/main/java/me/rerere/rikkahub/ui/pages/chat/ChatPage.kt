@@ -93,6 +93,7 @@ import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.LeftToRightListBullet
 import me.rerere.hugeicons.stroke.Menu03
 import me.rerere.hugeicons.stroke.MessageAdd01
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
@@ -657,6 +658,10 @@ private fun ChatPageContent(
                         )
                     )
                 },
+                // v4.8.104: 速览页快捷入口（翻译 / 图像生成）+ 点空白处返回
+                onOpenTranslator = { navController.navigate(Screen.Translator) },
+                onOpenImageGen = { navController.navigate(Screen.ImageGen) },
+                onExitPreview = { previewMode = false },
                 // v4.8.88: 子代理预算（速览页弹窗直接回写 Settings）
                 onUpdateSettings = { updated -> vm.updateSettings(updated) },
                 errors = errors,

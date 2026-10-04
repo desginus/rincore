@@ -821,7 +821,11 @@ class ChatService(
                 inputTransformers = buildList {
                     addAll(inputTransformers)
                     add(templateTransformer)
-                    add(workspaceReminderTransformer)
+                    // v4.8.104: 极简模式不注入工作区提醒（该提醒含沙箱与工具用法说明,
+                    // 会诱导模型尝试调用被禁用的工具）。零工具 = 零工具文本。
+                    if (!settings.minimalModeConversations.contains(conversation.id.toString())) {
+                        add(workspaceReminderTransformer)
+                    }
                     add(me.rerere.rikkahub.ecosystem.tools.SlashCommandRouter)
                 },
                 outputTransformers = outputTransformers,

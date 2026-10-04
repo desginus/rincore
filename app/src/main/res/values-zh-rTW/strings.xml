@@ -1253,7 +1253,6 @@
   <string name="setting_model_page_prompt_translation">翻譯</string>
   <string name="setting_model_page_suggestion_prompt_vars">變數: 對話內容: {content}, 語言: {locale}</string>
   <string name="setting_model_page_translate_prompt_vars">變數: 原始文字: {source_text}, 目標語言: {target_lang}</string>
-  <string name="chat_page_menu_video_generation">影片生成</string>
   <string name="video_gen_title">影片生成</string>
   <string name="video_gen_prompt_hint">描述你想生成的影片</string>
   <string name="video_gen_duration">時長</string>

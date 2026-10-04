@@ -1250,7 +1250,6 @@ mDNS 주소: .local 호스트네임을 사용하며, IP를 몰라도 같은 네�
   <string name="setting_model_page_prompt_translation">번역</string>
   <string name="setting_model_page_suggestion_prompt_vars">변수: 대화 내용: {content}, 언어: {locale}</string>
   <string name="setting_model_page_translate_prompt_vars">변수: 원문: {source_text}, 대상 언어: {target_lang}</string>
-  <string name="chat_page_menu_video_generation">비디오 생성</string>
   <string name="video_gen_title">비디오 생성</string>
   <string name="video_gen_prompt_hint">생성할 동영상을 설명하세요</string>
   <string name="video_gen_duration">길이</string>

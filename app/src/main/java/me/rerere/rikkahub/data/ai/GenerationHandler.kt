@@ -119,6 +119,10 @@ private const val TAG = "GenerationHandler"
 
 /** 顶层直连工具名 — 不参与工具区归类, 分层模式下直接注入 */
 // 顶层直连工具集口径统一于 ToolsBuilder.topLevelToolSetOf (v4.8.83)
+// v4.8.104 极简模式: 模型若仍发起工具调用 → 一律自动拒绝的回执理由
+private const val MINIMAL_MODE_DENIED_REASON =
+    "本对话已开启极简模式 — 工具全部禁用。请不要再调用任何工具，直接用文本回答用户。"
+
 private const val MAX_TOOL_OUTPUT_CHARS = 32 * 1024
 private const val TOOL_OUTPUT_PREVIEW_CHARS = 4 * 1024
 
@@ -691,6 +695,15 @@ class GenerationHandler(
                 // Check for tools that need approval
                 var hasPendingApproval = false
                 val updatedTools = tools.map { tool ->
+                    // v4.8.104 极简模式铁闸: 工具已全部禁用 — 模型若仍发起调用一律自动拒绝
+                    // (不执行、不进入等待审批), 以 denied 回执驱动其改走纯文本作答。
+                    // 旧实现在极简模式下仍会执行工具或卡在"等待审批"(用户实证: 输出中途
+                    // 突然出现一串参数然后停止 — 即为工具调用被暂停)。
+                    if (!toolsEnabled) {
+                        return@map tool.copy(
+                            approvalState = ToolApprovalState.Denied(MINIMAL_MODE_DENIED_REASON),
+                        )
+                    }
                     // v4.5.14: 顶层恒定后域工具查找回退全量池 — 顶层 tools 只决定
                     // 模型可见性, 执行不依赖顶层定义。invoke_tools 指引"加载后
                     // 直接调用"的语义由此恢复 (v4.5.12 只改注入未核执行链,
@@ -764,6 +777,14 @@ class GenerationHandler(
                 // Resuming after user interaction - use the resumable tools directly.
                 Log.i(TAG, "generateText: resuming with ${pendingTools.size} resumable tools")
                 toolsToProcess = messages.last().getTools().filter { it.canResumeExecution }
+                    .map { tool ->
+                        // v4.8.104 极简模式铁闸 (续接分支): 同样拒绝
+                        if (!toolsEnabled) {
+                            tool.copy(approvalState = ToolApprovalState.Denied(MINIMAL_MODE_DENIED_REASON))
+                        } else {
+                            tool
+                        }
+                    }
             }
 
             // Handle tools (execute approved tools, handle denied tools)

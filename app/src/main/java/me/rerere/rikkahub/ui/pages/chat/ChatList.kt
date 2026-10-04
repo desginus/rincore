@@ -8,6 +8,9 @@ package me.rerere.rikkahub.ui.pages.chat
  * 基线: 原版移植 + 自研 (TTS/搜索) | 地图: docs/APP_MAP.md §A | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 import me.rerere.hugeicons.HugeIcons
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import me.rerere.hugeicons.stroke.LanguageCircle
+import me.rerere.hugeicons.stroke.Image02
 import me.rerere.hugeicons.stroke.Tick01
 import me.rerere.hugeicons.stroke.ArrowDown01
 import me.rerere.hugeicons.stroke.ArrowUp01
@@ -156,6 +159,10 @@ fun ChatList(
     onToggleMinimalMode: () -> Unit = {},
     // v4.8.88 子代理预算：读/改设置（速览页搜索框右侧、极简模式左边）
     onUpdateSettings: (Settings) -> Unit = {},
+    // v4.8.104: 速览页快捷入口（翻译 / 图像生成）+ 点空白处返回默认对话
+    onOpenTranslator: () -> Unit = {},
+    onOpenImageGen: () -> Unit = {},
+    onExitPreview: () -> Unit = {},
 ) {
     AnimatedContent(
         targetState = previewMode,
@@ -174,6 +181,9 @@ fun ChatList(
                 minimalMode = minimalMode,
                 onToggleMinimalMode = onToggleMinimalMode,
                 onUpdateSettings = onUpdateSettings,
+                onOpenTranslator = onOpenTranslator,
+                onOpenImageGen = onOpenImageGen,
+                onExitPreview = onExitPreview,
                 animatedVisibilityScope = this@AnimatedContent,
             )
         } else {
@@ -630,6 +640,9 @@ private fun ChatListPreview(
     minimalMode: Boolean = false,
     onToggleMinimalMode: () -> Unit = {},
     onUpdateSettings: (Settings) -> Unit = {},
+    onOpenTranslator: () -> Unit = {},
+    onOpenImageGen: () -> Unit = {},
+    onExitPreview: () -> Unit = {},
 ) {
     var searchQuery by remember { mutableStateOf("") }
     // v4.8.88: 子代理预算弹窗开关
@@ -652,7 +665,12 @@ private fun ChatListPreview(
         modifier = Modifier
             .padding(top = innerPadding.calculateTopPadding())
             .fillMaxSize()
-            .hazeSource(state = hazeState),
+            .hazeSource(state = hazeState)
+            // v4.8.104: 点空白处返回默认对话页（列表项/按钮/输入框各自消费点击, 空白回落此处）
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onExitPreview() },
     ) {
         // 搜索框 + 极简模式开关（v4.8.85：把搜索框右侧那一块划出来做开关，点击即切换）
         Row(
@@ -689,6 +707,21 @@ private fun ChatListPreview(
                 maxLines = 1,
             )
             Spacer(Modifier.width(4.dp))
+            // v4.8.104: 快捷入口 — AI翻译 / 图像生成（预算与极简模式左边）
+            IconButton(onClick = onOpenTranslator) {
+                Icon(
+                    imageVector = HugeIcons.LanguageCircle,
+                    contentDescription = stringResource(R.string.chat_page_menu_ai_translator),
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            IconButton(onClick = onOpenImageGen) {
+                Icon(
+                    imageVector = HugeIcons.Image02,
+                    contentDescription = stringResource(R.string.chat_page_menu_image_generation),
+                    modifier = Modifier.size(22.dp),
+                )
+            }
             // v4.8.88 子代理预算：点开查看/调整本对话的 Token 上限与用量（超出即熔断）
             IconButton(onClick = { showBudgetDialog = true }) {
                 Icon(

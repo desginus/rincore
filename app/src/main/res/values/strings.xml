@@ -1419,7 +1419,6 @@
   <string name="setting_model_page_prompt_translation">Translation</string>
   <string name="setting_model_page_suggestion_prompt_vars">Variables: Conversation content: {content}, Language: {locale}</string>
   <string name="setting_model_page_translate_prompt_vars">Variables: Source text: {source_text}, Target language: {target_lang}</string>
-  <string name="chat_page_menu_video_generation">Video Generation</string>
   <string name="video_gen_title">Video Generation</string>
   <string name="video_gen_prompt_hint">Describe the video to generate</string>
   <string name="video_gen_duration">Duration</string>
