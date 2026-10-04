@@ -862,7 +862,7 @@ sealed interface Screen : NavKey {
     @Serializable
     data object ImageGen : Screen
 
-    // v4.8.100: 视频生成 (mediagen — OpenAI/火山/阿里/MiniMax 视频模型)
+    // v4.8.100/102: 视频生成 (Google Veo / 阿里云 HappyHorse — 页内配置 URL/模型/密钥)
     data object VideoGen : Screen
 
     @Serializable

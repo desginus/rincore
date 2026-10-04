@@ -1,15 +1,15 @@
 /* 【域 A·对话核心】 — 页面 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.pages.videogen
 
-/* ───【自研】VideoGenVM.kt — 视频生成 (v4.8.101, mediagen 标准生成链路)
- * 对齐图像生成页的 UI 逻辑: 提示词 / 参考图(首帧) / 模型选择 / 生成设置(时长·清晰度·
- * 比例·水印) / 生成·取消 / 会话重置 / 保存到工作区。
- * 链路: manager.generate (提交+轮询 Flow) → 终态 → 下载产出 → 本地播放/保存工作区。
- * 参考图: 本地 PNG → data URI (首帧角色) — 视频接口按供应商文档普遍接受 base64/data URI。
+/* ───【自研】VideoGenVM.kt — 视频生成 (v4.8.102)
+ * 用户定版: 不走"模型类型"系统化配置 — 接口 URL / 模型 ID / 密钥全部在视频生成页内
+ * 编辑; 两个内置适配走真实协议 (VideoGenEngine):
+ *   · Google Veo (Gemini API: predictLongRunning → 轮询 → 下载)
+ *   · 阿里云 HappyHorse (百炼 DashScope 异步任务: video-synthesis → tasks 轮询 → 下载)
+ * UI 逻辑对齐图像生成页: 提示词 / 参考图(首帧) / 接口选择 / 生成设置 / 生成·取消 / 会话重置。
  * ───────────────────────────────────────────────────────────────*/
 
 import android.app.Application
-import android.util.Base64
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -21,41 +21,24 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import me.rerere.mediagen.model.ImageRole
-import me.rerere.mediagen.model.MediaGenerationInput
-import me.rerere.mediagen.model.MediaGenerationModel
-import me.rerere.mediagen.model.MediaGenerationRequest
-import me.rerere.mediagen.model.MediaGenerationStatus
-import me.rerere.mediagen.provider.MediaGenerationManager
-import me.rerere.mediagen.provider.MediaGenerationProviderSetting
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.videogen.VideoGenDefaults
+import me.rerere.rikkahub.data.videogen.VideoGenEndpoint
+import me.rerere.rikkahub.data.videogen.VideoGenEngine
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import java.io.File
-import kotlin.time.Duration.Companion.seconds
-
-/** 模型选项 (供 UI 下拉; 键 = providerId|modelUuid 字符串形式)。 */
-data class VideoModelOption(
-    val key: String,
-    val label: String,
-    val provider: MediaGenerationProviderSetting,
-    val model: MediaGenerationModel,
-)
 
 class VideoGenVM(
     context: Application,
     private val settingsStore: SettingsStore,
-    private val manager: MediaGenerationManager,
     private val okHttpClient: OkHttpClient,
 ) : AndroidViewModel(context) {
-
-    enum class Phase { IDLE, SUBMITTING, QUEUED, RUNNING }
 
     private val _prompt = MutableStateFlow("")
     val prompt: StateFlow<String> = _prompt
 
-    private val _selectedKey = MutableStateFlow<String?>(null)
-    val selectedKey: StateFlow<String?> = _selectedKey
+    private val _selectedId = MutableStateFlow<String?>(null)
+    val selectedId: StateFlow<String?> = _selectedId
 
     private val _duration = MutableStateFlow<Int?>(null)
     val duration: StateFlow<Int?> = _duration
@@ -75,10 +58,10 @@ class VideoGenVM(
     private val _isGenerating = MutableStateFlow(false)
     val isGenerating: StateFlow<Boolean> = _isGenerating
 
-    private val _phase = MutableStateFlow(Phase.IDLE)
-    val phase: StateFlow<Phase> = _phase
+    private val _status = MutableStateFlow<VideoGenEngine.Status?>(null)
+    val status: StateFlow<VideoGenEngine.Status?> = _status
 
-    /** 错误文本 (常规为提供方消息; "no_model" = 未配置视频模型的哨兵值) */
+    /** 错误文本 (提供方可读消息; "no_model"/"not_configured" 为哨兵值)。 */
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
 
@@ -90,26 +73,13 @@ class VideoGenVM(
 
     private var cancelJob: Job? = null
 
-    /** 全部可用视频模型 (mediaGenerationProviders × kind=VIDEO)。 */
-    val videoModels: StateFlow<List<VideoModelOption>> = settingsStore.settingsFlow
-        .map { settings ->
-            settings.mediaGenerationProviders.flatMap { provider ->
-                provider.models
-                    .filter { it.kind == me.rerere.mediagen.model.MediaKind.VIDEO }
-                    .map { model ->
-                        VideoModelOption(
-                            key = provider.id.toString() + "|" + model.id.toString(),
-                            label = provider.name + " · " + model.modelId.let { if (it.isBlank()) model.displayName else it },
-                            provider = provider,
-                            model = model,
-                        )
-                    }
-            }
-        }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    /** 接口列表 (出厂 Veo + HappyHorse; 用户可编辑 URL/模型/密钥)。 */
+    val endpoints: StateFlow<List<VideoGenEndpoint>> = settingsStore.settingsFlow
+        .map { it.videoGenEndpoints }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, VideoGenDefaults.endpoints)
 
     fun updatePrompt(text: String) { _prompt.value = text }
-    fun selectModel(key: String) { _selectedKey.value = key }
+    fun selectEndpoint(id: String) { _selectedId.value = id }
     fun updateDuration(seconds: Int?) { _duration.value = seconds }
     fun updateResolution(value: String?) { _resolution.value = value }
     fun updateAspect(value: String?) { _aspect.value = value }
@@ -125,6 +95,25 @@ class VideoGenVM(
         deleteReferenceFiles(listOf(path))
     }
 
+    /** 编辑接口配置 (URL / 模型 ID / 密钥) — 唯一写点。 */
+    fun updateEndpoint(id: String, baseUrl: String, modelId: String, apiKey: String) {
+        viewModelScope.launch {
+            settingsStore.update { settings ->
+                settings.copy(
+                    videoGenEndpoints = settings.videoGenEndpoints.map { endpoint ->
+                        if (endpoint.id == id) {
+                            endpoint.copy(
+                                baseUrl = baseUrl.trim(),
+                                modelId = modelId.trim(),
+                                apiKey = apiKey.trim(),
+                            )
+                        } else endpoint
+                    },
+                )
+            }
+        }
+    }
+
     /** 新会话 (对齐图像生成: 取消在跑任务 + 清空全部输入与结果)。 */
     fun startNewSession() {
         cancelJob?.cancel()
@@ -135,17 +124,26 @@ class VideoGenVM(
         _result.value = null
         _error.value = null
         _isGenerating.value = false
-        _phase.value = Phase.IDLE
+        _status.value = null
         _savedToWorkspace.value = false
     }
 
     fun generate() {
         val promptText = _prompt.value.trim()
         if (promptText.isEmpty()) return
-        val all = videoModels.value
-        val option = all.firstOrNull { it.key == _selectedKey.value } ?: all.firstOrNull()
-        if (option == null) {
+        val list = endpoints.value
+        val endpoint = list.firstOrNull { it.id == _selectedId.value } ?: list.firstOrNull()
+        if (endpoint == null) {
             _error.value = "no_model"
+            return
+        }
+        if (!endpoint.configured) {
+            _error.value = "not_configured"
+            return
+        }
+        val firstFrame = _referenceImages.value.firstOrNull()
+        if (firstFrame != null && !endpoint.supportsFirstFrame) {
+            _error.value = "该接口暂不支持参考图（HappyHorse 文生视频为纯文本输入）"
             return
         }
         cancelJob?.cancel()
@@ -154,47 +152,30 @@ class VideoGenVM(
             _error.value = null
             _result.value = null
             _savedToWorkspace.value = false
-            _phase.value = Phase.SUBMITTING
+            _status.value = VideoGenEngine.Status.SUBMITTING
             try {
-                val request = MediaGenerationRequest(
+                val dir = File(getApplication<Application>().filesDir, "videogen").apply { mkdirs() }
+                val dest = File(dir, "video_" + System.currentTimeMillis() + ".mp4")
+                VideoGenEngine.generate(
+                    client = okHttpClient,
+                    endpoint = endpoint,
                     prompt = promptText,
-                    inputs = buildInputs(),
-                    resolution = _resolution.value,
                     aspectRatio = _aspect.value,
+                    resolution = _resolution.value,
                     durationSeconds = _duration.value,
-                    watermark = _watermark.value.takeIf { it },
+                    watermark = _watermark.value,
+                    firstFramePath = firstFrame,
+                    onStatus = { status -> _status.value = status },
+                    destFile = dest,
                 )
-                manager.generate(option.provider, option.model, request, interval = 15.seconds)
-                    .collect { task ->
-                        when (task.status) {
-                            MediaGenerationStatus.QUEUED -> _phase.value = Phase.QUEUED
-                            MediaGenerationStatus.RUNNING -> _phase.value = Phase.RUNNING
-                            MediaGenerationStatus.SUCCEEDED -> {
-                                val output = task.outputs.firstOrNull()
-                                val file = output?.let { downloadOutput(it) }
-                                if (file != null) {
-                                    _result.value = file
-                                } else {
-                                    _error.value = "empty output"
-                                }
-                                _phase.value = Phase.IDLE
-                            }
-                            MediaGenerationStatus.FAILED,
-                            MediaGenerationStatus.EXPIRED -> {
-                                _error.value = task.error?.message ?: task.status.name
-                                _phase.value = Phase.IDLE
-                            }
-                            MediaGenerationStatus.CANCELLED -> _phase.value = Phase.IDLE
-                            else -> {}
-                        }
-                    }
+                _result.value = dest
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
                 _error.value = e.message ?: e.javaClass.simpleName
             } finally {
                 _isGenerating.value = false
-                _phase.value = Phase.IDLE
+                _status.value = null
             }
         }
     }
@@ -203,7 +184,7 @@ class VideoGenVM(
         cancelJob?.cancel()
         cancelJob = null
         _isGenerating.value = false
-        _phase.value = Phase.IDLE
+        _status.value = null
     }
 
     /** 保存到工作区 (第一个可用工作区的「视频生成」目录)。 */
@@ -228,49 +209,9 @@ class VideoGenVM(
         }
     }
 
-    /** 参考图 → 首帧 data URI (本地 PNG 内联, 不依赖公网图床)。 */
-    private suspend fun buildInputs(): List<MediaGenerationInput> = withContext(Dispatchers.IO) {
-        _referenceImages.value.mapNotNull { path ->
-            runCatching {
-                val bytes = File(path).readBytes()
-                MediaGenerationInput.Image(
-                    url = "data:image/png;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP),
-                    role = ImageRole.FIRST_FRAME,
-                )
-            }.getOrNull()
-        }
-    }
-
     private fun deleteReferenceFiles(paths: List<String>) {
         paths.forEach { runCatching { File(it).delete() } }
     }
-
-    private suspend fun downloadOutput(output: me.rerere.mediagen.model.MediaGenerationOutput): File? =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val dir = File(getApplication<Application>().filesDir, "videogen").apply { mkdirs() }
-                val ext = when {
-                    output.mimeType.contains("webm", ignoreCase = true) -> "webm"
-                    output.mimeType.contains("quicktime", ignoreCase = true) ||
-                        output.mimeType.contains("mov", ignoreCase = true) -> "mov"
-                    else -> "mp4"
-                }
-                val file = File(dir, "video_" + System.currentTimeMillis() + "." + ext)
-                val inline = output.data
-                if (inline != null) {
-                    file.writeBytes(inline)
-                } else {
-                    val url = output.url ?: error("no output url")
-                    val response = okHttpClient.newCall(Request.Builder().url(url).get().build()).execute()
-                    response.use { r ->
-                        if (!r.isSuccessful) error("download HTTP " + r.code)
-                        val body = r.body ?: error("empty response")
-                        body.byteStream().use { ins -> file.outputStream().use { outs -> ins.copyTo(outs) } }
-                    }
-                }
-                file
-            }.getOrNull()
-        }
 
     companion object {
         private const val MAX_REFERENCE_IMAGES = 4

@@ -36,8 +36,9 @@ object SandboxPrewarmer {
                 val koin = GlobalContext.get()
                 val repo = koin.get<me.rerere.rikkahub.data.repository.WorkspaceRepository>()
                 val ws = repo.getAllWorkspaces().firstOrNull() ?: return@runCatching
-                // 一条轻量命令把 proot 启动 / rootfs patch / 页缓存全部走热
-                repo.executeCommand(ws.id, "true", "")
+                // 一条轻量命令把 proot 启动 / rootfs patch / 页缓存全部走热;
+                // v4.8.102: 同时预热 officecli 二进制 (34MB 首次载入 ~3.5s — 预热后首渲 ~1s)
+                repo.executeCommand(ws.id, "officecli --version >/dev/null 2>&1; true", "")
             }
         }
     }

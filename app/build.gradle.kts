@@ -24,7 +24,7 @@ android {
 // 比较 — 相同 code + 相同签名 = 任意替换安装 (升/降/同级均可)。
 // versionName 正常递增用于显示与归档; 发版只改 versionName。
 versionCode = 9999
-versionName = "4.8.101"
+versionName = "4.8.102"
 
             testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -276,7 +276,6 @@ dependencies {
     implementation(project(":material3"))
     implementation(project(":workspace"))
     implementation(project(":oauth"))
-    implementation(project(":mediagen"))
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
     implementation(kotlin("reflect"))
     // cron-utils: 定时任务调度（schedule_job 等工具的 cron 解析依赖）

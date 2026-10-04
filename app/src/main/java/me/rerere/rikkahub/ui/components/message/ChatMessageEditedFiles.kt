@@ -31,6 +31,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberBottomSheetState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -308,27 +313,33 @@ internal fun EditedFilesList(
                         onClick = {
                             val entry2 = selectedFile ?: return@Card
                             selectedFile = null
+                            // v4.8.102: 渲染等待加载标志 (officecli 真渲染需数秒, 提交瞬间即遮罩反馈)
+                            renderLoading = true
                             scope.launch {
-                                val resolved = resolveOrAsk(entry2) ?: return@launch
-                                withContext(Dispatchers.IO) {
-                                    runCatching {
-                                        val resolvedName = resolved.substringAfterLast('/')
-                                        renderFileName = resolvedName
-                                        val dir = File(context.cacheDir, "workspace_render")
-                                        dir.deleteRecursively()
-                                        dir.mkdirs()
-                                        val file = File(dir, resolvedName)
-                                        file.outputStream().use { output ->
-                                            exportResolvedFile(workspaceRepository, workspaceId, resolved, output)
+                                try {
+                                    val resolved = resolveOrAsk(entry2) ?: return@launch
+                                    withContext(Dispatchers.IO) {
+                                        runCatching {
+                                            val resolvedName = resolved.substringAfterLast('/')
+                                            renderFileName = resolvedName
+                                            val dir = File(context.cacheDir, "workspace_render")
+                                            dir.deleteRecursively()
+                                            dir.mkdirs()
+                                            val file = File(dir, resolvedName)
+                                            file.outputStream().use { output ->
+                                                exportResolvedFile(workspaceRepository, workspaceId, resolved, output)
+                                            }
+                                            val taskDir = File(dir, "task")
+                                            renderResult = RenderEngine.renderSmart(file, taskDir, resolvedName)
+                                        }.onFailure {
+                                            renderResult = RenderResult.Unsupported(
+                                                renderFileName.ifBlank { entry2.raw.substringAfterLast('/') },
+                                                "读取文件失败: ${it.message}",
+                                            )
                                         }
-                                        val taskDir = File(dir, "task")
-                                        renderResult = RenderEngine.renderSmart(file, taskDir, resolvedName)
-                                    }.onFailure {
-                                        renderResult = RenderResult.Unsupported(
-                                            renderFileName.ifBlank { entry2.raw.substringAfterLast('/') },
-                                            "读取文件失败: ${it.message}",
-                                        )
                                     }
+                                } finally {
+                                    renderLoading = false
                                 }
                             }
                         },
@@ -402,6 +413,33 @@ internal fun EditedFilesList(
                 }) { Text("取消") }
             },
         )
+    }
+
+    if (renderLoading && renderResult == null) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = {},
+            properties = androidx.compose.ui.window.DialogProperties(
+                usePlatformDefaultWidth = false,
+            ),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.45f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    CircularProgressIndicator(color = Color.White)
+                    Text(
+                        text = stringResource(R.string.render_loading),
+                        color = Color.White,
+                    )
+                }
+            }
+        }
     }
 
     if (renderResult != null) {

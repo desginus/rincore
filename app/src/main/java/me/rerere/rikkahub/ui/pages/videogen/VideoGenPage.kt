@@ -1,12 +1,13 @@
 /* 【域 A·对话核心】 — 页面 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.pages.videogen
 
-/* ───【自研】VideoGenPage.kt — 视频生成页 (v4.8.101)
+/* ───【自研】VideoGenPage.kt — 视频生成页 (v4.8.102)
  * 抽屉「功能折叠」三件套之一 (翻译 / 图像 / 视频)。
- * UI 逻辑全面对齐图像生成页 (ImgGenPage):
+ * UI 逻辑对齐图像生成页 (ImgGenPage):
  *   顶栏 (返回 + 新会话) → 结果区 (视频播放 + 保存) → 输入栏
- *   (模型选择弹层 / 生成设置弹层 / 参考图上传 / 描述框 / 发送·取消圆钮)
+ *   (接口选择弹层 (可编辑 URL/模型/密钥) / 生成设置弹层 / 参考图上传 / 描述框 / 发送·取消圆钮)
  *   生成中返回 → 取消确认弹窗; 错误走 toaster。
+ * 接口配置 (用户定版) : 不走模型类型系统 — 直接在接口弹层里 ✎ 编辑 URL / 模型 ID / 密钥。
  * ───────────────────────────────────────────────────────────────*/
 
 import androidx.activity.compose.BackHandler
@@ -76,6 +77,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
@@ -89,10 +91,13 @@ import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.ArrowUp02
 import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Delete01
+import me.rerere.hugeicons.stroke.PencilEdit01
 import me.rerere.hugeicons.stroke.Tools
 import me.rerere.hugeicons.stroke.Video01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.files.FileUtils
+import me.rerere.rikkahub.data.videogen.VideoGenEndpoint
+import me.rerere.rikkahub.data.videogen.VideoGenEngine
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.render.VideoRenderView
 import me.rerere.rikkahub.ui.components.ui.FormItem
@@ -179,28 +184,32 @@ private fun VideoGenScreen(
     modifier: Modifier = Modifier,
 ) {
     val prompt by vm.prompt.collectAsStateWithLifecycle()
-    val models by vm.videoModels.collectAsStateWithLifecycle()
-    val selectedKey by vm.selectedKey.collectAsStateWithLifecycle()
+    val endpoints by vm.endpoints.collectAsStateWithLifecycle()
+    val selectedId by vm.selectedId.collectAsStateWithLifecycle()
     val duration by vm.duration.collectAsStateWithLifecycle()
     val resolution by vm.resolution.collectAsStateWithLifecycle()
     val aspect by vm.aspect.collectAsStateWithLifecycle()
     val watermark by vm.watermark.collectAsStateWithLifecycle()
     val referenceImages by vm.referenceImages.collectAsStateWithLifecycle()
     val isGenerating by vm.isGenerating.collectAsStateWithLifecycle()
-    val phase by vm.phase.collectAsStateWithLifecycle()
+    val status by vm.status.collectAsStateWithLifecycle()
     val error by vm.error.collectAsStateWithLifecycle()
     val result by vm.result.collectAsStateWithLifecycle()
     val saved by vm.savedToWorkspace.collectAsStateWithLifecycle()
     val toaster = LocalToaster.current
     var showSettingsSheet by remember { mutableStateOf(false) }
+    var editingEndpoint by remember { mutableStateOf<VideoGenEndpoint?>(null) }
     val sheetState = rememberBottomSheetState(
         initialValue = SheetValue.Hidden,
         enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
     )
 
     val errorText = error?.let { e ->
-        if (e == "no_model") stringResource(R.string.video_gen_no_model)
-        else stringResource(R.string.video_gen_failed) + ": " + e
+        when (e) {
+            "no_model" -> stringResource(R.string.video_gen_no_model)
+            "not_configured" -> stringResource(R.string.video_gen_not_configured)
+            else -> stringResource(R.string.video_gen_failed) + ": " + e
+        }
     }
     LaunchedEffect(error) {
         errorText?.let { message ->
@@ -209,11 +218,12 @@ private fun VideoGenScreen(
         }
     }
 
-    val phaseText = when (phase) {
-        VideoGenVM.Phase.SUBMITTING, VideoGenVM.Phase.RUNNING ->
+    val statusText = when (status) {
+        VideoGenEngine.Status.SUBMITTING, VideoGenEngine.Status.RUNNING ->
             stringResource(R.string.video_gen_generating)
-        VideoGenVM.Phase.QUEUED -> stringResource(R.string.video_gen_queued)
-        VideoGenVM.Phase.IDLE -> null
+        VideoGenEngine.Status.QUEUED -> stringResource(R.string.video_gen_queued)
+        VideoGenEngine.Status.DOWNLOADING -> stringResource(R.string.video_gen_downloading)
+        null -> null
     }
 
     Column(
@@ -259,7 +269,7 @@ private fun VideoGenScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     ContainedLoadingIndicator()
-                    phaseText?.let {
+                    statusText?.let {
                         Text(
                             text = it,
                             style = MaterialTheme.typography.bodySmall,
@@ -274,9 +284,10 @@ private fun VideoGenScreen(
             vm = vm,
             isGenerating = isGenerating,
             referenceImages = referenceImages,
-            models = models,
-            selectedKey = selectedKey,
+            endpoints = endpoints,
+            selectedId = selectedId,
             onShowSettings = { showSettingsSheet = true },
+            onEditEndpoint = { editingEndpoint = it },
             modifier = Modifier,
         )
     }
@@ -292,6 +303,17 @@ private fun VideoGenScreen(
             onDismiss = { showSettingsSheet = false },
         )
     }
+
+    editingEndpoint?.let { endpoint ->
+        EndpointConfigDialog(
+            endpoint = endpoint,
+            onSave = { baseUrl, modelId, apiKey ->
+                vm.updateEndpoint(endpoint.id, baseUrl, modelId, apiKey)
+                editingEndpoint = null
+            },
+            onDismiss = { editingEndpoint = null },
+        )
+    }
 }
 
 @Composable
@@ -300,9 +322,10 @@ private fun VideoInputBar(
     vm: VideoGenVM,
     isGenerating: Boolean,
     referenceImages: List<String>,
-    models: List<VideoModelOption>,
-    selectedKey: String?,
+    endpoints: List<VideoGenEndpoint>,
+    selectedId: String?,
     onShowSettings: () -> Unit,
+    onEditEndpoint: (VideoGenEndpoint) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -328,7 +351,7 @@ private fun VideoInputBar(
                 }
             }
         }
-    var showModelSheet by remember { mutableStateOf(false) }
+    var showEndpointSheet by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -360,7 +383,7 @@ private fun VideoInputBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(
-                onClick = { showModelSheet = true },
+                onClick = { showEndpointSheet = true },
             ) {
                 Icon(
                     imageVector = HugeIcons.Video01,
@@ -422,15 +445,19 @@ private fun VideoInputBar(
         }
     }
 
-    if (showModelSheet) {
-        VideoModelSheet(
-            models = models,
-            currentKey = selectedKey,
+    if (showEndpointSheet) {
+        EndpointSheet(
+            endpoints = endpoints,
+            currentId = selectedId,
             onSelect = {
-                vm.selectModel(it)
-                showModelSheet = false
+                vm.selectEndpoint(it)
+                showEndpointSheet = false
             },
-            onDismiss = { showModelSheet = false },
+            onEdit = { endpoint ->
+                showEndpointSheet = false
+                onEditEndpoint(endpoint)
+            },
+            onDismiss = { showEndpointSheet = false },
         )
     }
 }
@@ -487,10 +514,11 @@ private fun ReferenceImagesRow(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun VideoModelSheet(
-    models: List<VideoModelOption>,
-    currentKey: String?,
+private fun EndpointSheet(
+    endpoints: List<VideoGenEndpoint>,
+    currentId: String?,
     onSelect: (String) -> Unit,
+    onEdit: (VideoGenEndpoint) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberBottomSheetState(
@@ -515,7 +543,7 @@ private fun VideoModelSheet(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(horizontal = 8.dp),
             )
-            if (models.isEmpty()) {
+            if (endpoints.isEmpty()) {
                 Text(
                     text = stringResource(R.string.video_gen_no_model),
                     color = MaterialTheme.colorScheme.error,
@@ -524,24 +552,41 @@ private fun VideoModelSheet(
                 )
             } else {
                 LazyColumn {
-                    items(models, key = { it.key }) { option ->
+                    items(endpoints, key = { it.id }) { endpoint ->
                         ListItem(
                             headlineContent = {
                                 Text(
-                                    text = option.model.modelId.ifBlank { option.model.displayName },
+                                    text = endpoint.name,
                                     maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             },
                             supportingContent = {
-                                Text(option.provider.name, maxLines = 1)
-                            },
-                            trailingContent = {
-                                RadioButton(
-                                    selected = option.key == currentKey,
-                                    onClick = { onSelect(option.key) },
+                                Text(
+                                    text = if (endpoint.configured) {
+                                        endpoint.modelId
+                                    } else {
+                                        stringResource(R.string.video_gen_not_configured)
+                                    },
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             },
-                            modifier = Modifier.clickable { onSelect(option.key) },
+                            leadingContent = {
+                                RadioButton(
+                                    selected = endpoint.id == currentId,
+                                    onClick = { onSelect(endpoint.id) },
+                                )
+                            },
+                            trailingContent = {
+                                IconButton(onClick = { onEdit(endpoint) }) {
+                                    Icon(
+                                        imageVector = HugeIcons.PencilEdit01,
+                                        contentDescription = stringResource(R.string.video_gen_edit),
+                                    )
+                                }
+                            },
+                            modifier = Modifier.clickable { onSelect(endpoint.id) },
                         )
                     }
                 }
@@ -549,6 +594,61 @@ private fun VideoModelSheet(
             Spacer(modifier = Modifier.height(16.dp))
         }
     }
+}
+
+@Composable
+private fun EndpointConfigDialog(
+    endpoint: VideoGenEndpoint,
+    onSave: (baseUrl: String, modelId: String, apiKey: String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var baseUrl by remember { mutableStateOf(endpoint.baseUrl) }
+    var modelId by remember { mutableStateOf(endpoint.modelId) }
+    var apiKey by remember { mutableStateOf(endpoint.apiKey) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(endpoint.name + " · " + stringResource(R.string.video_gen_cfg_title))
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = baseUrl,
+                    onValueChange = { baseUrl = it },
+                    label = { Text(stringResource(R.string.video_gen_cfg_url)) },
+                    singleLine = false,
+                    maxLines = 2,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = modelId,
+                    onValueChange = { modelId = it },
+                    label = { Text(stringResource(R.string.video_gen_cfg_model)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = apiKey,
+                    onValueChange = { apiKey = it },
+                    label = { Text(stringResource(R.string.video_gen_cfg_key)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(baseUrl, modelId, apiKey) },
+            ) {
+                Text(stringResource(R.string.confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
 }
 
 @OptIn(ExperimentalLayoutApi::class)

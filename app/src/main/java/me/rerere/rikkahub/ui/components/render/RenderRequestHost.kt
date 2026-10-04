@@ -20,6 +20,19 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import me.rerere.rikkahub.R
 import java.io.File
 
 object RenderRequestBus {
@@ -68,6 +81,34 @@ fun RenderRequestHost() {
                 result = r,
                 onDismiss = { RenderRequestBus.clear() },
             )
+        }
+    }
+
+    // v4.8.102: 渲染中加载标志 (officecli 真渲染需数秒)
+    if (result == null) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { RenderRequestBus.clear() },
+            properties = androidx.compose.ui.window.DialogProperties(
+                usePlatformDefaultWidth = false,
+            ),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.45f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    CircularProgressIndicator(color = Color.White)
+                    Text(
+                        text = stringResource(R.string.render_loading),
+                        color = Color.White,
+                    )
+                }
+            }
         }
     }
 }

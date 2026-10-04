@@ -164,6 +164,8 @@ class SettingsStore(
         val DEVELOPER_MODE = booleanPreferencesKey("developer_mode")
         val OPENCODE_API_KEY = stringPreferencesKey("opencode_api_key")
         val OPENCODE_API_KEYS = stringPreferencesKey("opencode_api_keys")
+        // v4.8.102: 视频生成接口配置 (Veo / HappyHorse — URL/模型ID/密钥)
+        val VIDEO_GEN_ENDPOINTS = stringPreferencesKey("video_gen_endpoints")
         // v3.12.8: 预热开关持久化 (v3.12.6 漏接 DataStore 两端, 重启回默认 false)
         val OPENCODE_WARM_ENABLED = booleanPreferencesKey("opencode_warm_enabled")
         val COMMAND_CODE_WARM_ENABLED = booleanPreferencesKey("command_code_warm_enabled")
@@ -268,6 +270,7 @@ class SettingsStore(
                 preferences[OPENCODE_API_KEY] = settings.opencodeApiKey
                 preferences[USAGE_VIEW_MODE] = settings.usageViewMode
                 preferences[OPENCODE_API_KEYS] = JsonInstant.encodeToString(settings.opencodeApiKeys)
+                preferences[VIDEO_GEN_ENDPOINTS] = JsonInstant.encodeToString(settings.videoGenEndpoints)
                 preferences[OPENCODE_WARM_ENABLED] = settings.opencodeWarmEnabled
                 preferences[COMMAND_CODE_WARM_ENABLED] = settings.commandCodeWarmEnabled
                 preferences[CC_IMAGE_COMPAT] = settings.ccImageCompat
@@ -488,6 +491,10 @@ class SettingsStore(
                 opencodeApiKeys = preferences[OPENCODE_API_KEYS]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: emptyList(),
+                videoGenEndpoints = preferences[VIDEO_GEN_ENDPOINTS]?.let {
+                    runCatching { JsonInstant.decodeFromString<List<me.rerere.rikkahub.data.videogen.VideoGenEndpoint>>(it) }
+                        .getOrDefault(me.rerere.rikkahub.data.videogen.VideoGenDefaults.endpoints)
+                } ?: me.rerere.rikkahub.data.videogen.VideoGenDefaults.endpoints,
                 displaySetting = JsonInstant.decodeFromString(preferences[DISPLAY_SETTING] ?: "{}"),
                 networkSetting = JsonInstant.decodeFromString(preferences[NETWORK_SETTING] ?: "{}"),
                 searchServices = preferences[SEARCH_SERVICES]?.let {
@@ -972,8 +979,8 @@ data class Settings(
     val toolDescriptionOverrides: Map<String, String> = emptyMap(), // 工具名→自定义描述。覆盖原始Tool描述
     val toolNameOverrides: Map<String, String> = emptyMap(), // v3.6.102: 工具改名 — 原工具名→新工具名 (汉语名工具改为字母数字, 模型才能识别)
     val classifierPrompt: String = "", // 工具自动分类提示词。空=使用默认
-    // v4.8.100: 媒体生成提供商 (mediagen 模块 — 图像/视频统一抽象; 供视频生成功能消费)
-    val mediaGenerationProviders: List<me.rerere.mediagen.provider.MediaGenerationProviderSetting> = emptyList(),
+    // v4.8.102: 视频生成接口 (URL / 模型 ID / 密钥 均在视频生成页内编辑; 内置 Veo + HappyHorse 双适配)
+    val videoGenEndpoints: List<me.rerere.rikkahub.data.videogen.VideoGenEndpoint> = me.rerere.rikkahub.data.videogen.VideoGenDefaults.endpoints,
 ) {
     companion object {
         // 构造一个用于初始化的settings, 但它不能用于保存，防止使用初始值存储
