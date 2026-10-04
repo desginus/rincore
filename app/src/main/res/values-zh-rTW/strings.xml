@@ -1255,7 +1255,6 @@
   <string name="setting_model_page_translate_prompt_vars">變數: 原始文字: {source_text}, 目標語言: {target_lang}</string>
   <string name="chat_page_menu_video_generation">影片生成</string>
   <string name="video_gen_title">影片生成</string>
-  <string name="video_gen_model">模型</string>
   <string name="video_gen_prompt_hint">描述你想生成的影片</string>
   <string name="video_gen_duration">時長</string>
   <string name="video_gen_resolution">清晰度</string>
@@ -1264,20 +1263,13 @@
   <string name="video_gen_watermark">浮水印</string>
   <string name="video_gen_generate">生成</string>
   <string name="video_gen_generating">生成中…</string>
-  <string name="video_gen_queued">排隊中…</string>
   <string name="video_gen_save_workspace">儲存到工作區</string>
   <string name="video_gen_saved">已儲存到工作區</string>
-  <string name="video_gen_no_model">未設定介面 — 點 ✎ 填寫 URL / 模型 ID / 金鑰</string>
+  <string name="video_gen_no_model">未選擇影片模型 — 請先在 設定 > 提供商 新增模型並將類型設為「影片」</string>
   <string name="video_gen_failed">生成失敗</string>
   <string name="video_gen_settings_title">影片生成設定</string>
   <string name="video_gen_cancel_title">取消生成</string>
   <string name="video_gen_cancel_message">確定要取消影片生成嗎？</string>
-  <string name="video_gen_cfg_title">介面設定</string>
-  <string name="video_gen_cfg_url">介面網址 (Base URL)</string>
-  <string name="video_gen_cfg_model">模型 ID</string>
-  <string name="video_gen_cfg_key">API Key</string>
-  <string name="video_gen_not_configured">未設定 — 點 ✎ 填寫</string>
-  <string name="video_gen_downloading">下載影片中…</string>
-  <string name="video_gen_edit">編輯</string>
   <string name="render_loading">渲染中…</string>
+  <string name="setting_provider_page_video_model">影片</string>
 </resources>

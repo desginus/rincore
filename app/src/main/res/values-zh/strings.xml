@@ -1327,7 +1327,6 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_model_page_translate_prompt_vars">变量: 原始文本: {source_text}, 目标语言: {target_lang}</string>
   <string name="chat_page_menu_video_generation">视频生成</string>
   <string name="video_gen_title">视频生成</string>
-  <string name="video_gen_model">模型</string>
   <string name="video_gen_prompt_hint">描述你想生成的视频</string>
   <string name="video_gen_duration">时长</string>
   <string name="video_gen_resolution">清晰度</string>
@@ -1336,20 +1335,13 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="video_gen_watermark">水印</string>
   <string name="video_gen_generate">生成</string>
   <string name="video_gen_generating">生成中…</string>
-  <string name="video_gen_queued">排队中…</string>
   <string name="video_gen_save_workspace">保存到工作区</string>
   <string name="video_gen_saved">已保存到工作区</string>
-  <string name="video_gen_no_model">未配置接口 — 点击 ✎ 填写 URL / 模型 ID / 密钥</string>
+  <string name="video_gen_no_model">未选择视频模型 — 请先在 设置 > 提供商 添加模型并将类型设为「视频」</string>
   <string name="video_gen_failed">生成失败</string>
   <string name="video_gen_settings_title">视频生成设置</string>
   <string name="video_gen_cancel_title">取消生成</string>
   <string name="video_gen_cancel_message">确定要取消视频生成吗？</string>
-  <string name="video_gen_cfg_title">接口配置</string>
-  <string name="video_gen_cfg_url">接口地址 (Base URL)</string>
-  <string name="video_gen_cfg_model">模型 ID</string>
-  <string name="video_gen_cfg_key">API 密钥</string>
-  <string name="video_gen_not_configured">未配置 — 点击 ✎ 填写</string>
-  <string name="video_gen_downloading">下载视频中…</string>
-  <string name="video_gen_edit">编辑</string>
   <string name="render_loading">正在渲染…</string>
+  <string name="setting_provider_page_video_model">视频</string>
 </resources>

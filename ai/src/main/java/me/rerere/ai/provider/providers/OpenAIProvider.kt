@@ -4,6 +4,9 @@ package me.rerere.ai.provider.providers
 /* ───【自研】OpenAIProvider.kt — 原版无此文件
  * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
  * ───────────────────────────────────────────────────────────────*/
+import kotlinx.coroutines.delay
+import me.rerere.ai.provider.VideoGenerationParams
+import me.rerere.ai.ui.VideoGenerationItem
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
@@ -52,6 +55,9 @@ import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
 private const val TAG = "OpenAIProvider"
+
+// v4.8.103: 视频生成轮询总预算 (提交+轮询+下载)
+private const val VIDEO_GENERATION_POLL_BUDGET_MS = 20L * 60 * 1000
 
 class OpenAIProvider(
     private val client: OkHttpClient,
@@ -227,6 +233,99 @@ class OpenAIProvider(
             model = model,
             embeddings = embeddings
         )
+    }
+
+    /* ── v4.8.103: 视频生成 — 阿里云 HappyHorse (百炼 DashScope 异步任务, 对照官方 API 参考) ──
+     * 提交 POST {baseUrl}/services/aigc/video-generation/video-synthesis
+     *   headers {Authorization: Bearer, X-DashScope-Async: enable}
+     *   body {model, input:{prompt}, parameters:{resolution?,ratio?,duration?,watermark?}}
+     * 轮询 GET {baseUrl}/tasks/{task_id} → output.task_status=SUCCEEDED → output.video_url 下载 */
+    override suspend fun generateVideo(
+        providerSetting: ProviderSetting,
+        params: VideoGenerationParams
+    ): Flow<VideoGenerationItem> = flow {
+        require(providerSetting is ProviderSetting.OpenAI) { "Expected OpenAI provider setting" }
+        val baseUrl = providerSetting.baseUrl.trimEnd('/')
+        require(baseUrl.contains("aliyuncs.com")) {
+            "当前视频生成适配: Google Veo (Google 提供方) 与阿里云 HappyHorse (接口地址含 aliyuncs.com 的提供方)"
+        }
+        val key = keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())
+
+        val submitBody = buildJsonObject {
+            put("model", params.model.modelId)
+            put("input", buildJsonObject {
+                put("prompt", params.prompt)
+            })
+            put("parameters", buildJsonObject {
+                params.resolution.takeIf { it.isNotBlank() }?.let { put("resolution", it) }
+                params.aspectRatio.takeIf { it.isNotBlank() }?.let { put("ratio", it) }
+                params.durationSeconds?.let { put("duration", it) }
+                params.watermark?.let { put("watermark", it) }
+            })
+        }.mergeCustomBody(params.customBody)
+        val submitUrl = "$baseUrl/services/aigc/video-generation/video-synthesis"
+        val submitResponse = client.newCall(
+            Request.Builder()
+                .url(submitUrl)
+                .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+                .addHeader("Authorization", "Bearer $key")
+                .addHeader("X-DashScope-Async", "enable")
+                .addHeader("Content-Type", "application/json")
+                .post(json.encodeToString(submitBody).toRequestBody("application/json".toMediaType()))
+                .configureReferHeaders(providerSetting.baseUrl)
+                .build()
+        ).await()
+        val submitText = submitResponse.body.string()
+        if (!submitResponse.isSuccessful) {
+            error("提交视频任务失败 [$submitUrl]: ${submitResponse.code} $submitText")
+        }
+        val submitJson = json.parseToJsonElement(submitText).jsonObject
+        submitJson["code"]?.jsonPrimitive?.contentOrNull?.let { code ->
+            error("HappyHorse 提交失败: $code " + (submitJson["message"]?.jsonPrimitive?.contentOrNull ?: submitText.take(200)))
+        }
+        val taskId = submitJson["output"]?.jsonObject?.get("task_id")?.jsonPrimitive?.contentOrNull
+            ?: error("提交响应缺少 task_id: $submitText")
+        Log.i(TAG, "generateVideo(happyhorse): task=$taskId")
+
+        val deadline = System.currentTimeMillis() + VIDEO_GENERATION_POLL_BUDGET_MS
+        while (true) {
+            if (System.currentTimeMillis() > deadline) error("HappyHorse 任务超时 (>20 分钟)")
+            delay(10_000)
+            val pollUrl = "$baseUrl/tasks/$taskId"
+            val pollResponse = client.newCall(
+                Request.Builder()
+                    .url(pollUrl)
+                    .addHeader("Authorization", "Bearer $key")
+                    .configureReferHeaders(providerSetting.baseUrl)
+                    .get()
+                    .build()
+            ).await()
+            val pollText = pollResponse.body.string()
+            if (!pollResponse.isSuccessful) {
+                error("轮询视频任务失败 [$pollUrl]: ${pollResponse.code} $pollText")
+            }
+            val output = json.parseToJsonElement(pollText).jsonObject["output"]?.jsonObject
+            when (val status = output?.get("task_status")?.jsonPrimitive?.contentOrNull) {
+                "SUCCEEDED" -> {
+                    val videoUrl = output["video_url"]?.jsonPrimitive?.contentOrNull
+                        ?: error("任务成功但无 video_url")
+                    val download = client.newCall(
+                        Request.Builder().url(videoUrl).get().build()
+                    ).await()
+                    if (!download.isSuccessful) error("视频下载失败: ${download.code}")
+                    val tmp = File.createTempFile("rincore_hh_", ".mp4")
+                    tmp.writeBytes(download.body.bytes())
+                    emit(VideoGenerationItem(file = tmp, mimeType = "video/mp4"))
+                    return@flow
+                }
+                "FAILED", "CANCELED", "UNKNOWN" -> {
+                    val detail = output["message"]?.jsonPrimitive?.contentOrNull
+                        ?: output["code"]?.jsonPrimitive?.contentOrNull ?: ""
+                    error("HappyHorse 任务 $status: $detail")
+                }
+                else -> {} // PENDING / RUNNING
+            }
+        }
     }
 
     override suspend fun generateImage(

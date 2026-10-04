@@ -862,7 +862,8 @@ sealed interface Screen : NavKey {
     @Serializable
     data object ImageGen : Screen
 
-    // v4.8.100/102: 视频生成 (Google Veo / 阿里云 HappyHorse — 页内配置 URL/模型/密钥)
+    // v4.8.100/102: 视频生成 (Google Veo / 阿里云 HappyHorse — 提供商模型类型 VIDEO, 对齐图像生成流程)
+    @Serializable
     data object VideoGen : Screen
 
     @Serializable

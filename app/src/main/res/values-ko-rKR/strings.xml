@@ -1252,7 +1252,6 @@ mDNS 주소: .local 호스트네임을 사용하며, IP를 몰라도 같은 네�
   <string name="setting_model_page_translate_prompt_vars">변수: 원문: {source_text}, 대상 언어: {target_lang}</string>
   <string name="chat_page_menu_video_generation">비디오 생성</string>
   <string name="video_gen_title">비디오 생성</string>
-  <string name="video_gen_model">모델</string>
   <string name="video_gen_prompt_hint">생성할 동영상을 설명하세요</string>
   <string name="video_gen_duration">길이</string>
   <string name="video_gen_resolution">해상도</string>
@@ -1261,20 +1260,13 @@ mDNS 주소: .local 호스트네임을 사용하며, IP를 몰라도 같은 네�
   <string name="video_gen_watermark">워터마크</string>
   <string name="video_gen_generate">생성</string>
   <string name="video_gen_generating">생성 중…</string>
-  <string name="video_gen_queued">대기 중…</string>
   <string name="video_gen_save_workspace">워크스페이스에 저장</string>
   <string name="video_gen_saved">워크스페이스에 저장됨</string>
-  <string name="video_gen_no_model">인터페이스 미설정 — ✎ 눌러 URL/모델 ID/키 입력</string>
+  <string name="video_gen_no_model">비디오 모델이 선택되지 않았습니다 — 설정 > 공급자에서 모델을 추가하고 유형을 비디오로 설정하세요</string>
   <string name="video_gen_failed">생성 실패</string>
   <string name="video_gen_settings_title">동영상 생성 설정</string>
   <string name="video_gen_cancel_title">생성 취소</string>
   <string name="video_gen_cancel_message">동영상 생성을 취소하시겠습니까?</string>
-  <string name="video_gen_cfg_title">API 구성</string>
-  <string name="video_gen_cfg_url">API Base URL</string>
-  <string name="video_gen_cfg_model">모델 ID</string>
-  <string name="video_gen_cfg_key">API 키</string>
-  <string name="video_gen_not_configured">미설정 — ✎ 눌러 입력</string>
-  <string name="video_gen_downloading">동영상 다운로드 중…</string>
-  <string name="video_gen_edit">편집</string>
   <string name="render_loading">렌더링 중…</string>
+  <string name="setting_provider_page_video_model">비디오</string>
 </resources>

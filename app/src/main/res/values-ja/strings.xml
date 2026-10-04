@@ -1252,7 +1252,6 @@ mDNSアドレス: .localホスト名を使用し、IPを知らなくても同じ
   <string name="setting_model_page_translate_prompt_vars">変数: 原文テキスト: {source_text}, 対象言語: {target_lang}</string>
   <string name="chat_page_menu_video_generation">動画生成</string>
   <string name="video_gen_title">動画生成</string>
-  <string name="video_gen_model">モデル</string>
   <string name="video_gen_prompt_hint">生成したい動画を説明</string>
   <string name="video_gen_duration">長さ</string>
   <string name="video_gen_resolution">解像度</string>
@@ -1261,20 +1260,13 @@ mDNSアドレス: .localホスト名を使用し、IPを知らなくても同じ
   <string name="video_gen_watermark">ウォーターマーク</string>
   <string name="video_gen_generate">生成</string>
   <string name="video_gen_generating">生成中…</string>
-  <string name="video_gen_queued">待機中…</string>
   <string name="video_gen_save_workspace">ワークスペースに保存</string>
   <string name="video_gen_saved">ワークスペースに保存済み</string>
-  <string name="video_gen_no_model">インターフェース未設定 — ✎ で URL・モデル ID・API キーを入力</string>
+  <string name="video_gen_no_model">動画モデルが未選択です — 設定 > プロバイダー でモデルを追加し、タイプを「動画」に設定してください</string>
   <string name="video_gen_failed">生成に失敗しました</string>
   <string name="video_gen_settings_title">動画生成設定</string>
   <string name="video_gen_cancel_title">生成をキャンセル</string>
   <string name="video_gen_cancel_message">動画生成をキャンセルしてもよろしいですか？</string>
-  <string name="video_gen_cfg_title">API 設定</string>
-  <string name="video_gen_cfg_url">API ベース URL</string>
-  <string name="video_gen_cfg_model">モデル ID</string>
-  <string name="video_gen_cfg_key">API キー</string>
-  <string name="video_gen_not_configured">未設定 — ✎ で入力</string>
-  <string name="video_gen_downloading">動画をダウンロード中…</string>
-  <string name="video_gen_edit">編集</string>
   <string name="render_loading">レンダリング中…</string>
+  <string name="setting_provider_page_video_model">動画</string>
 </resources>

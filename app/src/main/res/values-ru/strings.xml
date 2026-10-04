@@ -1252,7 +1252,6 @@
   <string name="setting_model_page_translate_prompt_vars">Переменные: Исходный текст: {source_text}, Целевой язык: {target_lang}</string>
   <string name="chat_page_menu_video_generation">Генерация видео</string>
   <string name="video_gen_title">Генерация видео</string>
-  <string name="video_gen_model">Модель</string>
   <string name="video_gen_prompt_hint">Опишите желаемое видео</string>
   <string name="video_gen_duration">Длительность</string>
   <string name="video_gen_resolution">Разрешение</string>
@@ -1261,20 +1260,13 @@
   <string name="video_gen_watermark">Водяной знак</string>
   <string name="video_gen_generate">Создать</string>
   <string name="video_gen_generating">Генерация…</string>
-  <string name="video_gen_queued">В очереди…</string>
   <string name="video_gen_save_workspace">Сохранить в рабочую область</string>
   <string name="video_gen_saved">Сохранено в рабочую область</string>
-  <string name="video_gen_no_model">Интерфейс не настроен — нажмите ✎ и заполните URL, ID модели и ключ</string>
+  <string name="video_gen_no_model">Видеомодель не выбрана — добавьте модель в Настройки > Провайдеры и установите тип «Видео»</string>
   <string name="video_gen_failed">Ошибка генерации</string>
   <string name="video_gen_settings_title">Настройки генерации видео</string>
   <string name="video_gen_cancel_title">Отменить генерацию</string>
   <string name="video_gen_cancel_message">Вы уверены, что хотите отменить генерацию видео?</string>
-  <string name="video_gen_cfg_title">Настройка API</string>
-  <string name="video_gen_cfg_url">Базовый URL интерфейса</string>
-  <string name="video_gen_cfg_model">ID модели</string>
-  <string name="video_gen_cfg_key">API-ключ</string>
-  <string name="video_gen_not_configured">Не настроено — нажмите ✎</string>
-  <string name="video_gen_downloading">Скачивание видео…</string>
-  <string name="video_gen_edit">Изменить</string>
   <string name="render_loading">Рендеринг…</string>
+  <string name="setting_provider_page_video_model">Видео</string>
 </resources>

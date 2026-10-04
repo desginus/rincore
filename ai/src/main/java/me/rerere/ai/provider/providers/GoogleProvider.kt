@@ -4,6 +4,12 @@ package me.rerere.ai.provider.providers
 /* ───【自研】GoogleProvider.kt — 原版无此文件
  * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
  * ───────────────────────────────────────────────────────────────*/
+import android.util.Base64
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flow
+import java.io.File
+import me.rerere.ai.provider.VideoGenerationParams
+import me.rerere.ai.ui.VideoGenerationItem
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
@@ -88,6 +94,9 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "GoogleProvider"
 
+// v4.8.103: 视频生成轮询总预算 (提交+轮询+下载)
+private const val VIDEO_GENERATION_POLL_BUDGET_MS = 20L * 60 * 1000
+
 class GoogleProvider(
     private val client: OkHttpClient,
     context: Context? = null,
@@ -136,6 +145,112 @@ class GoogleProvider(
                 request.newBuilder()
                     .addHeader("x-goog-api-key", key)
                     .build()
+            }
+        }
+    }
+
+    /* ── v4.8.103: 视频生成 — Google Veo (Gemini API, 双实现对照 googleapis SDK 原文) ──
+     * 提交 POST {baseUrl}/models/{model}:predictLongRunning (x-goog-api-key)
+     *   body {instances:[{prompt, image?:{bytesBase64Encoded,mimeType}}], parameters:{...}}
+     * 轮询 GET {baseUrl}/{operation.name} → done=true 时
+     *   response.generateVideoResponse.generatedSamples[0].video.uri → 带 key 下载 */
+    override suspend fun generateVideo(
+        providerSetting: ProviderSetting,
+        params: VideoGenerationParams
+    ): Flow<VideoGenerationItem> = flow {
+        require(providerSetting is ProviderSetting.Google) { "Expected Google provider setting" }
+        require(!providerSetting.vertexAI) { "Veo 目前仅支持 Gemini Developer API (非 Vertex 模式)" }
+        val key = keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())
+
+        val submitBody = buildJsonObject {
+            putJsonArray("instances") {
+                add(buildJsonObject {
+                    put("prompt", params.prompt)
+                    params.firstFrame?.let { path ->
+                        val bytes = File(path).readBytes()
+                        put("image", buildJsonObject {
+                            put("bytesBase64Encoded", Base64.encodeToString(bytes, Base64.NO_WRAP))
+                            put("mimeType", "image/png")
+                        })
+                    }
+                })
+            }
+            put("parameters", buildJsonObject {
+                put("numberOfVideos", params.numOfVideos)
+                params.aspectRatio.takeIf { it.isNotBlank() }?.let { put("aspectRatio", it) }
+                params.resolution.takeIf { it.isNotBlank() }?.let { put("resolution", it.lowercase()) }
+                params.durationSeconds?.let { put("durationSeconds", it) }
+            })
+        }.mergeCustomBody(params.customBody)
+        val submitUrl = buildUrl(providerSetting, "models/${params.model.modelId}:predictLongRunning")
+        val submitResponse = client.newCall(
+            transformRequest(
+                providerSetting = providerSetting,
+                request = Request.Builder()
+                    .url(submitUrl)
+                    .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+                    .post(json.encodeToString(submitBody).toRequestBody("application/json".toMediaType()))
+                    .configureReferHeaders(providerSetting.baseUrl)
+                    .build()
+            )
+        ).await()
+        val submitText = submitResponse.body.string()
+        if (!submitResponse.isSuccessful) {
+            error("提交视频生成失败 [$submitUrl]: ${submitResponse.code} $submitText")
+        }
+        val operationName = json.parseToJsonElement(submitText).jsonObject["name"]?.jsonPrimitive?.contentOrNull
+            ?: error("提交响应缺少 operation name: $submitText")
+        Log.i(TAG, "generateVideo: operation=$operationName")
+
+        val deadline = System.currentTimeMillis() + VIDEO_GENERATION_POLL_BUDGET_MS
+        while (true) {
+            if (System.currentTimeMillis() > deadline) error("Veo 任务超时 (>20 分钟)")
+            delay(10_000)
+            val pollUrl = buildUrl(providerSetting, operationName)
+            val pollResponse = client.newCall(
+                transformRequest(
+                    providerSetting = providerSetting,
+                    request = Request.Builder()
+                        .url(pollUrl)
+                        .get()
+                        .configureReferHeaders(providerSetting.baseUrl)
+                        .build()
+                )
+            ).await()
+            val pollText = pollResponse.body.string()
+            if (!pollResponse.isSuccessful) {
+                error("轮询视频任务失败 [$pollUrl]: ${pollResponse.code} $pollText")
+            }
+            val pollJson = json.parseToJsonElement(pollText).jsonObject
+            pollJson["error"]?.jsonObject?.let { err ->
+                error("Veo 任务失败: " + (err["message"]?.jsonPrimitive?.contentOrNull ?: pollText.take(300)))
+            }
+            if (pollJson["done"]?.jsonPrimitive?.booleanOrNull == true) {
+                val uri = pollJson["response"]?.jsonObject
+                    ?.get("generateVideoResponse")?.jsonObject
+                    ?.get("generatedSamples")?.jsonArray
+                    ?.getOrNull(0)?.jsonObject
+                    ?.get("video")?.jsonObject
+                    ?.get("uri")?.jsonPrimitive?.contentOrNull
+                    ?: error("Veo 完成但无视频产出: " + pollText.take(400))
+                var download = client.newCall(
+                    transformRequest(
+                        providerSetting = providerSetting,
+                        request = Request.Builder().url(uri).get().build()
+                    )
+                ).await()
+                if (!download.isSuccessful) {
+                    runCatching { download.close() }
+                    val separator = if (uri.contains("?")) "&" else "?"
+                    download = client.newCall(
+                        Request.Builder().url(uri + separator + "key=" + key).get().build()
+                    ).await()
+                }
+                if (!download.isSuccessful) error("视频下载失败: ${download.code}")
+                val tmp = File.createTempFile("rincore_veo_", ".mp4")
+                tmp.writeBytes(download.body.bytes())
+                emit(VideoGenerationItem(file = tmp, mimeType = "video/mp4"))
+                return@flow
             }
         }
     }

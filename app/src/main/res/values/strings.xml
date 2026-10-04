@@ -1421,7 +1421,6 @@
   <string name="setting_model_page_translate_prompt_vars">Variables: Source text: {source_text}, Target language: {target_lang}</string>
   <string name="chat_page_menu_video_generation">Video Generation</string>
   <string name="video_gen_title">Video Generation</string>
-  <string name="video_gen_model">Model</string>
   <string name="video_gen_prompt_hint">Describe the video to generate</string>
   <string name="video_gen_duration">Duration</string>
   <string name="video_gen_resolution">Resolution</string>
@@ -1430,20 +1429,13 @@
   <string name="video_gen_watermark">Watermark</string>
   <string name="video_gen_generate">Generate</string>
   <string name="video_gen_generating">Generating…</string>
-  <string name="video_gen_queued">Queued…</string>
   <string name="video_gen_save_workspace">Save to workspace</string>
   <string name="video_gen_saved">Saved to workspace</string>
-  <string name="video_gen_no_model">No endpoint configured — tap ✎ to fill URL, model ID and API key</string>
+  <string name="video_gen_no_model">No video model selected - add one in Settings > Providers and set its type to Video</string>
   <string name="video_gen_failed">Generation failed</string>
   <string name="video_gen_settings_title">Video Generation Settings</string>
   <string name="video_gen_cancel_title">Cancel Generation</string>
   <string name="video_gen_cancel_message">Are you sure you want to cancel video generation?</string>
-  <string name="video_gen_cfg_title">API Configuration</string>
-  <string name="video_gen_cfg_url">API Base URL</string>
-  <string name="video_gen_cfg_model">Model ID</string>
-  <string name="video_gen_cfg_key">API Key</string>
-  <string name="video_gen_not_configured">Not configured — tap ✎ to fill</string>
-  <string name="video_gen_downloading">Downloading video…</string>
-  <string name="video_gen_edit">Edit</string>
   <string name="render_loading">Rendering…</string>
+  <string name="setting_provider_page_video_model">Video</string>
 </resources>

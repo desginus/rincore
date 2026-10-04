@@ -164,8 +164,6 @@ class SettingsStore(
         val DEVELOPER_MODE = booleanPreferencesKey("developer_mode")
         val OPENCODE_API_KEY = stringPreferencesKey("opencode_api_key")
         val OPENCODE_API_KEYS = stringPreferencesKey("opencode_api_keys")
-        // v4.8.102: 视频生成接口配置 (Veo / HappyHorse — URL/模型ID/密钥)
-        val VIDEO_GEN_ENDPOINTS = stringPreferencesKey("video_gen_endpoints")
         // v3.12.8: 预热开关持久化 (v3.12.6 漏接 DataStore 两端, 重启回默认 false)
         val OPENCODE_WARM_ENABLED = booleanPreferencesKey("opencode_warm_enabled")
         val COMMAND_CODE_WARM_ENABLED = booleanPreferencesKey("command_code_warm_enabled")
@@ -191,6 +189,7 @@ class SettingsStore(
         val TRANSLATE_MODEL = stringPreferencesKey("translate_model")
         val ENABLE_SUGGESTION = booleanPreferencesKey("enable_suggestion")
         val IMAGE_GENERATION_MODEL = stringPreferencesKey("image_generation_model")
+        val VIDEO_GENERATION_MODEL = stringPreferencesKey("video_generation_model")
         val TITLE_PROMPT = stringPreferencesKey("title_prompt")
         val TRANSLATION_PROMPT = stringPreferencesKey("translation_prompt")
         val TRANSLATE_THINKING_BUDGET = intPreferencesKey("translate_thinking_budget")
@@ -270,7 +269,6 @@ class SettingsStore(
                 preferences[OPENCODE_API_KEY] = settings.opencodeApiKey
                 preferences[USAGE_VIEW_MODE] = settings.usageViewMode
                 preferences[OPENCODE_API_KEYS] = JsonInstant.encodeToString(settings.opencodeApiKeys)
-                preferences[VIDEO_GEN_ENDPOINTS] = JsonInstant.encodeToString(settings.videoGenEndpoints)
                 preferences[OPENCODE_WARM_ENABLED] = settings.opencodeWarmEnabled
                 preferences[COMMAND_CODE_WARM_ENABLED] = settings.commandCodeWarmEnabled
                 preferences[CC_IMAGE_COMPAT] = settings.ccImageCompat
@@ -290,6 +288,7 @@ class SettingsStore(
                 preferences[TRANSLATE_MODEL] = settings.translateModeId.toString()
                 preferences[ENABLE_SUGGESTION] = settings.enableSuggestion
                 preferences[IMAGE_GENERATION_MODEL] = settings.imageGenerationModelId.toString()
+                preferences[VIDEO_GENERATION_MODEL] = settings.videoGenerationModelId.toString()
                 preferences[TITLE_PROMPT] = settings.titlePrompt
                 preferences[TRANSLATION_PROMPT] = settings.translatePrompt
                 preferences[TRANSLATE_THINKING_BUDGET] = settings.translateThinkingBudget
@@ -444,6 +443,7 @@ class SettingsStore(
                     ?: DEFAULT_AUTO_MODEL_ID,
                 enableSuggestion = preferences[ENABLE_SUGGESTION] != false,
                 imageGenerationModelId = preferences[IMAGE_GENERATION_MODEL]?.let { Uuid.parse(it) } ?: Uuid.random(),
+                videoGenerationModelId = preferences[VIDEO_GENERATION_MODEL]?.let { Uuid.parse(it) } ?: Uuid.random(),
                 titlePrompt = preferences[TITLE_PROMPT] ?: DEFAULT_TITLE_PROMPT,
                 translatePrompt = preferences[TRANSLATION_PROMPT] ?: DEFAULT_TRANSLATION_PROMPT,
                 translateThinkingBudget = preferences[TRANSLATE_THINKING_BUDGET] ?: 0,
@@ -491,10 +491,6 @@ class SettingsStore(
                 opencodeApiKeys = preferences[OPENCODE_API_KEYS]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: emptyList(),
-                videoGenEndpoints = preferences[VIDEO_GEN_ENDPOINTS]?.let {
-                    runCatching { JsonInstant.decodeFromString<List<me.rerere.rikkahub.data.videogen.VideoGenEndpoint>>(it) }
-                        .getOrDefault(me.rerere.rikkahub.data.videogen.VideoGenDefaults.endpoints)
-                } ?: me.rerere.rikkahub.data.videogen.VideoGenDefaults.endpoints,
                 displaySetting = JsonInstant.decodeFromString(preferences[DISPLAY_SETTING] ?: "{}"),
                 networkSetting = JsonInstant.decodeFromString(preferences[NETWORK_SETTING] ?: "{}"),
                 searchServices = preferences[SEARCH_SERVICES]?.let {
@@ -713,6 +709,7 @@ class SettingsStore(
             preferences[TRANSLATE_MODEL] = settings.translateModeId.toString()
             preferences[ENABLE_SUGGESTION] = settings.enableSuggestion
             preferences[IMAGE_GENERATION_MODEL] = settings.imageGenerationModelId.toString()
+            preferences[VIDEO_GENERATION_MODEL] = settings.videoGenerationModelId.toString()
             preferences[TITLE_PROMPT] = settings.titlePrompt
             preferences[TRANSLATION_PROMPT] = settings.translatePrompt
             preferences[TRANSLATE_THINKING_BUDGET] = settings.translateThinkingBudget
@@ -918,6 +915,8 @@ data class Settings(
     val fastModelId: Uuid = Uuid.random(),
     val fastModelReasoningLevel: ReasoningLevel = ReasoningLevel.AUTO,
     val imageGenerationModelId: Uuid = Uuid.random(),
+    // v4.8.103: 视频生成模型 (对齐图像生成 — 提供商模型类型 VIDEO)
+    val videoGenerationModelId: Uuid = Uuid.random(),
     val titlePrompt: String = DEFAULT_TITLE_PROMPT,
     val translateModeId: Uuid = Uuid.random(),
     val translatePrompt: String = DEFAULT_TRANSLATION_PROMPT,
@@ -979,8 +978,6 @@ data class Settings(
     val toolDescriptionOverrides: Map<String, String> = emptyMap(), // 工具名→自定义描述。覆盖原始Tool描述
     val toolNameOverrides: Map<String, String> = emptyMap(), // v3.6.102: 工具改名 — 原工具名→新工具名 (汉语名工具改为字母数字, 模型才能识别)
     val classifierPrompt: String = "", // 工具自动分类提示词。空=使用默认
-    // v4.8.102: 视频生成接口 (URL / 模型 ID / 密钥 均在视频生成页内编辑; 内置 Veo + HappyHorse 双适配)
-    val videoGenEndpoints: List<me.rerere.rikkahub.data.videogen.VideoGenEndpoint> = me.rerere.rikkahub.data.videogen.VideoGenDefaults.endpoints,
 ) {
     companion object {
         // 构造一个用于初始化的settings, 但它不能用于保存，防止使用初始值存储
@@ -1132,6 +1129,7 @@ fun Settings.cleanupDeletedModels(deletedModelIds: Set<Uuid>): Settings {
         chatModelId = chatModelId.rollbackIfDeleted(),
         fastModelId = fastModelId.rollbackIfDeleted(),
         imageGenerationModelId = imageGenerationModelId.rollbackIfDeleted(),
+        videoGenerationModelId = videoGenerationModelId.rollbackIfDeleted(),
         translateModeId = translateModeId.rollbackIfDeleted(),
         ocrModelId = ocrModelId.rollbackIfDeleted(),
         compressModelId = compressModelId.rollbackIfDeleted(),

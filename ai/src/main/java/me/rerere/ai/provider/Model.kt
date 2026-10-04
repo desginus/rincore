@@ -28,6 +28,8 @@ enum class ModelType {
     CHAT,
     IMAGE,
     EMBEDDING,
+    // v4.8.103: 视频生成模型 (对齐图像生成流程 — Google Veo / 阿里云 HappyHorse)
+    VIDEO,
 }
 
 @Serializable
