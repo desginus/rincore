@@ -10,6 +10,10 @@ package me.rerere.rikkahub.utils
  * 现转发拼接 ROOTFS_WORKSPACE_DIR + rel, 并遍历全部 workspace 求命中。
  * ───────────────────────────────────────────────────────────────*/
 import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /** 支持的图片扩展名 (与 show_image 声明一致) */
 val WORKSPACE_IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg", "webp", "gif", "bmp")
@@ -165,6 +169,69 @@ fun resolveWorkspaceRelPath(raw: String): String? {
 object WorkspaceImageResolver {
     private const val TAG = "WorkspaceImage"
 
+    // ── v4.8.99 线程改革: 工作区列表 TTL 快照 ──
+    // resolveDetailed 是渲染链热路径 (每图每 keyer 调用), 旧实现每次 runBlocking 查库;
+    // 现改为内存快照: 60s TTL 内零查询, 过期后台刷新 (stale-while-revalidate),
+    // 冷路径只发生一次; 工作区增删经 invalidateWorkspaces() 显式失效。
+    private const val SNAPSHOT_TTL_MS = 60_000L
+
+    @Volatile
+    private var cachedWorkspaces: List<me.rerere.rikkahub.data.db.entity.WorkspaceEntity>? = null
+
+    @Volatile
+    private var cachedAtMs = 0L
+
+    @Volatile
+    private var refreshing = false
+
+    private val refreshScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** 工作区集合失效 (创建/删除/恢复后调用) */
+    fun invalidateWorkspaces() {
+        cachedWorkspaces = null
+    }
+
+    /** 启动预热 — 首个调用方不必付冷路径 */
+    fun warmWorkspaces() {
+        if (cachedWorkspaces == null) refreshAsync()
+    }
+
+    private fun refreshAsync() {
+        if (refreshing) return
+        refreshing = true
+        refreshScope.launch {
+            runCatching {
+                val koin = org.koin.core.context.GlobalContext.get()
+                val repo = koin.get<me.rerere.rikkahub.data.repository.WorkspaceRepository>()
+                cachedWorkspaces = repo.getAllWorkspaces()
+                cachedAtMs = System.currentTimeMillis()
+            }
+            refreshing = false
+        }
+    }
+
+    /** 快照读取: 热路径零阻塞; 冷路径 (仅首个调用) 同步取一次 */
+    private fun workspacesSnapshot(
+        fallbackRepo: me.rerere.rikkahub.data.repository.WorkspaceRepository? = null,
+    ): List<me.rerere.rikkahub.data.db.entity.WorkspaceEntity>? {
+        val cached = cachedWorkspaces
+        if (cached != null) {
+            if (System.currentTimeMillis() - cachedAtMs > SNAPSHOT_TTL_MS) refreshAsync()
+            return cached
+        }
+        val fetched = runCatching {
+            val repo = fallbackRepo
+                ?: org.koin.core.context.GlobalContext.get()
+                    .get<me.rerere.rikkahub.data.repository.WorkspaceRepository>()
+            kotlinx.coroutines.runBlocking { repo.getAllWorkspaces() }
+        }.getOrNull()
+        if (fetched != null) {
+            cachedWorkspaces = fetched
+            cachedAtMs = System.currentTimeMillis()
+        }
+        return fetched
+    }
+
     /**
      * 全链路解析: 返回 (宿主文件, "ok") 或 (null, 失败环节标签)。
      * 失败环节: empty_input / prefix_not_recognized / invalid_path / no_workspace /
@@ -190,9 +257,7 @@ object WorkspaceImageResolver {
             ?: return WorkspaceResolveResult(null, "no_workspace")
         val manager = runCatching { koin.get<me.rerere.workspace.WorkspaceManager>() }.getOrNull()
             ?: return WorkspaceResolveResult(null, "no_workspace")
-        val workspaces = runCatching {
-            kotlinx.coroutines.runBlocking { repo.getAllWorkspaces() }
-        }.getOrNull()
+        val workspaces = workspacesSnapshot(repo)
         if (workspaces.isNullOrEmpty()) return WorkspaceResolveResult(null, "no_workspace")
 
         // 转发路径 = ROOTFS_WORKSPACE_DIR 常量拼接 (语义: workspace:// 永远指

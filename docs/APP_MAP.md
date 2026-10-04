@@ -299,6 +299,28 @@ Haze 锁 `2.0.0-beta01` (rc 版本有格栅伪影); 玻璃层用 `RinGlass` 单�
 
 ---
 
+### 线程与调度总览 (v4.8.99 改革)
+
+> 调度器单一事实源: `utils/AppDispatchers.kt`（Main / Io / Compute / Sandbox）。
+> 规则: **UI 只做决策与派发; 数据层 suspend 自带调度; 服务层编排与重活分离;
+> 沙箱进程族独占隔离池**。
+
+| 层 | 调度器 | 用途 | 铁律 |
+|---|---|---|---|
+| UI | `Main` | Compose/VM 状态、事件收集 | 禁 file IO / runBlocking / 进程启动; 首帧 Markdown 同步解析 = 用户定版保护特区 (勿异步化) |
+| IO | `AppDispatchers.Io` | 磁盘/网络/DB 等待 | 勿放长阻塞进程等待 (会饿死共享池) |
+| 计算 | `AppDispatchers.Compute` | 序列化/解析/编码/压缩 | 请求组装/工具池构建/Markdown 后台解析均在此 |
+| 沙箱 | `AppDispatchers.Sandbox` | proot 启动 / 命令阻塞等待 (≤600s) / PTY / MCP stdio / job 族 | 与共享 IO 池隔离 (limitedParallelism 8); 经 WorkspaceRepository 进程族方法统一进入 |
+
+**作用域**: AppScope (Main+Supervisor+异常 handler) = 应用级编排; viewModelScope = UI;
+WarmPipeline / TriggerRegistry = 各自 Default 专用 scope; SandboxPrewarmer / keepalive = AppScope+IO。
+**阻塞禁区与例外**: 启动链 RikkaHubApp.runBlocking(IO) 数据库恢复 (deliberate);
+ContentProvider binder 线程 / 终端导出等同步 API 在 IO 线程内 runBlocking (允许, 须不在 Main)。
+**能效**: keepalive 前台 60s / 后台且无生成 → 暂停 (15s 粒度恢复; `AppForegroundState` +
+`GenerationForegroundService.hasActiveGeneration()` 判据); 生成期 WakeLock+WifiLock+前台服务。
+**热路径快照**: WorkspaceImageResolver 工作区列表 60s TTL 快照 (stale-while-revalidate,
+增删显式失效) — resolve 零阻塞, 替代旧"每次调用 runBlocking 查库"。
+
 ## 3. 需求 → 改动索引 (高频模式)
 
 | 用户需求类型 | 改动路径 |

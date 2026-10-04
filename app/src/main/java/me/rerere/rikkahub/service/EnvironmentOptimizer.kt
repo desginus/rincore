@@ -199,7 +199,20 @@ object ConnectionWarmer {
         // 阻塞网络调用; AppScope 的默认调度器为 Main, 原实现在主线程每 60s 阻塞
         // 一次 (网络差时数秒), 即"预热连接"引发的周期性卡顿源。统一移入 IO。
         keepAliveJobs[trimmed] = appScope.launch(Dispatchers.IO) {
+            // v4.8.99 能效策略: 后台且无活跃生成 → 暂停心跳 (循环存活, 15s 粒度检查;
+            // 回到前台 (foregroundEpoch 变化) 或后台生成中立即恢复原 60s 节奏)。
+            // 用户定版场景 (前台使用/生成) 行为不变; 仅消除"熄屏挂后台空转心跳"的耗电。
+            var lastForegroundEpoch = AppForegroundState.foregroundEpoch
             while (isActive) {
+                val epoch = AppForegroundState.foregroundEpoch
+                if (AppForegroundState.isBackground &&
+                    !GenerationForegroundService.hasActiveGeneration() &&
+                    epoch == lastForegroundEpoch
+                ) {
+                    kotlinx.coroutines.delay(15_000L)
+                    continue
+                }
+                lastForegroundEpoch = epoch
                 // v4.8.71 (用户定版): 先 ping 后计时 — 启动/生成开始即建立热连接
                 // ("开应用直接拉心跳, 首次延迟不是连接延迟"), 首 ping 不再等 60s;
                 // 之后 60s 间隔维持 (服务端空闲断连窗口 ~100s, 60s 留 40s 余量)。

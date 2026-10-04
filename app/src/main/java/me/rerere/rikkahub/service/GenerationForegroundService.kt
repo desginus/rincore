@@ -134,6 +134,9 @@ class GenerationForegroundService : Service() {
             }
         }
 
+        /** v4.8.99: 是否有活跃生成 (心跳能效策略判据 — 后台生成中保持心跳) */
+        fun hasActiveGeneration(): Boolean = activeSessions.isNotEmpty()
+
         /** 生成结束: 减记; 全部结束时 3s 防抖停止 (regenerate 瞬态不误停)。 */
         fun release(context: Context, conversationId: String) {
             val app = context.applicationContext

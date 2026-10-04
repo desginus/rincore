@@ -253,7 +253,9 @@ internal class McpSessionRegistry(
             oldClient?.let { closeClient(it, config.commonOptions.name) }
 
             val sdkClient = createSdkClient(config)
-            val transport = createTransport(config)
+            // v4.8.99: 传输创建含 stdio 进程启动 (ProcessBuilder/proot) — 此前在调用方
+            // 上下文执行 (appScope=Main 触发链 → 主线程付进程启动); 统一移入 Io。
+            val transport = withContext(me.rerere.rikkahub.utils.AppDispatchers.Io) { createTransport(config) }
             installTransportCallbacks(config, sdkClient, transport)
 
             try {

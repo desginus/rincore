@@ -129,7 +129,7 @@ class WorkspaceTerminalSessionManager internal constructor(
             true
         } else {
             try {
-                withContext(Dispatchers.IO) {
+                withContext(me.rerere.rikkahub.utils.AppDispatchers.Sandbox) {
                     if (!workspaceRootfsReady(appContext, root)) {
                         false
                     } else {

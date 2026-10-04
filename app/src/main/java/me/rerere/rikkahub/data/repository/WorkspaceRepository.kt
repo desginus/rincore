@@ -146,6 +146,8 @@ class WorkspaceRepository(
         )
         manager.ensureWorkspace(workspace.root)
         dao.upsert(workspace)
+        // v4.8.99: 工作区集合变化 → 图像解析快照失效 (resolve 热路径零阻塞的前提)
+        me.rerere.rikkahub.utils.WorkspaceImageResolver.invalidateWorkspaces()
         return workspace
     }
 
@@ -319,25 +321,25 @@ class WorkspaceRepository(
         id: String,
         command: String,
         cwd: String = "",
-    ): me.rerere.workspace.WorkspaceCommandResult = withContext(Dispatchers.IO) {
+    ): me.rerere.workspace.WorkspaceCommandResult = withContext(me.rerere.rikkahub.utils.AppDispatchers.Sandbox) {
         val workspace = dao.getById(id) ?: error("Workspace not found: $id")
         manager.ensureWorkspace(workspace.root)
         manager.executeCommand(root = workspace.root, command = command, cwd = cwd)
     }
 
     // ── v4.8.72: 后台任务直通 (workspace_job 工具) ──
-    suspend fun startJob(id: String, command: String, cwd: String, jobId: String) = withContext(Dispatchers.IO) {
+    suspend fun startJob(id: String, command: String, cwd: String, jobId: String) = withContext(me.rerere.rikkahub.utils.AppDispatchers.Sandbox) {
         val workspace = dao.getById(id) ?: error("Workspace not found: $id")
         manager.ensureWorkspace(workspace.root)
         manager.startJob(workspace.root, command, cwd, jobId)
     }
 
-    suspend fun jobStatus(id: String, jobId: String): WorkspaceManager.JobStatus? = withContext(Dispatchers.IO) {
+    suspend fun jobStatus(id: String, jobId: String): WorkspaceManager.JobStatus? = withContext(me.rerere.rikkahub.utils.AppDispatchers.Sandbox) {
         val workspace = dao.getById(id) ?: error("Workspace not found: $id")
         manager.jobStatus(workspace.root, jobId)
     }
 
-    suspend fun jobLogTail(id: String, jobId: String, maxBytes: Int = 6000): String = withContext(Dispatchers.IO) {
+    suspend fun jobLogTail(id: String, jobId: String, maxBytes: Int = 6000): String = withContext(me.rerere.rikkahub.utils.AppDispatchers.Sandbox) {
         val workspace = dao.getById(id) ?: error("Workspace not found: $id")
         val f = manager.jobLogFile(workspace.root, jobId)
         if (!f.exists()) "" else runCatching {
@@ -353,7 +355,7 @@ class WorkspaceRepository(
         }.getOrDefault("")
     }
 
-    suspend fun killJob(id: String, jobId: String): Int = withContext(Dispatchers.IO) {
+    suspend fun killJob(id: String, jobId: String): Int = withContext(me.rerere.rikkahub.utils.AppDispatchers.Sandbox) {
         val workspace = dao.getById(id) ?: error("Workspace not found: $id")
         manager.jobKill(workspace.root, jobId)
     }
@@ -487,7 +489,7 @@ class WorkspaceRepository(
      * 启动常驻进程 (不等待) — MCP stdio 桥接: 在 workspace 沙箱内启动
      * Python/Node MCP 服务器, 进程流由调用方接管 (McpManager StdioClientTransport)。
      */
-    suspend fun launchProcess(id: String, command: String, cwd: String = ""): Process? = withContext(Dispatchers.IO) {
+    suspend fun launchProcess(id: String, command: String, cwd: String = ""): Process? = withContext(me.rerere.rikkahub.utils.AppDispatchers.Sandbox) {
         val workspace = dao.getById(id) ?: return@withContext null
         manager.ensureWorkspace(workspace.root)
         manager.launchProcess(workspace.root, command, cwd)
@@ -496,6 +498,7 @@ class WorkspaceRepository(
     suspend fun delete(id: String): Boolean {
         val workspace = dao.getById(id) ?: return false
         dao.deleteById(id)
+        me.rerere.rikkahub.utils.WorkspaceImageResolver.invalidateWorkspaces()
         withContext(Dispatchers.IO) {
             manager.deleteWorkspace(workspace.root)
         }
