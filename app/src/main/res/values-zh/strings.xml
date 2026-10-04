@@ -1341,7 +1341,6 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="video_gen_saved">已保存到工作区</string>
   <string name="video_gen_no_model">未配置视频模型，请到 设置 → 媒体生成 添加。</string>
   <string name="video_gen_failed">生成失败</string>
-  <string name="video_gen_result">生成结果</string>
   <string name="setting_page_media_gen">媒体生成</string>
   <string name="setting_page_media_gen_desc">图像/视频生成提供商（OpenAI · 阿里云百炼 · 火山方舟 · MiniMax）</string>
   <string name="media_gen_add_provider">添加提供商</string>
@@ -1356,4 +1355,7 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="media_gen_kind">类型</string>
   <string name="media_gen_empty">暂无提供商 — 点击「添加提供商」。</string>
   <string name="media_gen_models">模型列表</string>
+  <string name="video_gen_settings_title">视频生成设置</string>
+  <string name="video_gen_cancel_title">取消生成</string>
+  <string name="video_gen_cancel_message">确定要取消视频生成吗？</string>
 </resources>

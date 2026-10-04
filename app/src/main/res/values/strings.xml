@@ -1435,7 +1435,6 @@
   <string name="video_gen_saved">Saved to workspace</string>
   <string name="video_gen_no_model">No video model configured. Go to Settings → Media generation and add one.</string>
   <string name="video_gen_failed">Generation failed</string>
-  <string name="video_gen_result">Result</string>
   <string name="setting_page_media_gen">Media generation</string>
   <string name="setting_page_media_gen_desc">Image/video generation providers (OpenAI · Aliyun · Volcengine · MiniMax)</string>
   <string name="media_gen_add_provider">Add provider</string>
@@ -1450,4 +1449,7 @@
   <string name="media_gen_kind">Kind</string>
   <string name="media_gen_empty">No providers yet — tap Add provider.</string>
   <string name="media_gen_models">Models</string>
+  <string name="video_gen_settings_title">Video Generation Settings</string>
+  <string name="video_gen_cancel_title">Cancel Generation</string>
+  <string name="video_gen_cancel_message">Are you sure you want to cancel video generation?</string>
 </resources>

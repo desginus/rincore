@@ -1,13 +1,15 @@
 /* 【域 A·对话核心】 — 页面 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.pages.videogen
 
-/* ───【自研】VideoGenVM.kt — 视频生成 (v4.8.100, mediagen 标准生成链路)
- * 参数对照 mediagen 公共模型: prompt / resolution(清晰度档位) / aspectRatio /
- * durationSeconds / watermark; 模型来自设置里的媒体生成提供商 (kind=VIDEO)。
+/* ───【自研】VideoGenVM.kt — 视频生成 (v4.8.101, mediagen 标准生成链路)
+ * 对齐图像生成页的 UI 逻辑: 提示词 / 参考图(首帧) / 模型选择 / 生成设置(时长·清晰度·
+ * 比例·水印) / 生成·取消 / 会话重置 / 保存到工作区。
  * 链路: manager.generate (提交+轮询 Flow) → 终态 → 下载产出 → 本地播放/保存工作区。
+ * 参考图: 本地 PNG → data URI (首帧角色) — 视频接口按供应商文档普遍接受 base64/data URI。
  * ───────────────────────────────────────────────────────────────*/
 
 import android.app.Application
+import android.util.Base64
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -19,6 +21,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import me.rerere.mediagen.model.ImageRole
+import me.rerere.mediagen.model.MediaGenerationInput
 import me.rerere.mediagen.model.MediaGenerationModel
 import me.rerere.mediagen.model.MediaGenerationRequest
 import me.rerere.mediagen.model.MediaGenerationStatus
@@ -65,6 +69,9 @@ class VideoGenVM(
     private val _watermark = MutableStateFlow(false)
     val watermark: StateFlow<Boolean> = _watermark
 
+    private val _referenceImages = MutableStateFlow<List<String>>(emptyList())
+    val referenceImages: StateFlow<List<String>> = _referenceImages
+
     private val _isGenerating = MutableStateFlow(false)
     val isGenerating: StateFlow<Boolean> = _isGenerating
 
@@ -109,6 +116,29 @@ class VideoGenVM(
     fun updateWatermark(enabled: Boolean) { _watermark.value = enabled }
     fun clearError() { _error.value = null }
 
+    fun addReferenceImages(paths: List<String>) {
+        _referenceImages.value = (_referenceImages.value + paths).distinct().take(MAX_REFERENCE_IMAGES)
+    }
+
+    fun removeReferenceImage(path: String) {
+        _referenceImages.value = _referenceImages.value.filterNot { it == path }
+        deleteReferenceFiles(listOf(path))
+    }
+
+    /** 新会话 (对齐图像生成: 取消在跑任务 + 清空全部输入与结果)。 */
+    fun startNewSession() {
+        cancelJob?.cancel()
+        cancelJob = null
+        deleteReferenceFiles(_referenceImages.value)
+        _referenceImages.value = emptyList()
+        _prompt.value = ""
+        _result.value = null
+        _error.value = null
+        _isGenerating.value = false
+        _phase.value = Phase.IDLE
+        _savedToWorkspace.value = false
+    }
+
     fun generate() {
         val promptText = _prompt.value.trim()
         if (promptText.isEmpty()) return
@@ -128,6 +158,7 @@ class VideoGenVM(
             try {
                 val request = MediaGenerationRequest(
                     prompt = promptText,
+                    inputs = buildInputs(),
                     resolution = _resolution.value,
                     aspectRatio = _aspect.value,
                     durationSeconds = _duration.value,
@@ -197,6 +228,23 @@ class VideoGenVM(
         }
     }
 
+    /** 参考图 → 首帧 data URI (本地 PNG 内联, 不依赖公网图床)。 */
+    private suspend fun buildInputs(): List<MediaGenerationInput> = withContext(Dispatchers.IO) {
+        _referenceImages.value.mapNotNull { path ->
+            runCatching {
+                val bytes = File(path).readBytes()
+                MediaGenerationInput.Image(
+                    url = "data:image/png;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP),
+                    role = ImageRole.FIRST_FRAME,
+                )
+            }.getOrNull()
+        }
+    }
+
+    private fun deleteReferenceFiles(paths: List<String>) {
+        paths.forEach { runCatching { File(it).delete() } }
+    }
+
     private suspend fun downloadOutput(output: me.rerere.mediagen.model.MediaGenerationOutput): File? =
         withContext(Dispatchers.IO) {
             runCatching {
@@ -223,4 +271,8 @@ class VideoGenVM(
                 file
             }.getOrNull()
         }
+
+    companion object {
+        private const val MAX_REFERENCE_IMAGES = 4
+    }
 }

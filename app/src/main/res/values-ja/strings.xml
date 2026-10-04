@@ -1266,7 +1266,6 @@ mDNSアドレス: .localホスト名を使用し、IPを知らなくても同じ
   <string name="video_gen_saved">ワークスペースに保存済み</string>
   <string name="video_gen_no_model">動画モデルが未設定です。設定 → メディア生成 で追加してください。</string>
   <string name="video_gen_failed">生成に失敗しました</string>
-  <string name="video_gen_result">結果</string>
   <string name="setting_page_media_gen">メディア生成</string>
   <string name="setting_page_media_gen_desc">画像/動画生成プロバイダー（OpenAI · Aliyun · Volcengine · MiniMax）</string>
   <string name="media_gen_add_provider">プロバイダーを追加</string>
@@ -1281,4 +1280,7 @@ mDNSアドレス: .localホスト名を使用し、IPを知らなくても同じ
   <string name="media_gen_kind">種類</string>
   <string name="media_gen_empty">プロバイダーがありません — 「プロバイダーを追加」をタップ。</string>
   <string name="media_gen_models">モデル一覧</string>
+  <string name="video_gen_settings_title">動画生成設定</string>
+  <string name="video_gen_cancel_title">生成をキャンセル</string>
+  <string name="video_gen_cancel_message">動画生成をキャンセルしてもよろしいですか？</string>
 </resources>

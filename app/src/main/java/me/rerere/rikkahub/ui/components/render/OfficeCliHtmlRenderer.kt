@@ -5,8 +5,9 @@ package me.rerere.rikkahub.ui.components.render
  * 背景: 内建提取器是"近似排版" (PPT 背景/版式还原率极低, 用户实证需导入 WPS 才能看)。
  *       officecli (随 rin-tools 资产分发到每个工作区 /usr/local/bin, aarch64 原生)
  *       的 html 模式 = 真实渲染引擎 (背景/版式/表格/形状/图片/字体全保真, 矢量文本)。
- * 链路: 复制文件到工作区 .render/<ts>/ → 沙箱 exec `officecli view <f> html -o index.html`
+ * 链路: 复制文件到工作区 .render/<ts>/ → 沙箱 exec `officecli view <f> html -o page1.html`
  *      → 后处理 (移除 three CDN importmap; docx/xlsx 注入"整页适配"脚本) → HtmlPages 结果。
+ * 产物名必须是 pageN.html —— HtmlPages 消费契约 (预览器加载 File(workDir, "page${pageIndex+1}.html"))。
  * 失败 (rootfs 未装/officecli 缺失/渲染出错) 一律返回 null, 由调用方回落内建提取器。
  * ───────────────────────────────────────────────────────────────*/
 
@@ -53,12 +54,12 @@ object OfficeCliHtmlRenderer {
             input.inputStream().use { ins -> src.outputStream().use { outs -> ins.copyTo(outs) } }
 
             val rel = ".render/${dir.name}/$safeName"
-            val outRel = ".render/${dir.name}/index.html"
+            val outRel = ".render/${dir.name}/page1.html"
             val cmd = "officecli view '/workspace/$rel' html -o '/workspace/$outRel'"
             val res = repo.executeCommand(ws.id, cmd, timeoutMillis = 180_000L)
             if (res.exitCode != 0) return@runCatching null
 
-            val out = File(dir, "index.html")
+            val out = File(dir, "page1.html")
             if (!out.isFile || out.length() <= 0L) return@runCatching null
             postProcess(out, ext)
             runCatching { src.delete() }

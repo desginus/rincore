@@ -1269,7 +1269,6 @@
   <string name="video_gen_saved">已儲存到工作區</string>
   <string name="video_gen_no_model">未設定影片模型，請到 設定 → 媒體生成 新增。</string>
   <string name="video_gen_failed">生成失敗</string>
-  <string name="video_gen_result">生成結果</string>
   <string name="setting_page_media_gen">媒體生成</string>
   <string name="setting_page_media_gen_desc">圖像/影片生成供應商（OpenAI · 阿里雲百煉 · 火山方舟 · MiniMax）</string>
   <string name="media_gen_add_provider">新增供應商</string>
@@ -1284,4 +1283,7 @@
   <string name="media_gen_kind">類型</string>
   <string name="media_gen_empty">尚無供應商 — 點擊「新增供應商」。</string>
   <string name="media_gen_models">模型列表</string>
+  <string name="video_gen_settings_title">影片生成設定</string>
+  <string name="video_gen_cancel_title">取消生成</string>
+  <string name="video_gen_cancel_message">確定要取消影片生成嗎？</string>
 </resources>

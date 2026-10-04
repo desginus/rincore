@@ -1266,7 +1266,6 @@ mDNS 주소: .local 호스트네임을 사용하며, IP를 몰라도 같은 네�
   <string name="video_gen_saved">워크스페이스에 저장됨</string>
   <string name="video_gen_no_model">동영상 모델이 없습니다. 설정 → 미디어 생성에서 추가하세요.</string>
   <string name="video_gen_failed">생성 실패</string>
-  <string name="video_gen_result">결과</string>
   <string name="setting_page_media_gen">미디어 생성</string>
   <string name="setting_page_media_gen_desc">이미지/동영상 생성 제공자 (OpenAI · Aliyun · Volcengine · MiniMax)</string>
   <string name="media_gen_add_provider">제공자 추가</string>
@@ -1281,4 +1280,7 @@ mDNS 주소: .local 호스트네임을 사용하며, IP를 몰라도 같은 네�
   <string name="media_gen_kind">종류</string>
   <string name="media_gen_empty">제공자가 없습니다 — 제공자 추가를 누르세요.</string>
   <string name="media_gen_models">모델 목록</string>
+  <string name="video_gen_settings_title">동영상 생성 설정</string>
+  <string name="video_gen_cancel_title">생성 취소</string>
+  <string name="video_gen_cancel_message">동영상 생성을 취소하시겠습니까?</string>
 </resources>

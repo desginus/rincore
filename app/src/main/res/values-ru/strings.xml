@@ -1266,7 +1266,6 @@
   <string name="video_gen_saved">Сохранено в рабочую область</string>
   <string name="video_gen_no_model">Нет видеомодели. Добавьте в Настройки → Генерация медиа.</string>
   <string name="video_gen_failed">Ошибка генерации</string>
-  <string name="video_gen_result">Результат</string>
   <string name="setting_page_media_gen">Генерация медиа</string>
   <string name="setting_page_media_gen_desc">Провайдеры генерации изображений и видео (OpenAI · Aliyun · Volcengine · MiniMax)</string>
   <string name="media_gen_add_provider">Добавить провайдера</string>
@@ -1281,4 +1280,7 @@
   <string name="media_gen_kind">Тип</string>
   <string name="media_gen_empty">Провайдеров нет — нажмите «Добавить провайдера».</string>
   <string name="media_gen_models">Модели</string>
+  <string name="video_gen_settings_title">Настройки генерации видео</string>
+  <string name="video_gen_cancel_title">Отменить генерацию</string>
+  <string name="video_gen_cancel_message">Вы уверены, что хотите отменить генерацию видео?</string>
 </resources>
