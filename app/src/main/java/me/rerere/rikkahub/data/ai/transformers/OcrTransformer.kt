@@ -169,8 +169,7 @@ object OcrTransformer : InputMessageTransformer, KoinComponent {
         }
     }
 
-    private companion object {
-        const val UNKNOWN_IMAGE_PLACEHOLDER = "[Image]"
-        const val FAILURE_CACHE_TTL_MS = 30L * 60 * 1000
-    }
+    // v4.8.107: standalone object 内不允许 companion object — 直接作为成员常量
+    private const val UNKNOWN_IMAGE_PLACEHOLDER = "[Image]"
+    private const val FAILURE_CACHE_TTL_MS = 30L * 60 * 1000
 }
