@@ -306,9 +306,12 @@ object ConnectionWarmer {
         }
     }
 
-    /** 轮首调用: 仅在非新鲜时等待 — 最近热直接放行 (零等待); 有在途预探活则 join
-     *  (上限 maxJoinMs); 都没有才同步探活 (保留半死连接剔除语义)。 */
-    suspend fun awaitPokeIfStale(baseUrl: String, apiKey: String?, maxJoinMs: Long = 1500L): Boolean {
+    /** v4.8.105 (无感衔接): 轮首调用 = 关键路径零等待 —— 热 → 立即放行;
+     *  有在途预探活最多 join maxJoinMs (默认 500ms); 仍冷 → **不再同步探活**,
+     *  放行真实请求 + 后台补探。半死连接由真实请求首包超时暴露, 走既有断流重试链
+     *  (3 轮重试 + 清理连接池) 剔除恢复 —— 不再让每一轮都付探活等待税
+     *  (旧兜底: join 1.5s + 同步探活最长数秒, 用户体感"工具后更久"的来源之一)。 */
+    suspend fun awaitPokeIfStale(baseUrl: String, apiKey: String?, maxJoinMs: Long = 500L): Boolean {
         val trimmed = baseUrl.trimEnd('/')
         if (trimmed.isBlank()) return false
         if (isRecentlyWarm(trimmed)) return true
@@ -316,7 +319,8 @@ object ConnectionWarmer {
             kotlinx.coroutines.withTimeoutOrNull(maxJoinMs) { job.join() }
             if (isRecentlyWarm(trimmed)) return true
         }
-        return pokeProviderHost(trimmed, apiKey)
+        pokeAsync(trimmed, apiKey)
+        return false
     }
 
     fun startProviderKeepAlive(

@@ -37,6 +37,11 @@ package me.rerere.rikkahub.data.ai
 import android.content.Context
 import me.rerere.rikkahub.BuildConfig
 import android.util.Log
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
@@ -113,6 +118,26 @@ private data class RetryState(
     /** v4.8.76: 上一轮 API 活动时间戳 (epoch ms) — OC/CC 轮间探活的 gap 判据;
      *  per-generation 持有 (generateInternal 每轮独立调用, 局部变量无法跨轮)。 */
     var lastApiRoundAt: Long = 0L,
+    /** v4.8.105 (无感衔接 E): 最近一次工具批执行完成时间戳 (epoch ms) —
+     *  工具结束 → 下一轮请求就绪 的 gap 分解埋点 (PREF/resume_gap)。 */
+    var lastToolEndAt: Long = 0L,
+)
+
+/** v4.8.105 (B): 待并行执行的工具 (阶段1顺序入队 → 阶段2并行执行 → 阶段3保序记账) */
+private class QueuedToolExec(
+    val tool: UIMessagePart.Tool,
+    val toolDef: me.rerere.rikkahub.data.ai.tools.Tool,
+    val args: JsonElement,
+    val idemKey: String,
+    val toolStartAt: Long,
+)
+
+/** v4.8.105 (B): 工具执行产出 (阶段2 → 阶段3); error 非空 = 执行抛错 (转错误回执) */
+private class ToolExecOutcome(
+    val item: QueuedToolExec,
+    val result: List<UIMessagePart>?,
+    val endAt: Long,
+    val error: Throwable?,
 )
 
 private const val TAG = "GenerationHandler"
@@ -122,6 +147,9 @@ private const val TAG = "GenerationHandler"
 // v4.8.104 极简模式: 模型若仍发起工具调用 → 一律自动拒绝的回执理由
 private const val MINIMAL_MODE_DENIED_REASON =
     "本对话已开启极简模式 — 工具全部禁用。请不要再调用任何工具，直接用文本回答用户。"
+
+/** v4.8.105 (无感衔接 B): 工具并行执行上限 (对齐 openai-agents max_function_tool_concurrency) */
+private const val MAX_PARALLEL_TOOL_EXECUTIONS = 4
 
 private const val MAX_TOOL_OUTPUT_CHARS = 32 * 1024
 private const val TOOL_OUTPUT_PREVIEW_CHARS = 4 * 1024
@@ -307,6 +335,40 @@ class GenerationHandler(
         // v4.8.84: 已加载工具区**逐步**持久化 —— 旧实现只在"本轮无工具调用"的收尾点发射，
         // 中途被打断/取消就整轮加载丢失（下轮模型以为工具还在，实际不在请求数组里）。
         var loadedEmitted: List<String> = loadedDomains.toList()
+        // ── v4.8.105 (无感衔接 A1/D): 跨步骤共享状态 — 写回变换前缀缓存 + 活性信号 ──
+        // ① 工具写回路径的输出变换前缀缓存: 输入序列在生成期内仅追加、前缀实例稳定,
+        //    每步只重算变化尾部 (此前每步对全量消息重跑 transforms, 上下文越长约慢)。
+        var writeBackTransformCacheIn: List<UIMessage> = emptyList()
+        var writeBackTransformCacheOut: List<UIMessage> = emptyList()
+        // ② 工具完成 → 下一轮首包 之间的"继续生成中…"活性信号 (首包到达自动熄灭)。
+        var resumeSignalArmed = false
+
+        suspend fun cachedWriteBackTransforms(input: List<UIMessage>): List<UIMessage> {
+            var prefixLen = 0
+            while (prefixLen < input.size && prefixLen < writeBackTransformCacheIn.size &&
+                input[prefixLen] === writeBackTransformCacheIn[prefixLen]
+            ) prefixLen++
+            suspend fun transformFrom(index: Int): List<UIMessage> =
+                input.subList(index, input.size).transforms(
+                    transformers = outputTransformers,
+                    context = context,
+                    model = model,
+                    assistant = assistant,
+                    settings = settings
+                )
+            val result = when {
+                prefixLen == input.size && input.size == writeBackTransformCacheIn.size ->
+                    writeBackTransformCacheOut
+                prefixLen == writeBackTransformCacheIn.size ->
+                    if (prefixLen == 0) transformFrom(0)
+                    else writeBackTransformCacheOut.subList(0, prefixLen) + transformFrom(prefixLen)
+                else -> transformFrom(0)
+            }
+            writeBackTransformCacheIn = input
+            writeBackTransformCacheOut = result
+            return result
+        }
+
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
             CallTracer.event("STEP", "step_$stepIndex", "Step $stepIndex begin, ${tools.size} tools loaded, messages=${messages.size}")
@@ -544,6 +606,11 @@ class GenerationHandler(
                     lengthContinuationState = lengthContinuationState,
                     messages = messages,
                     onUpdateMessages = {
+                        // v4.8.105 (D): 首包到达 → 熄灭"继续生成中"活性信号
+                        if (resumeSignalArmed) {
+                            resumeSignalArmed = false
+                            processingStatus.value = null
+                        }
                         messages = it.transforms(
                             transformers = outputTransformers,
                             context = context,
@@ -787,6 +854,18 @@ class GenerationHandler(
                     }
             }
 
+            // v4.8.105 (C1): 预探活提前到"工具执行开始前" — 整个工具执行时长用于连接变热,
+            // 轮首门只查打点 (关键路径零等待; 旧实现: 工具完成后才发预探活)。
+            run {
+                val pokeBase = ((provider as? ProviderSetting.OpenAI)?.baseUrl
+                    ?: (provider as? ProviderSetting.Claude)?.baseUrl)
+                val pokeKey = (provider as? ProviderSetting.OpenAI)?.apiKey
+                    ?: (provider as? ProviderSetting.Claude)?.apiKey
+                if (pokeBase != null) {
+                    runCatching { me.rerere.rikkahub.service.ConnectionWarmer.pokeAsync(pokeBase, pokeKey) }
+                }
+            }
+
             // Handle tools (execute approved tools, handle denied tools)
             // v3.11.17: 工具连续相同失败聚合 — (工具名+参数指纹) 维度计数。
             // 实证 (bug 报告): 模型锁死在错误工具名 26 次重复空参调用, 每次都
@@ -803,6 +882,8 @@ class GenerationHandler(
             // 不计数不执行 (正常推进不撞熔断; 同参重复提交直接返回, 不空转烧配额)
             val idempotentCache = HashMap<String, List<UIMessagePart>>()
             val executedTools = arrayListOf<UIMessagePart.Tool>()
+            // v4.8.105 (B): 阶段2用的执行队列 (顺序前置检查后入队, 随后并行执行)
+            val execQueue = mutableListOf<QueuedToolExec>()
             toolsToProcess.forEach { tool ->
                 when (tool.approvalState) {
                     is ToolApprovalState.Denied -> {
@@ -944,116 +1025,12 @@ class GenerationHandler(
                                         "请回到意图层重新决策: 核对工具名 → 补齐参数 → 或换用其他工具 (invoke_tools) → 或以文字说明放弃该路径。")))
                                 return@runCatching
                             }
-                            Log.i(TAG, "generateText: executing tool ${toolDef.name} with args: $args")
-                            // v4.8.70: 执行计时打点 (工具卡耗时 + 过程折叠"用时"全精度)
+                            Log.i(TAG, "generateText: queue tool ${toolDef.name} with args: $args")
+                            // v4.8.105 (B): 执行与记账分离 — 此处仅入队;
+                            // 阶段2 并行执行, 阶段3 保序记账 (与旧顺序语义一致)
                             val toolStartAt = System.currentTimeMillis()
                             CallTracer.event("TOOL", "exec_${toolDef.name}", "Executing ${toolDef.name}, args=${tool.input.length}c")
-                            // 工具执行超时兜底: 工具挂起(网络/IO)时不永久卡住,
-                            // 超时返回错误结果让模型继续 (修复: ChatCompletions 工具调用后一直加载)
-                            // v4.5.13: 超时异常分类修复 — withTimeout 抛的
-                            // TimeoutCancellationException 继承 CancellationException,
-                            // 此前被下方"取消传播"判定误杀并原样上抛, 生成静默终止,
-                            // 超时兜底形同虚设 (模型收不到错误反馈, 用户感知"莫名
-                            // 中断"的另一来源)。显式捕获超时转错误结果回传; 其余
-                            // 取消 (用户停止) 仍然 rethrow 走正常取消链。
-                            val result = runCatching {
-                                withTimeout(TOOL_EXECUTION_TIMEOUT_MS) {
-                                    toolDef.execute(args)
-                                }
-                            }.getOrElse { e ->
-                                if (e is kotlinx.coroutines.TimeoutCancellationException) {
-                                    CallTracer.event("TOOL", "timeout_${tool.toolName}",
-                                        "tool timed out after ${TOOL_EXECUTION_TIMEOUT_MS / 1000}s",
-                                        metrics = sseDiagMetrics())
-                                    listOf(UIMessagePart.Text(
-                                        "Error: Tool execution timed out after ${TOOL_EXECUTION_TIMEOUT_MS / 1000}s (${tool.toolName}). " +
-                                        "The tool may be hanging on network/IO. Reconsider: different parameters, another tool (invoke_tools), or answer in text."))
-                                } else {
-                                    throw e
-                                }
-                            }
-                            val toolEndAt = System.currentTimeMillis()
-                            val hasShellAccess = toolsInternal.any { it.name == "workspace_shell" }
-                            val truncated = maybeTruncateToolOutput(tool.toolCallId, result, hasShellAccess, tool.toolName)
-                            // v3.11.17: 连续相同失败熔断 — 判据: 结果文本以失败形态开头
-                            // (Missing:/Error/Invalid/MCP manager not initialized/未找到/超时)。
-                            // key = 工具名 + 参数指纹; 连续 ≥3 次相同失败后在回传文本
-                            // 前插入升级警告: 告知重复无用 + 给出三条修正路径。
-                            val finalOutput: List<UIMessagePart> = run {
-                                val failText = truncated.filterIsInstance<UIMessagePart.Text>()
-                                    .joinToString(" ") { it.text }.trim()
-                                // v4.7.10: 判定扩展 — 现场 (GLM 吸住) 的两种错误形态此前
-                                // 均不匹配旧列表: ① 异常路径 JSON "{\"error\":...}"
-                                // (v4.7.9 起 "[工具错误]..."): ② 工具自身错误文本
-                                // "无效目标域..." / "工具 'xxx' 不存在"。失败计数从未
-                                // 累计 → 防循环机制从未触发 — 这就是"没拦住"的代码级原因。
-                                val isFailure = failText.startsWith("Missing:") ||
-                                    failText.startsWith("Error") ||
-                                    failText.startsWith("Invalid") ||
-                                    failText.startsWith("MCP manager not initialized") ||
-                                    failText.contains("工具 " + tool.toolName + " 未找到") ||
-                                    failText.startsWith("Tool execution timed out") ||
-                                    failText.startsWith("无效") ||
-                                    failText.startsWith("工具 '") ||
-                                    failText.contains("[工具错误]") ||
-                                    (failText.startsWith("{") && failText.contains("\"error\""))
-                                if (isFailure) {
-                                    val key = tool.toolName + "|" + tool.input.hashCode()
-                                    val n = (toolFailureCounts[key] ?: 0) + 1
-                                    toolFailureCounts[key] = n
-                                    // v4.7.10: 同工具连续失败计数 (不论参数) — 防"修参数被吸"
-                                    // 循环。模型对同一工具换参数反复试错时, 同参 key 每次都
-                                    // 不同 (旧机制看不见), 此计数专治该形态。
-                                    val cn = (toolConsecutiveFailures[tool.toolName] ?: 0) + 1
-                                    toolConsecutiveFailures[tool.toolName] = cn
-                                    if (n >= 3) {
-                                        CallTracer.event("TOOL", "failure_loop_break",
-                                            "same-failure x" + n + ": " + tool.toolName, metrics = sseDiagMetrics())
-                                        return@run listOf(UIMessagePart.Text(
-                                            "⚠️ 这是第 " + n + " 次以完全相同的参数调用 " + tool.toolName + " 并得到相同错误 (错误: " + failText.take(120) + ")。" +
-                                            "以相同方式重复该调用不会产生不同结果, 请立即停止重复。可选路径: " +
-                                            "1) 重新确认你实际意图的工具名 (检查工具列表, 是否写错或选了错误工具); " +
-                                            "2) 若是参数问题, 先补齐必填参数再调用; " +
-                                            "3) 若该工具确实不可用, 换用其他工具 (可用 invoke_tools 查看可用工具) 或放弃该路径, 以文字向用户说明情况。" +
-                                            "禁止再发出与本次相同的调用。")) + truncated
-                                    }
-                                    if (cn >= 2) {
-                                        // v4.7.13: 软提示 → 强制指令升级 (分析报告实证:
-                                        // "软反馈对已经锚定的错误模式无效, 这是连续 N 次
-                                        // 不改的直接原因"; 现场: 思考说 A 动作做 B, 错误
-                                        // 历史自锚定)。阈值 3→2 提前打断, 文本改为指令式:
-                                        // 明确"停止 X"+"直接调用 Y"的下一步, 不再给选择题。
-                                        CallTracer.event("TOOL", "tool_loop_break",
-                                            "consecutive-fail x" + cn + ": " + tool.toolName, metrics = sseDiagMetrics())
-                                        return@run listOf(UIMessagePart.Text(
-                                            "【系统强制指令】你已连续 " + cn + " 次调用 " + tool.toolName + " 失败或被拦截。立即停止调用它 — 它无法帮助你完成任务。" +
-                                            "正确的下一步: 直接发出你真正需要的工具调用。例如搜索/查资料任务: 直接调用已加载的搜索工具" +
-                                            " (如 mcp__websearch__webSearchStd, 参数 {\"search_query\": \"你的查询\"})。" +
-                                            "所有已加载工具均已注册、可直接调用 — 无需移动、注册或任何准备动作。" +
-                                            (if (cn >= 4) "【最终警告】再次调用 " + tool.toolName + " 不会被受理, 也不会产生不同结果。" else "") +
-                                            " (原始错误: " + failText.take(100) + ")")) + truncated
-                                    }
-                                } else {
-                                    toolFailureCounts.remove(tool.toolName + "|" + tool.input.hashCode())
-                                    toolConsecutiveFailures.remove(tool.toolName)
-                                }
-                                truncated
-                            }
-                            val outChars = result.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }
-                            CallTracer.event("TOOL", "result_${toolDef.name}",
-                                "Exe输出: ${result.size} parts, ${outChars}c",
-                                mapOf("tool" to toolDef.name, "parts" to "${result.size}"))
-                            idempotentCache[idemKey] = finalOutput
-                            executedTools += tool.copy(
-                                output = finalOutput,
-                                startedAt = toolStartAt,
-                                finishedAt = toolEndAt
-                            )
-                            // v4.5.21: 真实行动计数 — 非 task_tool 工具的成功执行。
-                            // 任务清单空转检测的事实依据 (清单更新 vs 真实动作的比例)。
-                            if (toolDef.name != "task_tool") {
-                                me.rerere.rikkahub.data.ai.tools.TaskStateStore.realActionCounter += 1
-                            }
+                            execQueue += QueuedToolExec(tool, toolDef, args, idemKey, toolStartAt)
                         }.onFailure {
                             // 工具执行超时: 写回超时错误, 让模型继续 (不传播为取消)
                             if (it is TimeoutCancellationException) {
@@ -1103,15 +1080,153 @@ class GenerationHandler(
                 }
             }
 
-            // v4.8.98: 工具执行完成的瞬间后台预探活 (不阻塞) — 下一轮请求前的
-            // "半死连接剔除"在消息组装期并行完成, 工具后模型开口不再等探活。
-            run {
-                val pokeBase = ((provider as? ProviderSetting.OpenAI)?.baseUrl
-                    ?: (provider as? ProviderSetting.Claude)?.baseUrl)
-                val pokeKey = (provider as? ProviderSetting.OpenAI)?.apiKey
-                    ?: (provider as? ProviderSetting.Claude)?.apiKey
-                if (pokeBase != null) {
-                    runCatching { me.rerere.rikkahub.service.ConnectionWarmer.pokeAsync(pokeBase, pokeKey) }
+            // ── v4.8.105 (B): 阶段2 — 工具并行执行 (有界 4 路; 对齐 vercel/ai Promise.all
+            //    与 openai-agents 有界并发: 执行可并行, 记账必须保序) ──
+            val execOutcomes: List<ToolExecOutcome> = if (execQueue.isEmpty()) emptyList() else coroutineScope {
+                val sem = Semaphore(MAX_PARALLEL_TOOL_EXECUTIONS)
+                execQueue.map { item ->
+                    async {
+                        sem.withPermit {
+                            try {
+                                val value = withTimeout(TOOL_EXECUTION_TIMEOUT_MS) {
+                                    item.toolDef.execute(item.args)
+                                }
+                                ToolExecOutcome(item, value, System.currentTimeMillis(), null)
+                            } catch (e: TimeoutCancellationException) {
+                                CallTracer.event("TOOL", "timeout_${item.tool.toolName}",
+                                    "tool timed out after ${TOOL_EXECUTION_TIMEOUT_MS / 1000}s",
+                                    metrics = sseDiagMetrics())
+                                ToolExecOutcome(
+                                    item,
+                                    listOf(UIMessagePart.Text(
+                                        "Error: Tool execution timed out after ${TOOL_EXECUTION_TIMEOUT_MS / 1000}s (${item.tool.toolName}). " +
+                                            "The tool may be hanging on network/IO. Reconsider: different parameters, another tool (invoke_tools), or answer in text."
+                                    )),
+                                    System.currentTimeMillis(),
+                                    null,
+                                )
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
+                            } catch (e: Throwable) {
+                                ToolExecOutcome(item, null, System.currentTimeMillis(), e)
+                            }
+                        }
+                    }
+                }.awaitAll()
+            }
+
+            // ── v4.8.105 (B): 阶段3 — 保序记账 (截断 → 失败聚合 → 幂等缓存 → 写回;
+            //    与旧串行实现的判定顺序/文本逐字一致, 只把"执行"挪去了阶段2) ──
+            execOutcomes.forEach { outcome ->
+                val tool = outcome.item.tool
+                val toolDef = outcome.item.toolDef
+                val idemKey = outcome.item.idemKey
+                try {
+                    if (outcome.error != null) throw outcome.error
+                    val result = outcome.result ?: error("工具执行无产出")
+                    val toolStartAt = outcome.item.toolStartAt
+                    val toolEndAt = outcome.endAt
+                    val hasShellAccess = toolsInternal.any { it.name == "workspace_shell" }
+                    val truncated = maybeTruncateToolOutput(tool.toolCallId, result, hasShellAccess, tool.toolName)
+                    // v3.11.17: 连续相同失败熔断 — 判据: 结果文本以失败形态开头
+                    // (Missing:/Error/Invalid/MCP manager not initialized/未找到/超时)。
+                    // key = 工具名 + 参数指纹; 连续 ≥3 次相同失败后在回传文本
+                    // 前插入升级警告: 告知重复无用 + 给出三条修正路径。
+                    val finalOutput: List<UIMessagePart> = run {
+                        val failText = truncated.filterIsInstance<UIMessagePart.Text>()
+                            .joinToString(" ") { it.text }.trim()
+                        // v4.7.10: 判定扩展 — 现场 (GLM 吸住) 的两种错误形态此前
+                        // 均不匹配旧列表: ① 异常路径 JSON "{\"error\":...}"
+                        // (v4.7.9 起 "[工具错误]..."): ② 工具自身错误文本
+                        // "无效目标域..." / "工具 'xxx' 不存在"。失败计数从未
+                        // 累计 → 防循环机制从未触发 — 这就是"没拦住"的代码级原因。
+                        val isFailure = failText.startsWith("Missing:") ||
+                            failText.startsWith("Error") ||
+                            failText.startsWith("Invalid") ||
+                            failText.startsWith("MCP manager not initialized") ||
+                            failText.contains("工具 " + tool.toolName + " 未找到") ||
+                            failText.startsWith("Tool execution timed out") ||
+                            failText.startsWith("无效") ||
+                            failText.startsWith("工具 '") ||
+                            failText.contains("[工具错误]") ||
+                            (failText.startsWith("{") && failText.contains("\"error\""))
+                        if (isFailure) {
+                            val key = tool.toolName + "|" + tool.input.hashCode()
+                            val n = (toolFailureCounts[key] ?: 0) + 1
+                            toolFailureCounts[key] = n
+                            // v4.7.10: 同工具连续失败计数 (不论参数) — 防"修参数被吸"
+                            // 循环。模型对同一工具换参数反复试错时, 同参 key 每次都
+                            // 不同 (旧机制看不见), 此计数专治该形态。
+                            val cn = (toolConsecutiveFailures[tool.toolName] ?: 0) + 1
+                            toolConsecutiveFailures[tool.toolName] = cn
+                            if (n >= 3) {
+                                CallTracer.event("TOOL", "failure_loop_break",
+                                    "same-failure x" + n + ": " + tool.toolName, metrics = sseDiagMetrics())
+                                return@run listOf(UIMessagePart.Text(
+                                    "⚠️ 这是第 " + n + " 次以完全相同的参数调用 " + tool.toolName + " 并得到相同错误 (错误: " + failText.take(120) + ")。" +
+                                    "以相同方式重复该调用不会产生不同结果, 请立即停止重复。可选路径: " +
+                                    "1) 重新确认你实际意图的工具名 (检查工具列表, 是否写错或选了错误工具); " +
+                                    "2) 若是参数问题, 先补齐必填参数再调用; " +
+                                    "3) 若该工具确实不可用, 换用其他工具 (可用 invoke_tools 查看可用工具) 或放弃该路径, 以文字向用户说明情况。" +
+                                    "禁止再发出与本次相同的调用。")) + truncated
+                            }
+                            if (cn >= 2) {
+                                // v4.7.13: 软提示 → 强制指令升级 (分析报告实证:
+                                // "软反馈对已经锚定的错误模式无效, 这是连续 N 次
+                                // 不改的直接原因"; 现场: 思考说 A 动作做 B, 错误
+                                // 历史自锚定)。阈值 3→2 提前打断, 文本改为指令式:
+                                // 明确"停止 X"+"直接调用 Y"的下一步, 不再给选择题。
+                                CallTracer.event("TOOL", "tool_loop_break",
+                                    "consecutive-fail x" + cn + ": " + tool.toolName, metrics = sseDiagMetrics())
+                                return@run listOf(UIMessagePart.Text(
+                                    "【系统强制指令】你已连续 " + cn + " 次调用 " + tool.toolName + " 失败或被拦截。立即停止调用它 — 它无法帮助你完成任务。" +
+                                    "正确的下一步: 直接发出你真正需要的工具调用。例如搜索/查资料任务: 直接调用已加载的搜索工具" +
+                                    " (如 mcp__websearch__webSearchStd, 参数 {\"search_query\": \"你的查询\"})。" +
+                                    "所有已加载工具均已注册、可直接调用 — 无需移动、注册或任何准备动作。" +
+                                    (if (cn >= 4) "【最终警告】再次调用 " + tool.toolName + " 不会被受理, 也不会产生不同结果。" else "") +
+                                    " (原始错误: " + failText.take(100) + ")")) + truncated
+                            }
+                        } else {
+                            toolFailureCounts.remove(tool.toolName + "|" + tool.input.hashCode())
+                            toolConsecutiveFailures.remove(tool.toolName)
+                        }
+                        truncated
+                    }
+                    val outChars = result.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }
+                    CallTracer.event("TOOL", "result_${toolDef.name}",
+                        "Exe输出: ${result.size} parts, ${outChars}c",
+                        mapOf("tool" to toolDef.name, "parts" to "${result.size}"))
+                    idempotentCache[idemKey] = finalOutput
+                    executedTools += tool.copy(
+                        output = finalOutput,
+                        startedAt = toolStartAt,
+                        finishedAt = toolEndAt
+                    )
+                    // v4.5.21: 真实行动计数 — 非 task_tool 工具的成功执行。
+                    // 任务清单空转检测的事实依据 (清单更新 vs 真实动作的比例)。
+                    if (toolDef.name != "task_tool") {
+                        me.rerere.rikkahub.data.ai.tools.TaskStateStore.realActionCounter += 1
+                    }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    e.printStackTrace()
+                    executedTools += tool.copy(
+                        output = listOf(
+                            UIMessagePart.Text(
+                                json.encodeToString(
+                                    buildJsonObject {
+                                        put(
+                                            "error",
+                                            JsonPrimitive(buildString {
+                                                append("[工具错误] ${e.message ?: e.javaClass.simpleName}")
+                                            })
+                                        )
+                                    }
+                                )
+                            )
+                        )
+                    )
                 }
             }
 
@@ -1133,15 +1248,15 @@ class GenerationHandler(
             messages = messages.dropLast(1) + lastMessage.copy(parts = updatedParts)
             emit(
                 GenerationChunk.Messages(
-                    messages.transforms(
-                        transformers = outputTransformers,
-                        context = context,
-                        model = model,
-                        assistant = assistant,
-                        settings = settings
-                    )
+                    // v4.8.105 (A1): 前缀缓存 — 每步只重算变化的尾部 (此前全量重跑)
+                    cachedWriteBackTransforms(messages)
                 )
             )
+
+            // v4.8.105 (D/E): 活性信号 + 计时打点 — 工具完成 → 下一轮首包 (首包/清尾自动熄灭)
+            retry.lastToolEndAt = System.currentTimeMillis()
+            resumeSignalArmed = true
+            processingStatus.value = "工具已完成，继续生成中…"
         }
         // v3.11.6: 生成结束兜底清除重试提示 — 取消/异常路径不经过
         // 成功/预算耗尽分支, 提示会残留 (用户: 恢复后提示必须消失)
@@ -1564,6 +1679,15 @@ class GenerationHandler(
             )
             val preStreamMs = System.currentTimeMillis() - startMs
             Log.i(TAG, "Pre-stream ready in ${preStreamMs}ms, calling provider...")
+            // v4.8.105 (E): 无感衔接分解埋点 — 工具结束 → 请求就绪 (含组装/序列化/门)
+            if (retry.lastToolEndAt > 0) {
+                val postToolMs = System.currentTimeMillis() - retry.lastToolEndAt
+                me.rerere.ai.util.TraceLogger.log(
+                    "SSE", "resume: toolEnd→preStream=${postToolMs}ms (assembly=${preStreamMs}ms)"
+                )
+                CallTracer.event("PERF", "resume_gap", "toolEnd→preStream=${postToolMs}ms assembly=${preStreamMs}ms")
+                retry.lastToolEndAt = 0L
+            }
             // 4.2.0: 消费侧切原版 StreamChunkHandler (2.5.x 架构)
             val streamHandler = me.rerere.ai.ui.StreamChunkHandler(model = model)
             // v4.5.17: 仿 OpenCode 请求模式 — 开启且目标为 opencode.ai 网关时,
