@@ -59,7 +59,7 @@ internal fun mapExifOrientationToTransform(orientation: Int): ExifTransformType 
 // 会话尤甚)。按 路径+mtime+size 键缓存; 图片被编辑/覆盖后 mtime/size 变化
 // 自动失效 (与 Coil 工作区图缓存同一失效语义)。
 private val imageEncodeCache = object : LinkedHashMap<String, Pair<String, String>>(24, 0.75f, true) {
-    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<String, String>>) = size > 24
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<String, String>>) = size > 64  // v4.8.107: 24→64 防图片多时逐出重编码
 }
 private val imageEncodeCacheLock = Any()
 

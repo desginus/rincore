@@ -782,7 +782,90 @@ class ChatCompletionsAPI(
      * 请求前缀在已降级位置恒定 (消除滚动重算造成的每轮断裂点后移)。
      * 本层只做确定性替换: 带标记的 Image → 占位文本 (含原路径+read_image 指引)。
      */
+    // ── v4.8.107: 请求稳定性诊断器 — "上传图片后缓存全崩" 的现场定罪器 ──
+    // 每轮请求对 messages 逐条取稳定表征指纹, 与同会话上一轮对比; "非尾部消息"
+    // 出现变化 = 缓存前缀断裂点, 把第一条漂移消息的序号/角色/两版指纹摘要写入
+    // 运行日志 (tag=REQSTAB)。尾部两条以内的差异属正常演进 (最后消息随生成
+    // 更新/工具写回), 不报。纯只读, 永不影响请求内容。
+    private val requestStabilityCursor =
+        java.util.concurrent.ConcurrentHashMap<String, List<String>>()
+
+    private fun messageStabilityTag(m: UIMessage): String = buildString {
+        append(m.role.name)
+        m.parts.forEach { p ->
+            when (p) {
+                is UIMessagePart.Text -> {
+                    append("|T"); append(p.text.length); append(':'); append(p.text.hashCode())
+                }
+                is UIMessagePart.Reasoning -> {
+                    append("|R"); append(p.reasoning.length); append(':'); append(p.reasoning.hashCode())
+                }
+                is UIMessagePart.Image -> {
+                    append("|I"); append(p.url.length); append(':'); append(p.url.hashCode())
+                }
+                is UIMessagePart.Tool -> {
+                    append("|tool:"); append(p.toolName); append(':'); append(p.input.hashCode())
+                    p.output.forEach { o ->
+                        when (o) {
+                            is UIMessagePart.Text -> { append(':'); append(o.text.hashCode()) }
+                            is UIMessagePart.Image -> { append(":I"); append(o.url.hashCode()) }
+                            else -> append(":?")
+                        }
+                    }
+                }
+                else -> append("|?").append(p.javaClass.simpleName)
+            }
+        }
+    }
+
+    private fun reportRequestStability(key: String, messages: List<UIMessage>) {
+        runCatching {
+            val tags = messages.map { messageStabilityTag(it) }
+            if (requestStabilityCursor.size > 200) requestStabilityCursor.clear()
+            val prev = requestStabilityCursor.put(key, tags) ?: run {
+                me.rerere.ai.util.TraceLogger.log("REQSTAB", "baseline n=${tags.size}")
+                return
+            }
+            val n = minOf(prev.size, tags.size)
+            var idx = -1
+            for (i in 0 until n) {
+                if (prev[i] != tags[i]) { idx = i; break }
+            }
+            if (idx < 0) {
+                if (tags.size > prev.size) {
+                    me.rerere.ai.util.TraceLogger.log(
+                        "REQSTAB", "append-only +${tags.size - prev.size} (prefix ${prev.size} stable)"
+                    )
+                }
+                return
+            }
+            if (idx >= n - 2) return  // 尾部两条内属正常演进
+            val m = messages[idx]
+            me.rerere.ai.util.TraceLogger.log(
+                "REQSTAB",
+                "DRIFT #$idx (${prev.size}->${tags.size}) role=${m.role} now=[${tags[idx].take(90)}] prev=[${prev[idx].take(90)}]"
+            )
+        }
+    }
+
     private fun applyImageMarkers(messages: List<UIMessage>): List<UIMessage> {
+        // v4.8.107: 无标记短路 — 常规(无降级)对话完全零干预 (原逻辑无论有无标记
+        // 都全量 map 复制); 含图对话的常规路径由此与"无此体系"逐字节一致。
+        var anyMarked = false
+        scan@ for (msg in messages) {
+            for (part in msg.parts) {
+                if (part is UIMessagePart.Image &&
+                    part.metadata?.get("budget_dropped")?.jsonPrimitive?.contentOrNull == "true"
+                ) { anyMarked = true; break@scan }
+                if (part is UIMessagePart.Tool &&
+                    part.output.any { o ->
+                        o is UIMessagePart.Image &&
+                            o.metadata?.get("budget_dropped")?.jsonPrimitive?.contentOrNull == "true"
+                    }
+                ) { anyMarked = true; break@scan }
+            }
+        }
+        if (!anyMarked) return messages
         var replaced = 0
         val out = messages.map { msg ->
             val newParts = msg.parts.map { part ->
@@ -830,6 +913,11 @@ class ChatCompletionsAPI(
         // 高强度视觉工作流超限后整个请求被 [too_many_images] 拒绝, 用户全部进度中断。
         // 裁剪发生在请求副本上 (UI 不受影响), 保留最近图片, 超额部分降级为文本占位。
         val budgetedMessages = applyImageMarkers(messages)
+        // v4.8.107: 请求稳定性诊断 (REQSTAB) — 只读, 永不影响请求
+        reportRequestStability(
+            key = (params.sessionId ?: "-") + "|" + params.model.modelId,
+            messages = budgetedMessages,
+        )
         return buildJsonObject {
             put("model", params.model.modelId)
             put(

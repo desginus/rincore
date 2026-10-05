@@ -1304,10 +1304,17 @@ class GenerationHandler(
         // SettingClientPage 的描述不符); classic 维持预算闭环。
         // v4.7.24: 数量上限按模型判定 — 仅 GLM 网关 (GLM 字段 + OpenCode/CC 字段)
         // 限 6 张; 其他模型无数量限制 (字节限制仍在 applyImageBudgetMarking 内)
-        val imageCountLimit = if (isGlmGatewayModel(model, provider)) GLM_GATEWAY_IMAGE_LIMIT
+        // v4.8.107 (用户实证·"上传图片后缓存全崩"根治 — 对账原版后的修正):
+        // 图片预算/降级体系只对**严格网关** (GLM 经 OC/CC — 历史 too_many_images /
+        // TCP payload 场景) 生效; 普通 provider (DeepSeek/OpenAI 等) 回归原版形态 —
+        // 图直发、零预算干预。原版对所有 provider 均无此体系且无此问题; 预算标记
+        // 会改写历史图的 metadata/出站形态, 是"含图对话每轮请求构建"里唯一的
+        // 系统性自有偏差 (每上传即触发, 与原版最简单的路径形成最贵的差异)。
+        val strictImageGateway = isGlmGatewayModel(model, provider)
+        val imageCountLimit = if (strictImageGateway) GLM_GATEWAY_IMAGE_LIMIT
             else Int.MAX_VALUE
         val markedMessages: List<UIMessage> =
-            if (settings.imageUploadMode == "compat") effectiveMessages
+            if (settings.imageUploadMode == "compat" || !strictImageGateway) effectiveMessages
             else applyImageBudgetMarking(effectiveMessages, imageCountLimit)
 
         // 4.0.7: abilities 根本修复 — 自定义模型 (listModels 不带 abilities,
