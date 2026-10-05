@@ -341,8 +341,6 @@ class GenerationHandler(
         //    每步只重算变化尾部 (此前每步对全量消息重跑 transforms, 上下文越长约慢)。
         var writeBackTransformCacheIn: List<UIMessage> = emptyList()
         var writeBackTransformCacheOut: List<UIMessage> = emptyList()
-        // ② 工具完成 → 下一轮首包 之间的"继续生成中…"活性信号 (首包到达自动熄灭)。
-        var resumeSignalArmed = false
 
         suspend fun cachedWriteBackTransforms(input: List<UIMessage>): List<UIMessage> {
             var prefixLen = 0
@@ -607,11 +605,6 @@ class GenerationHandler(
                     lengthContinuationState = lengthContinuationState,
                     messages = messages,
                     onUpdateMessages = {
-                        // v4.8.105 (D): 首包到达 → 熄灭"继续生成中"活性信号
-                        if (resumeSignalArmed) {
-                            resumeSignalArmed = false
-                            processingStatus.value = null
-                        }
                         messages = it.transforms(
                             transformers = outputTransformers,
                             context = context,
@@ -1254,10 +1247,8 @@ class GenerationHandler(
                 )
             )
 
-            // v4.8.105 (D/E): 活性信号 + 计时打点 — 工具完成 → 下一轮首包 (首包/清尾自动熄灭)
+            // v4.8.105 (E): 计时打点 — 工具完成 → 下一轮首包 (resume_gap, 仅诊断)
             retry.lastToolEndAt = System.currentTimeMillis()
-            resumeSignalArmed = true
-            processingStatus.value = "工具已完成，继续生成中…"
         }
         // v3.11.6: 生成结束兜底清除重试提示 — 取消/异常路径不经过
         // 成功/预算耗尽分支, 提示会残留 (用户: 恢复后提示必须消失)

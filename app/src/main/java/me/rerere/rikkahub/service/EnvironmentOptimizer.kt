@@ -306,12 +306,12 @@ object ConnectionWarmer {
         }
     }
 
-    /** v4.8.105 (无感衔接): 轮首调用 = 关键路径零等待 —— 热 → 立即放行;
-     *  有在途预探活最多 join maxJoinMs (默认 500ms); 仍冷 → **不再同步探活**,
-     *  放行真实请求 + 后台补探。半死连接由真实请求首包超时暴露, 走既有断流重试链
-     *  (3 轮重试 + 清理连接池) 剔除恢复 —— 不再让每一轮都付探活等待税
-     *  (旧兜底: join 1.5s + 同步探活最长数秒, 用户体感"工具后更久"的来源之一)。 */
-    suspend fun awaitPokeIfStale(baseUrl: String, apiKey: String?, maxJoinMs: Long = 500L): Boolean {
+    /** v4.8.98 语义（v4.8.106 回调）：热 → 零等待放行；有在途预探活 join ≤maxJoinMs；
+     *  仍冷 → **同步快探活剔除半死连接**（connect/read 各 4s 上限，失败即清池）。
+     *  教训（v4.8.105→v4.8.106）: "冷=直接放行"在 VPN/抖动网络下会让真实请求整轮卡在
+     *  半死连接上直到首包超时 —— 比前置 4s 探活更伤体感。必须保留前置剔除语义。
+     *  预探活已在「工具执行开始前」提前发起（v4.8.105 C1），故此处兜底极少触发。 */
+    suspend fun awaitPokeIfStale(baseUrl: String, apiKey: String?, maxJoinMs: Long = 1500L): Boolean {
         val trimmed = baseUrl.trimEnd('/')
         if (trimmed.isBlank()) return false
         if (isRecentlyWarm(trimmed)) return true
@@ -319,8 +319,7 @@ object ConnectionWarmer {
             kotlinx.coroutines.withTimeoutOrNull(maxJoinMs) { job.join() }
             if (isRecentlyWarm(trimmed)) return true
         }
-        pokeAsync(trimmed, apiKey)
-        return false
+        return pokeProviderHost(trimmed, apiKey)
     }
 
     fun startProviderKeepAlive(
