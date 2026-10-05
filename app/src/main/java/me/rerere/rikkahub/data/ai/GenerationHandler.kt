@@ -54,6 +54,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -126,7 +127,7 @@ private data class RetryState(
 /** v4.8.105 (B): 待并行执行的工具 (阶段1顺序入队 → 阶段2并行执行 → 阶段3保序记账) */
 private class QueuedToolExec(
     val tool: UIMessagePart.Tool,
-    val toolDef: me.rerere.rikkahub.data.ai.tools.Tool,
+    val toolDef: Tool,
     val args: JsonElement,
     val idemKey: String,
     val toolStartAt: Long,
