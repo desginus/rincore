@@ -273,6 +273,11 @@ class SubAgentEngine(
                     if (budget.isExhausted(parentChatId)) {
                         budgetKilled.set(true)
                         runCatching { budget.flush(parentChatId) }
+                        // v4.8.108: 熔断诊断打点 — 已用/上限进运行日志（事后可查是谁烧的）
+                        me.rerere.ai.util.TraceLogger.log(
+                            "BUDGET",
+                            "熔断触发: used=${budget.used(parentChatId)} limit=${budget.limit()} chat=$parentChatId"
+                        )
                         registry.cancelAllForParent(parentChatId)
                         break
                     }

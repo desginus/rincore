@@ -1311,7 +1311,7 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="subagent_budget_title">子代理预算</string>
   <string name="subagent_budget_used">本对话已用 %1$s / %2$s tokens</string>
   <string name="subagent_budget_limit_label">上限（千 tokens）</string>
-  <string name="subagent_budget_hint">本对话已用 = 本对话全部子代理的累计消耗（含进行中的）。清零只重置本对话的计数；上限对所有对话生效。超出后：终止正在运行的子代理、禁止新派发，并告知模型。默认 100K。</string>
+  <string name="subagent_budget_hint">本对话已用 = 本对话全部子代理的累计消耗（含进行中的）。清零只重置本对话的计数；上限对所有对话生效。超出后：终止正在运行的子代理、禁止新派发，并告知模型。默认 1000K（每轮输入按全量计入）。</string>
   <string name="subagent_budget_save">保存</string>
   <string name="subagent_budget_reset">清零本对话</string>
   <string name="subagent_budget_icon">子代理预算</string>

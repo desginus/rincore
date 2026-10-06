@@ -14,7 +14,7 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * v4.8.88 — 子代理 Token 预算（按对话计）。v4.8.92 复核修整：
  *
- * 目标：一个对话通过子代理消耗的 Token 不得超过上限（默认 100K），超出即熔断：
+ * 目标：一个对话通过子代理消耗的 Token 不得超过上限（默认 1000K），超出即熔断：
  *   ① 终止正在运行的子代理（由引擎调 `cancelAllForParent` + 真停生成）
  *   ② 禁止新的派发（dispatch 前置闸门）
  *   ③ 明确告知模型（拒因文案）
@@ -61,7 +61,7 @@ class SubAgentBudget(private val settingsStore: SettingsStore) {
     /** flush / reset 串行化（防并发双写重复记账） */
     private val ledgerMutex = Mutex()
 
-    /** 当前上限（默认 100K） */
+    /** 当前上限（默认 1000K；v4.8.108 由 100K 提升——口径=账单口径） */
     fun limit(): Long = settingsStore.settingsFlow.value.subagentTokenBudget.coerceAtLeast(MIN_LIMIT)
 
     /** 已用 = 落盘值 + 未落盘增量 */

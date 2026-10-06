@@ -338,6 +338,7 @@ class SettingsStore(
                 preferences[ZONE_MODEL_VERSION] = settings.zoneModelVersion
                 preferences[SUBAGENT_TOKEN_BUDGET] = settings.subagentTokenBudget
                 preferences[SUBAGENT_TOKEN_USAGE] = JsonInstant.encodeToString(settings.subagentTokenUsage)
+                preferences[SUBAGENT_BUDGET_UPGRADED] = settings.subagentBudgetUpgraded
                 preferences[PRESET_SKILLS_SEED_VERSION] = settings.presetSkillsSeedVersion
                 preferences[TOOL_DESCRIPTION_OVERRIDES] = JsonInstant.encodeToString(settings.toolDescriptionOverrides)
                 preferences[CLASSIFIER_PROMPT] = settings.classifierPrompt
@@ -370,6 +371,7 @@ class SettingsStore(
         // v4.8.88: 子代理预算（每对话 Token 上限/已用）与预设技能播种版本
         val SUBAGENT_TOKEN_BUDGET = longPreferencesKey("subagent_token_budget")
         val SUBAGENT_TOKEN_USAGE = stringPreferencesKey("subagent_token_usage")
+        val SUBAGENT_BUDGET_UPGRADED = booleanPreferencesKey("subagent_budget_upgraded")
         val PRESET_SKILLS_SEED_VERSION = intPreferencesKey("preset_skills_seed_version")
         // ── 旧「工具域」键：v4.8.83 起只读一次用于迁移，不再写入（保存时清除）──
         val DOMAIN_NAME_OVERRIDES = stringPreferencesKey("domain_name_overrides")
@@ -541,7 +543,20 @@ class SettingsStore(
                 toolZones = fixedZones,
                 toolZoneLinks = fixedLinks,
                 zoneModelVersion = ZONE_MODEL_VERSION_CURRENT,
-                subagentTokenBudget = preferences[SUBAGENT_TOKEN_BUDGET] ?: 100_000L,
+                // v4.8.108: 子代理预算默认 100K→1000K 一次性升级（旧默认值自动升值；
+                // 用户手动调整过的值尊重保留；"已升级"标记随下次保存落盘，
+                // 标记落盘后本块不再改写任何值）
+                subagentTokenBudget = run {
+                    val raw = preferences[SUBAGENT_TOKEN_BUDGET]
+                    val upgraded = preferences[SUBAGENT_BUDGET_UPGRADED] ?: false
+                    if (upgraded) (raw ?: 1_000_000L)
+                    else when (raw) {
+                        null -> 1_000_000L
+                        100_000L -> 1_000_000L
+                        else -> raw
+                    }
+                },
+                subagentBudgetUpgraded = true,
                 subagentTokenUsage = preferences[SUBAGENT_TOKEN_USAGE]?.let {
                     runCatching { JsonInstant.decodeFromString<Map<String, Long>>(it) }.getOrDefault(emptyMap())
                 } ?: emptyMap(),
@@ -764,6 +779,7 @@ class SettingsStore(
             preferences[ZONE_MODEL_VERSION] = settings.zoneModelVersion
             preferences[SUBAGENT_TOKEN_BUDGET] = settings.subagentTokenBudget
             preferences[SUBAGENT_TOKEN_USAGE] = JsonInstant.encodeToString(settings.subagentTokenUsage)
+            preferences[SUBAGENT_BUDGET_UPGRADED] = settings.subagentBudgetUpgraded
             preferences[PRESET_SKILLS_SEED_VERSION] = settings.presetSkillsSeedVersion
             preferences[TOOL_DESCRIPTION_OVERRIDES] = JsonInstant.encodeToString(settings.toolDescriptionOverrides)
             preferences[CLASSIFIER_PROMPT] = settings.classifierPrompt
@@ -967,10 +983,15 @@ data class Settings(
     /** v4.8.87 工具区模型版本（v2 = id 不透明 + name/parentId）—— 一次性投影的幂等标记 */
     val zoneModelVersion: Int = ZONE_MODEL_VERSION_CURRENT,
     /**
-     * v4.8.88 子代理预算：一个对话通过子代理最多能消耗的 Token（默认 100K）。
+     * v4.8.88 子代理预算：一个对话通过子代理最多能消耗的 Token。
+     * v4.8.108: 默认 100K → 1000K（用户定版）。100K 在"每轮 input 全量计入"的
+     * 账单口径下只够 1-2 轮，三个并发子代理"刚派发即全体熔断"—— 误断根因即
+     * "口径 × 数值"严重不匹配（非假账 bug）。
      * 超出即熔断：终止正在运行的子代理 + 禁止新派发 + 告知模型。
      */
-    val subagentTokenBudget: Long = 100_000L,
+    val subagentTokenBudget: Long = 1_000_000L,
+    /** v4.8.108: 预算默认值升级标记（100K→1000K 一次性；防"旧默认值被反复回写"） */
+    val subagentBudgetUpgraded: Boolean = false,
     /** v4.8.88 每对话已消耗的子代理 Token（conversationId → tokens）。UI 可清零。 */
     val subagentTokenUsage: Map<String, Long> = emptyMap(),
     /** v4.8.88 预设技能播种版本（0=未播种；只增不复活用户删掉的技能） */
