@@ -588,8 +588,15 @@ class ChatCompletionsAPI(
                         Log.i(TAG, "onFailure: $exception")
                     }
                 } catch (e: Throwable) {
-                    Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
-                    exception = e
+                    // v4.8.109: 错误解析失败不得吞掉真实错误 —— 旧实现把"解析器自身的
+                    // 异常"覆盖为最终错误；保留连接/HTTP 层的原因, 并以响应码兜底。
+                    Log.w(TAG, "onFailure: failed to parse from $bodyRaw: ${e.message}")
+                    if (exception == null) {
+                        exception = HttpException(
+                            "HTTP ${response?.code ?: "?"}" +
+                                (bodyRaw?.take(200)?.let { " - $it" } ?: "")
+                        )
+                    }
                 }
 
                 // 仅在尚未收到任何数据时重试 (避免重复响应) — 移植 v2.9.8 稳定行为
@@ -1198,6 +1205,10 @@ class ChatCompletionsAPI(
             put("role", JsonPrimitive(message.role.name.lowercase()))
             if (message.parts.isOnlyTextPart()) {
                 put("content", message.parts.filterIsInstance<UIMessagePart.Text>().first().text)
+            } else if (message.parts.none { p -> p is UIMessagePart.Text || p is UIMessagePart.Image }) {
+                // v4.8.109: 空数组防线 — Document/Video/Audio 等 part 会被下方 when 忽略,
+                // "只有这类 part"的消息 content 会成空数组 → 网关拒绝。补占位文本兜底。
+                put("content", "[附件未加载]")
             } else {
                 putJsonArray("content") {
                     message.parts.forEach { part ->
@@ -1463,6 +1474,13 @@ class ChatCompletionsAPI(
 
             if (message.parts.isOnlyTextPart()) {
                 put("content", message.parts.filterIsInstance<UIMessagePart.Text>().first().text)
+            } else if (message.parts.none { p ->
+                    p is UIMessagePart.Text || p is UIMessagePart.Image || p is UIMessagePart.Tool
+                }
+            ) {
+                // v4.8.109: 空数组防线（同 cherry 分支 — 网关 zod "expected array to have >=1 items"
+                // 的根因是构建器忽略 Document/Video/Audio 后留下空 content）
+                put("content", "[附件未加载]")
             } else {
                 putJsonArray("content") {
                     message.parts.forEach { part ->

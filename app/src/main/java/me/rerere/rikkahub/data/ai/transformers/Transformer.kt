@@ -93,8 +93,12 @@ suspend fun List<UIMessage>.transforms(
     return transformers.fold(this) { acc, transformer ->
         runCatching { transformer.transform(ctx, acc) }
             .onFailure { e ->
+                // v4.8.109: 取消不是"组件故障" — 必须上抛（旧实现被 runCatching 吞掉,
+                // 用户"停止生成"后组件链仍在继续跑）。
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 android.util.Log.e("Transformer", "${transformer.javaClass.simpleName} failed: ${e.message}", e)
-                ctx.processingStatus.value = "消息处理组件 ${transformer.javaClass.simpleName.substringBefore("Transformer")} 异常, 已降级继续"
+                // v4.8.109 (用户定版): 不再向 UI 弹"…异常, 已降级继续"状态 —
+                // 降级是内部韧性机制, 不是用户事件; 诊断走日志 + CallTracer（运行日志页可查）。
                 me.rerere.rikkahub.data.ai.CallTracer.event(
                     "TRANSFORMER", "isolated_failure",
                     "${transformer.javaClass.simpleName}: ${e.message}",

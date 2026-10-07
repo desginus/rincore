@@ -1,16 +1,23 @@
-/* 【域 B·AI 传输】 — 本对话上传清单 | 地图: docs/APP_MAP.md §B */
+/* 【域 B·AI 传输】 — 附件注记（v4.8.109 重写） | 地图: docs/APP_MAP.md §B */
 package me.rerere.rikkahub.data.ai.transformers
 
 /*
- * v4.8.91: "本对话上传的文件"清单注入 —— 引导模型精确拿文件的核心件（用户定版思路）。
+ * v4.8.91 初版：上传清单注入**系统提示** <uploads_in_conversation>。
+ * v4.8.109 重写（用户实证 + 定版）：**缓存连续性**与**模型知晓**兼顾 —
  *
- * 不要让模型慢慢翻 /upload：每轮请求直接把当前上下文里出现过的上传文件按**先后**
- * 列给模型 —— 它能直接按路径读取；也能拿文件名前缀里的时间码让 upload_fetch 直取
- * （跨对话/历史文件同理）。这就是"上传区分区：看全部 / 只看本对话"的模型侧实现：
- * 本对话清单常驻本轮上下文，其余文件随时可按码/近列表反查。
+ * 问题（用户实证）：清单注入在系统提示 = 前缀首位，上传任何文件都改写系统提示
+ * → 整个已缓存前缀全断（"上传那次必崩、第二次纯文本恢复"现象的准确来源）。
  *
- * 无附件 → 零注入（不污染提示词缓存前缀）。
- * 扫描发生在 DocumentAsPromptTransformer **之前**（后者会把 Document part 转文本/移除）。
+ * 新形态：**注记锚定在附件消息自身**——
+ *   ① 对每条含"位于 /upload 的文档附件"的用户消息，在其文本**末端**追加一行
+ *      轻量注记「[用户上传了文档: 文件名（路径）]」；
+ *   ② 上传轮请求 = 上一轮请求 + 纯追加（注记只出现在新消息里）→ 历史前缀零破坏,
+ *      缓存连续（含图片上传：图片不产生任何注入, 天然连续）；
+ *   ③ 历史附件消息的注记只依赖其自身 parts → 逐轮字节恒定, 永不漂移；
+ *   ④ 模型知晓：新文档在消息末端有明确提示（旧系统提示清单被边缘化, 模型"无法知晓"）；
+ *   ⑤ 不突出：单行方括号、无格式噪音；无文档 → 零注入。
+ *
+ * 注册位置保持在 DocumentAsPromptTransformer **之前**（后者会把 Document part 转文本/移除）。
  */
 
 import android.net.Uri
@@ -18,65 +25,44 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.files.UploadCodes
+import java.io.File
 
 object UploadsListingTransformer : InputMessageTransformer {
-    private const val MAX_LISTED = 40
 
     override suspend fun transform(
         ctx: TransformerContext,
         messages: List<UIMessage>,
     ): List<UIMessage> {
-        val names = LinkedHashSet<String>()   // 按出现先后去重
-        messages.forEach { msg ->
-            msg.parts.forEach partLoop@{ part ->
-                val url = when (part) {
-                    is UIMessagePart.Document -> part.url
-                    is UIMessagePart.Image -> part.url
-                    is UIMessagePart.Audio -> part.url
-                    is UIMessagePart.Video -> part.url
-                    else -> null
-                } ?: return@partLoop
-                // 只统计真正位于 filesDir/upload 下的文件（附件/工具图等一律排除）
-                if (UploadCodes.codeForLocation(url) == null) return@partLoop
-                val name = runCatching { Uri.parse(url).path?.substringAfterLast('/') }.getOrNull()
-                if (!name.isNullOrBlank()) names.add(name)
+        var changed = false
+        val out = messages.map { msg ->
+            if (msg.role != MessageRole.USER) return@map msg
+            val docs = msg.parts.filterIsInstance<UIMessagePart.Document>()
+                .filter { UploadCodes.codeForLocation(it.url) != null }
+            if (docs.isEmpty()) return@map msg
+            val note = buildString {
+                append("\n\n[用户上传了文档: ")
+                append(docs.joinToString("、") { it.fileName })
+                append("（路径: ")
+                append(
+                    docs.mapNotNull { d ->
+                        runCatching { Uri.parse(d.url).path }.getOrNull()?.let { p ->
+                            "/upload/" + File(p).name
+                        }
+                    }.joinToString("、")
+                )
+                append("）]")
             }
-        }
-        if (names.isEmpty()) return messages
-
-        val list = names.toList()
-        val shown = if (list.size <= MAX_LISTED) list else list.takeLast(MAX_LISTED)
-        val note = buildString {
-            append("\n\n<uploads_in_conversation>\n")
-            append("Files uploaded in THIS conversation, in chronological order")
-            if (shown.size < list.size) append(" (last ${shown.size} of ${list.size})")
-            append(". Read them directly by these exact paths — do NOT browse /upload. ")
-            append("The filename prefix is the upload code (12-digit time code for new uploads); ")
-            append("for files from other conversations, resolve them with `upload_fetch` by code.\n")
-            shown.forEach { append("- /upload/").append(it).append('\n') }
-            append("</uploads_in_conversation>")
-        }
-
-        val systemIndex = messages.indexOfFirst { it.role == MessageRole.SYSTEM }
-        return if (systemIndex >= 0) {
-            messages.toMutableList().apply {
-                this[systemIndex] = this[systemIndex].appendUploadsNote(note)
+            val updated = msg.parts.toMutableList()
+            val textIdx = updated.indexOfLast { it is UIMessagePart.Text }
+            if (textIdx >= 0) {
+                val t = updated[textIdx] as UIMessagePart.Text
+                updated[textIdx] = t.copy(text = t.text + note)
+            } else {
+                updated.add(UIMessagePart.Text(note.trimStart()))
             }
-        } else {
-            listOf(UIMessage.system(note.trim())) + messages
+            changed = true
+            msg.copy(parts = updated)
         }
+        return if (changed) out else messages
     }
-}
-
-/** 把注记追加到消息的第一个文本 part（没有则补一个） */
-private fun UIMessage.appendUploadsNote(extra: String): UIMessage {
-    val updated = parts.toMutableList()
-    val firstTextIndex = updated.indexOfFirst { it is UIMessagePart.Text }
-    if (firstTextIndex >= 0) {
-        val text = updated[firstTextIndex] as UIMessagePart.Text
-        updated[firstTextIndex] = text.copy(text = text.text + extra)
-    } else {
-        updated.add(0, UIMessagePart.Text(extra))
-    }
-    return copy(parts = updated)
 }

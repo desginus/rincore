@@ -42,18 +42,29 @@ object DocumentAsPromptTransformer : InputMessageTransformer {
                         val documents = filterIsInstance<UIMessagePart.Document>()
                         if (documents.isNotEmpty()) {
                             documents.forEach { document ->
-                                val content = readDocumentContent(document)
-                                val file = resolveUploadFile(document)
-                                val path = file?.let { "/upload/" + it.name }
-                                val code = file?.let { UploadCodes.codeForFileName(it.name) }
-                                val attrs = buildString {
-                                    append(" name=\"").append(document.fileName).append('"')
-                                    if (code != null) append(" code=\"").append(code).append('"')
-                                    if (path != null) append(" path=\"").append(path).append('"')
+                                // v4.8.109: per-document 全兜底 — 任何读取/构建异常都必须完成
+                                // "移除 Document part + 占位文本替换"；Document part 残留会在出站
+                                // 构建器被忽略 → 消息 content 变空数组 → 网关拒绝
+                                // ("Too small: expected array to have >=1 items" 的根源)。
+                                val prompt = runCatching {
+                                    val content = readDocumentContent(document)
+                                    val file = resolveUploadFile(document)
+                                    val path = file?.let { "/upload/" + it.name }
+                                    val code = file?.let { UploadCodes.codeForFileName(it.name) }
+                                    val attrs = buildString {
+                                        append(" name=\"").append(document.fileName).append('"')
+                                        if (code != null) append(" code=\"").append(code).append('"')
+                                        if (path != null) append(" path=\"").append(path).append('"')
+                                    }
+                                    "<UploadFile" + attrs + ">\n" +
+                                        "```\n" + content + "\n```\n" +
+                                        "</UploadFile>"
+                                }.getOrElse { e ->
+                                    "<UploadFile name=\"" + document.fileName + "\">\n" +
+                                        "[附件读取失败: " + (e.message ?: e.javaClass.simpleName) +
+                                        " — 该附件未内联；如需查看请让用户重新发送]\n</UploadFile>"
                                 }
-                                val prompt = "<UploadFile" + attrs + ">\n" +
-                                    "```\n" + content + "\n```\n" +
-                                    "</UploadFile>"
+                                remove(document)
                                 add(0, UIMessagePart.Text(prompt))
                             }
                         }
@@ -70,6 +81,7 @@ object DocumentAsPromptTransformer : InputMessageTransformer {
                     val documents = filterIsInstance<UIMessagePart.Document>()
                     if (documents.isNotEmpty()) {
                         documents.forEach { document ->
+                          runCatching {
                             val file = resolveUploadFile(document)
                             val path = file?.let { "/upload/" + it.name }
                             val code = file?.let { UploadCodes.codeForFileName(it.name) }
@@ -95,6 +107,15 @@ object DocumentAsPromptTransformer : InputMessageTransformer {
                                 append("\n</UploadFile>")
                             }
                             add(0, UIMessagePart.Text(body))
+                          }.onFailure { e ->
+                              // v4.8.109: 兜底 — Document part 绝不残留（残留=出站空数组拒收）
+                              remove(document)
+                              add(0, UIMessagePart.Text(
+                                  "<UploadFile name=\"" + document.fileName + "\">\n" +
+                                      "[附件引用生成失败: " + (e.message ?: e.javaClass.simpleName) +
+                                      " — 如需查看请让用户重新发送]\n</UploadFile>"
+                              ))
+                          }
                         }
                     }
                 }
@@ -137,7 +158,16 @@ object DocumentAsPromptTransformer : InputMessageTransformer {
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> parseDocxAsText(file)
                 "application/vnd.openxmlformats-officedocument.presentationml.presentation" -> parsePptxAsText(file)
                 "application/epub+zip" -> parseEpubAsText(file)
-                else -> file.readText()
+                else -> {
+                    // v4.8.109: 二进制表格（xlsx/xls）不 readText 乱码 — 给出明确指引
+                    val lower = document.fileName.lowercase()
+                    if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
+                        "[xlsx 表格未内联（二进制表格不建议全量内联）。" +
+                            "需要查看时让模型使用沙盒工具按路径读取该文件。]"
+                    } else {
+                        file.readText()
+                    }
+                }
             }
         }.getOrElse {
             "[ERROR, failed to read file: " + document.fileName + "]"
