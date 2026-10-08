@@ -7,6 +7,8 @@ package me.rerere.rikkahub.data.ai.tools
  * 问题定位: 工作区工具报错/路径问题 → 本文件 + WorkspaceManager
  * 基线: 自研 | 地图: docs/APP_MAP.md §C | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
