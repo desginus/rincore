@@ -93,7 +93,6 @@ import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.Folder
-import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.ui.components.ai.AssistantPicker
 import me.rerere.rikkahub.ui.components.ui.BackupReminderCard
 import me.rerere.rikkahub.ui.components.ui.Greeting
@@ -105,14 +104,12 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.context.Navigator
 import com.dokar.sonner.ToastType
 import me.rerere.rikkahub.ui.hooks.EditStateContent
-import me.rerere.rikkahub.ui.hooks.readBooleanPreference
 import me.rerere.rikkahub.ui.hooks.rememberIsPlayStoreVersion
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.modifier.onClick
 import me.rerere.rikkahub.utils.navigateToChatPage
 import me.rerere.rikkahub.utils.toDp
 import org.koin.androidx.compose.koinViewModel
-import org.koin.compose.koinInject
 import kotlin.uuid.Uuid
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -130,7 +127,6 @@ fun ChatDrawerContent(
     val context = LocalContext.current
     val toaster = LocalToaster.current
     val isPlayStore = rememberIsPlayStoreVersion()
-    val repo = koinInject<ConversationRepository>()
 
     val activity = context as ComponentActivity
     val drawerVm: ChatDrawerVM = koinViewModel(viewModelStoreOwner = activity)
@@ -384,23 +380,11 @@ fun ChatDrawerContent(
                     val updateJob = vm.updateSettings(it)
                     scope.launch {
                         updateJob.join()
-                        // v4.8.110 (用户定版): 切换助手不再强制跳转到对话页 —
-                        // 在对话页: 保持"切到目标助手会话"的自然行为;
-                        // 其它页面 (工具矩阵/设置/历史…): 原地停留 (抽屉打开前的页面),
-                        // 仅收起抽屉 (小屏 Modal; 大屏常驻抽屉无此回调, 停留即可)。
-                        if (navController.current is Screen.Chat) {
-                            val id = if (context.readBooleanPreference("create_new_conversation_on_start", true)) {
-                                Uuid.random()
-                            } else {
-                                repo.getConversationsOfAssistant(it.assistantId)
-                                    .first()
-                                    .firstOrNull()
-                                    ?.id ?: Uuid.random()
-                            }
-                            navigateToChatPage(navigator = navController, chatId = id)
-                        } else {
-                            onRequestCloseDrawer?.invoke()
-                        }
+                        // v4.8.111 (用户定版·终版, 二次强调): 切换助手 = 只切助手 —
+                        // 不做任何导航。停留在他/她打开抽屉时的页面与会话
+                        // (对话页同样不跳到新助手的会话; 旧实现"跳默认对话页"已被用户明确否决)。
+                        // 仅收起小屏 Modal 抽屉; 大屏常驻抽屉无此回调、无需动作。
+                        onRequestCloseDrawer?.invoke()
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
