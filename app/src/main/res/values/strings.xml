@@ -718,6 +718,9 @@
   <string name="setting_mcp_page_add_one_to_get_started">Add one to get started</string>
   <string name="setting_mcp_page_basic_settings">Basic Settings</string>
   <string name="setting_mcp_page_custom_headers">Custom Headers</string>
+
+  <string name="setting_mcp_page_env_label">Environment Variables (one KEY=VALUE per line)</string>
+  <string name="setting_mcp_page_env_desc">Env vars injected when launching this stdio server (e.g. API keys, output dirs), passed through into the sandbox.</string>
   <string name="setting_mcp_page_custom_headers_desc">Add custom HTTP headers for MCP server requests</string>
   <string name="setting_mcp_page_delete_header">Delete Header</string>
   <string name="setting_mcp_page_enable">Enable</string>

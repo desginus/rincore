@@ -362,7 +362,9 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
                         navController = navController,
                         current = conversation,
                         vm = vm,
-                        settings = setting
+                        settings = setting,
+                        // v4.8.110: 切换助手原地停留时收起抽屉 (对话页切助手行为不变)
+                        onRequestCloseDrawer = { scope.launch { drawerState.close() } },
                     )
                 }
             ) {

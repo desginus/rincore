@@ -141,6 +141,34 @@ private class ToolExecOutcome(
     val error: Throwable?,
 )
 
+/**
+ * v4.8.110 (B·对齐 Claude Code toolOrchestration.partitionToolCalls): 工具执行分区 —
+ * 连续「并发安全」工具并为一批 (并行执行), 单个非安全工具各成一批 (串行)。
+ * 保守原则: 未知工具 = 非安全 (与 CC isConcurrencySafe 默认 false 一致)。
+ * 说明: shell/edit/写文件/MCP/管理操作等共享资源 (沙箱 proot、文件写、会话) 在
+ * 无差别并行下互踩, 正是"并行调用失败"老毛病的机制根因; 只读工具并行无此问题。
+ */
+private val CONCURRENCY_SAFE_TOOLS = setOf(
+    "workspace_read_file", "workspace_grep", "workspace_glob",
+    "read_image", "upload_fetch", "subagent_list", "subagent_get",
+)
+
+private fun partitionExecQueueByConcurrency(queue: List<QueuedToolExec>): List<Pair<List<QueuedToolExec>, Boolean>> {
+    val out = ArrayList<Pair<List<QueuedToolExec>, Boolean>>()
+    var cur = ArrayList<QueuedToolExec>()
+    var curSafe = false
+    for (item in queue) {
+        val safe = item.tool.toolName in CONCURRENCY_SAFE_TOOLS
+        if (cur.isEmpty() || (safe && curSafe)) {
+            cur.add(item); curSafe = safe
+        } else {
+            out.add(cur to curSafe); cur = arrayListOf(item); curSafe = safe
+        }
+    }
+    if (cur.isNotEmpty()) out.add(cur to curSafe)
+    return out
+}
+
 private const val TAG = "GenerationHandler"
 
 /** 顶层直连工具名 — 不参与工具区归类, 分层模式下直接注入 */
@@ -1074,39 +1102,27 @@ class GenerationHandler(
                 }
             }
 
-            // ── v4.8.105 (B): 阶段2 — 工具并行执行 (有界 4 路; 对齐 vercel/ai Promise.all
-            //    与 openai-agents 有界并发: 执行可并行, 记账必须保序) ──
-            val execOutcomes: List<ToolExecOutcome> = if (execQueue.isEmpty()) emptyList() else coroutineScope {
-                val sem = Semaphore(MAX_PARALLEL_TOOL_EXECUTIONS)
-                execQueue.map { item ->
-                    async {
-                        sem.withPermit {
-                            try {
-                                val value = withTimeout(TOOL_EXECUTION_TIMEOUT_MS) {
-                                    item.toolDef.execute(item.args)
-                                }
-                                ToolExecOutcome(item, value, System.currentTimeMillis(), null)
-                            } catch (e: TimeoutCancellationException) {
-                                CallTracer.event("TOOL", "timeout_${item.tool.toolName}",
-                                    "tool timed out after ${TOOL_EXECUTION_TIMEOUT_MS / 1000}s",
-                                    metrics = sseDiagMetrics())
-                                ToolExecOutcome(
-                                    item,
-                                    listOf(UIMessagePart.Text(
-                                        "Error: Tool execution timed out after ${TOOL_EXECUTION_TIMEOUT_MS / 1000}s (${item.tool.toolName}). " +
-                                            "The tool may be hanging on network/IO. Reconsider: different parameters, another tool (invoke_tools), or answer in text."
-                                    )),
-                                    System.currentTimeMillis(),
-                                    null,
-                                )
-                            } catch (e: kotlinx.coroutines.CancellationException) {
-                                throw e
-                            } catch (e: Throwable) {
-                                ToolExecOutcome(item, null, System.currentTimeMillis(), e)
-                            }
+            // ── v4.8.110 (B·对齐 Claude Code toolOrchestration): 工具执行分区 —
+            //    连续「并发安全」工具 (只读) 成批并行 (有界 4 路); 非安全工具 (shell/
+            //    edit/写文件/管理/MCP 等, 保守默认) 单个串行。v4.8.105 的「无差别并行」
+            //    是有副作用工具互踩的误判根源 (用户实证"并行调用失败"老毛病);
+            //    CC 模型 = partitionToolCalls: 执行可并行, 记账必须保序 (阶段3 不变)。
+            val execOutcomes: List<ToolExecOutcome> = if (execQueue.isEmpty()) {
+                emptyList()
+            } else {
+                val outcomeAcc = ArrayList<ToolExecOutcome>(execQueue.size)
+                partitionExecQueueByConcurrency(execQueue).forEach { (batch, safe) ->
+                    if (safe) {
+                        val batchOutcomes = coroutineScope {
+                            val sem = Semaphore(MAX_PARALLEL_TOOL_EXECUTIONS)
+                            batch.map { item -> async { sem.withPermit { executeToolItemSafe(item) } } }.awaitAll()
                         }
+                        outcomeAcc += batchOutcomes
+                    } else {
+                        batch.forEach { item -> outcomeAcc += executeToolItemSafe(item) }
                     }
-                }.awaitAll()
+                }
+                outcomeAcc
             }
 
             // ── v4.8.105 (B): 阶段3 — 保序记账 (截断 → 失败聚合 → 幂等缓存 → 写回;
@@ -1932,6 +1948,44 @@ class GenerationHandler(
 
     // invoke_tools 输出 exempt from truncation (工具列表必须完整)
     private val EXEMPT_FROM_TRUNCATION = setOf("invoke_tools")
+
+    /**
+     * v4.8.110 (B): 单个工具执行 (阶段2 执行单元) — 超时/取消/错误三态与旧实现逐字
+     * 一致; 并行批与串行批共用同一执行体。附 TOOLEXEC 诊断: 每个工具的耗时与结局
+     * 进运行日志 (CallTracer), 是并行批次失败时的直接证据。
+     */
+    private suspend fun executeToolItemSafe(item: QueuedToolExec): ToolExecOutcome {
+        val t0 = System.currentTimeMillis()
+        val outcome = try {
+            val value = withTimeout(TOOL_EXECUTION_TIMEOUT_MS) {
+                item.toolDef.execute(item.args)
+            }
+            ToolExecOutcome(item, value, System.currentTimeMillis(), null)
+        } catch (e: TimeoutCancellationException) {
+            CallTracer.event("TOOL", "timeout_${item.tool.toolName}",
+                "tool timed out after ${TOOL_EXECUTION_TIMEOUT_MS / 1000}s",
+                metrics = sseDiagMetrics())
+            ToolExecOutcome(
+                item,
+                listOf(UIMessagePart.Text(
+                    "Error: Tool execution timed out after ${TOOL_EXECUTION_TIMEOUT_MS / 1000}s (${item.tool.toolName}). " +
+                        "The tool may be hanging on network/IO. Reconsider: different parameters, another tool (invoke_tools), or answer in text."
+                )),
+                System.currentTimeMillis(),
+                null,
+            )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            ToolExecOutcome(item, null, System.currentTimeMillis(), e)
+        }
+        CallTracer.event(
+            "TOOLEXEC", item.tool.toolName,
+            "dt=" + (System.currentTimeMillis() - t0) + "ms " +
+                (outcome.error?.let { "fail=" + it.javaClass.simpleName + ": " + it.message?.take(120) } ?: "ok"),
+        )
+        return outcome
+    }
 
     private fun maybeTruncateToolOutput(
         toolCallId: String,

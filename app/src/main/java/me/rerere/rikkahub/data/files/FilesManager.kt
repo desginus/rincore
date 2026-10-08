@@ -32,6 +32,9 @@ import me.rerere.rikkahub.utils.getActivity
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
+/** v4.8.110 (B2): MCP 产物归集单文件上限 (与工作区读上限同语义) */
+private const val MAX_RESCUE_BYTES = 8L * 1024 * 1024
+
 class FilesManager(
     private val context: Context,
     private val repository: FilesRepository,
@@ -446,6 +449,65 @@ class FilesManager(
             runCatching { getFile(entity).delete() }
         }
         repository.deleteById(id) > 0
+    }
+
+    /**
+     * v4.8.110 (B2): MCP 产物归集 — MCP 输出按"全局视角"书写绝对路径, 受限助手
+     * (CWD 工作区) 按子目录视角解读必然失效。对"存在且不在调用方可见范围内"的文件:
+     * 复制到 /tool_outputs/<serverSlug>/rescued/ 并原样改写文本路径。
+     *  ① 可见范围 = 调用方 files 区 (workspaces/<callerRoot>/files + CWD 前缀) 或 /tool_outputs 共享区;
+     *  ② 单文件上限 8MB (与工作区读上限同语义), 超限跳过并在文本尾注说明 (不静默);
+     *  ③ 失败/跳过以尾注说明; 正常归集静默完成。
+     */
+    suspend fun rescueArtifactPathsByPolicy(
+        text: String,
+        serverSlug: String,
+        serverRoot: String?,   // MCP 绑定工作区的 root 目录名 (null=无法解析 /workspace 路径)
+        callerRoot: String?,   // 调用方助手工作区 root 目录名
+        callerCwd: String?,    // 调用方 CWD (相对 files 区; 空=整区可见)
+    ): String = withContext(Dispatchers.IO) {
+        val slug = serverSlug.takeIf { it.isNotBlank() && !it.contains("..") && !it.contains('/') } ?: "server"
+        val pathRegex = Regex("""(/workspace/|/tool_outputs/|/data/data/|/data/user/)[^\s"'`<>()\[\]]+""")
+        val literals = pathRegex.findAll(text).map { it.value }.distinct().toList()
+        if (literals.isEmpty()) return@withContext text
+
+        // 与 RepositoryModule 的 WorkspaceManager baseDir 对齐 (布局漂移时两处同步)
+        val workspacesBase = File(context.filesDir, "workspaces")
+        val callerVisibleRoot: File? = callerRoot?.let { root ->
+            val base = File(File(workspacesBase, root), "files")
+            val cwdRel = callerCwd?.trim('/')?.takeIf { it.isNotEmpty() }
+            if (cwdRel == null) base else File(base, cwdRel)
+        }
+        val sharedRootPath = File(context.filesDir, FileFolders.TOOL_OUTPUTS).absolutePath + File.separator
+        val notes = mutableListOf<String>()
+        var out = text
+        for (literal in literals) {
+            val src: File? = when {
+                literal.startsWith("/tool_outputs/") -> continue   // 共享区: 所有工作区可见, 无需归集
+                literal.startsWith("/workspace/") -> serverRoot?.let { root ->
+                    File(File(File(workspacesBase, root), "files"), literal.removePrefix("/workspace/"))
+                }
+                else -> File(literal) // /data/data|/data/user 全物理路径
+            }
+            if (src == null || !src.exists() || !src.isFile) continue
+            val srcPath = src.absolutePath
+            val inCallerVisible = callerVisibleRoot?.let { srcPath.startsWith(it.absolutePath + File.separator) } ?: false
+            if (inCallerVisible || srcPath.startsWith(sharedRootPath)) continue
+            if (src.length() > MAX_RESCUE_BYTES) {
+                notes += "「" + src.name + "」超过 " + (MAX_RESCUE_BYTES / 1024 / 1024) + "MB 未归集"
+                continue
+            }
+            val ok = runCatching {
+                val dir = File(File(context.filesDir, FileFolders.TOOL_OUTPUTS), "$slug/rescued").apply { mkdirs() }
+                val target = File(dir, src.name)
+                if (!target.exists() || target.length() != src.length()) {
+                    src.copyTo(target, overwrite = true)
+                }
+                out = out.replace(literal, "/tool_outputs/$slug/rescued/" + src.name)
+            }.isSuccess
+            if (!ok) notes += "「" + src.name + "」归集失败 (原路径保留)"
+        }
+        if (notes.isEmpty()) out else out + "\n[产物归集: " + notes.joinToString("; ") + "]"
     }
 
     suspend fun deleteOlderThan(

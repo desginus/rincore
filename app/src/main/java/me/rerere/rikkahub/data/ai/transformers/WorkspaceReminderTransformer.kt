@@ -196,6 +196,8 @@ private fun buildWorkspacePrompt(workspace: WorkspaceEntity, cwd: String? = null
     appendLine("- The skills directory is mounted at `/skills`. Each skill is a subdirectory `/skills/<skill-name>/` containing a `SKILL.md` (with `name` and `description` frontmatter) plus any supporting files. Read a skill's `SKILL.md` before using it, and follow its instructions.")
     appendLine("- Keep the /workspace root tidy: create a dedicated subfolder per task/project and put its files there, instead of dumping loose files and directories at the root.")
     appendLine("- Files the user uploaded are mounted at `/upload`. Treat `/upload` as READ-ONLY: read uploaded files from `/upload/<file-name>`, but never modify, overwrite, or delete anything there. If you need to change an uploaded file, copy it into `/workspace` first and edit the copy.")
+    // v4.8.110 (B3): /tool_outputs 语义定版 — 跨工作区共享产物区 (此前提示未交代, 模型不知道它存在)
+    appendLine("- The shared directory `/tool_outputs` is mounted in EVERY workspace (cross-workspace shared area). Use it to hand files between workspaces or to drop artifacts other assistants should see; its non-transcoded files are never auto-pruned.")
     // v4.8.91: 上传码直取 — 新文件是 12 位时间码 (即文件名前缀), 历史文件 8 位码; 禁止猜路径
     appendLine("- Every attachment carries an **upload code** (shown as `code=\"...\"` in its <UploadFile> tag; for new uploads it is the **filename prefix** — 12 digits like `1003002901` = upload time MMddHHmm + sequence). When the user refers to a file by code, or you need an uploaded file whose exact path you don't know, call `upload_fetch` with the code — it returns the precise `/upload/...` path directly. Never guess /upload paths or browse that folder blindly.")
     // v4.5.27: 助手级 CWD = 该助手的专一空间, 物理隔离在挂载层实现 —

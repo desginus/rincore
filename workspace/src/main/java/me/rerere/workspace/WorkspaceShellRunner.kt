@@ -34,6 +34,9 @@ data class WorkspaceShellContext(
     val shellCompatibilityMode: Boolean = false,
     // v4.8.72: 后台任务原语 — false 时省略 --kill-on-exit (proot 退出后子进程存活)
     val killOnExit: Boolean = true,
+    // v4.8.110 (B4): 调用方环境变量 — MCP stdio 启动等场景注入沙箱进程
+    // (在 `env -i` 白名单后以 KEY=VALUE argv 追加; key 非法跳过, 值无需转义)
+    val env: Map<String, String> = emptyMap(),
 )
 
 class HostShellRunner : WorkspaceShellRunner {

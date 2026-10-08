@@ -123,6 +123,8 @@ fun ChatDrawerContent(
     vm: ChatVM,
     settings: Settings,
     current: Conversation,
+    // v4.8.110: 抽屉收起回调 (小屏 Modal 传入; 大屏常驻抽屉为 null 且无需收起)
+    onRequestCloseDrawer: (() -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -382,15 +384,23 @@ fun ChatDrawerContent(
                     val updateJob = vm.updateSettings(it)
                     scope.launch {
                         updateJob.join()
-                        val id = if (context.readBooleanPreference("create_new_conversation_on_start", true)) {
-                            Uuid.random()
+                        // v4.8.110 (用户定版): 切换助手不再强制跳转到对话页 —
+                        // 在对话页: 保持"切到目标助手会话"的自然行为;
+                        // 其它页面 (工具矩阵/设置/历史…): 原地停留 (抽屉打开前的页面),
+                        // 仅收起抽屉 (小屏 Modal; 大屏常驻抽屉无此回调, 停留即可)。
+                        if (navController.current is Screen.Chat) {
+                            val id = if (context.readBooleanPreference("create_new_conversation_on_start", true)) {
+                                Uuid.random()
+                            } else {
+                                repo.getConversationsOfAssistant(it.assistantId)
+                                    .first()
+                                    .firstOrNull()
+                                    ?.id ?: Uuid.random()
+                            }
+                            navigateToChatPage(navigator = navController, chatId = id)
                         } else {
-                            repo.getConversationsOfAssistant(it.assistantId)
-                                .first()
-                                .firstOrNull()
-                                ?.id ?: Uuid.random()
+                            onRequestCloseDrawer?.invoke()
                         }
-                        navigateToChatPage(navigator = navController, chatId = id)
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),

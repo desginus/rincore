@@ -126,9 +126,9 @@ class McpManager(
             }
     }
 
-    suspend fun callTool(serverId: Uuid, toolName: String, args: JsonObject): List<UIMessagePart> {
+    suspend fun callTool(serverId: Uuid, toolName: String, args: JsonObject, ctx: McpCallContext? = null): List<UIMessagePart> {
         val result = try {
-            sessionRegistry.callTool(serverId, toolName, args)
+            sessionRegistry.callTool(serverId, toolName, args, ctx)
         } catch (e: CancellationException) {
             throw e
         } catch (e: McpClientUnavailableException) {
@@ -136,7 +136,8 @@ class McpManager(
         }
         return result.content.map { content ->
             when (content) {
-                is TextContent -> UIMessagePart.Text(content.text)
+                // v4.8.110 (B2): 文本里的绝对路径产物归集 (调用方可见范围外 → rescued + 改写)
+                is TextContent -> UIMessagePart.Text(rescueMcpArtifactPaths(content.text, serverId, ctx))
                 is ImageContent -> convertImageContentToFilePart(content)
                 else -> UIMessagePart.Text(JsonInstant.encodeToString(content))
             }
@@ -161,6 +162,29 @@ class McpManager(
         val freshConfig = oauthCoordinator.clearAuthorization(config)
         sessionRegistry.addClient(freshConfig)
     }
+
+    /**
+     * v4.8.110 (B2): 产物归集入口 — 解析 server/调用方的工作区 root 后交给
+     * FilesManager 策略函数; 任何失败降级为"原样 + 一行提示", 绝不让工具调用整体失败。
+     */
+    private suspend fun rescueMcpArtifactPaths(text: String, serverId: Uuid, ctx: McpCallContext?): String {
+        if (ctx?.workspaceId.isNullOrBlank() || !text.contains('/')) return text
+        return runCatching {
+            val wsRepo = workspaceRepository ?: return@runCatching text
+            val cfg = settingsStore.settingsFlow.value.mcpServers.find { it.id == serverId }
+            val slug = sanitizeRescueSlug(cfg?.commonOptions?.name ?: serverId.toString().take(8))
+            val serverRoot = (cfg as? McpServerConfig.StdioTransportServer)
+                ?.workspaceId?.takeIf { it.isNotBlank() }
+                ?.let { runCatching { wsRepo.getById(it)?.root }.getOrNull() }
+            val callerRoot = runCatching { wsRepo.getById(ctx.workspaceId)?.root }.getOrNull()
+            filesManager.rescueArtifactPathsByPolicy(text, slug, serverRoot, callerRoot, ctx.workspaceCwd)
+        }.getOrElse { e ->
+            text + "\n[产物归集失败: " + (e.message ?: e.javaClass.simpleName) + "]"
+        }
+    }
+
+    private fun sanitizeRescueSlug(name: String): String =
+        name.filter { it.isLetterOrDigit() || it in "._-" }.replace("..", "_").take(48).ifBlank { "server" }
 
     private suspend fun convertImageContentToFilePart(image: ImageContent): UIMessagePart.Image {
         val bytes = Base64.decode(image.data)

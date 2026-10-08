@@ -125,6 +125,13 @@ class ProotShellRunner(
             "TERM=xterm-256color",
             "LANG=C.UTF-8",
             "LC_ALL=C.UTF-8",
+        )
+        // v4.8.110 (B4): 调用方环境变量 — `env -i` 白名单之后追加 (重建环境时注入)。
+        // key 必须合法环境变量名 (非法跳过); 值经 argv 传递, 无 shell 解析, 无需转义。
+        context.env.entries
+            .filter { it.key.matches(Regex("[A-Za-z_][A-Za-z0-9_]*")) }
+            .forEach { entry -> command += "${entry.key}=${entry.value}" }
+        command += listOf(
             "/bin/bash",
             "-l",
             "-c",

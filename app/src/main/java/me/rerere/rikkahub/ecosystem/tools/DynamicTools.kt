@@ -25,6 +25,7 @@ import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.ai.mcp.McpCommonOptions
+import me.rerere.rikkahub.data.ai.mcp.McpCallContext
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
@@ -123,7 +124,14 @@ object DynamicTools {
                 parameters = { tool.inputSchema },
                 needsApproval = { tool.needsApproval },
                 execute = { input ->
-                    mcp.callTool(serverId, tool.name, if (input is kotlinx.serialization.json.JsonObject) input else kotlinx.serialization.json.JsonObject(emptyMap()))
+                    // v4.8.110 (B1): 调用方上下文 — 当前助手 workspaceId/CWD 随调用下传
+                    // (服务端 meta 直落工作区 + 客户端产物归集判定共用同一上下文)
+                    val assistant = settingsStore?.settingsFlow?.value?.getCurrentAssistant()
+                    val callCtx = assistant?.let { a ->
+                        val wsId = a.workspaceId?.toString()
+                        if (wsId.isNullOrBlank()) null else McpCallContext(wsId, a.workspaceCwd)
+                    }
+                    mcp.callTool(serverId, tool.name, if (input is kotlinx.serialization.json.JsonObject) input else kotlinx.serialization.json.JsonObject(emptyMap()), callCtx)
                 },
             )
         }

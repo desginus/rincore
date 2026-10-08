@@ -39,6 +39,12 @@ private const val READ_DEFAULT_LIMIT = 2000
 private const val READ_MAX_LIMIT = 10000
 private const val GREP_DEFAULT_MAX = 100
 private const val GREP_MAX_LIMIT = 500
+
+/**
+ * v4.8.110 (B6): 同路径编辑串行锁 — 并发 read-modify-write 丢更新的根治。
+ * key = workspaceId|cwd|path（保守: 不同 scope 映射各自为锁, 不误并不同物理文件）。
+ */
+private val editPathLocks = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>()
 private const val GLOB_DEFAULT_MAX = 200
 private const val GLOB_MAX_LIMIT = 1000
 
@@ -312,28 +318,42 @@ private fun createEditFileTool(
         val replaceAll = params["replace_all"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
         require(oldText.isNotEmpty()) { "old_text must not be empty" }
 
-        val original = workspaceRepository.readTextInRootfs(workspaceId, path, cwdRel)
-        // 逐级尝试 exact -> line_trimmed -> block_anchor 替换器, 见 TextReplacers.kt
-        val result = try {
-            replaceText(original, oldText, newText, replaceAll)
-        } catch (e: IllegalArgumentException) {
-            error("${e.message} (path: $path)")
-        }
-        val entry = workspaceRepository.writeTextInRootfs(workspaceId, path, result.updated, overwrite = true, cwd = cwdRel)
-        val diff = generateUnifiedDiff(original, result.updated, entry.path)
-        listOf(
-            UIMessagePart.Text(
-                text = buildJsonObject {
-                    put("path", entry.path)
-                    put("replacements", result.replacements)
-                    if (result.strategy != ExactReplacer.name) put("matchStrategy", result.strategy)
-                    put("sizeBytes", entry.sizeBytes)
-                    put("updatedAt", entry.updatedAt)
-                }.toString(),
-                // diff 存入 metadata 供 UI 渲染 diff view, 不会随工具结果发送给 API
-                metadata = diff?.let { d -> DiffMetadata(diff = d).toMetadata() },
+        // v4.8.110 (B6): 同路径串行化 — 并发批次中对同一文件的 edit 逐条
+        // read-modify-write（旧实现无保护: 并发丢更新 + 回执与最终内容不一致,
+        // 用户实证"4 条并发其中 2 条回执成功但内容未变"）。
+        val lockKey = "$workspaceId|$cwdRel|$path"
+        val lock = editPathLocks.computeIfAbsent(lockKey) { kotlinx.coroutines.sync.Mutex() }
+        lock.withLock {
+            val original = workspaceRepository.readTextInRootfs(workspaceId, path, cwdRel)
+            // 逐级尝试 exact -> line_trimmed -> block_anchor 替换器, 见 TextReplacers.kt
+            val result = try {
+                replaceText(original, oldText, newText, replaceAll)
+            } catch (e: IllegalArgumentException) {
+                error("${e.message} (path: $path)")
+            }
+            val entry = workspaceRepository.writeTextInRootfs(workspaceId, path, result.updated, overwrite = true, cwd = cwdRel)
+            // v4.8.110 (B6): 回执自检字段 — wrote/postHash 反映本次**落盘内容**;
+            // 串行化后回执与最终内容一致（冲突条目会以 0 匹配明确报错, 不假成功）。
+            val postHash = java.security.MessageDigest.getInstance("SHA-256")
+                .digest(result.updated.toByteArray(Charsets.UTF_8))
+                .joinToString("") { b -> "%02x".format(b) }
+            val diff = generateUnifiedDiff(original, result.updated, entry.path)
+            listOf(
+                UIMessagePart.Text(
+                    text = buildJsonObject {
+                        put("path", entry.path)
+                        put("replacements", result.replacements)
+                        if (result.strategy != ExactReplacer.name) put("matchStrategy", result.strategy)
+                        put("sizeBytes", entry.sizeBytes)
+                        put("updatedAt", entry.updatedAt)
+                        put("wrote", true)
+                        put("postHash", postHash)
+                    }.toString(),
+                    // diff 存入 metadata 供 UI 渲染 diff view, 不会随工具结果发送给 API
+                    metadata = diff?.let { d -> DiffMetadata(diff = d).toMetadata() },
+                )
             )
-        )
+        }
     },
 )
 
@@ -513,7 +533,7 @@ private fun createGrepTool(
             if command -v rg >/dev/null 2>&1; then
               rg --line-number --no-heading --color never -e $patternArg$globArg -- $pathArg 2>/dev/null | head -n $fetchLimit
             else
-              grep -rn -I -e $patternArg$grepInclude -- $pathArg 2>/dev/null | head -n $fetchLimit
+              grep -rn -I -E -e $patternArg$grepInclude -- $pathArg 2>/dev/null | head -n $fetchLimit
             fi
             exit 0
         """.trimIndent()

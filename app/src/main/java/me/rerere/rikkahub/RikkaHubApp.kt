@@ -340,11 +340,22 @@ class RikkaHubApp : Application() {
     }
 
     private fun cleanupToolOutputs() {
+        // v4.8.110 (B3, 用户定版): /tool_outputs 语义 = 跨工作区共享产物区,
+        // **不参与整目录回收**。旧实现为冷启动无条件 deleteRecursively() 整目录 —
+        // 用户产物与历史引用 ("Full output saved to: /tool_outputs/xxx") 全部断链
+        // (用户实证: 整目录清空事件)。现在只做"转存文件"老龄回收:
+        // 仅顶层 .txt、文件名匹配工具调用 id 形态 (call_* / toolu_* / tool_* / uuid),
+        // 且超过 7 天; 产物子目录与其它文件一律豁免。
         get<AppScope>().launch(Dispatchers.IO) {
             runCatching {
                 val dir = File(filesDir, FileFolders.TOOL_OUTPUTS)
-                if (dir.exists()) {
-                    dir.deleteRecursively()
+                if (!dir.exists()) return@runCatching
+                val cutoff = System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000
+                val transcodedName = Regex("^(call_|toolu_|tool_)[A-Za-z0-9_-]+\\.txt$|^[0-9a-fA-F\\-]{36}\\.txt$")
+                dir.listFiles()?.forEach { f ->
+                    if (f.isFile && transcodedName.matches(f.name) && f.lastModified() < cutoff) {
+                        runCatching { f.delete() }
+                    }
                 }
             }
         }

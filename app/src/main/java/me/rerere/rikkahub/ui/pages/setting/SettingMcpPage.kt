@@ -756,6 +756,37 @@ private fun McpCommonOptionsConfigure(
             )
         }
 
+        if (config is McpServerConfig.StdioTransportServer) {
+            HorizontalDivider()
+
+            // v4.8.110 (B4): stdio 环境变量编辑 (每行 KEY=VALUE) — 启动沙箱内 MCP
+            // 服务器时注入; 密钥等不再需要落文件。
+            FormItem(
+                label = { Text(stringResource(R.string.setting_mcp_page_env_label)) },
+                description = { Text(stringResource(R.string.setting_mcp_page_env_desc)) },
+            ) {
+                var envText by remember(config.id) {
+                    mutableStateOf(config.env.entries.joinToString("\n") { "${'$'}{it.key}=${'$'}{it.value}" })
+                }
+                OutlinedTextField(
+                    value = envText,
+                    onValueChange = { t ->
+                        envText = t
+                        val parsed = t.lineSequence().mapNotNull { line ->
+                            val idx = line.indexOf('=')
+                            val k = if (idx > 0) line.substring(0, idx).trim() else ""
+                            if (idx > 0 && k.matches(Regex("[A-Za-z_][A-Za-z0-9_]*"))) {
+                                k to line.substring(idx + 1).trim()
+                            } else null
+                        }.toMap()
+                        update(config.copy(env = parsed))
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2,
+                )
+            }
+        }
+
         HorizontalDivider()
 
         // 请求头配置

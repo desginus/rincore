@@ -331,6 +331,7 @@ class WorkspaceManager(
         root: String,
         command: String,
         cwd: String = "",
+        env: Map<String, String> = emptyMap(), // v4.8.110 (B4): 调用方环境变量 (MCP stdio env)
     ): Process? {
         require(command.isNotBlank()) { "Command is required" }
         val workingDir = fileSystem.resolve(filesDir(root), cwd)
@@ -349,6 +350,7 @@ class WorkspaceManager(
                 timeoutMillis = DEFAULT_COMMAND_TIMEOUT_MS,
                 stdin = null,
                 bindMounts = bindMounts,
+                env = env,
             )
         )
     }

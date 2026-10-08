@@ -24,6 +24,7 @@ import kotlinx.io.buffered
 import io.modelcontextprotocol.kotlin.sdk.shared.AbstractTransport
 import io.modelcontextprotocol.kotlin.sdk.shared.RequestOptions
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
+import io.modelcontextprotocol.kotlin.sdk.types.RequestMeta
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequestParams
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
@@ -47,6 +48,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
@@ -106,6 +109,17 @@ internal class McpStatusStore {
  * 每个 serverId 对应一个 [McpSession]，该 Session 的连接、同步、关闭和重连通过同一把 Mutex 串行执行。
  * Client 只有在 connect 与首次工具同步都成功后才对外可见。
  */
+
+/**
+ * v4.8.110 (B1): MCP 调用方上下文 — 随 callTool 下传。
+ * 服务端经 params._meta 读取 (rincore/workspaceCwd | workspaceId | rootfsFilesRoot),
+ * 客户端产物归集 (B2) 也复用同一上下文判定"调用方可见范围"。
+ */
+data class McpCallContext(
+    val workspaceId: String?,   // 调用方助手工作区 id (uuid 字符串)
+    val workspaceCwd: String?,  // 调用方助手 CWD (原样, 例 党课-CWD)
+)
+
 internal class McpSessionRegistry(
     private val settingsStore: SettingsStore,
     private val appScope: AppScope,
@@ -156,7 +170,7 @@ internal class McpSessionRegistry(
         }
     }
 
-    suspend fun callTool(serverId: Uuid, toolName: String, args: JsonObject): CallToolResult {
+    suspend fun callTool(serverId: Uuid, toolName: String, args: JsonObject, ctx: McpCallContext? = null): CallToolResult {
         val session = sessions[serverId]
             ?: throw McpClientUnavailableException("No MCP session for server $serverId")
         val freshConfig = oauthCoordinator.ensureFreshToken(session.config)
@@ -172,7 +186,19 @@ internal class McpSessionRegistry(
         return try {
             sdkClient.callTool(
                 request = CallToolRequest(
-                    params = CallToolRequestParams(name = toolName, arguments = args),
+                    // v4.8.110 (B1): 调用方上下文写进 _meta (独立字段, 不污染工具入参 schema;
+                    // 服务端约定: 读到 rincore/workspaceCwd 时把产物写到调用方工作区)
+                    params = CallToolRequestParams(
+                        name = toolName,
+                        arguments = args,
+                        meta = ctx?.workspaceId?.takeIf { it.isNotBlank() }?.let { wsId ->
+                            RequestMeta(buildJsonObject {
+                                put("rincore/workspaceCwd", ctx.workspaceCwd.orEmpty())
+                                put("rincore/workspaceId", wsId)
+                                put("rincore/rootfsFilesRoot", "/workspace")
+                            })
+                        },
+                    ),
                 ),
                 options = RequestOptions(timeout = 120.seconds),
             )
@@ -490,7 +516,7 @@ internal class McpSessionRegistry(
                 val repo = workspaceRepository
                     ?: throw IllegalStateException("viaWorkspace stdio requires WorkspaceRepository")
                 val p = runCatching {
-                    repo.launchProcess(config.workspaceId, config.command, "")
+                    repo.launchProcess(config.workspaceId, config.command, "", config.env)
                 }.getOrElse { e ->
                     Log.e("McpSessionRegistry", "viaWorkspace launch failed: ${e.message}")
                     throw IllegalStateException("workspace 启动 MCP 服务器失败: ${e.message}", e)
@@ -506,7 +532,7 @@ internal class McpSessionRegistry(
                     val workspaceId = config.workspaceId.takeIf { it.isNotBlank() }
                         ?: settingsStore.settingsFlow.value.getCurrentAssistant().workspaceId?.toString()
                         ?: throw e
-                    val wp = workspaceRepository?.launchProcess(workspaceId, config.command, "")
+                    val wp = workspaceRepository?.launchProcess(workspaceId, config.command, "", config.env)
                         ?: throw e
                     runCatching {
                         settingsStore.update { cur ->

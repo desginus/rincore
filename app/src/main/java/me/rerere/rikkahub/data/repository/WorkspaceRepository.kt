@@ -489,10 +489,11 @@ class WorkspaceRepository(
      * 启动常驻进程 (不等待) — MCP stdio 桥接: 在 workspace 沙箱内启动
      * Python/Node MCP 服务器, 进程流由调用方接管 (McpManager StdioClientTransport)。
      */
-    suspend fun launchProcess(id: String, command: String, cwd: String = ""): Process? = withContext(me.rerere.rikkahub.utils.AppDispatchers.Sandbox) {
+    // v4.8.110 (B4): env 透传 — MCP stdio 服务器环境变量注入 (launchProcess 链末端到 proot)
+    suspend fun launchProcess(id: String, command: String, cwd: String = "", env: Map<String, String> = emptyMap()): Process? = withContext(me.rerere.rikkahub.utils.AppDispatchers.Sandbox) {
         val workspace = dao.getById(id) ?: return@withContext null
         manager.ensureWorkspace(workspace.root)
-        manager.launchProcess(workspace.root, command, cwd)
+        manager.launchProcess(workspace.root, command, cwd, env)
     }
 
     suspend fun delete(id: String): Boolean {

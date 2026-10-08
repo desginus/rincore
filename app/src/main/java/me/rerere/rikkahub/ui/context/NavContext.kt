@@ -38,6 +38,9 @@ class Navigator(private val backStack: MutableList<NavKey>) {
     fun popBackStack() {
         if (backStack.size > 1) backStack.removeLastOrNull()
     }
+
+    /** v4.8.110: 当前栈顶屏 — 供 UI 判断"当前在哪个页面" (如切换助手是否原地停留)。 */
+    val current: NavKey? get() = backStack.lastOrNull()
 }
 
 class NavigateOptionsBuilder {

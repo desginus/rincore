@@ -108,6 +108,9 @@ sealed class McpServerConfig {
         val url: String = "",       // 可选: stdio server 暴露的 HTTP 地址
         val viaWorkspace: Boolean = false, // 通过 workspace 沙箱启动 (沙箱内有 Python/Node 运行时)
         val workspaceId: String = "",      // 目标 workspace id (viaWorkspace=true 时必填)
+        // v4.8.110 (B4): stdio 环境变量 — 上游 MCP 包普遍声明 environmentVariables
+        // (密钥等不再只能落文件); 经 launchProcess 链注入到 proot 沙箱进程。
+        val env: Map<String, String> = emptyMap(),
     ) : McpServerConfig() {
         override fun clone(id: Uuid, commonOptions: McpCommonOptions): McpServerConfig {
             return copy(id = id, commonOptions = commonOptions)
