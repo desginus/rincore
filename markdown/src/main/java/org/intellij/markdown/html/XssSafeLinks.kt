@@ -20,7 +20,7 @@ fun makeXssSafeDestination(s: CharSequence, fileAllowed: ((String) -> Boolean)? 
             ALLOWED_DATA_LINK_REGEX.containsMatchIn(trimmed) ||
                 (fileAllowed != null &&
                     trimmed.startsWith("file:", ignoreCase = true) &&
-                    fileAllowed.invoke(trimmed))
+                    fileAllowed.invoke(trimmed.toString()))
         else
             true
     } ?: "#"
