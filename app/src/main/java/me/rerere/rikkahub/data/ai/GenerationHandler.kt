@@ -1846,6 +1846,12 @@ class GenerationHandler(
                     }
                     Log.w(TAG, "network wait timeout (${waitedMs}ms) — fallback to normal retry chain")
                 }
+                // v4.8.114: 连接期失败识别 — Retry/Abort 两分支据此做可见化与文案
+                val connectPhase = isConnectPhaseFailure(e)
+                if (connectPhase) {
+                    CallTracer.event("NET", "connect_fail",
+                        "${e.javaClass.simpleName}: ${e.message}", metrics = sseDiagMetrics())
+                }
                 // 4.0.0 重写: 重试策略全部收敛至 RetryPolicy.kt (策略对象模式),
                 // 本处只保留职责原语: 分类 → 判决 → 回滚/delay/continue 或 终态抛出。
                 // 数值与文案逐字保留, 行为与旧嵌套链完全等价。
@@ -1861,6 +1867,17 @@ class GenerationHandler(
                             is RetryPhase.Init -> retry.init++
                             is RetryPhase.Stream -> retry.stream++
                             else -> {}
+                        }
+                        // v4.8.114: 重试可见化 — 连接期失败明确展示"正在重试",
+                        // 消除用户感知的数分钟静默"加载中" (成功/终态/离线等待路径
+                        // 都会覆盖或清空该状态, 无残留风险)
+                        if (connectPhase) {
+                            val used = when (phase) {
+                                is RetryPhase.Init -> retry.init
+                                is RetryPhase.Stream -> retry.stream
+                                else -> 0
+                            }
+                            processingStatus.value = "网络连接失败，自动重试中（第 $used 次）…"
                         }
                         // v4.7.18: 重试前清理连接池 — 断流多为连接层失效 (网络抖动/
                         // 僵尸连接/网卡问题), 复用陈旧连接会让重试立即再失败; 清理后
@@ -1885,9 +1902,20 @@ class GenerationHandler(
                         processingStatus.value = null
                         onUpdateMessages(messages)
                         Log.e(TAG, "retry aborted: ${verdict.message} — last error: ${e.message}")
-                        throw java.io.IOException(
-                            "[v${BuildConfig.VERSION_NAME}] ${verdict.message} (${e.message ?: "连接中断"})", e
-                        )
+                        // v4.8.114: 连接期失败终态文案可操作化 — 给出排查面而不是裸
+                        // 技术信息 (用户实证: 系统级按应用联网封锁时表现为数分钟
+                        // "加载中"后报连接失败, 用户无从下手)
+                        val abortMsg = if (connectPhase) {
+                            val proxyOn = settings.networkSetting.proxyEnabled
+                            "[v${BuildConfig.VERSION_NAME}] ${verdict.message} — 连接服务失败。" +
+                                "请检查：①系统联网控制/省流是否放行本应用（WLAN 与流量都查）" +
+                                (if (proxyOn) "；②应用内代理在当前网络是否可达（设置 → 偏好设置 → 网络，可先关闭代理对照）"
+                                 else "；②应用内代理设置（若曾开启过，见 设置 → 偏好设置 → 网络）") +
+                                "；③切换 WLAN/流量后重试。(${e.message ?: "连接中断"})"
+                        } else {
+                            "[v${BuildConfig.VERSION_NAME}] ${verdict.message} (${e.message ?: "连接中断"})"
+                        }
+                        throw java.io.IOException(abortMsg, e)
                     }
                 }
             }
@@ -1944,6 +1972,28 @@ class GenerationHandler(
             kotlinx.coroutines.delay(2000)
         }
         return !isDeviceOffline()
+    }
+
+    /**
+     * v4.8.114: 连接期失败识别 — 用户实证 (2026-10-09): 系统按应用联网封锁
+     * (澎湃 OS 联网控制/省流) 不会清掉 NET_CAPABILITY_INTERNET, isDeviceOffline()
+     * 拦不住 → 请求照发, connect 30s×多地址×重试链 = 数分钟静默"加载中"。
+     * 本判据用于 ①重试可见化 ②终态文案可操作化 ③NET 打点。保守匹配明确的
+     * 连接期异常类型 + 常见报错短语, 宁漏勿误 (误判会让服务端错误被贴上网络标签)。
+     */
+    private fun isConnectPhaseFailure(e: Throwable): Boolean {
+        if (e is java.net.UnknownHostException ||
+            e is java.net.ConnectException ||
+            e is java.net.SocketTimeoutException ||
+            e is java.net.NoRouteToHostException ||
+            e is java.net.SocketException
+        ) return true
+        val msg = (e.message ?: "").lowercase()
+        return msg.contains("failed to connect") ||
+            msg.contains("unable to resolve") ||
+            msg.contains("network is unreachable") ||
+            msg.contains("connect timed out") ||
+            msg.contains("connection refused")
     }
 
     // invoke_tools 输出 exempt from truncation (工具列表必须完整)
