@@ -910,63 +910,10 @@ private fun extractImagePathsFromText(text: String): List<String> {
         .toList()
 }
 
-private fun buildRenderUrl(workspaceId: String, path: String, cwd: String? = null): String {
-    // v4.5.27: CWD 专一空间 — 生成宿主完整路径时拼入 cwd 段, resolver 侧无需感知 cwd。
-    // host 字面形态输入 (含 workspaces/<UUID>/files/) 直接取其后段, 不再二次拼 cwd。
-    val hostRel = me.rerere.rikkahub.utils.normalizeHostWorkspacePath(path)?.removePrefix("/workspace/")
-    val rel = hostRel ?: run {
-        val base = path.trimStart('/').removePrefix("workspace/").removePrefix("/workspace/")
-        when {
-            cwd.isNullOrEmpty() -> base
-            // v4.8.73: 双前缀自愈 — base 已含 cwd 前缀 (模型把 host 渲染地址换算回
-            // /workspace/<cwd>/... 形态再传参) 时不再叠加; 叠加 = 地址解析全失败
-            // (渲染占位 + 保存失败 — "地址渲染法图片出问题"的根因之一)。
-            base == cwd || base.startsWith("$cwd/") -> base
-            else -> "$cwd/$base"
-        }
-    }
-    return "file:///data/data/me.rincore.app/files/workspaces/$workspaceId/files/$rel"
-}
-
-/**
- * v4.8.113: 「可直接输出后渲染」的 markdown 行 — 模型把 render_markdown 原样复述进
- * 回复正文, 图片即在气泡内显示 (配合 XssSafeLinks 的 file:// 私有目录放行)。
- * URL 按路径段 percent 编码 (中文/空格/括号等 markdown 敏感字符), resolver 端
- * percentDecodeLenient 解码还原; 无图片返回 null (零注入)。
- */
-private fun buildRenderMarkdown(workspaceId: String, paths: List<String>, cwd: String?): String? {
-    if (paths.isEmpty()) return null
-    val lines = paths.map { path ->
-        val rawName = path.substringAfterLast('/')
-        val alt = rawName.substringBeforeLast('.')
-            .replace(Regex("[\\[\\]()#`\\n\\r]"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
-            .ifBlank { "img" }
-        "![$alt](${encodeMarkdownUrl(buildRenderUrl(workspaceId, path, cwd))})"
-    }
-    return "以下是已生成图片的可直接输出渲染地址，把下面每一行原样复述到回复正文即可在气泡内显示图片:\n" +
-        lines.joinToString("\n")
-}
-
-private const val MD_URL_HEX = "0123456789ABCDEF"
-
-/** v4.8.113: markdown 内联 URL 编码 — 保留 [A-Za-z0-9-_.~$&*+,;=:@/]，其余按 UTF-8 %XX (internal 供单测) */
-internal fun encodeMarkdownUrl(url: String): String {
-    val safe = "-_.~$&*+,;=:@"
-    val sb = StringBuilder(url.length + 16)
-    for (ch in url) {
-        when {
-            ch == '/' -> sb.append('/')
-            ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch in safe -> sb.append(ch)
-            else -> ch.toString().toByteArray(Charsets.UTF_8).forEach { b ->
-                val v = b.toInt() and 0xFF
-                sb.append('%').append(MD_URL_HEX[v shr 4]).append(MD_URL_HEX[v and 0x0F])
-            }
-        }
-    }
-    return sb.toString()
-}
+// v4.8.115: buildRenderUrl / buildRenderMarkdown / encodeMarkdownUrl 已收口至
+// ToolImagePayload.kt (渲染地址单一来源; 规范形态 = percent 编码 file://, 全链唯一)。
+// 本文件三处产出点 (write_file / shell / read_image) 同包直调, 语义不变:
+// render_urls 与 render_markdown 现为同一形态, 不再存在"裸路径/编码串"双形态。
 
 private suspend fun WorkspaceRepository.readImageInRootfs(
     workspaceId: String,

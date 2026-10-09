@@ -13,6 +13,14 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import me.rerere.rikkahub.data.ai.tools.buildRenderUrl
+import me.rerere.rikkahub.data.ai.tools.extractRenderUrls
+import me.rerere.rikkahub.ui.components.richtext.decodeLocalFilePath
+import me.rerere.rikkahub.ui.components.richtext.isAppLocalImageUri
+import me.rerere.rikkahub.BuildConfig
 
 class WorkspacePathResolverTest {
 
@@ -247,5 +255,84 @@ class WorkspacePathResolverTest {
         assertEquals(r1!!.absolutePath, r2!!.absolutePath)
         assertEquals(4L, r2.length())
         assertTrue(r2.lastModified() >= 0)
+    }
+
+    // ── v4.8.115 渲染地址统一: 规范形态 = 编码 file://; 单一解码点 = Coil 认领层 ──
+    // 注意: debug 变体 applicationIdSuffix=".debug", pkg 一律取 BuildConfig.APPLICATION_ID
+    // 与 buildRenderUrl 内部同源 (硬编码包名在 debug 下必错)。
+
+    private fun pkg() = BuildConfig.APPLICATION_ID
+
+    @Test
+    fun renderUrl_canonical_encoded_and_roundtrip() {
+        val url = buildRenderUrl("wsid", "/workspace/桌面/受力图 (1).png", null)
+        // 编码形态: 中文/空格/括号不出现在地址里 (markdown 安全)
+        assertFalse(url.contains(' '))
+        assertFalse(url.contains('('))
+        assertFalse(url.contains("桌面"))
+        // 前缀 ASCII → XSS 门 (isAppPrivateFileUri, 默认 pkg 同源) 放行不受编码影响
+        assertTrue(isAppPrivateFileUri(url))
+        // 解码回环 (单一解码点所用的同一解码链; HOST_WS 锚点不含包名, 形态无关)
+        assertEquals("/桌面/受力图 (1).png", resolveWorkspaceRelPath(url))
+        // 幂等基准: 对原始路径编码一次 = 规范形态 (buildRenderMarkdown 不再二次编码)
+        assertEquals(
+            url,
+            encodeMarkdownUrl(
+                "file:///data/data/${pkg()}/files/workspaces/wsid/files/桌面/受力图 (1).png"
+            ),
+        )
+    }
+
+    @Test
+    fun payload_build_then_extract_roundtrip() {
+        val paths = listOf("/workspace/a/图1.png", "/workspace/b/图2.jpg")
+        val urls = paths.map { buildRenderUrl("wsid", it, null) }
+        val json = buildJsonObject {
+            put("render_urls", buildJsonArray { urls.forEach { add(JsonPrimitive(it)) } })
+            buildRenderMarkdown("wsid", paths, null)?.let { put("render_markdown", JsonPrimitive(it)) }
+        }
+        assertEquals(urls, extractRenderUrls(json))
+        // markdown 行内 URL 与 render_urls 逐字一致 (同一形态, 无二次转换)
+        urls.forEachIndexed { i, u ->
+            assertTrue(buildRenderMarkdown("wsid", paths, null)!!.contains("]($u)"))
+        }
+        // 防御: 异常输入返回空列表不抛错
+        assertEquals(emptyList<String>(), extractRenderUrls(null))
+        assertEquals(emptyList<String>(), extractRenderUrls(JsonPrimitive("not an object")))
+    }
+
+    @Test
+    fun localImage_claim_matrix() {
+        // 认领: workspace 虚拟形态 / host workspaces 锚点 / 私有 file:// (编码或裸) / 裸私有路径
+        assertTrue(isAppLocalImageUri("workspace://a/b.png"))
+        assertTrue(isAppLocalImageUri("file:///data/data/${pkg()}/files/workspaces/x/files/y.png"))
+        assertTrue(isAppLocalImageUri("file:///data/data/${pkg()}/files/upload/%E5%9B%BE1.png"))
+        assertTrue(isAppLocalImageUri("/data/data/${pkg()}/files/upload/图1.png"))
+        // 不认领: http / 外部存储 / 非私有 host 路径
+        assertFalse(isAppLocalImageUri("https://example.com/a.png"))
+        assertFalse(isAppLocalImageUri("file:///sdcard/a.png"))
+        assertFalse(isAppLocalImageUri("/tmp/a.png"))
+    }
+
+    @Test
+    fun localImage_decode_forms() {
+        // 编码 file:// → 中文还原
+        assertEquals(
+            "/data/data/${pkg()}/files/upload/图1.png",
+            decodeLocalFilePath("file:///data/data/${pkg()}/files/upload/%E5%9B%BE1.png"),
+        )
+        // /data/user/0 别名折叠
+        assertEquals(
+            "/data/data/${pkg()}/files/upload/图1.png",
+            decodeLocalFilePath("/data/user/0/${pkg()}/files/upload/%E5%9B%BE1.png"),
+        )
+        // 裸路径原样透传
+        assertEquals(
+            "/data/data/${pkg()}/cache/x.png",
+            decodeLocalFilePath("/data/data/${pkg()}/cache/x.png"),
+        )
+        // 异常形态不猜
+        assertNull(decodeLocalFilePath("file:/data/x.png"))
+        assertNull(decodeLocalFilePath("relative/path.png"))
     }
 }

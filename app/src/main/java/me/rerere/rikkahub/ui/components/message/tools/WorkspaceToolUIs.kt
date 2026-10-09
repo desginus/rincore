@@ -475,11 +475,10 @@ private fun ShellExitStatus(content: JsonElement, style: androidx.compose.ui.tex
     )
 }
 
-/** v4.8.113: 工具输出 JSON 的 render_urls 数组 (统一字段, 单图也返回数组) */
+/** v4.8.113: 工具输出 JSON 的 render_urls 数组 (统一字段, 单图也返回数组)
+ *  v4.8.115: 提取逻辑收口 ToolImagePayload (渲染地址单一来源), 此处仅保留调用点。 */
 private fun renderUrlsOf(content: JsonElement?): List<String> =
-    (content?.jsonObjectOrNull?.get("render_urls") as? JsonArray)
-        ?.mapNotNull { it.jsonPrimitiveOrNull?.contentOrNull }
-        .orEmpty()
+    me.rerere.rikkahub.data.ai.tools.extractRenderUrls(content)
 
 private const val MAX_RENDER_PREVIEW = 4
 
