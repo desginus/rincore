@@ -267,6 +267,12 @@ class ChatCompletionsAPI(
         val deltaToolIds = java.util.concurrent.ConcurrentHashMap<Int, String>()
         val lastEventAt = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
         val isOpencode = providerSetting.baseUrl.toHttpUrl().host == "opencode.ai"
+        // v4.8.112 (B136): 聚合网关族判定 — opencode.ai 与 api.commandcode.ai 的流收尾
+        // 语义与官方直连不同: 常态不携带 [DONE] / finish_reason, 以 usage/cost 尾包收尾;
+        // 而"上游死亡前的最后 usage 报告"与"正常完结的 usage 尾包"形态完全相同 (B54 实锤)。
+        // 族群内一律不信任 usage 尾包启发式, 完成判定交 onClosed 详细判据。
+        val isAggregateChannel = isOpencode ||
+            providerSetting.baseUrl.toHttpUrl().host == "api.commandcode.ai"
         val sentAtMs = System.currentTimeMillis()
         val firstDataAtMs = java.util.concurrent.atomic.AtomicLong(0)
         val headerReceived = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -546,9 +552,13 @@ class ChatCompletionsAPI(
                             // 相同 — 无法据此区分"正常完结"与"被掐断"。opencode 一律不置
                             // 完成标记, 交 onClosed 详细判据 (truncated 疑点 → 合成
                             // Finish(length) 自动续写; 完整 → 照常完成)。
-                            // v4.5.12 的心跳否决只覆盖"usage 后仍有内容"场景 — 掐断紧随
-                            // usage 时仍会被旧启发式掩盖 (本轮实锤)。非 opencode 维持原行为。
-                            if (!chunkHasRealDelta && !isOpencode) gotFinish.set(true)
+                            // v4.8.56 的心跳否决只覆盖"usage 后仍有内容"场景 — 掐断紧随
+                            // usage 时仍会被旧启发式掩盖 (本轮实锤)。非网关通道维持原行为
+                            // (官方直连常态有 [DONE]/finish_reason, 兼容回退不变)。
+                            // v4.8.112 (B136): 门控扩面到聚合网关族 (含 api.commandcode.ai —
+                            // 此前的盲区: CC 通道走"非 opencode"分支, usage 尾包照旧置完成标记,
+                            // 掐断被静默判为正常完成 = DeepSeek 静默中断的机制根因)。
+                            if (!chunkHasRealDelta && !isAggregateChannel) gotFinish.set(true)
                         }
 
                         val messageChunk = MessageChunk(
@@ -662,7 +672,7 @@ class ChatCompletionsAPI(
                     " finishReason=" + lastFinishReason + " events=" + eventCount +
                     " hasData=" + hasReceivedData.get() + " model=" + params.model.modelId)
                 if (!completed.get() && !gotFinish.get()) {
-                    if (isOpencode && hasReceivedData.get()) {
+                    if (isAggregateChannel && hasReceivedData.get()) {
                         // v3.8.42: 运行时自适应 —
                         //   行完整 + 有 content => 正常完成 (思考链与正文泾渭分明);
                         //   行完整 + 无 content + 有思考缓冲 => 思考正文化补发为正文
@@ -690,7 +700,7 @@ class ChatCompletionsAPI(
                                 truncated -> "content ends truncated (tail=\"${textTail.take(40)}\")"
                                 else -> "usage-tail suspect close (tail=\"${textTail.take(40)}\")"
                             }
-                            Log.w(TAG, "onClosed: opencode.ai cut detected ($why, model=${params.model.modelId} events=$eventCount) — synthetic length finish, auto-continue\nlast: ${dumpLastEvents()}")
+                            Log.w(TAG, "onClosed: gateway cut detected ($why, model=${params.model.modelId} events=$eventCount) — synthetic length finish, auto-continue\nlast: ${dumpLastEvents()}")
                             TraceLogger.log("SSE", "zen cut detected — synthetic length finish, auto-continue (events=$eventCount $why)")
                             trySend(
                                 MessageChunk(
@@ -714,11 +724,11 @@ class ChatCompletionsAPI(
                             val bodyText = reasoningBuffer.toString()
                             val bodyTail = if (bodyText.length > 80) bodyText.takeLast(80) else bodyText
                             if (looksTruncated(bodyTail)) {
-                                Log.w(TAG, "onClosed: opencode.ai reasoning-only truncated (tail=\"${bodyTail.take(40)}\") — keep data, notify")
+                                Log.w(TAG, "onClosed: gateway reasoning-only truncated (tail=\"${bodyTail.take(40)}\") — keep data, notify")
                                 TraceLogger.log("SSE", "zen reasoning-only truncated — keep data, notify user")
                                 close(OpenCodeStreamUnconfirmedException("OpenCode 输出被截断，已保留已生成内容"))
                             } else {
-                                TraceLogger.log("SSE", "opencode.ai closed after complete data (events=$eventCount) — no content, promoted reasoning as body (chars=${bodyText.length} tail=\"${bodyTail.take(40)}\")")
+                                TraceLogger.log("SSE", "gateway closed after complete data (events=$eventCount) — no content, promoted reasoning as body (chars=${bodyText.length} tail=\"${bodyTail.take(40)}\")")
                                 trySend(
                                     MessageChunk(
                                         id = "",
@@ -742,28 +752,64 @@ class ChatCompletionsAPI(
                         } else if (!hasTextContent && !hasToolCalls && reasoningTail.isNotBlank()) {
                             // v4.5.20 (用户实证): 纯思考无正文的关闭 = 思考阶段被掐,
                             // 非正常收尾 — 正常回合必有正文或工具。进重试链。
-                            Log.w(TAG, "onClosed: opencode.ai closed during reasoning-only phase (model=${params.model.modelId} events=$eventCount) — treat as interruption, retry\nlast: ${dumpLastEvents()}")
-                            TraceLogger.log("SSE", "opencode.ai closed during reasoning phase (no body/tools, events=$eventCount) — interruption, entering retry chain")
+                            Log.w(TAG, "onClosed: gateway closed during reasoning-only phase (model=${params.model.modelId} events=$eventCount) — treat as interruption, retry\nlast: ${dumpLastEvents()}")
+                            TraceLogger.log("SSE", "gateway closed during reasoning phase (no body/tools, events=$eventCount) — interruption, entering retry chain")
                             close(IOException("SSE 流在思考阶段被服务器关闭 (无正文输出, 无完成信号)"))
                         } else if (!hasTextContent && !hasToolCalls) {
                             // v4.5.20 (用户实证): 零输出空流 (仅角色/心跳块后即关) = 明确中断
-                            Log.w(TAG, "onClosed: opencode.ai closed with zero output (model=${params.model.modelId} events=$eventCount) — treat as interruption, retry\nlast: ${dumpLastEvents()}")
-                            TraceLogger.log("SSE", "opencode.ai closed with zero output (events=$eventCount) — interruption, entering retry chain")
+                            Log.w(TAG, "onClosed: gateway closed with zero output (model=${params.model.modelId} events=$eventCount) — treat as interruption, retry\nlast: ${dumpLastEvents()}")
+                            TraceLogger.log("SSE", "gateway closed with zero output (events=$eventCount) — interruption, entering retry chain")
                             close(IOException("SSE 流在输出任何内容前被服务器关闭 (无完成信号)"))
                         } else {
-                            TraceLogger.log("SSE", "opencode.ai closed after complete data (events=$eventCount) — treated as complete (body=$hasTextContent tools=$hasToolCalls, no completion signal on this gateway, tail=\"${textTail.take(40)}\" deltaKeys=\"$lastDeltaKeys\")")
+                            TraceLogger.log("SSE", "gateway closed after complete data (events=$eventCount) — treated as complete (body=$hasTextContent tools=$hasToolCalls, no completion signal on this gateway, tail=\"${textTail.take(40)}\" usageTail=${lastChunkWasUsageOnly.get()} lastParsed=$lastEventParsed deltaKeys=\"$lastDeltaKeys\")")
                             close()
                         }
                     } else {
                         Log.w(TAG, "onClosed: stream closed before completion — unexpected interruption" +
-                                " (completed=${completed.get()} gotFinish=${gotFinish.get()} hasData=${hasReceivedData.get()} opencode=$isOpencode model=${params.model.modelId} events=$eventCount lastParsed=$lastEventParsed)\nlast: ${dumpLastEvents()}")
+                                " (completed=${completed.get()} gotFinish=${gotFinish.get()} hasData=${hasReceivedData.get()} aggregate=$isAggregateChannel model=${params.model.modelId} events=$eventCount lastParsed=$lastEventParsed)\nlast: ${dumpLastEvents()}")
                         close(IOException("SSE 流在完成前被服务器关闭"))
                     }
                 } else {
-                    // v4.8.56: 显式完成明细入 trace — 用户导出日志可直接区分
-                    // [DONE] / 真 finish_reason 来源与内容尾部
-                    TraceLogger.log("SSE", "stream closed by server (completed=${completed.get()} finishReason=$lastFinishReason events=$eventCount hasText=$hasTextContent tail=\"${textTail.take(40)}\")")
-                    close()
+                    // v4.8.112 (B136): 「标准正常结束」正判据 — [DONE] 或真 finish_reason 之外的
+                    // 完成标记必须复核。非网关通道上 usage/cost 尾包会把完成标记置位 (历史
+                    // grok 兼容行为); 该形态与"上游死亡前最后 usage 报告"重合 (B54 实锤),
+                    // 单独作为完成证据时: 行残缺/尾部截断特征 → 有正文合成 Finish(length)
+                    // 走自动续写 (无缝, 有界), 无正文则进重试链 — 不再静默放行。
+                    val usageMaskedComplete = !completed.get() && gotFinish.get() &&
+                        lastFinishReason == null && lastChunkWasUsageOnly.get()
+                    val maskedCut = usageMaskedComplete &&
+                        (!lastEventParsed || looksTruncated(textTail) || looksTruncated(reasoningTail))
+                    if (maskedCut) {
+                        val why = if (!lastEventParsed) "mid-event truncation"
+                        else "content ends truncated (tail=\"${textTail.take(40)}\")"
+                        Log.w(TAG, "onClosed: usage-masked close rejected ($why, model=${params.model.modelId} events=$eventCount) — not treated as complete\nlast: ${dumpLastEvents()}")
+                        TraceLogger.log("SSE", "usage-mask close rejected ($why) — synthetic length finish / retry")
+                        if (hasTextContent) {
+                            trySend(
+                                MessageChunk(
+                                    id = "",
+                                    model = params.model.modelId,
+                                    choices = listOf(
+                                        UIMessageChoice(
+                                            index = 0,
+                                            delta = UIMessage(role = MessageRole.ASSISTANT, parts = emptyList()),
+                                            message = null,
+                                            finishReason = "length",
+                                        )
+                                    ),
+                                    usage = null,
+                                )
+                            ).onFailure { e -> Log.w(TAG, "onClosed: synthetic length finish dropped (${e?.message})") }
+                            close()
+                        } else {
+                            close(IOException("SSE 流疑似在无标准完成信号下被关闭 (usage 尾包, 无正文)"))
+                        }
+                    } else {
+                        // v4.8.56: 显式完成明细入 trace — 用户导出日志可直接区分
+                        // [DONE] / 真 finish_reason 来源与内容尾部
+                        TraceLogger.log("SSE", "stream closed by server (completed=${completed.get()} finishReason=$lastFinishReason events=$eventCount hasText=$hasTextContent tail=\"${textTail.take(40)}\")")
+                        close()
+                    }
                 }
             }
             }

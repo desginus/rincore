@@ -63,16 +63,34 @@ class ShareReceiverActivity : ComponentActivity() {
             else -> emptyList()
         }
 
-        // 复制到私有缓存 (外部 URI 授权在 finish 后失效) — IO 线程, 不阻塞冷启动
+        // 复制到私有缓存 (外部 URI 授权在 finish 后失效) — IO 线程, 不阻塞冷启动。
+        // v4.8.112 (用户实证"小概率空分享"): 复制失败不再静默丢弃 — 该 URI 原样保底
+        // 转发 (带读授权旗标), 并在有保底项时不做任务移除 (授权随任务存活)。
         lifecycleScope.launch(Dispatchers.IO) {
-            val localUris = fileUris.mapNotNull { copyToLocal(it) }
+            var fallbackCount = 0
+            val forwardedUris = ArrayList<Uri>(fileUris.size)
+            for (source in fileUris) {
+                val local = copyToLocal(source)
+                if (local != null) {
+                    forwardedUris.add(local)
+                } else {
+                    fallbackCount++
+                    forwardedUris.add(source)
+                }
+            }
             withContext(Dispatchers.Main) {
-                forwardToRoute(action, localUris, text, type)
+                forwardToRoute(action, forwardedUris, text, type, hasFallback = fallbackCount > 0)
             }
         }
     }
 
-    private fun forwardToRoute(action: String?, localUris: List<Uri>, text: String, type: String?) {
+    private fun forwardToRoute(
+        action: String?,
+        localUris: List<Uri>,
+        text: String,
+        type: String?,
+        hasFallback: Boolean = false,
+    ) {
         // SEND / SEND_MULTIPLE / VIEW / PROCESS_TEXT 统一为 SEND; 其他 action (TRANSLATE 等) 透传
         val normalizedAction = when (action) {
             Intent.ACTION_SEND,
@@ -87,7 +105,9 @@ class ShareReceiverActivity : ComponentActivity() {
             this.type = type ?: "*/*"
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                 Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                Intent.FLAG_ACTIVITY_CLEAR_TOP
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                // v4.8.112: 保底转发的原始 URI 依赖读授权 — 显式携带旗标
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
             putExtra(Intent.EXTRA_TEXT, text)
             when {
                 localUris.size == 1 -> putExtra(Intent.EXTRA_STREAM, localUris[0])
@@ -96,40 +116,88 @@ class ShareReceiverActivity : ComponentActivity() {
                 )
             }
         }
-        intent?.clipData?.let { clip -> forward.clipData = clip }
+        // v4.8.112: clipData 以「实际转发的 URI」重建 — 旧实现透传原始 clipData
+        // (引用的全是未复制的原始 URI, finish 后即不可读, 是空分享的疑点之一)。
+        if (localUris.isNotEmpty()) {
+            runCatching {
+                val clip = android.content.ClipData.newRawUri("", localUris[0])
+                for (i in 1 until localUris.size) {
+                    clip.addItem(android.content.ClipData.Item(localUris[i]))
+                }
+                forward.clipData = clip
+            }
+        }
 
         startActivity(forward)
 
-        // 延迟清理: 先让 RouteActivity 的启动事务落地, 再清中转任务 (隔离后互不影响, 此为第二层保险)
-        Handler(Looper.getMainLooper()).postDelayed({ finishAndRemoveTask() }, 600)
+        // 延迟清理: 先让 RouteActivity 的启动事务落地, 再清中转任务 (隔离后互不影响, 此为第二层保险)。
+        // v4.8.112: 含保底原始 URI 时仅 finish() — finishAndRemoveTask 会随任务移除回收读授权,
+        // 消费侧 (RouteActivity/ChatPage) 需要读取窗口; 任务 excludeFromRecents 不进最近任务。
+        if (hasFallback) {
+            Handler(Looper.getMainLooper()).postDelayed({ finish() }, 600)
+        } else {
+            Handler(Looper.getMainLooper()).postDelayed({ finishAndRemoveTask() }, 600)
+        }
     }
 
     /**
      * 将外部 content:// / file:// URI 复制到应用私有缓存, 返回 file:// URI。
      * 避免 finish() 后 URI 授权被回收导致 RouteActivity 无法读取。
+     *
+     * v4.8.112 (空分享加固):
+     * - 文件名 query 失败不再连带整体失败 (部分 provider 不支持 query);
+     * - 文件名消毒 (路径分隔符/非法字符), 防 File(dir, name) 逃逸或创建失败;
+     * - 备通道 openFileDescriptor (部分网盘 provider 只支持 fd 读取);
+     * - 双通道全失败 → 返回 null, 由调用方以原始 URI 保底转发。
      */
     private fun copyToLocal(sourceUri: Uri): Uri? {
         return try {
             val dir = File(this.cacheDir, "shared_incoming").apply { mkdirs() }
 
-            // 获取文件名
-            val fileName = contentResolver.query(sourceUri, null, null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val idx = cursor.getColumnIndex("_display_name")
-                    if (idx >= 0) cursor.getString(idx) else null
-                } else null
-            } ?: sourceUri.lastPathSegment ?: "shared_file"
+            val rawName = runCatching {
+                contentResolver.query(sourceUri, null, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val idx = cursor.getColumnIndex("_display_name")
+                        if (idx >= 0) cursor.getString(idx) else null
+                    } else null
+                }
+            }.getOrNull() ?: sourceUri.lastPathSegment ?: "shared_file"
+            val fileName = rawName
+                .replace(Regex("[\\\\/:*?\"<>|\\u0000-\\u001f]"), "_")
+                .take(120)
+                .ifBlank { "shared_file" }
 
             val destFile = File(dir, fileName)
-            contentResolver.openInputStream(sourceUri)?.use { input ->
-                destFile.outputStream().use { output ->
-                    input.copyTo(output)
-                }
+            // 主通道: InputStream
+            val primaryOk = runCatching {
+                val input = contentResolver.openInputStream(sourceUri)
+                    ?: error("openInputStream returned null for $sourceUri")
+                input.use { i -> destFile.outputStream().use { o -> i.copyTo(o) } }
+            }.onFailure { e ->
+                android.util.Log.w(TAG_LOG, "copyToLocal primary failed: $sourceUri", e)
+            }.isSuccess
+            // 备通道: FileDescriptor
+            val copied = primaryOk || runCatching {
+                contentResolver.openFileDescriptor(sourceUri, "r")?.use { pfd ->
+                    java.io.FileInputStream(pfd.fileDescriptor).use { i ->
+                        destFile.outputStream().use { o -> i.copyTo(o) }
+                    }
+                } ?: error("openFileDescriptor returned null for $sourceUri")
+            }.onFailure { e ->
+                android.util.Log.w(TAG_LOG, "copyToLocal fallback fd failed: $sourceUri", e)
+            }.isSuccess
+            if (!copied) {
+                runCatching { destFile.delete() }
+                return null
             }
             Uri.fromFile(destFile)
         } catch (e: Exception) {
-            android.util.Log.w("ShareReceiver", "copyToLocal failed: $sourceUri", e)
+            android.util.Log.w(TAG_LOG, "copyToLocal failed: $sourceUri", e)
             null
         }
+    }
+
+    companion object {
+        private const val TAG_LOG = "ShareReceiver"
     }
 }

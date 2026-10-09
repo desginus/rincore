@@ -14,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.net.toFile
 import com.dokar.sonner.ToastType
@@ -35,14 +36,17 @@ internal fun useCropLauncher(
 ): Pair<ActivityResultLauncher<Intent>, (Uri) -> Unit> {
     val context = LocalContext.current
     val toaster = LocalToaster.current
-    var cropOutputUri by remember { mutableStateOf<Uri?>(null) }
+    // v4.8.112: 裁剪输出状态用 rememberSaveable (String 路径) — Activity 重建后回执
+    // 仍能读到输出文件 (旧实现状态丢失 → RESULT_OK 分支拿 null → 裁剪结果被静默丢弃)
+    var cropOutputPath by rememberSaveable { mutableStateOf<String?>(null) }
+    fun cropOutputUriNow(): Uri? = cropOutputPath?.let { Uri.fromFile(File(it)) }
 
     val cropActivityLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         when (result.resultCode) {
             android.app.Activity.RESULT_OK -> {
-                cropOutputUri?.let { croppedUri ->
+                cropOutputUriNow()?.let { croppedUri ->
                     onCroppedImageReady(croppedUri)
                 }
             }
@@ -59,16 +63,16 @@ internal fun useCropLauncher(
                 )
             }
         }
-        cropOutputUri?.toFile()?.delete()
-        cropOutputUri = null
+        cropOutputUriNow()?.toFile()?.delete()
+        cropOutputPath = null
         onCleanup?.invoke()
     }
 
     val launchCrop: (Uri) -> Unit = { sourceUri ->
         val outputFile = File(context.appTempFolder, "crop_output_${System.currentTimeMillis()}.jpg")
-        cropOutputUri = Uri.fromFile(outputFile)
+        cropOutputPath = outputFile.absolutePath
 
-        var crop = UCrop.of(sourceUri, cropOutputUri!!).withOptions(UCrop.Options().apply {
+        var crop = UCrop.of(sourceUri, Uri.fromFile(outputFile)).withOptions(UCrop.Options().apply {
             setFreeStyleCropEnabled(freeStyleCropEnabled)
             setAllowedGestures(
                 UCropActivity.SCALE, UCropActivity.ROTATE, UCropActivity.NONE

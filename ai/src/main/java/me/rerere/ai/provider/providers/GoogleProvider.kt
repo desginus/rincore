@@ -388,6 +388,9 @@ class GoogleProvider(
         // 4.1.3 TTFT: Log.d 参数在 release 同样求值, 全量序列化纯浪费 — 删除
 
         var hasData = false
+        // v4.8.112 (B136): 完成信号跟踪 — Gemini 协议正常收尾必带 candidate.finishReason
+        // (STOP/MAX_TOKENS/…)。关流时缺此信号 = 断流, 进上层重试链。
+        var gotFinishReason = false
         val listener = object : EventSourceListener() {
             override fun onEvent(
                 eventSource: EventSource,
@@ -416,6 +419,8 @@ class GoogleProvider(
                             val groundingMetadata = candidateObj["groundingMetadata"]?.jsonObject
                             val finishReason =
                                 candidateObj["finishReason"]?.jsonPrimitive?.contentOrNull
+                            // v4.8.112 (B136): 非空 finishReason 即标准完成信号
+                            if (finishReason != null) gotFinishReason = true
 
                             val message = content?.let {
                                 parseMessage(buildJsonObject {
@@ -501,7 +506,15 @@ class GoogleProvider(
 
             override fun onClosed(eventSource: EventSource) {
                 Log.d(TAG, "onClosed")
-                close()
+                // v4.8.112 (B136): 正判据完成门 — 无 finishReason 的关流 = 断流, 进重试链
+                // (此前无条件 close(), 半截回复会被静默当正常完成保存)。
+                if (gotFinishReason) {
+                    close()
+                } else {
+                    Log.w(TAG, "onClosed: closed before completion (no finishReason) — treating as interruption")
+                    me.rerere.ai.util.TraceLogger.log("SSE", "google closed before completion — entering retry chain")
+                    close(java.io.IOException("SSE 流在完成前被服务器关闭 (无 finishReason)"))
+                }
             }
         }
 

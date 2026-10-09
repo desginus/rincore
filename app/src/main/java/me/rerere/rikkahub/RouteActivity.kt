@@ -249,6 +249,26 @@ class RouteActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * v4.8.112 (用户实证"小概率空分享"): 分享文件 URI 收集 — EXTRA_STREAM 优先,
+     * 缺失时兜底读 clipData (部分来源应用只填 clipData 或只填其一; 旧实现只认
+     * EXTRA_STREAM → 分享落地为空, 用户感知"跳转过来但没有任何文档")。
+     */
+    private fun shareFileUris(intent: Intent?): List<android.net.Uri> {
+        if (intent == null) return emptyList()
+        val fromExtra = when (intent.action) {
+            Intent.ACTION_SEND ->
+                listOfNotNull(intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM))
+            Intent.ACTION_SEND_MULTIPLE ->
+                intent.getParcelableArrayListExtra<android.net.Uri>(Intent.EXTRA_STREAM).orEmpty()
+            else -> emptyList()
+        }
+        if (fromExtra.isNotEmpty()) return fromExtra
+        return intent.clipData?.let { clip ->
+            (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri }
+        }.orEmpty()
+    }
+
     @Composable
     private fun ShareHandler(backStack: MutableList<NavKey>) {
         // 防止 recomposition 重复触发
@@ -300,9 +320,8 @@ class RouteActivity : ComponentActivity() {
             when (action) {
                 Intent.ACTION_SEND -> {
                     val text = intent?.getStringExtra(Intent.EXTRA_TEXT) ?: ""
-                    val uri = intent?.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
-                    val files = mutableListOf<String>()
-                    uri?.let { files.add(it.toString()) }
+                    // v4.8.112: EXTRA_STREAM 缺失时兜底 clipData (空分享来源修复)
+                    val files = shareFileUris(intent).map { it.toString() }
 
                     if (existingChatScreen != null && lastId == existingChatScreen.id) {
                         if (files.isNotEmpty() || text.isNotBlank()) {
@@ -326,8 +345,8 @@ class RouteActivity : ComponentActivity() {
                 }
                 Intent.ACTION_SEND_MULTIPLE -> {
                     val text = intent?.getStringExtra(Intent.EXTRA_TEXT) ?: ""
-                    val uris = intent?.getParcelableArrayListExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
-                    val files = uris?.map { it.toString() } ?: emptyList()
+                    // v4.8.112: 统一走 shareFileUris (含 clipData 兜底)
+                    val files = shareFileUris(intent).map { it.toString() }
 
                     if (existingChatScreen != null && lastId == existingChatScreen.id) {
                         if (files.isNotEmpty() || text.isNotBlank()) {
@@ -426,15 +445,12 @@ class RouteActivity : ComponentActivity() {
             when (action) {
                 Intent.ACTION_SEND -> {
                     val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
-                    val uri = intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
-                    val files = mutableListOf<String>()
-                    uri?.let { files.add(it.toString()) }
+                    val files = shareFileUris(intent).map { it.toString() }
                     addChat(text, files)
                 }
                 Intent.ACTION_SEND_MULTIPLE -> {
                     val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
-                    val uris = intent.getParcelableArrayListExtra<android.net.Uri>(Intent.EXTRA_STREAM)
-                    val files = uris?.map { it.toString() } ?: emptyList()
+                    val files = shareFileUris(intent).map { it.toString() }
                     addChat(text, files)
                 }
                 Intent.ACTION_PROCESS_TEXT -> {

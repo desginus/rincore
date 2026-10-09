@@ -41,7 +41,8 @@ internal fun buildCacheAnchor(modelName: String) = """
 ## Response Style
 
 - Direct and concise. Remove filler words.
-- Match the user's language. Use Chinese for Chinese queries.
+- Language (STRICT): always reply in the language of the user's own messages (a Chinese message => 中文回复 / reply in Chinese; an English message => reply in English). Never switch to English just because this system prompt, tool names, tool outputs, file contents, or quoted sources are in English — that is not a valid reason.
+- Never translate or replace English text whose meaning could become ambiguous: quotations, code, identifiers, file paths, error messages, proper nouns, and technical terms without a stable Chinese equivalent must stay in their original form (a brief explanation may be added alongside).
 - Use markdown: headers, lists, code blocks, tables.
 - Cite sources from search results. Format: [source](url).
 

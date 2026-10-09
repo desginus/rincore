@@ -194,6 +194,10 @@ class ResponseAPI(
         }
 
         var hasData = false
+        // v4.8.112 (B136): 标准完成信号跟踪 — [DONE] 或 response.completed。
+        // 关流时缺此信号 = 断流, 进上层重试链 (此前 onClosed 无条件 close(),
+        // 半截回复会被静默当正常完成保存 — 与 ChatCompletions 同族缺陷)。
+        var completedSignal = false
         val listener = object : EventSourceListener() {
             override fun onEvent(
                 eventSource: EventSource,
@@ -202,6 +206,7 @@ class ResponseAPI(
                 data: String
             ) {
                 if (data == "[DONE]") {
+                    completedSignal = true
                     close()
                     return
                 }
@@ -216,6 +221,7 @@ class ResponseAPI(
                     }
                 }
                 if (type == "response.completed") {
+                    completedSignal = true
                     close()
                 }
             }
@@ -275,7 +281,15 @@ class ResponseAPI(
             }
 
             override fun onClosed(eventSource: EventSource) {
-                close()
+                // v4.8.112 (B136): 正判据完成门 — 无 [DONE]/response.completed 的关流 = 断流,
+                // 交上层重试链自动恢复 (禁止静默把半截回复当完成)。
+                if (completedSignal) {
+                    close()
+                } else {
+                    Log.w(TAG, "onClosed: closed before completion (no [DONE]/response.completed) — treating as interruption")
+                    me.rerere.ai.util.TraceLogger.log("SSE", "responses closed before completion — entering retry chain")
+                    close(java.io.IOException("SSE 流在完成前被服务器关闭 (无 response.completed)"))
+                }
             }
         }
 

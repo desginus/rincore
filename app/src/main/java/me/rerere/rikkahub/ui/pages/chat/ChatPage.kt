@@ -238,12 +238,20 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
     //   ① vm.shareArgsConsumed: 首帧消费后置位, 页面重建 (抽屉→设置→返回) 不再重复
     //      填充 (修复"已发送的分享文档幽灵重现");
     //   ② 附件/文本追加到现有输入, 不覆盖 (修复"分享文档抹除输入框已有内容")。
+    val shareToaster = LocalToaster.current
+    val shareContext = LocalContext.current
     LaunchedEffect(files, text) {
         if (vm.shareArgsConsumed) return@LaunchedEffect
         if (files.isEmpty() && text.isNullOrEmpty()) return@LaunchedEffect
         vm.shareArgsConsumed = true
         if (files.isNotEmpty()) {
-            val localFiles = filesManager.createChatFilesByContents(files)
+            // v4.8.112 (空分享加固): 导入异常/零产物不得静默 — 旧实现异常即中断消费，
+            // 产物为空时用户只看到"跳转过来但什么都没有"。
+            val localFiles = runCatching {
+                filesManager.createChatFilesByContents(files)
+            }.onFailure { e ->
+                android.util.Log.e("ChatPage", "share file import failed", e)
+            }.getOrDefault(emptyList())
             val contentTypes = files.mapNotNull { file ->
                 filesManager.getFileMimeType(file)
             }
@@ -271,6 +279,14 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
                         ))
                     }
                 }
+            }
+            if (parts.isEmpty()) {
+                // v4.8.112: 失败可见 — 分享的文件全部未能读取 (源授权失效/来源文件不可读)
+                val names = fileNames.filterNotNull().joinToString("、").ifBlank { "${files.size} 个文件" }
+                shareToaster.show(
+                    shareContext.getString(R.string.chat_input_file_read_failed, names),
+                    type = ToastType.Error,
+                )
             }
             // 追加而非替换 (不抹除用户已写内容)
             inputState.messageContent = inputState.messageContent + parts
