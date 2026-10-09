@@ -103,6 +103,7 @@ import me.rerere.rikkahub.ui.components.table.DataTable
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.modifier.onClick
 import me.rerere.rikkahub.ui.theme.JetbrainsMono
+import me.rerere.rikkahub.utils.isAppPrivateFileUri
 import me.rerere.rikkahub.utils.toDp
 import org.intellij.markdown.IElementType
 import org.intellij.markdown.MarkdownElementTypes
@@ -117,7 +118,11 @@ import kotlin.time.Clock
 
 internal val flavour by lazy {
     GFMFlavourDescriptor(
-        makeHttpsAutoLinks = true, useSafeLinks = true
+        makeHttpsAutoLinks = true, useSafeLinks = true,
+        // v4.8.113 (用户实证"工具产图在正文不显示"根治①): 放行本应用私有目录 file:// —
+        // 工具结果 render_url (matplotlib/officecli 产图) 与聊天附件可被 ![]() 内联渲染;
+        // 渲染端 = Compose+Coil (非 WebView), 仅限 files/cache 私有目录, 其余 file:// 维持拦截
+        fileLinkAllowed = ::isAppPrivateFileUri,
     )
 }
 

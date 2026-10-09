@@ -768,7 +768,9 @@ class ClaudeProvider(
      *     任一方含 tool_result → 插 assistant 占位隔离 (合并必产生混排)
      *     双方均普通 user → 合并 content 块 (官方自动合并语义显式实现)
      *   循环收敛: 每次合并消息数 -1, 占位打断一对相邻; 违规对单调不增。
-     *   assistant 占位文本对模型语义中性 ("已收到工具结果")。
+     *   assistant 占位文本 (v4.8.113 升级): 纯中性文本 ("已收到工具结果") 曾被模型
+     *     原样复读当作回答 (用户实证: 工具产图轮模型只回了占位文本)。现文本带引导
+     *     语义 — 提示模型基于工具结果继续作答, 不再可被当作"最终回答"复读。
      */
     private fun normalizeMessageSequence(messages: JsonArray): JsonArray {
         val normStartMs = System.currentTimeMillis()
@@ -826,7 +828,7 @@ class ClaudeProvider(
                             putJsonArray("content") {
                                 add(buildJsonObject {
                                     put("type", "text")
-                                    put("text", "(已收到工具结果)")
+                                    put("text", "(工具结果已注入上文，请基于以上工具结果回答用户)")
                                 })
                             }
                         })

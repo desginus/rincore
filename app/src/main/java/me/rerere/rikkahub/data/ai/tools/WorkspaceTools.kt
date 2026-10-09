@@ -271,7 +271,13 @@ private fun createWriteFileTool(
         val resultJson = entry.toJson().toMutableMap()
         previousVersion?.let { resultJson["previous_version"] = JsonPrimitive(it) }
         if (path.isImagePath()) {
-            resultJson["render_url"] = JsonPrimitive(buildRenderUrl(workspaceId, path, cwdRel))
+            // v4.8.113: 统一 render_urls 数组 + render_markdown 直贴（模型原样复述进正文即显示）
+            resultJson["render_urls"] = buildJsonArray {
+                add(JsonPrimitive(buildRenderUrl(workspaceId, path, cwdRel)))
+            }
+            buildRenderMarkdown(workspaceId, listOf(path), cwdRel)?.let {
+                resultJson["render_markdown"] = JsonPrimitive(it)
+            }
         }
         listOf(UIMessagePart.Text(JsonObject(resultJson).toString()))
     },
@@ -374,8 +380,9 @@ private fun createShowFileTool(
         Present existing workspace files to the user as file chips attached to the conversation.
         Use this for documents, reports, or other downloadable files that the user may want to export/share.
         Show several at once with `paths` (array) — do NOT call this tool repeatedly for separate files.
-        Do NOT use this for images that should appear inline in the chat bubble — inline images are handled
-        automatically via render_url in workspace_read_file / workspace_write_file / workspace_shell results.
+        Do NOT use this for images that should appear inline in the chat bubble — image-producing tool results
+        include `render_urls` plus ready-to-echo `render_markdown` lines; copy those lines verbatim into your
+        reply text and the image renders inline in the chat bubble.
         The files must already exist — writing a file does NOT show it automatically; call this tool explicitly.
     """.trimIndent().replace("\n", " "),
     parameters = {
@@ -844,6 +851,10 @@ private fun createShellTool(
                         put("render_urls", buildJsonArray {
                             imagePaths.forEach { add(JsonPrimitive(buildRenderUrl(workspaceId, it, cwdRel))) }
                         })
+                        // v4.8.113: 直贴可直接输出的 markdown 行 — 模型原样复述进正文即显示
+                        buildRenderMarkdown(workspaceId, imagePaths, cwdRel)?.let {
+                            put("render_markdown", it)
+                        }
                     }
                 }.toString()
             )
@@ -917,6 +928,46 @@ private fun buildRenderUrl(workspaceId: String, path: String, cwd: String? = nul
     return "file:///data/data/me.rincore.app/files/workspaces/$workspaceId/files/$rel"
 }
 
+/**
+ * v4.8.113: 「可直接输出后渲染」的 markdown 行 — 模型把 render_markdown 原样复述进
+ * 回复正文, 图片即在气泡内显示 (配合 XssSafeLinks 的 file:// 私有目录放行)。
+ * URL 按路径段 percent 编码 (中文/空格/括号等 markdown 敏感字符), resolver 端
+ * percentDecodeLenient 解码还原; 无图片返回 null (零注入)。
+ */
+private fun buildRenderMarkdown(workspaceId: String, paths: List<String>, cwd: String?): String? {
+    if (paths.isEmpty()) return null
+    val lines = paths.map { path ->
+        val rawName = path.substringAfterLast('/')
+        val alt = rawName.substringBeforeLast('.')
+            .replace(Regex("[\\[\\]()#`\\n\\r]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .ifBlank { "img" }
+        "![$alt](${encodeMarkdownUrl(buildRenderUrl(workspaceId, path, cwd))})"
+    }
+    return "以下是已生成图片的可直接输出渲染地址，把下面每一行原样复述到回复正文即可在气泡内显示图片:\n" +
+        lines.joinToString("\n")
+}
+
+private const val MD_URL_HEX = "0123456789ABCDEF"
+
+/** v4.8.113: markdown 内联 URL 编码 — 保留 [A-Za-z0-9-_.~$&*+,;=:@/]，其余按 UTF-8 %XX (internal 供单测) */
+internal fun encodeMarkdownUrl(url: String): String {
+    val safe = "-_.~$&*+,;=:@"
+    val sb = StringBuilder(url.length + 16)
+    for (ch in url) {
+        when {
+            ch == '/' -> sb.append('/')
+            ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch in safe -> sb.append(ch)
+            else -> ch.toString().toByteArray(Charsets.UTF_8).forEach { b ->
+                val v = b.toInt() and 0xFF
+                sb.append('%').append(MD_URL_HEX[v shr 4]).append(MD_URL_HEX[v and 0x0F])
+            }
+        }
+    }
+    return sb.toString()
+}
+
 private suspend fun WorkspaceRepository.readImageInRootfs(
     workspaceId: String,
     path: String,
@@ -932,7 +983,13 @@ private suspend fun WorkspaceRepository.readImageInRootfs(
             buildJsonObject {
                 put("path", path)
                 put("description", "Image file read successfully")
-                put("render_url", buildRenderUrl(workspaceId, path, cwd))
+                // v4.8.113: 统一 render_urls 数组 + render_markdown 直贴
+                put("render_urls", buildJsonArray {
+                    add(JsonPrimitive(buildRenderUrl(workspaceId, path, cwd)))
+                })
+                buildRenderMarkdown(workspaceId, listOf(path), cwd)?.let {
+                    put("render_markdown", it)
+                }
             }.toString()
         ),
     )

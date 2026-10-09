@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -39,6 +40,7 @@ import me.rerere.ai.ui.DiffMetadata
 import me.rerere.ai.ui.metadataAs
 import me.rerere.common.http.jsonObjectOrNull
 import me.rerere.highlight.CodeHighlightText
+import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import androidx.compose.ui.res.stringResource
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ComputerTerminal01
@@ -224,6 +226,8 @@ object WriteFileToolUI : ToolUIRenderer {
     @Composable
     override fun Summary(context: ToolUIContext) {
         val text = remember(context) { textOf(context) } ?: return
+        // v4.8.113: 写入图片 (svg 等) 的缩略图
+        RenderUrlsPreview(context.content)
         FileContentSummary(
             text = text,
             path = context.arguments.getStringContent("path"),
@@ -238,6 +242,8 @@ object WriteFileToolUI : ToolUIRenderer {
             DefaultToolPreview(context = context)
             return
         }
+        // v4.8.113: 写入图片 (svg 等) 的缩略图
+        RenderUrlsPreview(context.content)
         FileContentPreview(path = context.arguments.getStringContent("path"), code = text)
     }
 }
@@ -368,6 +374,8 @@ object ShellToolUI : ToolUIRenderer {
         }
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             ShellExitStatus(content, MaterialTheme.typography.labelSmall)
+            // v4.8.113: 工具产图缩略图 (render_urls)
+            RenderUrlsPreview(content)
             if (combined.isNotEmpty()) {
                 Box(
                     modifier = Modifier
@@ -420,6 +428,8 @@ object ShellToolUI : ToolUIRenderer {
                 )
                 ShellExitStatus(content, MaterialTheme.typography.labelMedium)
             }
+            // v4.8.113: 工具产图缩略图 (render_urls)
+            RenderUrlsPreview(content)
             HighlightCodeBlock(
                 code = if (cwd.isNullOrBlank()) command else "# cwd: $cwd\n$command",
                 language = "bash",
@@ -463,6 +473,39 @@ private fun ShellExitStatus(content: JsonElement, style: androidx.compose.ui.tex
         style = style,
         color = if (ok) DiffAddedColor else MaterialTheme.colorScheme.error,
     )
+}
+
+/** v4.8.113: 工具输出 JSON 的 render_urls 数组 (统一字段, 单图也返回数组) */
+private fun renderUrlsOf(content: JsonElement?): List<String> =
+    (content?.jsonObjectOrNull?.get("render_urls") as? JsonArray)
+        ?.mapNotNull { it.jsonPrimitiveOrNull?.contentOrNull }
+        .orEmpty()
+
+private const val MAX_RENDER_PREVIEW = 4
+
+/**
+ * v4.8.113 (用户定版"工具产图直接可见"): 从工具输出的 render_urls 渲染内联缩略图。
+ * 显示层聚合 (不改请求不改落盘): 模型复述与否图片都在工具段可见, 点击放大。
+ */
+@Composable
+private fun RenderUrlsPreview(content: JsonElement?, modifier: Modifier = Modifier) {
+    val urls = remember(content) { renderUrlsOf(content) }
+    if (urls.isEmpty()) return
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        urls.take(MAX_RENDER_PREVIEW).forEach { url ->
+            ZoomableAsyncImage(
+                model = url,
+                contentDescription = null,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(160.dp)
+                    .clip(MaterialTheme.shapes.small),
+            )
+        }
+    }
 }
 
 /** 从工具输出 JSON 读取布尔字段 */

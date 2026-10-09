@@ -28,7 +28,9 @@ import org.intellij.markdown.parser.sequentialparsers.impl.*
  * `false` otherwise
  */
 open class CommonMarkFlavourDescriptor(protected val useSafeLinks: Boolean = true,
-                                       protected val absolutizeAnchorLinks: Boolean = false) : MarkdownFlavourDescriptor {
+                                       protected val absolutizeAnchorLinks: Boolean = false,
+                                       // v4.8.113: file:// 放行判定挂点 (应用注入本应用私有目录判定; null = 原版严格)
+                                       protected val fileLinkAllowed: ((String) -> Boolean)? = null) : MarkdownFlavourDescriptor {
     override val markerProcessorFactory: MarkerProcessorFactory = CommonMarkMarkerProcessor.Factory
 
     override fun createInlinesLexer(): MarkdownLexer {
@@ -98,7 +100,7 @@ open class CommonMarkFlavourDescriptor(protected val useSafeLinks: Boolean = tru
                         processEscapes = false
                     )
                     val linkDestination = LinkMap.normalizeDestination(linkText, false).let {
-                        if (useSafeLinks) makeXssSafeDestination(it) else it
+                        if (useSafeLinks) makeXssSafeDestination(it, fileLinkAllowed) else it
                     }
                     visitor.consumeTagOpen(node, "a", "href=\"$linkDestination\"")
                     visitor.consumeHtml(linkLabel)
@@ -113,14 +115,14 @@ open class CommonMarkFlavourDescriptor(protected val useSafeLinks: Boolean = tru
             MarkdownElementTypes.LINK_TITLE to TransparentInlineHolderProvider(),
 
             MarkdownElementTypes.INLINE_LINK to
-                    InlineLinkGeneratingProvider(baseURI, absolutizeAnchorLinks).makeXssSafe(useSafeLinks),
+                    InlineLinkGeneratingProvider(baseURI, absolutizeAnchorLinks).makeXssSafe(useSafeLinks, fileLinkAllowed),
 
             MarkdownElementTypes.FULL_REFERENCE_LINK to
-                    ReferenceLinksGeneratingProvider(linkMap, baseURI, absolutizeAnchorLinks).makeXssSafe(useSafeLinks),
+                    ReferenceLinksGeneratingProvider(linkMap, baseURI, absolutizeAnchorLinks).makeXssSafe(useSafeLinks, fileLinkAllowed),
             MarkdownElementTypes.SHORT_REFERENCE_LINK to
-                    ReferenceLinksGeneratingProvider(linkMap, baseURI, absolutizeAnchorLinks).makeXssSafe(useSafeLinks),
+                    ReferenceLinksGeneratingProvider(linkMap, baseURI, absolutizeAnchorLinks).makeXssSafe(useSafeLinks, fileLinkAllowed),
 
-            MarkdownElementTypes.IMAGE to ImageGeneratingProvider(linkMap, baseURI).makeXssSafe(useSafeLinks),
+            MarkdownElementTypes.IMAGE to ImageGeneratingProvider(linkMap, baseURI).makeXssSafe(useSafeLinks, fileLinkAllowed),
 
             MarkdownElementTypes.LINK_DEFINITION to object : GeneratingProvider {
                 override fun processNode(visitor: HtmlGenerator.HtmlGeneratingVisitor, text: String, node: ASTNode) {

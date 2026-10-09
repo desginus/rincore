@@ -183,6 +183,59 @@ class WorkspacePathResolverTest {
         assertNull(manager.resolveRootfsFileSafe(root, "/workspace/evil.png"))
     }
 
+    // ── isAppPrivateFileUri (v4.8.113 渲染门: markdown file:// 私有目录放行) ──
+
+    @Test
+    fun appPrivate_workspaceRenderUrl_allowed() {
+        assertTrue(
+            isAppPrivateFileUri(
+                "file:///data/data/me.rincore.app/files/workspaces/3f0be674-77cf-44aa-9efb-e9d3792b038f/files/KEEP-%E4%BA%A4%E4%BB%98%E5%8C%BA/mini.png",
+                pkg = "me.rincore.app",
+            )
+        )
+    }
+
+    @Test
+    fun appPrivate_dataUserAlias_allowed() {
+        assertTrue(
+            isAppPrivateFileUri(
+                "file:///data/user/0/me.rincore.app/cache/shared_incoming/a.pdf",
+                pkg = "me.rincore.app",
+            )
+        )
+    }
+
+    @Test
+    fun appPrivate_otherPackage_rejected() {
+        assertFalse(isAppPrivateFileUri("file:///data/data/com.other.app/files/a.png", pkg = "me.rincore.app"))
+    }
+
+    @Test
+    fun appPrivate_publicStorage_and_nonFilesDir_rejected() {
+        assertFalse(isAppPrivateFileUri("file:///sdcard/Download/a.png", pkg = "me.rincore.app"))
+        assertFalse(isAppPrivateFileUri("file:///data/data/me.rincore.app/databases/x.db", pkg = "me.rincore.app"))
+    }
+
+    @Test
+    fun appPrivate_nonFileScheme_rejected() {
+        assertFalse(isAppPrivateFileUri("https://example.com/a.png", pkg = "me.rincore.app"))
+    }
+
+    // ── encodeMarkdownUrl + resolver 解码回环 (v4.8.113 render_markdown 不变量) ──
+
+    @Test
+    fun markdownUrl_encode_roundTrip_viaResolver() {
+        val raw = "file:///data/data/me.rincore.app/files/workspaces/3f0be674-77cf-44aa-9efb-e9d3792b038f/files/KEEP-交付区/mini 1(2).png"
+        val encoded = encodeMarkdownUrl(raw)
+        assertFalse(encoded.contains(' '))
+        assertFalse(encoded.contains('('))
+        assertTrue(encoded.contains("KEEP-"))
+        assertEquals(
+            "/KEEP-交付区/mini 1(2).png",
+            resolveWorkspaceRelPath(encoded),
+        )
+    }
+
     @Test
     fun safe_mtimeChanges_reflected() {
         val (manager, root) = newManager()

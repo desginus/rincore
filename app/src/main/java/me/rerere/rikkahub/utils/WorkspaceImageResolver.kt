@@ -63,6 +63,26 @@ internal fun normalizeHostWorkspacePath(raw: String): String? {
     return "/workspace/" + afterUuid.substring("files/".length)
 }
 
+/**
+ * v4.8.113: file:// 渲染放行判定 — 仅本应用私有目录 (files/cache)。
+ * 由 Markdown.kt 的 flavour 注入 markdown XSS 安全链 (XssSafeLinks.fileAllowed):
+ * 工具产图 render_url 与聊天附件的 file:///data/data/<pkg>/... 地址放行，
+ * 其余 file:// 维持拦截。渲染端为 Compose+Coil (非 WebView)，无任意文件泄露面。
+ * 判据为字面前缀 (不做解码)：与 buildRenderUrl 产出形态一致。
+ */
+fun isAppPrivateFileUri(url: String, pkg: String = me.rerere.rikkahub.BuildConfig.APPLICATION_ID): Boolean {
+    val lower = url.trim().lowercase()
+    if (!lower.startsWith("file:")) return false
+    val p = pkg.lowercase()
+    val prefixes = listOf(
+        "file:///data/data/$p/files/",
+        "file:///data/data/$p/cache/",
+        "file:///data/user/0/$p/files/",
+        "file:///data/user/0/$p/cache/",
+    )
+    return prefixes.any { lower.startsWith(it) }
+}
+
 /** scheme/前缀是否为工作区地址 (前缀大小写不敏感, 路径本体大小写敏感) */
 fun isWorkspaceUri(raw: String?): Boolean {
     if (raw == null) return false

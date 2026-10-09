@@ -38,8 +38,10 @@ open class GFMFlavourDescriptor(
         useSafeLinks: Boolean = true,
         absolutizeAnchorLinks: Boolean = false,
         private val makeHttpsAutoLinks: Boolean = false,
-        private val useTagFilter: Boolean = false
-) : CommonMarkFlavourDescriptor(useSafeLinks, absolutizeAnchorLinks) {
+        private val useTagFilter: Boolean = false,
+        // v4.8.113: file:// 放行判定挂点 (透传 CommonMark; 应用侧注入本应用私有目录判定)
+        fileLinkAllowed: ((String) -> Boolean)? = null
+) : CommonMarkFlavourDescriptor(useSafeLinks, absolutizeAnchorLinks, fileLinkAllowed) {
     /**
      * For ABI compatibility.
      */
@@ -114,7 +116,7 @@ open class GFMFlavourDescriptor(
 
                         val link = EntityConverter.replaceEntities(linkText, true, false)
                         val normalizedDestination = LinkMap.normalizeDestination(absoluteLink, false).let {
-                            if (useSafeLinks) makeXssSafeDestination(it) else it
+                            if (useSafeLinks) makeXssSafeDestination(it, fileLinkAllowed) else it
                         }
                         visitor.consumeTagOpen(node, "a", "href=\"$normalizedDestination\"")
                         visitor.consumeHtml(link)
