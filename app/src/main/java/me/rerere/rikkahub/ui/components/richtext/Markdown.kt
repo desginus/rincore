@@ -1069,20 +1069,33 @@ private fun TableNode(node: ASTNode, content: String, modifier: Modifier = Modif
     }
 
     // 创建表头composable列表
+    // v4.8.119 (渲染链升级): 单元格节点直取 — 行内语义渲染 (替换"文本 trim 后丢进
+    // MarkdownBlock 重解析"的往返). 旧路径对单元格二次解析: ①重复 preProcess/parse
+    // 往返, ②块级语义错位 —— `- 调整`/`1. 步骤`/`# 标签`/`> 引用` 在单元格里会被
+    // 重解析成列表/标题/引用块(渲染成块而非原文), 与 GFM 单元格=行内内容的规范不符.
+    // 现直接以原始单元格 AST 子节点走统一行内管道 (附录 appendMarkdownNodeContent),
+    // 粗斜/代码/删除线/链接/行内公式全部按行内语义渲染.
+    val headerCellNodes = headerNode?.children?.filter { it.type == GFMTokenTypes.CELL } ?: emptyList()
+    val rowCellNodes = rowNodes.map { rowNode ->
+        rowNode.children.filter { it.type == GFMTokenTypes.CELL }
+    }
+
     val headers = List(columnCount) { columnIndex ->
         @Composable {
-            MarkdownBlock(
-                content = if (columnIndex < headerCells.size) headerCells[columnIndex] else "",
+            TableCellContent(
+                node = headerCellNodes.getOrNull(columnIndex),
+                content = content,
             )
         }
     }
 
     // 创建行数据composable列表
-    val rowComposables = rows.map { rowData ->
+    val rowComposables = rowCellNodes.map { cellNodes ->
         List(columnCount) { columnIndex ->
             @Composable {
-                MarkdownBlock(
-                    content = if (columnIndex < rowData.size) rowData[columnIndex] else "",
+                TableCellContent(
+                    node = cellNodes.getOrNull(columnIndex),
+                    content = content,
                 )
             }
         }
@@ -1184,6 +1197,49 @@ private fun TableNode(node: ASTNode, content: String, modifier: Modifier = Modif
             shape = RectangleShape,
         )
     }
+}
+
+/**
+ * v4.8.119 (渲染链升级): 表格单元格行内渲染件 — 与段落共用同一行内管道
+ * (appendMarkdownNodeContent): 粗斜/代码/删除线/链接(递归)/行内公式/引用标记
+ * 全部按"单元格 = GFM 行内内容"的规范渲染, 不再整段重解析。
+ * HTML 单元格不会进入本函数 (containsHtml 的整段判定已把含 HTML 消息交给
+ * MarkdownNew HTML 路径)。
+ */
+@Composable
+private fun TableCellContent(
+    node: ASTNode?,
+    content: String,
+) {
+    if (node == null) return
+    val colorScheme = MaterialTheme.colorScheme
+    val inlineContents = remember { mutableStateMapOf<String, InlineTextContent>() }
+    val enableLatexRendering = LocalSettings.current.displaySetting.enableLatexRendering
+    val textStyle = LocalTextStyle.current
+    val density = LocalDensity.current
+    val latexColorArgb = LocalContentColor.current.toArgb()
+    val annotatedString = remember(node, content, enableLatexRendering, latexColorArgb) {
+        buildAnnotatedString {
+            node.children.fastForEach { child ->
+                appendMarkdownNodeContent(
+                    node = child,
+                    content = content,
+                    inlineContents = inlineContents,
+                    colorScheme = colorScheme,
+                    density = density,
+                    style = textStyle,
+                    enableLatexRendering = enableLatexRendering,
+                    latexColorArgb = latexColorArgb,
+                )
+            }
+        }
+    }
+    Text(
+        text = annotatedString,
+        inlineContent = inlineContents,
+        softWrap = true,
+        overflow = TextOverflow.Visible,
+    )
 }
 
 // 构建CSV内容，对包含逗号/引号/换行的字段进行转义
@@ -1360,7 +1416,30 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                             color = colorScheme.primary, textDecoration = TextDecoration.Underline
                         )
                     ) {
-                        append(linkText)
+                        // v4.8.119 (渲染链升级): 链接内联内容递归渲染 — 旧实现 append(linkText)
+                        // 把链接文本原文（含 **粗体**/`代码`/$公式$ 标记符号）当纯文本画出,
+                        // 嵌套渲染丢失（"链接里全是原始符号"）。现按 LINK_TEXT 子节点递归,
+                        // 与段落同一套行内管道（保留链接色/下划线继承）。
+                        val linkTextNode = node.findChildOfTypeRecursive(MarkdownElementTypes.LINK_TEXT)
+                        if (linkTextNode != null) {
+                            linkTextNode.children.fastForEach { child ->
+                                if (child.type != MarkdownTokenTypes.LBRACKET && child.type != MarkdownTokenTypes.RBRACKET) {
+                                    appendMarkdownNodeContent(
+                                        node = child,
+                                        content = content,
+                                        inlineContents = inlineContents,
+                                        colorScheme = colorScheme,
+                                        density = density,
+                                        style = style,
+                                        enableLatexRendering = enableLatexRendering,
+                                        latexColorArgb = latexColorArgb,
+                                        onClickCitation = onClickCitation,
+                                    )
+                                }
+                            }
+                        } else {
+                            append(linkText)
+                        }
                     }
                 }
             }

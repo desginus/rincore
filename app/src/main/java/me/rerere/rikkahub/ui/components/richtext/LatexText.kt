@@ -74,8 +74,10 @@ fun LatexText(
             }
         }
     } else {
+        // v4.8.119: 渲染失败回落显示去壳公式 (processLatex 剥掉 $…$/\\(…\\) 定界符),
+        // 旧实现回落显示原文 `$x$` — 用户看到美元符残壳, 误以为"渲染没触发"。
         Text(
-            text = latex,
+            text = processLatex(latex),
             style = style,
             modifier = modifier
         )

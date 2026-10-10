@@ -72,6 +72,11 @@ jobs:
           ./gradlew :ai:compileDebugUnitTestKotlin --no-daemon --stacktrace
           ./gradlew :ai:test --no-daemon --continue || echo "::warning::行为断言存在历史遗留失败 (见上方明细), 编译门禁已过"
 
+      # v4.8.119: 渲染链升级 — 解析器数学触发矩阵硬门禁
+      # (CJK 邻接 $...$ 触发 / 货币对拒绝 / 行内代码内含 / 块级 $$; 防回归)
+      - name: Run markdown parser unit tests (render trigger gate)
+        run: ./gradlew :markdown:testDebugUnitTest --no-daemon --stacktrace
+
       - name: Build Release APK
         run: ./gradlew assembleRelease --no-daemon --stacktrace
 
