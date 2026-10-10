@@ -131,12 +131,18 @@ private suspend fun awaitCondition(timeoutMs: Long, condition: () -> Boolean): B
  * 由调用方决定信封 (success:false + error) 还是抛出 (throw_on_error)。
  */
 suspend fun WebView.navigateAndSettle(
-    tracker: BrowserNavigationTracker,
+    tracker: BrowserNavigationTracker?,
     timeoutMs: Long,
     graceMs: Long = 800L,
     idleMs: Long = 500L,
     load: suspend () -> Unit,
 ): NavOutcome {
+    // null tracker = 无生命周期事实源 (理论上不会发生: withController 已确保绑定),
+    // 降级为"执行动作但不结算" — 比拿非空断言炸掉一次工具调用好
+    if (tracker == null) {
+        withContext(Dispatchers.Main) { load() }
+        return NavOutcome(false, true, null, null, null)
+    }
     val genBefore = tracker.generation
     tracker.clearError()
     withContext(Dispatchers.Main) { load() }
@@ -152,8 +158,10 @@ suspend fun WebView.navigateAndSettle(
  * 读类工具的等就绪: 等在途导航结束 + 网络静默 (不主动发起导航)。
  * 返回是否在超时内就绪; 超时也照常返回 (调用方附 page_state 让模型自行判断)。
  */
-suspend fun WebView.awaitPageIdle(tracker: BrowserNavigationTracker, timeoutMs: Long, idleMs: Long = 400L): Boolean =
-    awaitCondition(timeoutMs) { !tracker.hasInFlightNav() && tracker.isSettled(tracker.generation, idleMs) }
+suspend fun WebView.awaitPageIdle(tracker: BrowserNavigationTracker?, timeoutMs: Long, idleMs: Long = 400L): Boolean {
+    if (tracker == null) return true
+    return awaitCondition(timeoutMs) { !tracker.hasInFlightNav() && tracker.isSettled(tracker.generation, idleMs) }
+}
 
 /** 页面快照 — 结算后取真实值 (JS 直读最终文档, 正确处理重定向后的最终 URL) */
 data class PageSnapshot(val url: String, val title: String, val readyState: String)
