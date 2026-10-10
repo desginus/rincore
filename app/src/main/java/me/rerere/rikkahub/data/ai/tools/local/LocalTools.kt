@@ -182,7 +182,7 @@ class LocalTools(
             val convIdProvider = { convId }
             BrowserToolDefaults.ALL_TOOLS.forEach { name ->
                 if (enabledTools[name] == true) {
-                    createBrowserTool(name, context, convIdProvider)?.let { tools.add(it) }
+                    createBrowserTool(name, context, convIdProvider, invocationContext)?.let { tools.add(it) }
                 }
             }
         }

@@ -242,6 +242,21 @@ class WorkspaceManager(
         }.getOrDefault(base)
     }
 
+    /**
+     * v4.8.116: rootfs 路径 → 宿主 File（写入向）— 与 [resolveRootfsPath] 同一映射
+     * (bind mounts / /workspace 区 / cwd 作用域)，不要求目标已存在。
+     * 仅支持可写区（/workspace）；内核伪文件系统等 resolveRootfsPath 会抛出的
+     * 形态一律返回 null。逃逸拒绝继承 resolve 链（canonical 校验）。
+     */
+    fun rootfsHostFileForWrite(root: String, path: String, cwd: String? = null): File? {
+        return runCatching {
+            val location = resolveRootfsPath(root, path, cwd)
+            val target = fileSystem.resolve(location.rootDir, location.relativePath)
+            if (target.path == location.rootDir.path) return null
+            target.toFile()
+        }.getOrNull()
+    }
+
     fun resolveRootfsFileSafe(root: String, path: String, cwd: String? = null): File? {
         return runCatching {
             val location = resolveRootfsPath(root, path, cwd)

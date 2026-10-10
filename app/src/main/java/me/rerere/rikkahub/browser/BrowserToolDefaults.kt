@@ -6,7 +6,7 @@ package me.rerere.rikkahub.browser
  * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
  * ───────────────────────────────────────────────────────────────*/
 /**
- * Authoritative list of the 18 browser tools the LLM can drive, plus their default
+ * Authoritative list of the 19 browser tools the LLM can drive, plus their default
  * enabled/disabled state. Read tools (cheap, don't touch the page) default ON;
  * write tools (mutate state, can be misused) default OFF; the loop-control tool
  * defaults ON because the AI can't escape the browser loop without it.
@@ -23,6 +23,7 @@ object BrowserToolDefaults {
     const val BACK = "browser_back"
     const val FORWARD = "browser_forward"
     const val WAIT_FOR = "browser_wait_for"
+    const val WAIT_FOR_LOAD = "browser_wait_for_load"
 
     // --- Write tools (default OFF) -----------------------------------------------------------
     const val CLICK = "browser_click"
@@ -38,7 +39,7 @@ object BrowserToolDefaults {
     const val DONE = "browser_done"
 
     val READ_TOOLS: Set<String> = setOf(
-        OPEN, CURRENT_URL, SCREENSHOT, GET_TEXT, GET_DOM, GET_LINKS, BACK, FORWARD, WAIT_FOR,
+        OPEN, CURRENT_URL, SCREENSHOT, GET_TEXT, GET_DOM, GET_LINKS, BACK, FORWARD, WAIT_FOR, WAIT_FOR_LOAD,
     )
 
     val WRITE_TOOLS: Set<String> = setOf(
@@ -49,7 +50,7 @@ object BrowserToolDefaults {
 
     /** Stable display order. Read first, then write, then loop-control. */
     val ALL_TOOLS: List<String> = listOf(
-        OPEN, CURRENT_URL, SCREENSHOT, GET_TEXT, GET_DOM, GET_LINKS, BACK, FORWARD, WAIT_FOR,
+        OPEN, CURRENT_URL, SCREENSHOT, GET_TEXT, GET_DOM, GET_LINKS, BACK, FORWARD, WAIT_FOR, WAIT_FOR_LOAD,
         CLICK, TYPE, SCROLL, SUBMIT, SELECT, PRESS_KEY, EVAL_JS, CLICK_AND_READ,
         DONE,
     )

@@ -41,6 +41,53 @@ class WorkspaceRepository(
     fun listFlow(): Flow<List<WorkspaceEntity>> = dao.listFlow()
 
     /**
+     * v4.8.116: 二进制写入 rootfs（浏览器截图等模型产物统一落盘）。
+     * 与 writeTextInRootfs 同语义（cwd 作用域、路径映射），但走宿主直写
+     * （PNG 走 shell base64 既慢又有长度上限）。仅 /workspace 区可写。
+     * 返回 false = 无绑定映射或写入失败（调用方回退 cache）。
+     */
+    suspend fun writeBinaryInRootfs(
+        workspaceId: String,
+        path: String,
+        bytes: ByteArray,
+        cwd: String? = null,
+    ): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val host = manager.rootfsHostFileForWrite(workspaceId, path, cwd) ?: return@withContext false
+            host.parentFile?.mkdirs()
+            java.io.FileOutputStream(host).use { it.write(bytes) }
+            true
+        }.getOrDefault(false)
+    }
+
+    /**
+     * v4.8.116: 浏览器截图 TTL 清理 — 只清理本应用自产工件
+     * （文件名前缀 [prefix]，默认 shot-），TTL 内的与最新 [keep] 张保留。
+     * 用户文件绝不动（前缀不匹配直接跳过）。
+     */
+    suspend fun sweepBrowserShotsInRootfs(
+        workspaceId: String,
+        cwd: String? = null,
+        subdir: String = "browser-shots",
+        prefix: String = "shot-",
+        ttlMs: Long = 24 * 60 * 60 * 1000L,
+        keep: Int = 50,
+    ): Unit = withContext(Dispatchers.IO) {
+        runCatching {
+            val dir = manager.rootfsHostFileForWrite(workspaceId, "/workspace/$subdir", cwd)?.parentFile
+                ?: return@withContext
+            val ours = dir.listFiles { f -> f.isFile && f.name.startsWith(prefix) } ?: return@withContext
+            val now = System.currentTimeMillis()
+            val sorted = ours.sortedByDescending { it.lastModified() }
+            sorted.forEachIndexed { idx, f ->
+                val expired = now - f.lastModified() > ttlMs
+                if (expired || idx >= keep) runCatching { f.delete() }
+            }
+        }
+    }
+
+
+    /**
      * v3.6.85: DeepSeek Harness 插件生态兼容 — 刷新 DSH 技能根。
      * 扫描所有 workspace files 区的 .dsh/skills 与 .agents/skills
      * (DSH 官方技能发现根), 注入 SkillManager 作为只读技能源。

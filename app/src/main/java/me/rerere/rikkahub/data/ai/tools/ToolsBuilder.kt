@@ -84,6 +84,9 @@ fun buildAssistantToolPool(
             callerAssistantId = assistant.id.toString(),
             callerConversationId = conversationId,
             isHeadless = false,
+            // v4.8.116: 浏览器截图等模型产物的统一落盘锚点 (与 workspace 工具同源)
+            workspaceId = assistant.workspaceId?.toString(),
+            workspaceCwd = workspaceCwd,
         ),
     ))
     if (assistant.enableRecentChatsReference) {

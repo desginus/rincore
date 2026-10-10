@@ -4,11 +4,22 @@ package me.rerere.rikkahub.data.ai.tools.local
 
 /* ───【自研】BrowserTools.kt — 原版无此文件
  * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * v4.8.116 (B139 用户实证六项, 整文件重写):
+ *   P0-1 乐观返回   → 导航类工具全部经 navigateAndSettle (load+network-idle),
+ *                     current_url/page_title 取结算后 JS 快照 (重定向最终 URL)
+ *   P0-2 静默吞错   → 主帧 net::ERR_*/HTTP>=4xx/超时捕获, 失败返回
+ *                     success:false+error+final_url; throw_on_error 可抛出
+ *   P0-3 受控输入   → type/select 走原型原生 value setter + input/change 事件
+ *                     (React/Vue value tracker 不再被绕过)
+ *   P1-4 语义混淆   → 读类结果附 page_state(ready_state/is_loading/url/title);
+ *                     未加载完时 selector_not_found 升级为 page_not_ready;
+ *                     新增 browser_wait_for_load
+ *   P1-5 同批竞态   → BrowserControllerHandle 全局操作互斥, 读类天然排在导航后
+ *   P2-6 截图不可见 → 截图统一落绑定工作区 /workspace/browser-shots/ (沙箱直读)
+ *                     + render_urls/render_markdown (v4.8.115 统一地址链) + TTL 清理
  * ───────────────────────────────────────────────────────────────*/
 import android.content.Context
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -29,11 +40,20 @@ import me.rerere.rikkahub.browser.BrowserCacheSweeper
 import me.rerere.rikkahub.browser.BrowserController
 import me.rerere.rikkahub.browser.BrowserControllerHandle
 import me.rerere.rikkahub.browser.BrowserDiffHelper
+import me.rerere.rikkahub.browser.BrowserNavigationTracker
 import me.rerere.rikkahub.browser.BrowserToolDefaults
 import me.rerere.rikkahub.browser.HeadlessBrowserSessionPool
+import me.rerere.rikkahub.browser.NavOutcome
+import me.rerere.rikkahub.browser.PageSnapshot
 import me.rerere.rikkahub.browser.ReadabilityRunner.runReadability
-import me.rerere.rikkahub.browser.awaitReadyState
+import me.rerere.rikkahub.browser.awaitPageIdle
 import me.rerere.rikkahub.browser.evaluateJavascriptAsync
+import me.rerere.rikkahub.browser.navigateAndSettle
+import me.rerere.rikkahub.browser.readPageSnapshot
+import me.rerere.rikkahub.data.ai.tools.ToolInvocationContext
+import me.rerere.rikkahub.data.ai.tools.buildRenderMarkdown
+import me.rerere.rikkahub.data.ai.tools.buildRenderUrl
+import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import java.io.File
 import java.io.FileOutputStream
 
@@ -53,6 +73,53 @@ private fun missingArgEnvelope(name: String, detail: String): JsonObject = build
     put("detail", detail)
 }
 
+private fun navFailureEnvelope(outcome: NavOutcome, snap: PageSnapshot): JsonObject = buildJsonObject {
+    put("success", false)
+    val err = when {
+        outcome.errorCode != null -> outcome.errorDesc?.takeIf { it.isNotBlank() } ?: "net::ERR_FAILED"
+        outcome.httpCode != null -> "HTTP_${outcome.httpCode}"
+        !outcome.settled -> "NET_TIMEOUT"
+        else -> "NAV_NO_START"
+    }
+    put("error", err)
+    put("detail", "Navigation failed or did not settle; the target page was NOT loaded. Do not treat the previous page as the target page.")
+    put("final_url", snap.url)
+    put("page_title", snap.title)
+    put("recovery", "Verify the URL/domain and retry, or open a different URL. On timeout, the site may be unreachable from this network.")
+}
+
+private fun pageStateJson(snap: PageSnapshot, tracker: BrowserNavigationTracker?): JsonObject = buildJsonObject {
+    put("ready_state", snap.readyState)
+    put("is_loading", tracker?.hasInFlightNav() == true || snap.readyState != "complete")
+    put("url", snap.url)
+    put("title", snap.title)
+}
+
+/**
+ * v4.8.116 (P1-4): 读类结果统一后处理 — ①selector_not_found 且页面未加载完时
+ * 升级为 page_not_ready（"还没加载完"与"真没有"不再混淆）；②所有读结果附
+ * page_state，模型可自判页面状态。
+ */
+private fun finalizeReadResult(
+    res: JsonObject,
+    snap: PageSnapshot,
+    tracker: BrowserNavigationTracker?,
+): JsonObject {
+    val err = res["error"]?.jsonPrimitive?.contentOrNull
+    if (err == "selector_not_found" && snap.readyState != "complete") {
+        return buildJsonObject {
+            put("error", "page_not_ready")
+            put("detail", "Page was still loading when the read ran (readyState=${snap.readyState}) — element absence is not conclusive.")
+            put("page_state", pageStateJson(snap, tracker))
+            put("recovery", "Call browser_wait_for_load, then repeat the same read.")
+        }
+    }
+    return buildJsonObject {
+        res.forEach { (k, v) -> put(k, v) }
+        put("page_state", pageStateJson(snap, tracker))
+    }
+}
+
 private fun textPart(obj: JsonObject): List<UIMessagePart> =
     listOf(UIMessagePart.Text(Json.encodeToString(obj)))
 
@@ -62,12 +129,16 @@ private fun jsString(s: String): String = JsonPrimitive(s).toString()
 
 fun browserOpenTool(context: Context, callerConvId: () -> String): Tool = Tool(
     name = BrowserToolDefaults.OPEN,
-    description = "Open a URL in the headless browser. Returns the URL and page title after navigation completes. If a previous session exists for this conversation, the page loads in that session (preserving cookies and history).",
+    description = "Open a URL in the headless browser. Waits for the navigation to settle (page load + network idle, redirects resolved) and returns the FINAL url/page_title — never a stale snapshot. Navigation failures (DNS error / timeout / HTTP error) return success:false with an error code; throw_on_error=true raises instead.",
     parameters = {
         InputSchema.Obj(properties = buildJsonObject {
             put("url", buildJsonObject {
                 put("type", "string")
                 put("description", "Fully-qualified URL to navigate to (must start with http:// or https://)")
+            })
+            put("throw_on_error", buildJsonObject {
+                put("type", "boolean")
+                put("description", "If true, throw on navigation failure instead of returning success:false (default false)")
             })
         }, required = listOf("url"))
     },
@@ -79,23 +150,38 @@ fun browserOpenTool(context: Context, callerConvId: () -> String): Tool = Tool(
             return@Tool textPart(missingArgEnvelope("url",
                 if (rawUrl == null) "url is required" else "url scheme must be http or https, got: $scheme"))
         }
+        val throwOnError = input.jsonObject["throw_on_error"]?.jsonPrimitive?.booleanOrNull == true
         val convId = callerConvId()
         val session = HeadlessBrowserSessionPool.getOrCreate(context, convId)
         val webView = session.start(convId)
-        if (!BrowserController.bindHeadless(convId, webView)) {
+        if (!BrowserController.bindHeadless(convId, webView, session.navigationTracker)) {
             return@Tool textPart(BrowserController.bindBusyEnvelope())
         }
         BrowserController.startTaskWindow()
         BrowserCacheSweeper.sweep(context)
         val out = withTimeoutOrNull(toolTimeoutMs) {
             BrowserControllerHandle.withController {
-                withContext(Dispatchers.Main) { webView.loadUrl(rawUrl) }
-                webView.awaitReadyState(12_000L)
-                BrowserController.appendAction("Open: $rawUrl")
-                buildJsonObject {
-                    put("success", true)
-                    put("current_url", webView.url.orEmpty())
-                    put("page_title", webView.title.orEmpty())
+                val tracker = controller.activeTracker()
+                // B139 P0-1/P0-2: load 事件 + network-idle 结算 — 旧实现轮询旧文档的
+                // readyState 立即返回, url/title 全是导航前快照
+                val outcome = webView.navigateAndSettle(
+                    tracker,
+                    timeoutMs = 15_000L,
+                    graceMs = 1_500L,
+                ) { webView.loadUrl(rawUrl) }
+                val snap = webView.readPageSnapshot()
+                if (outcome.failed) {
+                    val env = navFailureEnvelope(outcome, snap)
+                    if (throwOnError) throw IllegalStateException("browser_open failed: ${env["error"]} (${snap.url})")
+                    env
+                } else {
+                    BrowserController.appendAction("Open: $rawUrl")
+                    buildJsonObject {
+                        put("success", true)
+                        put("current_url", snap.url)
+                        put("page_title", snap.title)
+                        put("ready_state", snap.readyState)
+                    }
                 }
             }
         } ?: timeoutEnvelope(BrowserToolDefaults.OPEN)
@@ -105,43 +191,77 @@ fun browserOpenTool(context: Context, callerConvId: () -> String): Tool = Tool(
 
 fun browserCurrentUrlTool(): Tool = Tool(
     name = BrowserToolDefaults.CURRENT_URL,
-    description = "Return the browser's current URL and page title.",
+    description = "Return the browser's current URL, page title and load state.",
     execute = {
         val out = BrowserControllerHandle.withController {
+            val snap = webView.readPageSnapshot()
             buildJsonObject {
-                put("current_url", webView.url.orEmpty())
-                put("page_title", webView.title.orEmpty())
+                put("current_url", snap.url)
+                put("page_title", snap.title)
+                put("ready_state", snap.readyState)
             }
         }
         textPart(out)
     },
 )
 
-fun browserScreenshotTool(context: Context): Tool = Tool(
+fun browserScreenshotTool(context: Context, invocationContext: ToolInvocationContext): Tool = Tool(
     name = BrowserToolDefaults.SCREENSHOT,
-    description = "Capture a full-viewport screenshot of the current page as a PNG. Returns the absolute file path of the saved image.",
+    description = "Capture a full-viewport screenshot as PNG. Saved into the bound workspace at /workspace/browser-shots/ (sandbox-readable) with render_urls/render_markdown for inline display; falls back to app cache when no workspace is bound (path then is app-private). Screenshots are TTL-cleaned (24h, keep latest 50).",
     execute = {
         val out = withTimeoutOrNull(toolTimeoutMs) {
             BrowserControllerHandle.withController {
                 val w = webView.width.coerceAtLeast(1)
                 val h = webView.height.coerceAtLeast(1).coerceAtMost(MAX_SCREENSHOT_HEIGHT_PX)
                 val bitmap = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
-                try {
+                val pngBytes: ByteArray? = try {
                     val canvas = android.graphics.Canvas(bitmap)
                     webView.draw(canvas)
-                    val cacheDir = File(context.cacheDir, SCREENSHOT_CACHE_SUBDIR).apply { mkdirs() }
-                    val outFile = File(cacheDir, "shot-${System.currentTimeMillis()}.png")
-                    FileOutputStream(outFile).use { os ->
-                        bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, os)
+                    java.io.ByteArrayOutputStream().use { bos ->
+                        bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, bos)
+                        bos.toByteArray()
                     }
-                    BrowserController.appendAction("Screenshot")
+                } finally { bitmap.recycle() }
+                if (pngBytes == null) {
+                    return@withController buildJsonObject { put("success", false); put("error", "capture_failed") }
+                }
+                BrowserController.appendAction("Screenshot")
+                val ts = System.currentTimeMillis()
+                val wsId = invocationContext.workspaceId
+                val repo = runCatching {
+                    org.koin.java.KoinJavaComponent.getKoin().get<WorkspaceRepository>()
+                }.getOrNull()
+                val rootfsPath = "/workspace/browser-shots/shot-$ts.png"
+                val wroteToWorkspace = wsId != null &&
+                    repo?.writeBinaryInRootfs(wsId, rootfsPath, pngBytes, invocationContext.workspaceCwd) == true
+                if (wroteToWorkspace && wsId != null) {
+                    repo?.sweepBrowserShotsInRootfs(wsId, invocationContext.workspaceCwd)
+                    val renderUrl = buildRenderUrl(wsId, rootfsPath, invocationContext.workspaceCwd)
+                    buildJsonObject {
+                        put("success", true)
+                        put("path", rootfsPath)
+                        put("sandbox_path", rootfsPath)
+                        put("storage", "workspace")
+                        put("width", w)
+                        put("height", h)
+                        put("render_urls", buildJsonArray { add(renderUrl) })
+                        buildRenderMarkdown(wsId, listOf(rootfsPath), invocationContext.workspaceCwd)
+                            ?.let { put("render_markdown", it) }
+                    }
+                } else {
+                    val cacheDir = File(context.cacheDir, SCREENSHOT_CACHE_SUBDIR).apply { mkdirs() }
+                    val outFile = File(cacheDir, "shot-$ts.png")
+                    FileOutputStream(outFile).use { os -> os.write(pngBytes) }
+                    BrowserCacheSweeper.sweep(context)
                     buildJsonObject {
                         put("success", true)
                         put("path", outFile.absolutePath)
+                        put("storage", "cache")
                         put("width", w)
                         put("height", h)
+                        put("note", "No workspace bound — file is app-private (not sandbox-readable). Bind a workspace for inline display.")
                     }
-                } finally { bitmap.recycle() }
+                }
             }
         } ?: timeoutEnvelope(BrowserToolDefaults.SCREENSHOT)
         textPart(out)
@@ -150,14 +270,14 @@ fun browserScreenshotTool(context: Context): Tool = Tool(
 
 fun browserGetTextTool(): Tool = Tool(
     name = BrowserToolDefaults.GET_TEXT,
-    description = "Extract readable text from the current page. extract_mode: 'auto' (default, tries Readability then falls back to body.innerText), 'readability' (forces article extraction), 'raw' (selector-based innerText). Optional selector overrides Readability.",
+    description = "Extract readable text from the current page. extract_mode: 'auto' (default, tries Readability then falls back to body.innerText), 'readability' (forces article extraction), 'raw' (selector-based innerText). Optional selector overrides Readability. Waits for in-flight navigation to settle first (wait_ready, default true); returns page_state.",
     parameters = { getTextSchema(8000) },
     execute = { input -> textPart(runGetText(input)) },
 )
 
 fun browserGetDomTool(): Tool = Tool(
     name = BrowserToolDefaults.GET_DOM,
-    description = "Extract the outerHTML of an element matching a CSS selector. Defaults to 'body'. Clamped to max_chars (default 4000).",
+    description = "Extract the outerHTML of an element matching a CSS selector. Defaults to 'body'. Clamped to max_chars (default 4000). Waits for in-flight navigation to settle first (wait_ready, default true); a missing element on a still-loading page reports page_not_ready instead of selector_not_found; returns page_state.",
     parameters = { selectorAndMaxCharsSchema(4000, required = false) },
     execute = { input ->
         textPart(runReadHelper(input, BrowserToolDefaults.GET_DOM, 4000) { sel, max ->
@@ -179,10 +299,18 @@ fun browserGetDomTool(): Tool = Tool(
 
 fun browserGetLinksTool(): Tool = Tool(
     name = BrowserToolDefaults.GET_LINKS,
-    description = "List all <a href> links on the page with their text content. Caps at 200 links.",
+    description = "List all <a href> links on the page with their text content. Caps at 200 links. Waits for in-flight navigation to settle first (wait_ready, default true); returns page_state.",
+    parameters = {
+        InputSchema.Obj(properties = buildJsonObject {
+            put("wait_ready", buildJsonObject { put("type", "boolean"); put("description", "Wait for in-flight navigation to settle before reading (default true)") })
+        })
+    },
     execute = {
         val out = withTimeoutOrNull(toolTimeoutMs) {
             BrowserControllerHandle.withController {
+                val tracker = controller.activeTracker()
+                webView.awaitPageIdle(tracker, 5_000L)
+                val snap = webView.readPageSnapshot()
                 val js = """(function(){
                     try {
                         var links = document.querySelectorAll('a[href]');
@@ -197,8 +325,8 @@ fun browserGetLinksTool(): Tool = Tool(
                         return JSON.stringify({links: result, total: links.length});
                     } catch(e) { return JSON.stringify({error:'js_failed'}); }
                 })()"""
-                val raw = webView.evaluateJavascriptAsync(js)
-                parseJsResult(raw)
+                val res = parseJsResult(webView.evaluateJavascriptAsync(js))
+                finalizeReadResult(res, snap, tracker)
             }
         } ?: timeoutEnvelope(BrowserToolDefaults.GET_LINKS)
         textPart(out)
@@ -207,14 +335,24 @@ fun browserGetLinksTool(): Tool = Tool(
 
 fun browserBackTool(): Tool = Tool(
     name = BrowserToolDefaults.BACK,
-    description = "Navigate back in browser history. Returns {success, current_url}.",
-    execute = { input -> textPart(runHistoryNav(BrowserToolDefaults.BACK, forward = false)) },
+    description = "Navigate back in browser history. Waits for the navigation to settle and returns the FINAL current_url/page_title; failures (no history / load error) return success:false with an error code. throw_on_error=true raises instead.",
+    parameters = {
+        InputSchema.Obj(properties = buildJsonObject {
+            put("throw_on_error", buildJsonObject { put("type", "boolean"); put("description", "If true, throw on navigation failure (default false)") })
+        })
+    },
+    execute = { input -> textPart(runHistoryNav(BrowserToolDefaults.BACK, forward = false, input = input)) },
 )
 
 fun browserForwardTool(): Tool = Tool(
     name = BrowserToolDefaults.FORWARD,
-    description = "Navigate forward in browser history. Returns {success, current_url}.",
-    execute = { input -> textPart(runHistoryNav(BrowserToolDefaults.FORWARD, forward = true)) },
+    description = "Navigate forward in browser history. Waits for the navigation to settle and returns the FINAL current_url/page_title; failures return success:false with an error code. throw_on_error=true raises instead.",
+    parameters = {
+        InputSchema.Obj(properties = buildJsonObject {
+            put("throw_on_error", buildJsonObject { put("type", "boolean"); put("description", "If true, throw on navigation failure (default false)") })
+        })
+    },
+    execute = { input -> textPart(runHistoryNav(BrowserToolDefaults.FORWARD, forward = true, input = input)) },
 )
 
 internal fun buildWaitForPredicate(selector: String, state: String, containsText: String?): String {
@@ -294,34 +432,78 @@ fun browserWaitForTool(): Tool = Tool(
     },
 )
 
+/**
+ * v4.8.116 (P1-4): 显式等就绪 — 在途导航结束 + 网络静默 + readyState=complete。
+ * 消除"页面还没渲染完就读"与"元素真不存在"的语义混淆。
+ */
+fun browserWaitForLoadTool(): Tool = Tool(
+    name = BrowserToolDefaults.WAIT_FOR_LOAD,
+    description = "Wait until the page finishes loading: any in-flight navigation completes, the network goes quiet for idle_ms, and document.readyState becomes 'complete'. Use after browser_open/click/submit before reading. Returns {settled, page_state}.",
+    parameters = {
+        InputSchema.Obj(properties = buildJsonObject {
+            put("timeout_ms", buildJsonObject { put("type", "integer"); put("description", "Max wait ms (default 10000)") })
+            put("idle_ms", buildJsonObject { put("type", "integer"); put("description", "Network-quiet window in ms (default 400)") })
+        })
+    },
+    execute = { input ->
+        val timeoutMs = (input.jsonObject["timeout_ms"]?.jsonPrimitive?.intOrNull ?: 10_000).toLong().coerceIn(200L, toolTimeoutMs)
+        val idleMs = (input.jsonObject["idle_ms"]?.jsonPrimitive?.intOrNull ?: 400).toLong().coerceIn(0L, 5_000L)
+        val out = withTimeoutOrNull(toolTimeoutMs) {
+            BrowserControllerHandle.withController {
+                val tracker = controller.activeTracker()
+                val settled = webView.awaitPageIdle(tracker, timeoutMs, idleMs)
+                val snap = webView.readPageSnapshot()
+                buildJsonObject {
+                    put("settled", settled)
+                    put("page_state", pageStateJson(snap, tracker))
+                }
+            }
+        } ?: timeoutEnvelope(BrowserToolDefaults.WAIT_FOR_LOAD)
+        textPart(out)
+    },
+)
+
 // ---- Write tools --------------------------------------------------------------------------
 
 fun browserClickTool(): Tool = Tool(
     name = BrowserToolDefaults.CLICK,
-    description = "Click an element matching a CSS selector. Returns diff ({added, removed, added_chars, removed_chars, truncated}) by default. Pass full:true to skip diff and return post_click_url only.",
-    parameters = { selectorWithFullSchema("CSS selector to click") },
+    description = "Click an element matching a CSS selector. If the click triggers a navigation, waits for it to settle (load + network idle) and returns the FINAL post_click_url/page_title; SPA clicks return immediately. Navigation failures return success:false with an error code. Returns diff by default; pass full:true to skip diff.",
+    parameters = {
+        InputSchema.Obj(properties = buildJsonObject {
+            put("selector", buildJsonObject { put("type", "string"); put("description", "CSS selector to click") })
+            put("full", buildJsonObject { put("type", "boolean"); put("description", "Skip diff (default false)") })
+            put("throw_on_error", buildJsonObject { put("type", "boolean"); put("description", "If true, throw on navigation failure instead of returning success:false (default false)") })
+        }, required = listOf("selector"))
+    },
     execute = { input ->
         val selector = input.jsonObject["selector"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
         val full = parseFullArg(input)
+        val throwOnError = input.jsonObject["throw_on_error"]?.jsonPrimitive?.booleanOrNull == true
         val out = if (selector == null) missingArgEnvelope("selector", "selector is required")
         else withTimeoutOrNull(toolTimeoutMs) {
             BrowserControllerHandle.withController {
+                val tracker = controller.activeTracker()
                 withDiff(full) {
-                    val js = """(function(){
-                        try {
-                            var el = document.querySelector(${jsString(selector)});
-                            if (!el) return JSON.stringify({error:'selector_not_found', selector:${jsString(selector)}});
-                            el.scrollIntoView({block:'center', inline:'center'});
-                            el.click();
-                            return JSON.stringify({clicked:true});
-                        } catch(e) { return JSON.stringify({error:'js_failed', detail:String(e)}); }
-                    })()"""
-                    val raw = webView.evaluateJavascriptAsync(js)
-                    val res = parseJsResult(raw)
-                    if (res.containsKey("error")) return@withDiff res
-                    webView.awaitReadyState(8_000L)
+                    var actionError: JsonObject? = null
+                    // B139: 点击本身放进结算等待 — 点击触发的导航等到 finish + idle 后
+                    // 才读 post_click_url (不再返回旧 URL); SPA 点击宽限窗后立即返回
+                    val outcome = webView.navigateAndSettle(tracker, timeoutMs = 12_000L) {
+                        val res = parseJsResult(webView.evaluateJavascriptAsync(clickElementJs(selector)))
+                        if (res.containsKey("error")) actionError = res
+                    }
+                    if (actionError != null) return@withDiff actionError!!
+                    val snap = webView.readPageSnapshot()
+                    if (outcome.failed) {
+                        val env = navFailureEnvelope(outcome, snap)
+                        if (throwOnError) throw IllegalStateException("browser_click failed: ${env["error"]} (${snap.url})")
+                        return@withDiff env
+                    }
                     BrowserController.appendAction("Click: $selector")
-                    buildJsonObject { put("success", true); put("post_click_url", webView.url.orEmpty()) }
+                    buildJsonObject {
+                        put("success", true)
+                        put("post_click_url", snap.url)
+                        put("page_title", snap.title)
+                    }
                 }
             }
         } ?: timeoutEnvelope(BrowserToolDefaults.CLICK)
@@ -331,7 +513,7 @@ fun browserClickTool(): Tool = Tool(
 
 fun browserTypeTool(): Tool = Tool(
     name = BrowserToolDefaults.TYPE,
-    description = "Type text into an input/textarea/contenteditable element. Focuses, optionally clears, sets the value + dispatches 'input' event. Returns diff by default; pass full:true to skip.",
+    description = "Type text into an input/textarea/contenteditable element. Uses the NATIVE prototype value setter + input/change events so React/Vue controlled inputs receive the value (direct el.value assignment is bypassed by their state). Focuses, optionally clears first. Returns diff by default; pass full:true to skip.",
     parameters = {
         InputSchema.Obj(properties = buildJsonObject {
             put("selector", buildJsonObject { put("type", "string"); put("description", "CSS selector of the input") })
@@ -357,15 +539,27 @@ fun browserTypeTool(): Tool = Tool(
                                 var el = document.querySelector(${jsString(selector)});
                                 if (!el) return JSON.stringify({error:'selector_not_found'});
                                 el.focus();
-                                if ($clearFlag) {
-                                    if ('value' in el) el.value = '';
-                                    else if (el.isContentEditable) el.textContent = '';
+                                var text = ${jsString(text)};
+                                if (el.isContentEditable && el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') {
+                                    if ($clearFlag) el.textContent = '';
+                                    el.textContent = (el.textContent || '') + text;
+                                    el.dispatchEvent(new Event('input', {bubbles:true}));
+                                    el.dispatchEvent(new Event('change', {bubbles:true}));
+                                    return JSON.stringify({typed:true, via:'contenteditable'});
                                 }
-                                if ('value' in el) el.value = (el.value || '') + ${jsString(text)};
-                                else if (el.isContentEditable) el.textContent = (el.textContent || '') + ${jsString(text)};
+                                if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') {
+                                    return JSON.stringify({error:'not_inputable', tag: el.tagName});
+                                }
+                                var proto = el.tagName === 'TEXTAREA'
+                                    ? window.HTMLTextAreaElement.prototype
+                                    : window.HTMLInputElement.prototype;
+                                var desc = Object.getOwnPropertyDescriptor(proto, 'value');
+                                var finalVal = ($clearFlag ? '' : (el.value || '')) + text;
+                                if (desc && desc.set) { desc.set.call(el, finalVal); }
+                                else { el.value = finalVal; }
                                 el.dispatchEvent(new Event('input', {bubbles:true}));
                                 el.dispatchEvent(new Event('change', {bubbles:true}));
-                                return JSON.stringify({typed:true});
+                                return JSON.stringify({typed:true, via: (desc && desc.set) ? 'native_setter' : 'direct_value'});
                             } catch(e) { return JSON.stringify({error:'js_failed', detail:String(e)}); }
                         })()"""
                         val res = parseJsResult(webView.evaluateJavascriptAsync(js))
@@ -422,35 +616,56 @@ fun browserScrollTool(): Tool = Tool(
 
 fun browserSubmitTool(): Tool = Tool(
     name = BrowserToolDefaults.SUBMIT,
-    description = "Submit a form. If selector is a <button type=submit>, click it; otherwise locates the enclosing <form> and calls .submit(). Returns diff by default; pass full:true to skip.",
-    parameters = { selectorWithFullSchema("CSS selector of a submit button or element inside the target form") },
+    description = "Submit a form. If selector is a <button type=submit>, click it; otherwise locates the enclosing <form> and calls .submit(). Waits for the triggered navigation to settle and returns the FINAL post_submit_url; failures return success:false with an error code. Returns diff by default; pass full:true to skip.",
+    parameters = {
+        InputSchema.Obj(properties = buildJsonObject {
+            put("selector", buildJsonObject { put("type", "string"); put("description", "CSS selector of a submit button or element inside the target form") })
+            put("full", buildJsonObject { put("type", "boolean"); put("description", "Skip diff (default false)") })
+            put("throw_on_error", buildJsonObject { put("type", "boolean"); put("description", "If true, throw on navigation failure instead of returning success:false (default false)") })
+        }, required = listOf("selector"))
+    },
     execute = { input ->
         val selector = input.jsonObject["selector"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
         val full = parseFullArg(input)
+        val throwOnError = input.jsonObject["throw_on_error"]?.jsonPrimitive?.booleanOrNull == true
         val out = if (selector == null) missingArgEnvelope("selector", "selector is required")
         else withTimeoutOrNull(toolTimeoutMs) {
             BrowserControllerHandle.withController {
+                val tracker = controller.activeTracker()
                 withDiff(full) {
-                    val js = """(function(){
-                        try {
-                            var el = document.querySelector(${jsString(selector)});
-                            if (!el) return JSON.stringify({error:'selector_not_found'});
-                            if (el.tagName === 'BUTTON' && (el.type === 'submit' || el.type === '')) {
-                                el.click();
-                                return JSON.stringify({submitted:true, via:'button_click'});
-                            }
-                            var form = el.closest('form');
-                            if (!form) return JSON.stringify({error:'no_enclosing_form'});
-                            if (typeof form.requestSubmit === 'function') form.requestSubmit();
-                            else form.submit();
-                            return JSON.stringify({submitted:true, via:'form_submit'});
-                        } catch(e) { return JSON.stringify({error:'js_failed'}); }
-                    })()"""
-                    val res = parseJsResult(webView.evaluateJavascriptAsync(js))
-                    if (res.containsKey("error")) return@withDiff res
-                    webView.awaitReadyState(8_000L)
+                    var actionError: JsonObject? = null
+                    val outcome = webView.navigateAndSettle(tracker, timeoutMs = 12_000L) {
+                        val js = """(function(){
+                            try {
+                                var el = document.querySelector(${jsString(selector)});
+                                if (!el) return JSON.stringify({error:'selector_not_found'});
+                                if (el.tagName === 'BUTTON' && (el.type === 'submit' || el.type === '')) {
+                                    el.click();
+                                    return JSON.stringify({submitted:true, via:'button_click'});
+                                }
+                                var form = el.closest('form');
+                                if (!form) return JSON.stringify({error:'no_enclosing_form'});
+                                if (typeof form.requestSubmit === 'function') form.requestSubmit();
+                                else form.submit();
+                                return JSON.stringify({submitted:true, via:'form_submit'});
+                            } catch(e) { return JSON.stringify({error:'js_failed'}); }
+                        })()"""
+                        val res = parseJsResult(webView.evaluateJavascriptAsync(js))
+                        if (res.containsKey("error")) actionError = res
+                    }
+                    if (actionError != null) return@withDiff actionError!!
+                    val snap = webView.readPageSnapshot()
+                    if (outcome.failed) {
+                        val env = navFailureEnvelope(outcome, snap)
+                        if (throwOnError) throw IllegalStateException("browser_submit failed: ${env["error"]} (${snap.url})")
+                        return@withDiff env
+                    }
                     BrowserController.appendAction("Submit: $selector")
-                    buildJsonObject { put("success", true); put("post_submit_url", webView.url.orEmpty()) }
+                    buildJsonObject {
+                        put("success", true)
+                        put("post_submit_url", snap.url)
+                        put("page_title", snap.title)
+                    }
                 }
             }
         } ?: timeoutEnvelope(BrowserToolDefaults.SUBMIT)
@@ -460,7 +675,7 @@ fun browserSubmitTool(): Tool = Tool(
 
 fun browserSelectTool(): Tool = Tool(
     name = BrowserToolDefaults.SELECT,
-    description = "Set a <select> element's value. Dispatches 'change' event. Returns diff by default; pass full:true to skip.",
+    description = "Set a <select> element's value via the NATIVE prototype value setter + change/input events (React/Vue compatible). Returns diff by default; pass full:true to skip.",
     parameters = {
         InputSchema.Obj(properties = buildJsonObject {
             put("selector", buildJsonObject { put("type", "string"); put("description", "CSS selector of the <select>") })
@@ -483,8 +698,11 @@ fun browserSelectTool(): Tool = Tool(
                                 var el = document.querySelector(${jsString(selector)});
                                 if (!el) return JSON.stringify({error:'selector_not_found'});
                                 if (el.tagName !== 'SELECT') return JSON.stringify({error:'not_a_select'});
-                                el.value = ${jsString(value)};
+                                var desc = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value');
+                                if (desc && desc.set) { desc.set.call(el, ${jsString(value)}); }
+                                else { el.value = ${jsString(value)}; }
                                 el.dispatchEvent(new Event('change', {bubbles:true}));
+                                el.dispatchEvent(new Event('input', {bubbles:true}));
                                 return JSON.stringify({selected:true});
                             } catch(e) { return JSON.stringify({error:'js_failed'}); }
                         })()"""
@@ -562,7 +780,7 @@ fun browserEvalJsTool(): Tool = Tool(
 
 fun browserClickAndReadTool(): Tool = Tool(
     name = BrowserToolDefaults.CLICK_AND_READ,
-    description = "One-shot click + read. Click an element, await readyState, return diff (default) or extracted text. extract_mode: diff (default), auto, readability, raw. max_chars caps text (default 4000).",
+    description = "One-shot click + read. Clicks, awaits the triggered navigation to settle (or returns immediately for SPA clicks), then returns diff (default) or extracted text with the FINAL post_click_url/page_title. extract_mode: diff (default), auto, readability, raw. max_chars caps text (default 4000).",
     parameters = {
         InputSchema.Obj(properties = buildJsonObject {
             put("selector", buildJsonObject { put("type", "string"); put("description", "CSS selector to click") })
@@ -582,22 +800,19 @@ fun browserClickAndReadTool(): Tool = Tool(
         val out = if (selector == null) missingArgEnvelope("selector", "selector is required")
         else withTimeoutOrNull(toolTimeoutMs) {
             BrowserControllerHandle.withController {
+                val tracker = controller.activeTracker()
                 val before = if (mode == "diff") captureBodyText() else ""
-                val clickJs = """(function(){
-                    try {
-                        var el = document.querySelector(${jsString(selector)});
-                        if (!el) return JSON.stringify({error:'selector_not_found'});
-                        el.scrollIntoView({block:'center', inline:'center'});
-                        el.click();
-                        return JSON.stringify({clicked:true});
-                    } catch(e) { return JSON.stringify({error:'js_failed'}); }
-                })()"""
-                val clickRes = parseJsResult(webView.evaluateJavascriptAsync(clickJs))
-                if (clickRes.containsKey("error")) return@withController clickRes
-                webView.awaitReadyState(8_000L)
+                var clickError: JsonObject? = null
+                val outcome = webView.navigateAndSettle(tracker, timeoutMs = 12_000L) {
+                    val res = parseJsResult(webView.evaluateJavascriptAsync(clickElementJs(selector)))
+                    if (res.containsKey("error")) clickError = res
+                }
+                if (clickError != null) return@withController clickError!!
+                if (outcome.failed) return@withController navFailureEnvelope(outcome, webView.readPageSnapshot())
                 BrowserController.appendAction("Click+read: $selector")
-                val postUrl = withContext(Dispatchers.Main) { webView.url.orEmpty() }
-                val postTitle = withContext(Dispatchers.Main) { webView.title.orEmpty() }
+                val snap = webView.readPageSnapshot()
+                val postUrl = snap.url
+                val postTitle = snap.title
                 when (mode) {
                     "diff" -> {
                         val after = captureBodyText()
@@ -679,6 +894,7 @@ private fun selectorAndMaxCharsSchema(defaultMax: Int, required: Boolean): Input
     properties = buildJsonObject {
         put("selector", buildJsonObject { put("type", "string"); put("description", "CSS selector (default 'body')") })
         put("max_chars", buildJsonObject { put("type", "integer"); put("description", "Truncation cap (default $defaultMax)") })
+        put("wait_ready", buildJsonObject { put("type", "boolean"); put("description", "Wait for in-flight navigation to settle before reading (default true)") })
     },
     required = if (required) listOf("selector") else null,
 )
@@ -692,6 +908,7 @@ private fun getTextSchema(defaultMax: Int): InputSchema = InputSchema.Obj(
             put("enum", buildJsonArray { add("auto"); add("readability"); add("raw") })
             put("description", "auto (default) tries Readability then falls back; readability forces it; raw uses selector-based innerText")
         })
+        put("wait_ready", buildJsonObject { put("type", "boolean"); put("description", "Wait for in-flight navigation to settle before reading (default true)") })
     },
 )
 
@@ -721,6 +938,16 @@ private suspend fun BrowserControllerHandle.WithControllerScope.withDiff(
 private fun parseFullArg(input: kotlinx.serialization.json.JsonElement): Boolean =
     input.jsonObject["full"]?.jsonPrimitive?.booleanOrNull == true
 
+private fun clickElementJs(selector: String): String = """(function(){
+    try {
+        var el = document.querySelector(${jsString(selector)});
+        if (!el) return JSON.stringify({error:'selector_not_found', selector:${jsString(selector)}});
+        el.scrollIntoView({block:'center', inline:'center'});
+        el.click();
+        return JSON.stringify({clicked:true});
+    } catch(e) { return JSON.stringify({error:'js_failed', detail:String(e)}); }
+})()"""
+
 private fun parseJsResult(raw: String?): JsonObject {
     if (raw == null) return buildJsonObject { put("error", "js_no_result") }
     return runCatching {
@@ -738,8 +965,15 @@ private suspend fun runReadHelper(
 ): JsonObject {
     val selector = (input.jsonObject["selector"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }) ?: "body"
     val maxChars = (input.jsonObject["max_chars"]?.jsonPrimitive?.intOrNull ?: defaultMax).coerceIn(100, 64 * 1024)
+    val waitReady = input.jsonObject["wait_ready"]?.jsonPrimitive?.booleanOrNull ?: true
     return withTimeoutOrNull(toolTimeoutMs) {
-        BrowserControllerHandle.withController { parseJsResult(webView.evaluateJavascriptAsync(jsBuilder(selector, maxChars))) }
+        BrowserControllerHandle.withController {
+            val tracker = controller.activeTracker()
+            if (waitReady) webView.awaitPageIdle(tracker, 5_000L)
+            val snap = webView.readPageSnapshot()
+            val res = parseJsResult(webView.evaluateJavascriptAsync(jsBuilder(selector, maxChars)))
+            finalizeReadResult(res, snap, tracker)
+        }
     } ?: timeoutEnvelope(toolName)
 }
 
@@ -750,10 +984,15 @@ private suspend fun runGetText(input: kotlinx.serialization.json.JsonElement): J
     val maxChars = (input.jsonObject["max_chars"]?.jsonPrimitive?.intOrNull ?: 8000).coerceIn(100, 64 * 1024)
     val mode = input.jsonObject["extract_mode"]?.jsonPrimitive?.contentOrNull?.lowercase()
         ?.takeIf { it in setOf("auto", "readability", "raw") } ?: "auto"
+    val waitReady = input.jsonObject["wait_ready"]?.jsonPrimitive?.booleanOrNull ?: true
     return withTimeoutOrNull(toolTimeoutMs) {
         BrowserControllerHandle.withController {
-            if (explicitSelector != null) return@withController runRawText(explicitSelector, maxChars, mode = "raw_selector")
-            when (mode) {
+            val tracker = controller.activeTracker()
+            if (waitReady) webView.awaitPageIdle(tracker, 5_000L)
+            val snap = webView.readPageSnapshot()
+            val res = if (explicitSelector != null) {
+                runRawText(explicitSelector, maxChars, mode = "raw_selector")
+            } else when (mode) {
                 "raw" -> runRawText("body", maxChars, mode = "raw")
                 "readability" -> {
                     val text = webView.runReadability()
@@ -771,6 +1010,7 @@ private suspend fun runGetText(input: kotlinx.serialization.json.JsonElement): J
                     } else runRawText("body", maxChars, mode = "raw_fallback")
                 }
             }
+            finalizeReadResult(res, snap, tracker)
         }
     } ?: timeoutEnvelope(BrowserToolDefaults.GET_TEXT)
 }
@@ -793,31 +1033,56 @@ private suspend fun BrowserControllerHandle.WithControllerScope.runRawText(selec
 private fun clipText(text: String, maxChars: Int): Pair<String, Boolean> =
     if (text.length <= maxChars) text to false else text.substring(0, maxChars) to true
 
-private suspend fun runHistoryNav(toolName: String, forward: Boolean): JsonObject {
+private suspend fun runHistoryNav(toolName: String, forward: Boolean, input: kotlinx.serialization.json.JsonElement): JsonObject {
+    val throwOnError = input.jsonObject["throw_on_error"]?.jsonPrimitive?.booleanOrNull == true
     val out = withTimeoutOrNull(toolTimeoutMs) {
         BrowserControllerHandle.withController {
-            val ok = withContext(Dispatchers.Main) {
-                if (forward) { if (webView.canGoForward()) { webView.goForward(); true } else false }
-                else { if (webView.canGoBack()) { webView.goBack(); true } else false }
+            val tracker = controller.activeTracker()
+            val canGo = if (forward) webView.canGoForward() else webView.canGoBack()
+            if (!canGo) {
+                return@withController buildJsonObject {
+                    put("success", false)
+                    put("error", "NO_HISTORY")
+                    put("detail", if (forward) "No forward entry in browser history." else "No back entry in browser history.")
+                }
             }
-            if (ok) webView.awaitReadyState(8_000L)
-            BrowserController.appendAction(if (forward) "Forward" else "Back")
-            buildJsonObject { put("success", ok); put("current_url", webView.url.orEmpty()) }
+            val outcome = webView.navigateAndSettle(tracker, timeoutMs = 12_000L) {
+                if (forward) webView.goForward() else webView.goBack()
+            }
+            val snap = webView.readPageSnapshot()
+            if (outcome.failed) {
+                val env = navFailureEnvelope(outcome, snap)
+                if (throwOnError) throw IllegalStateException("$toolName failed: ${env["error"]} (${snap.url})")
+                env
+            } else {
+                BrowserController.appendAction(if (forward) "Forward" else "Back")
+                buildJsonObject {
+                    put("success", true)
+                    put("current_url", snap.url)
+                    put("page_title", snap.title)
+                }
+            }
         }
     } ?: timeoutEnvelope(toolName)
     return out
 }
 
-fun createBrowserTool(toolName: String, context: Context, convIdProvider: () -> String): Tool? = when (toolName) {
+fun createBrowserTool(
+    toolName: String,
+    context: Context,
+    convIdProvider: () -> String,
+    invocationContext: ToolInvocationContext? = null,
+): Tool? = when (toolName) {
     BrowserToolDefaults.OPEN -> browserOpenTool(context, convIdProvider)
     BrowserToolDefaults.CURRENT_URL -> browserCurrentUrlTool()
-    BrowserToolDefaults.SCREENSHOT -> browserScreenshotTool(context)
+    BrowserToolDefaults.SCREENSHOT -> browserScreenshotTool(context, invocationContext ?: ToolInvocationContext.EMPTY)
     BrowserToolDefaults.GET_TEXT -> browserGetTextTool()
     BrowserToolDefaults.GET_DOM -> browserGetDomTool()
     BrowserToolDefaults.GET_LINKS -> browserGetLinksTool()
     BrowserToolDefaults.BACK -> browserBackTool()
     BrowserToolDefaults.FORWARD -> browserForwardTool()
     BrowserToolDefaults.WAIT_FOR -> browserWaitForTool()
+    BrowserToolDefaults.WAIT_FOR_LOAD -> browserWaitForLoadTool()
     BrowserToolDefaults.CLICK -> browserClickTool()
     BrowserToolDefaults.TYPE -> browserTypeTool()
     BrowserToolDefaults.SCROLL -> browserScrollTool()

@@ -24,15 +24,23 @@ internal object BrowserCacheSweeper {
         sweep(cacheDir, keepLast)
     }
 
-    internal fun sweep(cacheDir: File, keepLast: Int) {
+    /**
+     * v4.8.116: 增加 TTL — 超过 [ttlMs] 的截图无论排名一律删除
+     * (缓存目录只存本应用自产工件, 无用户数据风险)。
+     */
+    internal fun sweep(cacheDir: File, keepLast: Int, ttlMs: Long = 24 * 60 * 60 * 1000L) {
         for (subdir in CACHE_SUBDIRS) {
             val dir = File(cacheDir, subdir)
             if (!dir.isDirectory) continue
             val files = dir.listFiles() ?: continue
             files.sortByDescending { it.lastModified() }
-            files.drop(keepLast).forEach { file ->
-                runCatching { file.delete() }.onFailure {
-                    Log.w(TAG, "Failed to delete ${file.name}", it)
+            val now = System.currentTimeMillis()
+            files.forEachIndexed { idx, file ->
+                val expired = now - file.lastModified() > ttlMs
+                if (idx >= keepLast || expired) {
+                    runCatching { file.delete() }.onFailure {
+                        Log.w(TAG, "Failed to delete ${file.name}", it)
+                    }
                 }
             }
         }

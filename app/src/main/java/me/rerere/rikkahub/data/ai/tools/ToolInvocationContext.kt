@@ -38,6 +38,10 @@ data class ToolInvocationContext(
     val callerConversationId: String? = null,
     val isHeadless: Boolean = false,
     val modelCanSeeImages: Boolean = true,
+    // v4.8.116: 工具产物的统一存储锚点 (浏览器截图等模型可见产物落到该工作区,
+    // 沙箱 /workspace 直读 + render_url 渲染链全通)。null = 无绑定工作区 (回退 cache)。
+    val workspaceId: String? = null,
+    val workspaceCwd: String? = null,
 ) {
     companion object {
         /** No-knowledge fallback. Factories that depend on context MUST handle this. */

@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -47,7 +49,11 @@ object BrowserController {
     /** Execution mode. Only Headless is used in RinCore. */
     sealed class Mode {
         data object Idle : Mode()
-        data class Headless(val callerConvId: String, val webView: WebView) : Mode()
+        data class Headless(
+            val callerConvId: String,
+            val webView: WebView,
+            val navigationTracker: BrowserNavigationTracker,  // v4.8.116 导航生命周期事实源
+        ) : Mode()
     }
 
     @Volatile
@@ -62,19 +68,29 @@ object BrowserController {
     fun recentActionsFlow(): StateFlow<List<String>> = _recentActions.asStateFlow()
 
     /** Bind a headless WebView for [callerConvId]. Returns false if slot is taken. */
-    fun bindHeadless(callerConvId: String, webView: WebView): Boolean {
+    fun bindHeadless(
+        callerConvId: String,
+        webView: WebView,
+        navigationTracker: BrowserNavigationTracker,
+    ): Boolean {
         synchronized(bindLock) {
             return when (val current = mode) {
                 is Mode.Headless ->
                     if (current.callerConvId == callerConvId) { true }
                     else { false }
                 Mode.Idle -> {
-                    mode = Mode.Headless(callerConvId, webView)
+                    mode = Mode.Headless(callerConvId, webView, navigationTracker)
                     bindDeferred.complete(Unit)
                     true
                 }
             }
         }
+    }
+
+    /** v4.8.116: 当前会话的导航跟踪器 (未绑定为 null) */
+    fun activeTracker(): BrowserNavigationTracker? = when (val m = mode) {
+        is Mode.Headless -> m.navigationTracker
+        Mode.Idle -> null
     }
 
     fun unbindHeadless(callerConvId: String) {
@@ -197,6 +213,14 @@ object BrowserControllerHandle {
         val webView: WebView,
     )
 
+    /**
+     * v4.8.116 (P1-5 用户实证: browser_open 与 get_dom/get_text 同批并行时读取必空):
+     * 全部浏览器工具共用这一把操作互斥 — 读类调用天然排在导航动作之后,
+     * 不存在"读请求在导航完成前发出"的窗口。浏览器是单实例资源, 与工具池的
+     * 有界并行正交: 并行到浏览器这里的调用全部串行化。
+     */
+    private val opsMutex = kotlinx.coroutines.sync.Mutex()
+
     suspend fun withController(
         block: suspend WithControllerScope.() -> JsonObject,
     ): JsonObject {
@@ -204,8 +228,10 @@ object BrowserControllerHandle {
         if (!BrowserController.isWithinTaskWindow()) {
             return BrowserController.taskTimeoutEnvelope()
         }
-        return withContext(Dispatchers.Main) {
-            WithControllerScope(BrowserController, wv).block()
+        return opsMutex.withLock {
+            withContext(Dispatchers.Main) {
+                WithControllerScope(BrowserController, wv).block()
+            }
         }
     }
 }
@@ -226,15 +252,6 @@ suspend fun WebView.evaluateJavascriptAsync(code: String, timeoutMs: Long = 8_00
     return withTimeoutOrNull(timeoutMs) { deferred.await() }
 }
 
-/**
- * Wait for document.readyState === "complete". Polls every 200ms.
- */
-suspend fun WebView.awaitReadyState(timeoutMs: Long = 8_000L): Boolean {
-    val deadline = System.currentTimeMillis() + timeoutMs
-    while (System.currentTimeMillis() < deadline) {
-        val raw = evaluateJavascriptAsync("(function(){return document.readyState;})()", 1_500L)
-        if (raw != null && raw.trim() == "\"complete\"") return true
-        kotlinx.coroutines.delay(200)
-    }
-    return false
-}
+// v4.8.116: 旧 awaitReadyState 已删除 — 它在导航进行中轮询到的是旧文档的
+// readyState (早已 complete), 是 B139 三条 P0"乐观返回"的根子。替代物 =
+// BrowserNavigation.kt 的 navigateAndSettle/awaitPageIdle (generation 事实源)。

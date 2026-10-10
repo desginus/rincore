@@ -35,6 +35,9 @@ class HeadlessBrowserSession(private val context: Context) {
     private var webView: WebView? = null
     private var host: LinearLayout? = null
 
+    /** v4.8.116: 导航生命周期跟踪 — WebViewClient 回调喂入, 工具结算等待的唯一事实源 */
+    val navigationTracker = BrowserNavigationTracker()
+
     suspend fun start(callerConvId: String): WebView {
         val existing = webView
         if (existing != null) return existing
@@ -73,7 +76,47 @@ class HeadlessBrowserSession(private val context: Context) {
                         favicon: android.graphics.Bitmap?,
                     ) {
                         super.onPageStarted(view, url, favicon)
+                        // v4.8.116: 导航代数 ++ (重定向链每跳递增); 旧文档的
+                        // readyState 不再作为结算判据 (B139 三条 P0 的根子)
+                        navigationTracker.onPageStarted()
                         view.evaluateJavascript(VISIBILITY_SHIM_JS, null)
+                    }
+
+                    override fun onPageFinished(view: WebView, url: String?) {
+                        super.onPageFinished(view, url)
+                        navigationTracker.onPageFinished()
+                    }
+
+                    // v4.8.116: network-idle 判据 — 每个资源请求刷新时间戳
+                    override fun shouldInterceptRequest(
+                        view: WebView?,
+                        request: WebResourceRequest?,
+                    ): android.webkit.WebResourceResponse? {
+                        navigationTracker.onRequest()
+                        return null
+                    }
+
+                    // v4.8.116: 主帧导航失败捕获 (P0-2 — 旧实现静默吞掉仍报 success)
+                    override fun onReceivedError(
+                        view: WebView?,
+                        request: WebResourceRequest?,
+                        error: android.webkit.WebResourceError?,
+                    ) {
+                        super.onReceivedError(view, request, error)
+                        if (request?.isForMainFrame == true && error != null) {
+                            navigationTracker.onMainFrameError(error.errorCode, error.description?.toString().orEmpty())
+                        }
+                    }
+
+                    override fun onReceivedHttpError(
+                        view: WebView?,
+                        request: WebResourceRequest?,
+                        errorResponse: android.webkit.WebResourceResponse?,
+                    ) {
+                        super.onReceivedHttpError(view, request, errorResponse)
+                        if (request?.isForMainFrame == true && errorResponse != null) {
+                            navigationTracker.onMainFrameHttpError(errorResponse.statusCode)
+                        }
                     }
                 }
                 CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
