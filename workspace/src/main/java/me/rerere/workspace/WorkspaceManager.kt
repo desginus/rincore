@@ -252,8 +252,8 @@ class WorkspaceManager(
         return runCatching {
             val location = resolveRootfsPath(root, path, cwd)
             val target = fileSystem.resolve(location.rootDir, location.relativePath)
-            if (target.path == location.rootDir.path) return null
-            target.toFile()
+            if (target.path == location.rootDir.path) null
+            else target
         }.getOrNull()
     }
 
