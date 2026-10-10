@@ -52,7 +52,9 @@ enum class SubAgentStatus {
 const val SUBAGENT_TITLE_PREFIX = "[Sub-agent]"
 
 object SubAgentDefaults {
-    const val DEFAULT_TIMEOUT_SECONDS = 300
+    // v4.8.120 (用户定版): 默认超时 300 → 1800 秒 (30 分钟) — 复杂任务/长调研
+    // 子代理此前 5 分钟即被截停; 上限不变 (MAX_TIMEOUT_SECONDS = 1800)。
+    const val DEFAULT_TIMEOUT_SECONDS = 1800
     const val MAX_TIMEOUT_SECONDS = 1800
     const val DEFAULT_MAX_TRIPS = 12
     const val MAX_MAX_TRIPS = 30

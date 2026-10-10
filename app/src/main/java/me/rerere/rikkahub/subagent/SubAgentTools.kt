@@ -99,7 +99,13 @@ fun subagentDispatchTool(
                     put("items", buildJsonObject { put("type", "string") })
                 })
                 put("run_in_background", buildJsonObject { put("type", "boolean") })
-                put("timeout_seconds", buildJsonObject { put("type", "integer") })
+                put("timeout_seconds", buildJsonObject {
+                    put("type", "integer")
+                    put(
+                        "description",
+                        "Max runtime in seconds (1-${SubAgentDefaults.MAX_TIMEOUT_SECONDS}; default ${SubAgentDefaults.DEFAULT_TIMEOUT_SECONDS})",
+                    )
+                })
                 put("max_trips", buildJsonObject { put("type", "integer") })
             },
             required = listOf("task"),

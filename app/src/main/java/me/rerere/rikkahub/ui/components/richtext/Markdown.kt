@@ -74,6 +74,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
@@ -114,6 +115,7 @@ import org.intellij.markdown.flavours.gfm.GFMElementTypes
 import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
 import org.intellij.markdown.flavours.gfm.GFMTokenTypes
 import org.intellij.markdown.parser.MarkdownParser
+import org.intellij.markdown.util.TableFenceUnwrapper
 import kotlin.time.Clock
 
 internal val flavour by lazy {
@@ -151,9 +153,14 @@ private val INTRAWORD_UNDERSCORE_REGEX = Regex("(?<=[A-Za-z0-9])_(?=[A-Za-z0-9])
 // v4.8.86: preProcess / flavour / parser 提升为 internal —— 它们是**两条渲染路径的唯一实现**
 // (MarkdownNew.kt 里那份副本已删除; 副本此前还漂移过: 内部没用自己声明的预编译正则)。
 internal fun preProcess(content: String): String {
+    // v4.8.120 (codex 对齐): ```md/```markdown 围栏内表格解包 — LLM 常把表格包进
+    // markdown 围栏当代码输出, 不解包则整张表渲染成代码块 (表格结构/单元格公式/
+    // 强调全灭; 与 openai/codex 同题实锤)。语义保守: 仅 md/markdown 围栏 + 体内
+    // 确含"表头+分隔行"才拆; 其他语言围栏与未闭合围栏原样保留 (流式降级安全)。
+    val unwrapped = TableFenceUnwrapper.unwrap(content)
     // 先找出所有代码块的位置
     val codeBlocks = mutableListOf<IntRange>()
-    CODE_BLOCK_REGEX.findAll(content).forEach { match ->
+    CODE_BLOCK_REGEX.findAll(unwrapped).forEach { match ->
         codeBlocks.add(match.range)
     }
 
@@ -163,7 +170,7 @@ internal fun preProcess(content: String): String {
     }
 
     // 替换行内公式 \( ... \) 到 $ ... $，但跳过代码块内的内容
-    var result = INLINE_LATEX_REGEX.replace(content) { matchResult ->
+    var result = INLINE_LATEX_REGEX.replace(unwrapped) { matchResult ->
         if (isInCodeBlock(matchResult.range.first)) {
             matchResult.value // 保持原样
         } else {
@@ -1080,11 +1087,21 @@ private fun TableNode(node: ASTNode, content: String, modifier: Modifier = Modif
         rowNode.children.filter { it.type == GFMTokenTypes.CELL }
     }
 
+    // v4.8.120 (codex 对齐): GFM 列对齐 — 从分隔行 (|:--|:-:|--:|) 解析; 未标注
+    // 列返回 null 保持既有形态 (只加不改 — 对既有表格零影响)。
+    val columnAlignments = remember(node, content) {
+        val delimiterRow = node.children.firstOrNull {
+            it.type == GFMTokenTypes.TABLE_SEPARATOR && it.getTextInNode(content).contains('-')
+        } ?: return@remember emptyList<TextAlign?>()
+        parseColumnAlignments(delimiterRow.getTextInNode(content))
+    }
+
     val headers = List(columnCount) { columnIndex ->
         @Composable {
             TableCellContent(
                 node = headerCellNodes.getOrNull(columnIndex),
                 content = content,
+                textAlign = columnAlignments.getOrNull(columnIndex),
             )
         }
     }
@@ -1096,6 +1113,7 @@ private fun TableNode(node: ASTNode, content: String, modifier: Modifier = Modif
                 TableCellContent(
                     node = cellNodes.getOrNull(columnIndex),
                     content = content,
+                    textAlign = columnAlignments.getOrNull(columnIndex),
                 )
             }
         }
@@ -1205,11 +1223,14 @@ private fun TableNode(node: ASTNode, content: String, modifier: Modifier = Modif
  * 全部按"单元格 = GFM 行内内容"的规范渲染, 不再整段重解析。
  * HTML 单元格不会进入本函数 (containsHtml 的整段判定已把含 HTML 消息交给
  * MarkdownNew HTML 路径)。
+ *
+ * v4.8.120: 增加 GFM 列对齐 (textAlign) — null = 未标注列保持既有形态。
  */
 @Composable
 private fun TableCellContent(
     node: ASTNode?,
     content: String,
+    textAlign: TextAlign? = null,
 ) {
     if (node == null) return
     val colorScheme = MaterialTheme.colorScheme
@@ -1234,12 +1255,43 @@ private fun TableCellContent(
             }
         }
     }
-    Text(
-        text = annotatedString,
-        inlineContent = inlineContents,
-        softWrap = true,
-        overflow = TextOverflow.Visible,
-    )
+    if (textAlign != null) {
+        Text(
+            text = annotatedString,
+            inlineContent = inlineContents,
+            softWrap = true,
+            overflow = TextOverflow.Visible,
+            textAlign = textAlign,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    } else {
+        Text(
+            text = annotatedString,
+            inlineContent = inlineContents,
+            softWrap = true,
+            overflow = TextOverflow.Visible,
+        )
+    }
+}
+
+/**
+ * v4.8.120: 解析 GFM 分隔行的列对齐 — `:--`=Start / `:-:`=Center / `--:`=End /
+ * 无边冒号 = null (不作干预)。段数不足时按 getOrNull 语义自然缺省。
+ */
+private fun parseColumnAlignments(delimiterLine: String): List<TextAlign?> {
+    val trimmed = delimiterLine.trim().trim('|')
+    if (trimmed.isEmpty()) return emptyList()
+    return trimmed.split('|').map { seg ->
+        val t = seg.trim()
+        val lead = t.startsWith(":")
+        val trail = t.endsWith(":") && t.length > 1
+        when {
+            lead && trail -> TextAlign.Center
+            trail -> TextAlign.End
+            lead -> TextAlign.Start
+            else -> null
+        }
+    }
 }
 
 // 构建CSV内容，对包含逗号/引号/换行的字段进行转义
