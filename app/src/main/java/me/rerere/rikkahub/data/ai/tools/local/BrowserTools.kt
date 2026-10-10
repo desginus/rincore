@@ -7,7 +7,7 @@ package me.rerere.rikkahub.data.ai.tools.local
  * v4.8.116 (B139 用户实证六项, 整文件重写):
  *   P0-1 乐观返回   → 导航类工具全部经 navigateAndSettle (load+network-idle),
  *                     current_url/page_title 取结算后 JS 快照 (重定向最终 URL)
- *   P0-2 静默吞错   → 主帧 net::ERR_*/HTTP>=4xx/超时捕获, 失败返回
+ *   P0-2 静默吞错   → 主帧 net::ERR_xxx / HTTP>=4xx / 超时捕获, 失败返回
  *                     success:false+error+final_url; throw_on_error 可抛出
  *   P0-3 受控输入   → type/select 走原型原生 value setter + input/change 事件
  *                     (React/Vue value tracker 不再被绕过)
