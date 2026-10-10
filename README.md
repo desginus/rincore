@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=build&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/version-v3.10.0-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/version-v4.8.116-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/license-segmented_dual-cyan)](LICENSE)
 
 **A real, self-contained AI assistant on your phone.** Not a wrapper — a rebuilt engine with six
@@ -129,48 +129,71 @@ changelog entry and a regression guard. Optimizations keep coming.
 
 ## 📋 Changelog
 
-Recent major releases (newest first):
+v4.8.54 → v4.8.116 (newest first):
 
-- **v4.8.116** — Browser tools rewritten end-to-end: navigation settle (load + network idle), visible failures (ERR/timeout + throw_on_error), native-setter typing for React/Vue inputs, page-state semantics, parallel-call mutual exclusion, screenshots unified into the workspace (sandbox-readable + inline renderable)
-- **v4.8.115** — Tool-image render addresses unified: one canonical form (percent-encoded file://), one decode point (Coil claim layer), one producer/extractor source
-- **v4.8.114** — Network-failure visibility: "retrying (attempt N)" status + actionable terminal message (connectivity control / proxy / switch network)
-- **v4.8.113** — Tool images visible inside the chat bubble: private file:// allowed through the markdown XSS gate + unified render_urls + render_markdown restatement + tool-section thumbnails
-- **v4.8.112** — Silent-interruption completion gate across all five channels + share/photo hardening + /@ cache root fix + English-drift reinforcement
-- **v4.8.111** — Assistant switching stays put (zero navigation), final fix
-- **v4.8.110** — Feature batch (B1–B6) + tool parallelism aligned with Claude Code
-- **v4.8.109** — XLSX upload exception + degradation dialog + cache continuity root fix
-- **v4.8.108** — Sub-agent budget false-trip root fix
-- **v4.8.107** — "Image upload breaks all caches" root fix (audited against upstream)
-- **v4.8.106** — Removed the "tool done, still generating…" banner + poke-gate fallback
-- **v4.8.105** — Seamless tool→output continuation: pre-poke + zero-wait gate + TTFT breakdown tracing
-- **v4.8.104** — Drawer cleanup + quick-overview page entry + tap-blank-to-return + minimal-mode tool gate
-- **v4.8.103** — VideoGen crash fix + video generation aligned to the image-generation flow
-- **v4.8.102** — Video generation for real (Google Veo direct) + rendering speedups
-- **v4.8.101** — Render-chain fix (officecli artifact contract) + video-gen page aligned with image-gen
-- **v4.8.100** — Document-render gaps closed (real officecli rendering) + video generation
-- **v4.8.99** — Threading reform: AppDispatchers single source of truth + sandbox process-family isolation pool
-- **v4.8.98** — Real document rendering + speedups + four-in-one batch (true PPT canvas size)
-- **v4.8.97** — Whole-repo deep optimization batch (dead-code cleanup + caching)
-- **v4.8.96** — MCP stdio connection regression fix
-- **v4.8.95** — GoogleProvider headers + three-language string coverage + precise title-model errors
-- **v4.8.94** — Upstream 2.5.6 port: chart_display tool chain + MCP OAuth/$ref fixes
-- **v4.8.93** — Drawer entries restored + stats page ported + duplicate entries removed
-- **v4.8.92** — Factory-reset removed (mis-tap risk) + /@ zone picker & origin labels + per-conversation memory + sub-agent budget review
-- **v4.8.91** — Upload codes as time codes (UTC+8, in filenames) + in-conversation upload listing + warm connection on resume
-- **v4.8.90** — /@ tool-matrix picker (3-level drill-down) + upload-code fetch tool + UI/model tool-pool parity
-- **v4.8.89** — Tool-matrix write chain rewritten: single transactional write entry, false success/failure fixed
-- **v4.8.88** — Preset skills (physics-tutor) + sub-agent budget + notification split + real generation stop
-- **v4.8.87** — Tool-matrix architecture rewrite: identity separated from path + single write entry
-- **v4.8.86** — Streaming render/cache rewrite: MarkdownStream engine, no per-chunk full reparse
-- **v4.8.85** — Minimal mode (zero tool injection) + free tool re-assignment
-- **v4.8.84** — Tool matrix: model-side management (manage_zone) + four fixes
-- **v4.8.83** — Tool matrix fully rewritten: builtin/custom split removed, unified declarative zones
-- **v4.8.82** — Compile-log readability: shell keeps head+tail, errors no longer truncated away
-- **v4.8.81** — One-tap clear for capability modules (MCP / Skills)
-- **v4.8.80** — MCP schema dangling-$ref fix + parameters null fallback
-- **v4.8.75** — ask_user fold exemption + pending-phase direct-send fix
-- **v4.8.72** — Sandbox background-job primitive (workspace_job) + timeout relax (600s/700s)
-- **v4.8.67** — Render path rolled back (stable v4.8.64 form) + fold-range correction
+- **v4.8.116** — Fixed browser tools returning stale URL/title after navigation (now waits for the page to actually finish loading); fixed unreachable pages still reporting success (now returns explicit error codes); fixed typing into React/Vue inputs having no effect (native setter + input/change events); fixed reads racing an in-flight navigation in the same batch; added the browser_wait_for_load tool; screenshots now land in the workspace — sandbox-readable and displayable inline.
+- **v4.8.115** — Fixed tool-generated images having inconsistent render-address formats across entry points (one canonical form, one decode point); local image caches now keyed by file mtime, so overwritten images show the new version immediately.
+- **v4.8.114** — Fixed long silent waits when the network is down: now shows "network failure, retrying (attempt N)" and an actionable message after final failure (connectivity control / in-app proxy / switch network).
+- **v4.8.113** — Fixed tool-generated images not rendering inside chat bubbles (private file:// allowed + unified field + verbatim-echoable image lines); thumbnails now show inside the tool section, tap to zoom.
+- **v4.8.112** — Fixed DeepSeek-family outputs being silently treated as "finished" at the halfway cut-off (completion criteria completed for all channels; abnormal endings now continue or retry); fixed occasional empty shares and lost photos; fixed conversation cache being flushed by @ mentions; English proper nouns no longer mistranslated.
+- **v4.8.111** — Fixed switching assistants jumping to another conversation (switching now switches only, no navigation).
+- **v4.8.110** — Completed the B1–B6 feature list; tool parallelism aligned with Claude Code (bounded concurrency, ordered output).
+- **v4.8.109** — Fixed XLSX upload exceptions, the degradation dialog, and cache discontinuity across upload rounds.
+- **v4.8.108** — Fixed sub-agent budget false trips.
+- **v4.8.107** — Fixed all conversation caches breaking after an image upload (root-caused against upstream).
+- **v4.8.106** — Removed the "tool done, still generating…" banner; restored the poke-gate fallback.
+- **v4.8.105** — Shorter wait between tool completion and resumed output: earlier pre-poke, zero-wait gate, TTFT breakdown tracing.
+- **v4.8.104** — Drawer "feature fold" removed; new quick-overview entry; tap-blank-to-return; minimal-mode tool gate.
+- **v4.8.103** — Fixed the video-generation page crash; video flow aligned with image generation.
+- **v4.8.102** — Video generation actually works (Google Veo direct); rendering speedups.
+- **v4.8.101** — Fixed "file not found" when opening rendered documents (artifact filename now matches the viewer contract); video-gen page aligned with image-gen.
+- **v4.8.100** — Document-rendering gaps closed (PPT / real officecli rendering); video generation added.
+- **v4.8.99** — Threading reform: unified dispatchers + sandbox process-family isolation pool.
+- **v4.8.98** — Fixed long PPTs showing only the left half (true canvas size); document rendering speedups.
+- **v4.8.97** — Repo-wide cleanup: 107 unused string keys, 4 unused icons, 3 dead files removed; caching improvements.
+- **v4.8.96** — Fixed the MCP stdio connection regression.
+- **v4.8.95** — GoogleProvider request headers completed; 30 string keys added across three languages; more precise title-model errors.
+- **v4.8.94** — Upstream 2.5.6 port: in-chat chart tool (chart_display); MCP OAuth callback 403 fixed; MCP tool schema $refs expanded.
+- **v4.8.93** — Restored the drawer's "AI translate / image generation" entries; stats page ported; two duplicate entries removed.
+- **v4.8.92** — "Factory reset" removed (mis-taps revived deleted configs); /@ picker can select whole zones + tool origin labels; sub-agent budget false-zero fixed; per-conversation memory added; local settings gained alarm/workflow switches.
+- **v4.8.91** — Upload codes are now time codes (MMDDHHmm, UTC+8, embedded in filenames); in-conversation upload listing; warm connection on app resume (faster first token); workspaces sorted by creation time.
+- **v4.8.90** — New /@ tool-matrix picker (3-level drill-down, tap to fill); new upload-code fetch tool; UI tool pool now matches the model tool pool.
+- **v4.8.89** — Fixed the "says it saved but didn't" family in the tool matrix (single transactional write path; false success/failure fixed).
+- **v4.8.88** — Built-in physics-tutor preset skill; sub-agent token budget (100K/conversation default, trip on exceed); separate notification channel for sub-agents; cancel now truly stops the underlying request.
+- **v4.8.87** — Tool-matrix architecture rewrite (identity separated from path; single write entry).
+- **v4.8.86** — Streaming render rewrite (MarkdownStream engine), no per-chunk full reparse — smoother long chats.
+- **v4.8.85** — Minimal mode added (zero tool injection); tools can be moved back to top-level direct.
+- **v4.8.84** — Tool matrix gains model-side management (four actions); fixed dead caches, gate false-blocks, hidden-zone disconnects, load loss.
+- **v4.8.83** — Tool matrix fully rewritten: builtin/custom split removed, unified declarative zones; deletes actually delete; config surfaces cut from 9 to 5.
+- **v4.8.82** — Compile-log readability: shell output keeps head+tail, errors no longer truncated away (model no longer misreads "no errors").
+- **v4.8.81** — One-tap clear for capability modules (MCP / Skills).
+- **v4.8.80** — Fixed MCP tool-schema dangling $refs; null parameters fallback.
+- **v4.8.79** — "Provider balance" module rolled back; CC empty-plan criteria fixed.
+- **v4.8.78** — async scope-extension call fix (compile fix with the version).
+- **v4.8.77** — Missing share icon import (compile fix).
+- **v4.8.76** — Poke timestamp now held across tool rounds (compile fix).
+- **v4.8.75** — ask_user cards exempt from folding; pending-phase direct send fixed.
+- **v4.8.74** — runInterruptible context fix (compile fix).
+- **v4.8.73** — Live segmented wrapping; CWD-pack render/reset/log fixes.
+- **v4.8.72** — Sandbox background jobs (workspace_job); command timeout relaxed to 600s.
+- **v4.8.71** — Segmented thinking/tool folding (capsules); OC/CC heartbeat at startup.
+- **v4.8.70** — DI layer fix + Markdown incremental-parse type visibility (compile fixes).
+- **v4.8.69** — Selective revert of the material-library upgrade (glass-effect investigation).
+- **v4.8.68** — Block-level parsing pipeline (speed mechanism, rendering unchanged).
+- **v4.8.67** — Render path rolled back to the stable form; fold scope corrected (thinking + tools only).
+- **v4.8.66** — List-iteration compatibility fix (compile fix).
+- **v4.8.65** — Chat-list composable fix (compile fix).
+- **v4.8.64** — MCP stdio branch fixes; material-library migration (compile fixes).
+- **v4.8.63** — Three-line spec rewrite: sort persistence, branch ownership, MCP CWD-lock removal, file-parsing engine.
+- **v4.8.62** — Accessibility semantics completed (compile fix).
+- **v4.8.61** — Workspace tool suspend calls fixed (compile fix).
+- **v4.8.60** — Usage page tidy-up ("in use" removed, key reveal); sandbox diagnostics (doccheck / blockscan).
+- **v4.8.59** — Ownership snapshot; expand-arrow direction fixed; usage query page rewritten.
+- **v4.8.58** — Project-pack smart ordering + expanded vertical list; capsule-window export semantics fixed.
+- **v4.8.57** — Capsule-window file-chain CWD resolution; request-fingerprint hardening.
+- **v4.8.56** — "Silent truncation" fixed: usage-tail packets no longer count as completion; cut-off output auto-continues.
+- **v4.8.55** — Continuation-decision fix (compile fix).
+- **v4.8.54** — Error triage extended on OC/CC gateways.
 
 ## 🤝 Credits
 
