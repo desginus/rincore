@@ -127,14 +127,55 @@ Stack: [Kotlin](https://kotlinlang.org/) · [Jetpack Compose](https://developer.
 RinCore is actively maintained. Issues and PRs are welcome — every problem reported becomes a
 changelog entry and a regression guard. Optimizations keep coming.
 
+## 📋 Changelog
+
+Recent major releases (newest first):
+
+- **v4.8.116** — Browser tools rewritten end-to-end: navigation settle (load + network idle), visible failures (ERR/timeout + throw_on_error), native-setter typing for React/Vue inputs, page-state semantics, parallel-call mutual exclusion, screenshots unified into the workspace (sandbox-readable + inline renderable)
+- **v4.8.115** — Tool-image render addresses unified: one canonical form (percent-encoded file://), one decode point (Coil claim layer), one producer/extractor source
+- **v4.8.114** — Network-failure visibility: "retrying (attempt N)" status + actionable terminal message (connectivity control / proxy / switch network)
+- **v4.8.113** — Tool images visible inside the chat bubble: private file:// allowed through the markdown XSS gate + unified render_urls + render_markdown restatement + tool-section thumbnails
+- **v4.8.112** — Silent-interruption completion gate across all five channels + share/photo hardening + /@ cache root fix + English-drift reinforcement
+- **v4.8.111** — Assistant switching stays put (zero navigation), final fix
+- **v4.8.110** — Feature batch (B1–B6) + tool parallelism aligned with Claude Code
+- **v4.8.109** — XLSX upload exception + degradation dialog + cache continuity root fix
+- **v4.8.108** — Sub-agent budget false-trip root fix
+- **v4.8.107** — "Image upload breaks all caches" root fix (audited against upstream)
+- **v4.8.106** — Removed the "tool done, still generating…" banner + poke-gate fallback
+- **v4.8.105** — Seamless tool→output continuation: pre-poke + zero-wait gate + TTFT breakdown tracing
+- **v4.8.104** — Drawer cleanup + quick-overview page entry + tap-blank-to-return + minimal-mode tool gate
+- **v4.8.103** — VideoGen crash fix + video generation aligned to the image-generation flow
+- **v4.8.102** — Video generation for real (Google Veo direct) + rendering speedups
+- **v4.8.101** — Render-chain fix (officecli artifact contract) + video-gen page aligned with image-gen
+- **v4.8.100** — Document-render gaps closed (real officecli rendering) + video generation
+- **v4.8.99** — Threading reform: AppDispatchers single source of truth + sandbox process-family isolation pool
+- **v4.8.98** — Real document rendering + speedups + four-in-one batch (true PPT canvas size)
+- **v4.8.97** — Whole-repo deep optimization batch (dead-code cleanup + caching)
+- **v4.8.96** — MCP stdio connection regression fix
+- **v4.8.95** — GoogleProvider headers + three-language string coverage + precise title-model errors
+- **v4.8.94** — Upstream 2.5.6 port: chart_display tool chain + MCP OAuth/$ref fixes
+- **v4.8.93** — Drawer entries restored + stats page ported + duplicate entries removed
+- **v4.8.92** — Factory-reset removed (mis-tap risk) + /@ zone picker & origin labels + per-conversation memory + sub-agent budget review
+- **v4.8.91** — Upload codes as time codes (UTC+8, in filenames) + in-conversation upload listing + warm connection on resume
+- **v4.8.90** — /@ tool-matrix picker (3-level drill-down) + upload-code fetch tool + UI/model tool-pool parity
+- **v4.8.89** — Tool-matrix write chain rewritten: single transactional write entry, false success/failure fixed
+- **v4.8.88** — Preset skills (physics-tutor) + sub-agent budget + notification split + real generation stop
+- **v4.8.87** — Tool-matrix architecture rewrite: identity separated from path + single write entry
+- **v4.8.86** — Streaming render/cache rewrite: MarkdownStream engine, no per-chunk full reparse
+- **v4.8.85** — Minimal mode (zero tool injection) + free tool re-assignment
+- **v4.8.84** — Tool matrix: model-side management (manage_zone) + four fixes
+- **v4.8.83** — Tool matrix fully rewritten: builtin/custom split removed, unified declarative zones
+- **v4.8.82** — Compile-log readability: shell keeps head+tail, errors no longer truncated away
+- **v4.8.81** — One-tap clear for capability modules (MCP / Skills)
+- **v4.8.80** — MCP schema dangling-$ref fix + parameters null fallback
+- **v4.8.75** — ask_user fold exemption + pending-phase direct-send fix
+- **v4.8.72** — Sandbox background-job primitive (workspace_job) + timeout relax (600s/700s)
+- **v4.8.67** — Render path rolled back (stable v4.8.64 form) + fold-range correction
+
 ## 🤝 Credits
 
-- Built on [RikkaHub](https://github.com/re-ovo/rikkahub) by re-ovo & contributors — the
-  foundation of this project.
-- If you like the idea but want a different take, these are excellent projects too:
-  - **RikkaHub** — the original, same-type client
-  - **RikkaHub Agent** — a strengthened, agent-focused build
-  - **Orange Chat** — an optimized build focused on AI companionship
+- **desginus** — design, development and maintenance
+- **Claude** — model-side collaborator
 
 ## 📄 License
 
