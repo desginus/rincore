@@ -87,6 +87,7 @@ import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.GenerationChunk
 import me.rerere.rikkahub.data.ai.CallTracer
+import me.rerere.rikkahub.data.ai.TraceKey
 import me.rerere.rikkahub.data.ai.GenerationHandler
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
@@ -463,6 +464,9 @@ class ChatService(
         // 可在 start 前挂起等待前驱 (RinCore 无 FGS acquire 机制, 用 LAZY 直通)
         val job = appScope.launch(start = CoroutineStart.LAZY) {
             try {
+                // v4.8.118 (B140): 追踪键控 — 本对话为独立追踪单元 (并行会话
+                // 互不串扰: start/event/finish 全按 TraceKey 隔离)
+                withContext(TraceKey(conversationId.toString())) {
                 finishInterruptedPendingTools(conversationId)
 
                 val currentConversation = session.state.value
@@ -499,6 +503,7 @@ class ChatService(
                 // Voice owns playback, including when its observer has already left the page.
                 // The ordinary autoplay collector must not read a late voice reply again.
                 if (queued.reply == null) _generationDoneFlow.emit(conversationId)
+                }
             } catch (e: Exception) {
                 queued.reply?.completeExceptionally(e)
                 e.printStackTrace()
@@ -547,6 +552,8 @@ class ChatService(
 
         val job = appScope.launch(start = CoroutineStart.LAZY) {
             try {
+                // v4.8.118 (B140): 追踪键控 — 本对话独立追踪单元
+                withContext(TraceKey(conversationId.toString())) {
                 previousJob?.join()
                 val conversation = session.state.value
 
@@ -570,6 +577,7 @@ class ChatService(
                 }
 
                 _generationDoneFlow.emit(conversationId)
+                }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 session.messageQueue.pause()
@@ -599,6 +607,8 @@ class ChatService(
         }
         val job = appScope.launch(start = CoroutineStart.LAZY) {
             try {
+                // v4.8.118 (B140): 追踪键控 — 本对话独立追踪单元
+                withContext(TraceKey(conversationId.toString())) {
                 me.rerere.rikkahub.data.ai.CallTracer.event(
                     "TOOL", "approval_${if (approved) "approved" else "denied"}",
                     "tool=$toolCallId reason=$reason answer=$answer"
@@ -649,6 +659,7 @@ class ChatService(
                     }
 
                     _generationDoneFlow.emit(conversationId)
+                }
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
@@ -787,7 +798,10 @@ class ChatService(
                     buildAssistantToolPool(
                         filesRoot = context.filesDir,
                         settings = settingsStore.settingsFlow.value,
-                        assistant = settingsStore.settingsFlow.value.getCurrentAssistant(),
+                        // v4.8.118: 本对话的助手 (原为"当前焦点助手"——并行/多助手
+                        // 场景下 invoke_tools 懒加载池会错位到焦点助手的工具与
+                        // 工作区锚点; 主 tools 构建一直用的就是本对话助手)
+                        assistant = assistant,
                         localTools = localTools,
                         skillManager = skillManager,
                         conversationRepo = conversationRepo,
