@@ -19,6 +19,7 @@ package me.rerere.rikkahub.browser
 import android.webkit.WebView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.contentOrNull
 
 /**
  * 导航状态机 — 由 HeadlessBrowserSession 的 WebViewClient 回调喂入。
