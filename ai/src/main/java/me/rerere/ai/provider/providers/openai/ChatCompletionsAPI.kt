@@ -87,6 +87,7 @@ import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessageChoice
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.util.KeyRoulette
+import me.rerere.ai.util.ParallelStreamRegistry
 import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.configureSessionHeaders
 import me.rerere.ai.util.encodeBase64
@@ -222,6 +223,10 @@ class ChatCompletionsAPI(
         messages: List<UIMessage>,
         params: TextGenerationParams,
     ): Flow<MessageChunk> = callbackFlow {
+        // v4.8.117 (B140): 同 host 并行流登记 — 完成门"并行上下文"判据的事实源; 
+        // exit 单点在 awaitClose (覆盖正常关闭/取消/重试链全部终结路径)
+        val parallelHost = providerSetting.baseUrl.toHttpUrl().host
+        ParallelStreamRegistry.enter(parallelHost)
         // v4.8.33 (性能): 请求体构建 + JSON 序列化移出主线程 — 本 callbackFlow 的
         // 收集上下文为 AppScope(Main): buildChatCompletionRequest 内含全量消息
         // 转换与图片编码 (解码/压缩/base64), 序列化在几百 KB 时 50-300ms —
@@ -760,6 +765,36 @@ class ChatCompletionsAPI(
                             Log.w(TAG, "onClosed: gateway closed with zero output (model=${params.model.modelId} events=$eventCount) — treat as interruption, retry\nlast: ${dumpLastEvents()}")
                             TraceLogger.log("SSE", "gateway closed with zero output (events=$eventCount) — interruption, entering retry chain")
                             close(IOException("SSE 流在输出任何内容前被服务器关闭 (无完成信号)"))
+                        } else if (!lastChunkWasUsageOnly.get() &&
+                            ParallelStreamRegistry.isParallel(parallelHost)
+                        ) {
+                            // v4.8.117 (B140): 「并行运行中的无完成证据关流」= 上游竞争掐流。
+                            // 聚合网关 (OC/CC) 的标准完结必带 usage/cost 尾包; 至此本分支的
+                            // 证据: 无 [DONE]/finish_reason (gotFinish=false)、无 usage 尾包、
+                            // 行完整、尾部无截断特征 — 与标准完结的唯一差异 = 最后帧是普通
+                            // content 帧。两 token 之间的"干净边界"被掐正是此形态 (多对话
+                            // 并行时的高发场景)。ox 系"无信号收尾"通道的正常结束因
+                            // parallel=1 不受影响 (仍走下方 complete 分支)。按用户定版原则
+                            // (非标准 → 先续写不静默放行): 合成 Finish(length) 走 GH 自动
+                            // 续写链 (上限 3 次, 耗尽显式报错; 绝不静默丢失)。
+                            Log.w(TAG, "onClosed: parallel no-evidence close (model=${params.model.modelId} events=$eventCount) — synthetic length finish, auto-continue\nlast: ${dumpLastEvents()}")
+                            TraceLogger.log("SSE", "parallel no-evidence close (no [DONE]/finish_reason/usage tail; hostParallel=${ParallelStreamRegistry.activeCount(parallelHost)}) — synthetic length finish, auto-continue (tail=\"${textTail.take(40)}\")")
+                            trySend(
+                                MessageChunk(
+                                    id = "",
+                                    model = params.model.modelId,
+                                    choices = listOf(
+                                        UIMessageChoice(
+                                            index = 0,
+                                            delta = UIMessage(role = MessageRole.ASSISTANT, parts = emptyList()),
+                                            message = null,
+                                            finishReason = "length",
+                                        )
+                                    ),
+                                    usage = null,
+                                )
+                            ).onFailure { e -> Log.w(TAG, "onClosed: synthetic length finish dropped (${e?.message})") }
+                            close()
                         } else {
                             TraceLogger.log("SSE", "gateway closed after complete data (events=$eventCount) — treated as complete (body=$hasTextContent tools=$hasToolCalls, no completion signal on this gateway, tail=\"${textTail.take(40)}\" usageTail=${lastChunkWasUsageOnly.get()} lastParsed=$lastEventParsed deltaKeys=\"$lastDeltaKeys\")")
                             close()
@@ -823,6 +858,7 @@ class ChatCompletionsAPI(
 
         awaitClose {
             Log.d(TAG, "awaitClose: cancelling eventSource")
+            ParallelStreamRegistry.exit(parallelHost)
             watchdogJob.cancel()
             currentEventSource?.cancel()
         }

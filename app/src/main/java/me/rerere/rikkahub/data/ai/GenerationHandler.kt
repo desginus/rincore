@@ -1679,6 +1679,12 @@ class GenerationHandler(
             // chunk 间隔本就大于 50ms, 节流不产生额外延迟, 密集时批处理保帧率。
             var lastUiUpdateMs = 0L
             var repetitionCheckedLen = 0
+            // v4.8.117 (B140): 外层包裹 — 内层各终态 catch 中"转 IOException 进重试链"
+            // 的异常 (HttpException 5xx 兜底转换 / 假取消转换) 此前从同级 catch 抛出
+            // 会逃出重试链 (结构偏差: 注释写着"进重试链"实际从未进), 现由本层统一
+            // 接手; Guard/Unconfirmed 的"不重试"语义在下方 IOException catch 首部
+            // 显式保持 (穿行上抛)。
+            try {
             try {
             // v3.11.4: 工具轮次诊断 — 运行日志页 SSE 现场可区分首轮/工具轮请求
             // v4.8.19 性能: 单遍无分配统计 (原 flatMap + filterIsInstance 每轮
@@ -1805,7 +1811,20 @@ class GenerationHandler(
                     "[v${BuildConfig.VERSION_NAME}] ${e.message}", e
                 )
             } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e  // 用户主动停止 — 不重试
+                // v4.8.117 (B140): 区分"用户主动停止"与"假取消" — 自身协程 Job 仍
+                // 活跃却在此处收到 CancellationException = 取消来自子作用域泄漏
+                // (非用户停止), 不得静默吞掉整条输出 (多对话并行场景加固):
+                // 转为 IOException 交外层重试链接手。真取消 (job 已死/进程清理)
+                // 原样上抛, 保持"不重试"既有语义。
+                val aliveJob = kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]
+                if (aliveJob?.isActive == false) throw e
+                Log.w(TAG, "fake cancellation (scope leak, not user stop) — routing to retry chain: ${e.message}")
+                CallTracer.event("RETRY", "fake_cancel",
+                    "CancellationException with alive job — treated as interruption: ${e.message}",
+                    metrics = sseDiagMetrics())
+                throw java.io.IOException(
+                    "[v${BuildConfig.VERSION_NAME}] 生成被非用户信号取消 (子作用域泄漏), 已转入重试链", e
+                )
             } catch (e: me.rerere.ai.util.HttpException) {
                 // 4.0.3 双保险: 5xx HttpException → IOException 进重试链
                 // (正常路径 Provider 层已转换; 此处防回归/防其他通道裸抛)。
@@ -1822,7 +1841,14 @@ class GenerationHandler(
                 Log.w(TAG, "stream unconfirmed (${e.message}) — keep partial content, no retry")
                 onUpdateMessages(messages)
                 throw e
+            }
             } catch (e: java.io.IOException) {
+                // v4.8.117 (B140): 显式"不重试"的终态异常穿行上抛 (语义保持) —
+                // ① 复读熔断 (cause=ClientGenerationGuardException): 不回滚不重试;
+                // ② 流未确认 (OpenCodeStreamUnconfirmedException): 保留已生成内容明示。
+                if (e is me.rerere.ai.provider.providers.openai.OpenCodeStreamUnconfirmedException ||
+                    e.cause is ClientGenerationGuardException
+                ) throw e
                 // 4.8.22 后台稳定性强化: 设备级离线时挂起等待网络恢复 — 不消耗
                 // 重试次数 (网络切换/信号盲区/后台网络冻结的恢复窗口内自动续连;
                 // 用户诉求: 一直保持连接, 不自己中断)。恢复后清池 + 立即重试。
