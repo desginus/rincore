@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=构建&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/版本-v4.8.122-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/版本-v4.8.123-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/许可-segmented_dual-cyan)](LICENSE)
 
 **手机上一个真正全面的 AI 助手。** 不是套壳，是一台重新打造过的引擎——背后是六周的高强度实测迭代与 400+ 个版本。
@@ -80,7 +80,9 @@ RinCore 处于活跃维护中，欢迎 Issue 与 PR。每一个被报告的问�
 
 ## 📋 更新日志
 
-v4.8.54 → v4.8.122（倒序）：
+v4.8.54 → v4.8.123（倒序）：
+
+- **v4.8.123** — 图片加载期间即按最终尺寸预留位置（本地图片读文件头测尺寸、远端图片首次加载后记住），上滑回看历史消息不再跳动/抽动；所有文件胶囊（文档、视频、音频与「本对话产出」列表）改为点击弹出选项：渲染 / 分享 / 导出 / 用其他应用打开（不再直接跳系统页面）；上下文压缩期间发送键不再变灰——消息与生成中同款排队「等待中」，压缩（或上一轮输出）完成后自动发出。
 
 - **v4.8.122** — 图片地址含下划线就挂的根因修复：渲染管线此前把图片/链接地址当普通文本处理（其"词内下划线保护"与"单波浪号替换"把地址里的 `_` 换成了全角 ＿、`~` 换成 ∼，地址被污染后永远找不到真实文件）。现在地址是不可透明 URL 令牌（扫描器保护 markdown 目标区/autolink/裸 URL）。同时：「本对话产出」扩面（shell/job 生成的文件也会被工作区扫描登记）；点击上传文件胶囊弹出选项弹层（渲染/分享/用其他应用打开）；消息列表两侧留白 16→8dp、气泡内留白 8→6dp；抽屉露边条回滚 64dp。
 

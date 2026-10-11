@@ -2,7 +2,7 @@
 
 > **给 AI 的读法**: 拿到本仓库先读本文件。它告诉你 — 每块代码在哪、干什么、
 > 用户提某类需求时改哪些文件、该问题历史上是否出现过。
-> 版本基线: v4.8.122 (2026-10-11)。大规模改动后请同步更新对应卡片。
+> 版本基线: v4.8.123 (2026-10-11)。大规模改动后请同步更新对应卡片。
 >
 > 配套历史知识 (必读): `.claude/skills/` 下 `rincore-project-brief`(架构基线) /
 > `rincore-changelog`(版本史) / `rincore-bug-record`(Bug 根因) /
@@ -50,7 +50,7 @@
 | `service/ContextCompressor.kt` | 压缩留存量计算/推荐保留条数 |
 | `data/model/Conversation.kt` | 会话模型 (消息节点/压缩留存/系统提示词) |
 | `data/model/Assistant.kt` | 助手配置 (模型/参数/工具/MCP/CWD; v4.8.121: maxConcurrentSubAgents 默认 7) |
-| `ui/pages/chat/ConversationArtifactsSheet.kt` | 本对话产出胶囊窗 (v4.8.121: 写类工具产出清单, 点击直接打开) |
+| `ui/pages/chat/ConversationArtifactsSheet.kt` | 本对话产出胶囊窗 (v4.8.121 清单; v4.8.123: 点击→选项弹层[渲染/分享/导出/打开], 解析链同 v4.8.63) |
 | `ui/pages/chat/ChatDrawer.kt` | 会话抽屉 (v4.8.121: 露边条 64→40dp) |
 
 **数据流**: 输入 → `ChatVM.handleMessageSend` → `ChatService.sendMessage` →
@@ -66,7 +66,7 @@
 
 **历史** (详见 bug-record/changelog):
 - 压缩弹窗全屏阻塞 → v4.8.8 "确认即关" 定版 (勿回退为 loading 弹窗)
-- 压缩中禁发 → v4.8.9 定版 (防打断压缩, 非 bug)
+- 压缩中禁发 → v4.8.9 定版 (防打断压缩, 非 bug) — **已被 v4.8.123 取代**: 压缩期可发送, 与模型输出期同款排队"等待中", 压缩完成自动发出 (用户定版)
 - 消息发送队列与延时回复联动 → v3.6.13/v3.11.30 系列
 - 极简模式 (对话级工具总闸) 随 v4.8.121 整体删除 (用户定版, 勿复活)
 - 代码块上的水平滑动不再呼出抽屉 (v4.8.121: 代码块区域吞未消费水平拖拽)
@@ -218,7 +218,8 @@ MCP 工具静态声明 (配置决定), 连接惰性 (首次调用才连)。
 | `markdown/.../util/UrlRegionScanner.kt` | 地址域扫描器 (v4.8.122: URL=不可透明令牌 — `_`/`~` 永不进入地址区; B144) |
 | `ui/components/richtext/Markdown.kt` | AST 渲染链 (v4.8.119: 链接内联递归/表格单元格行内直渲; v4.8.120: GFM 列对齐) |
 | `ui/components/richtext/HighlightCodeBlock.kt` | 代码块 (v4.8.121: 自动渲染/JS 沙箱执行/滑动防抽屉) |
-| `ui/components/message/ChatDocumentChip.kt` | 文档胶囊选项弹层 (v4.8.122: 渲染/分享/用其他应用打开 — 对齐「编辑过的文件」范式) |
+| `ui/components/message/ChatFileChip.kt` | 文件胶囊选项弹层 (v4.8.122→v4.8.123: 渲染/分享/导出/用其他应用打开; 文档/视频/音频三胶囊共用) |
+| `ui/components/richtext/StableSizeImage.kt` | 图片稳定占位 (v4.8.123, B145: 加载期与最终尺寸一致, 防上滑跳动) |
 
 **渲染铁律**: Markdown 首帧同步解析 (对齐原版, 勿改异步/占位/分段);
 Haze 锁 `2.0.0-beta01` (rc 版本有格栅伪影); 玻璃层用 `RinGlass` 单一来源。
@@ -232,7 +233,8 @@ Haze 锁 `2.0.0-beta01` (rc 版本有格栅伪影); 玻璃层用 `RinGlass` 单�
 **历史**: 渲染抽动完全对齐原版 (v4.7.26) / 首帧卡顿修复 (v4.8.1) /
 图片缓存失效 (v4.8.2) / 预设主题默认·莫兰迪紫 (v4.8.7) / 色相条 (v4.8.9) /
 渲染链升级 (v4.8.119: CJK 公式根修/链接递归/单元格直渲) / codex 对齐 (v4.8.120: 围栏解包/列对齐) /
-代码块自动渲染 (v4.8.121) / 地址 `_` 污染根修 — URL opaque 化 (v4.8.122, B144)。
+代码块自动渲染 (v4.8.121) / 地址 `_` 污染根修 — URL opaque 化 (v4.8.122, B144) /
+图片稳定占位防跳动 (v4.8.123, B145)。
 
 ### G. 自动化 (Automation)
 
