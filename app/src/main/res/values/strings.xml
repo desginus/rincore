@@ -76,6 +76,9 @@
   <string name="assistant_page_local_tools_ask_user_title">Ask User</string>
   <string name="assistant_page_local_tools_clipboard_desc">Read or write plain text from the device clipboard</string>
   <string name="assistant_page_local_tools_clipboard_title">Clipboard</string>
+  <string name="chat_page_menu_conversation_output">Conversation output</string>
+  <string name="conversation_output_title">Produced files</string>
+  <string name="conversation_output_empty">No produced files in this conversation yet.</string>
   <string name="assistant_page_local_tools_javascript_engine_desc">Execute JavaScript code with QuickJS engine for calculations and scripting</string>
   <string name="assistant_page_local_tools_javascript_engine_title">JavaScript Engine</string>
   <string name="assistant_page_local_tools_time_info_desc">Get current date, weekday, time, and timezone info from the device</string>
@@ -1292,6 +1295,9 @@
   <string name="assistant_page_local_tools_cost_guards_desc">让 AI 监控自身累计 token 用量，在接近预算上限时自动减速或停止</string>
   <string name="assistant_page_local_tools_browser_title">浏览器操控</string>
   <string name="assistant_page_local_tools_browser_desc">让 AI 通过内置浏览器访问网页、点击、填表、截图。共 18 个工具，写操作默认关闭需手动启用</string>
+  <string name="assistant_page_local_tools_section_render">Display &amp; Rendering</string>
+  <string name="assistant_page_local_tools_code_autorender_title">Auto-render in code blocks</string>
+  <string name="assistant_page_local_tools_code_autorender_desc">When enabled, HTML / JS / SVG code blocks render automatically as a preview (switch back to code view anytime).</string>
   <string name="assistant_page_local_tools_section_basic">基础交互</string>
   <string name="assistant_page_local_tools_section_auto">自动化</string>
   <string name="assistant_page_local_tools_share_title">Share</string>

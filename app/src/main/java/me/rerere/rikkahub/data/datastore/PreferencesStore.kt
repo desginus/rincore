@@ -40,6 +40,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
 import io.pebbletemplates.pebble.PebbleEngine
+import me.rerere.rikkahub.data.ai.tools.ProducedFile
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -334,10 +335,10 @@ class SettingsStore(
                 preferences[TOP_LEVEL_ADDITIONS] = JsonInstant.encodeToString(settings.topLevelAdditions)
                 preferences[TOP_LEVEL_REMOVALS] = JsonInstant.encodeToString(settings.topLevelRemovals)
                 preferences[TOOL_ZONE_SEEDED] = true
-                preferences[MINIMAL_MODE_CONVERSATIONS] = JsonInstant.encodeToString(settings.minimalModeConversations)
                 preferences[ZONE_MODEL_VERSION] = settings.zoneModelVersion
                 preferences[SUBAGENT_TOKEN_BUDGET] = settings.subagentTokenBudget
                 preferences[SUBAGENT_TOKEN_USAGE] = JsonInstant.encodeToString(settings.subagentTokenUsage)
+                preferences[CONVERSATION_PRODUCED_FILES] = JsonInstant.encodeToString(settings.conversationProducedFiles)
                 preferences[SUBAGENT_BUDGET_UPGRADED] = settings.subagentBudgetUpgraded
                 preferences[PRESET_SKILLS_SEED_VERSION] = settings.presetSkillsSeedVersion
                 preferences[TOOL_DESCRIPTION_OVERRIDES] = JsonInstant.encodeToString(settings.toolDescriptionOverrides)
@@ -366,11 +367,11 @@ class SettingsStore(
         val TOP_LEVEL_ADDITIONS = stringPreferencesKey("top_level_additions")
         val TOP_LEVEL_REMOVALS = stringPreferencesKey("top_level_removals")
         val TOOL_ZONE_SEEDED = booleanPreferencesKey("tool_zone_seeded")
-        val MINIMAL_MODE_CONVERSATIONS = stringPreferencesKey("minimal_mode_conversations")
         val ZONE_MODEL_VERSION = intPreferencesKey("zone_model_version")
         // v4.8.88: 子代理预算（每对话 Token 上限/已用）与预设技能播种版本
         val SUBAGENT_TOKEN_BUDGET = longPreferencesKey("subagent_token_budget")
         val SUBAGENT_TOKEN_USAGE = stringPreferencesKey("subagent_token_usage")
+        val CONVERSATION_PRODUCED_FILES = stringPreferencesKey("conversation_produced_files")
         val SUBAGENT_BUDGET_UPGRADED = booleanPreferencesKey("subagent_budget_upgraded")
         val PRESET_SKILLS_SEED_VERSION = intPreferencesKey("preset_skills_seed_version")
         // ── 旧「工具域」键：v4.8.83 起只读一次用于迁移，不再写入（保存时清除）──
@@ -560,12 +561,14 @@ class SettingsStore(
                 subagentTokenUsage = preferences[SUBAGENT_TOKEN_USAGE]?.let {
                     runCatching { JsonInstant.decodeFromString<Map<String, Long>>(it) }.getOrDefault(emptyMap())
                 } ?: emptyMap(),
+                conversationProducedFiles = preferences[CONVERSATION_PRODUCED_FILES]?.let {
+                    runCatching { JsonInstant.decodeFromString<Map<String, List<ProducedFile>>>(it) }.getOrDefault(emptyMap())
+                } ?: emptyMap(),
                 presetSkillsSeedVersion = preferences[PRESET_SKILLS_SEED_VERSION] ?: 0,
                 hiddenZones = zoneHidden,
                 topLevelAdditions = zoneTopLevelAdd,
                 topLevelRemovals = zoneTopLevelRemove,
                 toolZoneSeeded = true,
-                minimalModeConversations = preferences[MINIMAL_MODE_CONVERSATIONS]?.let { runCatching { JsonInstant.decodeFromString<Set<String>>(it) }.getOrDefault(emptySet()) } ?: emptySet(),
                 toolDescriptionOverrides = preferences[TOOL_DESCRIPTION_OVERRIDES]?.let { JsonInstant.decodeFromString(it) } ?: emptyMap(),
                 classifierPrompt = preferences[CLASSIFIER_PROMPT] ?: "",
             )
@@ -775,10 +778,10 @@ class SettingsStore(
             preferences[TOP_LEVEL_ADDITIONS] = JsonInstant.encodeToString(settings.topLevelAdditions)
             preferences[TOP_LEVEL_REMOVALS] = JsonInstant.encodeToString(settings.topLevelRemovals)
             preferences[TOOL_ZONE_SEEDED] = true
-            preferences[MINIMAL_MODE_CONVERSATIONS] = JsonInstant.encodeToString(settings.minimalModeConversations)
             preferences[ZONE_MODEL_VERSION] = settings.zoneModelVersion
             preferences[SUBAGENT_TOKEN_BUDGET] = settings.subagentTokenBudget
             preferences[SUBAGENT_TOKEN_USAGE] = JsonInstant.encodeToString(settings.subagentTokenUsage)
+            preferences[CONVERSATION_PRODUCED_FILES] = JsonInstant.encodeToString(settings.conversationProducedFiles)
             preferences[SUBAGENT_BUDGET_UPGRADED] = settings.subagentBudgetUpgraded
             preferences[PRESET_SKILLS_SEED_VERSION] = settings.presetSkillsSeedVersion
             preferences[TOOL_DESCRIPTION_OVERRIDES] = JsonInstant.encodeToString(settings.toolDescriptionOverrides)
@@ -977,9 +980,6 @@ data class Settings(
     val topLevelAdditions: Set<String> = emptySet(), // 额外提升到顶层的工具（始终注入请求体）
     val topLevelRemovals: Set<String> = emptySet(), // 从顶层降级到工具区的工具
     val toolZoneSeeded: Boolean = false, // 出厂模板是否已播种（迁移幂等标记）
-    /** v4.8.85 极简模式：这些对话不注入任何工具（连 MCP/记忆/任务清单都不注入），纯文本对话。
-     *  按对话持久化（DataStore，非 Room 表 → 无迁移风险）；对话删除后残留 id 无副作用。 */
-    val minimalModeConversations: Set<String> = emptySet(),
     /** v4.8.87 工具区模型版本（v2 = id 不透明 + name/parentId）—— 一次性投影的幂等标记 */
     val zoneModelVersion: Int = ZONE_MODEL_VERSION_CURRENT,
     /**
@@ -994,6 +994,11 @@ data class Settings(
     val subagentBudgetUpgraded: Boolean = false,
     /** v4.8.88 每对话已消耗的子代理 Token（conversationId → tokens）。UI 可清零。 */
     val subagentTokenUsage: Map<String, Long> = emptyMap(),
+    /**
+     * v4.8.121「本对话产出」：模型写类工具（workspace_write_file / workspace_edit_file）
+     * 成功产出的文件清单（conversationId → 新→旧；每对话 80 条上限，保留最近 200 对话）。
+     */
+    val conversationProducedFiles: Map<String, List<ProducedFile>> = emptyMap(),
     /** v4.8.88 预设技能播种版本（0=未播种；只增不复活用户删掉的技能） */
     val presetSkillsSeedVersion: Int = 0,
     val toolDescriptionOverrides: Map<String, String> = emptyMap(), // 工具名→自定义描述。覆盖原始Tool描述
@@ -1077,6 +1082,9 @@ data class DisplaySetting(
     val enableLiveUpdateNotification: Boolean = false,
     val codeBlockAutoWrap: Boolean = false,
     val codeBlockAutoCollapse: Boolean = false,
+    // v4.8.121 (用户定版): 「代码块内自动渲染」— 开启后 html/svg/js 代码块自动进入
+    // 预览渲染 (关闭时与旧行为一致: 默认代码视图, 手动按钮预览)。
+    val codeBlockAutoPreview: Boolean = false,
     val showLineNumbers: Boolean = false,
     val ttsOnlyReadQuoted: Boolean = false,
     val ttsOnlyReadOutsideBrackets: Boolean = false,

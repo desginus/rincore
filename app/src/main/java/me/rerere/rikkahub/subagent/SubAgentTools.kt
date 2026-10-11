@@ -80,7 +80,7 @@ fun subagentDispatchTool(
         stopped**. Do not retry blindly — tell the user and suggest raising/clearing the
         budget in the chat overview.
 
-        Concurrency caps: each assistant has its own (default 3, configurable 1-8) and
+        Concurrency caps: each assistant has its own (default 7, configurable 1-8) and
         there's a global cap of 16 across all assistants. Over-cap dispatches fail with
         a clear error — back off and retry, or wait for a slot.
 
@@ -99,13 +99,8 @@ fun subagentDispatchTool(
                     put("items", buildJsonObject { put("type", "string") })
                 })
                 put("run_in_background", buildJsonObject { put("type", "boolean") })
-                put("timeout_seconds", buildJsonObject {
-                    put("type", "integer")
-                    put(
-                        "description",
-                        "Max runtime in seconds (1-${SubAgentDefaults.MAX_TIMEOUT_SECONDS}; default ${SubAgentDefaults.DEFAULT_TIMEOUT_SECONDS})",
-                    )
-                })
+                // v4.8.121 (用户定版): timeout_seconds 不再暴露给模型 —— 默认 1800s 恒定,
+                // 防止模型自选小值(如 420s)把长任务提前截停("为什么还是 420 秒超时"根治)。
                 put("max_trips", buildJsonObject { put("type", "integer") })
             },
             required = listOf("task"),
@@ -133,8 +128,8 @@ fun subagentDispatchTool(
             tools = params["tools"]?.let { runCatching { it.jsonArray }.getOrNull() }
                 ?.mapNotNull { it.jsonPrimitive.contentOrNull },
             runInBackground = params["run_in_background"]?.jsonPrimitive?.booleanOrNull ?: false,
-            timeoutSeconds = params["timeout_seconds"]?.jsonPrimitive?.intOrNull
-                ?: SubAgentDefaults.DEFAULT_TIMEOUT_SECONDS,
+            // v4.8.121: 恒定默认超时 (1800s) — 忽略任何外部传入值
+            timeoutSeconds = SubAgentDefaults.DEFAULT_TIMEOUT_SECONDS,
             maxTrips = params["max_trips"]?.jsonPrimitive?.intOrNull
                 ?: SubAgentDefaults.DEFAULT_MAX_TRIPS,
             label = params["label"]?.jsonPrimitive?.contentOrNull,
@@ -193,15 +188,24 @@ fun subagentListTool(registry: SubAgentRegistry): Tool = Tool(
 fun subagentGetTool(registry: SubAgentRegistry): Tool = Tool(
     name = "subagent_get",
     description = """
-        Fetch the full run record for a sub-agent by id. Read-only.
-        Optional wait_seconds (0-45): blocks until the run reaches a terminal status or the
-        wait elapses — prefer this over repeated instant polls (saves round-trips).
+        Fetch the full run record for a sub-agent by id. Read-only. Two modes:
+        (1) default / wait_seconds (0-45): blocks until the run reaches a terminal status or the
+        wait elapses — prefer this over repeated instant polls (saves round-trips);
+        (2) wait_until_done=true — script-polling mode: polls every 10 seconds until the run
+        reaches a terminal status, then returns the final record and stops.
     """.trimIndent().replace("\n", " "),
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
                 put("id", buildJsonObject { put("type", "string") })
                 put("wait_seconds", buildJsonObject { put("type", "integer") })
+                put("wait_until_done", buildJsonObject {
+                    put("type", "boolean")
+                    put(
+                        "description",
+                        "Script-polling mode: poll every 10s until the run reaches a terminal status, then return.",
+                    )
+                })
             },
             required = listOf("id"),
         )
@@ -209,6 +213,31 @@ fun subagentGetTool(registry: SubAgentRegistry): Tool = Tool(
     execute = { args ->
         val id = args.jsonObject["id"]?.jsonPrimitive?.contentOrNull
             ?: return@Tool errEnv("invalid_id", "id is required")
+        // v4.8.121 (用户定版): 脚本轮询模式 — 每 10 秒查询一次, 直到子代理到达终态
+        // 执行返回并停止。轮询窗口 660s (收口于 700s 工具墙之内; 未到终态返回快照 +
+        // note, 可再次调用继续等待)。
+        val waitUntilDone = args.jsonObject["wait_until_done"]?.jsonPrimitive?.booleanOrNull ?: false
+        if (waitUntilDone) {
+            val deadline = System.currentTimeMillis() + 660_000L
+            while (true) {
+                val cur = registry.get(id)
+                    ?: return@Tool errEnv("unknown_id", "no sub-agent run with id $id")
+                if (cur.status != SubAgentStatus.PENDING && cur.status != SubAgentStatus.RUNNING) {
+                    return@Tool listOf(UIMessagePart.Text(encodeRun(cur).toString()))
+                }
+                if (System.currentTimeMillis() >= deadline) {
+                    return@Tool listOf(UIMessagePart.Text(buildJsonObject {
+                        put("still_running", true)
+                        put(
+                            "note",
+                            "轮询窗口 660s 用尽, 子代理仍在运行 — 再次调用 subagent_get(wait_until_done=true) 继续等待, 或用 wait_seconds 短查当前状态。",
+                        )
+                        put("run", encodeRun(cur))
+                    }.toString()))
+                }
+                kotlinx.coroutines.delay(10_000)
+            }
+        }
         // v4.8.88: 长轮询 —— 一次调用顶多次轮询；上限 45s 低于工具 60s 执行超时兜底
         val wait = (args.jsonObject["wait_seconds"]?.jsonPrimitive?.intOrNull ?: 0).coerceIn(0, 45)
         if (wait > 0) {

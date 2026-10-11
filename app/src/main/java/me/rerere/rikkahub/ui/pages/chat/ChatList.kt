@@ -19,7 +19,7 @@ import me.rerere.hugeicons.stroke.ArrowUpDouble
 import me.rerere.hugeicons.stroke.CursorPointer01
 import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Cancel01
-import me.rerere.hugeicons.stroke.Feather
+import me.rerere.hugeicons.stroke.Folder01
 import me.rerere.hugeicons.stroke.Gauge
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -64,7 +64,6 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -154,10 +153,7 @@ fun ChatList(
     onToggleFavorite: ((MessageNode) -> Unit)? = null,
     onConversationSystemPromptChange: ((String?) -> Unit)? = null,
     folderCwd: String? = null,
-    // v4.8.85 极简模式：本对话不注入任何工具（开关在速览页搜索框右侧）
-    minimalMode: Boolean = false,
-    onToggleMinimalMode: () -> Unit = {},
-    // v4.8.88 子代理预算：读/改设置（速览页搜索框右侧、极简模式左边）
+    // v4.8.88 子代理预算：读/改设置（速览页搜索框右侧）
     onUpdateSettings: (Settings) -> Unit = {},
     // v4.8.104: 速览页快捷入口（翻译 / 图像生成）+ 点空白处返回默认对话
     onOpenTranslator: () -> Unit = {},
@@ -178,8 +174,6 @@ fun ChatList(
                 settings = settings,
                 hazeState = hazeState,
                 onJumpToMessage = onJumpToMessage,
-                minimalMode = minimalMode,
-                onToggleMinimalMode = onToggleMinimalMode,
                 onUpdateSettings = onUpdateSettings,
                 onOpenTranslator = onOpenTranslator,
                 onOpenImageGen = onOpenImageGen,
@@ -637,8 +631,6 @@ private fun ChatListPreview(
     hazeState: HazeState,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onJumpToMessage: (Int) -> Unit,
-    minimalMode: Boolean = false,
-    onToggleMinimalMode: () -> Unit = {},
     onUpdateSettings: (Settings) -> Unit = {},
     onOpenTranslator: () -> Unit = {},
     onOpenImageGen: () -> Unit = {},
@@ -647,6 +639,8 @@ private fun ChatListPreview(
     var searchQuery by remember { mutableStateOf("") }
     // v4.8.88: 子代理预算弹窗开关
     var showBudgetDialog by remember { mutableStateOf(false) }
+    // v4.8.121: 本对话产出胶囊窗开关
+    var showArtifactsSheet by remember { mutableStateOf(false) }
     // v4.8.92: 预算面板直连引擎（显示含未落盘的真实用量；清零走 SubAgentBudget.reset）
     val subAgentEngine: me.rerere.rikkahub.subagent.SubAgentEngine = koinInject()
     val budgetScope = rememberCoroutineScope()
@@ -672,7 +666,7 @@ private fun ChatListPreview(
                 indication = null,
             ) { onExitPreview() },
     ) {
-        // 搜索框 + 极简模式开关（v4.8.85：把搜索框右侧那一块划出来做开关，点击即切换）
+        // 搜索框 + 右侧快捷图标区
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -707,7 +701,7 @@ private fun ChatListPreview(
                 maxLines = 1,
             )
             Spacer(Modifier.width(4.dp))
-            // v4.8.104: 快捷入口 — AI翻译 / 图像生成（预算与极简模式左边）
+            // v4.8.104: 快捷入口 — AI翻译 / 图像生成（预算图标左边）
             IconButton(onClick = onOpenTranslator) {
                 Icon(
                     imageVector = HugeIcons.LanguageCircle,
@@ -730,16 +724,22 @@ private fun ChatListPreview(
                     modifier = Modifier.size(22.dp),
                 )
             }
-            // 极简模式：开启 = 本对话不注入任何工具。选中色与「加号工具栏」里的开关一致
-            // (FilesPicker 的 active tint = Color(0xFF2196F3))。
-            IconButton(onClick = onToggleMinimalMode) {
+            // v4.8.121「本对话产出」：本对话中模型产出/修改过的文件（胶囊窗列表，点击直接打开）
+            IconButton(onClick = { showArtifactsSheet = true }) {
                 Icon(
-                    imageVector = HugeIcons.Feather,
-                    contentDescription = if (minimalMode) "极简模式已开启（本对话不注入任何工具）" else "极简模式（本对话不注入任何工具）",
-                    tint = if (minimalMode) Color(0xFF2196F3) else LocalContentColor.current,
+                    imageVector = HugeIcons.Folder01,
+                    contentDescription = stringResource(R.string.chat_page_menu_conversation_output),
                     modifier = Modifier.size(22.dp),
                 )
             }
+        }
+
+        // ── v4.8.121 本对话产出胶囊窗（模型产出/修改过的文件，点击直接打开）──
+        if (showArtifactsSheet) {
+            ConversationArtifactsSheet(
+                files = settings.conversationProducedFiles[conversation.id.toString()].orEmpty(),
+                onDismiss = { showArtifactsSheet = false },
+            )
         }
 
         // ── v4.8.88 子代理预算弹窗（与模型侧同一份 Settings 数据）──

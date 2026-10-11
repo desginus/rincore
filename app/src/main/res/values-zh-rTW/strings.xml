@@ -76,6 +76,12 @@
   <string name="assistant_page_local_tools_ask_user_title">詢問使用者</string>
   <string name="assistant_page_local_tools_clipboard_desc">讀取或寫入裝置剪貼簿中的純文字</string>
   <string name="assistant_page_local_tools_clipboard_title">剪貼簿</string>
+  <string name="assistant_page_local_tools_code_autorender_desc">開啟後 HTML / JS / SVG 程式碼區塊自動進入渲染預覽（可隨時切回程式碼檢視）。</string>
+  <string name="assistant_page_local_tools_code_autorender_title">程式碼區塊內自動渲染</string>
+  <string name="assistant_page_local_tools_section_render">顯示渲染</string>
+  <string name="chat_page_menu_conversation_output">本對話產出</string>
+  <string name="conversation_output_title">本對話產出</string>
+  <string name="conversation_output_empty">本對話尚無可開啟的產出檔案</string>
   <string name="assistant_page_local_tools_javascript_engine_desc">使用 QuickJS 引擎執行 JavaScript 代碼，進行計算和腳本處理</string>
   <string name="assistant_page_local_tools_javascript_engine_title">JavaScript 引擎</string>
   <string name="assistant_page_local_tools_time_info_desc">從裝置取得目前日期、星期、時間與時區資訊</string>

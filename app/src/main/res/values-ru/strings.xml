@@ -76,6 +76,12 @@
   <string name="assistant_page_local_tools_ask_user_title">Спросить пользователя</string>
   <string name="assistant_page_local_tools_clipboard_desc">Читать или записывать обычный текст из буфера обмена устройства</string>
   <string name="assistant_page_local_tools_clipboard_title">Буфер обмена</string>
+  <string name="assistant_page_local_tools_code_autorender_desc">При включении блоки кода HTML / JS / SVG автоматически отображаются в режиме предпросмотра (можно вернуться к коду в любой момент).</string>
+  <string name="assistant_page_local_tools_code_autorender_title">Авторендеринг в блоках кода</string>
+  <string name="assistant_page_local_tools_section_render">Отображение и рендеринг</string>
+  <string name="chat_page_menu_conversation_output">Результаты диалога</string>
+  <string name="conversation_output_title">Результаты диалога</string>
+  <string name="conversation_output_empty">В этом диалоге пока нет созданных файлов.</string>
   <string name="assistant_page_local_tools_javascript_engine_desc">Выполнение кода JavaScript с помощью движка QuickJS для вычислений и сценариев</string>
   <string name="assistant_page_local_tools_javascript_engine_title">Движок JavaScript</string>
   <string name="assistant_page_local_tools_time_info_desc">Получить текущую дату, день недели, время и часовой пояс с устройства</string>

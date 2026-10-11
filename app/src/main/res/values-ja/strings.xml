@@ -76,6 +76,12 @@
   <string name="assistant_page_local_tools_ask_user_title">ユーザーに質問</string>
   <string name="assistant_page_local_tools_clipboard_desc">デバイスのクリップボードからテキストを読み取りまたは書き込み</string>
   <string name="assistant_page_local_tools_clipboard_title">クリップボード</string>
+  <string name="assistant_page_local_tools_code_autorender_desc">有効にすると HTML / JS / SVG コードブロックが自動でプレビュー表示されます（いつでもコード表示に戻せます）。</string>
+  <string name="assistant_page_local_tools_code_autorender_title">コードブロック内で自動レンダリング</string>
+  <string name="assistant_page_local_tools_section_render">表示とレンダリング</string>
+  <string name="chat_page_menu_conversation_output">この会話の成果物</string>
+  <string name="conversation_output_title">この会話の成果物</string>
+  <string name="conversation_output_empty">この会話に開ける成果物ファイルはまだありません。</string>
   <string name="assistant_page_local_tools_javascript_engine_desc">QuickJSエンジンでJavaScriptコードを実行し、計算とスクリプト処理を行います</string>
   <string name="assistant_page_local_tools_javascript_engine_title">JavaScriptエンジン</string>
   <string name="assistant_page_local_tools_time_info_desc">デバイスから現在の日付、曜日、時刻、タイムゾーン情報を取得</string>

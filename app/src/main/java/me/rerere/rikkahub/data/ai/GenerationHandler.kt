@@ -173,9 +173,6 @@ private const val TAG = "GenerationHandler"
 
 /** 顶层直连工具名 — 不参与工具区归类, 分层模式下直接注入 */
 // 顶层直连工具集口径统一于 ToolsBuilder.topLevelToolSetOf (v4.8.83)
-// v4.8.104 极简模式: 模型若仍发起工具调用 → 一律自动拒绝的回执理由
-private const val MINIMAL_MODE_DENIED_REASON =
-    "本对话已开启极简模式 — 工具全部禁用。请不要再调用任何工具，直接用文本回答用户。"
 
 /** v4.8.105 (无感衔接 B): 工具并行执行上限 (对齐 openai-agents max_function_tool_concurrency) */
 private const val MAX_PARALLEL_TOOL_EXECUTIONS = 4
@@ -296,10 +293,6 @@ class GenerationHandler(
         // v3.20.0: 会话稳定 ID → x-opencode-session 头 (OpenCode 官方 2026-09-06
         // 起强制, 自动生效非 opt-in; 非 OpenCode host 不发)
         conversationId: Uuid? = null,
-        // v4.8.85 极简模式: 本对话不注入任何工具 (连 memory_tool / task_tool / MCP 都不注入)。
-        // 注意只关"注入", 不关"执行查找" —— 未完成的工具调用仍能凭全量池解析
-        // (沿用 v4.5.14 原则: 顶层 tools 只决定模型可见性, 执行不依赖它)。
-        minimalMode: Boolean = false,
     ): Flow<GenerationChunk> = flow {
         // Trace ID 每次生成唯一 — 之前用 model.id 导致所有 trace 同 ID (日志无法区分)
         CallTracer.startTrace(id = java.util.UUID.randomUUID().toString().take(8))
@@ -311,9 +304,8 @@ class GenerationHandler(
         // === 分层路由状态 ===
         // 注: 消息发送前统一组装, 各步共享同一构建路径 —
         // 覆盖所有会发送向 API 的消息 (含 step 循环内累积的新工具输出)
-        // v4.8.85: 极简模式 = 工具注入的总闸（关掉后连分层地图都不进 system）
-        val toolsEnabled = !minimalMode
-        val useLayered = assistant.useLayeredTools && tools.isNotEmpty() && toolsEnabled
+        // v4.8.121 (用户定版): 对话级工具禁用开关已移除 — 工具注入无"总闸"概念
+        val useLayered = assistant.useLayeredTools && tools.isNotEmpty()
         // 从 Conversation 恢复已加载的域（Feature #4: 跨对话持久化）
         // v3.6.10: LinkedHashSet 保序去重 — 加载顺序 = tools 数组顺序 (前缀稳定)
         val loadedDomains = java.util.LinkedHashSet<String>().apply {
@@ -463,7 +455,7 @@ class GenerationHandler(
                 }
             } else emptySet()
 
-            val toolsInternal = if (!toolsEnabled) emptyList<Tool>() else if (useLayered) {
+            val toolsInternal = if (useLayered) {
                 buildList {
                     Log.i(TAG, "generateInternal: build tools (layered)($assistant)")
                     // 框架工具 — 始终可调用, 不走域系统
@@ -628,7 +620,6 @@ class GenerationHandler(
                 generateInternal(
                     assistant = assistant,
                     settings = settings,
-                    toolsEnabled = toolsEnabled,
                     retry = retry,
                     lengthContinuationState = lengthContinuationState,
                     messages = messages,
@@ -784,15 +775,6 @@ class GenerationHandler(
                 // Check for tools that need approval
                 var hasPendingApproval = false
                 val updatedTools = tools.map { tool ->
-                    // v4.8.104 极简模式铁闸: 工具已全部禁用 — 模型若仍发起调用一律自动拒绝
-                    // (不执行、不进入等待审批), 以 denied 回执驱动其改走纯文本作答。
-                    // 旧实现在极简模式下仍会执行工具或卡在"等待审批"(用户实证: 输出中途
-                    // 突然出现一串参数然后停止 — 即为工具调用被暂停)。
-                    if (!toolsEnabled) {
-                        return@map tool.copy(
-                            approvalState = ToolApprovalState.Denied(MINIMAL_MODE_DENIED_REASON),
-                        )
-                    }
                     // v4.5.14: 顶层恒定后域工具查找回退全量池 — 顶层 tools 只决定
                     // 模型可见性, 执行不依赖顶层定义。invoke_tools 指引"加载后
                     // 直接调用"的语义由此恢复 (v4.5.12 只改注入未核执行链,
@@ -866,14 +848,6 @@ class GenerationHandler(
                 // Resuming after user interaction - use the resumable tools directly.
                 Log.i(TAG, "generateText: resuming with ${pendingTools.size} resumable tools")
                 toolsToProcess = messages.last().getTools().filter { it.canResumeExecution }
-                    .map { tool ->
-                        // v4.8.104 极简模式铁闸 (续接分支): 同样拒绝
-                        if (!toolsEnabled) {
-                            tool.copy(approvalState = ToolApprovalState.Denied(MINIMAL_MODE_DENIED_REASON))
-                        } else {
-                            tool
-                        }
-                    }
             }
 
             // v4.8.105 (C1): 预探活提前到"工具执行开始前" — 整个工具执行时长用于连接变热,
@@ -1134,6 +1108,26 @@ class GenerationHandler(
                 try {
                     if (outcome.error != null) throw outcome.error
                     val result = outcome.result ?: error("工具执行无产出")
+                    // v4.8.121「本对话产出」: 写类工作区工具成功 → 登记产出文件
+                    // (update{} 持锁读-改-写, 不整快照覆盖)
+                    runCatching {
+                        val cid = conversationId?.toString() ?: return@runCatching
+                        val produced = me.rerere.rikkahub.data.ai.tools.ProducedFiles.extractPath(
+                            tool.toolName,
+                            outcome.item.args as? kotlinx.serialization.json.JsonObject,
+                        ) ?: return@runCatching
+                        settingsStore.update { s ->
+                            s.copy(
+                                conversationProducedFiles = me.rerere.rikkahub.data.ai.tools.ProducedFiles.record(
+                                    current = s.conversationProducedFiles,
+                                    conversationId = cid,
+                                    toolName = tool.toolName,
+                                    path = produced,
+                                    nowMs = System.currentTimeMillis(),
+                                )
+                            )
+                        }
+                    }
                     val toolStartAt = outcome.item.toolStartAt
                     val toolEndAt = outcome.endAt
                     val hasShellAccess = toolsInternal.any { it.name == "workspace_shell" }
@@ -1304,8 +1298,6 @@ class GenerationHandler(
         // v3.11.27: 子代理对话不注入用户自定义 prompt (其余正常注入)
         skipAssistantPrompt: Boolean = false,
         conversationId: Uuid? = null,
-        // v4.8.85: 极简模式 —— 工具注入总闸（连顶层工具的系统提示都不进 system）
-        toolsEnabled: Boolean = true,
     ) {
         val startMs = System.currentTimeMillis()
         // v3.6.74 (4.1.1 重申): 消息一律原样发送, 零改动。
@@ -1394,8 +1386,7 @@ class GenerationHandler(
 
             // 框架工具 systemPrompt (瘦身 — v2.9.4/v3.5.1: 其余工具描述在请求 tools 数组,
             // 全量注入会导致工具池膨胀时冷启动 system 70K+ tokens)
-            // v4.8.85: 极简模式下连这段都不注入（零工具 = 零工具文本）
-            val toolPrompts = if (!toolsEnabled) emptyList() else tools
+            val toolPrompts = tools
                 .filter { it.name in topLevelToolSetOf(settings) && it.name != "invoke_tools" }
                 .map { tool -> tool.systemPrompt(model, effectiveMessages) }
                 .filter { it.isNotBlank() }

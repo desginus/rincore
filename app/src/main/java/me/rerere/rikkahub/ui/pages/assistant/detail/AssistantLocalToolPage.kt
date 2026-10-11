@@ -58,6 +58,7 @@ import androidx.compose.runtime.setValue
 fun AssistantLocalToolPage(id: String) {
     val vm: AssistantDetailVM = koinViewModel(parameters = { parametersOf(id) })
     val assistant by vm.assistant.collectAsStateWithLifecycle()
+    val settings by vm.settings.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
@@ -72,7 +73,13 @@ fun AssistantLocalToolPage(id: String) {
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) { innerPadding ->
-        AssistantLocalToolContent(innerPadding = innerPadding, assistant = assistant, onUpdate = { vm.update(it) })
+        AssistantLocalToolContent(
+            innerPadding = innerPadding,
+            assistant = assistant,
+            displaySetting = settings.displaySetting,
+            onUpdate = { vm.update(it) },
+            onUpdateDisplaySetting = { vm.updateDisplaySetting(it) },
+        )
     }
 }
 
@@ -80,7 +87,9 @@ fun AssistantLocalToolPage(id: String) {
 private fun AssistantLocalToolContent(
     innerPadding: PaddingValues,
     assistant: Assistant,
-    onUpdate: (Assistant) -> Unit
+    displaySetting: me.rerere.rikkahub.data.datastore.DisplaySetting,
+    onUpdate: (Assistant) -> Unit,
+    onUpdateDisplaySetting: (me.rerere.rikkahub.data.datastore.DisplaySetting) -> Unit,
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
@@ -146,6 +155,20 @@ private fun AssistantLocalToolContent(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(innerPadding).imePadding(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // ── 显示渲染（v4.8.121 用户定版: 「代码块内自动渲染」）──
+        Text(stringResource(R.string.assistant_page_local_tools_section_render), style = androidx.compose.material3.MaterialTheme.typography.titleSmall, color = androidx.compose.material3.MaterialTheme.colorScheme.primary)
+        CardGroup {
+            item(
+                headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_code_autorender_title)) },
+                supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_code_autorender_desc)) },
+                trailingContent = {
+                    Switch(
+                        checked = displaySetting.codeBlockAutoPreview,
+                        onCheckedChange = { onUpdateDisplaySetting(displaySetting.copy(codeBlockAutoPreview = it)) },
+                    )
+                },
+            )
+        }
         // ── 基础交互 ──
         Text(stringResource(R.string.assistant_page_local_tools_section_basic), style = androidx.compose.material3.MaterialTheme.typography.titleSmall, color = androidx.compose.material3.MaterialTheme.colorScheme.primary)
         CardGroup {

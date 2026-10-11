@@ -790,8 +790,6 @@ class ChatService(
                 conversationLorebookIds = conversation.lorebookIds,
                 workspaceCwd = effectiveWorkspaceCwd,
                 conversationLoadedDomains = conversation.loadedDomains,
-                // v4.8.85 极简模式: 该对话不注入任何工具（纯文本对话）
-                minimalMode = settings.minimalModeConversations.contains(conversation.id.toString()),
                 // v3.11.27: 子代理会话 ([Sub-agent] 标题) 不注入用户自定义 prompt
                 skipAssistantPrompt = conversation.title.startsWith("[Sub-agent]"),
                 toolPoolProvider = {
@@ -835,11 +833,7 @@ class ChatService(
                 inputTransformers = buildList {
                     addAll(inputTransformers)
                     add(templateTransformer)
-                    // v4.8.104: 极简模式不注入工作区提醒（该提醒含沙箱与工具用法说明,
-                    // 会诱导模型尝试调用被禁用的工具）。零工具 = 零工具文本。
-                    if (!settings.minimalModeConversations.contains(conversation.id.toString())) {
-                        add(workspaceReminderTransformer)
-                    }
+                    add(workspaceReminderTransformer)
                     add(me.rerere.rikkahub.ecosystem.tools.SlashCommandRouter)
                 },
                 outputTransformers = outputTransformers,

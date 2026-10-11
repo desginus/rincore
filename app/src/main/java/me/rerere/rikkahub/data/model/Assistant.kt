@@ -67,7 +67,7 @@ data class Assistant(
     val timeReminderIntervalMinutes: Int = 60,            // 时间间隔提醒注入
     val allowConversationSystemPrompt: Boolean = false, // 允许对话单独重写 system prompt
     val allowConversationPromptInjection: Boolean = false, // 允许对话单独绑定提示词注入
-    val maxConcurrentSubAgents: Int = 3, // 子代理并行上限，1-8
+    val maxConcurrentSubAgents: Int = 7, // 子代理并行上限，1-8（v4.8.121: 默认 3→7，用户定版"最多同时 7 个"）
     val useLayeredTools: Boolean = true, // 分层工具路由：true=按需加载(省token), false=全量注入(兜底)
 )
 

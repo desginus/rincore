@@ -151,6 +151,18 @@ class AssistantDetailVM(
         }
     }
 
+    /** v4.8.121: 显示设置写入口 (「代码块内自动渲染」等全局 displaySetting 开关) */
+    fun updateDisplaySetting(displaySetting: me.rerere.rikkahub.data.datastore.DisplaySetting) {
+        viewModelScope.launch {
+            val current = settings.value
+            settingsStore.update(
+                settings = current.copy(
+                    displaySetting = displaySetting
+                )
+            )
+        }
+    }
+
     fun cleanupUnusedTags() {
         viewModelScope.launch {
             val settings = settings.value
