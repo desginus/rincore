@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=build&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/version-v4.8.123-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/version-v4.8.124-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/license-segmented_dual-cyan)](LICENSE)
 
 **A real, self-contained AI assistant on your phone.** Not a wrapper — a rebuilt engine with six
@@ -129,7 +129,9 @@ changelog entry and a regression guard. Optimizations keep coming.
 
 ## 📋 Changelog
 
-v4.8.54 → v4.8.123 (newest first):
+v4.8.54 → v4.8.124 (newest first):
+
+- **v4.8.124** — Rolled back the output completion gate completely (per user verdict): clean-boundary stream closes without completion evidence are once again treated as complete — no synthetic continue requests, which had been provoking gateway errors ("Upstream stream ended before terminal chunk") and breaking conversations. The v4.8.117/118 parallel-cut detection and evidence-based gate are removed; the v4.8.112 channel-completion guards remain in place.
 
 - **v4.8.123** — Images now reserve their final size while loading (local images are measured from the file header, remote ones remembered after first load), so scrolling up through history no longer makes messages jump; every file capsule (documents, video, audio, and the conversation-output list) now opens an options sheet — render / share / export / open-with — instead of jumping straight into system pages; sending is no longer grayed out during context compression — the message queues like during generation and goes out automatically once compression (or the previous turn) finishes.
 

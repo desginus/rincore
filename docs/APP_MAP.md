@@ -2,7 +2,7 @@
 
 > **给 AI 的读法**: 拿到本仓库先读本文件。它告诉你 — 每块代码在哪、干什么、
 > 用户提某类需求时改哪些文件、该问题历史上是否出现过。
-> 版本基线: v4.8.123 (2026-10-11)。大规模改动后请同步更新对应卡片。
+> 版本基线: v4.8.124 (2026-10-11)。大规模改动后请同步更新对应卡片。
 >
 > 配套历史知识 (必读): `.claude/skills/` 下 `rincore-project-brief`(架构基线) /
 > `rincore-changelog`(版本史) / `rincore-bug-record`(Bug 根因) /
@@ -104,8 +104,8 @@ Completions/Response API)、MCP 客户端、提示词组装、消息变换器。
 **历史**: MCP 重启断联根治 (v4.8.6) / thinking 字段语义结构根修 (v4.8.10) /
 断流重试三件套 (v4.8.7) / GLM 图片限制 6 张 (v4.7.24) / MCP stdio 回归修复
 (v4.8.96 — fork SDK 探测触发 stderr FATAL 停机; 锁 ProtocolEra.Legacy + stderr 永不 FATAL, bug-record B122) /
-静默中断五通道完成门 (v4.8.112, B136) / 并行流登记 ParallelStreamRegistry (v4.8.117, B140) /
-完成门 v2 证据化 + AggregateCloseEvidence 学习层 (v4.8.118, B141)。
+静默中断五通道完成门 (v4.8.112, B136 — 保留) / 并行流登记与完成门 v2 均由 **v4.8.124 整体回滚**
+(用户定版: 放弃防中断新逻辑, B146; 干净边界无证据关流回到 treated-as-complete)。
 
 ### C. 工具系统 (Tools)
 

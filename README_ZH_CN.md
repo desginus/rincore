@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=构建&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/版本-v4.8.123-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/版本-v4.8.124-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/许可-segmented_dual-cyan)](LICENSE)
 
 **手机上一个真正全面的 AI 助手。** 不是套壳，是一台重新打造过的引擎——背后是六周的高强度实测迭代与 400+ 个版本。
@@ -80,7 +80,9 @@ RinCore 处于活跃维护中，欢迎 Issue 与 PR。每一个被报告的问�
 
 ## 📋 更新日志
 
-v4.8.54 → v4.8.123（倒序）：
+v4.8.54 → v4.8.124（倒序）：
+
+- **v4.8.124** — 输出门禁彻底回滚（用户定版）：干净边界、无完成证据的流关流恢复为"视为完成"——不再合成续写追问（该行为会触发上游网关的 "Upstream stream ended before terminal chunk" 错误、导致对话不可用）；v4.8.117/118 的并行掐流检测与完成门 v2 证据化整体移除，v4.8.112 的五通道完成判据保留。
 
 - **v4.8.123** — 图片加载期间即按最终尺寸预留位置（本地图片读文件头测尺寸、远端图片首次加载后记住），上滑回看历史消息不再跳动/抽动；所有文件胶囊（文档、视频、音频与「本对话产出」列表）改为点击弹出选项：渲染 / 分享 / 导出 / 用其他应用打开（不再直接跳系统页面）；上下文压缩期间发送键不再变灰——消息与生成中同款排队「等待中」，压缩（或上一轮输出）完成后自动发出。
 
