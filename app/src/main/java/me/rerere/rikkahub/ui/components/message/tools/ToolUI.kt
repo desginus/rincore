@@ -33,6 +33,7 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Tools
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.richtext.HighlightCodeBlock
+import me.rerere.rikkahub.ui.components.richtext.StableSizeImage
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.utils.JsonInstant
@@ -203,10 +204,9 @@ fun DefaultToolPreview(
                                 style = TextStyle(fontSize = 10.sp, lineHeight = 12.sp)
                             )
 
-                            is UIMessagePart.Image -> ZoomableAsyncImage(
-                                model = part.url,
+                            is UIMessagePart.Image -> StableSizeImage(
+                                src = part.url,
                                 contentDescription = null,
-                                modifier = Modifier.fillMaxWidth(),
                             )
 
                             else -> {}

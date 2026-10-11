@@ -302,14 +302,10 @@ private fun RenderImage(
                 .padding(vertical = 8.dp),
             contentAlignment = Alignment.Center
         ) {
-            ZoomableAsyncImage(
-                model = src,
+            StableSizeImage(
+                src = src,
                 contentDescription = alt.takeIf { it.isNotEmpty() },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 400.dp)
-                    .clip(RoundedCornerShape(8.dp)),
-                contentScale = ContentScale.Fit,
+                maxHeight = 400.dp,
             )
         }
     }

@@ -112,6 +112,14 @@ class ConversationSession(
     // 处理状态（如 OCR 识别中）
     val processingStatus = MutableStateFlow<String?>(null)
 
+    /**
+     * v4.8.123 (用户定版): 压缩进行中标记 — 队列派发门据此把新消息挂起"等待中"
+     * (压缩期发送 = 与模型输出期同款排队)。由 ChatService.runCompression 设置,
+     * 结束(成功/失败/取消)的 finally 清除并统一派发排队消息。
+     */
+    @Volatile
+    var isCompressing: Boolean = false
+
     // 生成任务（内聚在 session 中）
     private val _generationJob = MutableStateFlow<Job?>(null)
     private val activeJobs = mutableSetOf<Job>()

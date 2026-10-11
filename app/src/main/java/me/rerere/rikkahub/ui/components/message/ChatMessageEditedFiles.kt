@@ -80,7 +80,7 @@ private const val DEFAULT_VISIBLE_COUNT = 3
 private val WORKSPACE_FILE_TOOL_NAMES = setOf("workspace_show_file")
 
 /** v4.8.63: 胶囊窗文件条目 — 展示用原始路径 + 工具执行回执中已验证的解析路径。 */
-private data class ChipFile(val raw: String, val resolvedHint: String?)
+internal data class ChipFile(val raw: String, val resolvedHint: String?)
 
 /** v4.8.63: 模糊匹配多命中时的用户选择状态 (选择后继续原动作; 取消则放弃, 不报错)。 */
 private data class FileChooserState(
@@ -459,7 +459,7 @@ internal fun EditedFilesList(
 
 /** v4.8.57: CWD 归一化 (同 WorkspaceTools 口径), null/空 = 无约束。
  *  接受助手级 workspaceCwd 与项目包 cwd (含 "/workspace/xxx" 绝对形态)。 */
-private fun normalizeCwdRel(raw: String?): String? {
+internal fun normalizeCwdRel(raw: String?): String? {
     val trimmed = raw?.trim('/') ?: return null
     val rel = (if (trimmed == "workspace") "" else trimmed.removePrefix("workspace/")).trim('/')
     return rel.ifBlank { null }
@@ -501,13 +501,13 @@ private fun chipFilesOf(tool: UIMessagePart.Tool): List<ChipFile> {
  *  策略: ①回执解析路径 → ②原始输入 × {项目包 CWD、助手 CWD、根} 多候选直取 →
  *  ③仍未命中则按文件名全库模糊匹配 (后缀深度择优; 仍并列 → 交由调用方弹窗让用户
  *  选择, 不报错)。解析产物: 全根语义 Rootfs 绝对路径 (导出统一 cwd=null 消费)。 */
-private sealed interface ScopedResolution {
+internal sealed interface ScopedResolution {
     data class Resolved(val rootfsPath: String) : ScopedResolution
     data class Ambiguous(val candidates: List<String>) : ScopedResolution
     data class NotFound(val detail: String) : ScopedResolution
 }
 
-private suspend fun resolveScopedFile(
+internal suspend fun resolveScopedFile(
     repository: WorkspaceRepository,
     workspaceId: String,
     chip: ChipFile,
@@ -567,7 +567,7 @@ private suspend fun resolveScopedFile(
 }
 
 /** v4.8.63: 导出已解析文件 (全根语义, 单一出口 — '解析路径'与'导出语义'不再双轨)。 */
-private suspend fun exportResolvedFile(
+internal suspend fun exportResolvedFile(
     repository: WorkspaceRepository,
     workspaceId: String,
     rootfsPath: String,

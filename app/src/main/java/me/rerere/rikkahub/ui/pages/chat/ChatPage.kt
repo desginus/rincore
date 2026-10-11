@@ -569,7 +569,6 @@ private fun ChatPageContent(
             bottomBar = {
                 val messageQueue by vm.messageQueue.collectAsStateWithLifecycle()
                 val voiceState by vm.voiceSession.state.collectAsStateWithLifecycle()
-                val compressBlocking by vm.compressing.collectAsStateWithLifecycle()
                 ChatInput(
                     hazeState = hazeState,
                     onStartVoiceMode = onStartVoiceMode,
@@ -582,7 +581,6 @@ private fun ChatPageContent(
                     onFinishEditQueuedMessage = vm::finishEditQueuedMessage,
                     onResumeMessageQueue = vm::resumeMessageQueue,
                     loading = loadingJob != null,
-                    sendBlocked = compressBlocking,
                     settings = setting,
                     completionProviders = completionProviders,
                     toolPickerProvider = toolPickerProvider,

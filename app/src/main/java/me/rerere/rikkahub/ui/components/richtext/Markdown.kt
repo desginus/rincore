@@ -764,14 +764,10 @@ private fun MarkdownNode(
             Column(
                 modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // 这里可以使用Coil等图片加载库加载图片
-                ZoomableAsyncImage(
-                    model = imageUrl,
+                // v4.8.123: 稳定占位尺寸 (防上滑跳动) — 加载期与最终尺寸一致
+                StableSizeImage(
+                    src = imageUrl,
                     contentDescription = altText,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .widthIn(min = 120.dp)
-                        .heightIn(min = 120.dp),
                 )
             }
         }

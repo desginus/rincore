@@ -3,7 +3,7 @@ package me.rerere.rikkahub.ui.pages.chat
 
 /* ───【域 A·对话核心】ChatVM.kt
  * 职责: 对话 VM — 发送/编辑/删除/压缩/重新生成/恢复位点
- * 常用改动: 发送逻辑 → handleMessageSend (含压缩中禁发兜底); 压缩 → handleCompressContext/cancelCompress; 恢复 → restoreCompressAt
+ * 常用改动: 发送逻辑 → handleMessageSend (v4.8.123: 压缩期可发送, 排队至压缩完成后自动发出); 压缩 → handleCompressContext/cancelCompress; 恢复 → restoreCompressAt
  * 问题定位: 发送无响应/压缩异常/编辑丢失 → 本文件
  * 基线: 原版移植 + 自研 (settings 投影) | 差异 +56 行 | 地图: docs/APP_MAP.md §A | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
@@ -272,8 +272,8 @@ class ChatVM(
      */
     fun handleMessageSend(content: List<UIMessagePart>,answer: Boolean = true) {
         if (content.isEmptyInputMessage()) return
-        // v4.8.9: 压缩中禁止发送 (防打断压缩 — 用户定版); UI 层按钮已禁用, 此处兜底
-        if (_compressing.value) return
+        // v4.8.123 (用户定版): 压缩期可发送 — 与模型输出期同款排队"等待中"
+        // (派发门在压缩期挂起; 压缩完成由 ChatService.runCompression 统一派发)
         analytics.logEvent("ai_send_message", null)
 
         // v3.6.13: 延迟自动回复 — 开启时发送不触发模型回复 (消息排队,
@@ -358,7 +358,7 @@ class ChatVM(
         val job = viewModelScope.launch {
             _compressing.value = true
             try {
-                chatService.compressConversation(
+                chatService.runCompression(
                     _conversationId,
                     conversation.value,
                     additionalPrompt,

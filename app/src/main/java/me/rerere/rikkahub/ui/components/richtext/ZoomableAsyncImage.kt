@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.DefaultAlpha
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
@@ -130,8 +131,16 @@ fun ZoomableAsyncImage(
             onLoading = {
                 loading = true
             },
-            onSuccess = {
+            onSuccess = { state ->
                 loading = false
+                // v4.8.123: 回填尺寸 memo — 同会话再次出现 (含上滑回看) 按已知尺寸
+                // 预留, 不再从小占位跳到实际尺寸
+                runCatching {
+                    val img = state.result.image
+                    model?.let { m ->
+                        ImagePixelSizeMemo.put(m, IntSize(img.width, img.height))
+                    }
+                }
             },
             onError = {
                 loading = false

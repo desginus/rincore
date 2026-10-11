@@ -3,7 +3,7 @@ package me.rerere.rikkahub.ui.components.ai
 
 /* ───【域 A·对话核心】ChatInput.kt
  * 职责: 输入区 (发送/思考键/消息队列卡片/语音/附件入口)
- * 常用改动: 发送键状态 → SendButton (blocked=压缩中禁发, v4.8.9); 键位互换 → swapKeys; 语音 → VoiceMode
+ * 常用改动: 发送键状态 → SendButton (v4.8.123: 压缩期可发送一排队); 键位互换 → swapKeys; 语音 → VoiceMode
  * 问题定位: 发送键异常/输入区布局错位 → 本文件
  * 基线: 原版移植 + 自研 (键位互换/发送禁用) | 差异 ±45 行 | 地图: docs/APP_MAP.md §A | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
@@ -132,8 +132,6 @@ import androidx.compose.runtime.setValue
 fun ChatInput(
     state: ChatInputState,
     loading: Boolean,
-    // v4.8.9: 压缩中禁止发送 (防打断压缩 — 用户定版); 由 ChatPage 传入
-    sendBlocked: Boolean = false,
     settings: Settings,
     modifier: Modifier = Modifier,
     completionProviders: List<ChatCompletionProvider> = emptyList(),
@@ -338,7 +336,6 @@ fun ChatInput(
                                     SendButton(
                                         loading = loading,
                                         empty = state.isEmpty(),
-                                        blocked = sendBlocked,
                                         onClick = { sendMessage() },
                                         onLongClick = { sendMessageWithoutAnswer() },
                                     )
@@ -402,7 +399,6 @@ fun ChatInput(
                                     SendButton(
                                         loading = loading,
                                         empty = state.isEmpty(),
-                                        blocked = sendBlocked,
                                         onClick = { sendMessage() },
                                         onLongClick = { sendMessageWithoutAnswer() },
                                     )
@@ -426,21 +422,21 @@ fun ChatInput(
 private fun SendButton(
     loading: Boolean,
     empty: Boolean,
-    blocked: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val showStop = loading && empty
-    // v4.8.9: blocked (压缩中) — 视觉禁用 (灰) + 点击无效
+    // v4.8.123 (用户定版): 压缩期可发送 — 发送键不再有"压缩中禁用"态; 压缩期发出的
+    // 消息与模型输出期同款排队"等待中", 压缩完成后自动发出 (见 ChatVM/ChatService)。
     val containerColor = when {
         showStop -> MaterialTheme.colorScheme.errorContainer
-        blocked || empty -> MaterialTheme.colorScheme.surfaceContainerHigh
+        empty -> MaterialTheme.colorScheme.surfaceContainerHigh
         else -> MaterialTheme.colorScheme.primary
     }
     val contentColor = when {
         showStop -> MaterialTheme.colorScheme.onErrorContainer
-        blocked || empty -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+        empty -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
         else -> MaterialTheme.colorScheme.onPrimary
     }
     Box(
@@ -450,7 +446,7 @@ private fun SendButton(
             .testTag("chat_send_button")
             .clip(CircleShape)
             .combinedClickable(
-                enabled = (showStop || !empty) && !blocked,
+                enabled = showStop || !empty,
                 onClick = onClick,
                 onLongClick = onLongClick,
             )

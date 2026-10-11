@@ -734,13 +734,14 @@ private fun ChatListPreview(
             }
         }
 
-        // ── v4.8.121 本对话产出胶囊窗（模型产出/修改过的文件，点击直接打开）──
-        if (showArtifactsSheet) {
-            ConversationArtifactsSheet(
-                files = settings.conversationProducedFiles[conversation.id.toString()].orEmpty(),
-                onDismiss = { showArtifactsSheet = false },
-            )
-        }
+        // ── v4.8.121/123 本对话产出（清单一→选项弹层：渲染/分享/导出/打开）──
+        ConversationArtifactsSheet(
+            open = showArtifactsSheet,
+            files = settings.conversationProducedFiles[conversation.id.toString()].orEmpty(),
+            assistant = settings.getAssistantById(conversation.assistantId) ?: settings.getCurrentAssistant(),
+            folderCwd = null,
+            onOpenChange = { showArtifactsSheet = it },
+        )
 
         // ── v4.8.88 子代理预算弹窗（与模型侧同一份 Settings 数据）──
         if (showBudgetDialog) {

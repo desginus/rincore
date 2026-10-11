@@ -2,6 +2,8 @@
 package me.rerere.rikkahub.ui.components.message
 
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,6 +39,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.File02
+import me.rerere.hugeicons.stroke.FileImport
 import me.rerere.hugeicons.stroke.FileView
 import me.rerere.hugeicons.stroke.Share08
 import me.rerere.rikkahub.R
@@ -49,15 +52,16 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import java.io.File
 
 /**
- * v4.8.122 (用户实证: "我发出去的文件点击胶囊窗不会弹出渲染等选项"):
- * 上传/文档胶囊的选项宿主 — 弹层 [渲染 / 分享 / 用其他应用打开] (对齐既有
- * 「编辑过的文件」胶囊 EditedFilesList 的选项范式)。渲染走渲染机
- * RenderEngine.renderSmart; Host 恒驻组合 (open 仅控弹层可见) — 渲染进行中
- * 关闭弹层不丢进度态。
+ * v4.8.122→v4.8.123 (用户定版): 消息内文件胶囊的统一选项宿主 —
+ * 弹层 [渲染 / 分享 / 导出 / 用其他应用打开] (对齐「编辑过的文件」胶囊范式,
+ * 点击不再直呼系统分享/打开页面)。覆盖: 上传文档 (Document) / 视频 / 音频胶囊。
+ * - 渲染 = 渲染机 RenderEngine.renderSmart (文档/表格/幻灯片/音视频播放预览)
+ * - 导出 = 系统 CreateDocument 另存副本
+ * - Host 恒驻组合 (open 仅控弹层可见) — 渲染进行中关闭弹层不丢进度态。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DocumentChipHost(
+fun FileChipOptionsHost(
     open: Boolean,
     file: File,
     fileName: String,
@@ -69,6 +73,26 @@ fun DocumentChipHost(
     var renderResult by remember { mutableStateOf<RenderResult?>(null) }
     var renderLoading by remember { mutableStateOf(false) }
     val renderable = remember(fileName) { detectRenderKind(fileName) != RenderKind.NONE }
+
+    // v4.8.123: 导出 = 系统另存副本 (CreateDocument)
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/octet-stream"),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching {
+            val out = context.contentResolver.openOutputStream(uri) ?: error("无法写入目标位置")
+            out.use { output -> file.inputStream().use { input -> input.copyTo(output) } }
+            toaster.show(
+                message = "已导出: ${fileName.ifBlank { file.name }}",
+                type = ToastType.Success,
+            )
+        }.onFailure { e ->
+            toaster.show(
+                message = "导出失败: ${e.message?.take(120) ?: "未知错误"}",
+                type = ToastType.Error,
+            )
+        }
+    }
 
     if (open) {
         ModalBottomSheet(onDismissRequest = { onOpenChange(false) }) {
@@ -170,6 +194,38 @@ fun DocumentChipHost(
                         )
                         Text(
                             text = stringResource(R.string.common_share),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
+                }
+                Card(
+                    onClick = {
+                        onOpenChange(false)
+                        runCatching {
+                            exportLauncher.launch(fileName.ifBlank { file.name })
+                        }.onFailure { e ->
+                            toaster.show(
+                                message = "导出失败: ${e.message?.take(120) ?: "未知错误"}",
+                                type = ToastType.Error,
+                            )
+                        }
+                    },
+                    shape = MaterialTheme.shapes.medium,
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier
+                            .padding(16.dp)
+                            .fillMaxWidth(),
+                    ) {
+                        Icon(
+                            imageVector = HugeIcons.FileImport,
+                            contentDescription = null,
+                            modifier = Modifier.padding(4.dp),
+                        )
+                        Text(
+                            text = stringResource(R.string.common_export),
                             style = MaterialTheme.typography.titleMedium,
                         )
                     }

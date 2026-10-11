@@ -445,7 +445,9 @@ class ChatService(
             // 用户可直接发送消息 (消息即刻出队正常发送; 未回答的 ask_user 会在发送链首部
             // 由 finishInterruptedPendingTools 以 cancelled 落底, 协议安全)。
             // 其余待批工具 (真实审批) 仍阻塞队列 — 审批未了结的轮次不可被新消息插队。
-            if (session.getJob() != null || session.state.value.currentMessages.any { message ->
+            // v4.8.123 (用户定版): 压缩期新消息与模型输出期同款排队 — 压缩中不派发
+            // (压缩结束在 ChatService.runCompression 的 finally 里统一派发)。
+            if (session.getJob() != null || session.isCompressing || session.state.value.currentMessages.any { message ->
                     message.parts.any {
                         it is UIMessagePart.Tool && it.isPending && it.toolName != "ask_user"
                     }
@@ -1196,6 +1198,28 @@ class ChatService(
     }
 
     // ---- 压缩对话历史 ----
+
+    /**
+     * v4.8.123 (用户定版): 压缩执行入口 (UI 调用) — 压缩期标记会话 (派发门据此
+     * 把新消息挂起"等待中"), 结束(成功/失败/取消)必达的 finally 里清标记并派发
+     * 排队消息 (压缩完成 → 排队消息自动发出)。
+     */
+    suspend fun runCompression(
+        conversationId: Uuid,
+        conversation: Conversation,
+        additionalPrompt: String,
+        targetTokens: Int,
+        keepRecentMessages: Int = 10
+    ): Result<Unit> {
+        val compressSession = sessionManager.get(conversationId)
+        compressSession?.isCompressing = true
+        return try {
+            compressConversation(conversationId, conversation, additionalPrompt, targetTokens, keepRecentMessages)
+        } finally {
+            compressSession?.isCompressing = false
+            dispatchNextQueuedMessage(conversationId)
+        }
+    }
 
     suspend fun compressConversation(
         conversationId: Uuid,

@@ -216,13 +216,10 @@ private fun HtmlBlockElement(
             val alt = element.attr("alt")
             if (src.isNotEmpty()) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    ZoomableAsyncImage(
-                        model = src,
+                    // v4.8.123: 稳定占位尺寸 (防上滑跳动) — 加载期与最终尺寸一致
+                    StableSizeImage(
+                        src = src,
                         contentDescription = alt.takeIf { it.isNotEmpty() },
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .widthIn(min = 120.dp)
-                            .heightIn(min = 120.dp),
                     )
                 }
             }
@@ -721,13 +718,10 @@ private fun HtmlInlineAsComposable(node: Node, onClickCitation: (String) -> Unit
                     val src = node.attr("src")
                     val alt = node.attr("alt")
                     if (src.isNotEmpty()) {
-                        ZoomableAsyncImage(
-                            model = src,
+                        // v4.8.123: 稳定占位尺寸 (防上滑跳动)
+                        StableSizeImage(
+                            src = src,
                             contentDescription = alt.takeIf { it.isNotEmpty() },
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .widthIn(min = 120.dp)
-                                .heightIn(min = 120.dp),
                         )
                     }
                 }

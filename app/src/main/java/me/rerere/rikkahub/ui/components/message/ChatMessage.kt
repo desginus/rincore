@@ -5,7 +5,6 @@ package me.rerere.rikkahub.ui.components.message
 /* ───【原版对齐】ChatMessage.kt | 差异 ±8 行
  * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
  * ───────────────────────────────────────────────────────────────*/
-import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
@@ -60,7 +59,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastAll
 import androidx.compose.ui.util.fastForEach
 import androidx.compose.ui.util.fastForEachIndexed
-import androidx.core.content.FileProvider
 import androidx.core.net.toFile
 import androidx.core.net.toUri
 import kotlinx.coroutines.FlowPreview
@@ -506,19 +504,12 @@ private fun MessagePartsBlock(
                     }
 
                     is UIMessagePart.Video -> {
+                        // v4.8.123 (用户定版): 点击 → 选项弹层 [渲染/分享/导出/打开]
+                        // (不再直呼系统分享/打开页; 对齐「编辑过的文件」胶囊范式)
+                        var videoOptionsOpen by remember { mutableStateOf(false) }
                         Surface(
                             tonalElevation = 2.dp,
-                            onClick = {
-                                val intent = Intent(Intent.ACTION_VIEW)
-                                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                intent.data = FileProvider.getUriForFile(
-                                    context,
-                                    "${context.packageName}.fileprovider",
-                                    part.url.toUri().toFile()
-                                )
-                                val chooserIndent = Intent.createChooser(intent, null)
-                                context.startActivity(chooserIndent)
-                            },
+                            onClick = { videoOptionsOpen = true },
                             modifier = Modifier,
                             shape = RoundedCornerShape(8.dp),
                         ) {
@@ -526,22 +517,27 @@ private fun MessagePartsBlock(
                                 Icon(HugeIcons.Video01, null)
                             }
                         }
+                        val videoFile = remember(part.url) {
+                            runCatching { part.url.toUri().toFile() }.getOrNull()
+                        }
+                        if (videoFile != null) {
+                            FileChipOptionsHost(
+                                open = videoOptionsOpen,
+                                file = videoFile,
+                                fileName = remember(part.url) {
+                                    part.url.toUri().lastPathSegment ?: part.url.substringAfterLast('/')
+                                },
+                                onOpenChange = { videoOptionsOpen = it },
+                            )
+                        }
                     }
 
                     is UIMessagePart.Audio -> {
+                        // v4.8.123 (用户定版): 点击 → 选项弹层 [渲染/分享/导出/打开]
+                        var audioOptionsOpen by remember { mutableStateOf(false) }
                         Surface(
                             tonalElevation = 2.dp,
-                            onClick = {
-                                val intent = Intent(Intent.ACTION_VIEW)
-                                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                intent.data = FileProvider.getUriForFile(
-                                    context,
-                                    "${context.packageName}.fileprovider",
-                                    part.url.toUri().toFile()
-                                )
-                                val chooserIndent = Intent.createChooser(intent, null)
-                                context.startActivity(chooserIndent)
-                            },
+                            onClick = { audioOptionsOpen = true },
                             modifier = Modifier,
                             shape = RoundedCornerShape(50),
                             color = MaterialTheme.colorScheme.secondaryContainer
@@ -559,6 +555,19 @@ private fun MessagePartsBlock(
                                     )
                                 }
                             }
+                        }
+                        val audioFile = remember(part.url) {
+                            runCatching { part.url.toUri().toFile() }.getOrNull()
+                        }
+                        if (audioFile != null) {
+                            FileChipOptionsHost(
+                                open = audioOptionsOpen,
+                                file = audioFile,
+                                fileName = remember(part.url) {
+                                    part.url.toUri().lastPathSegment ?: part.url.substringAfterLast('/')
+                                },
+                                onOpenChange = { audioOptionsOpen = it },
+                            )
                         }
                     }
 
@@ -636,12 +645,12 @@ private fun MessagePartsBlock(
                                 }
                             }
                         }
-                        // v4.8.122: 选项宿主 (恒驻组合以保全渲染进度态; open 仅控弹层)
+                        // v4.8.123: 选项宿主 (恒驻组合以保全渲染进度态; open 仅控弹层)
                         val chipFile = remember(part.url) {
                             runCatching { part.url.toUri().toFile() }.getOrNull()
                         }
                         if (chipFile != null) {
-                            DocumentChipHost(
+                            FileChipOptionsHost(
                                 open = chipOptionsOpen,
                                 file = chipFile,
                                 fileName = part.fileName,
