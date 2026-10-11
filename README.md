@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=build&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/version-v4.8.121-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/version-v4.8.122-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/license-segmented_dual-cyan)](LICENSE)
 
 **A real, self-contained AI assistant on your phone.** Not a wrapper — a rebuilt engine with six
@@ -129,7 +129,9 @@ changelog entry and a regression guard. Optimizations keep coming.
 
 ## 📋 Changelog
 
-v4.8.54 → v4.8.121 (newest first):
+v4.8.54 → v4.8.122 (newest first):
+
+- **v4.8.122** — Root-cause fix for images failing to render when the address contains an underscore: the render pipeline used to treat image/link addresses as ordinary text (its word-internal underscore / tilde protective passes rewrote `_`→fullwidth and `~`→∼ inside URLs, corrupting the address so the real file could never be found). Addresses are now opaque URL tokens (a scanner protects markdown destinations, autolinks and bare URLs). Plus: "conversation output" now also tracks files produced via shell/job rounds (workspace file-system scan); tapping an uploaded file chip now opens an options sheet (render / share / open-with); message list side margin 16→8dp and bubble inner padding 8→6dp; drawer edge gap rolled back to 64dp.
 
 - **v4.8.121** — Sub-agent retrieval gained a script-polling mode (wait_until_done: checks every 10s and returns the moment the run finishes); the model can no longer pass a custom timeout (fixed at the 1800s ceiling), and per-assistant concurrent sub-agents now default to 7; new "auto-render in code blocks" setting (HTML/JS/SVG render as previews, switch back to code anytime); horizontal swipes on a code block no longer open the chat drawer; the feather "minimal mode" toggle has been removed; drawer edge gap tightened to 40dp; new "conversation output" panel — tap a file the model produced and it opens directly.
 - **v4.8.120** — Tables wrapped in md/markdown code fences now render as real tables (fence unwrapping ported from OpenAI Codex); GFM column alignment (:---:) is honored; sub-agent default timeout raised to 1800 seconds.

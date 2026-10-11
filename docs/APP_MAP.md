@@ -2,7 +2,7 @@
 
 > **给 AI 的读法**: 拿到本仓库先读本文件。它告诉你 — 每块代码在哪、干什么、
 > 用户提某类需求时改哪些文件、该问题历史上是否出现过。
-> 版本基线: v4.8.121 (2026-10-11)。大规模改动后请同步更新对应卡片。
+> 版本基线: v4.8.122 (2026-10-11)。大规模改动后请同步更新对应卡片。
 >
 > 配套历史知识 (必读): `.claude/skills/` 下 `rincore-project-brief`(架构基线) /
 > `rincore-changelog`(版本史) / `rincore-bug-record`(Bug 根因) /
@@ -70,6 +70,7 @@
 - 消息发送队列与延时回复联动 → v3.6.13/v3.11.30 系列
 - 极简模式 (对话级工具总闸) 随 v4.8.121 整体删除 (用户定版, 勿复活)
 - 代码块上的水平滑动不再呼出抽屉 (v4.8.121: 代码块区域吞未消费水平拖拽)
+- 消息列表两侧留白 16→8dp + 气泡内留白 8→6dp (v4.8.122 用户定版); 抽屉露边条回滚 64dp (v4.8.122)
 
 ### B. AI 传输 (AI Transport)
 
@@ -127,7 +128,7 @@ Completions/Response API)、MCP 客户端、提示词组装、消息变换器。
 | `ecosystem/tools/DynamicTools.kt` | 动态工具池 |
 | `subagent/SubAgentEngine.kt` | 子代理引擎 |
 | `subagent/SubAgentTools.kt` | 子代理四工具 (v4.8.121: get 双模式 wait_until_done 脚本轮询 / dispatch 超时恒定 1800s 不可传 / 并发默认 7) |
-| `data/ai/tools/ProducedFiles.kt` | 本对话产出登记器 (v4.8.121: 写类工具成功 → Settings 清单, UI 见 ConversationArtifactsSheet) |
+| `data/ai/tools/ProducedFiles.kt` | 本对话产出登记器 (v4.8.121 直登记; v4.8.122 扩面: shell/job 回合后工作区 mtime 扫描 scanWorkspaceSince + recordBatch) |
 | `ui/pages/setting/SettingZonePage.kt` | 工具矩阵页 (工具区增删改/隐藏 + 顶层直连工具; 「恢复出厂」已按用户定版移除 v4.8.92) |
 
 **分层注入铁律**: 系统提示词只放 7 个框架工具; 其余工具在请求 tools 数组;
@@ -214,8 +215,10 @@ MCP 工具静态声明 (配置决定), 连接惰性 (首次调用才连)。
 | `highlight/` 模块 | 代码高亮实现 |
 | `ui/components/richtext/WorkspaceImageFetch.kt` | 图片加载 (缓存键含 mtime+size; Coil 接入见 RouteActivity) |
 | `markdown/` 模块 (vendored) | intellij-markdown + 数学模型移植 (v4.8.119) + TableFenceUnwrapper (v4.8.120: md 围栏内表格解包) |
+| `markdown/.../util/UrlRegionScanner.kt` | 地址域扫描器 (v4.8.122: URL=不可透明令牌 — `_`/`~` 永不进入地址区; B144) |
 | `ui/components/richtext/Markdown.kt` | AST 渲染链 (v4.8.119: 链接内联递归/表格单元格行内直渲; v4.8.120: GFM 列对齐) |
 | `ui/components/richtext/HighlightCodeBlock.kt` | 代码块 (v4.8.121: 自动渲染/JS 沙箱执行/滑动防抽屉) |
+| `ui/components/message/ChatDocumentChip.kt` | 文档胶囊选项弹层 (v4.8.122: 渲染/分享/用其他应用打开 — 对齐「编辑过的文件」范式) |
 
 **渲染铁律**: Markdown 首帧同步解析 (对齐原版, 勿改异步/占位/分段);
 Haze 锁 `2.0.0-beta01` (rc 版本有格栅伪影); 玻璃层用 `RinGlass` 单一来源。
@@ -229,7 +232,7 @@ Haze 锁 `2.0.0-beta01` (rc 版本有格栅伪影); 玻璃层用 `RinGlass` 单�
 **历史**: 渲染抽动完全对齐原版 (v4.7.26) / 首帧卡顿修复 (v4.8.1) /
 图片缓存失效 (v4.8.2) / 预设主题默认·莫兰迪紫 (v4.8.7) / 色相条 (v4.8.9) /
 渲染链升级 (v4.8.119: CJK 公式根修/链接递归/单元格直渲) / codex 对齐 (v4.8.120: 围栏解包/列对齐) /
-代码块自动渲染 (v4.8.121)。
+代码块自动渲染 (v4.8.121) / 地址 `_` 污染根修 — URL opaque 化 (v4.8.122, B144)。
 
 ### G. 自动化 (Automation)
 

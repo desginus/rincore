@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=构建&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/版本-v4.8.121-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/版本-v4.8.122-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/许可-segmented_dual-cyan)](LICENSE)
 
 **手机上一个真正全面的 AI 助手。** 不是套壳，是一台重新打造过的引擎——背后是六周的高强度实测迭代与 400+ 个版本。
@@ -80,7 +80,9 @@ RinCore 处于活跃维护中，欢迎 Issue 与 PR。每一个被报告的问�
 
 ## 📋 更新日志
 
-v4.8.54 → v4.8.121（倒序）：
+v4.8.54 → v4.8.122（倒序）：
+
+- **v4.8.122** — 图片地址含下划线就挂的根因修复：渲染管线此前把图片/链接地址当普通文本处理（其"词内下划线保护"与"单波浪号替换"把地址里的 `_` 换成了全角 ＿、`~` 换成 ∼，地址被污染后永远找不到真实文件）。现在地址是不可透明 URL 令牌（扫描器保护 markdown 目标区/autolink/裸 URL）。同时：「本对话产出」扩面（shell/job 生成的文件也会被工作区扫描登记）；点击上传文件胶囊弹出选项弹层（渲染/分享/用其他应用打开）；消息列表两侧留白 16→8dp、气泡内留白 8→6dp；抽屉露边条回滚 64dp。
 
 - **v4.8.121** — 子代理回收器新增脚本轮询模式（wait_until_done：每 10 秒查询一次，完成即返回）；模型不再能自传超时（恒定 1800 秒上限），单助手并发子代理默认 7 个；新增「代码块内自动渲染」开关（HTML/JS/SVG 自动预览，可随时切回代码）；代码块上的横向滑动不再误触抽屉；羽毛「极简模式」开关已删除；抽屉露边条收紧为 40dp；新增「本对话产出」面板——点按模型产出的文件即可直接打开。
 - **v4.8.120** — 被 md/markdown 代码围栏包住的表格现在渲染为真表格（围栏解包逻辑移植自 OpenAI Codex）；支持 GFM 列对齐（:---:）；子代理默认超时提升至 1800 秒。
