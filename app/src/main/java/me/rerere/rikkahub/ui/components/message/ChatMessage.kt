@@ -450,7 +450,7 @@ private fun MessagePartsBlock(
                                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = settings.displaySetting.bubbleOpacity),
                                     onClick = { onUserMessageClick?.invoke() },
                                 ) {
-                                    Column(modifier = Modifier.padding(8.dp)) {
+                                    Column(modifier = Modifier.padding(6.dp)) {
                                         MarkdownBlock(
                                             content = part.text.replaceRegexes(
                                                 assistant = assistant,
@@ -468,7 +468,7 @@ private fun MessagePartsBlock(
                                         shape = RoundedCornerShape(16.dp),
                                         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = settings.displaySetting.bubbleOpacity),
                                     ) {
-                                        Column(modifier = Modifier.padding(8.dp)) {
+                                        Column(modifier = Modifier.padding(6.dp)) {
                                             MarkdownBlock(
                                                 content = part.text.replaceRegexes(
                                                     assistant = assistant,
@@ -585,19 +585,12 @@ private fun MessagePartsBlock(
                     }
 
                     is UIMessagePart.Document -> {
+                        // v4.8.122 (用户实证: 点击胶囊窗不弹出渲染等选项): 改为选项弹层
+                        // [渲染 / 分享 / 用其他应用打开] — 对齐「编辑过的文件」胶囊范式
+                        var chipOptionsOpen by remember { mutableStateOf(false) }
                         Surface(
                             tonalElevation = 2.dp,
-                            onClick = {
-                                val intent = Intent(Intent.ACTION_VIEW)
-                                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                intent.data = FileProvider.getUriForFile(
-                                    context,
-                                    "${context.packageName}.fileprovider",
-                                    part.url.toUri().toFile()
-                                )
-                                val chooserIndent = Intent.createChooser(intent, null)
-                                context.startActivity(chooserIndent)
-                            },
+                            onClick = { chipOptionsOpen = true },
                             modifier = Modifier,
                             shape = RoundedCornerShape(50),
                             color = MaterialTheme.colorScheme.tertiaryContainer
@@ -642,6 +635,18 @@ private fun MessagePartsBlock(
                                     )
                                 }
                             }
+                        }
+                        // v4.8.122: 选项宿主 (恒驻组合以保全渲染进度态; open 仅控弹层)
+                        val chipFile = remember(part.url) {
+                            runCatching { part.url.toUri().toFile() }.getOrNull()
+                        }
+                        if (chipFile != null) {
+                            DocumentChipHost(
+                                open = chipOptionsOpen,
+                                file = chipFile,
+                                fileName = part.fileName,
+                                onOpenChange = { chipOptionsOpen = it },
+                            )
                         }
                     }
 

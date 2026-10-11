@@ -116,6 +116,7 @@ import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
 import org.intellij.markdown.flavours.gfm.GFMTokenTypes
 import org.intellij.markdown.parser.MarkdownParser
 import org.intellij.markdown.util.TableFenceUnwrapper
+import org.intellij.markdown.util.UrlRegionScanner
 import kotlin.time.Clock
 
 internal val flavour by lazy {
@@ -206,12 +207,27 @@ internal fun preProcess(content: String): String {
             "\u0000MATH${mathSegs.size - 1}\u0000"
         }
     }
-    val textDone = SINGLE_TILDE_REGEX.replace(withMathPlaceholder) { m ->
-        if (isInCodeBlock(m.range.first)) m.value else "\u223C"
+    // v4.8.122 (用户实证: 图片地址里一个 '_' 就足以让图挂 — 只剩 alt):
+    // 「地址是不可透明的 URL 令牌」— 词内下划线保护 (v4.8.17) 与单波浪号替换
+    // (v4.5.11) 此前只跳过代码块, 会把 markdown 图片/链接目标区、autolink 与裸
+    // scheme:// URL 里的 '_'/'~' 一并换成全角字符 → 地址被污染 (实测:
+    // shot_y5_1.png → shot＿y5＿1.png), resolver/Coil 找不到真实文件 → 加载失败。
+    // 现于公式占位后的当前文本上重算保护域 (前几轮替换会移位偏移 — 顺带修掉
+    // 旧版对"代码块/地址区"判定的漂移), 并新增 URL/地址域 (UrlRegionScanner):
+    // 地址区一律原样, 正文词内下划线/波浪号保护能力不变。
+    val guards = buildList {
+        CODE_BLOCK_REGEX.findAll(withMathPlaceholder).forEach { add(it.range) }
+        addAll(UrlRegionScanner.findProtectedRegions(withMathPlaceholder))
     }
-    // v4.8.17: 词内下划线 → 全角下划线 (公式段已占位, 不受影响; 代码块内原样)
+
+    fun isGuarded(position: Int): Boolean = guards.any { position in it }
+
+    val textDone = SINGLE_TILDE_REGEX.replace(withMathPlaceholder) { m ->
+        if (isGuarded(m.range.first)) m.value else "\u223C"
+    }
+    // v4.8.17: 词内下划线 → 全角下划线 (公式段已占位; 代码块与地址区原样)
     val underscoreDone = INTRAWORD_UNDERSCORE_REGEX.replace(textDone) { m ->
-        if (isInCodeBlock(m.range.first)) m.value else "＿"
+        if (isGuarded(m.range.first)) m.value else "＿"
     }
     result = MATH_RESTORE_REGEX.replace(underscoreDone) { m ->
         mathSegs[m.groupValues[1].toInt()].replace(SINGLE_TILDE_REGEX, "\\sim")

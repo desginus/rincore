@@ -1127,6 +1127,7 @@ class GenerationHandler(
                                 )
                             )
                         }
+                        CallTracer.event("TOOL", "produced_direct", "${tool.toolName}: $produced")
                     }
                     val toolStartAt = outcome.item.toolStartAt
                     val toolEndAt = outcome.endAt
@@ -1232,6 +1233,37 @@ class GenerationHandler(
                         )
                     )
                 }
+            }
+
+            // v4.8.122「本对话产出」·工作区文件系统监控 (用户意见: 编辑/生成/移动等
+            // 全部登记, "容易且效果好"): shell/job 等一切生成路径的兜底 — 扫描本回合
+            // 窗口内被创建/修改的工作区文件并批量登记 (mtime ≥ 回合起点; 排除
+            // .versions 快照; 上限 200; 与直登记同路径去重)。
+            runCatching {
+                val cid = conversationId?.toString() ?: return@runCatching
+                val wsId = assistant.workspaceId?.toString() ?: return@runCatching
+                val scanTools = setOf("workspace_shell", "workspace_job")
+                val hits = execOutcomes.filter { it.item.tool.toolName in scanTools }
+                if (hits.isEmpty()) return@runCatching
+                val sinceMs = hits.minOf { it.item.toolStartAt } - 2_000L
+                val paths = withContext(Dispatchers.IO) {
+                    me.rerere.rikkahub.data.ai.tools.ProducedFiles.scanWorkspaceSince(wsId, sinceMs)
+                }
+                if (paths.isEmpty()) return@runCatching
+                settingsStore.update { s ->
+                    s.copy(
+                        conversationProducedFiles = me.rerere.rikkahub.data.ai.tools.ProducedFiles.recordBatch(
+                            current = s.conversationProducedFiles,
+                            conversationId = cid,
+                            entries = paths.map { path -> "workspace_scan" to path },
+                            nowMs = System.currentTimeMillis(),
+                        )
+                    )
+                }
+                CallTracer.event(
+                    "TOOL", "produced_scan",
+                    "workspace scan +${paths.size}: ${paths.take(6).joinToString()}"
+                )
             }
 
             // v3.6.74: 上下文降维方向废弃 — 工具输出原样保留, 不做压缩
