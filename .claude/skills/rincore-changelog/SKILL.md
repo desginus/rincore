@@ -3,344 +3,228 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v4.0.16 为最新）
+# RinCore 更新日志（v2.9.4 → v4.8.111）
 
-ZoomableAsyncImage fallback 现在显示 resolver 失败原因 (resolveDetailed.reason)：reason=prefix_not_recognized / invalid_path / no_workspace / not_found / extension_rejected 或 not_workspace_uri。按具体 reason 针对性根治，所需一次数据收集明确替代回滚方向。
+> 结构: 顶部为最新纪元（人工整理）; 中段为纪元摘要 + 归档指针; 底部为旧版历史原文（保留）。
+> 全量逐版本清单（448 条, v3.6.0 起）见同目录 FULL_HISTORY.md。
 
-## v4.0.16（回滚流光玻璃 + 删除兼容设置 + 工作区预览桥接渲染机，2026-09-09）
-- 回滚澎湃 OS4 流光玻璃 (haze blur):
-  - 移除 ChatInput/ChatList/ChatPage 中的 HazeState/hazeSource/hazeBlur
-  - 删除设置-显示中的“启用模糊效果”开关
-  - 删除 Gradle haze/haze-blur/haze-blur-material3 依赖
-  - 保留 DataStore enableBlurEffect 字段（废弃字段保留原则），不再读取
-  - HyperMotion 的弹窗基础设施 HyperDialog/HyperFullPanel 保留，仅回滚 haze 模糊
-- 删除设置-网络中的“强兼容模式”和“Command Code 图片兼容”两个开关
-  - GenerationHandler 不再注入 cherryCompatMode
-  - ChatService 不再按 ccImageCompat 条件加入 CCImageCompatTransformer
-  - DataStore 字段保留（废弃字段保留原则）
-- 工作区文件预览桥接渲染机：
-  - WorkspaceFilePreviewDialog 对非图片文件统一调用 RenderEngine.render
-  - 复用 ChatMessageEditedFiles 的“第三功能”渲染能力（docx/xlsx/pptx/pdf/txt/md/代码/音视频）
-  - 图片仍走 ZoomableAsyncImage
-  - RenderEngine 无法处理或非图片 Unsupported 时显示“无法解析该文档内容”
-  - HtmlPagesContent 提升为 internal 以便复用
+## v4.8.x（冷态诊断 + 回植 + 铺展架构期 · 2026-09-22 ~ 09-26）
 
-## v4.0.15（长上下文首 token 延迟诊断，2026-09-08）
-- 在 GenerationHandler.generateInternal 与 ClaudeProvider 关键路径加毫秒级计时日志
-  (internalBuild / preStream / buildMessageRequest / normalizeMessageSequence /
-   insertMessagesCacheControl)
-- 消除两条与上下文大小成正比的大日志:
-  - 删除 streamText 中遍历打印每条消息完整 JSON 的 Log.i
-  - 完整请求体 Log.d 改为只打印 model/messages数/bodyChars
-- 不改业务逻辑, 等待用户抓取日志后定位真实瓶颈
+> 以下逐版本条目由 git 提交信息自动整理（SHA/日期锚定）; 4.8.36-38 / 4.8.42-53
+> 的大事件完整上下文见 rincore-bug-record（B46-B51）与 rincore-decisions（D9-D14）。
 
-## v4.0.14（本地图片链接渲染增强：别名规范化 + 全场景 render_url，2026-09-07）
-- resolver 别名规范化：/data/user/0/<pkg> → /data/data/<pkg>，消除“stat 可达、字节不通”
-- workspace_shell 返回自动提取 render_urls：扫描 stdout/stderr 中的 /workspace/、workspace://、file:///data/data/.../files/workspaces/.../files/ 图片路径
-- workspace_show_file 描述更新：明确不推荐用于对话框内联图片，内联图片由 read_file/write_file/shell 的 render_url 自动处理
-- AI 图片生成（ImgGenVM）落盘时附加 renderUrl 字段，为发送到对话等场景做准备
+- **v4.8.121**（bf96fe1b7·2026-10-11）: **子代理双模式与去 420 疑云 + 代码块自动渲染 + 代码块滑动防抽屉 + 极简模式删除 + 抽屉露边条 40dp + 本对话产出** —— ①【子代理三件】`subagent_get` 双模式（旧 wait_seconds 行为 + 新 `wait_until_done` 脚本轮询模式：每 10s 查询至终态即返回停止；窗口 660s 收口于 700s 工具墙，未终态返回快照+note 可续调）/ `subagent_dispatch` **移除模型可传 timeout_seconds**（恒定 1800s——"为什么还是 420 秒超时"的根治：模型自选小值提前截停的路径被封死）/ `maxConcurrentSubAgents` 默认 3→7（用户定版"最多同时 7 个"；引擎上限 8 不变）。②【代码块内自动渲染】新显示开关（助手设置→本地设置 新增「显示渲染」区）：开启后 html/svg/js 代码块自动进入预览（仍可手动切回代码视图）；JS 预览=沙箱页执行脚本+console 输出/异常回显+`</script` 防逃逸改写；关闭时与旧行为逐字节一致。③【代码块滑动不触发抽屉】HighlightCodeBlock 吞掉未被子组件消费的水平拖拽（Main 通道、超触摸阈值且横向占优才吞；内部横向滚动/垂直滚动/点击零影响）。④【极简模式整体删除】Feather 入口/开关参数/Settings 字段与持久化/GH 工具注入总闸+自动拒绝铁闸/ChatService 注入闸——全链清理零残留。⑤【抽屉露边条】64→40dp（缩至约 2/3）。⑥【本对话产出】新功能：workspace_write_file / workspace_edit_file 成功 → Settings 持久化登记（新→旧/每对话 80 条/保留最近 200 对话）+ 速览页入口（Folder 图标，替代羽毛位）+ 胶囊窗列表（新件 ConversationArtifactsSheet，FlowRow 胶囊芯片）+ 点击 openWorkspaceLink 直接打开。⑦strings ×6 语言。
+- **v4.8.120**（2bf3e2e96·2026-10-11）: **渲染器再增强（codex 对齐移植）+ 子代理默认超时 1800s** —— ①【openai/codex 源码研究→移植】`codex-rs/tui/src/markdown.rs::unwrap_markdown_fences` + `table_detect.rs` 判定件 → Kotlin 移植（新件 markdown 模块 `TableFenceUnwrapper` + 单测 7 组入 CI 硬门禁）：**LLM 常把表格包进 \`\`\`md/\`\`\`markdown 围栏当代码输出**，不解包整张表渲染成代码块（表格结构/单元格公式/强调全灭——codex 同题实锤）；保守语义逐条保持（仅 md/markdown 围栏大小写不敏感 / 缓冲全围栏体才判定 / 体内须有表头+紧邻分隔行 / 其他语言围栏零触碰 / 未闭合围栏原样回收流式降级安全）；分隔符阈值贴合本仓解析器（≥1 连字符——codex 为 ≥3，照抄会产生"解析器认表、解包器不认"错位）；preProcess 首步接入（先解包再代码块判定/公式转换——解包后单元格公式/强调全量参与渲染）。②【GFM 列对齐】`|:--|:-:|--:|` 解析（分隔行直挂子节点→逐段冒号判定）→ 表格单元格 TextAlign Start/Center/End（未标注列 null 零干预，仅加不改）。③【codex 其余研究结论】流式数学"未闭合块公式扣留不上屏"与表格 holdback = 属"何时上屏"调度——依渲染调度铁律不移植，记录在案。④子代理默认超时 300→1800s（用户定版；MAX 1800 不变，schema 补描述）。本地 kotlinc 2.4.10 验证器（/workspace/.verify/kotlinc）全矩阵取证：解包 11/11 + 对齐闭环（Start/Center/End）+ 分隔行直取。
+- **v4.8.119**（30b9182f5·2026-10-11）: **渲染链升级（用户实证"嵌套渲染基本都错/很多渲染没触发"）** —— ①**解析器数学模型整移植**（rikkahub/markdown master 重写版）：**CJK 紧贴 `$...$` 触发**（旧模型要求两侧空白/标点 = 中文语境公式全灭，根修）/ 货币对 `$5 和 $10` 拒绝 / 内联代码内含 / 链接目的地不误伤 / 嵌套 `$` 中止；本地 kotlinc 验证器 20+ 用例矩阵全过（修复前后对照取证）。②**渲染器嵌套修正**：链接内联内容递归渲染（旧实现 append(linkText) 把 `**粗**`/`\`码\``/`$公式$` 原文符号直接画出）+ **表格单元格行内直渲**（旧路径 trim 后整段重解析——单元格内 `- 调整`/`1. 步骤`/`# 标签`/`> 引用` 被块级语义错位渲染成列表/标题/引用块，与 GFM"单元格=行内内容"规范不符；现直接以原始单元格 AST 子节点走统一行内管道）+ LatexText 渲染失败回落去壳显示（旧显示 `$x$` 残壳误判"没触发"）。③**测试门禁**：markdown 模块数学触发矩阵单测 + CI `:markdown:testDebugUnitTest` 硬门禁。④**套件调研结论**：JLaTeXMath 1.5=最新（无原生 KaTeX 等价物）；mikepenz 0.45/Markwon 不满足（无数学/无流式/停更）；解析器 vendored=上游最新+本次数学移植——保留自有渲染链+精准修复为最优解。CI 一次全绿（约 8 分钟，含新门禁首跑）。
+- **v4.8.118**（1000c3d61·2026-10-11）: **完成门 v2 证据化（用户定版"取消盲区问题，首先保证正常输出"）+ 并行域深挖两 bug** —— ①**完成门证据化**：新件 `AggregateCloseEvidence`（ai）学习"通道标准完结形状"（usage 帧/usage 尾包收尾→标记 host+model）；仅习得通道的干净边界无证据关流才判掐流自动续写；未习得通道（ox 系无信号收尾）一律 treated-as-complete——正常输出零风险；v4.8.117"并行即判"撤除（误伤面：无信号通道正常结束被强制续写），并行降为日志标注；trace 增 usageCapable/parallel；单测 4 组。②**toolPoolProvider 助手错位**（并行真 bug）：invoke_tools 懒加载池用焦点助手而非本对话助手→改回本对话 assistant。③**CallTracer 并行串扰根治**：全局单槽→协程上下文 `TraceKey` 键控（三处生成体注入、按对话隔离落盘/关档、调用点零改动）——并行运行日志不再互相污染（并行 bug 难诊断的元凶）。**教训：外部上下文判据本身也要证据化；"首先保证正常输出"=自动干预只建立正证据上；跨对话共享单槽状态=并行 bug 温床（本轮抓到工具池+追踪器两处）；诊断设施自身必须并发安全。**
+- **v4.8.117**（7245dbb1c·2026-10-10）: **B140 多对话并行时失焦对话中断不重试——双因根治** —— 全域审计无明面取消者后锁定：①**主力根因=OC/CC 聚合完成门盲区**：并行时上游竞争在两 token 之间的"干净边界"掐流，关闭形态（无 [DONE]/finish_reason/usage 尾包、行完整、尾部无截断）被"treated as complete"静默收尾——该形态与 ox 系"无信号收尾"通道正常结束在信号层不可区分，**并行上下文是唯一判别信号**；②**兜底根因=假取消静默**（Cancellation 全当用户停止→不重试）；③附带实锤：HttpException 5xx→"进重试链"注释与实际不符（同级 catch 抛出会逃逸，从未进链）。**修复**：ParallelStreamRegistry 新件（同 host 并行计数，enter 于 callbackFlow 块首/exit 于 awaitClose 单点）+ 聚合门新增「并行+无完成证据关流→合成 Finish(length) 自动续写」（有界 3 次耗尽显式报错，ox 系单流不受影响）+ streamLoop 取消区分（job 死=用户停止不重试 / job 活=泄漏转 IOException 进链）+ 外层 try 包裹（5xx/假取消转换真进重试链；Guard/Unconfirmed 显式穿行保持不重试）。单测：ParallelStreamRegistry 三组（计数/并行判定/host 隔离）。**教训：①"中断且不重试"先分两层——谁掐流（信号层）与为何不恢复（门判据/重试链）②信号不可区分时必须引入外部上下文判据③catch 同级不互捕——注释语义必须与异常实际流向对账。**
+- **v4.8.116**（d5e3d3446 + 4 个同版编译修复 4d8c542f0/03ea4feab/f4f86b912/108f5eb4c，CI 第 5 轮全绿·2026-10-10）: **浏览器工具 B139 整链重写（用户六项实证，P0×3+P1×2+P2×1+存储统一总纲）** —— 共同根子=旧 awaitReadyState 在导航进行中轮询到**旧文档** readyState（早已 complete）立即返回。①**导航生命周期层**（新 BrowserNavigation.kt）：BrowserNavigationTracker（generation/finishedGeneration/lastRequestAtMs/主帧错误，WebViewClient 全埋点）+ navigateAndSettle（两阶段：宽限窗等导航开始——SPA 点击不白等；已开始→finish+network-idle 结算）+ readPageSnapshot（JS 直读最终 location.href/document.title，重定向正确）+ awaitPageIdle；**删除旧 awaitReadyState 足枪**。②**失败可见**：主帧 net::ERR_*/HTTP≥4xx/超时 → success:false+error+final_url+recovery；throw_on_error 可抛（默认 false）。③**受控输入**：type/select 走原型原生 value setter + input/change（用户实测写法；clear 同 setter）。④**语义区分**：读类 wait_ready(默认 true)+page_state(ready_state/is_loading/url/title)；未加载完时 selector_not_found 升级 page_not_ready；新增 browser_wait_for_load（18→19 工具）。⑤**同批竞态根治**：BrowserControllerHandle 全局操作互斥，读类天然排在导航后（用户实证“还是没修清楚，彻底修”）。⑥**存储统一**（“客户端是模型的客户端”）：截图统一落绑定工作区 /workspace/browser-shots/（沙箱直读）+ render_urls/render_markdown 走 v4.8.115 统一地址链 + TTL 24h/keep50 只清 shot-* 自产工件；无绑定工作区回退 cache 并说明。接线=ToolInvocationContext+workspaceId/cwd（ToolsBuilder 与 workspace 工具同源）+ WorkspaceManager.rootfsHostFileForWrite（写入向映射）+ WorkspaceRepository.writeBinaryInRootfs/sweepBrowserShotsInRootfs。tracker 状态机单测 5 组。CI 插曲：同版修复 4 轮——①WorkspaceManager toFile 不存在（WorkspaceFileSystem.resolve 已返回 java.io.File）②头注释 net::ERR_*/HTTP 的 */ 提前终止块注释③BrowserNavigation contentOrNull 缺 import④tracker 可空化（activeTracker 可空 → 扩展函数空安全降级）。**教训：①“等导航”的唯一正确事实源=WebViewClient 生命周期事件，旧文档的 readyState/location.href 全是陷阱；②点击类动作必须把动作本身放进结算等待的 load{}（genBefore 先于动作捕获）；③批次替换脚本必须带 count==1 assert——静默 no-op 比失败更浪费（本轮四个脚本全空转，靠 grep 符号在位复核才暴露，改全文重写）。**
+- **v4.8.115**（e062c1a20·2026-10-09）: **工具产图渲染地址统一（用户定版“一个地方做转换，不许一处一形态一处一转换”）** —— 四类矛盾清点：①同一张图双形态（render_urls 裸 file:// vs render_markdown 编码串）②加载层解码行为随形态漂移（workspace:// 走自定义解析、编码 file:// 落 Coil 内建 FileFetcher 行为未定义、裸路径直读）③缓存键只覆盖 workspace 形态（file:// 同路径覆盖不刷新）④产出三处手搓+UI 提取私有副本+包名硬编码（debug 构建下地址指错包）。**统一方案（保持简单逻辑零新特性）**：①规范形态=percent 编码 file:// 全链唯一（前缀 ASCII，XSS 门零改动）；②单一解码点=Coil 认领层整文件重写（isAppLocalImageUri 认领 + decodeLocalFilePath 纯函数解码 + resolveLocalImageFile 统一解析；workspace:// 与 file:// 同链；resolver 扩展名白名单拒绝 svg/heic 时 host 形态降级直读）+ 所有本地图片统一 mtime+size 缓存键；③产出/提取单一来源 ToolImagePayload.kt（buildRenderUrl/buildRenderMarkdown/encodeMarkdownUrl/extractRenderUrls 收口；buildRenderMarkdown 摘掉二次编码——规范形态只编一次）+ 三处产出点同包直调 + WorkspaceToolUIs 提取委托；④包名 BuildConfig.APPLICATION_ID 化（修 debug `.debug` 后缀下硬编码错位的潜伏 bug）。单测 +5：规范形态回环/幂等、payload 构建↔提取回环、认领矩阵、解码形态（pkg 全部 BuildConfig 同源，防 debug 后缀必炸）。**教训：①“统一”的落点=加载层单一解码点+产出层单一构造器，两头收口中间全透传；②字符串插值 $pkg() 非法必须 \${pkg()}；③单元测试跑 debug 变体，任何 BuildConfig.APPLICATION_ID 相关断言不得硬编码 release 包名（applicationIdSuffix=.debug）。**
+- **v4.8.114**（9c98c6d2d·2026-10-09）: **网络连接失败可见化（B138 收尾）** —— 用户实证“发送后一直加载、无首次输出”，两层排查定案：①4.8.113 请求链全量审计**无罪**（ClaudeProvider 占位=纯文本替换；完成门有 45s 风暴顶+Init 4 次快速失败硬顶；渲染层不涉网；BufferedSocketFactory 未绑网络；应用内代理默认关）**不回滚**；②真机制=设备侧按应用联网封锁（澎湃 OS 联网控制/省流）不清 `NET_CAPABILITY_INTERNET` → `isDeviceOffline()`（只看能力位）判“在线” → connect 30s×多地址×Init 快速失败链=数分钟静默“加载中”→终态裸技术信息。加固四处（零行为变化）：`isConnectPhaseFailure` 保守识别 + Retry 分支展示「网络连接失败，自动重试中（第 N 次）…」+ Abort 终态文案可操作化（联网控制/应用内代理/切网三指引，代理开启时指向 设置→偏好设置→网络）+ `NET connect_fail` 打点。**教训：系统能力位≠真实可达性；网络失败链每段都要用户可见；终态错误必须可操作（指向排查面）。**
+- **v4.8.113**（46b53a46f + 编译修复 f118bb356，同版重推一次全绿·2026-10-09）: **工具产图“气泡内直接可见”整链改造（B137，用户实证 + 用户自拟测试方案）** —— ①**渲染门**（客户端真根因）：markdown XSS 安全链把 `file:` 全替换 “#”，模型复述 render_url 也显示不出来；修复=XssSafeLinks 加 fileAllowed 挂点（默认原版严格）+ app isAppPrivateFileUri 仅放行本应用私有 files/cache 目录（Compose+Coil 渲染端无 WebView 泄露面）+ 唯一 flavor 装配注入；②**统一字段** render_urls（数组，单图也数组）；③**render_markdown 直贴**（每图一行 `![名](url)`，URL 按路径段 percent 编码防解析断裂；模型原样复述进正文即显示；指引随字段内嵌=消息锚定缓存零破坏）；④**工具段缩略图**（ShellToolUI/WriteFileToolUI 从 render_urls 直接渲染 ZoomableAsyncImage，生成中即可见图、点击放大）；⑤**占位复读根**（ClaudeProvider 占位文本升级为带引导语义——此前“(已收到工具结果)”被模型原样复读当回答）；⑥show_file 描述修正 + WorkspaceReminder 补内联图片统一口径；⑦单测矩阵（isAppPrivateFileUri + encodeMarkdownUrl↔decoder 解码回环，30 用例）。**教训：安全拦截必须核实“拦截面×渲染端”（file:// 策略对 Compose+Coil 渲染端=产图全灭）；模型行为问题优先用“工具结果自带可复述物料”解决；请求占位文本必须带引导语义防复读。**
+- **v4.8.112**（f2ab8b9c4·2026-10-09）: **静默中断完成门五通道全覆盖（重试逻辑按"标准正常结束"正判据重核）+ 分享空分享加固 + 拍照丢照加固 + ToolMention 缓存根治 + 英文诱导强化** —— ①**B136 静默中断（DeepSeek 系列）**：根因=B54 家族残留——v4.8.56"usage 尾包不置完成标记"修复只加了 opencode.ai 门控，**CC（api.commandcode.ai）走非 OC 分支 usage 照旧置位** → 掐断紧随 usage 心跳即被静默判"正常完成"，重试链零触发；修复=isAggregateChannel(OC+CC) 扩面（usage 门 + onClosed 详细判据全族覆盖）+ 非网关 usage 尾包完成复核（截断特征→合成 Finish(length) 续写 / 无正文→重试）+ ResponseAPI/Google/Interactions 补正判据完成门（无 [DONE]/response.completed/finishReason/interaction.completed → IOException 进重试链）+ 现场 trace 三条。②**分享空分享加固**（用户实证小概率文档不出现）：ShareReceiver 复制失败保底转发原始 URI（GRANT 旗标；含保底项时不 finishAndRemoveTask 保住授权窗口）+ 双通道复制（InputStream/FileDescriptor）+ 文件名 query 失败不连带 + 文件名消毒 + clipData 重建为实际转发 URI；RouteActivity 分享入口统一 shareFileUris（EXTRA_STREAM 缺失兜底读 clipData）；ChatPage 消费失败可见（toast）。③**拍照丢照加固**：相机/裁剪输出状态 remember→rememberSaveable（路径字符串）；15 分钟窗口兜底找回最近拍摄；真失败 toast。④**缓存根治**：ToolMentionTransformer 从"系统提示注入"改为"锚定提及消息自身"（与 v4.8.109 上传注记同款；用一次 /@ 点名不再全断缓存；邮箱形态豁免）。⑤**英文诱导**：cache anchor 语言条款强化（"以用户消息语言为准，系统提示/工具输出/引用英文不构成切换理由"）+ "歧义敏感英文不得翻译替换"保护条款（用户定版）。**教训：B54 类修复必须核实适用面全族覆盖（同族不同 host 判据 = 下一个静默 bug）；"完成"永远以正判据为准，兼容启发式只许"降级为疑似"，绝不静默放行。**
+- **v4.8.111**（2026-10-08）: **切换助手"停留"终版修复（用户二次强调）** — v4.8.110 只覆盖"非对话页"分支（保留了"对话页→跳目标会话"），而用户真实路径恰在对话页（抽屉→点助手→切→被拽到新会话=用户眼中的"默认对话页"）。终版：**切换助手=只切助手、零导航**（删除 AssistantPicker.onUpdateSettings 全部导航逻辑，仅 updateSettings + 收起小屏抽屉；清理 repo/readBooleanPreference/koinInject 死引用）。**教训：行为类修复必须穷举用户真实入口路径（全库 grep 调用点 + 与用户场景复述对齐），"留一半"等于没修。**
+- **v4.8.110**（740a36178·2026-10-08，首推 b37340a48 因 withLock import 漏补编译错修复后同版重推；终轮全绿）: **需求单 v2 全单（B1-B6）+ 工具并行调用对齐 Claude Code + 切助手停留**。①**B1** MCP 调用方上下文下传：新建 `McpCallContext(workspaceId, workspaceCwd)`（top-level，McpSessionRegistry.kt）→ DynamicTools 从 `getCurrentAssistant()` 构造 → McpManager 透传 → `CallToolRequestParams.meta = RequestMeta{buildJsonObject{rincore/workspaceCwd, rincore/workspaceId, rincore/rootfsFilesRoot:/workspace}}`（**SDK 0.15.0-rikka.2 原生支持 `@SerialName("_meta") meta` 字段，无需升级；arguments schema 零变化**）。②**B2** 客户端产物归集：McpManager 结果映射对 TextContent 扫绝对路径（`/workspace|/tool_outputs|/data/data|/data/user` 正则）→ 存在且不在调用方可见范围（调用方 files 区+CWD 前缀 或 /tool_outputs 共享区）→ 复制 `/tool_outputs/<server>/rescued/` + 改写文本路径；FilesManager.rescueArtifactPathsByPolicy（8MB 上限超限跳过+尾注；失败降级原样+提示不失败整体调用；幂等同名同大小）；`workspaces/<root>/files` 布局与 RepositoryModule 对齐（注释警示漂移）。③**B3** `/tool_outputs` 语义定死：**真凶=冷启动 `cleanupToolOutputs()` 无条件 `deleteRecursively()` 整目录**（RikkaHubApp，用户实证 07:39 整目录清空 → 收窄为仅回收 7 天前的".txt 转存文件"（`call_/toolu_/tool_` 前缀或 uuid 命名，仅顶层），产物子目录/其它文件豁免）；WorkspaceReminder 增补共享产物区说明。④**B4** stdio env：`StdioTransportServer.env: Map<String,String>`（反序列化兼容）→ 注入链 McpSessionRegistry → WorkspaceRepository.launchProcess(env) → WorkspaceManager → WorkspaceShellContext.env → **ProotShellRunner 在 `env -i` 白名单后以 KEY=VALUE argv 追加**（关键洞察：命令经 `env -i` 重建环境，ProcessBuilder 环境传不进去、也不需要——argv 无转义问题；key 非法跳过）；SettingMcpPage 增 env 编辑（每行 KEY=VALUE）。⑤**B5** workspace_grep 兜底 `grep -rn -I -E -e`（B5 验收：ERE 修复，BRE 静默失效根治）。⑥**B6** workspace_edit_file 同路径串行化（ConcurrentHashMap<Mutex> key=workspaceId|cwd|path）+ 回执 `wrote/postHash(SHA-256)`；Zone 侧复核 v4.8.89 已闭环。⑦**工具并行调用对齐 CC**（用户"找一个其他客户端对齐"）：拉取 Claude Code `toolOrchestration.ts` 原文 → 重写执行分区 = `partitionExecQueueByConcurrency`（连续只读工具成批并行有界 4 路；非安全工具单个串行；保守默认未知=非安全）+ `executeToolItemSafe`（三态执行体+**TOOLEXEC 诊断**：每工具耗时/结局进运行日志）。白名单：workspace_read_file/grep/glob、read_image、upload_fetch、subagent_list/get。⑧**切助手停留**：Navigator 新增 `val current: NavKey?`；ChatDrawerContent 增 `onRequestCloseDrawer`；AssistantPicker.onUpdateSettings —— `navController.current is Screen.Chat` 时保持原"切到目标会话"，其它页面原地停留（仅收起小屏 Modal 抽屉；大屏常驻抽屉不动）。
+- **v4.8.109**（361ac6519·2026-10-07，同版多次重推：①上游 daemon-jvm 配置锁 JBR+失效 foojay 链接致 CI 守护启动失败 → 放宽"任意 JDK 21" ②补 HttpException import；终轮一次全绿）: **XLSX 上传异常 + 降级弹窗 + 缓存连续性（上传轮）三合一根治**。①**取消"消息处理组件…异常,已降级继续"弹窗**（用户点名）：降级是内部韧性机制不再上 UI（走日志+CallTracer）；并修复链级 catch 吞取消（停止生成后组件链仍跑）。②**XLSX 异常链**：DocumentAsPrompt 对该文档抛异常→降级→Document part 未转换残留→**出站构建器忽略该类 part→该消息 content 变空数组→网关 zod 拒绝（"Too small: expected array to have >=1 items" 的准确来源）**；修=per-document 全兜底（异常也完成"移除+占位替换"）+ 出站两处 user 构建器**空数组防线**（[附件未加载]兜底）+ classic 模式 xlsx 不再 readText 乱码（明确指引）。③**缓存连续性（第二次根治）**：旧实现把「上传清单」注入**系统提示**（前缀首位）→ 上传任何文件=整个已缓存前缀全断="上传那次必崩"（下轮清单不变→恢复="第二次纯文本恢复"，现象机制严丝合缝）；**重写为「附件消息注记」**：对含 /upload 文档附件的用户消息，在其**文本末端**追加单行轻量注记「[用户上传了文档: 名（路径）]」——上传轮=纯追加零破坏、图片上传=零注入天然连续、历史注记字节恒定；同时解决"模型无法知晓新文档"（旧系统提示清单被边缘化）。**教训：任何"每轮变化"的感知注入绝不能放系统提示（前缀首位=一动全断）；锚定到消息自身（只依赖自身 parts）才是缓存友好形态；网关"expected array to have >=1 items"指向请求里空数组——出站构建器对"忽略型 part"必须有空数组防线。**
+- **v4.8.108**（5743013f8·2026-10-06，CI 一次全绿）: **子代理预算误熔断根治**。①上限默认 100K → **1000K**（含存量迁移：旧默认值 100_000 自动升 1_000_000；用户手动调过的值尊重保留；升级标记 `subagent_budget_upgraded` 防反复回写；UI 输入单位=千 tokens 不变）。②**熔断机制审计结论（"为什么会断"）**：记账口径=账单口径（每轮 prompt+completion 累计；子代理每轮携带全量上下文——系统提示+工具 schema，动辄数万 token/轮）；**三个并发子代理共用同一对话预算桶**（3 倍速叠加）；看门狗 6s 一结算、第一轮落账即判决——**100K 在该口径下只够 1-2 轮，故"刚派发即全体熔断"**；水位增量结算/终态补账/清零链路复核均正确（**非假账 bug，是"口径×数值"不匹配**）。③熔断点新增诊断打点（运行日志 tag=BUDGET：used/limit/chat）。④文案同步（默认 1000K + 口径说明）。**方法论：预算类机制必须让用户直觉匹配计量口径——"每轮全量 input 计入"的口径下，数值直觉要按轮数×上下文体积换算，不能按"产出量"直觉。**
+- **v4.8.107**（68a9f02ba·2026-10-05，首推 0438f791b 因 OcrTransformer 的 standalone object 内 companion object 编译报红、同版重推）: **「上传图片后缓存全崩」对账原版后的根治**。①**对照（逐文件 diff upstream-try/master）**：上游图片编码器（FileEncoder）与消息序列化形态与我们同源；**上游没有任何「图片预算/降级」体系**——`ImageBudget`（applyImageBudgetMarking）/`applyImageMarkers` 占位替换/`budget_dropped` 标记均为 RinCore 自研件（v4.3.6 起五轮补丁，为 GLM 网关 too_many_images/TCP 场景），且**对所有 provider 的每轮含图请求生效**——是"含图对话 vs 纯文本"在请求构建中唯一的系统性自有偏差（用户实证原版无此问题）。②**R1 回归原版形态**：预算/降级体系限定为仅严格网关（GLM 经 OC/CC）生效；**普通 provider（DeepSeek/OpenAI 等）图直发、零干预**。③**R2 现场定罪器（REQSTAB）**：ChatCompletionsAPI 每次请求构建对 messages 逐条指纹（role+parts 摘要 hash），与同会话上轮对比，非尾部漂移（尾部两条内视为正常演进）→ 运行日志直接写出漂移消息序号/角色/两版指纹摘要——残余问题可一条日志定罪。④**R2b**：applyImageMarkers 无标记短路（常规对话零干预）。**教训：自研组件要标注其历史适用面（谁需要它、谁不需要），"为 A 场景加的干预"不得无差别作用于所有 provider；对照上游是排查"我们 vs 原版"差异的最快路径。**
+- **v4.8.106**（19d87577b·2026-10-05，CI 一次全绿）: **①删除「工具已完成，继续生成中…」文字与机制**（用户点名删除；复盘：该"活性信号"实为等待的广告牌，反而放大体感等待）②**探活门兜底回调**（撤销 v4.8.105 C2 的"冷=直接放行"）：恢复 v4.8.98 语义 热=0/在途 join≤1.5s/冷=同步快探活剔除半死连接 —— "冷=直接放行"在 VPN/抖动网络下会让真实请求整轮卡到首包超时，体感差于前置 4s 探活（教训：保护性前置剔除不能为了纸面零等待而撤）。保留 105 的其余收益：工具并行执行、写回变换前缀缓存、预探活提前（C1）、resume_gap 埋点。**通用教训：感知层"等待指示"若不能真正缩短等待，就是负优化；网络层的保护性等待与"零等待"目标冲突时以后者让位于稳定性。**
+- **v4.8.105**（874e63736·2026-10-05，首推 528ca0512 因 Tool 类型 FQN 误写编译报红、同版重推）: **工具↔输出「无感衔接」落地（五件套）** —— ①**C1/C2 探活门零等待**：预探活提前到「工具执行开始前」（整个工具时长用于变热）；轮首门改为 热→0 / 在途 join≤500ms / 冷→**放行真实请求+后台补探**，同步探活彻底移出关键路径（半死连接由首包超时走既有断流重试链剔除恢复）。②**B 工具并行执行**（对齐 vercel/ai `Promise.all` 与 openai-agents 有界并发）：执行与记账分离重构 —— 阶段1 顺序前置检查（manage 闸门/幂等重放/计数/熔断）入队 → 阶段2 `coroutineScope`+`Semaphore(4)` 并行执行（超时/取消/错误语义与旧实现等价：超时转文本、取消上抛、异常转错误回执）→ 阶段3 **保序记账**（截断/失败聚合/幂等缓存/写回，判定顺序与文本逐字不变）。多工具 Σt → max t。③**A1 写回变换前缀缓存**：跨步骤复用（生成期内消息列表仅追加、前缀实例稳定），每步只重算变化尾部，消除每步全量 `transforms`。④**D 活性信号**：工具完成→下一轮首包之间显示「工具已完成，继续生成中…」，首包到达自动熄灭（processingStatus 通道）。⑤**E 埋点**：`toolEnd→preStream` gap 写 TraceLogger/`CallTracer.resume_gap`（含 assembly 时长），运行日志页可核。**通用教训：关健路径上的"等待类"逻辑（探活/串行）要么提前、要么并行、要么移出；确定性的记账必须与不确定性的执行解耦。**
+- **v4.8.104**（6b13d220·2026-10-04）: **①抽屉去「功能折叠」+ ②速览页新入口 + ③点空白返回 + ④极简模式工具铁闸** —— ①ChatDrawer 删除「AI翻译/图像生成/视频生成」DropdownMenu 整块（45 行 + 状态 + 4 死 import）；视频入口随之下线（用户定版：视频暂不调不修，页面代码保留待恢复）。②「对话速览」（ChatListPreview，消息总览页）搜索行新增 **AI翻译 + 图像生成** 两个入口（位于 子代理预算 Gauge / 极简 Feather 左边；复用 chat_page_menu_* 文案作 contentDescription；ChatPage 接 `Screen.Translator`/`Screen.ImageGen` 导航）。③速览页**点空白处直接返回默认对话**：ChatListPreview 外层 Column 挂无涟漪 clickable → `onExitPreview = { previewMode = false }`（列表项/按钮/输入框各自消费点击，不误触；此前只有右上角 X）。④**修极简模式仍触发工具调用**（双根因）：(a) 极简只关"注入"未关"执行"——模型发起的调用仍会**执行**或**卡在等待审批**（用户实证"输出中途冒出一串参数然后停止"= 等待审批暂停态）；修复=审批装配分支与续接分支在 `!toolsEnabled` 时把一切调用转 `Denied(MINIMAL_MODE_DENIED_REASON)`——不执行、不暂停，denied 回执驱动模型改走纯文本；(b) `WorkspaceReminderTransformer`（含沙箱工具用法说明）在极简下仍注入 → 诱导调用；修复=ChatService 在极简模式不注入该提醒（零工具=零工具文本）。死键 chat_page_menu_video_generation ×6 清理。**教训：关"能力"必须关全链——注入/执行/暂停/诱导文本四处缺一不可。**
+- **v4.8.103**（f2f8873f·2026-10-04）: **①VideoGen 崩溃修复 + ②视频生成回归"路线一"（与图像生成完全同流程）** —— ①**B125**：`Screen.VideoGen` 漏 `@Serializable` → Navigation3 在活动退后台保存回退栈时 `Serializer for class 'VideoGen' is not found` 崩溃（堆栈定位于 NavBackStackSerializer/SavedStateEncoder）。修复=补注解（教训：新增 Screen 必须 @Serializable 本已记录，属于违规未查）。②**用户明确的路线选择**：「回到和图片完全相同的流程」——`ModelType` 新增 **VIDEO**；设置→提供商 模型类型选择器/标签补「视频」；视频页改用**标准 `ModelSelector(type=VIDEO)`**（与图像生成同款组件）；`Provider` 接口新增 `generateVideo` 默认实现 + `VideoGenerationParams`/`VideoGenerationItem(File)`；`providerManager.getProviderByType(provider).generateVideo(...)` 分发——**GoogleProvider→Google Veo**（`{base}/models/{model}:predictLongRunning`，instances/parameters 报文对照 googleapis python-genai/js-genai 源码；轮询 operations；`response.generateVideoResponse.generatedSamples[0].video.uri` 带 x-goog-api-key 下载，失败回退 key 查询参数；首帧 `instances[].image.bytesBase64Encoded` 图生视频）；**OpenAIProvider→阿里云 HappyHorse**（baseUrl 含 aliyuncs.com 时启用；`{base}/services/aigc/video-generation/video-synthesis` + Bearer + `X-DashScope-Async: enable` → `{base}/tasks/{id}` 轮询 → `video_url` 下载；resolution/ratio/duration 3-15s/watermark；对照阿里云官方 API 参考）。**错误统一携带请求 URL + API 原文回复**（上一版 404 无法诊断的根因之一：错误消息丢了响应体；现用户可直接看到是模型不可用还是地址/占位符问题）。③撤 v4.8.102 的页内端点体系：VideoGenEndpoint/VideoGenEngine 删除、Settings `videoGenEndpoints`→`videoGenerationModelId`（含持久化+删除级联回退）、9 个死键×6 清理、新增 `setting_provider_page_video_model`。**调研实证（用户要求"别臆想"）**：python-genai types.py/_operations_converters.py（mldev 响应路径 generateVideoResponse.generatedSamples）、js-genai models.ts（`{model}:predictLongRunning`）、阿里云 help happyhorse-text-to-video-api-reference（curl 样例+参数表+状态机）、GitHub 代码搜索 predictLongRunning（10752 命中，done-hub 中继等真实用例）。
+- **v4.8.102**（b230febe·2026-10-04）: **①视频生成真做 + ②渲染提速双管** —— ①用户定版：**不走"模型类型"系统化配置**（撤 mediagen 方案），改为**视频生成页内直填 URL / 模型 ID / 密钥**；新增 `VideoGenEngine` 真实协议双适配：**Google Veo**（Gemini API `:predictLongRunning` 提交 → `operations` 轮询 → 带 x-goog-api-key 下载；响应路径 `response.generateVideoResponse.generatedSamples[0].video.uri`；首帧 `instances[].image.bytesBase64Encoded` 图生视频；参数 numberOfVideos/aspectRatio/resolution/durationSeconds）＋**阿里云 HappyHorse**（百炼 `video-synthesis` 异步任务 → `tasks/{id}` 轮询 → `video_url` 免鉴权下载；参数 resolution/ratio/duration 3-15s/watermark；提交 `X-DashScope-Async: enable` + Bearer）；`VideoGenEndpoint` 双接口配置（出厂预填官方端点+模型 ID，页内 ✎ 弹窗编辑，DataStore 持久化 `video_gen_endpoints`）；接口弹层（RadioButton 选择 + 配置状态 + 编辑）;错误消息统一走 toaster（哨兵 no_model/not_configured）。**mediagen 方案全量移除**（模块 28 文件 / 设置页 / Koin / Settings 字段 / 14 键×6 语言）。②**渲染提速+加载标志**：officecli 结果缓存（路径+大小+mtime 键，重复打开零沙箱直出）+ 工作区内文件免拷贝直渲染 + LRU 保留 8 目录 + SandboxPrewarmer 预热 officecli 二进制（实测首渲 4.7s→热渲 0.94s，预热后首渲≈1s）；胶囊窗/rin render 补"渲染中"遮罩弹窗（把 v3.9.6 时代遗留的 renderLoading 死变量接线）+ render_loading 键×6。实测基准：officecli html 冷 4.7s/热 0.94s（2 页与 30 页大盘同量级，固定开销为主 → 预热+缓存价值最大）。
+- **v4.8.101**（f0ce584e·2026-10-04）: **①渲染断链修复 + ②视频生成页对齐图像生成** —— ①用户实证"点击渲染弹找不到文件错误页"：根因 = officecli 产物写 `index.html`，而 HtmlPages 消费契约是 `File(workDir, "page${pageIndex+1}.html")`（预览器固定加载 page1.html）→ 产物名落空 → WebView 错误页（**不是连网问题，是生产者/消费者文件名契约错位**）。修复：产物直接命名 `-o page1.html`（单一事实源：契约在 RenderViewDialog.HtmlPagesContent）。②VideoGenPage 全面重写对齐 ImgGenPage：同一套 UI 骨架（顶栏返回+新会话 Add01 / 结果区+ContainedLoadingIndicator+阶段文案 / 输入栏 = [Video01 模型选择弹层][Tools 设置弹层][Add01 参考图上传][描述框][发送·取消圆钮(surfaceContainerHigh/primary/errorContainer 三态)] / 生成设置底部弹层（FormItem+FilterChip+OutlinedNumberInput：时长·清晰度·比例·水印）/ 生成中返回→取消确认弹窗 / 错误走 toaster（com.dokar.sonner）；VM 对齐：参考图上传（ImageUtils.loadOptimizedBitmap→PNG→appTempFolder `videogen_ref_*`）、本地图→**首帧 data URI**（`data:image/png;base64`，Base64.NO_WRAP；视频接口按供应商文档接受 base64/data URI）、startNewSession（取消+清全部）、removeReferenceImage 删临时文件；-1 死键 video_gen_result×6。新增字符串 video_gen_settings_title / video_gen_cancel_title / video_gen_cancel_message ×6 语言。**通用教训：跨组件"文件/资源命名"是隐式接口——生产者改名必须全局 grep 消费端契约（本轮 officecli 渲染器 vs HtmlPages 加载器）。**
+- **v4.8.100**（a37794c66·2026-10-04）: **①文档渲染缺口补齐（用户实证：PPT 完整重渲染率不足5%、须导入 WPS）+ ②视频生成功能** —— ①**officecli 真渲染接入**（免查 GitHub 新库的调研结论：本应用已随 rin-tools 分发 officecli（aarch64 原生/.NET 系）到每个工作区，其 `view <f> html` 模式 = 真实渲染引擎，实测 PPT 背景/版式/表格/形状/图片全保真（像素级验证 + Playwright 手机视口验证），优于 PPTXjs/docx-preview/pptx-preview 等 JS 方案且零新增分发）: 新增 `OfficeCliHtmlRenderer`（复制到工作区 .render/ → 沙箱 exec html 渲染 → 后处理：去 three CDN importmap + docx/xlsx 注入整页适配脚本 → HtmlPages 结果）；`RenderEngine.renderSmart` 智能入口（docx/pptx/xlsx 优先真渲染，失败回落内建提取器）；三个调用点（胶囊窗 ChatMessageEditedFiles / 工作区预览 WorkspaceDetailPage / rin render 桥）全部切换。②**视频生成功能**: 全量移植上游 `mediagen` 模块（28 文件; OpenAI/阿里云百炼/火山方舟/MiniMax; 图像+视频统一 MediaGeneration* 抽象 + 任务生命周期 + 测试）; `VideoGenVM/VideoGenPage`（参数: 模型(VIDEO)/提示词/时长/清晰度/画面比例/水印 → manager.generate 轮询 Flow → 下载播放 + 保存工作区）; `SettingMediaGenPage`（厂商级配置: 凭据+模型列表, 模型带 kind）; 抽屉「功能折叠」= 翻译/图像/视频三件套; 设置→模型 新增「媒体生成」入口; 31 键×6 语言。③线程: VideoGen 下载/保存均走 IO; officecli 渲染走 Sandbox 调度器（经 executeCommand）。
+- **v4.8.99**（2f8ca97bd·2026-10-04）: **线程体系改革**（用户定版：把"被冲得七零八落"的线程重新收集/拆分/重组/派发）—— ①**AppDispatchers 单一事实源**（`utils/AppDispatchers.kt`: Main/Io/Compute/Sandbox 四层语义化调度器）；②**沙箱进程族隔离池**（`Sandbox = IO.limitedParallelism(8)`）：WorkspaceRepository 进程六方法（executeCommand/startJob/jobStatus/jobLogTail/killJob/launchProcess）+ 终端 PTY + MCP stdio 传输创建全部移出共享 IO 池——长命令（≤600s 阻塞等待）不再可能饿死 UI 侧磁盘/网络 IO；③**WorkspaceImageResolver 热路径快照**：消除"每次 resolve 都 runBlocking 查库"（60s TTL + stale-while-revalidate + 工作区增删显式失效 + 启动预热），渲染链零阻塞；④**keepalive 能效策略**：后台且无活跃生成 → 暂停心跳（15s 粒度检查恢复；回前台/后台生成中保持 60s 用户定版节奏）——消除熄屏挂后台空转耗电；⑤**AppForegroundState 前后台单一事实源**（ActivityLifecycleCallbacks resumed 计数，HyperOS 3 同款判据，与 ChatNotificationManager 一致）；⑥**APP_MAP 新增「线程与调度总览」卡片**（分层模型/作用域清单/阻塞禁区与例外/能效/热路径快照）。审计覆盖：调度器全量分布（IO 208/Main 38/Default 15/Unconfined 0/GlobalScope 0）、runBlocking 全清单逐一裁定（启动链 deliberate/ContentProvider binder/IO 线程内同步 API/operit 搁置——均合法）、appScope.launch 24 站点逐一核查、flowOn 11 站点语义确认。
+- **v4.8.98**（5b1b2739d·2026-10-04）: **文档渲染真实形态 + 提速 + 一体化四件套** —— ①**PPT 渲染根治**（用户实证"长形 PPT 只显左半、需右滑、旋转无效"）: 画布改取 `presentation.xml` 的 `sldSz`（4:3/16:9/自定义真尺寸）；幻灯片页 viewport=画布宽 + WebView `useWideViewPort/loadWithOverviewMode` 整页适配 —— 竖屏/横屏打开即完整显示整张幻灯片（旋转自动重适配）；移除横向滚动包装；深色切换即时生效修复（rememberUpdatedState + LaunchedEffect）；**XLSX 单元格字号保真**（cellXfs→fontId→fonts/sz 半磅→pt）。②**流畅**: Workspace 文件预览渲染从 remember 主线程移出（produceState+IO，大文档不再卡帧）+ 渲染任务目录从工作区改 cacheDir（不再残留 render_task_*）。③**工具后提速**: 探活二阶段重构 —— 工具完成瞬间 `pokeAsync` 后台预探活（与消息组装并行）；轮首 `awaitPokeIfStale`：最近 70s 内心跳/探活成功过则**零等待直放行**，有在途预探活 join ≤1.5s，都没有才同步探活（保留半死连接剔除语义）——"工具返回后模型久久不开口"的剩余等待消除。④**软件-沙箱一体化**: `SandboxPrewarmer` 启动预热（30 分钟窗口节流，首工具不再付冷启动）；**`rin render <path>` 全链** —— 沙箱脚本 → 桥端点 /render → RouteActivity intent → RenderRequestBus → 应用内原生渲染弹窗（docx/xlsx/pptx/pdf/图片），渲染在 IO、关闭即清；WorkspaceReminder 同步提示。
+- **v4.8.97**（5f03c0cab·2026-10-04）: **全库深度优化批**（用户定版"按功能分块标注/清死代码/和谐重写/缓存重中之重"）—— ①**死代码清理**：107 个全库零引用字符串键（6 语言共约 600 行）、4 个未用 drawable（afdian/kofi/patreon/rabbit）、3 个死文件（SearchPicker.kt 全文件零引用 / CustomThemeButton.kt / ui/hooks/Lifecycle.kt）、McpPicker.kt 两个零引用函数（-163 行）、WorkspaceImageResolver 死缓存 cachedRoot+currentRoot+invalidateRoot（零调用方的陈旧根缓存）、FileManagerTool NUL 字面量→\u0000 转义（修 grep 认二进制）、Provider.getBalance 占位 "TODO"→""；②**和谐化**：maskKey 两处私有实现（一处 4+4、一处 6+...4、短键一处裸暴露）→ utils/KeyMask.kt `maskApiKey` 单一实现（7 调用点）；③**分块标注**：APP_MAP 升至 v4.8.97 —— §1 规模按域头重新统计、B/C/F/I 卡补 Interactions API/图表工具/ZoneOps/ToolOrigin/charts/统计缓存/记忆/用量等新条目、**§2.5 新增「缓存与新鲜窗口总览」卡片**（12 项缓存全表）、§3 索引补 4 行、修正 EnhancedMemoryRepository 陈旧引用；④**缓存全库核实**：12 项缓存逐一体检（键含内容版本/有界/有失效），结论全部合格，仅清理 1 个死缓存。⑤**架构核视**：611 文件全带域头标注（100%）；发现上游对齐缺口 1 项（OpenRouter reasoning_details 直通未移植，入 roadmap 候选）。
+- **v4.8.96**（3b03e3cd0·2026-10-04）: **MCP stdio 连接回归修复**（v4.8.94 fork SDK 引入）——fork 默认 Auto 纪元先发 `server/discover` 探测 → 老服务器 stderr 记 "unknown method"(含 "error") → 旧分类器 FATAL 停机 → "Connection closed"。修复: ①强制 `ProtocolEra.Legacy`（恢复官方 0.15.0 握手）②stderr 分类器永不 FATAL。**本地复现实锤**（kotlinc+jar 直跑：Auto=FAIL/Legacy=OK）。＋**用量查询抽屉预热**（打开抽屉瞬间后台预查询，进页面秒开）＋**统计页即开**（StatsCache 缓存直出 + 抽屉预热 + StatsVM 秒显，不再有加载过程）。[bug-record B122]
+- **v4.8.95**（d2452e5d6·2026-10-04）: 终审补遗 — ①GoogleProvider 模型列表补提供商请求头（上游 654a5e1f7 全链覆盖中我方漏点）；②ja/ko-rKR/ru 三语言补齐 chart×8+clone+export 共 30 键（上游 2.5.5→2.5.6 新增 68 键现全语言 100% 覆盖）；③标题生成快速模型精确报错（对齐 d5f0039ba：此前"快速模型缺失→静默 return"改为抛 error_fast_model_not_found/_provider_not_found 并走 CheckFastModelSettings——修正"已具备"误判）。终审方法：delta 文件清单逐一闭环 + 字符串键集合机器比对 + "已具备"必须验到触发路径（触发条件→文案→失败分支）。
+- **v4.8.94**（9de68c378·2026-10-04）: **原版 2.5.6 全量移植（18 提交逐项进化判断）** — chart_display 图表工具链（聊天内即时交互图表卡：图表/表格视图切换；6 新文件+7 接线+三语言）/ MCP OAuth 回调 localhost 修 WAF403 / MCP $ref 内联展开（McpToolSchema.kt 替换 v4.8.80 $defs 透传）+ MCP SDK 切 rikkahub fork 0.15.0-rikka.2 / 日志 JSON 长按闪退修 / fork 标题序号递增 / 模型注册表 Gemini4+Claude Opus·Sonnet 5.5（移除 Claude3）/ 模型列表按供应商折叠（持久化）/ 导出「导出思维过程」开关+四修复 / 复制助手带记忆（确认框）/ 提供商高级设置 tab（自定义请求头，mergeCustomHeaders 优先级=提供商最低）/ Gemini Interactions API（useInteractionsApi + google/InteractionsAPI+StreamDecoder）/ 图片生成快捷方式 / LF 统一。[两次编译修复同版重推：①ServerToolProtocol 补 GOOGLE_GENERATE_CONTENT ②图表 6 文件 package 前缀笔误]
+- **v4.8.93**（0c8b5d9ca·2026-10-04）: 抽屉底部恢复「AI翻译/图像生成」入口（ImageGen 接线恢复，左4右1）+ 统计页整体复刻 2.5.6（逐字节）+ 删「仿 OpenCode 请求模式」UI（字段保留）+ 删模型页「工具路由模型/工具矩阵」重复入口（字段保留）。
+- **v4.8.92**（12d039423·2026-10-03）: 移除恢复出厂(误触风险) + /@ 选择器可选区&来源标签(技能/MCP统一) + 子代理预算复核(live显示/真清零) + 单对话记忆(DB迁移/注入/守卫/管理UI) + 本地设置(补闹钟&工作流开关)。[编译修复: 裸撇号→aapt2]
+- **v4.8.91**（f1ce7fc17·2026-10-03）: 上传码改时间码(月日时分+补位/东八区/入文件名) + 本对话上传清单注入(引导直取) + 时间全链锚定东八区 + Workspace 创建先后排序 + TTFT(回前台即热连接)。
+- **v4.8.90**（06adf4da8·2026-10-02）: /@ 工具矩阵选择器(三级下钻+@回填+模型侧语义注入) + 上传码直取(UploadCodes+upload_fetch+Prompt注入) + 审计修复(ZoneMap全深度/附件错误回退路径/UI池与模型池同口径)。[编译修复: LocalContext 提出 runCatching lambda]
+- **v4.8.89**（44249d287·2026-10-02）: 工具矩阵写链重构 — 唯一事务写入口(applyZoneOp/Res.then) + 整快照写持锁 + 写后校验对施加值判定（修假成功/假失败）。
+- **v4.8.88**（67e06038e·2026-10-02）: 预设能力涉题辅导(出厂技能 physics-tutor) + 子代理预算(默认100K/对话, 熔断终止+禁派发+告知模型) + 通知分流(子代理独立频道) + 取消真停生成 + subagent_get 长轮询。[编译修复: RouteActivity when 补 SubAgentFinished]
+- **v4.8.87**（71f9a28d2·2026-10-01）: 工具矩阵架构重写 — 身份与路径分离(ZoneTree 派生) + 唯一写入口 ZoneOps(写后校验) + 技能归属键同源化 + 归一化只修不增。[编译修复: keywordZone 排序键类型]
+- **v4.8.86**（22ed02741·2026-10-01）: 流式渲染/缓存重构 — 消除"每分片全量重解析"(块数阈值倒灌+HTML 整段重解析) + 块边界/预解析/缓存三合一(新增 MarkdownStream 引擎)。
+- **v4.8.85**（52e3bebeb·2026-10-01）: 极简模式(对话速览页一键, 零工具注入) + 工具归属自由化(修复顶层直连段/工具列表看不到框架工具 + 多选批量归属 + 效果提示)。
+- **v4.8.84**（a1af6cc69·2026-10-01）: 工具矩阵 — 模型管理能力补全(manage_zone 四动作) + 入口收敛为 invoke_tools/manage_zone + 死缓存/门控误拦/隐藏区失联/加载丢失四修。[编译修复: 意图门控内联 shortName/displayName]
+- **v4.8.83**（fab3317ba·2026-10-01）: 4.8.83 — 工具矩阵（原「工具域」）彻底重写（旧体系 9 个平行配置面 + 内置/自定义二元分裂 → 一套统一模型）: ①**取消内置/自定义分裂** —— 全部工具区是同一种声明式数据 `ToolZone{id,title,description,keywords}`（`routing/ToolZone.kt`），**id = 完整路径即身份、创建后不变**，出厂模板仅首启播种一次，此后用户完全拥有；②**真删除** —— 删除即从声明移除（含后代区、隐藏标记、元数据），手动归属的工具迁移到父区（无父区则交回自动归类），回执与实际效果永远一致（旧版按 `name == domain` 匹配，子域/全路径场景静默删不掉 = "回值成功但没删"）；③**空区不再蒸发、不再被自动清理** —— 声明即存在，0 工具的工具区照常留在矩阵（UI 收进「暂无工具」分组，仍可编辑/删除）；④**顶层工具集三合一** —— 旧 `FRAMEWORK_TOOL_SET` + `exemptFromDomainTools` + `demotedFrameworkTools` 合并为「出厂模板 `DEFAULT_TOP_LEVEL_TOOLS` + 用户提升 − 用户降级」单一口径，且注入链真正消费（旧 demoted 只被 UI 读写、注入链从不消费 = **死配置**，"移进域"从未生效）；⑤**配置面 9 → 5** —— customDomains/removedBuiltinDomains/hiddenDomains/toolDomainOverrides/customDomainDescriptions/customDomainKeywords/domainNameOverrides/exemptFromDomainTools/demotedFrameworkTools 收敛为 `toolZones / toolZoneLinks / hiddenZones / topLevelAdditions / topLevelRemovals`（+ toolZoneSeeded），旧数据一次性迁移（幂等，迁移后清除旧键并写死 seeded）；⑥**改名** —— 工具域→**工具区**、整体→**工具矩阵**，AI 工具同步改名 `manage_zone / list_zones / search_zones / move_tool_to_zone`；⑦新增「恢复出厂工具区」（只补缺失模板区，不动用户自建区与已有改动）；⑧UI 三页重写（工具矩阵页吸收原框架工具页、工具列表页、对照页），视图全部直接派生自 settings（消除"写入成功但列表还是旧的"陈旧快照）。**验证**：CI run #1605 一次全绿，Release v4.8.83（APK 81.57MB）。
+- **v4.8.82**（61e829413·2026-10-01）: 4.8.82 — 编译日志可读性（shell 输出截断策略重写）: ①根因 —— `StreamCollector` 只保留**前** 128K 字符、超出即丢弃；编译器/构建器（Gradle/CMake/pip/npm）把错误与总结打在**尾部**，等于"把报错扔掉、只留开头一片进度噪声"，模型据此误判"编译没报错"。改为**头+尾双保留**（前 48K + 末 76K 环形缓冲，中段省略并插入显式标记 `... [已省略中间 N 字符] ...`，总长仍不超 `MAX_OUTPUT_CHARS`），省略量经 `WorkspaceCommandResult.omittedChars` 回报；②`workspace_shell` 结果新增 `omittedChars` + `note`（超限，附"重定向到文件再分页读"的处置）与 `hint`（超时 = 中途截断残段 → 引导 `workspace_job`）；③修 grep/glob 截断误报：`head -n N` 无法区分"正好 N 条"与"不止 N 条"，改取 N+1 行再判定；④workspace 模块单测同步（新增"未超限逐字不变"用例）。**验证**：kotlinc 2.4.10 整模块真编译通过 + 真实进程边界矩阵全绿（n=0…1000000；4000 行构建日志的 `> Task … FAILED` / `e: … Unresolved reference` / `BUILD FAILED` 三行均落在保留尾部）。
+- **v4.8.67**（9cf442e9d·2026-09-28）: 4.8.67 — 渲染路径回滚 (A1 块级切分+A2 live-tail 门控全撤, 恢复 v4.8.64 渲染形态; 4.8.65/66 两版合并实测滑动抽动回归, 与 v4.7.23/25 同型失败) + 过程折叠范围修正 (仅 Reasoning/Tool 折叠, 中途正文不再裹入 — 用户定版)。
+- **v4.8.72**（8555522c9·2026-09-29）: 4.8.72 — 沙箱后台任务原语 + 超时放宽 + 实例隔离指引: ①TOOL_EXECUTION_TIMEOUT_MS 60s→700s; 命令默认超时 30s→600s (生成类接口 70s 起); ②workspace_job 新工具 (start/status/kill): 无 --kill-on-exit 独立 proot 启动脚本, proot 退出后任务存活; 存活判定 = /proc environ 标记扫描 (RIN_JOB_ID, 同 UID) — 修"新实例 ps 查不到旧进程误判死亡"; 日志/退出码落 /workspace/.rin-jobs/; ③WorkspaceReminder + 工具描述明示实例隔离语义 (禁止跨调用 ps 判活)。[附] edit_image 请求体/GatewayUnreachable 属外部自编 MCP 服务, 本仓零命中, 透传不拦。
+- **v4.8.75**（fb6df15b6·2026-09-29）: 4.8.75 — ask_user 折叠豁免 + 等候期直发: ①含 ask_user 的过程段不折叠 (问答卡可交互); ②等候期直发 bug 根因=出队门拦截任意 isPending (ask_user HITL 同命中; 等候期 job 已结束仅此门在拦) → 门豁免 ask_user (其余审批仍阻塞); finishInterruptedPendingTools 把未回答 ask_user 以 cancelled 落底。
+- **v4.8.81**（16db9cfb8·2026-10-01）: 4.8.81 — 能力模块一键清空: MCP 页顶栏导入左侧 + Skill 页右上角各加"清空"按钮 (HugeIcons.Eraser, 确认弹窗): MCP 清空 mcpServers (reconcile 自动断连; 空列表禁用); Skill 删除主技能目录全部技能 (只读源 dsh__/plugin__ 保留, 删后 pruneOrphanedEnabledSkills + toolDomainOverrides 孤儿清理, 回调删除数 toast)。实现: SkillManager.deleteAllSkills + SkillsVM.deleteAllSkills(onDone)。
+- **v4.8.80**（88fcb570e·2026-10-01）: 4.8.80 — MCP schema 悬空 $ref 修复 + parameters null 兜底: ①"Pointer '/$defs/JointType' does not exist" (网关 400) — SDK ToolSchema 携带 defs 但 toSchema() 只取 properties/required 丢弃 $defs → 出站 $ref 悬空; 修复: InputSchema.Obj 增 $defs/$schema 字段 + MCP 转换全量透传; ②"expected record, received null" (网关 zod) — 默认 parameters {null} 的工具发出 "parameters": null; 修复: Tool.effectiveParameters() 兜底 (null→最小对象 schema), ChatCompletions/ResponseAPI/Google/Claude 四出站点统一接入。刷新重连后存量 MCP 工具自动获得新 schema (mergeTools 每次重连重转换)。
+- **v4.8.79**（ef349eb25·2026-09-30）: 4.8.79 — 回滚提供商余额模块 + CC 空套餐判据修正: ①撤销用量页"提供商余额"区 (用户: 效果不符; 全清零残留); ②CC 空套餐新判据 (实见特征): 任一窗口无有效重置时间 (倒计时"未知") 且月/加油包/免费额度全 0 → NoSubscription; 旧判据 (字段全缺) 实测从不命中 (空套餐响应仍带窗口对象); 反例保护: credits>0 或任一窗口有重置 → 不折叠。OC 判据不变。
+- **v4.8.78**（e0738cefb 红→2b9ddcb39 绿·2026-09-30）: 4.8.78 — 空密钥折叠 (无套餐三态) + 提供商余额数字形态: ①用量页空密钥分类 — CC 无信息 (窗口/套餐/额度字段全缺) 或 HTTP 4xx → NoSubscription; OC HTTP 4xx (查询失败表象) → NoSubscription; 网络异常/5xx 仍 Failed (不误折叠); 无套餐密钥收进底部折叠组 (展开仅列密钥), 错误横幅只计真失败, 详情弹层直达"无套餐"提示; ②用量页新增"提供商余额"区 — 已配置且启用 balanceOption 的提供商 (DeepSeek/OpenRouter/月之暗面等) 并行 getBalance → 数字余额直接呈现 (无环形图); ③基建: UsageApi.fetchUsageDetailed (HTTP 码) + KeyQueryState 三态 (Ok/NoSubscription/Failed)。教训: kotlinx.coroutines.async FQN 调用会解析到废弃全局函数 (error 级) — 必须 import + CoroutineScope 扩展调用; awaitAll 同为扩展需 import。
+- **v4.8.77**（105d46719 红→eafeedd4b 绿·2026-09-30）: 4.8.77 — 项目包移出为助手 (多助手协作结构第一步): 项目包设置新增「移出为助手」— 包合并为新 assistant (继承源助手全部配置, 名称=包名, CWD=包 CWD 未设则随源助手 = 绑定不变; 包内全部对话转移为其对话记录; 原助手不再保留该包)。实现: DAO 批量转移 + ChatService.extractFolderAsAssistant 先同步活跃 session 内存态再库级转移最后删包 (同 deleteFolder 教训 4.7.x); 生成中拒操作。配套设计文档 /workspace/docs/assistant-a2a-design.md (先例: ForgeAI sessions_send / CowAgent Multi-Agent Team / AionUi Team them up / AgentScope MsgHub+ACP / agmsg+claude-intercom; 三阶段: A 包→助手 [已落地] B talk_to_assistant 工具 [agent-as-tool + SubAgentEngine 复用] C 群聊团队视图)。教训: 图标新增使用点必须同步补 import (me.rerere.hugeicons.stroke.X)。
+- **v4.8.76**（d152b3112 红→d98f77387 绿·2026-09-29）: 4.8.76 — 折叠豁免限未回答态 + 复盘审计两处起效缺陷: ①豁免仅限 isPending (未回答) 的 ask_user, Answered/Denied 后正常折叠 (用户定版修正); ②审计 A: OC/CC 轮间探活此前从未触发 — lastApiRoundAt 作用域错 (generateInternal 每轮独立调用) → 挂 RetryState per-generation 跨轮持有; ③审计 B: workspace_job 漏入 FRAMEWORK_TOOL_SET (仅域内可见, 模型顶层调不到) → 补入 + JobToolUI 渲染器; ④复盘确认 ask_user 出队门/实时折叠/DraftStore/patch 节流/双前缀自愈 均落位。教训: 跨轮状态必须挂 per-generation 状态对象 (局部变量在 generateInternal 每轮重置)。
+- **v4.8.74**（c087d7d7e 红→933d3e418 绿·2026-09-29）: 4.8.74 — Skill 模块回滚 + Shell 提速 + OC/CC 轮间探活: ①Skill 回滚 (用户定版: 移植覆盖掉我们的改动): 6 文件回 085f42838 (v4.8.63 自有形态) + 移除内置技能机制 (BuiltinSkills/assets/bind mount/DI/启动接线, 全仓零残留); ExtraSkillRoot (v3.6.85) 与 mtime 缓存 (v4.8.32) 保留。②Shell 提速: rootfs patch 节流 (每次调用全量 etc 检查 → 进程内 10 分钟一次, 冷启动首调必执行) + >500ms 写运行日志 (WS/exec_ms)。③OC/CC 定向两连: (a) 每对话心跳修池 — 原恒用 primary, OC/CC 主请求走长保活池, 心跳一直打错池; (b) 轮间探活 — 距上轮 >15s (工具长执行后) 先 GET /models (4s) 剔除半死连接+清池, 真实请求不再整段等 readTimeout (CONN/poke 写日志)。CI 教训: runInterruptible 块非挂起上下文 (计时/上报须分离)。
+- **v4.8.73**（da361f4ba·2026-09-29）: 4.8.73 — 实时分段包裹 + CWD 包 bug 群修复: ①实时包裹 (用户定版: 每完成一段就裹一段): 生成中凡其后已有正文的过程段立即折叠胶囊, 活动尾段展开, 完成后全裹; ②撤除每工具耗时 chip (显示有问题), 段级胶囊用时保留; ③图片渲染/保存双前缀自愈: buildRenderUrl 检测 base 已含 cwd 前缀不叠加 + resolver miss 时去重首段重试 (A/A/x 形态历史消息自愈); ④项目包重置无效根因: ChatVM conversationFolderCwd 原仅会话流重发射时一次性重读 → 改 flatMapLatest 订阅 getFolderFlow (设/重置立即刷新); ⑤保存失败写 CallTracer 运行日志 (此前仅 logcat)。
+- **v4.8.71**（9902174e4·2026-09-28）: 4.8.71 — 分段过程折叠 (胶囊窗) + OpenCode/CommandCode 启动即心跳: ①分段折叠 (用户定版): 按输出顺序逐段 [思考+工具]→[用时胶囊] [正文] [思考+工具]→[用时胶囊]…, 每段只包住自己那段过程 (不再汇总顶部); 披露行改胶囊形态 (RoundedCornerShape 50%, 包内容宽度, 非方框)。②预热 (用户定版"开应用直接拉心跳"): ensureProviderKeepAlive 改先 ping 后计时 (启动即建热连接, 首 ping 不再等 60s); startProviderKeepAlive 双供应商独立常驻 (原单槽互踩 → commandcode.ai 与 opencode.ai 并行 per-host 幂等)。
+- **v4.8.70**（7841e57f9 红→1748565da 绿·2026-09-28）: 4.8.70 — CS 优势块进化式采纳合版 (五件套一版, 用户定版"少发版本"): ①增量切分状态机 SplitState (每 tick O(δ), 已定稿块携带缓存结果, 仅尾块解析) — 真实解析器基准 19-60us/tick 且与文档长度解耦 (7KB→47KB), vs 旧 5-15ms: 累计 208x/297x, 60x 目标达成; ②工具计时全链 (Tool.startedAt/finishedAt+执行打点+折叠"用时"含工具+工具卡耗时 chip); ③会话草稿持久化 DraftStore (独立 DataStore, 1s 防抖+onCleared 兜底+发送自动清, 恢复仅输入空时); ④OpenCode Go 供应商预设 (zen go 网关); ⑤定位权限报错行动化 (CS 式结构化引导: 权限管理路径+禁止自动重试; 授予 UI 走既有权限管理页)。CI 教训: Koin single 误嵌另一 single lambda 内=implicit receiver 错; object 内 public fun 暴露 private 嵌套类=可见性暴露 (SplitState 提顶层 internal+全函数签名对齐)。
+- **v4.8.69**（8153056d2·2026-09-28）: 4.8.69 — 选择性回滚 2.5.5 移植的 material3 alpha29 升级 (玻璃消失排查): 排查证实玻璃链路 (ChatInput/RinGlass/ChatPage hazeSource/设置模型) 4.8.62→HEAD 零改动、移植 diff 无输入透明度改动 → 唯一渲染链变量=alpha29 → material3 回 alpha27 + ReasoningPicker Slider 回 value 形态; Mcp stdio 修复/设置存储修复/其余移植成果保留。环境: 解析管线两级缓存 (4.8.68) 保持不变。
+- **v4.8.68**（2498cbace·2026-09-28）: 4.8.68 — CS 速度机制本体落地: 解析管线块级化 (渲染形态零变化) — MarkdownParseCache 两级管线 (整段 256 槽 + 块级 2048 槽): 按顶层块切分 (空行边界; fence/$$/LaTeX 块保护), 稳定块命中缓存复用同实例 → strong skipping 跳过重组, 仅尾块现场解析; 每 tick O(全文)→O(尾块)。真实解析器 JVM 基准: 每 tick 10-22x, 全程 12.8x, 新管线每 tick 成本不随文档增长。教训: 增量做在解析层而非组件层 (组件层=4.8.66 抽动源)。
+- **v4.8.66**（d7be27366·2026-09-28）: 4.8.66 — CS 安卓端全量移植一批到位: ①A1 块级流式渲染 (MarkdownBlocks.kt: 顶层块切分 + 每块独立解析/渲染/缓存, 流式仅尾部块工作 — 语义对齐 streamdown) ②B 过程折叠 (最后非空文本=正文; 思考/工具/中途叙述完成态折叠为"用时 N 秒"披露, 生成中实时; ProcessGroup 语义) ③C 抽屉参数化 (宽 = min(400dp, 屏宽-64dp), 露边条) ④字符串/版本配套; 编译修复一轮 (fastForEach 不接受预赋值 @Composable 函数变量)。
+- **v4.8.65**（bc42f1a9e·2026-09-28）: 4.8.65 — CS 安卓端移植首刀: live-tail 视野门控 (Phase A) — 流式尾部不在视野内时冻结上屏文本 (不执行正则变换/不触发解析建树), 回屏或生成完成时追赶; ChatList 迟滞判定 (隐藏320dp/恢复160dp, derivedStateOf 不读不订阅) + ChatMessage/Reasoning 双门控包装 (冻结期零状态写入)。来源: Cherry Studio 安卓端学习档案 docs/cherry-android-study.md。
+- **v4.8.64**（50a03b416·2026-09-28）: 4.8.64 — 原版 2.5.5 适配性移植（禁止直拷逐文件重写）: ①设置读取完整性根治（空配置回退/损坏备份/重试/原子启动计数）②内置技能机制（BuiltinSkills+/builtin_skills 挂载+skill-creator+只读详情+搜索+字节保存）③UI 统一三组件（ItemActionMenu/ReorderableDrag/ExpressivePopup）+14 页适配 ④数据恢复页（从聊天记录恢复助手）⑤混元 baseUrl+hy 正则+依赖（material3 alpha29/coreKtx 1.19.1/coil 3.6.3）。RTL/阿拉伯语簇整簇跳过（指示）；haze 锁 beta01；SearchPicker 整段重写缓行。编译修复两轮（7485ffe4c/f6cc44c68 红 → 50a03b416 绿）。
+- **v4.8.63**（085f42838·2026-09-28）: 4.8.63 — 三线规范重写: ①排序统计持久化根治（两条剪枝误删路径封闭; 北京自然日3天窗; 全量目录全集）②消息分支继承 folderId（bug-High: 掉默认聊天）③MCP STDIO 去 CWD 锁（cwd=""全量视图; 修连接超时）④文件解析引擎重写（回执路径优先+自动拼接+后缀模糊+多命中弹窗选择）
+- **v4.8.62**（68eac0570·2026-09-28）: 4.8.62 — 进入助手落地逻辑（有聊天记录=正常; 全在项目包→项目包选择; 唯一包有任务→直达该包）+ 项目包任务绿点（包行右侧, 同对话行款）+ 未归类计数 DAO/仓库 + applySelection 统计分离
+- **v4.8.61**（e34efddf6·2026-09-27）: 4.8.61 — 优化批次: 卡包弹窗可滑(硬规则)+详情刷新 + workspace_show_file 多文件(paths 数组) + doccheck 支持 HTML 输入/blockscan --thresh
+- **v4.8.60**（5b9c0d910·2026-09-27）: 4.8.60 — 用量页取消"使用中"+密钥条目「查看」（完整密钥+复制）+ 沙箱文档诊断链（新 builtin doccheck/blockscan + toolbox 能力清单 + 引导升级: 自检/样例先行/python3 -B）
+- **v4.8.59**（f62244bf2·2026-09-27）: 4.8.59 — 空对话归属快照（A 下打开的空对话切换选区后仍归 A）+ 展开箭头上下向 + 用量查询整页重写（小卡片列表→点击弹详情; 删独立 CC 页; 并行+缓存直出; 返回失效修复）
+- **v4.8.58**（3345f724e·2026-09-27）: 4.8.58 — 项目包智能推荐排序（本次选中→最近3次去重→3天频次; 真统计/过期真删）+ 展开态竖向项目包列表（排列对齐对话行; 取消横向图标条; 选中自动折叠）+ 胶囊窗导出切换 Rootfs 全语义解析（HTML 文件失效根治, B57）
+- **v4.8.57**（58ca35c2c·2026-09-27）: 4.8.57 — 胶囊窗文件链 CWD 多候选解析（项目包优先; 分享/导出失败可见提示）+ 请求指纹盲区加固（tools 全量签名 / hist 中位 ID / fp2 最终 system 指纹）
+- **v4.8.56**（f7fe1233a·2026-09-26）: 4.8.56 — 静默截断实锤根治（usage 尾包启发式 opencode 撤销 + 掐断疑点判定合成 Finish(length) 自动续写 + 完成明细入 trace; B53 姊妹篇）
+- **v4.8.55**（495df38f7·2026-09-26, 含一次编译修复 c47921b91→495df38f7）: 4.8.55 — 正文长度截断自动续写（finish_reason=length 根治"输出异常中断无报错"：请求级续写引导 + 同消息无缝续写 + 工具全截断场景补齐 + 上限 3 次/耗尽明确报错）
+- **v4.8.54**（4119a1b79·2026-09-26）: 4.8.54 — 聚合网关上游瞬时错误分流扩展至 CC 通道（"Upstream request failed" 家族; opencode.ai/api.commandcode.ai → IOException 重试链）
+- **v4.8.53**（fa6bc1885·2026-09-26）: 4.8.53 — 图片保存假成功根治（保存链真实结果 + MediaStore 两段式 + 名称/MIME 修正）
+- **v4.8.52**（763099082·2026-09-26）: 4.8.52 — 背景裁切 + 动态背景×壁纸共存
+- **v4.8.51**（7f90b1125·2026-09-26）: 4.8.51 — 四项: 压缩蓝标阈值 / 缓存命中率三修 / 壁纸启动黑屏 / CI 一推一建
+- **v4.8.50**（130aa8253·2026-09-26）: 4.8.50 编译修复 — ChatPage 补 milliseconds/collect 两处 import (不升版本)；4.8.50 — 预热管线 v1 (铺展架构) + 追赶线残留终审 + 设计文档
+- **v4.8.49**（7b894e424·2026-09-26）: 4.8.49 编译修复 — 缓存回植锚点吞掉 MarkdownParseResult 收尾括号 (不升版本)；4.8.49 — 回植批次二: 渲染缓存 + vendored 库 + 图片版本键 (回植完成)
+- **v4.8.48**（912aa322e·2026-09-26）: 4.8.48 — 回植批次一: 桥恢复 + 消息路径四项回归 (冷态诊断后的第一批)
+- **v4.8.47**（e7171e323·2026-09-26）: 4.8.47 — 诊断: 沙箱桥启动禁用 (卡顿归因裁决版)
+- **v4.8.46**（d5beecfa4·2026-09-25）: 4.8.46 — 消息路径最后残留清零: ChainOfThought + HighlightCodeBlock 回 4.7.26
+- **v4.8.45**（ea145f87d·2026-09-25）: 4.8.45 — 重做第二发: 项目包回归 (以 4.8.43 旧码为参考适配新基线)
+- **v4.8.44**（04e7f36f9·2026-09-25）: 4.8.44 — 基线重建第一发: 4.7.26 + 绝对无关集 (撤聊天页组合路径全部嫌疑)
+- **v4.8.43**（9e9717358·2026-09-25）: 4.8.43 — 渲染提速批次回滚 (缓存/预热撤除 + 渲染库回退 fork) — 控制变量实验第一发
+- **v4.8.42**（7873a66cd·2026-09-25）: 4.8.42 — 滚动历史"抽动/卡"专项: 预热全量扩容 + 缓存容量提升 (对照 4.7.26)
+- **v4.8.41**（dab67a49b·2026-09-25）: 4.8.41 — 渲染层回滚至存档点1 纯净态 (撤 v4.8.38 检查点)
+- **v4.8.40**（87c2944ca·2026-09-25）: 4.8.40 — 移植原版 2.5.4 (适配性重写: 思考档位 / 流解码 / 注册表 / 三处 UI)
+- **v4.8.39**（01bb6b988·2026-09-25）: 4.8.39 — OpenCode+Responses+grok 上游瞬时错误场景分流 (转重试链)
+- **v4.8.38**（3046ae177·2026-09-25）: 4.8.38 — 渲染回滚至存档点1 + 心跳线程修复 + CPU 空转修复；4.8.38 — 渲染机制回滚至存档点1 + 心跳线程修复
+- **v4.8.37**（ac051320d·2026-09-25）: 4.8.37 — 卡死修复: 渲染更新从"每次上屏"改为"合并窗口+自适应节流"
+- **v4.8.36**（4f115a9b6·2026-09-25）: 4.8.36 — 流式显示速度修复: 渲染解析调度重写 (取消风暴 → 单飞行最新推进)
+- **v4.8.35**（d6da9490f·2026-09-25）: 4.8.35 — 保活/缓存类参数全面放宽 (用户定版: 时间大幅延长)
+- **v4.8.34**（6e33e00d3·2026-09-25）: 4.8.34 — 当前 provider 心跳保活 + 发送链主线程卸载 (工具后恢复专项)
+- **v4.8.33**（f9bbe32f4·2026-09-25）: 4.8.33 编译修复 — CC streamTextRaw 的 requestBody 引用 (onFailure 诊断仍用)；4.8.33 — 请求体瘦身 + 每轮构建/图片编码卸载 (TTFT 与工具后等待专项)
+- **v4.8.32**（5b1524255·2026-09-25）: 4.8.32 — 运行稳定性/卡顿专项 (五项) + 生成中禁压缩
+- **v4.8.31**（4b26b8b96·2026-09-24）: 4.8.31 编译修复 — ast-grep 示例的 $ 未转义 (Kotlin 字符串模板误插值)；fix+feat: 4.8.31 — PDF 回归原数据直读 + 编程工具扩展 (ast-grep / yq)
+- **v4.8.30**（f003ee199·2026-09-24）: 4.8.30 — 文档工作哲学落地: 看原貌 / 就地编辑 / 不重建
+- **v4.8.29**（f28519ce9·2026-09-24）: 4.8.29 — `pdfmd` 工具 (PDF→Markdown, 含扫描件 OCR) + 文档工具链收尾
+- **v4.8.28**（ae2425661·2026-09-24）: 4.8.28 补 — toolbox workflow hint 更新 (补 echo 包裹, 防运行时命令误执行)；4.8.28 — 深色选中态修复 + .doc 工具链强化 (setarch/水印实战固化)
+- **v4.8.27**（829a39f03·2026-09-24）: 4.8.27 — 紧急: 对话显示为空/跳包根因根治 (加载窗口期误判)
+- **v4.8.26**（a62eb24c0·2026-09-24）: 4.8.26 — 项目包交互修正 + 选区持久化 + 空对话归属跟随
+- **v4.8.25**（4faccd01a·2026-09-24）: 4.8.25 — 项目包栏精简 + CWD 选择器空间限定 + 全链路一致性核验
+- **v4.8.24**（b2dffcaec·2026-09-24）: 4.8.24 编译修复 — ChatDrawer 缺 getCurrentAssistant 扩展 import；4.8.24 — 文件夹 → 项目包 (功能大改动) + 弹窗深色修复
+- **v4.8.23**（2723a1a57·2026-09-24）: 4.8.23 — 启动崩溃根治 (通知渠道缺 name) + 渠道创建全面防护
+- **v4.8.22**（eee9edc05·2026-09-23）: 4.8.22 — 后台连接稳定性最高级强化 (三项)
+- **v4.8.21**（3db001fb6·2026-09-23）: 4.8.21 — 流式能效深挖 (WifiLock 降级 + Jsoup 主线程卸载)
+- **v4.8.20**（f8cc497c0·2026-09-23）: 4.8.20 — 后台任务可持续性: 生成保活前台服务
+- **v4.8.19**（0fc47c0d6·2026-09-23）: 4.8.19 — 高负载热点深挖 (四处热点消除)；versionName 修正 4.8.19 → 4.8.18；4.8.19 — checkFilesDelete 快路径 (流式高频路径减负)
+- **v4.8.18**（e0d6d3a0b·2026-09-23）: 4.8.18 编译修复 — toLowerCase() 弃用错误 (3 处)；4.8.18 — 主题调色盘升级 (HSL 三通道全开)；4.8.18 — 渲染库升级 (vendored): 上游 0.7.14 + CJK 修复合并
+- **v4.8.17**（dd509e752·2026-09-23）: 4.8.17 编译修复 — MarkdownNew 常量补齐 (同包文件级 private 不可跨文件)；4.8.17 — 词内下划线渲染修复 (M_O / xF_y 类公式文本) + MarkdownNew 正则预编译
+- **v4.8.16**（f23781ce9·2026-09-23）: 4.8.16 — 死代码清理 (compression 包整包, 358 行)
+- **v4.8.15**（34687fe9d·2026-09-23）: 4.8.15 — 流式消息更新快路径 (updateCurrentMessages 引用同一性短路)
+- **v4.8.14**（1818f151e·2026-09-23）: 4.8.14 — 长时间多工具调用发热修复 (per-step 重复计算消除)
+- **v4.8.13**（214ef5b75·2026-09-23）: 4.8.13 — Phase 1 第三刀: ChatService 保活体系独立
+- **v4.8.12**（ecb88cbc9·2026-09-23）: 4.8.12 — 大重构启动: Phase 0 标注归一 (552 文件) + Phase 1 拆解第一、二刀
+- **v4.8.11**（36f23b101·2026-09-23）: v4.8.11 — 输入框玻璃自愈扩展 + 设置返回跳级修复 + 标注第二梯队
+- **v4.8.10**（17517e90b·2026-09-23）: v4.8.10 — 应用裂变与标注工程 (APP_MAP 地图 + 20 核心文件域标注) + 分享加载条
+- **v4.8.9**（21e3bcf8f·2026-09-22）: v4.8.9 — 压缩提示条 z-order 修复 + 压缩中禁发 + 主题色相渐变条
+- **v4.8.8**（c88fa932a·2026-09-22）: v4.8.8 编译修正 — CompressContextDialog 恢复 Job import (import 清理误删, 签名仍引用)；v4.8.8 — 压缩弹窗根治 (确认即关, 无压缩态弹窗) + 主题自定义改预设色板
+- **v4.8.7**（78e028eb2·2026-09-22）: v4.8.7 — 压缩管理上移 + 预设主题「默认」(莫兰迪紫)
+- **v4.8.6**（8782a4c61·2026-09-22）: v4.8.6 — MCP 重启断联根治 + 压缩弹窗非阻塞化
+- **v4.8.5**（bf26291af·2026-09-22）: v4.8.5 — 文件夹完整导出 (内容零丢失零破损, 根因根治)
+- **v4.8.4**（25c571998·2026-09-22）: v4.8.4 — 发送键位置修正 + 三处状态蓝色提醒 + 文件传输加载动画
+- **v4.8.3**（8259282bf·2026-09-22）: v4.8.3 — 延时回复交互重构 + CWD 名称净化 + 发送/思考键互换
+- **v4.8.2**（88b87dc23·2026-09-22）: v4.8.2 — 地址渲染图缓存修复 (模型改图覆盖后仍显示旧图)
+- **v4.8.1**（dac169d15·2026-09-22）: v4.8.1 — 进入对话首帧卡顿 + 启动黑屏 (双修复)
+- **v4.8.0**（adcc81ab4·2026-09-22）: v4.8.0 编译修复 — ProviderManager 实例获取 (class 非 object)；v4.8.0 — 沙箱穿透: 软件-沙箱一体化桥 (SandboxBridge + rin 命令)
 
-## v4.0.13（图片落盘/读取自动注入标准本地渲染 URL，2026-09-07）
-- 按用户指示放弃模型自己拼凑地址；在图片落盘或读取返回瞬间自动注入 render_url
-- 标准格式：file:///data/data/me.rincore.app/files/workspaces/<UUID>/files/<relPath>，严格对齐当前 resolver 逻辑（HOST_WS_PREFIXES 识别 file:///data/data/.../workspaces/<UUID>/files/ 前缀并 normalize 到 /workspace/<rel>）以及模型回馈的精确链接方案
-- 注入点：readImageInRootfs 返回、write_file 写入图片扩展名文件后的返回
-- 修复 CI 编译错误：Map<String,JsonElement> 要求用 JsonPrimitive 包装 render_url
+## v4.5 ~ v4.7（功能爆发与体验重塑期 · 2026-09-10 ~ 09-21）
+- **主线**: Operit 生态吸收批次（商城/运行时/UI渲染, v4.5.28-39; 后于 v4.5.40 用户判定搁置、入口收纳）→ 沟通体验专项（玻璃/动效统一/输入栏）→ 编码与沙箱升级（OfficeCLI 集成 v4.7.19 / Codex+OpenCode 精华吸收 v4.7.20）→ 可靠性批次（发热/断流/文件导出）。
+- **v4.5.x 关键**: CWD 作用域定案（会话级→助手级, v4.5.23）; 图片预算防爆（47x 网关系数, v4.5.19）; 串台修复（v4.5.26-27 模型/思考档位隔离）; 会话路由三刀（v4.5.34-36 DSH 发现链/跨助手同ID）; 渲染内核四修（v4.5.33）; 玻璃重构批次（v4.5.25+）。
+- **v4.6.x 关键**: 编程能力增强（read_file 分页/workspace_grep/workspace_glob, v4.6.1）; 记忆系统文件化（v4.6.5-6 Room 迁移闪退止血, 见 B31）; 默认工具白名单/记忆交火/框架工具页（v4.6.4）。
+- **v4.7.x 关键**: 域管理三坑修复（v4.7.16, 内置域可编辑/rename 父域保留）; 发热根治（v4.7.17 前缀缓存, 见 B32）; task_tool 卡片全量回传; 断流重试三件套（v4.7.18 清池/网络监听/WifiLock, 见 B34）; OfficeCLI 文档链（v4.7.19）; 编程引导层（v4.7.20）; haze 格栅回滚（v4.7.21, 见 B35）; 统一使用体验五任务（v4.7.22）; 分享链与 Markdown 负载（v4.7.23, 见 B36）; 图片限制精细化（v4.7.24）; 滚动抽动定版对齐原版（v4.7.25-26, 见 B37）。
+- 全量逐版本清单: FULL_HISTORY.md「v4.5.x / v4.6.x / v4.7.x 系列」。
 
-## v4.0.12（仅回滚图片方向本地链接解析，2026-09-07）
-- 用户指示：仅回滚图片方向，其他绝对不动
-- 回滚内容（恢复 v3.19.0 原状）：删除 readImageInRootfs 的 display_hint、删除工具描述里的 workspace:// 格式引导、删除 ZoomableAsyncImage 诊断 reason 显示
-- 保留不动：thinking 语义修正 (v4.0.10)、Cherry 统一模式 (v4.0.10)、消息序列规范化 (v4.0.9)、abilities backfill (v4.0.8)、Anthropic session 头 (v4.0.7)
+## v4.0 ~ v4.4（重写工程与拉齐期 · 2026-09-05 ~ 09-10）
+- **v4.0.x**: 重写工程全量（fork 全文件重写消化屎山; 提取点/闭合结构/思考控制分派; 工作区预览桥接; 回滚澎湃流光玻璃）。
+- **v4.1.x**: 屎山拉齐工程（552 文件全域标注 / docs/APP_MAP 体系 / 原版 2.5.1 逐字节对齐批次 / 地图指针）。
+- **v4.2.x**: 原版 2.4.17→2.5.x 适配移植批次。
+- **v4.3.x**: 传输层与体验强化（图片预算守卫 backfill / 息屏保活 / 会话链加固等）。
+- **v4.4**: 未使用（版本跳号）。
+- 全量逐版本清单: FULL_HISTORY.md「v4.0.x ~ v4.3.x 系列」。
 
-## v4.0.10（thinking 字段语义结构根修 + 放弃 Cherry 分裂模式，2026-09-07）
-- 根本根因（18:30/20:11 两单同根）：thinkingField 返回 thinking 值对象再 forEach 平铺 → type 和 display 被铺平到请求体顶层 → qwen 网关 schema 校验非法字段直接 400 且返回极简空错误体。v4.0.8 backfill 激活 thinking 后 bug 才暴露（v4.0.6 压测时 abilities 空 thinking 未激活）
-- thinkingFields 修正为返回 Map 字段名→值：thinking={type,display?} 与 output_config={effort} 独立顶层字段完整嵌套。keys 固定为 model,messages,max_tokens,stream,system,thinking[,output_config],tools，无裸 type/display（模拟回归 4 场景 PASS）
-- 放弃 Cherry 分裂模式（v3.17.0 引入的 buildMessagesCherry 独立路径）：删除 cherry 分支分派+buildCherryAssistantMessage 全函数+相关注释，请求构造统一为单一路径。cherryCompatMode 数据壳保留 DataStore 兼容（UI Legacy 壳标注），已无行为分支
-- CC 通道无同型 bug（thinking 嵌套对象平铺安全），不改
-- 教训：提取函数返回值必须是"被掉进的字段集合"而不是"某个字段的值对象"——forEach 平铺同源 bug 在 thinkingControlFields（CC）处也存在，但 CC 通道返回的是顶层字段集合本身所以无 bug。函数自评：返回类型改变语义完全变
+## v3.6 ~ v3.9（能力模块与稳定化期 · 2026-08-09 ~ 09-03）
+- **v3.6.x**: 能力模块分组（MCP/Skills/内置）+ 域管理计数口径统一 + 缓存前缀根治 + 删除假成功 + 工具系统修复批次。
+- **v3.7.x / v3.8.x**: 原版 2.4.x 全量移植批次（深度对齐; 传输层迭代）+ 稳定化观察期。
+- **v3.9.x**: 屎山清理第一二批（含 4.1.6 起并入拉齐工程）与前四纪元收尾。
+- 全量逐版本清单: FULL_HISTORY.md「v3.6.x ~ v3.9.x 系列」。
 
-## v4.0.9（消息序列统一规范化两阶段重写，2026-09-07）
-- 18:30 单暴露序列级缺口（同一网关合并语义下的漏网形状）：REQ_META [10]=user(tool_result:2) → [11]=user(text:1) 两连 user。网关按官方语义合并连续 user → 合并后 tool_result 与 text 块混排 → CC 转换器挂起（极简错误体）。v4.0.6 规范化只覆盖工具图消息，普通 tool_result+用户消息场景漏网（16:07 实证过混排必挂）
-- normalizeConsecutiveToolImageUsers 整段重写为 normalizeMessageSequence（两阶段算法）：阶段 1 工具图消息合并进后继 user content 头部；阶段 2 循环修正交替违规直到收敛——任一方含 tool_result 则插 assistant 占位隔离（合并必混排），双方普通 user 则显式合并（官方自动合并语义实现，顺序保留）；guard 64 防死循环
-- 五形状模拟回归全 PASS：18:30 现场 / 16:42 图消息 / v4.0.6 压测回归 / 普通图文合并 / 正常交替零修改。教训：规范化类改动必须对全部已知形状做模拟回归（v4.0.6 的单遍算法在 16:42 形状上模拟即 FAIL——当时没做就上线了）
+---
 
-## v4.0.8（思考控制 UI 门控数据层兜底 + 图片展示引导全覆盖，2026-09-07）
-- 思考控制残留根因（数据生命周期层）：v4.0.7 只兜底了请求层，历史遗留模型持久化 abilities 恒空 → UI 门控（ChatInput 思考按钮读 getCurrentChatModel().abilities）依然空值，按钮根本不显示。原版能工作不是有额外代码，而是模型都经新 UI 添加（添加时注入并持久化）
-- 根本修复：PreferencesStore.settingsFlow providers 解码后 abilities backfill（按注册表还原空 abilities 模型，读时增强不写回），一处修复覆盖 UI 门控+请求层+任意未来消费点
-- 图片展示残留根因（引导覆盖面）：v4.0.7 display_hint 只挂 read_file，用户场景"模型生成图片后展示"走 write_file/shell 无任何引导
-- 修复：①write_file 图片路径返回增补 display_hint ②shell description 增补展示格式（工具列表常驻可见）③read_file description 同步；全部引导明确禁用 file:// 与相对路径
-- 方法论教训：修门控问题必须全消费点排查（UI 门控与请求层是两条独立读取路径，只修一条=没修完）；"原版能用"要区分"代码差异"与"数据差异"——历史数据问题不能用代码对齐解决
 
-## v4.0.7（本地图片链接渲染根修 + 思考控制对齐原版 + Anthropic session 头，2026-09-07）
-- 图片渲染根因（决定性实验闭环）：rikkahub markdown fork 的 XssSafeLinks 把 file:// 协议 img src 改写为 '#'（URI 丢失，渲染层无解）；workspace:// 与 /workspace/ 绝对路径原样保留。之前"修好又坏"真相 = v3.15.x 工具返回改 host file:// URI 后模型复述被库打 '#'
-- 修复：readImageInRootfs 返回增补 display_hint 引导模型在回复中嵌入 ![](workspace://<path>)；渲染层 v3.11.31 起原生支持（Coil Fetcher 直读 rootfs + mtime cache key）。正确渲染格式：![](workspace:///workspace/相对路径)，file:// 不可用
-- 思考控制三处根修：①abilities 根本修复（listModels 均不带 abilities，UI 未编辑模型恒空 → REASONING 门控全哑；GenerationHandler transforms 前经 ModelRegistry.MODEL_ABILITIES 按 modelId 兜底）②CC thinkingControlFields 对齐原版 2.4.17（deepseek 家族撤 v3.6.49 档位塌缩 MEDIUM/HIGH→high MAX→max 其余直透；opencode.ai 撤 v3.15.3 none→minimal effort 直透；删 v3.15.4 commandcode 特判落 else 兜底）③Anthropic thinkingField 已对齐保持（adaptive+output_config.effort）
-- session 头：sessionHeader 提取到 ai/util/Request.kt 共享，ClaudeProvider 3 处 /messages 注入（streamText/generateText/2013 重试）
-- 过程教训：git 身份丢失致 commit 静默失败后误派旧代码 dispatch（已取消重派）；patch 后 checkout 恢复与再注入叠加产生重复声明（CI 红 1 次后去重修复）——文件操作必须先重读现场再动手
 
-## v4.0.6（工具图片格式基础层重写 CC+Anthropic 双通道，2026-09-06）
-- 基础层根因（用户锚定 Workspace ReadFile 返回，原生阿里云无此问题）：CC 通道 toToolResultContent 在模型支持图片输入时把 image_url 块塞进 role=tool content——OpenAI 规范 tool content 仅支持文本，严格上游挂起=CC 卡死根因；Anthropic 通道 v4.0.5 拆独立 user 消息后与相邻 user 连续→qwen 兼容层角色交替硬校验 400
-- CC 重写：toToolResultContent content 只留文本（空补占位，多文本块数组形状）；新增共享 addToolImagesAsUserMessage（图片拆独立后继 user 消息，常规+Cherry 路径共用）；CCImageCompatTransformer 保留（转换器层已无图可转，幂等）
-- Anthropic 重写：normalizeConsecutiveToolImageUsers 后处理——工具图 user 消息与后继 user 相邻则合并图块进其 content 头部（user 图文混合形状=[0][6][14] 同类已验证安全）；否则前插 assistant 占位文本恢复严格交替
-- 形状实证链闭环：内嵌拒（15:37）→同消息混排拒（16:07）→独立消息连续 user 拒（16:42）→最终合法形状=纯 tool_result 消息+图文合并 user 或 assistant 占位隔离
+## v3.5.x（传输层回滚期）
+- **v3.5.1**（10a62b5d）：冷启动 70K 注入修复——v2.9.4 工具 systemPrompt 瘦身移植到 else 分支（layer1Prompt 无调用方传入，恒走 else 全量注入 264 工具 → 70K；改后只注入 7 框架工具）
+- **v3.5.0**（5dacddfd）：传输层整体回滚到 3.2.2（checkout 8 文件：OpenAIProvider/ChatCompletionsAPI/ResponseAPI/Message/GenerationHandler/PlaceholderTransformer/PromptInjectionTransformer/ChatService）——用户决策：补丁式修复无法解决连接中断；保留流式落盘/保活/权限/闹钟/FGS/DI
 
-## v4.0.5（工具图片拆独立 user 消息 + 极简错误体细化，2026-09-06）
-- 16:07 单实证: v4.0.4 同消息混排（image:2 tool_result:11）仍被拒——兼容层（qwen 等，按模型分协议直传 Anthropic）对含 tool_result 的 user 消息要求纯 tool_result 块序列，同消息混入任何其他块都拒
-- 重写: tool_result 消息恢复纯 tool_result 块序列；工具图片拆独立后继 user 消息（[工具返回的图片]+image 块）——唯一被本会话验证安全的图片形状（user 图消息 [0][6][14] 正常工作）；官方通道自动合并连续 user 语义等价；拆分在 JsonArray 层不受 UIMessage 合并防御链影响
-- 报错细化: 极简错误体（{"model":...} 零信息回显）识别→可读诊断（含 http code 与方向提示）；REQ_META 增补 tool_result 内嵌块统计 innerNonText（顶层统计看不到内嵌 image 的定位教训）
-- 编译教训: Kotlin 字符串内嵌套双引号经 heredoc 双重转义事故（""model""→"\\"model\\""），生成后必须逐行核验含引号字面量
+## v3.4.x（传输层补丁期——已全部回滚）
+- **v3.4.10**（d2cf333a）：Responses API reasoning 回传格式修正（summary 元素类型按 host：deepseek→reasoning_text，其他→summary_text；content 内 reasoning_text 被拒 unknown variant）
+- **v3.4.9**（40f941ca）：Responses API thinking 回传——content 内加 reasoning_text 块（后被 v3.4.10 修正位置）
+- **v3.4.8**（ee79b24b）：ChatCompletions DeepSeek 强制 reasoning 回传（host.contains("deepseek")）+ 千问缓存机制确认（隐式缓存自动/Qwen3.7 门槛 ~2000 tokens/命中率非 100%）
+- **v3.4.7**（9e71dfb6）：空返回自动重试（流式/非流式，平台偶发空流）+ 流式诊断（SSE done/failure chunks+finish_reason、gen_return）
+- **v3.4.6**（0029f256）：生成中切后台回答丢失修复——流式增量落盘（GenerationChunk.Messages 每步 saveConversation + onCompletion 兜底）【回滚后保留】
+- **v3.4.5**（011d0692）：Required SETTINGS preface 根治——BEFORE_SYSTEM_PROMPT 合并进 system（v2.9.5 注入隔离引入的协议违规）
+- **v3.4.4**（3647bb07）：定时任务崩溃——FGS type=none 被 Android 16 禁止；ForegroundInfo 指定 dataSync + Manifest SystemForegroundService 覆盖声明【回滚后保留】
+- **v3.4.3**（b7061b06）：闹钟 AI 工具移植（alarm_create/list/delete）+ UI 入口藏到数据与存储
+- **v3.4.2**（1561747f）：闹钟页崩溃——AlarmScheduler 未注册 DI（R8 混淆显示 LanguageCircleKt）；权限页加固（build 兜底/startActivity try-catch/SDK 过滤）【回滚后保留】
+- **v3.4.1**（13a2ab89）：缓存断层诊断日志（cache: prompt/cached + 骤降>50% 输出缓存断层!）+ CronJobWorker 前台服务 + AlarmReceiver 协程化 + ACCESS_BACKGROUND_LOCATION
 
-## v4.0.4（工具结果图片重定位 + 网关挂起重试修正，2026-09-06）
-- 根因（15:37 报错单，与 CC 图片兼容 v3.13.7 同构）：工具读文件返回图片 → tool_result content 内嵌 image → OpenCode 网关（Anthropic→CC 转换）变 role=tool content 的 image_url，OpenAI 规范 tool content 仅支持 text，严格上游挂起/报错（报错体 {"model":...} 为网关极简回显）；重试携带同样非法结构 → 永久失败
-- PartGroup.Tools 序列化段整段重写：tool_result 剥离内嵌图片 → 同 user 消息 tool_result 块后追加独立 image 块（Anthropic 官方合法混排，图片仍送达）
-- toToolResultBlock 重写：content 只留文本块，空 content 补占位防严格上游拒收
-- onFailure 瞬时判定重写：5xx 或无状态码（网关 hang 裸断 response==null）一律转 IOException 进重试链；4xx 保持终态 — 修复重试无法正常重试
-- CC 通道由 CCImageCompatTransformer opt-in 覆盖（v3.13.3 用户定版），不动
+## v3.3.x（稳定性期）
+- **v3.3.14**（6af4e530）：后台保障链移植（阶段 1/3）——AlarmManager 双通道 + 设备闹钟 + 电池工具 + DB migration 26
+- **v3.3.13**（3b22848c）：Required SETTINGS preface 修复——sanitizeToolCallSequence 循环内每步调用 + 移除所有未配对 tool_call
+- **v3.3.12**（5ff81bde）：缓存逻辑整体回滚到 2.4.5 移植前
+- **v3.3.10-11**：工具域分类管理 UI 修复（工具池对齐/统一分类/幽灵域清理/skill 显示）+ Skill 计入工具统计
+- **v3.3.8**（5fd777f6）：16 bug 全量修复——域管理原子化/move 校验与 skill 挂载/skill 体系修复
+- **v3.3.6**（aa4b0a30）：消息序列清洗 + skill-MCP 统一到 invoke_tools + 缓存稳定；system 完全静态化（移除 use_skill 动态注入）
+- **v3.3.7**（35182bfe）：审批死循环修复 + UI 合并
 
-## v4.0.2（Office/PDF 文档预览 + 澎湃 OS 4 动效统一，2026-09-05）
-- 文档预览（零新依赖）：DocumentPreview.kt OOXML 纯解析（docx 段落/pptx 按页分节/xlsx sharedStrings+行解析/epub），SAX 流式+XXE 防护+200KB 截断；PDF 用内置 PdfRenderer 渲染前 3 页位图+页数提示；旧版二进制（doc/ppt/xls）引导外部打开——该类型不支持预览 问题消除
-- 澎湃 OS 4 动效基建（HyperMotion.kt）：HyperMotionSpec 弹性 spring（damping 0.85/stiffness 380 柔和回弹）+HyperGlassPanel 柔光玻璃（半透明表面+白高光描边+24dp 圆角）+HyperDialog 弹窗统一入口（入场 fade 220ms+scale 0.92→1 弹性）+HyperFullPanel 全屏玻璃面板
-- 全局替换：RikkaConfirmDialog 换壳 HyperDialog（签名对齐 M3 Composable lambda，9 文件调用方零改动）；WorkspaceDetailPage 4 个 AlertDialog+预览 Dialog → HyperDialog/HyperFullPanel
-- 编译教训：HyperDialog 签名必须与 M3 AlertDialog 一致（title/text 是 Composable lambda 非 String）；ColumnScope.PdfPreviewPages 扩展 receiver 解决 weight 作用域
+## v3.2.x（移植前稳定期）
+- **v3.2.2**（7bcc022b）：域分类引擎白板化 + 域变更事务化 + MCP 硬前缀映射——【传输层回滚基线】
+- **v3.2.0**（616af07b）：F1 根因修复——MCP 动态工具注入全链路
 
-## v4.0.1（426 报错修复 + 原版 2.4.17 全量适配移植，2026-09-05）
-- Bug 修复: ClaudeProvider/ChatCompletionsAPI onFailure 5xx 转 IOException 进重试链（HttpException 是 RuntimeException 重试链不捕，qwen3.8-flash 网关 500 无重试终态失败）；4xx 保持直接报错
-- 工作区图片缩略图（原版移植适配）: resolveFile 链（Manager→Repo→VM）+ 卡片 40dp coil 缩略图；适配 detectFileType→扩展名（共享 PREVIEW_IMAGE_EXTS）/updatedAt→sizeBytes/保留 onPreview 链
-- OpenCode 兼容综合: v3.20.0 已实现更严格版本（非会话请求不发），不重复移植；ModelRegistry 注册 GPT_6
-- 备份体系重构（原版移植适配）: BackupManager+DatabaseBackup（VACUUM INTO+integrity_check）+PendingRestore（journal 原子安装+回滚）+SQLiteConfiguration+AppDatabaseFactory 提取；适配 persistSettings 字段清单按 RinCore 全字段生成（原版缺自研字段会丢配置）/settingsFlow→settingsFlow；RikkaHubApp 启动前恢复（runBlocking(IO) 数据一致性刚需）；S3/WebDav -600 行复制粘贴
-- 搜索按助手过滤: FTS EXISTS 子查询+SearchVM scope 重构+分段按钮+6 语言
-- 选择器兼容: PickVisualMedia→GetContent/GetMultipleContents（厂商兼容）；代码导出 wt+UTF8+IO；记忆页去 #id
-- 顺手修历史遗留: toolNameOverrides 持久化键 TOOL_NAME_OVERRIDES 未定义（settings 有字段但写盘即丢）
-- 移植教训: 原版 persistSettings 字段清单照搬会丢自研配置；测试文件需核实原版 tag 真实存在（git show 失败重定向会造空文件）
+## v2.9.x（缓存优化期）
+- **v2.9.5**（43cf1b47）：缓存锚点 + 注入隔离（BEFORE_SYSTEM_PROMPT 变独立 user 消息——引入 SETTINGS 协议违规的根源，v3.4.5 修复）；system prompt 缓存优化（53780f85）
+- **v2.9.4**（97faaa9a）：5 工具入域管理 UI + system prompt 瘦身（分层模式仅注入框架工具 systemPrompt）+ 五工具归域 + Skill 开关 + 动态域注入
 
-## v4.0.0（重写工程全量完成 — 四模块屎山削除，2026-09-05）
-- 模块1 GenerationHandler 重试链: 135 行嵌套 catch → RetryPolicy.kt 策略对象 (129 行); RetryState 纯计数器
-- 模块2/3 watchdog 三阶段跨族统一: ChatCompletionsAPI 与 ClaudeProvider 各 ~60 行逐字复制的状态机 → WatchdogPolicy.kt (94 行) StreamWatchdog 单一实现双族共用; 2013 降级判定 → MinimalBodyRetry.shouldDegrade 收敛
-- 模块4 思考控制分派提取: CC 185 行 host 分派 when 内联 → thinkingControlFields 纯函数; Claude thinking 家族三态 → thinkingField 纯函数
-- 削减效果: GenerationHandler 78→71 处标记 (1326→1270 行), ChatCompletionsAPI 57→49 (1475→1430), ClaudeProvider 31→26 (957→923); 策略逻辑全部收敛至两个独立策略文件 (224 行)
-- 行为等价: 全部重试数值/closeMsg 文案 (重试链判据输入)/thinking 分派映射/2013 判据逐字保留
+## 版本号/versionCode 对照（近期）
 
-（以下为模块1 首发记录）
-- 屎山现状: streamLoop catch 链 IOException 分支 135 行嵌套, 策略数值硬编码散落 (4/500L×n/18/6/300L/1000/2000/4000), 状态算术内联, 终态清理代码重复 4 次
-- 重写产物: 新文件 RetryPolicy.kt (129 行) — RetryPhase 密封类 (Init 4 次线性退避/Stream 三轮链 18 次, 封装配额与推进) + StreamFailureClassifier (嗅探判据收敛) + RetryDecision (统一 Retry/Abort 决策); GenerationHandler catch 链 135 行 → 42 行职责原语; RetryState 瘦身为纯计数器
-- 行为等价保证: 全部策略数值逐字保留 (4 次/0.5s×n/header 判死不 delay/18 次/风暴 300ms×3/经典 1-2-4s), 全部用户可见报错文案逐字保留, 自动重试开关拦截语义不变
-- 后续模块 (未动手): ChatCompletionsAPI 1475 行 57 处 (watchdog 三阶段), ClaudeProvider 957 行 31 处
+> v4.8.x 起 versionCode 锁定 9999（只递 versionName）；完整版本-SHA-日期对照见 FULL_HISTORY.md。以下为旧表（历史存档）：
+| 版本 | versionCode | 提交 |
+|------|:---:|------|
+| v3.5.1 | 162 | 10a62b5d |
+| v3.5.0 | 161 | 5dacddfd |
+| v3.4.10 | 160 | d2cf333a |
+| v3.4.9 | 159 | 40f941ca |
+| v3.4.8 | 158 | ee79b24b |
+| v3.4.7 | 157 | 9e71dfb6 |
+| v3.4.6 | 156 | 0029f256 |
+| v3.4.5 | 155 | 011d0692 |
+| v3.4.4 | 154 | 3647bb07 |
+| v3.4.3 | 153 | b7061b06 |
+| v3.4.2 | 152 | 1561747f |
+| v3.4.1 | 151 | 13a2ab89 |
+| v3.3.14 | 150 | 6af4e530 |
+| v3.3.13 | 149 | 3b22848c |
+| v3.3.12 | 148 | 5ff81bde |
 
-## v3.22.2（A17/澎湃OS 4 定向 FGS 防护，2026-09-05）
-- FloatingNotificationService.onTimeout: specialUse/dataSync FGS 系统超时（A14+ 引入，A17 严格执行）优雅降级 stopForeground(DETACH) 保留进程，杜绝生成中途被强杀断流
-- onTaskRemoved: 划掉应用卡片记录现场（HyperOS 4 cached 进程压缩排查锚点）
-- 达标确认: WakeLock 15min 兜底/精确闹钟权限引导/全库无 setThreadPriority（A17 Java 层越界校验无风险）/targetSdk 37
+## 移植状态（fork 三功能）
+| 功能 | 状态 |
+|---|---|
+| 后台保活（AlarmScheduler 双通道 + SCHEDULE_EXACT_ALARM + 电池优化引导） | ✅ 阶段 1（6af4e530） |
+| 权限自动发现（PermissionInventory + SettingPermissionsPage + BatteryTool） | ✅ 阶段 2（89fbf274） |
+| 工作流（WorkflowEngine + 触发器 + DB + MCP 工具） | ⚠️ 阶段 3 未完成（执行层/UI/MCP 集成未做） |
 
-## v3.22.1（工作区文件预览点击无反应修复，2026-09-05）
-- 根因: WorkspaceFileCard 调用点未传 onPreview，签名默认空 lambda 编译通过但点击执行空操作（用户判断"导向问题"正确）
-- 上轮 v3.22.0 补参断言失败后未回验传导链的遗漏；修复后链路五段自检全通
-
-## v3.22.0（用量数据链统一 + 工作区文件预览 + 多文件上传，2026-09-05）
-- 数据链统一（用户定版：CC 数据按 OC 模式解析，二者零差别，唯一变化=数据从哪个 API 来）：新增 toOcShape 转换（CC 结果在数据入口转为 OC UsageResult 形状），OC/CC 同入单一 usages map；下游全部去族化（focalOC/focalCC 双族抽象删除→单 focal，CC 大窗专用代码块删除统一走 OC 大窗，cards 焦点卡统一，otherVisible/error 判定/失败统计全从统一 map 取）；crossUsages state 与双族渲染引用全删——密钥加入顺序对渲染零影响
-- 工作区文件预览：文件菜单新增预览（第一项）；图片扩展 → ZoomableAsyncImage 缩放（对话页同款），21 种文本扩展 → 等宽滚动显示（200KB 截断），解析中 loading，不支持类型显示大小；VM.openPreview 复用 shareFile 缓存拷贝链（Page 传 context.cacheDir）
-- 多文件上传：OpenDocument 单选 → OpenMultipleDocuments 多选，循环导入
-
-## v3.21.0（CC 焦点大窗同构重写 + 点击编辑取消 + Transformer 链隔离，2026-09-05）
-- CC 焦点大窗: 按用户指示完全对齐 OC 焦点窗同构 (4 个独立 item 块替代 items(4)+when, nearestReset 同款最近窗口计算); 渲染分支入口加 UsageView 诊断日志 (branch/mode/双族判定/两 map 大小), 复现一次日志即实锤实际分支
-- 点击呼出编辑取消 (用户定版: 编辑走长按菜单), onUserMessageClick 置 null
-- Transformer 链异常隔离 (技术债高危): fold 无隔离致单个 transformer 内部 bug 炸整条生成链; 链级 runCatching 降级跳过 + processingStatus 用户可见 + CallTrace 记录; visualTransforms 同样隔离
-- 时间系统核查: app 内时间链路正确 (createdAt 存本地墙上时间+显示同源); 对不上的是 workspace 沙箱时钟 (UTC 差 8h), 属工具环境限制
-
-## v3.20.0（x-opencode-session 自动注入 — OpenCode 官方 09/06 强制，2026-09-05）
-- OpenCode 官方邮件: 缺 x-opencode-session 头的请求 09/06 起可能报错, 要求每会话一个稳定 ID
-- 实现 (自动生效非 opt-in): generateText +conversationId 参数 (默认 null 零破坏) → params → ChatCompletionsAPI 两处 Request 的 sessionHeader 扩展, 仅 host==opencode.ai 且 ID 在场时注入; ChatService 主对话传 conversation.id (会话 UUID 稳定); 标题/建议/翻译等单轮调用不传不发
-- v3.6.80 曾全局删除该头 (疑似 grok 400), 现按 host 精确判定恢复, 官方语义反转
-
-## v3.19.0（CC 焦点大窗 + AskUser 开放输入框 + 渲染放宽 + 报错敏感，2026-09-04）
-- CC 密钥焦点模式不显示完整形态: 根因=数据分支只认 usages[apiKey] (OC), CC 结果在 crossUsages, CC 聚焦时 focal 分支恒缺失; 修复=焦点数据双族统一 focalOC/focalCC, focus 大窗新增 CC 四环, cards 焦点卡按族选 mini 卡, error 判定双族
-- AskUser 默认开放输入框 (用户定版): 恒显示 补充说明 可选框, 提交并入顶层 followup 字段 (模型解析兼容), answered 态显示
-- 本地图片渲染放宽: 扩展名白名单拒绝删除, 全部尝试解码失败落占位符; mime 补 heic/avif/svg, 未知扩展 image/* 嗅探
-- 报错敏感性: 用量查询部分密钥失败不再静默 (error 追加 OC/CC 失败张数); cache-fp 诊断 catch 加吞错标注
-- 消息点击编辑: 链路核实完整 (Surface onClick → onEdit), 无需改动
-- 技术债标注: GenerationHandler/ChatService/ChatCompletionsAPI/PreferencesStore 四核心文件审计头
-
-## v3.18.0（用量页焦点视图重构 + 密钥统一保存收口 + 导出 ANR 修复，2026-09-04）
-- 焦点视图矩阵: 渲染完全由 usageViewMode 决定与 otherVisible 解耦 (旧实现其他密钥用量全满被滤空时 cards 模式错误落入大窗分支); cards=焦点小卡+其他小卡, focus=仅焦点密钥完整形态 (竖列大窗)
-- 密钥统一保存收口 (用户定版: 密钥就是密钥不分族): UsagePage LaunchedEffect 兜底 — 当前 key 不在卡包自动收编, 根治备份恢复/迁移等单槽路径的概率性漏保存; UI 文案全部去族化
-- 技术债扫描修复: SettingCallTracePage 导出链 runBlocking+file IO 在主线程 (日志大时 ANR) 协程化; 审计达标: GenerationHandler/ChatService 无主线程阻塞, ChatCompletionsAPI eventSource 生命周期正确
-
-## v3.17.0（强兼容完全独立 Cherry 路径 + CC 长保活池 + 预热池错配修复，2026-09-04）
-- 强兼容重构: 新增 buildMessagesCherry 独立构造路径 (assistant reasoning 一律不回传/纯 reasoning 整条跳过/tool 四要素无 name/空 content+tool_calls → content:null); 常规路径全部还原 (v3.16.0 穿透参数全撤), 调用处 if/else 分流, 开关两态互不可见
-- CC 长保活池: v3.13.4 CC 预热进默认池 keepalive 60s, 60 秒后连接被 OkHttp 回收 = 预热白做; effClient 将 api.commandcode.ai 同入 opencodeClient 300s 池 (对齐 OpenCode); warmWithOkHttp 长池判定 + RikkaHubApp/ChatService 四处预热调用传参同步修正
-- 预热核查: OpenCode 链 (启动 warmWithOkHttp → GET /models 真实请求 → 300s 池) 落实; CC 链动作真实但此前进错池, 本次修复; 消息时定向预热与裸 socket DNS 兜底独立正常
-
-## v3.16.0（强兼容模式 + User Agent 方向移除 + 基础链路审计，2026-09-04）
-- 强兼容模式: NetworkSetting.cherryCompatMode (持久化, 网络页首位开关, 默认关) → TextGenerationParams.cherryCompatMode → ChatCompletionsAPI 分支。开启后请求体对齐 Cherry Studio/AI SDK 极简形状: ①reasoning_content 不回传 (纯 reasoning assistant 自然跳过) ②tool 消息去 name 字段 ③空 content+tool_calls → content:null ④思考控制整体停用 ⑤常规模式行为零变化
-- User Agent 方向移除: 网络设置页 UA UI 整块删除、DataSourceModule 两处 interceptor UA 注入删除、v3.9.13 空 UA 检查空壳清除; NetworkSetting.userAgent 字段保留仅作 DataStore 反序列化兼容; 工具 fetch UA (RinCore/3.6) 与 CC 查询 UA (commandcode-cli) 属功能标识保留
-- 基础链路审计: buildChatCompletionRequest 逐字段核对 (model/messages/temperature/top_p/max_tokens/stream/stream_options/tools/tool_choice) 全部合规; 非兼容风险点 (reasoning_content 回传/name 字段/thinking 字段) 已由强兼容模式统一覆盖
-
-## v3.15.4（CC 思考分支简化 — B117 回归修复，2026-09-04）
-- CC 通道关思考无法建连、整个思考模块炸: v3.15.2 发的 thinking 字段被网关拒绝 (Bifrost 类 DeepSeek provider 不认识 thinking; claude 子分支永不命中 — CC 严格校验模型-端点配对, claude 发 chat/completions 直接 400 wrong endpoint)
-- CC 分支简化为纯 reasoning_effort: AUTO 不发 / OFF→low (v4-flash 最低档, CC 无 none/minimal) / low|medium→low / high→high / xhigh|max→max
-
-## v3.15.3（file:// 点击崩溃根治 + 偶发无响应，2026-09-04）
-- FileUriExposedException 主线程崩溃: 模型输出 file:// 链接 (xlsx 等) 被 Compose 默认 handler 直通 Intent.setData → StrictMode 判死。四处 markdown 链接点击统一拦截 → openWorkspaceLink → resolveAnyFile (新增, 不限图片扩展名) → FileProvider content:// → ACTION_VIEW
-- 偶发发消息无反应: v3.15.2 非 DeepSeek 家族 OFF 发 reasoning_effort:none 原样, 强制思考型模型 (GLM-5.3 mandatory) 与部分后端 none=400/空响应 → OFF 语义改 minimal (Bifrost 全档支持)
-
-## v3.15.2（思考程度控制修复 + host 前缀适配，2026-09-04）
-- 思考不可调三重根因: ①REASONING 能力门槛吞参数 (聚合网关放行) ②OpenCode 非 DeepSeek 家族静默跳过 (v3.11.8 防 400 副作用, 补 reasoning_effort 原样发送) ③CC api.commandcode.ai 落 else 分支 OFF→low 假关 (新增 CC 分支: deepseek→thinking+effort / claude→thinking{type,budget_tokens} / 其他→effort 原样); 清理 v3.6.80 opencode 死分支
-- workspace host 前缀适配: [file://]/data/data|user/0/<pkg>/files/workspaces/<UUID>/files/<rel> 归一化为 /workspace/<rel> (教训固化: proot 与 host 渲染端互不可见, /data/user/0 symlink 别名等价归一)
-
-## v3.15.1（突然中断无重试 + 缓存骤降双修，2026-09-04）
-- Bug1 突然中断无重试: isInitPhase 判据 retry.stream==0 把输出中断流误判为发起阶段 → init 池 4×25s=100s 全静默终报, 三轮链没机会跑; 且类成员计数在子代理并发时互相偷预算
-- 修复: RetryState per-request 局部对象经参数传入 generateInternal + receivedAnyData 置位 (collect 内 chunk.choices 非空即置位) + 判据改为 receivedAnyData==false 才是发起失败 — 输出中断一律走三轮链
-- Bug2 缓存 90%→0: currentMcpTools 每步实时拉取, MCP 连接波动时 tools JSON 抖动 → DeepSeek 前缀缓存每步全灭 (缓存键含 tools 序列)
-- 修复: MCP 工具会话内快照 + DynamicTools.isDirty/markMcpDirty 置脏刷新 (manage_mcp_servers 功能保留)
-
-## v3.15.0（原版 2.4.16 定向移植，2026-09-03）
-- 8 项中 6 项移植: 气泡透明度 roundToInt / HTML-SVG 默认不预览 / 快速模型思考级别+移除标题建议模型 / 自动重试开关 (NetworkSetting.enableAutoRetry) / PickVisualMedia 图片选择 (对齐原版只迁 image) / TTS 稳定性 (TtsController 重构+TTSProviderException+倍速移常规页)
-- 2 项跳过: Gemini 混合工具 (upstream 已拆 google/ 子目录, RinCore 单文件结构前提不存在) / 硅基流动余额移除 (RinCore 自研 provider 集合无此对象)
-- 方法论: 先分清基准 (upstream 4309fdfe 终态符号集合对照) 再整体交织, 不追编译错误
-
-## v3.14.0（断流重试统一三轮链，2026-09-03）
-- 用户实证: 纯文本输出中途卡几十秒, 极少数恢复多数彻底卡死 — 多链并行恢复混乱
-- 重构为用户定版三轮链: 每轮=风暴 3 次×300ms + 经典 3 次 (1s/2s/4s, 对齐原版 2.4.16 指数退避), 共 3 轮 18 次, 总窗口 ≈26s 必有终报
-- 废弃: watchdog 单次恢复 / headerRetry 4 次流中分支 / 风暴 15×500ms 三分支; 发起阶段 4 次独立池保留
-- CC 图片根治 (v3.13.3-7 迭代): 最终方案 = tool result 图片重定位 (图片在 Tool part.output 里非 TOOL 消息), 对齐 AI SDK 标准行为
-
-## v3.13.3（Command Code 图片兼容适配，2026-09-03）
-- 根因: CC 网关严格校验 ChatCompletions 图片 — GIF data URI 被拒 / 编码失败发空 text 块被拒 → Invalid input → 发起重试 4 次 = 无报错硬等卡死；OpenCode 网关宽容 + Cherry Studio 统一转 JPEG 所以正常
-- CCImageCompatTransformer (CC 专属 opt-in): JPEG/PNG/WebP 放行, GIF/HEIC 等转 JPEG 静态帧, 不可解码剔除+文本备注, 绝不发空块
-- 双重生效: 设置开关 ccImageCompat && key user_ 前缀; 设置-偏好-网络独立开关组; DataStore 两端接通
-
-## v3.13.2（时间进制 + 跨族统一小卡 + CC 小卡第四环，2026-09-03）
-- countdownText 进制对齐: 24h 进位天、7 天进位周 (同 OpenCode formatRemaining); UsageCards.formatRemainingMs 统一
-- 卡片视图跨族密钥可见: 新建 UsageCards.kt (UsageMiniCardData 四环 5h/周/月/重置), 两页 doQuery 按 key 前缀分流存 crossUsages, otherVisible 合并本族+跨族
-- CC KeyCard 补第四环"重置" (红→绿反向), 恒显四环; 两页 KeyCard 签名统一 MiniCardData
-- 编译失败三连教训: 局部变量先声明后用 / 改签名全局 grep 调用点 / fetchUsage 可空 mapNotNull 过滤 / patch assert 失败静默中断需独立小脚本
-
-## v3.13.1（planId 提取容错 + 多级授信匹配，2026-09-03）
-- planId 三级回退: data.planId → 顶层 planId → data 本身是字符串
-- 授信多级: 精确 → 包含匹配 (最长 key, goat_v2 命中 goat) → 月度剩余"最近不足档"反推; percent clamp 0-100
-- 诊断自证: 未匹配时 UI 副标题显示真实 planId 原文, 日志打 subs 原文前 300 字符
-
-## v3.13.0（月度总额授信语义修正 + 缓存连接巡检，2026-09-03）
-- 月度"目录不匹配"根因: 三重校验过度设计 (官方积分滚存永不过期, 剩余超月度池合法) → 改授信语义: planId 命中即显示总额与百分比; cap 锚点降级日志警告
-- 缓存/连接巡检全绿: 重试三池请求级重置 / 幂等缓存函数局部 / workspace cache key mtime+size / 预热节流 host 60s / 连接池 12x60s+长保活 12x300s / CC 生成走 claude 池
-
-## v3.12.8（预热开关落盘 + 月度已用百分比 + 重置卡红→绿，2026-09-02）
-- 预热开关重启丢失根因: 只在 Settings 数据类定义, DataStore 两端都没接 (纯内存字段); 补齐键定义+流恢复+updateSync — 教训: 新增设置字段必须同 commit 接通两端
-- 月度已用百分比宽松回退 (目录总额算已用比例, 不再 0%)
-- 重置倒计时颜色定版: 与用量卡反向 红→绿 (环+文本同色, CC+OpenCode 双侧)
-
-## v3.12.7（CC 展示完全对齐 OpenCode，2026-09-02）
-- CC 单密钥四卡复刻 UsageRingCard 竖列布局: 顺序 5h→周→月→重置倒计时最下, 环 64dp 上名字下重置时间, 四卡恒显
-- bottomText 合并剩余数量+重置时间; 重置卡时段标注式; 多密钥 MiniRing 渐变统一; 空壳 item 嵌套修复
-
-## v3.12.6（双预热开关化 + CC 第四卡 + 预热节流，2026-09-02）
-- 设置-偏好-网络"密钥预热"组: OpenCode/Command Code 两独立 Switch (默认关); ChatService 按开关分流
-- warmWithOkHttp 60s 节流; 定向预热变慢根因 = 同 key 并发预热+生成被服务端串行化 → opt-in
-
-## v3.12.5（user_ 分流决定性修复 + 全密钥渐变 + CC 专项预热，2026-09-02）
-- 分流决定性 bug: 判据 startsWith("User") 大小写敏感, 真实 key user_ 永不命中 → 一直查 OpenCode 端点必然失败; 修复 ignoreCase=true
-- 渐变配色升级全密钥默认: OpenCode 四卡+MiniRing 全接 usageColorArgb; 重置倒计时红→绿 (后 v3.12.8 定版反向)
-- ChatService CC 专项预热 (v3.12.6 开关化)
-
-## v3.12.0（对话发起与连接稳定性定版，2026-09-02）
-- 发起阶段优化定版: header 判死 15s→25s (ClaudeProvider+ChatCompletionsAPI 同步, 吸收网关冷启动 10-20s 单窗口直接成功) + 重试 15→4 次封顶 (4x25s+退避≈110s 快速终报, 旧 225s)
-- 退避分级: 前 2 次 800ms (瞬时挂起快速恢复), 3 次起 2s (持续不可达不连续怼)
-- 预热请求短超时 clone (connect 4s/read 6s, 同池): 死网关时预热线程不再按主 client 3min readTimeout 挂死
-- keepAlive 60s 维持 v2.9.8 定版 (DeepSeek 空闲关闭快, 拉长撞陈旧连接 → unexpected end of stream)
-
-## v3.11.35（子代理统计补齐 + 发起重试重写，2026-09-02）
-- 子代理三路径 (成功/超时/失败) 填充 tokensIn/Out + tripCount; harvestTripCount = 会话内 assistant 消息数 (此前 tripCount 恒 0)
-- 详情卡耗费统计: tokens in/out + 合计 (账单口径)
-- 发起重试重写: header 判死 25s + 4 次封顶 (见 v3.12.0)
-- 教训: v3.11.30 成功路径填充块因脚本中断未落盘 (统计恒空的根因)
-
-## v3.11.34（show_image 下线 + 输入条透明修复，2026-09-01）
-- show_image 工具删除 (被 workspace:// 内联渲染取代); 注册点 ToolInvocationContext+LocalTools 两处; 历史调用卡回退通用渲染
-- 输入条透明 bug: Surface color 与 hazeBlur modifier 条件必须同源 (enableBlurEffect && !loading), color 单看 enableBlurEffect 时生成中透明
-
-## v3.11.33（用户图片空白修复 + 重试计数残留根治，2026-09-01）
-- ZoomableAsyncImage 回退分支式布局: Box+matchParentSize 在无宽度约束场景 (clip+height(72dp)) 塌缩空白; 失败态/正常态共用同一 modifier 直挂显示组件
-- GenerationHandler headerRetryCount 请求级重置 (Koin single 类成员跨请求残留, 2-3 秒报"15 次"物理不可能=残留铁证); header retry 日志带 elapsed
-
-## v3.11.32（workspace:// 渲染死点修复，2026-09-01）
-- 真实死点: resolver 转发路径须带 "/workspace" 前缀 (ROOTFS_WORKSPACE_DIR 常量), 直接传 rel 会 fallthrough 到 linuxDir 必然 not_found
-- show_image detail 插值事故修复 + 失败环节分级文案; file:///workspace/ 三斜杠支持; workspace:// 失败渲染 alt+占位框
-- 外部测试模型"跨进程/桥通信"结论被证伪: 单进程架构, PathSafetyGuard 策略文案≠内核权限
-
-## v3.11.31（workspace:// 图片内联渲染首版，2026-09-01）
-- 纯函数 resolver (三前缀/宽松 percent-decode/UTF-8 中文/.. 折叠穿越拒绝) + WorkspaceManager.resolveRootfsFileSafe (复用 resolvePath 内建 canonical 防逃逸)
-- Coil3: WorkspaceUriKeyer (mtime+size cache key, 覆盖更新即新图) + WorkspaceImageFetcherFactory (扩展名白名单, ImageSource(path,fs) 直读 rootfs)
-- coil3.5 API 口径: coil3.key.Keyer / ImageSource(path, fileSystem) / Path.toPath(); matchParentSize 是 BoxScope 成员不 import
-- 磨砂生成期降级: loading 时输入条 hazeBlur → 半透明纯色 (静止恢复)
-- WorkspacePathResolverTest 单测 (R 系列用例)
-
-## v3.11.30（task_tool 压测 + 熔断双条件 + token 统计，2026-09-01）
-- task_tool 22 条压测修复 (响应轻量化不回显清单 <1KB, UI 从 input.tasks 解析)
-- 复读熔断误杀修复 = 双条件: 全文重复 >=4 且 repetitionTailCount 尾窗 768 内近邻 >=3
-- GenerationHandler idempotentCache: 同工具+同参数重放返回上次结果, 不占 TOOL_SAME_TOOL_CALL_LIMIT 预算
-- 子代理 token 统计 harvestTokenUsage (账单口径)
-- CI 失败教训: 多文件 python patch 中断丢整段 (success fill 漏提交, harvestTokenUsage 函数体 v3.11.31 补)
-
-## v3.11.29（子代理运行记录 Room 落盘，2026-08-31）
-- sub_agent_runs 表 + SubAgentRunDao; 启动恢复 restoreFromDisk; 遗留 running/pending 标记 FAILED(process_lost)
-- Migration_28_29 手写 (schema 28.json 缺失时 AutoMigration 不可用)
-
-## v3.11.28（派发/执行解耦，2026-08-31）
-- dispatch() 不再 join: 前台/后台统一异步派发, 立即返回 run id + pending; 终态由 subagent_get 轮询
-- subagent_* 工具卡恢复显示 (与普通工具一致)
-
-## v3.11.27（子代理清理 + prompt 隔离，2026-08-31）
-- notifyParentIfBackground 移除; ConversationDAO 全列表排除子代理会话; 子代理 skipAssistantPrompt 跳过用户 system prompt
-
-## v3.11.26（Cherry Studio 任务功能延伸 + 加号面板改造 + 子代理展示收敛，2026-08-31）
-- task_tool 推进反馈 (sequential-thinking 风格) — 每次调用返回 {tasks, progress, hint}，hint 给下一步指引（单 in_progress 规则 / 全部 completed 交付 / 空转纠偏）
-- 加号面板下方新增四快捷入口行（BigIconTextButton 与上方网格式对齐）：
-  - 子代理详情 (AiBrain01) — 显示当前对话派发子代理列表、运行中计数、token/轮次/耗时、结果内显、停止按钮
-  - 模型记忆 (Book02) — 直接路由 Screen.AssistantMemory（无顶部4选项卡）
-  - 工作区目录 (Folder01) — 原底部文件夹入口迁入此处收纳
-  - 上下文条数 (BubbleChatQuestion) — 显示 conversation.messageNodes.size（ContextCompressor 按条数压缩的可视化参考）
-- 子代理统一展示窗口：ChatMessage.kt 过滤 `subagent_*` 工具调用 — 消息列表不再散落子代理过程，所有子代理信息汇聚到 SubAgentDetailSheet
-- SubAgentStatus 枚举对齐：PENDING/RUNNING/SUCCEEDED/FAILED/TIMED_OUT/CANCELLED；状态色按运行→tertiary、完成→primary、失败/超时→error
-- 修复：SubAgentDetailSheet 原双 else 语法错误；FilesPicker 删除原单独工作区按钮避免功能重叠
-
-## v3.11.25（Cherry Studio 任务清单 + 工具卡语义化折叠标题，2026-08-31）
-- 新框架工具 task_tool — TodoWrite 全量清单模式；清单存 tool output 随会话消息持久化，零 DB，跨轮可见
-- schema: tasks 数组，每项 {id, title, status: pending|in_progress|completed, activeForm}；执行时校验 id 唯一/title 非空/status 合法
-- systemPrompt 引导模型"多步任务先建清单；一次只一个 in_progress；完成即更新；全 completed 才交付"
-- TaskToolUI 任务卡片 — 折叠标题"任务清单"，展开渲染清单行（✓/◐/○ + 进行中描述 + activeForm）
-- DefaultToolUIRenderer 按 Snake name 动词映射语义化折叠标题 — "写入文件"替代"写入 /path/to/file.json"；完整路径留展开详情
-- FRAMEWORK_TOOL_SET 新增 task_tool，不参与视图统计；TaskToolUI 注册到 ToolUIRegistry.renderers 列表第 1 位
-
-## v3.11.24（四故障深度修复，2026-08-31）
-- F1 记忆写入健康门 (memoryHealthCheck: 4000c/时间锚断言/重复度) + buildMemoryPrompt 渲染过滤 + TimeReminder 幂等收窄
-- F2 思考工具四道协议门 + 同工具累计连调 >6 次物理拦截
-- F3 流式复读熔断 (repetitionSampleCount 384 字符粒度 → ClientGenerationGuardException)
-- D STREAM_RETRY_BUDGET_MS 10s→45s ("重试 1 次后仍失败" 假终报根治)
-
-## v3.11.23（原版 2.4.15 全量移植，2026-08-30）
-- MCP OAuth 架构重写 (:oauth module/loopback 回调/DiscoveryClient/Coordinator 重写)
-- 文件清理时间范围 (CleanRange 7/14/30/ALL BottomSheet)
-- Gemini 云端+本地工具并存 (tools 数组合并)
-- tool-only 消息操作按钮修复 (isEmptyUIMessage Tool→false)
-- 输入栏折叠动画随上游回滚; 依赖矩阵对齐 (m3 alpha27/okhttp 5.5.0/sqlite-vector 1.0.0/删 nav2)
-
-## v3.11.22（渐变背景卡死根因治理，2026-08-30）
-- 故障真因：hazeSource + drawWithContent 包裹下 rememberInfiniteTransition 不被唤醒；帧时钟驱动方案均失效
-- v3.6.82 砍动画的理由（GPU 满载/静态卡顿）在当前环境被证伪
-- 修复：整文件零增删替换为原版 RikkaHub HEAD MeshGradientBackground.kt，恢复 rememberInfiniteTransition + Canvas 逐帧绘制
-
-## v3.11.21（光团动画校准 + 图标差异化，2026-08-30）
-- 光团动画参数整文件对齐原版 RikkaHub HEAD：四周期 5.5s/7s/8.5s/6.2s，四中心正上 0.48w/左上 0.18w/右上 0.82w/中上 0.58w
-- 图标差异化：偏好设置 (CursorPointer01) / 能力模块 (Agent Skills 保留 Puzzle / 插件改 Package) / 工具域 (分类管理→Sorting01 / 内置工具→Tools)
-
-## v3.11.21 之前的历史版本详情
-
-> 完整历史记录保留于 `.claude/skills/rincore-changelog/legacy-changelog.txt`（如需查阅历史某版本）。
-
-## 历史教训（防重踩——每次改动前必读）
-- **产品线**：v3.8.44-45 曾建 WaterHub B 类产品线（flavor 拆分），用户 3.9.1 令废弃回滚——只保留 A 线 RinCore 单产品构建。教训：未与用户对齐的产品线扩张立即废弃，勿自行推进
-- **功能界线**：用户只要求移植的功能就只移植，不自作主张附带其他功能（v3.8.44 附带工具入口/漂浮字幕被要求全量回滚）
-- **limitContext 滞回策略 ↔ 缓存**：v3.3.0 引入（2.4.5 适配）→ v3.3.5 回滚（**缓存机制报废**）→ v3.3.12 确认回滚。函数仍在 Message.kt 但未启用（无 contextMessageSize 字段）——**勿重新启用**，启用即破坏缓存前缀
-- **缓存锚点/注入隔离**：v2.9.5 注入隔离（BEFORE_SYSTEM_PROMPT 变独立 user 消息）引入 SETTINGS 协议违规 → v3.4.5 修复——**协议合规 > 缓存边际收益**
-- **DeepSeek Responses reasoning**：3.5.4~3.5.6 猜测性修复全废（服务端格式不成熟）→ 3.5.7 按官方协议（明文 content）→ 3.5.8 工具轮相邻 assistant 消息 → 3.5.9 起搁置（等官方更新）
-- **工具执行无超时**：3.5.9 withTimeout 60s 兜底——工具挂起不永久阻塞生成
-- **缓存"卡-跳-线性"**：DeepSeek 服务端磁盘缓存机制（构建延迟秒级+固定间隔切分+SWA 独立单元）——客户端不可控，已入库 decisions D2
-- **消息渲染红线**：消息列表渲染链是历史严重事故遗留红线，绝对不可再动（只读不动，改文件渲染另走通道）
+## 版本线理顺（2026-08-03 深度审计）
+- **两轮循环**：第一轮 v2.9.x→v3.8.x（07-11~07-30 上午，已废弃）；第二轮 v3.2.0→v3.5.x（07-30 下午~今，当前）
+- **硬重置**：07-30 13:16 v3.8.0→v3.2.0（版本号复用）
+- **唯一可靠标识：versionCode**（全程递增，当前 164）——此后版本对照一律以 versionCode 为准
+- 分支：backup-bad-merge（第一轮存档）/ desk（Desk 面板）/ upstream-try（上游 2.4.5 适配试验）
+- **第三纪元（当前）**: 2026-09-05 起 v4.x 重写工程单线推进；v4.8.x 起 versionCode 锁 9999（只用 versionName 判定版本）；发布为 GitHub Release（build.yml，一推一建）。

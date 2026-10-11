@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=构建&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/版本-v4.8.116-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/版本-v4.8.121-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/许可-segmented_dual-cyan)](LICENSE)
 
 **手机上一个真正全面的 AI 助手。** 不是套壳，是一台重新打造过的引擎——背后是六周的高强度实测迭代与 400+ 个版本。
@@ -80,7 +80,13 @@ RinCore 处于活跃维护中，欢迎 Issue 与 PR。每一个被报告的问�
 
 ## 📋 更新日志
 
-v4.8.54 → v4.8.116（倒序）：
+v4.8.54 → v4.8.121（倒序）：
+
+- **v4.8.121** — 子代理回收器新增脚本轮询模式（wait_until_done：每 10 秒查询一次，完成即返回）；模型不再能自传超时（恒定 1800 秒上限），单助手并发子代理默认 7 个；新增「代码块内自动渲染」开关（HTML/JS/SVG 自动预览，可随时切回代码）；代码块上的横向滑动不再误触抽屉；羽毛「极简模式」开关已删除；抽屉露边条收紧为 40dp；新增「本对话产出」面板——点按模型产出的文件即可直接打开。
+- **v4.8.120** — 被 md/markdown 代码围栏包住的表格现在渲染为真表格（围栏解包逻辑移植自 OpenAI Codex）；支持 GFM 列对齐（:---:）；子代理默认超时提升至 1800 秒。
+- **v4.8.119** — Markdown/数学渲染升级：行内 $...$ 紧贴中文也能触发（"公式不渲染"的主因根修）；链接内嵌套内容正确渲染；表格单元格按行内 Markdown 直渲（不再重解析）；解析器回归测试加入 CI。
+- **v4.8.118** — 掐流识别 v2：证据化识别上游掐流（自动续写），无完成信号的网关正常输出零风险；修复 invoke_tools 懒加载池错绑焦点助手；运行日志按对话隔离，多对话并行不再互相串扰。
+- **v4.8.117** — 修复多对话同时生成时，失焦对话被掐断后不重试的问题（并行流登记 + 合成续长 + 假取消区分）。
 
 - **v4.8.116** — 修复浏览器工具导航后返回旧地址、旧标题（改为等页面真正加载完再返回）；修复打不开的页面仍报成功（现在返回明确错误码）；修复对 React/Vue 输入框填值无效（改用原生赋值 + input/change 事件）；修复打开页面与读内容同批并行时读空；新增 browser_wait_for_load 工具；截图改存工作区，沙箱可直接读取、对话里可直接显示。
 - **v4.8.115** — 修复工具生成图片的渲染地址在不同入口格式不一致的问题（全链统一为一种格式，解码只在一处做）；所有本地图片缓存加入文件修改时间，改图覆盖后立即显示新图。

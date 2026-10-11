@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=build&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/version-v4.8.116-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/version-v4.8.121-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/license-segmented_dual-cyan)](LICENSE)
 
 **A real, self-contained AI assistant on your phone.** Not a wrapper — a rebuilt engine with six
@@ -129,7 +129,13 @@ changelog entry and a regression guard. Optimizations keep coming.
 
 ## 📋 Changelog
 
-v4.8.54 → v4.8.116 (newest first):
+v4.8.54 → v4.8.121 (newest first):
+
+- **v4.8.121** — Sub-agent retrieval gained a script-polling mode (wait_until_done: checks every 10s and returns the moment the run finishes); the model can no longer pass a custom timeout (fixed at the 1800s ceiling), and per-assistant concurrent sub-agents now default to 7; new "auto-render in code blocks" setting (HTML/JS/SVG render as previews, switch back to code anytime); horizontal swipes on a code block no longer open the chat drawer; the feather "minimal mode" toggle has been removed; drawer edge gap tightened to 40dp; new "conversation output" panel — tap a file the model produced and it opens directly.
+- **v4.8.120** — Tables wrapped in md/markdown code fences now render as real tables (fence unwrapping ported from OpenAI Codex); GFM column alignment (:---:) is honored; sub-agent default timeout raised to 1800 seconds.
+- **v4.8.119** — Markdown/math rendering upgrade: inline $...$ math now triggers even when adjacent to Chinese text (the main cause of "math not rendering"); nested inline content inside links renders correctly; table cells render inline Markdown directly instead of a re-parse round-trip; parser regression tests added to CI.
+- **v4.8.118** — Stream-cut handling v2: evidence-based detection of upstream cuts (auto-continue) while gateways without end signals keep rendering normally; fixed the invoke_tools lazy pool binding to the focused assistant instead of the conversation's own; run logs are now keyed per conversation, so parallel chats stop contaminating each other's traces.
+- **v4.8.117** — Fixed background (unfocused) conversations being cut off and never retrying while multiple chats generate at the same time (parallel-stream registry + synthetic length continuation + fake-cancel distinction).
 
 - **v4.8.116** — Fixed browser tools returning stale URL/title after navigation (now waits for the page to actually finish loading); fixed unreachable pages still reporting success (now returns explicit error codes); fixed typing into React/Vue inputs having no effect (native setter + input/change events); fixed reads racing an in-flight navigation in the same batch; added the browser_wait_for_load tool; screenshots now land in the workspace — sandbox-readable and displayable inline.
 - **v4.8.115** — Fixed tool-generated images having inconsistent render-address formats across entry points (one canonical form, one decode point); local image caches now keyed by file mtime, so overwritten images show the new version immediately.

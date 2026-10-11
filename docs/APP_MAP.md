@@ -2,7 +2,7 @@
 
 > **给 AI 的读法**: 拿到本仓库先读本文件。它告诉你 — 每块代码在哪、干什么、
 > 用户提某类需求时改哪些文件、该问题历史上是否出现过。
-> 版本基线: v4.8.97 (2026-10-04)。大规模改动后请同步更新对应卡片。
+> 版本基线: v4.8.121 (2026-10-11)。大规模改动后请同步更新对应卡片。
 >
 > 配套历史知识 (必读): `.claude/skills/` 下 `rincore-project-brief`(架构基线) /
 > `rincore-changelog`(版本史) / `rincore-bug-record`(Bug 根因) /
@@ -49,7 +49,9 @@
 | `service/MessageQueue.kt` | 消息发送队列 (延时回复依赖) |
 | `service/ContextCompressor.kt` | 压缩留存量计算/推荐保留条数 |
 | `data/model/Conversation.kt` | 会话模型 (消息节点/压缩留存/系统提示词) |
-| `data/model/Assistant.kt` | 助手配置 (模型/参数/工具/MCP/CWD) |
+| `data/model/Assistant.kt` | 助手配置 (模型/参数/工具/MCP/CWD; v4.8.121: maxConcurrentSubAgents 默认 7) |
+| `ui/pages/chat/ConversationArtifactsSheet.kt` | 本对话产出胶囊窗 (v4.8.121: 写类工具产出清单, 点击直接打开) |
+| `ui/pages/chat/ChatDrawer.kt` | 会话抽屉 (v4.8.121: 露边条 64→40dp) |
 
 **数据流**: 输入 → `ChatVM.handleMessageSend` → `ChatService.sendMessage` →
 `MessageQueue.enqueue` → `dispatchNextQueuedMessage` (守卫: 生成中/pending tool
@@ -66,6 +68,8 @@
 - 压缩弹窗全屏阻塞 → v4.8.8 "确认即关" 定版 (勿回退为 loading 弹窗)
 - 压缩中禁发 → v4.8.9 定版 (防打断压缩, 非 bug)
 - 消息发送队列与延时回复联动 → v3.6.13/v3.11.30 系列
+- 极简模式 (对话级工具总闸) 随 v4.8.121 整体删除 (用户定版, 勿复活)
+- 代码块上的水平滑动不再呼出抽屉 (v4.8.121: 代码块区域吞未消费水平拖拽)
 
 ### B. AI 传输 (AI Transport)
 
@@ -83,7 +87,8 @@ Completions/Response API)、MCP 客户端、提示词组装、消息变换器。
 | `data/ai/mcp/McpManager.kt` | MCP 门面 + reconcile 触发 |
 | `ai/.../providers/google/InteractionsAPI.kt` | Gemini Interactions API (v4.8.94; 客户端已锁 ProtocolEra.Legacy, 见 B122) |
 | `data/ai/prompts/` | 系统提示词组装 (PromptAssembler) |
-| `data/ai/GenerationHandler.kt` | 生成管线执行 (流式组装/图片预算/重试链) |
+| `data/ai/GenerationHandler.kt` | 生成管线执行 (流式组装/图片预算/重试链; v4.8.121: 写类工具产出登记钩子) |
+| `data/ai/CallTracer.kt` | 全链路追踪 + LogSessionStore 归档 (v4.8.118: 协程上下文 TraceKey 键控, 并行按对话隔离) |
 
 **核心协议纪律** (铁律, 改动前必读 rincore-project-brief):
 - OpenCode 网关按模型分协议: qwen 走 Anthropic 直传, CC 走 Chat Completions
@@ -97,7 +102,9 @@ Completions/Response API)、MCP 客户端、提示词组装、消息变换器。
 
 **历史**: MCP 重启断联根治 (v4.8.6) / thinking 字段语义结构根修 (v4.8.10) /
 断流重试三件套 (v4.8.7) / GLM 图片限制 6 张 (v4.7.24) / MCP stdio 回归修复
-(v4.8.96 — fork SDK 探测触发 stderr FATAL 停机; 锁 ProtocolEra.Legacy + stderr 永不 FATAL, bug-record B122)。
+(v4.8.96 — fork SDK 探测触发 stderr FATAL 停机; 锁 ProtocolEra.Legacy + stderr 永不 FATAL, bug-record B122) /
+静默中断五通道完成门 (v4.8.112, B136) / 并行流登记 ParallelStreamRegistry (v4.8.117, B140) /
+完成门 v2 证据化 + AggregateCloseEvidence 学习层 (v4.8.118, B141)。
 
 ### C. 工具系统 (Tools)
 
@@ -119,6 +126,8 @@ Completions/Response API)、MCP 客户端、提示词组装、消息变换器。
 | `ecosystem/EcosystemManager.kt` | 插件/生态管理 |
 | `ecosystem/tools/DynamicTools.kt` | 动态工具池 |
 | `subagent/SubAgentEngine.kt` | 子代理引擎 |
+| `subagent/SubAgentTools.kt` | 子代理四工具 (v4.8.121: get 双模式 wait_until_done 脚本轮询 / dispatch 超时恒定 1800s 不可传 / 并发默认 7) |
+| `data/ai/tools/ProducedFiles.kt` | 本对话产出登记器 (v4.8.121: 写类工具成功 → Settings 清单, UI 见 ConversationArtifactsSheet) |
 | `ui/pages/setting/SettingZonePage.kt` | 工具矩阵页 (工具区增删改/隐藏 + 顶层直连工具; 「恢复出厂」已按用户定版移除 v4.8.92) |
 
 **分层注入铁律**: 系统提示词只放 7 个框架工具; 其余工具在请求 tools 数组;
@@ -130,7 +139,8 @@ MCP 工具静态声明 (配置决定), 连接惰性 (首次调用才连)。
 - 工具审批 → `ToolInvocationContext` + 设置页
 
 **历史**: 序列思考工具彻底删除 (v4.7.12) / 管理三件套意图门控 (v4.7.12) /
-工具图片四部曲 (B118) / 域管理三坑修复 (v4.7.16)。
+工具图片四部曲 (B118) / 域管理三坑修复 (v4.7.16) / 浏览器工具套件重写 (v4.8.116, B139) /
+子代理双模式 + 超时收权 + 并发默认 7 (v4.8.121, B143)。
 
 ### D. 工作区沙箱 (Workspace & Sandbox)
 
@@ -183,7 +193,8 @@ MCP 工具静态声明 (配置决定), 连接惰性 (首次调用才连)。
 - 新开关 → PreferencesStore (booleanPreferencesKey) + 设置页 Card/Switch
 - 新设置页 → `ui/pages/setting/` 新建 + 路由注册 + SettingPage 分组
 
-**历史**: 发送/思考键互换 (v4.8.3) / 状态蓝标三处 (v4.8.4) / 主题条自定义 (v4.8.9)。
+**历史**: 发送/思考键互换 (v4.8.3) / 状态蓝标三处 (v4.8.4) / 主题条自定义 (v4.8.9) /
+「代码块内自动渲染」开关 (v4.8.121: displaySetting.codeBlockAutoPreview, UI 在助手设置→本地设置「显示渲染」区)。
 
 ### F. 主题渲染 (Theme & Render)
 
@@ -202,6 +213,9 @@ MCP 工具静态声明 (配置决定), 连接惰性 (首次调用才连)。
 | `ui/components/render/DocumentRenderEngine.kt` | 文档渲染调度 (HTML/PDF/DOCX/XLSX) |
 | `highlight/` 模块 | 代码高亮实现 |
 | `ui/components/richtext/WorkspaceImageFetch.kt` | 图片加载 (缓存键含 mtime+size; Coil 接入见 RouteActivity) |
+| `markdown/` 模块 (vendored) | intellij-markdown + 数学模型移植 (v4.8.119) + TableFenceUnwrapper (v4.8.120: md 围栏内表格解包) |
+| `ui/components/richtext/Markdown.kt` | AST 渲染链 (v4.8.119: 链接内联递归/表格单元格行内直渲; v4.8.120: GFM 列对齐) |
+| `ui/components/richtext/HighlightCodeBlock.kt` | 代码块 (v4.8.121: 自动渲染/JS 沙箱执行/滑动防抽屉) |
 
 **渲染铁律**: Markdown 首帧同步解析 (对齐原版, 勿改异步/占位/分段);
 Haze 锁 `2.0.0-beta01` (rc 版本有格栅伪影); 玻璃层用 `RinGlass` 单一来源。
@@ -213,7 +227,9 @@ Haze 锁 `2.0.0-beta01` (rc 版本有格栅伪影); 玻璃层用 `RinGlass` 单�
 - 渲染问题 → 先 diff 上游 RikkaHub 对应文件 (对齐优先原则)
 
 **历史**: 渲染抽动完全对齐原版 (v4.7.26) / 首帧卡顿修复 (v4.8.1) /
-图片缓存失效 (v4.8.2) / 预设主题默认·莫兰迪紫 (v4.8.7) / 色相条 (v4.8.9)。
+图片缓存失效 (v4.8.2) / 预设主题默认·莫兰迪紫 (v4.8.7) / 色相条 (v4.8.9) /
+渲染链升级 (v4.8.119: CJK 公式根修/链接递归/单元格直渲) / codex 对齐 (v4.8.120: 围栏解包/列对齐) /
+代码块自动渲染 (v4.8.121)。
 
 ### G. 自动化 (Automation)
 
