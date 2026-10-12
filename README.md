@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=build&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/version-v4.8.124-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/version-v4.8.125-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/license-segmented_dual-cyan)](LICENSE)
 
 **A real, self-contained AI assistant on your phone.** Not a wrapper — a rebuilt engine with six
@@ -129,7 +129,9 @@ changelog entry and a regression guard. Optimizations keep coming.
 
 ## 📋 Changelog
 
-v4.8.54 → v4.8.124 (newest first):
+v4.8.54 → v4.8.125 (newest first):
+
+- **v4.8.125** — Output-recovery tuning (without re-introducing any cut-detection gate): the stream-phase idle watchdog limit is now a unified 150s (was 90/120s — the tighter values were killing slow upstreams, and replay-based retries amplified the interruption experience); stream-interruption retries now show a visible status ("output interrupted, auto-recovering — attempt N"); workspace output paths are canonicalized so a single file never appears twice in the conversation-output list; and the file chips / output sheet were rewritten with three options (render / export / open with), dropping "share" (which duplicated open-with) — every action now gives visible feedback.
 
 - **v4.8.124** — Rolled back the output completion gate completely (per user verdict): clean-boundary stream closes without completion evidence are once again treated as complete — no synthetic continue requests, which had been provoking gateway errors ("Upstream stream ended before terminal chunk") and breaking conversations. The v4.8.117/118 parallel-cut detection and evidence-based gate are removed; the v4.8.112 channel-completion guards remain in place.
 

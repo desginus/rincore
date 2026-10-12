@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=构建&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/版本-v4.8.124-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/版本-v4.8.125-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/许可-segmented_dual-cyan)](LICENSE)
 
 **手机上一个真正全面的 AI 助手。** 不是套壳，是一台重新打造过的引擎——背后是六周的高强度实测迭代与 400+ 个版本。
@@ -80,7 +80,9 @@ RinCore 处于活跃维护中，欢迎 Issue 与 PR。每一个被报告的问�
 
 ## 📋 更新日志
 
-v4.8.54 → v4.8.124（倒序）：
+v4.8.54 → v4.8.125（倒序）：
+
+- **v4.8.125** — 输出恢复链定点调优（未重引入掐流检测门）：流阶段看门狗空闲上限统一为 150 秒（原 90/120 秒——过紧的阈值会误杀慢上游，而"重试重放"会放大断连体感）；流中断重试现在有可见状态（"输出中断，正在自动恢复（第 N 次）…"）；工作区产出路径统一规范化——同一文件不再在「本对话产出」里重复出现；文件胶囊与产出弹层重写为三选项（渲染/导出/用其他应用打开）——删除「分享」（与"用其他应用打开"重复），每个动作都有可见反馈。
 
 - **v4.8.124** — 输出门禁彻底回滚（用户定版）：干净边界、无完成证据的流关流恢复为"视为完成"——不再合成续写追问（该行为会触发上游网关的 "Upstream stream ended before terminal chunk" 错误、导致对话不可用）；v4.8.117/118 的并行掐流检测与完成门 v2 证据化整体移除，v4.8.112 的五通道完成判据保留。
 
