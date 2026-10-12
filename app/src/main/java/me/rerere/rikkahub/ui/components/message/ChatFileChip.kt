@@ -60,7 +60,7 @@ import java.io.File
  * - 宿主恒驻 (open 仅控弹层可见) — 渲染进行中关闭弹层不丢进度态;
  * - `file` 允许为 null (URL 无法解出本地文件/文件已被清理) — 点按任何动作都有
  *   **可见 toast 反馈**, 不再出现"点了没反应";
- * - 「用其他应用打开」按扩展名解析 MIME (原 "*/*" 会混入无关应用)。
+ * - 「用其他应用打开」按扩展名解析 MIME (原先通配 MIME 会把无关应用全列进来)。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
