@@ -15,7 +15,7 @@ import kotlinx.coroutines.launch
  * 三阶段状态机 (v3.11.13 定版, "多尝试, 少静默"):
  *   阶段1 header 建连/响应头前 25s — 网关冷启动/挂起快速断开 → 上层快速重试
  *   阶段2 first-event 已连接未出首事件 150s — 上游思考, 重试无意义, 耐心等
- *   阶段3 stream 流出中 90s(opencode)/120s(其他) — 流间隙上限
+ *   阶段3 stream 流出中 150s (v4.8.125 统一; 原 90/120s) — 流间隙上限
  *
  * 行为等价不变量:
  * - 每 15s tick 检查一次
@@ -24,7 +24,8 @@ import kotlinx.coroutines.launch
  * - 超时 close(IOException) 并退出循环
  */
 class StreamWatchdog(
-    private val isOpencode: Boolean,
+    // v4.8.125: 保留入参 (调用面兼容; 流阶段上限已统一 150s, 不再按族区分)
+    isOpencode: Boolean,
     private val headerReceived: java.util.concurrent.atomic.AtomicBoolean,
     private val hasData: java.util.concurrent.atomic.AtomicBoolean,
     private val lastEventAt: java.util.concurrent.atomic.AtomicLong,
@@ -37,7 +38,12 @@ class StreamWatchdog(
     // 真死网关 60s 后仍走重试链, 最终报错不受影响。
     val headerLimitMs = 60_000L
     val firstEventLimitMs = 150_000L
-    val streamLimitMs = if (isOpencode) 90_000L else 120_000L
+    // v4.8.125 (用户实证: "输出途中莫名其妙中断, 重试很久"): 流阶段上限 90/120s → 150s 统一。
+    // 旧 90s (OC 通道) 对慢上游 (长思考/间歇静默 — keepalive 不刷新空闲标记) 误杀面
+    // 偏大; "误杀 → 重试重放 → 再误杀" 正是"断连 + 恢复慢"的放大器。真死连接由
+    // readTimeout (180s) 兜底, 且与 first-event 段 (150s, 设计即"上游思考耐心等")
+    // 对齐为同一耐心档 — "多尝试, 少静默" 前提是别误杀。
+    val streamLimitMs = 150_000L
 
     data class Phase(val name: String, val limitMs: Long, val closeMsg: String)
 
@@ -64,8 +70,8 @@ class StreamWatchdog(
     companion object {
         const val TICK_INTERVAL_MS = 15_000L
 
-        /** 流阶段上限 (秒, 供日志展示) */
-        fun streamLimitSec(isOpencode: Boolean): Long = (if (isOpencode) 90_000L else 120_000L) / 1000
+        /** 流阶段上限 (秒, 供日志展示) — v4.8.125: 统一 150s */
+        fun streamLimitSec(isOpencode: Boolean): Long = 150L
 
         /**
          * 标准协程 watchdog 循环 — 两 Provider 原内联 launch 块的统一形态。

@@ -2,6 +2,7 @@
 package me.rerere.rikkahub.ui.components.message
 
 import android.content.Intent
+import android.webkit.MimeTypeMap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -41,7 +42,6 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.File02
 import me.rerere.hugeicons.stroke.FileImport
 import me.rerere.hugeicons.stroke.FileView
-import me.rerere.hugeicons.stroke.Share08
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.RenderKind
 import me.rerere.rikkahub.ui.components.detectRenderKind
@@ -52,18 +52,21 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import java.io.File
 
 /**
- * v4.8.122→v4.8.123 (用户定版): 消息内文件胶囊的统一选项宿主 —
- * 弹层 [渲染 / 分享 / 导出 / 用其他应用打开] (对齐「编辑过的文件」胶囊范式,
- * 点击不再直呼系统分享/打开页面)。覆盖: 上传文档 (Document) / 视频 / 音频胶囊。
- * - 渲染 = 渲染机 RenderEngine.renderSmart (文档/表格/幻灯片/音视频播放预览)
- * - 导出 = 系统 CreateDocument 另存副本
- * - Host 恒驻组合 (open 仅控弹层可见) — 渲染进行中关闭弹层不丢进度态。
+ * v4.8.122→v4.8.125 (用户定版): 消息内文件胶囊的统一选项宿主 —
+ * 弹层 [渲染 / 导出 / 用其他应用打开]。覆盖: 上传文档 (Document) / 视频 / 音频胶囊。
+ *
+ * v4.8.125 重写要点 (用户复核):
+ * - 「分享」与「用其他应用打开」实质同一系统选单 → **删除「分享」**, 保留 3 项;
+ * - 宿主恒驻 (open 仅控弹层可见) — 渲染进行中关闭弹层不丢进度态;
+ * - `file` 允许为 null (URL 无法解出本地文件/文件已被清理) — 点按任何动作都有
+ *   **可见 toast 反馈**, 不再出现"点了没反应";
+ * - 「用其他应用打开」按扩展名解析 MIME (原 "*/*" 会混入无关应用)。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FileChipOptionsHost(
     open: Boolean,
-    file: File,
+    file: File?,
     fileName: String,
     onOpenChange: (Boolean) -> Unit,
 ) {
@@ -73,17 +76,28 @@ fun FileChipOptionsHost(
     var renderResult by remember { mutableStateOf<RenderResult?>(null) }
     var renderLoading by remember { mutableStateOf(false) }
     val renderable = remember(fileName) { detectRenderKind(fileName) != RenderKind.NONE }
+    val displayName = fileName.ifBlank { file?.name.orEmpty() }
+
+    fun missingFile(): Boolean {
+        val f = file
+        if (f == null || !f.exists()) {
+            toaster.show(message = "文件不存在或已被清理", type = ToastType.Error)
+            return true
+        }
+        return false
+    }
 
     // v4.8.123: 导出 = 系统另存副本 (CreateDocument)
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/octet-stream"),
     ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
+        val f = file
+        if (uri == null || f == null) return@rememberLauncherForActivityResult
         runCatching {
             val out = context.contentResolver.openOutputStream(uri) ?: error("无法写入目标位置")
-            out.use { output -> file.inputStream().use { input -> input.copyTo(output) } }
+            out.use { output -> f.inputStream().use { input -> input.copyTo(output) } }
             toaster.show(
-                message = "已导出: ${fileName.ifBlank { file.name }}",
+                message = "已导出: ${displayName.ifBlank { f.name }}",
                 type = ToastType.Success,
             )
         }.onFailure { e ->
@@ -103,7 +117,7 @@ fun FileChipOptionsHost(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
-                    text = fileName,
+                    text = displayName.ifBlank { "文件" },
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -112,20 +126,21 @@ fun FileChipOptionsHost(
                     Card(
                         onClick = {
                             onOpenChange(false)
+                            if (missingFile()) return@Card
                             renderLoading = true
                             scope.launch {
                                 try {
                                     withContext(Dispatchers.IO) {
                                         runCatching {
-                                            if (!file.exists()) error("文件不存在")
+                                            val f = file ?: error("文件不存在")
                                             val taskDir = File(context.cacheDir, "doc_chip_render").apply {
                                                 deleteRecursively()
                                                 mkdirs()
                                             }
-                                            renderResult = RenderEngine.renderSmart(file, taskDir, fileName)
+                                            renderResult = RenderEngine.renderSmart(f, taskDir, displayName.ifBlank { f.name })
                                         }.onFailure {
                                             renderResult = RenderResult.Unsupported(
-                                                fileName,
+                                                displayName,
                                                 "读取文件失败: ${it.message}",
                                             )
                                         }
@@ -159,50 +174,9 @@ fun FileChipOptionsHost(
                 Card(
                     onClick = {
                         onOpenChange(false)
+                        if (missingFile()) return@Card
                         runCatching {
-                            val uri = FileProvider.getUriForFile(
-                                context,
-                                "${context.packageName}.fileprovider",
-                                file,
-                            )
-                            val intent = Intent(Intent.ACTION_SEND).apply {
-                                type = "application/octet-stream"
-                                putExtra(Intent.EXTRA_STREAM, uri)
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            context.startActivity(Intent.createChooser(intent, null))
-                        }.onFailure { e ->
-                            toaster.show(
-                                message = "分享失败: ${e.message?.take(120) ?: "未知错误"}",
-                                type = ToastType.Error,
-                            )
-                        }
-                    },
-                    shape = MaterialTheme.shapes.medium,
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        modifier = Modifier
-                            .padding(16.dp)
-                            .fillMaxWidth(),
-                    ) {
-                        Icon(
-                            imageVector = HugeIcons.Share08,
-                            contentDescription = null,
-                            modifier = Modifier.padding(4.dp),
-                        )
-                        Text(
-                            text = stringResource(R.string.common_share),
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                    }
-                }
-                Card(
-                    onClick = {
-                        onOpenChange(false)
-                        runCatching {
-                            exportLauncher.launch(fileName.ifBlank { file.name })
+                            exportLauncher.launch(displayName.ifBlank { file?.name ?: "file" })
                         }.onFailure { e ->
                             toaster.show(
                                 message = "导出失败: ${e.message?.take(120) ?: "未知错误"}",
@@ -233,15 +207,20 @@ fun FileChipOptionsHost(
                 Card(
                     onClick = {
                         onOpenChange(false)
+                        if (missingFile()) return@Card
                         runCatching {
+                            val f = file ?: error("文件不存在")
                             val uri = FileProvider.getUriForFile(
                                 context,
                                 "${context.packageName}.fileprovider",
-                                file,
+                                f,
                             )
+                            // v4.8.125: 按扩展名解析 MIME (原 "*/*" 会把无关应用全列进来)
+                            val ext = (displayName.ifBlank { f.name }).substringAfterLast('.', "").lowercase()
+                            val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "*/*"
                             val intent = Intent(Intent.ACTION_VIEW).apply {
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                setDataAndType(uri, "*/*")
+                                setDataAndType(uri, mime)
                             }
                             context.startActivity(Intent.createChooser(intent, null))
                         }.onFailure { e ->

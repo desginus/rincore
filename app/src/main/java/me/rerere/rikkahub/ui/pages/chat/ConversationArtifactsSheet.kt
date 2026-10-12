@@ -1,7 +1,6 @@
 /* 【域 A·对话核心】 — 本对话产出胶囊窗 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.pages.chat
 
-import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -42,7 +41,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.content.FileProvider
 import com.dokar.sonner.ToastType
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -53,9 +51,9 @@ import me.rerere.hugeicons.stroke.File01
 import me.rerere.hugeicons.stroke.File02
 import me.rerere.hugeicons.stroke.FileImport
 import me.rerere.hugeicons.stroke.FileView
-import me.rerere.hugeicons.stroke.Share08
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.tools.ProducedFile
+import me.rerere.rikkahub.data.ai.tools.ProducedFiles
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.ui.components.RenderKind
@@ -74,11 +72,16 @@ import org.koin.compose.koinInject
 import java.io.File
 
 /**
- * v4.8.121→v4.8.123 (用户定版「本对话产出」): 模型产出/修改过的文件清单 —
- * 胶囊窗列表展示; 点击不再直呼系统打开页, 改为**选项弹层**
- * [渲染 / 分享 / 导出 / 用其他应用打开] (对齐「编辑过的文件」胶囊范式)。
- * 动作走工作区解析链 (多候选直取 → 模糊匹配 → 多命中弹层选择, 与 v4.8.63 同源)。
- * Host 以 open 控制可见 (恒驻组合) — 渲染进行中关闭弹层不丢进度态。
+ * v4.8.121→v4.8.125 (用户定版「本对话产出」): 模型产出/修改过的文件清单 —
+ * 胶囊窗列表展示; 点击 → **选项弹层 [渲染 / 导出 / 用其他应用打开]**。
+ *
+ * v4.8.125 重写要点 (用户复核):
+ * - 「分享」与「用其他应用打开」实质同一系统选单 → **删除「分享」**, 保留 3 项;
+ * - 列表按路径去重 (v4.8.125 登记侧已做形态规范化, 此处兜底 distinctBy);
+ * - 每个动作全链可见反馈: 解析失败/多命中/导出失败均 toast 或弹层, 渲染失败
+ *   显式出 Unsupported 视图 — 不再有"点了没反应";
+ * - 动作走工作区解析链 (多候选直取 → 模糊匹配 → 多命中弹层选择, 与 v4.8.63 同源);
+ * - Host 以 open 控制可见 (恒驻组合) — 渲染进行中关闭弹层不丢进度态。
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -96,6 +99,13 @@ fun ConversationArtifactsSheet(
     val workspaceId = assistant?.workspaceId?.toString()
     val cwdCandidates = remember(folderCwd, assistant) {
         listOfNotNull(normalizeCwdRel(folderCwd), normalizeCwdRel(assistant?.workspaceCwd)).distinct()
+    }
+    // v4.8.125: 显示侧形态收敛 + 兜底去重 — 历史记录 (v4.8.121-124 持久化的多形态路径)
+    // 也在此归一后再去重, 同一文件不多列; 解析链本就有多候选探针, 归一后仍可命中。
+    val displayFiles = remember(files, assistant) {
+        files
+            .map { f -> f.copy(path = ProducedFiles.canonicalPath(f.path, assistant?.workspaceCwd)) }
+            .distinctBy { it.path }
     }
 
     var selected by remember { mutableStateOf<ProducedFile?>(null) }
@@ -150,33 +160,8 @@ fun ConversationArtifactsSheet(
         }
     }
 
-    fun startShare(target: ProducedFile) {
-        scope.launch {
-            runCatching {
-                val wsId = workspaceId ?: error("该助手未绑定工作区")
-                val resolved = resolveOrAsk(target.path) ?: return@launch
-                val dir = File(context.cacheDir, "workspace_share").apply { mkdirs() }
-                val fileName = resolved.substringAfterLast('/')
-                val file = File(dir, fileName)
-                file.outputStream().use { output -> exportResolvedFile(workspaceRepository, wsId, resolved, output) }
-                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-                val intent = Intent(Intent.ACTION_SEND).apply {
-                    type = "application/octet-stream"
-                    putExtra(Intent.EXTRA_STREAM, uri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                context.startActivity(Intent.createChooser(intent, null))
-            }.onFailure { e ->
-                toaster.show(
-                    message = "分享失败: ${e.message?.take(120) ?: "未知错误"}",
-                    type = ToastType.Error,
-                )
-            }
-        }
-    }
-
     fun startRender(target: ProducedFile) {
-        val fileName = target.path.substringAfterLast('/')
+        val fileName = target.path.substringAfterLast('/').ifBlank { target.path }
         renderLoading = true
         scope.launch {
             try {
@@ -219,7 +204,7 @@ fun ConversationArtifactsSheet(
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.padding(bottom = 12.dp),
                     )
-                    if (files.isEmpty()) {
+                    if (displayFiles.isEmpty()) {
                         Text(
                             text = stringResource(R.string.conversation_output_empty),
                             style = MaterialTheme.typography.bodyMedium,
@@ -230,7 +215,7 @@ fun ConversationArtifactsSheet(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            files.forEach { file ->
+                            displayFiles.forEach { file ->
                                 Surface(
                                     onClick = { selected = file },
                                     shape = CircleShape,
@@ -258,7 +243,7 @@ fun ConversationArtifactsSheet(
                         }
                     }
                 } else {
-                    // 选项视图: [渲染 / 分享 / 导出 / 用其他应用打开]
+                    // 选项视图: [渲染 / 导出 / 用其他应用打开]
                     val fileName = sel.path.substringAfterLast('/').ifBlank { sel.path }
                     Text(
                         text = fileName,
@@ -279,15 +264,6 @@ fun ConversationArtifactsSheet(
                                 },
                             )
                         }
-                        ArtifactOptionCard(
-                            icon = { Icon(HugeIcons.Share08, contentDescription = null, modifier = Modifier.padding(4.dp)) },
-                            label = stringResource(R.string.common_share),
-                            onClick = {
-                                selected = null
-                                onOpenChange(false)
-                                startShare(sel)
-                            },
-                        )
                         ArtifactOptionCard(
                             icon = { Icon(HugeIcons.FileImport, contentDescription = null, modifier = Modifier.padding(4.dp)) },
                             label = stringResource(R.string.common_export),
@@ -312,6 +288,7 @@ fun ConversationArtifactsSheet(
                             onClick = {
                                 selected = null
                                 onOpenChange(false)
+                                // openWorkspaceLink 自带解析与失败 toast (不静默)
                                 openWorkspaceLink(sel.path)
                             },
                         )

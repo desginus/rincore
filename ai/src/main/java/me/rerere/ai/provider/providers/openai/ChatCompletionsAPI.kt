@@ -293,6 +293,9 @@ class ChatCompletionsAPI(
         )
         val watchdogJob = me.rerere.ai.core.StreamWatchdog.launchIn(this@callbackFlow, watchdog) { fired ->
             Log.w(TAG, "SSE idle timeout — closing stream: $fired")
+            // v4.8.125: 判死打点入运行日志 — 用户"断连/恢复慢"排查时可直接区分
+            // "看门狗判死" 与 "上游主动断" (onFailure) 两种来源
+            me.rerere.ai.util.TraceLogger.log("SSE", "watchdog fired: $fired")
         }
 
         // SSE 连接优化: 首次数据到达前断连时自动重试, 指数退避 (移植 v2.9.8 稳定行为)

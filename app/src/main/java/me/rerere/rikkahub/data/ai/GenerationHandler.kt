@@ -1115,6 +1115,7 @@ class GenerationHandler(
                         val produced = me.rerere.rikkahub.data.ai.tools.ProducedFiles.extractPath(
                             tool.toolName,
                             outcome.item.args as? kotlinx.serialization.json.JsonObject,
+                            workspaceCwd,
                         ) ?: return@runCatching
                         settingsStore.update { s ->
                             s.copy(
@@ -1894,13 +1895,17 @@ class GenerationHandler(
                         // v4.8.114: 重试可见化 — 连接期失败明确展示"正在重试",
                         // 消除用户感知的数分钟静默"加载中" (成功/终态/离线等待路径
                         // 都会覆盖或清空该状态, 无残留风险)
-                        if (connectPhase) {
-                            val used = when (phase) {
-                                is RetryPhase.Init -> retry.init
-                                is RetryPhase.Stream -> retry.stream
-                                else -> 0
-                            }
-                            processingStatus.value = "网络连接失败，自动重试中（第 $used 次）…"
+                        // v4.8.125 (用户实证: "输出途中断连 + 重试很久才会恢复"): 流中断
+                        // 重试同样可见 — 中途断流的静默自动恢复不再是"没反应".
+                        val retryShown = when (phase) {
+                            is RetryPhase.Init -> retry.init
+                            is RetryPhase.Stream -> retry.stream
+                            else -> 0
+                        }
+                        processingStatus.value = if (connectPhase) {
+                            "网络连接失败，自动重试中（第 $retryShown 次）…"
+                        } else {
+                            "输出中断，正在自动恢复（第 $retryShown 次）…"
                         }
                         // v4.7.18: 重试前清理连接池 — 断流多为连接层失效 (网络抖动/
                         // 僵尸连接/网卡问题), 复用陈旧连接会让重试立即再失败; 清理后

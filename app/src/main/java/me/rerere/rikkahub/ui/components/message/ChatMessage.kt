@@ -520,16 +520,14 @@ private fun MessagePartsBlock(
                         val videoFile = remember(part.url) {
                             runCatching { part.url.toUri().toFile() }.getOrNull()
                         }
-                        if (videoFile != null) {
-                            FileChipOptionsHost(
-                                open = videoOptionsOpen,
-                                file = videoFile,
-                                fileName = remember(part.url) {
-                                    part.url.toUri().lastPathSegment ?: part.url.substringAfterLast('/')
-                                },
-                                onOpenChange = { videoOptionsOpen = it },
-                            )
-                        }
+                        FileChipOptionsHost(
+                            open = videoOptionsOpen,
+                            file = videoFile,
+                            fileName = remember(part.url) {
+                                part.url.toUri().lastPathSegment ?: part.url.substringAfterLast('/')
+                            },
+                            onOpenChange = { videoOptionsOpen = it },
+                        )
                     }
 
                     is UIMessagePart.Audio -> {
@@ -559,16 +557,14 @@ private fun MessagePartsBlock(
                         val audioFile = remember(part.url) {
                             runCatching { part.url.toUri().toFile() }.getOrNull()
                         }
-                        if (audioFile != null) {
-                            FileChipOptionsHost(
-                                open = audioOptionsOpen,
-                                file = audioFile,
-                                fileName = remember(part.url) {
-                                    part.url.toUri().lastPathSegment ?: part.url.substringAfterLast('/')
-                                },
-                                onOpenChange = { audioOptionsOpen = it },
-                            )
-                        }
+                        FileChipOptionsHost(
+                            open = audioOptionsOpen,
+                            file = audioFile,
+                            fileName = remember(part.url) {
+                                part.url.toUri().lastPathSegment ?: part.url.substringAfterLast('/')
+                            },
+                            onOpenChange = { audioOptionsOpen = it },
+                        )
                     }
 
                     is UIMessagePart.Image -> {
@@ -645,18 +641,17 @@ private fun MessagePartsBlock(
                                 }
                             }
                         }
-                        // v4.8.123: 选项宿主 (恒驻组合以保全渲染进度态; open 仅控弹层)
+                        // v4.8.123/125: 选项宿主恒驻 (渲染进度态保全; file 可空 —
+                        // 缺失时点按任何动作都有可见 toast, 不再"点了没反应")
                         val chipFile = remember(part.url) {
                             runCatching { part.url.toUri().toFile() }.getOrNull()
                         }
-                        if (chipFile != null) {
-                            FileChipOptionsHost(
-                                open = chipOptionsOpen,
-                                file = chipFile,
-                                fileName = part.fileName,
-                                onOpenChange = { chipOptionsOpen = it },
-                            )
-                        }
+                        FileChipOptionsHost(
+                            open = chipOptionsOpen,
+                            file = chipFile,
+                            fileName = part.fileName,
+                            onOpenChange = { chipOptionsOpen = it },
+                        )
                     }
 
                     else -> {

@@ -13,12 +13,15 @@ import java.io.File
  * ②工作区文件系统扫描 (shell/job 回合后按 mtime 兜底, 见 [scanWorkspaceSince]);
  * ③批量回写走 [recordBatch]。持久化于 Settings (DataStore), 按对话分组, 新→旧排列;
  * 每对话上限 80 条, 全局保留最近 200 个对话 (超限按每对话最新时间裁剪)。
- * UI = 速览页「本对话产出」胶囊窗列表, 点击经 openWorkspaceLink 直接打开
- * (FileProvider → 系统应用)。
+ * UI = 速览页「本对话产出」胶囊窗列表 (点击 → 选项弹层)。
+ * v4.8.125 (用户复核"点进去为什么是 4 个"): 路径规范化 [canonicalPath] —
+ * 直登记 (工具参数形态不一: 裸相对 / "/workspace/x" / cwd 作用域) 与扫描产物
+ * (filesDir 相对 → "/workspace/<rel>") 收敛为同一全根形态后再去重, 同一文件
+ * 不再以多形态重复入列。
  */
 @Serializable
 data class ProducedFile(
-    /** 工具写入路径 (通常 /workspace/...; 根沙箱绝对路径) */
+    /** 工具写入路径 (规范化全根形态: /workspace/<rel>; 根沙箱绝对路径) */
     val path: String,
     /** 产出工具名 */
     val tool: String,
@@ -36,11 +39,33 @@ object ProducedFiles {
         "workspace_edit_file" to "path",
     )
 
-    /** 从工具名 + 参数提取产出文件路径; 非写类/无路径返回 null */
-    fun extractPath(toolName: String, args: JsonObject?): String? {
+    /**
+     * v4.8.125: 路径规范化 — 全根语义唯一形态 "/workspace/<rel>"。
+     * 背景: 写类工具的 path 参数形态不一 (裸相对 / "/workspace/x" / cwd 作用域),
+     * 与 shell 回合 mtime 扫描产物 (filesDir 相对 → "/workspace/<rel>") 对不上,
+     * 同一文件会以多形态重复入列 ("为什么是 4 个" 的来源之一)。cwd 非空时按
+     * 作用域补前级 (与 proot /workspace 挂载映射同源); 非 /workspace 的其它
+     * 绝对形态 (rootfs 其它区) 原样保留。
+     */
+    fun canonicalPath(raw: String, cwd: String?): String {
+        val p = raw.trim().replace('\\', '/')
+        if (p.isEmpty()) return p
+        if (p == "/workspace") return "/workspace"
+        val rel = when {
+            p.startsWith("/workspace/") -> p.removePrefix("/workspace/")
+            p.startsWith("/") -> return p
+            else -> p
+        }
+        val c = cwd?.trim()?.trim('/').orEmpty()
+        val full = if (c.isNotEmpty() && !rel.startsWith("$c/")) "$c/$rel" else rel
+        return "/workspace/" + full.trimStart('/')
+    }
+
+    /** 从工具名 + 参数提取产出路径 (已规范化; cwd = 环路作用域, 用于形态收敛) */
+    fun extractPath(toolName: String, args: JsonObject?, cwd: String? = null): String? {
         val key = PATH_ARG[toolName] ?: return null
         val raw = (args?.get(key) as? JsonPrimitive)?.content?.trim().orEmpty()
-        return raw.ifEmpty { null }
+        return raw.ifEmpty { null }?.let { canonicalPath(it, cwd) }
     }
 
     /** 幂等登记: 同路径去重取最新 (新→旧), 每对话上限 80, 全局保留最近 200 对话 */
