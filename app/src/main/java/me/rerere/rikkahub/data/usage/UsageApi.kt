@@ -6,6 +6,7 @@ package me.rerere.rikkahub.data.usage
  * 返回: { usage: { rolling/weekly/monthly: { status, percent, resetsAt } } }
  * ───────────────────────────────────────────────────────────────*/
 import android.util.Log
+import me.rerere.rikkahub.data.ai.AIRequestInterceptor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -51,6 +52,8 @@ object UsageApi {
             val request = Request.Builder()
                 .url(USAGE_URL)
                 .header("Authorization", "Bearer $apiKey")
+                // v4.8.126: 自有 UA (与模型请求同源; OC 网关客户端身份要求)
+                .header("User-Agent", AIRequestInterceptor.USER_AGENT)
                 .get()
                 .build()
             client.newCall(request).execute().use { resp ->

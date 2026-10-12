@@ -139,11 +139,16 @@ private const val TAG = "ChatService"
 internal fun backgroundTextGenerationParams(
     model: Model,
     reasoningLevel: ReasoningLevel = ReasoningLevel.AUTO,
+    // v4.8.126 (OC 合规): 对话内辅助调用 (标题/建议/压缩) 显式携带本对话 session —
+    // 官方要求 "stable session ID in x-opencode-session for each conversation"
+    // (含辅助请求); 不传 = 保持既有随机 session (等价官方"无状态调用"形态)
+    sessionId: String? = null,
 ): TextGenerationParams = TextGenerationParams(
     model = model,
     reasoningLevel = reasoningLevel,
     customHeaders = model.customHeaders,
     customBody = model.customBodies,
+    sessionId = sessionId ?: java.util.UUID.randomUUID().toString(),
 )
 
 private val forkTitleSuffixRegex = Regex("""\((\d+)\)$""")
@@ -1127,7 +1132,7 @@ class ChatService(
                                 .takeLast(4).joinToString("\n\n") { it.summaryAsText(maxLength = 500) })
                     ),
                 ),
-                params = backgroundTextGenerationParams(model, settings.fastModelReasoningLevel),
+                params = backgroundTextGenerationParams(model, settings.fastModelReasoningLevel, sessionId = conversationId.toString()),
             )
 
             // 生成完，conversation可能不是最新了，因此需要重新获取
@@ -1175,7 +1180,7 @@ class ChatService(
                                 .takeLast(8).joinToString("\n\n") { it.summaryAsText(maxLength = 500) }),
                     )
                 ),
-                params = backgroundTextGenerationParams(model, settings.fastModelReasoningLevel),
+                params = backgroundTextGenerationParams(model, settings.fastModelReasoningLevel, sessionId = conversationId.toString()),
             )
             val suggestions =
                 result.message.toText().split("\n").map { it.trim() }
@@ -1283,7 +1288,7 @@ class ChatService(
             val result = providerHandler.generateText(
                 providerSetting = provider,
                 messages = listOf(UIMessage.user(prompt)),
-                params = backgroundTextGenerationParams(model, compressLevel),
+                params = backgroundTextGenerationParams(model, compressLevel, sessionId = conversationId.toString()),
             )
 
             return result.message.toText().trim().ifEmpty { throw IllegalStateException("Failed to generate compressed summary") }

@@ -1652,7 +1652,10 @@ class GenerationHandler(
                 addAll(model.customBodies)
             },
             // 4.1.0: sessionId 双头注入 (X-Session-ID + x-opencode-session), API 层按 host 自动补全
-            sessionId = conversationId?.toString(),
+            // v4.8.126 (OC 合规): null 兜底随机 — OC 网关"无状态调用也要求 session 归属"
+            // (anomalyco/opencode generate.ts: "Gateways require session attribution even
+            // for a stateless call"), 不再出现任何无头请求
+            sessionId = conversationId?.toString() ?: java.util.UUID.randomUUID().toString(),
         )
         if (stream) {
             // 断流自动恢复 (v3.5.46 根治): 输出中连接中断 (切后台网络切换/
