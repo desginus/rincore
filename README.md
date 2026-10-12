@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=build&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/version-v4.8.126-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/version-v4.8.127-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/license-segmented_dual-cyan)](LICENSE)
 
 **A real, self-contained AI assistant on your phone.** Not a wrapper — a rebuilt engine with six
@@ -129,7 +129,9 @@ changelog entry and a regression guard. Optimizations keep coming.
 
 ## 📋 Changelog
 
-v4.8.54 → v4.8.126 (newest first):
+v4.8.54 → v4.8.127 (newest first):
+
+- **v4.8.127** — Gateway client-identity disguise (per user: don't expose our own client): AI requests now present identities of validated clients instead of a self-declared one — `opencode/latest/1.19.0/cli` (the exact format the official OpenCode CLI sends) for the opencode.ai gateway, and `codex_cli_rs/0.162.1 (Linux 6.8.0; x86_64)` (Codex CLI's real format, widely recognized by gateways) for other AI providers. Only AI traffic is affected; non-AI requests and callers with explicit UAs are untouched.
 
 - **v4.8.126** — OpenCode gateway client compliance: all AI requests now send a self-identifying User-Agent (`RinCore/<version>` instead of OkHttp's default — the OpenCode Go docs explicitly ask clients to identify with their own user agent rather than a generic HTTP-library name, as traffic is abuse-monitored), and session attribution is completed across auxiliary calls (title/suggestion/compression now carry the conversation's stable `x-opencode-session`; no request can go out without one). Also verified via a full diff that the v4.8.115→v4.8.116 delta contained browser-tool changes only — the streaming chain was untouched, so the interruption issue was not introduced there.
 
