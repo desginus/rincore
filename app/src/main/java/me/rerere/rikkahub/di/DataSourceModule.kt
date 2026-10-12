@@ -298,7 +298,7 @@ val dataSourceModule = module {
             .followSslRedirects(true)
             .followRedirects(true)
             .retryOnConnectionFailure(true)
-            // v4.8.126: OC 合规 UA — AIRequestInterceptor 注入 RinCore/<版本> (缺省才补)
+            // v4.8.126/127: 网关客户端身份伪装 (AIRequestInterceptor: opencode/codex UA, 缺省才补)
             .addInterceptor(AIRequestInterceptor())
             .build()
             .also { me.rerere.ai.provider.ProviderManager.opencodeClient = it }
@@ -316,7 +316,7 @@ val dataSourceModule = module {
             .followSslRedirects(true)
             .followRedirects(true)
             .retryOnConnectionFailure(true)
-            // v4.8.126: OC 合规 UA — AIRequestInterceptor 注入 RinCore/<版本> (缺省才补)
+            // v4.8.126/127: 网关客户端身份伪装 (AIRequestInterceptor: opencode/codex UA, 缺省才补)
             .addInterceptor(AIRequestInterceptor())
             .build()
             .also { me.rerere.ai.provider.ProviderManager.claudeClient = it }

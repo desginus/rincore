@@ -52,8 +52,8 @@ object UsageApi {
             val request = Request.Builder()
                 .url(USAGE_URL)
                 .header("Authorization", "Bearer $apiKey")
-                // v4.8.126: 自有 UA (与模型请求同源; OC 网关客户端身份要求)
-                .header("User-Agent", AIRequestInterceptor.USER_AGENT)
+                // v4.8.126/127: 伪装 UA (与模型请求同源 — OC 官方客户端形态)
+                .header("User-Agent", AIRequestInterceptor.OPENCODE_UA)
                 .get()
                 .build()
             client.newCall(request).execute().use { resp ->
