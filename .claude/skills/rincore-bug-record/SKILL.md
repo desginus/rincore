@@ -5,6 +5,13 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 
 # RinCore Bug 记录（全部历史）
 
+## B148 — OpenCode 网关客户端合规缺口（UA=库默认 + 辅助会话归属）+ 115↔116 断连归因审计（v4.8.126）
+- **背景（用户指派两查）**：输出途中断连依旧（DeepSeek 也出现）；①对比 v4.8.115↔116，查是否 116 引入；②查 opencode 提供商是否需要特殊请求头。
+- **① 115↔116 审计（证伪"116 引入"）**：`git diff e062c1a20..4d8c542f0` 全量 = 13 文件，全部为浏览器工具 B139 重写 + 工作区存储接线（BrowserTools/BrowserNavigation/BrowserController/BrowserCacheSweeper/HeadlessBrowserSession/BrowserToolDefaults/WorkspaceRepository/WorkspaceManager/ToolInvocationContext/ToolsBuilder/LocalTools + 测试 + 版本号）；**ChatCompletionsAPI、GenerationHandler(流)、RetryPolicy、DataSourceModule/EnvironmentOptimizer 零改动**。ChatCompletionsAPI 从 115 到 HEAD 净差 = v4.8.125 的 +3 行 trace → 流链与 115 等效，无可回衡项。
+- **② OC 合规排查（官方文档逐条对照，两条缺口实锤）**：依据 opencode.ai/docs/console/go（"Where can I use it?" 三要求 + Validated/Problematic clients 表）与 anomalyco/opencode 源码（generate.ts："Gateways require session attribution even for a stateless call"；model-request.ts 会话头）：(a) 官方："Identify itself with its own user agent, such as `my-coding-agent/1.0`, **rather than a generic SDK or HTTP-library name**" —— 我方全链 AI 请求 UA = OkHttp 默认 `okhttp/4.x`（文档点名的不合规形态；文档明言 "Traffic is monitored for abuse"）；(b) 官方："Send a stable session ID in `x-opencode-session` for each conversation"（含辅助请求）—— 主链达标（conversationId 双头注入），但 GH sessionId 在 conversationId=null 时整头缺失（官方：无状态调用也要求归属），辅助调用（标题/建议/压缩）走随机 session。
+- **处置**：①AIRequestInterceptor 重写（缺省注入 `RinCore/<版本>` UA；显式 UA 让行），装配主/proxy（既有）+ opencode/claude（新增）四客户端；UsageApi(OC) 同源补 UA。②GH sessionId null 兜底随机；标题/候选建议/压缩三辅助调用显式携带本对话 sessionId（backgroundTextGenerationParams 增 sessionId 参数）。③CommandCodeUsageApi 的 `commandcode-cli/1.40.1` 保留（既有刻意身份，未动）。
+- **影响预期**：客户端身份/归属对齐官方要求后降低被 Go/Zen 滥用监控降级/掐流的概率（无因果证明，但是唯一有官方文档背书的合规面）；叠加 v4.8.125（看门狗误杀收窄 + 恢复可见化）。
+- **教训**：①第三方网关的"客户端身份要求"是隐形门槛（UA 不能是库默认）——审计法 = 对照官方文档逐条打勾（身份/归属/流量形态）；②版本怀疑先做全量 diff 证伪，证据先于猜测（115↔116 十三件全是浏览器 → 结论"不成立"而非"大概不是"）；③官方文档 + 开源客户端源码是协议事实源（本仓曾误搜 sst/opencode，正确组织是 anomalyco/opencode — 先用本仓研究材料校准事实源）。
 ## B147 — "输出途中断连"变频繁 + "重试很久才恢复"（v4.8.125 定点治理）
 - **现象（用户，v4.8.121-124 期间）**：最近几个版本很容易"输出途中断连"；出现后可能要重试很久才恢复连接；连 DeepSeek 也出现；用户明确"不要再往门禁那个方向改（问题更大）"、并说"也可能真的是服务器方的问题"。
 - **链路盘点（代码级）**：mid-stream 中断的全部来源分层 — ①上游/网络真断（socket 级）→ onFailure 即时；②静默（无数据事件）→ 看门狗判死（OC 90s / 其他 120s；**keepalive 不刷新空闲标记**）+ readTimeout 180s 兜底；③复读熔断（罕见）；④假取消（117 已回滚, 不涉及）。恢复链：GH 流重试 18 次（每轮 300ms 风暴×3 + 1/2/4s 经典；每次前清池）且**回滚已输出内容重放**；预数据失败另有 API 内部 5 次（1+2+4+8+16s）。

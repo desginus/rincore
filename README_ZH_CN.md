@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=构建&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/版本-v4.8.125-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/版本-v4.8.126-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/许可-segmented_dual-cyan)](LICENSE)
 
 **手机上一个真正全面的 AI 助手。** 不是套壳，是一台重新打造过的引擎——背后是六周的高强度实测迭代与 400+ 个版本。
@@ -80,7 +80,9 @@ RinCore 处于活跃维护中，欢迎 Issue 与 PR。每一个被报告的问�
 
 ## 📋 更新日志
 
-v4.8.54 → v4.8.125（倒序）：
+v4.8.54 → v4.8.126（倒序）：
+
+- **v4.8.126** — OpenCode 网关客户端合规：全部 AI 请求改为自有 UA（`RinCore/<版本>`，替代 OkHttp 默认——OpenCode Go 文档明确要求客户端以自有名标识、而非泛用 HTTP 库名，且该网关对流量做滥用监控）；会话归属补齐（标题/候选建议/压缩等辅助调用改为携带本对话的稳定 `x-opencode-session`，不再存在无归属请求）。另经全量 diff 证实 v4.8.115→v4.8.116 的改动仅涉及浏览器工具——流链未被触碰，中断问题并非该版本引入。
 
 - **v4.8.125** — 输出恢复链定点调优（未重引入掐流检测门）：流阶段看门狗空闲上限统一为 150 秒（原 90/120 秒——过紧的阈值会误杀慢上游，而"重试重放"会放大断连体感）；流中断重试现在有可见状态（"输出中断，正在自动恢复（第 N 次）…"）；工作区产出路径统一规范化——同一文件不再在「本对话产出」里重复出现；文件胶囊与产出弹层重写为三选项（渲染/导出/用其他应用打开）——删除「分享」（与"用其他应用打开"重复），每个动作都有可见反馈。
 
