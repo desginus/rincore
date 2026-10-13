@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=构建&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/版本-v4.8.129-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/版本-v4.8.130-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/许可-segmented_dual-cyan)](LICENSE)
 
 **手机上一个真正全面的 AI 助手。** 不是套壳，是一台重新打造过的引擎——背后是六周的高强度实测迭代与 400+ 个版本。
@@ -80,7 +80,9 @@ RinCore 处于活跃维护中，欢迎 Issue 与 PR。每一个被报告的问�
 
 ## 📋 更新日志
 
-v4.8.54 → v4.8.129（倒序）：
+v4.8.54 → v4.8.130（倒序）：
+
+- **v4.8.130** — 断流重试节奏改版（用户定版数值）：中断自动恢复的等待序列改为 300ms → 700ms → 1s → 2s → 3s → 5s，6 次一组、共 3 组（18 次不变）——递增退避取代此前的固定间隔形态，对齐社区"固定间隔重试会加剧 429/503 限流"的实测结论。同版附带 v4.8.92↔HEAD 断连链全量对比审计（结论：无客户端回归；旧版本"更好"的体感来自上游劣化时间线 + 恢复动作被显式可见化）。
 
 - **v4.8.129** — 文件交互统一与图片保存修复：「本对话产出」与对话内文件胶囊现在共享同一套实现（新增 ChatFileActions 核心），统一为三选项——导出 / 分享 / 渲染；移除此前「用其他应用打开」（其独立解析链导致"文档不存在"假失败）。预览弹窗的图片保存改为与图片渲染同一条解析链（修复 Workspace/上传图片——尤其中文文件名——的保存失败），保存失败现在会真正写进运行日志。
 

@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=build&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/version-v4.8.129-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/version-v4.8.130-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/license-segmented_dual-cyan)](LICENSE)
 
 **A real, self-contained AI assistant on your phone.** Not a wrapper — a rebuilt engine with six
@@ -129,7 +129,9 @@ changelog entry and a regression guard. Optimizations keep coming.
 
 ## 📋 Changelog
 
-v4.8.54 → v4.8.129 (newest first):
+v4.8.54 → v4.8.130 (newest first):
+
+- **v4.8.130** — Stream-retry pacing revamp (user-specified): mid-stream interruption recovery now waits 300ms → 700ms → 1s → 2s → 3s → 5s per group, six attempts per group, three groups (18 attempts unchanged) — a gradual backoff instead of the previous fixed-interval storm, aligned with community findings that fixed-interval retries worsen 429/503 rate limiting. Also includes a full v4.8.92↔HEAD stream-chain audit (conclusion: no client-side regression; the earlier build's "better" feel is explained by upstream degradation timing plus recovery now being made visible).
 
 - **v4.8.129** — File-interaction unification & image-saving fix: the conversation-output sheet and the in-conversation file chips now share one implementation (new ChatFileActions core) with the same three actions — export / share / render — replacing the earlier "open with other apps" (removed; its separate resolution chain caused false "file not found" errors). Image saving from the preview dialog now uses the same resolution chain as image rendering (fixing save failures for workspace/uploaded images, especially Chinese filenames), and save failures now actually appear in the run log.
 
