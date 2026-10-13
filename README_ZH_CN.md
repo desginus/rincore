@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=构建&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/版本-v4.8.128-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/版本-v4.8.129-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/许可-segmented_dual-cyan)](LICENSE)
 
 **手机上一个真正全面的 AI 助手。** 不是套壳，是一台重新打造过的引擎——背后是六周的高强度实测迭代与 400+ 个版本。
@@ -80,7 +80,9 @@ RinCore 处于活跃维护中，欢迎 Issue 与 PR。每一个被报告的问�
 
 ## 📋 更新日志
 
-v4.8.54 → v4.8.128（倒序）：
+v4.8.54 → v4.8.129（倒序）：
+
+- **v4.8.129** — 文件交互统一与图片保存修复：「本对话产出」与对话内文件胶囊现在共享同一套实现（新增 ChatFileActions 核心），统一为三选项——导出 / 分享 / 渲染；移除此前「用其他应用打开」（其独立解析链导致"文档不存在"假失败）。预览弹窗的图片保存改为与图片渲染同一条解析链（修复 Workspace/上传图片——尤其中文文件名——的保存失败），保存失败现在会真正写进运行日志。
 
 - **v4.8.128** — LaTeX 渲染："公式整条击杀"防护。jlatexmath 是整条解析——一个 AMS 编号/元命令（`\tag{1}`）就会让整条公式回落成原文显示。现于渲染前清洗：`\tag{X}`→`\quad(X)`（编号保留可见）、`\label/\nonumber/\notag` 删除、`equation` 环境去壳、`\bm`→`\boldsymbol`——你报告的那条物理公式（含 `\boxed` 与 `\tag`）现在可以完整渲染。
 

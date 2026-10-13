@@ -2,7 +2,7 @@
 
 > **给 AI 的读法**: 拿到本仓库先读本文件。它告诉你 — 每块代码在哪、干什么、
 > 用户提某类需求时改哪些文件、该问题历史上是否出现过。
-> 版本基线: v4.8.128 (2026-10-13)。大规模改动后请同步更新对应卡片。
+> 版本基线: v4.8.129 (2026-10-13)。大规模改动后请同步更新对应卡片。
 >
 > 配套历史知识 (必读): `.claude/skills/` 下 `rincore-project-brief`(架构基线) /
 > `rincore-changelog`(版本史) / `rincore-bug-record`(Bug 根因) /
@@ -50,7 +50,7 @@
 | `service/ContextCompressor.kt` | 压缩留存量计算/推荐保留条数 |
 | `data/model/Conversation.kt` | 会话模型 (消息节点/压缩留存/系统提示词) |
 | `data/model/Assistant.kt` | 助手配置 (模型/参数/工具/MCP/CWD; v4.8.121: maxConcurrentSubAgents 默认 7) |
-| `ui/pages/chat/ConversationArtifactsSheet.kt` | 本对话产出胶囊窗 (v4.8.121 清单; v4.8.125: 3 选项[渲染/导出/用其他应用打开] — 删分享; 路径规范化去重; 解析链同 v4.8.63) |
+| `ui/pages/chat/ConversationArtifactsSheet.kt` | 本对话产出胶囊窗 (v4.8.121 清单; v4.8.129: 3 选项[导出/分享/渲染] — 与对话胶囊窗共享 ChatFileActions 单一实现; 路径规范化去重; 解析链同 v4.8.63) |
 | `ui/pages/chat/ChatDrawer.kt` | 会话抽屉 (v4.8.121: 露边条 64→40dp) |
 
 **数据流**: 输入 → `ChatVM.handleMessageSend` → `ChatService.sendMessage` →
@@ -222,7 +222,8 @@ MCP 工具静态声明 (配置决定), 连接惰性 (首次调用才连)。
 | `ui/components/richtext/Markdown.kt` | AST 渲染链 (v4.8.119: 链接内联递归/表格单元格行内直渲; v4.8.120: GFM 列对齐) |
 | `ui/components/richtext/LatexText.kt` | 公式渲染咽喉点 (processLatex: 定界符剥离 + v4.8.128 编号/元命令清洗; assumeLatexSize 与渲染同源) |
 | `ui/components/richtext/HighlightCodeBlock.kt` | 代码块 (v4.8.121: 自动渲染/JS 沙箱执行/滑动防抽屉) |
-| `ui/components/message/ChatFileChip.kt` | 文件胶囊选项弹层 (v4.8.125: 3 选项[渲染/导出/用其他应用打开] — 删分享; file 可空有可见反馈; MIME 按扩展名; 文档/视频/音频共用) |
+| `ui/components/message/ChatFileChip.kt` | 文件胶囊选项弹层 (v4.8.129: 3 选项[导出/分享/渲染]; 与产出/编辑过的文件共享 ChatFileActions; file 可空有可见反馈; 文档/视频/音频共用) |
+| `ui/components/message/ChatFileActions.kt` | 文件交互三件套统一核心 (v4.8.129: materializeWorkspaceFile/exportLocalFileTo/shareLocalFile — 三处单一实现) |
 | `ui/components/richtext/StableSizeImage.kt` | 图片稳定占位 (v4.8.123, B145: 加载期与最终尺寸一致, 防上滑跳动) |
 
 **渲染铁律**: Markdown 首帧同步解析 (对齐原版, 勿改异步/占位/分段);

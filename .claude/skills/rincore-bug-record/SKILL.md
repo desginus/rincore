@@ -5,6 +5,12 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 
 # RinCore Bug 记录（全部历史）
 
+## B150 — 文件交互三件套统一回滚（用户警告件）+ 图片保存整链根修（"保存失败且无日志"）（v4.8.129）
+- **背景（用户两点）**：①"在对话里用胶囊窗打开文件交互，和本对话产出里应该是完全相同的；不要用其他应用打开，直接 copy 胶囊窗的 [导出/分享/渲染]，逻辑路径完全一样。你现在的本对话产出里，用其他应用打开点了没反应/提示文档不存在，但实际存在。**警告一次，予以修正和回滚**。" ②"对话中的图片（如 Workspace 里的）点击下载会显示保存失败；请查日志但没有任何日志。先把所有图片下载路径全看一遍。"
+- **① 根因与回滚**：v4.8.125 删「分享」留「用其他应用打开」**方向错误**（用户本意是删「打开」留「分享」）。「打开」的实现 `openWorkspaceLink` 是 markdown 链接族解析链（WorkspaceImageResolver.resolveAnyFile，无 cwdCandidates/模糊探测），与导出/渲染所用的 resolveScopedFile 链**不同源、宽容度不足** → 对 canonicalPath 产出/历史多形态路径判"文件不存在"假失败。**处置**：新建共享核心 `ChatFileActions`（materializeWorkspaceFile / exportLocalFileTo / shareLocalFile），上传胶囊·编辑过的文件·本对话产出 三处 [导出/分享/渲染] 收敛为**单一实现**（动作顺序/图标也对齐「编辑过的文件」）；「用其他应用打开」整体移除。
+- **② 图片保存链审计（全清单）**：ImagePreviewDialog 下载按钮（对话图片/工具图/上传图/图库预览）→ FilesManager.saveMessageImage（主链路）；ImgGenPage 保存按钮 → 同函数；Mermaid 导出 → bitmap 直存（不涉解析，无改动）。**根因两处**：(a) saveMessageImage 的 workspace 分支用 isWorkspaceUri 认领（HOST 前缀过宽）——上传图 "file:///data/..." 命中前缀 → resolver 对非 workspaces 结构判 invalid_path → 保存失败；(b) "file:/" 单斜杠形态（java.io.File.toUri() 产出、中文名 percent 编码）走 Uri.toFile() **不解码** → file not found —— 即"有的时候失败"= 中文名/编码名文件。**处置**：saveMessageImage 接入**渲染同源统一链**（v4.8.115 单一解码点 isAppLocalImageUri + resolveLocalImageFile）；decodeLocalFilePath 扩展接纳 file:/ 单斜杠（+单测更新）。
+- **③ "无日志"根因**：CallTracer.event 在无活动轮次时**静默 return 丢弃**——图片保存在空闲期点击（无生成、无 TraceKey）→ v4.8.73 加的 "SAVE" 事件从未落盘 → "详情见运行日志"名不副实。**处置**：event 空闲期兜底（无活动轮次 → 落最近会话，无会话则新开并立即完成）；logSaveFailure 统一落点（logcat + 运行日志实落）。
+- **教训**：①用户说"删掉一个"时必须**双向确认删哪个**（本轮删错方向被用户警告）；②"把同样的逻辑 copy 过去"的正确实现 = 抽**单一共享函数**被多处调用（复制两份必然漂移）；③凡"能渲染就要能保存/分享/导出"的消费链必须复用渲染链**同一认领+解码**（单一解码点原则的延伸）；④提示类文案（"详情见运行日志"）必须验证日志真的落了——空闲期事件静默丢弃 = 假日志。
 ## B149 — LaTeX `\tag` 家族整条击杀（"中间那个公式渲染错误 \boxed{} 和 \tag{}"）（v4.8.128）
 - **背景（用户）**：物理讲解中的公式 `\tan60^\circ=\frac{a_\tau}{a_n}=\frac{R\alpha}{R\omega^2}=\frac{\alpha}{\omega^2}\;\Longrightarrow\;\boxed{\alpha=\sqrt3\,\omega^2}\tag{1}` 在应用里渲染错误，用户点名 `\boxed{}` 和 `\tag{}`。
 - **根因实锤**：jlatexmath（rikkahub fork）对 AMS 编号/元命令零容忍——命令矩阵实证（上游 1.0.7 jshell 37 例）：`\tag`/`\tag*`/`\label`/`\nonumber`/`\notag`/`\begin{equation}` 任一出现即**整条** ParseException；渲染端回落"原文带反斜杠"显示（v4.8.119 去壳回落）→ 整条公式看起来全坏，连原生支持的 `\boxed`（fork PredefinedCommands 宏 137）一起被误会为"渲染错误"。旁证：用户消息里的 `[Latex]` 是内联公式复制产物（Compose 内联内容占位文本），非显示错误。
