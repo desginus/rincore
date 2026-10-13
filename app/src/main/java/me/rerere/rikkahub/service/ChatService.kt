@@ -740,7 +740,7 @@ class ChatService(
         //   b) 60s 节流 + 服务端 (CF 系) ~100s 空闲断连, 绝大多数发送时
         //      连接已死, 预热名存实亡。
         // 连接新鲜度由 ConnectionWarmer.startProviderKeepAlive 常驻心跳
-        // (45s 周期, 同池, App 启动拉起) 保证, 任意时刻发送均为热连接。
+        // (60s 周期, 同池, App 启动拉起) 保证, 任意时刻发送均为热连接。
 
         val senderName = if (assistant.useAssistantAvatar) {
             assistant.name.ifEmpty { context.getString(R.string.assistant_page_default_assistant) }

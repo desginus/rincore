@@ -12,7 +12,8 @@ package me.rerere.rikkahub.data.ai
  * 嵌套策略混杂 → 策略对象模式)。
  *
  * 设计不变量 (行为等价重构, 数值与文案逐字保留):
- * - 发起池: 4 次, 线性退避 0.5s×n (header 判死型不 delay)
+ * - 发起池: 重试 5 次 (1 次初始请求 + 5 次重试; v4.8.131 用户定版 4→5),
+ *   线性退避 0.5s×n (header 判死型不 delay)
  * - 流中断: 三轮链 3 轮×6 次=18 次, 每轮 = 300ms/700ms/1s/2s/3s/5s 递增退避
  *   (v4.8.130 用户定版: 6 次一组 ×3 组; 递增退避对齐社区"别用固定间隔重试"结论)
  * - 全部用户可见报错文案保持原样
@@ -30,9 +31,9 @@ sealed class RetryPhase {
     /** 是否还有重试余量 */
     val hasQuota: Boolean get() = used < total
 
-    /** 发起阶段: 4 次连接尝试 */
+    /** 发起阶段: 重试 5 次 (1 次初始请求 + 5 次重试; v4.8.131 用户定版: 4→5) */
     data class Init(override val used: Int = 0) : RetryPhase() {
-        override val total get() = 4
+        override val total get() = 5
         /** 快速失败型线性退避 0.5s×n (header 判死型已耗 25s 等待不 delay) */
         fun backoffMs(attempt: Int): Long = 500L * attempt
         fun next() = copy(used = used + 1)

@@ -167,7 +167,7 @@ object ConnectionWarmer {
     //   b) 生成前预热与主请求并发, 同 key 请求被网关串行化 (v3.12.6
     //      用户实测), 预热请求挂在慢网关上时主请求排队等它。
     // 心跳方案: 应用级常驻协程每 60s (< 100s 空闲阈值, 留 40s 安全余量; v4.8.35 从 45s 放宽)
-    // 对目标 host 发 GET /models (同池), 连接池内永远有 ≤45s 新鲜连接;
+    // 对目标 host 发 GET /models (同池), 连接池内永远有 ≤60s 新鲜连接;
     // 发送时零握手零冷连, 且主请求与心跳碰撞窗口 <1s (心跳请求耗时)。
     // 开关沿用 opencodeWarmEnabled/commandCodeWarmEnabled (语义升级为保活)。
     // ─────────────────────────────────────────────────────────────
@@ -180,7 +180,7 @@ object ConnectionWarmer {
     private val keepAliveJobs = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
 
     /**
-     * v4.8.34: 确保某个 provider baseUrl 有 45s 心跳 (幂等)。
+     * v4.8.34: 确保某个 provider baseUrl 有 60s 心跳 (幂等; v4.8.35 起 60s)。
      * 由生成开始时调用 (当前对话确定的 provider) — 工具执行期间连接保持新鲜,
      * 工具结束后的下一轮请求直接复用热连接。
      */
@@ -281,7 +281,7 @@ object ConnectionWarmer {
     private val lastWarmAtMs = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private val pokeJobs = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
 
-    /** 进程级作用域 (生成开始时经 startProviderKeepAlive 注入, 供后台预探活使用) */
+    /** 进程级作用域 (应用启动时经 RikkaHubApp 预热线程的 startProviderKeepAlive 注入, 供后台预探活使用) */
     @Volatile
     private var appScopeRef: kotlinx.coroutines.CoroutineScope? = null
 
@@ -293,7 +293,7 @@ object ConnectionWarmer {
     private fun isRecentlyWarm(host: String): Boolean =
         System.currentTimeMillis() - (lastWarmAtMs[host] ?: 0L) < 70_000L
 
-    /** 工具执行完成的瞬间调用 (不阻塞): 后台预探活 — 下一轮请求发起前通常已完成。 */
+    /** 工具执行开始前调用 (v4.8.105 C1 提前; 与消息组装并行, 不阻塞): 后台预探活 — 下一轮请求发起前通常已完成。 */
     fun pokeAsync(baseUrl: String, apiKey: String?) {
         val trimmed = baseUrl.trimEnd('/')
         if (trimmed.isBlank()) return
@@ -349,25 +349,6 @@ object ConnectionWarmer {
         }
     }
 
-    /**
-     * 单次预热某个主机 (不受 warmed 标记限制)。
-     * 用于对话启动时延迟预热, 与消息预处理并发执行。
-     */
-    fun warmHostOnce(context: Context, host: String, port: Int = 443) {
-        Thread({
-            try {
-                val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-                    ?: return@Thread
-                val activeNetwork = connectivityManager.activeNetwork ?: return@Thread
-                val socketFactory = activeNetwork.socketFactory
-                val socket = socketFactory.createSocket()
-                val addr = java.net.InetSocketAddress(host, port)
-                socket.connect(addr, 2000)
-                socket.close()
-                Log.i(TAG, "延迟预热成功: $host:$port")
-            } catch (e: Exception) {
-                Log.w(TAG, "延迟预热失败: $host:$port — ${e.message}")
-            }
-        }, "lazy-warmup-$host").start()
-    }
+    // v4.8.131 审计: 旧 warmHostOnce (裸 socket 单次预热, "对话启动时延迟预热") 全库
+    // 零调用方 — 已被常驻保活 (ensureProviderKeepAlive) 与探活体系取代, 删除。
 }

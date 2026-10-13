@@ -1664,6 +1664,11 @@ class GenerationHandler(
             // 写入 per-generation 状态对象, 供 generateText 侧决策)
             lengthContinuationState.lastRoundLengthCut = false
             lengthContinuationState.lastRoundToolRepaired = false
+            // v4.8.131 审计修复: 轮边界重置 receivedAnyData — 工具轮之间该标记会带着
+            // 上一轮的 true 残留 (v4.3.11 只修了轮内重试分支), 下一轮首次连接失败
+            // 会被 classify 误判为流中断 → 塞进 18 次流中断链而不是 5 次发起链。
+            // 语义"本轮是否收到过流数据" = 当前尝试, 每次进入流循环前归零。
+            retry.receivedAnyData = false
             streamLoop@ while (true) {
             // v4.8.74 (OC/CC 定向): 距上轮 >15s (工具长执行后) 先轻量探活再发真实请求 —
             // 半死连接 4s 内剔除+清池 (否则真实请求整段等 readTimeout, 用户感知"工具后
@@ -1688,11 +1693,10 @@ class GenerationHandler(
                     }
                 }
             }
-            // v3.11.10: 重试预算在首次断流时刻重置起算 — 旧实现从流启动计时,
-            // 含"流启动→断流"的静默期; 平台首包就静默时 watchdog 60s 单次
-            // 已耗尽全部预算, 进入 catch 时连第一次重试都不满足条件,
-            // 用户感知"一直没反应最后报错"且重试机制完全失效
-            var retryBudgetStartMs = System.currentTimeMillis()
+            // v4.8.131 核校: 本计时仅服务 stream retry 诊断日志 (本次尝试时长);
+            // 45s 时间预算自 v3.14.0 三轮链改造起即无消费点 (预算 = 18 次计数),
+            // 旧 v3.11.10 注释描述的"预算起算"语义已不存在 (v4.8.130 已删死常量)。
+            val attemptStartMs = System.currentTimeMillis()
             val preStreamMessages = messages
             // v3.6.49: UI 更新节流 — 每 chunk 调 onUpdateMessages 触发整个 ChatPage
             // 重组, 流式期间高频重组是卡顿/发热/120Hz 掉帧根因。
@@ -1758,7 +1762,12 @@ class GenerationHandler(
                     lengthContinuationState.lastRoundToolRepaired = false
                 }
                 // v3.15.1: 收到任何流数据即置位 — StreamChunk 判据 (Finish 之外均视为有效数据)
-                if (chunk !is me.rerere.ai.ui.StreamChunk.Finish) retry.receivedAnyData = true
+                // v4.8.131 审计修复: 重试成功进入流式 — 发起期重试提示即刻清除
+                // (此前"网络连接失败，自动重试中"会滞留到流结束, 与流内容并存显示)
+                if (chunk !is me.rerere.ai.ui.StreamChunk.Finish) {
+                    if (!retry.receivedAnyData) processingStatus.value = null
+                    retry.receivedAnyData = true
+                }
                 // 4.2.1 bug 修复: usage 合并已在 StreamChunkHandler.Usage 内完成
                 // (copy(usage = usage.merge)), 此处不得再 merge — v4.2.0 双重合并
                 // 使 token 统计翻倍。保留缓存诊断日志。
@@ -1894,24 +1903,22 @@ class GenerationHandler(
                         // v4.8.114: 重试可见化 — 连接期失败明确展示"正在重试",
                         // 消除用户感知的数分钟静默"加载中" (成功/终态/离线等待路径
                         // 都会覆盖或清空该状态, 无残留风险)
-                        // v4.8.125 (用户实证: "输出途中断连 + 重试很久才会恢复"): 流中断
-                        // 重试同样可见 — 中途断流的静默自动恢复不再是"没反应".
-                        val retryShown = when (phase) {
-                            is RetryPhase.Init -> retry.init
-                            is RetryPhase.Stream -> retry.stream
-                            else -> 0
-                        }
-                        processingStatus.value = if (connectPhase) {
-                            "网络连接失败，自动重试中（第 $retryShown 次）…"
+                        // v4.8.131 (用户指令): 撤掉流中断可见化 — 仅「发起阶段」
+                        // (本轮尚未收到任何流数据) 的连接类失败显示重试状态;
+                        // 一切流中断 (socket 断连/看门狗判死/网关掐流) 的自动恢复
+                        // 回到静默 (v4.8.125 引入的"输出中断，正在自动恢复"撤除;
+                        // 注意: 中途 socket 断连同样静默 — 门控看阶段而非异常类型)。
+                        if (connectPhase && phase is RetryPhase.Init) {
+                            processingStatus.value = "网络连接失败，自动重试中（第 ${retry.init} 次）…"
                         } else {
-                            "输出中断，正在自动恢复（第 $retryShown 次）…"
+                            processingStatus.value = null  // 流中断恢复静默; 顺带清残留提示
                         }
                         // v4.7.18: 重试前清理连接池 — 断流多为连接层失效 (网络抖动/
                         // 僵尸连接/网卡问题), 复用陈旧连接会让重试立即再失败; 清理后
                         // 重试走全新连接, 配合退避 delay 显著提高恢复成功率。
                         me.rerere.ai.provider.ProviderManager.evictAllPools()
                         if (verdict.delayMs > 0) kotlinx.coroutines.delay(verdict.delayMs)
-                        Log.w(TAG, "stream retry $verdict.logDetail (budget ${System.currentTimeMillis() - retryBudgetStartMs}ms): ${e.message}")
+                        Log.w(TAG, "stream retry $verdict.logDetail (attempt ${System.currentTimeMillis() - attemptStartMs}ms): ${e.message}")
                         CallTracer.event("RETRY", "stream_retry",
                             "${verdict.logDetail} | ${e.javaClass.simpleName}: ${e.message}",
                             metrics = sseDiagMetrics())
@@ -1920,7 +1927,7 @@ class GenerationHandler(
                         // v4.3.11 (BUG18): receivedAnyData 语义是"本轮是否收到过流数据"
                         // — 重试开新轮必须重置, 否则首轮收过数据、次轮发起即败时
                         // classify 拿着上轮残留误判为 StreamInterrupted, 发起类失败
-                        // 被塞进 18 次流中断链 (每次立即失败) 而不是 4 次快速失败
+                        // 被塞进 18 次流中断链 (每次立即失败) 而不是 5 次快速失败
                         // 终态, 重试风暴打在死连接上白耗 1 分钟+
                         retry.receivedAnyData = false
                         continue@streamLoop
