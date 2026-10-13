@@ -5,6 +5,12 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 
 # RinCore Bug 记录（全部历史）
 
+## B149 — LaTeX `\tag` 家族整条击杀（"中间那个公式渲染错误 \boxed{} 和 \tag{}"）（v4.8.128）
+- **背景（用户）**：物理讲解中的公式 `\tan60^\circ=\frac{a_\tau}{a_n}=\frac{R\alpha}{R\omega^2}=\frac{\alpha}{\omega^2}\;\Longrightarrow\;\boxed{\alpha=\sqrt3\,\omega^2}\tag{1}` 在应用里渲染错误，用户点名 `\boxed{}` 和 `\tag{}`。
+- **根因实锤**：jlatexmath（rikkahub fork）对 AMS 编号/元命令零容忍——命令矩阵实证（上游 1.0.7 jshell 37 例）：`\tag`/`\tag*`/`\label`/`\nonumber`/`\notag`/`\begin{equation}` 任一出现即**整条** ParseException；渲染端回落"原文带反斜杠"显示（v4.8.119 去壳回落）→ 整条公式看起来全坏，连原生支持的 `\boxed`（fork PredefinedCommands 宏 137）一起被误会为"渲染错误"。旁证：用户消息里的 `[Latex]` 是内联公式复制产物（Compose 内联内容占位文本），非显示错误。
+- **处置**：新件 `markdown/src/main/java/org/intellij/markdown/util/LatexCommandSanitizer`：`\tag{X}`/`\tag*{X}` → `\quad(X)`（编号保留可见）；`\label`/`\nonumber`/`\notag` → 删除；`\begin{equation(*)}`/`\end{equation(*)}` → 删包裹留内容；`\bm` → `\boldsymbol`。花括号配对扫描器（支持 `\tag{\text{a}}` 嵌套与 `\{`/`\}` 转义）、全变换幂等、其余命令零触碰。接线 `LatexText.processLatex`（全链唯一咽喉点）+ `assumeLatexSize` 同源（尺寸预估与实际渲染同一串）。
+- **本地验证**：kotlinc 整模块编译零错 + harness 19 断言全过 + 清洗输出 12/12 过 jlatexmath 真实引擎解析（用户原公式 → `...\boxed{...}\quad(1)` 整条可渲染）。回归门禁 `LatexCommandSanitizerTest` 12 组进 `:markdown:testDebugUnitTest`。
+- **教训**：①jlatexmath 是"全有或全无"解析——一个不支持命令炸整条公式，元命令必须在渲染前清洗层兜底（不能指望渲染端容错）；②命令支持面必须用真实引擎矩阵实证（37 例），不靠猜；③用户点名两个命令时实锤根因可能只有一个（`\tag`），另一个（`\boxed`）是被整条回落"陪绑"的——报告要点破。
 ## B148 — OpenCode 网关客户端合规缺口（UA=库默认 + 辅助会话归属）+ 115↔116 断连归因审计（v4.8.126）
 - **背景（用户指派两查）**：输出途中断连依旧（DeepSeek 也出现）；①对比 v4.8.115↔116，查是否 116 引入；②查 opencode 提供商是否需要特殊请求头。
 - **① 115↔116 审计（证伪"116 引入"）**：`git diff e062c1a20..4d8c542f0` 全量 = 13 文件，全部为浏览器工具 B139 重写 + 工作区存储接线（BrowserTools/BrowserNavigation/BrowserController/BrowserCacheSweeper/HeadlessBrowserSession/BrowserToolDefaults/WorkspaceRepository/WorkspaceManager/ToolInvocationContext/ToolsBuilder/LocalTools + 测试 + 版本号）；**ChatCompletionsAPI、GenerationHandler(流)、RetryPolicy、DataSourceModule/EnvironmentOptimizer 零改动**。ChatCompletionsAPI 从 115 到 HEAD 净差 = v4.8.125 的 +3 行 trace → 流链与 115 等效，无可回衡项。

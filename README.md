@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=build&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/version-v4.8.127-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/version-v4.8.128-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/license-segmented_dual-cyan)](LICENSE)
 
 **A real, self-contained AI assistant on your phone.** Not a wrapper — a rebuilt engine with six
@@ -129,7 +129,9 @@ changelog entry and a regression guard. Optimizations keep coming.
 
 ## 📋 Changelog
 
-v4.8.54 → v4.8.127 (newest first):
+v4.8.54 → v4.8.128 (newest first):
+
+- **v4.8.128** — LaTeX rendering: protection against formula-killing commands. jlatexmath parses a formula as all-or-nothing — a single AMS numbering/meta command (`\tag{1}`) made an entire formula fall back to raw source text. A pre-render sanitizer now converts `\tag{X}`→`\quad(X)` (number stays visible), strips `\label`/`\nonumber`/`\notag`, unwraps `equation` environments, and normalizes `\bm`→`\boldsymbol` — the reported physics formula (with `\boxed` and `\tag`) now renders in full.
 
 - **v4.8.127** — Gateway client-identity disguise (per user: don't expose our own client): AI requests now present identities of validated clients instead of a self-declared one — `opencode/latest/1.19.0/cli` (the exact format the official OpenCode CLI sends) for the opencode.ai gateway, and `codex_cli_rs/0.162.1 (Linux 6.8.0; x86_64)` (Codex CLI's real format, widely recognized by gateways) for other AI providers. Only AI traffic is affected; non-AI requests and callers with explicit UAs are untouched.
 

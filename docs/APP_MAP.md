@@ -2,7 +2,7 @@
 
 > **给 AI 的读法**: 拿到本仓库先读本文件。它告诉你 — 每块代码在哪、干什么、
 > 用户提某类需求时改哪些文件、该问题历史上是否出现过。
-> 版本基线: v4.8.127 (2026-10-13)。大规模改动后请同步更新对应卡片。
+> 版本基线: v4.8.128 (2026-10-13)。大规模改动后请同步更新对应卡片。
 >
 > 配套历史知识 (必读): `.claude/skills/` 下 `rincore-project-brief`(架构基线) /
 > `rincore-changelog`(版本史) / `rincore-bug-record`(Bug 根因) /
@@ -217,9 +217,10 @@ MCP 工具静态声明 (配置决定), 连接惰性 (首次调用才连)。
 | `ui/components/render/DocumentRenderEngine.kt` | 文档渲染调度 (HTML/PDF/DOCX/XLSX) |
 | `highlight/` 模块 | 代码高亮实现 |
 | `ui/components/richtext/WorkspaceImageFetch.kt` | 图片加载 (缓存键含 mtime+size; Coil 接入见 RouteActivity) |
-| `markdown/` 模块 (vendored) | intellij-markdown + 数学模型移植 (v4.8.119) + TableFenceUnwrapper (v4.8.120: md 围栏内表格解包) |
+| `markdown/` 模块 (vendored) | intellij-markdown + 数学模型移植 (v4.8.119) + TableFenceUnwrapper (v4.8.120: md 围栏内表格解包) + LatexCommandSanitizer (v4.8.128, B149: \tag 家族整条击杀防护) |
 | `markdown/.../util/UrlRegionScanner.kt` | 地址域扫描器 (v4.8.122: URL=不可透明令牌 — `_`/`~` 永不进入地址区; B144) |
 | `ui/components/richtext/Markdown.kt` | AST 渲染链 (v4.8.119: 链接内联递归/表格单元格行内直渲; v4.8.120: GFM 列对齐) |
+| `ui/components/richtext/LatexText.kt` | 公式渲染咽喉点 (processLatex: 定界符剥离 + v4.8.128 编号/元命令清洗; assumeLatexSize 与渲染同源) |
 | `ui/components/richtext/HighlightCodeBlock.kt` | 代码块 (v4.8.121: 自动渲染/JS 沙箱执行/滑动防抽屉) |
 | `ui/components/message/ChatFileChip.kt` | 文件胶囊选项弹层 (v4.8.125: 3 选项[渲染/导出/用其他应用打开] — 删分享; file 可空有可见反馈; MIME 按扩展名; 文档/视频/音频共用) |
 | `ui/components/richtext/StableSizeImage.kt` | 图片稳定占位 (v4.8.123, B145: 加载期与最终尺寸一致, 防上滑跳动) |
