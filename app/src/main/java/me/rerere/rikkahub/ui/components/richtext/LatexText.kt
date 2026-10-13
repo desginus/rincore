@@ -1,8 +1,10 @@
 /* 【域 F·主题渲染】 — 消息/文档渲染 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.richtext
 
-/* ───【原版对齐】LatexText.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+/* ───【原版对齐】LatexText.kt | 基线: 原版 2.5.1
+ * v4.8.119 差异: 渲染失败回落去壳显示 (原版回落显示 $x$ 残壳);
+ * v4.8.128 差异: processLatex 接 LatexCommandSanitizer — 编号/元命令清洗
+ * (\tag 家族整条击杀防护, 用户实证 "中间那个公式渲染错误")。
  * ───────────────────────────────────────────────────────────────*/
 
 import android.graphics.Rect
@@ -19,12 +21,15 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.TextUnit
+import org.intellij.markdown.util.LatexCommandSanitizer
 import ru.noties.jlatexmath.JLatexMathDrawable
 import ru.noties.jlatexmath.JLatexMathSplitter
 
 fun assumeLatexSize(latex: String, fontSize: Float): Rect {
     return runCatching {
-        JLatexMathDrawable.builder(latex)
+        // v4.8.128: 与渲染同源 (processLatex 含编号/元命令清洗) — 尺寸预估与
+        // 实际渲染用同一串, 否则 \tag 公式预估 0 尺寸、渲染 0 尺寸双失败
+        JLatexMathDrawable.builder(processLatex(latex))
             .textSize(fontSize)
             .padding(0)
             .build()
@@ -146,7 +151,7 @@ private val displayBracketRegex = Regex("""^\\\[(.*?)\\\]""", RegexOption.DOT_MA
 
 private fun processLatex(latex: String): String {
     val trimmed = latex.trim()
-    return when {
+    val content = when {
         displayDollarRegex.matches(trimmed) ->
             displayDollarRegex.find(trimmed)?.groupValues?.get(1)?.trim() ?: trimmed
 
@@ -161,4 +166,8 @@ private fun processLatex(latex: String): String {
 
         else -> trimmed
     }
+    // v4.8.128 (用户实证 \tag 整条击杀): 编号/元命令清洗 — 见 LatexCommandSanitizer
+    // (jlatexmath 对 \tag/\label/\nonumber/\notag/\begin{equation} 零容忍, 一个即
+    // 整条 ParseException → 回落原文; 清洗后编号保留为 \quad(...), 其余删除)
+    return LatexCommandSanitizer.sanitize(content)
 }
