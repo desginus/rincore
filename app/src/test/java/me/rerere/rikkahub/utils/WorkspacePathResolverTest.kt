@@ -331,8 +331,14 @@ class WorkspacePathResolverTest {
             "/data/data/${pkg()}/cache/x.png",
             decodeLocalFilePath("/data/data/${pkg()}/cache/x.png"),
         )
-        // 异常形态不猜
-        assertNull(decodeLocalFilePath("file:/data/x.png"))
+        // v4.8.129: file:/ 单斜杠 (java.io.File.toUri() 产出形态) 纳入解码 —
+        // 上传图中文名 percent 编码的保存失败根修
+        assertEquals(
+            "/data/data/${pkg()}/files/upload/图1.png",
+            decodeLocalFilePath("file:/data/user/0/${pkg()}/files/upload/%E5%9B%BE1.png"),
+        )
+        // 裸 file: 无斜杠 / 相对路径仍不猜
+        assertNull(decodeLocalFilePath("file:data/x.png"))
         assertNull(decodeLocalFilePath("relative/path.png"))
     }
 }

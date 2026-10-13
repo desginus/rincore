@@ -48,9 +48,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.File01
-import me.rerere.hugeicons.stroke.File02
 import me.rerere.hugeicons.stroke.FileImport
 import me.rerere.hugeicons.stroke.FileView
+import me.rerere.hugeicons.stroke.Share08
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.tools.ProducedFile
 import me.rerere.rikkahub.data.ai.tools.ProducedFiles
@@ -60,28 +60,31 @@ import me.rerere.rikkahub.ui.components.RenderKind
 import me.rerere.rikkahub.ui.components.detectRenderKind
 import me.rerere.rikkahub.ui.components.message.ChipFile
 import me.rerere.rikkahub.ui.components.message.ScopedResolution
-import me.rerere.rikkahub.ui.components.message.exportResolvedFile
+import me.rerere.rikkahub.ui.components.message.exportLocalFileTo
+import me.rerere.rikkahub.ui.components.message.materializeWorkspaceFile
 import me.rerere.rikkahub.ui.components.message.normalizeCwdRel
 import me.rerere.rikkahub.ui.components.message.resolveScopedFile
+import me.rerere.rikkahub.ui.components.message.shareLocalFile
 import me.rerere.rikkahub.ui.components.render.RenderEngine
 import me.rerere.rikkahub.ui.components.render.RenderResult
 import me.rerere.rikkahub.ui.components.render.RenderViewDialog
-import me.rerere.rikkahub.ui.components.richtext.openWorkspaceLink
 import me.rerere.rikkahub.ui.context.LocalToaster
 import org.koin.compose.koinInject
 import java.io.File
 
 /**
- * v4.8.121→v4.8.125 (用户定版「本对话产出」): 模型产出/修改过的文件清单 —
- * 胶囊窗列表展示; 点击 → **选项弹层 [渲染 / 导出 / 用其他应用打开]**。
+ * v4.8.121→v4.8.129 (用户定版「本对话产出」): 模型产出/修改过的文件清单 —
+ * 胶囊窗列表展示; 点击 → **选项弹层 [导出 / 分享 / 渲染]**。
  *
- * v4.8.125 重写要点 (用户复核):
- * - 「分享」与「用其他应用打开」实质同一系统选单 → **删除「分享」**, 保留 3 项;
- * - 列表按路径去重 (v4.8.125 登记侧已做形态规范化, 此处兜底 distinctBy);
- * - 每个动作全链可见反馈: 解析失败/多命中/导出失败均 toast 或弹层, 渲染失败
- *   显式出 Unsupported 视图 — 不再有"点了没反应";
- * - 动作走工作区解析链 (多候选直取 → 模糊匹配 → 多命中弹层选择, 与 v4.8.63 同源);
- * - Host 以 open 控制可见 (恒驻组合) — 渲染进行中关闭弹层不丢进度态。
+ * v4.8.129 (用户指令, 回滚 v4.8.125 的「用其他应用打开」): 与对话内文件胶囊
+ * 逻辑路径**完全一致** (共享 ChatFileActions 统一核心: 解析 → 物化 → 动作) —
+ *   - 导出 = 系统另存 (CreateDocument) → exportLocalFileTo;
+ *   - 分享 = shareLocalFile (FileProvider → ACTION_SEND 选择器);
+ *   - 渲染 = RenderEngine.renderSmart → RenderViewDialog (仅可渲染类型显示)。
+ * 「用其他应用打开」整体移除 (v4.8.125 引入 — 用户实证点击"提示文档不存在"
+ * 假失败: 其解析链 (openWorkspaceLink) 与导出/渲染链不同源)。
+ * 保留: 列表路径规范化去重 (v4.8.125) / 多候选解析 + 多命中弹层 (v4.8.63 同源) /
+ * 全链可见反馈 / Host 恒驻组合 (渲染进度态保全)。
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -145,8 +148,8 @@ fun ConversationArtifactsSheet(
             runCatching {
                 val wsId = workspaceId ?: error("该助手未绑定工作区")
                 val resolved = resolveOrAsk(target.path) ?: return@launch
-                val out = context.contentResolver.openOutputStream(uri) ?: error("无法写入目标位置")
-                out.use { exportResolvedFile(workspaceRepository, wsId, resolved, it) }
+                val file = materializeWorkspaceFile(context, workspaceRepository, wsId, resolved)
+                exportLocalFileTo(context, file, uri)
                 toaster.show(
                     message = "已导出: ${target.path.substringAfterLast('/')}",
                     type = ToastType.Success,
@@ -169,14 +172,12 @@ fun ConversationArtifactsSheet(
                     runCatching {
                         val wsId = workspaceId ?: error("该助手未绑定工作区")
                         val resolved = resolveOrAsk(target.path) ?: return@withContext
-                        val dir = File(context.cacheDir, "workspace_render").apply {
+                        val resolvedName = resolved.substringAfterLast('/')
+                        val file = materializeWorkspaceFile(context, workspaceRepository, wsId, resolved)
+                        val taskDir = File(context.cacheDir, "file_actions_task").apply {
                             deleteRecursively()
                             mkdirs()
                         }
-                        val resolvedName = resolved.substringAfterLast('/')
-                        val file = File(dir, resolvedName)
-                        file.outputStream().use { output -> exportResolvedFile(workspaceRepository, wsId, resolved, output) }
-                        val taskDir = File(dir, "task")
                         renderResult = RenderEngine.renderSmart(file, taskDir, resolvedName)
                     }.onFailure {
                         renderResult = RenderResult.Unsupported(fileName, "读取文件失败: ${it.message}")
@@ -243,7 +244,7 @@ fun ConversationArtifactsSheet(
                         }
                     }
                 } else {
-                    // 选项视图: [渲染 / 导出 / 用其他应用打开]
+                    // v4.8.129: 选项 = [导出 / 分享 / 渲染] — 与对话内胶囊窗逻辑路径完全一致
                     val fileName = sel.path.substringAfterLast('/').ifBlank { sel.path }
                     Text(
                         text = fileName,
@@ -253,17 +254,6 @@ fun ConversationArtifactsSheet(
                         modifier = Modifier.padding(bottom = 12.dp),
                     )
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (detectRenderKind(fileName) != RenderKind.NONE) {
-                            ArtifactOptionCard(
-                                icon = { Icon(HugeIcons.FileView, contentDescription = null, modifier = Modifier.padding(4.dp)) },
-                                label = "渲染",
-                                onClick = {
-                                    selected = null
-                                    onOpenChange(false)
-                                    startRender(sel)
-                                },
-                            )
-                        }
                         ArtifactOptionCard(
                             icon = { Icon(HugeIcons.FileImport, contentDescription = null, modifier = Modifier.padding(4.dp)) },
                             label = stringResource(R.string.common_export),
@@ -283,15 +273,37 @@ fun ConversationArtifactsSheet(
                             },
                         )
                         ArtifactOptionCard(
-                            icon = { Icon(HugeIcons.File02, contentDescription = null, modifier = Modifier.padding(4.dp)) },
-                            label = "用其他应用打开",
+                            icon = { Icon(HugeIcons.Share08, contentDescription = null, modifier = Modifier.padding(4.dp)) },
+                            label = stringResource(R.string.common_share),
                             onClick = {
                                 selected = null
                                 onOpenChange(false)
-                                // openWorkspaceLink 自带解析与失败 toast (不静默)
-                                openWorkspaceLink(sel.path)
+                                scope.launch {
+                                    runCatching {
+                                        val wsId = workspaceId ?: error("该助手未绑定工作区")
+                                        val resolved = resolveOrAsk(sel.path) ?: return@launch
+                                        val file = materializeWorkspaceFile(context, workspaceRepository, wsId, resolved)
+                                        shareLocalFile(context, file)
+                                    }.onFailure { e ->
+                                        toaster.show(
+                                            message = "分享失败: ${e.message?.take(120) ?: "未知错误"}",
+                                            type = ToastType.Error,
+                                        )
+                                    }
+                                }
                             },
                         )
+                        if (detectRenderKind(fileName) != RenderKind.NONE) {
+                            ArtifactOptionCard(
+                                icon = { Icon(HugeIcons.FileView, contentDescription = null, modifier = Modifier.padding(4.dp)) },
+                                label = "渲染",
+                                onClick = {
+                                    selected = null
+                                    onOpenChange(false)
+                                    startRender(sel)
+                                },
+                            )
+                        }
                     }
                 }
             }

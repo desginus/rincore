@@ -1,8 +1,6 @@
 /* 【域 F·主题渲染】 — 消息/文档渲染 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.message
 
-import android.content.Intent
-import android.webkit.MimeTypeMap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -33,15 +31,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.content.FileProvider
 import com.dokar.sonner.ToastType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.File02
 import me.rerere.hugeicons.stroke.FileImport
 import me.rerere.hugeicons.stroke.FileView
+import me.rerere.hugeicons.stroke.Share08
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.RenderKind
 import me.rerere.rikkahub.ui.components.detectRenderKind
@@ -52,15 +49,16 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import java.io.File
 
 /**
- * v4.8.122→v4.8.125 (用户定版): 消息内文件胶囊的统一选项宿主 —
- * 弹层 [渲染 / 导出 / 用其他应用打开]。覆盖: 上传文档 (Document) / 视频 / 音频胶囊。
+ * v4.8.122→v4.8.129 (用户定版): 消息内文件胶囊的统一选项宿主 —
+ * 弹层 **[导出 / 分享 / 渲染]**。覆盖: 上传文档 (Document) / 视频 / 音频胶囊。
  *
- * v4.8.125 重写要点 (用户复核):
- * - 「分享」与「用其他应用打开」实质同一系统选单 → **删除「分享」**, 保留 3 项;
- * - 宿主恒驻 (open 仅控弹层可见) — 渲染进行中关闭弹层不丢进度态;
- * - `file` 允许为 null (URL 无法解出本地文件/文件已被清理) — 点按任何动作都有
- *   **可见 toast 反馈**, 不再出现"点了没反应";
- * - 「用其他应用打开」按扩展名解析 MIME (原先通配 MIME 会把无关应用全列进来)。
+ * v4.8.129 (用户指令, 回滚 v4.8.125 的「用其他应用打开」): 与「编辑过的文件」
+ * 及「本对话产出」逻辑路径完全一致 — 三件套动作全部走共享 ChatFileActions:
+ *   - 导出 = 系统另存 (CreateDocument) → exportLocalFileTo;
+ *   - 分享 = shareLocalFile (FileProvider → ACTION_SEND 选择器);
+ *   - 渲染 = RenderEngine.renderSmart → RenderViewDialog (仅可渲染类型显示)。
+ * 宿主恒驻 (open 仅控弹层可见) — 渲染进行中关闭弹层不丢进度态; file 可空 —
+ * 点按任何动作都有可见 toast 反馈 (不出现"点了没反应")。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -87,15 +85,14 @@ fun FileChipOptionsHost(
         return false
     }
 
-    // v4.8.123: 导出 = 系统另存副本 (CreateDocument)
+    // v4.8.123: 导出 = 系统另存副本 (CreateDocument; v4.8.129 走统一出口)
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/octet-stream"),
     ) { uri ->
         val f = file
         if (uri == null || f == null) return@rememberLauncherForActivityResult
         runCatching {
-            val out = context.contentResolver.openOutputStream(uri) ?: error("无法写入目标位置")
-            out.use { output -> f.inputStream().use { input -> input.copyTo(output) } }
+            exportLocalFileTo(context, f, uri)
             toaster.show(
                 message = "已导出: ${displayName.ifBlank { f.name }}",
                 type = ToastType.Success,
@@ -122,6 +119,73 @@ fun FileChipOptionsHost(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                Card(
+                    onClick = {
+                        onOpenChange(false)
+                        if (missingFile()) return@Card
+                        runCatching {
+                            exportLauncher.launch(displayName.ifBlank { file?.name ?: "file" })
+                        }.onFailure { e ->
+                            toaster.show(
+                                message = "导出失败: ${e.message?.take(120) ?: "未知错误"}",
+                                type = ToastType.Error,
+                            )
+                        }
+                    },
+                    shape = MaterialTheme.shapes.medium,
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier
+                            .padding(16.dp)
+                            .fillMaxWidth(),
+                    ) {
+                        Icon(
+                            imageVector = HugeIcons.FileImport,
+                            contentDescription = null,
+                            modifier = Modifier.padding(4.dp),
+                        )
+                        Text(
+                            text = stringResource(R.string.common_export),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
+                }
+                Card(
+                    onClick = {
+                        onOpenChange(false)
+                        if (missingFile()) return@Card
+                        runCatching {
+                            val f = file ?: error("文件不存在")
+                            shareLocalFile(context, f)
+                        }.onFailure { e ->
+                            toaster.show(
+                                message = "分享失败: ${e.message?.take(120) ?: "未知错误"}",
+                                type = ToastType.Error,
+                            )
+                        }
+                    },
+                    shape = MaterialTheme.shapes.medium,
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier
+                            .padding(16.dp)
+                            .fillMaxWidth(),
+                    ) {
+                        Icon(
+                            imageVector = HugeIcons.Share08,
+                            contentDescription = null,
+                            modifier = Modifier.padding(4.dp),
+                        )
+                        Text(
+                            text = stringResource(R.string.common_share),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
+                }
                 if (renderable) {
                     Card(
                         onClick = {
@@ -169,85 +233,6 @@ fun FileChipOptionsHost(
                                 style = MaterialTheme.typography.titleMedium,
                             )
                         }
-                    }
-                }
-                Card(
-                    onClick = {
-                        onOpenChange(false)
-                        if (missingFile()) return@Card
-                        runCatching {
-                            exportLauncher.launch(displayName.ifBlank { file?.name ?: "file" })
-                        }.onFailure { e ->
-                            toaster.show(
-                                message = "导出失败: ${e.message?.take(120) ?: "未知错误"}",
-                                type = ToastType.Error,
-                            )
-                        }
-                    },
-                    shape = MaterialTheme.shapes.medium,
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        modifier = Modifier
-                            .padding(16.dp)
-                            .fillMaxWidth(),
-                    ) {
-                        Icon(
-                            imageVector = HugeIcons.FileImport,
-                            contentDescription = null,
-                            modifier = Modifier.padding(4.dp),
-                        )
-                        Text(
-                            text = stringResource(R.string.common_export),
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                    }
-                }
-                Card(
-                    onClick = {
-                        onOpenChange(false)
-                        if (missingFile()) return@Card
-                        runCatching {
-                            val f = file ?: error("文件不存在")
-                            val uri = FileProvider.getUriForFile(
-                                context,
-                                "${context.packageName}.fileprovider",
-                                f,
-                            )
-                            // v4.8.125: 按扩展名解析 MIME (原 "*/*" 会把无关应用全列进来)
-                            val ext = (displayName.ifBlank { f.name }).substringAfterLast('.', "").lowercase()
-                            val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "*/*"
-                            val intent = Intent(Intent.ACTION_VIEW).apply {
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                setDataAndType(uri, mime)
-                            }
-                            context.startActivity(Intent.createChooser(intent, null))
-                        }.onFailure { e ->
-                            toaster.show(
-                                message = "打开失败: ${e.message?.take(120) ?: "未知错误"}",
-                                type = ToastType.Error,
-                            )
-                        }
-                    },
-                    shape = MaterialTheme.shapes.medium,
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        modifier = Modifier
-                            .padding(16.dp)
-                            .fillMaxWidth(),
-                    ) {
-                        Icon(
-                            imageVector = HugeIcons.File02,
-                            contentDescription = null,
-                            modifier = Modifier.padding(4.dp),
-                        )
-                        Text(
-                            text = "用其他应用打开",
-                            style = MaterialTheme.typography.titleMedium,
-                        )
                     }
                 }
             }

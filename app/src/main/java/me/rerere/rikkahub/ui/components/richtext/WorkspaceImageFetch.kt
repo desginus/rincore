@@ -36,13 +36,19 @@ import okio.Path.Companion.toPath
  * v4.8.115: 本地地址解码 (纯函数, 无文件系统访问, 单测覆盖)。
  * file:// 剥 scheme → 裸路径原样 → 含 % 才 percentDecodeLenient (回环安全,
  * 非法 % 序列原样保留) → /data/user/0 别名折叠为 /data/data。
- * 返回 null = 不认识的形态 (file:/ 单斜杠、相对路径等不猜)。
+ * v4.8.129: 接纳 file:/ 单斜杠形态 — java.io.File.toUri() 的产出 (上传图/MCP 图
+ * 等 "file:/data/user/0/..." 且中文名被 percent 编码); 此前"不猜"导致保存链
+ * Uri.toFile() 不解码 → 中文名文件"保存失败"。
+ * 返回 null = 不认识的形态 (裸 file: 无斜杠、相对路径等不猜)。
  */
 internal fun decodeLocalFilePath(data: String): String? {
     val t = data.trim()
     val withoutScheme = when {
         t.length >= 7 && t.substring(0, 7).equals("file://", ignoreCase = true) ->
             t.substring(7)
+        // v4.8.129: file:/ 单斜杠 (File.toUri() 产出形态) — 保留其 "/" 后走统一解码
+        t.length >= 6 && t.substring(0, 6).equals("file:/", ignoreCase = true) ->
+            t.substring(5)
         t.length >= 5 && t.substring(0, 5).equals("file:", ignoreCase = true) -> return null
         t.startsWith("/") -> t
         else -> return null

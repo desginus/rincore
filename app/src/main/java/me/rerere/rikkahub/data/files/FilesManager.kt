@@ -27,6 +27,9 @@ import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.db.entity.ManagedFileEntity
 import me.rerere.rikkahub.data.repository.FilesRepository
 import me.rerere.rikkahub.utils.exportImage
+import me.rerere.rikkahub.ui.components.richtext.decodeLocalFilePath
+import me.rerere.rikkahub.ui.components.richtext.isAppLocalImageUri
+import me.rerere.rikkahub.ui.components.richtext.resolveLocalImageFile
 import me.rerere.rikkahub.utils.exportImageFile
 import me.rerere.rikkahub.utils.getActivity
 import kotlin.io.encoding.Base64
@@ -304,40 +307,41 @@ class FilesManager(
                 val byteArray = Base64.decode(image.substringAfter("base64,").toByteArray())
                 val bitmap = BitmapFactory.decodeByteArray(byteArray, 0, byteArray.size)
                 if (bitmap == null) {
-                    Log.e("FilesManager", "saveMessageImage: data:image decode failed")
+                    logSaveFailure("data_decode_failed", image)
                     false
                 } else activityContext.exportImage(activity, bitmap)
             }
 
-            // v4.5.16: workspace 形态优先 — 本地生成图片/模型引用图片的标准渲染
-            // URL 统一经 WorkspaceImageResolver 解析为真实宿主文件再导出。
-            // v4.8.53: 解析失败不再静默 (此前 → "提示成功但相册没有" 假成功)。
-            me.rerere.rikkahub.utils.isWorkspaceUri(image) -> {
-                val resolved = me.rerere.rikkahub.utils.WorkspaceImageResolver.resolve(image)
-                if (resolved != null) {
+            // v4.8.129 (用户实证: "Workspace/上传图片保存失败且运行日志为空"):
+            // 与渲染链同源 — v4.8.115 单一解码点 (isAppLocalImageUri + resolveLocalImageFile)
+            // 认领并解析, 凡渲染认领的本地图片一律可保存。旧实现两处缺陷在此修复:
+            // ①host 前缀误判 (上传图 "file:///data/..." 命中 HOST 前缀 → resolver 对
+            //   非 workspaces 结构判 invalid_path → 保存失败);
+            // ②file:/ 单斜杠形态 (File.toUri() 产出, 中文名 percent 编码) 走
+            //   Uri.toFile() 不解码 → file not found。
+            isAppLocalImageUri(image) -> {
+                val resolved = resolveLocalImageFile(image)
+                if (resolved != null && resolved.isFile) {
                     activityContext.exportImageFile(activity, resolved)
                 } else {
-                    Log.w("FilesManager", "saveMessageImage: workspace image unresolved: $image")
-                    // v4.8.73: 同步写运行日志 (与"详情见运行日志"提示对齐)
-                    me.rerere.rikkahub.data.ai.CallTracer.event(
-                        "SAVE", "workspace_image_unresolved", "image=${image.take(200)}"
-                    )
+                    logSaveFailure("local_unresolved", image)
                     false
                 }
             }
 
             image.startsWith("file:") -> {
-                val file = runCatching { image.toUri().toFile() }.getOrNull()
-                if (file == null || !file.exists()) {
-                    Log.e("FilesManager", "saveMessageImage: file not found: $image")
+                val decoded = decodeLocalFilePath(image)
+                val file = decoded?.let { File(it) }
+                if (file == null || !file.isFile) {
+                    logSaveFailure("file_not_found", image)
                     false
                 } else activityContext.exportImageFile(activity, file)
             }
 
             image.startsWith("/") -> {
                 val file = File(image)
-                if (!file.exists()) {
-                    Log.e("FilesManager", "saveMessageImage: file not found: $image")
+                if (!file.isFile) {
+                    logSaveFailure("path_not_found", image)
                     false
                 } else activityContext.exportImageFile(activity, file)
             }
@@ -353,14 +357,11 @@ class FilesManager(
                         if (connection.responseCode == HttpURLConnection.HTTP_OK) {
                             val bitmap = BitmapFactory.decodeStream(connection.inputStream)
                             if (bitmap == null) {
-                                Log.e("FilesManager", "saveMessageImage: http decode failed: $image")
+                                logSaveFailure("http_decode_failed", image)
                                 false
                             } else activityContext.exportImage(activity, bitmap)
                         } else {
-                            Log.e(
-                                "FilesManager",
-                                "saveMessageImage: http ${connection.responseCode}: $image"
-                            )
+                            logSaveFailure("http_${connection.responseCode}", image)
                             false
                         }
                     } finally {
@@ -368,15 +369,27 @@ class FilesManager(
                     }
                 }.getOrElse { t ->
                     Log.e("FilesManager", "saveMessageImage: http failed: $image", t)
+                    logSaveFailure("http_failed", image)
                     false
                 }
             }
 
             else -> {
-                Log.e("FilesManager", "saveMessageImage: unsupported format: $image")
+                logSaveFailure("unsupported", image)
                 false
             }
         }
+    }
+
+    /**
+     * v4.8.129: 保存失败统一落点 — logcat + 运行日志实落 (空闲期走 CallTracer
+     * 的最近会话兜底, 不再静默丢弃)。此前"详情见运行日志"因事件被丢而名不副实。
+     */
+    private suspend fun logSaveFailure(reason: String, image: String) {
+        Log.e("FilesManager", "saveMessageImage: $reason: ${image.take(300)}")
+        me.rerere.rikkahub.data.ai.CallTracer.event(
+            "SAVE", "save_image_failed", "reason=$reason url=${image.take(300)}"
+        )
     }
 
     data class SyncResult(

@@ -108,8 +108,30 @@ object CallTracer {
     suspend fun event(phase: String, step: String, detail: String, metrics: Map<String, String> = emptyMap()) {
         val key = currentKey()
         mutex.withLock {
-            val state = traces[key] ?: return
-            if (!state.active) return
+            val state = traces[key]
+            if (state == null || !state.active) {
+                // v4.8.129 (用户实证: "保存失败 (详情见运行日志)"但运行日志为空):
+                // 空闲期无活动轮次的 UI 事件 (图片保存失败等) 不再静默丢弃 — 落最近
+                // 一次会话 (无会话则新开并立即完成), 保证提示名实相符; 键内活动轮次
+                // 路径行为零变化。
+                if (key == UNKEYED) {
+                    val latest = LogSessionStore.listSessions().firstOrNull()
+                    val sid = latest?.id ?: LogSessionStore.startSession()
+                    LogSessionStore.appendEvent(
+                        sessionId = sid,
+                        event = LogSessionStore.LogSessionEvent(
+                            ts = System.currentTimeMillis(),
+                            phase = phase,
+                            step = step,
+                            detail = detail,
+                            metrics = metrics,
+                        ),
+                    )
+                    if (latest == null) LogSessionStore.finishSession(sid)
+                    Log.d(TAG, "[detached] $phase/$step: $detail")
+                }
+                return
+            }
             val e = TraceEvent(
                 elapsedMs = System.currentTimeMillis() - state.startTime,
                 phase = phase,

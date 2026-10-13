@@ -4,8 +4,9 @@ package me.rerere.rikkahub.ui.components.message
 
 /* ───【原版对齐】ChatMessageEditedFiles.kt | 差异 ±2 行
  * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * v4.8.129: 三件套动作 [导出/分享/渲染] 收敛至共享 ChatFileActions —
+ * 与上传文件胶囊 / 本对话产出 逻辑路径完全一致 (单一实现)。
  * ───────────────────────────────────────────────────────────────*/
-import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -46,7 +47,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.content.FileProvider
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.JsonArray
@@ -147,13 +147,12 @@ internal fun EditedFilesList(
     ) { uri ->
         val entry = selectedFile.also { selectedFile = null } ?: return@rememberLauncherForActivityResult
         if (uri == null) return@rememberLauncherForActivityResult
-        val outputStream = context.contentResolver.openOutputStream(uri) ?: return@rememberLauncherForActivityResult
         scope.launch {
             runCatching {
-                outputStream.use { output ->
-                    val resolved = resolveOrAsk(entry) ?: return@runCatching
-                    exportResolvedFile(workspaceRepository, workspaceId, resolved, output)
-                }
+                val resolved = resolveOrAsk(entry) ?: return@launch
+                // v4.8.129: 统一出口 — 物化本地文件后走共享导出 (与胶囊窗/产出同源)
+                val file = materializeWorkspaceFile(context, workspaceRepository, workspaceId, resolved)
+                exportLocalFileTo(context, file, uri)
             }.onFailure { e ->
                 toaster.show(
                     message = "导出失败: ${e.message?.take(120) ?: "未知错误"}",
@@ -262,23 +261,10 @@ internal fun EditedFilesList(
                         selectedFile = null
                         scope.launch {
                             runCatching {
-                                val resolved = resolveOrAsk(entry2) ?: return@runCatching
-                                val dir = File(context.cacheDir, "workspace_share").apply { mkdirs() }
-                                val file = File(dir, resolved.substringAfterLast('/'))
-                                file.outputStream().use { output ->
-                                    exportResolvedFile(workspaceRepository, workspaceId, resolved, output)
-                                }
-                                val uri = FileProvider.getUriForFile(
-                                    context,
-                                    "${context.packageName}.fileprovider",
-                                    file,
-                                )
-                                val intent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "application/octet-stream"
-                                    putExtra(Intent.EXTRA_STREAM, uri)
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                }
-                                context.startActivity(Intent.createChooser(intent, null))
+                                val resolved = resolveOrAsk(entry2) ?: return@launch
+                                // v4.8.129: 统一出口 — 物化 + 共享分享实现 (与胶囊窗/产出同源)
+                                val file = materializeWorkspaceFile(context, workspaceRepository, workspaceId, resolved)
+                                shareLocalFile(context, file)
                             }.onFailure { e ->
                                 toaster.show(
                                     message = "分享失败: ${e.message?.take(120) ?: "未知错误"}",
@@ -322,14 +308,12 @@ internal fun EditedFilesList(
                                         runCatching {
                                             val resolvedName = resolved.substringAfterLast('/')
                                             renderFileName = resolvedName
-                                            val dir = File(context.cacheDir, "workspace_render")
-                                            dir.deleteRecursively()
-                                            dir.mkdirs()
-                                            val file = File(dir, resolvedName)
-                                            file.outputStream().use { output ->
-                                                exportResolvedFile(workspaceRepository, workspaceId, resolved, output)
+                                            // v4.8.129: 统一出口 — 物化 (与胶囊窗/产出同源) + 渲染
+                                            val file = materializeWorkspaceFile(context, workspaceRepository, workspaceId, resolved)
+                                            val taskDir = File(context.cacheDir, "file_actions_task").apply {
+                                                deleteRecursively()
+                                                mkdirs()
                                             }
-                                            val taskDir = File(dir, "task")
                                             renderResult = RenderEngine.renderSmart(file, taskDir, resolvedName)
                                         }.onFailure {
                                             renderResult = RenderResult.Unsupported(
