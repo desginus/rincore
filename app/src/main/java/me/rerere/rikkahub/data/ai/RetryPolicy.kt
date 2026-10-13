@@ -13,7 +13,8 @@ package me.rerere.rikkahub.data.ai
  *
  * 设计不变量 (行为等价重构, 数值与文案逐字保留):
  * - 发起池: 4 次, 线性退避 0.5s×n (header 判死型不 delay)
- * - 流中断: 三轮链 3 轮×6 次=18 次, 每轮 = 风暴 3×300ms + 经典 1/2/4s
+ * - 流中断: 三轮链 3 轮×6 次=18 次, 每轮 = 300ms/700ms/1s/2s/3s/5s 递增退避
+ *   (v4.8.130 用户定版: 6 次一组 ×3 组; 递增退避对齐社区"别用固定间隔重试"结论)
  * - 全部用户可见报错文案保持原样
  *
  * 职责边界:
@@ -42,17 +43,18 @@ sealed class RetryPhase {
     /** 流中断阶段: 三轮链 18 次 */
     data class Stream(override val used: Int = 0) : RetryPhase() {
         override val total get() = 18
-        /** 第 n 次 (0-based 已用计数) 的等待时长: 轮内前 3 次风暴 300ms, 后 3 次经典 1/2/4s */
+        /** 第 n 次 (0-based 已用计数) 的等待时长: 组内 300ms→700ms→1s→2s→3s→5s 递增退避
+         *  (v4.8.130 用户定版: 6 次一组 ×3 组 = 18 次不变; 旧形态为 风暴 3×300ms +
+         *  经典 1/2/4s — 社区实锤 429/503 场景固定间隔重试"越炸越狠", 改递增形态) */
         fun delayMs(): Long {
             val phaseInRound = used % 6 + 1
-            return if (phaseInRound <= 3) 300L else longArrayOf(1000L, 2000L, 4000L)[phaseInRound - 4]
+            return longArrayOf(300L, 700L, 1000L, 2000L, 3000L, 5000L)[phaseInRound - 1]
         }
-        /** 日志描述: round x/3 phase storm|classic y/6 */
+        /** 日志描述: round x/3 step y/6 */
         fun describe(): String {
             val round = used / 6 + 1
             val phaseInRound = used % 6 + 1
-            val kind = if (phaseInRound <= 3) "storm" else "classic"
-            return "round $round/3 $kind phase $phaseInRound/6"
+            return "round $round/3 step $phaseInRound/6"
         }
         fun next() = copy(used = used + 1)
         fun exhaustedMessage(): String =

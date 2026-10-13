@@ -230,15 +230,11 @@ class GenerationHandler(
         // 命令预算放宽到 600s (workspace_shell 上限) 之上再留 100s 余量 (沙箱启动/脚本开销)。
         private const val TOOL_EXECUTION_TIMEOUT_MS = 700_000L
 
-        /** v3.11.24 断流重试风暴硬顶 (ms): 45s。
-         *  语义修正 — 旧值 10s 把"正常生成数分钟后断流"误判为预算耗尽
-         *  (2026-08-31 实证: 网关正常输出数分钟后 Software caused connection
-         *  abort, 进 catch 时 elapsed 已远超 10s, 本可恢复的连接被打成
-         *  "重试 1 次后仍失败" 终报)。本预算本意 = 限制断流恢复风暴,
-         *  非限制生成时长: 常规风暴 15 次 x 150ms ≈ 2.3s 远小于 45s;
-         *  极劣网络 45s 亦足够穷尽 15 次上限。静默长等待的判定仍由
-         *  ChatCompletionsAPI 三阶段 watchdog 负责, 此处只兜风暴总量。 */
-        private const val STREAM_RETRY_BUDGET_MS = 45_000L
+        // v4.8.130: 断流重试预算 = 三轮链 18 次 (RetryPolicy.kt Stream — 每组
+        // 300ms/700ms/1s/2s/3s/5s 递增退避, 用户定版)。旧 v3.11.24 的 45s 时间
+        // 预算常量 (STREAM_RETRY_BUDGET_MS) 经全库核验已无任何消费点 (其注释
+        // 所述"兜风暴总量"在当前实现中不生效), 本次删除; 静默长等待的判定由
+        // ChatCompletionsAPI 三阶段 watchdog 负责。
 
         /** v3.11.24 (F2): 同一工具在同一轮生成的累计调用上限 (含成功调用)。
          *  实证 2026-08-31: mcp__sequentialthinking 连调 6 次, 5 次无信息量,
