@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=构建&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/版本-v4.8.130-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/版本-v4.8.131-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/许可-segmented_dual-cyan)](LICENSE)
 
 **手机上一个真正全面的 AI 助手。** 不是套壳，是一台重新打造过的引擎——背后是六周的高强度实测迭代与 400+ 个版本。
@@ -80,7 +80,9 @@ RinCore 处于活跃维护中，欢迎 Issue 与 PR。每一个被报告的问�
 
 ## 📋 更新日志
 
-v4.8.54 → v4.8.130（倒序）：
+v4.8.54 → v4.8.131（倒序）：
+
+- **v4.8.131** — 断流重试细化与连接链全量审计：中途断流的自动恢复恢复为完全静默（撤掉"正在自动恢复"提示；仅"发起连接失败"仍显示重试状态）；发起连接的重试池从 4 次提升到 5 次。对重试/保活/预热全链的审计还修复了两处真实问题：工具轮之间"已收到数据"标记的残留（可能把下一轮首次连接失败误塞进长重试链）、重试成功后提示滞留到流结束；并清理死代码与陈旧注释。
 
 - **v4.8.130** — 断流重试节奏改版（用户定版数值）：中断自动恢复的等待序列改为 300ms → 700ms → 1s → 2s → 3s → 5s，6 次一组、共 3 组（18 次不变）——递增退避取代此前的固定间隔形态，对齐社区"固定间隔重试会加剧 429/503 限流"的实测结论。同版附带 v4.8.92↔HEAD 断连链全量对比审计（结论：无客户端回归；旧版本"更好"的体感来自上游劣化时间线 + 恢复动作被显式可见化）。
 
