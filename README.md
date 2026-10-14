@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=build&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/version-v4.8.133-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/version-v4.8.135-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/license-segmented_dual-cyan)](LICENSE)
 
 **A real, self-contained AI assistant on your phone.** Not a wrapper — a rebuilt engine with six
@@ -129,7 +129,10 @@ changelog entry and a regression guard. Optimizations keep coming.
 
 ## 📋 Changelog
 
-v4.8.54 → v4.8.133 (newest first):
+v4.8.54 → v4.8.135 (newest first):
+
+- **v4.8.135** — Two priority fixes: `workspace_glob` now supports `**`/path patterns (previously `**/*` silently returned empty) with a real total count when truncated; `buildRenderUrl` stats before emitting and recomputes (cwd-prefix variants + bounded same-name search) to stop stale render links. Same-version compile fix included.
+- **v4.8.134** — Test-report full sweep (13 items): image-mismatch root cause = upload-copy naming race (allocate + create now atomic), per-conversation task lists, sub-agent activity heartbeat, read_image percent-decode + /workspace paths, dispatch queueing, budget transparency, NonCancellable writes, url_only reads, environment notes.
 
 - **v4.8.133** — Sub-agent timeout truth alignment: a full audit found no "420" constant anywhere (code, resources, UI, DB, assets, history) — the number came from the model-facing surfaces, which after the earlier parameter removal had no authoritative statement of the real cap (and carried a stale budget figure, 100K vs the actual 1000K). The dispatch tool description now states the fixed 1800-second (30-minute) cap, a supplied `timeout_seconds` is explicitly reported as ignored, and legacy per-run values are annotated as historical. Engine behavior unchanged (fixed 1800s).
 

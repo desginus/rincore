@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=构建&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/版本-v4.8.133-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/版本-v4.8.135-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/许可-segmented_dual-cyan)](LICENSE)
 
 **手机上一个真正全面的 AI 助手。** 不是套壳，是一台重新打造过的引擎——背后是六周的高强度实测迭代与 400+ 个版本。
@@ -80,7 +80,10 @@ RinCore 处于活跃维护中，欢迎 Issue 与 PR。每一个被报告的问�
 
 ## 📋 更新日志
 
-v4.8.54 → v4.8.133（倒序）：
+v4.8.54 → v4.8.135（倒序）：
+
+- **v4.8.135** — 两项优先修复：workspace_glob 支持 **/路径模式（此前 “**/*” 静默返回空），truncated 给真实总数；buildRenderUrl 发出前 stat 并回退重算（cwd 前缀变体 + 限定深度同名搜索），治陈旧渲染坏链。含同版编译修复。
+- **v4.8.134** — 测试报告全量治理（13 项）：图片错位根因=上传副本命名竞态（取号+创建原子化）、任务清单按对话隔离、子代理活动心跳、read_image 百分号解码与 /workspace 路径、派发排队、预算透明、写入 NonCancellable、url_only 读、环境说明。
 
 - **v4.8.133** — 子代理超时真值对齐：全库对账（代码/资源/UI/数据库/资产/历史）均无"420"常量，该数字来自模型可见面——此前的参数移除之后，工具描述里没有任何权威的超时上限声明（且残留一个陈旧数值：预算 100K 与实际 1000K 不符）。现在 dispatch 工具描述直接写明固定上限 1800 秒（30 分钟），模型若仍传入 timeout_seconds 会在结果中显式标注"已忽略"，历史运行记录里的旧值也会被标注为历史值。引擎行为不变（恒定 1800 秒）。
 

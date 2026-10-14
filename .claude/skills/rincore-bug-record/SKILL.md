@@ -5,6 +5,19 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 
 # RinCore Bug 记录（全部历史）
 
+## B156 — workspace_glob "**/*" 静默空返回 + render_urls 陈旧路径（v4.8.135）
+- **现象（用户测试报告）**：①`workspace_glob` 传 `**/*` 静默返回空（不报错不警告），"差点据此认定工作区是空的"——把空结果误读成"不存在"；②同一图片路径，工具两次给出的 render URL 都是陈旧形态（真实路径两层丢失=更早的目录结构快照），图渲染不出来而工具还要求"原样复制进回复"=系统性发坏链。
+- **定位**：①glob 一律 `find -name <pattern>` —— `**/*` 作为**文件名**模式永不命中，且空结果零提示；②`buildRenderUrl` 纯计算不校验目标存在性——路径陈旧/结构变更后照发不误。
+- **修复**：①含 `/` 或 `**` 的模式改 `find -path` 整路径匹配（GNU find 的 `*` 可跨目录；`**/`→`*`，非绝对/通配开头补 `*/` 前缀），truncated 时 `wc -l` 给真实总数，空结果显式 note+写法提示；②发出前 stat，主形态不存在→三级回退（去/加 cwd 前缀 → workspace files 根下限定深度同名搜索），全不中仍回主形态。
+- **教训**：①**"空结果"与"不存在"必须在输出层面可区分**（静默空=最危险的假阴性）；②**发出去的引用（URL/路径）必须发前校验**——工具要求用户/模型"原样复述"的东西，错误会被逐字传播。
+
+## B155 — 工具回传图片错位（上传副本命名竞态）根因实锤（v4.8.134）
+- **现象（用户测试报告·A 级最严重）**：同轮并行多次读图时，工具回传图片与请求文件错位——读 9-1/9-2 得同一张、读 9-2/9-3 得两张相同的 9-4、读 pdfp6 返回 p8、读 9-3-shot 返回 9-2。用户据此建立错误机构认知，浪费大量图片预算与轮次。
+- **定位（实锤）**：`readImageInRootfs` 把图片字节**复制到 upload 目录**再回 URL；`UploadCodes.nextCode` 的 synchronized **只护住"扫描取号"**，"取号 → callers' createNewFile"之间存在竞态窗口——同轮并行读图时两个调用同扫到 max=01 → 双双取 02 → 同一文件两次写入、后写覆盖先写 → 两个工具结果的 Image URL 指向同一文件 → **两张都显示最后写入的那张**（与全部观察面吻合：成对出现、并行高发、内容=后写入者）。
+- **修复**：`FileUtils.createUploadFile`（取号+创建文件在同一临界区完成，seqLock 可重入复用；buildUploadFileName 内层 nextCode 安全复用同一把锁），FilesManager 四个命名点（ByContents/ByByteArrays/createChatTextFile/createTargetFile）全部切换。
+- **教训**：①**"并发安全"必须覆盖 check-then-act 的整段**——锁只护查询、不护"占位"，竞态照旧（v4.8.91 注释"并发安全"只对了一半）；②凡"复制到共享目录再引用"的链，命名唯一性=内容正确性。
+
+
 ## B154 — 子代理"默认超时还是420" = 模型可见面缺真值（v4.8.133）
 - **现象（用户）**："subagent的默认超时时间还是420"（v4.8.120 默认 300→1800、v4.8.121 移除模型可传参数之后仍报 420）。
 - **全库对账（零 420 常量）**：代码（app/ai/workspace/common 全模块，含 grep 420 各种表达）、资源（strings/drawable ×全语言）、UI（SubAgentDetailSheet 只显示状态文案，无数值）、DB（entity/migration 无默认值）、资产、历史 git —— **唯一命中是 v4.8.121 的解释性注释**。引擎唯一超时源 = `withTimeoutOrNull(request.timeoutSeconds * 1000L)`，`SubAgentRequest` 唯一创建点=dispatch（恒定 `DEFAULT_TIMEOUT_SECONDS=1800`）。
