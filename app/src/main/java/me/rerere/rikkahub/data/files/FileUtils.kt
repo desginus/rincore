@@ -42,6 +42,20 @@ object FileUtils {
         return "${UploadCodes.nextCode(dir)}_$base.$ext"
     }
 
+    /**
+     * v4.8.134 (B155 根修): 原子"取号 + 创建文件" — 在上传目录同一临界区内完成,
+     * 返回已创建的空文件 (调用方直接写入)。旧流程 (取号 → 稍后 createNewFile) 在
+     * 并行工具下会撞号: 两个调用同扫到 max=01 → 都取 02 → 同一文件被两次写入,
+     * 后写覆盖先写 → 两个工具结果指向同一张图 (用户实证: 读 9-1/9-2 得同一张图)。
+     * seqLock 可重入 (JVM monitor), 内层 buildUploadFileName 的 nextCode 安全复用同一把锁。
+     */
+    fun createUploadFile(dir: File, displayName: String?, mimeType: String?): File =
+        synchronized(UploadCodes.seqLock) {
+            val file = File(dir, buildUploadFileName(dir, displayName, mimeType))
+            if (!file.exists()) file.createNewFile()
+            file
+        }
+
     private fun resolveExtension(displayName: String?, mimeType: String?): String {
         val extFromName = displayName
             ?.substringAfterLast('.', "")

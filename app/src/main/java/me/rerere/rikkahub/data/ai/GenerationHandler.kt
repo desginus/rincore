@@ -494,7 +494,7 @@ class GenerationHandler(
                     }
                     // v3.11.24: 任务清单工具 — 始终注入 (框架工具, 静态, 零 DB;
                     // 清单存 tool output 随会话消息持久化 — Cherry 任务功能移植)
-                    add(createTaskTool())
+                    add(createTaskTool(conversationId?.toString() ?: "global"))  // v4.8.134 (A2): 清单按对话隔离
                     // 其他框架工具 (search/conversation/workspace) — 始终注入
                     addAll(frameworkTools.filter { it.name != "memory_tool" })
                     // invoke_tools 元工具 — 操作 allDomainTools (含MCP), 模型按需加载
@@ -1207,7 +1207,7 @@ class GenerationHandler(
                     // v4.5.21: 真实行动计数 — 非 task_tool 工具的成功执行。
                     // 任务清单空转检测的事实依据 (清单更新 vs 真实动作的比例)。
                     if (toolDef.name != "task_tool") {
-                        me.rerere.rikkahub.data.ai.tools.TaskStateStore.realActionCounter += 1
+                        me.rerere.rikkahub.data.ai.tools.TaskStateStore.of(conversationId?.toString() ?: "global").realActionCounter += 1  // v4.8.134 (A2): 按对话键
                     }
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e

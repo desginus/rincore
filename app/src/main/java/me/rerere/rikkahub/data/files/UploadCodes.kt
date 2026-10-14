@@ -31,8 +31,8 @@ object UploadCodes {
     /** 新命名：<10 位 月日时分><2-3 位补位>_<原名> */
     private val NEW_NAME = Regex("^(\\d{10})(\\d{2,3})_")
 
-    /** 补位分配锁 —— 同一分钟并发上传不撞号 */
-    private val seqLock = Any()
+    /** 补位分配锁 —— 同一分钟并发上传不撞号 (v4.8.134: 与 FileUtils.createUploadFile 共用, 取号+创建原子) */
+    internal val seqLock = Any()
 
     /** 历史码字符集（去易混字符 0/O/1/I/L） */
     private const val LEGACY_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
@@ -44,19 +44,29 @@ object UploadCodes {
 
     /** 生成下一个上传码（东八区钟面 + 目录扫描取序）。 */
     fun nextCode(uploadDir: File, nowMs: Long = System.currentTimeMillis()): String =
-        synchronized(seqLock) {
-            if (!uploadDir.exists()) uploadDir.mkdirs()
-            val prefix = formatPrefix(nowMs)
-            var max = 0
-            uploadDir.listFiles()?.forEach { f ->
-                val m = NEW_NAME.find(f.name) ?: return@forEach
-                if (m.groupValues[1] == prefix) {
-                    val n = m.groupValues[2].toIntOrNull() ?: 0
-                    if (n > max) max = n
-                }
+        synchronized(seqLock) { nextCodeLocked(uploadDir, nowMs) }
+
+    /**
+     * v4.8.134 (B155 根修): 无锁版取号 — 仅供已经持有 [seqLock] 的"取号+创建文件"
+     * 原子流程内部使用 (FileUtils.createUploadFile)。原 nextCode 的锁只护住扫描取号,
+     * 从返回名字到调用方 createNewFile 之间存在竞态窗口: 并行工具 (同时读多张图 →
+     * 各自复制到 upload) 会双双拿到同一个号 → 同一文件被两次写入, 后写覆盖先写 →
+     * 两个工具结果指向同一张图 (用户实证: 读 9-1/9-2 得到同一张图, 并行读图时高发)。
+     * 现在取号与创建在同一临界区内完成, 下一个调用必然看到已创建的文件。
+     */
+    internal fun nextCodeLocked(uploadDir: File, nowMs: Long = System.currentTimeMillis()): String {
+        if (!uploadDir.exists()) uploadDir.mkdirs()
+        val prefix = formatPrefix(nowMs)
+        var max = 0
+        uploadDir.listFiles()?.forEach { f ->
+            val m = NEW_NAME.find(f.name) ?: return@forEach
+            if (m.groupValues[1] == prefix) {
+                val n = m.groupValues[2].toIntOrNull() ?: 0
+                if (n > max) max = n
             }
-            prefix + "%02d".format(Locale.US, max + 1)
         }
+        return prefix + "%02d".format(Locale.US, max + 1)
+    }
 
     /** 文件名 → 码（新命名解码时间码；旧命名回退历史 8 位码，旧引用不断链）。 */
     fun codeForFileName(name: String): String {

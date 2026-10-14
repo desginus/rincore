@@ -136,6 +136,16 @@ class SubAgentRegistry(
             it.status == SubAgentStatus.RUNNING || it.status == SubAgentStatus.PENDING
         }
 
+    // v4.8.134 (B1 排队): RUNNING-only 口径 — 槽位等待器用它判断"真正在跑的数量",
+    // 排队中的 PENDING 不计入 (否则等待者互相挡槽)。
+    fun runningCountForAssistant(parentAssistantId: String): Int =
+        _runs.value.values.count {
+            it.parentAssistantId == parentAssistantId && it.status == SubAgentStatus.RUNNING
+        }
+
+    fun runningCountGlobal(): Int =
+        _runs.value.values.count { it.status == SubAgentStatus.RUNNING }
+
     /**
      * Cancel a single run by id. Returns true if a cancellable job existed; false if the
      * run was already in a terminal state or if the id is unknown. Marking the status to

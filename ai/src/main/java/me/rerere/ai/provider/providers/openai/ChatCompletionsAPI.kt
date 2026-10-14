@@ -923,15 +923,31 @@ class ChatCompletionsAPI(
             }
         }
         if (!anyMarked) return messages
+        // v4.8.134 (A4b): 统计总量/省略量 — 占位文本携带"本请求共 X 张, 已省略 Y 张",
+        // 第一次省略发生时模型(与用户)即拿到明确信号, 不再静默失明。
+        var totalImgs = 0
+        var markedImgs = 0
+        for (msg in messages) for (part in msg.parts) {
+            if (part is UIMessagePart.Image) {
+                totalImgs++
+                if (part.metadata?.get("budget_dropped")?.jsonPrimitive?.contentOrNull == "true") markedImgs++
+            }
+            if (part is UIMessagePart.Tool) for (o in part.output) {
+                if (o is UIMessagePart.Image) {
+                    totalImgs++
+                    if (o.metadata?.get("budget_dropped")?.jsonPrimitive?.contentOrNull == "true") markedImgs++
+                }
+            }
+        }
         var replaced = 0
         val out = messages.map { msg ->
             val newParts = msg.parts.map { part ->
                 when {
                     part is UIMessagePart.Image && part.metadata?.get("budget_dropped")?.jsonPrimitive?.contentOrNull == "true" ->
-                        UIMessagePart.Text(imageBudgetPlaceholder(part)).also { replaced++ }
+                        UIMessagePart.Text(imageBudgetPlaceholder(part, totalImgs, markedImgs)).also { replaced++ }
                     part is UIMessagePart.Tool -> part.copy(output = part.output.map { op ->
                         if (op is UIMessagePart.Image && op.metadata?.get("budget_dropped")?.jsonPrimitive?.contentOrNull == "true") {
-                            UIMessagePart.Text(imageBudgetPlaceholder(op)).also { replaced++ }
+                            UIMessagePart.Text(imageBudgetPlaceholder(op, totalImgs, markedImgs)).also { replaced++ }
                         } else op
                     })
                     else -> part
@@ -953,9 +969,9 @@ class ChatCompletionsAPI(
         }
     }
 
-    private fun imageBudgetPlaceholder(image: UIMessagePart.Image): String = when {
+    private fun imageBudgetPlaceholder(image: UIMessagePart.Image, totalImages: Int = 0, droppedImages: Int = 0): String = when {
         image.url.startsWith("file://") ->
-            "[图片已省略 (超出本请求图片预算): 原文件已保存于会话中, 路径: " + image.url + " — 需要查看时调用 read_image 工具传入该路径]"
+            "[图片已省略 (超出本请求图片预算): 本请求共 $totalImages 张图, 已省略 $droppedImages 张; 原文件已保存于会话中, 路径: " + image.url + " — 需要查看时调用 read_image 工具传入该路径 (支持百分号编码形态)]"
         else -> "[图片已省略 (超出本请求图片预算): 内联图片数据未保留]"
     }
 

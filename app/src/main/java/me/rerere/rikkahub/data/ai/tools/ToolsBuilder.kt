@@ -70,11 +70,11 @@ fun buildAssistantToolPool(
     operitToolProvider: me.rerere.rikkahub.data.operit.runtime.OperitToolProvider? = null, // v4.5.29 岔路口计划·阶段2: Operit 脚本工具
 ): List<Tool> = buildList {
     // v4.3.7: 图片预算闭环件 — 占位图按需重取 (默认 null 不注入, 仅 ChatService 主链路注入)
-    filesRoot?.let { add(createReadImageTool(it)) }
+    filesRoot?.let { add(createReadImageTool(it, workspaceRepository, assistant.workspaceId?.toString().orEmpty())) }  // v4.8.134 (A4): 支持 /workspace 路径
     // v4.8.90: 上传码直取 —— 与 read_image 同一注入条件（filesRoot = context.filesDir）
     filesRoot?.let { add(createUploadFetchTool(it)) }
     // v3.11.25: 任务清单工具 (Cherry Studio Agent 任务功能移植) — 框架工具, 静态
-    add(createTaskTool())
+    add(createTaskTool(conversationId))  // v4.8.134 (A2): 按对话隔离
     if (settings.enableWebSearch) {
         addAll(createSearchTools(settings))
     }

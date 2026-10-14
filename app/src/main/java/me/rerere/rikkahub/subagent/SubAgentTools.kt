@@ -51,6 +51,9 @@ private fun encodeRun(run: SubAgentRun): kotlinx.serialization.json.JsonObject =
     put("tokens_in", run.tokensIn)
     put("tokens_out", run.tokensOut)
     put("trip_count", run.tripCount)
+    // v4.8.134 (A3): 可观测心跳 (trip_count = 已执行工具次数; last_activity = 最近工具动作)
+    if (run.lastActivity != null) put("last_activity", run.lastActivity)
+    if (run.lastActivityAtMs != null) put("last_activity_at_ms", run.lastActivityAtMs)
 }
 
 /**
@@ -165,6 +168,14 @@ fun subagentDispatchTool(
             is SubAgentEngine.DispatchResult.Ok -> {
                 val payload = buildJsonObject {
                     encodeRun(res.run).forEach { (k, v) -> put(k, v) }
+                    // v4.8.134 (B1/B2): 排队语义 + 预算透明
+                    if (res.run.status == SubAgentStatus.PENDING) {
+                        put("queue_note", "并发已满时自动排队(槽位释放即启动, subagent_get 轮询); trip_count=已执行工具次数, last_activity=最近动作")
+                    }
+                    if (parentChatId != null) {
+                        put("budget_used_tokens", engine.budget.used(parentChatId))
+                        put("budget_limit_tokens", engine.budget.limit())
+                    }
                     if (suppliedTimeout != null && suppliedTimeout != res.run.timeoutSeconds) {
                         put("timeout_seconds_fixed_at", res.run.timeoutSeconds)
                         put(

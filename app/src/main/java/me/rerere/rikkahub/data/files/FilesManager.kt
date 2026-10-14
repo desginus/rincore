@@ -125,11 +125,8 @@ class FilesManager(
                 val sourceName = getFileNameFromUri(uri) ?: uri.lastPathSegment ?: "file"
                 val sourceMime = getFileMimeType(uri)
                 // v4.8.91: 上传一律时间码命名（<码>_<原名>.ext），码即文件名前缀
-                val fileName = FileUtils.buildUploadFileName(dir, displayName = sourceName, mimeType = sourceMime)
-                val file = dir.resolve(fileName)
-                if (!file.exists()) {
-                    file.createNewFile()
-                }
+                // v4.8.134 (B155): 原子取号+创建 (并行上传不再撞号覆盖)
+                val file = FileUtils.createUploadFile(dir, displayName = sourceName, mimeType = sourceMime)
                 val inputStream = context.contentResolver.openInputStream(uri)
                     ?: error("Failed to open input stream for $uri")
                 inputStream.use { input ->
@@ -164,11 +161,8 @@ class FilesManager(
             dir.mkdirs()
         }
         byteArrays.forEach { byteArray ->
-            val fileName = FileUtils.buildUploadFileName(dir, displayName = "image.png", mimeType = "image/png")
-            val file = dir.resolve(fileName)
-            if (!file.exists()) {
-                file.createNewFile()
-            }
+            // v4.8.134 (B155): 原子取号+创建 — 并行读图各自独立文件, 不再同号覆盖
+            val file = FileUtils.createUploadFile(dir, displayName = "image.png", mimeType = "image/png")
             val newUri = file.toUri()
             file.outputStream().use { outputStream ->
                 outputStream.write(byteArray)
@@ -248,8 +242,7 @@ class FilesManager(
         if (!dir.exists()) {
             dir.mkdirs()
         }
-        val fileName = FileUtils.buildUploadFileName(dir, displayName = "pasted_text.txt", mimeType = "text/plain")
-        val file = dir.resolve(fileName)
+        val file = FileUtils.createUploadFile(dir, displayName = "pasted_text.txt", mimeType = "text/plain")
         file.writeText(text)
         trackManagedFile(
             folder = FileFolders.UPLOAD,
@@ -553,12 +546,12 @@ class FilesManager(
             dir.mkdirs()
         }
         // v4.8.91: upload 目录统一时间码命名；其它目录保持 uuid 命名
-        val name = if (folder == FileFolders.UPLOAD) {
-            FileUtils.buildUploadFileName(dir, displayName = displayName, mimeType = mimeType)
+        return if (folder == FileFolders.UPLOAD) {
+            // v4.8.134 (B155): 原子取号+创建
+            FileUtils.createUploadFile(dir, displayName = displayName, mimeType = mimeType)
         } else {
-            FileUtils.buildUuidFileName(displayName = displayName, mimeType = mimeType)
+            File(dir, FileUtils.buildUuidFileName(displayName = displayName, mimeType = mimeType))
         }
-        return File(dir, name)
     }
 
     private fun buildUuidFileName(displayName: String?, mimeType: String?): String =

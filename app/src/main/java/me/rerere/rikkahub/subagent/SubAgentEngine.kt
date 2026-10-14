@@ -100,6 +100,9 @@ class SubAgentEngine(
      * v4.8.88: 用量水位（runId → 已计入的 tokens）。
      * 看门狗与终态都会对同一个 run 结算 —— 用"只加增量"的水位口径避免重复记账。
      */
+    /** v4.8.134 (B1): 排队松弛量 — 并发上限之外允许排队的额外深度 (超出即拒绝)。 */
+    private val QUEUE_SLACK = 8
+
     private val countedIn = ConcurrentHashMap<String, Long>()
     private val countedOut = ConcurrentHashMap<String, Long>()
 
@@ -141,17 +144,20 @@ class SubAgentEngine(
         val cleaned = (validation as SubAgentRequestValidator.Result.Ok).request
 
         // Concurrency cap. Global first (cheaper), then per-assistant.
-        if (registry.globalActiveCount() >= SubAgentDefaults.GLOBAL_CONCURRENCY_CAP) {
+        // v4.8.134 (B1 排队, 用户实证"第 4 个被直接拒绝"): 并发满不再直接拒绝 —
+        // 创建 PENDING run, 执行协程在 awaitSlot 槽位等待器里排队, 槽位释放即自动启动。
+        // 仅当排队深度也超限 (并发上限 + 松弛量) 才拒绝, 防失控堆积。
+        if (registry.globalActiveCount() >= SubAgentDefaults.GLOBAL_CONCURRENCY_CAP + QUEUE_SLACK) {
             return@withContext DispatchResult.Reject(
-                "global_cap_reached",
-                "max ${SubAgentDefaults.GLOBAL_CONCURRENCY_CAP} concurrent sub-agents across all assistants"
+                "global_queue_full",
+                "queue full: ${registry.globalActiveCount()} pending+running sub-agents (global cap ${SubAgentDefaults.GLOBAL_CONCURRENCY_CAP} + slack $QUEUE_SLACK)"
             )
         }
         val perAssistantCap = currentAssistantCap(parentAssistantId)
-        if (registry.activeCountForAssistant(parentAssistantId) >= perAssistantCap) {
+        if (registry.activeCountForAssistant(parentAssistantId) >= perAssistantCap + QUEUE_SLACK) {
             return@withContext DispatchResult.Reject(
-                "assistant_cap_reached",
-                "this assistant's max_concurrent_sub_agents cap of $perAssistantCap is reached"
+                "assistant_queue_full",
+                "queue full: this assistant's cap is $perAssistantCap (+ slack $QUEUE_SLACK pending+running)"
             )
         }
 
@@ -226,13 +232,43 @@ class SubAgentEngine(
         )
     }
 
+    /** v4.8.134 (B1): 排队槽位互斥 — "检查容量 + 翻 RUNNING" 原子化, 防两个等待者同槽抢占。 */
+    private val slotMutex = kotlinx.coroutines.sync.Mutex()
+
+    /** v4.8.134 (B1): 槽位等待 — 500ms 粒度; RUNNING 数低于封顶即占槽 (转 RUNNING) 放行。 */
+    private suspend fun awaitSlot(runId: String, parentAssistantId: String) {
+        while (true) {
+            val acquired = slotMutex.withLock {
+                val me = registry.get(runId) ?: return
+                if (me.status == SubAgentStatus.CANCELLED) return
+                val fits = registry.runningCountForAssistant(parentAssistantId) < currentAssistantCap(parentAssistantId) &&
+                    registry.runningCountGlobal() < SubAgentDefaults.GLOBAL_CONCURRENCY_CAP
+                if (fits) registry.update(runId) { it.copy(status = SubAgentStatus.RUNNING) }
+                fits
+            }
+            if (acquired) return
+            if (registry.get(runId)?.status != SubAgentStatus.PENDING) return
+            delay(500)
+        }
+    }
+
     private suspend fun executeRun(
         runId: String,
         parentAssistantId: String,
         parentChatId: String?,
         request: SubAgentRequest,
     ) {
-        registry.update(runId) { it.copy(status = SubAgentStatus.RUNNING) }
+        // v4.8.134 (B1): 槽位排队 — 并发满时保持 PENDING 等待, 槽位释放即启动;
+        // 等待期间被取消 (熔断/用户取消) 走 CANCELLED 收尾 (NonCancellable 兜底)。
+        try {
+            awaitSlot(runId, parentAssistantId)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            withContext(kotlinx.coroutines.NonCancellable) {
+                runCatching { markTerminal(runId, SubAgentStatus.CANCELLED, "cancelled while queued") }
+            }
+            throw e
+        }
+        if (registry.get(runId)?.status != SubAgentStatus.RUNNING) return  // 排队期间被取消/清场
         ledgerIds[runId]?.let { agentRunRepo.setStatus(it, AgentRunStatus.running) }
 
         val parentAsstUuid = runCatching { Uuid.parse(parentAssistantId) }.getOrNull()
@@ -393,7 +429,7 @@ class SubAgentEngine(
      * — better to interrupt than to silently lose the completion.
      */
     /** 一次会话读取同时拿 用量 + 轮次（v4.8.88：旧实现分两次读盘）。 */
-    private data class UsageSnap(val tIn: Long, val tOut: Long, val trips: Int)
+    private data class UsageSnap(val tIn: Long, val tOut: Long, val trips: Int, val lastActivity: String?)
 
     private suspend fun snapshotUsage(conversationId: Uuid): UsageSnap {
         return runCatching {
@@ -401,20 +437,30 @@ class SubAgentEngine(
             var tIn = 0L
             var tOut = 0L
             var trips = 0
+            var lastActivity: String? = null
             conv?.messageNodes?.forEach { node ->
-                // 轮次口径：当前选中分支的 assistant 消息条数（与旧 harvestTripCount 一致）
-                if (node.messages.getOrNull(node.selectIndex)?.role?.name.equals("assistant", ignoreCase = true)) trips++
                 // 计费口径：节点内全部消息的 usage（重生成分支各自计费，多轮不合并）
                 node.messages.forEach { msg ->
                     val usage = msg.usage ?: return@forEach
                     if (usage.promptTokens > 0) tIn += usage.promptTokens
                     if (usage.completionTokens > 0) tOut += usage.completionTokens
                 }
+                // v4.8.134 (A3): 轮次口径改"已执行工具次数" + 最近动作 — 工具轮循环在单条
+                // assistant 消息内追加 tool parts, 旧口径"assistant 消息条数"恒为 1, 无法
+                // 反映进度 (用户实证: trip_count 恒 1 但文件早已写完, 无法判断在干活还是卡死)。
+                node.messages.forEach { msg ->
+                    msg.parts.forEach { p ->
+                        if (p is UIMessagePart.Tool && p.output.isNotEmpty()) {
+                            trips++
+                            lastActivity = p.toolName + ": " + p.input.toString().take(90)
+                        }
+                    }
+                }
             }
-            UsageSnap(tIn, tOut, trips)
+            UsageSnap(tIn, tOut, trips, lastActivity)
         }.getOrElse {
             Log.w(TAG, "snapshotUsage failed for $conversationId", it)
-            UsageSnap(0L, 0L, 0)
+            UsageSnap(0L, 0L, 0, null)
         }
     }
 
@@ -426,13 +472,20 @@ class SubAgentEngine(
         val snap = snapshotUsage(convId)
         val dIn = (snap.tIn - (countedIn[runId] ?: 0L)).coerceAtLeast(0L)
         val dOut = (snap.tOut - (countedOut[runId] ?: 0L)).coerceAtLeast(0L)
-        if (dIn == 0L && dOut == 0L && snap.trips == registry.get(runId)?.tripCount) return
+        val curRun = registry.get(runId)
+        if (dIn == 0L && dOut == 0L && snap.trips == curRun?.tripCount && snap.lastActivity == curRun?.lastActivity) return
         if (dIn > 0L || dOut > 0L) {
             countedIn[runId] = snap.tIn
             countedOut[runId] = snap.tOut
         }
         registry.update(runId) {
-            it.copy(tokensIn = it.tokensIn + dIn, tokensOut = it.tokensOut + dOut, tripCount = snap.trips)
+            it.copy(
+                tokensIn = it.tokensIn + dIn,
+                tokensOut = it.tokensOut + dOut,
+                tripCount = snap.trips,
+                lastActivity = snap.lastActivity,  // v4.8.134 (A3): 最近动作心跳
+                lastActivityAtMs = System.currentTimeMillis(),
+            )
         }
         if (parentChatId != null && (dIn > 0L || dOut > 0L)) {
             budget.add(parentChatId, dIn + dOut)

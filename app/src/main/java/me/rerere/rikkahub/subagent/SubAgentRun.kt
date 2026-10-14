@@ -36,6 +36,10 @@ data class SubAgentRun(
     val tokensIn: Long = 0,
     val tokensOut: Long = 0,
     val tripCount: Int = 0,
+    // v4.8.134 (A3): 可观测 — 最近工具动作/时间 (进程内轮询刷新, 不入库);
+    // tripCount 语义同步改为"已执行工具次数" (旧口径"assistant 消息条数"恒为 1)。
+    val lastActivity: String? = null,
+    val lastActivityAtMs: Long? = null,
 )
 
 @Serializable

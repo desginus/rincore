@@ -146,6 +146,10 @@ private fun createReadFileTool(
                     put("type", "integer")
                     put("description", "Maximum number of lines to read. Defaults to $READ_DEFAULT_LIMIT.")
                 })
+                put("url_only", buildJsonObject {
+                    put("type", "boolean")
+                    put("description", "Images only: return render_urls/render_markdown WITHOUT loading the image body (no image-budget cost). Use when the file already exists and you only need an inline-render URL. Defaults to false.")
+                })
             },
             required = listOf("path"),
         )
@@ -170,7 +174,26 @@ private fun createReadFileTool(
                 )
             )
         } else if (path.isImagePath()) {
-            workspaceRepository.readImageInRootfs(workspaceId, path, cwdRel)
+            // v4.8.134 (B4): url_only — 已有文件取渲染地址不再重读整图 (旧路要复制+加载, 白耗图片预算)
+            val urlOnly = params["url_only"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() == true
+            if (urlOnly) {
+                listOf(
+                    UIMessagePart.Text(
+                        buildJsonObject {
+                            put("path", path)
+                            put("url_only", true)
+                            put("render_urls", buildJsonArray {
+                                add(JsonPrimitive(buildRenderUrl(workspaceId, path, cwdRel)))
+                            })
+                            buildRenderMarkdown(workspaceId, listOf(path), cwdRel)?.let {
+                                put("render_markdown", it)
+                            }
+                        }.toString()
+                    )
+                )
+            } else {
+                workspaceRepository.readImageInRootfs(workspaceId, path, cwdRel)
+            }
         } else {
             val text = workspaceRepository.readTextInRootfs(workspaceId, path, cwdRel)
             // v4.6.1: 行号分页 (对齐业界编程 Agent 的 Read 工具设计)
@@ -267,7 +290,11 @@ private fun createWriteFileTool(
                 previousVersion = "$vdir/$name.$ts"
             }
         }
-        val entry = workspaceRepository.writeTextInRootfs(workspaceId, path, text, overwrite, cwdRel, append)
+        // v4.8.134 (B3, 用户实证"17KB 写入被取消后零落盘"): 落盘段 NonCancellable —
+        // 取消(停止生成)不再把已开始的写入掐死; 本地 IO 快, 延迟可控, 内容照常完整落盘。
+        val entry = kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+            workspaceRepository.writeTextInRootfs(workspaceId, path, text, overwrite, cwdRel, append)
+        }
         val resultJson = entry.toJson().toMutableMap()
         previousVersion?.let { resultJson["previous_version"] = JsonPrimitive(it) }
         if (path.isImagePath()) {
@@ -760,9 +787,9 @@ private fun createShellTool(
     name = "workspace_shell",
     description = buildString {
         append("Run a shell command in the assistant's bound workspace Rootfs. The workspace files area is mounted at /workspace. ")
-        append("Use cwd for a path relative to the workspace files root. ")
+        append("Use cwd for a path relative to the workspace files root (the root itself IS /workspace in the sandbox). ")
         if (!defaultCwd.isNullOrBlank()) {
-            append("Defaults to '$defaultCwd'. ")
+            append("Defaults to '$defaultCwd' — i.e. the absolute sandbox path /workspace/$defaultCwd. ")
         }
         append("Requires Rootfs to be installed and ready. ")
         append("Each call runs in a fresh isolated proot instance — processes started here die when the call ends; for long tasks (minutes) use workspace_job (durable background jobs) instead.")
@@ -779,7 +806,7 @@ private fun createShellTool(
                     put(
                         "description",
                         if (!defaultCwd.isNullOrBlank()) {
-                            "Working directory relative to the workspace files root. Defaults to '$defaultCwd'."
+                            "Working directory relative to the workspace files root (/workspace). Defaults to '$defaultCwd' (= /workspace/$defaultCwd)."
                         } else {
                             "Working directory relative to the workspace files root. Defaults to root."
                         }
@@ -875,7 +902,7 @@ private suspend fun WorkspaceRepository.readTextInRootfs(
  * 按 Rootfs 内绝对路径读入内存。路径映射交给 WorkspaceManager, 由它统一处理
  * /workspace、bind mount 与 Rootfs 内部路径。
  */
-private suspend fun WorkspaceRepository.readRootfsBuffer(
+internal suspend fun WorkspaceRepository.readRootfsBuffer(
     workspaceId: String,
     path: String,
     cwd: String? = null,
@@ -925,10 +952,13 @@ private suspend fun WorkspaceRepository.readImageInRootfs(
     val filesManager = getKoin().get<FilesManager>()
     val uris = filesManager.createChatFilesByByteArrays(listOf(bytes))
     return listOf(
+        // v4.8.134 (C3): 图片前置来源标签 — 工具结果与图片混排时可对齐 (省略占位/实际图片)
+        UIMessagePart.Text("[图片] $path"),
         UIMessagePart.Image(url = uris.first().toString()),
         UIMessagePart.Text(
             buildJsonObject {
                 put("path", path)
+                put("image_id", uris.first().lastPathSegment ?: path)  // v4.8.134 (C3): 稳定 id (上传副本文件名, 唯一)
                 put("description", "Image file read successfully")
                 // v4.8.113: 统一 render_urls 数组 + render_markdown 直贴
                 put("render_urls", buildJsonArray {
