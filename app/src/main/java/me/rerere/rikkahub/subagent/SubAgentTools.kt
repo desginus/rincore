@@ -34,6 +34,15 @@ private fun encodeRun(run: SubAgentRun): kotlinx.serialization.json.JsonObject =
     if (run.modelId != null) put("model_id", run.modelId)
     put("run_in_background", run.runInBackground)
     put("timeout_seconds", run.timeoutSeconds)
+    // v4.8.133: 历史值澄清 — 旧版本该值可被模型自选 (300/420 等); 当前引擎固定 1800s。
+    // 存储值 ≠ 当前引擎上限时显式标注, 防被读成"当前默认超时"。
+    if (run.timeoutSeconds != SubAgentDefaults.DEFAULT_TIMEOUT_SECONDS) {
+        put(
+            "timeout_seconds_note",
+            "historical per-run cap stored by an older build; the current engine cap is fixed at " +
+                "${SubAgentDefaults.DEFAULT_TIMEOUT_SECONDS}s (30 min)",
+        )
+    }
     put("max_trips", run.maxTrips)
     put("started_at_ms", run.startedAtMs)
     if (run.finishedAtMs != null) put("finished_at_ms", run.finishedAtMs)
@@ -74,11 +83,14 @@ fun subagentDispatchTool(
         of many polls; use subagent_list to enumerate). run_in_background only hints the
         scheduling priority; the return contract is identical either way.
 
-        Budget (v4.8.88): each conversation has a sub-agent token budget (default 100K,
-        adjustable via the gauge button in the chat overview). When it is exhausted the
-        dispatch is REFUSED **and all running sub-agents of that conversation are
-        stopped**. Do not retry blindly — tell the user and suggest raising/clearing the
-        budget in the chat overview.
+        Timeout cap (FIXED): every run is capped at 1800 seconds (30 minutes). The cap is
+        not adjustable — do not pass a timeout_seconds argument; if you do, it is ignored.
+
+        Budget (v4.8.88, default raised in v4.8.108): each conversation has a sub-agent
+        token budget (default 1000K, adjustable via the gauge button in the chat
+        overview). When it is exhausted the dispatch is REFUSED **and all running
+        sub-agents of that conversation are stopped**. Do not retry blindly — tell the
+        user and suggest raising/clearing the budget in the chat overview.
 
         Concurrency caps: each assistant has its own (default 7, configurable 1-8) and
         there's a global cap of 16 across all assistants. Over-cap dispatches fail with
@@ -121,6 +133,10 @@ fun subagentDispatchTool(
         val params = args.jsonObject
         val task = params["task"]?.jsonPrimitive?.contentOrNull
             ?: return@Tool errEnv("invalid_task", "task is required")
+        // v4.8.133: 模型习惯性仍可能带 timeout_seconds (旧 schema/上下文惯性) — 引擎恒定
+        // 1800s 忽略之; 记录所传值, 回执里显式说明"已忽略 + 固定值"(否则工具卡里的 420
+        // 会被模型/用户读成"当前默认仍是 420")。
+        val suppliedTimeout = params["timeout_seconds"]?.jsonPrimitive?.intOrNull
         val request = SubAgentRequest(
             task = task,
             modelId = params["model_id"]?.jsonPrimitive?.contentOrNull,
@@ -146,8 +162,20 @@ fun subagentDispatchTool(
         when (val res = engine.dispatch(parentAssistantId, parentChatId, request)) {
             is SubAgentEngine.DispatchResult.Reject ->
                 return@Tool errEnv(res.error, res.detail)
-            is SubAgentEngine.DispatchResult.Ok ->
-                listOf(UIMessagePart.Text(encodeRun(res.run).toString()))
+            is SubAgentEngine.DispatchResult.Ok -> {
+                val payload = buildJsonObject {
+                    encodeRun(res.run).forEach { (k, v) -> put(k, v) }
+                    if (suppliedTimeout != null && suppliedTimeout != res.run.timeoutSeconds) {
+                        put("timeout_seconds_fixed_at", res.run.timeoutSeconds)
+                        put(
+                            "note",
+                            "timeout_seconds is fixed at ${res.run.timeoutSeconds}s (30-minute cap) " +
+                                "and cannot be set by the caller; the supplied value ($suppliedTimeout) was ignored.",
+                        )
+                    }
+                }
+                listOf(UIMessagePart.Text(payload.toString()))
+            }
         }
     },
 )
