@@ -123,8 +123,12 @@ internal fun applyImageBudgetMarking(messages: List<UIMessage>, countLimit: Int)
     val dropped = sized.filter { it.key !in kept }
     if (dropped.isEmpty()) return messages
     // v4.8.134 (A4b): 运行日志打点 — 预算省略在日志里可见 (kept/dropped/字节)
+    // v4.8.135 同版修复: 本函数非 suspend 上下文, CallTracer.event 是 suspend → 改用 TraceLogger.log
     runCatching {
-        CallTracer.event("IMG", "budget_drop", "kept=${kept.size} dropped=${dropped.size} total_bytes=${sized.sumOf { it.bytes }}")
+        me.rerere.ai.util.TraceLogger.log(
+            "IMG",
+            "budget_drop: kept=${kept.size} dropped=${dropped.size} total_bytes=${sized.sumOf { it.bytes }}"
+        )
     }
     Log.w(TAG, "image budget: dropping ${dropped.size} older images (kept ${kept.size}, ${dropped.size + kept.size} total)")
     val result = messages.mapIndexed { mi, msg ->
