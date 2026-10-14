@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=build&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/version-v4.8.131-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/version-v4.8.132-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/license-segmented_dual-cyan)](LICENSE)
 
 **A real, self-contained AI assistant on your phone.** Not a wrapper — a rebuilt engine with six
@@ -129,7 +129,9 @@ changelog entry and a regression guard. Optimizations keep coming.
 
 ## 📋 Changelog
 
-v4.8.54 → v4.8.131 (newest first):
+v4.8.54 → v4.8.132 (newest first):
+
+- **v4.8.132** — Cache-degradation verdict & resume-latency cleanup: a full audit of a typical 475-event session log proved the prompt-cache misses are server-side (client fingerprints stable throughout; fixed miss position + a match-point regression), and identified the resume-latency contributors (three 60s gateway hangs, cache misses, one 13.5s probe stall). Fixes: probe failure cooldown + bounded sync probe (6s), separate probe-wait timing in diagnostics, an automatic "gateway_miss" verdict event, and a new full-content fingerprint covering the current-turn message.
 
 - **v4.8.131** — Stream-retry refinement & full connection-chain audit: mid-stream interruption recovery is now completely silent again (the "recovering" status text was removed; only initial-connection failures still show a retry notice). The connection-initiation retry pool was raised from 4 to 5 retries. A full audit of the retry/keepalive/warmup chain also fixed two real issues: a stale "received data" flag across tool rounds (which could push a first-attempt connection failure into the long stream-retry chain) and a retry notice that lingered through streaming after a successful retry; plus dead code and stale comments cleanup.
 
