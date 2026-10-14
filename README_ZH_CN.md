@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=构建&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/版本-v4.8.132-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/版本-v4.8.133-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/许可-segmented_dual-cyan)](LICENSE)
 
 **手机上一个真正全面的 AI 助手。** 不是套壳，是一台重新打造过的引擎——背后是六周的高强度实测迭代与 400+ 个版本。
@@ -80,7 +80,9 @@ RinCore 处于活跃维护中，欢迎 Issue 与 PR。每一个被报告的问�
 
 ## 📋 更新日志
 
-v4.8.54 → v4.8.132（倒序）：
+v4.8.54 → v4.8.133（倒序）：
+
+- **v4.8.133** — 子代理超时真值对齐：全库对账（代码/资源/UI/数据库/资产/历史）均无"420"常量，该数字来自模型可见面——此前的参数移除之后，工具描述里没有任何权威的超时上限声明（且残留一个陈旧数值：预算 100K 与实际 1000K 不符）。现在 dispatch 工具描述直接写明固定上限 1800 秒（30 分钟），模型若仍传入 timeout_seconds 会在结果中显式标注"已忽略"，历史运行记录里的旧值也会被标注为历史值。引擎行为不变（恒定 1800 秒）。
 
 - **v4.8.132** — 缓存退化定罪与恢复延迟治理：对一份典型会话运行日志（475 事件）的全量审读证明缓存未命中发生在服务端（客户端指纹全程稳定、断裂点位置固定且出现匹配点回退），并定位了恢复延迟来源（3 次 60 秒网关挂起、缓存断裂、1 次 13.5 秒探活卡顿）。修复：探活失败冷却 + 同步探活 6 秒总时限、诊断中探活等待单列、新增"网关侧缓存丢失"自动定罪事件与覆盖当前轮消息的全内容指纹。
 

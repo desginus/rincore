@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=build&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/version-v4.8.132-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/version-v4.8.133-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/license-segmented_dual-cyan)](LICENSE)
 
 **A real, self-contained AI assistant on your phone.** Not a wrapper — a rebuilt engine with six
@@ -129,7 +129,9 @@ changelog entry and a regression guard. Optimizations keep coming.
 
 ## 📋 Changelog
 
-v4.8.54 → v4.8.132 (newest first):
+v4.8.54 → v4.8.133 (newest first):
+
+- **v4.8.133** — Sub-agent timeout truth alignment: a full audit found no "420" constant anywhere (code, resources, UI, DB, assets, history) — the number came from the model-facing surfaces, which after the earlier parameter removal had no authoritative statement of the real cap (and carried a stale budget figure, 100K vs the actual 1000K). The dispatch tool description now states the fixed 1800-second (30-minute) cap, a supplied `timeout_seconds` is explicitly reported as ignored, and legacy per-run values are annotated as historical. Engine behavior unchanged (fixed 1800s).
 
 - **v4.8.132** — Cache-degradation verdict & resume-latency cleanup: a full audit of a typical 475-event session log proved the prompt-cache misses are server-side (client fingerprints stable throughout; fixed miss position + a match-point regression), and identified the resume-latency contributors (three 60s gateway hangs, cache misses, one 13.5s probe stall). Fixes: probe failure cooldown + bounded sync probe (6s), separate probe-wait timing in diagnostics, an automatic "gateway_miss" verdict event, and a new full-content fingerprint covering the current-turn message.
 
