@@ -607,7 +607,7 @@ private fun createGlobTool(
 ) = Tool(
     name = "workspace_glob",
     description = """
-        Find files by name pattern in the workspace (e.g. "*.kt", "README*", "config.*").
+        Find files by name pattern in the workspace (e.g. "*.kt", "README*", "config.*"). Patterns containing "/" or "**" are matched against the full path at any depth (e.g. "**/*" lists all files; "**/*.kt" all .kt files at any depth).
         Returns matching file paths sorted by modification time (newest first).
         Use this instead of shell find/ls for file discovery.
         Parameters: pattern (required); path (search root, defaults to /workspace);
@@ -642,14 +642,23 @@ private fun createGlobTool(
             .coerceIn(1, GLOB_MAX_LIMIT)
         val pathArg = searchPath.shellQuote()
         val patternArg = pattern.shellQuote()
+        // v4.8.135 (用户实证: "**/*" 静默返回空): 含 '/' 或 "**" 的模式改按整路径
+        // 匹配 (find -path; GNU find 的 * 可跨目录), 纯文件名模式保持 -name。
+        // 旧实现一律 -name → "**/*" 永不命中且无任何提示 = 把空结果误读成"不存在"。
+        val pathMode = pattern.contains('/') || pattern.contains("**")
+        var findPathPattern = pattern.replace("**/", "*")
+        if (pathMode && !findPathPattern.startsWith("/") && !findPathPattern.startsWith("*")) {
+            findPathPattern = "*/$findPathPattern"
+        }
+        val matchArg = if (pathMode) "-path ${findPathPattern.shellQuote()}" else "-name $patternArg"
         // mtime 倒序 (find -printf 不支持时降级为原序) — 全路径输出
         // v4.8.82: 同 grep — 多取 1 行以精确区分"正好 N 个"与"不止 N 个"
         val fetchLimit = maxResults + 1
         val command = """
             if find $pathArg -maxdepth 0 -printf '' 2>/dev/null; then
-              find $pathArg -type f -name $patternArg -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -n $fetchLimit | cut -d' ' -f2-
+              find $pathArg -type f $matchArg -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -n $fetchLimit | cut -d' ' -f2-
             else
-              find $pathArg -type f -name $patternArg 2>/dev/null | head -n $fetchLimit
+              find $pathArg -type f $matchArg 2>/dev/null | head -n $fetchLimit
             fi
             exit 0
         """.trimIndent()
@@ -657,15 +666,36 @@ private fun createGlobTool(
         val output = (result.stdout ?: "").trim()
         val lines = if (output.isBlank()) emptyList() else output.split('\n')
         val truncated = lines.size > maxResults
+        // v4.8.135: truncated 时给出真实总数 (旧实现只报"已显示数", 无法判断规模)
+        var totalCount: Int? = null
+        if (truncated) {
+            totalCount = runCatching {
+                workspaceRepository.executeCommand(
+                    workspaceId,
+                    "find $pathArg -type f $matchArg 2>/dev/null | wc -l",
+                    defaultCwd.orEmpty(),
+                ).stdout?.trim()?.toIntOrNull()
+            }.getOrNull()
+        }
         listOf(
             UIMessagePart.Text(
                 buildJsonObject {
                     put("pattern", pattern)
                     put("path", searchPath)
-                    put("count", lines.size)
+                    put("count", lines.take(maxResults).size)
                     if (truncated) {
                         put("truncated", true)
-                        put("note", "Showing newest $maxResults files; refine pattern for more precision.")
+                        if (totalCount != null) put("total", totalCount)
+                        put(
+                            "note",
+                            "Showing newest $maxResults of ${totalCount ?: "many"} matching files; refine pattern to narrow down.",
+                        )
+                    } else if (lines.isEmpty()) {
+                        // v4.8.135: 空结果显式声明 (防"静默空"被读成"不存在") + 写法提示
+                        put(
+                            "note",
+                            "No files matched. Patterns: \"*.kt\" matches file names; \"**/*\" matches all files at any depth.",
+                        )
                     }
                     put("text", lines.take(maxResults).joinToString("\n"))
                 }.toString()

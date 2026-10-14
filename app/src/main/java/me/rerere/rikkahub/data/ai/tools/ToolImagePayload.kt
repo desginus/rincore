@@ -59,7 +59,33 @@ internal fun buildRenderUrl(workspaceId: String, path: String, cwd: String? = nu
         }
     }
     val pkg = me.rerere.rikkahub.BuildConfig.APPLICATION_ID
-    return encodeMarkdownUrl("file:///data/data/$pkg/files/workspaces/$workspaceId/files/$rel")
+    // v4.8.135 (用户实证: render_urls 发出已失效绝对路径却要求"原样复制进回复" = 系统性坏链):
+    // 发出前 stat 一次 — 主形态不存在时依次回退重算 (去/加 cwd 前缀 → workspace files 根下
+    // 限定深度同名搜索), 全不中仍返回主形态 (保持旧行为)。
+    val root = "/data/data/$pkg/files/workspaces/$workspaceId/files"
+    val candidates = buildList {
+        add(rel)
+        if (!cwd.isNullOrEmpty()) {
+            if (rel.startsWith("$cwd/")) add(rel.removePrefix("$cwd/")) else add("$cwd/$rel")
+        }
+    }.distinct()
+    run {
+        for (c in candidates) {
+            if (java.io.File("$root/$c").exists()) {
+                return encodeMarkdownUrl("file://$root/$c")
+            }
+        }
+        val name = rel.substringAfterLast('/')
+        val found = runCatching {
+            java.io.File(root).walkTopDown().maxDepth(4).take(4000)
+                .firstOrNull { it.isFile && it.name == name }
+        }.getOrNull()
+        if (found != null) {
+            val foundRel = found.absolutePath.removePrefix("$root/")
+            return encodeMarkdownUrl("file://$root/$foundRel")
+        }
+    }
+    return encodeMarkdownUrl("file://$root/$rel")
 }
 
 /**
