@@ -265,6 +265,7 @@ object ConnectionWarmer {
             warmClient.newCall(reqBuilder.build()).execute().use { true }
         }.getOrElse { e ->
             runCatching { client.connectionPool.evictAll() }
+            lastPokeFailAtMs[trimmed] = System.currentTimeMillis()  // v4.8.132: 失败冷却打点
             Log.w(TAG, "poke fail ($trimmed): ${e.message} — pool evicted")
             me.rerere.rikkahub.data.ai.CallTracer.event(
                 "CONN", "poke_failed", "host=$trimmed err=${e.message?.take(120)}"
@@ -293,12 +294,26 @@ object ConnectionWarmer {
     private fun isRecentlyWarm(host: String): Boolean =
         System.currentTimeMillis() - (lastWarmAtMs[host] ?: 0L) < 70_000L
 
+    // v4.8.132 (用户实证: "工具返回后恢复间隔越来越久" — 单次探活挂 13.5s 复盘):
+    // ① 失败冷却 — 网络坏窗口内 (如 IPv6 路由死) 探活会连环尝试多个地址, 单次可挂
+    //    13s+; 60s 内失败过 → 跳过探活直接放行真实请求 (半死连接剔除由既有 header
+    //    watchdog + 重试链兜底; 坏网络下探活救不了, 只会叠加等待)。
+    // ② 同步探活总时限 — 阻塞 execute 不可被 withTimeout 打断, 改"后台任务 + join
+    //    上限"形态: 超时即放行, 探活在后台继续 (成功照常 markWarm)。
+    private val lastPokeFailAtMs = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private const val POKE_FAIL_COOLDOWN_MS = 60_000L
+    private const val SYNC_POKE_MAX_MS = 6_000L
+
+    private fun isPokeCoolingDown(host: String): Boolean =
+        System.currentTimeMillis() - (lastPokeFailAtMs[host] ?: 0L) < POKE_FAIL_COOLDOWN_MS
+
     /** 工具执行开始前调用 (v4.8.105 C1 提前; 与消息组装并行, 不阻塞): 后台预探活 — 下一轮请求发起前通常已完成。 */
     fun pokeAsync(baseUrl: String, apiKey: String?) {
         val trimmed = baseUrl.trimEnd('/')
         if (trimmed.isBlank()) return
         if (!(trimmed.contains("opencode.ai") || trimmed.contains("commandcode.ai"))) return
         if (isRecentlyWarm(trimmed)) return
+        if (isPokeCoolingDown(trimmed)) return  // v4.8.132: 失败冷却期跳过
         val scope = appScopeRef ?: return
         if (pokeJobs[trimmed]?.isActive == true) return
         pokeJobs[trimmed] = scope.launch(Dispatchers.IO) {
@@ -315,11 +330,20 @@ object ConnectionWarmer {
         val trimmed = baseUrl.trimEnd('/')
         if (trimmed.isBlank()) return false
         if (isRecentlyWarm(trimmed)) return true
+        if (isPokeCoolingDown(trimmed)) return false  // v4.8.132: 失败冷却期直接放行
         pokeJobs[trimmed]?.takeIf { it.isActive }?.let { job ->
             kotlinx.coroutines.withTimeoutOrNull(maxJoinMs) { job.join() }
             if (isRecentlyWarm(trimmed)) return true
         }
-        return pokeProviderHost(trimmed, apiKey)
+        // v4.8.132: 同步探活改"后台任务 + join 上限" — 总等待有界 (≤6s), 超时放行
+        val scope = appScopeRef
+        if (scope == null) return pokeProviderHost(trimmed, apiKey)
+        val existing = pokeJobs[trimmed]?.takeIf { it.isActive }
+        val job = existing ?: scope.launch(Dispatchers.IO) {
+            runCatching { pokeProviderHost(trimmed, apiKey) }
+        }.also { pokeJobs[trimmed] = it }
+        val finished = kotlinx.coroutines.withTimeoutOrNull(SYNC_POKE_MAX_MS) { job.join() } != null
+        return finished && isRecentlyWarm(trimmed)
     }
 
     fun startProviderKeepAlive(

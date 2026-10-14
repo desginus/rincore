@@ -1607,6 +1607,9 @@ class GenerationHandler(
         // 是诊断盲区 (fp_stable 但缓存被打断 → 归因失明; 用户实证"缓存极不稳定")。
         // fp2 对最终发送形态的 system 全文取指纹; fp_stable + fp2_drift = 变换层漂移,
         // fp2_stable + 低命中 = 网关/上游侧 (路由/TTL/缓存生成状态)。
+        // v4.8.132: fp2 稳定性标记 — 低缓存命中时的自动归因判据 (fp2 稳定 + 低命中 =
+        // 缓存块丢失在网关/上游侧; 见下方 CACHE/gateway_miss 判定)
+        var finalSystemStable = false
         runCatching {
             val sysText = internalMessages.firstOrNull { it.role == MessageRole.SYSTEM }
                 ?.parts?.filterIsInstance<UIMessagePart.Text>()?.joinToString("") { it.text } ?: ""
@@ -1617,9 +1620,47 @@ class GenerationHandler(
             val prev2 = lastCacheFp.put(key2, fp2)
             when {
                 prev2 == null -> CallTracer.event("CACHE", "fp2_init", "fp2=$fp2 | sys=${sysText.length}c#${sysH}")
-                prev2 == fp2 -> CallTracer.event("CACHE", "fp2_stable", "fp2=$fp2 unchanged | sys=${sysText.length}c#${sysH}")
+                prev2 == fp2 -> {
+                    finalSystemStable = true
+                    CallTracer.event("CACHE", "fp2_stable", "fp2=$fp2 unchanged | sys=${sysText.length}c#${sysH}")
+                }
                 else -> CallTracer.event("CACHE", "fp2_drift",
                     "FINAL SYSTEM CHANGED prev=$prev2 now=$fp2 | sys=${sysText.length}c#${sysH}")
+            }
+        }
+
+        // v4.8.132: fp3 尾段全内容指纹 — fp/hist 只覆盖"排除尾部两条"且仅尺寸+首中尾 ID,
+        // 当前轮用户消息 (含变换注入) 与全量内容字节稳定性此前是盲区; 本指纹对除"增长中
+        // 消息"外的全部消息做全内容 SHA-256 (post-transform 形态; 每轮百 KB 级, ~1-3ms),
+        // 任何字节级改写 (变换注入漂移/历史改写) 都会被 fp3_drift 直接指认。
+        runCatching {
+            val preTail = internalMessages.dropLast(1)
+            val sb3 = StringBuilder()
+            for (m in preTail) {
+                sb3.append(m.role.name).append('|').append(m.id).append('\n')
+                for (p in m.parts) {
+                    when (p) {
+                        is UIMessagePart.Text -> sb3.append("T:").append(p.text)
+                        is UIMessagePart.Reasoning -> sb3.append("R:").append(p.reasoning)
+                        is UIMessagePart.Tool -> {
+                            sb3.append("TOOL:").append(p.toolName).append(':').append(p.input)
+                            p.output.forEach { o -> if (o is UIMessagePart.Text) sb3.append("O:").append(o.text) }
+                        }
+                        else -> sb3.append("?:").append(p.javaClass.simpleName)
+                    }
+                    sb3.append('\u0001')
+                }
+            }
+            val d3 = java.security.MessageDigest.getInstance("SHA-256").digest(sb3.toString().toByteArray())
+            val fp3 = d3.take(8).joinToString("") { "%02x".format(it) }
+            val key3 = (conversationId?.toString() ?: "global") + ":pretail"
+            val prev3 = lastCacheFp.put(key3, fp3)
+            val desc3 = "preTail=${preTail.size}m/${sb3.length}c"
+            when {
+                prev3 == null -> CallTracer.event("CACHE", "fp3_init", "fp3=$fp3 | $desc3")
+                prev3 == fp3 -> CallTracer.event("CACHE", "fp3_stable", "fp3=$fp3 unchanged | $desc3")
+                else -> CallTracer.event("CACHE", "fp3_drift",
+                    "PRE-TAIL CONTENT CHANGED prev=$prev3 now=$fp3 | $desc3")
             }
         }
 
@@ -1673,6 +1714,9 @@ class GenerationHandler(
             // v4.8.74 (OC/CC 定向): 距上轮 >15s (工具长执行后) 先轻量探活再发真实请求 —
             // 半死连接 4s 内剔除+清池 (否则真实请求整段等 readTimeout, 用户感知"工具后
             // 模型久久不开口"); 快速重试 (gap 小) 不触发, 零额外开销。
+            // v4.8.132: 探活等待单列上报 — 用户排查"工具后恢复间隔"时, 14921ms 的
+            // "assembly" 实为探活等待 (曾误导归因); pokeMs 单列后可区分"探活慢"与"组装慢"
+            var pokeWaitMs = 0L
             run {
                 val nowAt = System.currentTimeMillis()
                 val gapMs = if (retry.lastApiRoundAt > 0) nowAt - retry.lastApiRoundAt else 0L
@@ -1684,12 +1728,14 @@ class GenerationHandler(
                     if (pokeBase != null) {
                         val pokeKey = (provider as? ProviderSetting.OpenAI)?.apiKey
                             ?: (provider as? ProviderSetting.Claude)?.apiKey
+                        val pokeT0 = System.currentTimeMillis()
                         val ok = runCatching {
                             // v4.8.98: 仅在非新鲜时等待 — 最近心跳/探活成功 (≤70s) 零等待;
                             // 工具后已发起的后台预探活在此 join (上限 1.5s)
                             me.rerere.rikkahub.service.ConnectionWarmer.awaitPokeIfStale(pokeBase, pokeKey)
                         }.getOrDefault(false)
-                        CallTracer.event("CONN", "poke", "host=$pokeBase gapMs=$gapMs ok=$ok")
+                        pokeWaitMs = System.currentTimeMillis() - pokeT0
+                        CallTracer.event("CONN", "poke", "host=$pokeBase gapMs=$gapMs ok=$ok waitMs=$pokeWaitMs")
                     }
                 }
             }
@@ -1725,9 +1771,9 @@ class GenerationHandler(
             if (retry.lastToolEndAt > 0) {
                 val postToolMs = System.currentTimeMillis() - retry.lastToolEndAt
                 me.rerere.ai.util.TraceLogger.log(
-                    "SSE", "resume: toolEnd→preStream=${postToolMs}ms (assembly=${preStreamMs}ms)"
+                    "SSE", "resume: toolEnd→preStream=${postToolMs}ms (assembly=${preStreamMs}ms, poke=${pokeWaitMs}ms)"
                 )
-                CallTracer.event("PERF", "resume_gap", "toolEnd→preStream=${postToolMs}ms assembly=${preStreamMs}ms")
+                CallTracer.event("PERF", "resume_gap", "toolEnd→preStream=${postToolMs}ms assembly=${preStreamMs}ms poke=${pokeWaitMs}ms")
                 retry.lastToolEndAt = 0L
             }
             // 4.2.0: 消费侧切原版 StreamChunkHandler (2.5.x 架构)
@@ -1776,6 +1822,13 @@ class GenerationHandler(
                         val cacheHitRate = usage.cachedTokens * 100 / usage.promptTokens
                         CallTracer.event("CACHE", "usage",
                             "prompt=${usage.promptTokens} cached=${usage.cachedTokens} hit=$cacheHitRate%")
+                        // v4.8.132 (用户实证"缓存退化"): 低命中且客户端前缀无漂移 → 直接给出
+                        // 归因结论 (缓存块丢失在网关/上游侧 — 路由/TTL/负载), 免去每次人工比对
+                        // fp/fp2。阈值 60%: 正常轮 90-99%, 断裂轮 0-48%, 分离度充足。
+                        if (cacheHitRate < 60 && finalSystemStable) {
+                            CallTracer.event("CACHE", "gateway_miss",
+                                "低命中但客户端前缀无漂移 (fp/fp2 stable) — 缓存块丢失在网关/上游侧 (路由/TTL/负载), 非客户端问题")
+                        }
                         Log.i(
                             TAG,
                             "cache: prompt=${usage.promptTokens} cached=${usage.cachedTokens}" +
