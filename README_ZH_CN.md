@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=构建&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/版本-v4.8.136-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/版本-v4.8.137-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/许可-segmented_dual-cyan)](LICENSE)
 
 **手机上一个真正全面的 AI 助手。** 不是套壳，是一台重新打造过的引擎——背后是六周的高强度实测迭代与 400+ 个版本。
@@ -80,7 +80,9 @@ RinCore 处于活跃维护中，欢迎 Issue 与 PR。每一个被报告的问�
 
 ## 📋 更新日志
 
-v4.8.54 → v4.8.136（倒序）：
+v4.8.54 → v4.8.137（倒序）：
+
+- **v4.8.137** — 上传文件同名覆盖根修：上传码正则按 12 位误写而真实文件名是 10 位，同分钟同 basename（工具图恒为 image.png）全拿 01 号互相覆盖——多个读图结果指向同一文件。正则/校验全链对齐 + 回归测试。另外：重试链相位修正（发起链 5 次快速失败只用于尚无输出的建连阶段，有输出后含工具轮一律 18 次流中断链）、/dev/shm 绑定（Python multiprocessing）、pdf 脚本逐页无文本层提示、toolbox 逐工具真实安装提示。
 
 - **v4.8.136** — 本对话产出胶囊窗"点了没反应"根修：在选项态被关闭时留下 open=true+已隐藏的僵尸态（Material3 的 onDismissRequest 在 sheet 隐藏之后才回调），此后重新打开的点击全部无效，直到页面状态重建才偶发恢复。现在任何关闭都彻底复位；选项→列表一步回退改由返回键承担。附 80 条产出清单滚动可达。
 

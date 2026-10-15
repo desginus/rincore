@@ -5,6 +5,25 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 
 # RinCore Bug 记录（全部历史）
 
+## B160 — 沙箱缺 /dev/shm（multiprocessing 崩）+ pdf 无文本层静默 + toolbox 提示失实（v4.8.137）
+- **现象**：①Python 多进程池构造即 `FileNotFoundError: SemLock`（`/dev/shm` 不存在；`mp.set_start_method('fork')` 也绕不过）；②纯扫描件 `pdftotext` 只输出分页符（3 字节）无警告；③toolbox 的 MISSING 项统一提示 `pip3 install cairosvg`（qpdf/convert 根本不是它提供的），启动横幅与另一处口径矛盾。
+- **定位**：①宿主 Android `/dev` 下本无 shm，`KERNEL_FS_MOUNTS` 又把宿主 `/dev` 整体绑进 guest → guest `/dev/shm` 缺席；glibc `sem_open()`/共享内存全落 `/dev/shm`。②`pdf` 脚本非 OCR 路径对空文本页静默跳过。③toolbox 的通用安装提示是"一句话糊全表"。
+- **修复**：①`ProotShellRunner.buildCommand` 自建宿主目录绑定 `/dev/shm`（置于内核 fs 绑定之后=更具体优先）+ 预创建 guest 挂载点；②`pdf` 逐页检测（无文本且有图 → image-only 标注 + `--png`/`--ocr` 指引）；③toolbox 逐工具真实提示（qpdf→pypdf/PyMuPDF、convert→PIL/cairosvg、tesseract→rapidocr…）+ tips 与提醒文案口径统一。
+- **教训**：**环境的"没有"要让工具说清楚**：能力缺失的提示必须逐项真实（通用一句=新的误导源）；宿主—guest 的挂载覆盖要检查"更具体路径是否被打脸"。
+
+## B159 — 重试链相位错配：工具轮后首连失败被按"发起阶段"5 次即停（v4.8.137）
+- **现象（用户）**："模型中途调用工具之后，网络波动，输出中断，报错'已连续5次不可达'——不应该试 18 次吗？5 次是对话建立时的，为什么匹配错误？"
+- **定位**：发起链（5 次+可见提示）由 `StreamFailureClassifier.classify(e, receivedAnyData)` 判定，而 `receivedAnyData` **每轮归零**（v4.8.131 的轮边界重置）——工具轮之后的续发轮在本轮尚无数据，被按"发起阶段"处理 → 5 次即终态；但本次发送**屏幕早已有输出**，用户预期 18 次流中断链。
+- **修复**：`RetryState` 增 `outputStarted`（首次收流置位、**跨轮不清零**）；classify 判据 = `receivedAnyData || outputStarted` → 发起链只服务"刚发完消息、尚无输出"的建连阶段；有输出后一切失败（含工具轮/新轮首连失败）走 18 次流中断链（静默恢复）。
+- **教训**：**"阶段"的定义要按用户语义对齐，不是按实现最方便的边界**——"发起阶段"= 尚无输出的建连（用户视角），不是"每轮无数据"（实现视角）；修边界 bug 时把语义往上一层问一遍（这次是 v4.8.131 把轮边界重置修对了细节、但阶段语义本身需要用户再定）。
+
+## B158 — 上传文件同名覆盖根因：NEW_NAME 正则与实际文件名格式永不匹配（v4.8.137）
+- **现象（用户 100% 复现）**：同轮读三张不同图片 → 三张全部返回第一张（TEST-AAA）；三次调用共用同一 `image_id`（`1015104801_image.png`）；render_urls 路径各自正确；跨轮单读正常。
+- **定位（实锤）**：`UploadCodes.NEW_NAME = Regex("^(\\d{10})(\\d{2,3})_")` 按"12-13 位"误写，**实际文件名 10 位**（MMddHHmm 8 + 序号 2）→ 正则永不匹配 → `nextCodeLocked` 扫描永远 max=0 → **同分钟所有文件都拿 01 号**；工具图副本 basename 恒为 `image.png` → 同分钟多张读图全部写同一个文件，后写覆盖先写 → 所有相关工具结果（含 classic 路径"附图"投递）指向同一文件 → 全是同一张图。同族的 `hasCodeFormat`（12..13）把可见的 10 位文件名前缀判为非法 → upload_fetch 按前缀取码反而不命中；`<UploadFile code>` 此前给的是哈希码而非文件名前缀。v4.8.134 的原子化锁定修了"取号→创建"竞态，但**扫描从未生效过**（先验证基础功能、再修并发——"锁护一半"的翻版）。
+- **修复**：正则 `^(\d{8})(\d{2,})_`；`hasCodeFormat` 10..12；`codeForFileName` 归一即文件名前缀；`createUploadFile` createNewFile 重试硬化；`UploadCodesTest` 回归（格式对齐 + 同分钟同名不碰撞）。
+- **教训**：①**格式契约必须与生成端同源核验**（formatter 产 10 位、regex 写 12 位、注释写"12 位"、示例写 10 位——四个地方各写各的=系统性失配）；②设备落地文件名是最终 ground truth（用户证据里的 `1015104801_image.png` 直接定案）；③"扫描结果恒空"与"并发竞态"症状相似但根因层次不同——先单线程验证基础功能，再谈并发。
+
+
 ## B157 — 本对话产出胶囊窗"点了没反应/点不开"（dismiss 僵尸态, v4.8.136）
 - **现象（用户）**："点击页面更多那里 → 本对话产出 → 点胶囊窗，很多时候点了没反应、点不开，有的时候又能点开"。
 - **定位（僵尸态实锤）**：`ConversationArtifactsSheet` 的 `ModalBottomSheet(onDismissRequest = { if (selected != null) selected = null else onOpenChange(false) })`。Material3 的 `onDismissRequest` 是**关闭动画完成后的通知**（scrim 点击/下滑已完成隐藏）——在"选项态"被 dismiss 时只清 `selected` 不清 `open` → 留下 `open=true` + `sheetState=Hidden`：此后入口点击 `open=true`（无状态变化）→ **无重组 → sheet 永不重现**；"有时又能点开"= 页面级状态重建（退出预览等）把 remember 复位后偶发恢复。

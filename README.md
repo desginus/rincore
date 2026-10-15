@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=build&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/version-v4.8.136-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/version-v4.8.137-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/license-segmented_dual-cyan)](LICENSE)
 
 **A real, self-contained AI assistant on your phone.** Not a wrapper — a rebuilt engine with six
@@ -129,7 +129,9 @@ changelog entry and a regression guard. Optimizations keep coming.
 
 ## 📋 Changelog
 
-v4.8.54 → v4.8.136 (newest first):
+v4.8.54 → v4.8.137 (newest first):
+
+- **v4.8.137** — Upload filename-collision root fix: the upload-code regex expected 12-digit names while real names are 10 digits, so same-minute files with the same basename (tool images are always image.png) all shared the 01 slot and overwrote each other — multiple image tool-results pointed at one file. Regex/validators aligned + regression test. Also: retry-phase semantics (init 5-attempt quick-fail only before any output; 18-attempt stream chain afterwards, incl. post-tool rounds), /dev/shm binding for Python multiprocessing, pdf script per-page no-text-layer notices, and truthful per-tool install hints in toolbox.
 
 - **v4.8.136** — Conversation-artifacts sheet "tap does nothing" root fix: a dismissed-while-options-shown sheet left `open=true` + hidden state (Material3's onDismissRequest fires after the sheet is already hidden), so reopen taps became no-ops until the page state was recreated. Dismiss now always fully closes; the options→list step moved to the system back key. Plus scroll support for the 80-item produced-files list.
 
