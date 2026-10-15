@@ -182,12 +182,13 @@ private fun createReadFileTool(
                         buildJsonObject {
                             put("path", path)
                             put("url_only", true)
-                            put("render_urls", buildJsonArray {
-                                add(JsonPrimitive(buildRenderUrl(workspaceId, path, cwdRel)))
-                            })
-                            buildRenderMarkdown(workspaceId, listOf(path), cwdRel)?.let {
-                                put("render_markdown", it)
+                            // v4.8.142: 单点载荷 — 验存不过不发地址 (宁可没图, 不给死链)
+                            val rpRead = buildRenderPayload(workspaceId, listOf(path), cwdRel)
+                            if (rpRead.urls.isNotEmpty()) {
+                                put("render_urls", buildJsonArray { rpRead.urls.forEach { add(JsonPrimitive(it)) } })
+                                rpRead.markdown?.let { put("render_markdown", it) }
                             }
+                            if (rpRead.skipped > 0) put("render_note", renderSkippedNote(rpRead.skipped))
                         }.toString()
                     )
                 )
@@ -299,12 +300,13 @@ private fun createWriteFileTool(
         previousVersion?.let { resultJson["previous_version"] = JsonPrimitive(it) }
         if (path.isImagePath()) {
             // v4.8.113: 统一 render_urls 数组 + render_markdown 直贴（模型原样复述进正文即显示）
-            resultJson["render_urls"] = buildJsonArray {
-                add(JsonPrimitive(buildRenderUrl(workspaceId, path, cwdRel)))
+            // v4.8.142: 单点载荷 — 验存不过不发地址 (宁可没图, 不给死链)
+            val rpWrite = buildRenderPayload(workspaceId, listOf(path), cwdRel)
+            if (rpWrite.urls.isNotEmpty()) {
+                resultJson["render_urls"] = buildJsonArray { rpWrite.urls.forEach { add(JsonPrimitive(it)) } }
+                rpWrite.markdown?.let { resultJson["render_markdown"] = JsonPrimitive(it) }
             }
-            buildRenderMarkdown(workspaceId, listOf(path), cwdRel)?.let {
-                resultJson["render_markdown"] = JsonPrimitive(it)
-            }
+            if (rpWrite.skipped > 0) resultJson["render_note"] = JsonPrimitive(renderSkippedNote(rpWrite.skipped))
         }
         listOf(UIMessagePart.Text(JsonObject(resultJson).toString()))
     },
@@ -905,13 +907,13 @@ private fun createShellTool(
                         "exitCode=0 but stderr contains error output — a multi-part script may have partially executed (earlier steps done, later steps skipped). Verify actual effects before proceeding."
                     )
                     if (imagePaths.isNotEmpty()) {
-                        put("render_urls", buildJsonArray {
-                            imagePaths.forEach { add(JsonPrimitive(buildRenderUrl(workspaceId, it, cwdRel))) }
-                        })
-                        // v4.8.113: 直贴可直接输出的 markdown 行 — 模型原样复述进正文即显示
-                        buildRenderMarkdown(workspaceId, imagePaths, cwdRel)?.let {
-                            put("render_markdown", it)
+                        // v4.8.142: 单点载荷 — 验存不过不发地址 (宁可没图, 不给死链)
+                        val rpShell = buildRenderPayload(workspaceId, imagePaths, cwdRel)
+                        if (rpShell.urls.isNotEmpty()) {
+                            put("render_urls", buildJsonArray { rpShell.urls.forEach { add(JsonPrimitive(it)) } })
+                            rpShell.markdown?.let { put("render_markdown", it) }
                         }
+                        if (rpShell.skipped > 0) put("render_note", renderSkippedNote(rpShell.skipped))
                     }
                 }.toString()
             )
@@ -967,7 +969,7 @@ private fun extractImagePathsFromText(text: String): List<String> {
         .toList()
 }
 
-// v4.8.115: buildRenderUrl / buildRenderMarkdown / encodeMarkdownUrl 已收口至
+// v4.8.115/142: buildRenderUrl / buildRenderPayload / encodeMarkdownUrl 已收口至
 // ToolImagePayload.kt (渲染地址单一来源; 规范形态 = percent 编码 file://, 全链唯一)。
 // 本文件三处产出点 (write_file / shell / read_image) 同包直调, 语义不变:
 // render_urls 与 render_markdown 现为同一形态, 不再存在"裸路径/编码串"双形态。
@@ -991,12 +993,13 @@ private suspend fun WorkspaceRepository.readImageInRootfs(
                 put("image_id", uris.first().lastPathSegment ?: path)  // v4.8.134 (C3): 稳定 id (上传副本文件名, 唯一)
                 put("description", "Image file read successfully")
                 // v4.8.113: 统一 render_urls 数组 + render_markdown 直贴
-                put("render_urls", buildJsonArray {
-                    add(JsonPrimitive(buildRenderUrl(workspaceId, path, cwd)))
-                })
-                buildRenderMarkdown(workspaceId, listOf(path), cwd)?.let {
-                    put("render_markdown", it)
+                // v4.8.142: 单点载荷 — 验存不过不发地址 (宁可没图, 不给死链)
+                val rpImage = buildRenderPayload(workspaceId, listOf(path), cwd)
+                if (rpImage.urls.isNotEmpty()) {
+                    put("render_urls", buildJsonArray { rpImage.urls.forEach { add(JsonPrimitive(it)) } })
+                    rpImage.markdown?.let { put("render_markdown", it) }
                 }
+                if (rpImage.skipped > 0) put("render_note", renderSkippedNote(rpImage.skipped))
             }.toString()
         ),
     )

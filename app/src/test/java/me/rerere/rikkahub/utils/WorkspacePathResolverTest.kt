@@ -17,7 +17,10 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import me.rerere.rikkahub.data.ai.tools.buildRenderUrl
+import me.rerere.rikkahub.data.ai.tools.encodeMarkdownUrl
 import me.rerere.rikkahub.data.ai.tools.extractRenderUrls
+import me.rerere.rikkahub.data.ai.tools.renderMarkdownOf
+import me.rerere.rikkahub.data.ai.tools.renderUrlCandidates
 import me.rerere.rikkahub.ui.components.richtext.decodeLocalFilePath
 import me.rerere.rikkahub.ui.components.richtext.isAppLocalImageUri
 import me.rerere.rikkahub.BuildConfig
@@ -265,7 +268,11 @@ class WorkspacePathResolverTest {
 
     @Test
     fun renderUrl_canonical_encoded_and_roundtrip() {
-        val url = buildRenderUrl("wsid", "/workspace/桌面/受力图 (1).png", null)
+        // v4.8.142: 映射/编码经纯函数层 (renderUrlCandidates) 覆盖 — stat 需真文件,
+        // CI 沙箱无 /data/data, buildRenderUrl 的 null 契约见 renderUrl_noDeadLinks。
+        val host = renderUrlCandidates("wsid", "/workspace/桌面/受力图 (1).png", null).single()
+        assertEquals("/data/data/${pkg()}/files/workspaces/wsid/files/桌面/受力图 (1).png", host)
+        val url = encodeMarkdownUrl("file://$host")
         // 编码形态: 中文/空格/括号不出现在地址里 (markdown 安全)
         assertFalse(url.contains(' '))
         assertFalse(url.contains('('))
@@ -274,28 +281,66 @@ class WorkspacePathResolverTest {
         assertTrue(isAppPrivateFileUri(url))
         // 解码回环 (单一解码点所用的同一解码链; HOST_WS 锚点不含包名, 形态无关)
         assertEquals("/桌面/受力图 (1).png", resolveWorkspaceRelPath(url))
-        // 幂等基准: 对原始路径编码一次 = 规范形态 (buildRenderMarkdown 不再二次编码)
+        // 幂等基准: 对原始路径编码一次 = 规范形态 (不再二次编码)
+        assertEquals(url, encodeMarkdownUrl("file://$host"))
+        // markdown 行形态 (纯函数直驱): 与 render_urls 同一编码
+        val md = renderMarkdownOf(listOf("桌面/受力图 (1).png" to url))
+        assertTrue(md!!.startsWith("以下是已生成图片"))
+        assertTrue(md.contains("]($url)"))
+    }
+
+    @Test
+    fun renderUrl_noDeadLinks_and_mounts() {
+        // 表外绝对路径 → 零候选 (不生成任何地址; 宁可没图, 不给死链)
+        assertEquals(emptyList<String>(), renderUrlCandidates("wsid", "/tmp/x.png", null))
+        assertEquals(emptyList<String>(), renderUrlCandidates("wsid", "/var/log/x.png", null))
+        assertEquals(emptyList<String>(), renderUrlCandidates("wsid", "/root/x.png", null))
+        // 具名挂载区映射 (与 RepositoryModule bindMounts 同源: 目录名 = FileFolders 常量)
         assertEquals(
-            url,
-            encodeMarkdownUrl(
-                "file:///data/data/${pkg()}/files/workspaces/wsid/files/桌面/受力图 (1).png"
-            ),
+            listOf("/data/data/${pkg()}/files/upload/x.png"),
+            renderUrlCandidates("wsid", "/upload/x.png", null),
+        )
+        assertEquals(
+            listOf("/data/data/${pkg()}/files/tool_outputs/x.png"),
+            renderUrlCandidates("wsid", "/tool_outputs/x.png", null),
+        )
+        assertEquals(
+            listOf("/data/data/${pkg()}/files/skills/foo/x.png"),
+            renderUrlCandidates("wsid", "/skills/foo/x.png", null),
+        )
+        // 宿主字面形态: 四个可显示区内原样; 区外零候选 (fonts 未授权)
+        assertEquals(
+            listOf("/data/data/${pkg()}/files/workspaces/other/files/a.png"),
+            renderUrlCandidates("wsid", "file:///data/data/${pkg()}/files/workspaces/other/files/a.png", null),
+        )
+        assertEquals(
+            emptyList<String>(),
+            renderUrlCandidates("wsid", "file:///data/data/${pkg()}/files/fonts/a.png", null),
+        )
+        // v4.8.142 硬契约: 一切不存在的文件 → null (死链零输出)
+        assertNull(buildRenderUrl("wsid", "/workspace/桌面/受力图 (1).png", null))
+        assertNull(buildRenderUrl("wsid", "/upload/x.png", null))
+        assertNull(buildRenderUrl("wsid", "/tmp/x.png", null))
+        assertNull(buildRenderUrl("wsid", "/workspace/a/b/c.png", "cwd"))
+        // workspace:// 虚拟形态 = 工作区相对路径 (剥 scheme)
+        assertEquals(
+            listOf("/data/data/${pkg()}/files/workspaces/wsid/files/d/a b.png"),
+            renderUrlCandidates("wsid", "workspace://d/a%20b.png", null),
         )
     }
 
     @Test
     fun payload_build_then_extract_roundtrip() {
+        // v4.8.142: urls 由纯候选层直接构成 (不依赖文件真的存在), 覆盖提取器回环。
         val paths = listOf("/workspace/a/图1.png", "/workspace/b/图2.jpg")
-        val urls = paths.map { buildRenderUrl("wsid", it, null) }
+        val urls = paths.map { encodeMarkdownUrl("file://${renderUrlCandidates("wsid", it, null).single()}") }
         val json = buildJsonObject {
             put("render_urls", buildJsonArray { urls.forEach { add(JsonPrimitive(it)) } })
-            buildRenderMarkdown("wsid", paths, null)?.let { put("render_markdown", JsonPrimitive(it)) }
         }
         assertEquals(urls, extractRenderUrls(json))
         // markdown 行内 URL 与 render_urls 逐字一致 (同一形态, 无二次转换)
-        urls.forEachIndexed { i, u ->
-            assertTrue(buildRenderMarkdown("wsid", paths, null)!!.contains("]($u)"))
-        }
+        val md = renderMarkdownOf(paths.zip(urls))
+        urls.forEach { u -> assertTrue(md!!.contains("]($u)")) }
         // 防御: 异常输入返回空列表不抛错
         assertEquals(emptyList<String>(), extractRenderUrls(null))
         assertEquals(emptyList<String>(), extractRenderUrls(JsonPrimitive("not an object")))

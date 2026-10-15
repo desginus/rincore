@@ -51,8 +51,8 @@ import me.rerere.rikkahub.browser.evaluateJavascriptAsync
 import me.rerere.rikkahub.browser.navigateAndSettle
 import me.rerere.rikkahub.browser.readPageSnapshot
 import me.rerere.rikkahub.data.ai.tools.ToolInvocationContext
-import me.rerere.rikkahub.data.ai.tools.buildRenderMarkdown
-import me.rerere.rikkahub.data.ai.tools.buildRenderUrl
+import me.rerere.rikkahub.data.ai.tools.buildRenderPayload
+import me.rerere.rikkahub.data.ai.tools.renderSkippedNote
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import java.io.File
 import java.io.FileOutputStream
@@ -236,7 +236,8 @@ fun browserScreenshotTool(context: Context, invocationContext: ToolInvocationCon
                     repo?.writeBinaryInRootfs(wsId, rootfsPath, pngBytes, invocationContext.workspaceCwd) == true
                 if (wroteToWorkspace && wsId != null) {
                     repo?.sweepBrowserShotsInRootfs(wsId, invocationContext.workspaceCwd)
-                    val renderUrl = buildRenderUrl(wsId, rootfsPath, invocationContext.workspaceCwd)
+                    // v4.8.142: 单点载荷 — 验存不过不发地址 (宁可没图, 不给死链)
+                    val rpShot = buildRenderPayload(wsId, listOf(rootfsPath), invocationContext.workspaceCwd)
                     buildJsonObject {
                         put("success", true)
                         put("path", rootfsPath)
@@ -244,9 +245,11 @@ fun browserScreenshotTool(context: Context, invocationContext: ToolInvocationCon
                         put("storage", "workspace")
                         put("width", w)
                         put("height", h)
-                        put("render_urls", buildJsonArray { add(renderUrl) })
-                        buildRenderMarkdown(wsId, listOf(rootfsPath), invocationContext.workspaceCwd)
-                            ?.let { put("render_markdown", it) }
+                        if (rpShot.urls.isNotEmpty()) {
+                            put("render_urls", buildJsonArray { rpShot.urls.forEach { add(JsonPrimitive(it)) } })
+                            rpShot.markdown?.let { put("render_markdown", it) }
+                        }
+                        if (rpShot.skipped > 0) put("render_note", renderSkippedNote(rpShot.skipped))
                     }
                 } else {
                     val cacheDir = File(context.cacheDir, SCREENSHOT_CACHE_SUBDIR).apply { mkdirs() }
