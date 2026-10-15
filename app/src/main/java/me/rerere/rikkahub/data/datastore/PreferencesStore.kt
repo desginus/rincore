@@ -340,6 +340,7 @@ class SettingsStore(
                 preferences[SUBAGENT_TOKEN_USAGE] = JsonInstant.encodeToString(settings.subagentTokenUsage)
                 preferences[CONVERSATION_PRODUCED_FILES] = JsonInstant.encodeToString(settings.conversationProducedFiles)
                 preferences[SUBAGENT_BUDGET_UPGRADED] = settings.subagentBudgetUpgraded
+                preferences[SUBAGENT_CONCURRENCY_UPGRADED] = settings.subagentConcurrencyUpgraded
                 preferences[PRESET_SKILLS_SEED_VERSION] = settings.presetSkillsSeedVersion
                 preferences[TOOL_DESCRIPTION_OVERRIDES] = JsonInstant.encodeToString(settings.toolDescriptionOverrides)
                 preferences[CLASSIFIER_PROMPT] = settings.classifierPrompt
@@ -373,6 +374,7 @@ class SettingsStore(
         val SUBAGENT_TOKEN_USAGE = stringPreferencesKey("subagent_token_usage")
         val CONVERSATION_PRODUCED_FILES = stringPreferencesKey("conversation_produced_files")
         val SUBAGENT_BUDGET_UPGRADED = booleanPreferencesKey("subagent_budget_upgraded")
+        val SUBAGENT_CONCURRENCY_UPGRADED = booleanPreferencesKey("subagent_concurrency_upgraded")
         val PRESET_SKILLS_SEED_VERSION = intPreferencesKey("preset_skills_seed_version")
         // ── 旧「工具域」键：v4.8.83 起只读一次用于迁移，不再写入（保存时清除）──
         val DOMAIN_NAME_OVERRIDES = stringPreferencesKey("domain_name_overrides")
@@ -477,7 +479,15 @@ class SettingsStore(
                         }
                     )
                 },
-                assistants = JsonInstant.decodeFromString(preferences[ASSISTANTS] ?: "[]"),
+                // v4.8.139: 子代理并发上限一次性升级 — 存量助手仍带旧默认 3 (v4.8.121 默认已
+                // 3→7, 但已落盘助手 JSON 里固定为 3) → 用户实证"子代理只容纳 3 并发"。
+                // 仅升级"恰好等于旧默认 3"的值 (手动设过其它值的不动); 升级后置标记,
+                // 此后手动改为 3 不再被覆盖 (镜像 v4.8.108 预算升级模式)。
+                assistants = run {
+                    val raw = JsonInstant.decodeFromString<List<Assistant>>(preferences[ASSISTANTS] ?: "[]")
+                    if (preferences[SUBAGENT_CONCURRENCY_UPGRADED] == true) raw
+                    else raw.map { a -> if (a.maxConcurrentSubAgents == 3) a.copy(maxConcurrentSubAgents = 7) else a }
+                },
                 dynamicColor = preferences[DYNAMIC_COLOR] != false,
                 themeId = preferences[THEME_ID] ?: PresetThemes[0].id,
                 customThemes = preferences[CUSTOM_THEMES]?.let {
@@ -558,6 +568,7 @@ class SettingsStore(
                     }
                 },
                 subagentBudgetUpgraded = true,
+                subagentConcurrencyUpgraded = true,  // v4.8.139: 升级标记随下次保存落盘, 之后不再改写任何值
                 subagentTokenUsage = preferences[SUBAGENT_TOKEN_USAGE]?.let {
                     runCatching { JsonInstant.decodeFromString<Map<String, Long>>(it) }.getOrDefault(emptyMap())
                 } ?: emptyMap(),
@@ -783,6 +794,7 @@ class SettingsStore(
             preferences[SUBAGENT_TOKEN_USAGE] = JsonInstant.encodeToString(settings.subagentTokenUsage)
             preferences[CONVERSATION_PRODUCED_FILES] = JsonInstant.encodeToString(settings.conversationProducedFiles)
             preferences[SUBAGENT_BUDGET_UPGRADED] = settings.subagentBudgetUpgraded
+            preferences[SUBAGENT_CONCURRENCY_UPGRADED] = settings.subagentConcurrencyUpgraded
             preferences[PRESET_SKILLS_SEED_VERSION] = settings.presetSkillsSeedVersion
             preferences[TOOL_DESCRIPTION_OVERRIDES] = JsonInstant.encodeToString(settings.toolDescriptionOverrides)
             preferences[CLASSIFIER_PROMPT] = settings.classifierPrompt
@@ -992,6 +1004,9 @@ data class Settings(
     val subagentTokenBudget: Long = 1_000_000L,
     /** v4.8.108: 预算默认值升级标记（100K→1000K 一次性；防"旧默认值被反复回写"） */
     val subagentBudgetUpgraded: Boolean = false,
+    /** v4.8.139: 子代理并发上限一次性升级标记 — 存量助手仍带旧默认 3 (v4.8.121 只改了默认值,
+     *  已落盘助手 JSON 里固定为 3) → 用户实证"子代理只容纳 3 并发"。 */
+    val subagentConcurrencyUpgraded: Boolean = false,
     /** v4.8.88 每对话已消耗的子代理 Token（conversationId → tokens）。UI 可清零。 */
     val subagentTokenUsage: Map<String, Long> = emptyMap(),
     /**
