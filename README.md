@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=build&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/version-v4.8.139-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/version-v4.8.140-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/license-segmented_dual-cyan)](LICENSE)
 
 **A real, self-contained AI assistant on your phone.** Not a wrapper — a rebuilt engine with six
@@ -129,7 +129,9 @@ changelog entry and a regression guard. Optimizations keep coming.
 
 ## 📋 Changelog
 
-v4.8.54 → v4.8.139 (newest first):
+v4.8.54 → v4.8.140 (newest first):
+
+- **v4.8.140** — Sub-agent outputs landing in the wrong CWD: sub-agent conversations did not inherit the parent conversation's project-pack (folder) id, so their effective working directory fell back to the assistant-level CWD (folder.cwd ?: assistant CWD resolution) while the parent chat lived in a pack. Fixed by inheriting parentFolderId at conversation creation.
 
 - **v4.8.139** — Sub-agent concurrency "only 3" root fix: the 3→7 default bump (v4.8.121) only affected NEW assistants; existing assistants keep the persisted old default 3. One-time migration now upgrades exactly-3 values to 7 (manually set other values untouched; one-shot flag pattern). Also documents the two-commit/two-run release race and the verification method.
 

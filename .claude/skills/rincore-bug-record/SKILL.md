@@ -5,6 +5,13 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 
 # RinCore Bug 记录（全部历史）
 
+## B163 — 子代理产物"落不到对应的 CWD/工作区"（v4.8.140）
+- **现象（用户）**："subagent 的产物落不到对应的 cwd 或工作区。"
+- **定位**：子代理会话在 `SubAgentEngine.executeRun` 创建（`Conversation.ofId(assistantId=父助手, newConversation=true)`）——**未继承父对话的 folderId**；生效 CWD 链（ChatService：`conversation.folderId → folder.cwd ?: assistant.workspaceCwd`）对子代理整体跌回**助手级**。父对话在项目包（有包 CWD）时，子代理的写文件/沙箱挂载（v4.5.27 专一空间=按生效 CWD 挂载）全落在助手 CWD → 用户找不到产物（工作区 id 正确，是 CWD 层级错位——"三要素 assistant/workspace/cwd 只对了前两个"）。
+- **修复**：`executeRun` 读取父对话 `folderId` 并写入子代理会话（`ofId(folderId=parentFolderId)`，全库唯一创建点）；父对话不在包内 → 继承 null、行为不变。
+- **教训（#57）**：**派生上下文（子代理/派发任务/自动化会话）必须显式继承父上下文的"生效值链"**——凡"创建时少传一个归属字段，就整体跌回默认层级"的结构，都要问一遍"这个派生对象的所有三要素（assistant/workspace/cwd）与父一致吗"；CWD/权限/归属类 bug 的签名 = "上层对了、下层层级悄悄错位"。
+
+
 ## B162 — 子代理"只容纳 3 并发"：默认值升级只对新助手生效（v4.8.139）
 - **现象（用户）**："子代理只容纳3并发"（v4.8.121 已定版"最多同时 7 个"并落地排队）。
 - **定位**：`maxConcurrentSubAgents` 的"默认 3→7"改动发生在**数据类默认值**层；存量助手的持久化 JSON 里固定存着旧默认 3（字段早已物化落盘），加载时不做任何迁移 → `currentAssistantCap` 读到 3 → 并发槽位=3，第 4+ 个自动排队（v4.8.134 排队逻辑把"只 3 个在跑"表现为静默等待）。

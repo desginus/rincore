@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=构建&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/版本-v4.8.139-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/版本-v4.8.140-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/许可-segmented_dual-cyan)](LICENSE)
 
 **手机上一个真正全面的 AI 助手。** 不是套壳，是一台重新打造过的引擎——背后是六周的高强度实测迭代与 400+ 个版本。
@@ -80,7 +80,9 @@ RinCore 处于活跃维护中，欢迎 Issue 与 PR。每一个被报告的问�
 
 ## 📋 更新日志
 
-v4.8.54 → v4.8.139（倒序）：
+v4.8.54 → v4.8.140（倒序）：
+
+- **v4.8.140** — 子代理产物落错 CWD：子代理会话创建时未继承父对话的项目包归属，生效工作目录整体跌回助手级 CWD（解析链 = 包 cwd ?: 助手 cwd），而父对话在项目包里。修复 = 创建时继承父对话 folderId。
 
 - **v4.8.139** — 子代理并发"只容纳 3"根修：v4.8.121 的默认 3→7 只对新建助手生效，存量助手的落盘 JSON 里仍是旧默认 3。现在做一次性迁移：恰好等于 3 的值升到 7（手动设过其它值的不动；一次性标记模式）。
 
