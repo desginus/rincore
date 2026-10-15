@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=构建&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/版本-v4.8.141-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/版本-v4.8.142-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/许可-segmented_dual-cyan)](LICENSE)
 
 **手机上一个真正全面的 AI 助手。** 不是套壳，是一台重新打造过的引擎——背后是六周的高强度实测迭代与 400+ 个版本。
@@ -80,7 +80,9 @@ RinCore 处于活跃维护中，欢迎 Issue 与 PR。每一个被报告的问�
 
 ## 📋 更新日志
 
-v4.8.54 → v4.8.141（倒序）：
+v4.8.54 → v4.8.142（倒序）：
+
+- **v4.8.142** — 工具产图渲染地址三根修：映射表化（/workspace /upload /tool_outputs /skills，与 bindMounts 同源）+ 发出前验存（isFile && canRead；死链零输出、撤销错文件兜底）+ buildRenderPayload 五生产点单点统一；被丢弃路径输出 render_note 说明而非误导性"可复述显示"话术。
 
 - **v4.8.141** — 滚动历史"气泡抽动"根修：为流式设计的双段渲染（首帧终态 + 异步增量重算写回 state）泄漏进了重入视口路径（LazyColumn 回收重建）——每条消息每次滚入都要多付一次整段重组，正是 v4.7.26 定版禁止的"首帧→异步替换过渡"。修复 = 首发与首帧渲染依据相同则跳过（流式行为不变）。
 

@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=build&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/version-v4.8.141-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/version-v4.8.142-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/license-segmented_dual-cyan)](LICENSE)
 
 **A real, self-contained AI assistant on your phone.** Not a wrapper — a rebuilt engine with six
@@ -129,7 +129,9 @@ changelog entry and a regression guard. Optimizations keep coming.
 
 ## 📋 Changelog
 
-v4.8.54 → v4.8.141 (newest first):
+v4.8.54 → v4.8.142 (newest first):
+
+- **v4.8.142** — Tool image render-URL triple fix: a mount-table based path mapping (/workspace /upload /tool_outputs /skills, sourced from the same bindMounts table), existence gating before emitting ANY url (isFile && canRead; no dead links ever, no wrong-file fallbacks), and a single buildRenderPayload used by all five producers; skipped paths yield a render_note instead of a misleading "echo to display" line.
 
 - **v4.8.141** — Scroll-history "bubble twitch" root fix: the streaming-oriented two-stage render (first-frame terminal render + async incremental re-render written back to state) leaked into the viewport re-entry path (LazyColumn recycle-rebuild), causing a full second recomposition per message per scroll-in — the exact "first-frame → async swap" transition v4.7.26 banned. Fixed by skipping the redundant first emission when it equals the content the first frame already rendered (streaming behavior unchanged).
 
