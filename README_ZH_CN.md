@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=构建&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/版本-v4.8.138-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/版本-v4.8.139-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/许可-segmented_dual-cyan)](LICENSE)
 
 **手机上一个真正全面的 AI 助手。** 不是套壳，是一台重新打造过的引擎——背后是六周的高强度实测迭代与 400+ 个版本。
@@ -80,7 +80,9 @@ RinCore 处于活跃维护中，欢迎 Issue 与 PR。每一个被报告的问�
 
 ## 📋 更新日志
 
-v4.8.54 → v4.8.138（倒序）：
+v4.8.54 → v4.8.139（倒序）：
+
+- **v4.8.139** — 子代理并发"只容纳 3"根修：v4.8.121 的默认 3→7 只对新建助手生效，存量助手的落盘 JSON 里仍是旧默认 3。现在做一次性迁移：恰好等于 3 的值升到 7（手动设过其它值的不动；一次性标记模式）。
 
 - **v4.8.138** — 工作目录选择器修复：废除 4.8.25 的浏览围栏（原先被限制在助手 CWD 子树内，导致"被锁定"），浏览全程可达工作区根；重置改为清到生效链（本包层 + 仍在生效的助手层），确保一定回到根（旧版在生效值来自助手级时是无操作）。根处"设为工作目录"存 null 而非 "/workspace" 空壳值。
 
