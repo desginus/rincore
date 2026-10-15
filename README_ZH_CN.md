@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=构建&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/版本-v4.8.135-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/版本-v4.8.136-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/许可-segmented_dual-cyan)](LICENSE)
 
 **手机上一个真正全面的 AI 助手。** 不是套壳，是一台重新打造过的引擎——背后是六周的高强度实测迭代与 400+ 个版本。
@@ -80,7 +80,9 @@ RinCore 处于活跃维护中，欢迎 Issue 与 PR。每一个被报告的问�
 
 ## 📋 更新日志
 
-v4.8.54 → v4.8.135（倒序）：
+v4.8.54 → v4.8.136（倒序）：
+
+- **v4.8.136** — 本对话产出胶囊窗"点了没反应"根修：在选项态被关闭时留下 open=true+已隐藏的僵尸态（Material3 的 onDismissRequest 在 sheet 隐藏之后才回调），此后重新打开的点击全部无效，直到页面状态重建才偶发恢复。现在任何关闭都彻底复位；选项→列表一步回退改由返回键承担。附 80 条产出清单滚动可达。
 
 - **v4.8.135** — 两项优先修复：workspace_glob 支持 **/路径模式（此前 “**/*” 静默返回空），truncated 给真实总数；buildRenderUrl 发出前 stat 并回退重算（cwd 前缀变体 + 限定深度同名搜索），治陈旧渲染坏链。含同版编译修复。
 - **v4.8.134** — 测试报告全量治理（13 项）：图片错位根因=上传副本命名竞态（取号+创建原子化）、任务清单按对话隔离、子代理活动心跳、read_image 百分号解码与 /workspace 路径、派发排队、预算透明、写入 NonCancellable、url_only 读、环境说明。

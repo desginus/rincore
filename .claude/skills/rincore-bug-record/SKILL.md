@@ -5,6 +5,14 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 
 # RinCore Bug 记录（全部历史）
 
+## B157 — 本对话产出胶囊窗"点了没反应/点不开"（dismiss 僵尸态, v4.8.136）
+- **现象（用户）**："点击页面更多那里 → 本对话产出 → 点胶囊窗，很多时候点了没反应、点不开，有的时候又能点开"。
+- **定位（僵尸态实锤）**：`ConversationArtifactsSheet` 的 `ModalBottomSheet(onDismissRequest = { if (selected != null) selected = null else onOpenChange(false) })`。Material3 的 `onDismissRequest` 是**关闭动画完成后的通知**（scrim 点击/下滑已完成隐藏）——在"选项态"被 dismiss 时只清 `selected` 不清 `open` → 留下 `open=true` + `sheetState=Hidden`：此后入口点击 `open=true`（无状态变化）→ **无重组 → sheet 永不重现**；"有时又能点开"= 页面级状态重建（退出预览等）把 remember 复位后偶发恢复。
+- **修复**：①dismiss 一律彻底关闭（selected=null + onOpenChange(false)）；「选项→列表」一步回退改由系统返回键（BackHandler）承担，不与 dismiss 语义混淆；②长清单可达性：产出上限 80 条，无滚动时超出行高上限的胶囊被裁剪不可触达 → `verticalScroll` + `heightIn(max=520dp)`。
+- **全库同类扫描**：仅此一处条件式 dismiss；其余 ModalBottomSheet 与 FileChipOptionsHost 调用方均单步赋值；AlertDialog 的 `if (!loading)` 门是可否决语义（无僵尸）。
+- **教训**：①**ModalBottomSheet 的 onDismissRequest ≠ 可否决请求**——它通知时 sheet 已隐藏，"拒绝关闭"必然留下 open=true 僵尸态；任何 dismiss 路径都必须让外部状态彻底复位。②**"有时好有时坏"的状态机 bug 要找"能复位它的那条路径"**（此处=页面退出重建 remember），它就是根因的签名。③长内容必须显式给滚动与上限（用户的 340+ 未归档文件让 80 条上限的清单也会溢出）。
+
+
 ## B156 — workspace_glob "**/*" 静默空返回 + render_urls 陈旧路径（v4.8.135）
 - **现象（用户测试报告）**：①`workspace_glob` 传 `**/*` 静默返回空（不报错不警告），"差点据此认定工作区是空的"——把空结果误读成"不存在"；②同一图片路径，工具两次给出的 render URL 都是陈旧形态（真实路径两层丢失=更早的目录结构快照），图渲染不出来而工具还要求"原样复制进回复"=系统性发坏链。
 - **定位**：①glob 一律 `find -name <pattern>` —— `**/*` 作为**文件名**模式永不命中，且空结果零提示；②`buildRenderUrl` 纯计算不校验目标存在性——路径陈旧/结构变更后照发不误。
