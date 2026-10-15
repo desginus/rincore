@@ -277,10 +277,18 @@ class SubAgentEngine(
                 markTerminal(runId, SubAgentStatus.FAILED, "bad parent assistant id")
                 return
             }
+        // v4.8.140 (用户实证"subagent 的产物落不到对应的 CWD/工作区"): 子代理**继承父对话的
+        // 项目包归属** — 否则子代理会话 folderId 为空, ChatService 的生效 CWD 解析
+        // (folder.cwd ?: assistant.workspaceCwd) 对子代理整体跌回助手级, 产物全落助手
+        // CWD 而不是父对话所在项目包的 CWD。父对话不在包内时继承 null, 行为不变。
+        val parentFolderId = parentChatId?.let { pid ->
+            runCatching { conversationRepo.getConversationById(Uuid.parse(pid))?.folderId }.getOrNull()
+        }
         val conv = Conversation.ofId(
             id = Uuid.random(),
             assistantId = parentAsstUuid,
             newConversation = true,
+            folderId = parentFolderId,
         ).copy(title = "$SUBAGENT_TITLE_PREFIX ${request.label?.take(40) ?: request.task.take(40)}")
         conversationRepo.insertConversation(conv)
         chatService.initializeConversation(conv.id)
