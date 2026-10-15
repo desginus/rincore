@@ -85,6 +85,14 @@ import java.io.File
  * 假失败: 其解析链 (openWorkspaceLink) 与导出/渲染链不同源)。
  * 保留: 列表路径规范化去重 (v4.8.125) / 多候选解析 + 多命中弹层 (v4.8.63 同源) /
  * 全链可见反馈 / Host 恒驻组合 (渲染进度态保全)。
+ *
+ * v4.8.136 (B157 用户实证"点了没反应/点不开, 时好时坏") 根修:
+ *  - dismiss 僵尸态: Material3 的 onDismissRequest 是"关闭动画已完成"的通知 (sheet
+ *    此刻已隐藏), 旧两步式 (只清 selected 不清 open) 留下 open=true+Hidden — 此后
+ *    入口点击无状态变化无重组, 永远打不开 (页面级状态重建才偶发恢复)。现在 dismiss
+ *    一律彻底关闭; 「选项→列表」回退改由系统返回键承担 (BackHandler)。
+ *  - 长清单可达性: 产出清单可达 80 条, 无滚动时超出行高上限的胶囊被裁剪不可触达 —
+ *    内容列加垂直滚动 + 高度上限 (嵌套滚动与 sheet 拖拽标准协同)。
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -190,13 +198,21 @@ fun ConversationArtifactsSheet(
     }
 
     if (open) {
+        // v4.8.136 (B157): dismiss 一律彻底关闭 —— 详细机制见文件头注释;
+        // 「选项→列表」的一步回退在此用返回键实现, 不与 dismiss 语义混淆。
+        androidx.activity.compose.BackHandler(enabled = selected != null) { selected = null }
         ModalBottomSheet(onDismissRequest = {
-            if (selected != null) selected = null else onOpenChange(false)
+            selected = null
+            onOpenChange(false)
         }) {
             val sel = selected
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    // v4.8.136: 长清单可达性 — 无滚动时超出半展开位的胶囊被裁剪且无法
+                    // 触达 (产出上限 80 条); 嵌套滚动与 sheet 拖拽标准协同。
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState())
                     .padding(start = 20.dp, end = 20.dp, bottom = 28.dp),
             ) {
                 if (sel == null) {
