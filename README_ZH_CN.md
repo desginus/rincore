@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=构建&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/版本-v4.8.137-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/版本-v4.8.138-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/许可-segmented_dual-cyan)](LICENSE)
 
 **手机上一个真正全面的 AI 助手。** 不是套壳，是一台重新打造过的引擎——背后是六周的高强度实测迭代与 400+ 个版本。
@@ -80,7 +80,9 @@ RinCore 处于活跃维护中，欢迎 Issue 与 PR。每一个被报告的问�
 
 ## 📋 更新日志
 
-v4.8.54 → v4.8.137（倒序）：
+v4.8.54 → v4.8.138（倒序）：
+
+- **v4.8.138** — 工作目录选择器修复：废除 4.8.25 的浏览围栏（原先被限制在助手 CWD 子树内，导致"被锁定"），浏览全程可达工作区根；重置改为清到生效链（本包层 + 仍在生效的助手层），确保一定回到根（旧版在生效值来自助手级时是无操作）。根处"设为工作目录"存 null 而非 "/workspace" 空壳值。
 
 - **v4.8.137** — 上传文件同名覆盖根修：上传码正则按 12 位误写而真实文件名是 10 位，同分钟同 basename（工具图恒为 image.png）全拿 01 号互相覆盖——多个读图结果指向同一文件。正则/校验全链对齐 + 回归测试。另外：重试链相位修正（发起链 5 次快速失败只用于尚无输出的建连阶段，有输出后含工具轮一律 18 次流中断链）、/dev/shm 绑定（Python multiprocessing）、pdf 脚本逐页无文本层提示、toolbox 逐工具真实安装提示。
 

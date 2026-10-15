@@ -5,6 +5,14 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 
 # RinCore Bug 记录（全部历史）
 
+## B161 — 工作目录选择"被锁定 + 重置无用"（v4.8.138）
+- **现象（用户）**："选择工作目录时被锁定，点击重置无用。"
+- **① 锁定（围栏）**：`WorkspaceCwdPickerSheet` 的 4.8.25"根限制"（`rootPath`）——浏览被钳在助手 CWD（project pack 场景下 rootPath=assistant.workspaceCwd）：回退键到达 rootRel 即禁用、无 currentCwd 时以 rootRel 为起点 → 无法向上浏览其它目录。与用户长期语义冲突（"项目包 CWD 目的是方便模型做生产物整理规划，不是把程序锁进沙箱 / CWD 沙箱问题是大多数 bug 主因"）。
+- **② 重置无用（层级错配）**：FilesPicker 显示 `effectiveCwd = folderCwd ?: assistant.workspaceCwd`，但 `onSelectCwd(null)` 只写 `folderRepository.updateCwd(fid, null)` —— 清掉本包一层后，助手级 CWD 仍生效 → 界面/沙箱零变化。判据："重置后 effective 仍非空 = 假重置"。
+- **修复**：①删 `rootPath` 参数与回退钳制（3 调用点同步），浏览可达工作区根、起点=当前 CWD；②重置级联：清本包后若助手级仍生效则一并清零（重置后必回根）；③Set 按钮根=null（不存 "/workspace" 空壳值）。
+- **教训**：①"便利默认"类功能不得做成"浏览牢笼"——围栏式限制必须问"用户想不想被围"（用户语义优先于机制对称性）；②**显示什么层级、就重置什么层级**——effective 显示 + 单层写入 = 假重置（同 v4.8.89 "先写后校验要对刚写的值"家族）；重置的验收判据 = "重置后生效值必为空（回到根）"。
+
+
 ## B160 — 沙箱缺 /dev/shm（multiprocessing 崩）+ pdf 无文本层静默 + toolbox 提示失实（v4.8.137）
 - **现象**：①Python 多进程池构造即 `FileNotFoundError: SemLock`（`/dev/shm` 不存在；`mp.set_start_method('fork')` 也绕不过）；②纯扫描件 `pdftotext` 只输出分页符（3 字节）无警告；③toolbox 的 MISSING 项统一提示 `pip3 install cairosvg`（qpdf/convert 根本不是它提供的），启动横幅与另一处口径矛盾。
 - **定位**：①宿主 Android `/dev` 下本无 shm，`KERNEL_FS_MOUNTS` 又把宿主 `/dev` 整体绑进 guest → guest `/dev/shm` 缺席；glibc `sem_open()`/共享内存全落 `/dev/shm`。②`pdf` 脚本非 OCR 路径对空文本页静默跳过。③toolbox 的通用安装提示是"一句话糊全表"。
