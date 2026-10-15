@@ -71,6 +71,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.mapLatest
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Tick01
@@ -105,10 +106,15 @@ fun MarkdownNew(
     val renderer = remember { HtmlStreamRenderer() }
     var nodes by remember { mutableStateOf(renderer.nodes(content)) }
 
+    // v4.8.141 (B164 同修): 首帧渲染依据 = initialRenderedContent — 重入视口时
+    // 首发与之相同 → 跳过二次渲染与节点全量替换 (旧实现 = 尾块重解析 + 全量
+    // setData 重组, 滚动中"抽动一下"的另一半来源)。流式 tick 不受影响。
+    val initialRenderedContent = remember { content }
     val updatedContent by rememberUpdatedState(content)
     LaunchedEffect(Unit) {
         snapshotFlow { updatedContent }
             .distinctUntilChanged()
+            .filter { it != initialRenderedContent }
             .mapLatest { renderer.nodes(it) }
             .catch { it.printStackTrace() }
             .flowOn(Dispatchers.Default)

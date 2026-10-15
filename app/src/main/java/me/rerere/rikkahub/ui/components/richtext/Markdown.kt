@@ -91,6 +91,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
@@ -482,10 +483,19 @@ fun MarkdownBlock(
 
     // 监听内容变化，重新解析AST树
     // 这里在后台线程解析AST树, 防止频繁更新的时候掉帧
+    // v4.8.141 (B164 "滚动抽动"根修·用户实证"上下翻时气泡抽动一下"):
+    // 首帧渲染依据 = initialRenderedContent — **转瞬态首发与它相同 (重入视口/
+    // LazyColumn 回收重建的常态) → 跳过**。旧实现会为同一内容再跑一遍转瞬态并
+    // setData 替换 → 整段二次重组 (MarkdownNode 非 skippable, 逐块全量重组),
+    // 滚动中多付一整个重帧 = "每到一条新消息抽动一下" (v4.7.25/v4.8.42 同族病症
+    // 第三复现; 与 v4.7.26 定版"首帧即最终 AST, 无异步替换过渡"一致化)。
+    // 流式行为完全不变: 内容一旦变化 (≠ 首帧依据), 照常进入转瞬态链。
+    val initialRenderedContent = remember { content }
     val updatedContent by rememberUpdatedState(content)
     LaunchedEffect(Unit) {
         snapshotFlow { updatedContent }
             .distinctUntilChanged()
+            .filter { it != initialRenderedContent }
             .mapLatest { MarkdownParseCache.parseTransient(it, splitState) }
             .catch { exception -> exception.printStackTrace() }
             .flowOn(Dispatchers.Default)
