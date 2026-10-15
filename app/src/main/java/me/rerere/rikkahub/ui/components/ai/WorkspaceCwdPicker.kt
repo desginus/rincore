@@ -56,15 +56,13 @@ fun WorkspaceCwdPickerSheet(
     currentCwd: String?,
     onSelectCwd: (String?) -> Unit,
     onDismiss: () -> Unit,
-    // 4.8.25: 根限制 (绝对路径) — 浏览不可越界到该目录之上, 且无 currentCwd 时
-    // 以该目录为起点; null = 工作区根 (无限制, 原行为)。项目包 CWD 选择传
-    // 助手 CWD (语义: "只能当前助手已有的 CWD 空间内设置子 CWD")。
-    rootPath: String? = null,
 ) {
+    // v4.8.138 (用户实证"选择工作目录时被锁定, 点击重置无用"): **废除 4.8.25 的"根限制"**
+    // —— CWD 是便利默认而非牢笼 (与"项目包 CWD 不是把程序锁进沙箱"的语义同源)。
+    // 浏览全程可达工作区根; 起点 = 当前 CWD (无 CWD 则根)。
     val workspaceRepository: WorkspaceRepository = koinInject()
-    val rootRel = remember(rootPath) { fromAbsolutePath(rootPath) }
 
-    var browsePath by remember { mutableStateOf(fromAbsolutePath(currentCwd).ifBlank { rootRel }) }
+    var browsePath by remember { mutableStateOf(fromAbsolutePath(currentCwd)) }
     var entries by remember { mutableStateOf<List<WorkspaceFileEntry>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
 
@@ -108,11 +106,10 @@ fun WorkspaceCwdPickerSheet(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 IconButton(
-                    // 4.8.25: 根限制 — 到达 rootRel 时禁用返回 (不可越界)
-                    enabled = browsePath.isNotBlank() && browsePath != rootRel,
+                    // v4.8.138: 无锁定 — 可一路返回到工作区根 (根限制已废除)
+                    enabled = browsePath.isNotBlank(),
                     onClick = {
-                        val parent = browsePath.substringBeforeLast('/', missingDelimiterValue = "")
-                        browsePath = if (parent.length < rootRel.length) rootRel else parent
+                        browsePath = browsePath.substringBeforeLast('/', missingDelimiterValue = "")
                     },
                 ) {
                     Icon(HugeIcons.ArrowTurnBackward, contentDescription = null)
@@ -187,7 +184,8 @@ Text(
                     }
                 }
                 FilledTonalButton(onClick = {
-                    onSelectCwd(toAbsolutePath(browsePath))
+                    // v4.8.138: 根 (空 browsePath) = 未设置 — 传 null, 不存 "/workspace" 空壳值
+                    onSelectCwd(if (browsePath.isBlank()) null else toAbsolutePath(browsePath))
                     onDismiss()
                 }) {
                     Text(stringResource(R.string.workspace_cwd_set))

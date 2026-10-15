@@ -364,14 +364,19 @@ internal fun FilesPicker(
             WorkspaceCwdPickerSheet(
                 workspaceId = boundWorkspace.id,
                 currentCwd = effectiveCwd,
-                // 4.8.25: 项目包对话 — 限制在助手 CWD 空间内 (同抽屉项目包设置口径);
-                // 聊天 — 无限制 (原行为, 助手级 CWD 可在整个工作区选择)
-                rootPath = if (conversation.folderId != null) assistant.workspaceCwd else null,
                 onSelectCwd = { newCwd ->
                     val fid = conversation.folderId
                     if (fid != null) {
                         // 项目包对话: 写入项目包 CWD (仅该包生效)
-                        pickerScope.launch { folderRepository.updateCwd(fid, newCwd) }
+                        pickerScope.launch {
+                            folderRepository.updateCwd(fid, newCwd)
+                            // v4.8.138 (治"点击重置无用"): 重置 = 回到工作区根 — 旧实现只清
+                            // 本包一层; 清掉本包后助手级 CWD 仍生效时界面/沙箱毫无变化 →
+                            // 一并清零, 确保重置后一定回到根。
+                            if (newCwd == null && assistant.workspaceCwd != null) {
+                                onUpdateAssistant(assistant.copy(workspaceCwd = null))
+                            }
+                        }
                     } else {
                         // v4.5.23: 写入助手级 CWD (settings 持久化) — 整个助手全部对话生效
                         onUpdateAssistant(assistant.copy(workspaceCwd = newCwd))

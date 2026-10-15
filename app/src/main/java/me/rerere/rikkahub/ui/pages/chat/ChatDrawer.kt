@@ -728,16 +728,15 @@ fun ChatDrawerContent(
         )
     }
 
-    // 4.8.24 项目包 CWD 选择器 (复用工作区目录选择; 限定助手 CWD 空间内)
+    // 4.8.24 项目包 CWD 选择器 (复用工作区目录选择)
+    // v4.8.138: 废除"限定助手 CWD 空间"的浏览限制 (用户实证"选择工作目录时被锁定");
+    // CWD 是便利默认不是牢笼, 浏览全程可达工作区根。
     val assistantWorkspaceIdForCwd = settings.getCurrentAssistant().workspaceId?.toString()
     if (assistantWorkspaceIdForCwd != null) {
-        // 4.8.25: rootPath = 助手 CWD — 项目包 CWD 只能在当前助手 CWD 空间内选择
-        val assistantCwdForPicker = settings.getCurrentAssistant().workspaceCwd
         if (cwdPickerForNew) {
             WorkspaceCwdPickerSheet(
                 workspaceId = assistantWorkspaceIdForCwd,
                 currentCwd = createPackCwd,
-                rootPath = assistantCwdForPicker,
                 onSelectCwd = {
                     createPackCwd = it
                     cwdPickerForNew = false
@@ -749,7 +748,6 @@ fun ChatDrawerContent(
             WorkspaceCwdPickerSheet(
                 workspaceId = assistantWorkspaceIdForCwd,
                 currentCwd = folder.cwd,
-                rootPath = assistantCwdForPicker,
                 onSelectCwd = {
                     drawerVm.updateFolderCwd(folder.id, it)
                     cwdPickerForFolder = null
