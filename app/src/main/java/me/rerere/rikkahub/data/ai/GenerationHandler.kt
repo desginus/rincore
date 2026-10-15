@@ -116,6 +116,12 @@ private data class RetryState(
     var init: Int = 0,
     /** 本轮是否收到过任何流数据 (collect 置位) — 发起/流中断判据 */
     var receivedAnyData: Boolean = false,
+    /** v4.8.137 (用户定版): 本次发送是否已产出过任何输出 (首次收流即置位, 跨轮不清零)。
+     *  发起链 (5 次快速失败 + 可见提示) 只服务"用户刚发完消息、屏幕尚无输出"的建连
+     *  阶段; 一旦有输出 (含工具轮之后的续发轮), 一切失败按流中断链 (18 次) 恢复。
+     *  用户实证: 工具轮后首连失败被按轮判成发起阶段, 仅 5 次即报"已尝试 5 次仍无法
+     *  建立连接" — 此时应继续 18 次。 */
+    var outputStarted: Boolean = false,
     /** v4.8.76: 上一轮 API 活动时间戳 (epoch ms) — OC/CC 轮间探活的 gap 判据;
      *  per-generation 持有 (generateInternal 每轮独立调用, 局部变量无法跨轮)。 */
     var lastApiRoundAt: Long = 0L,
@@ -1705,10 +1711,11 @@ class GenerationHandler(
             // 写入 per-generation 状态对象, 供 generateText 侧决策)
             lengthContinuationState.lastRoundLengthCut = false
             lengthContinuationState.lastRoundToolRepaired = false
-            // v4.8.131 审计修复: 轮边界重置 receivedAnyData — 工具轮之间该标记会带着
-            // 上一轮的 true 残留 (v4.3.11 只修了轮内重试分支), 下一轮首次连接失败
-            // 会被 classify 误判为流中断 → 塞进 18 次流中断链而不是 5 次发起链。
-            // 语义"本轮是否收到过流数据" = 当前尝试, 每次进入流循环前归零。
+            // v4.8.131 审计修复: 轮边界重置 receivedAnyData — 该标记语义 = "本轮是否
+            // 收到过流数据", 每次进入流循环前归零 (轮内判据)。
+            // v4.8.137 (用户定版修正): 分类判据 = 本轮数据 OR 本次发送已产出
+            // (retry.outputStarted, 跨轮不清零) — 发起链只服务建连阶段 (尚无任何
+            // 输出); 工具轮之后的续发轮属"已开始有输出", 一律流中断链 (18 次) 恢复。
             retry.receivedAnyData = false
             streamLoop@ while (true) {
             // v4.8.74 (OC/CC 定向): 距上轮 >15s (工具长执行后) 先轻量探活再发真实请求 —
@@ -1813,6 +1820,7 @@ class GenerationHandler(
                 if (chunk !is me.rerere.ai.ui.StreamChunk.Finish) {
                     if (!retry.receivedAnyData) processingStatus.value = null
                     retry.receivedAnyData = true
+                    retry.outputStarted = true  // v4.8.137: 本次发送已产出 — 此后一切失败走流中断链 (18 次)
                 }
                 // 4.2.1 bug 修复: usage 合并已在 StreamChunkHandler.Usage 内完成
                 // (copy(usage = usage.merge)), 此处不得再 merge — v4.2.0 双重合并
@@ -1940,7 +1948,9 @@ class GenerationHandler(
                 // 4.0.0 重写: 重试策略全部收敛至 RetryPolicy.kt (策略对象模式),
                 // 本处只保留职责原语: 分类 → 判决 → 回滚/delay/continue 或 终态抛出。
                 // 数值与文案逐字保留, 行为与旧嵌套链完全等价。
-                val failure = StreamFailureClassifier.classify(e, retry.receivedAnyData)
+                // v4.8.137 (用户定版): 分类判据加入"本次发送是否已产出" — 发起链只服务
+                // 建连阶段 (无任何输出); 有输出后 (含工具轮续发) 一律流中断链 18 次恢复。
+                val failure = StreamFailureClassifier.classify(e, retry.receivedAnyData || retry.outputStarted)
                 val phase: RetryPhase = when (failure) {
                     is StreamFailure.InitPhase -> RetryPhase.Init(used = retry.init)
                     else -> RetryPhase.Stream(used = retry.stream)

@@ -51,9 +51,14 @@ object FileUtils {
      */
     fun createUploadFile(dir: File, displayName: String?, mimeType: String?): File =
         synchronized(UploadCodes.seqLock) {
-            val file = File(dir, buildUploadFileName(dir, displayName, mimeType))
-            if (!file.exists()) file.createNewFile()
-            file
+            // v4.8.137 硬化: createNewFile() 返回 false (= 文件已存在) 时重新取号重试 —
+            // 即便未来出现扫描面识别不了的命名形态, 也不可能再撞号覆盖 (上限 64 次后
+            // 兜底复用旧语义)。
+            repeat(64) {
+                val file = File(dir, buildUploadFileName(dir, displayName, mimeType))
+                if (file.createNewFile()) return file
+            }
+            File(dir, buildUploadFileName(dir, displayName, mimeType))
         }
 
     private fun resolveExtension(displayName: String?, mimeType: String?): String {

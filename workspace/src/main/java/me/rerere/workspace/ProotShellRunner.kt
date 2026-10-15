@@ -117,6 +117,19 @@ class ProotShellRunner(
             }
         }
 
+        // v4.8.137 (用户实证: Python multiprocessing 在沙箱内 SemLock 构造即
+        // FileNotFoundError 崩溃 — 根因 = guest 缺 /dev/shm; 宿主 Android 的
+        // /dev 下本就没有 shm, 内核 fs 绑定又整体覆盖 guest /dev)。修复: 自建
+        // 宿主目录绑定到 /dev/shm (置于内核 fs 绑定之后 = 更具体的路径优先),
+        // 并预创建 guest 挂载点。glibc sem_open()/Python 共享内存全部落在
+        // /dev/shm — 绑定后 multiprocessing 可用。
+        runCatching {
+            File(context.linuxDir, "dev/shm").mkdirs()
+            val shmHost = File(context.tempDir, "shm").apply { mkdirs() }
+            command += "-b"
+            command += "${shmHost.absolutePath}:/dev/shm"
+        }
+
         command += listOf(
             "/usr/bin/env",
             "-i",

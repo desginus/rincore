@@ -145,7 +145,7 @@ private fun buildWorkspacePrompt(workspace: WorkspaceEntity, cwd: String? = null
     appendLine("- Large files: `workspace_read_file` reports totalLines and a continuation hint; keep reading with offset when truncated (default window 2000 lines).")
     // v4.8.113 (用户定版): 图片内联渲染统一口径 — 工具结果自带 render_urls + render_markdown
     appendLine("- Inline images: when a tool result contains `render_urls` (images produced by shell/python/officecli), copy the `render_markdown` lines VERBATIM into your reply text — the image then renders inside the chat bubble. Never retype or re-encode the URL yourself.")
-    appendLine("- Run `toolbox` any time to list the sandbox's built-in tools — it now also lists the document chain (weasyprint / img2pdf / pdftoppm / qpdf / ghostscript / ImageMagick / tesseract / Playwright) and the diagnostics tools. Check it BEFORE concluding a capability is missing.")
+    appendLine("- Run `toolbox` any time to list the sandbox's built-in tools — it also shows per-tool availability of the document chain (weasyprint / img2pdf / pdftoppm / qpdf / ghostscript / ImageMagick / tesseract / Playwright — each with a real install/workaround hint; some are NOT installed in a given rootfs) and the diagnostics tools. Check it BEFORE concluding a capability is missing.")
     appendLine("- Back to the app — software-sandbox bridge (`rin` command calls RinCore features from inside the sandbox; run `rin help` for all):")
     appendLine("  `rin notify \"title\" \"body\"` system notification (reaches the user even in background) · `rin toast \"text\"` in-app toast · `rin clip get|set <text>` clipboard.")
     appendLine("  `rin ai \"prompt\"` asks the current model and prints the reply (pipe-friendly: `cat data.csv | rin ai -` · `rin ai --system \"You are a summarizer\" ...`) —")
@@ -201,8 +201,8 @@ private fun buildWorkspacePrompt(workspace: WorkspaceEntity, cwd: String? = null
     appendLine("- Files the user uploaded are mounted at `/upload`. Treat `/upload` as READ-ONLY: read uploaded files from `/upload/<file-name>`, but never modify, overwrite, or delete anything there. If you need to change an uploaded file, copy it into `/workspace` first and edit the copy.")
     // v4.8.110 (B3): /tool_outputs 语义定版 — 跨工作区共享产物区 (此前提示未交代, 模型不知道它存在)
     appendLine("- The shared directory `/tool_outputs` is mounted in EVERY workspace (cross-workspace shared area). Use it to hand files between workspaces or to drop artifacts other assistants should see; its non-transcoded files are never auto-pruned.")
-    // v4.8.91: 上传码直取 — 新文件是 12 位时间码 (即文件名前缀), 历史文件 8 位码; 禁止猜路径
-    appendLine("- Every attachment carries an **upload code** (shown as `code=\"...\"` in its <UploadFile> tag; for new uploads it is the **filename prefix** — 12 digits like `1003002901` = upload time MMddHHmm + sequence). When the user refers to a file by code, or you need an uploaded file whose exact path you don't know, call `upload_fetch` with the code — it returns the precise `/upload/...` path directly. Never guess /upload paths or browse that folder blindly.")
+    // v4.8.91: 上传码直取 — 新文件是时间码 (MMddHHmm+序号, 10 位起; 即文件名前缀), 历史文件 8 位码; 禁止猜路径
+    appendLine("- Every attachment carries an **upload code** (shown as `code=\"...\"` in its <UploadFile> tag; for new uploads it is the **filename prefix** — a 10+ digit time code like `1003002901` = upload time MMddHHmm + sequence). When the user refers to a file by code, or you need an uploaded file whose exact path you don't know, call `upload_fetch` with the code — it returns the precise `/upload/...` path directly. Never guess /upload paths or browse that folder blindly.")
     // v4.5.27: 助手级 CWD = 该助手的专一空间, 物理隔离在挂载层实现 —
     // 该文件夹即沙箱内 /workspace 根 (proot 挂载 + 文件工具解析同源), 外部目录不可见/不可达。
     val rawCwd = cwd?.trim('/').orEmpty()

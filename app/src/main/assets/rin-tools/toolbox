@@ -76,18 +76,31 @@ else
 fi
 
 echo ""
-echo "=== Document chain (check here BEFORE concluding a capability is missing) ==="
+echo "=== Document chain — per-tool availability (check here BEFORE concluding a capability is missing) ==="
+hint_for() {
+    case "$1" in
+        weasyprint) echo "pip3 install --break-system-packages weasyprint" ;;
+        img2pdf)    echo "pip3 install --break-system-packages img2pdf" ;;
+        pdftoppm|pdfinfo) echo "system poppler-utils (may be absent); fallback: python3 + PyMuPDF (fitz) renders/extracts" ;;
+        qpdf)       echo "system qpdf (may be absent); fallback: pypdf / PyMuPDF for merge/split/decrypt/linearize" ;;
+        gs)         echo "system ghostscript (may be absent); fallback: PyMuPDF / pypdf for most conversions" ;;
+        convert)    echo "system ImageMagick (may be absent); fallback: python3 PIL (pillow); SVG->PNG: cairosvg" ;;
+        tesseract)  echo "system tesseract-ocr (may be absent); fallback: pip3 install --break-system-packages rapidocr-onnxruntime" ;;
+        playwright) echo "pip3 install --break-system-packages playwright && playwright install chromium" ;;
+        *)          echo "install per its own documentation" ;;
+    esac
+}
 for t in weasyprint img2pdf pdftoppm pdfinfo qpdf gs convert tesseract playwright; do
     if command -v "$t" >/dev/null 2>&1; then
         echo "  [ok] $t"
     else
-        echo "  [MISSING] $t  (install on demand, e.g. pip3 install --break-system-packages cairosvg)"
+        echo "  [MISSING] $t  -> $(hint_for "$t")"
     fi
 done
 if command -v tesseract >/dev/null 2>&1; then
     echo "  tesseract langs: $(tesseract --list-langs 2>/dev/null | tail -n +2 | tr '\n' ' ')"
 fi
-echo "  tips: HTML->PDF = weasyprint <f.html> <out.pdf> · SVG->PNG = convert (basic) or cairosvg (complex) ·"
+echo "  tips: HTML->PDF = weasyprint <f.html> <out.pdf> · SVG->PNG = cairosvg (pip3) or convert (if present) ·"
 echo "        PDF pages->PNG = pdftoppm -png <f.pdf> out · page QA = doccheck · scan regions = blockscan"
 
 echo ""

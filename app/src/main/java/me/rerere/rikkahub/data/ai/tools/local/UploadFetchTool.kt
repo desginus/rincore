@@ -29,7 +29,7 @@ import java.io.File
 fun createUploadFetchTool(filesRoot: File): Tool = Tool(
     name = "upload_fetch",
     description = "Resolve a user-uploaded file by its **upload code** and return its exact sandbox path. " +
-        "New uploads use a 12-digit time code (MMddHHmm+seq, e.g. `1003002901`) which is also the " +
+        "New uploads use a time code (MMddHHmm+seq, e.g. `1003002901` — 10+ digits) which is also the " +
         "filename prefix under /upload; legacy files use an 8-char code. The code is shown as " +
         "code=\"...\" in <UploadFile> tags. Use this instead of browsing /upload blindly. " +
         "Also lists the most recent uploads when nothing matches. Read-only.",
@@ -38,7 +38,7 @@ fun createUploadFetchTool(filesRoot: File): Tool = Tool(
             properties = buildJsonObject {
                 put("code", buildJsonObject {
                     put("type", "string")
-                    put("description", "上传码（新文件为 12 位时间码如 1003002901；历史文件为 8 位码）。与 query 二选一。")
+                    put("description", "上传码（新文件为时间码如 1003002901，即文件名前缀；历史文件为 8 位码）。与 query 二选一。")
                 })
                 put("query", buildJsonObject {
                     put("type", "string")

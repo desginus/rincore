@@ -10,7 +10,7 @@ import java.util.TimeZone
 /**
  * v4.8.91: 上传码 v2 —— **时间码**。
  *
- * 格式：`月日时分` + `两位顺序补位`，共 12 位数字；24 小时制、固定东八区（Asia/Shanghai）：
+ * 格式：`月日时分`（MMddHHmm，8 位）+ `顺序补位`（≥2 位），共 10 位起；24 小时制、固定东八区（Asia/Shanghai）：
  *   · 10 月 3 日 00:29 的第 1 个上传 → `1003002901`（00 时 = 24 小时制的 00 点）
  *   · 同一分钟的后续上传 → 补位 02、03…（按落盘顺序，扫描目录取 max+1，并发安全）
  *
@@ -28,8 +28,14 @@ import java.util.TimeZone
 object UploadCodes {
     private const val CN_TZ_ID = "Asia/Shanghai"
 
-    /** 新命名：<10 位 月日时分><2-3 位补位>_<原名> */
-    private val NEW_NAME = Regex("^(\\d{10})(\\d{2,3})_")
+    /** 新命名：<8 位 月日时分><2+ 位补位>_<原名>（实际总位数 = 10 起）
+     *  v4.8.137 根修：旧正则误写为 `^(\d{10})(\d{2,3})_`（要求 12-13 位数字），
+     *  与实际 10 位文件名永不匹配 → 扫描永远取不到 max → **同分钟所有同 basename
+     *  文件（工具图恒为 image.png）全部拿 01 号 → 同一文件被覆盖，多个工具结果
+     *  指向同一张图**（用户 100% 复现实证：三连读图全部返回第一张且共用同一
+     *  image_id）。同时 codeForFileName/hasCodeFormat 按 "12 位" 写的校验也一并
+     *  修正（此前 upload_fetch 用可见的文件名前缀反而匹配不到）。 */
+    private val NEW_NAME = Regex("^(\\d{8})(\\d{2,})_")
 
     /** 补位分配锁 —— 同一分钟并发上传不撞号 (v4.8.134: 与 FileUtils.createUploadFile 共用, 取号+创建原子) */
     internal val seqLock = Any()
@@ -116,7 +122,8 @@ object UploadCodes {
     /** 是否合法码：12-13 位数字（时间码）或 8 位历史码。 */
     fun hasCodeFormat(raw: String): Boolean {
         val t = normalize(raw)
-        if (t.length in 12..13 && t.all { it.isDigit() }) return true
+        // v4.8.137: 实际时间码 = 8 位前缀 + ≥2 位序号 (10 位起最大 4 位序号)
+        if (t.length in 10..12 && t.all { it.isDigit() }) return true
         return t.length == 8 && t.all { it in LEGACY_ALPHABET }
     }
 }

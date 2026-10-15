@@ -41,6 +41,7 @@ def extract_text(src: str, ocr: bool) -> None:
 
     doc = pymupdf.open(src)
     parts = []
+    image_only_pages = []
     for i, page in enumerate(doc):
         if ocr:
             textpage = page.get_textpage_ocr(full=True, dpi=200)
@@ -49,10 +50,22 @@ def extract_text(src: str, ocr: bool) -> None:
             t = page.get_text()
         if t.strip():
             parts.append(f"=== page {i + 1} ===\n{t.strip()}")
+        elif not ocr and page.get_images(full=True):
+            # v4.8.137 (用户实证): 无文本层页面此前被静默跳过 (只输出分页符,
+            # 极易误判"文件损坏/读取成功但无内容") — 逐页标注 image-only,
+            # 并在末尾给出渲染/OCR 明确路径。
+            image_only_pages.append(i + 1)
     doc.close()
     if parts:
         print("\n\n".join(parts))
-    else:
+    if image_only_pages:
+        shown = ", ".join(str(p) for p in image_only_pages[:15])
+        more = " …" if len(image_only_pages) > 15 else ""
+        print(f"\n[hint] page(s) {shown}{more} have NO text layer (image-only scan) — nothing to extract there.",
+              file=sys.stderr)
+        print("       view them:  pdf <file.pdf> --png      ·      OCR text:  pdf <file.pdf> --ocr",
+              file=sys.stderr)
+    if not parts and not image_only_pages:
         print("(no text layer — scanned PDF)")
         print("view the pages instead:  pdf <file.pdf> --png")
         print("or force OCR text:       pdf <file.pdf> --ocr")
