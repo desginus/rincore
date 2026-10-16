@@ -34,7 +34,7 @@ import dev.chrisbanes.haze.blur.hazeBlur
  * ┌──────────────┬────────────────────────────────────────────────┐
  * │ 状态          │ 渲染                                            │
  * ├──────────────┼────────────────────────────────────────────────┤
- * │ 模糊开启(默认) │ hazeBlur(8dp·零噪点) + 半透明填充(frostFill@0.30)   │
+ * │ 模糊开启(默认) │ hazeBlur(8dp→40%合成) + 半透明填充(frostFill@0.30) │
  * │ 生成中         │ 同上 (永不在生成期降级为纯色底 — v4.1.5 定版)   │
  * │ 键盘弹出       │ 同上 (仅布局位移动画, 玻璃参数不变)             │
  * │ 空/有内容      │ 同上 (内容多少不改变玻璃材质)                   │
@@ -72,6 +72,13 @@ object RinGlass {
             blurRadius(8.dp)
             noiseFactor(0f)
             backgroundColor(Color.Transparent)
+            // v4.8.154 (用户: "输入框是黑的, 压根不透明" — 机制锚点):
+            // 半透明的另一半 = **模糊图层自身的合成透明度** — 背景(动态渐变 Mesh/壁纸)
+            // 是全幅不透明层, blur(不透明)=不透明, 填充浓度怎么调都救不回来
+            // (透出的是模糊层, 不是底下内容)。已对 haze 源码取证:
+            // style.alpha → 各 delegate `layer.alpha = blurVisualEffect.alpha`
+            // = 整个模糊图层按 40% 合成 → 底下内容透出 ≈ 0.6×0.7(fill0.30) ≈ 42% = 真半透明。
+            alpha(0.4f)
         }
     }
 
@@ -99,7 +106,8 @@ object RinGlass {
      * (弹窗族 HyperGlassPanel 回退保持原规格 — 本值仅输入框族消费。)
      */
     @Composable
-    fun inputFallbackColor(): Color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.8f)
+    // v4.8.154: 0.8 → 0.65 — "压根不透明"的双路径防御: 模糊关闭时同样真半透明
+    fun inputFallbackColor(): Color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.65f)
 }
 
 /**
