@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=build&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/version-v4.8.146-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/version-v4.8.147-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/license-segmented_dual-cyan)](LICENSE)
 
 **A real, self-contained AI assistant on your phone.** Not a wrapper — a rebuilt engine with six
@@ -129,7 +129,9 @@ changelog entry and a regression guard. Optimizations keep coming.
 
 ## 📋 Changelog
 
-v4.8.54 → v4.8.146 (newest first):
+v4.8.54 → v4.8.147 (newest first):
+
+- **v4.8.147** — Rounded panel margin aligned to bubble margin; glass upgraded to deep frosted "light-wave" blur (20dp, zero noise); input placeholder removed and composer slimmed ~8dp (text field untouched); title bar moved down 5dp; project-pack pill after the title; new-chat empty page gains a two-arc orbit selector (outer=assistants, inner=project packs, conveyor-loop animation).
 
 - **v4.8.146** — Rounded glass sheet at the title/content seam; Agent Skills and Discover merged into one tabbed page; a "testing in progress" note on the plugins page; new Upload inbox (with usage annotations for avatars/chat backgrounds); produced-files tracking scoped per conversation (CWD scope + cross-conversation filtering) plus real-data stress tests of the skills installer.
 
