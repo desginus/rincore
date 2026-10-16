@@ -5,6 +5,19 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 
 # RinCore Bug 记录（全部历史）
 
+## B171 — 项目包"切换"只写归属、没有"进入"（回执性缺位）（v4.8.149）
+- **现象**（用户）: "切换助手修好了，但是切换项目包没修好"——空态轨道内弧点选项目包后，用户看不到实质"切换"。
+- **根因**: 内弧接线只做 `vm.updateConversation(conversation.copy(folderId=fid))` —— 会话归属确实写入了，但**"进入该项目包"的应用级状态**（抽屉当前选区 `_selectedFolderId`、本次进程默认页、智能排序统计）全部不动 → 用户拉抽屉仍是原视图 → 感知"没切换"。**"切换"是一个多面状态，只兑现了一面**。
+- **修复**: 同走 `ChatDrawerVM.selectFolder` 单入口（applySelection + recordPackClick + 新增进程记忆），归属写入保留。
+- **教训（#74）**: 用户语义的"切换/进入"必须一次兑现全部可见面（选区/默认页/统计/归属），只写底层数据=回执性缺位；多 VM 场景通过"单入口函数"收口，不要各写各的状态。
+
+## B172 — 抽屉默认页反复弹"项目包选择页"（v4.8.149）
+- **现象**（用户）: "每一次选择在某个项目包时 拉开抽屉都是项目包选择页面"；切助手后默认落在选择页而不是包内。
+- **根因**: ① v4.8.62 落地逻辑在"聊天"空时**无条件**弹选择页（无"上次进入的包"记忆）；② `landingExpand` 信号**无消费**——`LaunchedEffect(landingExpand)` 在抽屉内容重进组合时对同一 true 值**重复应用**。
+- **修复**: 进程级"进入过的包"记忆（按助手，`ProjectPackSelection.enteredFolderIdByAssistant`）+ 落地逻辑读记忆恢复默认页 + `consumeLanding()` 一次性消费。
+- **教训（#75）**: 一次性事件信号必须消费（StateFlow 存续值会被重组合重复应用）；"默认页/落地"类状态需要显式记忆源（进程级），不能靠按键重置。
+
+
 ## B169 — 轨道路径选择器"点击只点亮不切换"（v4.8.148）
 - **现象**（用户）: 空对话页点外弧第一个助手图标，"就会点亮，就是有颜色圈出来。但是不会进行任何切换"。
 - **根因**: 接线走 `ChatVM.moveConversationToAssistant`——首行 `conversationRepo.getConversationById(conversation.id) ?: return@launch`；而**空对话未入库**（`ChatService.saveConversation` 明文"新会话且为空时不保存"）→ 直接静默退出；且 `settingsStore.updateAssistant` 被放在该分支之后 → 全程无操作（"点亮"= Material 涟漪，误读为选中态）。

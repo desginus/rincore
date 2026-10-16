@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=构建&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/版本-v4.8.148-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/版本-v4.8.149-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/许可-segmented_dual-cyan)](LICENSE)
 
 **手机上一个真正全面的 AI 助手。** 不是套壳，是一台重新打造过的引擎——背后是六周的高强度实测迭代与 400+ 个版本。
@@ -80,7 +80,9 @@ RinCore 处于活跃维护中，欢迎 Issue 与 PR。每一个被报告的问�
 
 ## 📋 更新日志
 
-v4.8.54 → v4.8.148（倒序）：
+v4.8.54 → v4.8.149（倒序）：
+
+- **v4.8.149** — 空态轨道选项目包现在真正"进入"该包（归属 + 抽屉选区 + 统计同走单入口）；抽屉按助手记忆"本次进程进入过的包"（不再每次弹项目包选择页）；落地信号一次性消费。
 
 - **v4.8.148** — 轨道选择器精修（抹除导轨线；圆形图标柔光玻璃；名称备注常驻；出入场淡入淡出；未设头像统一 AiMagic 图标）+ 修复：点助手真实切换（空对话未入库导致旧路径静默无操作）+ 玻璃半径压回 haze 32px 输入缩放阈值内（治"隔栅"）。
 
