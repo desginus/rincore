@@ -98,6 +98,7 @@ import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Fullscreen
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.ui.components.motion.LocalHazeState
 import me.rerere.rikkahub.ui.components.motion.RinGlass
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
@@ -156,7 +157,6 @@ fun ChatInput(
     onStopVoiceMode: () -> Unit = {},
 ) {
     val toaster = LocalToaster.current
-    val hazeTintColor = MaterialTheme.colorScheme.surfaceContainerLow
     // v4.7.22: 玻璃规格收敛到 RinGlass 单一来源 (4.3 时代原生款: hazeBlur 4dp)。
     // 全 app 玻璃件 (输入框/弹窗/悬浮工具条/附件面板) 共用同一规格, 防参数漂移。
     val inputHazeStyle = RinGlass.blurStyle()
@@ -245,7 +245,8 @@ fun ChatInput(
                     .clip(containerShape)
                     .then(
                         // 4.7.22 输入框显示逻辑 (全状态单一形态, 见 RinGlass 规格表):
-                        //   模糊开启 -> hazeBlur(4dp) + 透明底; 关闭 -> 半透明纯色底。
+                        //   模糊开启 -> hazeBlur(4dp) + 透明底; 关闭 -> 半透明底
+                        //   (v4.8.144: 原纯色底撤除 — "任何场景默认半透明")。
                         //   生成中/键盘弹出/空或有内容/语音/编辑 — 一律同上, 不变形。
                         //   (4.1.5: 生成中降级已删除 — 原版恒模糊; v4.7.11: 双类型已回滚)
                         if (settings.displaySetting.enableBlurEffect) {
@@ -259,7 +260,7 @@ fun ChatInput(
                 shape = containerShape,
                 tonalElevation = 0.dp,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                color = if (settings.displaySetting.enableBlurEffect) Color.Transparent else hazeTintColor,
+                color = if (settings.displaySetting.enableBlurEffect) Color.Transparent else RinGlass.inputFallbackColor(),
             ) {
                 Column(
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -540,6 +541,9 @@ private fun TextInputRow(
             settings.displaySetting.pasteLongTextAsFile, settings.displaySetting.pasteLongTextThreshold
         ) {
             ReceiveContentListener { transferableContent ->
+                // v4.8.144: 文本粘贴自管插入 — 显式把光标落到插入段末尾 (修"粘贴后光标停在
+                // 原位不动"); handled 防剪贴板多表示 (text/plain+text/html) 双插入/双建文件。
+                var handled = false
                 when {
                     transferableContent.hasMediaType(MediaType.Image) -> {
                         transferableContent.consume { item ->
@@ -555,15 +559,26 @@ private fun TextInputRow(
                         }
                     }
 
-                    settings.displaySetting.pasteLongTextAsFile && transferableContent.hasMediaType(MediaType.Text) -> {
+                    transferableContent.hasMediaType(MediaType.Text) -> {
                         transferableContent.consume { item ->
                             val text = item.text?.toString()
-                            if (text != null && text.length > settings.displaySetting.pasteLongTextThreshold) {
-                                val document = filesManager.createChatTextFile(text)
-                                state.addFiles(listOf(document))
+                            if (text.isNullOrEmpty()) {
+                                false
+                            } else if (settings.displaySetting.pasteLongTextAsFile &&
+                                text.length > settings.displaySetting.pasteLongTextThreshold
+                            ) {
+                                if (!handled) {
+                                    handled = true
+                                    val document = filesManager.createChatTextFile(text)
+                                    state.addFiles(listOf(document))
+                                }
+                                true
+                            } else if (handled) {
                                 true
                             } else {
-                                false
+                                handled = true
+                                state.pasteInsertText(text)
+                                true
                             }
                         }
                     }
@@ -731,7 +746,7 @@ private fun TextInputRow(
             } else null,
         )
         if (isFullScreen) {
-            FullScreenEditor(state = state) {
+            FullScreenEditor(state = state, receiveContent = receiveContentListener) {
                 isFullScreen = false
             }
         }
@@ -820,6 +835,21 @@ private fun ChatInputState.applyCompletion(
 }
 
 /**
+ * v4.8.144: 粘贴自管插入 — 选区替换/光标处插入, 并**显式把光标落到插入段末尾**。
+ * 用户实证"有时候粘贴后光标停在原位不动": 自管插入使选择更新成为本函数的确定性责任,
+ * 不再依赖内部接收路径的隐式行为; 语义与平台默认纯文本粘贴一致 (单次, 纯文本)。
+ */
+private fun ChatInputState.pasteInsertText(text: String) {
+    val textLength = textContent.text.length
+    textContent.edit {
+        val start = selection.min.coerceIn(0, textLength)
+        val end = selection.max.coerceIn(start, textLength)
+        replace(start, end, text)
+        selection = TextRange(start + text.length)
+    }
+}
+
+/**
  * v4.8.90: `/@` 触发检测 —— 光标恰在 `/@` 两个字符之后。
  * 与 WorkspaceCompletionProvider 的「空格 @」互不冲突：那边要求 @ 前是边界符
  * （空格/括号/引号），这里的 @ 前是 '/'，两边各走各的。
@@ -887,8 +917,25 @@ private fun QuickMessageButton(
 
 @Composable
 private fun FullScreenEditor(
-    state: ChatInputState, onDone: () -> Unit
+    state: ChatInputState,
+    receiveContent: ReceiveContentListener,
+    onDone: () -> Unit
 ) {
+    // v4.8.144 (用户定版): 全屏输入框重写为**半透明玻璃面板** — 与主输入框同一材质,
+    // 任何场景默认半透明 (不再是不透明纯色板)。模糊开启→hazeBlur 真玻璃 (haze 2.0
+    // 支持 Dialog 跨窗模糊, source 来自聊天页 LocalHazeState); 关闭/无源→半透明底。
+    // 粘贴走同一 ReceiveContentListener (长文转文件/图片附件/光标自管插入行为一致)。
+    val settings = LocalSettings.current
+    val hazeState = LocalHazeState.current
+    val shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    val glassModifier = if (settings.displaySetting.enableBlurEffect) {
+        hazeState?.let {
+            Modifier.hazeBlur(
+                input = HazeInput.Sources(it),
+                style = RinGlass.blurStyle(),
+            )
+        } ?: Modifier
+    } else Modifier
     BasicAlertDialog(
         onDismissRequest = {
             onDone()
@@ -907,8 +954,16 @@ private fun FullScreenEditor(
             Surface(
                 modifier = Modifier
                     .widthIn(max = 800.dp)
-                    .fillMaxHeight(0.9f),
-                shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+                    .fillMaxHeight(0.9f)
+                    .clip(shape)
+                    .then(glassModifier),
+                shape = shape,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                color = if (settings.displaySetting.enableBlurEffect && hazeState != null) {
+                    Color.Transparent
+                } else {
+                    RinGlass.inputFallbackColor()
+                },
             ) {
                 Column(
                     modifier = Modifier
@@ -929,7 +984,8 @@ private fun FullScreenEditor(
                         state = state.textContent,
                         modifier = Modifier
                             .padding(bottom = 2.dp)
-                            .fillMaxSize(),
+                            .fillMaxSize()
+                            .contentReceiver(receiveContent),
                         shape = RoundedCornerShape(32.dp),
                         keyboardOptions = KeyboardOptions(
                             capitalization = KeyboardCapitalization.Sentences, // v3.6.97 移植 2.4.10

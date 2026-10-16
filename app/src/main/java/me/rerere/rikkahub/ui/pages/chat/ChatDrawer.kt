@@ -209,13 +209,12 @@ fun ChatDrawerContent(
 
     // Menu popup 状态
 
-    // v4.8.66 (CS 安卓端移植): 抽屉宽度 = min(400dp, 屏宽-64dp) — 右侧留一条
-    // 可点击关闭的对话露边条 (front 型覆盖滑动; 对齐 CS appSidebar 参数 400/64)。
-    // v4.8.122: v4.8.121 的 40dp 尝试回滚 (用户澄清该项不是他要改的"对话框")。
-    val drawerScreenWidth = LocalConfiguration.current.screenWidthDp.dp
-    val drawerSheetWidth = minOf(400.dp, drawerScreenWidth - 64.dp)
+    // v4.8.66 (CS 安卓端移植) 曾把宽度改为自适应 min(400dp, 屏宽-64dp)。
+    // v4.8.144 (用户定版): 实测否决该自适应 — 抽屉过宽、露边条(抽屉右缘~屏右缘的
+    // 对话条)只剩很短一条; "之前改错了、没改回来" = 此改动从未回滚 (v4.8.122 只回滚了
+    // 40dp 露边条插曲)。恢复**原版 300dp 固定宽度** (上游 RikkaHub 原样)。
     ModalDrawerSheet(
-        modifier = Modifier.width(drawerSheetWidth)
+        modifier = Modifier.width(300.dp)
     ) {
         Column(
             modifier = Modifier.padding(8.dp),

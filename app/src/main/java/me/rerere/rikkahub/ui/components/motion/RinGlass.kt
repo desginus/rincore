@@ -39,12 +39,13 @@ import dev.chrisbanes.haze.blur.material3.Material3
  * │ 空/有内容      │ 同上 (内容多少不改变玻璃材质)                   │
  * │ 语音模式       │ 同上 (行内容切换, 玻璃材质不变)                 │
  * │ 编辑消息       │ 同上                                            │
- * │ 用户关闭模糊    │ 半透明纯色底 (surfaceContainerLow) — 显式设置,  │
- * │ (enableBlurEffect│   唯一允许的非玻璃形态                          │
- * │  =false)       │                                                │
- * │ 无 haze source │ 半透明纯色底 (弹窗层无源时回退 — 与上同族)      │
+ * │ 用户关闭模糊    │ 输入框族: 半透明底 (inputFallbackColor,        │
+ * │ (enableBlurEffect│   v4.8.144 定版"任何场景默认半透明");          │
+ * │  =false)       │ 弹窗族: 纯色回退 (fallbackColor)               │
+ * │ 无 haze source │ 同上 (按消费方族别取回退色)                     │
  * └──────────────┴────────────────────────────────────────────────┘
  * 其他形态 (格栅/纯色/其他模糊参数) 均为 bug, 不允许出现。
+ * v4.8.144: 输入框族(主输入框/全屏输入框)任何场景默认半透明 — 关闭模糊不再出纯色板。
  *
  * 【消费方】ChatInput / HyperGlassPanel(弹窗体系) / 聊天悬浮工具条 /
  * 附件面板 — 全部经 Modifier.rinGlass() 或 RinGlass.blurStyle。
@@ -64,9 +65,17 @@ object RinGlass {
     /** 高光描边 (澎湃 4 玻璃质感 — HyperGlassPanel 同源) */
     val highlightColor: Color = Color.White.copy(alpha = 0.14f)
 
-    /** 无 haze source 或用户关闭模糊时的回退底色 */
+    /** 无 haze source 或用户关闭模糊时的回退底色 (弹窗族) */
     @Composable
     fun fallbackColor(): Color = MaterialTheme.colorScheme.surfaceContainerLow
+
+    /**
+     * v4.8.144 (用户定版): 输入框族"任何场景默认半透明" — 模糊关闭/无源时, 主输入框与
+     * 全屏输入框的回退底色由不透明纯色改为半透明 (alpha 0.8), 不再存在纯色板形态。
+     * (弹窗族 HyperGlassPanel 回退保持原规格 — 本值仅输入框族消费。)
+     */
+    @Composable
+    fun inputFallbackColor(): Color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.8f)
 }
 
 /**

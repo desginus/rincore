@@ -12,6 +12,9 @@ import androidx.activity.compose.BackHandler
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.calculateTopPadding
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Alignment
@@ -901,7 +904,11 @@ private fun TopBar(
         onUpdateTitle(it)
     }
 
+    // v4.8.144 (用户定版): 标题栏上移 — 标题文本与状态栏(时间/电量)间距过大;
+    // 顶部边距 = 原来的 2/5 (状态栏内边距按比例缩小, 文字随之整体上提)。
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     TopAppBar(
+        windowInsets = WindowInsets(top = statusBarTop * 2f / 5f),
         colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
         navigationIcon = {
             if (!bigScreen) {
