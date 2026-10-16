@@ -34,7 +34,7 @@ import dev.chrisbanes.haze.blur.hazeBlur
  * ┌──────────────┬────────────────────────────────────────────────┐
  * │ 状态          │ 渲染                                            │
  * ├──────────────┼────────────────────────────────────────────────┤
- * │ 模糊开启(默认) │ hazeBlur(8dp·零噪点·材质tint) + 1dp 高光/描边 │
+ * │ 模糊开启(默认) │ chrome=hazeBlur(8dp·零噪点·材质tint); 背衬层=sheetBlurStyle │
  * │ 生成中         │ 同上 (永不在生成期降级为纯色底 — v4.1.5 定版)   │
  * │ 键盘弹出       │ 同上 (仅布局位移动画, 玻璃参数不变)             │
  * │ 空/有内容      │ 同上 (内容多少不改变玻璃材质)                   │
@@ -85,6 +85,23 @@ object RinGlass {
 
     /** 高光描边 (澎湃 4 玻璃质感 — HyperGlassPanel 同源) */
     val highlightColor: Color = Color.White.copy(alpha = 0.14f)
+
+    /**
+     * v4.8.152 (用户实报"整个对话页面蒙了一层黑"修复): **大面积背衬层专用规格 —
+     * 与主规格同为 8dp 零噪点全质量档, 但【不带材质 tint】**。
+     * 事故复盘: v4.8.151 把材质 tint (surface@0.5) 加进单一规格后, 正文圆角面板
+     * (覆盖整页的背衬玻璃) 也被叠上 50% surface 色 — 深色主题下 = 整页黑纱
+     * (浅色=白纱, 同一错误)。结论: **材质 tint 只属于小面积 chrome (输入框/弹窗/
+     * 图标/工具条); 大面积背衬层必须零 tint 纯模糊** — 两角色两规格, 不再混用。
+     */
+    @Composable
+    fun sheetBlurStyle(): HazeBlurStyle {
+        return HazeBlurStyle {
+            blurRadius(8.dp)
+            noiseFactor(0f)
+            backgroundColor(Color.Transparent)
+        }
+    }
 
     /** 无 haze source 或用户关闭模糊时的回退底色 (弹窗族) */
     @Composable

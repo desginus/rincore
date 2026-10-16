@@ -17,7 +17,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -38,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -149,7 +149,7 @@ fun EmptyOrbitSelector(
                 blurEnabled = blurEnabled,
                 onClick = { onSelectAssistant(assistant.id) },
             ) {
-                AssistantCircle(avatar = assistant.avatar, name = assistant.name)
+                AssistantCircle(avatar = assistant.avatar, name = assistant.name, highlight = selected)
             }
         }
 
@@ -178,7 +178,9 @@ fun EmptyOrbitSelector(
                 Icon(
                     imageVector = HugeIcons.Message02,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    // v4.8.152: 选中 = 图标本体发亮 (主色)
+                    tint = if (selected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(20.dp),
                 )
             }
@@ -205,7 +207,9 @@ fun EmptyOrbitSelector(
                     androidx.compose.material3.Icon(
                         imageVector = HugeIcons.Folder01,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        // v4.8.152: 选中 = 图标本体发亮 (主色)
+                        tint = if (selected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp),
                     )
                 }
@@ -281,14 +285,21 @@ private fun OrbitItem(
                     scaleX = scale
                     scaleY = scale
                 }
+                // v4.8.152 (用户定版方案): 选中态 = **图标本体发亮** (主色 glyph + 主色柔光晕),
+                // 不再套描边亮环 — 环在出入场淡出时会呈"残缺"观感, 从结构上移除。
+                .then(
+                    if (selected) {
+                        Modifier.shadow(
+                            elevation = 10.dp,
+                            shape = CircleShape,
+                            ambientColor = MaterialTheme.colorScheme.primary,
+                            spotColor = MaterialTheme.colorScheme.primary,
+                        )
+                    } else Modifier
+                )
                 // v4.8.148 (用户定版): 圆形图标 = 输入框同族柔光玻璃
                 .rinGlass(hazeState = hazeState, blurEnabled = blurEnabled, shape = CircleShape)
                 .rinGlassHighlight(CircleShape)
-                .then(
-                    if (selected) {
-                        Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
-                    } else Modifier
-                )
                 .clickable(onClick = onClick),
         ) {
             icon()
@@ -317,7 +328,7 @@ private fun OrbitItem(
  *   未设头像 → **统一代表性图标** (AiMagic = 助手/AI 语义; 不再用文字缩写)。
  */
 @Composable
-private fun AssistantCircle(avatar: Avatar, name: String) {
+private fun AssistantCircle(avatar: Avatar, name: String, highlight: Boolean = false) {
     when (avatar) {
         is Avatar.Image -> {
             AsyncImage(
@@ -340,7 +351,9 @@ private fun AssistantCircle(avatar: Avatar, name: String) {
             Icon(
                 imageVector = HugeIcons.AiMagic,
                 contentDescription = name,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                // v4.8.152: 选中 = 图标本体发亮 (主色)
+                tint = if (highlight) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp),
             )
         }

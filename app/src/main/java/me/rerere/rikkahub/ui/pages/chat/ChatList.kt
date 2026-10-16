@@ -358,7 +358,8 @@ private fun ChatListNormal(
                     .then(
                         if (contentSheetBlur) Modifier.hazeBlur(
                             input = HazeInput.Sources(hazeState),
-                            style = me.rerere.rikkahub.ui.components.motion.RinGlass.blurStyle(),
+                            // v4.8.152: 大面积背衬层用无 tint 规格 (v4.8.151 的 tint 致整页"黑纱/白纱")
+                            style = me.rerere.rikkahub.ui.components.motion.RinGlass.sheetBlurStyle(),
                         ) else Modifier
                     )
                     .background(
