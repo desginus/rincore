@@ -2,12 +2,11 @@
 package me.rerere.rikkahub.ui.pages.operiteco
 
 
-/* ───【自研】岔路口计划·生态模块 v2 (v4.6.4 综合统一)
- * "生态与插件"统一页 — 三 Tab:
- *   ① 工具包: 内置 31 包 + 市场包 (script/package — 启用即注册模型工具)
- *   ② 插件:   workspace 插件 (目录即安装, 桥接状态可见)
- *   ③ 面板:   带 UI 的插件面板 (OperitUiTabContent — 独立 WebView 渲染管线)
- * 与主聊天双并行, 数据全线走 InstalledPackageStore / PluginManager 单一信源。
+/* ───【自研】生态模块 (v4.8.145 治理: 撤插件/面板 Tab)
+ * 工具包页 — Operit 插件生态的兼容测试开发者选项 (与其他设置项隔离开):
+ *   内置 31 包 + 市场包 (script/package — 启用即注册模型工具)。
+ * 数据走 InstalledPackageStore / OperitToolProvider 单一信源。
+ * (原「插件」「面板」两 Tab 已按用户定版撤除; workspace 插件在能力模块「插件」页。)
  * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -29,7 +28,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -38,7 +36,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -52,7 +49,6 @@ import me.rerere.rikkahub.data.operit.market.InstalledPackageStore
 import me.rerere.rikkahub.data.operit.market.MarketInstallService
 import me.rerere.rikkahub.data.operit.runtime.OperitBuiltinPackages
 import me.rerere.rikkahub.data.operit.runtime.OperitToolProvider
-import me.rerere.rikkahub.data.plugin.PluginManager
 import org.koin.compose.koinInject
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -60,29 +56,21 @@ import org.koin.compose.koinInject
 fun OperitEcoPage(
     onBack: () -> Unit,
 ) {
-    var tab by remember { mutableIntStateOf(0) }
-
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Text("生态与插件") },
+            title = { Text("工具包") },
             navigationIcon = {
                 TextButton(onClick = onBack) { Text("返回") }
             },
         )
-        TabRow(selectedTabIndex = tab) {
-            listOf("工具包", "插件", "面板").forEachIndexed { index, title ->
-                Tab(
-                    selected = tab == index,
-                    onClick = { tab = index },
-                    text = { Text(title) },
-                )
-            }
-        }
-        when (tab) {
-            0 -> EcoPackagesTab()
-            1 -> EcoPluginsTab()
-            else -> me.rerere.rikkahub.ui.pages.operitui.OperitUiTabContent()
-        }
+        // v4.8.145 (用户定版): 标注为兼容测试开发者选项
+        Text(
+            "Operit 插件生态的兼容测试开发者选项",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+        )
+        EcoPackagesTab()
     }
 }
 
@@ -188,84 +176,6 @@ private fun EcoPackagesTab() {
             tools = tools,
             onDismiss = { detailPkg = null },
         )
-    }
-}
-
-/** Tab② 插件 — workspace 插件 (目录即安装, 桥接状态可见) */
-@Composable
-private fun EcoPluginsTab() {
-    val pluginManager: PluginManager = koinInject()
-    val scope = rememberCoroutineScope()
-    var refreshTick by remember { mutableIntStateOf(0) }
-    var refreshing by remember { mutableStateOf(false) }
-    val plugins = remember(refreshTick) { pluginManager.pluginsUiSnapshot() }
-
-    LazyColumn(Modifier.fillMaxSize()) {
-        item(key = "plugin_hint") {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "workspace 插件：目录放入文件区 .plugins/<插件名>/ 即安装（plugin.yaml + 可选 SKILL.md）。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f),
-                )
-                TextButton(
-                    enabled = !refreshing,
-                    onClick = {
-                        scope.launch {
-                            refreshing = true
-                            runCatching { pluginManager.refresh() }
-                            refreshTick++
-                            refreshing = false
-                        }
-                    },
-                ) { Text(if (refreshing) "刷新中" else "刷新") }
-            }
-        }
-        if (plugins.isEmpty()) {
-            item(key = "plugin_empty") {
-                Text(
-                    "暂无 workspace 插件。",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(16.dp),
-                )
-            }
-        } else {
-            items(plugins, key = { "pl_" + it.name }) { plugin ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 6.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    ),
-                ) {
-                    Column(Modifier.padding(16.dp)) {
-                        Text(plugin.name, style = MaterialTheme.typography.titleMedium)
-                        if (plugin.description.isNotBlank()) {
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                plugin.description,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            buildString {
-                                if (plugin.hasSkill) append("技能 ")
-                                append("桥接: ").append(plugin.bridgeStatus)
-                            },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-        }
     }
 }
 

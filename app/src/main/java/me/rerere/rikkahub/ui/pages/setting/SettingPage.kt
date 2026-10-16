@@ -42,6 +42,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.GlobalSearch
 import me.rerere.hugeicons.stroke.Code
 import me.rerere.hugeicons.stroke.AiEditing
 import me.rerere.hugeicons.stroke.AiMagic
@@ -90,17 +91,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val filesManager: FilesManager = koinInject()
     var showDomainPage by remember { mutableStateOf(false) }
-    // v3.6.16: 高级功能统一入口 (搜索/语音/Web/扩展/权限/工具对照聚合)
-    var showAdvancedPage by remember { mutableStateOf(false) }
     var showBuiltinToolsPage by remember { mutableStateOf(false) }
-
-    if (showAdvancedPage) {
-        SettingAdvancedPage(
-            settings = settings,
-            onBack = { showAdvancedPage = false },
-        )
-        return
-    }
 
     if (showBuiltinToolsPage) {
         SettingBuiltinToolsPage(onBack = { showBuiltinToolsPage = false })
@@ -281,6 +272,13 @@ item(
                         headlineContent = { Text("插件") },
                     )
 item(
+                        // v4.8.145: 技能「发现」— CherryIN / skills.sh 两来源 (CS v0.2.1 移植)。
+                        onClick = { navController.navigate(Screen.SkillDiscover) },
+                        leadingContent = { Icon(HugeIcons.GlobalSearch, null) },
+                        supportingContent = { Text("CherryIN / skills.sh — 搜索、安装与管理技能包") },
+                        headlineContent = { Text("发现技能") },
+                    )
+item(
                         onClick = { showDomainPage = true },
                         leadingContent = { Icon(HugeIcons.Sorting01, null) },
                         supportingContent = { Text(stringResource(R.string.setting_page_domain_management_desc)) },
@@ -361,7 +359,9 @@ item(
                         headlineContent = { Text("运行日志") },
                     )
                     item(
-                        onClick = { showAdvancedPage = true },
+                        // v4.8.145: 改为真实导航 (修"子页返回跳两级"bug — 原为内嵌 remember 状态页,
+                        // 进入其子页后返回时内嵌状态已丢失, 直接落回设置主页)。
+                        onClick = { navController.navigate(Screen.SettingAdvanced) },
                         leadingContent = { Icon(HugeIcons.Wrench01, null) },
                         supportingContent = { Text("更多设置项") },
                         headlineContent = { Text("更多设置") },

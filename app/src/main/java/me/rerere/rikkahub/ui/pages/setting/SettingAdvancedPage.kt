@@ -132,15 +132,6 @@ fun SettingAdvancedPage(
                     supportingContent = { Text("权限自动发现 · 后台保障链引导") },
                     headlineContent = { Text("权限管理") },
                 )
-                // v4.5.40: 生态入口收纳 (原抽屉/对话页入口迁入 — UI 恢复原样)
-                // v4.6.4: 综合统一 — 工具包/插件/面板 三合一 ("生态与插件");
-                // 插件面板并入统一页 Tab, 不再单列入口
-                item(
-                    onClick = { navController.navigate(Screen.OperitEco) },
-                    leadingContent = { Icon(HugeIcons.Package, null) },
-                    supportingContent = { Text("工具包 / 插件 / 面板 — 一站式生态管理") },
-                    headlineContent = { Text("生态与插件") },
-                )
                 item(
                     onClick = { navController.navigate(Screen.Market) },
                     leadingContent = { Icon(HugeIcons.Download04, null) },
@@ -159,6 +150,21 @@ fun SettingAdvancedPage(
                     leadingContent = { Icon(HugeIcons.Settings03, null) },
                     supportingContent = { Text("系统工具地图 / List Domains / Invoke Tools 三信源对照") },
                     headlineContent = { Text("工具对照（开发者）") },
+                )
+            }
+
+            // ── 兼容测试（开发者 · 隔离区） ──────────────────────────
+            // v4.8.145 (用户定版): 工具包 = Operit 插件生态的兼容测试开发者选项,
+            // 与其他设置项隔离 (独立分组; 不混入服务/扩展/开发者区)。
+            CardGroup(
+                modifier = Modifier.padding(horizontal = 8.dp),
+                title = { Text("兼容测试（开发者）") },
+            ) {
+                item(
+                    onClick = { navController.navigate(Screen.OperitEco) },
+                    leadingContent = { Icon(HugeIcons.Package, null) },
+                    supportingContent = { Text("Operit 插件生态的兼容测试开发者选项") },
+                    headlineContent = { Text("工具包") },
                 )
             }
 

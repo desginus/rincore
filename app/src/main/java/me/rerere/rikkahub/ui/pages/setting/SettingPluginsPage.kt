@@ -100,13 +100,6 @@ fun SettingPluginsPage(
                 ) { Text(if (refreshing.value) "刷新中" else "刷新") }
             },
         )
-        Text(
-            "插件是独立能力模块：目录放入 workspace 文件区 .plugins/<插件名>/ 即安装。" +
-                "插件技能经独立工具读取，桥接工具经 workspace 沙箱常驻启动（与 STDIO MCP 同机制）。",
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            color = MaterialTheme.colorScheme.primary,
-        )
         LazyColumn(Modifier.fillMaxSize()) {
             // v4.5.33: 来自市场的插件区块 (Operit 生态 — 应用市场安装)
             if (operitPackages.isNotEmpty()) {
@@ -148,8 +141,7 @@ fun SettingPluginsPage(
             if (plugins.isEmpty() && operitPackages.isEmpty()) {
                 item {
                     Text(
-                        "暂无插件。可在应用市场安装，或创建 workspace 文件区 .plugins/<插件名>/ 目录，" +
-                            "内含 plugin.yaml（name/description/command）与可选 SKILL.md、桥接脚本，然后刷新。",
+                        "暂无插件。",
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(16.dp),
                     )

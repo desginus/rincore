@@ -711,6 +711,19 @@ class RouteActivity : ComponentActivity() {
                                 SettingPluginsPage(onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } })
                             }
 
+                            entry<Screen.SettingAdvanced> {
+                                me.rerere.rikkahub.ui.pages.setting.SettingAdvancedPage(
+                                    settings = settings,
+                                    onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } },
+                                )
+                            }
+
+                            entry<Screen.SkillDiscover> {
+                                me.rerere.rikkahub.ui.pages.setting.SettingSkillDiscoverPage(
+                                    onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } },
+                                )
+                            }
+
 
                             entry<Screen.SettingFiles> {
                                 SettingFilesPage()
@@ -977,6 +990,14 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object SettingPlugins : Screen
+
+    /** v4.8.145: 其他功能页改为真实导航目的地 (修"子页返回跳两级"：原为内嵌 remember 状态页)。 */
+    @Serializable
+    data object SettingAdvanced : Screen
+
+    /** v4.8.145: 技能「发现」(CherryIN / skills.sh 两来源, CS v0.2.1 移植)。 */
+    @Serializable
+    data object SkillDiscover : Screen
 
     @Serializable
     data object SettingToolHub : Screen
