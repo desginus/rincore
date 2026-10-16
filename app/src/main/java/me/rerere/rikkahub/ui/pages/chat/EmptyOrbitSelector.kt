@@ -1,14 +1,15 @@
 /* 【域 A·对话核心】 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.pages.chat
 
-/* ───【自研】EmptyOrbitSelector.kt — v4.8.147 (用户定版)
+/* ───【自研】EmptyOrbitSelector.kt — v4.8.148 (用户定版 v147 精修)
  * 新聊天/默认页(无消息)双弧轨道选择器:
- *   · 外弧轨道 = 助手 (圆形头像) — 点选 = 切助手 (委托上层 moveConversationToAssistant)
+ *   · 外弧轨道 = 助手 (柔光玻璃圆 + 头像/统一图标) — 点选 = 直切全局助手+会话归属同步
  *   · 内弧轨道 = 项目包 (当前助手的包) — 点选 = 回写本对话 folderId
- *   · 几何: 右上(新增对话按钮下方) → 左下(输入栏左上方), 从大圆裁一段的缓弧 (二次贝塞尔近似);
+ *   · 几何: 右上(新增对话按钮下方) → 左下(输入栏左上方), 缓弧 (不可见, 不画导轨线);
  *     内弧 = 外弧沿弧法线内缩紧贴。
- *   · 动画: 传送带轮播 — 队列自右上向左下流动, 出左下后立即从右上重现 (%1 环绕)。
- *   · 状态: 当前项 = 图标放大 + 主色描边 + 下方名称备注。
+ *   · 动画: 传送带轮播 (%1 环绕, 出左下立即右上重现) + 出入场淡入淡出 (相位端 8% 窗)。
+ *   · 图标: 与输入框同族柔光玻璃圆; 头像=真图/表情, 未设=统一代表性图标 (AiMagic)。
+ *   · 状态: 每个图标下常驻名称备注; 当前项 = 放大 + 主色描边。
  * ───────────────────────────────────────────────────────────────*/
 
 import androidx.compose.animation.core.LinearEasing
@@ -16,7 +17,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,8 +38,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -53,7 +52,11 @@ import coil3.request.ImageRequest
 import kotlin.math.hypot
 import kotlin.math.sqrt
 import kotlin.uuid.Uuid
+import dev.chrisbanes.haze.HazeState
+import me.rerere.rikkahub.ui.components.motion.rinGlassHighlight
+import me.rerere.rikkahub.ui.components.motion.rinGlass
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.AiMagic
 import me.rerere.hugeicons.stroke.Folder01
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Folder
@@ -73,6 +76,8 @@ fun EmptyOrbitSelector(
     currentFolderId: Uuid?,
     onSelectAssistant: (Uuid) -> Unit,
     onSelectFolder: (Uuid) -> Unit,
+    hazeState: HazeState? = null,
+    blurEnabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val settings = LocalSettings.current
@@ -122,21 +127,7 @@ fun EmptyOrbitSelector(
         val bi = inner(b)
         val ci = inner(c)
 
-        val trackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.16f)
-
-        Canvas(Modifier.fillMaxSize()) {
-            val outerPath = Path().apply {
-                moveTo(a.x, a.y)
-                quadraticBezierTo(c.x, c.y, b.x, b.y)
-            }
-            val innerPath = Path().apply {
-                moveTo(ai.x, ai.y)
-                quadraticBezierTo(ci.x, ci.y, bi.x, bi.y)
-            }
-            val stroke = Stroke(width = 1.5.dp.toPx())
-            drawPath(outerPath, color = trackColor, style = stroke)
-            drawPath(innerPath, color = trackColor, style = stroke)
-        }
+        // v4.8.148: 导轨线已按用户定版抹除 (轨道本身不可见, 仅图标队列可见)
 
         // 外弧: 助手
         val n = assistants.size
@@ -151,6 +142,8 @@ fun EmptyOrbitSelector(
                 selected = selected,
                 halfIcon = iconPx / 2f,
                 label = assistant.name,
+                hazeState = hazeState,
+                blurEnabled = blurEnabled,
                 onClick = { onSelectAssistant(assistant.id) },
             ) {
                 AssistantCircle(avatar = assistant.avatar, name = assistant.name)
@@ -170,6 +163,8 @@ fun EmptyOrbitSelector(
                 selected = selected,
                 halfIcon = iconPx / 2f,
                 label = folder.name,
+                hazeState = hazeState,
+                blurEnabled = blurEnabled,
                 onClick = { onSelectFolder(folder.id) },
             ) {
                 Box(
@@ -200,9 +195,9 @@ private fun quadPoint(a: Offset2, c: Offset2, b: Offset2, t: Float): Offset2 {
 }
 
 /**
- * 轨道项: 图标 (可放大/描边) + 选中时名称备注。
+ * 轨道项: 柔光玻璃圆 (与输入框同族) + 常驻名称备注。
  * 动画值 (tState) 在 graphicsLayer 块内读取 = 帧内只更新图层, 零重组 (传送带高性能路径);
- * 相位 = (t + index/count) % 1 — 出左下立即从右上重现。
+ * 相位 = (t + index/count) % 1 — 出左下立即从右上重现; 两端 8% 窗淡入淡出 (入出场平滑)。
  */
 @Composable
 private fun OrbitItem(
@@ -214,6 +209,8 @@ private fun OrbitItem(
     selected: Boolean,
     halfIcon: Float,
     label: String,
+    hazeState: HazeState?,
+    blurEnabled: Boolean,
     onClick: () -> Unit,
     icon: @Composable () -> Unit,
 ) {
@@ -226,6 +223,8 @@ private fun OrbitItem(
                 val p = quadPoint(arcA, arcC, arcB, phase)
                 translationX = p.x - size.width / 2f
                 translationY = p.y - halfIcon
+                // v4.8.148: 出入场淡入淡出 (相位两端 8% 窗; 出左下前淡出, 右上重现后淡入)
+                alpha = kotlin.math.min(phase / 0.08f, (1f - phase) / 0.08f).coerceIn(0f, 1f)
             },
     ) {
         Box(
@@ -236,7 +235,9 @@ private fun OrbitItem(
                     scaleX = scale
                     scaleY = scale
                 }
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)
+                // v4.8.148 (用户定版): 圆形图标 = 输入框同族柔光玻璃
+                .rinGlass(hazeState = hazeState, blurEnabled = blurEnabled, shape = CircleShape)
+                .rinGlassHighlight(CircleShape)
                 .then(
                     if (selected) {
                         Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
@@ -246,45 +247,55 @@ private fun OrbitItem(
         ) {
             icon()
         }
-        if (selected) {
-            Surface(
-                shape = RoundedCornerShape(50),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
-                modifier = Modifier.padding(top = 2.dp),
-            ) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
-                )
-            }
+        Surface(
+            shape = RoundedCornerShape(50),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+            modifier = Modifier.padding(top = 2.dp),
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (selected) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
+            )
         }
     }
 }
 
-/** 助手头像圆 (图/表情/首字)。 */
+/**
+ * 助手圆内容 (v4.8.148 用户定版):
+ *   真图头像 → 原样展示 (与 UIAvatar 同款直载); 表情头像 → 表情;
+ *   未设头像 → **统一代表性图标** (AiMagic = 助手/AI 语义; 不再用文字缩写)。
+ */
 @Composable
 private fun AssistantCircle(avatar: Avatar, name: String) {
     when (avatar) {
         is Avatar.Image -> {
             AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current).data(avatar.url).build(),
+                model = avatar.url,
                 contentDescription = name,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize().padding(2.dp)
-                    .graphicsLayer { clip = true; shape = CircleShape },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(2.dp)
+                    .graphicsLayer {
+                        clip = true
+                        shape = CircleShape
+                    },
             )
         }
         is Avatar.Emoji -> {
             Text(text = avatar.content, style = MaterialTheme.typography.titleMedium)
         }
         else -> {
-            Text(
-                text = name.take(1).ifBlank { "?" },
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Icon(
+                imageVector = HugeIcons.AiMagic,
+                contentDescription = name,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
             )
         }
     }

@@ -489,6 +489,8 @@ private fun ChatListNormal(
                     currentFolderId = conversation.folderId,
                     onSelectAssistant = onOrbitSelectAssistant,
                     onSelectFolder = onOrbitSelectFolder,
+                    hazeState = hazeState,
+                    blurEnabled = settings.displaySetting.enableBlurEffect,
                 )
             }
         }

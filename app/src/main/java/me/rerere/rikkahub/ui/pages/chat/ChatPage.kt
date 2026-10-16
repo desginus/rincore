@@ -674,7 +674,16 @@ private fun ChatPageContent(
                 onUpdateSettings = { updated -> vm.updateSettings(updated) },
                 // v4.8.147: 空态轨道选择器接线 — 切助手=复用"移对话到助手"(含归属清理与全局切换);
                 // 选项目包=回写本对话 folderId。
-                onOrbitSelectAssistant = { id -> vm.moveConversationToAssistant(conversation, id) },
+                onOrbitSelectAssistant = { id ->
+                    // v4.8.148 (B169 修复): 旧版走 moveConversationToAssistant — 但空对话
+                    // 尚未入库 (saveConversation 明文"新会话且为空时不保存"), 其首行
+                    // getConversationById ?: return 直接静默退出, 且 updateAssistant 藏在该
+                    // 分支内 → 点击"只点亮不切换"。修复 = ①直切全局助手 (设置层, 永远生效)
+                    // ②会话归属内存态同步 (空对话发送时随 saveConversation 入库)。
+                    vm.updateSettings(setting.copy(assistantId = id))
+                    vm.updateConversation(conversation.copy(assistantId = id, folderId = null))
+                    vm.saveConversationAsync()
+                },
                 onOrbitSelectFolder = { fid ->
                     vm.updateConversation(conversation.copy(folderId = fid))
                     vm.saveConversationAsync()

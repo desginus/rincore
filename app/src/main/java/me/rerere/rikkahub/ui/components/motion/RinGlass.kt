@@ -59,12 +59,15 @@ object RinGlass {
      */
     @Composable
     fun blurStyle(): HazeBlurStyle = HazeBlurStyle {
-        // v4.8.147 (用户定版): 深磨砂 = "全部的模糊感/光波粒" —
-        // 旧规格 (blurRadius 4dp + haze 默认噪点 noiseFactor 0.15 + Material3 底色)
-        // 被用户判为"很强的隔山感/隔栅玻璃": 4dp 太浅 + 噪点颗粒 = 格栅观感。
-        // 现规格 = 20dp 深模糊 (库默认半径) + 零噪点 + 无底色 (纯模糊)。
-        blurRadius(20.dp)
-        noiseFactor(0f)
+        // v4.8.148 (用户实证"隔栅感极重"修复 — v4.8.147 为严重误改):
+        // haze 自适应性能策略 (BlurInputScalePolicy) 按**物理像素半径**分档:
+        //   ≥32px → 0.8 输入缩放; ≥60px → 0.5 (= 半分辨率输入上采样 → 块状"隔栅")。
+        // v4.8.147 的 20dp 在高密度屏 = 55-70px → 命中 0.5 档 → 隔栅感极重。
+        // 正解: 半径压到 32px 物理以下 (8dp × density≤4.0 = ≤32px) → 恒 1.0 全质量输入,
+        // 视觉上"完整深磨砂"反而更纯(全分辨率 22-28px 半径); 微噪点 0.06 仅用于抖动
+        // 8bit 模糊渐变的色带 (光波粒质感, 非颗粒)。
+        blurRadius(8.dp)
+        noiseFactor(0.06f)
         backgroundColor(Color.Transparent)
     }
 
