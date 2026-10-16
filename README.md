@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=build&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/version-v4.8.150-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/version-v4.8.151-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/license-segmented_dual-cyan)](LICENSE)
 
 **A real, self-contained AI assistant on your phone.** Not a wrapper — a rebuilt engine with six
@@ -129,7 +129,9 @@ changelog entry and a regression guard. Optimizations keep coming.
 
 ## 📋 Changelog
 
-v4.8.54 → v4.8.150 (newest first):
+v4.8.54 → v4.8.151 (newest first):
+
+- **v4.8.151** — Orbit inner arc gains the default "Chat" space entry; smoother fade for the highlighted item (shorter window, smoothstep, retreat scale). Also ships the final soft-light glass spec (zero noise + material tint) after a same-version compile fix.
 
 - **v4.8.150** — Soft-light glass final spec: deep full-quality blur (8dp, no half-res), zero noise, and a theme-adaptive material tint (surface @ 0.5) — validated by pixel-level simulation against the Cherry Studio v0.2.1 Android recipe.
 
