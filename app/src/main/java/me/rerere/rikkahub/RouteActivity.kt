@@ -28,10 +28,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -65,6 +64,8 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
+import me.rerere.rikkahub.ui.components.motion.CherryDuration
+import me.rerere.rikkahub.ui.components.motion.CherryEasing
 import coil3.annotation.ExperimentalCoilApi
 import coil3.ImageLoader
 import coil3.compose.setSingletonImageLoaderFactory
@@ -530,24 +531,39 @@ class RouteActivity : ComponentActivity() {
                         modifier = Modifier.fillMaxSize(),
                         onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } },
                         transitionSpec = {
-                            if (backStack.size == 1) fadeIn() togetherWith fadeOut()
+                            // v4.8.156 (用户: "切换动画柔和而不是生硬"): 转场柔和化 — 统一 CS
+                            // 令牌 (settle 曲线 cubic-bezier(0.22,1,0.36,1) · 250ms); 位移大幅
+                            // 削减 (整屏滑入+0.7 缩放+半屏滑出 → 1/8 滑入 + 交叉淡入淡出)。
+                            val softF = tween<Float>(CherryDuration.BASE, easing = CherryEasing.Settle)
+                            val softI = tween<Int>(CherryDuration.BASE, easing = CherryEasing.Settle)
+                            if (backStack.size == 1) fadeIn(softF) togetherWith fadeOut(softF)
                             else {
-                                slideInHorizontally { it } togetherWith
-                                    slideOutHorizontally { -it / 2 } + scaleOut(targetScale = 0.7f) + fadeOut()
+                                (slideInHorizontally(softI) { it / 8 } + fadeIn(softF)) togetherWith
+                                    (slideOutHorizontally(softI) { -it / 16 } + fadeOut(softF))
                             }
                         },
                         popTransitionSpec = {
-                            slideInHorizontally { -it / 2 } + scaleIn(initialScale = 0.7f) + fadeIn() togetherWith
-                                slideOutHorizontally { it }
+                            val softF = tween<Float>(CherryDuration.BASE, easing = CherryEasing.Settle)
+                            val softI = tween<Int>(CherryDuration.BASE, easing = CherryEasing.Settle)
+                            (slideInHorizontally(softI) { -it / 16 } + fadeIn(softF)) togetherWith
+                                (slideOutHorizontally(softI) { it / 8 } + fadeOut(softF))
                         },
                         predictivePopTransitionSpec = {
-                            slideInHorizontally { -it / 2 } + scaleIn(initialScale = 0.7f) + fadeIn() togetherWith
-                                slideOutHorizontally { it }
+                            val softF = tween<Float>(CherryDuration.BASE, easing = CherryEasing.Settle)
+                            val softI = tween<Int>(CherryDuration.BASE, easing = CherryEasing.Settle)
+                            (slideInHorizontally(softI) { -it / 16 } + fadeIn(softF)) togetherWith
+                                (slideOutHorizontally(softI) { it / 8 } + fadeOut(softF))
                         },
                         entryProvider = entryProvider {
                             entry<Screen.Chat>(
-                                metadata = NavDisplay.transitionSpec { fadeIn() togetherWith fadeOut() }
-                                    + NavDisplay.popTransitionSpec { fadeIn() togetherWith fadeOut() }
+                                metadata = NavDisplay.transitionSpec {
+                                    // v4.8.156: 对话页 = 柔和交叉淡化 (settle 250ms)
+                                    fadeIn(tween<Float>(CherryDuration.BASE, easing = CherryEasing.Settle)) togetherWith
+                                        fadeOut(tween<Float>(CherryDuration.BASE, easing = CherryEasing.Settle))
+                                } + NavDisplay.popTransitionSpec {
+                                    fadeIn(tween<Float>(CherryDuration.BASE, easing = CherryEasing.Settle)) togetherWith
+                                        fadeOut(tween<Float>(CherryDuration.BASE, easing = CherryEasing.Settle))
+                                }
                             ) { key ->
                                 ChatPage(
                                     id = Uuid.parse(key.id),

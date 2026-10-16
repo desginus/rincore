@@ -158,8 +158,9 @@ fun ChatInput(
 ) {
     val toaster = LocalToaster.current
     // v4.7.22: 玻璃规格收敛到 RinGlass 单一来源 (4.3 时代原生款: hazeBlur 4dp)。
+    // v4.8.156 (用户: "输入框可见度改5成"): 输入框族专用 inputBlurStyle (5成合成)。
     // 全 app 玻璃件 (输入框/弹窗/悬浮工具条/附件面板) 共用同一规格, 防参数漂移。
-    val inputHazeStyle = RinGlass.blurStyle()
+    val inputHazeStyle = RinGlass.inputBlurStyle()
     val assistant = settings.getCurrentAssistant()
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
@@ -931,7 +932,7 @@ private fun FullScreenEditor(
         hazeState?.let {
             Modifier.hazeBlur(
                 input = HazeInput.Sources(it),
-                style = RinGlass.blurStyle(),
+                style = RinGlass.inputBlurStyle(),
             )
         } ?: Modifier
     } else Modifier

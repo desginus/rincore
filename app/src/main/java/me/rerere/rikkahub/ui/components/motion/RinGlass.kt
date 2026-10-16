@@ -33,7 +33,7 @@ import dev.chrisbanes.haze.blur.material3.Material3
  * ┌──────────────┬────────────────────────────────────────────────┐
  * │ 状态          │ 渲染                                            │
  * ├──────────────┼────────────────────────────────────────────────┤
- * │ 模糊开启(默认) │ hazeBlur(4dp) + 透明底 + 1dp 高光/描边         │
+ * │ 模糊开启(默认) │ hazeBlur(4dp; 输入框族 5成合成-v4.8.156) + 透明底+1dp 描边 │
  * │ 生成中         │ 同上 (永不在生成期降级为纯色底 — v4.1.5 定版)   │
  * │ 键盘弹出       │ 同上 (仅布局位移动画, 玻璃参数不变)             │
  * │ 空/有内容      │ 同上 (内容多少不改变玻璃材质)                   │
@@ -62,6 +62,19 @@ object RinGlass {
         blurRadius(4.dp)
     }
 
+    /**
+     * v4.8.156 (用户: "输入框可见度改5成"): 输入框族玻璃 — **可见度五成**。
+     * Material3 预设自带 surface 背底 (opaque) 的完整效果, `alpha` = haze 的
+     * "总体效果不透明度" (HazeBlurStyleScope.alpha, 已对源取证) → 整个模糊层
+     * 按 50% 合成, 玻璃透出背景 = 可见度五成。
+     * 仅输入框族 (主输入框/全屏输入框) 消费; 弹窗/工具条/轨道图标仍用 blurStyle()。
+     */
+    @Composable
+    fun inputBlurStyle(): HazeBlurStyle = HazeBlurStyle.Material3 {
+        blurRadius(4.dp)
+        alpha(0.5f)
+    }
+
     /** 高光描边 (澎湃 4 玻璃质感 — HyperGlassPanel 同源) */
     val highlightColor: Color = Color.White.copy(alpha = 0.14f)
 
@@ -71,11 +84,12 @@ object RinGlass {
 
     /**
      * v4.8.144 (用户定版): 输入框族"任何场景默认半透明" — 模糊关闭/无源时, 主输入框与
-     * 全屏输入框的回退底色由不透明纯色改为半透明 (alpha 0.8), 不再存在纯色板形态。
+     * 全屏输入框的回退底色由不透明纯色改为半透明, 不再存在纯色板形态。
+     * v4.8.156 (用户: "输入框可见度改5成"): 0.8 → **0.5** — 关闭模糊路径同样五成可见。
      * (弹窗族 HyperGlassPanel 回退保持原规格 — 本值仅输入框族消费。)
      */
     @Composable
-    fun inputFallbackColor(): Color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.8f)
+    fun inputFallbackColor(): Color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.5f)
 }
 
 /**

@@ -37,7 +37,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -150,7 +149,7 @@ fun EmptyOrbitSelector(
                 blurEnabled = blurEnabled,
                 onClick = { onSelectAssistant(assistant.id) },
             ) {
-                AssistantCircle(avatar = assistant.avatar, name = assistant.name, highlight = selected)
+                AssistantCircle(avatar = assistant.avatar, name = assistant.name)
             }
         }
 
@@ -181,9 +180,8 @@ fun EmptyOrbitSelector(
                 Icon(
                     imageVector = HugeIcons.Message02,
                     contentDescription = null,
-                    // v4.8.152: 选中 = 图标本体发亮 (主色)
-                    tint = if (chatSelected) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    // v4.8.156: 图标恒为中性色 (选中仅标签文字变色)
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(20.dp),
                 )
             }
@@ -210,9 +208,8 @@ fun EmptyOrbitSelector(
                     androidx.compose.material3.Icon(
                         imageVector = HugeIcons.Folder01,
                         contentDescription = null,
-                        // v4.8.152: 选中 = 图标本体发亮 (主色)
-                        tint = if (selected) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        // v4.8.156: 图标恒为中性色 (选中仅标签文字变色)
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp),
                     )
                 }
@@ -241,7 +238,8 @@ private fun quadPoint(a: Offset2, c: Offset2, b: Offset2, t: Float): Offset2 {
 /**
  * 轨道项: 柔光玻璃圆 (与输入框同族) + 常驻名称备注。
  * 动画值 (tState) 在 graphicsLayer 块内读取 = 帧内只更新图层, 零重组 (传送带高性能路径);
- * 相位 = (t + index/count) % 1 — 出左下立即从右上重现; 两端 8% 窗淡入淡出 (入出场平滑)。
+ * 相位 = (t + index/count) % 1 — 出左下立即从右上重现; 两端 5% 窗淡入淡出 (入出场平滑)。
+ * v4.8.156 (用户定版): 选中态 = **仅标签文字变主色** (无放大/无柔光晕/图标不变色)。
  */
 @Composable
 private fun OrbitItem(
@@ -258,7 +256,6 @@ private fun OrbitItem(
     onClick: () -> Unit,
     icon: @Composable () -> Unit,
 ) {
-    val scale = if (selected) 1.15f else 1f
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
@@ -284,22 +281,8 @@ private fun OrbitItem(
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .size(ICON_DP)
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                }
-                // v4.8.152 (用户定版方案): 选中态 = **图标本体发亮** (主色 glyph + 主色柔光晕),
-                // 不再套描边亮环 — 环在出入场淡出时会呈"残缺"观感, 从结构上移除。
-                .then(
-                    if (selected) {
-                        Modifier.shadow(
-                            elevation = 10.dp,
-                            shape = CircleShape,
-                            ambientColor = MaterialTheme.colorScheme.primary,
-                            spotColor = MaterialTheme.colorScheme.primary,
-                        )
-                    } else Modifier
-                )
+                // v4.8.156 (用户定版): 选中高亮全部删除 — 不再有放大/柔光晕/图标变色,
+                // 被选中项仅标签文字变主色 (见下方 label 的 color)。
                 // v4.8.148 (用户定版): 圆形图标 = 输入框同族柔光玻璃
                 .rinGlass(hazeState = hazeState, blurEnabled = blurEnabled, shape = CircleShape)
                 .rinGlassHighlight(CircleShape)
@@ -331,7 +314,7 @@ private fun OrbitItem(
  *   未设头像 → **统一代表性图标** (AiMagic = 助手/AI 语义; 不再用文字缩写)。
  */
 @Composable
-private fun AssistantCircle(avatar: Avatar, name: String, highlight: Boolean = false) {
+private fun AssistantCircle(avatar: Avatar, name: String) {
     when (avatar) {
         is Avatar.Image -> {
             AsyncImage(
@@ -354,9 +337,8 @@ private fun AssistantCircle(avatar: Avatar, name: String, highlight: Boolean = f
             Icon(
                 imageVector = HugeIcons.AiMagic,
                 contentDescription = name,
-                // v4.8.152: 选中 = 图标本体发亮 (主色)
-                tint = if (highlight) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
+                // v4.8.156: 图标恒为中性色 (选中仅标签文字变色)
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp),
             )
         }
