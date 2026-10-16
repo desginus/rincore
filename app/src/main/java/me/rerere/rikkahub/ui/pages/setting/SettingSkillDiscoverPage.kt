@@ -56,7 +56,7 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import org.koin.compose.koinInject
 
 @Composable
-fun SettingSkillDiscoverPage(onBack: () -> Unit) {
+fun SettingSkillDiscoverContent() {
     val toaster = LocalToaster.current
     val skillManager: SkillManager = koinInject()
     var source by remember { mutableStateOf(SkillDiscoverSource.CHERRYIN) }
@@ -124,7 +124,7 @@ fun SettingSkillDiscoverPage(onBack: () -> Unit) {
                         item.githubSkillName,
                     )
                 }
-                toaster.show(message = "已安装「$name」— 可在 Agent Skills 中查看", type = ToastType.Success)
+                toaster.show(message = "已安装「$name」— 可在「我的技能」中查看", type = ToastType.Success)
             } catch (e: Exception) {
                 toaster.show(message = e.message ?: "安装失败", type = ToastType.Error)
             } finally {
@@ -144,7 +144,7 @@ fun SettingSkillDiscoverPage(onBack: () -> Unit) {
             installing = "url"
             try {
                 val name = SkillDiscoverService.installFromUrl(skillManager, raw)
-                toaster.show(message = "已安装「$name」— 可在 Agent Skills 中查看", type = ToastType.Success)
+                toaster.show(message = "已安装「$name」— 可在「我的技能」中查看", type = ToastType.Success)
                 urlInput = ""
             } catch (e: Exception) {
                 toaster.show(message = e.message ?: "安装失败", type = ToastType.Error)
@@ -154,24 +154,8 @@ fun SettingSkillDiscoverPage(onBack: () -> Unit) {
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("发现技能") },
-                navigationIcon = {
-                    TextButton(onClick = onBack) { Text("返回") }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-            )
-        },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-        ) {
+    // v4.8.146: 内容化 — 由 SkillHubPage「发现」Tab 承载 (顶栏/返回由 Hub 提供)
+    Column(Modifier.fillMaxSize()) {
             TabRow(selectedTabIndex = source.ordinal) {
                 Tab(
                     selected = source == SkillDiscoverSource.CHERRYIN,
@@ -306,7 +290,6 @@ fun SettingSkillDiscoverPage(onBack: () -> Unit) {
                     }
                 }
             }
-        }
     }
 }
 

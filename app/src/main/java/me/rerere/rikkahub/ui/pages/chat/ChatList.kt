@@ -78,6 +78,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
+import dev.chrisbanes.haze.blur.hazeBlur
+import dev.chrisbanes.haze.HazeInput
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.gestures.scrollBy
@@ -333,6 +335,28 @@ private fun ChatListNormal(
         }
 
         ChatFontProvider(displaySetting = settings.displaySetting) {
+            // v4.8.146 (用户定版): 标题栏与正文交界圆角 — 正文区改为"圆角玻璃面板"
+            // (顶角 24dp)。模糊开 = hazeBlur 真玻璃 (背景层已是 haze source, 静态源走
+            // haze 缓存, 滚动无额外开销); 关 = 半透明底 (不用纯色板, 见 RinGlass 规格)。
+            // 目的: 缓和标题栏与正文之间的硬分割线 (用户: "明显的上下分割")。
+            val contentSheetShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+            val contentSheetBlur = settings.displaySetting.enableBlurEffect
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = innerPadding.calculateTopPadding())
+                    .clip(contentSheetShape)
+                    .then(
+                        if (contentSheetBlur) Modifier.hazeBlur(
+                            input = HazeInput.Sources(hazeState),
+                            style = me.rerere.rikkahub.ui.components.motion.RinGlass.blurStyle(),
+                        ) else Modifier
+                    )
+                    .background(
+                        if (contentSheetBlur) Color.Transparent
+                        else MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.35f)
+                    ),
+            ) {
             LazyColumn(
                 state = state,
                 contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 16.dp) + PaddingValues(bottom = 32.dp + innerPadding.calculateBottomPadding()),
@@ -340,8 +364,7 @@ private fun ChatListNormal(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier
                     .fillMaxSize()
-                    .hazeSource(state = hazeState)
-                    .padding(top = innerPadding.calculateTopPadding()),
+                    .hazeSource(state = hazeState),
             ) {
             itemsIndexed(
                 items = conversation.messageNodes,
@@ -440,6 +463,7 @@ private fun ChatListNormal(
                         .fillMaxWidth()
                         .height(5.dp)
                 )
+            }
             }
             }
         }

@@ -100,6 +100,13 @@ fun SettingPluginsPage(
                 ) { Text(if (refreshing.value) "刷新中" else "刷新") }
             },
         )
+        // v4.8.146 (用户定版): 一行状态备注
+        Text(
+            "功能正在测试中，暂未正式上线",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+        )
         LazyColumn(Modifier.fillMaxSize()) {
             // v4.5.33: 来自市场的插件区块 (Operit 生态 — 应用市场安装)
             if (operitPackages.isNotEmpty()) {

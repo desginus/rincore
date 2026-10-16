@@ -112,8 +112,13 @@ object ProducedFiles {
      * "容易且效果好"): 工作区文件系统扫描 — 返回 sinceMs 之后被创建/修改的文件
      * (rootfs 全根语义 "/workspace/<rel>")。shell / officecli / python 等一切
      * 生成路径的兜底; 排除 .versions 版本快照目录; 目录不计; 上限 200。
+     * v4.8.146: cwdScope = 本对话生效 CWD (多对话并行时把归属边界收到本项目子树)。
      */
-    suspend fun scanWorkspaceSince(workspaceId: String, sinceMs: Long): List<String> {
+    suspend fun scanWorkspaceSince(
+        workspaceId: String,
+        sinceMs: Long,
+        cwdScope: String? = null,
+    ): List<String> {
         return runCatching {
             val koin = org.koin.core.context.GlobalContext.get()
             val repo = koin.get<me.rerere.rikkahub.data.repository.WorkspaceRepository>()
@@ -122,8 +127,15 @@ object ProducedFiles {
             val base = manager.filesDir(entity.root)
             if (!base.isDirectory) return emptyList()
 
+            // v4.8.146 (用户复核"记录不准确, 多对话场景注意"): 扫描域 = 本对话生效 CWD 子树。
+            // 多对话并行共用同一工作区时, 全根 mtime 扫描会把邻居对话/用户手改的文件
+            // 记到本对话 (跨对话污染); CWD 域把"本对话项目范围"作为归属边界。
+            // CWD 为空或路径不存在时退回全根 (保持旧行为, 避免漏报)。
+            val scopeRel = cwdScope?.trim()?.trim('/')?.takeIf { it.isNotEmpty() }
+            val scopeRoot = scopeRel?.let { File(base, it) }?.takeIf { it.isDirectory } ?: base
+
             val out = ArrayList<String>()
-            val seq = base.walkTopDown().onEnter { dir -> dir.name != ".versions" }
+            val seq = scopeRoot.walkTopDown().onEnter { dir -> dir.name != ".versions" }
             for (f in seq) {
                 if (out.size >= 200) break
                 if (f.isFile && f.lastModified() >= sinceMs) {

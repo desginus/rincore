@@ -42,6 +42,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.Folder01
 import me.rerere.hugeicons.stroke.GlobalSearch
 import me.rerere.hugeicons.stroke.Code
 import me.rerere.hugeicons.stroke.AiEditing
@@ -262,7 +263,8 @@ item(
 item(
                         onClick = { navController.navigate(Screen.Skills) },
                         leadingContent = { Icon(HugeIcons.Puzzle, null) },
-                        supportingContent = { Text("Agent Skills 能力模块（与 MCP 同等次，一个 Skill 一个工具）") },
+                        // v4.8.146 (用户定版): 我的技能 + 发现 合并为单一 UI (SkillHubPage 内 Tab 切换)
+                        supportingContent = { Text("我的技能 + 发现（CherryIN / skills.sh）") },
                         headlineContent = { Text("Agent Skills") },
                     )
 item(
@@ -270,13 +272,6 @@ item(
                         leadingContent = { Icon(HugeIcons.Package, null) },
                         supportingContent = { Text("插件能力模块（workspace 目录安装：技能 + STDIO MCP 桥接）") },
                         headlineContent = { Text("插件") },
-                    )
-item(
-                        // v4.8.145: 技能「发现」— CherryIN / skills.sh 两来源 (CS v0.2.1 移植)。
-                        onClick = { navController.navigate(Screen.SkillDiscover) },
-                        leadingContent = { Icon(HugeIcons.GlobalSearch, null) },
-                        supportingContent = { Text("CherryIN / skills.sh — 搜索、安装与管理技能包") },
-                        headlineContent = { Text("发现技能") },
                     )
 item(
                         onClick = { showDomainPage = true },
@@ -357,6 +352,13 @@ item(
                         leadingContent = { Icon(HugeIcons.Code, null) },
                         supportingContent = { Text("查看最近一条消息的完整运行流程") },
                         headlineContent = { Text("运行日志") },
+                    )
+                    item(
+                        // v4.8.146 (用户定版): 收件箱 (Upload) — 上传文件管理 + 使用位置标注
+                        onClick = { navController.navigate(Screen.SettingUploadInbox) },
+                        leadingContent = { Icon(HugeIcons.Folder01, null) },
+                        supportingContent = { Text("Upload 上传文件 — 查看占用与使用位置（头像 / 对话背景等）") },
+                        headlineContent = { Text("收件箱") },
                     )
                     item(
                         // v4.8.145: 改为真实导航 (修"子页返回跳两级"bug — 原为内嵌 remember 状态页,

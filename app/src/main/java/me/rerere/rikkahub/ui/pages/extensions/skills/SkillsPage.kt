@@ -33,6 +33,10 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.Switch
@@ -80,11 +84,10 @@ import androidx.compose.runtime.setValue
 import me.rerere.rikkahub.utils.plus
 
 @Composable
-fun SkillsPage() {
+private fun SkillsLibraryPane() {
     val navController = LocalNavController.current
     val vm = koinViewModel<SkillsVM>()
     val skills by vm.skills.collectAsStateWithLifecycle()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val toaster = LocalToaster.current
     val context = LocalContext.current
     var showImportSheet by rememberSaveable { mutableStateOf(false) }
@@ -113,36 +116,17 @@ fun SkillsPage() {
         }
     }
 
-    Scaffold(
-        topBar = {
-            LargeFlexibleTopAppBar(
-                title = { Text(stringResource(R.string.skills_page_title)) },
-                navigationIcon = { BackButton() },
-                actions = {
-                    // v4.8.81: 一键清空 (右上角) — 删除全部自建技能, 只读源保留
-                    IconButton(onClick = { showClearAllDialog = true }) {
-                        Icon(HugeIcons.Eraser, contentDescription = "清空全部技能")
-                    }
-                },
-                scrollBehavior = scrollBehavior,
-                colors = CustomColors.topBarColors,
-            )
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { showImportSheet = true }) {
-                Icon(HugeIcons.Add01, contentDescription = null)
-            }
-        },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        containerColor = CustomColors.topBarColors.containerColor,
-    ) { innerPadding ->
+    // v4.8.146 (用户定版): 原独立页拆为"内容面板" — 由 SkillHubPage 的双 Tab 承载
+    // (我的技能 = 本面板; 发现 = SettingSkillDiscoverContent)。顶栏/返回由 Hub 提供;
+    // 清空(Eraser)与原导入 FAB 收进右下角按钮列。
+    Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = innerPadding + PaddingValues(
+            contentPadding = PaddingValues(
                 start = 16.dp,
                 end = 16.dp,
-                top = 16.dp,
-                bottom = 16.dp + 72.dp,
+                top = 8.dp,
+                bottom = 16.dp + 72.dp + 60.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -203,6 +187,21 @@ fun SkillsPage() {
                     onClick = { navController.navigate(Screen.SkillDetail(skill.name)) },
                     onDelete = { deleteTarget = skill },
                 )
+            }
+        }
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp),
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            // v4.8.81: 一键清空 — 删除全部自建技能, 只读源保留
+            androidx.compose.material3.SmallFloatingActionButton(onClick = { showClearAllDialog = true }) {
+                Icon(HugeIcons.Eraser, contentDescription = "清空全部技能")
+            }
+            FloatingActionButton(onClick = { showImportSheet = true }) {
+                Icon(HugeIcons.Add01, contentDescription = null)
             }
         }
     }
@@ -394,6 +393,52 @@ private fun SkillCard(
                             onDelete()
                         },
                     )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * v4.8.146 (用户定版): Agent Skills 与「发现」合并为单一 UI — 同页 Tab 切换。
+ *   · 我的技能 = 本地技能管理 (SkillsLibraryPane, 原 SkillsPage 全量能力)
+ *   · 发现     = CherryIN / skills.sh 两来源 (SettingSkillDiscoverContent, v4.8.145 移植)
+ */
+@Composable
+fun SkillHubPage() {
+    var hubTab by rememberSaveable { mutableIntStateOf(0) }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Agent Skills") },
+                navigationIcon = { BackButton() },
+                colors = CustomColors.topBarColors,
+            )
+        },
+        containerColor = CustomColors.topBarColors.containerColor,
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+        ) {
+            TabRow(selectedTabIndex = hubTab) {
+                Tab(
+                    selected = hubTab == 0,
+                    onClick = { hubTab = 0 },
+                    text = { Text("我的技能") },
+                )
+                Tab(
+                    selected = hubTab == 1,
+                    onClick = { hubTab = 1 },
+                    text = { Text("发现") },
+                )
+            }
+            Box(modifier = Modifier.weight(1f)) {
+                if (hubTab == 0) {
+                    SkillsLibraryPane()
+                } else {
+                    me.rerere.rikkahub.ui.pages.setting.SettingSkillDiscoverContent()
                 }
             }
         }

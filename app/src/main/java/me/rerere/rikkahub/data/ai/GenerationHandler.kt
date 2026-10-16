@@ -1250,22 +1250,34 @@ class GenerationHandler(
                 if (hits.isEmpty()) return@runCatching
                 val sinceMs = hits.minOf { it.item.toolStartAt } - 2_000L
                 val paths = withContext(Dispatchers.IO) {
-                    me.rerere.rikkahub.data.ai.tools.ProducedFiles.scanWorkspaceSince(wsId, sinceMs)
+                    me.rerere.rikkahub.data.ai.tools.ProducedFiles.scanWorkspaceSince(
+                        wsId, sinceMs, cwdScope = workspaceCwd,
+                    )
                 }
                 if (paths.isEmpty()) return@runCatching
                 settingsStore.update { s ->
+                    // v4.8.146 (用户复核"记录不准确, 多对话场景注意"): 剔除"近期已被其它对话
+                    // 直登记"的路径 — 直登记 (write/edit 工具参数) 是高置信归属, 扫描命中它
+                    // 说明该文件是邻居对话的产出, 不算本对话产出。
+                    val foreignRecent = s.conversationProducedFiles
+                        .filterKeys { it != cid }
+                        .values
+                        .flatten()
+                        .filter { it.atMs >= sinceMs }
+                        .mapTo(HashSet()) { it.path }
+                    val filtered = paths.filter { it !in foreignRecent }
                     s.copy(
                         conversationProducedFiles = me.rerere.rikkahub.data.ai.tools.ProducedFiles.recordBatch(
                             current = s.conversationProducedFiles,
                             conversationId = cid,
-                            entries = paths.map { path -> "workspace_scan" to path },
+                            entries = filtered.map { path -> "workspace_scan" to path },
                             nowMs = System.currentTimeMillis(),
                         )
                     )
                 }
                 CallTracer.event(
                     "TOOL", "produced_scan",
-                    "workspace scan +${paths.size}: ${paths.take(6).joinToString()}"
+                    "workspace scan +${paths.size} (cwd=${workspaceCwd ?: "/"}): ${paths.take(6).joinToString()}"
                 )
             }
 
