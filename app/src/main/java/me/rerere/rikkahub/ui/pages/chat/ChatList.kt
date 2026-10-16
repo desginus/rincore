@@ -342,44 +342,15 @@ private fun ChatListNormal(
         }
 
         ChatFontProvider(displaySetting = settings.displaySetting) {
-            // v4.8.146 (用户定版): 标题栏与正文交界圆角 — 正文区改为"圆角玻璃面板"
-            // (顶角 24dp)。模糊开 = hazeBlur 真玻璃 (背景层已是 haze source, 静态源走
-            // haze 缓存, 滚动无额外开销); 关 = 半透明底 (不用纯色板, 见 RinGlass 规格)。
-            // 目的: 缓和标题栏与正文之间的硬分割线 (用户: "明显的上下分割")。
-            val contentSheetShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-            val contentSheetBlur = settings.displaySetting.enableBlurEffect
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    // v4.8.147 (用户定版): 圆角面板边距 = 对话气泡边距 (左右 8dp) —
-                    // 面板左右缘与气泡缘对齐, 视觉上就是"气泡的边缘是圆角"。
-                    .padding(start = 8.dp, end = 8.dp, top = innerPadding.calculateTopPadding())
-                    .clip(contentSheetShape)
-                    .then(
-                        if (contentSheetBlur) Modifier.hazeBlur(
-                            input = HazeInput.Sources(hazeState),
-                            // v4.8.153: 规格合一 — 面板=纯高斯模糊(仅背景源, 无填充无 tint)
-                            style = me.rerere.rikkahub.ui.components.motion.RinGlass.blurStyle(),
-                        ) else Modifier
-                    )
-                    .background(
-                        if (contentSheetBlur) Color.Transparent
-                        else MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.35f)
-                    ),
-            ) {
             LazyColumn(
                 state = state,
-                // v4.8.147: 水平留白移交面板 (面板已左右收 8dp), 内容水平内边距归零
-                contentPadding = PaddingValues(start = 0.dp, end = 0.dp, top = 16.dp) + PaddingValues(bottom = 32.dp + innerPadding.calculateBottomPadding()),
+                contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 16.dp) + PaddingValues(bottom = 32.dp + innerPadding.calculateBottomPadding()),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier
-                    .fillMaxSize(),
-                    // v4.8.153 (用户定版"最简单的柔光玻璃"): 消息列表**不再作为模糊源**——
-                    // 玻璃(面板/输入框/弹窗)的模糊只对背景(壁纸/渐变)做。
-                    // 旧版把列表纳入模糊源 → ★散光★: 清晰消息画在"模糊后的自己"之上,
-                    // 每个气泡/小图标(复制/转发等)周围渗出虚影辉光; 输入框内还叠加
-                    // 文本拖影("隔栅感")。内容不入源, 全部虚影类观感从机制上消失。
+                    .fillMaxSize()
+                    .hazeSource(state = hazeState)
+                    .padding(top = innerPadding.calculateTopPadding()),
             ) {
             itemsIndexed(
                 items = conversation.messageNodes,
@@ -480,8 +451,8 @@ private fun ChatListNormal(
                 )
             }
             }
-            }
         }
+
         // v4.8.147 (用户定版): 新聊天/默认页 — 双弧轨道选择器 (外=助手 / 内=项目包,
         // 传送带式轮播: 右上入场 → 左下出场后立即右上重现)。
         if (conversation.messageNodes.isEmpty() && !loading) {

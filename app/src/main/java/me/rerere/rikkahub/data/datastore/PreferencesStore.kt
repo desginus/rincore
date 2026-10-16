@@ -1109,9 +1109,7 @@ data class DisplaySetting(
     val sendOnEnter: Boolean = false,
     val enableAutoScroll: Boolean = true,
     val enableLatexRendering: Boolean = true,
-    // v4.8.154: false → true — 玻璃是该应用的旗舰观感, 未动过开关的用户默认应看到它
-    // ("输入框黑的压根不透明"历轮兜底嫌疑之一 = 开关默认关); 已显式存 false 的用户不受影响。
-    val enableBlurEffect: Boolean = true,
+    val enableBlurEffect: Boolean = false,
     val chatFontFamily: ChatFontFamily = ChatFontFamily.DEFAULT,
     val chatCustomFontPath: String = "",
     val chatCustomFontName: String = "",

@@ -260,9 +260,7 @@ fun ChatInput(
                 shape = containerShape,
                 tonalElevation = 0.dp,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                // v4.8.153 (用户定版"半透明加高斯模糊"): 玻璃开启 = 半透明填充 + 高斯模糊
-                color = if (settings.displaySetting.enableBlurEffect) RinGlass.frostFill()
-                else RinGlass.inputFallbackColor(),
+                color = if (settings.displaySetting.enableBlurEffect) Color.Transparent else RinGlass.inputFallbackColor(),
             ) {
                 Column(
                     // v4.8.147: 上下内边距 4→2 (再省 2dp×2, 不影响正文框)
@@ -960,9 +958,8 @@ private fun FullScreenEditor(
                     .then(glassModifier),
                 shape = shape,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                // v4.8.153: 同主输入框 — 半透明填充 + 高斯模糊
                 color = if (settings.displaySetting.enableBlurEffect && hazeState != null) {
-                    RinGlass.frostFill()
+                    Color.Transparent
                 } else {
                     RinGlass.inputFallbackColor()
                 },

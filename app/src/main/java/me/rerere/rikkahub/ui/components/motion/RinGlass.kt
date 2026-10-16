@@ -17,16 +17,15 @@ import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.HazeBlurStyle
-import dev.chrisbanes.haze.blur.HazeColorEffect
 import dev.chrisbanes.haze.blur.hazeBlur
+import dev.chrisbanes.haze.blur.material3.Material3
 
 /**
  * ═══════════════════════════════════════════════════════════════════
  * RinGlass — 柔光玻璃统一渲染规格 (v4.7.22)
  *
- * 【定版依据】用户定版: 全 app 玻璃元素统一为"光波粒"柔光玻璃款
- * (haze 2.0.0-beta01 渲染管线 + blurRadius 8dp[全质量档] + 零噪点 + surface@0.5
- * 材质 tint; v4.8.150 像素级仿真对比定案 — 取代"4dp+噪点"与"20dp 半分辨率"两代旧规格)。
+ * 【定版依据】用户定版: 全 app 玻璃元素统一为 4.3~4.5 时代"原生构建"的
+ * 柔光玻璃款式 (haze 2.0.0-beta01 渲染管线 + blurRadius 4dp)。
  * v4.7.0 移植原版 2.5.3 时误升 haze rc02 导致"格栅式"变化 (v4.7.21 已
  * 回滚版本); 本文件将参数收敛为单一来源, 杜绝多处定义再次漂移。
  *
@@ -34,7 +33,7 @@ import dev.chrisbanes.haze.blur.hazeBlur
  * ┌──────────────┬────────────────────────────────────────────────┐
  * │ 状态          │ 渲染                                            │
  * ├──────────────┼────────────────────────────────────────────────┤
- * │ 模糊开启(默认) │ hazeBlur(8dp→40%合成) + 半透明填充(frostFill@0.30) │
+ * │ 模糊开启(默认) │ hazeBlur(4dp) + 透明底 + 1dp 高光/描边         │
  * │ 生成中         │ 同上 (永不在生成期降级为纯色底 — v4.1.5 定版)   │
  * │ 键盘弹出       │ 同上 (仅布局位移动画, 玻璃参数不变)             │
  * │ 空/有内容      │ 同上 (内容多少不改变玻璃材质)                   │
@@ -59,39 +58,9 @@ object RinGlass {
      * 即用户认可的"原生款"。
      */
     @Composable
-    fun blurStyle(): HazeBlurStyle {
-        // v4.8.153 (用户定版 — "最简单的柔光玻璃 = 半透明 + 高斯模糊"):
-        //   ① 高斯模糊: 8dp × density≤4.0 ≤ 32px 物理 → 恒 1.0 全质量输入档
-        //      (≥32px 掉 0.8 / ≥60px 掉 0.5 半分辨率 = 块状"隔栅", 见 v4.8.147 教训);
-        //   ② 零噪点: 噪点(0.15/0.06)在真实观感=颗粒脏感 — 永久移除;
-        //   ③ 无 tint/无底色: "半透明"由消费方的**填充层**提供 (rinGlass→frostFill /
-        //      输入框 Surface color=frostFill) — 撤除 v4.8.150 的 colorEffects 材质 tint
-        //      (其实现在深色主题下把玻璃压成黑板感, 用户判"又黑又有隔栅")。
-        //      模糊源只含背景 (消息列表 v4.8.153 起不入源 — 散光/拖影从机制上消除)。
-        return HazeBlurStyle {
-            blurRadius(8.dp)
-            noiseFactor(0f)
-            backgroundColor(Color.Transparent)
-            // v4.8.154 (用户: "输入框是黑的, 压根不透明" — 机制锚点):
-            // 半透明的另一半 = **模糊图层自身的合成透明度** — 背景(动态渐变 Mesh/壁纸)
-            // 是全幅不透明层, blur(不透明)=不透明, 填充浓度怎么调都救不回来
-            // (透出的是模糊层, 不是底下内容)。已对 haze 源码取证:
-            // style.alpha → 各 delegate `layer.alpha = blurVisualEffect.alpha`
-            // = 整个模糊图层按 40% 合成 → 底下内容透出 ≈ 0.6×0.7(fill0.30) ≈ 42% = 真半透明。
-            alpha(0.4f)
-        }
+    fun blurStyle(): HazeBlurStyle = HazeBlurStyle.Material3 {
+        blurRadius(4.dp)
     }
-
-    /**
-     * v4.8.153 (用户定版"半透明加高斯模糊"): 玻璃面**半透明填充** —
-     * 与高斯模糊叠加 = 最简单的柔光玻璃。主题自适应 (浅=乳白 / 深=烟色)。
-     * v4.8.154 (用户: "输入框是黑的, 压根不透明"): 0.65 → **0.30** —
-     * 深色主题下 65% 的 surface 系填充=黑板观感(透出量不可感知);
-     * "全部的模糊感"原义 = 玻璃面主要呈现模糊本身, 填充只留薄薄一层:
-     * 30% 填充/70% 透出 = 明确可感知的半透明。
-     */
-    @Composable
-    fun frostFill(): Color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.3f)
 
     /** 高光描边 (澎湃 4 玻璃质感 — HyperGlassPanel 同源) */
     val highlightColor: Color = Color.White.copy(alpha = 0.14f)
@@ -106,8 +75,7 @@ object RinGlass {
      * (弹窗族 HyperGlassPanel 回退保持原规格 — 本值仅输入框族消费。)
      */
     @Composable
-    // v4.8.154: 0.8 → 0.65 — "压根不透明"的双路径防御: 模糊关闭时同样真半透明
-    fun inputFallbackColor(): Color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.65f)
+    fun inputFallbackColor(): Color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.8f)
 }
 
 /**
@@ -133,8 +101,7 @@ fun Modifier.rinGlass(
         ) else Modifier
     )
     .background(
-        // v4.8.153: 模糊开启 = 半透明填充 (最简单的柔光玻璃); 关闭 = 回退底色
-        if (blurEnabled && hazeState != null) RinGlass.frostFill()
+        if (blurEnabled && hazeState != null) Color.Transparent
         else RinGlass.fallbackColor()
     )
 
