@@ -263,7 +263,8 @@ fun ChatInput(
                 color = if (settings.displaySetting.enableBlurEffect) Color.Transparent else RinGlass.inputFallbackColor(),
             ) {
                 Column(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    // v4.8.147: 上下内边距 4→2 (再省 2dp×2, 不影响正文框)
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     if (voiceState.phase != VoicePhase.Off) {
@@ -508,7 +509,8 @@ private fun TextInputRow(
 
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        // v4.8.147 (用户定版): 工具行上移 — 正文框不动, 仅收掉工具行上方间距 (4→0)
+        verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
         if (state.isEditing()) {
             Surface(
@@ -704,9 +706,6 @@ private fun TextInputRow(
                     isFocused = it.isFocused
                 },
             shape = MaterialTheme.shapes.largeIncreased,
-            placeholder = {
-                Text(stringResource(R.string.chat_input_placeholder))
-            },
             lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
             keyboardOptions = KeyboardOptions(
                 imeAction = if (settings.displaySetting.sendOnEnter) ImeAction.Send else ImeAction.Default,
@@ -990,9 +989,6 @@ private fun FullScreenEditor(
                         keyboardOptions = KeyboardOptions(
                             capitalization = KeyboardCapitalization.Sentences, // v3.6.97 移植 2.4.10
                         ),
-                        placeholder = {
-                            Text(stringResource(R.string.chat_input_placeholder))
-                        },
                         colors = TextFieldDefaults.colors().copy(
                             unfocusedIndicatorColor = Color.Transparent,
                             focusedIndicatorColor = Color.Transparent,

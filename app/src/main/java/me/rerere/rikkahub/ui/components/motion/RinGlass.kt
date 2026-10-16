@@ -18,14 +18,14 @@ import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.HazeBlurStyle
 import dev.chrisbanes.haze.blur.hazeBlur
-import dev.chrisbanes.haze.blur.material3.Material3
 
 /**
  * ═══════════════════════════════════════════════════════════════════
  * RinGlass — 柔光玻璃统一渲染规格 (v4.7.22)
  *
- * 【定版依据】用户定版: 全 app 玻璃元素统一为 4.3~4.5 时代"原生构建"的
- * 柔光玻璃款式 (haze 2.0.0-beta01 渲染管线 + blurRadius 4dp)。
+ * 【定版依据】用户定版: 全 app 玻璃元素统一为"光波粒"深磨砂款
+ * (haze 2.0.0-beta01 渲染管线 + blurRadius 20dp + 零噪点; v4.8.147 取代 4.3 时代
+ * "4dp+噪点"旧规格 — 用户判其"很强的隔山感/隔栅玻璃")。
  * v4.7.0 移植原版 2.5.3 时误升 haze rc02 导致"格栅式"变化 (v4.7.21 已
  * 回滚版本); 本文件将参数收敛为单一来源, 杜绝多处定义再次漂移。
  *
@@ -33,7 +33,7 @@ import dev.chrisbanes.haze.blur.material3.Material3
  * ┌──────────────┬────────────────────────────────────────────────┐
  * │ 状态          │ 渲染                                            │
  * ├──────────────┼────────────────────────────────────────────────┤
- * │ 模糊开启(默认) │ hazeBlur(4dp) + 透明底 + 1dp 高光/描边         │
+ * │ 模糊开启(默认) │ hazeBlur(20dp·零噪点) + 透明底 + 1dp 高光/描边   │
  * │ 生成中         │ 同上 (永不在生成期降级为纯色底 — v4.1.5 定版)   │
  * │ 键盘弹出       │ 同上 (仅布局位移动画, 玻璃参数不变)             │
  * │ 空/有内容      │ 同上 (内容多少不改变玻璃材质)                   │
@@ -58,8 +58,14 @@ object RinGlass {
      * 即用户认可的"原生款"。
      */
     @Composable
-    fun blurStyle(): HazeBlurStyle = HazeBlurStyle.Material3 {
-        blurRadius(4.dp)
+    fun blurStyle(): HazeBlurStyle = HazeBlurStyle {
+        // v4.8.147 (用户定版): 深磨砂 = "全部的模糊感/光波粒" —
+        // 旧规格 (blurRadius 4dp + haze 默认噪点 noiseFactor 0.15 + Material3 底色)
+        // 被用户判为"很强的隔山感/隔栅玻璃": 4dp 太浅 + 噪点颗粒 = 格栅观感。
+        // 现规格 = 20dp 深模糊 (库默认半径) + 零噪点 + 无底色 (纯模糊)。
+        blurRadius(20.dp)
+        noiseFactor(0f)
+        backgroundColor(Color.Transparent)
     }
 
     /** 高光描边 (澎湃 4 玻璃质感 — HyperGlassPanel 同源) */

@@ -162,6 +162,9 @@ fun ChatList(
     onOpenTranslator: () -> Unit = {},
     onOpenImageGen: () -> Unit = {},
     onExitPreview: () -> Unit = {},
+    // v4.8.147: 空态轨道选择器 (外弧=助手 / 内弧=项目包)
+    onOrbitSelectAssistant: (Uuid) -> Unit = {},
+    onOrbitSelectFolder: (Uuid) -> Unit = {},
 ) {
     AnimatedContent(
         targetState = previewMode,
@@ -209,6 +212,8 @@ fun ChatList(
                 onToggleFavorite = onToggleFavorite,
                 onConversationSystemPromptChange = onConversationSystemPromptChange,
                 folderCwd = folderCwd,
+                onOrbitSelectAssistant = onOrbitSelectAssistant,
+                onOrbitSelectFolder = onOrbitSelectFolder,
             )
         }
     }
@@ -240,6 +245,8 @@ private fun ChatListNormal(
     onToggleFavorite: ((MessageNode) -> Unit)? = null,
     onConversationSystemPromptChange: ((String?) -> Unit)? = null,
     folderCwd: String? = null,
+    onOrbitSelectAssistant: (Uuid) -> Unit = {},
+    onOrbitSelectFolder: (Uuid) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val loadingState by rememberUpdatedState(loading)
@@ -344,7 +351,9 @@ private fun ChatListNormal(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(top = innerPadding.calculateTopPadding())
+                    // v4.8.147 (用户定版): 圆角面板边距 = 对话气泡边距 (左右 8dp) —
+                    // 面板左右缘与气泡缘对齐, 视觉上就是"气泡的边缘是圆角"。
+                    .padding(start = 8.dp, end = 8.dp, top = innerPadding.calculateTopPadding())
                     .clip(contentSheetShape)
                     .then(
                         if (contentSheetBlur) Modifier.hazeBlur(
@@ -359,7 +368,8 @@ private fun ChatListNormal(
             ) {
             LazyColumn(
                 state = state,
-                contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 16.dp) + PaddingValues(bottom = 32.dp + innerPadding.calculateBottomPadding()),
+                // v4.8.147: 水平留白移交面板 (面板已左右收 8dp), 内容水平内边距归零
+                contentPadding = PaddingValues(start = 0.dp, end = 0.dp, top = 16.dp) + PaddingValues(bottom = 32.dp + innerPadding.calculateBottomPadding()),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier
@@ -465,6 +475,21 @@ private fun ChatListNormal(
                 )
             }
             }
+            }
+        }
+        // v4.8.147 (用户定版): 新聊天/默认页 — 双弧轨道选择器 (外=助手 / 内=项目包,
+        // 传送带式轮播: 右上入场 → 左下出场后立即右上重现)。
+        if (conversation.messageNodes.isEmpty() && !loading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+            ) {
+                EmptyOrbitSelector(
+                    currentFolderId = conversation.folderId,
+                    onSelectAssistant = onOrbitSelectAssistant,
+                    onSelectFolder = onOrbitSelectFolder,
+                )
             }
         }
         Box(

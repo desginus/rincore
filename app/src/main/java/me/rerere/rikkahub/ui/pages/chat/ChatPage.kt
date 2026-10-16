@@ -12,6 +12,7 @@ import androidx.activity.compose.BackHandler
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.ime
@@ -671,6 +672,13 @@ private fun ChatPageContent(
                 onExitPreview = { previewMode = false },
                 // v4.8.88: 子代理预算（速览页弹窗直接回写 Settings）
                 onUpdateSettings = { updated -> vm.updateSettings(updated) },
+                // v4.8.147: 空态轨道选择器接线 — 切助手=复用"移对话到助手"(含归属清理与全局切换);
+                // 选项目包=回写本对话 folderId。
+                onOrbitSelectAssistant = { id -> vm.moveConversationToAssistant(conversation, id) },
+                onOrbitSelectFolder = { fid ->
+                    vm.updateConversation(conversation.copy(folderId = fid))
+                    vm.saveConversationAsync()
+                },
                 errors = errors,
                 onDismissError = onDismissError,
                 onClearAllErrors = onClearAllErrors,
@@ -887,6 +895,30 @@ private fun ChatFilesPickerSheet(
 }
 
 @Composable
+/** v4.8.147 (用户定版): 对话归属项目包时的标题便签胶囊 (全圆角, 内容=项目包名)。 */
+@Composable
+private fun ConversationFolderPill(folderId: Uuid?) {
+    val id = folderId ?: return
+    val folderRepo: me.rerere.rikkahub.data.repository.FolderRepository =
+        org.koin.compose.koinInject()
+    val folder by remember(id) { folderRepo.getFolderFlow(id) }
+        .collectAsStateWithLifecycle(initialValue = null)
+    val name = folder?.name?.takeIf { it.isNotBlank() } ?: return
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        modifier = Modifier.widthIn(max = 120.dp),
+    ) {
+        Text(
+            text = name,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+        )
+    }
+}
+
 private fun TopBar(
     settings: Settings,
     conversation: Conversation,
@@ -907,7 +939,8 @@ private fun TopBar(
     // 顶部边距 = 原来的 2/5 (状态栏内边距按比例缩小, 文字随之整体上提)。
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     TopAppBar(
-        windowInsets = WindowInsets(top = statusBarTop * 2f / 5f),
+        // v4.8.147 (用户定版): 上次上移过多 — 下移 5dp (2/5 状态栏 + 5dp)
+        windowInsets = WindowInsets(top = statusBarTop * 2f / 5f + 5.dp),
         colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
         navigationIcon = {
             if (!bigScreen) {
@@ -936,12 +969,21 @@ private fun TopBar(
                     val assistant = settings.getCurrentAssistant()
                     val model = settings.getCurrentChatModel()
                     val provider = model?.findProvider(providers = settings.providers, checkOverwrite = false)
-                    Text(
-                        text = conversation.title.ifBlank { stringResource(R.string.chat_page_new_chat) },
-                        maxLines = 1,
-                        style = MaterialTheme.typography.bodyMedium,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            text = conversation.title.ifBlank { stringResource(R.string.chat_page_new_chat) },
+                            maxLines = 1,
+                            style = MaterialTheme.typography.bodyMedium,
+                            overflow = TextOverflow.Ellipsis,
+                            // fill=false: 标题按需占宽, 胶囊紧随其后; 超长时标题先省略
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        // v4.8.147 (用户定版): 对话归属项目包时, 标题后加小便签胶囊 (大圆角)
+                        ConversationFolderPill(folderId = conversation.folderId)
+                    }
                     if (model != null && provider != null) {
                         Text(
                             text = "${assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) }} / ${model.displayName} (${provider.name})",
