@@ -115,7 +115,7 @@ import me.rerere.rikkahub.ui.pages.market.MarketPage
 import me.rerere.rikkahub.ui.pages.extensions.PromptPage
 import me.rerere.rikkahub.ui.pages.extensions.QuickMessagesPage
 import me.rerere.rikkahub.ui.pages.extensions.skills.SkillDetailPage
-import me.rerere.rikkahub.ui.pages.extensions.skills.SkillsPage
+import me.rerere.rikkahub.ui.pages.extensions.skills.SkillHubPage
 import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspacePage
 import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceDetailPage
 import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceTerminalPage
@@ -777,7 +777,7 @@ class RouteActivity : ComponentActivity() {
                             }
 
                             entry<Screen.Skills> {
-                                me.rerere.rikkahub.ui.pages.extensions.skills.SkillHubPage()
+                                SkillHubPage()
                             }
 
                             entry<Screen.Workspaces> {
