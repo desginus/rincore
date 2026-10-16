@@ -358,8 +358,8 @@ private fun ChatListNormal(
                     .then(
                         if (contentSheetBlur) Modifier.hazeBlur(
                             input = HazeInput.Sources(hazeState),
-                            // v4.8.152: 大面积背衬层用无 tint 规格 (v4.8.151 的 tint 致整页"黑纱/白纱")
-                            style = me.rerere.rikkahub.ui.components.motion.RinGlass.sheetBlurStyle(),
+                            // v4.8.153: 规格合一 — 面板=纯高斯模糊(仅背景源, 无填充无 tint)
+                            style = me.rerere.rikkahub.ui.components.motion.RinGlass.blurStyle(),
                         ) else Modifier
                     )
                     .background(
@@ -374,8 +374,12 @@ private fun ChatListNormal(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier
-                    .fillMaxSize()
-                    .hazeSource(state = hazeState),
+                    .fillMaxSize(),
+                    // v4.8.153 (用户定版"最简单的柔光玻璃"): 消息列表**不再作为模糊源**——
+                    // 玻璃(面板/输入框/弹窗)的模糊只对背景(壁纸/渐变)做。
+                    // 旧版把列表纳入模糊源 → ★散光★: 清晰消息画在"模糊后的自己"之上,
+                    // 每个气泡/小图标(复制/转发等)周围渗出虚影辉光; 输入框内还叠加
+                    // 文本拖影("隔栅感")。内容不入源, 全部虚影类观感从机制上消失。
             ) {
             itemsIndexed(
                 items = conversation.messageNodes,

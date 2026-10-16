@@ -34,7 +34,7 @@ import dev.chrisbanes.haze.blur.hazeBlur
  * ┌──────────────┬────────────────────────────────────────────────┐
  * │ 状态          │ 渲染                                            │
  * ├──────────────┼────────────────────────────────────────────────┤
- * │ 模糊开启(默认) │ chrome=hazeBlur(8dp·零噪点·材质tint); 背衬层=sheetBlurStyle │
+ * │ 模糊开启(默认) │ hazeBlur(8dp·零噪点) + 半透明填充(frostFill@0.65)   │
  * │ 生成中         │ 同上 (永不在生成期降级为纯色底 — v4.1.5 定版)   │
  * │ 键盘弹出       │ 同上 (仅布局位移动画, 玻璃参数不变)             │
  * │ 空/有内容      │ 同上 (内容多少不改变玻璃材质)                   │
@@ -60,48 +60,30 @@ object RinGlass {
      */
     @Composable
     fun blurStyle(): HazeBlurStyle {
-        // v4.8.151 编译修复: MaterialTheme.colorScheme 是 @Composable getter —
-        // 必须在函数体(组合上下文)取值后传入非 @Composable 的 HazeBlurStyle{} 构建器。
-        val materialTint = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
-        return HazeBlurStyle {
-        // v4.8.150 (用户实证终版 — 像素级仿真对比定案): "柔光玻璃"三要素
-        //   ① 深模糊但锁全质量档: 8dp × density≤4.0 ≤ 32px 物理 → 恒 1.0 输入缩放
-        //      (≥32px 掉 0.8 / ≥60px 掉 0.5 半分辨率 = 块状"隔栅", 见 v4.8.147 误改教训);
-        //   ② 零噪点: 噪点(haze 默认 0.15 / 曾用 0.06)在真实观感=颗粒脏感 —
-        //      历次"隔山/糟糕"的共因, 彻底移除(色带由 tint 层兜底, 不再靠噪点抖动);
-        //   ③ 系统材质 tint (CS ultraThinMaterial 同思路): surface@0.5 以 SrcOver 叠于
-        //      模糊之上 = 乳白"柔光"扩散层; 无 tint 的纯模糊在深色内容后=灰污渍感。
-        // 参照: Cherry Studio v0.2.1 安卓头部玻璃 (dimezis blur intensity 24 + ultraThin 材质 tint)。
-        blurRadius(8.dp)
-        noiseFactor(0f)
-        backgroundColor(Color.Transparent)
-        colorEffects(
-            listOf(
-                HazeColorEffect.tint(materialTint)
-            )
-        )
-        }
-    }
-
-    /** 高光描边 (澎湃 4 玻璃质感 — HyperGlassPanel 同源) */
-    val highlightColor: Color = Color.White.copy(alpha = 0.14f)
-
-    /**
-     * v4.8.152 (用户实报"整个对话页面蒙了一层黑"修复): **大面积背衬层专用规格 —
-     * 与主规格同为 8dp 零噪点全质量档, 但【不带材质 tint】**。
-     * 事故复盘: v4.8.151 把材质 tint (surface@0.5) 加进单一规格后, 正文圆角面板
-     * (覆盖整页的背衬玻璃) 也被叠上 50% surface 色 — 深色主题下 = 整页黑纱
-     * (浅色=白纱, 同一错误)。结论: **材质 tint 只属于小面积 chrome (输入框/弹窗/
-     * 图标/工具条); 大面积背衬层必须零 tint 纯模糊** — 两角色两规格, 不再混用。
-     */
-    @Composable
-    fun sheetBlurStyle(): HazeBlurStyle {
+        // v4.8.153 (用户定版 — "最简单的柔光玻璃 = 半透明 + 高斯模糊"):
+        //   ① 高斯模糊: 8dp × density≤4.0 ≤ 32px 物理 → 恒 1.0 全质量输入档
+        //      (≥32px 掉 0.8 / ≥60px 掉 0.5 半分辨率 = 块状"隔栅", 见 v4.8.147 教训);
+        //   ② 零噪点: 噪点(0.15/0.06)在真实观感=颗粒脏感 — 永久移除;
+        //   ③ 无 tint/无底色: "半透明"由消费方的**填充层**提供 (rinGlass→frostFill /
+        //      输入框 Surface color=frostFill) — 撤除 v4.8.150 的 colorEffects 材质 tint
+        //      (其实现在深色主题下把玻璃压成黑板感, 用户判"又黑又有隔栅")。
+        //      模糊源只含背景 (消息列表 v4.8.153 起不入源 — 散光/拖影从机制上消除)。
         return HazeBlurStyle {
             blurRadius(8.dp)
             noiseFactor(0f)
             backgroundColor(Color.Transparent)
         }
     }
+
+    /**
+     * v4.8.153 (用户定版"半透明加高斯模糊"): 玻璃面**半透明填充** —
+     * 与高斯模糊叠加 = 最简单的柔光玻璃。主题自适应 (浅=乳白 / 深=烟色)。
+     */
+    @Composable
+    fun frostFill(): Color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.65f)
+
+    /** 高光描边 (澎湃 4 玻璃质感 — HyperGlassPanel 同源) */
+    val highlightColor: Color = Color.White.copy(alpha = 0.14f)
 
     /** 无 haze source 或用户关闭模糊时的回退底色 (弹窗族) */
     @Composable
@@ -139,7 +121,8 @@ fun Modifier.rinGlass(
         ) else Modifier
     )
     .background(
-        if (blurEnabled && hazeState != null) Color.Transparent
+        // v4.8.153: 模糊开启 = 半透明填充 (最简单的柔光玻璃); 关闭 = 回退底色
+        if (blurEnabled && hazeState != null) RinGlass.frostFill()
         else RinGlass.fallbackColor()
     )
 
