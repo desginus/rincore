@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=build&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/version-v4.8.151-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/version-v4.8.152-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/license-segmented_dual-cyan)](LICENSE)
 
 **A real, self-contained AI assistant on your phone.** Not a wrapper — a rebuilt engine with six
@@ -129,7 +129,9 @@ changelog entry and a regression guard. Optimizations keep coming.
 
 ## 📋 Changelog
 
-v4.8.54 → v4.8.151 (newest first):
+v4.8.54 → v4.8.152 (newest first):
+
+- **v4.8.152** — Fix the page-wide dark/light veil (backdrop glass layers must carry no material tint); orbit selection now highlights the icon itself (primary glow) instead of a ring outline.
 
 - **v4.8.151** — Orbit inner arc gains the default "Chat" space entry; smoother fade for the highlighted item (shorter window, smoothstep, retreat scale). Also ships the final soft-light glass spec (zero noise + material tint) after a same-version compile fix.
 

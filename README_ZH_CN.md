@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=构建&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/版本-v4.8.151-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/版本-v4.8.152-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/许可-segmented_dual-cyan)](LICENSE)
 
 **手机上一个真正全面的 AI 助手。** 不是套壳，是一台重新打造过的引擎——背后是六周的高强度实测迭代与 400+ 个版本。
@@ -80,7 +80,9 @@ RinCore 处于活跃维护中，欢迎 Issue 与 PR。每一个被报告的问�
 
 ## 📋 更新日志
 
-v4.8.54 → v4.8.151（倒序）：
+v4.8.54 → v4.8.152（倒序）：
+
+- **v4.8.152** — 修复整页黑纱/白纱（大面积背衬层不带材质 tint）；轨道选中态改为"图标本体发光"（主色柔光），撤除描边亮环。
 
 - **v4.8.151** — 轨道内弧新增「聊天」默认项；高亮项出入场更柔和（短窗 + smoothstep + 端部缩入）。同版修复后一并交付柔光玻璃终版（零噪点 + 材质 tint）。
 
