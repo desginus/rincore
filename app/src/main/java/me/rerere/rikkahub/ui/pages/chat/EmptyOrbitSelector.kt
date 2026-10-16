@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
@@ -57,7 +58,9 @@ import me.rerere.rikkahub.ui.components.motion.rinGlassHighlight
 import me.rerere.rikkahub.ui.components.motion.rinGlass
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.AiMagic
+import me.rerere.hugeicons.stroke.Message02
 import me.rerere.hugeicons.stroke.Folder01
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Folder
 import me.rerere.rikkahub.data.repository.FolderRepository
@@ -75,7 +78,7 @@ private const val BOW_FACTOR = 0.16f
 fun EmptyOrbitSelector(
     currentFolderId: Uuid?,
     onSelectAssistant: (Uuid) -> Unit,
-    onSelectFolder: (Uuid) -> Unit,
+    onSelectFolder: (Uuid?) -> Unit,
     hazeState: HazeState? = null,
     blurEnabled: Boolean = true,
     modifier: Modifier = Modifier,
@@ -150,13 +153,41 @@ fun EmptyOrbitSelector(
             }
         }
 
-        // 内弧: 项目包 (当前助手)
+        // 内弧: 「聊天」默认项 + 项目包 (当前助手)
+        // v4.8.151 (用户: 项目包选择项里应当有聊天这个默认项): 内弧第一位 = 「聊天」
+        // (未归类默认空间, folderId=null), 与抽屉项目包列表同序 (聊天在前)。
         val m = folders.size
+        val innerCount = m + 1
+        OrbitItem(
+            tState = tState,
+            phaseOffset = 0f,
+            arcA = ai,
+            arcC = ci,
+            arcB = bi,
+            selected = currentFolderId == null,
+            halfIcon = iconPx / 2f,
+            label = stringResource(R.string.chat_page_folder_default),
+            hazeState = hazeState,
+            blurEnabled = blurEnabled,
+            onClick = { onSelectFolder(null) },
+        ) {
+            Box(
+                modifier = Modifier.size(ICON_DP),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = HugeIcons.Message02,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
         folders.forEachIndexed { index, folder ->
             val selected = folder.id == currentFolderId
             OrbitItem(
                 tState = tState,
-                phaseOffset = if (m > 0) index.toFloat() / m else 0f,
+                phaseOffset = if (innerCount > 0) (index + 1).toFloat() / innerCount else 0f,
                 arcA = ai,
                 arcC = ci,
                 arcB = bi,
@@ -184,6 +215,12 @@ fun EmptyOrbitSelector(
 }
 
 private data class Offset2(val x: Float, val y: Float)
+
+/** v4.8.151: smoothstep 淡入淡出缓动 (0..1 → 平滑 S 曲线)。 */
+private fun smoothFade(x: Float): Float {
+    val s = x.coerceIn(0f, 1f)
+    return s * s * (3f - 2f * s)
+}
 
 /** 二次贝塞尔取样 (与 Canvas 轨迹同一条曲线)。 */
 private fun quadPoint(a: Offset2, c: Offset2, b: Offset2, t: Float): Offset2 {
@@ -223,8 +260,17 @@ private fun OrbitItem(
                 val p = quadPoint(arcA, arcC, arcB, phase)
                 translationX = p.x - size.width / 2f
                 translationY = p.y - halfIcon
-                // v4.8.148: 出入场淡入淡出 (相位两端 8% 窗; 出左下前淡出, 右上重现后淡入)
-                alpha = kotlin.math.min(phase / 0.08f, (1f - phase) / 0.08f).coerceIn(0f, 1f)
+                // v4.8.151 (用户: 高亮环在淡入淡出时生硬残缺): 端窗收窄 5% + smoothstep 缓动
+                // (起步/收尾平滑, 消灭线性淡出的"半透明残缺环"), 且端部整体轻微缩入
+                // (0.85→1) — 退场读作"缩入角落", 与平移/淡出合成为柔和出入场。
+                val k = smoothFade(kotlin.math.min(phase / 0.05f, (1f - phase) / 0.05f))
+                alpha = k
+                scaleX = 0.85f + 0.15f * k
+                scaleY = 0.85f + 0.15f * k
+                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(
+                    pivotFractionX = 0.5f,
+                    pivotFractionY = if (size.height > 0f) (halfIcon / size.height).coerceIn(0f, 1f) else 0.5f,
+                )
             },
     ) {
         Box(

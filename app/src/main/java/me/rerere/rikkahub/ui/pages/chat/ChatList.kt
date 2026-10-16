@@ -164,7 +164,7 @@ fun ChatList(
     onExitPreview: () -> Unit = {},
     // v4.8.147: 空态轨道选择器 (外弧=助手 / 内弧=项目包)
     onOrbitSelectAssistant: (Uuid) -> Unit = {},
-    onOrbitSelectFolder: (Uuid) -> Unit = {},
+    onOrbitSelectFolder: (Uuid?) -> Unit = {},
 ) {
     AnimatedContent(
         targetState = previewMode,
@@ -246,7 +246,7 @@ private fun ChatListNormal(
     onConversationSystemPromptChange: ((String?) -> Unit)? = null,
     folderCwd: String? = null,
     onOrbitSelectAssistant: (Uuid) -> Unit = {},
-    onOrbitSelectFolder: (Uuid) -> Unit = {},
+    onOrbitSelectFolder: (Uuid?) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val loadingState by rememberUpdatedState(loading)
