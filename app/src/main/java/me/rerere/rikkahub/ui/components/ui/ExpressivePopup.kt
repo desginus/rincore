@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
+import me.rerere.rikkahub.ui.components.motion.CherryMotion
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.contentColorFor
@@ -91,16 +91,15 @@ fun ExpressivePopup(
         onDismissRequest = onDismissRequest,
         properties = properties,
     ) {
-        val motionScheme = MaterialTheme.motionScheme
+        // v4.8.143 (CS v0.2.1 动效复刻): 静置缩放 0.8→0.97; 开 350ms overshoot /
+        // 关 250ms settle / 淡 200ms settle (替换原 MD3 Expressive 空间弹簧的弹跳手感)。
         val transition = rememberTransition(expandedState, label = "ExpressivePopup")
         val scale by transition.animateFloat(
-            transitionSpec = {
-                if (targetState) motionScheme.fastSpatialSpec() else motionScheme.fastEffectsSpec()
-            },
+            transitionSpec = { if (targetState) CherryMotion.Open else CherryMotion.Close },
             label = "scale",
-        ) { if (it) 1f else 0.8f }
+        ) { if (it) 1f else CherryMotion.POPUP_REST_SCALE }
         val alpha by transition.animateFloat(
-            transitionSpec = { motionScheme.fastEffectsSpec() },
+            transitionSpec = { CherryMotion.Fade },
             label = "alpha",
         ) { if (it) 1f else 0f }
 

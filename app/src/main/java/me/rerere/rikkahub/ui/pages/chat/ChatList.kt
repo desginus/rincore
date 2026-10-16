@@ -28,9 +28,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
@@ -110,6 +107,8 @@ import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.service.ChatError
+import me.rerere.rikkahub.ui.components.motion.CherryMotion
+import me.rerere.rikkahub.ui.components.motion.cherryPress
 import me.rerere.rikkahub.ui.components.message.ChatMessage
 import me.rerere.rikkahub.ui.components.ui.ErrorCardsDisplay
 import me.rerere.rikkahub.ui.components.ui.ListSelectableItem
@@ -905,11 +904,15 @@ private fun BoxScope.MessageJumper(
     AnimatedVisibility(
         visible = show,
         modifier = Modifier.align(if (onLeft) Alignment.CenterStart else Alignment.CenterEnd),
-        enter = slideInHorizontally(
-            initialOffsetX = { if (onLeft) -it * 2 else it * 2 },
+        // v4.8.143 (CS v0.2.1 动效复刻): 回底浮动件 = 0.8 缩放 + 淡入淡出 (200ms settle),
+        // 不再侧向滑入 (对齐其 scroll-to-bottom-button 的 visibilityMotion)。
+        enter = fadeIn(CherryMotion.Fade) + scaleIn(
+            initialScale = CherryMotion.FAB_HIDDEN_SCALE,
+            animationSpec = CherryMotion.Fade,
         ),
-        exit = slideOutHorizontally(
-            targetOffsetX = { if (onLeft) -it * 2 else it * 2 },
+        exit = fadeOut(CherryMotion.Fade) + scaleOut(
+            targetScale = CherryMotion.FAB_HIDDEN_SCALE,
+            animationSpec = CherryMotion.Fade,
         )
     ) {
         Column(
@@ -917,7 +920,7 @@ private fun BoxScope.MessageJumper(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Surface(
-                onClick = {
+                modifier = Modifier.cherryPress(CherryMotion.PRESS_ALPHA_SOFT) {
                     scope.launch {
                         state.scrollToItem(0)
                     }
@@ -936,7 +939,7 @@ private fun BoxScope.MessageJumper(
                 )
             }
             Surface(
-                onClick = {
+                modifier = Modifier.cherryPress(CherryMotion.PRESS_ALPHA_SOFT) {
                     scope.launch {
                         state.animateScrollToItem(
                             (state.firstVisibleItemIndex - 1).fastCoerceAtLeast(
@@ -959,7 +962,7 @@ private fun BoxScope.MessageJumper(
                 )
             }
             Surface(
-                onClick = {
+                modifier = Modifier.cherryPress(CherryMotion.PRESS_ALPHA_SOFT) {
                     scope.launch {
                         state.animateScrollToItem(state.firstVisibleItemIndex + 1)
                     }
@@ -977,7 +980,7 @@ private fun BoxScope.MessageJumper(
                 )
             }
             Surface(
-                onClick = {
+                modifier = Modifier.cherryPress(CherryMotion.PRESS_ALPHA_SOFT) {
                     scope.launch {
                         state.scrollToItem(state.layoutInfo.totalItemsCount - 1)
                     }
