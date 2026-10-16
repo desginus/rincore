@@ -59,7 +59,11 @@ object RinGlass {
      * 即用户认可的"原生款"。
      */
     @Composable
-    fun blurStyle(): HazeBlurStyle = HazeBlurStyle {
+    fun blurStyle(): HazeBlurStyle {
+        // v4.8.151 编译修复: MaterialTheme.colorScheme 是 @Composable getter —
+        // 必须在函数体(组合上下文)取值后传入非 @Composable 的 HazeBlurStyle{} 构建器。
+        val materialTint = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
+        return HazeBlurStyle {
         // v4.8.150 (用户实证终版 — 像素级仿真对比定案): "柔光玻璃"三要素
         //   ① 深模糊但锁全质量档: 8dp × density≤4.0 ≤ 32px 物理 → 恒 1.0 输入缩放
         //      (≥32px 掉 0.8 / ≥60px 掉 0.5 半分辨率 = 块状"隔栅", 见 v4.8.147 误改教训);
@@ -73,9 +77,10 @@ object RinGlass {
         backgroundColor(Color.Transparent)
         colorEffects(
             listOf(
-                HazeColorEffect.tint(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
+                HazeColorEffect.tint(materialTint)
             )
         )
+        }
     }
 
     /** 高光描边 (澎湃 4 玻璃质感 — HyperGlassPanel 同源) */
