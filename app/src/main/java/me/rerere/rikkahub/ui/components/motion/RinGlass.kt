@@ -17,15 +17,16 @@ import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.HazeBlurStyle
+import dev.chrisbanes.haze.blur.HazeColorEffect
 import dev.chrisbanes.haze.blur.hazeBlur
 
 /**
  * ═══════════════════════════════════════════════════════════════════
  * RinGlass — 柔光玻璃统一渲染规格 (v4.7.22)
  *
- * 【定版依据】用户定版: 全 app 玻璃元素统一为"光波粒"深磨砂款
- * (haze 2.0.0-beta01 渲染管线 + blurRadius 20dp + 零噪点; v4.8.147 取代 4.3 时代
- * "4dp+噪点"旧规格 — 用户判其"很强的隔山感/隔栅玻璃")。
+ * 【定版依据】用户定版: 全 app 玻璃元素统一为"光波粒"柔光玻璃款
+ * (haze 2.0.0-beta01 渲染管线 + blurRadius 8dp[全质量档] + 零噪点 + surface@0.5
+ * 材质 tint; v4.8.150 像素级仿真对比定案 — 取代"4dp+噪点"与"20dp 半分辨率"两代旧规格)。
  * v4.7.0 移植原版 2.5.3 时误升 haze rc02 导致"格栅式"变化 (v4.7.21 已
  * 回滚版本); 本文件将参数收敛为单一来源, 杜绝多处定义再次漂移。
  *
@@ -33,7 +34,7 @@ import dev.chrisbanes.haze.blur.hazeBlur
  * ┌──────────────┬────────────────────────────────────────────────┐
  * │ 状态          │ 渲染                                            │
  * ├──────────────┼────────────────────────────────────────────────┤
- * │ 模糊开启(默认) │ hazeBlur(20dp·零噪点) + 透明底 + 1dp 高光/描边   │
+ * │ 模糊开启(默认) │ hazeBlur(8dp·零噪点·材质tint) + 1dp 高光/描边 │
  * │ 生成中         │ 同上 (永不在生成期降级为纯色底 — v4.1.5 定版)   │
  * │ 键盘弹出       │ 同上 (仅布局位移动画, 玻璃参数不变)             │
  * │ 空/有内容      │ 同上 (内容多少不改变玻璃材质)                   │
@@ -59,16 +60,22 @@ object RinGlass {
      */
     @Composable
     fun blurStyle(): HazeBlurStyle = HazeBlurStyle {
-        // v4.8.148 (用户实证"隔栅感极重"修复 — v4.8.147 为严重误改):
-        // haze 自适应性能策略 (BlurInputScalePolicy) 按**物理像素半径**分档:
-        //   ≥32px → 0.8 输入缩放; ≥60px → 0.5 (= 半分辨率输入上采样 → 块状"隔栅")。
-        // v4.8.147 的 20dp 在高密度屏 = 55-70px → 命中 0.5 档 → 隔栅感极重。
-        // 正解: 半径压到 32px 物理以下 (8dp × density≤4.0 = ≤32px) → 恒 1.0 全质量输入,
-        // 视觉上"完整深磨砂"反而更纯(全分辨率 22-28px 半径); 微噪点 0.06 仅用于抖动
-        // 8bit 模糊渐变的色带 (光波粒质感, 非颗粒)。
+        // v4.8.150 (用户实证终版 — 像素级仿真对比定案): "柔光玻璃"三要素
+        //   ① 深模糊但锁全质量档: 8dp × density≤4.0 ≤ 32px 物理 → 恒 1.0 输入缩放
+        //      (≥32px 掉 0.8 / ≥60px 掉 0.5 半分辨率 = 块状"隔栅", 见 v4.8.147 误改教训);
+        //   ② 零噪点: 噪点(haze 默认 0.15 / 曾用 0.06)在真实观感=颗粒脏感 —
+        //      历次"隔山/糟糕"的共因, 彻底移除(色带由 tint 层兜底, 不再靠噪点抖动);
+        //   ③ 系统材质 tint (CS ultraThinMaterial 同思路): surface@0.5 以 SrcOver 叠于
+        //      模糊之上 = 乳白"柔光"扩散层; 无 tint 的纯模糊在深色内容后=灰污渍感。
+        // 参照: Cherry Studio v0.2.1 安卓头部玻璃 (dimezis blur intensity 24 + ultraThin 材质 tint)。
         blurRadius(8.dp)
-        noiseFactor(0.06f)
+        noiseFactor(0f)
         backgroundColor(Color.Transparent)
+        colorEffects(
+            listOf(
+                HazeColorEffect.tint(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
+            )
+        )
     }
 
     /** 高光描边 (澎湃 4 玻璃质感 — HyperGlassPanel 同源) */
