@@ -894,7 +894,6 @@ private fun ChatFilesPickerSheet(
     }
 }
 
-@Composable
 /** v4.8.147 (用户定版): 对话归属项目包时的标题便签胶囊 (全圆角, 内容=项目包名)。 */
 @Composable
 private fun ConversationFolderPill(folderId: Uuid?) {
@@ -919,6 +918,7 @@ private fun ConversationFolderPill(folderId: Uuid?) {
     }
 }
 
+@Composable
 private fun TopBar(
     settings: Settings,
     conversation: Conversation,
