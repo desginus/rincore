@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=构建&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/版本-v4.8.143-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/版本-v4.8.144-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/许可-segmented_dual-cyan)](LICENSE)
 
 **手机上一个真正全面的 AI 助手。** 不是套壳，是一台重新打造过的引擎——背后是六周的高强度实测迭代与 400+ 个版本。
@@ -80,7 +80,9 @@ RinCore 处于活跃维护中，欢迎 Issue 与 PR。每一个被报告的问�
 
 ## 📋 更新日志
 
-v4.8.54 → v4.8.143（倒序）：
+v4.8.54 → v4.8.144（倒序）：
+
+- **v4.8.144** — 抽屉宽度恢复上游原版 300dp 固定（v4.8.66 的自适应宽度从未被回滚）；标题栏上移（顶部边距=状态栏高度×2/5）；输入框与全屏输入框任何场景默认半透明（关闭模糊回退半透明底、全屏编辑器重写为玻璃面板）；粘贴改为自管插入并显式落光标（修"粘贴后光标不动"）。
 
 - **v4.8.143** — 动效体系按 Cherry Studio 手机版 v0.2.1 复刻（第一批）：移植其动效词汇（Settle/Overshoot 曲线、200·250·350ms、临界阻尼弹簧、0.97 弹层静置缩放、无涟漪透明度按压）；弹窗真正播放入场缩放（0.97→1，350ms 过冲）并补上遮罩/返回键的出场动画；回底浮动件改为 0.8 缩放淡入淡出。
 

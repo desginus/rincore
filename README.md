@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=build&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/version-v4.8.143-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/version-v4.8.144-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/license-segmented_dual-cyan)](LICENSE)
 
 **A real, self-contained AI assistant on your phone.** Not a wrapper — a rebuilt engine with six
@@ -129,7 +129,9 @@ changelog entry and a regression guard. Optimizations keep coming.
 
 ## 📋 Changelog
 
-v4.8.54 → v4.8.143 (newest first):
+v4.8.54 → v4.8.144 (newest first):
+
+- **v4.8.144** — Drawer width restored to upstream's fixed 300dp (the v4.8.66 adaptive width was never rolled back); title bar raised (top inset = status-bar height × 2/5); the composer and the fullscreen editor are always translucent now (blur-off falls back to a semi-transparent tint; the fullscreen editor was rewritten as a glass panel); pasted text is inserted with an explicit cursor move (fixing a "cursor stuck after paste" bug).
 
 - **v4.8.143** — Motion system reworked to Cherry Studio mobile v0.2.1 (phase 1): ported its motion vocabulary (Settle/Overshoot curves, 200·250·350ms, critically-damped spring, 0.97 popup resting scale, opacity-based press with no ripple); dialogs now truly play their scale-in (0.97→1, 350ms overshoot) and animate their scrim/back close; the scroll-to-bottom FAB uses the 0.8-scale fade visibility motion.
 
