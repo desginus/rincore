@@ -158,13 +158,15 @@ fun EmptyOrbitSelector(
         // (未归类默认空间, folderId=null), 与抽屉项目包列表同序 (聊天在前)。
         val m = folders.size
         val innerCount = m + 1
+        // v4.8.152 编译修复: 聊天项选中态先落局部量 (原直传命名实参, 图标 tint 引用悬空)
+        val chatSelected = currentFolderId == null
         OrbitItem(
             tState = tState,
             phaseOffset = 0f,
             arcA = ai,
             arcC = ci,
             arcB = bi,
-            selected = currentFolderId == null,
+            selected = chatSelected,
             halfIcon = iconPx / 2f,
             label = stringResource(R.string.chat_page_folder_default),
             hazeState = hazeState,
@@ -179,7 +181,7 @@ fun EmptyOrbitSelector(
                     imageVector = HugeIcons.Message02,
                     contentDescription = null,
                     // v4.8.152: 选中 = 图标本体发亮 (主色)
-                    tint = if (selected) MaterialTheme.colorScheme.primary
+                    tint = if (chatSelected) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(20.dp),
                 )
