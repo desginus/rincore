@@ -19,4 +19,19 @@ import kotlin.uuid.Uuid
  */
 object ProjectPackSelection {
     val selectedFolderId = MutableStateFlow<Uuid?>(null)
+
+    /**
+     * v4.8.149 (用户定版): 本次进程"进入过的项目包"记忆 (按助手)。
+     *
+     * 背景: 用户规格 — "针对聊天这个默认项目包为空、但其他项目包有实际内容的情况,
+     * 如果当前进入了其他项目包, 则默认该项目包内为本次进程的默认页面; 而不是每一次
+     * 选择/重开抽屉都是项目包选择页面"。进入 = 抽屉点选 或 空态轨道内弧选包
+     * (两者同走 ChatDrawerVM.selectFolder 单入口)。
+     * 写入方: ChatDrawerVM; 读取方: ChatDrawerVM.runLandingCheck (落地默认页)。
+     */
+    val enteredFolderIdByAssistant = java.util.concurrent.ConcurrentHashMap<Uuid, Uuid>()
+
+    fun recordEntered(assistantId: Uuid, folderId: Uuid) {
+        enteredFolderIdByAssistant[assistantId] = folderId
+    }
 }

@@ -685,8 +685,13 @@ private fun ChatPageContent(
                     vm.saveConversationAsync()
                 },
                 onOrbitSelectFolder = { fid ->
+                    // v4.8.149 (用户: "切换项目包没修好"): 旧实现只写了 conversation.folderId
+                    // — 没有"进入项目包" (抽屉选区/本次进程默认页/智能排序统计全不动),
+                    // 用户感知 = 没切换。修复 = 归属写入 + 同走抽屉 selectFolder 单入口
+                    // (选区/进程记忆/统计一次到位)。
                     vm.updateConversation(conversation.copy(folderId = fid))
                     vm.saveConversationAsync()
+                    drawerVm.selectFolder(fid)
                 },
                 errors = errors,
                 onDismissError = onDismissError,

@@ -211,7 +211,13 @@ class ChatDrawerVM(
     fun selectFolder(folderId: Uuid?) {
         applySelection(folderId)
         // v4.8.58: 智能排序 — 真实记录点击 (仅项目包; 「聊天」不计)
-        if (folderId != null) recordPackClick(folderId)
+        if (folderId != null) {
+            recordPackClick(folderId)
+            // v4.8.149 (用户定版): 记录"本次进程进入过的包"(本助手) — 落地默认页依据
+            viewModelScope.launch {
+                runCatching { ProjectPackSelection.recordEntered(assistantIdFlow.first(), folderId) }
+            }
+        }
     }
 
     /** v4.8.62: 选区应用 (与点击统计分离 — 落地逻辑复用, 非用户点击不计) */
@@ -262,6 +268,15 @@ class ChatDrawerVM(
     private val _landingExpand = MutableStateFlow<Boolean?>(null)
     val landingExpand: StateFlow<Boolean?> = _landingExpand.asStateFlow()
 
+    /**
+     * v4.8.149: 落地信号一次性消费 — 防止抽屉内容重组合/重进组合时
+     * LaunchedEffect(landingExpand) 对同一信号重复应用, 导致"每次拉开抽屉
+     * 都变回项目包选择页"。(消费后置 null; 下次落地 (助手切换) 会重新置值。)
+     */
+    fun consumeLanding() {
+        _landingExpand.value = null
+    }
+
     private fun runLandingCheck() {
         viewModelScope.launch {
             runCatching {
@@ -279,6 +294,15 @@ class ChatDrawerVM(
                 val running = foldersNow.filter { chatService.hasGeneratingConversationInFolder(it.id) }
                 if (running.size == 1) {
                     applySelection(running[0].id) // 非用户点击, 不计智能排序统计
+                    _landingExpand.value = false
+                    return@runCatching
+                }
+                // v4.8.149 (用户定版): 本次进程已进入过本助手的某包 → 默认页 = 该包内
+                // (对应"聊天为空 + 其他包有实际内容 + 已进入过其他包"的场景),
+                // 不再弹项目包选择页; 无进入记忆时才走选择页 (v4.8.62 原行为)。
+                val entered = ProjectPackSelection.enteredFolderIdByAssistant[assistantId]
+                if (entered != null && foldersNow.any { it.id == entered }) {
+                    applySelection(entered) // 恢复默认页, 非用户点击不计统计
                     _landingExpand.value = false
                 } else {
                     _landingExpand.value = true

@@ -201,6 +201,8 @@ fun ChatDrawerContent(
             false -> packBarExpanded = false
             null -> {}
         }
+        // v4.8.149: 一次性消费 — 同一信号绝不重复应用 (防"每次拉开抽屉都是选择页")
+        if (landingExpand != null) drawerVm.consumeLanding()
     }
     var showPackSettingsDialog by remember { mutableStateOf(false) }
     var createPackCwd by remember { mutableStateOf<String?>(null) }
