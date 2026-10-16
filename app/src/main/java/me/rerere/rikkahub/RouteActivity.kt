@@ -29,6 +29,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -535,7 +536,7 @@ class RouteActivity : ComponentActivity() {
                             // 令牌 (settle 曲线 cubic-bezier(0.22,1,0.36,1) · 250ms); 位移大幅
                             // 削减 (整屏滑入+0.7 缩放+半屏滑出 → 1/8 滑入 + 交叉淡入淡出)。
                             val softF = tween<Float>(CherryDuration.BASE, easing = CherryEasing.Settle)
-                            val softI = tween<Int>(CherryDuration.BASE, easing = CherryEasing.Settle)
+                            val softI = tween<IntOffset>(CherryDuration.BASE, easing = CherryEasing.Settle)
                             if (backStack.size == 1) fadeIn(softF) togetherWith fadeOut(softF)
                             else {
                                 (slideInHorizontally(softI) { it / 8 } + fadeIn(softF)) togetherWith
@@ -544,13 +545,13 @@ class RouteActivity : ComponentActivity() {
                         },
                         popTransitionSpec = {
                             val softF = tween<Float>(CherryDuration.BASE, easing = CherryEasing.Settle)
-                            val softI = tween<Int>(CherryDuration.BASE, easing = CherryEasing.Settle)
+                            val softI = tween<IntOffset>(CherryDuration.BASE, easing = CherryEasing.Settle)
                             (slideInHorizontally(softI) { -it / 16 } + fadeIn(softF)) togetherWith
                                 (slideOutHorizontally(softI) { it / 8 } + fadeOut(softF))
                         },
                         predictivePopTransitionSpec = {
                             val softF = tween<Float>(CherryDuration.BASE, easing = CherryEasing.Settle)
-                            val softI = tween<Int>(CherryDuration.BASE, easing = CherryEasing.Settle)
+                            val softI = tween<IntOffset>(CherryDuration.BASE, easing = CherryEasing.Settle)
                             (slideInHorizontally(softI) { -it / 16 } + fadeIn(softF)) togetherWith
                                 (slideOutHorizontally(softI) { it / 8 } + fadeOut(softF))
                         },
