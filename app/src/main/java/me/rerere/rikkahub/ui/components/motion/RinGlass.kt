@@ -34,7 +34,7 @@ import dev.chrisbanes.haze.blur.hazeBlur
  * ┌──────────────┬────────────────────────────────────────────────┐
  * │ 状态          │ 渲染                                            │
  * ├──────────────┼────────────────────────────────────────────────┤
- * │ 模糊开启(默认) │ hazeBlur(8dp·零噪点) + 半透明填充(frostFill@0.65)   │
+ * │ 模糊开启(默认) │ hazeBlur(8dp·零噪点) + 半透明填充(frostFill@0.30)   │
  * │ 生成中         │ 同上 (永不在生成期降级为纯色底 — v4.1.5 定版)   │
  * │ 键盘弹出       │ 同上 (仅布局位移动画, 玻璃参数不变)             │
  * │ 空/有内容      │ 同上 (内容多少不改变玻璃材质)                   │
@@ -78,9 +78,13 @@ object RinGlass {
     /**
      * v4.8.153 (用户定版"半透明加高斯模糊"): 玻璃面**半透明填充** —
      * 与高斯模糊叠加 = 最简单的柔光玻璃。主题自适应 (浅=乳白 / 深=烟色)。
+     * v4.8.154 (用户: "输入框是黑的, 压根不透明"): 0.65 → **0.30** —
+     * 深色主题下 65% 的 surface 系填充=黑板观感(透出量不可感知);
+     * "全部的模糊感"原义 = 玻璃面主要呈现模糊本身, 填充只留薄薄一层:
+     * 30% 填充/70% 透出 = 明确可感知的半透明。
      */
     @Composable
-    fun frostFill(): Color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.65f)
+    fun frostFill(): Color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.3f)
 
     /** 高光描边 (澎湃 4 玻璃质感 — HyperGlassPanel 同源) */
     val highlightColor: Color = Color.White.copy(alpha = 0.14f)
