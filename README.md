@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=build&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/version-v4.8.152-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/version-v4.8.153-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/license-segmented_dual-cyan)](LICENSE)
 
 **A real, self-contained AI assistant on your phone.** Not a wrapper — a rebuilt engine with six
@@ -129,7 +129,9 @@ changelog entry and a regression guard. Optimizations keep coming.
 
 ## 📋 Changelog
 
-v4.8.54 → v4.8.152 (newest first):
+v4.8.54 → v4.8.153 (newest first):
+
+- **v4.8.153** — Soft glass finalized as "semi-transparent + gaussian blur": the message list leaves the blur sources (fixes the glow/ghost feel on bubbles and message action icons), the material tint layer is removed.
 
 - **v4.8.152** — Fix the page-wide dark/light veil (backdrop glass layers must carry no material tint); orbit selection now highlights the icon itself (primary glow) instead of a ring outline.
 
