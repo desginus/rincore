@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=构建&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/版本-v4.8.147-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/版本-v4.8.148-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/许可-segmented_dual-cyan)](LICENSE)
 
 **手机上一个真正全面的 AI 助手。** 不是套壳，是一台重新打造过的引擎——背后是六周的高强度实测迭代与 400+ 个版本。
@@ -80,7 +80,9 @@ RinCore 处于活跃维护中，欢迎 Issue 与 PR。每一个被报告的问�
 
 ## 📋 更新日志
 
-v4.8.54 → v4.8.147（倒序）：
+v4.8.54 → v4.8.148（倒序）：
+
+- **v4.8.148** — 轨道选择器精修（抹除导轨线；圆形图标柔光玻璃；名称备注常驻；出入场淡入淡出；未设头像统一 AiMagic 图标）+ 修复：点助手真实切换（空对话未入库导致旧路径静默无操作）+ 玻璃半径压回 haze 32px 输入缩放阈值内（治"隔栅"）。
 
 - **v4.8.147** — 圆角面板边距对齐气泡边距；玻璃升级为深磨砂"光波粒"（20dp 深模糊、零噪点）；删输入框占位文本并压缩输入栏约 8dp（不碰正文框）；标题栏下移 5dp；标题后项目包胶囊；新聊天空页新增双弧轨道选择器（外弧=助手、内弧=项目包，传送带轮播）。
 

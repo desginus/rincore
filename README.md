@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=build&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/version-v4.8.147-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/version-v4.8.148-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/license-segmented_dual-cyan)](LICENSE)
 
 **A real, self-contained AI assistant on your phone.** Not a wrapper — a rebuilt engine with six
@@ -129,7 +129,9 @@ changelog entry and a regression guard. Optimizations keep coming.
 
 ## 📋 Changelog
 
-v4.8.54 → v4.8.147 (newest first):
+v4.8.54 → v4.8.148 (newest first):
+
+- **v4.8.148** — Orbit selector polish (guide lines removed; glass circular icons; always-on name labels; fade in/out at track ends; uniform AiMagic fallback icon) + fix: tapping an assistant now actually switches (empty conversations were never persisted, making the old path a silent no-op) + glass radius corrected to stay under haze's 32px input-scale threshold (fixes the "grille" artifact).
 
 - **v4.8.147** — Rounded panel margin aligned to bubble margin; glass upgraded to deep frosted "light-wave" blur (20dp, zero noise); input placeholder removed and composer slimmed ~8dp (text field untouched); title bar moved down 5dp; project-pack pill after the title; new-chat empty page gains a two-arc orbit selector (outer=assistants, inner=project packs, conveyor-loop animation).
 

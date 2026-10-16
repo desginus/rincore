@@ -5,6 +5,19 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 
 # RinCore Bug 记录（全部历史）
 
+## B169 — 轨道路径选择器"点击只点亮不切换"（v4.8.148）
+- **现象**（用户）: 空对话页点外弧第一个助手图标，"就会点亮，就是有颜色圈出来。但是不会进行任何切换"。
+- **根因**: 接线走 `ChatVM.moveConversationToAssistant`——首行 `conversationRepo.getConversationById(conversation.id) ?: return@launch`；而**空对话未入库**（`ChatService.saveConversation` 明文"新会话且为空时不保存"）→ 直接静默退出；且 `settingsStore.updateAssistant` 被放在该分支之后 → 全程无操作（"点亮"= Material 涟漪，误读为选中态）。
+- **修复**: ①设置层直切 `updateSettings(assistantId=id)`（与入库状态解耦、永远生效）；②会话归属内存态同步 `updateConversation(copy(assistantId=id, folderId=null))`；③`saveConversationAsync` 尽力落盘（空对话发送时随机制入库）。
+- **教训（#73）**: 对空对话做任何依赖 DB 的操作前，先查其入库时机；"切换"类操作必须与入库状态解耦。
+
+## B170 — v4.8.147 玻璃参数误改："隔栅感极重"（v4.8.148 纠正）
+- **现象**（用户）: v4.8.147 后输入栏柔光玻璃"隔栅感极重"（严重误改）。
+- **根因实锤**: haze `BlurInputScalePolicy` 以**物理像素半径**分档输入缩放——≥32px → 0.8；≥60px → 0.5（半分辨率输入上采样 = 块状"隔栅"）。v4.8.147 的 20dp 在高密度屏（density 2.75-3.5）= 55-70px → 命中 0.5 档。
+- **修复**: 半径 8dp（×density≤4.0 = ≤32px 恒 1.0 档）+ noiseFactor 0.06（仅抖动色带）+ 无底色。
+- **教训（#72）**: 玻璃观感三旋钮 = 半径/噪点/**输入缩放档**；大半径反而降质——半径必须低于 32px 物理。
+
+
 ## B168 — 「本对话产出」多对话污染（v4.8.146）
 - **现象**（用户）: "本对话产出这里的记录不准确，多对话场景下你还要注意一下"。
 - **根因**: shell/job 回合后走 `ProducedFiles.scanWorkspaceSince(wsId, sinceMs)` **全工作区 mtime 扫描** — 并行对话共用同一工作区时，邻居对话（或用户手改）在窗口内产生的文件全被记入**本对话**（扫描没有归属边界）。
