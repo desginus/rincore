@@ -166,6 +166,12 @@ fun SettingAdvancedPage(
                     supportingContent = { Text("Operit 插件生态的兼容测试开发者选项") },
                     headlineContent = { Text("工具包") },
                 )
+                item(
+                    onClick = { navController.navigate(Screen.GlassLab) },
+                    leadingContent = { Icon(HugeIcons.AiMagic, null) },
+                    supportingContent = { Text("输入栏玻璃配方受控实验（多方案对照，选定后落地）") },
+                    headlineContent = { Text("渲染器（玻璃实验）") },
+                )
             }
 
             Text(
