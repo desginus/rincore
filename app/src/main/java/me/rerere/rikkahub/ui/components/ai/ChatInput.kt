@@ -159,6 +159,8 @@ fun ChatInput(
     val hazeTintColor = MaterialTheme.colorScheme.surfaceContainerLow
     // v4.8.176 (渲染回滚 4.8.119): 玻璃规格 = RinGlass 单一来源 (4.3 时代原生款: hazeBlur 4dp)。
     val inputHazeStyle = RinGlass.blurStyle()
+    // v4.8.177: 输入栏蒙版 — 叠加在模糊层之上的一层可调透明度覆盖层 (默认 0% = 等同无蒙版)。
+    val glassMaskColor = RinGlass.inputMaskColor(settings.displaySetting.glassMaskPercent)
     val assistant = settings.getCurrentAssistant()
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
@@ -258,7 +260,7 @@ fun ChatInput(
                 shape = containerShape,
                 tonalElevation = 0.dp,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                color = if (settings.displaySetting.enableBlurEffect) Color.Transparent else hazeTintColor,
+                color = if (settings.displaySetting.enableBlurEffect) glassMaskColor else hazeTintColor,
             ) {
                 Column(
                     // v4.8.147: 上下内边距 4→2 (再省 2dp×2, 不影响正文框)

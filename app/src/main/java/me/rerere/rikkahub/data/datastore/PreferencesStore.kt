@@ -1110,6 +1110,7 @@ data class DisplaySetting(
     val enableAutoScroll: Boolean = true,
     val enableLatexRendering: Boolean = true,
     val enableBlurEffect: Boolean = false,
+    val glassMaskPercent: Int = 0, // v4.8.177: 输入栏蒙版不透明度 0..100 (0=关闭; 叠加在模糊层之上)
     val chatFontFamily: ChatFontFamily = ChatFontFamily.DEFAULT,
     val chatCustomFontPath: String = "",
     val chatCustomFontName: String = "",

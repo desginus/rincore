@@ -621,6 +621,7 @@
   <string name="setting_display_page_enable_auto_scroll_title">Автопрокрутка</string>
   <string name="setting_display_page_enable_blur_effect_desc">Включить эффект размытия на панели ввода чата</string>
   <string name="setting_display_page_enable_blur_effect_title">Включить эффект размытия</string>
+  <string name="setting_glass_mask_title">Маска поля ввода</string>
   <string name="setting_display_page_enable_latex_rendering_desc">Отображать математические выражения и формулы с использованием синтаксиса LaTeX</string>
   <string name="setting_display_page_enable_latex_rendering_title">Включить рендеринг LaTeX</string>
   <string name="setting_display_page_enable_message_generation_haptic_effect_desc">Включить виброотклик при генерации сообщений</string>

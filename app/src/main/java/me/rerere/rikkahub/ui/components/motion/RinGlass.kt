@@ -67,6 +67,17 @@ object RinGlass {
     /** 无 haze source 或用户关闭模糊时的回退底色 */
     @Composable
     fun fallbackColor(): Color = MaterialTheme.colorScheme.surfaceContainerLow
+
+    /**
+     * v4.8.177: 输入栏蒙版 — 叠加在模糊层之上的可调透明度覆盖层。
+     * 0% = 关闭 (返回透明, 观感与无蒙版完全一致); 颜色跟随主题 (surfaceContainerLow)。
+     */
+    @Composable
+    fun inputMaskColor(percent: Int): Color {
+        val p = percent.coerceIn(0, 100) / 100f
+        return if (p <= 0f) Color.Transparent
+        else MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = p)
+    }
 }
 
 /**

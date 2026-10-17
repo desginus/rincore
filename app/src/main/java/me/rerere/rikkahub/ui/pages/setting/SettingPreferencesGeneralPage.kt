@@ -175,6 +175,24 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
                             )
                         },
                     )
+                    // v4.8.177: 输入栏蒙版 — 叠加在模糊层之上的一层可调透明度覆盖层 (0%=关闭, 默认)
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_glass_mask_title)) },
+                        supportingContent = {
+                            Column {
+                                Slider(
+                                    value = displaySetting.glassMaskPercent.toFloat(),
+                                    onValueChange = {
+                                        updateDisplaySetting(
+                                            displaySetting.copy(glassMaskPercent = it.toInt().coerceIn(0, 100))
+                                        )
+                                    },
+                                    valueRange = 0f..100f,
+                                )
+                                Text("${displaySetting.glassMaskPercent}%")
+                            }
+                        },
+                    )
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_enable_message_generation_haptic_effect_title)) },
                         supportingContent = { Text(stringResource(R.string.setting_display_page_enable_message_generation_haptic_effect_desc)) },
