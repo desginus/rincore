@@ -66,8 +66,9 @@ import me.rerere.rikkahub.data.repository.FolderRepository
 import me.rerere.rikkahub.ui.context.LocalSettings
 import org.koin.compose.koinInject
 
-// v4.8.154 (用户): 双轨图标速度减 3 倍 — 一圈 26s → 78s
-private const val ORBIT_DURATION_MS = 78_000
+// v4.8.157 (用户修订: "现在的双轨道速度在变原来的一半"): 速度 = 原来的一半 —
+// 一圈 26s → 52s (v4.8.154 曾按"减3倍"做成 78s, 本轮回调为半速)。
+private const val ORBIT_DURATION_MS = 52_000
 private val ORBIT_EDGE_DP = 52.dp
 private val ORBIT_TOP_DP = 44.dp
 private val INNER_GAP_DP = 64.dp

@@ -558,12 +558,20 @@ class RouteActivity : ComponentActivity() {
                         entryProvider = entryProvider {
                             entry<Screen.Chat>(
                                 metadata = NavDisplay.transitionSpec {
-                                    // v4.8.156: 对话页 = 柔和交叉淡化 (settle 250ms)
-                                    fadeIn(tween<Float>(CherryDuration.BASE, easing = CherryEasing.Settle)) togetherWith
-                                        fadeOut(tween<Float>(CherryDuration.BASE, easing = CherryEasing.Settle))
+                                    // v4.8.157 (用户: "不同对话的切换...做一个淡入淡出的过渡...系统根本
+                                    // 来不及反应, 有的时候它会闪一下卡一下"): 对话切换 = **fade-through**
+                                    // — 抽屉切对话走 clearAndNavigate(清栈直切): 旧内容瞬间消失 + 新页面
+                                    // 重组合全部暴露 → 闪/卡。改为: 旧内容 140ms 快速淡出 → 背景停顿窗
+                                    // (新页面在此完成重组合, 卡顿被盖住) → 新内容延迟 200ms 起 260ms 柔和
+                                    // 淡入 — 用户只看到一次干净的"淡出 → 淡入"。
+                                    fadeIn(
+                                        tween<Float>(260, delayMillis = 200, easing = CherryEasing.Settle)
+                                    ) togetherWith fadeOut(
+                                        tween<Float>(140, easing = CherryEasing.Settle)
+                                    )
                                 } + NavDisplay.popTransitionSpec {
-                                    fadeIn(tween<Float>(CherryDuration.BASE, easing = CherryEasing.Settle)) togetherWith
-                                        fadeOut(tween<Float>(CherryDuration.BASE, easing = CherryEasing.Settle))
+                                    fadeIn(tween<Float>(260, delayMillis = 200, easing = CherryEasing.Settle)) togetherWith
+                                        fadeOut(tween<Float>(140, easing = CherryEasing.Settle))
                                 }
                             ) { key ->
                                 ChatPage(

@@ -341,6 +341,7 @@ class SettingsStore(
                 preferences[CONVERSATION_PRODUCED_FILES] = JsonInstant.encodeToString(settings.conversationProducedFiles)
                 preferences[SUBAGENT_BUDGET_UPGRADED] = settings.subagentBudgetUpgraded
                 preferences[SUBAGENT_CONCURRENCY_UPGRADED] = settings.subagentConcurrencyUpgraded
+                preferences[BLUR_EFFECT_UPGRADED] = settings.blurEffectUpgraded
                 preferences[PRESET_SKILLS_SEED_VERSION] = settings.presetSkillsSeedVersion
                 preferences[TOOL_DESCRIPTION_OVERRIDES] = JsonInstant.encodeToString(settings.toolDescriptionOverrides)
                 preferences[CLASSIFIER_PROMPT] = settings.classifierPrompt
@@ -375,6 +376,8 @@ class SettingsStore(
         val CONVERSATION_PRODUCED_FILES = stringPreferencesKey("conversation_produced_files")
         val SUBAGENT_BUDGET_UPGRADED = booleanPreferencesKey("subagent_budget_upgraded")
         val SUBAGENT_CONCURRENCY_UPGRADED = booleanPreferencesKey("subagent_concurrency_upgraded")
+        // v4.8.157: 模糊效果一次性升级标记 (存量 enableBlurEffect=false → 强制开启一次)
+        val BLUR_EFFECT_UPGRADED = booleanPreferencesKey("blur_effect_upgraded")
         val PRESET_SKILLS_SEED_VERSION = intPreferencesKey("preset_skills_seed_version")
         // ── 旧「工具域」键：v4.8.83 起只读一次用于迁移，不再写入（保存时清除）──
         val DOMAIN_NAME_OVERRIDES = stringPreferencesKey("domain_name_overrides")
@@ -504,7 +507,14 @@ class SettingsStore(
                 opencodeApiKeys = preferences[OPENCODE_API_KEYS]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: emptyList(),
-                displaySetting = JsonInstant.decodeFromString(preferences[DISPLAY_SETTING] ?: "{}"),
+                // v4.8.157 (用户实证"输入框没有做高斯模糊"): 存量设置 enableBlurEffect 恒为关 —
+                // 玻璃链 (haze 真模糊) 从未在真机生效, 用户长期看到的是回退板块。未升级过的设备
+                // 强制开启一次 (镜像 v4.8.139 并发升级模式); 升级标记落盘后恢复用户控制。
+                displaySetting = run {
+                    val ds = JsonInstant.decodeFromString<DisplaySetting>(preferences[DISPLAY_SETTING] ?: "{}")
+                    if (preferences[BLUR_EFFECT_UPGRADED] == true) ds
+                    else ds.copy(enableBlurEffect = true)
+                },
                 networkSetting = JsonInstant.decodeFromString(preferences[NETWORK_SETTING] ?: "{}"),
                 searchServices = preferences[SEARCH_SERVICES]?.let {
                     JsonInstant.decodeFromString(it)
@@ -569,6 +579,7 @@ class SettingsStore(
                 },
                 subagentBudgetUpgraded = true,
                 subagentConcurrencyUpgraded = true,  // v4.8.139: 升级标记随下次保存落盘, 之后不再改写任何值
+                blurEffectUpgraded = true,  // v4.8.157: 模糊升级标记随下次保存落盘, 之后恢复用户控制
                 subagentTokenUsage = preferences[SUBAGENT_TOKEN_USAGE]?.let {
                     runCatching { JsonInstant.decodeFromString<Map<String, Long>>(it) }.getOrDefault(emptyMap())
                 } ?: emptyMap(),
@@ -795,6 +806,7 @@ class SettingsStore(
             preferences[CONVERSATION_PRODUCED_FILES] = JsonInstant.encodeToString(settings.conversationProducedFiles)
             preferences[SUBAGENT_BUDGET_UPGRADED] = settings.subagentBudgetUpgraded
             preferences[SUBAGENT_CONCURRENCY_UPGRADED] = settings.subagentConcurrencyUpgraded
+            preferences[BLUR_EFFECT_UPGRADED] = settings.blurEffectUpgraded
             preferences[PRESET_SKILLS_SEED_VERSION] = settings.presetSkillsSeedVersion
             preferences[TOOL_DESCRIPTION_OVERRIDES] = JsonInstant.encodeToString(settings.toolDescriptionOverrides)
             preferences[CLASSIFIER_PROMPT] = settings.classifierPrompt
@@ -1007,6 +1019,9 @@ data class Settings(
     /** v4.8.139: 子代理并发上限一次性升级标记 — 存量助手仍带旧默认 3 (v4.8.121 只改了默认值,
      *  已落盘助手 JSON 里固定为 3) → 用户实证"子代理只容纳 3 并发"。 */
     val subagentConcurrencyUpgraded: Boolean = false,
+    /** v4.8.157: 模糊效果一次性升级标记 — 存量设备 enableBlurEffect 恒为关 (用户实证
+     *  "输入框没有做高斯模糊": 玻璃链从未在真机生效), 首次加载强制开启一次。 */
+    val blurEffectUpgraded: Boolean = false,
     /** v4.8.88 每对话已消耗的子代理 Token（conversationId → tokens）。UI 可清零。 */
     val subagentTokenUsage: Map<String, Long> = emptyMap(),
     /**
