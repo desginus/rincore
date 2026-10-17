@@ -70,11 +70,12 @@ fun GlassLabPage(onBack: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
         )
+        val variants = labVariants()
         LazyColumn(
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
-            itemsIndexed(labVariants()) { _, variant ->
+            itemsIndexed(variants) { _, variant ->
                 LabSpecimen(variant)
             }
         }
