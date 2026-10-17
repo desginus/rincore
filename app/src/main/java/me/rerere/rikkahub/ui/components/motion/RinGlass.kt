@@ -57,6 +57,7 @@ object RinGlass {
      * v4.8.166: 4dp → 12dp。4dp 半径下列表文字残影锐利，叠加 haze 默认噪点呈现格栅感；
      * 原版 12dp 与之一致，模糊后的列表背景不再呈颗粒状。
      */
+    @Composable
     fun blurStyle(): HazeBlurStyle = HazeBlurStyle.Material3 {
         blurRadius(12.dp)
     }
