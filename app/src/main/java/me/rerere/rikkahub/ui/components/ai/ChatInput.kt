@@ -163,8 +163,13 @@ fun ChatInput(
     // 回退色 = 不透明 surfaceContainerLow (原版)。液态玻璃分支整体从代码移除;
     // haze 版本回退至 2.0.0-beta01 (= 用户真机 157/158 实证渲染出模糊的版本)。
     val hazeTintColor = MaterialTheme.colorScheme.surfaceContainerLow
+    // v4.8.162 (第三次警告后的结构性保底): Material3 预设自带不透明 surface 底色 —
+    // 一旦模糊输入捕获在真机上为空, 玻璃层就只剩这块底色 = 用户 160 实证的黑/白板。
+    // 底色透明后: 源正常 = 磨砂玻璃 (与原版观感一致, 源不透明底反正被盖住);
+    // 源异常 = 层透明直接透出背后内容 — **任何状态都不可能再画出不透明的板子**。
     val inputHazeStyle = HazeBlurStyle.Material3 {
         blurRadius(12.dp)
+        backgroundColor(androidx.compose.ui.graphics.Color.Transparent)
     }
     val assistant = settings.getCurrentAssistant()
     val keyboardController = LocalSoftwareKeyboardController.current
