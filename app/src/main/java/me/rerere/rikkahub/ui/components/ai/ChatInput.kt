@@ -158,9 +158,9 @@ fun ChatInput(
     onStopVoiceMode: () -> Unit = {},
 ) {
     val toaster = LocalToaster.current
-    // v4.7.22: 玻璃规格收敛到 RinGlass 单一来源 (4.3 时代原生款: hazeBlur 4dp)。
-    // 全 app 玻璃件 (输入框/弹窗/悬浮工具条/附件面板) 共用同一规格, 防参数漂移。
-    val inputHazeStyle = RinGlass.blurStyle()
+    // v4.8.171: 输入框族 = 渲染器实验场用户指认 F 配方 (4dp+零噪点+层透明度90%+全保真)。
+    // 与 chrome 族 (弹窗/图标/工具条, blurStyle) 分离, 单一来源仍在 RinGlass。
+    val inputHazeStyle = RinGlass.inputBlurStyle()
     val assistant = settings.getCurrentAssistant()
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
@@ -937,7 +937,7 @@ private fun FullScreenEditor(
         hazeState?.let {
             Modifier.hazeBlur(
                 input = HazeInput.Sources(it),
-                style = RinGlass.blurStyle(),
+                style = RinGlass.inputBlurStyle(),
                 // v4.8.169: 全屏编辑器同规格钉死最高保真度 (与主输入框一致)。
                 performanceMode = HazePerformanceMode.Quality,
             )

@@ -95,8 +95,8 @@ private fun labVariants(): List<LabVariant> {
     val low = MaterialTheme.colorScheme.surfaceContainerLow
     return listOf(
         LabVariant(
-            "A · 现行管线（对照）",
-            "Material3 12dp + 默认噪点 0.15 + 全保真 — 与真实输入栏同配方, 预期复现格栅",
+            "A · 旧规格对照",
+            "Material3 12dp + 默认噪点 0.15 + 全保真 — v4.8.170 前的真实输入栏配方（复现格栅用）",
             RinGlass.blurStyle(),
             Color.Transparent,
         ),
@@ -126,9 +126,15 @@ private fun labVariants(): List<LabVariant> {
         ),
         LabVariant(
             "F · 轻磨砂 4dp 零噪点",
-            "4dp + 零噪点 + 模糊层透明度 90% — 采样最细的极限形态",
+            "4dp + 零噪点 + 模糊层透明度 90% — 用户已指认 (v4.8.171 已落地真实输入栏)",
             m3Style(4.dp, 0f, 0.9f),
             Color.Transparent,
+        ),
+        LabVariant(
+            "G · F + D 叠加（F玻璃+55%薄板）",
+            "F 的玻璃 (4dp+零噪点+90%) 叠 D 的 55% 半透明薄板 — 双层叠加对照 (用户指定)",
+            m3Style(4.dp, 0f, 0.9f),
+            low.copy(alpha = 0.55f),
         ),
     )
 }

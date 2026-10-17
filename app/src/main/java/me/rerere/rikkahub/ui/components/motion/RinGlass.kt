@@ -66,6 +66,20 @@ object RinGlass {
         blurRadius(12.dp)
     }
 
+    /**
+     * 输入框族玻璃样式 — v4.8.171 渲染器实验场用户指认 **F 配方**:
+     * Material3 预设 + 4dp 半径 + 零噪点 + 模糊层透明度 90% (调用点另钉全保真 Quality)。
+     * 仅主输入框 + 全屏编辑器消费; chrome 族 (弹窗/图标/工具条) 仍走 blurStyle()。
+     * 若用户在渲染器 G 样本 (F+D 叠加薄板) 定版叠加形态, 只需在调用点 Surface
+     * color 处加 frostFill 同款填充, 本样式不动。
+     */
+    @Composable
+    fun inputBlurStyle(): HazeBlurStyle = HazeBlurStyle.Material3 {
+        blurRadius(4.dp)
+        noiseFactor(0f)
+        alpha(0.9f)
+    }
+
     /** 高光描边 (澎湃 4 玻璃质感 — HyperGlassPanel 同源) */
     val highlightColor: Color = Color.White.copy(alpha = 0.14f)
 
