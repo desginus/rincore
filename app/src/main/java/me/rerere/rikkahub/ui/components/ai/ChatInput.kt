@@ -82,11 +82,6 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.HazeBlurStyle
 import dev.chrisbanes.haze.blur.hazeBlur
 import dev.chrisbanes.haze.blur.material3.Material3
-import dev.chrisbanes.haze.glass.GlassDefaults
-import dev.chrisbanes.haze.glass.GlassStyle
-import dev.chrisbanes.haze.glass.OpticalSizeValue
-import dev.chrisbanes.haze.glass.hazeGlass
-import dev.chrisbanes.haze.glass.material3.Material3
 import com.dokar.sonner.ToastType
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collectLatest
@@ -103,7 +98,6 @@ import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Fullscreen
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.datastore.BackgroundEffectType
 import me.rerere.rikkahub.ui.components.motion.LocalHazeState
 import me.rerere.rikkahub.ui.components.motion.RinGlass
 import me.rerere.rikkahub.data.datastore.Settings
@@ -163,10 +157,11 @@ fun ChatInput(
     onStopVoiceMode: () -> Unit = {},
 ) {
     val toaster = LocalToaster.current
-    // v4.8.160 (用户定版: "直接去抄原版的，原版256版本就可以"): 输入框玻璃 = **原版
-    // RikkaHub 2.5.6 原文实现** — 两形态: BLUR = HazeBlurStyle.Material3{12dp};
-    // GLASS = haze-glass 液态玻璃 (GlassStyle.Material3, containerColor=surfaceContainerLow,
-    // tint=同色@0.3, optics 16dp/depth 0.5)。回退色 = 不透明 surfaceContainerLow (原版)。
+    // v4.8.161 (用户定版·第二次警告: "原版就根本没有模糊和液态玻璃的分支…最后说的
+    // 效果就是原版256版本的启用模糊效果开启时的那个效果"): **只有一种效果** =
+    // 原版 RikkaHub 2.5.6 启用模糊效果开启时的那一种 — HazeBlurStyle.Material3{12dp};
+    // 回退色 = 不透明 surfaceContainerLow (原版)。液态玻璃分支整体从代码移除;
+    // haze 版本回退至 2.0.0-beta01 (= 用户真机 157/158 实证渲染出模糊的版本)。
     val hazeTintColor = MaterialTheme.colorScheme.surfaceContainerLow
     val inputHazeStyle = HazeBlurStyle.Material3 {
         blurRadius(12.dp)
@@ -255,28 +250,11 @@ fun ChatInput(
                     .fillMaxWidth()
                     .clip(containerShape)
                     .then(
-                        // v4.8.160: 原版 2.5.6 双形态 (模糊 / 液态玻璃)
                         if (settings.displaySetting.enableBlurEffect) {
-                            when (settings.displaySetting.backgroundEffectType) {
-                                BackgroundEffectType.BLUR -> Modifier.hazeBlur(
-                                    input = HazeInput.Sources(hazeState),
-                                    style = inputHazeStyle,
-                                )
-                                BackgroundEffectType.GLASS -> Modifier.hazeGlass(
-                                    input = HazeInput.Sources(hazeState),
-                                    style = GlassStyle.Material3(
-                                        containerColor = hazeTintColor,
-                                        tint = hazeTintColor.copy(alpha = 0.3f),
-                                    ) {
-                                        // Keep background text from competing with the input text.
-                                        optics(GlassDefaults.optics.copy(
-                                            blurRadius = OpticalSizeValue.Fixed(16.dp),
-                                            depth = OpticalSizeValue.Fixed(0.5f),
-                                        ))
-                                        shape(containerShape)
-                                    },
-                                )
-                            }
+                            Modifier.hazeBlur(
+                                input = HazeInput.Sources(hazeState),
+                                style = inputHazeStyle,
+                            )
                         } else Modifier
                     ),
                 shape = containerShape,
