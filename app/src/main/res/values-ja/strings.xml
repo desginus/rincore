@@ -620,6 +620,16 @@
   <string name="setting_display_page_enable_auto_scroll_desc">AIがコンテンツを生成中に自動で下までスクロールする</string>
   <string name="setting_display_page_enable_auto_scroll_title">自動スクロール</string>
   <string name="setting_display_page_enable_blur_effect_desc">チャット入力バーにぼかし効果を有効にする</string>
+  <string name="setting_glass_blur_radius_title">ぼかし半径</string>
+  <string name="setting_glass_light">弱め</string>
+  <string name="setting_glass_heavy">強め</string>
+  <string name="setting_glass_plate_title">入力バーのプレート</string>
+  <string name="setting_glass_plate_desc">ぼかし層の上に半透明プレートを重ねる</string>
+  <string name="setting_glass_plate_color_title">プレートの色</string>
+  <string name="setting_glass_plate_color_theme">テーマに従う</string>
+  <string name="setting_glass_plate_color_dark">暗色</string>
+  <string name="setting_glass_plate_color_light">明色</string>
+  <string name="setting_glass_plate_opacity_title">プレートの不透明度</string>
   <string name="setting_display_page_enable_blur_effect_title">ぼかし効果を有効にする</string>
   <string name="setting_display_page_enable_latex_rendering_desc">LaTeX構文を使用して数式や数値表現をレンダリングする</string>
   <string name="setting_display_page_enable_latex_rendering_title">LaTeXレンダリングを有効にする</string>

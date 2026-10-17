@@ -158,9 +158,8 @@ fun ChatInput(
     onStopVoiceMode: () -> Unit = {},
 ) {
     val toaster = LocalToaster.current
-    // v4.8.171: 输入框族 = 渲染器实验场用户指认 F 配方 (4dp+零噪点+层透明度90%+全保真)。
-    // 与 chrome 族 (弹窗/图标/工具条, blurStyle) 分离, 单一来源仍在 RinGlass。
-    val inputHazeStyle = RinGlass.inputBlurStyle()
+    // v4.8.172: 输入框族 = F 配方基座 (零噪点+层透明度90%+全保真), 半径用户自定 (设置→通用偏好)。
+    val inputHazeStyle = RinGlass.inputBlurStyle(settings.displaySetting.glassBlurRadiusDp)
     val assistant = settings.getCurrentAssistant()
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
@@ -266,7 +265,11 @@ fun ChatInput(
                 shape = containerShape,
                 tonalElevation = 0.dp,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                color = if (settings.displaySetting.enableBlurEffect) Color.Transparent else RinGlass.inputFallbackColor(),
+                color = if (settings.displaySetting.enableBlurEffect) {
+                    RinGlass.inputPlateColor(settings.displaySetting)
+                } else {
+                    RinGlass.inputFallbackColor()
+                },
             ) {
                 Column(
                     // v4.8.147: 上下内边距 4→2 (再省 2dp×2, 不影响正文框)
@@ -937,7 +940,7 @@ private fun FullScreenEditor(
         hazeState?.let {
             Modifier.hazeBlur(
                 input = HazeInput.Sources(it),
-                style = RinGlass.inputBlurStyle(),
+                style = RinGlass.inputBlurStyle(settings.displaySetting.glassBlurRadiusDp),
                 // v4.8.169: 全屏编辑器同规格钉死最高保真度 (与主输入框一致)。
                 performanceMode = HazePerformanceMode.Quality,
             )
@@ -967,7 +970,7 @@ private fun FullScreenEditor(
                 shape = shape,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                 color = if (settings.displaySetting.enableBlurEffect && hazeState != null) {
-                    Color.Transparent
+                    RinGlass.inputPlateColor(settings.displaySetting)
                 } else {
                     RinGlass.inputFallbackColor()
                 },

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -175,6 +176,107 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
                             )
                         },
                     )
+                    // v4.8.172 (用户定版): 输入栏玻璃自定义 — 作用于真实输入栏, 对话页实地对比
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_glass_blur_radius_title)) },
+                        supportingContent = {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FilterChip(
+                                        selected = displaySetting.glassBlurRadiusDp == 4,
+                                        onClick = {
+                                            updateDisplaySetting(displaySetting.copy(glassBlurRadiusDp = 4))
+                                        },
+                                        label = { Text(stringResource(R.string.setting_glass_light)) }
+                                    )
+                                    FilterChip(
+                                        selected = displaySetting.glassBlurRadiusDp == 16,
+                                        onClick = {
+                                            updateDisplaySetting(displaySetting.copy(glassBlurRadiusDp = 16))
+                                        },
+                                        label = { Text(stringResource(R.string.setting_glass_heavy)) }
+                                    )
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Slider(
+                                        value = displaySetting.glassBlurRadiusDp.toFloat(),
+                                        onValueChange = {
+                                            updateDisplaySetting(displaySetting.copy(glassBlurRadiusDp = it.roundToInt()))
+                                        },
+                                        valueRange = 2f..24f,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(text = "${displaySetting.glassBlurRadiusDp}dp")
+                                }
+                            }
+                        },
+                    )
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_glass_plate_title)) },
+                        supportingContent = { Text(stringResource(R.string.setting_glass_plate_desc)) },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.glassPlateEnabled,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(glassPlateEnabled = it))
+                                }
+                            )
+                        },
+                    )
+                    if (displaySetting.glassPlateEnabled) {
+                        item(
+                            headlineContent = { Text(stringResource(R.string.setting_glass_plate_color_title)) },
+                            supportingContent = {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FilterChip(
+                                        selected = displaySetting.glassPlateColorMode == 0,
+                                        onClick = {
+                                            updateDisplaySetting(displaySetting.copy(glassPlateColorMode = 0))
+                                        },
+                                        label = { Text(stringResource(R.string.setting_glass_plate_color_theme)) }
+                                    )
+                                    FilterChip(
+                                        selected = displaySetting.glassPlateColorMode == 1,
+                                        onClick = {
+                                            updateDisplaySetting(displaySetting.copy(glassPlateColorMode = 1))
+                                        },
+                                        label = { Text(stringResource(R.string.setting_glass_plate_color_dark)) }
+                                    )
+                                    FilterChip(
+                                        selected = displaySetting.glassPlateColorMode == 2,
+                                        onClick = {
+                                            updateDisplaySetting(displaySetting.copy(glassPlateColorMode = 2))
+                                        },
+                                        label = { Text(stringResource(R.string.setting_glass_plate_color_light)) }
+                                    )
+                                }
+                            },
+                        )
+                        item(
+                            headlineContent = { Text(stringResource(R.string.setting_glass_plate_opacity_title)) },
+                            supportingContent = {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Slider(
+                                        value = displaySetting.glassPlateOpacity.toFloat(),
+                                        onValueChange = {
+                                            updateDisplaySetting(displaySetting.copy(glassPlateOpacity = it.roundToInt()))
+                                        },
+                                        valueRange = 0f..100f,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(text = "${displaySetting.glassPlateOpacity}%")
+                                }
+                            },
+                        )
+                    }
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_enable_message_generation_haptic_effect_title)) },
                         supportingContent = { Text(stringResource(R.string.setting_display_page_enable_message_generation_haptic_effect_desc)) },

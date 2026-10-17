@@ -19,6 +19,7 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.HazeBlurStyle
 import dev.chrisbanes.haze.blur.hazeBlur
 import dev.chrisbanes.haze.blur.material3.Material3
+import me.rerere.rikkahub.data.datastore.DisplaySetting
 
 /**
  * ═══════════════════════════════════════════════════════════════════
@@ -74,10 +75,26 @@ object RinGlass {
      * color 处加 frostFill 同款填充, 本样式不动。
      */
     @Composable
-    fun inputBlurStyle(): HazeBlurStyle = HazeBlurStyle.Material3 {
-        blurRadius(4.dp)
+    fun inputBlurStyle(radiusDp: Int): HazeBlurStyle = HazeBlurStyle.Material3 {
+        blurRadius(radiusDp.dp)
         noiseFactor(0f)
         alpha(0.9f)
+    }
+
+    /**
+     * v4.8.172 (用户定版): 输入栏透明板 — 画在模糊层之上的半透明薄板。
+     * 开关/深浅/浓度全部用户自定 (DisplaySetting.glassPlate*); 关闭时全透明。
+     * 浓度 0% = 关; 跟随主题 = surfaceContainerLow (Material3 预设底色同源)。
+     */
+    @Composable
+    fun inputPlateColor(displaySetting: DisplaySetting): Color {
+        if (!displaySetting.glassPlateEnabled) return Color.Transparent
+        val base = when (displaySetting.glassPlateColorMode) {
+            1 -> Color.Black
+            2 -> Color.White
+            else -> MaterialTheme.colorScheme.surfaceContainerLow
+        }
+        return base.copy(alpha = displaySetting.glassPlateOpacity / 100f)
     }
 
     /** 高光描边 (澎湃 4 玻璃质感 — HyperGlassPanel 同源) */

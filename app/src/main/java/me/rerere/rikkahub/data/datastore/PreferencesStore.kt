@@ -1110,6 +1110,11 @@ data class DisplaySetting(
     val enableAutoScroll: Boolean = true,
     val enableLatexRendering: Boolean = true,
     val enableBlurEffect: Boolean = false,
+    // v4.8.172 (用户定版): 输入栏玻璃自定义 — 半径/透明板(开关/深浅/浓度), 实时作用于真实输入栏。
+    val glassBlurRadiusDp: Int = 4,
+    val glassPlateEnabled: Boolean = false,
+    val glassPlateColorMode: Int = 0, // 0=跟随主题 1=深色 2=浅色
+    val glassPlateOpacity: Int = 35,
     val chatFontFamily: ChatFontFamily = ChatFontFamily.DEFAULT,
     val chatCustomFontPath: String = "",
     val chatCustomFontName: String = "",
