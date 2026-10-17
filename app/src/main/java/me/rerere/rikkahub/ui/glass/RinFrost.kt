@@ -25,6 +25,8 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
@@ -43,6 +45,7 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /** 自管高斯引擎状态: 源捕获层集合 + 各源窗口锚点 + 重算节流水位 */
@@ -98,16 +101,21 @@ public fun Modifier.rinFrost(
 ): Modifier = composed {
     val density = LocalDensity.current
     val smallLayer = rememberGraphicsLayer()
+    val scope = rememberCoroutineScope()
     var anchor by remember { mutableStateOf(Offset.Zero) }
     var frosted by remember { mutableStateOf<ImageBitmap?>(null) }
     var lastMs by remember { mutableLongStateOf(0L) }
+    var inFlight by remember { mutableStateOf(false) }
     onGloballyPositioned { anchor = it.positionInRoot() }
     drawBehind {
         val now = SystemClock.elapsedRealtime()
-        if (frosted == null || now - lastMs >= FROST_THROTTLE_MS) {
+        if (!inFlight && (frosted == null || now - lastMs >= FROST_THROTTLE_MS)) {
             lastMs = now
+            inFlight = true
             val sw = (size.width / FROST_DOWNSCALE).roundToInt().coerceAtLeast(1)
             val sh = (size.height / FROST_DOWNSCALE).roundToInt().coerceAtLeast(1)
+            val radiusSmall = ((radiusDp * density.density / FROST_DOWNSCALE) / 2f)
+                .roundToInt().coerceIn(1, 6)
             smallLayer.record(size = IntSize(sw, sh)) {
                 scale(1f / FROST_DOWNSCALE, pivot = Offset.Zero) {
                     state.sources.forEach { src ->
@@ -118,9 +126,15 @@ public fun Modifier.rinFrost(
                     }
                 }
             }
-            val r = ((radiusDp * density.density / FROST_DOWNSCALE) / 2f)
-                .roundToInt().coerceIn(1, 6)
-            frosted = rinFrostBoxBlur(smallLayer.toImageBitmap(), r)
+            // toImageBitmap = suspend 读回 (读回与 CPU 模糊在协程完成, 结果经状态驱动重绘;
+            // in-flight 防重入; 读回拿到的是最近一次 record = 磨砂内容, 竞态无害)
+            scope.launch {
+                try {
+                    frosted = rinFrostBoxBlur(smallLayer.toImageBitmap(), radiusSmall)
+                } finally {
+                    inFlight = false
+                }
+            }
         }
         frosted?.let { img ->
             drawImage(
