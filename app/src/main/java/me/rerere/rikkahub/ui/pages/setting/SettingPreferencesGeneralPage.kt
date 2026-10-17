@@ -215,6 +215,70 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
                             }
                         },
                     )
+                    // v4.8.173: 模糊层不透明度 — 模糊层的合成浓度 (50=半透, 100=全糊)
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_glass_blur_alpha_title)) },
+                        supportingContent = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Slider(
+                                    value = displaySetting.glassBlurAlphaPercent.toFloat(),
+                                    onValueChange = {
+                                        updateDisplaySetting(displaySetting.copy(glassBlurAlphaPercent = it.roundToInt()))
+                                    },
+                                    valueRange = 50f..100f,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(text = "${displaySetting.glassBlurAlphaPercent}%")
+                            }
+                        },
+                    )
+                    // v4.8.173: 噪点（颗粒）— 原版 Material3 预设默认 15%
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_glass_noise_title)) },
+                        supportingContent = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Slider(
+                                    value = displaySetting.glassNoisePercent.toFloat(),
+                                    onValueChange = {
+                                        updateDisplaySetting(displaySetting.copy(glassNoisePercent = it.roundToInt()))
+                                    },
+                                    valueRange = 0f..30f,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(text = "${displaySetting.glassNoisePercent}%")
+                            }
+                        },
+                    )
+                    // v4.8.173: 模糊层数 — 2 = blur→板→blur 夹心 (实验)
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_glass_blur_layers_title)) },
+                        supportingContent = {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(
+                                    selected = displaySetting.glassBlurLayers == 1,
+                                    onClick = {
+                                        updateDisplaySetting(displaySetting.copy(glassBlurLayers = 1))
+                                    },
+                                    label = { Text("×1") }
+                                )
+                                FilterChip(
+                                    selected = displaySetting.glassBlurLayers == 2,
+                                    onClick = {
+                                        updateDisplaySetting(displaySetting.copy(glassBlurLayers = 2))
+                                    },
+                                    label = { Text("×2") }
+                                )
+                            }
+                        },
+                    )
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_glass_plate_title)) },
                         supportingContent = { Text(stringResource(R.string.setting_glass_plate_desc)) },
@@ -273,6 +337,35 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
                                         modifier = Modifier.weight(1f)
                                     )
                                     Text(text = "${displaySetting.glassPlateOpacity}%")
+                                }
+                            },
+                        )
+                        // v4.8.173: 板层数 — N 层同浓度板叠加 (等效不透明度 = 1-(1-p)^N)
+                        item(
+                            headlineContent = { Text(stringResource(R.string.setting_glass_plate_layers_title)) },
+                            supportingContent = {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FilterChip(
+                                        selected = displaySetting.glassPlateLayers == 1,
+                                        onClick = {
+                                            updateDisplaySetting(displaySetting.copy(glassPlateLayers = 1))
+                                        },
+                                        label = { Text("×1") }
+                                    )
+                                    FilterChip(
+                                        selected = displaySetting.glassPlateLayers == 2,
+                                        onClick = {
+                                            updateDisplaySetting(displaySetting.copy(glassPlateLayers = 2))
+                                        },
+                                        label = { Text("×2") }
+                                    )
+                                    FilterChip(
+                                        selected = displaySetting.glassPlateLayers == 3,
+                                        onClick = {
+                                            updateDisplaySetting(displaySetting.copy(glassPlateLayers = 3))
+                                        },
+                                        label = { Text("×3") }
+                                    )
                                 }
                             },
                         )

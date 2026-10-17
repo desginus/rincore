@@ -1115,6 +1115,10 @@ data class DisplaySetting(
     val glassPlateEnabled: Boolean = false,
     val glassPlateColorMode: Int = 0, // 0=跟随主题 1=深色 2=浅色
     val glassPlateOpacity: Int = 35,
+    val glassBlurAlphaPercent: Int = 90, // 模糊层不透明度 50..100 (F=90)
+    val glassNoisePercent: Int = 0, // 噪点 0..30 (原版 Material3 预设默认=15)
+    val glassPlateLayers: Int = 1, // 板层数 1..3 (N 层同浓度叠加)
+    val glassBlurLayers: Int = 1, // 模糊层数 1..2 (2=blur→板→blur 夹心, 实验)
     val chatFontFamily: ChatFontFamily = ChatFontFamily.DEFAULT,
     val chatCustomFontPath: String = "",
     val chatCustomFontName: String = "",

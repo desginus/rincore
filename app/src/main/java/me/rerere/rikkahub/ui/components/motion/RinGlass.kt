@@ -20,6 +20,7 @@ import dev.chrisbanes.haze.blur.HazeBlurStyle
 import dev.chrisbanes.haze.blur.hazeBlur
 import dev.chrisbanes.haze.blur.material3.Material3
 import me.rerere.rikkahub.data.datastore.DisplaySetting
+import kotlin.math.pow
 
 /**
  * ═══════════════════════════════════════════════════════════════════
@@ -75,16 +76,18 @@ object RinGlass {
      * color 处加 frostFill 同款填充, 本样式不动。
      */
     @Composable
-    fun inputBlurStyle(radiusDp: Int): HazeBlurStyle = HazeBlurStyle.Material3 {
-        blurRadius(radiusDp.dp)
-        noiseFactor(0f)
-        alpha(0.9f)
-    }
+    fun inputBlurStyle(radiusDp: Int, alphaPercent: Int, noisePercent: Int): HazeBlurStyle =
+        HazeBlurStyle.Material3 {
+            blurRadius(radiusDp.dp)
+            noiseFactor(noisePercent.coerceIn(0, 100) / 100f)
+            alpha(alphaPercent.coerceIn(0, 100) / 100f)
+        }
 
     /**
      * v4.8.172 (用户定版): 输入栏透明板 — 画在模糊层之上的半透明薄板。
-     * 开关/深浅/浓度全部用户自定 (DisplaySetting.glassPlate*); 关闭时全透明。
+     * 开关/深浅/浓度/层数全部用户自定 (DisplaySetting.glassPlate*); 关闭时全透明。
      * 浓度 0% = 关; 跟随主题 = surfaceContainerLow (Material3 预设底色同源)。
+     * v4.8.173: 板层数 — N 层同浓度板叠加的等效不透明度 = 1-(1-p)^N。
      */
     @Composable
     fun inputPlateColor(displaySetting: DisplaySetting): Color {
@@ -94,7 +97,10 @@ object RinGlass {
             2 -> Color.White
             else -> MaterialTheme.colorScheme.surfaceContainerLow
         }
-        return base.copy(alpha = displaySetting.glassPlateOpacity / 100f)
+        val p = displaySetting.glassPlateOpacity.coerceIn(0, 100) / 100f
+        val n = displaySetting.glassPlateLayers.coerceIn(1, 3)
+        val effective = (1.0 - (1.0 - p.toDouble()).pow(n)).toFloat()
+        return base.copy(alpha = effective)
     }
 
     /** 高光描边 (澎湃 4 玻璃质感 — HyperGlassPanel 同源) */

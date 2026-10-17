@@ -64,6 +64,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -158,8 +159,36 @@ fun ChatInput(
     onStopVoiceMode: () -> Unit = {},
 ) {
     val toaster = LocalToaster.current
-    // v4.8.172: 输入框族 = F 配方基座 (零噪点+层透明度90%+全保真), 半径用户自定 (设置→通用偏好)。
-    val inputHazeStyle = RinGlass.inputBlurStyle(settings.displaySetting.glassBlurRadiusDp)
+    // v4.8.173: 输入框族玻璃全参数用户自定 (设置→通用偏好「输入栏玻璃」) —
+    // 半径/模糊层不透明度/噪点/板(开关·深浅·浓度·层数)/模糊层数, 全部实时生效。
+    val inputHazeStyle = RinGlass.inputBlurStyle(
+        radiusDp = settings.displaySetting.glassBlurRadiusDp,
+        alphaPercent = settings.displaySetting.glassBlurAlphaPercent,
+        noisePercent = settings.displaySetting.glassNoisePercent,
+    )
+    // v4.8.173 双层模糊(实验): blur1 → 透明板(drawBehind) → blur2 夹心; 单层时后两者恒空。
+    val glassPlateColor = RinGlass.inputPlateColor(settings.displaySetting)
+    val glassBlur1: Modifier = if (settings.displaySetting.enableBlurEffect) {
+        Modifier.hazeBlur(
+            input = HazeInput.Sources(hazeState),
+            style = inputHazeStyle,
+            performanceMode = HazePerformanceMode.Quality,
+        )
+    } else Modifier
+    val glassBlur2: Modifier = if (
+        settings.displaySetting.enableBlurEffect && settings.displaySetting.glassBlurLayers >= 2
+    ) {
+        Modifier.hazeBlur(
+            input = HazeInput.Sources(hazeState),
+            style = inputHazeStyle,
+            performanceMode = HazePerformanceMode.Quality,
+        )
+    } else Modifier
+    val glassPlateBetween: Modifier = if (
+        settings.displaySetting.enableBlurEffect && settings.displaySetting.glassBlurLayers >= 2
+    ) {
+        Modifier.drawBehind { drawRect(glassPlateColor) }
+    } else Modifier
     val assistant = settings.getCurrentAssistant()
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
@@ -243,32 +272,19 @@ fun ChatInput(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(containerShape)
-                    .then(
-                        // 4.7.22 输入框显示逻辑 (全状态单一形态, 见 RinGlass 规格表):
-                        //   模糊开启 -> hazeBlur(12dp) + 透明底; 关闭 -> 半透明底
-                        //   (v4.8.144: 原纯色底撤除 — "任何场景默认半透明")。
-                        //   生成中/键盘弹出/空或有内容/语音/编辑 — 一律同上, 不变形。
-                        //   (4.1.5: 生成中降级已删除 — 原版恒模糊; v4.7.11: 双类型已回滚)
-                        if (settings.displaySetting.enableBlurEffect) {
-                            Modifier.hazeBlur(
-                                input = HazeInput.Sources(hazeState),
-                                style = inputHazeStyle,
-                                // v4.8.169: 钉死最高保真度 (Quality=Fixed(1f) -> 恒全分辨率)。
-                                // haze 自适应保真策略按 半径px×面积×更新节奏 把模糊输入降到 0.8/0.5
-                                // 档再非整数放大回放 = "织物/条纹"采样网格纹理的唯一运行时来源;
-                                // 输入框族不再允许降档 (用户口径: 图案够细 = 磨砂玻璃)。
-                                performanceMode = HazePerformanceMode.Quality,
-                            )
-                        }
-                        else Modifier
-                    ),
+                    .then(glassBlur1)
+                    .then(glassPlateBetween)
+                    .then(glassBlur2),
                 shape = containerShape,
                 tonalElevation = 0.dp,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                color = if (settings.displaySetting.enableBlurEffect) {
-                    RinGlass.inputPlateColor(settings.displaySetting)
-                } else {
-                    RinGlass.inputFallbackColor()
+                // v4.8.173: 双层模糊时板已画在两模糊层之间(drawBehind), 此处透明;
+                // 单层=板色; 关闭=半透明回退底。
+                color = when {
+                    settings.displaySetting.enableBlurEffect &&
+                        settings.displaySetting.glassBlurLayers >= 2 -> Color.Transparent
+                    settings.displaySetting.enableBlurEffect -> glassPlateColor
+                    else -> RinGlass.inputFallbackColor()
                 },
             ) {
                 Column(
@@ -940,7 +956,11 @@ private fun FullScreenEditor(
         hazeState?.let {
             Modifier.hazeBlur(
                 input = HazeInput.Sources(it),
-                style = RinGlass.inputBlurStyle(settings.displaySetting.glassBlurRadiusDp),
+                style = RinGlass.inputBlurStyle(
+                    radiusDp = settings.displaySetting.glassBlurRadiusDp,
+                    alphaPercent = settings.displaySetting.glassBlurAlphaPercent,
+                    noisePercent = settings.displaySetting.glassNoisePercent,
+                ),
                 // v4.8.169: 全屏编辑器同规格钉死最高保真度 (与主输入框一致)。
                 performanceMode = HazePerformanceMode.Quality,
             )

@@ -630,6 +630,10 @@
   <string name="setting_glass_plate_color_dark">Тёмная</string>
   <string name="setting_glass_plate_color_light">Светлая</string>
   <string name="setting_glass_plate_opacity_title">Непрозрачность пластины</string>
+  <string name="setting_glass_blur_alpha_title">Непрозрачность слоя размытия</string>
+  <string name="setting_glass_noise_title">Шум (зерно)</string>
+  <string name="setting_glass_blur_layers_title">Слои размытия</string>
+  <string name="setting_glass_plate_layers_title">Слои пластины</string>
   <string name="setting_display_page_enable_blur_effect_title">Включить эффект размытия</string>
   <string name="setting_display_page_enable_latex_rendering_desc">Отображать математические выражения и формулы с использованием синтаксиса LaTeX</string>
   <string name="setting_display_page_enable_latex_rendering_title">Включить рендеринг LaTeX</string>

@@ -630,6 +630,10 @@
   <string name="setting_glass_plate_color_dark">暗色</string>
   <string name="setting_glass_plate_color_light">明色</string>
   <string name="setting_glass_plate_opacity_title">プレートの不透明度</string>
+  <string name="setting_glass_blur_alpha_title">ぼかし層の不透明度</string>
+  <string name="setting_glass_noise_title">ノイズ（粒状）</string>
+  <string name="setting_glass_blur_layers_title">ぼかしの層数</string>
+  <string name="setting_glass_plate_layers_title">プレートの層数</string>
   <string name="setting_display_page_enable_blur_effect_title">ぼかし効果を有効にする</string>
   <string name="setting_display_page_enable_latex_rendering_desc">LaTeX構文を使用して数式や数値表現をレンダリングする</string>
   <string name="setting_display_page_enable_latex_rendering_title">LaTeXレンダリングを有効にする</string>

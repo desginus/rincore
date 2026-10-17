@@ -674,6 +674,10 @@
   <string name="setting_glass_plate_color_dark">Dark</string>
   <string name="setting_glass_plate_color_light">Light</string>
   <string name="setting_glass_plate_opacity_title">Plate Opacity</string>
+  <string name="setting_glass_blur_alpha_title">Blur Layer Opacity</string>
+  <string name="setting_glass_noise_title">Noise (Grain)</string>
+  <string name="setting_glass_blur_layers_title">Blur Layers</string>
+  <string name="setting_glass_plate_layers_title">Plate Layers</string>
   <string name="setting_display_page_enable_blur_effect_title">Enable Blur Effect</string>
   <string name="setting_display_page_enable_latex_rendering_desc">Render mathematical expressions and formulas using LaTeX syntax</string>
   <string name="setting_display_page_enable_latex_rendering_title">Enable LaTeX Rendering</string>
