@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeInput
@@ -33,7 +34,7 @@ import dev.chrisbanes.haze.blur.material3.Material3
  * ┌──────────────┬────────────────────────────────────────────────┐
  * │ 状态          │ 渲染                                            │
  * ├──────────────┼────────────────────────────────────────────────┤
- * │ 模糊开启(默认) │ hazeBlur(4dp; 输入框族 5成合成-v4.8.156) + 透明底+1dp 描边 │
+ * │ 模糊开启(默认) │ hazeBlur(4dp; 输入框族动态半径≤58px·0.85合成-v4.8.158) + 透明底+1dp 描边 │
  * │ 生成中         │ 同上 (永不在生成期降级为纯色底 — v4.1.5 定版)   │
  * │ 键盘弹出       │ 同上 (仅布局位移动画, 玻璃参数不变)             │
  * │ 空/有内容      │ 同上 (内容多少不改变玻璃材质)                   │
@@ -63,16 +64,26 @@ object RinGlass {
     }
 
     /**
-     * v4.8.156 (用户: "输入框可见度改5成"): 输入框族玻璃 — **可见度五成**。
-     * Material3 预设自带 surface 背底 (opaque) 的完整效果, `alpha` = haze 的
-     * "总体效果不透明度" (HazeBlurStyleScope.alpha, 已对源取证) → 整个模糊层
-     * 按 50% 合成, 玻璃透出背景 = 可见度五成。
+     * v4.8.156: 输入框族玻璃 (可见度五成)。
+     * v4.8.158 (用户: "输入框高斯模糊确实是有，但是效果很差，大幅提高它这个模糊程度"):
+     *   ① **半径 4dp → 动态大幅值**: 按设备密度换算, 物理像素半径封顶 58px —
+     *     haze BlurInputScalePolicy 取证 (AND 逻辑): 0.5 激进档需"半径≥60px 且
+     *     面积≥500k px²"; 全屏输入框面积必然超 500k, 故半径必须恒 <60px
+     *     (v4.8.147 的"隔栅"= 0.5 档半分辨率上采样, 教训 #72)。输入框本体面积
+     *     ~18 万 px² 未达 30 万 → 主输入框恒全质量档; 全屏编辑器至多 0.8 档 (轻微)。
+     *   ② **alpha 0.5 → 0.85**: 模糊层主导呈现 — 0.5 时一半画面是背后的清晰内容,
+     *     半径再大也"看得见但不强"; 0.85 = 重磨砂仍留微透。
      * 仅输入框族 (主输入框/全屏输入框) 消费; 弹窗/工具条/轨道图标仍用 blurStyle()。
      */
     @Composable
-    fun inputBlurStyle(): HazeBlurStyle = HazeBlurStyle.Material3 {
-        blurRadius(4.dp)
-        alpha(0.5f)
+    fun inputBlurStyle(): HazeBlurStyle {
+        // 组合上下文取值 (教训 B175: @Composable getter 不得进 DSL 构建 lambda)
+        val density = LocalDensity.current.density
+        val radiusDp = (58f / density).coerceAtMost(20f).dp
+        return HazeBlurStyle.Material3 {
+            blurRadius(radiusDp)
+            alpha(0.85f)
+        }
     }
 
     /** 高光描边 (澎湃 4 玻璃质感 — HyperGlassPanel 同源) */
