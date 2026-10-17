@@ -56,6 +56,10 @@ object RinGlass {
      * 柔光玻璃模糊样式 — 唯一规格，对齐原版 RikkaHub 2.5.6 的 blurRadius(12.dp)。
      * v4.8.166: 4dp → 12dp。4dp 半径下列表文字残影锐利，叠加 haze 默认噪点呈现格栅感；
      * v4.8.167: haze 依赖同步 2.0.0 正式版（渲染管线逐字对齐原版 2.5.6）。
+     * v4.8.169: 输入框族调用点钉死 performanceMode=Quality(Fixed(1f)) — haze 自适应保真
+     * 策略在设备几何触发时会把模糊输入降采样(0.8/0.5 档)再非整数放大=织物/条纹纹理的
+     * 唯一运行时来源; 钉死后纹理粒度恒为物理像素、不随滚动节奏波动。弹窗/图标族小面积
+     * 恒处 1.0 全质量档, 不钉。
      */
     @Composable
     fun blurStyle(): HazeBlurStyle = HazeBlurStyle.Material3 {

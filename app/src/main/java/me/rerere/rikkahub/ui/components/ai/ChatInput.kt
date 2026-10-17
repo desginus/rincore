@@ -78,6 +78,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import dev.chrisbanes.haze.HazeInput
+import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.HazeBlurStyle
 import dev.chrisbanes.haze.blur.hazeBlur
@@ -253,6 +254,11 @@ fun ChatInput(
                             Modifier.hazeBlur(
                                 input = HazeInput.Sources(hazeState),
                                 style = inputHazeStyle,
+                                // v4.8.169: 钉死最高保真度 (Quality=Fixed(1f) -> 恒全分辨率)。
+                                // haze 自适应保真策略按 半径px×面积×更新节奏 把模糊输入降到 0.8/0.5
+                                // 档再非整数放大回放 = "织物/条纹"采样网格纹理的唯一运行时来源;
+                                // 输入框族不再允许降档 (用户口径: 图案够细 = 磨砂玻璃)。
+                                performanceMode = HazePerformanceMode.Quality,
                             )
                         }
                         else Modifier
@@ -932,6 +938,8 @@ private fun FullScreenEditor(
             Modifier.hazeBlur(
                 input = HazeInput.Sources(it),
                 style = RinGlass.blurStyle(),
+                // v4.8.169: 全屏编辑器同规格钉死最高保真度 (与主输入框一致)。
+                performanceMode = HazePerformanceMode.Quality,
             )
         } ?: Modifier
     } else Modifier
