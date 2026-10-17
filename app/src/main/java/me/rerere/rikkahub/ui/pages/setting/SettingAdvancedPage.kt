@@ -24,7 +24,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.Screen
 import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.AiMagic
 import me.rerere.hugeicons.stroke.ArrowLeft01
 import me.rerere.hugeicons.stroke.Download04
 import me.rerere.hugeicons.stroke.GlobalSearch
@@ -166,12 +165,6 @@ fun SettingAdvancedPage(
                     leadingContent = { Icon(HugeIcons.Package, null) },
                     supportingContent = { Text("Operit 插件生态的兼容测试开发者选项") },
                     headlineContent = { Text("工具包") },
-                )
-                item(
-                    onClick = { navController.navigate(Screen.GlassLab) },
-                    leadingContent = { Icon(HugeIcons.AiMagic, null) },
-                    supportingContent = { Text("输入栏玻璃配方受控实验（多方案对照，选定后落地）") },
-                    headlineContent = { Text("渲染器（玻璃实验）") },
                 )
             }
 

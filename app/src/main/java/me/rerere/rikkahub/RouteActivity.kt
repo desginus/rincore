@@ -822,11 +822,6 @@ class RouteActivity : ComponentActivity() {
                                     onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } },
                                 )
                             }
-                            entry<Screen.GlassLab> {
-                                me.rerere.rikkahub.ui.glass.GlassLabPage(
-                                    onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } },
-                                )
-                            }
                             entry<Screen.MarketDetail> { key ->
                                 MarketDetailPage(key.id)
                             }
@@ -1100,10 +1095,6 @@ sealed interface Screen : NavKey {
     // v4.6.2: 生态模块页 (内置工具包 + 市场插件 — 独立渲染管线)
     @Serializable
     data object OperitEco : Screen
-
-    // v4.8.170: 渲染器（玻璃实验场）— 输入栏玻璃配方受控实验 (用户定版; 仅测试用途)
-    @Serializable
-    data object GlassLab : Screen
 
     @Serializable
     data class MarketDetail(val id: String) : Screen

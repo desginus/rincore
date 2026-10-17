@@ -6,6 +6,8 @@ package me.rerere.rikkahub.ui.components.motion
  * ───────────────────────────────────────────────────────────────*/
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -23,7 +25,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
@@ -35,12 +36,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import dev.chrisbanes.haze.HazeState
-import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 
 /**
  * 4.0.2: 澎湃 OS 4 动效基建 — 柔和弹性曲线 + 柔光玻璃面板。
@@ -54,6 +50,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 
 /** 聊天页 (或宿主页) 的 HazeState — 弹窗玻璃消费此 source 做真模糊 */
 val LocalHazeState = staticCompositionLocalOf<HazeState?> { null }
+
+/** 澎湃弹性规格: 中高阻尼 (柔和回弹不过弹), 中刚度 (跟手不拖沓) */
+object HyperMotionSpec {
+    val spring = spring<Float>(
+        dampingRatio = 0.85f,
+        stiffness = 380f,
+        visibilityThreshold = 0.001f,
+    )
+    const val FADE_IN_MS = 220
+    const val FADE_OUT_MS = 180
+    const val ENTER_FROM_SCALE = 0.92f
+    const val EXIT_TO_SCALE = 0.95f
+}
 
 /**
  * 柔光玻璃面板 — 半透明表面 + 高光描边 (澎湃 4 玻璃质感)。
@@ -78,10 +87,8 @@ fun HyperGlassPanel(
 }
 
 /**
- * 弹窗统一入口 (语义结构: title/content/actions 自绘)。
- * v4.8.143 (CS v0.2.1 动效复刻): 入场 fade + scale(0.97→1) 350ms overshoot (到达感);
- * 返回键/遮罩关闭 = 250ms settle 出场后回调 (窗口存活至动画完成);
- * 按钮触发的关闭 (调用方直接置 show=false) 仍即时卸载 — 结构限制, 见交付说明。
+ * 澎湃动效弹窗 — 入场 fade+scale(0.92→1) 弹性, 出场 fade+scale(→0.95)。
+ * 全 app 弹窗统一入口 (语义结构: title/content/actions 自绘)。
  */
 @Composable
 fun HyperDialog(
@@ -93,41 +100,22 @@ fun HyperDialog(
     confirmButton: (@Composable () -> Unit)? = null,
     dismissButton: (@Composable () -> Unit)? = null,
 ) {
-    // v4.8.143 (CS v0.2.1 动效复刻): 自管可见性 (false→true 播放入场)。
-    // 旧实现 visible=true 常量 — AnimatedVisibility 初始可见不播 enter, 入场缩放从未真正生效。
-    // 关闭路径 (返回键/遮罩) 延迟到 250ms settle 出场完成后才回调 (窗口保持存活)。
-    var visible by remember { mutableStateOf(false) }
-    var closing by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-    LaunchedEffect(Unit) { visible = true }
     Dialog(
-        onDismissRequest = {
-            if (!closing) {
-                closing = true
-                visible = false
-                scope.launch {
-                    kotlinx.coroutines.delay(CherryDuration.BASE + 40L)
-                    onDismissRequest()
-                }
-            }
-        },
+        onDismissRequest = onDismissRequest,
         properties = properties,
     ) {
         // 4.1.5: 弹窗 dim 归零 — 默认 dim 遮罩会盖住玻璃 blur 的透出效果
         val view = androidx.compose.ui.platform.LocalView.current
         (view.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window?.setDimAmount(0f)
         AnimatedVisibility(
-            visible = visible,
-            enter = fadeIn(CherryMotion.Fade) +
+            visible = true,
+            enter = fadeIn(tween(HyperMotionSpec.FADE_IN_MS)) +
                 scaleIn(
-                    initialScale = CherryMotion.POPUP_REST_SCALE,
-                    animationSpec = CherryMotion.Open,
+                    initialScale = HyperMotionSpec.ENTER_FROM_SCALE,
+                    animationSpec = HyperMotionSpec.spring,
                 ),
-            exit = fadeOut(CherryMotion.Close) +
-                scaleOut(
-                    targetScale = CherryMotion.POPUP_REST_SCALE,
-                    animationSpec = CherryMotion.Close,
-                ),
+            exit = fadeOut(tween(HyperMotionSpec.FADE_OUT_MS)) +
+                scaleOut(targetScale = HyperMotionSpec.EXIT_TO_SCALE),
         ) {
             HyperGlassPanel(modifier = modifier) {
                 // 4.8.24 深色可读性修复: 弹窗 title/text 强制主题前景色 —
@@ -166,22 +154,8 @@ fun HyperFullPanel(
     onDismiss: () -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    // v4.8.143: 同 HyperDialog — 入场动画真正播放 + 关闭延迟到出场完成后回调。
-    var visible by remember { mutableStateOf(false) }
-    var closing by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-    LaunchedEffect(Unit) { visible = true }
     Dialog(
-        onDismissRequest = {
-            if (!closing) {
-                closing = true
-                visible = false
-                scope.launch {
-                    kotlinx.coroutines.delay(CherryDuration.BASE + 40L)
-                    onDismiss()
-                }
-            }
-        },
+        onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         Box(
@@ -191,16 +165,11 @@ fun HyperFullPanel(
             contentAlignment = Alignment.Center,
         ) {
             AnimatedVisibility(
-                visible = visible,
-                enter = fadeIn(CherryMotion.Fade) +
+                visible = true,
+                enter = fadeIn(tween(HyperMotionSpec.FADE_IN_MS)) +
                     scaleIn(
-                        initialScale = CherryMotion.POPUP_REST_SCALE,
-                        animationSpec = CherryMotion.Open,
-                    ),
-                exit = fadeOut(CherryMotion.Close) +
-                    scaleOut(
-                        targetScale = CherryMotion.POPUP_REST_SCALE,
-                        animationSpec = CherryMotion.Close,
+                        initialScale = HyperMotionSpec.ENTER_FROM_SCALE,
+                        animationSpec = HyperMotionSpec.spring,
                     ),
             ) {
                 Surface(

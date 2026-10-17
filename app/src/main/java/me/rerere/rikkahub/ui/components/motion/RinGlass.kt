@@ -19,15 +19,13 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.HazeBlurStyle
 import dev.chrisbanes.haze.blur.hazeBlur
 import dev.chrisbanes.haze.blur.material3.Material3
-import me.rerere.rikkahub.data.datastore.DisplaySetting
-import kotlin.math.pow
 
 /**
  * ═══════════════════════════════════════════════════════════════════
  * RinGlass — 柔光玻璃统一渲染规格 (v4.7.22)
  *
  * 【定版依据】用户定版: 全 app 玻璃元素统一为 4.3~4.5 时代"原生构建"的
- * 柔光玻璃款式 (haze 2.0.0 渲染管线 + blurRadius 12dp)。
+ * 柔光玻璃款式 (haze 2.0.0-beta01 渲染管线 + blurRadius 4dp)。
  * v4.7.0 移植原版 2.5.3 时误升 haze rc02 导致"格栅式"变化 (v4.7.21 已
  * 回滚版本); 本文件将参数收敛为单一来源, 杜绝多处定义再次漂移。
  *
@@ -35,19 +33,18 @@ import kotlin.math.pow
  * ┌──────────────┬────────────────────────────────────────────────┐
  * │ 状态          │ 渲染                                            │
  * ├──────────────┼────────────────────────────────────────────────┤
- * │ 模糊开启(默认) │ hazeBlur(12dp) + 透明底 + 1dp 高光/描边         │
+ * │ 模糊开启(默认) │ hazeBlur(4dp) + 透明底 + 1dp 高光/描边         │
  * │ 生成中         │ 同上 (永不在生成期降级为纯色底 — v4.1.5 定版)   │
  * │ 键盘弹出       │ 同上 (仅布局位移动画, 玻璃参数不变)             │
  * │ 空/有内容      │ 同上 (内容多少不改变玻璃材质)                   │
  * │ 语音模式       │ 同上 (行内容切换, 玻璃材质不变)                 │
  * │ 编辑消息       │ 同上                                            │
- * │ 用户关闭模糊    │ 输入框族: 半透明底 (inputFallbackColor,        │
- * │ (enableBlurEffect│   v4.8.144 定版"任何场景默认半透明");          │
- * │  =false)       │ 弹窗族: 纯色回退 (fallbackColor)               │
- * │ 无 haze source │ 同上 (按消费方族别取回退色)                     │
+ * │ 用户关闭模糊    │ 半透明纯色底 (surfaceContainerLow) — 显式设置,  │
+ * │ (enableBlurEffect│   唯一允许的非玻璃形态                          │
+ * │  =false)       │                                                │
+ * │ 无 haze source │ 半透明纯色底 (弹窗层无源时回退 — 与上同族)      │
  * └──────────────┴────────────────────────────────────────────────┘
  * 其他形态 (格栅/纯色/其他模糊参数) 均为 bug, 不允许出现。
- * v4.8.144: 输入框族(主输入框/全屏输入框)任何场景默认半透明 — 关闭模糊不再出纯色板。
  *
  * 【消费方】ChatInput / HyperGlassPanel(弹窗体系) / 聊天悬浮工具条 /
  * 附件面板 — 全部经 Modifier.rinGlass() 或 RinGlass.blurStyle。
@@ -55,68 +52,21 @@ import kotlin.math.pow
  */
 object RinGlass {
     /**
-     * 柔光玻璃模糊样式 — 唯一规格，对齐原版 RikkaHub 2.5.6 的 blurRadius(12.dp)。
-     * v4.8.166: 4dp → 12dp。4dp 半径下列表文字残影锐利，叠加 haze 默认噪点呈现格栅感；
-     * v4.8.167: haze 依赖同步 2.0.0 正式版（渲染管线逐字对齐原版 2.5.6）。
-     * v4.8.169: 输入框族调用点钉死 performanceMode=Quality(Fixed(1f)) — haze 自适应保真
-     * 策略在设备几何触发时会把模糊输入降采样(0.8/0.5 档)再非整数放大=织物/条纹纹理的
-     * 唯一运行时来源; 钉死后纹理粒度恒为物理像素、不随滚动节奏波动。弹窗/图标族小面积
-     * 恒处 1.0 全质量档, 不钉。
+     * 柔光玻璃模糊样式 — 唯一规格。
+     * blurRadius 4dp: 4.3 时代参数 (v3.6.82 起: 8->4dp, 120Hz GPU 采样开销优化),
+     * 即用户认可的"原生款"。
      */
     @Composable
     fun blurStyle(): HazeBlurStyle = HazeBlurStyle.Material3 {
-        blurRadius(12.dp)
-    }
-
-    /**
-     * 输入框族玻璃样式 — v4.8.171 渲染器实验场用户指认 **F 配方**:
-     * Material3 预设 + 4dp 半径 + 零噪点 + 模糊层透明度 90% (调用点另钉全保真 Quality)。
-     * 仅主输入框 + 全屏编辑器消费; chrome 族 (弹窗/图标/工具条) 仍走 blurStyle()。
-     * 若用户在渲染器 G 样本 (F+D 叠加薄板) 定版叠加形态, 只需在调用点 Surface
-     * color 处加 frostFill 同款填充, 本样式不动。
-     */
-    @Composable
-    fun inputBlurStyle(radiusDp: Int, alphaPercent: Int, noisePercent: Int): HazeBlurStyle =
-        HazeBlurStyle.Material3 {
-            blurRadius(radiusDp.dp)
-            noiseFactor(noisePercent.coerceIn(0, 100) / 100f)
-            alpha(alphaPercent.coerceIn(0, 100) / 100f)
-        }
-
-    /**
-     * v4.8.172 (用户定版): 输入栏透明板 — 画在模糊层之上的半透明薄板。
-     * 开关/深浅/浓度/层数全部用户自定 (DisplaySetting.glassPlate*); 关闭时全透明。
-     * 浓度 0% = 关; 跟随主题 = surfaceContainerLow (Material3 预设底色同源)。
-     * v4.8.173: 板层数 — N 层同浓度板叠加的等效不透明度 = 1-(1-p)^N。
-     */
-    @Composable
-    fun inputPlateColor(displaySetting: DisplaySetting): Color {
-        if (!displaySetting.glassPlateEnabled) return Color.Transparent
-        val base = when (displaySetting.glassPlateColorMode) {
-            1 -> Color.Black
-            2 -> Color.White
-            else -> MaterialTheme.colorScheme.surfaceContainerLow
-        }
-        val p = displaySetting.glassPlateOpacity.coerceIn(0, 100) / 100f
-        val n = displaySetting.glassPlateLayers.coerceIn(1, 3)
-        val effective = (1.0 - (1.0 - p.toDouble()).pow(n)).toFloat()
-        return base.copy(alpha = effective)
+        blurRadius(4.dp)
     }
 
     /** 高光描边 (澎湃 4 玻璃质感 — HyperGlassPanel 同源) */
     val highlightColor: Color = Color.White.copy(alpha = 0.14f)
 
-    /** 无 haze source 或用户关闭模糊时的回退底色 (弹窗族) */
+    /** 无 haze source 或用户关闭模糊时的回退底色 */
     @Composable
     fun fallbackColor(): Color = MaterialTheme.colorScheme.surfaceContainerLow
-
-    /**
-     * v4.8.144 (用户定版): 输入框族"任何场景默认半透明" — 模糊关闭/无源时, 主输入框与
-     * 全屏输入框的回退底色由不透明纯色改为半透明 (alpha 0.8), 不再存在纯色板形态。
-     * (弹窗族 HyperGlassPanel 回退保持原规格 — 本值仅输入框族消费。)
-     */
-    @Composable
-    fun inputFallbackColor(): Color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.8f)
 }
 
 /**
