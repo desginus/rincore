@@ -468,7 +468,6 @@ private fun ChatListNormal(
                     onSelectAssistant = onOrbitSelectAssistant,
                     onSelectFolder = onOrbitSelectFolder,
                     hazeState = hazeState,
-                    blurEnabled = settings.displaySetting.enableBlurEffect,
                 )
             }
         }

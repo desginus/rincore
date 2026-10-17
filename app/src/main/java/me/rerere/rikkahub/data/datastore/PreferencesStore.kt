@@ -341,7 +341,6 @@ class SettingsStore(
                 preferences[CONVERSATION_PRODUCED_FILES] = JsonInstant.encodeToString(settings.conversationProducedFiles)
                 preferences[SUBAGENT_BUDGET_UPGRADED] = settings.subagentBudgetUpgraded
                 preferences[SUBAGENT_CONCURRENCY_UPGRADED] = settings.subagentConcurrencyUpgraded
-                preferences[BLUR_EFFECT_UPGRADED_V2] = settings.blurEffectUpgradedV2
                 preferences[PRESET_SKILLS_SEED_VERSION] = settings.presetSkillsSeedVersion
                 preferences[TOOL_DESCRIPTION_OVERRIDES] = JsonInstant.encodeToString(settings.toolDescriptionOverrides)
                 preferences[CLASSIFIER_PROMPT] = settings.classifierPrompt
@@ -376,9 +375,6 @@ class SettingsStore(
         val CONVERSATION_PRODUCED_FILES = stringPreferencesKey("conversation_produced_files")
         val SUBAGENT_BUDGET_UPGRADED = booleanPreferencesKey("subagent_budget_upgraded")
         val SUBAGENT_CONCURRENCY_UPGRADED = booleanPreferencesKey("subagent_concurrency_upgraded")
-        // v4.8.162: 模糊效果二次强制开启标记 — v1(157) 开启后, 用户在 160 排障期间把开关
-        // 留在了关闭位, 其后所有版本看到的一直是"关闭态回退底"。v2 再强制开启一次。
-        val BLUR_EFFECT_UPGRADED_V2 = booleanPreferencesKey("blur_effect_upgraded_v2")
         val PRESET_SKILLS_SEED_VERSION = intPreferencesKey("preset_skills_seed_version")
         // ── 旧「工具域」键：v4.8.83 起只读一次用于迁移，不再写入（保存时清除）──
         val DOMAIN_NAME_OVERRIDES = stringPreferencesKey("domain_name_overrides")
@@ -508,14 +504,7 @@ class SettingsStore(
                 opencodeApiKeys = preferences[OPENCODE_API_KEYS]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: emptyList(),
-                // v4.8.162 (二次强制开启): v1 曾在 157 强制开启一次, 但用户在 160 期间手动留在
-                // 关闭位 — 其后 160/161 看到的都是"关闭态回退底" (黑色不透明板观感)。未升级 v2
-                // 的设备再次强制开启一次; v2 标记落盘后恢复用户控制。
-                displaySetting = run {
-                    val ds = JsonInstant.decodeFromString<DisplaySetting>(preferences[DISPLAY_SETTING] ?: "{}")
-                    if (preferences[BLUR_EFFECT_UPGRADED_V2] == true) ds
-                    else ds.copy(enableBlurEffect = true)
-                },
+                displaySetting = JsonInstant.decodeFromString(preferences[DISPLAY_SETTING] ?: "{}"),
                 networkSetting = JsonInstant.decodeFromString(preferences[NETWORK_SETTING] ?: "{}"),
                 searchServices = preferences[SEARCH_SERVICES]?.let {
                     JsonInstant.decodeFromString(it)
@@ -580,7 +569,6 @@ class SettingsStore(
                 },
                 subagentBudgetUpgraded = true,
                 subagentConcurrencyUpgraded = true,  // v4.8.139: 升级标记随下次保存落盘, 之后不再改写任何值
-                blurEffectUpgradedV2 = true,  // v4.8.162: 二次升级标记随下次保存落盘, 之后恢复用户控制
                 subagentTokenUsage = preferences[SUBAGENT_TOKEN_USAGE]?.let {
                     runCatching { JsonInstant.decodeFromString<Map<String, Long>>(it) }.getOrDefault(emptyMap())
                 } ?: emptyMap(),
@@ -807,7 +795,6 @@ class SettingsStore(
             preferences[CONVERSATION_PRODUCED_FILES] = JsonInstant.encodeToString(settings.conversationProducedFiles)
             preferences[SUBAGENT_BUDGET_UPGRADED] = settings.subagentBudgetUpgraded
             preferences[SUBAGENT_CONCURRENCY_UPGRADED] = settings.subagentConcurrencyUpgraded
-            preferences[BLUR_EFFECT_UPGRADED_V2] = settings.blurEffectUpgradedV2
             preferences[PRESET_SKILLS_SEED_VERSION] = settings.presetSkillsSeedVersion
             preferences[TOOL_DESCRIPTION_OVERRIDES] = JsonInstant.encodeToString(settings.toolDescriptionOverrides)
             preferences[CLASSIFIER_PROMPT] = settings.classifierPrompt
@@ -1020,9 +1007,6 @@ data class Settings(
     /** v4.8.139: 子代理并发上限一次性升级标记 — 存量助手仍带旧默认 3 (v4.8.121 只改了默认值,
      *  已落盘助手 JSON 里固定为 3) → 用户实证"子代理只容纳 3 并发"。 */
     val subagentConcurrencyUpgraded: Boolean = false,
-    /** v4.8.162: 模糊效果二次强制开启标记 — v1(157) 后用户在 160 排障期间把开关留在关闭位,
-     *  其后所有版本看到的都是"关闭态回退底"; v2 首次加载再强制开启一次。 */
-    val blurEffectUpgradedV2: Boolean = false,
     /** v4.8.88 每对话已消耗的子代理 Token（conversationId → tokens）。UI 可清零。 */
     val subagentTokenUsage: Map<String, Long> = emptyMap(),
     /**

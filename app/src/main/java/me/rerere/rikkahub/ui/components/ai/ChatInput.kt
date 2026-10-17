@@ -157,16 +157,10 @@ fun ChatInput(
     onStopVoiceMode: () -> Unit = {},
 ) {
     val toaster = LocalToaster.current
-    // v4.8.161 (用户定版·第二次警告: "原版就根本没有模糊和液态玻璃的分支…最后说的
-    // 效果就是原版256版本的启用模糊效果开启时的那个效果"): **只有一种效果** =
-    // 原版 RikkaHub 2.5.6 启用模糊效果开启时的那一种 — HazeBlurStyle.Material3{12dp};
-    // 回退色 = 不透明 surfaceContainerLow (原版)。液态玻璃分支整体从代码移除;
-    // haze 版本回退至 2.0.0-beta01 (= 用户真机 157/158 实证渲染出模糊的版本)。
-    val hazeTintColor = MaterialTheme.colorScheme.surfaceContainerLow
-    // v4.8.162 (第三次警告后的结构性保底): Material3 预设自带不透明 surface 底色 —
-    // 一旦模糊输入捕获在真机上为空, 玻璃层就只剩这块底色 = 用户 160 实证的黑/白板。
-    // 底色透明后: 源正常 = 磨砂玻璃 (与原版观感一致, 源不透明底反正被盖住);
-    // 源异常 = 层透明直接透出背后内容 — **任何状态都不可能再画出不透明的板子**。
+    // v4.8.163 (用户定版·终局: "把那个模糊的开关删了…做成默认…做成唯一状态…原版
+    // 怎么弄就怎么弄"): **玻璃 = 唯一默认状态** — 恒等同原版 RikkaHub 2.5.6
+    // "启用模糊效果开启" 的形态 (Material3{12dp}), 无开关、无类型、无回退板。
+    // backgroundColor 透明保底: 捕获异常=透出内容 — 数学上不可能再画出不透明板。
     val inputHazeStyle = HazeBlurStyle.Material3 {
         blurRadius(12.dp)
         backgroundColor(androidx.compose.ui.graphics.Color.Transparent)
@@ -255,18 +249,17 @@ fun ChatInput(
                     .fillMaxWidth()
                     .clip(containerShape)
                     .then(
-                        if (settings.displaySetting.enableBlurEffect) {
-                            Modifier.hazeBlur(
-                                input = HazeInput.Sources(hazeState),
-                                style = inputHazeStyle,
-                            )
-                        } else Modifier
+                        // v4.8.163: 无条件玻璃 (唯一状态)
+                        Modifier.hazeBlur(
+                            input = HazeInput.Sources(hazeState),
+                            style = inputHazeStyle,
+                        )
                     ),
                 shape = containerShape,
                 tonalElevation = 0.dp,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                // v4.8.160: 原版口径 — 模糊开=透明 (玻璃层自带材质), 关=不透明回退色
-                color = if (settings.displaySetting.enableBlurEffect) Color.Transparent else hazeTintColor,
+                // v4.8.163: 永远透明底 (磨砂由玻璃层呈现; 不存在"关闭态回退板")
+                color = Color.Transparent,
             ) {
                 Column(
                     // v4.8.147: 上下内边距 4→2 (再省 2dp×2, 不影响正文框)
@@ -926,10 +919,17 @@ private fun FullScreenEditor(
     receiveContent: ReceiveContentListener,
     onDone: () -> Unit
 ) {
-    // v4.8.160 (用户定版: "直接去抄原版的，原版256版本就可以"): 全屏编辑器还原原版
-    // RikkaHub 2.5.6 — 普通 Surface 面板 (顶角 16dp), 无玻璃/半透明底/描边 (原版即如此)。
+    // v4.8.163 (用户定版·终局): 全屏编辑器与主输入框同材质 = **无条件玻璃** (唯一状态)。
     // 粘贴仍走同一 ReceiveContentListener (行为不变)。
-    val shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+    val hazeState = LocalHazeState.current
+    val fullscreenHazeStyle = HazeBlurStyle.Material3 {
+        blurRadius(12.dp)
+        backgroundColor(androidx.compose.ui.graphics.Color.Transparent)
+    }
+    val glassModifier = hazeState?.let {
+        Modifier.hazeBlur(input = HazeInput.Sources(it), style = fullscreenHazeStyle)
+    } ?: Modifier
+    val shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
     BasicAlertDialog(
         onDismissRequest = {
             onDone()
@@ -948,8 +948,12 @@ private fun FullScreenEditor(
             Surface(
                 modifier = Modifier
                     .widthIn(max = 800.dp)
-                    .fillMaxHeight(0.9f),
+                    .fillMaxHeight(0.9f)
+                    .clip(shape)
+                    .then(glassModifier),
                 shape = shape,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                color = Color.Transparent,
             ) {
                 Column(
                     modifier = Modifier

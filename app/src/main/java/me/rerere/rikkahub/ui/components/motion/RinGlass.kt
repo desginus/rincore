@@ -40,7 +40,7 @@ import dev.chrisbanes.haze.blur.material3.Material3
  * │ 语音模式       │ 同上 (行内容切换, 玻璃材质不变)                 │
  * │ 编辑消息       │ 同上                                            │
  * │ 用户关闭模糊    │ 输入框族: 半透明底 (inputFallbackColor,        │
- * │ (enableBlurEffect│   v4.8.144 定版"任何场景默认半透明");          │
+ * │ v4.8.163: 开关已删除—玻璃=唯一状态(开/关辨识不存在)│
  * │  =false)       │ 弹窗族: 纯色回退 (fallbackColor)               │
  * │ 无 haze source │ 同上 (按消费方族别取回退色)                     │
  * └──────────────┴────────────────────────────────────────────────┘
@@ -85,24 +85,23 @@ object RinGlass {
  *   if (enableBlur) hazeBlur(style) + Color.Transparent else fallbackColor
  *
  * @param hazeState 宿主 HazeState; null = 无源, 走半透明回退
- * @param blurEnabled 用户设置 displaySetting.enableBlurEffect; false = 半透明回退
  * @param shape 裁剪形状 (玻璃必须与容器同 shape, 否则模糊溢出)
  */
 @Composable
 fun Modifier.rinGlass(
     hazeState: HazeState?,
-    blurEnabled: Boolean = true,
     shape: Shape,
 ): Modifier = this
     .clip(shape)
     .then(
-        if (blurEnabled && hazeState != null) Modifier.hazeBlur(
+        // v4.8.163: 无开关 — 有源即玻璃 (唯一状态)
+        if (hazeState != null) Modifier.hazeBlur(
             input = HazeInput.Sources(hazeState),
             style = RinGlass.blurStyle(),
         ) else Modifier
     )
     .background(
-        if (blurEnabled && hazeState != null) Color.Transparent
+        if (hazeState != null) Color.Transparent
         else RinGlass.fallbackColor()
     )
 
