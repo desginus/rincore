@@ -157,13 +157,13 @@ fun ChatInput(
     onStopVoiceMode: () -> Unit = {},
 ) {
     val toaster = LocalToaster.current
-    // v4.8.163 (用户定版·终局: "把那个模糊的开关删了…做成默认…做成唯一状态…原版
-    // 怎么弄就怎么弄"): **玻璃 = 唯一默认状态** — 恒等同原版 RikkaHub 2.5.6
-    // "启用模糊效果开启" 的形态 (Material3{12dp}), 无开关、无类型、无回退板。
-    // backgroundColor 透明保底: 捕获异常=透出内容 — 数学上不可能再画出不透明板。
+    // v4.8.164 (用户验证: "一模一样的主题在原版那个效果就是我现在所要的" — 163 实测
+    // 纯黑, 同主题实证把残余差异收敛到一处): **与原版 2.5.6 逐字一致** — 样式 =
+    // HazeBlurStyle.Material3 { blurRadius(12.dp) }, 零覆写。Material3 预设底色 =
+    // 不透明 surface = 原版磨砂玻璃"永远在的那块底料": 助手无壁纸/无渐变时, 原版就靠
+    // 它呈现那块可辨识的深色磨砂板; 162/163 我加的"底色透明保底"恰把它删掉 = 露底纯黑。
     val inputHazeStyle = HazeBlurStyle.Material3 {
         blurRadius(12.dp)
-        backgroundColor(androidx.compose.ui.graphics.Color.Transparent)
     }
     val assistant = settings.getCurrentAssistant()
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -258,7 +258,7 @@ fun ChatInput(
                 shape = containerShape,
                 tonalElevation = 0.dp,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                // v4.8.163: 永远透明底 (磨砂由玻璃层呈现; 不存在"关闭态回退板")
+                // v4.8.164: 透明 Surface 底 = 原版"开启模糊效果"语义 (颜色恒透明, 磨砂由玻璃层呈现)
                 color = Color.Transparent,
             ) {
                 Column(
@@ -924,7 +924,6 @@ private fun FullScreenEditor(
     val hazeState = LocalHazeState.current
     val fullscreenHazeStyle = HazeBlurStyle.Material3 {
         blurRadius(12.dp)
-        backgroundColor(androidx.compose.ui.graphics.Color.Transparent)
     }
     val glassModifier = hazeState?.let {
         Modifier.hazeBlur(input = HazeInput.Sources(it), style = fullscreenHazeStyle)
