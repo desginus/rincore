@@ -33,14 +33,14 @@ import dev.chrisbanes.haze.blur.material3.Material3
  * ┌──────────────┬────────────────────────────────────────────────┐
  * │ 状态          │ 渲染                                            │
  * ├──────────────┼────────────────────────────────────────────────┤
- * │ 模糊开启(默认) │ hazeBlur(4dp; 输入框族动态半径≤58px·0.85合成-v4.8.158) + 透明底+1dp 描边 │
+ * │ 模糊开启(默认) │ hazeBlur(4dp) + 透明底 + 1dp 高光/描边         │
  * │ 生成中         │ 同上 (永不在生成期降级为纯色底 — v4.1.5 定版)   │
  * │ 键盘弹出       │ 同上 (仅布局位移动画, 玻璃参数不变)             │
  * │ 空/有内容      │ 同上 (内容多少不改变玻璃材质)                   │
  * │ 语音模式       │ 同上 (行内容切换, 玻璃材质不变)                 │
  * │ 编辑消息       │ 同上                                            │
  * │ 用户关闭模糊    │ 输入框族: 半透明底 (inputFallbackColor,        │
- * │ v4.8.163: 开关已删除—玻璃=唯一状态(开/关辨识不存在)│
+ * │ (enableBlurEffect│   v4.8.144 定版"任何场景默认半透明");          │
  * │  =false)       │ 弹窗族: 纯色回退 (fallbackColor)               │
  * │ 无 haze source │ 同上 (按消费方族别取回退色)                     │
  * └──────────────┴────────────────────────────────────────────────┘
@@ -71,12 +71,11 @@ object RinGlass {
 
     /**
      * v4.8.144 (用户定版): 输入框族"任何场景默认半透明" — 模糊关闭/无源时, 主输入框与
-     * 全屏输入框的回退底色由不透明纯色改为半透明, 不再存在纯色板形态。
-     * v4.8.156 (用户: "输入框可见度改5成"): 0.8 → **0.5** — 关闭模糊路径同样五成可见。
+     * 全屏输入框的回退底色由不透明纯色改为半透明 (alpha 0.8), 不再存在纯色板形态。
      * (弹窗族 HyperGlassPanel 回退保持原规格 — 本值仅输入框族消费。)
      */
     @Composable
-    fun inputFallbackColor(): Color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.5f)
+    fun inputFallbackColor(): Color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.8f)
 }
 
 /**
@@ -85,23 +84,24 @@ object RinGlass {
  *   if (enableBlur) hazeBlur(style) + Color.Transparent else fallbackColor
  *
  * @param hazeState 宿主 HazeState; null = 无源, 走半透明回退
+ * @param blurEnabled 用户设置 displaySetting.enableBlurEffect; false = 半透明回退
  * @param shape 裁剪形状 (玻璃必须与容器同 shape, 否则模糊溢出)
  */
 @Composable
 fun Modifier.rinGlass(
     hazeState: HazeState?,
+    blurEnabled: Boolean = true,
     shape: Shape,
 ): Modifier = this
     .clip(shape)
     .then(
-        // v4.8.163: 无开关 — 有源即玻璃 (唯一状态)
-        if (hazeState != null) Modifier.hazeBlur(
+        if (blurEnabled && hazeState != null) Modifier.hazeBlur(
             input = HazeInput.Sources(hazeState),
             style = RinGlass.blurStyle(),
         ) else Modifier
     )
     .background(
-        if (hazeState != null) Color.Transparent
+        if (blurEnabled && hazeState != null) Color.Transparent
         else RinGlass.fallbackColor()
     )
 

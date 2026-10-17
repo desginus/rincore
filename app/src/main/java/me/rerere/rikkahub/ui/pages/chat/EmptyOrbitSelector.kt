@@ -81,6 +81,7 @@ fun EmptyOrbitSelector(
     onSelectAssistant: (Uuid) -> Unit,
     onSelectFolder: (Uuid?) -> Unit,
     hazeState: HazeState? = null,
+    blurEnabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val settings = LocalSettings.current
@@ -146,6 +147,7 @@ fun EmptyOrbitSelector(
                 halfIcon = iconPx / 2f,
                 label = assistant.name,
                 hazeState = hazeState,
+                blurEnabled = blurEnabled,
                 onClick = { onSelectAssistant(assistant.id) },
             ) {
                 AssistantCircle(avatar = assistant.avatar, name = assistant.name)
@@ -169,6 +171,7 @@ fun EmptyOrbitSelector(
             halfIcon = iconPx / 2f,
             label = stringResource(R.string.chat_page_folder_default),
             hazeState = hazeState,
+            blurEnabled = blurEnabled,
             onClick = { onSelectFolder(null) },
         ) {
             Box(
@@ -196,6 +199,7 @@ fun EmptyOrbitSelector(
                 halfIcon = iconPx / 2f,
                 label = folder.name,
                 hazeState = hazeState,
+                blurEnabled = blurEnabled,
                 onClick = { onSelectFolder(folder.id) },
             ) {
                 Box(
@@ -249,6 +253,7 @@ private fun OrbitItem(
     halfIcon: Float,
     label: String,
     hazeState: HazeState?,
+    blurEnabled: Boolean,
     onClick: () -> Unit,
     icon: @Composable () -> Unit,
 ) {
@@ -280,7 +285,7 @@ private fun OrbitItem(
                 // v4.8.156 (用户定版): 选中高亮全部删除 — 不再有放大/柔光晕/图标变色,
                 // 被选中项仅标签文字变主色 (见下方 label 的 color)。
                 // v4.8.148 (用户定版): 圆形图标 = 输入框同族柔光玻璃
-                .rinGlass(hazeState = hazeState, shape = CircleShape)
+                .rinGlass(hazeState = hazeState, blurEnabled = blurEnabled, shape = CircleShape)
                 .rinGlassHighlight(CircleShape)
                 .clickable(onClick = onClick),
         ) {

@@ -620,9 +620,6 @@
   <string name="setting_display_page_enable_auto_scroll_desc">AI 正在產生內容時，自動捲動至底部</string>
   <string name="setting_display_page_enable_auto_scroll_title">自動滾動</string>
   <string name="setting_display_page_enable_blur_effect_desc">在聊天輸入列啟用模糊效果</string>
-    <string name="setting_display_page_background_effect_type">背景效果類型</string>
-    <string name="setting_display_page_background_effect_blur">模糊</string>
-    <string name="setting_display_page_background_effect_glass">液態玻璃</string>
   <string name="setting_display_page_enable_blur_effect_title">啟用模糊效果</string>
   <string name="setting_display_page_enable_latex_rendering_desc">使用 LaTeX 語法呈現數學表達式與公式</string>
   <string name="setting_display_page_enable_latex_rendering_title">啟用 LaTeX 渲染</string>

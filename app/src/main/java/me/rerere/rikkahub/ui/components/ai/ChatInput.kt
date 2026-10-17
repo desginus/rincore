@@ -157,14 +157,9 @@ fun ChatInput(
     onStopVoiceMode: () -> Unit = {},
 ) {
     val toaster = LocalToaster.current
-    // v4.8.164 (用户验证: "一模一样的主题在原版那个效果就是我现在所要的" — 163 实测
-    // 纯黑, 同主题实证把残余差异收敛到一处): **与原版 2.5.6 逐字一致** — 样式 =
-    // HazeBlurStyle.Material3 { blurRadius(12.dp) }, 零覆写。Material3 预设底色 =
-    // 不透明 surface = 原版磨砂玻璃"永远在的那块底料": 助手无壁纸/无渐变时, 原版就靠
-    // 它呈现那块可辨识的深色磨砂板; 162/163 我加的"底色透明保底"恰把它删掉 = 露底纯黑。
-    val inputHazeStyle = HazeBlurStyle.Material3 {
-        blurRadius(12.dp)
-    }
+    // v4.7.22: 玻璃规格收敛到 RinGlass 单一来源 (4.3 时代原生款: hazeBlur 4dp)。
+    // 全 app 玻璃件 (输入框/弹窗/悬浮工具条/附件面板) 共用同一规格, 防参数漂移。
+    val inputHazeStyle = RinGlass.blurStyle()
     val assistant = settings.getCurrentAssistant()
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
@@ -249,17 +244,23 @@ fun ChatInput(
                     .fillMaxWidth()
                     .clip(containerShape)
                     .then(
-                        // v4.8.163: 无条件玻璃 (唯一状态)
-                        Modifier.hazeBlur(
-                            input = HazeInput.Sources(hazeState),
-                            style = inputHazeStyle,
-                        )
+                        // 4.7.22 输入框显示逻辑 (全状态单一形态, 见 RinGlass 规格表):
+                        //   模糊开启 -> hazeBlur(4dp) + 透明底; 关闭 -> 半透明底
+                        //   (v4.8.144: 原纯色底撤除 — "任何场景默认半透明")。
+                        //   生成中/键盘弹出/空或有内容/语音/编辑 — 一律同上, 不变形。
+                        //   (4.1.5: 生成中降级已删除 — 原版恒模糊; v4.7.11: 双类型已回滚)
+                        if (settings.displaySetting.enableBlurEffect) {
+                            Modifier.hazeBlur(
+                                input = HazeInput.Sources(hazeState),
+                                style = inputHazeStyle,
+                            )
+                        }
+                        else Modifier
                     ),
                 shape = containerShape,
                 tonalElevation = 0.dp,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                // v4.8.164: 透明 Surface 底 = 原版"开启模糊效果"语义 (颜色恒透明, 磨砂由玻璃层呈现)
-                color = Color.Transparent,
+                color = if (settings.displaySetting.enableBlurEffect) Color.Transparent else RinGlass.inputFallbackColor(),
             ) {
                 Column(
                     // v4.8.147: 上下内边距 4→2 (再省 2dp×2, 不影响正文框)
@@ -919,16 +920,21 @@ private fun FullScreenEditor(
     receiveContent: ReceiveContentListener,
     onDone: () -> Unit
 ) {
-    // v4.8.163 (用户定版·终局): 全屏编辑器与主输入框同材质 = **无条件玻璃** (唯一状态)。
-    // 粘贴仍走同一 ReceiveContentListener (行为不变)。
+    // v4.8.144 (用户定版): 全屏输入框重写为**半透明玻璃面板** — 与主输入框同一材质,
+    // 任何场景默认半透明 (不再是不透明纯色板)。模糊开启→hazeBlur 真玻璃 (haze 2.0
+    // 支持 Dialog 跨窗模糊, source 来自聊天页 LocalHazeState); 关闭/无源→半透明底。
+    // 粘贴走同一 ReceiveContentListener (长文转文件/图片附件/光标自管插入行为一致)。
+    val settings = LocalSettings.current
     val hazeState = LocalHazeState.current
-    val fullscreenHazeStyle = HazeBlurStyle.Material3 {
-        blurRadius(12.dp)
-    }
-    val glassModifier = hazeState?.let {
-        Modifier.hazeBlur(input = HazeInput.Sources(it), style = fullscreenHazeStyle)
-    } ?: Modifier
     val shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    val glassModifier = if (settings.displaySetting.enableBlurEffect) {
+        hazeState?.let {
+            Modifier.hazeBlur(
+                input = HazeInput.Sources(it),
+                style = RinGlass.blurStyle(),
+            )
+        } ?: Modifier
+    } else Modifier
     BasicAlertDialog(
         onDismissRequest = {
             onDone()
@@ -952,7 +958,11 @@ private fun FullScreenEditor(
                     .then(glassModifier),
                 shape = shape,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                color = Color.Transparent,
+                color = if (settings.displaySetting.enableBlurEffect && hazeState != null) {
+                    Color.Transparent
+                } else {
+                    RinGlass.inputFallbackColor()
+                },
             ) {
                 Column(
                     modifier = Modifier
