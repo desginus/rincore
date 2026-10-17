@@ -347,9 +347,11 @@ private fun ChatListNormal(
                 contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 16.dp) + PaddingValues(bottom = 32.dp + innerPadding.calculateBottomPadding()),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
+                // v4.8.159 (教训 #79 复现·沙箱拼图实证): 消息列表**退出模糊源** —
+                // 大半径模糊会把框下/面板下的文字拖成灰色横带 = 用户所说的"格栅感"
+                // (拼图对照: 源含列表=灰带明显 / 源仅背景=干净磨砂)。玻璃只对背景模糊。
                 modifier = Modifier
                     .fillMaxSize()
-                    .hazeSource(state = hazeState)
                     .padding(top = innerPadding.calculateTopPadding()),
             ) {
             itemsIndexed(

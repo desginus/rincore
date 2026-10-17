@@ -75,6 +75,16 @@ object RinGlass {
      *     半径再大也"看得见但不强"; 0.85 = 重磨砂仍留微透。
      * 仅输入框族 (主输入框/全屏输入框) 消费; 弹窗/工具条/轨道图标仍用 blurStyle()。
      */
+    /**
+     * v4.8.159 (用户: "实在不行你就多叠几层不透明的板子，或者半透明的那种。你自己
+     * 先看一下效果" — 沙箱拼图实测结论): 输入框玻璃在模糊层之上**再叠一层半透明乳白板**。
+     * 拼图对照 (preview.png): 纯叠板=灰色塑料感 / 纯模糊(源仅背景)=干净但偏薄 /
+     * 模糊+单层乳白板=磨砂实体感与可读性最佳。32% 与模糊层(alpha0.85)合成 = 稳定磨砂。
+     */
+    @Composable
+    fun inputPlateColor(): Color =
+        MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.32f)
+
     @Composable
     fun inputBlurStyle(): HazeBlurStyle {
         // 组合上下文取值 (教训 B175: @Composable getter 不得进 DSL 构建 lambda)
