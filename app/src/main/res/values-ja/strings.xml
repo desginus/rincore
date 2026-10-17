@@ -622,6 +622,12 @@
   <string name="setting_display_page_enable_blur_effect_desc">チャット入力バーにぼかし効果を有効にする</string>
   <string name="setting_display_page_enable_blur_effect_title">ぼかし効果を有効にする</string>
   <string name="setting_glass_mask_title">入力欄マスク</string>
+  <string name="setting_glass_mask_color_title">マスクの色</string>
+  <string name="setting_glass_mask_color_theme">テーマに従う</string>
+  <string name="setting_glass_mask_color_dark">ダーク</string>
+  <string name="setting_glass_mask_color_light">ライト</string>
+  <string name="setting_glass_noise_title">入力欄ノイズ</string>
+  <string name="setting_glass_fog_title">入力欄フォグ</string>
   <string name="setting_display_page_enable_latex_rendering_desc">LaTeX構文を使用して数式や数値表現をレンダリングする</string>
   <string name="setting_display_page_enable_latex_rendering_title">LaTeXレンダリングを有効にする</string>
   <string name="setting_display_page_enable_message_generation_haptic_effect_desc">メッセージ生成時に触覚フィードバックを有効にする</string>

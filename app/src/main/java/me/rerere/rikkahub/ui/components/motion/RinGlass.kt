@@ -11,6 +11,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
@@ -61,6 +62,18 @@ object RinGlass {
         blurRadius(4.dp)
     }
 
+    /**
+     * v4.8.178: 输入栏玻璃样式 — 4dp 基座 (119 定版半径, 不提供半径旋钮) + 可调噪点 (0..100)。
+     * 默认 15 = Material3 预设默认档 (beta01 源码已核实: 预设只写 backgroundColor,
+     * 噪点继承 HazeBlurDefaults.noiseFactor=0.15 — 故 15% 与设置前逐字节一致)。
+     * 双层玻璃 (S1 中间片 / S2 第二层) 两层共用本样式。
+     */
+    @Composable
+    fun inputBlurStyle(noisePercent: Int): HazeBlurStyle = HazeBlurStyle.Material3 {
+        blurRadius(4.dp)
+        noiseFactor(noisePercent.coerceIn(0, 100) / 100f)
+    }
+
     /** 高光描边 (澎湃 4 玻璃质感 — HyperGlassPanel 同源) */
     val highlightColor: Color = Color.White.copy(alpha = 0.14f)
 
@@ -69,14 +82,33 @@ object RinGlass {
     fun fallbackColor(): Color = MaterialTheme.colorScheme.surfaceContainerLow
 
     /**
-     * v4.8.177: 输入栏蒙版 — 叠加在模糊层之上的可调透明度覆盖层。
-     * 0% = 关闭 (返回透明, 观感与无蒙版完全一致); 颜色跟随主题 (surfaceContainerLow)。
+     * v4.8.177/178: 输入栏蒙版 — 叠加在模糊层之上的可调透明度覆盖层。
+     * 0% = 关闭 (返回透明, 观感与无蒙版一致); 颜色: 0=跟随主题 1=深色 2=浅色。
      */
     @Composable
-    fun inputMaskColor(percent: Int): Color {
+    fun inputMaskColor(colorMode: Int, percent: Int): Color {
         val p = percent.coerceIn(0, 100) / 100f
-        return if (p <= 0f) Color.Transparent
-        else MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = p)
+        if (p <= 0f) return Color.Transparent
+        val base = when (colorMode) {
+            1 -> Color.Black
+            2 -> Color.White
+            else -> MaterialTheme.colorScheme.surfaceContainerLow
+        }
+        return base.copy(alpha = p)
+    }
+
+    /**
+     * v4.8.178: 雾化 — 白色柔雾覆盖层 (上浓下淡, 竖向渐变); 0 = 关闭 (返回 null 无雾)。
+     */
+    fun fogBrush(percent: Int): Brush? {
+        val p = percent.coerceIn(0, 100) / 100f
+        return if (p <= 0f) null
+        else Brush.verticalGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.7f * p),
+                Color.White.copy(alpha = 0.15f * p),
+            ),
+        )
     }
 }
 

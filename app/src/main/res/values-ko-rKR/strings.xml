@@ -622,6 +622,12 @@
   <string name="setting_display_page_enable_blur_effect_desc">채팅 입력창에 블러 효과 활성화</string>
   <string name="setting_display_page_enable_blur_effect_title">흐림 효과 활성화</string>
   <string name="setting_glass_mask_title">입력창 마스크</string>
+  <string name="setting_glass_mask_color_title">마스크 색상</string>
+  <string name="setting_glass_mask_color_theme">테마 따르기</string>
+  <string name="setting_glass_mask_color_dark">어둡게</string>
+  <string name="setting_glass_mask_color_light">밝게</string>
+  <string name="setting_glass_noise_title">입력창 노이즈</string>
+  <string name="setting_glass_fog_title">입력창 포그</string>
   <string name="setting_display_page_enable_latex_rendering_desc">LaTeX 구문을 사용해 수식과 공식을 렌더링합니다</string>
   <string name="setting_display_page_enable_latex_rendering_title">LaTeX 렌더링 활성화</string>
   <string name="setting_display_page_enable_message_generation_haptic_effect_desc">메시지 생성 시 진동 피드백 활성화</string>

@@ -64,8 +64,10 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -82,6 +84,8 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.HazeBlurStyle
 import dev.chrisbanes.haze.blur.hazeBlur
 import dev.chrisbanes.haze.blur.material3.Material3
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import com.dokar.sonner.ToastType
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collectLatest
@@ -157,10 +161,21 @@ fun ChatInput(
 ) {
     val toaster = LocalToaster.current
     val hazeTintColor = MaterialTheme.colorScheme.surfaceContainerLow
-    // v4.8.176 (渲染回滚 4.8.119): 玻璃规格 = RinGlass 单一来源 (4.3 时代原生款: hazeBlur 4dp)。
-    val inputHazeStyle = RinGlass.blurStyle()
-    // v4.8.177: 输入栏蒙版 — 叠加在模糊层之上的一层可调透明度覆盖层 (默认 0% = 等同无蒙版)。
-    val glassMaskColor = RinGlass.inputMaskColor(settings.displaySetting.glassMaskPercent)
+    // v4.8.178: 输入栏外观三旋钮（119 定版 4dp 基座, 半径不再提供旋钮）: 噪点 / 蒙版 / 雾化。
+    val inputHazeStyle = RinGlass.inputBlurStyle(settings.displaySetting.glassNoisePercent)
+    val glassMaskColor = RinGlass.inputMaskColor(
+        colorMode = settings.displaySetting.glassMaskColorMode,
+        percent = settings.displaySetting.glassMaskPercent,
+    )
+    // v4.8.178: 雾化 — 白色柔雾覆盖层（上浓下淡）; null = 关闭。
+    val fogBrush = RinGlass.fogBrush(settings.displaySetting.glassFogPercent)
+    // v4.8.178: 深色主题 → 输入栏描边 = 纯白线（用户定版）。
+    val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    // v4.8.178 双层玻璃（用户定版: 第一层输出的再模糊一遍、输入栏再圈出来、边缘约3dp只模糊一遍做层次）:
+    //   S1 = 对源(背景)单次模糊, 同槽位兄弟节点, 同时作为第二层模糊的源（天然对齐零坐标计算）;
+    //   S2 = 对 S1 输出再模糊一遍、内缩 3dp → 边缘一圈露出 S1 单模糊 = 层次;
+    //   最差情形（第二层捕获失败）退化 = 单层模糊, 不会黑/不会坏。
+    val frostMidState = rememberHazeState()
     val assistant = settings.getCurrentAssistant()
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
@@ -240,26 +255,49 @@ fun ChatInput(
                 onResume = onResumeMessageQueue,
             )
             // v3.6.36: 页面完全静默 — 降维开启/关闭页面无差别 (状态与统计移至设置-其他功能)
+            // v4.8.178 双层玻璃 (用户定版): S1 中间玻璃片=对源单次模糊并作为第二层的源; S2=对 S1
+            // 输出再模糊一遍、内缩 3dp → 边缘一圈只显单模糊做层次; 雾化/蒙版在层之上内容之下。
+            Box(modifier = Modifier.fillMaxWidth()) {
+                if (settings.displaySetting.enableBlurEffect) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clip(containerShape)
+                            .hazeSource(state = frostMidState)
+                            .hazeBlur(
+                                input = HazeInput.Sources(hazeState),
+                                style = inputHazeStyle,
+                            ),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .padding(3.dp)
+                            .clip(containerShape)
+                            .hazeBlur(
+                                input = HazeInput.Sources(frostMidState),
+                                style = inputHazeStyle,
+                            ),
+                    )
+                    fogBrush?.let { brush ->
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .clip(containerShape)
+                                .drawBehind { drawRect(brush = brush) },
+                        )
+                    }
+                }
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(containerShape)
-                    .then(
-                        // 4.7.22 输入框显示逻辑 (全状态单一形态, 见 RinGlass 规格表):
-                        //   模糊开启 -> hazeBlur(4dp) + 透明底; 关闭 -> 半透明纯色底。
-                        //   生成中/键盘弹出/空或有内容/语音/编辑 — 一律同上, 不变形。
-                        //   (4.1.5: 生成中降级已删除 — 原版恒模糊; v4.7.11: 双类型已回滚)
-                        if (settings.displaySetting.enableBlurEffect) {
-                            Modifier.hazeBlur(
-                                input = HazeInput.Sources(hazeState),
-                                style = inputHazeStyle,
-                            )
-                        }
-                        else Modifier
-                    ),
+                    .clip(containerShape),
                 shape = containerShape,
                 tonalElevation = 0.dp,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                border = BorderStroke(
+                    1.dp,
+                    if (darkTheme) Color.White else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                ),
                 color = if (settings.displaySetting.enableBlurEffect) glassMaskColor else hazeTintColor,
             ) {
                 Column(
@@ -408,6 +446,7 @@ fun ChatInput(
                             }
                     }
                 }
+            }
             }
 
         }

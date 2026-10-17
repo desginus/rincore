@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -190,6 +191,68 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
                                     valueRange = 0f..100f,
                                 )
                                 Text("${displaySetting.glassMaskPercent}%")
+                            }
+                        },
+                    )
+                    // v4.8.178: 蒙版颜色 — 深/浅可选（透明 = 把浓度拉到 0%）
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_glass_mask_color_title)) },
+                        supportingContent = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                FilterChip(
+                                    selected = displaySetting.glassMaskColorMode == 0,
+                                    onClick = { updateDisplaySetting(displaySetting.copy(glassMaskColorMode = 0)) },
+                                    label = { Text(stringResource(R.string.setting_glass_mask_color_theme)) },
+                                )
+                                FilterChip(
+                                    selected = displaySetting.glassMaskColorMode == 1,
+                                    onClick = { updateDisplaySetting(displaySetting.copy(glassMaskColorMode = 1)) },
+                                    label = { Text(stringResource(R.string.setting_glass_mask_color_dark)) },
+                                )
+                                FilterChip(
+                                    selected = displaySetting.glassMaskColorMode == 2,
+                                    onClick = { updateDisplaySetting(displaySetting.copy(glassMaskColorMode = 2)) },
+                                    label = { Text(stringResource(R.string.setting_glass_mask_color_light)) },
+                                )
+                            }
+                        },
+                    )
+                    // v4.8.178: 输入栏噪点（0-100%; 15%=Material3 预设档）
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_glass_noise_title)) },
+                        supportingContent = {
+                            Column {
+                                Slider(
+                                    value = displaySetting.glassNoisePercent.toFloat(),
+                                    onValueChange = {
+                                        updateDisplaySetting(
+                                            displaySetting.copy(glassNoisePercent = it.toInt().coerceIn(0, 100))
+                                        )
+                                    },
+                                    valueRange = 0f..100f,
+                                )
+                                Text("${displaySetting.glassNoisePercent}%")
+                            }
+                        },
+                    )
+                    // v4.8.178: 输入栏雾化（白色柔雾 上浓下淡; 0=关闭）
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_glass_fog_title)) },
+                        supportingContent = {
+                            Column {
+                                Slider(
+                                    value = displaySetting.glassFogPercent.toFloat(),
+                                    onValueChange = {
+                                        updateDisplaySetting(
+                                            displaySetting.copy(glassFogPercent = it.toInt().coerceIn(0, 100))
+                                        )
+                                    },
+                                    valueRange = 0f..100f,
+                                )
+                                Text("${displaySetting.glassFogPercent}%")
                             }
                         },
                     )

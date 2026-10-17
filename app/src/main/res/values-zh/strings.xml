@@ -653,6 +653,12 @@
   <string name="setting_display_page_enable_blur_effect_desc">在聊天输入栏启用模糊效果</string>
   <string name="setting_display_page_enable_blur_effect_title">启用模糊效果</string>
   <string name="setting_glass_mask_title">输入栏蒙版</string>
+  <string name="setting_glass_mask_color_title">蒙版颜色</string>
+  <string name="setting_glass_mask_color_theme">跟随主题</string>
+  <string name="setting_glass_mask_color_dark">深色</string>
+  <string name="setting_glass_mask_color_light">浅色</string>
+  <string name="setting_glass_noise_title">输入栏噪点</string>
+  <string name="setting_glass_fog_title">输入栏雾化</string>
   <string name="setting_display_page_enable_latex_rendering_desc">使用 LaTeX 语法渲染数学表达式和公式</string>
   <string name="setting_display_page_enable_latex_rendering_title">启用 LaTeX 渲染</string>
   <string name="setting_display_page_enable_message_generation_haptic_effect_desc">消息生成时启用触觉反馈效果</string>

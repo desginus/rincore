@@ -954,7 +954,8 @@ private fun TopBar(
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     TopAppBar(
         // v4.8.147 (用户定版): 上次上移过多 — 下移 5dp (2/5 状态栏 + 5dp)
-        windowInsets = WindowInsets(top = statusBarTop * 2f / 5f + 5.dp),
+        // v4.8.178 (用户定版): 再下移 10dp (2/5 状态栏 + 15dp)
+        windowInsets = WindowInsets(top = statusBarTop * 2f / 5f + 15.dp),
         colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
         navigationIcon = {
             if (!bigScreen) {
