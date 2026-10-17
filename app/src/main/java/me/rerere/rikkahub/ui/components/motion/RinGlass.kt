@@ -53,13 +53,12 @@ import dev.chrisbanes.haze.blur.material3.Material3
  */
 object RinGlass {
     /**
-     * 柔光玻璃模糊样式 — 唯一规格。
-     * blurRadius 4dp: 4.3 时代参数 (v3.6.82 起: 8->4dp, 120Hz GPU 采样开销优化),
-     * 即用户认可的"原生款"。
+     * 柔光玻璃模糊样式 — 唯一规格，对齐原版 RikkaHub 2.5.6 的 blurRadius(12.dp)。
+     * v4.8.166: 4dp → 12dp。4dp 半径下列表文字残影锐利，叠加 haze 默认噪点呈现格栅感；
+     * 原版 12dp 与之一致，模糊后的列表背景不再呈颗粒状。
      */
-    @Composable
     fun blurStyle(): HazeBlurStyle = HazeBlurStyle.Material3 {
-        blurRadius(4.dp)
+        blurRadius(12.dp)
     }
 
     /** 高光描边 (澎湃 4 玻璃质感 — HyperGlassPanel 同源) */
