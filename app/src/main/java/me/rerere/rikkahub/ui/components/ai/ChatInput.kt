@@ -82,6 +82,11 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.HazeBlurStyle
 import dev.chrisbanes.haze.blur.hazeBlur
 import dev.chrisbanes.haze.blur.material3.Material3
+import dev.chrisbanes.haze.glass.GlassDefaults
+import dev.chrisbanes.haze.glass.GlassStyle
+import dev.chrisbanes.haze.glass.OpticalSizeValue
+import dev.chrisbanes.haze.glass.hazeGlass
+import dev.chrisbanes.haze.glass.material3.Material3
 import com.dokar.sonner.ToastType
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collectLatest
@@ -98,6 +103,7 @@ import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Fullscreen
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.datastore.BackgroundEffectType
 import me.rerere.rikkahub.ui.components.motion.LocalHazeState
 import me.rerere.rikkahub.ui.components.motion.RinGlass
 import me.rerere.rikkahub.data.datastore.Settings
@@ -157,10 +163,14 @@ fun ChatInput(
     onStopVoiceMode: () -> Unit = {},
 ) {
     val toaster = LocalToaster.current
-    // v4.7.22: 玻璃规格收敛到 RinGlass 单一来源 (4.3 时代原生款: hazeBlur 4dp)。
-    // v4.8.156 (用户: "输入框可见度改5成"): 输入框族专用 inputBlurStyle (5成合成)。
-    // 全 app 玻璃件 (输入框/弹窗/悬浮工具条/附件面板) 共用同一规格, 防参数漂移。
-    val inputHazeStyle = RinGlass.inputBlurStyle()
+    // v4.8.160 (用户定版: "直接去抄原版的，原版256版本就可以"): 输入框玻璃 = **原版
+    // RikkaHub 2.5.6 原文实现** — 两形态: BLUR = HazeBlurStyle.Material3{12dp};
+    // GLASS = haze-glass 液态玻璃 (GlassStyle.Material3, containerColor=surfaceContainerLow,
+    // tint=同色@0.3, optics 16dp/depth 0.5)。回退色 = 不透明 surfaceContainerLow (原版)。
+    val hazeTintColor = MaterialTheme.colorScheme.surfaceContainerLow
+    val inputHazeStyle = HazeBlurStyle.Material3 {
+        blurRadius(12.dp)
+    }
     val assistant = settings.getCurrentAssistant()
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
@@ -245,24 +255,35 @@ fun ChatInput(
                     .fillMaxWidth()
                     .clip(containerShape)
                     .then(
-                        // 4.7.22 输入框显示逻辑 (全状态单一形态, 见 RinGlass 规格表):
-                        //   模糊开启 -> hazeBlur(4dp) + 透明底; 关闭 -> 半透明底
-                        //   (v4.8.144: 原纯色底撤除 — "任何场景默认半透明")。
-                        //   生成中/键盘弹出/空或有内容/语音/编辑 — 一律同上, 不变形。
-                        //   (4.1.5: 生成中降级已删除 — 原版恒模糊; v4.7.11: 双类型已回滚)
+                        // v4.8.160: 原版 2.5.6 双形态 (模糊 / 液态玻璃)
                         if (settings.displaySetting.enableBlurEffect) {
-                            Modifier.hazeBlur(
-                                input = HazeInput.Sources(hazeState),
-                                style = inputHazeStyle,
-                            )
-                        }
-                        else Modifier
+                            when (settings.displaySetting.backgroundEffectType) {
+                                BackgroundEffectType.BLUR -> Modifier.hazeBlur(
+                                    input = HazeInput.Sources(hazeState),
+                                    style = inputHazeStyle,
+                                )
+                                BackgroundEffectType.GLASS -> Modifier.hazeGlass(
+                                    input = HazeInput.Sources(hazeState),
+                                    style = GlassStyle.Material3(
+                                        containerColor = hazeTintColor,
+                                        tint = hazeTintColor.copy(alpha = 0.3f),
+                                    ) {
+                                        // Keep background text from competing with the input text.
+                                        optics(GlassDefaults.optics.copy(
+                                            blurRadius = OpticalSizeValue.Fixed(16.dp),
+                                            depth = OpticalSizeValue.Fixed(0.5f),
+                                        ))
+                                        shape(containerShape)
+                                    },
+                                )
+                            }
+                        } else Modifier
                     ),
                 shape = containerShape,
                 tonalElevation = 0.dp,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                // v4.8.159: 模糊层之上叠一层半透明乳白板（沙箱拼图实测最优组合）
-                color = if (settings.displaySetting.enableBlurEffect) RinGlass.inputPlateColor() else RinGlass.inputFallbackColor(),
+                // v4.8.160: 原版口径 — 模糊开=透明 (玻璃层自带材质), 关=不透明回退色
+                color = if (settings.displaySetting.enableBlurEffect) Color.Transparent else hazeTintColor,
             ) {
                 Column(
                     // v4.8.147: 上下内边距 4→2 (再省 2dp×2, 不影响正文框)
@@ -922,21 +943,10 @@ private fun FullScreenEditor(
     receiveContent: ReceiveContentListener,
     onDone: () -> Unit
 ) {
-    // v4.8.144 (用户定版): 全屏输入框重写为**半透明玻璃面板** — 与主输入框同一材质,
-    // 任何场景默认半透明 (不再是不透明纯色板)。模糊开启→hazeBlur 真玻璃 (haze 2.0
-    // 支持 Dialog 跨窗模糊, source 来自聊天页 LocalHazeState); 关闭/无源→半透明底。
-    // 粘贴走同一 ReceiveContentListener (长文转文件/图片附件/光标自管插入行为一致)。
-    val settings = LocalSettings.current
-    val hazeState = LocalHazeState.current
-    val shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-    val glassModifier = if (settings.displaySetting.enableBlurEffect) {
-        hazeState?.let {
-            Modifier.hazeBlur(
-                input = HazeInput.Sources(it),
-                style = RinGlass.inputBlurStyle(),
-            )
-        } ?: Modifier
-    } else Modifier
+    // v4.8.160 (用户定版: "直接去抄原版的，原版256版本就可以"): 全屏编辑器还原原版
+    // RikkaHub 2.5.6 — 普通 Surface 面板 (顶角 16dp), 无玻璃/半透明底/描边 (原版即如此)。
+    // 粘贴仍走同一 ReceiveContentListener (行为不变)。
+    val shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
     BasicAlertDialog(
         onDismissRequest = {
             onDone()
@@ -955,17 +965,8 @@ private fun FullScreenEditor(
             Surface(
                 modifier = Modifier
                     .widthIn(max = 800.dp)
-                    .fillMaxHeight(0.9f)
-                    .clip(shape)
-                    .then(glassModifier),
+                    .fillMaxHeight(0.9f),
                 shape = shape,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                // v4.8.159: 同主输入框 — 模糊层之上叠半透明乳白板
-                color = if (settings.displaySetting.enableBlurEffect && hazeState != null) {
-                    RinGlass.inputPlateColor()
-                } else {
-                    RinGlass.inputFallbackColor()
-                },
             ) {
                 Column(
                     modifier = Modifier
