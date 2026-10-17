@@ -12,6 +12,8 @@ package me.rerere.rikkahub.ui.glass
  * 全链绕开 haze/Skia RenderEffect GPU 模糊合成链 — 用户实测 (B187/B188):
  * 该链任何半径/噪点/板/保真档组合都产量化采样网格 (锐利方块马赛克), 不可调除。
  * 磨砂管线 (haze) 保留为设置内可选引擎 (D19 旋钮全部保留)。
+ * v4.8.175: 全黑修复 — composed 工厂丢弃了 onGloballyPositioned(截错区域=左上角纯黑);
+ * 现为完整返回链 + 就绪门(锚点/源未就绪零绘制) + 读回异常兜底。
  * ───────────────────────────────────────────────────────────────*/
 
 import android.graphics.Bitmap
@@ -77,19 +79,23 @@ public fun Modifier.rinFrostSource(state: RinFrostState?): Modifier =
             val layer = rememberGraphicsLayer()
             DisposableEffect(state) {
                 state.sources.add(layer)
-                state.origins[layer] = Offset.Zero
                 onDispose {
                     state.sources.remove(layer)
                     state.origins.remove(layer)
                 }
             }
-            onGloballyPositioned { state.origins[layer] = it.positionInRoot() }
-            drawWithContent {
-                layer.record(size = IntSize(size.width.roundToInt(), size.height.roundToInt())) {
-                    this@drawWithContent.drawContent()
+            // v4.8.175 修复: composed 工厂必须返回完整修饰链——旧写法把 onGloballyPositioned
+            // 作为独立表达式语句构建后被丢弃(只有最后表达式会被返回, Kotlin 静默, 编译零警告),
+            // 位置跟踪失效、锚点恒 (0,0) → 捕获截到屏幕左上角标题栏区(纯黑) → 输入栏全黑。教训 #99:
+            // composed 里每个子修饰器都必须挂在返回链上。
+            this
+                .onGloballyPositioned { state.origins[layer] = it.positionInRoot() }
+                .drawWithContent {
+                    layer.record(size = IntSize(size.width.roundToInt(), size.height.roundToInt())) {
+                        this@drawWithContent.drawContent()
+                    }
+                    drawContent()
                 }
-                drawContent()
-            }
         }
     }
 
@@ -102,40 +108,57 @@ public fun Modifier.rinFrost(
     val density = LocalDensity.current
     val smallLayer = rememberGraphicsLayer()
     val scope = rememberCoroutineScope()
-    var anchor by remember { mutableStateOf(Offset.Zero) }
+    var anchor by remember { mutableStateOf<Offset?>(null) }
     var frosted by remember { mutableStateOf<ImageBitmap?>(null) }
     var lastMs by remember { mutableLongStateOf(0L) }
     var inFlight by remember { mutableStateOf(false) }
-    onGloballyPositioned { anchor = it.positionInRoot() }
-    drawBehind {
-        val now = SystemClock.elapsedRealtime()
-        if (!inFlight && (frosted == null || now - lastMs >= FROST_THROTTLE_MS)) {
-            lastMs = now
-            inFlight = true
-            val sw = (size.width / FROST_DOWNSCALE).roundToInt().coerceAtLeast(1)
-            val sh = (size.height / FROST_DOWNSCALE).roundToInt().coerceAtLeast(1)
-            val radiusSmall = ((radiusDp * density.density / FROST_DOWNSCALE) / 2f)
-                .roundToInt().coerceIn(1, 6)
-            smallLayer.record(size = IntSize(sw, sh)) {
-                scale(1f / FROST_DOWNSCALE, pivot = Offset.Zero) {
-                    state.sources.forEach { src ->
-                        val off = state.origins[src] ?: Offset.Zero
-                        translate(off.x - anchor.x, off.y - anchor.y) {
-                            drawLayer(src)
+    // v4.8.175 修复: 完整返回链(与 rinFrostSource 同款——旧写法 onGloballyPositioned 被丢弃,
+    // anchor 恒 (0,0) = 全黑根因) + 锚点/来源就绪门: 未就绪宁可零绘制, 绝不截错区域画黑块;
+    // 读回/模糊异常 = 保持上一帧并下个节流窗重试。
+    this
+        .onGloballyPositioned { anchor = it.positionInRoot() }
+        .drawBehind {
+            val anchorNow = anchor ?: return@drawBehind
+            val ready = state.sources.mapNotNull { src -> state.origins[src]?.let { src to it } }
+            if (ready.isEmpty()) return@drawBehind
+            val now = SystemClock.elapsedRealtime()
+            if (!inFlight && (frosted == null || now - lastMs >= FROST_THROTTLE_MS)) {
+                lastMs = now
+                inFlight = true
+                val sw = (size.width / FROST_DOWNSCALE).roundToInt().coerceAtLeast(1)
+                val sh = (size.height / FROST_DOWNSCALE).roundToInt().coerceAtLeast(1)
+                val radiusSmall = ((radiusDp * density.density / FROST_DOWNSCALE) / 2f)
+                    .roundToInt().coerceIn(1, 6)
+                val recorded = try {
+                    smallLayer.record(size = IntSize(sw, sh)) {
+                        scale(1f / FROST_DOWNSCALE, pivot = Offset.Zero) {
+                            ready.forEach { (src, off) ->
+                                translate(off.x - anchorNow.x, off.y - anchorNow.y) {
+                                    drawLayer(src)
+                                }
+                            }
                         }
                     }
+                    true
+                } catch (_: Throwable) {
+                    false
                 }
-            }
-            // toImageBitmap = suspend 读回 (读回与 CPU 模糊在协程完成, 结果经状态驱动重绘;
-            // in-flight 防重入; 读回拿到的是最近一次 record = 磨砂内容, 竞态无害)
-            scope.launch {
-                try {
-                    frosted = rinFrostBoxBlur(smallLayer.toImageBitmap(), radiusSmall)
-                } finally {
+                // toImageBitmap = suspend 读回 (读回与 CPU 模糊在协程完成, 结果经状态驱动重绘;
+                // in-flight 防重入; 读回拿到的是最近一次 record = 磨砂内容, 竞态无害)
+                if (recorded) {
+                    scope.launch {
+                        try {
+                            frosted = rinFrostBoxBlur(smallLayer.toImageBitmap(), radiusSmall)
+                        } catch (_: Throwable) {
+                            // 保持上一帧, 下个节流窗重试 (绝不画黑)
+                        } finally {
+                            inFlight = false
+                        }
+                    }
+                } else {
                     inFlight = false
                 }
             }
-        }
         frosted?.let { img ->
             drawImage(
                 image = img,
