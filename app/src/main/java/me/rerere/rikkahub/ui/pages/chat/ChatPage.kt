@@ -110,6 +110,9 @@ import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.ui.components.ai.ChatAttachmentPickerActions
 import me.rerere.rikkahub.ui.components.motion.LocalHazeState
+import me.rerere.rikkahub.ui.glass.LocalRinFrostState
+import me.rerere.rikkahub.ui.glass.rememberRinFrostState
+import me.rerere.rikkahub.ui.glass.rinFrostSource
 import me.rerere.rikkahub.ui.components.motion.rinGlass
 import me.rerere.rikkahub.ui.components.motion.rinGlassHighlight
 import me.rerere.rikkahub.ui.components.ai.ChatInput
@@ -447,6 +450,7 @@ private fun ChatPageContent(
     val operitToolProviderForPicker: me.rerere.rikkahub.data.operit.runtime.OperitToolProvider = koinInject()
     var previewMode by rememberSaveable { mutableStateOf(false) }
     val hazeState = rememberHazeState()
+    val frostState = rememberRinFrostState()
     // v3.8.9: 分享面板 (外部 Activity) 返回后 Haze 模糊纹理失效成黑框,
     // 进设置再返回能恢复 (导航触发重组), 分享返回不触发任何重组。
     // ON_RESUME 递增 tick 强制背景重组, 重建模糊纹理。
@@ -535,6 +539,7 @@ private fun ChatPageContent(
             setting = setting,
             modifier = Modifier
                 .hazeSource(hazeState)
+                .rinFrostSource(frostState)
                 .drawWithContent {
                     @Suppress("UNUSED_EXPRESSION")
                     hazeRebuildTick
@@ -547,6 +552,7 @@ private fun ChatPageContent(
         // 本页背景 source (HyperDialog/HyperGlassPanel 真模糊)
         androidx.compose.runtime.CompositionLocalProvider(
             LocalHazeState provides hazeState,
+            LocalRinFrostState provides frostState,
         ) {
         Scaffold(
             topBar = {

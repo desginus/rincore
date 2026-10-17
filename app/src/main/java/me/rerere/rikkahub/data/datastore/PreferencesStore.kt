@@ -1119,6 +1119,7 @@ data class DisplaySetting(
     val glassNoisePercent: Int = 0, // 噪点 0..30 (原版 Material3 预设默认=15)
     val glassPlateLayers: Int = 1, // 板层数 1..3 (N 层同浓度叠加)
     val glassBlurLayers: Int = 1, // 模糊层数 1..2 (2=blur→板→blur 夹心, 实验)
+    val glassEngine: Int = 1, // 模糊技术 0=haze 磨砂管线 1=RinFrost 自管高斯 (v4.8.174 默认换路线)
     val chatFontFamily: ChatFontFamily = ChatFontFamily.DEFAULT,
     val chatCustomFontPath: String = "",
     val chatCustomFontName: String = "",

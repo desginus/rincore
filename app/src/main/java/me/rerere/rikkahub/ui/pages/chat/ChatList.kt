@@ -54,6 +54,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
+import me.rerere.rikkahub.ui.glass.LocalRinFrostState
+import me.rerere.rikkahub.ui.glass.rinFrostSource
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -350,6 +352,7 @@ private fun ChatListNormal(
                 modifier = Modifier
                     .fillMaxSize()
                     .hazeSource(state = hazeState)
+                    .rinFrostSource(LocalRinFrostState.current)
                     .padding(top = innerPadding.calculateTopPadding()),
             ) {
             itemsIndexed(
@@ -688,6 +691,7 @@ private fun ChatListPreview(
             .padding(top = innerPadding.calculateTopPadding())
             .fillMaxSize()
             .hazeSource(state = hazeState)
+            .rinFrostSource(LocalRinFrostState.current)
             // v4.8.104: 点空白处返回默认对话页（列表项/按钮/输入框各自消费点击, 空白回落此处）
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },

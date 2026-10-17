@@ -634,6 +634,9 @@
   <string name="setting_glass_noise_title">噪點（顆粒）</string>
   <string name="setting_glass_blur_layers_title">模糊層數</string>
   <string name="setting_glass_plate_layers_title">板層數</string>
+  <string name="setting_glass_engine_title">模糊技術</string>
+  <string name="setting_glass_engine_gaussian">高斯模糊（自管）</string>
+  <string name="setting_glass_engine_frosted">磨砂管線（haze）</string>
   <string name="setting_display_page_enable_blur_effect_title">啟用模糊效果</string>
   <string name="setting_display_page_enable_latex_rendering_desc">使用 LaTeX 語法呈現數學表達式與公式</string>
   <string name="setting_display_page_enable_latex_rendering_title">啟用 LaTeX 渲染</string>

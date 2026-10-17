@@ -101,6 +101,8 @@ import me.rerere.hugeicons.stroke.Fullscreen
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.motion.LocalHazeState
+import me.rerere.rikkahub.ui.glass.LocalRinFrostState
+import me.rerere.rikkahub.ui.glass.rinFrost
 import me.rerere.rikkahub.ui.components.motion.RinGlass
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
@@ -189,6 +191,18 @@ fun ChatInput(
     ) {
         Modifier.drawBehind { drawRect(glassPlateColor) }
     } else Modifier
+    // v4.8.174 自管高斯引擎 (RinFrost, 用户定版换技术路线): 捕获→1/8 降采样→CPU 盒式模糊
+    // →上采样, 绕开 GPU 模糊合成链 (用户实测该链任何参数组合都产量化采样网格, B188)。
+    // 无 LocalRinFrostState (非聊天窗) 或引擎选磨砂时自动退回 haze 链。
+    val useFrost = settings.displaySetting.enableBlurEffect &&
+        settings.displaySetting.glassEngine == 1 && LocalRinFrostState.current != null
+    val glassFrostModifier: Modifier = if (useFrost) {
+        Modifier.rinFrost(
+            state = LocalRinFrostState.current!!,
+            radiusDp = settings.displaySetting.glassBlurRadiusDp,
+            alphaPercent = settings.displaySetting.glassBlurAlphaPercent,
+        )
+    } else Modifier
     val assistant = settings.getCurrentAssistant()
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
@@ -272,19 +286,21 @@ fun ChatInput(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(containerShape)
-                    .then(glassBlur1)
-                    .then(glassPlateBetween)
-                    .then(glassBlur2),
+                    .then(
+                        // v4.8.174: 模糊技术分流 — 自管高斯(RinFrost, 默认)/磨砂管线(haze, 可选)
+                        if (useFrost) glassFrostModifier
+                        else Modifier.then(glassBlur1).then(glassPlateBetween).then(glassBlur2)
+                    ),
                 shape = containerShape,
                 tonalElevation = 0.dp,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                // v4.8.173: 双层模糊时板已画在两模糊层之间(drawBehind), 此处透明;
-                // 单层=板色; 关闭=半透明回退底。
+                // v4.8.174: 自管高斯=板照旧画在模糊层上; 磨砂双层=板画夹层(此处置透明);
+                // 关闭=半透明回退底。
                 color = when {
-                    settings.displaySetting.enableBlurEffect &&
-                        settings.displaySetting.glassBlurLayers >= 2 -> Color.Transparent
-                    settings.displaySetting.enableBlurEffect -> glassPlateColor
-                    else -> RinGlass.inputFallbackColor()
+                    !settings.displaySetting.enableBlurEffect -> RinGlass.inputFallbackColor()
+                    useFrost -> glassPlateColor
+                    settings.displaySetting.glassBlurLayers >= 2 -> Color.Transparent
+                    else -> glassPlateColor
                 },
             ) {
                 Column(

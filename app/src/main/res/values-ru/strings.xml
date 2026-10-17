@@ -634,6 +634,9 @@
   <string name="setting_glass_noise_title">Шум (зерно)</string>
   <string name="setting_glass_blur_layers_title">Слои размытия</string>
   <string name="setting_glass_plate_layers_title">Слои пластины</string>
+  <string name="setting_glass_engine_title">Движок размытия</string>
+  <string name="setting_glass_engine_gaussian">Гаусс (свой)</string>
+  <string name="setting_glass_engine_frosted">Матовое (haze)</string>
   <string name="setting_display_page_enable_blur_effect_title">Включить эффект размытия</string>
   <string name="setting_display_page_enable_latex_rendering_desc">Отображать математические выражения и формулы с использованием синтаксиса LaTeX</string>
   <string name="setting_display_page_enable_latex_rendering_title">Включить рендеринг LaTeX</string>

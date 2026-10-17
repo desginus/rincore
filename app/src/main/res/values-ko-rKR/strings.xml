@@ -634,6 +634,9 @@
   <string name="setting_glass_noise_title">노이즈(입자)</string>
   <string name="setting_glass_blur_layers_title">블러 레이어 수</string>
   <string name="setting_glass_plate_layers_title">플레이트 레이어 수</string>
+  <string name="setting_glass_engine_title">블러 엔진</string>
+  <string name="setting_glass_engine_gaussian">가우시안(자체)</string>
+  <string name="setting_glass_engine_frosted">프로스트(haze)</string>
   <string name="setting_display_page_enable_blur_effect_title">흐림 효과 활성화</string>
   <string name="setting_display_page_enable_latex_rendering_desc">LaTeX 구문을 사용해 수식과 공식을 렌더링합니다</string>
   <string name="setting_display_page_enable_latex_rendering_title">LaTeX 렌더링 활성화</string>

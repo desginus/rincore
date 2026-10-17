@@ -176,6 +176,28 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
                             )
                         },
                     )
+                    // v4.8.174: 模糊技术 — 自管高斯(默认, 绕开 GPU 合成链) / 磨砂管线(haze)
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_glass_engine_title)) },
+                        supportingContent = {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(
+                                    selected = displaySetting.glassEngine == 1,
+                                    onClick = {
+                                        updateDisplaySetting(displaySetting.copy(glassEngine = 1))
+                                    },
+                                    label = { Text(stringResource(R.string.setting_glass_engine_gaussian)) }
+                                )
+                                FilterChip(
+                                    selected = displaySetting.glassEngine == 0,
+                                    onClick = {
+                                        updateDisplaySetting(displaySetting.copy(glassEngine = 0))
+                                    },
+                                    label = { Text(stringResource(R.string.setting_glass_engine_frosted)) }
+                                )
+                            }
+                        },
+                    )
                     // v4.8.172 (用户定版): 输入栏玻璃自定义 — 作用于真实输入栏, 对话页实地对比
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_glass_blur_radius_title)) },
