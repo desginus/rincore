@@ -1,9 +1,4 @@
-/* 【域 E·设置体系】 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.ui.pages.setting.components
-
-/* ───【原版对齐】ASRProviderConfigure.kt | 差异 ±23 行 (基线 2.5.1)
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -18,8 +13,20 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.rerere.asr.ASRProviderSetting
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.ui.components.ui.FormItem
-import me.rerere.rikkahub.ui.components.ui.OutlinedNumberInput
+import me.rerere.rikkahub.ui.components.ui.CardGroup
+import me.rerere.rikkahub.ui.components.ui.CardGroupScope
+import me.rerere.rikkahub.ui.components.ui.CardGroupValue
+import me.rerere.rikkahub.ui.components.ui.switchItem
+import me.rerere.ui.components.OutlinedNumberInput
+
+val ASRProviderSetting.typeName: String
+    get() = when (this) {
+        is ASRProviderSetting.OpenAIRealtime -> "OpenAI Realtime"
+        is ASRProviderSetting.DashScope -> "DashScope"
+        is ASRProviderSetting.Volcengine -> "Volcengine"
+        is ASRProviderSetting.MiMo -> "MiMo"
+        is ASRProviderSetting.Step -> "Step"
+    }
 
 @Composable
 fun ASRProviderConfigure(
@@ -28,57 +35,49 @@ fun ASRProviderConfigure(
     onValueChange: (ASRProviderSetting) -> Unit
 ) {
     Column(
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
         modifier = modifier.verticalScroll(rememberScrollState())
     ) {
-        FormItem(
-            label = { Text(stringResource(R.string.setting_asr_configure_provider_type)) },
-            description = { Text(stringResource(R.string.setting_asr_configure_provider_type_desc)) }
-        ) {
-            OutlinedTextField(
-                value = when (setting) {
-                    is ASRProviderSetting.OpenAIRealtime -> "OpenAI Realtime"
-                    is ASRProviderSetting.DashScope -> "DashScope"
-                    is ASRProviderSetting.Volcengine -> "Volcengine"
-                    is ASRProviderSetting.MiMo -> "MiMo"
-                    is ASRProviderSetting.Step -> "Step"
-                },
-                onValueChange = {},
-                readOnly = true,
-                modifier = Modifier.fillMaxWidth()
+        CardGroup {
+            // 类型在新建时选定，之后不能改
+            item(
+                headlineContent = { Text(stringResource(R.string.setting_asr_configure_provider_type)) },
+                supportingContent = { Text(stringResource(R.string.setting_asr_configure_provider_type_desc)) },
+                trailingContent = { CardGroupValue(setting.typeName) },
             )
+
+            formItem(
+                headlineContent = { Text(stringResource(R.string.setting_asr_configure_name)) },
+                supportingContent = { Text(stringResource(R.string.setting_asr_configure_name_desc)) }
+            ) {
+                OutlinedTextField(
+                    value = setting.name,
+                    onValueChange = { onValueChange(setting.copyProvider(name = it)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("OpenAI Realtime") }
+                )
+            }
         }
 
-        FormItem(
-            label = { Text(stringResource(R.string.setting_asr_configure_name)) },
-            description = { Text(stringResource(R.string.setting_asr_configure_name_desc)) }
-        ) {
-            OutlinedTextField(
-                value = setting.name,
-                onValueChange = { onValueChange(setting.copyProvider(name = it)) },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("OpenAI Realtime") }
-            )
-        }
-
-        when (setting) {
-            is ASRProviderSetting.OpenAIRealtime -> OpenAIRealtimeASRConfiguration(setting, onValueChange)
-            is ASRProviderSetting.DashScope -> DashScopeASRConfiguration(setting, onValueChange)
-            is ASRProviderSetting.Volcengine -> VolcengineASRConfiguration(setting, onValueChange)
-            is ASRProviderSetting.MiMo -> MiMoASRConfiguration(setting, onValueChange)
-            is ASRProviderSetting.Step -> StepASRConfiguration(setting, onValueChange)
+        CardGroup {
+            when (setting) {
+                is ASRProviderSetting.OpenAIRealtime -> openAIRealtimeASRItems(setting, onValueChange)
+                is ASRProviderSetting.DashScope -> dashScopeASRItems(setting, onValueChange)
+                is ASRProviderSetting.Volcengine -> volcengineASRItems(setting, onValueChange)
+                is ASRProviderSetting.MiMo -> miMoASRItems(setting, onValueChange)
+                is ASRProviderSetting.Step -> stepASRItems(setting, onValueChange)
+            }
         }
     }
 }
 
-@Composable
-private fun OpenAIRealtimeASRConfiguration(
+private fun CardGroupScope.openAIRealtimeASRItems(
     setting: ASRProviderSetting.OpenAIRealtime,
     onValueChange: (ASRProviderSetting) -> Unit
 ) {
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_api_key)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_openai_api_key_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_api_key)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_openai_api_key_desc)) }
     ) {
         OutlinedTextField(
             value = setting.apiKey,
@@ -88,9 +87,9 @@ private fun OpenAIRealtimeASRConfiguration(
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_websocket_url)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_openai_websocket_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_websocket_url)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_openai_websocket_desc)) }
     ) {
         OutlinedTextField(
             value = setting.websocketUrl,
@@ -100,9 +99,9 @@ private fun OpenAIRealtimeASRConfiguration(
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_model)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_model_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_model)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_model_desc)) }
     ) {
         OutlinedTextField(
             value = setting.model,
@@ -112,9 +111,9 @@ private fun OpenAIRealtimeASRConfiguration(
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_language)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_language_iso_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_language)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_language_iso_desc)) }
     ) {
         OutlinedTextField(
             value = setting.language,
@@ -124,9 +123,9 @@ private fun OpenAIRealtimeASRConfiguration(
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_prompt)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_prompt_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_prompt)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_prompt_desc)) }
     ) {
         OutlinedTextField(
             value = setting.prompt,
@@ -137,9 +136,9 @@ private fun OpenAIRealtimeASRConfiguration(
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_vad_threshold)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_vad_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_vad_threshold)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_vad_desc)) }
     ) {
         OutlinedNumberInput(
             value = setting.vadThreshold,
@@ -153,9 +152,9 @@ private fun OpenAIRealtimeASRConfiguration(
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_prefix_padding)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_prefix_padding_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_prefix_padding)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_prefix_padding_desc)) }
     ) {
         OutlinedNumberInput(
             value = setting.prefixPaddingMs,
@@ -169,9 +168,9 @@ private fun OpenAIRealtimeASRConfiguration(
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_silence_duration)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_silence_duration_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_silence_duration)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_silence_duration_desc)) }
     ) {
         OutlinedNumberInput(
             value = setting.silenceDurationMs,
@@ -186,14 +185,13 @@ private fun OpenAIRealtimeASRConfiguration(
     }
 }
 
-@Composable
-private fun DashScopeASRConfiguration(
+private fun CardGroupScope.dashScopeASRItems(
     setting: ASRProviderSetting.DashScope,
     onValueChange: (ASRProviderSetting) -> Unit
 ) {
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_api_key)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_dashscope_api_key_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_api_key)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_dashscope_api_key_desc)) }
     ) {
         OutlinedTextField(
             value = setting.apiKey,
@@ -203,9 +201,9 @@ private fun DashScopeASRConfiguration(
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_websocket_url)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_dashscope_websocket_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_websocket_url)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_dashscope_websocket_desc)) }
     ) {
         OutlinedTextField(
             value = setting.websocketUrl,
@@ -215,9 +213,9 @@ private fun DashScopeASRConfiguration(
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_model)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_model_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_model)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_model_desc)) }
     ) {
         OutlinedTextField(
             value = setting.model,
@@ -227,9 +225,9 @@ private fun DashScopeASRConfiguration(
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_language)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_language_iso_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_language)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_language_iso_desc)) }
     ) {
         OutlinedTextField(
             value = setting.language,
@@ -239,9 +237,9 @@ private fun DashScopeASRConfiguration(
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_vad_threshold)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_dashscope_vad_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_vad_threshold)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_dashscope_vad_desc)) }
     ) {
         OutlinedNumberInput(
             value = setting.vadThreshold,
@@ -255,9 +253,9 @@ private fun DashScopeASRConfiguration(
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_silence_duration)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_silence_duration_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_silence_duration)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_silence_duration_desc)) }
     ) {
         OutlinedNumberInput(
             value = setting.silenceDurationMs,
@@ -272,14 +270,13 @@ private fun DashScopeASRConfiguration(
     }
 }
 
-@Composable
-private fun VolcengineASRConfiguration(
+private fun CardGroupScope.volcengineASRItems(
     setting: ASRProviderSetting.Volcengine,
     onValueChange: (ASRProviderSetting) -> Unit
 ) {
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_api_key)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_volcengine_api_key_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_api_key)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_volcengine_api_key_desc)) }
     ) {
         OutlinedTextField(
             value = setting.apiKey,
@@ -289,33 +286,33 @@ private fun VolcengineASRConfiguration(
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_websocket_url)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_volcengine_websocket_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_websocket_url)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_volcengine_websocket_desc)) }
     ) {
         OutlinedTextField(
             value = setting.websocketUrl,
             onValueChange = { onValueChange(setting.copy(websocketUrl = it)) },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("wss://openspeech.bytedance.com/api/v3/sauc/bigmodel") }
+            placeholder = { Text("wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async") }
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_resource_id)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_resource_id_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_resource_id)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_resource_id_desc)) }
     ) {
         OutlinedTextField(
             value = setting.resourceId,
             onValueChange = { onValueChange(setting.copy(resourceId = it)) },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("volc.bigasr.sauc.duration") }
+            placeholder = { Text("volc.seedasr.sauc.duration") }
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_language)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_language_code_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_language)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_language_code_desc)) }
     ) {
         OutlinedTextField(
             value = setting.language,
@@ -324,16 +321,29 @@ private fun VolcengineASRConfiguration(
             placeholder = { Text("auto") }
         )
     }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_page_asr_silence_duration)) },
+        supportingContent = { Text(stringResource(R.string.setting_page_asr_silence_duration_desc)) },
+    ) {
+        OutlinedNumberInput(
+            value = setting.silenceDurationMs,
+            onValueChange = { value ->
+                if (value in 300..5000) onValueChange(setting.copy(silenceDurationMs = value))
+            },
+            modifier = Modifier.fillMaxWidth(),
+            label = stringResource(R.string.setting_page_asr_milliseconds),
+        )
+    }
+
 }
 
-@Composable
-private fun MiMoASRConfiguration(
+private fun CardGroupScope.miMoASRItems(
     setting: ASRProviderSetting.MiMo,
     onValueChange: (ASRProviderSetting) -> Unit
 ) {
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_api_key)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_mimo_api_key_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_api_key)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_mimo_api_key_desc)) }
     ) {
         OutlinedTextField(
             value = setting.apiKey,
@@ -343,9 +353,9 @@ private fun MiMoASRConfiguration(
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_base_url)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_mimo_base_url_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_base_url)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_mimo_base_url_desc)) }
     ) {
         OutlinedTextField(
             value = setting.baseUrl,
@@ -355,9 +365,9 @@ private fun MiMoASRConfiguration(
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_model)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_mimo_model_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_model)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_mimo_model_desc)) }
     ) {
         OutlinedTextField(
             value = setting.model,
@@ -367,9 +377,9 @@ private fun MiMoASRConfiguration(
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_language)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_mimo_language_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_language)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_mimo_language_desc)) }
     ) {
         OutlinedTextField(
             value = setting.language,
@@ -379,9 +389,9 @@ private fun MiMoASRConfiguration(
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_sample_rate)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_mimo_sample_rate_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_sample_rate)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_mimo_sample_rate_desc)) }
     ) {
         OutlinedNumberInput(
             value = setting.sampleRate,
@@ -395,9 +405,9 @@ private fun MiMoASRConfiguration(
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_segment_duration)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_mimo_segment_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_segment_duration)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_mimo_segment_desc)) }
     ) {
         OutlinedNumberInput(
             value = setting.segmentDurationSec,
@@ -412,14 +422,13 @@ private fun MiMoASRConfiguration(
     }
 }
 
-@Composable
-private fun StepASRConfiguration(
+private fun CardGroupScope.stepASRItems(
     setting: ASRProviderSetting.Step,
     onValueChange: (ASRProviderSetting) -> Unit
 ) {
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_api_key)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_step_api_key_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_api_key)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_step_api_key_desc)) }
     ) {
         OutlinedTextField(
             value = setting.apiKey,
@@ -429,9 +438,9 @@ private fun StepASRConfiguration(
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_base_url)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_step_base_url_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_base_url)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_step_base_url_desc)) }
     ) {
         OutlinedTextField(
             value = setting.baseUrl,
@@ -441,9 +450,9 @@ private fun StepASRConfiguration(
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_model)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_step_model_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_model)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_step_model_desc)) }
     ) {
         OutlinedTextField(
             value = setting.model,
@@ -453,9 +462,9 @@ private fun StepASRConfiguration(
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_language)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_step_language_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_language)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_step_language_desc)) }
     ) {
         OutlinedTextField(
             value = setting.language,
@@ -465,9 +474,9 @@ private fun StepASRConfiguration(
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_sample_rate)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_step_sample_rate_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_sample_rate)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_step_sample_rate_desc)) }
     ) {
         OutlinedNumberInput(
             value = setting.sampleRate,
@@ -481,9 +490,9 @@ private fun StepASRConfiguration(
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_segment_duration)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_step_segment_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_segment_duration)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_step_segment_desc)) }
     ) {
         OutlinedNumberInput(
             value = setting.segmentDurationSec,
@@ -497,29 +506,23 @@ private fun StepASRConfiguration(
         )
     }
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_step_itn)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_step_itn_desc)) }
-    ) {
-        androidx.compose.material3.Switch(
-            checked = setting.enableItn,
-            onCheckedChange = { onValueChange(setting.copy(enableItn = it)) }
-        )
-    }
+    switchItem(
+        checked = setting.enableItn,
+        onCheckedChange = { onValueChange(setting.copy(enableItn = it)) },
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_step_itn)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_step_itn_desc)) },
+    )
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_step_timestamp)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_step_timestamp_desc)) }
-    ) {
-        androidx.compose.material3.Switch(
-            checked = setting.enableTimestamp,
-            onCheckedChange = { onValueChange(setting.copy(enableTimestamp = it)) }
-        )
-    }
+    switchItem(
+        checked = setting.enableTimestamp,
+        onCheckedChange = { onValueChange(setting.copy(enableTimestamp = it)) },
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_step_timestamp)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_step_timestamp_desc)) },
+    )
 
-    FormItem(
-        label = { Text(stringResource(R.string.setting_asr_configure_step_hotwords)) },
-        description = { Text(stringResource(R.string.setting_asr_configure_step_hotwords_desc)) }
+    formItem(
+        headlineContent = { Text(stringResource(R.string.setting_asr_configure_step_hotwords)) },
+        supportingContent = { Text(stringResource(R.string.setting_asr_configure_step_hotwords_desc)) }
     ) {
         OutlinedTextField(
             // 用逗号分隔展示, 输入时按逗号 split 回 List
