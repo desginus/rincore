@@ -40,7 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import me.rerere.ui.toast.ToastType
+import com.dokar.sonner.ToastType
 import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers

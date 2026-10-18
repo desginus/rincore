@@ -64,7 +64,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.MemoryFile
+import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.ItemAction
 import me.rerere.rikkahub.ui.components.ui.ItemActionMenu
@@ -418,7 +418,7 @@ private fun AssistantItem(
     assistantCount: Int,
     settings: Settings,
     modifier: Modifier = Modifier,
-    memories: List<MemoryFile>,
+    memories: List<AssistantMemory>,
     onEdit: () -> Unit,
     onCopy: () -> Unit,
     onDelete: () -> Unit,
