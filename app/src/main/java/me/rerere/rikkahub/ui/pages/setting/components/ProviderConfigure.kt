@@ -55,13 +55,15 @@ import androidx.compose.runtime.setValue
 fun ProviderConfigure(
     provider: ProviderSetting,
     modifier: Modifier = Modifier,
+    // 5.0.0 并树：模型的提供商覆盖允许切换类型（上游 3.0.0 语义）
+    allowTypeSwitch: Boolean = false,
     onEdit: (provider: ProviderSetting) -> Unit
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = modifier
     ) {
-        if (!provider.builtIn) {
+        if (!provider.builtIn || allowTypeSwitch) {
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                 ProviderSetting.Types.forEachIndexed { index, type ->
                     SegmentedButton(

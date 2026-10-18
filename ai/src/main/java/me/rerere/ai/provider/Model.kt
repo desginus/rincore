@@ -21,6 +21,8 @@ data class Model(
     val abilities: List<ModelAbility> = emptyList(),
     val tools: Set<BuiltInTools> = emptySet(),
     val providerOverwrite: ProviderSetting? = null,
+    // 5.0.0 并树：上下文窗口大小(token)，上游 3.0.0 字段（默认 1M，序列化向后兼容）
+    val contextLength: Int = 1_000_000,
 )
 
 @Serializable
