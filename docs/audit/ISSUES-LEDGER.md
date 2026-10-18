@@ -203,3 +203,11 @@
   - `chat-media`（我方 v4.8.185 对话媒体快照；不备份=恢复后消息图片全断）
   覆盖面：本地导出、WebDAV 备份、S3 备份、恢复（stageRestore→isAttachment）四链同源 ✓；`PendingRestore.resolveInside` 路径穿越守卫保留 ✓。
 - **前三处同类「列表各写各的」教训**：收集/校验两面必须同源常量（本批已收口）；同族先例=v4.8.137 UploadCodes 格式契约四处各写各的。
+
+### G16 v5.0.3 收尾批（2026-10-19 05:3x）— 文档/清理/知识库全量收口
+- **死代码清理**：删 3 个死导航 Screen 对象（SettingToolHub/SettingToolCompare/SettingBuiltinTools——零引用；页面本体经 SettingPage/SettingAdvancedPage 内联状态使用，保留）+ **VideoGen 全链删除**（页面×2/VM/注册/Screen/entry；对齐上游 3.0.0 删除——媒体创作已由 MediaCreation 接管；ImgGen 与上游一致保留【两边均无导航】）。
+- **检索体系收口**：CODE_INDEX **51 条占位全量补写**（逐件核读头注+主声明→一句话职责，0 遗留）；module-map 加 5.0.0 现状头（13 模块清单+入口指引）。
+- **README×3**：补 5.0.1/5.0.2/5.0.3 更新日志（英文条目式/繁中简版段）+ 徽章 5.0.3。
+- **知识库随迁（此前未带上的 6 件）**：rincore-bug-record/rincore-changelog(+FULL_HISTORY)/rincore-decisions/rincore-dev-process/rincore-project-brief/rincore-roadmap + .claude/commands/publish-release.md 全部入仓；更新至 5.0.3——changelog 补 4.9.0-dev→5.0.3 六条（B1/B2/B3/接线/备份/清理全记录）；bug-record 补 **B195**（R8 重复类 + lintVital 1161 条 ExtraTranslation）与 **B196**（「编译干净但运行断」接线缺口族七类）；brief/roadmap 基线 v5.0.3。
+- **保底项⑤（Scale 面）核对**：ZoomableAsyncImage 双方均 ContentScale.Fit；StableSizeImage（v4.8.123 首帧稳定占位）在树——对齐 ✓。
+- **发布**：推 adopt（oracle run 39168355353）→ 绿后 FF main → Release **v5.0.3**。
