@@ -1,6 +1,5 @@
 package me.rerere.tts.controller
 
-
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.CancellationException
@@ -248,7 +247,7 @@ class TtsController(
                         )
                     }
 
-                    // 预取下一窗口
+                    // 仅预取当前分片后的固定窗口
                     prefetchNextChunks(chunk.index)
 
                     val response = try {
@@ -300,7 +299,6 @@ class TtsController(
         return try {
             deferred.await()
         } catch (e: Exception) {
-            if (e is kotlinx.coroutines.CancellationException) throw e
             // 避免后续复用已经失败或取消的 Deferred
             cache.remove(chunk.id, deferred)
             throw e
@@ -326,7 +324,7 @@ class TtsController(
         while (true) {
             try {
                 return synthesizer.synthesize(provider, chunk)
-            } catch (e: kotlinx.coroutines.CancellationException) {
+            } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 if (!e.isRetryableSynthesisError() || attempt >= MAX_SYNTHESIS_ATTEMPTS) throw e

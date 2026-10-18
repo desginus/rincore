@@ -2,7 +2,7 @@
 package me.rerere.rikkahub.ui.components.message
 
 
-/* ───【原版对齐】ChatMessageEditedFiles.kt | 差异 ±2 行
+/* ───【原版对齐】ChatMessageEditedFiles.kt | 差异 ≈410 行变更（vs 2.5.1·2026-10-18 复核）
  * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
  * v4.8.129: 三件套动作 [导出/分享/渲染] 收敛至共享 ChatFileActions —
  * 与上传文件胶囊 / 本对话产出 逻辑路径完全一致 (单一实现)。

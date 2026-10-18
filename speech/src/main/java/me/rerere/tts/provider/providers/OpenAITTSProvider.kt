@@ -1,6 +1,5 @@
 package me.rerere.tts.provider.providers
 
-
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.flow.Flow
@@ -9,8 +8,8 @@ import kotlinx.serialization.json.Json
 import me.rerere.tts.model.AudioChunk
 import me.rerere.tts.model.AudioFormat
 import me.rerere.tts.model.TTSRequest
-import me.rerere.tts.provider.TTSProviderException
 import me.rerere.tts.provider.TTSProvider
+import me.rerere.tts.provider.TTSProviderException
 import me.rerere.tts.provider.TTSProviderSetting
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -50,9 +49,12 @@ class OpenAITTSProvider : TTSProvider<TTSProviderSetting.OpenAI> {
         val response = httpClient.newCall(httpRequest).execute()
 
         if (!response.isSuccessful) {
+            val statusCode = response.code
+            val statusMessage = response.message
+            response.close()
             throw TTSProviderException(
-                message = "TTS request failed: ${response.code} ${response.message}",
-                statusCode = response.code
+                message = "TTS request failed: $statusCode $statusMessage",
+                statusCode = statusCode
             )
         }
 

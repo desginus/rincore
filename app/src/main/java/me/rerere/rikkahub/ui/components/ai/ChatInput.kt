@@ -5,7 +5,7 @@ package me.rerere.rikkahub.ui.components.ai
  * 职责: 输入区 (发送/思考键/消息队列卡片/语音/附件入口)
  * 常用改动: 发送键状态 → SendButton (v4.8.123: 压缩期可发送一排队); 键位互换 → swapKeys; 语音 → VoiceMode
  * 问题定位: 发送键异常/输入区布局错位 → 本文件
- * 基线: 原版移植 + 自研 (键位互换/发送禁用) | 差异 ±45 行 | 地图: docs/APP_MAP.md §A | 历史: .claude/skills/rincore-bug-record
+ * 基线: 原版移植 + 自研 (键位互换/发送禁用) | 差异 ≈404 行变更（vs 2.5.1·2026-10-18 复核） | 地图: docs/APP_MAP.md §A | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 
 import androidx.compose.animation.AnimatedVisibility

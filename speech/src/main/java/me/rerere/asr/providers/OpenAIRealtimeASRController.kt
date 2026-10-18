@@ -1,6 +1,5 @@
 package me.rerere.asr.providers
 
-
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
@@ -146,7 +145,11 @@ class OpenAIRealtimeASRController(
     }
 
     override fun dispose() {
-        stop()
+        recorderJob?.cancel()
+        val socket = webSocket
+        webSocket = null
+        socket?.cancel()
+        releaseRecorder()
         scope.cancel()
     }
 
@@ -197,8 +200,10 @@ class OpenAIRealtimeASRController(
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Audio recording failed", e)
-                setError(e.message ?: "Audio recording failed")
+                if (isActive) {
+                    Log.e(TAG, "Audio recording failed", e)
+                    setError(e.message ?: "Audio recording failed")
+                }
             } finally {
                 releaseRecorder()
             }
@@ -212,6 +217,16 @@ class OpenAIRealtimeASRController(
         }
 
         when (val type = event.optString("type")) {
+            "input_audio_buffer.speech_started" -> {
+                val id = event.optString("item_id")
+                _state.update { it.copy(voiceTurn = it.voiceTurn.started(id)) }
+            }
+
+            "input_audio_buffer.speech_stopped" -> {
+                val id = event.optString("item_id")
+                _state.update { it.copy(voiceTurn = it.voiceTurn.stopped(id)) }
+            }
+
             "conversation.item.input_audio_transcription.delta" -> {
                 val itemId = event.optString("item_id", "default")
                 val delta = event.optString("delta")
@@ -224,11 +239,16 @@ class OpenAIRealtimeASRController(
             "conversation.item.input_audio_transcription.completed" -> {
                 val itemId = event.optString("item_id", "default")
                 val transcript = event.optString("transcript").trim()
+                _state.update { it.copy(voiceTurn = it.voiceTurn.completed(itemId, transcript)) }
                 partialTranscripts.remove(itemId)
                 if (transcript.isNotEmpty()) {
                     completedTranscripts.add(transcript)
                 }
                 publishTranscript()
+            }
+
+            "conversation.item.input_audio_transcription.failed" -> {
+                setError(event.optJSONObject("error")?.optString("message") ?: "ASR transcription failed")
             }
 
             "error" -> {

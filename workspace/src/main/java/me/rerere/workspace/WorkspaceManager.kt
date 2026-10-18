@@ -5,7 +5,7 @@ package me.rerere.workspace
  * 职责: 沙箱门面 (文件/导出 exportFolderToZip/launchProcess)
  * 常用改动: 导出 → exportFolderToZip (直接文件树, 勿复用 listFiles — 有 500 截断); 启动 → launchProcess
  * 问题定位: 导出丢失/沙箱启动失败 → 本文件
- * 基线: 原版移植 + 自研 (导出/launchProcess) | 差异 ±27 行 | 地图: docs/APP_MAP.md §D | 历史: .claude/skills/rincore-bug-record
+ * 基线: 原版移植 + 自研 (导出/launchProcess) | 差异 ≈277 行变更（vs 2.5.1·2026-10-18 复核） | 地图: docs/APP_MAP.md §D | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 import java.io.File
 import java.io.InputStream
