@@ -205,6 +205,9 @@ dependencies {
     implementation(libs.koin.compose)
     implementation(libs.koin.androidx.workmanager)
 
+    // jetbrains markdown parser (vendored: 0.7.14 + CJK fix — 见 :markdown 模块)
+    implementation(project(":markdown"))
+
     // okhttp
     implementation(libs.okhttp)
     implementation(libs.okhttp.sse)
