@@ -38,3 +38,17 @@ fun TokenUsage?.merge(other: TokenUsage): TokenUsage {
         cachedTokens = cachedTokens
     )
 }
+
+/**
+ * 累加多次请求的 usage，每次请求都会按完整上下文计费，因此 prompt 也直接相加。
+ */
+fun TokenUsage?.sum(other: TokenUsage?): TokenUsage? {
+    if (this == null) return other
+    if (other == null) return this
+    return TokenUsage(
+        promptTokens = promptTokens + other.promptTokens,
+        completionTokens = completionTokens + other.completionTokens,
+        cachedTokens = cachedTokens + other.cachedTokens,
+        totalTokens = totalTokens + other.totalTokens,
+    )
+}
