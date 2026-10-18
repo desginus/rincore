@@ -133,6 +133,14 @@ import me.rerere.rikkahub.ui.pages.setting.SettingPreferencesGeneralPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPreferencesNetworkPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPreferencesUIPage
 import me.rerere.rikkahub.ui.pages.setting.SettingClientPage
+import me.rerere.rikkahub.ui.pages.setting.SettingDonatePage
+import me.rerere.rikkahub.ui.pages.setting.SettingMcpDetailPage
+import me.rerere.rikkahub.ui.pages.setting.SettingMediaPage
+import me.rerere.rikkahub.ui.pages.mediacreation.MediaCreationPage
+import me.rerere.rikkahub.ui.pages.mediacreation.MediaCreationSessionsPage
+import me.rerere.rikkahub.ui.pages.memory.MemoryFilePage
+import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceFileEditorPage
+import me.rerere.workspace.WorkspaceStorageArea
 import me.rerere.rikkahub.ui.pages.setting.SettingThemePage
 import me.rerere.rikkahub.ui.pages.setting.SettingFilesPage
 import me.rerere.rikkahub.ui.pages.setting.AlarmSettingsPage
@@ -730,6 +738,38 @@ class RouteActivity : ComponentActivity() {
 
                             entry<Screen.SettingMcp> {
                                 SettingMcpPage()
+                            }
+
+                            entry<Screen.SettingMedia> {
+                                SettingMediaPage()
+                            }
+
+                            entry<Screen.SettingMcpDetail> { key ->
+                                SettingMcpDetailPage(id = Uuid.parse(key.serverId))
+                            }
+
+                            entry<Screen.SettingDonate> {
+                                SettingDonatePage()
+                            }
+
+                            entry<Screen.MemoryFile> { key ->
+                                MemoryFilePage(memoryId = key.memoryId, path = key.path)
+                            }
+
+                            entry<Screen.MediaCreationSessions> {
+                                MediaCreationSessionsPage()
+                            }
+
+                            entry<Screen.MediaCreation> { key ->
+                                MediaCreationPage(id = key.id)
+                            }
+
+                            entry<Screen.WorkspaceFileEditor> { key ->
+                                WorkspaceFileEditorPage(
+                                    id = key.id,
+                                    area = WorkspaceStorageArea.valueOf(key.area),
+                                    path = key.path,
+                                )
                             }
 
                             entry<Screen.SettingPlugins> {
