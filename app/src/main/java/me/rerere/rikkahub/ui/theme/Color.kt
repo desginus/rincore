@@ -175,6 +175,10 @@ fun darkExtendColors(): ExtendColors = ExtendColors(
 )
 
 object CustomColors {
+
+    // RinCore 兼容层（B1 并树）：上游 3.0.0 FloatingToolbar 配色
+    val floatingToolbarColors: FloatingToolbarColors
+        @Composable get() = FloatingToolbarDefaults.vibrantFloatingToolbarColors()
     var black = false
 
     val topBarColors: TopAppBarColors

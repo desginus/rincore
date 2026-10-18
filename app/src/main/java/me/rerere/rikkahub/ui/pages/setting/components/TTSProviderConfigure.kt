@@ -68,6 +68,7 @@ fun TTSProviderConfigure(
                         is TTSProviderSetting.Step -> "Step"
                         is TTSProviderSetting.ElevenLabs -> "ElevenLabs"
                         is TTSProviderSetting.FishAudio -> "Fish Audio"
+                        is TTSProviderSetting.Volcengine -> "火山引擎"
                     },
                     onValueChange = {},
                     readOnly = true,
@@ -149,6 +150,11 @@ fun TTSProviderConfigure(
                                         name = "ElevenLabs TTS"
                                     )
 
+                                    TTSProviderSetting.Volcengine::class -> TTSProviderSetting.Volcengine(
+                                        id = setting.id,
+                                        name = "火山引擎 TTS"
+                                    )
+
                                     TTSProviderSetting.FishAudio::class -> TTSProviderSetting.FishAudio(
                                         id = setting.id,
                                         name = "Fish Audio TTS"
@@ -197,6 +203,7 @@ fun TTSProviderConfigure(
             is TTSProviderSetting.ElevenLabs -> ElevenLabsTTSConfiguration(setting, onValueChange)
             is TTSProviderSetting.FishAudio -> FishAudioTTSConfiguration(setting, onValueChange)
             is TTSProviderSetting.Step -> StepTTSConfiguration(setting, onValueChange)
+            is TTSProviderSetting.Volcengine -> VolcengineTTSConfiguration(setting, onValueChange)
         }
     }
 }
@@ -1518,6 +1525,65 @@ private fun StepTTSConfiguration(
             placeholder = { Text("例如: 语气温柔, 语速偏慢") },
             minLines = 2,
             maxLines = 4,
+        )
+    }
+}
+
+@Composable
+private fun VolcengineTTSConfiguration(
+    setting: TTSProviderSetting.Volcengine,
+    onValueChange: (TTSProviderSetting) -> Unit
+) {
+    FormItem(
+        label = { Text("API Key") },
+        description = { Text("请填写豆包语音控制台的 API Key（不是火山方舟控制台）。") }
+    ) {
+        OutlinedTextField(
+            value = setting.apiKey,
+            onValueChange = { onValueChange(setting.copy(apiKey = it)) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+    }
+    FormItem(label = { Text(stringResource(R.string.setting_tts_page_base_url)) }) {
+        OutlinedTextField(
+            value = setting.baseUrl,
+            onValueChange = { onValueChange(setting.copy(baseUrl = it)) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+    }
+    FormItem(
+        label = { Text("资源 ID") },
+        description = { Text("需与已开通服务/音色匹配，默认 seed-tts-2.0。") }
+    ) {
+        OutlinedTextField(
+            value = setting.resourceId,
+            onValueChange = { onValueChange(setting.copy(resourceId = it)) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+    }
+    FormItem(
+        label = { Text("音色") },
+        description = { Text("控制台开通的音色 ID，如 zh_female_vv_uranus_bigtts。") }
+    ) {
+        OutlinedTextField(
+            value = setting.speaker,
+            onValueChange = { onValueChange(setting.copy(speaker = it)) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+    }
+    FormItem(
+        label = { Text("语速") },
+        description = { Text("-50 ~ 100，0 为默认。") }
+    ) {
+        OutlinedTextField(
+            value = setting.speechRate.toString(),
+            onValueChange = { onValueChange(setting.copy(speechRate = it.toIntOrNull() ?: 0)) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
         )
     }
 }

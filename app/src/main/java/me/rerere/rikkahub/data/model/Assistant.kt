@@ -15,6 +15,8 @@ import kotlin.uuid.Uuid
 
 @Serializable
 data class Assistant(
+    // RinCore 兼容层（B1 并树）：对话单独绑定提示词注入开关（v4.6.x 引入）
+    val allowConversationPromptInjection: Boolean = false,
     val id: Uuid = Uuid.random(),
     val chatModelId: Uuid? = null, // 如果为null, 使用全局默认模型
     val name: String = "",

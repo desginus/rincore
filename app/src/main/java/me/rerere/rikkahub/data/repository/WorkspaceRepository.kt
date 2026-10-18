@@ -31,6 +31,8 @@ import java.io.InputStream
 import java.io.OutputStream
 import kotlin.uuid.Uuid
 
+private const val MAX_PREVIEW_BYTES = 1 * 1024 * 1024L
+
 class WorkspaceRepository(
     private val dao: WorkspaceDAO,
     private val manager: WorkspaceManager,
@@ -276,6 +278,29 @@ class WorkspaceRepository(
         val workspace = dao.getById(id) ?: return@withContext emptyList()
         manager.ensureWorkspace(workspace.root)
         manager.listFiles(workspace.root, path, area)
+    }
+
+    /**
+     * 读取文本用于应用内预览/编辑（上游 3.0.0 形态）: LINUX 区走 exportFile 读入内存并限大小。
+     */
+    suspend fun readTextForPreview(
+        id: String,
+        area: WorkspaceStorageArea,
+        path: String,
+    ): String = withContext(Dispatchers.IO) {
+        val workspace = dao.getById(id) ?: error("Workspace not found: $id")
+        manager.ensureWorkspace(workspace.root)
+        when (area) {
+            WorkspaceStorageArea.FILES -> manager.readText(workspace.root, path)
+            WorkspaceStorageArea.LINUX -> {
+                val size = manager.fileSize(workspace.root, path, area)
+                require(size <= MAX_PREVIEW_BYTES) { "文件过大, 无法预览 (${size} bytes)" }
+                java.io.ByteArrayOutputStream().use { out ->
+                    manager.exportFile(workspace.root, path, area, out)
+                    out.toString(Charsets.UTF_8.name())
+                }
+            }
+        }
     }
 
     suspend fun readText(

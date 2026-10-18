@@ -163,6 +163,7 @@ configurations.matching { it.name.endsWith("UnitTestRuntimeClasspath") }.configu
 
 dependencies {
     implementation(libs.quickjs)
+    implementation(libs.quickjs.wrapper)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.process)

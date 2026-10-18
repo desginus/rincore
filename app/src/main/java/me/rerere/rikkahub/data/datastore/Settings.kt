@@ -182,6 +182,16 @@ enum class ConversationSortOrder {
 
 @Serializable
 data class DisplaySetting(
+    // ── RinCore 兼容层（B1 并树）：v4.8.183 定版玻璃字段 + 旧消费面字段（JSON blob 持久化，零迁移） ──
+    val useAppIconStyleLoadingIndicator: Boolean = true,
+    val glassMaskPercent: Int = 50,
+    val glassMaskColorMode: Int = 1,
+    val glassNoisePercent: Int = 100,
+    val glassFogPercent: Int = 3,
+    val glassBlurRadiusDp: Int = 2,
+    val glassLineWidthDp: Float = 1.0f,
+    val glassLineBrightness: Int = 30,
+    val glassPresetUpgraded: Boolean = false,
     val userAvatar: Avatar = Avatar.Dummy,
     val userNickname: String = "",
     val showUserAvatar: Boolean = true,

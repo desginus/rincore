@@ -6,6 +6,7 @@ import me.rerere.rikkahub.data.ai.tools.routing.LegacyZoneConfig
 import me.rerere.rikkahub.data.ai.tools.routing.ToolZone
 import me.rerere.rikkahub.data.ai.tools.routing.ZONE_MODEL_VERSION_CURRENT
 import me.rerere.rikkahub.data.ai.tools.routing.migrateLinkKeys
+import me.rerere.rikkahub.data.ai.tools.routing.migrateToZones
 import me.rerere.rikkahub.data.ai.tools.routing.projectZoneModel
 import me.rerere.rikkahub.data.datastore.LegacyCustomDomain
 import me.rerere.rikkahub.data.datastore.SettingsStore

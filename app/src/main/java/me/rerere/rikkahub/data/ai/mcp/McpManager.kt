@@ -31,6 +31,7 @@ import me.rerere.oauth.OAuthHttpClient
 import me.rerere.oauth.OAuthLoopbackCallbackServer
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.files.saveUploadFromBytes
@@ -113,6 +114,18 @@ class McpManager(
     fun getClient(config: McpServerConfig): Client? = sessionRegistry.getClient(config.id)
 
     fun getStatus(config: McpServerConfig): Flow<McpStatus> = sessionRegistry.getStatus(config.id)
+
+    /** RinCore 兼容层（B1 并树）：按指定助手过滤（上游 3.0.0 形态）。 */
+    fun getAllAvailableTools(assistant: Assistant): List<Triple<Uuid, String, McpTool>> {
+        val settings = settingsStore.settingsFlow.value
+        return settings.mcpServers
+            .filter { it.commonOptions.enable && it.id in assistant.mcpServers }
+            .flatMap { server ->
+                server.commonOptions.tools
+                    .filter { tool -> tool.enable }
+                    .map { tool -> Triple(server.id, server.commonOptions.name, tool) }
+            }
+    }
 
     fun getAllAvailableTools(): List<Triple<Uuid, String, McpTool>> {
         val settings = settingsStore.settingsFlow.value

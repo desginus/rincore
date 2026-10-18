@@ -13,6 +13,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
 import kotlinx.coroutines.CancellationException
@@ -270,7 +271,7 @@ class SettingsStore internal constructor(
 
     fun updateSync(settings: Settings) {
         if (settings.init) return
-        settingsFlow.value = settings
+        state.value = settings
         settingsRevision.value = settingsRevision.value + 1
     }
 
@@ -402,6 +403,9 @@ class SettingsStore internal constructor(
     suspend fun selectAssistant(assistantId: Uuid) {
         update { it.copy(assistantId = assistantId) }
     }
+
+    /** RinCore 兼容层：旧调用点（切换当前助手）。 */
+    suspend fun updateAssistant(assistantId: Uuid) = selectAssistant(assistantId)
 
     private suspend fun updateAssistant(assistantId: Uuid, transform: (Assistant) -> Assistant) {
         update { settings ->

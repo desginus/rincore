@@ -910,6 +910,7 @@ private fun ScrapeWebPreview(content: JsonElement) {
     }
 }
 
+@Composable
 internal fun memoryToolTitle(toolName: String, arguments: JsonElement?): String? = when (toolName) {
     MemoryToolNames.READ -> stringResource(R.string.chat_message_tool_read_memory)
     MemoryToolNames.LIST -> stringResource(R.string.chat_message_tool_list_memory)

@@ -29,6 +29,13 @@ class SettingVM(
         }
     }
 
+    /** RinCore 兼容层：上游页面用 lambda 形态（读-改-写原子）。 */
+    fun updateSettings(fn: (Settings) -> Settings) {
+        viewModelScope.launch {
+            settingsStore.update(fn)
+        }
+    }
+
     /**
      * v4.8.89 工具矩阵**事务入口**（UI 侧唯一写路径）。
      *

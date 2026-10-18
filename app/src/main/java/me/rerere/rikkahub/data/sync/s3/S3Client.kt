@@ -1,6 +1,8 @@
 /* 【域 I·数据存储】 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.data.sync.s3
 
+import kotlin.time.Duration
+
 /* ───【原版对齐】S3Client.kt | 与 2.5.1 逐字节一致
  * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
  * ───────────────────────────────────────────────────────────────*/
@@ -301,6 +303,17 @@ class S3Client(
             val scheme = if (config.isHttps) "https://" else "http://"
             "$scheme${config.bucket}.${config.host}$path"
         }
+    }
+
+    /**
+     * 带签名的临时下载地址，桶不需要公开读取。[expires] 最长 7 天。
+     */
+    fun presignGetUrl(key: String, expires: Duration): String {
+        return AwsSignatureV4.presignGetUrl(
+            config = config,
+            path = "/${key.trimStart('/')}",
+            expires = expires,
+        )
     }
 
     private fun File.sha256Hex(): String {
