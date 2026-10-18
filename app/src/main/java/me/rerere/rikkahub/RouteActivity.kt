@@ -162,7 +162,6 @@ import me.rerere.rikkahub.ui.pages.setting.scheduledjobs.ScheduledJobsScreen
 import me.rerere.rikkahub.ui.pages.setting.scheduledjobs.ScheduledJobDetailScreen
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerPage
 import me.rerere.rikkahub.ui.pages.imggen.ImageGenPage
-import me.rerere.rikkahub.ui.pages.videogen.VideoGenPage
 import me.rerere.rikkahub.ui.pages.translator.TranslatorPage
 import me.rerere.rikkahub.ui.pages.stats.StatsPage
 import me.rerere.rikkahub.ui.pages.webview.WebViewPage
@@ -608,9 +607,6 @@ class RouteActivity : ComponentActivity() {
                             }
 
                             // v4.8.100: 视频生成页（抽屉「功能折叠」入口 — 翻译/图像/视频三件套）
-                            entry<Screen.VideoGen> {
-                                VideoGenPage()
-                            }
 
                             entry<Screen.History> {
                                 HistoryPage()
@@ -957,10 +953,7 @@ sealed interface Screen : NavKey {
     data object ImageGen : Screen
 
     // v4.8.100/102: 视频生成 (Google Veo / 阿里云 HappyHorse — 提供商模型类型 VIDEO, 对齐图像生成流程)
-    @Serializable
-    data object VideoGen : Screen
-
-    @Serializable
+        @Serializable
     data object History : Screen
 
     @Serializable
@@ -1065,16 +1058,7 @@ sealed interface Screen : NavKey {
     @Serializable
     data object SettingUploadInbox : Screen
 
-    @Serializable
-    data object SettingToolHub : Screen
-
-    @Serializable
-    data object SettingToolCompare : Screen
-
-    @Serializable
-    data object SettingBuiltinTools : Screen
-
-    @Serializable
+                @Serializable
     data object SettingFiles : Screen
 
     @Serializable
