@@ -1,98 +1,227 @@
 <div align="center">
-  <img src="docs/icon.png" alt="App 图标" width="100" />
-  <h1>RikkaHub</h1>
+  <h1>RinCore</h1>
 
-一个原生Android LLM 聊天客户端，支持切换不同的供应商进行聊天 🤖💬
+[![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=构建&logo=github)](https://github.com/desginus/rincore/actions)
+[![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
+[![Version](https://img.shields.io/badge/版本-v5.0.0-blue)](https://github.com/desginus/rincore/releases)
+[![License](https://img.shields.io/badge/许可-segmented_dual-cyan)](LICENSE)
 
-[English](README.md) | [繁體中文](README_ZH_TW.md) | 简体中文
+**手机上一个真正全面的 AI 助手。** 不是套壳，是一台重新打造过的引擎——背后是六周的高强度实测迭代与 400+ 个版本。
 
-点击链接加入群聊 👉 [【RikkaHub】](https://qm.qq.com/q/I8MSU0FkOu)
+RinCore 是 [RikkaHub](https://github.com/re-ovo/rikkahub) 的独立分支持续维护。它继承了 Rika 系一贯的基因（原生 Android、Material You、多 Provider），然后把底层的引擎重新做了一遍——更便宜、更稳定、更可控，并注入设备级的 Agent 能力。
+
+> **真机实测：** 400+ 工具加载、叠加超长角色预设上下文，冷启动只需约 10K token。（全量注入时代是 70K~100K+。）
+
+[English](README.md) | [简体中文](README_ZH_CN.md) | [繁體中文](README_ZH_TW.md)
 
 </div>
-
-<div align="center">
-  <img src="docs/img/poster.png" alt="RikkaHub" width="800" />
-</div>
-
 
 ## 🚀 下载
 
-🔗 [前往官网下载](https://rikka-ai.com/download)（推荐）
+RinCore 每次推送都会构建。两种方式获取最新 APK：
 
-🔗 [前往 Google Play 下载](https://play.google.com/store/apps/details?id=me.rerere.rikkahub)
+1. **GitHub Releases（推荐）** —— `nightly` 预发布版每晚重新发布，始终指向最新构建：<https://github.com/desginus/rincore/releases>
+2. **GitHub Actions 产物** —— 每次 CI 通过都会产出即时 APK，打开最新运行、展开 `rincore-release` 即可下载：<https://github.com/desginus/rincore/actions>
 
-> [!WARNING]
-> RikkaHub 存在许多 fork 版本，fork 版本出现问题与 RikkaHub 无关，请谨慎使用 fork 版本，避免隐私泄露或者过度索要权限问题。
+下载后直接安装，无需任何商店。
 
-## 💖 赞助商
+## 🔁 更新节奏：快，且每一步都是真的
 
-| 赞助商 | 介绍 |
-|:---:|:---|
-| <img src="docs/sponsors/aihubmix.png" alt="Aihubmix" width="50" /><br /><b>Aihubmix</b> | 感谢 <a href="https://aihubmix.com?aff=pG7r">aihubmix.com</a> 的资金支持。我们推荐使用 aihubmix 作为全球主流模型的一站式服务平台。（OpenAI、Claude、Google Gemini、DeepSeek、Qwen 以及数百种其他模型）。 |
-| <img src="docs/sponsors/api-mart.png" alt="APIMart" width="50" /><br /><b><a href="https://go.apimart.ai/gh-rikkahub">APIMart</a></b> | 感谢 APIMart 赞助了本项目！APIMart 是专注 AI 图片/视频生成的低价 API 平台，GPT-Image-2 低至 $0.006/张，1 美元可出图 160+ 张。图片、视频一套异步 API 通吃，提交任务拿 ID、回调取结果，跑批万张不超时、换模型不改代码。按量付费、无月费，通过<a href="https://go.apimart.ai/gh-rikkahub">此注册链接</a>注册即可开用。 |
-| <img src="docs/sponsors/suixiang.jpg" alt="随想AI中转" width="50" /><br /><b><a href="https://sui-xiang.com">随想AI中转</a></b> | 感谢<a href="https://sui-xiang.com">随想AI中转</a>对本项目的赞助！随想AI中转 是一家可靠高效的 API 中继服务提供商，提供 Claude、Codex、Gemini 等的中继服务。注重隐私的中转站·无数据倒卖·无模型掺水，隐私，透明，极速售后。新账户注册每日签到就送 0.5 元测试额度，充值额度 1:1，无需订阅，按量付费。多线路冗余、跨区域容灾、自动故障切换，长链路 SSE 不中断。99.9% 可用性，关键调用从不掉队。 |
-| <img src="docs/sponsors/ztest.png" alt="真测 ztest.ai" width="50" /><br /><b><a href="https://ztest.ai">真测 ztest.ai</a></b> | 感谢<a href="https://ztest.ai">真测 ztest.ai</a>对本项目的赞助！真测 ztest.ai 是一个 AI 中转站模型检测平台，检测结果数据全公开，23 项探针覆盖协议、身份、能力、内容完整性、安全性、性能六大维度，交叉印证识别伪造与降级。作为独立第三方验证平台，实时监测 AI 中转站的模型真实性、响应质量与服务可用性。 |
-| <img src="docs/sponsors/maru.png" alt="MaruCode" width="50" /><br /><b><a href="https://api.muteki.site/register?aff=Rikkahub&promo=Rikkahub">MaruCode</a></b> | <b><a href="https://api.muteki.site/register?aff=Rikkahub&promo=Rikkahub">MaruCode</a></b> 是一家偶尔做做慈善的小破站 API，自营号池，主要提供 Codex、Claude Code、GPT Image 等主流模型，支持 Websocket 协议，明码标价(Codex 0.25x, CC 1.5x)，透明汇率(1:1)，<a href="https://api.muteki.site/register?aff=Rikkahub&promo=Rikkahub">新用户注册送 2 刀</a>。<a href="https://images-2.muteki.site">生图工作台🖼️</a> |
+RinCore 的更新是持续的，每个版本号都承载了实打实的改进：
 
-## ✨ 功能特色
+- 项目历史约 **6 周**（2026 年 7 月起），累计 **400+ 个版本发布**，近 30 天 **540+ 次提交**。
+- 每个版本都是真实的一步：每一个设计与修改都来自**日常使用的实测**——用着不舒服就记录，量出问题就改，改完就发版。
+- 更新日志公开可查，没有空转版本号、没有为发而发。
 
-- 🎨 现代化安卓APP设计（Material 3 Expressive / 预测性返回）和 🌙 暗色模式
-- 📦 工作区：基于 proot 的 Linux 智能体环境
-- 🎬 媒体生成（图片、视频）
-- 🖥️ Web多端访问支持
-- 🛠️ MCP 与 Skills 支持
-- 🔄 多种类型的供应商支持，自定义 API / URL / 模型（目前支持 OpenAI、Google、Anthropic）
-- 🖼️ 多模态输入支持
-- 📝 Markdown 渲染（支持代码高亮、数学公式、表格、Mermaid）
-- 🔍 搜索功能（Exa、Tavily、Zhipu、LinkUp、Brave、Perplexity、..）
-- 🧩 Prompt 变量（模型名称、时间等）
-- 🤳 二维码导出和导入提供商
-- 🤖 智能体自定义
-- 🧠 基于文件的记忆
-- 📝 AI翻译
-- 🌐 自定义HTTP请求头和请求体
+## 🏗️ 这是一次重建，不是加功能
 
-## ✨ 开发
+RinCore 不是"RikkaHub 加了些功能"。核心是被日常使用推着重做出来的：
 
-> [!IMPORTANT]
-> 本项目不接受 Pull Request（PR）。
+- **单一信源（SSOT）** —— UI、域名列表、工具注入、Prompt 全部派生自同一个设置源，任何视图只读同一份数据，逐层漂移在机制上不可能发生。
+- **网络与缓存，按失败数据重写** —— SSE 断流指数退避重试、挂起看门狗、纯 HTTP/1.1 传输（弱网失败的真根因）、TCP+TLS 连接预热压首字延迟、断流续传、缓存指纹诊断（精确告诉你 DeepSeek 前缀缓存在哪一环断了）。中断与静默被杀，全部从根上修。
+- **压缩机制重做** —— 不再按固定条数截断。保留边界按对话轮 + token 数（60%）定位、四舍五入到最近的整轮；绝不压缩你刚发的内容，且按下压缩必然真正压缩到东西。
+- **成本从设计上降低** —— 工具区分层使冷启动从 100K+ 降到约 10K，请求前缀保持稳定，Provider 的 Prompt 缓存持续命中。
 
-本项目使用[Android Studio](https://developer.android.com/studio)开发。
+## ✨ 为什么选 RinCore —— 引擎级的差异
 
-技术栈文档:
+- **工具矩阵分层管理（成本杀手）** —— 400+ 工具按**工具区**归类，经 `invoke_tools` 按需加载，不再把全部工具塞进每个请求。工具矩阵全程可视化：新建/删除工具区、调整工具归属、按区计数、开发者对照（信源一致性自校验）。
+- **完整 MCP，含 STDIO** —— HTTP / Streamable HTTP / SSE / **STDIO** 全支持。STDIO 服务器在沙箱工作区以进程方式启动（设备端无需 Python）；工具声明静态化，连接波动不影响请求前缀与缓存；OAuth 令牌透明刷新。
+- **插件与技能** —— `ecosystem/plugins` 即装即卸；技能以一等工具存在（`skill__名称`）。请求顶层只放行批准的框架工具与用户豁免工具，其余一律藏在 `invoke_tools` 之内。
+- **手机 Agent，划好安全线** —— 值得搬的 Agent 能力几乎全部移植并在设备端运行：proot Linux 工作区、文件管理（批量/归档/读写/下载）、浏览器、媒体播放、闹钟、日历、电量、真实定位 + 地图、剪贴板、TTS、通知、屏幕常亮、定时任务、交互式流式输出、需要时向你确认。**高风险行为——替你操作屏幕（点击/滑动）——明确不做**。Agent 处理的是你的数据与文件，不是你的屏幕。
+- **OpenCode / OpenCode Zen 专项适配** —— 看门狗、无 `[DONE]` 流式完成判定、模型定义、推理模式对齐，上游打不顺的这里能跑。
+- **容量随时可见** —— 用量面板：多密钥卡片、实时余额、剩余时间倒计时、精确重置时段，额度心里有数。同时提供便捷的容量查询入口。
+- **一个软件，多份工作** —— 常规配置之后，图片生成、工作区数据分析、文档生成与导出、学习助手模式，与核心聊天体验一起扛。
+- **一整打体验级修复** —— 延迟自动回复（消息先排队，模型不会打断你输入）、消息多版本编辑、记忆 ID 时间戳化、时间感知调度、液态玻璃输入、可复现崩溃日志，等等。
 
-- [Kotlin](https://kotlinlang.org/) (开发语言)
-- [Koin](https://insert-koin.io/) (依赖注入)
-- [Jetpack Compose](https://developer.android.com/jetpack/compose) (UI 框架)
-- [DataStore](https://developer.android.com/topic/libraries/architecture/datastore?hl=zh-cn#preferences-datastore) (
-  偏好数据存储)
-- [Room](https://developer.android.com/training/data-storage/room) (数据库)
-- [Coil](https://coil-kt.github.io/coil/) (图片加载)
-- [Material 3 Expressive](https://m3.material.io/) (UI 设计)
-- [Navigation 3](https://developer.android.com/guide/navigation/navigation-3) (导航)
-- [Okhttp](https://square.github.io/okhttp/) (HTTP 客户端)
-- [kotlinx.serialization](https://github.com/Kotlin/kotlinx.serialization) (Json序列化)
+## 🎨 能力传承
+
+**继承自原版 RikkaHub（保留且可用）：**
+
+Material You + 深色模式 · 多 Provider（自定义 API/地址/模型，OpenAI/Anthropic/Google 兼容）· 多模态输入（图片/文本/PDF/DOCX）· proot Linux 工作区 · Web 多端 · MCP · Markdown（代码高亮/LaTeX/表格/Mermaid）· 消息分支 · 多引擎搜索（Exa/Tavily/Zhipu/LinkUp/Brave/Perplexity 等）· Prompt 变量 · 配置二维码导入导出 · 助手定制 · 类 ChatGPT 记忆 · AI 翻译 · 自定义请求头与请求体 · Silly Tavern 角色卡导入。
+
+**自 Agent 系移植（设备端运行，去掉高风险项）：**
+
+设备工具——闹钟、日历、电量、定位与地图、媒体播放与扫描、通知、剪贴板、TTS、屏幕常亮、系统意图 · 文件管理（批量与归档）· 定时任务 · 内置浏览器/网页抓取 · 跨对话读取 · 时间戳记忆 · 交互式流式工具输出。
+
+*（替用户点击/滑动屏幕的屏幕控制，是我们不越的那条线。）*
+
+## 🛠️ 构建
+
+使用 [Android Studio](https://developer.android.com/studio) 开发。
+
+技术栈： [Kotlin](https://kotlinlang.org/) · [Jetpack Compose](https://developer.android.com/jetpack/compose) · [Koin](https://insert-koin.io/) · [DataStore](https://developer.android.com/topic/libraries/architecture/datastore) · [Room](https://developer.android.com/training/data-storage/room) · [Coil](https://coil-kt.github.io/coil/) · [Material You](https://m3.material.io/) · [OkHttp](https://square.github.io/okhttp/) · [kotlinx.serialization](https://github.com/Kotlin/kotlinx.serialization)
 
 > [!TIP]
-> 你需要在 `app` 文件夹下添加 `google-services.json` 文件才能构建应用。
+> 本地构建需要 `app` 目录下存在 `google-services.json`。
 
-## 💰 捐赠
+## 🔧 维护与支持
 
-* [Ko-fi](https://ko-fi.com/reovodev)
-* [爱发电](https://afdian.com/a/reovo)
+RinCore 处于活跃维护中，欢迎 Issue 与 PR。每一个被报告的问题都会进入更新日志并转化为回归防线。优化与适配持续进行。
 
-## ⭐ Star History
+## 📋 更新日志
 
-如果喜欢这个项目，请给个Star ⭐
+v4.8.54 → v5.0.0（倒序）：
 
-<a href="https://www.star-history.com/?type=date&repos=re-ovo%2Frikkahub">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=re-ovo/rikkahub&type=date&theme=dark&legend=top-left&sealed_token=qSytWeq7LkzQQViTjK0MYlvvA_qkfuwjOxOqgbRpLUZZwok5rO6LXhpVL7Mq-q3o89BfKpzE7g66BCy18H6eiqTsD8czD0J-HejLqmHy-npcvCTHu11wZw" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=re-ovo/rikkahub&type=date&legend=top-left&sealed_token=qSytWeq7LkzQQViTjK0MYlvvA_qkfuwjOxOqgbRpLUZZwok5rO6LXhpVL7Mq-q3o89BfKpzE7g66BCy18H6eiqTsD8czD0J-HejLqmHy-npcvCTHu11wZw" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=re-ovo/rikkahub&type=date&legend=top-left&sealed_token=qSytWeq7LkzQQViTjK0MYlvvA_qkfuwjOxOqgbRpLUZZwok5rO6LXhpVL7Mq-q3o89BfKpzE7g66BCy18H6eiqTsD8czD0J-HejLqmHy-npcvCTHu11wZw" />
- </picture>
-</a>
+- **v5.0.0** — 反向换底到上游 3.0.0：引擎跑在上游底树上，RinCore 的全部功能逐项回植——生成稳定链（重试链/完成门/看门狗）、工具矩阵与工具区、子代理引擎、上传链（时间码）、CWD 链、沙箱工作区与 stdio MCP（SSE/StreamableHTTP/STDIO 三传输）、Codex 血统的 Markdown 渲染器、记忆 2.0（Markdown 记忆文件库 + 整理"做梦"调度）与我方单对话记忆并存、上游媒体创作模块，以及上游 3.0.0 全套 UI（设置/备份/扩展/翻译器）。主页面结构保留我方形态（加号→工具箱、右上角→本对话产出、双星轨、工具懒加载）。按规格排除：我方旧的输入栏/标题栏模糊实验链、饼干形头像（头像恒圆形）。
 
-## 📄 许可证
+- **v4.8.153** — 柔光玻璃终局简化"半透明+高斯模糊"：消息列表退出模糊源（治气泡与消息按钮的散光/虚影），撤除材质 tint 滤镜层。
 
-本项目基于 [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0) 开源。
+- **v4.8.152** — 修复整页黑纱/白纱（大面积背衬层不带材质 tint）；轨道选中态改为"图标本体发光"（主色柔光），撤除描边亮环。
+
+- **v4.8.151** — 轨道内弧新增「聊天」默认项；高亮项出入场更柔和（短窗 + smoothstep + 端部缩入）。同版修复后一并交付柔光玻璃终版（零噪点 + 材质 tint）。
+
+- **v4.8.150** — 柔光玻璃终版：深模糊全质量档（8dp 不半分辨率）+ 零噪点 + 主题自适应材质 tint（surface@0.5）——以像素级仿真对比对照 CS v0.2.1 安卓配方定案。
+
+- **v4.8.149** — 空态轨道选项目包现在真正"进入"该包（归属 + 抽屉选区 + 统计同走单入口）；抽屉按助手记忆"本次进程进入过的包"（不再每次弹项目包选择页）；落地信号一次性消费。
+
+- **v4.8.148** — 轨道选择器精修（抹除导轨线；圆形图标柔光玻璃；名称备注常驻；出入场淡入淡出；未设头像统一 AiMagic 图标）+ 修复：点助手真实切换（空对话未入库导致旧路径静默无操作）+ 玻璃半径压回 haze 32px 输入缩放阈值内（治"隔栅"）。
+
+- **v4.8.147** — 圆角面板边距对齐气泡边距；玻璃升级为深磨砂"光波粒"（20dp 深模糊、零噪点）；删输入框占位文本并压缩输入栏约 8dp（不碰正文框）；标题栏下移 5dp；标题后项目包胶囊；新聊天空页新增双弧轨道选择器（外弧=助手、内弧=项目包，传送带轮播）。
+
+- **v4.8.146** — 标题栏/正文交界圆角玻璃面板；Agent Skills 与发现合并为单页双 Tab；插件页加"功能测试中"备注；新增收件箱（Upload，含头像/对话背景的使用位置标注）；本对话产出按对话收边界（CWD 域 + 跨对话剔除）并对技能安装器做了真实数据压力测试。
+
+- **v4.8.145** — 修复设置深层子页返回跳两级；生态页只留「工具包」（标注为 Operit 插件生态兼容测试开发者选项、独立隔离）；插件页备注文本删除；**技能「发现」自 Cherry Studio v0.2.1 移植**——两个公开来源（CherryIN + skills.sh），搜索/热门/一键安装到本地技能库，另附从链接安装。
+
+- **v4.8.144** — 抽屉宽度恢复上游原版 300dp 固定（v4.8.66 的自适应宽度从未被回滚）；标题栏上移（顶部边距=状态栏高度×2/5）；输入框与全屏输入框任何场景默认半透明（关闭模糊回退半透明底、全屏编辑器重写为玻璃面板）；粘贴改为自管插入并显式落光标（修"粘贴后光标不动"）。
+
+- **v4.8.143** — 动效体系按 Cherry Studio 手机版 v0.2.1 复刻（第一批）：移植其动效词汇（Settle/Overshoot 曲线、200·250·350ms、临界阻尼弹簧、0.97 弹层静置缩放、无涟漪透明度按压）；弹窗真正播放入场缩放（0.97→1，350ms 过冲）并补上遮罩/返回键的出场动画；回底浮动件改为 0.8 缩放淡入淡出。
+
+- **v4.8.142** — 工具产图渲染地址三根修：映射表化（/workspace /upload /tool_outputs /skills，与 bindMounts 同源）+ 发出前验存（isFile && canRead；死链零输出、撤销错文件兜底）+ buildRenderPayload 五生产点单点统一；被丢弃路径输出 render_note 说明而非误导性"可复述显示"话术。
+
+- **v4.8.141** — 滚动历史"气泡抽动"根修：为流式设计的双段渲染（首帧终态 + 异步增量重算写回 state）泄漏进了重入视口路径（LazyColumn 回收重建）——每条消息每次滚入都要多付一次整段重组，正是 v4.7.26 定版禁止的"首帧→异步替换过渡"。修复 = 首发与首帧渲染依据相同则跳过（流式行为不变）。
+
+- **v4.8.140** — 子代理产物落错 CWD：子代理会话创建时未继承父对话的项目包归属，生效工作目录整体跌回助手级 CWD（解析链 = 包 cwd ?: 助手 cwd），而父对话在项目包里。修复 = 创建时继承父对话 folderId。
+
+- **v4.8.139** — 子代理并发"只容纳 3"根修：v4.8.121 的默认 3→7 只对新建助手生效，存量助手的落盘 JSON 里仍是旧默认 3。现在做一次性迁移：恰好等于 3 的值升到 7（手动设过其它值的不动；一次性标记模式）。
+
+- **v4.8.138** — 工作目录选择器修复：废除 4.8.25 的浏览围栏（原先被限制在助手 CWD 子树内，导致"被锁定"），浏览全程可达工作区根；重置改为清到生效链（本包层 + 仍在生效的助手层），确保一定回到根（旧版在生效值来自助手级时是无操作）。根处"设为工作目录"存 null 而非 "/workspace" 空壳值。
+
+- **v4.8.137** — 上传文件同名覆盖根修：上传码正则按 12 位误写而真实文件名是 10 位，同分钟同 basename（工具图恒为 image.png）全拿 01 号互相覆盖——多个读图结果指向同一文件。正则/校验全链对齐 + 回归测试。另外：重试链相位修正（发起链 5 次快速失败只用于尚无输出的建连阶段，有输出后含工具轮一律 18 次流中断链）、/dev/shm 绑定（Python multiprocessing）、pdf 脚本逐页无文本层提示、toolbox 逐工具真实安装提示。
+
+- **v4.8.136** — 本对话产出胶囊窗"点了没反应"根修：在选项态被关闭时留下 open=true+已隐藏的僵尸态（Material3 的 onDismissRequest 在 sheet 隐藏之后才回调），此后重新打开的点击全部无效，直到页面状态重建才偶发恢复。现在任何关闭都彻底复位；选项→列表一步回退改由返回键承担。附 80 条产出清单滚动可达。
+
+- **v4.8.135** — 两项优先修复：workspace_glob 支持 **/路径模式（此前 “**/*” 静默返回空），truncated 给真实总数；buildRenderUrl 发出前 stat 并回退重算（cwd 前缀变体 + 限定深度同名搜索），治陈旧渲染坏链。含同版编译修复。
+- **v4.8.134** — 测试报告全量治理（13 项）：图片错位根因=上传副本命名竞态（取号+创建原子化）、任务清单按对话隔离、子代理活动心跳、read_image 百分号解码与 /workspace 路径、派发排队、预算透明、写入 NonCancellable、url_only 读、环境说明。
+
+- **v4.8.133** — 子代理超时真值对齐：全库对账（代码/资源/UI/数据库/资产/历史）均无"420"常量，该数字来自模型可见面——此前的参数移除之后，工具描述里没有任何权威的超时上限声明（且残留一个陈旧数值：预算 100K 与实际 1000K 不符）。现在 dispatch 工具描述直接写明固定上限 1800 秒（30 分钟），模型若仍传入 timeout_seconds 会在结果中显式标注"已忽略"，历史运行记录里的旧值也会被标注为历史值。引擎行为不变（恒定 1800 秒）。
+
+- **v4.8.132** — 缓存退化定罪与恢复延迟治理：对一份典型会话运行日志（475 事件）的全量审读证明缓存未命中发生在服务端（客户端指纹全程稳定、断裂点位置固定且出现匹配点回退），并定位了恢复延迟来源（3 次 60 秒网关挂起、缓存断裂、1 次 13.5 秒探活卡顿）。修复：探活失败冷却 + 同步探活 6 秒总时限、诊断中探活等待单列、新增"网关侧缓存丢失"自动定罪事件与覆盖当前轮消息的全内容指纹。
+
+- **v4.8.131** — 断流重试细化与连接链全量审计：中途断流的自动恢复恢复为完全静默（撤掉"正在自动恢复"提示；仅"发起连接失败"仍显示重试状态）；发起连接的重试池从 4 次提升到 5 次。对重试/保活/预热全链的审计还修复了两处真实问题：工具轮之间"已收到数据"标记的残留（可能把下一轮首次连接失败误塞进长重试链）、重试成功后提示滞留到流结束；并清理死代码与陈旧注释。
+
+- **v4.8.130** — 断流重试节奏改版（用户定版数值）：中断自动恢复的等待序列改为 300ms → 700ms → 1s → 2s → 3s → 5s，6 次一组、共 3 组（18 次不变）——递增退避取代此前的固定间隔形态，对齐社区"固定间隔重试会加剧 429/503 限流"的实测结论。同版附带 v4.8.92↔HEAD 断连链全量对比审计（结论：无客户端回归；旧版本"更好"的体感来自上游劣化时间线 + 恢复动作被显式可见化）。
+
+- **v4.8.129** — 文件交互统一与图片保存修复：「本对话产出」与对话内文件胶囊现在共享同一套实现（新增 ChatFileActions 核心），统一为三选项——导出 / 分享 / 渲染；移除此前「用其他应用打开」（其独立解析链导致"文档不存在"假失败）。预览弹窗的图片保存改为与图片渲染同一条解析链（修复 Workspace/上传图片——尤其中文文件名——的保存失败），保存失败现在会真正写进运行日志。
+
+- **v4.8.128** — LaTeX 渲染："公式整条击杀"防护。jlatexmath 是整条解析——一个 AMS 编号/元命令（`\tag{1}`）就会让整条公式回落成原文显示。现于渲染前清洗：`\tag{X}`→`\quad(X)`（编号保留可见）、`\label/\nonumber/\notag` 删除、`equation` 环境去壳、`\bm`→`\boldsymbol`——你报告的那条物理公式（含 `\boxed` 与 `\tag`）现在可以完整渲染。
+
+- **v4.8.127** — 网关客户端身份伪装（用户定版：不要暴露我们自己）：AI 请求改为伪装成网关已验证客户端的身份——opencode.ai 网关使用 `opencode/latest/1.19.0/cli`（与官方 OpenCode CLI 完全同款格式），其余 AI 提供商使用 `codex_cli_rs/0.162.1 (Linux 6.8.0; x86_64)`（Codex CLI 真实格式，各网关广泛认可）。仅 AI 流量受影响；非 AI 请求与显式自设 UA 的调用方零影响。
+
+- **v4.8.126** — OpenCode 网关客户端合规：全部 AI 请求改为自有 UA（`RinCore/<版本>`，替代 OkHttp 默认——OpenCode Go 文档明确要求客户端以自有名标识、而非泛用 HTTP 库名，且该网关对流量做滥用监控）；会话归属补齐（标题/候选建议/压缩等辅助调用改为携带本对话的稳定 `x-opencode-session`，不再存在无归属请求）。另经全量 diff 证实 v4.8.115→v4.8.116 的改动仅涉及浏览器工具——流链未被触碰，中断问题并非该版本引入。
+
+- **v4.8.125** — 输出恢复链定点调优（未重引入掐流检测门）：流阶段看门狗空闲上限统一为 150 秒（原 90/120 秒——过紧的阈值会误杀慢上游，而"重试重放"会放大断连体感）；流中断重试现在有可见状态（"输出中断，正在自动恢复（第 N 次）…"）；工作区产出路径统一规范化——同一文件不再在「本对话产出」里重复出现；文件胶囊与产出弹层重写为三选项（渲染/导出/用其他应用打开）——删除「分享」（与"用其他应用打开"重复），每个动作都有可见反馈。
+
+- **v4.8.124** — 输出门禁彻底回滚（用户定版）：干净边界、无完成证据的流关流恢复为"视为完成"——不再合成续写追问（该行为会触发上游网关的 "Upstream stream ended before terminal chunk" 错误、导致对话不可用）；v4.8.117/118 的并行掐流检测与完成门 v2 证据化整体移除，v4.8.112 的五通道完成判据保留。
+
+- **v4.8.123** — 图片加载期间即按最终尺寸预留位置（本地图片读文件头测尺寸、远端图片首次加载后记住），上滑回看历史消息不再跳动/抽动；所有文件胶囊（文档、视频、音频与「本对话产出」列表）改为点击弹出选项：渲染 / 分享 / 导出 / 用其他应用打开（不再直接跳系统页面）；上下文压缩期间发送键不再变灰——消息与生成中同款排队「等待中」，压缩（或上一轮输出）完成后自动发出。
+
+- **v4.8.122** — 图片地址含下划线就挂的根因修复：渲染管线此前把图片/链接地址当普通文本处理（其"词内下划线保护"与"单波浪号替换"把地址里的 `_` 换成了全角 ＿、`~` 换成 ∼，地址被污染后永远找不到真实文件）。现在地址是不可透明 URL 令牌（扫描器保护 markdown 目标区/autolink/裸 URL）。同时：「本对话产出」扩面（shell/job 生成的文件也会被工作区扫描登记）；点击上传文件胶囊弹出选项弹层（渲染/分享/用其他应用打开）；消息列表两侧留白 16→8dp、气泡内留白 8→6dp；抽屉露边条回滚 64dp。
+
+- **v4.8.121** — 子代理回收器新增脚本轮询模式（wait_until_done：每 10 秒查询一次，完成即返回）；模型不再能自传超时（恒定 1800 秒上限），单助手并发子代理默认 7 个；新增「代码块内自动渲染」开关（HTML/JS/SVG 自动预览，可随时切回代码）；代码块上的横向滑动不再误触抽屉；羽毛「极简模式」开关已删除；抽屉露边条收紧为 40dp；新增「本对话产出」面板——点按模型产出的文件即可直接打开。
+- **v4.8.120** — 被 md/markdown 代码围栏包住的表格现在渲染为真表格（围栏解包逻辑移植自 OpenAI Codex）；支持 GFM 列对齐（:---:）；子代理默认超时提升至 1800 秒。
+- **v4.8.119** — Markdown/数学渲染升级：行内 $...$ 紧贴中文也能触发（"公式不渲染"的主因根修）；链接内嵌套内容正确渲染；表格单元格按行内 Markdown 直渲（不再重解析）；解析器回归测试加入 CI。
+- **v4.8.118** — 掐流识别 v2：证据化识别上游掐流（自动续写），无完成信号的网关正常输出零风险；修复 invoke_tools 懒加载池错绑焦点助手；运行日志按对话隔离，多对话并行不再互相串扰。
+- **v4.8.117** — 修复多对话同时生成时，失焦对话被掐断后不重试的问题（并行流登记 + 合成续长 + 假取消区分）。
+
+- **v4.8.116** — 修复浏览器工具导航后返回旧地址、旧标题（改为等页面真正加载完再返回）；修复打不开的页面仍报成功（现在返回明确错误码）；修复对 React/Vue 输入框填值无效（改用原生赋值 + input/change 事件）；修复打开页面与读内容同批并行时读空；新增 browser_wait_for_load 工具；截图改存工作区，沙箱可直接读取、对话里可直接显示。
+- **v4.8.115** — 修复工具生成图片的渲染地址在不同入口格式不一致的问题（全链统一为一种格式，解码只在一处做）；所有本地图片缓存加入文件修改时间，改图覆盖后立即显示新图。
+- **v4.8.114** — 修复断网时界面长时间无提示：现在显示「网络连接失败，自动重试中（第 N 次）」，失败后给出可操作的排查提示（系统联网控制 / 应用内代理 / 切换网络）。
+- **v4.8.113** — 修复工具生成的图片无法在对话气泡里显示（file:// 图片放行 + 统一字段 + 可直接复述的图片行）；工具执行段内直接显示缩略图，点击放大。
+- **v4.8.112** — 修复 DeepSeek 等模型输出到一半被当成「正常结束」静默中断（补齐全部通道的完成判定，非正常结束会续写或重试）；修复分享偶发空分享、拍照偶发丢照片；修复用 @ 点名工具后对话缓存全部失效；加强英文专有名词不被误翻译。
+- **v4.8.111** — 修复切换助手后被跳到别的会话（切换助手只切助手，不再导航）。
+- **v4.8.110** — 完成需求单 B1-B6；工具并行调用对齐 Claude Code（有界并发、保序输出）。
+- **v4.8.109** — 修复 XLSX 上传异常、降级弹窗、上传轮次缓存不连续。
+- **v4.8.108** — 修复子代理预算被误熔断。
+- **v4.8.107** — 修复上传图片后对话缓存整体失效（对账原版后根治）。
+- **v4.8.106** — 删除「工具已完成，继续生成中…」等待提示；恢复探活门兜底逻辑。
+- **v4.8.105** — 缩短工具执行完到模型继续输出之间的等待：预探活提前、探活门零等待、增加 TTFT 分阶段耗时记录。
+- **v4.8.104** — 抽屉去掉「功能折叠」；速览页新增入口；点空白处返回；极简模式工具闸门。
+- **v4.8.103** — 修复视频生成页崩溃；视频生成流程与图像生成对齐。
+- **v4.8.102** — 视频生成真正可用（Google Veo 直连）；渲染提速。
+- **v4.8.101** — 修复文档渲染点击报「找不到文件」（产物文件名与预览器契约对齐）；视频生成页对齐图像生成。
+- **v4.8.100** — 文档渲染缺口补齐（PPT / officecli 真渲染接入）；新增视频生成。
+- **v4.8.99** — 线程体系改革：统一调度器 + 沙箱进程族隔离池，缓解卡顿。
+- **v4.8.98** — 修复长形 PPT 只显示左半、需右滑的问题（按真实画布尺寸渲染）；文档渲染提速。
+- **v4.8.97** — 全库清理：删 107 个无用字符串键、4 个未用图标、3 个死文件；缓存优化。
+- **v4.8.96** — 修复 MCP stdio 连接失效的回归。
+- **v4.8.95** — 补齐 GoogleProvider 请求头；三语言补 30 个字符串键；标题生成模型报错更精确。
+- **v4.8.94** — 移植原版 2.5.6：新增聊天内图表工具（chart_display）；修复 MCP OAuth 回调 403、MCP 工具 schema $ref 展开。
+- **v4.8.93** — 恢复抽屉底部「AI 翻译 / 图像生成」入口；统计页复刻原版；清理两处重复入口。
+- **v4.8.92** — 移除「恢复出厂」（误触会复活已删配置）；/@ 选择器支持选整区 + 工具来源标签；修复子代理预算假清零；新增单对话记忆；本地设置补闹钟 / 工作流开关。
+- **v4.8.91** — 上传码改为时间码（月日时分、东八区、写进文件名）；本对话上传清单注入；回前台即建立热连接（缩短首字延迟）；工作区按创建时间排序。
+- **v4.8.90** — 新增 /@ 工具矩阵选择器（三级下钻、点选回填）；新增上传码直取工具；修复界面工具池与模型工具池不一致。
+- **v4.8.89** — 修复工具矩阵「显示改好了实际没改」一族问题（统一事务写入口，修假成功 / 假失败）。
+- **v4.8.88** — 内置「习题辅导」出厂技能；子代理预算（默认 100K / 对话，超限熔断）；子代理完成通知独立频道；取消生成时真正停止底层请求。
+- **v4.8.87** — 工具矩阵架构重写（身份与路径分离 + 唯一写入口）。
+- **v4.8.86** — 流式渲染重构（MarkdownStream 引擎），消除每个分片全量重解析，长对话更流畅。
+- **v4.8.85** — 新增极简模式（零工具注入）；工具可自由移回顶层直连。
+- **v4.8.84** — 工具矩阵支持模型侧管理（四个动作）；修复死缓存 / 门控误拦 / 隐藏区失联 / 加载丢失。
+- **v4.8.83** — 工具矩阵彻底重写：取消「内置 / 自定义」分裂，统一为声明式工具区；删除操作真实生效；配置面从 9 个减到 5 个。
+- **v4.8.82** — 编译日志可读性：shell 输出改为头尾双保留，报错不再被截断丢弃（模型不再误判「没有报错」）。
+- **v4.8.81** — 能力模块一键清空（MCP / 技能）。
+- **v4.8.80** — 修复 MCP 工具 schema 悬空 $ref；出站 parameters 空值兜底。
+- **v4.8.79** — 回滚「提供商余额」模块；修复 CC 空套餐判据。
+- **v4.8.78** — async 作用域扩展调用修复（编译修复随版）。
+- **v4.8.77** — 补分享图标引用（编译修复随版）。
+- **v4.8.76** — 探活时间戳跨轮持有修复（编译修复随版）。
+- **v4.8.75** — ask_user 问答卡免折叠；等候期直发修复。
+- **v4.8.74** — runInterruptible 上下文修复（编译修复随版）。
+- **v4.8.73** — 实时分段包裹；CWD 绑定包一组渲染 / 重置 / 日志修复。
+- **v4.8.72** — 新增沙箱后台任务（workspace_job）；命令超时放宽到 600s。
+- **v4.8.71** — 分段过程折叠（胶囊窗）；OpenCode / CommandCode 启动即心跳。
+- **v4.8.70** — 依赖注入层级修复 + Markdown 增量解析类型可见性（编译修复随版）。
+- **v4.8.69** — 选择性回滚材质库升级（玻璃效果排查）。
+- **v4.8.68** — 解析管线块级化（提速机制，渲染形态不变）。
+- **v4.8.67** — 渲染路径回滚到稳定形态；折叠范围修正（仅思考与工具）。
+- **v4.8.66** — 列表遍历兼容修复（编译修复随版）。
+- **v4.8.65** — 聊天列表组合函数修复（编译修复随版）。
+- **v4.8.64** — MCP stdio 分支结构修复；材质库迁移适配（编译修复随版）。
+- **v4.8.63** — 三线规范重写：排序持久化、分支归属、MCP 去 CWD 锁、文件解析引擎。
+- **v4.8.62** — 无障碍语义补全（编译修复随版）。
+- **v4.8.61** — workspace 工具挂起调用修复（编译修复随版）。
+- **v4.8.60** — 用量页整理（取消「使用中」、密钥查看）；沙箱诊断工具（doccheck / blockscan）。
+- **v4.8.59** — 归属快照；展开箭头方向修正；用量查询页重写。
+- **v4.8.58** — 项目包智能排序 + 展开态竖向列表；胶囊窗导出语义修正。
+- **v4.8.57** — 胶囊窗文件链 CWD 多候选解析；请求指纹加固。
+- **v4.8.56** — 修复「静默截断」：usage 尾包不再冒充完成标记，被掐断的输出自动续写。
+- **v4.8.55** — 续写决策修复（编译修复随版）。
+- **v4.8.54** — 聚合网关（OC / CC）瞬时错误分流。
+
+## 🤝 致谢
+
+- **desginus** —— 设计、开发与维护
+- **Claude** —— 模型侧协作者
+
+## 📄 许可
+
+[许可协议](LICENSE)
