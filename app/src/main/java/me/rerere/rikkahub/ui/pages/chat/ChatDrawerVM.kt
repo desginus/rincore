@@ -10,6 +10,8 @@ package me.rerere.rikkahub.ui.pages.chat
  * ───────────────────────────────────────────────────────────────*/
 
 
+import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
+import kotlinx.coroutines.flow.flowOf
 import android.app.Application
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -60,8 +62,20 @@ class ChatDrawerVM(
     private val folderRepo: FolderRepository,
     private val chatService: ChatService,
     private val favoriteDAO: me.rerere.rikkahub.data.db.dao.FavoriteDAO,
+    // 5.0.0 并树：记忆整理状态（抽屉「整理中」指示 — 上游 3.0.0）
+    private val memoryConsolidationScheduler: MemoryConsolidationScheduler,
     private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
+
+    /** 当前助手的记忆库是否正在后台整理；没开记忆的助手即使共用全局记忆库在整理也不显示。 */
+    val memoryDreaming: StateFlow<Boolean> = settingsStore.settingsFlow
+        .map { settings -> settings.getCurrentAssistant().takeIf { it.enableMemory }?.memoryId }
+        .distinctUntilChanged()
+        .flatMapLatest { memoryId ->
+            if (memoryId == null) flowOf(false)
+            else memoryConsolidationScheduler.statusOf(memoryId).map { it.running }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     // v3.8.15: 清理聊天内容 — 删除早于 cutoff 的非置顶无收藏对话
     fun cleanupConversations(cutoffEpochMs: Long, onDone: (removed: Int, skipped: Int) -> Unit) {

@@ -7,6 +7,7 @@ package me.rerere.rikkahub.ui.pages.chat
  * 问题定位: 抽屉内容/新建归属错误 → 本文件 + ChatDrawerVM
  * 基线: 原版移植 + 自研 (文件夹/入口) | 地图: docs/APP_MAP.md §A | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
+import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -138,6 +139,8 @@ fun ChatDrawerContent(
     // v4.8.58 (用户定版): 项目包智能推荐排序 — 本次选中(缓存) → 最近 3 次去重 →
     // 3 天频次 → 默认序; 数据源 = 持久化点击统计 (过期真删见 LaunchedEffect)
     val packClickStats by drawerVm.packClickStatsJson.collectAsStateWithLifecycle()
+    // 5.0.0 并树：记忆整理中指示（上游 3.0.0）
+    val memoryDreaming by drawerVm.memoryDreaming.collectAsStateWithLifecycle()
     // v4.8.62: 项目包任务绿点数据 (含正在执行对话的项目包)
     val packsWithRunning by drawerVm.packsWithRunning.collectAsStateWithLifecycle()
     val rankedFolders = remember(folders, selectedFolderId, packClickStats) {
@@ -308,6 +311,12 @@ fun ChatDrawerContent(
                     modifier = Modifier.weight(1f),
                 )
             }
+            if (memoryDreaming) {
+                MemoryDreamingEntry(
+                    onClick = { navController.navigate(Screen.AssistantMemory(settings.assistantId.toString())) },
+                )
+            }
+
             if (showCleanupDialog) {
                 CleanupChatDialog(
                     onCleanup = { cutoffEpochMs ->
@@ -909,6 +918,33 @@ fun ChatDrawerContent(
 }
 
 // v3.8.15: 块状三入口 — 搜索 / 查询(历史) / 清理, 最上行为"聊天历史"标题
+@Composable
+private fun MemoryDreamingEntry(onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            ContainedLoadingIndicator(modifier = Modifier.size(18.dp))
+            Text(
+                text = stringResource(R.string.memory_dreaming),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
 @Composable
 private fun DrawerActions(navController: Navigator, onCleanupClick: () -> Unit) {
     Column {
