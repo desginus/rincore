@@ -27,7 +27,9 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.huge.icons)
-    implementation(libs.jetbrains.markdown)
+    // 5.0.0 并树：ui 模块渲染依赖改用我方 :markdown（同包 org.intellij.markdown，含 CJK 数学/表格解包/URL 保护等本地修复）—
+    // 避免与外部 com.github.rikkahub:markdown 同时进入 release classpath（R8 重复类：ExperimentalApi.class）
+    implementation(project(":markdown"))
     implementation(libs.jsoup)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
