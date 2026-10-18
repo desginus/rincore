@@ -199,7 +199,6 @@ private fun AssistantHeader(
         UIAvatar(
             value = assistant.avatar,
             name = name,
-            shape = CircleShape,
             onUpdate = null,
             modifier = Modifier
                 .size(136.dp)
