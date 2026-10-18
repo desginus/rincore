@@ -706,47 +706,6 @@ private fun QwenTTSConfiguration(
             }
         }
     }
-
-    // Language Type
-    var languageExpanded by remember { mutableStateOf(false) }
-    val languageTypes = listOf("Auto", "Chinese", "English", "Japanese", "Korean")
-
-    FormItem(
-        label = { Text("Language Type") },
-        description = { Text("Language type for TTS synthesis") }
-    ) {
-        ExposedDropdownMenuBox(
-            expanded = languageExpanded,
-            onExpandedChange = { languageExpanded = !languageExpanded }
-        ) {
-            OutlinedTextField(
-                value = setting.languageType,
-                onValueChange = { newLanguageType ->
-                    onValueChange(setting.copy(languageType = newLanguageType))
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
-                trailingIcon = {
-                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = languageExpanded)
-                }
-            )
-            DropdownMenu(
-                expanded = languageExpanded,
-                onDismissRequest = { languageExpanded = false }
-            ) {
-                languageTypes.forEach { languageType ->
-                    DropdownMenuItem(
-                        text = { Text(languageType) },
-                        onClick = {
-                            languageExpanded = false
-                            onValueChange(setting.copy(languageType = languageType))
-                        }
-                    )
-                }
-            }
-        }
-    }
 }
 
 @Composable

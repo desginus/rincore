@@ -108,7 +108,6 @@ sealed class TTSProviderSetting {
         val voice: String = "longanhuan_v3.6",
         val format: String = "wav",
         val sampleRate: Int = 24000,
-            val languageType: String = "Auto",
     ) : TTSProviderSetting() {
         override fun copyProvider(
             id: Uuid,
