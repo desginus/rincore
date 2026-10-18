@@ -1,10 +1,5 @@
-/* 【域 I·数据存储】 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.data.db
 
-
-/* ───【原版对齐】AppDatabase.kt | 差异 ±32 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.RoomDatabase
@@ -16,55 +11,48 @@ import me.rerere.rikkahub.data.db.dao.FavoriteDAO
 import me.rerere.rikkahub.data.db.dao.FolderDAO
 import me.rerere.rikkahub.data.db.dao.GenMediaDAO
 import me.rerere.rikkahub.data.db.dao.ManagedFileDAO
+import me.rerere.rikkahub.data.db.dao.MediaCreationDAO
+import me.rerere.rikkahub.data.db.dao.MemoryConsolidationDAO
 import me.rerere.rikkahub.data.db.dao.MemoryDAO
 import me.rerere.rikkahub.data.db.dao.MessageNodeDAO
-import me.rerere.rikkahub.data.db.dao.AlarmDao
+import me.rerere.rikkahub.data.db.dao.TranslationHistoryDAO
 import me.rerere.rikkahub.data.db.dao.WorkspaceDAO
-import me.rerere.rikkahub.workflow.db.WorkflowDao
-import me.rerere.rikkahub.workflow.db.WorkflowRunDao
-import me.rerere.rikkahub.workflow.db.WorkflowEntity
-import me.rerere.rikkahub.workflow.db.WorkflowRunEntity
 import me.rerere.rikkahub.data.db.entity.ConversationEntity
 import me.rerere.rikkahub.data.db.entity.FavoriteEntity
 import me.rerere.rikkahub.data.db.entity.FolderEntity
 import me.rerere.rikkahub.data.db.entity.GenMediaEntity
 import me.rerere.rikkahub.data.db.entity.ManagedFileEntity
-import me.rerere.rikkahub.data.db.entity.MemoryEntity
+import me.rerere.rikkahub.data.db.entity.MediaCreationNodeEntity
+import me.rerere.rikkahub.data.db.entity.MediaCreationRecordEntity
+import me.rerere.rikkahub.data.db.entity.MediaCreationSessionEntity
+import me.rerere.rikkahub.data.db.entity.MemoryConsolidationEntity
+import me.rerere.rikkahub.data.db.entity.MemoryFileEntity
 import me.rerere.rikkahub.data.db.entity.MessageNodeEntity
-import me.rerere.rikkahub.data.db.dao.ScheduledJobDao
-import me.rerere.rikkahub.data.db.dao.ScheduledJobRunDao
-import me.rerere.rikkahub.data.agentrun.AgentRunDao
-import me.rerere.rikkahub.data.db.entity.ScheduledJobEntity
-import me.rerere.rikkahub.data.db.entity.ScheduledJobRunEntity
-import me.rerere.rikkahub.data.db.entity.AlarmEntity
+import me.rerere.rikkahub.data.db.entity.TranslationHistoryEntity
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
-import me.rerere.rikkahub.data.agentrun.AgentRun
-import me.rerere.rikkahub.data.db.entity.SubAgentRunEntity
-import me.rerere.rikkahub.data.db.dao.SubAgentRunDao
 import me.rerere.rikkahub.data.db.migrations.Migration_16_17
 import me.rerere.rikkahub.data.db.migrations.Migration_22_23
+import me.rerere.rikkahub.data.db.migrations.Migration_28_29
 import me.rerere.rikkahub.data.db.migrations.Migration_8_9
 import me.rerere.rikkahub.utils.JsonInstant
 
 @Database(
     entities = [
         ConversationEntity::class,
-        MemoryEntity::class,
+        MemoryFileEntity::class,
+        MemoryConsolidationEntity::class,
         GenMediaEntity::class,
         MessageNodeEntity::class,
         ManagedFileEntity::class,
         FavoriteEntity::class,
         WorkspaceEntity::class,
         FolderEntity::class,
-        ScheduledJobEntity::class,
-        ScheduledJobRunEntity::class,
-        AgentRun::class,
-        AlarmEntity::class,
-        WorkflowEntity::class,
-        WorkflowRunEntity::class,
-        SubAgentRunEntity::class,
+        MediaCreationSessionEntity::class,
+        MediaCreationNodeEntity::class,
+        MediaCreationRecordEntity::class,
+        TranslationHistoryEntity::class,
     ],
-    version = 32,
+    version = 30,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -84,14 +72,20 @@ import me.rerere.rikkahub.utils.JsonInstant
         AutoMigration(from = 21, to = 22),
         AutoMigration(from = 22, to = 23, spec = Migration_22_23::class),
         AutoMigration(from = 23, to = 24),
+        AutoMigration(from = 24, to = 25),
+        AutoMigration(from = 25, to = 26),
+        AutoMigration(from = 26, to = 27),
+        AutoMigration(from = 28, to = 29, spec = Migration_28_29::class),
+        AutoMigration(from = 29, to = 30),
     ]
 )
-
 @TypeConverters(TokenUsageConverter::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDAO
 
     abstract fun memoryDao(): MemoryDAO
+
+    abstract fun memoryConsolidationDao(): MemoryConsolidationDAO
 
     abstract fun genMediaDao(): GenMediaDAO
 
@@ -105,19 +99,9 @@ abstract class AppDatabase : RoomDatabase() {
 
     abstract fun folderDao(): FolderDAO
 
-    abstract fun scheduledJobDao(): ScheduledJobDao
+    abstract fun mediaCreationDao(): MediaCreationDAO
 
-    abstract fun scheduledJobRunDao(): ScheduledJobRunDao
-
-    abstract fun alarmDao(): AlarmDao
-
-    abstract fun workflowDao(): WorkflowDao
-
-    abstract fun workflowRunDao(): WorkflowRunDao
-
-    abstract fun agentRunDao(): AgentRunDao
-
-    abstract fun subAgentRunDao(): SubAgentRunDao
+    abstract fun translationHistoryDao(): TranslationHistoryDAO
 }
 
 object TokenUsageConverter {
@@ -131,29 +115,3 @@ object TokenUsageConverter {
         return JsonInstant.decodeFromString(usage)
     }
 }
-
-/**
- * 4.8.92: 单对话记忆字段 (31+ schema json 缺失, 手写迁移 — 同 30_31 先例)。
- *  两列均 nullable TEXT 直接 ADD COLUMN; 历史记忆 conversation_id = NULL → 仍是助手级, 行为不变。 */
-val MIGRATION_31_32 = object : androidx.room.migration.Migration(31, 32) {
-    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
-        db.execSQL("ALTER TABLE memoryentity ADD COLUMN conversation_id TEXT")
-        db.execSQL("ALTER TABLE memoryentity ADD COLUMN source_conversation_id TEXT")
-    }
-}
-
-/** 4.1.0: Shell 兼容模式字段 (25+ schema json 缺失, 手写迁移 — 同 28_29 先例) */
-val MIGRATION_29_30 = object : androidx.room.migration.Migration(29, 30) {
-    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
-        db.execSQL("ALTER TABLE workspaces ADD COLUMN shell_compatibility_mode INTEGER NOT NULL DEFAULT 0")
-    }
-}
-
-/** 4.8.24: 项目包 CWD 字段 (30+ schema json 缺失, 手写迁移 — 同 29_30 先例)。
- *  nullable TEXT 列直接 ADD COLUMN (无 NOT NULL/默认值需求)。 */
-val MIGRATION_30_31 = object : androidx.room.migration.Migration(30, 31) {
-    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
-        db.execSQL("ALTER TABLE conversation_folder ADD COLUMN cwd TEXT")
-    }
-}
-

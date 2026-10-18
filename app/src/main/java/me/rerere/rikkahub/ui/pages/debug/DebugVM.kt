@@ -1,8 +1,4 @@
-/* 【域 L·基础设施】 — 页面 | 地图: docs/APP_MAP.md §L */
 package me.rerere.rikkahub.ui.pages.debug
-/* ───【原版对齐】DebugVM.kt | 基线 2.5.5 (v4.8.64 移植: 助手恢复扫描 recoverAssistantsFromConversations)
- * 来源: 原版 2.5.5 适配移植 | 差异: 仅工程标注
- * ───────────────────────────────────────────────────────────────*/
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -34,6 +30,13 @@ class DebugVM(
 ) : ViewModel() {
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
         .stateIn(viewModelScope, SharingStarted.Lazily, Settings.dummy())
+
+    val launchCount: StateFlow<Int> = settingsStore.launchCountFlow
+        .stateIn(viewModelScope, SharingStarted.Lazily, 0)
+
+    fun setLaunchCount(count: Int) {
+        viewModelScope.launch { settingsStore.setLaunchCount(count) }
+    }
 
     private val _conversationCount = MutableStateFlow<Int?>(null)
     val conversationCount: StateFlow<Int?> = _conversationCount.asStateFlow()
@@ -77,13 +80,13 @@ class DebugVM(
         val recovered = missing.mapIndexed { index, (id, _) ->
             Assistant(id = id, name = "恢复的助手 ${index + 1}")
         }
-        settingsStore.update(settings.copy(assistants = settings.assistants + recovered))
+        settingsStore.update { it.copy(assistants = it.assistants + recovered) }
         return recovered.size
     }
 
-    fun updateSettings(settings: Settings) {
+    fun updateSettings(fn: (Settings) -> Settings) {
         viewModelScope.launch {
-            settingsStore.update(settings)
+            settingsStore.update(fn)
         }
     }
 

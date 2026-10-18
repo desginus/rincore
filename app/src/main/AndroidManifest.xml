@@ -13,27 +13,14 @@
   <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
   <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
   <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
   <uses-permission
     android:name="android.permission.PACKAGE_USAGE_STATS"
     tools:ignore="ProtectedPermissions" />
   <uses-permission android:name="android.permission.READ_CALENDAR" />
   <uses-permission android:name="android.permission.WRITE_CALENDAR" />
-  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-  <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
-  <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
-  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
-  <uses-permission android:name="android.permission.WAKE_LOCK" />
-  <!-- 4.8.22: 电池优化豁免请求 (后台任务保护 — 配合前台服务防系统冻结) -->
-  <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
-  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-  <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"
-      android:maxSdkVersion="32" />
-  <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
-  <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
   <uses-feature
     android:name="android.hardware.camera"
@@ -82,7 +69,6 @@
       android:configChanges="keyboardHidden|orientation|screenSize"
       android:exported="true"
       android:importantForAutofill="noExcludeDescendants"
-      android:launchMode="singleTask"
       android:theme="@style/Theme.Rikkahub"
       android:windowSoftInputMode="adjustResize">
       <intent-filter>
@@ -90,33 +76,15 @@
 
         <category android:name="android.intent.category.LAUNCHER" />
       </intent-filter>
-
-      <meta-data
-        android:name="android.app.shortcuts"
-        android:resource="@xml/shortcuts" />
-    </activity>
-    <activity
-      android:name=".ui.activity.ShareReceiverActivity"
-      android:exported="true"
-      android:excludeFromRecents="true"
-      android:taskAffinity=""
-      android:theme="@android:style/Theme.Translucent.NoTitleBar">
       <intent-filter>
         <action android:name="android.intent.action.SEND" />
 
         <category android:name="android.intent.category.DEFAULT" />
 
-        <data android:mimeType="*/*" />
+        <data android:mimeType="text/plain" />
       </intent-filter>
       <intent-filter>
-        <action android:name="android.intent.action.SEND_MULTIPLE" />
-
-        <category android:name="android.intent.category.DEFAULT" />
-
-        <data android:mimeType="*/*" />
-      </intent-filter>
-      <intent-filter>
-        <action android:name="android.intent.action.SEND" />
+        <action android:name="android.intent.action.PROCESS_TEXT" />
 
         <category android:name="android.intent.category.DEFAULT" />
 
@@ -129,25 +97,13 @@
       </intent-filter>
 
       <intent-filter>
-        <action android:name="me.rerere.rikkahub.action.IMAGE_GEN" />
+        <action android:name="me.rerere.rikkahub.action.MEDIA_CREATION" />
         <category android:name="android.intent.category.DEFAULT" />
       </intent-filter>
-      <intent-filter>
-        <action android:name="android.intent.action.PROCESS_TEXT" />
 
-        <category android:name="android.intent.category.DEFAULT" />
-
-        <data android:mimeType="text/plain" />
-      </intent-filter>
-      <intent-filter>
-        <action android:name="android.intent.action.VIEW" />
-
-        <category android:name="android.intent.category.DEFAULT" />
-
-        <data android:scheme="content" />
-        <data android:scheme="file" />
-        <data android:mimeType="*/*" />
-      </intent-filter>
+      <meta-data
+        android:name="android.app.shortcuts"
+        android:resource="@xml/shortcuts" />
     </activity>
     <activity
       android:name=".ui.activity.ShortcutHandlerActivity"
@@ -160,7 +116,7 @@
 
         <data
           android:host="shortcut"
-          android:scheme="rincoredesk" />
+          android:scheme="rikkahub" />
       </intent-filter>
     </activity>
     <activity
@@ -168,21 +124,24 @@
       android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
 
     <service
+      android:name=".service.ChatGenerationForegroundService"
+      android:exported="false"
+      android:foregroundServiceType="dataSync" />
+    <service
+      android:name=".service.MediaCreationForegroundService"
+      android:exported="false"
+      android:foregroundServiceType="dataSync" />
+    <service
+      android:name=".service.MemoryDreamForegroundService"
+      android:exported="false"
+      android:foregroundServiceType="dataSync" />
+    <service
       android:name=".service.WebServerService"
       android:exported="false"
       android:foregroundServiceType="specialUse">
       <property
         android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
         android:value="local web server for LLM chat UI" />
-    </service>
-
-    <service
-      android:name=".service.GenerationForegroundService"
-      android:exported="false"
-      android:foregroundServiceType="specialUse">
-      <property
-        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-        android:value="keep AI chat generation running in background" />
     </service>
 
     <provider
@@ -195,7 +154,7 @@
         android:resource="@xml/file_paths" />
     </provider>
     <provider
-      android:name=".data.provider.WorkspaceDocumentsProvider"
+      android:name=".service.WorkspaceDocumentsProvider"
       android:authorities="${applicationId}.documents"
       android:exported="true"
       android:grantUriPermissions="true"
@@ -214,65 +173,6 @@
         android:value="androidx.startup"
         tools:node="remove" />
     </provider>
-
-    <!-- WorkManager 前台服务类型覆盖: Android 14+ (targetSdk 34+) 禁止 type=none FGS -->
-    <service
-      android:name="androidx.work.impl.foreground.SystemForegroundService"
-      android:foregroundServiceType="dataSync"
-      android:exported="false"
-      tools:node="merge" />
-
-    <service
-      android:name=".service.MediaPlaybackService"
-      android:exported="false"
-      android:foregroundServiceType="mediaPlayback">
-      <intent-filter>
-        <action android:name="android.intent.action.MEDIA_BUTTON" />
-      </intent-filter>
-    </service>
-
-    <receiver
-      android:name="androidx.media.session.MediaButtonReceiver"
-      android:exported="true">
-      <intent-filter>
-        <action android:name="android.intent.action.MEDIA_BUTTON" />
-      </intent-filter>
-    </receiver>
-
-    <receiver
-      android:name=".service.CronBootReceiver"
-      android:exported="true">
-      <intent-filter>
-        <action android:name="android.intent.action.BOOT_COMPLETED" />
-        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-        <action android:name="android.intent.action.QUICKBOOT_POWERON" />
-      </intent-filter>
-    </receiver>
-
-    <service
-      android:name=".service.FloatingNotificationService"
-      android:exported="false"
-      android:foregroundServiceType="specialUse">
-      <property
-        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-        android:value="floating notification window for post_notification tool" />
-    </service>
-    <receiver
-      android:name=".service.AlarmReceiver"
-      android:exported="false" />
-    <receiver
-      android:name=".service.CronAlarmReceiver"
-      android:exported="false" />
-    <receiver
-      android:name=".service.AlarmRescheduleReceiver"
-      android:exported="true">
-      <intent-filter>
-        <action android:name="android.intent.action.BOOT_COMPLETED" />
-        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-        <action android:name="android.intent.action.TIME_SET" />
-        <action android:name="android.intent.action.TIMEZONE_CHANGED" />
-      </intent-filter>
-    </receiver>
   </application>
 
 </manifest>

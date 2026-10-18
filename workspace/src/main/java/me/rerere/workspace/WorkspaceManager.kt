@@ -1,17 +1,11 @@
 package me.rerere.workspace
 
-
-/* ───【域 D·工作区沙箱】WorkspaceManager.kt
- * 职责: 沙箱门面 (文件/导出 exportFolderToZip/launchProcess)
- * 常用改动: 导出 → exportFolderToZip (直接文件树, 勿复用 listFiles — 有 500 截断); 启动 → launchProcess
- * 问题定位: 导出丢失/沙箱启动失败 → 本文件
- * 基线: 原版移植 + 自研 (导出/launchProcess) | 差异 ≈277 行变更（vs 2.5.1·2026-10-18 复核） | 地图: docs/APP_MAP.md §D | 历史: .claude/skills/rincore-bug-record
- * ───────────────────────────────────────────────────────────────*/
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
+import java.nio.file.Files
 
 class WorkspaceManager(
     private val baseDir: File,
@@ -47,7 +41,9 @@ class WorkspaceManager(
 
     fun tempDir(root: String): File = File(workspaceDir(root), TEMP_DIR)
 
-    fun hasRootfs(root: String): Boolean = File(linuxDir(root), "bin/sh").isFile
+    fun hasRootfs(root: String): Boolean = isUsableRootfs(linuxDir(root))
+
+    fun rootfsShell(root: String): String = rootfsShell(linuxDir(root))
 
     fun deleteWorkspace(root: String): Boolean = workspaceDir(root).deleteRecursively()
 
@@ -115,73 +111,8 @@ class WorkspaceManager(
         val file = fileSystem.resolve(areaDir(root, area), path)
         require(file.exists()) { "File does not exist: $path" }
         require(file.isFile) { "Path is not a file: $path" }
-        // v4.5.7 根修: 不关闭调用方的输出流 — 文件夹打包 (exportFolderZip) 传入
-        // ZipOutputStream, 此前 outputStream.use 在第一个文件写完即关闭 zip 流,
-        // 后续所有条目抛异常 (导出"传输中断"/分享静默失败)。流生命周期一律由
-        // 调用方管理, 本方法只负责拷贝并关闭自己打开的输入流。
-        file.inputStream().use { input -> input.copyTo(outputStream) }
+        outputStream.use { out -> file.inputStream().use { it.copyTo(out) } }
     }
-
-    /**
-     * v4.8.5: 文件夹完整导出为 zip — 彻底重写 (用户实证: 旧实现导出后解压内容丢失/破损)。
-     *
-     * 旧实现缺陷 (根因链):
-     *  ① 递归依赖 fileSystem.list — 其内部 take(maxListEntries=500) 截断:
-     *     单层超过 500 个条目时, 超出部分静默丢失 (内容丢失的直接根因);
-     *  ② zip 条目无时间戳 — 解压后 mtime 全丢 (破损感来源之一);
-     *  ③ 深层空目录依赖列表层遍历, 易漏。
-     *
-     * 新实现: 直接对宿主文件树递归 (rootDir.listFiles), 不经过 UI 列表层 —
-     * 条目数只受磁盘限制; 每个条目带 mtime; 空目录/空文件/中文名 (UTF-8 EFS)
-     * 全部保留; 失败向上抛 (不产出半损 zip)。底层流生命周期由 use 管理
-     * (zip.close 连带关闭 outputStream — 与旧行为一致, 调用方不再 close)。
-     */
-    fun exportFolderToZip(
-        root: String,
-        folderPath: String,
-        area: WorkspaceStorageArea = WorkspaceStorageArea.FILES,
-        outputStream: OutputStream,
-    ): FolderZipStats {
-        val base = fileSystem.resolve(areaDir(root, area), folderPath)
-        require(base.exists()) { "Folder does not exist: $folderPath" }
-        require(base.isDirectory) { "Path is not a directory: $folderPath" }
-
-        var files = 0L
-        var dirs = 0L
-        var bytes = 0L
-        java.util.zip.ZipOutputStream(outputStream).use { zip ->
-            fun walk(dir: File, prefix: String) {
-                val children = dir.listFiles()
-                    ?.filter { !it.name.startsWith(".l2s.") }   // proot link2symlink 影子条目
-                    // v4.8.91: 与列表同口径 —— 创建先后
-                    ?.sortedWith(compareBy<File> { it.lastModified() }.thenBy { it.name.lowercase() })
-                    ?: return
-                for (child in children) {
-                    val name = prefix + child.name
-                    if (child.isDirectory) {
-                        val de = java.util.zip.ZipEntry("$name/")
-                        de.time = child.lastModified()
-                        zip.putNextEntry(de)
-                        zip.closeEntry()
-                        dirs++
-                        walk(child, "$name/")
-                    } else {
-                        val fe = java.util.zip.ZipEntry(name)
-                        fe.time = child.lastModified()
-                        zip.putNextEntry(fe)
-                        child.inputStream().use { it.copyTo(zip) }
-                        zip.closeEntry()
-                        files++
-                        bytes += child.length()
-                    }
-                }
-            }
-            walk(base, "")
-        }
-        return FolderZipStats(files = files, dirs = dirs, bytes = bytes)
-    }
-
-    data class FolderZipStats(val files: Long, val dirs: Long, val bytes: Long)
 
     /**
      * 把 Rootfs 内的绝对路径映射到宿主机上的真实文件。
@@ -190,7 +121,7 @@ class WorkspaceManager(
      * 可以直接用文件 IO 访问, 无需经过 PRoot; 只是 Rootfs 目录里对应位置是个空挂载点,
      * 按 [WorkspaceStorageArea.LINUX] 解析必然落空。
      */
-    fun resolveRootfsPath(root: String, path: String, cwd: String? = null): RootfsLocation {
+    fun resolveRootfsPath(root: String, path: String): RootfsLocation {
         val trimmed = path.trim().trimEnd('/').ifBlank { "/" }
         require(trimmed.startsWith("/")) { "Rootfs path must be absolute: $path" }
 
@@ -203,9 +134,8 @@ class WorkspaceManager(
         }
 
         if (trimmed == ROOTFS_WORKSPACE_DIR || trimmed.startsWith("$ROOTFS_WORKSPACE_DIR/")) {
-            // v4.5.27: CWD 专一空间 — cwd 非空时 /workspace 解析到该子目录 (与 proot 挂载同源)
             return RootfsLocation(
-                rootDir = workspaceScopeDir(root, cwd),
+                rootDir = filesDir(root),
                 relativePath = trimmed.removePrefix(ROOTFS_WORKSPACE_DIR).trimStart('/'),
             )
         }
@@ -218,67 +148,17 @@ class WorkspaceManager(
         return RootfsLocation(linuxDir(root), trimmed.trimStart('/'))
     }
 
-    /**
-     * v3.11.31: 带安全校验的 Rootfs 内文件解析 (供图片渲染链路使用)。
-     * canonical 后要求落在 [RootfsLocation.rootDir] (workspace files 区或 bind
-     * mount source) 之内, 拒绝 `..` / symlink / bind 逃逸; 指向 rootDir 自身目录
-     * 或不存在/非普通文件一律返回 null。永不抛出异常。
-     */
-    /**
-     * v4.5.27: 助手级 CWD 作用域目录 — cwd 非空时返回 filesDir/<cwd> (canonical 校验在 filesDir 内),
-     * 与 ProotShellRunner 的 /workspace 挂载源保持同源; cwd 为空/非法时回退整区 filesDir。
-     */
-    private fun workspaceScopeDir(root: String, cwd: String?): File {
-        val base = filesDir(root)
-        if (cwd.isNullOrBlank()) return base
-        return runCatching {
-            val baseCanonical = base.canonicalFile
-            val scoped = File(baseCanonical, cwd.trim().trim('/')).canonicalFile
-            if (scoped.path == baseCanonical.path || scoped.path.startsWith(baseCanonical.path + File.separator)) {
-                scoped
-            } else {
-                base
-            }
-        }.getOrDefault(base)
-    }
+    fun rootfsFileSize(root: String, path: String): Long =
+        resolveRootfsFile(root, path).also { it.requireReadableFile(path) }.length()
 
-    /**
-     * v4.8.116: rootfs 路径 → 宿主 File（写入向）— 与 [resolveRootfsPath] 同一映射
-     * (bind mounts / /workspace 区 / cwd 作用域)，不要求目标已存在。
-     * 仅支持可写区（/workspace）；内核伪文件系统等 resolveRootfsPath 会抛出的
-     * 形态一律返回 null。逃逸拒绝继承 resolve 链（canonical 校验）。
-     */
-    fun rootfsHostFileForWrite(root: String, path: String, cwd: String? = null): File? {
-        return runCatching {
-            val location = resolveRootfsPath(root, path, cwd)
-            val target = fileSystem.resolve(location.rootDir, location.relativePath)
-            if (target.path == location.rootDir.path) null
-            else target
-        }.getOrNull()
-    }
-
-    fun resolveRootfsFileSafe(root: String, path: String, cwd: String? = null): File? {
-        return runCatching {
-            val location = resolveRootfsPath(root, path, cwd)
-            // resolve 内部已做 canonical + 逃逸拒绝 (resolvePath require)
-            val target = fileSystem.resolve(location.rootDir, location.relativePath)
-            if (target.path == location.rootDir.path || !target.isFile) return null
-            target
-        }.getOrNull()
-    }
-
-    fun rootfsFileSize(root: String, path: String, cwd: String? = null): Long =
-        resolveRootfsFile(root, path, cwd).also { it.requireReadableFile(path) }.length()
-
-    fun exportRootfsFile(root: String, path: String, outputStream: OutputStream, cwd: String? = null) {
-        val file = resolveRootfsFile(root, path, cwd)
+    fun exportRootfsFile(root: String, path: String, outputStream: OutputStream) {
+        val file = resolveRootfsFile(root, path)
         file.requireReadableFile(path)
-        // v4.5.7: 流契约统一 — 只关闭自己打开的输入流, 调用方流由调用方管理
-        file.inputStream().use { input -> input.copyTo(outputStream) }
+        outputStream.use { out -> file.inputStream().use { it.copyTo(out) } }
     }
 
-    private fun resolveRootfsFile(root: String, path: String, cwd: String? = null): File {
-        val location = resolveRootfsPath(root, path, cwd)
+    private fun resolveRootfsFile(root: String, path: String): File {
+        val location = resolveRootfsPath(root, path)
         return fileSystem.resolve(location.rootDir, location.relativePath)
     }
 
@@ -341,138 +221,6 @@ class WorkspaceManager(
         )
     }
 
-    /** 启动常驻进程 (不等待) — MCP stdio 桥接: workspace 内启动 Python/Node MCP 服务器 */
-    fun launchProcess(
-        root: String,
-        command: String,
-        cwd: String = "",
-        env: Map<String, String> = emptyMap(), // v4.8.110 (B4): 调用方环境变量 (MCP stdio env)
-    ): Process? {
-        require(command.isNotBlank()) { "Command is required" }
-        val workingDir = fileSystem.resolve(filesDir(root), cwd)
-        require(workingDir.exists()) { "Working directory does not exist: $cwd" }
-        require(workingDir.isDirectory) { "Working path is not a directory: $cwd" }
-
-        return shellRunner.launchProcess(
-            WorkspaceShellContext(
-                root = root,
-                command = command,
-                cwd = cwd,
-                filesDir = filesDir(root),
-                linuxDir = linuxDir(root),
-                tempDir = tempDir(root),
-                workingDir = workingDir,
-                timeoutMillis = DEFAULT_COMMAND_TIMEOUT_MS,
-                stdin = null,
-                bindMounts = bindMounts,
-                env = env,
-            )
-        )
-    }
-
-    // ── v4.8.72: 后台任务原语 (用户定版: 长任务必须有后台/异步能力) ──
-    // 独立 proot (killOnExit=false) 启动脚本; proot 退出后任务继续存活;
-    // 存活判定不依赖沙箱内 ps (每实例隔离) — /proc 环境标记扫描 (同 UID 可见)。
-
-    data class JobStatus(
-        val id: String,
-        val state: String,   // running | done | dead
-        val exitCode: Int?,
-        val pids: List<Int>,
-    )
-
-    private fun jobsDir(root: String): File = File(filesDir(root), ".rin-jobs").apply { mkdirs() }
-
-    fun jobLogFile(root: String, jobId: String): File = File(jobsDir(root), "$jobId.log")
-
-    /** 启动后台任务 — 脚本落地规避全部 shell 引号问题; 返回即已脱离调用实例。 */
-    fun startJob(root: String, command: String, cwd: String, jobId: String) {
-        require(command.isNotBlank()) { "Command is required" }
-        val cwdRel = cwd.trim().trim('/')
-        val script = buildString {
-            append("#!/bin/bash\n")
-            if (cwdRel.isNotEmpty()) {
-                append("cd \"/workspace/").append(cwdRel).append("\" || exit 1\n")
-            } else {
-                append("cd /workspace || exit 1\n")
-            }
-            append("export RIN_JOB_ID=").append(jobId).append('\n')
-            append(command).append('\n')
-            append("_rin_rc=\$?\n")
-            append("echo \"\$_rin_rc\" > \"/workspace/.rin-jobs/").append(jobId).append(".exit\"\n")
-        }
-        File(jobsDir(root), "$jobId.sh").writeText(script)
-        val inner = "nohup bash /workspace/.rin-jobs/$jobId.sh > /workspace/.rin-jobs/$jobId.log 2>&1 < /dev/null & echo RINJOB_STARTED $jobId"
-        val process = shellRunner.launchProcess(
-            WorkspaceShellContext(
-                root = root,
-                command = inner,
-                cwd = "",
-                filesDir = filesDir(root),
-                linuxDir = linuxDir(root),
-                tempDir = tempDir(root),
-                workingDir = filesDir(root),
-                timeoutMillis = 30_000L,
-                stdin = null,
-                bindMounts = bindMounts,
-                killOnExit = false,
-            )
-        ) ?: error("proot 不可用, 后台任务无法启动")
-        runCatching {
-            process.waitFor(30, java.util.concurrent.TimeUnit.SECONDS)
-            process.destroy()
-        }
-    }
-
-    fun jobStatus(root: String, jobId: String): JobStatus? {
-        val dir = jobsDir(root)
-        if (!File(dir, "$jobId.sh").exists()) return null
-        val exitCode = File(dir, "$jobId.exit")
-            .takeIf { it.exists() }?.readText()?.trim()?.toIntOrNull()
-        val pids = if (exitCode == null) scanJobPids(jobId) else emptyList()
-        val state = when {
-            exitCode != null -> "done"
-            pids.isNotEmpty() -> "running"
-            else -> "dead"
-        }
-        return JobStatus(jobId, state, exitCode, pids)
-    }
-
-    fun jobKill(root: String, jobId: String): Int {
-        var killed = 0
-        for (pid in scanJobPids(jobId)) {
-            runCatching {
-                Runtime.getRuntime().exec(arrayOf("kill", "-9", pid.toString())).waitFor()
-                killed++
-            }
-        }
-        return killed
-    }
-
-    /** /proc 扫描: RIN_JOB_ID=<id> 环境标记 (覆盖全部子孙进程) 或脚本路径命令行。
-     *  同 UID 进程可见 — 跨沙箱实例唯一可靠的存活判据 (ps 看不到 != 已死)。 */
-    private fun scanJobPids(jobId: String): List<Int> {
-        val marker = "RIN_JOB_ID=$jobId"
-        val cmdMarker = ".rin-jobs/$jobId.sh"
-        val out = ArrayList<Int>()
-        val procs = File("/proc").listFiles() ?: return out
-        for (p in procs) {
-            val pid = p.name.toIntOrNull() ?: continue
-            val envText = runCatching {
-                String(File(p, "environ").readBytes(), Charsets.ISO_8859_1)
-            }.getOrNull()
-            if (envText != null && envText.split('\u0000').any { it == marker }) {
-                out.add(pid)
-                continue
-            }
-            val cmdText = runCatching {
-                String(File(p, "cmdline").readBytes(), Charsets.ISO_8859_1)
-            }.getOrNull() ?: continue
-            if (cmdText.contains(cmdMarker)) out.add(pid)
-        }
-        return out
-    }
-
     private fun requireValidRoot(root: String) {
         require(root.matches(ROOT_NAME_REGEX)) {
             "Invalid workspace root name: $root"
@@ -501,7 +249,7 @@ class WorkspaceManager(
         private const val FILES_DIR = "files"
         private const val LINUX_DIR = "linux"
         private const val TEMP_DIR = "tmp"
-        const val DEFAULT_COMMAND_TIMEOUT_MS = 600_000L
+        const val DEFAULT_COMMAND_TIMEOUT_MS = 30_000L
 
         /** Rootfs 内工作区文件区的挂载点 */
         const val ROOTFS_WORKSPACE_DIR = "/workspace"
@@ -510,6 +258,21 @@ class WorkspaceManager(
         val KERNEL_FS_MOUNTS = listOf("/dev", "/proc", "/sys")
 
         private val ROOT_NAME_REGEX = Regex("[A-Za-z0-9._-]+")
+
+        /** Rootfs 是否可用, 以 /bin/sh 存在为准 */
+        fun isUsableRootfs(linuxDir: File): Boolean =
+            linuxDir.isDirectory && linuxDir.hasRootfsEntry("bin/sh")
+
+        /** Rootfs 内使用的 shell: 优先 bash, 没有时 (如 Alpine minirootfs) 回退到 /bin/sh */
+        fun rootfsShell(linuxDir: File): String =
+            if (linuxDir.hasRootfsEntry("bin/bash")) "/bin/bash" else "/bin/sh"
+
+        // Alpine 等发行版的 /bin/sh 是指向 /bin/busybox 的绝对路径软链, 在宿主机上解析不到目标,
+        // 只有 proot 内才能正确解析, 所以软链本身存在即视为存在
+        private fun File.hasRootfsEntry(path: String): Boolean {
+            val entry = File(this, path)
+            return entry.isFile || Files.isSymbolicLink(entry.toPath())
+        }
     }
 }
 

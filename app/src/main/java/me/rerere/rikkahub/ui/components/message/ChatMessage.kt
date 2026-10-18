@@ -1,10 +1,5 @@
-/* 【域 F·主题渲染】 — 消息/文档渲染 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.message
 
-
-/* ───【原版对齐】ChatMessage.kt | 差异 ≈254 行变更（vs 2.5.1·2026-10-18 复核）
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
@@ -12,6 +7,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,7 +16,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.CardDefaults
@@ -30,21 +25,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -52,15 +45,12 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.util.fastAll
 import androidx.compose.ui.util.fastForEach
 import androidx.compose.ui.util.fastForEachIndexed
-import androidx.core.net.toFile
-import androidx.core.net.toUri
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.serialization.json.jsonArray
@@ -73,8 +63,6 @@ import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.isEmptyUIMessage
 import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.ArrowDown01
-import me.rerere.hugeicons.stroke.ArrowUp01
 import me.rerere.hugeicons.stroke.File02
 import me.rerere.hugeicons.stroke.MusicNote03
 import me.rerere.hugeicons.stroke.Video01
@@ -84,86 +72,25 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.replaceRegexes
-import me.rerere.rikkahub.ui.components.charts.ChartCard
-import me.rerere.rikkahub.ui.components.charts.ChartSpec
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.richtext.buildMarkdownPreviewHtml
-import me.rerere.rikkahub.ui.components.webview.WebViewContentCache
 import me.rerere.rikkahub.ui.components.ui.ChainOfThought
 import me.rerere.rikkahub.ui.components.ui.Favicon
+import me.rerere.rikkahub.ui.components.ui.FaviconRow
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.theme.LocalChatFontFamily
 import me.rerere.rikkahub.ui.theme.rememberChatFontFamily
-import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.openUrl
 import me.rerere.rikkahub.utils.urlDecode
+import me.rerere.ui.charts.ChartCard
+import me.rerere.ui.charts.ChartSpec
+import me.rerere.ui.webview.WebViewContentCache
 import java.util.Locale
 import kotlin.time.Duration.Companion.milliseconds
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-
-// 4.1.5 根修: v3.8.12 的 spec 参数化仍是"loading 翻转瞬间改变
-// animateContentSize 参数" — Tween(0)→Spring 参数变化重启动画,
-// 输出完成瞬间整页抽动 (用户实测 v4.1.4 仍在)。对齐原版恒定形态:
-// animateContentSize() 无参数差异, loading 翻转零动画扰动。
-private fun Modifier.contentSizeAnimated(loading: Boolean): Modifier =
-    animateContentSize()
-
-
-
-/**
- * v4.8.66 (CS 安卓端移植): 过程折叠披露行 —
- * 完成态把"正文之外的过程" (思考/工具/中途叙述) 折叠为一行 (用时 N 秒 / 过程记录),
- * 点击展开显示原渲染链。
- */
-@Composable
-private fun ProcessDisclosureRow(
-    containerColor: Color,
-    durationSeconds: Int,
-    expanded: Boolean,
-    onToggle: () -> Unit,
-    content: @Composable () -> Unit,
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Surface(
-            // v4.8.71 (用户定版): 胶囊窗 — 大圆角胶囊形态 (非方框), 宽度包内容
-            shape = RoundedCornerShape(percent = 50),
-            color = containerColor,
-            onClick = onToggle,
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Text(
-                    text = if (durationSeconds > 0) {
-                        stringResource(R.string.chat_process_duration, durationSeconds)
-                    } else {
-                        stringResource(R.string.chat_process_title)
-                    },
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Icon(
-                    imageVector = if (expanded) HugeIcons.ArrowUp01 else HugeIcons.ArrowDown01,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        AnimatedVisibility(visible = expanded) {
-            Column(modifier = Modifier.padding(top = 4.dp)) {
-                content()
-            }
-        }
-    }
-}
 
 @Composable
 fun ChatMessage(
@@ -172,7 +99,6 @@ fun ChatMessage(
     loading: Boolean = false,
     model: Model? = null,
     assistant: Assistant? = null,
-    folderCwd: String? = null,
     lastMessage: Boolean = false,
     onFork: () -> Unit,
     onRegenerate: () -> Unit,
@@ -188,6 +114,15 @@ fun ChatMessage(
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
 ) {
     val message = node.messages[node.selectIndex]
+    if (message.isContextCheckpoint) {
+        ChatMessageContextCheckpoint(
+            message = message,
+            onEdit = onEdit,
+            onDelete = onDelete,
+            modifier = modifier,
+        )
+        return
+    }
     val settings = LocalSettings.current.displaySetting
     val chatFontFamily = LocalChatFontFamily.current ?: rememberChatFontFamily(settings)
     val textStyle = LocalTextStyle.current.copy(
@@ -237,8 +172,7 @@ fun ChatMessage(
                 model = model,
                 onToolApproval = onToolApproval,
                 onToolAnswer = onToolAnswer,
-                // v3.21.0: 点击呼出编辑已取消 (用户定版) — 编辑走长按菜单
-                onUserMessageClick = null,
+                onUserMessageClick = if (message.role == MessageRole.USER) onEdit else null,
             )
 
             message.translation?.let { translation ->
@@ -255,13 +189,16 @@ fun ChatMessage(
             message.parts.isEmptyUIMessage().not()
         }
 
+        val motionScheme = MaterialTheme.motionScheme
         AnimatedVisibility(
             visible = showActions,
-            enter = slideInVertically { it / 2 } + fadeIn(),
-            exit = slideOutVertically { it / 2 } + fadeOut()
+            enter = slideInVertically(motionScheme.defaultSpatialSpec()) { it / 2 } +
+                fadeIn(motionScheme.defaultEffectsSpec()),
+            exit = slideOutVertically(motionScheme.fastSpatialSpec()) { it / 2 } +
+                fadeOut(motionScheme.fastEffectsSpec())
         ) {
             Column(
-                modifier = Modifier.contentSizeAnimated(loading)
+                modifier = Modifier.animateContentSize()
             ) {
                 ChatMessageActionButtons(
                     message = message,
@@ -280,11 +217,10 @@ fun ChatMessage(
         EditedFilesList(
             parts = message.parts,
             assistant = assistant,
-            folderCwd = folderCwd,
         )
 
         ProvideTextStyle(textStyle) {
-            ChatMessageNerdLine(message = message, isLast = lastMessage)
+            ChatMessageNerdLine(message = message)
         }
 
     }
@@ -346,8 +282,6 @@ private fun MessagePartsBlock(
     onUserMessageClick: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
-    val contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
-
     // 消息输出HapticFeedback
     val hapticFeedback = LocalHapticFeedback.current
     val settings = LocalSettings.current
@@ -385,22 +319,13 @@ private fun MessagePartsBlock(
 
     // Render parts in original order (group thinking/tool as chain-of-thought)
     val groupedParts = remember(parts) { parts.groupMessageParts() }
-
-    // v4.8.66 (CS 移植) + v4.8.67 (用户定版修正): 过程折叠只收"思考与工具调用" —
-    // 中途正文 (哪怕很短) 一律留在正文区原位渲染, 不再裹入过程记录。
-    // 生成中不折叠 (实时展示, 与原行为一致); 仅完成态启用。
-    val isAssistantRole = role == MessageRole.ASSISTANT
-    // v4.8.73 (用户定版): 实时分段包裹 — 每完成一段就裹一段:
-    // 生成中, 凡其后已出现正文的过程段立即折叠为胶囊 (阶段一结束即包裹);
-    // 活动尾段 (其后尚无正文) 保持展开正常显示; 完成后全部折叠。以此往复。
-
-    val renderPartBlock: @Composable (MessagePartBlock) -> Unit = { block ->
+    groupedParts.fastForEach { block ->
         when (block) {
             is MessagePartBlock.ThinkingBlock -> {
                 if (block.steps.isNotEmpty()) {
                     val isReasoningOnlyBlock = block.steps.fastAll { it is ThinkingStep.ReasoningStep }
                     ChainOfThought(
-                        modifier = Modifier.contentSizeAnimated(loading),
+                        modifier = Modifier.animateContentSize(),
                         steps = block.steps,
                         collapsedAdaptiveWidth = isReasoningOnlyBlock,
                         cardColors = CardDefaults.cardColors(
@@ -420,16 +345,20 @@ private fun MessagePartsBlock(
                             }
 
                             is ThinkingStep.ToolStep -> {
-                                // v3.11.28: 子代理工具调用与普通工具完全对齐 — 调用卡必须可见
-                                // (派发/查询/取消都有明确提示), 结果不隐藏; 运行详情仍收在
-                                // 加号面板「子代理详情」里做唯一展示窗口。
                                 key(step.tool.toolCallId.ifBlank { step.hashCode().toString() }) {
                                     ChatMessageToolStep(
                                         tool = step.tool,
                                         loading = loading && !step.tool.isExecuted,
+                                        assistant = assistant,
                                         onToolApproval = onToolApproval,
                                         onToolAnswer = onToolAnswer,
                                     )
+                                }
+                            }
+
+                            is ThinkingStep.ServerToolStep -> {
+                                key(step.tool.toolCallId.ifBlank { step.hashCode().toString() }) {
+                                    ChatMessageServerToolStep(tool = step.tool)
                                 }
                             }
                         }
@@ -437,45 +366,49 @@ private fun MessagePartsBlock(
                 }
             }
 
+            is MessagePartBlock.ChartBlock -> key(block.index) {
+                val spec = remember(block.tool.input) { ChartSpec.fromJson(block.tool.inputAsJson()) }
+                spec?.let { ChartCard(spec = it) }
+            }
+
             is MessagePartBlock.ContentBlock -> key(block.index) {
                 when (val part = block.part) {
                     is UIMessagePart.Text -> {
                         val textContent = @Composable {
                             if (role == MessageRole.USER) {
-                                Surface(
-                                    modifier = Modifier.contentSizeAnimated(loading),
-                                    shape = RoundedCornerShape(16.dp),
+                                ChatMessageBubble(
+                                    role = role,
                                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = settings.displaySetting.bubbleOpacity),
                                     onClick = { onUserMessageClick?.invoke() },
+                                    // 用户气泡不占满整行，和助手的回复错开
+                                    modifier = Modifier
+                                        .padding(start = 48.dp)
+                                        .animateContentSize(),
                                 ) {
-                                    Column(modifier = Modifier.padding(6.dp)) {
-                                        MarkdownBlock(
-                                            content = part.text.replaceRegexes(
-                                                assistant = assistant,
-                                                scope = AssistantAffectScope.USER,
-                                                visual = true,
-                                            ),
-                                            onClickCitation = handleClickCitation
-                                        )
-                                    }
+                                    MarkdownBlock(
+                                        content = part.text.replaceRegexes(
+                                            assistant = assistant,
+                                            scope = AssistantAffectScope.USER,
+                                            visual = true,
+                                        ),
+                                        onClickCitation = handleClickCitation
+                                    )
                                 }
                             } else {
                                 if (settings.displaySetting.showAssistantBubble) {
-                                    Surface(
-                                        modifier = Modifier.contentSizeAnimated(loading),
-                                        shape = RoundedCornerShape(16.dp),
+                                    ChatMessageBubble(
+                                        role = role,
                                         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = settings.displaySetting.bubbleOpacity),
+                                        modifier = Modifier.animateContentSize(),
                                     ) {
-                                        Column(modifier = Modifier.padding(6.dp)) {
-                                            MarkdownBlock(
-                                                content = part.text.replaceRegexes(
-                                                    assistant = assistant,
-                                                    scope = AssistantAffectScope.ASSISTANT,
-                                                    visual = true,
-                                                ),
-                                                onClickCitation = handleClickCitation
-                                            )
-                                        }
+                                        MarkdownBlock(
+                                            content = part.text.replaceRegexes(
+                                                assistant = assistant,
+                                                scope = AssistantAffectScope.ASSISTANT,
+                                                visual = true,
+                                            ),
+                                            onClickCitation = handleClickCitation,
+                                        )
                                     }
                                 } else {
                                     MarkdownBlock(
@@ -484,7 +417,9 @@ private fun MessagePartsBlock(
                                             scope = AssistantAffectScope.ASSISTANT,
                                             visual = true,
                                         ),
-                                        onClickCitation = handleClickCitation
+                                        onClickCitation = handleClickCitation,
+                                        modifier = Modifier
+                                            .animateContentSize()
                                     )
                                 }
                             }
@@ -504,66 +439,16 @@ private fun MessagePartsBlock(
                     }
 
                     is UIMessagePart.Video -> {
-                        // v4.8.123 (用户定版): 点击 → 选项弹层 [渲染/分享/导出/打开]
-                        // (不再直呼系统分享/打开页; 对齐「编辑过的文件」胶囊范式)
-                        var videoOptionsOpen by remember { mutableStateOf(false) }
-                        Surface(
-                            tonalElevation = 2.dp,
-                            onClick = { videoOptionsOpen = true },
-                            modifier = Modifier,
-                            shape = RoundedCornerShape(8.dp),
-                        ) {
-                            Box(modifier = Modifier.size(72.dp), contentAlignment = Alignment.Center) {
-                                Icon(HugeIcons.Video01, null)
-                            }
-                        }
-                        val videoFile = remember(part.url) {
-                            runCatching { part.url.toUri().toFile() }.getOrNull()
-                        }
-                        FileChipOptionsHost(
-                            open = videoOptionsOpen,
-                            file = videoFile,
-                            fileName = remember(part.url) {
-                                part.url.toUri().lastPathSegment ?: part.url.substringAfterLast('/')
-                            },
-                            onOpenChange = { videoOptionsOpen = it },
+                        ChatMessageMediaTile(
+                            icon = HugeIcons.Video01,
+                            onClick = { context.openLocalFile(part.url) },
                         )
                     }
 
                     is UIMessagePart.Audio -> {
-                        // v4.8.123 (用户定版): 点击 → 选项弹层 [渲染/分享/导出/打开]
-                        var audioOptionsOpen by remember { mutableStateOf(false) }
-                        Surface(
-                            tonalElevation = 2.dp,
-                            onClick = { audioOptionsOpen = true },
-                            modifier = Modifier,
-                            shape = RoundedCornerShape(50),
-                            color = MaterialTheme.colorScheme.secondaryContainer
-                        ) {
-                            ProvideTextStyle(MaterialTheme.typography.labelSmall) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = HugeIcons.MusicNote03,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-                        }
-                        val audioFile = remember(part.url) {
-                            runCatching { part.url.toUri().toFile() }.getOrNull()
-                        }
-                        FileChipOptionsHost(
-                            open = audioOptionsOpen,
-                            file = audioFile,
-                            fileName = remember(part.url) {
-                                part.url.toUri().lastPathSegment ?: part.url.substringAfterLast('/')
-                            },
-                            onOpenChange = { audioOptionsOpen = it },
+                        ChatMessageMediaTile(
+                            icon = HugeIcons.MusicNote03,
+                            onClick = { context.openLocalFile(part.url) },
                         )
                     }
 
@@ -574,7 +459,7 @@ private fun MessagePartsBlock(
                             Box(
                                 modifier = Modifier
                                     .size(72.dp)
-                                    .clip(MaterialTheme.shapes.medium)
+                                    .clip(MaterialTheme.shapes.large)
                                     .background(MaterialTheme.colorScheme.surfaceVariant)
                                     .shimmer(isLoading = true)
                             )
@@ -583,74 +468,43 @@ private fun MessagePartsBlock(
                                 model = part.url,
                                 contentDescription = null,
                                 modifier = Modifier
-                                    .clip(MaterialTheme.shapes.medium)
+                                    .clip(MaterialTheme.shapes.large)
                                     .height(72.dp)
                             )
                         }
                     }
 
                     is UIMessagePart.Document -> {
-                        // v4.8.122 (用户实证: 点击胶囊窗不弹出渲染等选项): 改为选项弹层
-                        // [渲染 / 分享 / 用其他应用打开] — 对齐「编辑过的文件」胶囊范式
-                        var chipOptionsOpen by remember { mutableStateOf(false) }
-                        Surface(
-                            tonalElevation = 2.dp,
-                            onClick = { chipOptionsOpen = true },
-                            modifier = Modifier,
-                            shape = RoundedCornerShape(50),
-                            color = MaterialTheme.colorScheme.tertiaryContainer
-                        ) {
-                            ProvideTextStyle(MaterialTheme.typography.labelSmall) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    when (part.mime) {
-                                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> {
-                                            Icon(
-                                                painter = painterResource(R.drawable.docx),
-                                                contentDescription = null,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        }
-
-                                        "application/pdf" -> {
-                                            Icon(
-                                                painter = painterResource(R.drawable.pdf),
-                                                contentDescription = null,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        }
-
-                                        else -> {
-                                            Icon(
-                                                imageVector = HugeIcons.File02,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        }
+                        ChatMessageFileChip(
+                            text = part.fileName,
+                            onClick = { context.openLocalFile(part.url) },
+                            icon = {
+                                when (part.mime) {
+                                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> {
+                                        Icon(
+                                            painter = painterResource(R.drawable.docx),
+                                            contentDescription = null,
+                                            modifier = Modifier.size(20.dp)
+                                        )
                                     }
 
-                                    Text(
-                                        text = part.fileName,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.widthIn(max = 200.dp)
-                                    )
+                                    "application/pdf" -> {
+                                        Icon(
+                                            painter = painterResource(R.drawable.pdf),
+                                            contentDescription = null,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+
+                                    else -> {
+                                        Icon(
+                                            imageVector = HugeIcons.File02,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
                                 }
-                            }
-                        }
-                        // v4.8.123/125: 选项宿主恒驻 (渲染进度态保全; file 可空 —
-                        // 缺失时点按任何动作都有可见 toast, 不再"点了没反应")
-                        val chipFile = remember(part.url) {
-                            runCatching { part.url.toUri().toFile() }.getOrNull()
-                        }
-                        FileChipOptionsHost(
-                            open = chipOptionsOpen,
-                            file = chipFile,
-                            fileName = part.fileName,
-                            onOpenChange = { chipOptionsOpen = it },
+                            },
                         )
                     }
 
@@ -659,85 +513,94 @@ private fun MessagePartsBlock(
                     }
                 }
             }
-
-            // v4.8.94 (图表工具链): 成功的 chart_display 调用原地替换为图表卡片
-            is MessagePartBlock.ChartBlock -> key(block.index) {
-                val spec = remember(block.tool.input) { ChartSpec.fromJson(block.tool.inputAsJson()) }
-                spec?.let { ChartCard(spec = it) }
-            }
         }
-    }
-
-    // v4.8.73: 实时分段包裹渲染 — 已完成阶段立即折叠为"用时 N 秒"胶囊 (原位);
-    // 活动尾段展开正常显示; 完成后全部折叠。以此往复。
-    if (isAssistantRole) {
-        val lastBodyIndex = groupedParts.indexOfLast { it !is MessagePartBlock.ThinkingBlock }
-        groupedParts.forEachIndexed { blockIndex, block ->
-            if (block is MessagePartBlock.ThinkingBlock) {
-                // v4.8.76 (用户定版修正): 仅"未回答"的 ask_user 阻止折叠 — 等候回答期间
-                // 问答卡保持展开可交互; 已回答/已取消后该段正常折叠。
-                val hasUnansweredAskUser = block.steps.any {
-                    it is ThinkingStep.ToolStep && it.tool.toolName == "ask_user" && it.tool.isPending
-                }
-                val foldThisSegment = (!loading || blockIndex < lastBodyIndex) && !hasUnansweredAskUser
-                if (foldThisSegment) {
-                    var segmentExpanded by rememberSaveable(blockIndex) { mutableStateOf(false) }
-                    val segmentDuration = remember(block) {
-                        block.steps.sumOf { step ->
-                            when (step) {
-                                is ThinkingStep.ReasoningStep ->
-                                    step.reasoning.finishedAt?.let { (it - step.reasoning.createdAt).inWholeSeconds } ?: 0L
-                                is ThinkingStep.ToolStep -> {
-                                    val st = step.tool.startedAt
-                                    val en = step.tool.finishedAt
-                                    if (st != null && en != null && en > st) (en - st) / 1000 else 0L
-                                }
-                            }
-                        }.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
-                    }
-                    ProcessDisclosureRow(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = settings.displaySetting.bubbleOpacity),
-                        durationSeconds = segmentDuration,
-                        expanded = segmentExpanded,
-                        onToggle = { segmentExpanded = !segmentExpanded },
-                    ) {
-                        renderPartBlock(block)
-                    }
-                } else {
-                    renderPartBlock(block)
-                }
-            } else {
-                renderPartBlock(block)
-            }
-        }
-    } else {
-        groupedParts.forEach { block -> renderPartBlock(block) }
     }
 
     // Annotations (always rendered at the end)
     if (annotations.isNotEmpty()) {
-        Column(
-            modifier = Modifier.contentSizeAnimated(loading),
+        ChatMessageCitations(annotations = annotations)
+    }
+}
+
+private val BubbleCorner = 24.dp
+private val BubbleTailCorner = 6.dp
+private val BubblePressedCorner = 12.dp
+
+/**
+ * 消息气泡：大圆角，靠头像一侧的顶角收紧；可点击时按下其余圆角也跟着收紧
+ */
+@Composable
+private fun ChatMessageBubble(
+    role: MessageRole,
+    color: Color,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    content: @Composable () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressProgress by animatePressProgress(interactionSource)
+    val corner = lerp(BubbleCorner, BubblePressedCorner, pressProgress)
+    val shape = if (role == MessageRole.USER) {
+        RoundedCornerShape(topStart = corner, topEnd = BubbleTailCorner, bottomEnd = corner, bottomStart = corner)
+    } else {
+        RoundedCornerShape(topStart = BubbleTailCorner, topEnd = corner, bottomEnd = corner, bottomStart = corner)
+    }
+    // MarkdownBlock 自带 4dp 的水平内边距
+    val contentModifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+    if (onClick != null) {
+        Surface(
+            onClick = onClick,
+            modifier = modifier,
+            shape = shape,
+            color = color,
+            interactionSource = interactionSource,
         ) {
-            var expand by remember { mutableStateOf(false) }
-            if (expand) {
+            Box(modifier = contentModifier) { content() }
+        }
+    } else {
+        Surface(
+            modifier = modifier,
+            shape = shape,
+            color = color,
+        ) {
+            Box(modifier = contentModifier) { content() }
+        }
+    }
+}
+
+@Composable
+private fun ChatMessageCitations(annotations: List<UIMessageAnnotation>) {
+    var expand by remember { mutableStateOf(false) }
+    val urls = remember(annotations) {
+        annotations.map { annotation ->
+            when (annotation) {
+                is UIMessageAnnotation.UrlCitation -> annotation.url
+            }
+        }
+    }
+    Column(
+        modifier = Modifier.animateContentSize(MaterialTheme.motionScheme.defaultSpatialSpec()),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        ChatMessageFileChip(
+            text = stringResource(R.string.citations_count, annotations.size),
+            onClick = { expand = !expand },
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            icon = { FaviconRow(urls = urls, size = 18.dp) },
+        )
+        if (expand) {
+            Surface(
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+            ) {
                 ProvideTextStyle(
                     MaterialTheme.typography.labelMedium.copy(
-                        color = MaterialTheme.extendColors.gray8.copy(alpha = 0.65f)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 ) {
                     Column(
-                        modifier = Modifier
-                            .drawWithContent {
-                                drawContent()
-                                drawRoundRect(
-                                    color = contentColor.copy(alpha = 0.2f),
-                                    size = Size(width = 10f, height = size.height),
-                                )
-                            }
-                            .padding(start = 16.dp)
-                            .padding(4.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         annotations.fastForEachIndexed { index, annotation ->
                             when (annotation) {
@@ -760,13 +623,6 @@ private fun MessagePartsBlock(
                         }
                     }
                 }
-            }
-            TextButton(
-                onClick = {
-                    expand = !expand
-                }
-            ) {
-                Text(stringResource(R.string.citations_count, annotations.size))
             }
         }
     }

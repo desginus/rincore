@@ -1,12 +1,5 @@
-/* 【域 A·对话核心】 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.service
 
-
-/* ───【原版对齐】ConversationSessionManager.kt | 2.5.3 移植 (v4.7.2)
- * 会话注册表收口: 生命周期/引用计数/状态流统一管理, ChatService 保留
- * 加载、持久化与消息分发职责。StateFlow registry 取代 map+version 手动
- * 递增模式 — 收集器永远不会观察到插入前的状态。
- * ───────────────────────────────────────────────────────────────*/
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
@@ -21,11 +14,14 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.model.Conversation
 import kotlin.uuid.Uuid
 
-/** Owns runtime sessions; loading, persistence and message dispatch belong to ChatService. */
+/** Owns runtime sessions; loading and message dispatch belong to ChatService, persistence goes through [ConversationStore]. */
 class ConversationSessionManager(
     private val scope: CoroutineScope,
+    private val store: ConversationStore,
     private val createInitialConversation: (Uuid) -> Conversation,
     private val onGenerationFinished: (ConversationSession, Throwable?) -> Unit,
+    // 会话没有页面引用也不在生成，被回收了
+    private val onSessionRemoved: (Uuid) -> Unit = {},
 ) {
     private val lock = Any()
     private val sessions = MutableStateFlow<Map<Uuid, ConversationSession>>(emptyMap())
@@ -41,6 +37,7 @@ class ConversationSessionManager(
             id = conversationId,
             initial = createInitialConversation(conversationId),
             scope = scope,
+            store = store,
             onIdle = { removeIfIdle(session) },
             onGenerationFinished = { id, cause ->
                 if (get(id) === session) onGenerationFinished(session, cause)
@@ -84,6 +81,7 @@ class ConversationSessionManager(
         }
         // Job completion can call back into the registry; never hold its lock during cleanup.
         removed.cleanup()
+        onSessionRemoved(removed.id)
     }
 
     fun cleanup() {

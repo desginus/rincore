@@ -1,10 +1,5 @@
-/* 【域 I·数据存储】 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.data.db.dao
 
-
-/* ───【原版对齐】MessageNodeDAO.kt | 差异 ±6 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
@@ -20,10 +15,6 @@ interface MessageNodeDAO {
     // 使用与 messages 相同的 JSON 编码，保守保留所有分支中出现的 URL。
     @Query("SELECT EXISTS(SELECT 1 FROM message_node WHERE instr(messages, :encodedFileUrl) > 0)")
     suspend fun hasFileReference(encodedFileUrl: String): Boolean
-
-    // v4.8.186: 收件箱使用标注 — 返回引用指定子串(如 "upload/<上传码>")的对话 ID。
-    @Query("SELECT DISTINCT conversation_id FROM message_node WHERE instr(messages, :needle) > 0 LIMIT 60")
-    suspend fun conversationIdsContaining(needle: String): List<String>
 
     @Query("SELECT * FROM message_node WHERE conversation_id = :conversationId ORDER BY node_index ASC")
     suspend fun getNodesOfConversation(conversationId: String): List<MessageNodeEntity>
@@ -70,17 +61,17 @@ data class MessageTokenStats(
 
 data class MessageDayCount(val day: String, val count: Int)
 
-// 统计 SQL 内联 CASE 校验 JSON，避免损坏行导致整个统计查询失败（不依赖 WHERE 求值顺序，无效 JSON 按空数组处理）。
+// 在 json_each() 的参数内校验 JSON，避免损坏行导致整个统计查询失败。
+// 使用 CASE 而非依赖 WHERE 条件的求值顺序，无效 JSON 按空数组处理。
+private const val VALID_MESSAGES_JSON = "CASE WHEN json_valid(mn.messages) THEN mn.messages ELSE '[]' END"
 
 // SQLite json_each() 展开 messages JSON 数组，json_extract() 提取 Token 字段并聚合
-// json_valid 过滤损坏行: 历史上某行 messages JSON 损坏 (malformed) 会导致
-// json_each 展开时报 SQLiteException — 子查询先排除, 统计只覆盖合法数据
 private val TOKEN_STATS_SQL = SimpleSQLiteQuery(
     "SELECT COUNT(*) AS totalMessages, " +
         "COALESCE(SUM(CAST(json_extract(j.value, '$.usage.promptTokens') AS INTEGER)), 0) AS promptTokens, " +
         "COALESCE(SUM(CAST(json_extract(j.value, '$.usage.completionTokens') AS INTEGER)), 0) AS completionTokens, " +
         "COALESCE(SUM(CAST(json_extract(j.value, '$.usage.cachedTokens') AS INTEGER)), 0) AS cachedTokens " +
-        "FROM (SELECT messages FROM message_node WHERE json_valid(messages)) mn, json_each(mn.messages) j"
+        "FROM message_node mn, json_each($VALID_MESSAGES_JSON) j"
 )
 
 suspend fun MessageNodeDAO.getTokenStats(): MessageTokenStats = getTokenStatsRaw(TOKEN_STATS_SQL)
@@ -91,11 +82,10 @@ suspend fun MessageNodeDAO.getMessageCountPerDay(startDate: String): List<Messag
         SimpleSQLiteQuery(
             "SELECT substr(json_extract(j.value, '$.createdAt'), 1, 10) AS day, " +
                 "COUNT(*) AS count " +
-                "FROM (SELECT messages FROM message_node WHERE json_valid(messages)) mn, json_each(mn.messages) j " +
+                "FROM message_node mn, json_each($VALID_MESSAGES_JSON) j " +
                 "WHERE json_extract(j.value, '$.role') = 'user' " +
                 "AND json_extract(j.value, '$.createdAt') >= ? " +
                 "GROUP BY day",
             arrayOf(startDate)
         )
     )
-

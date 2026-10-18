@@ -1,9 +1,4 @@
-/* 【域 A·对话核心】 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.service
-
-/* ───【原版对齐】WebServerService.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 import android.app.PendingIntent
 import android.app.Service
@@ -19,7 +14,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.WEB_SERVER_NOTIFICATION_CHANNEL_ID
@@ -75,7 +69,7 @@ class WebServerService : Service() {
                     return START_NOT_STICKY
                 }
                 serviceScope.launch {
-                    val settings = settingsStore.settingsFlowRaw.first()
+                    val settings = settingsStore.awaitLoaded()
                     if (settings.webServerEnabled) {
                         startObservingState()
                         webServerManager.start(
@@ -154,7 +148,7 @@ class WebServerService : Service() {
     )
 
     private fun buildStartingNotification() = NotificationCompat.Builder(this, WEB_SERVER_NOTIFICATION_CHANNEL_ID)
-        .setSmallIcon(R.drawable.small_icon)
+        .setSmallIcon(R.drawable.ic_stat_rikkahub)
         .setContentTitle(getString(R.string.notification_channel_web_server))
         .setContentText(getString(R.string.notification_web_server_starting))
         .setContentIntent(buildLaunchPendingIntent())
@@ -173,7 +167,7 @@ class WebServerService : Service() {
             PendingIntent.FLAG_IMMUTABLE
         )
         return NotificationCompat.Builder(this, WEB_SERVER_NOTIFICATION_CHANNEL_ID)
-            .setSmallIcon(R.drawable.small_icon)
+            .setSmallIcon(R.drawable.ic_stat_rikkahub)
             .setContentTitle(getString(R.string.notification_web_server_running))
             .setContentText(url)
             .setContentIntent(buildLaunchPendingIntent())

@@ -1,28 +1,22 @@
-/* 【域 A·对话核心】 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.service
 
-
-/* ───【原版对齐】ChatNotificationManager | 差异 +108 行
- * 来源: 原版移植 + 自研 (灵动岛增强)
- * 差异: Live Update 通知/灵动岛生命周期自研处理
- * ───────────────────────────────────────────────────────────────*/
-import android.app.Activity
 import android.app.Application
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Bundle
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
-import androidx.core.app.TaskStackBuilder
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.ProcessLifecycleOwner
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.CHAT_LIVE_UPDATE_NOTIFICATION_CHANNEL_ID
-import me.rerere.rikkahub.SUBAGENT_COMPLETED_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.RouteActivity
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -31,15 +25,11 @@ import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.utils.cancelNotification
 import me.rerere.rikkahub.utils.sendNotification
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
 import kotlin.uuid.Uuid
 
 // Live Update 通知节流间隔：流式输出每个chunk都会触发一次更新，
 // notify() 是 binder IPC 且系统本身会对高频更新限流，必须在应用侧节流
 private const val LIVE_UPDATE_NOTIFICATION_THROTTLE_MS = 1000L
-
-/** v4.8.88: 子代理通知 id 基址（远离主模型完成(1)与 Live Update(hash+10000) 的取值域） */
-private const val SUBAGENT_NOTIFICATION_ID_BASE = 300_000
 
 /**
  * 订阅 [AppEventBus] 上的聊天生成事件，负责后台生成相关的系统通知
@@ -51,41 +41,27 @@ class ChatNotificationManager(
     eventBus: AppEventBus,
     private val settingsStore: SettingsStore,
 ) {
+    private val isForeground = MutableStateFlow(false)
     private val liveUpdateLastSentAt = ConcurrentHashMap<Uuid, Long>()
 
-    // ActivityLifecycleCallbacks: HyperOS 3 上 ProcessLifecycleOwner 回调不可靠,
-    // 改用 resumed activity 计数器判断前后台
-    @Volatile
-    private var isForeground: Boolean = false
-    private val resumedActivityCount = AtomicInteger(0)
-
     init {
-        context.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
-            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
-            override fun onActivityStarted(activity: Activity) {}
-            override fun onActivityResumed(activity: Activity) {
-                if (resumedActivityCount.incrementAndGet() > 0) {
-                    isForeground = true
-                    // 回到前台时取消对话完成通知 (notificationId=1)
-                    context.cancelNotification(1)
+        // ProcessLifecycleOwner 要求在主线程注册观察者
+        appScope.launch {
+            ProcessLifecycleOwner.get().lifecycle.addObserver(
+                LifecycleEventObserver { _, event ->
+                    when (event) {
+                        Lifecycle.Event.ON_START -> isForeground.value = true
+                        Lifecycle.Event.ON_STOP -> isForeground.value = false
+                        else -> {}
+                    }
                 }
-            }
-            override fun onActivityPaused(activity: Activity) {
-                if (resumedActivityCount.decrementAndGet() <= 0) {
-                    isForeground = false
-                }
-            }
-            override fun onActivityStopped(activity: Activity) {}
-            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
-            override fun onActivityDestroyed(activity: Activity) {}
-        })
-
+            )
+        }
         appScope.launch(Dispatchers.Default) {
             eventBus.events.collect { event ->
                 when (event) {
                     is AppEvent.ChatGenerationUpdate -> handleGenerationUpdate(event)
                     is AppEvent.ChatGenerationEnded -> handleGenerationEnded(event)
-                    is AppEvent.SubAgentFinished -> handleSubAgentFinished(event) // v4.8.88
                     else -> {}
                 }
             }
@@ -93,7 +69,7 @@ class ChatNotificationManager(
     }
 
     private fun handleGenerationUpdate(event: AppEvent.ChatGenerationUpdate) {
-        if (isForeground) return
+        if (isForeground.value) return
         val displaySetting = settingsStore.settingsFlow.value.displaySetting
         if (!displaySetting.enableNotificationOnMessageGeneration) return
         if (!displaySetting.enableLiveUpdateNotification) return
@@ -110,62 +86,9 @@ class ChatNotificationManager(
         cancelLiveUpdateNotification(event.conversationId)
 
         val contentPreview = event.contentPreview ?: return
-        if (isForeground) return
+        if (isForeground.value) return
         if (!settingsStore.settingsFlow.value.displaySetting.enableNotificationOnMessageGeneration) return
-        // v4.8.88: 子代理会话不弹"聊天完成" —— 由引擎的 SubAgentFinished 走独立频道弹子代理提示
-        if (event.isSubAgent) return
         sendGenerationDoneNotification(event.conversationId, event.senderName, contentPreview)
-    }
-
-    /**
-     * v4.8.88: 子代理终态通知 —— 独立频道 / 独立文案 / 跳回父对话。
-     * 用户定版：子代理任务完成弹子代理的提示，主模型弹主模型的，两者在通知系统里分开。
-     */
-    private fun handleSubAgentFinished(event: AppEvent.SubAgentFinished) {
-        if (isForeground) return
-        if (!settingsStore.settingsFlow.value.displaySetting.enableNotificationOnMessageGeneration) return
-        sendSubAgentNotification(event)
-    }
-
-    private fun sendSubAgentNotification(event: AppEvent.SubAgentFinished) {
-        val tokens = formatTokenCount(event.tokensIn + event.tokensOut)
-        val body: String = when (event.status) {
-            "SUCCEEDED" -> {
-                val preview = event.resultPreview?.takeIf { it.isNotBlank() }
-                val suffix = context.getString(R.string.notification_subagent_done, tokens)
-                if (preview == null) suffix else "$preview\n$suffix"
-            }
-            "TIMED_OUT" -> context.getString(R.string.notification_subagent_timeout, tokens)
-            "CANCELLED" -> {
-                if (event.error?.contains("预算") == true) {
-                    context.getString(R.string.notification_subagent_budget)
-                } else return // 用户主动取消：不打扰
-            }
-            else -> context.getString(
-                R.string.notification_subagent_failed,
-                (event.error ?: "unknown").take(120)
-            )
-        }
-        val parentUuid = event.parentConversationId?.let { runCatching { Uuid.parse(it) }.getOrNull() }
-        context.sendNotification(
-            channelId = SUBAGENT_COMPLETED_NOTIFICATION_CHANNEL_ID,
-            notificationId = SUBAGENT_NOTIFICATION_ID_BASE + (event.runId.hashCode() and 0x3FFFF)
-        ) {
-            title = context.getString(R.string.notification_subagent_title, event.label)
-            content = body
-            autoCancel = true
-            useDefaults = true
-            useBigTextStyle = true
-            category = NotificationCompat.CATEGORY_STATUS
-            if (parentUuid != null) contentIntent = getPendingIntent(context, parentUuid)
-        }
-    }
-
-    /** 1.2k / 3.4M 形式的紧凑计数 */
-    private fun formatTokenCount(tokens: Long): String = when {
-        tokens >= 1_000_000 -> String.format(java.util.Locale.US, "%.1fM", tokens / 1_000_000.0)
-        tokens >= 1_000 -> String.format(java.util.Locale.US, "%.1fk", tokens / 1_000.0)
-        else -> tokens.toString()
     }
 
     private fun sendGenerationDoneNotification(
@@ -181,14 +104,9 @@ class ChatNotificationManager(
             content = contentPreview
             autoCancel = true
             useDefaults = true
-            useBigTextStyle = true
             category = NotificationCompat.CATEGORY_MESSAGE
             contentIntent = getPendingIntent(context, conversationId)
         }
-    }
-
-    private fun getLiveUpdateNotificationId(conversationId: Uuid): Int {
-        return conversationId.hashCode() + 10000
     }
 
     private fun sendLiveUpdateNotification(
@@ -196,66 +114,86 @@ class ChatNotificationManager(
         lastMessage: UIMessage,
         senderName: String
     ) {
-        // 仅用稳定状态文本，不传流式内容——避免 HyperOS 动态通知做文本过渡动画导致卡顿
-        val (chipText, statusText) = determineNotificationContent(lastMessage.parts)
+        // 确定当前状态
+        val (chipText, statusText, contentText) = determineNotificationContent(lastMessage.parts)
 
         context.sendNotification(
             channelId = CHAT_LIVE_UPDATE_NOTIFICATION_CHANNEL_ID,
-            notificationId = getLiveUpdateNotificationId(conversationId)
+            // 更新前台服务正在使用的同一条通知，避免重复显示生成进度。
+            notificationId = ChatGenerationForegroundService.NOTIFICATION_ID
         ) {
             title = senderName
-            content = statusText
+            content = contentText
+            subText = statusText
             ongoing = true
             onlyAlertOnce = true
             category = NotificationCompat.CATEGORY_PROGRESS
+            useBigTextStyle = true
             contentIntent = getPendingIntent(context, conversationId)
             requestPromotedOngoing = true
             shortCriticalText = chipText
         }
     }
 
-    /** 返回 (chipText, statusText)。不返回流式内容文本。 */
-    private fun determineNotificationContent(parts: List<UIMessagePart>): Pair<String, String> {
+    private fun determineNotificationContent(parts: List<UIMessagePart>): Triple<String, String, String> {
+        // 检查最近的 part 来确定状态
         val lastReasoning = parts.filterIsInstance<UIMessagePart.Reasoning>().lastOrNull()
         val lastTool = parts.filterIsInstance<UIMessagePart.Tool>().lastOrNull()
         val lastText = parts.filterIsInstance<UIMessagePart.Text>().lastOrNull()
 
         return when {
+            // 正在执行工具
             lastTool != null && !lastTool.isExecuted -> {
                 val toolName = lastTool.toolName.substringAfterLast("__")
-                context.getString(R.string.notification_live_update_chip_tool) to
-                    context.getString(R.string.notification_live_update_tool, toolName)
+                Triple(
+                    context.getString(R.string.notification_live_update_chip_tool),
+                    context.getString(R.string.notification_live_update_tool, toolName),
+                    lastTool.input.take(100)
+                )
             }
+            // 正在思考（Reasoning 未结束）
             lastReasoning != null && lastReasoning.finishedAt == null -> {
-                context.getString(R.string.notification_live_update_chip_thinking) to
-                    context.getString(R.string.notification_live_update_thinking)
+                Triple(
+                    context.getString(R.string.notification_live_update_chip_thinking),
+                    context.getString(R.string.notification_live_update_thinking),
+                    lastReasoning.reasoning.takeLast(200)
+                )
             }
+            // 正在写回复
             lastText != null -> {
-                context.getString(R.string.notification_live_update_chip_writing) to
-                    context.getString(R.string.notification_live_update_writing)
+                Triple(
+                    context.getString(R.string.notification_live_update_chip_writing),
+                    context.getString(R.string.notification_live_update_writing),
+                    lastText.text.takeLast(200)
+                )
             }
+            // 默认状态
             else -> {
-                context.getString(R.string.notification_live_update_chip_writing) to
-                    context.getString(R.string.notification_live_update_title)
+                Triple(
+                    context.getString(R.string.notification_live_update_chip_writing),
+                    context.getString(R.string.notification_live_update_title),
+                    ""
+                )
             }
         }
     }
 
     private fun cancelLiveUpdateNotification(conversationId: Uuid) {
         liveUpdateLastSentAt.remove(conversationId)
-        context.cancelNotification(getLiveUpdateNotificationId(conversationId))
+        // 前台服务持有通知时系统会保留它；启动失败时则清理普通 ongoing 通知。
+        context.cancelNotification(ChatGenerationForegroundService.NOTIFICATION_ID)
     }
 
     private fun getPendingIntent(context: Context, conversationId: Uuid): PendingIntent {
         val intent = Intent(context, RouteActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra("conversationId", conversationId.toString())
         }
-        return TaskStackBuilder.create(context)
-            .addNextIntentWithParentStack(intent)
-            .getPendingIntent(
-                conversationId.hashCode(),
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            )!!
+        return PendingIntent.getActivity(
+            context,
+            conversationId.hashCode(),
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
     }
 }

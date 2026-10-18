@@ -14,7 +14,7 @@ jobs:
     outputs:
       should_build: ${{ steps.check.outputs.should_build }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
       - name: Check for recent commits
         id: check
         run: |
@@ -39,25 +39,29 @@ jobs:
       contents: write   # 发布 Release 需要写权限
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: recursive # 拉取子模块
 
+      # 与 Android Studio 自带的 JetBrains Runtime 21 保持一致
       - name: Set up JDK
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          distribution: 'jetbrains'
+          java-version: '21'
+        env:
+          # jetbrains 安装器通过 GitHub API 查询版本，带上 token 避免被限流
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # web 模块的 preBuild 会执行 `pnpm run build` 构建前端，必须准备好 Node + pnpm
       - name: Set up pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@v4
         with:
           version: 11
 
       - name: Set up Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
@@ -69,7 +73,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Gradle cache
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
@@ -78,15 +82,14 @@ jobs:
 
       - name: Prepare build files
         run: |
-          # 与 build.yml 一致 — v3.8.30 起签名密钥从 GitHub Secrets 注入
-          # (仓库内不再存放 jks; secrets 未配置时跳过签名构建)
-          if [ -z "${{ secrets.KEYSTORE_BASE64 }}" ] || [ -z "${{ secrets.KEYSTORE_PASSWORD }}" ]; then
-            echo "::warning::KEYSTORE secrets 未配置, 跳过 release 签名"
-            printf 'storeFile=\nstorePassword=\nkeyAlias=\nkeyPassword=\n' > local.properties
-          else
-            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release-key.jks
-            printf 'storeFile=../app/release-key.jks\nstorePassword=%s\nkeyAlias=rincore\nkeyPassword=%s\n' "${{ secrets.KEYSTORE_PASSWORD }}" "${{ secrets.KEYSTORE_PASSWORD }}" > local.properties
-          fi
+          # 解码base64编码的keystore文件
+          echo "${{ secrets.KEY_BASE64 }}" | base64 -d > app/app.key
+
+          # 写入签名配置到local.properties
+          echo "${{ secrets.SIGNING_CONFIG }}" > local.properties
+
+          # 写入Google Services配置
+          echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > app/google-services.json
 
       - name: Gradle Build
         run: |

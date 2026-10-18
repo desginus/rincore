@@ -1,6 +1,5 @@
 package me.rerere.tts.model
 
-
 import kotlinx.serialization.Serializable
 
 @Serializable

@@ -1,10 +1,4 @@
-/* 【域 I·数据存储】 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.data.db.dao
-
-/* ───【原版对齐】ConversationDAO.kt | 差异 ±51 行 (基线 2.5.1)
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
-
 
 import androidx.paging.PagingSource
 import androidx.room.Dao
@@ -18,49 +12,47 @@ import me.rerere.rikkahub.data.repository.LightConversationEntity
 
 @Dao
 interface ConversationDAO {
-    @Query("SELECT * FROM conversationentity WHERE title NOT LIKE '[Sub-agent]%' ORDER BY is_pinned DESC, update_at DESC")
+    @Query("SELECT * FROM conversationentity ORDER BY is_pinned DESC, update_at DESC")
     fun getAll(): Flow<List<ConversationEntity>>
 
-    @Query("SELECT * FROM conversationentity WHERE title NOT LIKE '[Sub-agent]%' ORDER BY is_pinned DESC, update_at DESC")
+    @Query("SELECT * FROM conversationentity ORDER BY is_pinned DESC, update_at DESC")
     fun getAllPaging(): PagingSource<Int, ConversationEntity>
 
-    @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId AND title NOT LIKE '[Sub-agent]%' ORDER BY is_pinned DESC, update_at DESC")
+    @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId ORDER BY is_pinned DESC, update_at DESC")
     fun getConversationsOfAssistant(assistantId: String): Flow<List<ConversationEntity>>
 
-    @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, folder_id as folderId FROM conversationentity WHERE assistant_id = :assistantId AND title NOT LIKE '[Sub-agent]%' ORDER BY is_pinned DESC, update_at DESC")
+    @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, folder_id as folderId FROM conversationentity WHERE assistant_id = :assistantId ORDER BY is_pinned DESC, update_at DESC")
     fun getConversationsOfAssistantPaging(assistantId: String): PagingSource<Int, LightConversationEntity>
 
-    @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, folder_id as folderId FROM conversationentity WHERE assistant_id = :assistantId AND folder_id = '' AND title NOT LIKE '[Sub-agent]%' ORDER BY is_pinned DESC, update_at DESC")
-    fun getUnfiledConversationsOfAssistantPaging(assistantId: String): PagingSource<Int, LightConversationEntity>
+    @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, folder_id as folderId FROM conversationentity WHERE assistant_id = :assistantId AND folder_id = '' ORDER BY is_pinned DESC, CASE WHEN :sortByCreateTime THEN create_at ELSE update_at END DESC")
+    fun getUnfiledConversationsOfAssistantPaging(
+        assistantId: String,
+        sortByCreateTime: Boolean,
+    ): PagingSource<Int, LightConversationEntity>
 
-    /** v4.8.62: 未归类对话计数 (进入助手的落地逻辑用; 与分页查询同口径, 排除子代理) */
-    @Query("SELECT COUNT(*) FROM conversationentity WHERE assistant_id = :assistantId AND folder_id = '' AND title NOT LIKE '[Sub-agent]%'")
-    suspend fun countUnfiledConversationsOfAssistant(assistantId: String): Int
+    @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, folder_id as folderId FROM conversationentity WHERE folder_id = :folderId ORDER BY is_pinned DESC, CASE WHEN :sortByCreateTime THEN create_at ELSE update_at END DESC")
+    fun getConversationsOfFolderPaging(
+        folderId: String,
+        sortByCreateTime: Boolean,
+    ): PagingSource<Int, LightConversationEntity>
 
-    @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, folder_id as folderId FROM conversationentity WHERE folder_id = :folderId AND title NOT LIKE '[Sub-agent]%' ORDER BY is_pinned DESC, update_at DESC")
-    fun getConversationsOfFolderPaging(folderId: String): PagingSource<Int, LightConversationEntity>
-
-    @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId AND title NOT LIKE '[Sub-agent]%' ORDER BY is_pinned DESC, update_at DESC LIMIT :limit")
+    @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId ORDER BY is_pinned DESC, update_at DESC LIMIT :limit")
     suspend fun getRecentConversationsOfAssistant(assistantId: String, limit: Int): List<ConversationEntity>
 
-    @Query("SELECT * FROM conversationentity WHERE title LIKE '%' || :searchText || '%' AND title NOT LIKE '[Sub-agent]%' ORDER BY is_pinned DESC, update_at DESC")
+    @Query("SELECT * FROM conversationentity WHERE title LIKE '%' || :searchText || '%' ORDER BY is_pinned DESC, update_at DESC")
     fun searchConversations(searchText: String): Flow<List<ConversationEntity>>
 
-    @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, folder_id as folderId FROM conversationentity WHERE title LIKE '%' || :searchText || '%' AND title NOT LIKE '[Sub-agent]%' ORDER BY is_pinned DESC, update_at DESC")
+    @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, folder_id as folderId FROM conversationentity WHERE title LIKE '%' || :searchText || '%' ORDER BY is_pinned DESC, update_at DESC")
     fun searchConversationsPaging(searchText: String): PagingSource<Int, LightConversationEntity>
 
-    @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId AND title LIKE '%' || :searchText || '%' AND title NOT LIKE '[Sub-agent]%' ORDER BY is_pinned DESC, update_at DESC")
+    @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId AND title LIKE '%' || :searchText || '%' ORDER BY is_pinned DESC, update_at DESC")
     fun searchConversationsOfAssistant(assistantId: String, searchText: String): Flow<List<ConversationEntity>>
 
-    @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, folder_id as folderId FROM conversationentity WHERE assistant_id = :assistantId AND title LIKE '%' || :searchText || '%' AND title NOT LIKE '[Sub-agent]%' ORDER BY is_pinned DESC, update_at DESC")
+    @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, folder_id as folderId FROM conversationentity WHERE assistant_id = :assistantId AND title LIKE '%' || :searchText || '%' ORDER BY is_pinned DESC, update_at DESC")
     fun searchConversationsOfAssistantPaging(assistantId: String, searchText: String): PagingSource<Int, LightConversationEntity>
 
     @Query("SELECT * FROM conversationentity WHERE id = :id")
     fun getConversationFlowById(id: String): Flow<ConversationEntity?>
-
-    // v3.8.15: 清理聊天内容 — 非置顶且最后活动早于 cutoff 的对话候选
-    @Query("SELECT * FROM conversationentity WHERE is_pinned = 0 AND update_at < :cutoffEpochMs")
-    suspend fun getCleanupCandidates(cutoffEpochMs: Long): List<ConversationEntity>
 
     @Query("SELECT id FROM conversationentity")
     suspend fun getAllIds(): List<String>
@@ -95,20 +87,36 @@ interface ConversationDAO {
     @Query("UPDATE conversationentity SET is_pinned = :isPinned WHERE id = :id")
     suspend fun updatePinStatus(id: String, isPinned: Boolean)
 
+    @Query("UPDATE conversationentity SET assistant_id = :assistantId, folder_id = '' WHERE id = :id")
+    suspend fun updateAssistantId(id: String, assistantId: String)
+
     @Query("UPDATE conversationentity SET folder_id = :folderId WHERE id = :id")
     suspend fun updateFolderId(id: String, folderId: String)
+
+    @Query("UPDATE conversationentity SET title = :title WHERE id = :id")
+    suspend fun updateTitle(id: String, title: String)
+
+    @Query("UPDATE conversationentity SET custom_system_prompt = :customSystemPrompt WHERE id = :id")
+    suspend fun updateCustomSystemPrompt(id: String, customSystemPrompt: String)
+
+    @Query("UPDATE conversationentity SET suggestions = :chatSuggestions WHERE id = :id")
+    suspend fun updateChatSuggestions(id: String, chatSuggestions: String)
+
+    @Query("UPDATE conversationentity SET config = :config, mode_injection_ids = :modeInjectionIds, lorebook_ids = :lorebookIds, workspace_cwd = :workspaceCwd WHERE id = :id")
+    suspend fun updateConfig(
+        id: String,
+        config: String,
+        modeInjectionIds: String,
+        lorebookIds: String,
+        workspaceCwd: String,
+    )
 
     @Query("UPDATE conversationentity SET folder_id = '' WHERE folder_id = :folderId")
     suspend fun clearFolder(folderId: String)
 
-    // v4.8.77: 项目包移出为助手 — 批量转移包内对话到新助手 (清空 folder 归属)
-    @Query("UPDATE conversationentity SET assistant_id = :assistantId, folder_id = '' WHERE folder_id = :folderId")
-    suspend fun reassignFolderConversations(folderId: String, assistantId: String)
-
     @Query("SELECT COUNT(*) FROM conversationentity")
     suspend fun countAll(): Int
 
-    // v4.8.64 (2.5.5 移植): 数据恢复页 — 聊天记录引用的助手分布
     @Query("SELECT assistant_id AS assistantId, COUNT(*) AS count FROM conversationentity GROUP BY assistant_id")
     suspend fun countByAssistant(): List<AssistantConversationCount>
 
@@ -124,5 +132,4 @@ interface ConversationDAO {
 
 data class ConversationDayCount(val day: String, val count: Int)
 
-// v4.8.64 (2.5.5 移植): 数据恢复页配套
 data class AssistantConversationCount(val assistantId: String, val count: Int)

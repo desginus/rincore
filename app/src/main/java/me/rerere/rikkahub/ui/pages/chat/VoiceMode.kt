@@ -1,9 +1,4 @@
-/* 【域 A·对话核心】 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.pages.chat
-
-/* ───【原版对齐】VoiceMode.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 import me.rerere.rikkahub.R
 import android.content.Context
@@ -12,6 +7,7 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.lifecycle.Lifecycle
@@ -27,7 +23,6 @@ import me.rerere.asr.providers.DashScopeASRController
 import me.rerere.asr.providers.VolcengineASRController
 import me.rerere.asr.providers.OpenAIRealtimeASRController
 import me.rerere.rikkahub.data.datastore.Settings
-import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
 import me.rerere.rikkahub.data.datastore.getSelectedTTSProvider
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
@@ -41,7 +36,6 @@ import me.rerere.rikkahub.utils.removeBracketedContent
 import me.rerere.rikkahub.utils.stripMarkdown
 import okhttp3.OkHttpClient
 import org.koin.compose.koinInject
-import androidx.compose.runtime.getValue
 
 /** Lives above adaptive drawer branches, so resizing does not recreate the voice session. */
 @Composable
@@ -73,7 +67,7 @@ fun rememberVoiceModeStarter(vm: ChatVM, settings: Settings): () -> Unit {
         val blocked = when {
             provider == null -> context.getString(R.string.chat_page_voice_configure_asr)
             !provider.supportsServerVadVoiceMode -> context.getString(R.string.chat_page_voice_unsupported_asr)
-            settings.getCurrentChatModel() == null -> context.getString(R.string.chat_page_voice_select_model)
+            vm.currentChatModel.value == null -> context.getString(R.string.chat_page_voice_select_model)
             asr.state.value.isRecording -> context.getString(R.string.chat_page_voice_finish_dictation)
             vm.messageQueue.value.paused && vm.messageQueue.value.messages.isNotEmpty() ->
                 context.getString(R.string.chat_page_voice_resume_queue)

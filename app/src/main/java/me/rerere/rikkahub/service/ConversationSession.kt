@@ -1,12 +1,6 @@
 package me.rerere.rikkahub.service
 
-
-/* ───【域 A·对话核心】ConversationSession.kt
- * 职责: 单会话运行时 (Job/消息队列/互斥初始化/状态封装)
- * 常用改动: 会话状态 → state/setJob; 中断 → cancel
- * 问题定位: 流式输出被旧快照覆盖/状态丢失 → 本文件
- * 基线: 原版 2.5.3 对齐 (v4.7.2) | 地图: docs/APP_MAP.md §A | 历史: .claude/skills/rincore-bug-record
- * ───────────────────────────────────────────────────────────────*/
+import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -25,100 +19,203 @@ import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.uuid.Uuid
 
-// v4.8.35: 会话空闲回收 5s → 30 分钟 (用户定版: 保活类时间大幅延长)。
-// 原 5s 语义: UI 引用归零 (离开对话页) 5 秒即移出内存 — 切走再回来需
-// 全量重建 (DB 加载 + 状态装载 + 预热), 高频切换场景反复付重建成本。
-// 30 分钟: 会话 (消息内存态/处理状态/队列) 常驻, 切走切回即开即用;
-// 正在生成的会话不回收 (原 !isGenerating 守卫保留); 内存代价 = 每活跃
-// 会话一份消息列表, 数十 MB 量级, 移动端可接受。
-private const val IDLE_TIMEOUT_MS = 30 * 60_000L
+private const val TAG = "ConversationSession"
+private const val IDLE_TIMEOUT_MS = 5_000L
 
+/** 会话的持久化，由 ChatService 实现 */
+interface ConversationStore {
+    /**
+     * 落库前对会话的补全（比如把助手配置固定到会话上），结果同样写回内存。
+     * 返回的变换在最新状态上原子执行，不能挂起。
+     */
+    suspend fun prepareWrite(): (Conversation) -> Conversation
+
+    /** [previous] 是上次落库或加载时的状态，从未落库的新会话为 null */
+    suspend fun write(previous: Conversation?, current: Conversation)
+}
+
+/**
+ * 一个会话在内存中的状态，加载之后它就是唯一的权威：所有修改都在最新状态上做变换，
+ * 落库时写入内存此刻的内容，不接受外部传入的整份快照，数据库里的旧版本也不会再读回来覆盖内存。
+ */
 class ConversationSession(
     val id: Uuid,
     initial: Conversation,
     private val scope: CoroutineScope,
+    private val store: ConversationStore,
     private val onIdle: (Uuid) -> Unit,
     private val onGenerationFinished: (Uuid, Throwable?) -> Unit = { _, _ -> },
 ) {
-    // 会话状态 (2.5.3: 封装 — 外部经 updateConversation 写入, 读取走 StateFlow)
+    // 会话状态
     private val _state = MutableStateFlow(initial)
     val state: StateFlow<Conversation> = _state.asStateFlow()
+    private val initializationMutex = Mutex()
+    private val writeMutex = Mutex()
+    @Volatile
+    var isInitialized = false
+        private set
+
+    // 上次落库、加载或新建时的状态，内存还是这个实例就说明没有要落库的修改；只在 writeMutex 内修改
+    private var lastWritten: Conversation = initial
+    @Volatile
+    var existsInDatabase = false
+        private set
+
+    // 每次 [replace] 加一：跨挂起点的操作据此发现会话已经被删除或整条换掉，不再把结果写进去
+    @Volatile
+    var incarnation = 0
+        private set
+
     val messageQueue = MessageQueue()
+
+    /**
+     * 页面切换和 SSE 重连只加载一次。[load] 返回 null 表示数据库里没有这个会话，改用 [create] 新建。
+     * 加载完成前会话不接受修改，所以不会出现加载结果覆盖新内容的情况。
+     */
+    suspend fun initialize(
+        load: suspend () -> Conversation?,
+        create: suspend () -> Conversation = { throw IllegalStateException("Conversation $id not found") },
+    ) {
+        initializationMutex.withLock {
+            if (isInitialized) return
+            val loaded = load()
+            val conversation = loaded ?: create()
+            require(conversation.id == id)
+            writeMutex.withLock {
+                lastWritten = conversation
+                existsInDatabase = loaded != null
+            }
+            synchronized(this) {
+                _state.value = conversation
+                isInitialized = true
+            }
+        }
+    }
+
+    /** 在最新状态上修改会话，只改内存；需要落库时之后调用 [flush] */
+    fun update(transform: (Conversation) -> Conversation): Conversation = checkNotNull(tryUpdate(transform))
+
+    /** 同 [update]，[transform] 返回 null 表示没什么可改的，这时不修改并返回 null */
+    @Synchronized
+    fun tryUpdate(transform: (Conversation) -> Conversation?): Conversation? {
+        check(isInitialized) { "Conversation $id is not loaded yet" }
+        val updated = transform(_state.value) ?: return null
+        require(updated.id == id)
+        _state.value = updated
+        return updated
+    }
+
+    /**
+     * 把内存此刻的状态落库。落库串行执行，每次都读取最新状态，后执行的一定带着更新的内容；
+     * 和上次落库相比没有修改，或者是还没内容的新会话时不写。
+     */
+    suspend fun flush(): Conversation {
+        if (!isInitialized) return state.value
+        return writeMutex.withLock {
+            val latest = state.value
+            if (latest === lastWritten) return@withLock latest
+            // 还没内容的新会话不落库，也不能提前固定配置：会话开始前聊天页的修改要写回助手
+            if (!existsInDatabase && latest.title.isBlank() && latest.messageNodes.isEmpty()) {
+                return@withLock latest
+            }
+            val current = update(store.prepareWrite())
+            store.write(previous = lastWritten.takeIf { existsInDatabase }, current = current)
+            lastWritten = current
+            existsInDatabase = true
+            current
+        }
+    }
+
+    /**
+     * 只修改还没落库的新会话，只改内存，首次落库时一并写入；会话已经落库时不修改，返回 false。
+     * 在 [flush] 的锁内判断，不会和首次落库交错
+     */
+    internal suspend fun updateDraft(transform: (Conversation) -> Conversation): Boolean {
+        return writeMutex.withLock {
+            if (existsInDatabase) return@withLock false
+            update(transform)
+            true
+        }
+    }
+
+    /**
+     * 只更新部分列的元数据：改内存，再按列落库，不重写消息节点。
+     * 修改和落库都在 [flush] 的锁内进行，落库的先后与内存修改的先后一致。
+     *
+     * @param expectedIncarnation 跨挂起点的操作在开始时记下的 [incarnation]。[replace] 在同一把锁内递增它，
+     * 所以在锁内比较才可靠：会话在这期间被删除或整条换掉时不写入，返回 false
+     */
+    internal suspend fun updateMetadata(
+        transform: (Conversation) -> Conversation,
+        persist: suspend (Conversation) -> Unit,
+        expectedIncarnation: Int = incarnation,
+    ): Boolean {
+        return writeMutex.withLock {
+            if (incarnation != expectedIncarnation) return@withLock false
+            val (before, updated) = synchronized(this) {
+                val before = _state.value
+                before to update(transform)
+            }
+            persist(updated)
+            // 改之前内存和数据库一致，按列写完两边又一致了，回收时不必整份重写；
+            // 之后如果又有别的修改，内存已经不是 updated 这个实例，仍然算作没落库
+            if (existsInDatabase && lastWritten === before) lastWritten = updated
+            true
+        }
+    }
+
+    /**
+     * 整条替换会话（删除、撤销删除）：先停止并等待所有任务，在锁内改写数据库，再把内存换成与之一致的状态。
+     * 页面和 SSE 仍然持有同一个会话对象，直接看到新状态，引用计数也不受影响。
+     *
+     * @param write 改写数据库；参数是替换前的内存状态，会话还没加载时为 null
+     */
+    internal suspend fun replace(
+        conversation: Conversation,
+        existsInDatabase: Boolean,
+        write: suspend (previous: Conversation?) -> Unit,
+    ) {
+        require(conversation.id == id)
+        cancelJobs().forEach { it.join() }
+        // 正在进行的加载结束后才替换，否则加载结果会盖掉替换后的状态
+        initializationMutex.withLock {
+            writeMutex.withLock {
+                write(state.value.takeIf { isInitialized })
+                synchronized(this) {
+                    _state.value = conversation
+                    isInitialized = true
+                    incarnation++
+                }
+                lastWritten = conversation
+                this.existsInDatabase = existsInDatabase
+            }
+        }
+        processingStatus.value = null
+    }
+
+    // 失败和取消也必须保存已收到的内容，且保存完成前不能释放生成任务。
+    suspend fun finishGeneration(): Conversation = withContext(NonCancellable) {
+        update { current ->
+            current.copy(
+                messageNodes = current.messageNodes.map { node ->
+                    node.copy(messages = node.messages.map { it.finishReasoning() })
+                },
+                updateAt = Instant.now(),
+            )
+        }
+        flush()
+    }
 
     // 从队列取出到写入会话历史之间，附件仍需作为有效引用保留。
     @Volatile
     var submittingMessage: QueuedMessage? = null
         internal set
 
-    // 2.5.3: 页面切换和 SSE 重连只加载一次；活跃 session 的内存状态始终优先。
-    private val initializationMutex = Mutex()
-    private val metadataMutex = Mutex()
-    @Volatile
-    private var initialized = false
-
-    suspend fun initialize(load: suspend () -> Conversation) {
-        initializationMutex.withLock {
-            if (initialized) return
-            val conversation = load()
-            synchronized(this) {
-                // 加载挂起期间可能已经通过保存或编辑写入了更新的状态。
-                if (!initialized) updateConversation(conversation)
-            }
-        }
-    }
-
-    @Synchronized
-    fun updateConversation(conversation: Conversation) {
-        require(conversation.id == id)
-        _state.value = conversation
-        initialized = true
-    }
-
-    /** 4.8.27: 是否已完成 DB 加载 — 发送路径归属同步守卫
-     *  (防加载窗口期误判: 未初始化时 state 是空对话初始值, 不可据此判定归属)。 */
-    fun isInitialized(): Boolean = initialized
-
-    // 2.5.3: 元数据先应用到最新内存状态；落库只更新对应列，不能用旧消息快照覆盖流式输出。
-    internal suspend fun updateMetadata(
-        update: (Conversation) -> Conversation,
-        persist: suspend (Conversation) -> Unit,
-    ) {
-        metadataMutex.withLock {
-            val updated = synchronized(this) {
-                update(state.value).also(::updateConversation)
-            }
-            persist(updated)
-        }
-    }
-
-    // 2.5.3: 失败和取消也必须保存已收到的内容，且保存完成前不能释放生成任务。
-    suspend fun finishGeneration(save: suspend (Conversation) -> Unit): Conversation =
-        withContext(NonCancellable) {
-            val current = state.value
-            val conversation = current.copy(
-                messageNodes = current.messageNodes.map { node ->
-                    node.copy(messages = node.messages.map { it.finishReasoning() })
-                },
-                updateAt = Instant.now(),
-            )
-            updateConversation(conversation)
-            save(conversation)
-            conversation
-        }
-
     // 原子引用计数
     private val refCount = AtomicInteger(0)
 
     // 处理状态（如 OCR 识别中）
     val processingStatus = MutableStateFlow<String?>(null)
-
-    /**
-     * v4.8.123 (用户定版): 压缩进行中标记 — 队列派发门据此把新消息挂起"等待中"
-     * (压缩期发送 = 与模型输出期同款排队)。由 ChatService.runCompression 设置,
-     * 结束(成功/失败/取消)的 finally 清除并统一派发排队消息。
-     */
-    @Volatile
-    var isCompressing: Boolean = false
 
     // 生成任务（内聚在 session 中）
     private val _generationJob = MutableStateFlow<Job?>(null)
@@ -149,7 +246,7 @@ class ConversationSession(
         job?.invokeOnCompletion { cause ->
             synchronized(this) {
                 activeJobs.remove(job)
-                // 排队协程未进入 body 即被取消时, 级联取消前驱
+                // Also propagate cancellation when a queued coroutine never entered its body.
                 if (!cancelPrevious && cause is CancellationException) previous?.cancel()
                 // A replaced job must not clear or advance its successor.
                 if (_generationJob.compareAndSet(job, null)) {
@@ -174,6 +271,16 @@ class ConversationSession(
         idleCheckJob = scope.launch {
             delay(IDLE_TIMEOUT_MS)
             if (refCount.get() <= 0 && !isGenerating) {
+                // 回收前把只改了内存的内容落库；落库失败就留在内存里，等下次释放引用或生成结束时再检查。
+                // 还没落过库的会话不在这里新建：只打开过、没发过消息的新会话不该留下记录
+                try {
+                    if (existsInDatabase) flush()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to persist conversation $id before eviction", e)
+                    return@launch
+                }
                 onIdle(id)
             }
         }

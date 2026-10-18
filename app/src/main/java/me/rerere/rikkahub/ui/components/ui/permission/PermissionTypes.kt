@@ -1,10 +1,5 @@
-/* 【域 F·主题渲染】 — UI 组件 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.ui.permission
 
-
-/* ───【原版对齐】PermissionTypes.kt | 差异 ±7 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import android.Manifest
 import android.os.Build
 import androidx.annotation.RequiresApi
@@ -85,12 +80,5 @@ val PermissionLocalNetwork = PermissionInfo(
     permission = Manifest.permission.ACCESS_LOCAL_NETWORK,
     displayName = { Text(stringResource(R.string.permission_local_network)) },
     usage = { Text(stringResource(R.string.permission_local_network_desc)) },
-    required = true
-)
-
-val PermissionLocation = PermissionInfo(
-    permission = Manifest.permission.ACCESS_FINE_LOCATION,
-    displayName = { Text(stringResource(R.string.permission_location_title)) },
-    usage = { Text(stringResource(R.string.permission_location_desc)) },
     required = true
 )

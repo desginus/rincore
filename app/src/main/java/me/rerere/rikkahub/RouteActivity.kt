@@ -1,22 +1,4 @@
-@file:OptIn(ExperimentalCoilApi::class)
-@file:Suppress("DEPRECATION") // getParcelableExtra 平台 API
-/**
- * 路由 Activity + 导航注册中心 — 模块: F. UI 层
- *
- * 职责: 应用入口 + 所有页面导航注册 (持续增长 — 适配新功能时建议拆分)。
- * 注意: 与 fork 差异 ≈1812 行变更（vs 2.5.1·2026-10-18 复核） (S6 石山) — 新页面注册集中在此。
- *
- * 问题定位: 导航闪退/页面找不到 → 查本文件注册
- */
 package me.rerere.rikkahub
-
-
-/* ───【域 L·基础设施】RouteActivity.kt
- * 职责: 主导航宿主 (Navigation3 backStack/entryProvider/全局 CompositionLocal)
- * 常用改动: 新页面 → entry<Screen.X> 注册; 返回 → onBack removeLast; 注入 → CompositionLocalProvider
- * 问题定位: 导航跳级/返回异常/新页面接入 → 本文件 + NavContext
- * 基线: 原版移植 + 自研 (Screen 扩展) | 地图: docs/APP_MAP.md §L | 历史: .claude/skills/rincore-bug-record
- * ───────────────────────────────────────────────────────────────*/
 
 import android.annotation.SuppressLint
 import android.content.Intent
@@ -28,10 +10,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SharedTransitionLayout
-import androidx.compose.animation.core.tween
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -48,8 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
@@ -59,15 +40,13 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
-import me.rerere.rikkahub.ui.components.motion.CherryDuration
-import me.rerere.rikkahub.ui.components.motion.CherryEasing
-import coil3.annotation.ExperimentalCoilApi
 import coil3.ImageLoader
 import coil3.compose.setSingletonImageLoaderFactory
 import coil3.gif.AnimatedImageDecoder
@@ -76,17 +55,18 @@ import coil3.network.cachecontrol.CacheControlCacheStrategy
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
 import coil3.svg.SvgDecoder
-import com.dokar.sonner.Toaster
-import com.dokar.sonner.rememberToasterState
+import me.rerere.ui.toast.Toaster
+import me.rerere.ui.toast.rememberToasterState
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.db.DatabaseMigrationTracker
 import me.rerere.rikkahub.data.db.MigrationState
 import me.rerere.rikkahub.data.event.AppEvent
 import me.rerere.rikkahub.data.event.AppEventBus
+import me.rerere.rikkahub.data.repository.MediaCreationRepository
+import me.rerere.rikkahub.service.MediaCreationForegroundService
 import me.rerere.rikkahub.ui.activity.SafeModeActivity
-import me.rerere.rikkahub.ui.components.richtext.WorkspaceImageFetcherFactory
-import me.rerere.rikkahub.ui.components.richtext.WorkspaceUriKeyer
 import me.rerere.rikkahub.ui.components.ui.TTSController
 import me.rerere.rikkahub.ui.context.LocalASRState
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -112,18 +92,22 @@ import me.rerere.rikkahub.ui.pages.backup.BackupPage
 import me.rerere.rikkahub.ui.pages.chat.ChatPage
 import me.rerere.rikkahub.ui.pages.debug.DebugPage
 import me.rerere.rikkahub.ui.pages.extensions.ExtensionsPage
-import me.rerere.rikkahub.ui.pages.market.MarketDetailPage
-import me.rerere.rikkahub.ui.pages.market.MarketPage
 import me.rerere.rikkahub.ui.pages.extensions.PromptPage
 import me.rerere.rikkahub.ui.pages.extensions.QuickMessagesPage
 import me.rerere.rikkahub.ui.pages.extensions.skills.SkillDetailPage
-import me.rerere.rikkahub.ui.pages.extensions.skills.SkillHubPage
+import me.rerere.rikkahub.ui.pages.memory.MemoryFilePage
+import me.rerere.rikkahub.ui.pages.extensions.skills.SkillsPage
 import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspacePage
 import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceDetailPage
+import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceFileEditorPage
 import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceTerminalPage
+import me.rerere.workspace.WorkspaceStorageArea
 import me.rerere.rikkahub.ui.pages.favorite.FavoritePage
 import me.rerere.rikkahub.ui.pages.history.HistoryPage
+import me.rerere.rikkahub.ui.pages.imggen.ImageGenPage
 import me.rerere.rikkahub.ui.pages.log.LogPage
+import me.rerere.rikkahub.ui.pages.mediacreation.MediaCreationPage
+import me.rerere.rikkahub.ui.pages.mediacreation.MediaCreationSessionsPage
 import me.rerere.rikkahub.ui.pages.search.SearchPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAboutPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPreferencesPage
@@ -132,33 +116,24 @@ import me.rerere.rikkahub.ui.pages.setting.SettingPreferencesNotificationPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPreferencesGeneralPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPreferencesNetworkPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPreferencesUIPage
-import me.rerere.rikkahub.ui.pages.setting.SettingClientPage
 import me.rerere.rikkahub.ui.pages.setting.SettingThemePage
+import me.rerere.rikkahub.ui.pages.setting.SettingDonatePage
 import me.rerere.rikkahub.ui.pages.setting.SettingFilesPage
-import me.rerere.rikkahub.ui.pages.setting.AlarmSettingsPage
-import me.rerere.rikkahub.ui.pages.setting.SettingPermissionsPage
-import me.rerere.rikkahub.workflow.ui.WorkflowsScreen
-import me.rerere.rikkahub.ui.pages.setting.SettingCallTracePage
-import me.rerere.rikkahub.ui.pages.setting.SettingSkillsEcosystemPage
+import me.rerere.rikkahub.ui.pages.setting.SettingMcpDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingMcpPage
-import me.rerere.rikkahub.ui.pages.setting.SettingPluginsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingModelPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPage
 import me.rerere.rikkahub.ui.pages.setting.SettingProviderDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingProviderPage
 import me.rerere.rikkahub.ui.pages.setting.SettingSearchDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingSearchPage
+import me.rerere.rikkahub.ui.pages.setting.SettingMediaPage
 import me.rerere.rikkahub.ui.pages.setting.SettingSpeechPage
 import me.rerere.rikkahub.ui.pages.setting.SettingWebPage
-import me.rerere.rikkahub.ui.pages.setting.scheduledjobs.ScheduledJobsScreen
-import me.rerere.rikkahub.ui.pages.setting.scheduledjobs.ScheduledJobDetailScreen
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerPage
-import me.rerere.rikkahub.ui.pages.imggen.ImageGenPage
-import me.rerere.rikkahub.ui.pages.videogen.VideoGenPage
-import me.rerere.rikkahub.ui.pages.translator.TranslatorPage
 import me.rerere.rikkahub.ui.pages.stats.StatsPage
+import me.rerere.rikkahub.ui.pages.translator.TranslatorPage
 import me.rerere.rikkahub.ui.pages.webview.WebViewPage
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.theme.RikkahubTheme
 import me.rerere.rikkahub.utils.CrashHandler
 import me.rerere.rikkahub.utils.openUsageAccessSettings
@@ -166,27 +141,17 @@ import okhttp3.OkHttpClient
 import org.koin.android.ext.android.inject
 import org.koin.compose.koinInject
 import kotlin.uuid.Uuid
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 
 private const val TAG = "RouteActivity"
 private const val ACTION_TRANSLATE = "me.rerere.rikkahub.action.TRANSLATE"
-private const val ACTION_IMAGE_GEN = "me.rerere.rikkahub.action.IMAGE_GEN"
-// v4.8.98: 沙箱 rin render → 应用原生渲染弹窗 (软件-沙箱一体化)
-private const val ACTION_RENDER_FILE = "me.rerere.rikkahub.action.RENDER_FILE"
+private const val ACTION_MEDIA_CREATION = "me.rerere.rikkahub.action.MEDIA_CREATION"
 
 class RouteActivity : ComponentActivity() {
     private val okHttpClient by inject<OkHttpClient>()
     private val settingsStore by inject<SettingsStore>()
+    private val mediaCreationRepository by inject<MediaCreationRepository>()
     private var navStack: MutableList<NavKey>? = null
-
-    // v4.8.91 TTFT: 冷启动/回前台即预热"当前对话模型"的连接（幂等、非阻塞）——
-    // 用户打开软件看一会儿再发消息时，连接仍是热的（服务端 ~100s 空闲断连吃不到我们）。
-    private val warmupLifecycleObserver = object : androidx.lifecycle.DefaultLifecycleObserver {
-        override fun onResume(owner: androidx.lifecycle.LifecycleOwner) {
-            me.rerere.rikkahub.service.ProviderWarmup.warmCurrentChatModel()
-        }
-    }
+    private val pendingIntents = ArrayDeque<Intent>()
 
     // Volume key listener registry — last registered handler wins
     internal val volumeKeyListeners = mutableListOf<(isVolumeUp: Boolean) -> Boolean>()
@@ -213,8 +178,9 @@ class RouteActivity : ComponentActivity() {
             finish()
             return
         }
-        // v4.8.91 TTFT: 进入前台即预热连接（观察者幂等注册）
-        lifecycle.addObserver(warmupLifecycleObserver)
+        if (savedInstanceState == null) {
+            handleIntent(intent)
+        }
         setContent {
             RikkahubTheme {
                 setSingletonImageLoaderFactory { context ->
@@ -233,13 +199,9 @@ class RouteActivity : ComponentActivity() {
                                 add(GifDecoder.Factory())
                             }
                             add(SvgDecoder.Factory(scaleToDensity = true))
-                            // v3.11.31: workspace:// 图片 — rootfs 直读, mtime cache key
-                            add(WorkspaceUriKeyer())
-                            add(WorkspaceImageFetcherFactory())
                         }
                         .build()
                 }
-                me.rerere.rikkahub.ui.components.render.RenderRequestHost()
                 AppRoutes()
             }
         }
@@ -251,216 +213,51 @@ class RouteActivity : ComponentActivity() {
         }
     }
 
-    /**
-     * v4.8.112 (用户实证"小概率空分享"): 分享文件 URI 收集 — EXTRA_STREAM 优先,
-     * 缺失时兜底读 clipData (部分来源应用只填 clipData 或只填其一; 旧实现只认
-     * EXTRA_STREAM → 分享落地为空, 用户感知"跳转过来但没有任何文档")。
-     */
-    private fun shareFileUris(intent: Intent?): List<android.net.Uri> {
-        if (intent == null) return emptyList()
-        val fromExtra = when (intent.action) {
-            Intent.ACTION_SEND ->
-                listOfNotNull(intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM))
-            Intent.ACTION_SEND_MULTIPLE ->
-                intent.getParcelableArrayListExtra<android.net.Uri>(Intent.EXTRA_STREAM).orEmpty()
-            else -> emptyList()
-        }
-        if (fromExtra.isNotEmpty()) return fromExtra
-        return intent.clipData?.let { clip ->
-            (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri }
-        }.orEmpty()
-    }
-
-    @Composable
-    private fun ShareHandler(backStack: MutableList<NavKey>) {
-        // 防止 recomposition 重复触发
-        var handled by remember { mutableStateOf(false) }
-        LaunchedEffect(Unit) {
-            if (handled) return@LaunchedEffect
-
-            // 通知点击: 从 PendingIntent 的 extra 中提取 conversationId
-            val notificationConversationId = intent?.getStringExtra("conversationId")
-            if (notificationConversationId != null) {
-                handled = true
-                backStack.clear()
-                backStack.add(Screen.Chat(notificationConversationId))
-                return@LaunchedEffect
-            }
-
-            val action = intent?.action ?: return@LaunchedEffect
-            if (action == ACTION_TRANSLATE) {
-                handled = true
-                backStack.add(Screen.Translator)
-                return@LaunchedEffect
-            }
-            if (action == ACTION_IMAGE_GEN) {
-                handled = true
-                backStack.add(Screen.ImageGen)
-                return@LaunchedEffect
-            }
-            if (action == ACTION_RENDER_FILE) {
-                handled = true
-                intent?.getStringExtra("render_path")?.let {
-                    me.rerere.rikkahub.ui.components.render.RenderRequestBus.request(it)
-                }
-                return@LaunchedEffect
-            }
-            val isSpecialAction = action in setOf(
-                Intent.ACTION_SEND,
-                Intent.ACTION_SEND_MULTIPLE,
-                Intent.ACTION_PROCESS_TEXT
-            )
-            if (!isSpecialAction) return@LaunchedEffect
-
-            handled = true
-
-            // Bug #1/#3 修复: 检查 backStack 是否已包含目标对话
-            val existingChatScreen = backStack.lastOrNull() as? Screen.Chat
-            val lastId = readStringPreference("lastConversationId", Uuid.random().toString())
-                ?: Uuid.random().toString()
-
-            when (action) {
-                Intent.ACTION_SEND -> {
-                    val text = intent?.getStringExtra(Intent.EXTRA_TEXT) ?: ""
-                    // v4.8.112: EXTRA_STREAM 缺失时兜底 clipData (空分享来源修复)
-                    val files = shareFileUris(intent).map { it.toString() }
-
-                    if (existingChatScreen != null && lastId == existingChatScreen.id) {
-                        if (files.isNotEmpty() || text.isNotBlank()) {
-                            backStack.add(
-                                Screen.Chat(
-                                    id = lastId,
-                                    text = text.ifBlank { null },
-                                    files = files,
-                                    nodeId = null
-                                )
-                            )
-                        }
-                    } else {
-                        backStack.clear()
-                        backStack.add(Screen.Chat(
-                            id = lastId,
-                            text = text.ifBlank { null },
-                            files = files,
-                        ))
-                    }
-                }
-                Intent.ACTION_SEND_MULTIPLE -> {
-                    val text = intent?.getStringExtra(Intent.EXTRA_TEXT) ?: ""
-                    // v4.8.112: 统一走 shareFileUris (含 clipData 兜底)
-                    val files = shareFileUris(intent).map { it.toString() }
-
-                    if (existingChatScreen != null && lastId == existingChatScreen.id) {
-                        if (files.isNotEmpty() || text.isNotBlank()) {
-                            backStack.add(
-                                Screen.Chat(
-                                    id = lastId,
-                                    text = text.ifBlank { null },
-                                    files = files,
-                                    nodeId = null
-                                )
-                            )
-                        }
-                    } else {
-                        backStack.clear()
-                        backStack.add(Screen.Chat(
-                            id = lastId,
-                            text = text.ifBlank { null },
-                            files = files,
-                        ))
-                    }
-                }
-                Intent.ACTION_PROCESS_TEXT -> {
-                    val txt = intent?.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString() ?: ""
-
-                    if (existingChatScreen != null && lastId == existingChatScreen.id) {
-                        if (txt.isNotBlank()) {
-                            backStack.add(
-                                Screen.Chat(
-                                    id = lastId,
-                                    text = txt,
-                                    nodeId = null
-                                )
-                            )
-                        }
-                    } else {
-                        backStack.clear()
-                        backStack.add(Screen.Chat(
-                            id = lastId,
-                            text = txt.ifBlank { null },
-                        ))
-                    }
-                }
-            }
-        }
-    }
-
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        if (intent.action == ACTION_TRANSLATE) {
-            navStack?.add(Screen.Translator)
-        }
-        if (intent.action == ACTION_IMAGE_GEN) {
-            navStack?.add(Screen.ImageGen)
-        }
-        if (intent.action == ACTION_RENDER_FILE) {
-            intent.getStringExtra("render_path")?.let {
-                me.rerere.rikkahub.ui.components.render.RenderRequestBus.request(it)
-            }
-        }
-        // Navigate to the chat screen if a conversation ID is provided
-        intent.getStringExtra("conversationId")?.let { text ->
-            navStack?.add(Screen.Chat(text))
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent) {
+        val backStack = navStack ?: run {
+            // Compose 尚未创建导航栈，待就绪后处理。
+            pendingIntents.addLast(intent)
             return
         }
-
-        // Bug #1/#3 修复: singleTask 模式下处理到达的 ACTION_SEND
-        // 对齐 ShareHandler 逻辑: 检查已有对话, 复用 lastConversationId
-        val action = intent.action
-        if (action == Intent.ACTION_SEND || action == Intent.ACTION_SEND_MULTIPLE || action == Intent.ACTION_PROCESS_TEXT) {
-            val existingChatScreen = navStack?.lastOrNull() as? Screen.Chat
-            val lastId = readStringPreference("lastConversationId", Uuid.random().toString())
-                ?: Uuid.random().toString()
-
-            fun addChat(text: String?, files: List<String> = emptyList()) {
-                val alreadyInChat = existingChatScreen != null && lastId == existingChatScreen.id
-                if (alreadyInChat) {
-                // 文件分享到已有对话: 推送新 entry 携带 files/text
-                if (files.isNotEmpty() || !text.isNullOrBlank()) {
-                    navStack?.add(Screen.Chat(
-                        id = lastId,
-                        text = text?.ifBlank { null },
-                        files = files,
-                        nodeId = null
-                    ))
-                }
-                } else {
-                navStack?.clear()
-                navStack?.add(Screen.Chat(
-                    id = lastId,
-                    text = text?.ifBlank { null },
-                    files = files,
-                ))
-                }
+        val destination = when (intent.action) {
+            ACTION_TRANSLATE -> Screen.Translator
+            ACTION_MEDIA_CREATION -> {
+                openNewMediaCreation(backStack)
+                null
             }
-
-            when (action) {
-                Intent.ACTION_SEND -> {
-                    val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
-                    val files = shareFileUris(intent).map { it.toString() }
-                    addChat(text, files)
-                }
-                Intent.ACTION_SEND_MULTIPLE -> {
-                    val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
-                    val files = shareFileUris(intent).map { it.toString() }
-                    addChat(text, files)
-                }
-                Intent.ACTION_PROCESS_TEXT -> {
-                    val txt = intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString() ?: ""
-                    addChat(txt)
-                }
-            }
+            Intent.ACTION_SEND -> Screen.ShareHandler(
+                text = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty(),
+                streamUri = intent.getStringExtra(Intent.EXTRA_STREAM),
+            )
+            Intent.ACTION_PROCESS_TEXT -> Screen.ShareHandler(
+                text = intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString().orEmpty(),
+            )
+            else -> mediaCreationDestination(intent)
+                ?: intent.getStringExtra("conversationId")?.let { Screen.Chat(it) }
         }
+        if (destination != null && backStack.lastOrNull() != destination) {
+            backStack.add(destination)
+        }
+    }
+
+    // 快捷方式没有指定会话，打开一个空会话
+    private fun openNewMediaCreation(backStack: MutableList<NavKey>) {
+        lifecycleScope.launch {
+            val destination = Screen.MediaCreation(mediaCreationRepository.newSession().id.toString())
+            if (backStack.lastOrNull() != destination) backStack.add(destination)
+        }
+    }
+
+    // 媒体创作的通知带着会话 ID，点击后直接打开那个会话
+    private fun mediaCreationDestination(intent: Intent): Screen? {
+        val sessionId = intent.getStringExtra(MediaCreationForegroundService.EXTRA_MEDIA_SESSION_ID) ?: return null
+        return runCatching { Uuid.parse(sessionId) }.getOrNull()?.let { Screen.MediaCreation(it.toString()) }
     }
 
     @OptIn(ExperimentalComposeUiApi::class)
@@ -478,7 +275,6 @@ class RouteActivity : ComponentActivity() {
                     is AppEvent.OpenUsageAccessSettings -> this@RouteActivity.openUsageAccessSettings()
                     is AppEvent.ChatGenerationUpdate -> Unit // 由 ChatNotificationManager 消费
                     is AppEvent.ChatGenerationEnded -> Unit // 由 ChatNotificationManager 消费
-                    is AppEvent.SubAgentFinished -> Unit // v4.8.88: 由 ChatNotificationManager 消费（子代理独立频道）
                 }
             }
         }
@@ -496,9 +292,12 @@ class RouteActivity : ComponentActivity() {
         )
 
         val backStack = rememberNavBackStack(startScreen)
-        SideEffect { this@RouteActivity.navStack = backStack }
-
-        ShareHandler(backStack)
+        SideEffect {
+            navStack = backStack
+            while (pendingIntents.isNotEmpty()) {
+                handleIntent(pendingIntents.removeFirst())
+            }
+        }
 
         SharedTransitionLayout {
             CompositionLocalProvider(
@@ -509,13 +308,6 @@ class RouteActivity : ComponentActivity() {
                 LocalTTSState provides tts,
                 LocalASRState provides asr,
             ) {
-                Toaster(
-                    state = toastState,
-                    darkTheme = LocalDarkMode.current,
-                    richColors = true,
-                    alignment = Alignment.TopCenter,
-                    showCloseButton = true,
-                )
                 TTSController()
                 Box(
                     modifier = Modifier
@@ -530,56 +322,32 @@ class RouteActivity : ComponentActivity() {
                             rememberViewModelStoreNavEntryDecorator(),
                         ),
                         modifier = Modifier.fillMaxSize(),
-                        onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } },
+                        onBack = { backStack.removeLastOrNull() },
                         transitionSpec = {
-                            // v4.8.156 (用户: "切换动画柔和而不是生硬"): 转场柔和化 — 统一 CS
-                            // 令牌 (settle 曲线 cubic-bezier(0.22,1,0.36,1) · 250ms); 位移大幅
-                            // 削减 (整屏滑入+0.7 缩放+半屏滑出 → 1/8 滑入 + 交叉淡入淡出)。
-                            val softF = tween<Float>(CherryDuration.BASE, easing = CherryEasing.Settle)
-                            val softI = tween<IntOffset>(CherryDuration.BASE, easing = CherryEasing.Settle)
-                            if (backStack.size == 1) fadeIn(softF) togetherWith fadeOut(softF)
+                            if (backStack.size == 1) fadeIn() togetherWith fadeOut()
                             else {
-                                (slideInHorizontally(softI) { it / 8 } + fadeIn(softF)) togetherWith
-                                    (slideOutHorizontally(softI) { -it / 16 } + fadeOut(softF))
+                                slideInHorizontally { it } togetherWith
+                                    slideOutHorizontally { -it / 2 } + scaleOut(targetScale = 0.7f) + fadeOut()
                             }
                         },
                         popTransitionSpec = {
-                            val softF = tween<Float>(CherryDuration.BASE, easing = CherryEasing.Settle)
-                            val softI = tween<IntOffset>(CherryDuration.BASE, easing = CherryEasing.Settle)
-                            (slideInHorizontally(softI) { -it / 16 } + fadeIn(softF)) togetherWith
-                                (slideOutHorizontally(softI) { it / 8 } + fadeOut(softF))
+                            slideInHorizontally { -it / 2 } + scaleIn(initialScale = 0.7f) + fadeIn() togetherWith
+                                slideOutHorizontally { it }
                         },
                         predictivePopTransitionSpec = {
-                            val softF = tween<Float>(CherryDuration.BASE, easing = CherryEasing.Settle)
-                            val softI = tween<IntOffset>(CherryDuration.BASE, easing = CherryEasing.Settle)
-                            (slideInHorizontally(softI) { -it / 16 } + fadeIn(softF)) togetherWith
-                                (slideOutHorizontally(softI) { it / 8 } + fadeOut(softF))
+                            slideInHorizontally { -it / 2 } + scaleIn(initialScale = 0.7f) + fadeIn() togetherWith
+                                slideOutHorizontally { it }
                         },
                         entryProvider = entryProvider {
                             entry<Screen.Chat>(
-                                metadata = NavDisplay.transitionSpec {
-                                    // v4.8.157 (用户: "不同对话的切换...做一个淡入淡出的过渡...系统根本
-                                    // 来不及反应, 有的时候它会闪一下卡一下"): 对话切换 = **fade-through**
-                                    // — 抽屉切对话走 clearAndNavigate(清栈直切): 旧内容瞬间消失 + 新页面
-                                    // 重组合全部暴露 → 闪/卡。改为: 旧内容 140ms 快速淡出 → 背景停顿窗
-                                    // (新页面在此完成重组合, 卡顿被盖住) → 新内容延迟 200ms 起 260ms 柔和
-                                    // 淡入 — 用户只看到一次干净的"淡出 → 淡入"。
-                                    fadeIn(
-                                        tween<Float>(260, delayMillis = 200, easing = CherryEasing.Settle)
-                                    ) togetherWith fadeOut(
-                                        tween<Float>(140, easing = CherryEasing.Settle)
-                                    )
-                                } + NavDisplay.popTransitionSpec {
-                                    fadeIn(tween<Float>(260, delayMillis = 200, easing = CherryEasing.Settle)) togetherWith
-                                        fadeOut(tween<Float>(140, easing = CherryEasing.Settle))
-                                }
+                                metadata = NavDisplay.transitionSpec { fadeIn() togetherWith fadeOut() }
+                                    + NavDisplay.popTransitionSpec { fadeIn() togetherWith fadeOut() }
                             ) { key ->
                                 ChatPage(
                                     id = Uuid.parse(key.id),
                                     text = key.text,
                                     files = key.files.map { it.toUri() },
-                                    nodeId = key.nodeId?.let { Uuid.parse(it) },
-                                    folderId = key.folderId?.let { Uuid.parse(it) }
+                                    nodeId = key.nodeId?.let { Uuid.parse(it) }
                                 )
                             }
 
@@ -588,20 +356,6 @@ class RouteActivity : ComponentActivity() {
                                     text = key.text,
                                     image = key.streamUri
                                 )
-                            }
-
-                            entry<Screen.Translator> {
-                                TranslatorPage()
-                            }
-
-                            // v4.8.93: 图像生成页接线恢复（抽屉「图像生成」入口）
-                            entry<Screen.ImageGen> {
-                                ImageGenPage()
-                            }
-
-                            // v4.8.100: 视频生成页（抽屉「功能折叠」入口 — 翻译/图像/视频三件套）
-                            entry<Screen.VideoGen> {
-                                VideoGenPage()
                             }
 
                             entry<Screen.History> {
@@ -632,6 +386,10 @@ class RouteActivity : ComponentActivity() {
                                 AssistantMemoryPage(key.id)
                             }
 
+                            entry<Screen.MemoryFile> { key ->
+                                MemoryFilePage(memoryId = key.memoryId, path = key.path)
+                            }
+
                             entry<Screen.AssistantRequest> { key ->
                                 AssistantRequestPage(key.id)
                             }
@@ -648,10 +406,8 @@ class RouteActivity : ComponentActivity() {
                                 AssistantExtensionsPage(key.id)
                             }
 
-                            entry<Screen.Usage> {
-                                me.rerere.rikkahub.ui.pages.usage.UsagePage(
-                                    onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } },
-                                )
+                            entry<Screen.Translator> {
+                                TranslatorPage()
                             }
 
                             entry<Screen.Setting> {
@@ -660,6 +416,23 @@ class RouteActivity : ComponentActivity() {
 
                             entry<Screen.Backup> {
                                 BackupPage()
+                            }
+
+                            entry<Screen.ImageGen> {
+                                ImageGenPage()
+                            }
+
+                            entry<Screen.MediaCreationSessions> {
+                                MediaCreationSessionsPage()
+                            }
+
+                            // 从会话列表展开（容器变换），页面本身只做淡入淡出，避免和平移打架
+                            entry<Screen.MediaCreation>(
+                                metadata = NavDisplay.transitionSpec { fadeIn() togetherWith fadeOut() }
+                                    + NavDisplay.popTransitionSpec { fadeIn() togetherWith fadeOut() }
+                                    + NavDisplay.predictivePopTransitionSpec { fadeIn() togetherWith fadeOut() }
+                            ) { key ->
+                                MediaCreationPage(key.id)
                             }
 
                             entry<Screen.WebView> { key ->
@@ -688,10 +461,6 @@ class RouteActivity : ComponentActivity() {
 
                             entry<Screen.SettingPreferencesUI> {
                                 SettingPreferencesUIPage()
-                            }
-
-                            entry<Screen.SettingPreferencesClient> {
-                                SettingClientPage()
                             }
 
                             entry<Screen.SettingPreferencesNetwork> {
@@ -728,57 +497,28 @@ class RouteActivity : ComponentActivity() {
                                 SettingSpeechPage()
                             }
 
+                            entry<Screen.SettingMedia> {
+                                SettingMediaPage()
+                            }
+
                             entry<Screen.SettingMcp> {
                                 SettingMcpPage()
                             }
 
-                            entry<Screen.SettingPlugins> {
-                                SettingPluginsPage(onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } })
+                            entry<Screen.SettingMcpDetail> { key ->
+                                SettingMcpDetailPage(id = Uuid.parse(key.serverId))
                             }
 
-                            entry<Screen.SettingAdvanced> {
-                                me.rerere.rikkahub.ui.pages.setting.SettingAdvancedPage(
-                                    settings = settings,
-                                    onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } },
-                                )
+                            entry<Screen.SettingDonate> {
+                                SettingDonatePage()
                             }
-
-                            entry<Screen.SettingUploadInbox> {
-                                me.rerere.rikkahub.ui.pages.setting.SettingUploadInboxPage(
-                                    onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } },
-                                )
-                            }
-
 
                             entry<Screen.SettingFiles> {
                                 SettingFilesPage()
                             }
-                            entry<Screen.SettingCallTrace> {
-                                SettingCallTracePage()
-                            }
-                            entry<Screen.SettingAlarms> {
-                                AlarmSettingsPage(onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } })
-                            }
-                            entry<Screen.SettingPermissions> {
-                                SettingPermissionsPage(onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } })
-                            }
-                            entry<Screen.Workflows> {
-                                WorkflowsScreen(onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } })
-                            }
-                            entry<Screen.SettingSkillsEcosystem> {
-                                SettingSkillsEcosystemPage()
-                            }
 
                             entry<Screen.SettingWeb> {
                                 SettingWebPage()
-                            }
-
-                            entry<Screen.ScheduledJobs> {
-                                ScheduledJobsScreen()
-                            }
-
-                            entry<Screen.ScheduledJobDetail> { key ->
-                                ScheduledJobDetailScreen(key.id)
                             }
 
                             entry<Screen.Debug> {
@@ -802,36 +542,27 @@ class RouteActivity : ComponentActivity() {
                             }
 
                             entry<Screen.Skills> {
-                                SkillHubPage()
+                                SkillsPage()
                             }
 
                             entry<Screen.Workspaces> {
                                 WorkspacePage()
                             }
 
-                            entry<Screen.Market> {
-                                MarketPage()
-                            }
-                            entry<Screen.OperitUi> {
-                                me.rerere.rikkahub.ui.pages.operitui.OperitUiPage(
-                                    onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } },
-                                )
-                            }
-                            entry<Screen.OperitEco> {
-                                me.rerere.rikkahub.ui.pages.operiteco.OperitEcoPage(
-                                    onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } },
-                                )
-                            }
-                            entry<Screen.MarketDetail> { key ->
-                                MarketDetailPage(key.id)
-                            }
-
                             entry<Screen.WorkspaceDetail> { key ->
-                                WorkspaceDetailPage(key.id, key.initialTab, key.initialPath)
+                                WorkspaceDetailPage(key.id)
                             }
 
                             entry<Screen.WorkspaceTerminal> { key ->
                                 WorkspaceTerminalPage(key.id)
+                            }
+
+                            entry<Screen.WorkspaceFileEditor> { key ->
+                                WorkspaceFileEditorPage(
+                                    id = key.id,
+                                    area = WorkspaceStorageArea.valueOf(key.area),
+                                    path = key.path,
+                                )
                             }
 
                             entry<Screen.SkillDetail> { key ->
@@ -889,6 +620,10 @@ class RouteActivity : ComponentActivity() {
                             }
                         }
                     }
+                    Toaster(
+                        state = toastState,
+                        modifier = Modifier.align(Alignment.TopCenter),
+                    )
                 }
             }
         }
@@ -901,24 +636,11 @@ sealed interface Screen : NavKey {
         val id: String,
         val text: String? = null,
         val files: List<String> = emptyList(),
-        val nodeId: String? = null,
-        val folderId: String? = null
+        val nodeId: String? = null
     ) : Screen
 
     @Serializable
     data class ShareHandler(val text: String, val streamUri: String? = null) : Screen
-
-    // 4.1.0: AI 翻译页 (2.5.1 移植)
-    @Serializable
-    data object Translator : Screen
-
-    // v4.8.93: AI 图像生成页 (2.5.6 接线恢复)
-    @Serializable
-    data object ImageGen : Screen
-
-    // v4.8.100/102: 视频生成 (Google Veo / 阿里云 HappyHorse — 提供商模型类型 VIDEO, 对齐图像生成流程)
-    @Serializable
-    data object VideoGen : Screen
 
     @Serializable
     data object History : Screen
@@ -941,6 +663,10 @@ sealed interface Screen : NavKey {
     @Serializable
     data class AssistantMemory(val id: String) : Screen
 
+    /** 记忆库 [memoryId] 里的一个文件，[path] 为 null 时新建 */
+    @Serializable
+    data class MemoryFile(val memoryId: String, val path: String? = null) : Screen
+
     @Serializable
     data class AssistantRequest(val id: String) : Screen
 
@@ -954,13 +680,22 @@ sealed interface Screen : NavKey {
     data class AssistantInjections(val id: String) : Screen
 
     @Serializable
-    data object Usage : Screen
+    data object Translator : Screen
 
     @Serializable
     data object Setting : Screen
 
     @Serializable
     data object Backup : Screen
+
+    @Serializable
+    data object ImageGen : Screen
+
+    @Serializable
+    data object MediaCreationSessions : Screen
+
+    @Serializable
+    data class MediaCreation(val id: String) : Screen
 
     @Serializable
     data class WebView(val url: String = "", val contentId: String = "") : Screen
@@ -982,9 +717,6 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object SettingPreferencesUI : Screen
-
-    @Serializable
-    data object SettingPreferencesClient : Screen
 
     @Serializable
     data object SettingPreferencesNetwork : Screen
@@ -1011,55 +743,22 @@ sealed interface Screen : NavKey {
     data object SettingSpeech : Screen
 
     @Serializable
+    data object SettingMedia : Screen
+
+    @Serializable
     data object SettingMcp : Screen
 
     @Serializable
-    data object SettingPlugins : Screen
-
-
-    /** v4.8.145: 其他功能页改为真实导航目的地 (修"子页返回跳两级"：原为内嵌 remember 状态页)。 */
-    @Serializable
-    data object SettingAdvanced : Screen
-
-    /** v4.8.146: 收件箱 (Upload) — 上传文件管理 + 使用位置标注。 */
-    @Serializable
-    data object SettingUploadInbox : Screen
+    data class SettingMcpDetail(val serverId: String) : Screen
 
     @Serializable
-    data object SettingToolHub : Screen
-
-    @Serializable
-    data object SettingToolCompare : Screen
-
-    @Serializable
-    data object SettingBuiltinTools : Screen
+    data object SettingDonate : Screen
 
     @Serializable
     data object SettingFiles : Screen
 
     @Serializable
-    data object SettingCallTrace : Screen
-
-    @Serializable
-    data object SettingAlarms : Screen
-
-    @Serializable
-    data object SettingPermissions : Screen
-
-    @Serializable
-    data object Workflows : Screen
-
-    @Serializable
-    data object SettingSkillsEcosystem : Screen
-
-    @Serializable
     data object SettingWeb : Screen
-
-    @Serializable
-    data object ScheduledJobs : Screen
-
-    @Serializable
-    data class ScheduledJobDetail(val id: String) : Screen
 
     @Serializable
     data object Debug : Screen
@@ -1082,28 +781,14 @@ sealed interface Screen : NavKey {
     @Serializable
     data object Workspaces : Screen
 
-    // v4.5.28 岔路口计划·阶段1: 应用市场
     @Serializable
-    data object Market : Screen
-
-    // v4.5.34: 插件界面渲染页
-    // v4.5.40 修复: 补 @Serializable — NavBackStack 持久化 (onSaveInstanceState)
-    // 序列化 back stack 时缺 serializer 崩溃 (SerializationException: OperitUi)
-    @Serializable
-    data object OperitUi : Screen
-
-    // v4.6.2: 生态模块页 (内置工具包 + 市场插件 — 独立渲染管线)
-    @Serializable
-    data object OperitEco : Screen
-
-    @Serializable
-    data class MarketDetail(val id: String) : Screen
-
-    @Serializable
-    data class WorkspaceDetail(val id: String, val initialTab: Int = 0, val initialPath: String? = null) : Screen
+    data class WorkspaceDetail(val id: String) : Screen
 
     @Serializable
     data class WorkspaceTerminal(val id: String) : Screen
+
+    @Serializable
+    data class WorkspaceFileEditor(val id: String, val area: String, val path: String) : Screen
 
     @Serializable
     data class SkillDetail(val skillName: String) : Screen

@@ -1,6 +1,5 @@
 package me.rerere.search
 
-
 import android.content.Context
 import androidx.compose.runtime.Composable
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -64,6 +63,7 @@ interface SearchService<T : SearchServiceOptions> {
                 is SearchServiceOptions.GrokOptions -> GrokSearchService
                 is SearchServiceOptions.TinyfishOptions -> TinyfishSearchService
                 is SearchServiceOptions.SerperOptions -> SerperSearchService
+                is SearchServiceOptions.DeepSeekOptions -> DeepSeekSearchService
                 is SearchServiceOptions.CustomJsOptions -> CustomJsSearchService
             } as SearchService<T>
         }
@@ -169,13 +169,14 @@ sealed class SearchServiceOptions {
             GrokOptions::class to "Grok",
             TinyfishOptions::class to "Tinyfish",
             SerperOptions::class to "Serper",
+            DeepSeekOptions::class to "DeepSeek",
             CustomJsOptions::class to "Custom JS",
         )
     }
 
     @Serializable
     @SerialName("bing_local")
-    class BingLocalOptions(
+    data class BingLocalOptions(
         override val id: Uuid = Uuid.random()
     ) : SearchServiceOptions()
 
@@ -310,6 +311,13 @@ sealed class SearchServiceOptions {
     @Serializable
     @SerialName("serper")
     data class SerperOptions(
+        override val id: Uuid = Uuid.random(),
+        val apiKey: String = "",
+    ) : SearchServiceOptions()
+
+    @Serializable
+    @SerialName("deepseek")
+    data class DeepSeekOptions(
         override val id: Uuid = Uuid.random(),
         val apiKey: String = "",
     ) : SearchServiceOptions()

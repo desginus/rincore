@@ -1,16 +1,6 @@
 package me.rerere.rikkahub.ui.pages.chat
 
-
-/* ───【域 A·对话核心】ChatList.kt
- * 职责: 消息列表渲染 (滚动/多版本消息/长按菜单/预览与搜索)
- * 常用改动: 消息渲染 → 本文件 itemsIndexed; 滚动 → chatListState; 菜单 → 长按块
- * 问题定位: 滚动抽动/渲染异常 (先 diff 上游对齐) → 本文件 + components/message
- * 基线: 原版移植 + 自研 (TTS/搜索) | 地图: docs/APP_MAP.md §A | 历史: .claude/skills/rincore-bug-record
- * ───────────────────────────────────────────────────────────────*/
 import me.rerere.hugeicons.HugeIcons
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import me.rerere.hugeicons.stroke.LanguageCircle
-import me.rerere.hugeicons.stroke.Image02
 import me.rerere.hugeicons.stroke.Tick01
 import me.rerere.hugeicons.stroke.ArrowDown01
 import me.rerere.hugeicons.stroke.ArrowUp01
@@ -19,8 +9,6 @@ import me.rerere.hugeicons.stroke.ArrowUpDouble
 import me.rerere.hugeicons.stroke.CursorPointer01
 import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Cancel01
-import me.rerere.hugeicons.stroke.Folder01
-import me.rerere.hugeicons.stroke.Gauge
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -28,7 +16,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
@@ -46,18 +36,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.hazeSource
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.Icon
@@ -65,26 +52,30 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
-import dev.chrisbanes.haze.blur.hazeBlur
-import dev.chrisbanes.haze.HazeInput
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalScrollCaptureInProgress
@@ -94,36 +85,32 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceAtLeast
 import androidx.compose.ui.zIndex
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
-import org.koin.compose.koinInject
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getAssistantById
-import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.rikkahub.data.model.withConversation
 import me.rerere.rikkahub.service.ChatError
-import me.rerere.rikkahub.ui.components.motion.CherryMotion
-import me.rerere.rikkahub.ui.components.motion.cherryPress
 import me.rerere.rikkahub.ui.components.message.ChatMessage
 import me.rerere.rikkahub.ui.components.ui.ErrorCardsDisplay
-import me.rerere.rikkahub.ui.components.ui.ListSelectableItem
-import me.rerere.rikkahub.ui.components.ui.RabbitLoadingIndicator
-import me.rerere.rikkahub.ui.components.ui.Tooltip
 import me.rerere.rikkahub.ui.hooks.ImeLazyListAutoScroller
 import me.rerere.rikkahub.ui.theme.ChatFontProvider
+import me.rerere.rikkahub.utils.plus
+import me.rerere.ui.components.ListSelectableItem
+import me.rerere.ui.components.Tooltip
 import kotlin.math.roundToInt
 import kotlin.uuid.Uuid
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-import me.rerere.rikkahub.utils.plus
 
 private const val TAG = "ChatList"
 private const val LoadingIndicatorKey = "LoadingIndicator"
@@ -155,16 +142,6 @@ fun ChatList(
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onToggleFavorite: ((MessageNode) -> Unit)? = null,
     onConversationSystemPromptChange: ((String?) -> Unit)? = null,
-    folderCwd: String? = null,
-    // v4.8.88 子代理预算：读/改设置（速览页搜索框右侧）
-    onUpdateSettings: (Settings) -> Unit = {},
-    // v4.8.104: 速览页快捷入口（翻译 / 图像生成）+ 点空白处返回默认对话
-    onOpenTranslator: () -> Unit = {},
-    onOpenImageGen: () -> Unit = {},
-    onExitPreview: () -> Unit = {},
-    // v4.8.147: 空态轨道选择器 (外弧=助手 / 内弧=项目包)
-    onOrbitSelectAssistant: (Uuid) -> Unit = {},
-    onOrbitSelectFolder: (Uuid?) -> Unit = {},
 ) {
     AnimatedContent(
         targetState = previewMode,
@@ -180,10 +157,6 @@ fun ChatList(
                 settings = settings,
                 hazeState = hazeState,
                 onJumpToMessage = onJumpToMessage,
-                onUpdateSettings = onUpdateSettings,
-                onOpenTranslator = onOpenTranslator,
-                onOpenImageGen = onOpenImageGen,
-                onExitPreview = onExitPreview,
                 animatedVisibilityScope = this@AnimatedContent,
             )
         } else {
@@ -211,13 +184,29 @@ fun ChatList(
                 onToolAnswer = onToolAnswer,
                 onToggleFavorite = onToggleFavorite,
                 onConversationSystemPromptChange = onConversationSystemPromptChange,
-                folderCwd = folderCwd,
-                onOrbitSelectAssistant = onOrbitSelectAssistant,
-                onOrbitSelectFolder = onOrbitSelectFolder,
             )
         }
     }
 }
+
+// 顶部渐隐：消息滚到标题栏下面时逐渐透明，从状态栏一直淡出到标题栏下沿之外，保证标题可读。
+// 让内容自己变透明而不是盖一层背景色，背景图和动态渐变背景才不会被盖住。
+private fun Modifier.topFadingEdge(height: Dp): Modifier = this
+    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithCache {
+        val fadeHeight = height.toPx()
+        val brush = Brush.verticalGradient(
+            0f to Color.Transparent,
+            0.6f to Color.Black.copy(alpha = 0.15f),
+            1f to Color.Black,
+            startY = 0f,
+            endY = fadeHeight,
+        )
+        onDrawWithContent {
+            drawContent()
+            drawRect(brush, size = Size(size.width, fadeHeight), blendMode = BlendMode.DstIn)
+        }
+    }
 
 @Composable
 private fun ChatListNormal(
@@ -244,9 +233,6 @@ private fun ChatListNormal(
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onToggleFavorite: ((MessageNode) -> Unit)? = null,
     onConversationSystemPromptChange: ((String?) -> Unit)? = null,
-    folderCwd: String? = null,
-    onOrbitSelectAssistant: (Uuid) -> Unit = {},
-    onOrbitSelectFolder: (Uuid?) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val loadingState by rememberUpdatedState(loading)
@@ -258,10 +244,11 @@ private fun ChatListNormal(
     DisposableEffect(Unit) {
         val listener: (Boolean) -> Boolean = { isVolumeUp ->
             if (settings.displaySetting.enableVolumeKeyScroll) {
-                val bottomPaddingPx = with(density) {
-                    (32.dp + innerPadding.calculateBottomPadding()).toPx()
+                // 列表视口包含标题栏和输入区遮住的部分，翻页时只按可见区域计算
+                val coveredPx = with(density) {
+                    (innerPadding.calculateTopPadding() + 32.dp + innerPadding.calculateBottomPadding()).toPx()
                 }
-                val scrollAmount = (state.layoutInfo.viewportSize.height - bottomPaddingPx) *
+                val scrollAmount = (state.layoutInfo.viewportSize.height - coveredPx) *
                     settings.displaySetting.volumeKeyScrollRatio
                 scope.launch { state.scrollBy(if (isVolumeUp) -scrollAmount else scrollAmount) }
                 true
@@ -290,18 +277,15 @@ private fun ChatListNormal(
     // 自动跟随键盘滚动
     ImeLazyListAutoScroller(lazyListState = state)
 
-    // 对话大小警告对话框
-    val sizeInfo = rememberConversationSizeInfo(conversation)
-    var showSizeWarningDialog by rememberSaveable(conversation.id) { mutableStateOf(true) }
-    if (sizeInfo.showWarning && showSizeWarningDialog) {
-        ConversationSizeWarningDialog(
-            sizeInfo = sizeInfo,
-            onDismiss = { showSizeWarningDialog = false }
-        )
-    }
-
-    val assistant = remember(settings.assistants, conversation.assistantId) {
-        settings.getAssistantById(conversation.assistantId)
+    val assistant = remember(
+        settings.assistants,
+        conversation.assistantId,
+        conversation.config,
+        conversation.modeInjectionIds,
+        conversation.lorebookIds,
+    ) {
+        // 工作区等配置在会话开始后以会话上固定的为准
+        settings.getAssistantById(conversation.assistantId)?.withConversation(conversation)
     }
     val modelById = remember(settings.providers) {
         settings.providers
@@ -344,19 +328,21 @@ private fun ChatListNormal(
         ChatFontProvider(displaySetting = settings.displaySetting) {
             LazyColumn(
                 state = state,
-                // v4.8.182 (用户定版): 顶部内边距改由 contentPadding 承担——消息可向上滑入标题栏下方
-                // （标题栏半透明, 划过内容可见）; 静止态位置与滚动语义与旧版逐位等价。
-                contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 16.dp + innerPadding.calculateTopPadding()) + PaddingValues(bottom = 32.dp + innerPadding.calculateBottomPadding()),
+                // 顶部留白放进 contentPadding，让消息可以滚动到透明标题栏下面
+                contentPadding = PaddingValues(16.dp) + PaddingValues(
+                    top = innerPadding.calculateTopPadding(),
+                    bottom = 32.dp + innerPadding.calculateBottomPadding(),
+                ),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier
                     .fillMaxSize()
+                    .topFadingEdge(innerPadding.calculateTopPadding() + 24.dp)
                     .hazeSource(state = hazeState),
             ) {
             itemsIndexed(
                 items = conversation.messageNodes,
                 key = { index, item -> item.id },
-                contentType = { index, item -> item.currentMessage.role },
             ) { index, node ->
                 Column {
                     ListSelectableItem(
@@ -373,9 +359,9 @@ private fun ChatListNormal(
                     ) {
                         ChatMessage(
                             node = node,
-                            model = node.currentMessage.modelId?.let(modelById::get),
+                            model = node.currentMessage.modelId?.let(modelById::get)
+                                ?: node.currentMessage.snapshotModel(),
                             assistant = assistant,
-                            folderCwd = folderCwd,
                             loading = loading && index == lastMessageIndex,
                             onRegenerate = {
                                 onRegenerate(node.currentMessage)
@@ -390,9 +376,10 @@ private fun ChatListNormal(
                                 onDelete(node.currentMessage)
                             },
                             onShare = {
-                                selecting = true
+                                selecting = true  // 使用 CoroutineScope 延迟状态更新
                                 selectedItems.clear()
-                                selectedItems.add(node.id)
+                                selectedItems.addAll(conversation.messageNodes.map { it.id }
+                                    .subList(0, conversation.messageNodes.indexOf(node) + 1))
                             },
                             onUpdate = {
                                 onUpdateMessage(it)
@@ -427,7 +414,7 @@ private fun ChatListNormal(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        RabbitLoadingIndicator(
+                        ContainedLoadingIndicator(
                             modifier = Modifier.size(28.dp)
                         )
                         AnimatedVisibility(
@@ -454,23 +441,6 @@ private fun ChatListNormal(
             }
         }
 
-        // v4.8.147 (用户定版): 新聊天/默认页 — 双弧轨道选择器 (外=助手 / 内=项目包,
-        // 传送带式轮播: 右上入场 → 左下出场后立即右上重现)。
-        if (conversation.messageNodes.isEmpty() && !loading) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-            ) {
-                EmptyOrbitSelector(
-                    currentFolderId = conversation.folderId,
-                    onSelectAssistant = onOrbitSelectAssistant,
-                    onSelectFolder = onOrbitSelectFolder,
-                    hazeState = hazeState,
-                    blurEnabled = settings.displaySetting.enableBlurEffect,
-                )
-            }
-        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -659,20 +629,9 @@ private fun ChatListPreview(
     settings: Settings,
     hazeState: HazeState,
     animatedVisibilityScope: AnimatedVisibilityScope,
-    onJumpToMessage: (Int) -> Unit,
-    onUpdateSettings: (Settings) -> Unit = {},
-    onOpenTranslator: () -> Unit = {},
-    onOpenImageGen: () -> Unit = {},
-    onExitPreview: () -> Unit = {},
+    onJumpToMessage: (Int) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
-    // v4.8.88: 子代理预算弹窗开关
-    var showBudgetDialog by remember { mutableStateOf(false) }
-    // v4.8.121: 本对话产出胶囊窗开关
-    var showArtifactsSheet by remember { mutableStateOf(false) }
-    // v4.8.92: 预算面板直连引擎（显示含未落盘的真实用量；清零走 SubAgentBudget.reset）
-    val subAgentEngine: me.rerere.rikkahub.subagent.SubAgentEngine = koinInject()
-    val budgetScope = rememberCoroutineScope()
 
     // 过滤消息，同时保留原始 index 避免后续 O(n) indexOf 查找
     val filteredMessages = remember(conversation.messageNodes, searchQuery) {
@@ -688,150 +647,42 @@ private fun ChatListPreview(
         modifier = Modifier
             .padding(top = innerPadding.calculateTopPadding())
             .fillMaxSize()
-            .hazeSource(state = hazeState)
-            // v4.8.104: 点空白处返回默认对话页（列表项/按钮/输入框各自消费点击, 空白回落此处）
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-            ) { onExitPreview() },
+            .hazeSource(state = hazeState),
     ) {
-        // 搜索框 + 右侧快捷图标区
-        Row(
+        // 搜索框
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                modifier = Modifier.weight(1f),
-                placeholder = { Text(stringResource(R.string.history_page_search)) },
-                leadingIcon = {
-                    Icon(
-                        imageVector = HugeIcons.Search01,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(
-                                imageVector = HugeIcons.Cancel01,
-                                contentDescription = "Clear",
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
+            placeholder = { Text(stringResource(R.string.history_page_search)) },
+            leadingIcon = {
+                Icon(
+                    imageVector = HugeIcons.Search01,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+            },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { searchQuery = "" }) {
+                        Icon(
+                            imageVector = HugeIcons.Cancel01,
+                            contentDescription = "Clear",
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
-                },
-                singleLine = true,
-                shape = CircleShape,
-                maxLines = 1,
-            )
-            Spacer(Modifier.width(4.dp))
-            // v4.8.104: 快捷入口 — AI翻译 / 图像生成（预算图标左边）
-            IconButton(onClick = onOpenTranslator) {
-                Icon(
-                    imageVector = HugeIcons.LanguageCircle,
-                    contentDescription = stringResource(R.string.chat_page_menu_ai_translator),
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-            IconButton(onClick = onOpenImageGen) {
-                Icon(
-                    imageVector = HugeIcons.Image02,
-                    contentDescription = stringResource(R.string.chat_page_menu_image_generation),
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-            // v4.8.88 子代理预算：点开查看/调整本对话的 Token 上限与用量（超出即熔断）
-            IconButton(onClick = { showBudgetDialog = true }) {
-                Icon(
-                    imageVector = HugeIcons.Gauge,
-                    contentDescription = stringResource(R.string.subagent_budget_icon),
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-            // v4.8.121「本对话产出」：本对话中模型产出/修改过的文件（胶囊窗列表，点击直接打开）
-            IconButton(onClick = { showArtifactsSheet = true }) {
-                Icon(
-                    imageVector = HugeIcons.Folder01,
-                    contentDescription = stringResource(R.string.chat_page_menu_conversation_output),
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-        }
-
-        // ── v4.8.121/123 本对话产出（清单一→选项弹层：渲染/分享/导出/打开）──
-        ConversationArtifactsSheet(
-            open = showArtifactsSheet,
-            files = settings.conversationProducedFiles[conversation.id.toString()].orEmpty(),
-            assistant = settings.getAssistantById(conversation.assistantId) ?: settings.getCurrentAssistant(),
-            folderCwd = null,
-            onOpenChange = { showArtifactsSheet = it },
+                }
+            },
+            singleLine = true,
+            shape = CircleShape,
+            maxLines = 1,
         )
-
-        // ── v4.8.88 子代理预算弹窗（与模型侧同一份 Settings 数据）──
-        if (showBudgetDialog) {
-            val convId = conversation.id.toString()
-            // v4.8.92: 真实已用 = 落盘值 + 未落盘增量（跑动中的子代理数字实时动）
-            val liveUsage by subAgentEngine.budget.liveUsageFlow.collectAsStateWithLifecycle()
-            val usedTokens = (settings.subagentTokenUsage[convId] ?: 0L) + (liveUsage[convId] ?: 0L)
-            val limitTokens = settings.subagentTokenBudget
-            var limitText by remember(limitTokens) { mutableStateOf((limitTokens / 1000).toString()) }
-            AlertDialog(
-                onDismissRequest = { showBudgetDialog = false },
-                title = { Text(stringResource(R.string.subagent_budget_title)) },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            stringResource(
-                                R.string.subagent_budget_used,
-                                formatBudgetTokens(usedTokens),
-                                formatBudgetTokens(limitTokens),
-                            ),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        OutlinedTextField(
-                            value = limitText,
-                            onValueChange = { limitText = it },
-                            label = { Text(stringResource(R.string.subagent_budget_limit_label)) },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Text(
-                            stringResource(R.string.subagent_budget_hint),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        val k = limitText.trim().toLongOrNull()?.coerceIn(1L, 100_000L)
-                        if (k != null) {
-                            onUpdateSettings(settings.copy(subagentTokenBudget = k * 1000L))
-                        }
-                        showBudgetDialog = false
-                    }) { Text(stringResource(R.string.subagent_budget_save)) }
-                },
-                dismissButton = {
-                    Row {
-                        TextButton(onClick = {
-                            // v4.8.92: 清零 = 未落盘 + 已落盘一起清（此前只清落盘 → 假清零）
-                            budgetScope.launch { subAgentEngine.budget.reset(convId) }
-                            showBudgetDialog = false
-                        }) { Text(stringResource(R.string.subagent_budget_reset)) }
-                        TextButton(onClick = { showBudgetDialog = false }) { Text("取消") }
-                    }
-                },
-            )
-        }
 
         // 消息预览
         LazyColumn(
-            contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 16.dp) + PaddingValues(bottom = 32.dp + innerPadding.calculateBottomPadding()),
+            contentPadding = PaddingValues(16.dp) + PaddingValues(bottom = 32.dp + innerPadding.calculateBottomPadding()),
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier
                 .fillMaxWidth()
@@ -933,15 +784,11 @@ private fun BoxScope.MessageJumper(
     AnimatedVisibility(
         visible = show,
         modifier = Modifier.align(if (onLeft) Alignment.CenterStart else Alignment.CenterEnd),
-        // v4.8.143 (CS v0.2.1 动效复刻): 回底浮动件 = 0.8 缩放 + 淡入淡出 (200ms settle),
-        // 不再侧向滑入 (对齐其 scroll-to-bottom-button 的 visibilityMotion)。
-        enter = fadeIn(CherryMotion.Fade) + scaleIn(
-            initialScale = CherryMotion.FAB_HIDDEN_SCALE,
-            animationSpec = CherryMotion.Fade,
+        enter = slideInHorizontally(
+            initialOffsetX = { if (onLeft) -it * 2 else it * 2 },
         ),
-        exit = fadeOut(CherryMotion.Fade) + scaleOut(
-            targetScale = CherryMotion.FAB_HIDDEN_SCALE,
-            animationSpec = CherryMotion.Fade,
+        exit = slideOutHorizontally(
+            targetOffsetX = { if (onLeft) -it * 2 else it * 2 },
         )
     ) {
         Column(
@@ -949,7 +796,7 @@ private fun BoxScope.MessageJumper(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Surface(
-                modifier = Modifier.cherryPress(CherryMotion.PRESS_ALPHA_SOFT) {
+                onClick = {
                     scope.launch {
                         state.scrollToItem(0)
                     }
@@ -968,7 +815,7 @@ private fun BoxScope.MessageJumper(
                 )
             }
             Surface(
-                modifier = Modifier.cherryPress(CherryMotion.PRESS_ALPHA_SOFT) {
+                onClick = {
                     scope.launch {
                         state.animateScrollToItem(
                             (state.firstVisibleItemIndex - 1).fastCoerceAtLeast(
@@ -991,7 +838,7 @@ private fun BoxScope.MessageJumper(
                 )
             }
             Surface(
-                modifier = Modifier.cherryPress(CherryMotion.PRESS_ALPHA_SOFT) {
+                onClick = {
                     scope.launch {
                         state.animateScrollToItem(state.firstVisibleItemIndex + 1)
                     }
@@ -1009,7 +856,7 @@ private fun BoxScope.MessageJumper(
                 )
             }
             Surface(
-                modifier = Modifier.cherryPress(CherryMotion.PRESS_ALPHA_SOFT) {
+                onClick = {
                     scope.launch {
                         state.scrollToItem(state.layoutInfo.totalItemsCount - 1)
                     }
@@ -1028,11 +875,4 @@ private fun BoxScope.MessageJumper(
             }
         }
     }
-}
-
-/** v4.8.88: 1.2k / 3.4M 形式的紧凑 Token 计数（预算弹窗用） */
-private fun formatBudgetTokens(tokens: Long): String = when {
-    tokens >= 1_000_000 -> "%.1fM".format(tokens / 1_000_000.0)
-    tokens >= 1_000 -> "%.1fk".format(tokens / 1_000.0)
-    else -> tokens.toString()
 }

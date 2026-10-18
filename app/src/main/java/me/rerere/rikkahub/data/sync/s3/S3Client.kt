@@ -1,9 +1,4 @@
-/* 【域 I·数据存储】 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.data.sync.s3
-
-/* ───【原版对齐】S3Client.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 import android.util.Log
 import android.util.Xml
@@ -18,6 +13,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpMethod
 import io.ktor.http.isSuccess
 import io.ktor.utils.io.jvm.javaio.toInputStream
+import io.ktor.utils.io.readAvailable
 import io.ktor.util.cio.readChannel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -27,6 +23,7 @@ import java.io.InputStream
 import java.io.StringReader
 import java.security.MessageDigest
 import java.time.Instant
+import kotlin.time.Duration
 
 private const val TAG = "S3Client"
 
@@ -301,6 +298,17 @@ class S3Client(
             val scheme = if (config.isHttps) "https://" else "http://"
             "$scheme${config.bucket}.${config.host}$path"
         }
+    }
+
+    /**
+     * 带签名的临时下载地址，桶不需要公开读取。[expires] 最长 7 天。
+     */
+    fun presignGetUrl(key: String, expires: Duration): String {
+        return AwsSignatureV4.presignGetUrl(
+            config = config,
+            path = "/${key.trimStart('/')}",
+            expires = expires,
+        )
     }
 
     private fun File.sha256Hex(): String {

@@ -1,9 +1,4 @@
-/* 【域 I·数据存储】 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.data.db.entity
-
-/* ───【原版对齐】FolderEntity.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
@@ -32,7 +27,4 @@ data class FolderEntity(
     val sortIndex: Int = 0,
     @ColumnInfo("create_at")
     val createAt: Long,
-    // 4.8.24: 项目包 CWD (工作目录, 相对工作区根) — null = 未设置 (回退助手级 CWD)
-    @ColumnInfo("cwd")
-    val cwd: String? = null,
 )

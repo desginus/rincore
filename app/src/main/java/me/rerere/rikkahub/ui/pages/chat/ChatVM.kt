@@ -1,26 +1,26 @@
 package me.rerere.rikkahub.ui.pages.chat
 
-
-/* ───【域 A·对话核心】ChatVM.kt
- * 职责: 对话 VM — 发送/编辑/删除/压缩/重新生成/恢复位点
- * 常用改动: 发送逻辑 → handleMessageSend (v4.8.123: 压缩期可发送, 排队至压缩完成后自动发出); 压缩 → handleCompressContext/cancelCompress; 恢复 → restoreCompressAt
- * 问题定位: 发送无响应/压缩异常/编辑丢失 → 本文件
- * 基线: 原版移植 + 自研 (settings 投影) | 差异 +56 行 | 地图: docs/APP_MAP.md §A | 历史: .claude/skills/rincore-bug-record
- * ───────────────────────────────────────────────────────────────*/
 import android.app.Application
+import android.content.Context
+import android.util.Log
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import me.rerere.rikkahub.data.firebase.StubAnalytics
+import com.google.firebase.analytics.FirebaseAnalytics
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -31,74 +31,40 @@ import me.rerere.ai.ui.isEmptyInputMessage
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.NodeFavoriteTarget
-import me.rerere.rikkahub.data.repository.ConversationRepository
+import me.rerere.rikkahub.data.model.getAssistantOf
+import me.rerere.rikkahub.data.model.getChatModelOf
 import me.rerere.rikkahub.data.repository.FavoriteRepository
-import me.rerere.rikkahub.data.repository.FolderRepository
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.ui.hooks.writeStringPreference
-import me.rerere.rikkahub.data.datastore.DraftStore
-import androidx.compose.runtime.snapshotFlow
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.flatMapLatest
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.UpdateChecker
+import me.rerere.rikkahub.web.ApiException
 import java.util.Locale
 import kotlin.uuid.Uuid
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 
 private const val TAG = "ChatVM"
 
 class ChatVM(
     id: String,
-    folderId: Uuid?,
     private val context: Application,
     private val settingsStore: SettingsStore,
-    private val conversationRepo: ConversationRepository,
     private val chatService: ChatService,
     val updateChecker: UpdateChecker,
-    private val analytics: StubAnalytics = StubAnalytics,
+    private val analytics: FirebaseAnalytics,
     private val filesManager: FilesManager,
     private val favoriteRepository: FavoriteRepository,
-    private val folderRepository: FolderRepository,
-    private val draftStore: DraftStore,
 ) : ViewModel() {
     private val _conversationId: Uuid = Uuid.parse(id)
     val conversation: StateFlow<Conversation> = chatService.getConversationFlow(_conversationId)
-
-    // v4.8.59: 空对话"开启时归属"快照 — 对话打开那一刻的项目包选区。
-    // 发送时优先采用: 在项目包 A 下打开的空对话始终归 A (此后切换选区不改写
-    // 归属 — 用户实证根修); 在「聊天」下打开则快照为空 → 发送时跟随当前
-    // 选区 (v4.8.26 流程保留: 选项目包→直接发消息→归该项目包)。
-    private var packAtOpen: Uuid? = null
-
-    // 4.8.24 项目包 CWD — 对话所属项目包的 cwd (项目包锚定; null = 未设置/聊天默认)
-    // v4.8.73: 改订阅项目包行 flow — 原实现仅在会话流重发射时一次性重读, 导致
-    // 设置/重置项目包 CWD 后 UI 无反应 (重置 = 写 null, 永不刷新 → "无法取消重置")。
-    @kotlin.OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val conversationFolderCwd: StateFlow<String?> = conversation
-        .map { it.folderId }
-        .distinctUntilChanged()
-        .flatMapLatest { fid ->
-            if (fid == null) kotlinx.coroutines.flow.flowOf(null)
-            else folderRepository.getFolderFlow(fid).map { it?.cwd }
-        }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
     var chatListInitialized by mutableStateOf(false) // 聊天列表是否已经滚动到底部
-    // v4.7.23: 分享/深链一次性输入参数消费标记 — 首个组合消费后置位。
-    // 防止页面重建 (抽屉→设置→返回) 时重复消费 back stack 的 files/text,
-    // 导致"已完成发送的分享文档幽灵重现"。
-    var shareArgsConsumed by mutableStateOf(false)
 
     // 聊天输入状态 - 保存在 ViewModel 中避免 TransactionTooLargeException
     val inputState = ChatInputState()
@@ -125,36 +91,9 @@ class ChatVM(
         // 添加对话引用
         chatService.addConversationReference(_conversationId)
 
-        // v4.8.70: 会话草稿持久化 — VM 重建/进程重启后恢复 (仅输入为空时注入);
-        // 输入变化 1s 防抖落盘 (collectLatest 取消式, 连续输入只落最终值); onCleared 兜底 flush
-        viewModelScope.launch {
-            val draft = draftStore.load(_conversationId)
-            if (draft.isNotEmpty() && inputState.textContent.text.isBlank() &&
-                inputState.messageContent.isEmpty() && !inputState.isEditing()
-            ) {
-                inputState.setMessageText(draft)
-            }
-        }
-        viewModelScope.launch {
-            snapshotFlow { inputState.textContent.text.toString() }
-                .collectLatest { text ->
-                    delay(1000)
-                    draftStore.save(_conversationId, text)
-                }
-        }
-
         // 初始化对话
         viewModelScope.launch {
-            chatService.initializeConversation(_conversationId, folderId)
-        }
-
-        // v4.8.59: 捕获"开启时归属" (仅一次; 待 DB 加载完成判定可靠 — 加载
-        // 窗口期的空初始值不可作判据, 与 v4.8.27 双重守卫同思路)
-        viewModelScope.launch {
-            val conv = conversation.first { chatService.isConversationInitialized(it.id) }
-            if (conv.messageNodes.isEmpty() && conv.folderId == null) {
-                packAtOpen = ProjectPackSelection.selectedFolderId.value
-            }
+            chatService.initializeConversation(_conversationId)
         }
 
         // 记住对话ID, 方便下次启动恢复
@@ -162,8 +101,6 @@ class ChatVM(
     }
 
     override fun onCleared() {
-        // v4.8.70: 草稿兜底落盘 (发送后文本为空 → save 内部转 clear)
-        draftStore.saveNow(_conversationId, inputState.textContent.text.toString())
         voiceSession.stop()
         super.onCleared()
         // 移除对话引用
@@ -174,15 +111,21 @@ class ChatVM(
     val settings: StateFlow<Settings> =
         settingsStore.settingsFlow.stateIn(viewModelScope, SharingStarted.Eagerly, Settings.dummy())
 
-    // 网络搜索
-    val enableWebSearch = settings.map {
-        it.enableWebSearch
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    // 流式输出时会话每个 chunk 都在变，助手和模型只取决于下面这几个字段
+    private val configuredConversation = conversation.distinctUntilChanged { old, new ->
+        old.assistantId == new.assistantId && old.config == new.config &&
+            old.modeInjectionIds == new.modeInjectionIds && old.lorebookIds == new.lorebookIds
+    }
+
+    // 会话视角下的助手：会话开始后，模型、思考级别、搜索等以会话上固定的配置为准
+    val assistant: StateFlow<Assistant> = combine(settings, configuredConversation) { settings, conversation ->
+        settings.getAssistantOf(conversation)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, settings.value.getAssistantOf(conversation.value))
 
     // 当前模型
-    val currentChatModel = settings.map { settings ->
-        settings.getCurrentChatModel()
-    }.stateIn(viewModelScope, SharingStarted.Lazily, null)
+    val currentChatModel: StateFlow<Model?> = combine(settings, configuredConversation) { settings, conversation ->
+        settings.getChatModelOf(conversation)
+    }.stateIn(viewModelScope, SharingStarted.Lazily, settings.value.getChatModelOf(conversation.value))
 
     // 错误状态
     val errors: StateFlow<List<ChatError>> = chatService.errors
@@ -191,7 +134,6 @@ class ChatVM(
 
     fun clearAllErrors() = chatService.clearAllErrors()
 
-    // 4.1.0: 消息发送队列 (2.5.0 移植)
     val messageQueue = chatService.getMessageQueueFlow(_conversationId)
 
     fun removeQueuedMessage(id: Uuid) = chatService.removeQueuedMessage(_conversationId, id)
@@ -209,26 +151,19 @@ class ChatVM(
     // MCP管理器
     val mcpManager = chatService.mcpManager
 
-    /**
-     * v3.11.30: 延迟自动回复开关 — 立即同步写内存 (消除 toggle→发送 的
-     * flow 更新竞态, 修复"有概率拦截失败"), 磁盘持久化异步进行。
-     */
-    fun toggleDeferAutoReply(checked: Boolean) {
-        val current = settingsStore.settingsFlow.value
-        if (current.deferAutoReply == checked) return
-        settingsStore.updateSync(current.copy(deferAutoReply = checked))
-        viewModelScope.launch {
-            runCatching { settingsStore.update(settingsStore.settingsFlow.value) }
-        }
-    }
-
     // 更新设置
-    fun updateSettings(newSettings: Settings): Job {
+    fun updateSettings(fn: (Settings) -> Settings): Job {
         return viewModelScope.launch {
-            val oldSettings = settings.value
+            var oldSettings: Settings? = null
+            var newSettings: Settings? = null
+            settingsStore.update { old ->
+                fn(old).also { new ->
+                    oldSettings = old
+                    newSettings = new
+                }
+            }
             // 检查用户头像是否有变化，如果有则删除旧头像
-            checkUserAvatarDelete(oldSettings, newSettings)
-            settingsStore.update(newSettings)
+            checkUserAvatarDelete(oldSettings ?: return@launch, newSettings ?: return@launch)
         }
     }
 
@@ -242,27 +177,47 @@ class ChatVM(
         }
     }
 
-    // 设置聊天模型
-    fun setChatModel(assistant: Assistant, model: Model) {
+    // 聊天页对助手的修改：新会话直接改助手，会话开始后只改当前会话
+    fun updateAssistant(assistant: Assistant) {
         viewModelScope.launch {
-            settingsStore.update { settings ->
-                settings.copy(
-                    assistants = settings.assistants.map {
-                        if (it.id == assistant.id) {
-                            it.copy(
-                                chatModelId = model.id
-                            )
-                        } else {
-                            it
-                        }
-                    })
-            }
+            chatService.updateChatAssistant(_conversationId) { assistant }
+        }
+    }
+
+    // 新会话开始前归入抽屉里选中的文件夹
+    suspend fun updateDraftFolder(folderId: Uuid?) {
+        chatService.updateDraftConversationFolder(_conversationId, folderId)
+    }
+
+    // 设置聊天模型
+    fun setChatModel(model: Model) {
+        viewModelScope.launch {
+            chatService.updateChatAssistant(_conversationId) { it.copy(chatModelId = model.id) }
+        }
+    }
+
+    // 切换搜索方式
+    fun updateSearch(enableWebSearch: Boolean, builtInSearch: Boolean) {
+        viewModelScope.launch {
+            chatService.updateChatSearch(_conversationId, enableWebSearch, builtInSearch)
         }
     }
 
     // Update checker
-    val updateState =
-        updateChecker.checkUpdate().stateIn(viewModelScope, SharingStarted.Eagerly, UiState.Loading)
+    val updateState = settingsStore.settingsFlow
+        .map { settings ->
+            !settings.init &&
+                settings.displaySetting.updateCheckDisabledUntilEpochMillis <= System.currentTimeMillis()
+        }
+        .distinctUntilChanged()
+        .flatMapLatest { enabled ->
+            if (enabled) updateChecker.updateState else flowOf(UiState.Loading)
+        }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000),
+            UiState.Loading,
+        )
 
     /**
      * 处理消息发送
@@ -272,124 +227,24 @@ class ChatVM(
      */
     fun handleMessageSend(content: List<UIMessagePart>,answer: Boolean = true) {
         if (content.isEmptyInputMessage()) return
-        // v4.8.123 (用户定版): 压缩期可发送 — 与模型输出期同款排队"等待中"
-        // (派发门在压缩期挂起; 压缩完成由 ChatService.runCompression 统一派发)
         analytics.logEvent("ai_send_message", null)
 
-        // v3.6.13: 延迟自动回复 — 开启时发送不触发模型回复 (消息排队,
-        // 关闭后发消息触发; 解决消息未发完模型打断回复)
-        // v3.11.30: 双保险 — 开关切换已同步写内存 (见 toggleDeferAutoReply),
-        // 这里再读一次 flow.value 保证最新值。仍读旧值期间不可能出现:
-        // updateSync 在主线程同步完成, 同线程后续消息必见新值。
-        val effectiveAnswer = if (settingsStore.settingsFlow.value.deferAutoReply) false else answer
-        // 4.8.27: 空对话归属同步 — 发送时执行 (判定可靠; 根治 v4.8.26 加载
-        // 窗口期误判: 误判会抢先写 session 致 DB 加载被丢弃)。
-        // 守卫: 会话须已完成 DB 加载 (isConversationInitialized) — 加载中
-        // 的 state 是空对话初始值, 不可据此判定归属 (极端边缘防护)。
-        // 归属更新完成后才入队发送, 保证生成链读取正确 folderId (effectiveWorkspaceCwd)。
-        val conv = conversation.value
-        // v4.8.59: 归属目标 — 空对话优先"开启时快照" (在项目包下打开的空对话
-        // 始终归该项目包, 之后切换选区不改写 — 用户实证根修); 快照为空 (聊天
-        // 下打开) 或已有归属时维持既有逻辑 (当前选区 / 已定归属不改)。
-        val targetFolder = if (conv.folderId == null) {
-            packAtOpen ?: ProjectPackSelection.selectedFolderId.value
-        } else {
-            conv.folderId
-        }
-        val shouldSyncFolder = chatService.isConversationInitialized(conv.id) &&
-            conv.messageNodes.isEmpty() && conv.folderId != targetFolder
-        if (shouldSyncFolder) {
-            viewModelScope.launch {
-                chatService.moveConversationToFolder(conv.id, targetFolder)
-                chatService.sendMessage(_conversationId, content, effectiveAnswer)
-            }
-        } else {
-            chatService.sendMessage(_conversationId, content, effectiveAnswer)
-        }
+        chatService.sendMessage(_conversationId, content, answer)
     }
 
     fun handleMessageEdit(parts: List<UIMessagePart>, messageId: Uuid) {
         if (parts.isEmptyInputMessage()) return
         analytics.logEvent("ai_edit_message", null)
 
-        // v4.5.16: 延时自动回复拦截补全 — 编辑消息此前绕过 deferAutoReply
-        // gate 立即触发重新生成 (开关开着模型照样回复, 用户感知"拦截不
-        // 彻底")。开启时仅保存编辑版本, 不自动生成。
-        val deferAutoReply = settingsStore.settingsFlow.value.deferAutoReply
-
         viewModelScope.launch {
-            // 1. 追加新版本 (旧版本保留, 123 按钮可切换)
             chatService.editMessage(_conversationId, messageId, parts)
-            // 2. 直接触发重新生成 — 编辑完成即开始, 无需再点重新生成。
-            //    编辑后追加的新版本 id 与 messageId 不同, 须在全量消息中定位
-            //    (currentMessages 只含每节点当前选中消息, 找不到旧 id)
-            val edited = conversation.value.messageNodes
-                .flatMap { it.messages }
-                .find { it.id == messageId } ?: return@launch
-            // v3.5.53: 仅编辑 user 消息触发重新生成 — assistant 回复编辑只保存
-            if (edited.role == me.rerere.ai.core.MessageRole.USER && !deferAutoReply) {
-                chatService.regenerateAtMessage(_conversationId, edited)
-            }
         }
     }
 
-    // v4.8.6: 压缩进行中状态 — 页内提示用 (压缩弹窗关闭后"后台运行"语义下,
-    // 用户回来仍可见压缩仍在进行; 只随本 VM (本对话) 存在, 切走其他页面自由)
-    private val _compressing = MutableStateFlow(false)
-    val compressing: StateFlow<Boolean> = _compressing.asStateFlow()
-
-    // v4.8.8: 压缩任务引用 — 供页内提示条取消
-    private var compressJob: kotlinx.coroutines.Job? = null
-
-    fun handleCompressContext(additionalPrompt: String, targetTokens: Int, keepRecentMessages: Int): Job {
-        // v4.8.32: 生成中禁止压缩 (用户定版) — 生成期间消息流式变化, 压缩会与
-        // 生成链写同一会话对象 (后写的全量保存覆盖对方), 且压缩本身是重操作,
-        // 与流式渲染抢占资源。UI 层按钮已随生成态灰化, 此处兜底 (对话框已打开
-        // 期间生成启动等边缘路径)。
-        if (chatService.isConversationGenerating(_conversationId)) {
-            return viewModelScope.launch {
-                chatService.addError(
-                    IllegalStateException("正在生成回复，生成期间无法压缩。请等待完成后再试。"),
-                    conversationId = _conversationId,
-                    title = context.getString(R.string.error_title_compress_conversation)
-                )
-            }
-        }
-        val job = viewModelScope.launch {
-            _compressing.value = true
-            try {
-                chatService.runCompression(
-                    _conversationId,
-                    conversation.value,
-                    additionalPrompt,
-                    targetTokens,
-                    keepRecentMessages
-                ).onFailure {
-                    chatService.addError(it, title = context.getString(R.string.error_title_compress_conversation))
-                }
-            } finally {
-                _compressing.value = false
-                compressJob = null
-            }
-        }
-        compressJob = job
-        return job
-    }
-
-    /** v4.8.8: 取消进行中的压缩 (页内提示条取消按钮) */
-    fun cancelCompress() {
-        compressJob?.cancel()
-        compressJob = null
-        _compressing.value = false
-    }
-
-    // v3.8.13: 从留存位点恢复 (旧单次撤销改为位点管理)
-    fun restoreCompressAt(index: Int) {
-        viewModelScope.launch {
-            val conv = conversation.value
-            if (conv.compressRetentions.isNotEmpty() || conv.compressedContext != null) {
-                val migrated = if (conv.compressRetentions.isEmpty()) conv.migrateLegacyCompress() else conv
-                chatService.saveConversation(_conversationId, migrated.restoreCompressAt(index))
+    fun handleCompressContext(additionalPrompt: String): Job {
+        return viewModelScope.launch {
+            chatService.compressConversation(_conversationId, additionalPrompt).onFailure {
+                chatService.addError(it, title = context.getString(R.string.error_title_compress_conversation))
             }
         }
     }
@@ -412,12 +267,9 @@ class ChatVM(
         )
     }
 
-    fun regenerateAtMessage(
-        message: UIMessage,
-        regenerateAssistantMsg: Boolean = true
-    ) {
+    fun regenerateAtMessage(message: UIMessage) {
         analytics.logEvent("ai_regenerate_at_message", null)
-        chatService.regenerateAtMessage(_conversationId, message, regenerateAssistantMsg)
+        chatService.regenerateAtMessage(_conversationId, message.id)
     }
 
     fun handleToolApproval(
@@ -443,44 +295,28 @@ class ChatVM(
         }
     }
 
-    fun saveConversationAsync() {
-        viewModelScope.launch {
-            chatService.saveConversation(_conversationId, conversation.value)
-        }
-    }
-
     fun updateTitle(title: String) {
         viewModelScope.launch {
-            val updatedConversation = conversation.value.copy(title = title)
-            chatService.saveConversation(_conversationId, updatedConversation)
+            chatService.updateTitle(_conversationId, title)
         }
     }
 
     fun deleteConversation(conversation: Conversation): Job =
         viewModelScope.launch {
-            conversationRepo.deleteConversation(conversation)
+            chatService.deleteConversation(conversation.id)
         }
 
     fun updatePinnedStatus(conversation: Conversation) {
         viewModelScope.launch {
-            conversationRepo.togglePinStatus(conversation.id)
+            chatService.toggleConversationPinned(conversation.id)
         }
     }
 
-
     fun moveConversationToAssistant(conversation: Conversation, targetAssistantId: Uuid) {
         viewModelScope.launch {
-            val conversationFull = conversationRepo.getConversationById(conversation.id) ?: return@launch
-            // 文件夹是助手内分组，切换助手后原文件夹在新助手下不可见，需清空归属避免会话丢失
-            val updatedConversation = conversationFull.copy(
-                assistantId = targetAssistantId,
-                folderId = null,
-            )
+            chatService.moveConversationToAssistant(conversation.id, targetAssistantId)
             if (conversation.id == _conversationId) {
-                chatService.saveConversation(_conversationId, updatedConversation)
-                settingsStore.updateAssistant(targetAssistantId)
-            } else {
-                conversationRepo.updateConversation(updatedConversation)
+                settingsStore.selectAssistant(targetAssistantId)
             }
         }
     }
@@ -491,24 +327,36 @@ class ChatVM(
 
     fun generateTitle(conversation: Conversation, force: Boolean = false) {
         viewModelScope.launch {
-            val conversationFull = conversationRepo.getConversationById(conversation.id) ?: return@launch
-            chatService.generateTitle(_conversationId, conversationFull, force)
-        }
-    }
-
-    fun generateSuggestion(conversation: Conversation) {
-        viewModelScope.launch {
-            chatService.generateSuggestion(_conversationId, conversation)
+            chatService.generateTitle(conversation.id, force)
         }
     }
 
     fun clearTranslationField(messageId: Uuid) {
-        chatService.clearTranslationField(_conversationId, messageId)
+        viewModelScope.launch {
+            chatService.clearTranslationField(_conversationId, messageId)
+        }
     }
 
-    fun updateConversation(newConversation: Conversation) {
-        chatService.updateConversationState(_conversationId) {
-            newConversation
+    fun selectMessageNode(nodeId: Uuid, selectIndex: Int) {
+        viewModelScope.launch {
+            try {
+                chatService.selectMessageNode(_conversationId, nodeId, selectIndex)
+            } catch (e: ApiException) {
+                // 界面上的分支已经过时（比如刚被清理掉），切换不了就算了
+                Log.w(TAG, "selectMessageNode: ${e.message}")
+            }
+        }
+    }
+
+    fun updateConversationSystemPrompt(systemPrompt: String?) {
+        viewModelScope.launch {
+            chatService.updateConversationSystemPrompt(_conversationId, systemPrompt)
+        }
+    }
+
+    fun updateWorkspaceCwd(workspaceCwd: String?) {
+        viewModelScope.launch {
+            chatService.updateWorkspaceCwd(_conversationId, workspaceCwd)
         }
     }
 
@@ -528,17 +376,7 @@ class ChatVM(
                 )
             }
 
-            chatService.updateConversationState(_conversationId) { currentConversation ->
-                currentConversation.copy(
-                    messageNodes = currentConversation.messageNodes.map { existingNode ->
-                        if (existingNode.id == node.id) {
-                            existingNode.copy(isFavorite = !currentlyFavorited)
-                        } else {
-                            existingNode
-                        }
-                    }
-                )
-            }
+            chatService.setNodeFavorite(_conversationId, node.id, favorite = !currentlyFavorited)
         }
     }
 

@@ -1,17 +1,12 @@
 package me.rerere.ai.provider
 
-
-/* ───【原版对齐】Provider.kt | 差异 ±17 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import me.rerere.ai.core.ReasoningLevel
-import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.core.Tool
+import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.ui.ImageGenSize
-import me.rerere.ai.ui.VideoGenerationItem
 import me.rerere.ai.ui.ImageGenerationItem
 import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.UIMessage
@@ -19,19 +14,12 @@ import kotlin.uuid.Uuid
 
 // 提供商实现
 // 采用无状态设计，使用时除了需要传入需要的参数外，还需要传入provider setting作为参数
-// 4.1.7 原版对齐: 非流式生成结果 (2.5.x 架构 — StreamChunkHandler 配套)
-data class TextGenerationResult(
-    val id: String,
-    val model: String,
-    val message: UIMessage,
-    val finishReason: String? = null,
-    val usage: TokenUsage? = null,
-)
-
 interface Provider<T : ProviderSetting> {
     suspend fun listModels(providerSetting: T): List<Model>
 
-    suspend fun getBalance(providerSetting: T): String = ""
+    suspend fun getBalance(providerSetting: T): String {
+        return "TODO"
+    }
 
     suspend fun generateText(
         providerSetting: T,
@@ -65,15 +53,16 @@ interface Provider<T : ProviderSetting> {
     ): Flow<ImageGenerationItem> {
         error("Image edit is not supported")
     }
-
-    /** 视频生成 (v4.8.103): 提交→轮询→下载在实现方内部完成, 单条产出流。 */
-    suspend fun generateVideo(
-        providerSetting: ProviderSetting,
-        params: VideoGenerationParams,
-    ): Flow<VideoGenerationItem> {
-        error("Video generation is not supported")
-    }
 }
+
+@Serializable
+data class TextGenerationResult(
+    val id: String,
+    val model: String,
+    val message: UIMessage,
+    val finishReason: String? = null,
+    val usage: TokenUsage? = null,
+)
 
 @Serializable
 data class TextGenerationParams(
@@ -85,15 +74,7 @@ data class TextGenerationParams(
     val reasoningLevel: ReasoningLevel = ReasoningLevel.OFF,
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBody: List<CustomBody> = emptyList(),
-    // 4.1.0: 对齐原版 2.5.x — sessionId 双头 (X-Session-ID 全局 + x-opencode-session 网关)
-    // 原版 2.5.2 移植: 默认随机 session — 非聊天内部请求 (标题/翻译/压缩等)
-    // 也携带 session id 头, 网关侧用量归因与粘路由不再缺失
     val sessionId: String? = Uuid.random().toString(),
-    // v3.16.0: 强兼容模式 — Chat Completions 按 Cherry Studio 极简格式发送
-    val cherryCompatMode: Boolean = false,
-    // v4.5.5: 图片上传模式 (客户端设置) — classic=工具图转移 user+预算标记 /
-    // compat=工具图内嵌 tool content image_url (v4.3.12 前形态)
-    val imageUploadMode: String = "classic",
 )
 
 @Serializable
@@ -115,21 +96,6 @@ data class ImageEditParams(
     val numOfImages: Int = 1,
     val size: String = ImageGenSize.AUTO.value,
     val partialImages: Int = 2,
-    val customHeaders: List<CustomHeader> = emptyList(),
-    val customBody: List<CustomBody> = emptyList(),
-)
-
-@Serializable
-data class VideoGenerationParams(
-    val model: Model,
-    val prompt: String,
-    val numOfVideos: Int = 1,
-    val resolution: String = "",
-    val aspectRatio: String = "",
-    val durationSeconds: Int? = null,
-    val watermark: Boolean? = null,
-    /** 首帧图 (本地文件路径; Veo 以 base64 内联; 阿里百炼文生视频不支持) */
-    val firstFrame: String? = null,
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBody: List<CustomBody> = emptyList(),
 )

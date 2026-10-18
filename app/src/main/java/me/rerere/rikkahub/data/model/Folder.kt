@@ -1,9 +1,4 @@
-/* 【域 A·对话核心】 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.data.model
-
-/* ───【原版对齐】Folder.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 import java.time.Instant
 import kotlin.uuid.Uuid
@@ -17,6 +12,4 @@ data class Folder(
     val name: String,
     val sortIndex: Int = 0,
     val createAt: Instant = Instant.now(),
-    // 4.8.24 项目包 CWD (工作目录, 工作区相对路径) — null = 未设置
-    val cwd: String? = null,
 )

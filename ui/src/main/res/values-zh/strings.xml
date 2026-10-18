@@ -1,0 +1,27 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<resources>
+  <string name="sketch_dialog_undo">撤销</string>
+  <string name="sketch_dialog_redo">重做</string>
+  <string name="sketch_dialog_clear">清除</string>
+  <string name="sketch_dialog_eraser">橡皮擦</string>
+  <string name="sketch_dialog_discard_title">放弃草图？</string>
+  <string name="sketch_dialog_discard_message">您的绘图将丢失。</string>
+  <string name="sketch_dialog_custom_color">自定义颜色</string>
+  <string name="sketch_dialog_paper">画布</string>
+  <string name="sketch_dialog_paper_auto">适应屏幕</string>
+  <string name="sketch_dialog_choose_image">选择图片</string>
+  <string name="sketch_dialog_remove_image">移除图片</string>
+  <string name="sketch_dialog_image_load_failed">无法加载图片</string>
+  <string name="sketch_dialog_brush_pen">钢笔</string>
+  <string name="sketch_dialog_brush_marker">马克笔</string>
+  <string name="sketch_dialog_brush_highlighter">荧光笔</string>
+  <string name="sketch_dialog_brush_dashed">虚线</string>
+  <string name="sketch_dialog_brush_calligraphy">毛笔</string>
+  <string name="sketch_dialog_brush_flat">平头笔</string>
+  <string name="sketch_dialog_text">文字</string>
+  <string name="sketch_dialog_select">选择</string>
+  <string name="chart_mode_chart">图表</string>
+  <string name="chart_mode_table">表格</string>
+  <string name="chart_series">系列</string>
+  <string name="chart_series_name">系列 %1$d</string>
+</resources>

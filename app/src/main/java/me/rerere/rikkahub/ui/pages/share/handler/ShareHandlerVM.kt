@@ -1,9 +1,4 @@
-/* 【域 A·对话核心】 — 页面 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.pages.share.handler
-
-/* ───【原版对齐】ShareHandlerVM.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -22,6 +17,6 @@ class ShareHandlerVM(
         .stateIn(viewModelScope, SharingStarted.Eagerly, Settings.dummy())
 
     suspend fun updateAssistant(assistantId: Uuid) {
-        settingsStore.updateAssistant(assistantId)
+        settingsStore.selectAssistant(assistantId)
     }
 }

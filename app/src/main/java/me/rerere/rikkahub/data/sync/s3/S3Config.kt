@@ -1,9 +1,4 @@
-/* 【域 I·数据存储】 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.data.sync.s3
-
-/* ───【原版对齐】S3Config.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 import kotlinx.serialization.Serializable
 
@@ -28,6 +23,10 @@ data class S3Config(
 
     val isHttps: Boolean
         get() = endpoint.startsWith("https://")
+
+    /** endpoint 没写协议时补上 https://，给不需要兼容旧行为的配置用。 */
+    fun withHttpsByDefault(): S3Config =
+        if (endpoint.isBlank() || "://" in endpoint) this else copy(endpoint = "https://$endpoint")
 
     fun bucketUrl(): String {
         return if (pathStyle) {

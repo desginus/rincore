@@ -9,32 +9,44 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.google.services)
+    alias(libs.plugins.firebase.crashlytics)
     alias(libs.plugins.baselineprofile)
 }
 
 android {
     namespace = "me.rerere.rikkahub"
-    compileSdk = 37
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 2
+        }
+    }
 
     defaultConfig {
-            applicationId = "me.rincore.app"
-            minSdk = 26
-            targetSdk = 37
-            // VS号全局统一锁定 9999 (v3.11.0 起): Android 安装器按 versionCode
-// 比较 — 相同 code + 相同签名 = 任意替换安装 (升/降/同级均可)。
-// versionName 正常递增用于显示与归档; 发版只改 versionName。
-versionCode = 9999
-versionName = "4.8.189"
+        applicationId = "me.rerere.rikkahub"
+        minSdk = 26
+        targetSdk = 37
+        versionCode = 192
+        versionName = "3.0.0"
 
-            // v4.8.179: 开发者版本开关 — true=开发者版(含"开发者调试"入口/面板); v4.8.183 正式版=false
-            buildConfigField("Boolean", "DEVELOPER_BUILD", "false")
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-            testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
-            ndk {
-                abiFilters += listOf("arm64-v8a")
-            }
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
         }
+    }
+
+    splits {
+        abi {
+            // AppBundle tasks usually contain "bundle" in their name
+            //noinspection WrongGradleMethod
+            val isBuildingBundle = gradle.startParameter.taskNames.any { it.lowercase().contains("bundle") }
+            isEnable = !isBuildingBundle
+            reset()
+            include("arm64-v8a", "x86_64")
+            isUniversalApk = true
+        }
+    }
 
     signingConfigs {
         create("release") {
@@ -64,9 +76,9 @@ versionName = "4.8.189"
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
-            // v3.6.83: 对齐原版 RikkaHub — 原版 release 不启用 R8 混淆/优化,
-            // 用户实测原版流畅。移除 minify 排除 R8 优化对 Compose 重组
-            // 的潜在影响, 且堆栈恢复可读 (此前 r8-map-id 混淆堆栈难以诊断)
+            optimization {
+                enable = true
+            }
             buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
         }
@@ -85,7 +97,7 @@ versionName = "4.8.189"
         buildConfig = true
     }
     sourceSets {
-        getByName("androidTest").assets.srcDir("$projectDir/schemas")
+        getByName("androidTest").assets.srcDirs("$projectDir/schemas")
     }
     androidResources {
         generateLocaleConfig = true
@@ -111,6 +123,14 @@ versionName = "4.8.189"
     }
 }
 
+// baselineprofile 插件按 release 复制出 nonMinifiedRelease 时只关掉 isMinifyEnabled，关不掉 optimization，
+// 不手动关的话生成用的包会被 R8 内联、合并类，profile 里记下的是优化后的类和方法
+androidComponents {
+    finalizeDsl { extension ->
+        extension.buildTypes.findByName("nonMinifiedRelease")?.optimization?.enable = false
+    }
+}
+
 composeCompiler {
     stabilityConfigurationFiles.add(
         project.layout.projectDirectory.file("compose_compiler_config.conf")
@@ -132,7 +152,16 @@ kotlin {
     }
 }
 
+// Local JVM tests need the desktop native library instead of the Android AAR.
+configurations.matching { it.name.endsWith("UnitTestRuntimeClasspath") }.configureEach {
+    resolutionStrategy.dependencySubstitution {
+        substitute(module("io.github.dokar3:quickjs-kt-android"))
+            .using(module("io.github.dokar3:quickjs-kt-jvm:${libs.versions.quickjs.get()}"))
+    }
+}
+
 dependencies {
+    implementation(libs.quickjs)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.process)
@@ -149,9 +178,6 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
-    implementation(libs.haze)
-    implementation(libs.haze.blur)
-    implementation(libs.haze.blur.material3)
     implementation(libs.androidx.material3.adaptive)
     implementation(libs.androidx.material3.adaptive.layout)
 
@@ -162,6 +188,9 @@ dependencies {
     implementation(libs.androidx.material3.adaptive.navigation3)
 
     // Firebase
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.analytics)
+    implementation(libs.firebase.crashlytics)
 
     // DataStore
     implementation(libs.androidx.datastore.preferences)
@@ -170,16 +199,18 @@ dependencies {
     // https://github.com/drewnoakes/metadata-extractor
     implementation(libs.metadata.extractor)
 
-    // Haze (background blur)
+    // Haze (background blur and glass)
+    implementation(libs.haze)
+    implementation(libs.haze.blur)
+    implementation(libs.haze.blur.material3)
+    implementation(libs.haze.glass)
+    implementation(libs.haze.glass.material3)
 
     // koin
     implementation(platform(libs.koin.bom))
     implementation(libs.koin.android)
     implementation(libs.koin.compose)
     implementation(libs.koin.androidx.workmanager)
-
-    // jetbrains markdown parser (vendored: 0.7.14 + CJK fix — 见 :markdown 模块)
-    implementation(project(":markdown"))
 
     // okhttp
     implementation(libs.okhttp)
@@ -211,8 +242,9 @@ dependencies {
 
     // serialization
     implementation(libs.kotlinx.serialization.json)
-    implementation(libs.hjson) // v4.6.4: HJSON 解析 (Operit 生态包手写格式 — 与 Operit 同款依赖)
-    implementation(libs.quickjs.kt.android) // v4.5.29 岔路口计划·阶段2: Operit 脚本运行时
+
+    // YAML front matter
+    implementation(libs.snakeyaml)
 
     // zxing
     implementation(libs.zxing.core)
@@ -233,17 +265,17 @@ dependencies {
     implementation(libs.androidx.paging.runtime)
     implementation(libs.androidx.paging.compose)
 
+    // media3 (video playback)
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.ui)
+
     // Apache Commons Text
     implementation(libs.commons.text)
-
-    // Toast (Sonner)
-    implementation(libs.sonner)
 
     // Reorderable (https://github.com/Calvin-LL/Reorderable/)
     implementation(libs.reorderable)
 
-    // lucide icons
-    implementation(libs.lucide.icons)
+    // icons
     implementation(libs.huge.icons)
 
     // image viewer
@@ -275,30 +307,21 @@ dependencies {
     implementation(project(":highlight"))
     implementation(project(":search"))
     implementation(project(":speech"))
+    implementation(project(":mediagen"))
     implementation(project(":common"))
     implementation(project(":material3"))
+    implementation(project(":ui"))
     implementation(project(":workspace"))
     implementation(project(":oauth"))
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
     implementation(kotlin("reflect"))
-    // cron-utils: 定时任务调度（schedule_job 等工具的 cron 解析依赖）
-    implementation("com.cronutils:cron-utils:9.2.1")
-
-    // Google Play Services Location (get_location tool)
-    implementation(libs.play.services.location)
-    implementation(libs.kotlinx.coroutines.play.services)
-
-    // AndroidX DocumentFile — SAF tree traversal for FileManager tools
-    implementation("androidx.documentfile:documentfile:1.0.1")
-
-    // AndroidX Media (MediaSessionCompat for media playback tools)
-    implementation(libs.androidx.media)
 
     // Leak Canary
     // debugImplementation(libs.leakcanary.android)
 
     // tests
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

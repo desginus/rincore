@@ -1,9 +1,4 @@
-/* 【域 D·工作区沙箱】 | 地图: docs/APP_MAP.md §D */
 package me.rerere.rikkahub.ui.pages.extensions.workspace
-
-/* ───【原版对齐】WorkspaceTerminalPage.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 import android.graphics.Typeface
 import androidx.compose.foundation.background
@@ -40,8 +35,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -66,12 +63,10 @@ import me.rerere.rikkahub.ui.theme.RikkahubTheme
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 
 @Composable
 fun WorkspaceTerminalPage(id: String) {
-    val vm: WorkspaceDetailVM = koinViewModel(parameters = { parametersOf(id, "") })  // v4.7.23: 共享 VM 第二参 initialPath
+    val vm: WorkspaceDetailVM = koinViewModel(parameters = { parametersOf(id) })
     val state by vm.state.collectAsStateWithLifecycle()
     val sessionManager: WorkspaceTerminalSessionManager = koinInject()
     val root = state.workspace?.root

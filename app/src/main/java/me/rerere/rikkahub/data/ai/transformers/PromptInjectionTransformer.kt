@@ -1,22 +1,5 @@
-/**
- * 提示词注入转换器 — 模块: A. 传输链 / transformers
- *
- * 职责: 按 Assistant 的 ModeInjection 与 Lorebook 触发注入。
- * 注入位置语义 (v3.5.x 修正, 协议合规):
- *  - BEFORE_SYSTEM_PROMPT = system 前缀 (合并进 system — 首条保持 system)
- *  - AFTER_SYSTEM_PROMPT  = system 后缀 (同属 system)
- *  - TOP_OF_CHAT          = 独立消息 (对话顶部)
- *
- * 问题定位: SETTINGS 报错/首条非 system → 查本文件 + MessageProtocol
- */
-/* 【域 B·AI 传输】 | 地图: docs/APP_MAP.md §B */
 package me.rerere.rikkahub.data.ai.transformers
 
-
-/* ───【原版对齐】PromptInjectionTransformer | 差异 +100 行
- * 来源: 原版移植 + 自研 (注入策略调整)
- * 差异: 注入位置/内容与缓存前缀适配自研调整
- * ───────────────────────────────────────────────────────────────*/
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -26,7 +9,6 @@ import me.rerere.rikkahub.data.model.PromptInjection
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.extractContextForMatching
 import me.rerere.rikkahub.data.model.isTriggered
-import kotlin.uuid.Uuid
 
 /**
  * 提示词注入转换器
@@ -43,8 +25,6 @@ object PromptInjectionTransformer : InputMessageTransformer {
             assistant = ctx.assistant,
             modeInjections = ctx.settings.modeInjections,
             lorebooks = ctx.settings.lorebooks,
-            conversationModeInjectionIds = ctx.conversationModeInjectionIds,
-            conversationLorebookIds = ctx.conversationLorebookIds,
         )
     }
 }
@@ -57,8 +37,6 @@ internal fun transformMessages(
     assistant: Assistant,
     modeInjections: List<PromptInjection.ModeInjection>,
     lorebooks: List<Lorebook>,
-    conversationModeInjectionIds: Set<Uuid> = emptySet(),
-    conversationLorebookIds: Set<Uuid> = emptySet(),
 ): List<UIMessage> {
     // 收集所有需要注入的内容
     val injections = collectInjections(
@@ -66,8 +44,6 @@ internal fun transformMessages(
         assistant = assistant,
         modeInjections = modeInjections,
         lorebooks = lorebooks,
-        conversationModeInjectionIds = conversationModeInjectionIds,
-        conversationLorebookIds = conversationLorebookIds,
     )
 
     if (injections.isEmpty()) {
@@ -91,29 +67,17 @@ internal fun collectInjections(
     assistant: Assistant,
     modeInjections: List<PromptInjection.ModeInjection>,
     lorebooks: List<Lorebook>,
-    conversationModeInjectionIds: Set<Uuid> = emptySet(),
-    conversationLorebookIds: Set<Uuid> = emptySet(),
 ): List<PromptInjection> {
     val injections = mutableListOf<PromptInjection>()
-    val effectiveModeInjectionIds = if (assistant.allowConversationPromptInjection) {
-        conversationModeInjectionIds
-    } else {
-        assistant.modeInjectionIds
-    }
-    val effectiveLorebookIds = if (assistant.allowConversationPromptInjection) {
-        conversationLorebookIds
-    } else {
-        assistant.lorebookIds
-    }
 
     // 1. 获取关联的 ModeInjection
     modeInjections
-        .filter { it.enabled && effectiveModeInjectionIds.contains(it.id) }
+        .filter { it.enabled && assistant.modeInjectionIds.contains(it.id) }
         .forEach { injections.add(it) }
 
     // 2. 获取关联的 Lorebook 中被触发的 RegexInjection
     val enabledLorebooks = lorebooks.filter {
-        it.enabled && effectiveLorebookIds.contains(it.id)
+        it.enabled && assistant.lorebookIds.contains(it.id)
     }
     if (enabledLorebooks.isNotEmpty()) {
         // 提取上下文用于匹配（只取非 SYSTEM 消息）
@@ -134,9 +98,6 @@ internal fun collectInjections(
 
 /**
  * 应用注入到消息列表
- *
- * BEFORE/AFTER_SYSTEM_PROMPT 不修改系统消息本身,
- * 而是插入为独立用户消息 — 保证系统消息缓存前缀稳定。
  */
 internal fun applyInjections(
     messages: List<UIMessage>,
@@ -144,30 +105,58 @@ internal fun applyInjections(
 ): List<UIMessage> {
     val result = messages.toMutableList()
 
-    // 找到系统消息和第一条用户消息的索引
-    val firstUserIndex = result.indexOfFirst { it.role == MessageRole.USER }
+    // 找到系统消息的索引（通常是第一条）
+    val systemIndex = result.indexOfFirst { it.role == MessageRole.SYSTEM }
 
-    // BEFORE_SYSTEM_PROMPT → system 前缀（语义: system 的一部分 — 结构上保证首条为 system）
-    val beforeContent = byPosition[InjectionPosition.BEFORE_SYSTEM_PROMPT]
-        ?.joinToString("\n") { it.content } ?: ""
-    if (beforeContent.isNotEmpty()) {
-        val sysIdx = result.indexOfFirst { it.role == MessageRole.SYSTEM }
-        if (sysIdx >= 0) {
-            result[sysIdx] = prependToSystem(result[sysIdx], beforeContent)
-        } else {
-            result.add(0, UIMessage.system(beforeContent))
+    // 处理 BEFORE_SYSTEM_PROMPT 和 AFTER_SYSTEM_PROMPT
+    if (systemIndex >= 0) {
+        val beforeContent = byPosition[InjectionPosition.BEFORE_SYSTEM_PROMPT]
+            ?.joinToString("\n") { it.content } ?: ""
+        val afterContent = byPosition[InjectionPosition.AFTER_SYSTEM_PROMPT]
+            ?.joinToString("\n") { it.content } ?: ""
+
+        if (beforeContent.isNotEmpty() || afterContent.isNotEmpty()) {
+            val systemMessage = result[systemIndex]
+            val originalText = systemMessage.parts
+                .filterIsInstance<UIMessagePart.Text>()
+                .joinToString("") { it.text }
+
+            val newText = buildString {
+                if (beforeContent.isNotEmpty()) {
+                    append(beforeContent)
+                    appendLine()
+                }
+                append(originalText)
+                if (afterContent.isNotEmpty()) {
+                    appendLine()
+                    append(afterContent)
+                }
+            }
+
+            result[systemIndex] = systemMessage.copy(
+                parts = listOf(UIMessagePart.Text(newText)),
+                isSynthetic = true,
+            )
         }
-    }
+    } else {
+        // 没有系统消息时，创建一个新的系统消息
+        val beforeContent = byPosition[InjectionPosition.BEFORE_SYSTEM_PROMPT]
+            ?.joinToString("\n") { it.content } ?: ""
+        val afterContent = byPosition[InjectionPosition.AFTER_SYSTEM_PROMPT]
+            ?.joinToString("\n") { it.content } ?: ""
 
-    // AFTER_SYSTEM_PROMPT → system 后缀（同样属于 system 的一部分 — 保持首条 system 不变）
-    val afterContent = byPosition[InjectionPosition.AFTER_SYSTEM_PROMPT]
-        ?.joinToString("\n") { it.content } ?: ""
-    if (afterContent.isNotEmpty()) {
-        val sysIdx = result.indexOfFirst { it.role == MessageRole.SYSTEM }
-        if (sysIdx >= 0) {
-            result[sysIdx] = appendToSystem(result[sysIdx], afterContent)
-        } else {
-            result.add(0, UIMessage.system(afterContent))
+        val combinedContent = buildString {
+            if (beforeContent.isNotEmpty()) {
+                append(beforeContent)
+            }
+            if (afterContent.isNotEmpty()) {
+                if (isNotEmpty()) appendLine()
+                append(afterContent)
+            }
+        }
+
+        if (combinedContent.isNotEmpty()) {
+            result.add(0, UIMessage.system(combinedContent).copy(isSynthetic = true))
         }
     }
 
@@ -228,7 +217,9 @@ private fun createMergedInjectionMessages(injections: List<PromptInjection>): Li
             when (role) {
                 MessageRole.ASSISTANT -> UIMessage.assistant(mergedContent)
                 else -> UIMessage.user(mergedContent)
-            }
+            }.copy(
+                isSynthetic = true,
+            )
         }
 }
 
@@ -238,23 +229,6 @@ private fun createMergedInjectionMessages(injections: List<PromptInjection>): Li
  * 某些提供商（如 deepseek）要求 USER 之后紧跟带工具的 ASSISTANT，
  * 在两者之间插入消息会导致报错或破坏推理连续性。
  */
-
-/** system 前缀注入 — 文本合并到 system 开头, 保留非文本 parts */
-private fun prependToSystem(msg: UIMessage, text: String): UIMessage {
-    val textParts = msg.parts.filterIsInstance<UIMessagePart.Text>()
-    val nonTextParts = msg.parts.filterNot { it is UIMessagePart.Text }
-    val merged = text + "\n" + textParts.joinToString("\n") { it.text }
-    return msg.copy(parts = listOf(UIMessagePart.Text(merged)) + nonTextParts)
-}
-
-/** system 后缀注入 — 文本合并到 system 末尾 */
-private fun appendToSystem(msg: UIMessage, text: String): UIMessage {
-    val textParts = msg.parts.filterIsInstance<UIMessagePart.Text>()
-    val nonTextParts = msg.parts.filterNot { it is UIMessagePart.Text }
-    val merged = textParts.joinToString("\n") { it.text } + "\n" + text
-    return msg.copy(parts = nonTextParts + listOf(UIMessagePart.Text(merged)))
-}
-
 internal fun findSafeInsertIndex(messages: List<UIMessage>, targetIndex: Int): Int {
     var index = targetIndex.coerceIn(0, messages.size)
 

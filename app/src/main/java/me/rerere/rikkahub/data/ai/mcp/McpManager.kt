@@ -1,12 +1,5 @@
 package me.rerere.rikkahub.data.ai.mcp
 
-/* ───【域 B·AI 传输】McpManager.kt
- * 职责: MCP 门面 (状态聚合/调用转发/reconcile 触发)
- * 常用改动: 连接触发 → init collect reconcile; 状态 → syncingStatus
- * 问题定位: MCP 状态异常 → 本文件 + McpSessionRegistry
- * 基线: 原版移植 + 自研 | 地图: docs/APP_MAP.md §B | 历史: .claude/skills/rincore-bug-record
- * ───────────────────────────────────────────────────────────────*/
-
 import android.content.Context
 import androidx.core.net.toUri
 import io.ktor.client.HttpClient
@@ -31,9 +24,9 @@ import me.rerere.oauth.OAuthHttpClient
 import me.rerere.oauth.OAuthLoopbackCallbackServer
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.files.saveUploadFromBytes
+import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.utils.JsonInstant
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
@@ -50,8 +43,6 @@ class McpManager(
     private val settingsStore: SettingsStore,
     private val appScope: AppScope,
     private val filesManager: FilesManager,
-    // v3.11.2 兼容: STDIO viaWorkspace 沙箱启动需要 WorkspaceRepository
-    private val workspaceRepository: me.rerere.rikkahub.data.repository.WorkspaceRepository? = null,
 ) {
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
@@ -75,7 +66,7 @@ class McpManager(
     }
 
     private val statusStore = McpStatusStore()
-    private val callbackServer = OAuthLoopbackCallbackServer(
+    private val oauthCallbackServer = OAuthLoopbackCallbackServer(
         port = MCP_OAUTH_CALLBACK_PORT,
         callbackPath = MCP_OAUTH_CALLBACK_PATH,
     )
@@ -84,7 +75,7 @@ class McpManager(
         appScope = appScope,
         oauthClient = OAuthHttpClient(okHttpClient),
         discoveryClient = McpOAuthDiscoveryClient(okHttpClient),
-        callbackServer = callbackServer,
+        callbackServer = oauthCallbackServer,
         authorizationLauncher = CustomTabsOAuthAuthorizationLauncher,
         updateStatus = statusStore::update,
     )
@@ -94,8 +85,6 @@ class McpManager(
         httpClient = httpClient,
         oauthCoordinator = oauthCoordinator,
         statusStore = statusStore,
-        // v3.11.2 兼容: STDIO viaWorkspace 沙箱启动 (原版无, 需注入)
-        workspaceRepository = workspaceRepository,
     )
 
     init {
@@ -114,9 +103,8 @@ class McpManager(
 
     fun getStatus(config: McpServerConfig): Flow<McpStatus> = sessionRegistry.getStatus(config.id)
 
-    fun getAllAvailableTools(): List<Triple<Uuid, String, McpTool>> {
+    fun getAllAvailableTools(assistant: Assistant): List<Triple<Uuid, String, McpTool>> {
         val settings = settingsStore.settingsFlow.value
-        val assistant = settings.getCurrentAssistant()
         return settings.mcpServers
             .filter { it.commonOptions.enable && it.id in assistant.mcpServers }
             .flatMap { server ->
@@ -126,9 +114,9 @@ class McpManager(
             }
     }
 
-    suspend fun callTool(serverId: Uuid, toolName: String, args: JsonObject, ctx: McpCallContext? = null): List<UIMessagePart> {
+    suspend fun callTool(serverId: Uuid, toolName: String, args: JsonObject): List<UIMessagePart> {
         val result = try {
-            sessionRegistry.callTool(serverId, toolName, args, ctx)
+            sessionRegistry.callTool(serverId, toolName, args)
         } catch (e: CancellationException) {
             throw e
         } catch (e: McpClientUnavailableException) {
@@ -136,8 +124,7 @@ class McpManager(
         }
         return result.content.map { content ->
             when (content) {
-                // v4.8.110 (B2): 文本里的绝对路径产物归集 (调用方可见范围外 → rescued + 改写)
-                is TextContent -> UIMessagePart.Text(rescueMcpArtifactPaths(content.text, serverId, ctx))
+                is TextContent -> UIMessagePart.Text(content.text)
                 is ImageContent -> convertImageContentToFilePart(content)
                 else -> UIMessagePart.Text(JsonInstant.encodeToString(content))
             }
@@ -162,29 +149,6 @@ class McpManager(
         val freshConfig = oauthCoordinator.clearAuthorization(config)
         sessionRegistry.addClient(freshConfig)
     }
-
-    /**
-     * v4.8.110 (B2): 产物归集入口 — 解析 server/调用方的工作区 root 后交给
-     * FilesManager 策略函数; 任何失败降级为"原样 + 一行提示", 绝不让工具调用整体失败。
-     */
-    private suspend fun rescueMcpArtifactPaths(text: String, serverId: Uuid, ctx: McpCallContext?): String {
-        if (ctx?.workspaceId.isNullOrBlank() || !text.contains('/')) return text
-        return runCatching {
-            val wsRepo = workspaceRepository ?: return@runCatching text
-            val cfg = settingsStore.settingsFlow.value.mcpServers.find { it.id == serverId }
-            val slug = sanitizeRescueSlug(cfg?.commonOptions?.name ?: serverId.toString().take(8))
-            val serverRoot = (cfg as? McpServerConfig.StdioTransportServer)
-                ?.workspaceId?.takeIf { it.isNotBlank() }
-                ?.let { runCatching { wsRepo.getById(it)?.root }.getOrNull() }
-            val callerRoot = runCatching { wsRepo.getById(ctx.workspaceId)?.root }.getOrNull()
-            filesManager.rescueArtifactPathsByPolicy(text, slug, serverRoot, callerRoot, ctx.workspaceCwd)
-        }.getOrElse { e ->
-            text + "\n[产物归集失败: " + (e.message ?: e.javaClass.simpleName) + "]"
-        }
-    }
-
-    private fun sanitizeRescueSlug(name: String): String =
-        name.filter { it.isLetterOrDigit() || it in "._-" }.replace("..", "_").take(48).ifBlank { "server" }
 
     private suspend fun convertImageContentToFilePart(image: ImageContent): UIMessagePart.Image {
         val bytes = Base64.decode(image.data)

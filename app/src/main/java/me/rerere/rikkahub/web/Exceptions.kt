@@ -1,10 +1,5 @@
-/* 【域 J·Web 服务】 | 地图: docs/APP_MAP.md §J */
 package me.rerere.rikkahub.web
 
-
-/* ───【原版对齐】Exceptions.kt | 差异 ±1 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import io.ktor.http.HttpStatusCode
 
 sealed class ApiException(
@@ -15,4 +10,5 @@ sealed class ApiException(
 class BadRequestException(message: String) : ApiException(message, HttpStatusCode.BadRequest)
 class NotFoundException(message: String) : ApiException(message, HttpStatusCode.NotFound)
 class UnauthorizedException(message: String) : ApiException(message, HttpStatusCode.Unauthorized)
+class ForbiddenException(message: String) : ApiException(message, HttpStatusCode.Forbidden)
 class ConflictException(message: String) : ApiException(message, HttpStatusCode.Conflict)

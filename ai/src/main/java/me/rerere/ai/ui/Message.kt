@@ -1,44 +1,16 @@
-@file:Suppress("DEPRECATION") // ToolCall/ToolResult 序列化兼容保留
-/**
- * 消息模型 — 模块: A. 传输链 / ai (核心数据结构)
- *
- * 职责: UIMessage (role+parts) / UIMessagePart 类型体系 (Text/Image/ToolCall/Tool/Reasoning)
- *       / MessageChunk 流式块 / 审批状态。
- * 所有消息操作 (组装/清洗/序列化) 基于此模型 — 协议层 MessageProtocol 也操作它。
- *
- * 注意: UIMessagePart.ToolResult 已 @Deprecated (用 Tool); 新增 part 类型需同步序列化器。
- *
- * 问题定位: 消息结构/序列化/part 类型问题 → 查本文件
- */
 package me.rerere.ai.ui
-
-
-/* ───【原版对齐】Message ──────────────────────────────────────────────
- * 原版: 有同文件 | RinCore 差异 +388 行
- * 来源: 原版移植 + 自研 (多版本机制)
- * 功能: 消息模型 — UIMessage/MessageNode/多版本/selectIndex
- * 特点: 1. MessageNode.messages 多版本 (编辑追加新版本保留旧版,
- *        123 按钮切换); 2. finishReasoning 收尾 (思考链计时停表)
- * 逻辑: currentMessages 只含每节点选中消息; limitContext 函数在此
- *       但禁用 (D5 — 启用即破坏缓存前缀)
- * 与原版主要差异:
- *   1. 多版本节点机制 (原版单版本)
- *   2. 编辑语义 (原版替换, RinCore 追加)
- * ────────────────────────────────────────────────────────────────────*/
 
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.Transient
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.Model
 import me.rerere.ai.util.json
+import kotlin.math.roundToInt
 import kotlin.time.Clock
-import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
 // 公共消息抽象, 具体的Provider实现会转换为API接口需要的DTO
@@ -52,127 +24,20 @@ data class UIMessage(
         .toLocalDateTime(TimeZone.currentSystemDefault()),
     val finishedAt: LocalDateTime? = null,
     val modelId: Uuid? = null,
+    // 模型名称的快照：modelId 指向的模型被删除后，靠它继续显示这条消息由谁生成
+    val modelSnapshot: ModelSnapshot? = null,
     val usage: TokenUsage? = null,
-    val translation: String? = null
+    // 模型实际生成耗时（各步从首个 chunk 到响应结束的累计），不含首 token 延迟、工具执行和审批等待
+    val generationTimeMs: Long? = null,
+    // 最后一次请求结束时的上下文占用（prompt + completion），usage 是多步累计值，不能用来看上下文大小
+    val contextTokens: Int? = null,
+    val translation: String? = null,
+    // 压缩检查点：此消息是它之前全部历史的摘要，组装请求时从最后一个检查点开始取
+    val isContextCheckpoint: Boolean = false,
+    // 请求期间生成的内部消息；该标记仅在内存中使用
+    @Transient
+    val isSynthetic: Boolean = false,
 ) {
-    private fun appendChunk(chunk: MessageChunk): UIMessage {
-        val choice = chunk.choices.getOrNull(0)
-        val message = choice?.delta ?: choice?.message
-        return message?.let { delta ->
-            // Handle Parts
-            var newParts = delta.parts.fold(parts) { acc, deltaPart ->
-                when (deltaPart) {
-                    is UIMessagePart.Text -> {
-                        // Skip empty text deltas
-                        if (deltaPart.text.isEmpty()) {
-                            acc
-                        } else {
-                            val lastPart = acc.lastOrNull()
-                            if (lastPart is UIMessagePart.Text) {
-                                // Append to the last Text part
-                                acc.dropLast(1) + lastPart.copy(text = lastPart.text + deltaPart.text)
-                            } else {
-                                // Create new Text part
-                                acc + deltaPart
-                            }
-                        }
-                    }
-
-                    is UIMessagePart.Image -> {
-                        val lastPart = acc.lastOrNull()
-                        if (lastPart is UIMessagePart.Image) {
-                            // Append to the last Image part (for streaming base64)
-                            acc.dropLast(1) + lastPart.copy(
-                                url = lastPart.url + deltaPart.url,
-                                metadata = deltaPart.metadata ?: lastPart.metadata
-                            )
-                        } else {
-                            // Create new Image part
-                            acc + UIMessagePart.Image(
-                                url = "data:image/png;base64,${deltaPart.url}",
-                                metadata = deltaPart.metadata,
-                            )
-                        }
-                    }
-
-                    is UIMessagePart.Reasoning -> {
-                        // Skip empty reasoning deltas
-                        if (deltaPart.reasoning.isEmpty() && deltaPart.metadata == null) {
-                            acc
-                        } else {
-                            val lastPart = acc.lastOrNull()
-                            if (lastPart is UIMessagePart.Reasoning) {
-                                // Append to the last Reasoning part
-                                acc.dropLast(1) + UIMessagePart.Reasoning(
-                                    reasoning = lastPart.reasoning + deltaPart.reasoning,
-                                    createdAt = lastPart.createdAt,
-                                    finishedAt = null,
-                                ).also {
-                                    it.metadata = deltaPart.metadata ?: lastPart.metadata
-                                }
-                            } else {
-                                // Create new Reasoning part
-                                acc + deltaPart
-                            }
-                        }
-                    }
-
-                    is UIMessagePart.Tool -> {
-                        if (deltaPart.toolCallId.isBlank()) {
-                            // No ID yet - append to the last Tool if it also has no ID
-                            val lastTool = acc.lastOrNull { it is UIMessagePart.Tool } as? UIMessagePart.Tool
-                            if (lastTool != null) {
-                                acc.map { part ->
-                                    if (part === lastTool) part.merge(deltaPart) else part
-                                }
-                            } else {
-                                acc + deltaPart.copy()
-                            }
-                        } else {
-                            // Has ID - find and update by ID, or insert new
-                            val existsPart = acc.find {
-                                it is UIMessagePart.Tool && it.toolCallId == deltaPart.toolCallId
-                            } as? UIMessagePart.Tool
-                            if (existsPart == null) {
-                                acc + deltaPart.copy()
-                            } else {
-                                acc.map { part ->
-                                    if (part is UIMessagePart.Tool && part.toolCallId == deltaPart.toolCallId) {
-                                        part.merge(deltaPart)
-                                    } else part
-                                }
-                            }
-                        }
-                    }
-
-                    else -> {
-                        println("delta part append not supported: $deltaPart")
-                        acc
-                    }
-                }
-            }
-            // Handle Reasoning End
-            if (parts.filterIsInstance<UIMessagePart.Reasoning>()
-                    .isNotEmpty() && delta.parts.filterIsInstance<UIMessagePart.Reasoning>()
-                    .isEmpty()
-            ) {
-                newParts = newParts.map { part ->
-                    if (part is UIMessagePart.Reasoning && part.finishedAt == null) {
-                        part.copy(finishedAt = Clock.System.now())
-                    } else part
-                }
-            }
-            // Handle annotations
-            val newAnnotations = delta.annotations.ifEmpty {
-                annotations
-            }
-            copy(
-                parts = newParts,
-                annotations = newAnnotations,
-            )
-        } ?: this
-    }
-
     fun summaryAsText(maxLength: Int = Int.MAX_VALUE): String {
         val text = "[${role.name}]: " + parts.joinToString(separator = "\n") { part ->
             when (part) {
@@ -214,8 +79,15 @@ data class UIMessage(
         it is UIMessagePart.Image && it.url.startsWith("data:")
     }
 
-    operator fun plus(chunk: MessageChunk): UIMessage {
-        return this.appendChunk(chunk)
+    /**
+     * 用快照还原出一个只用于展示名称和图标的 [Model]
+     *
+     * 仅在按 [modelId] 查不到模型时使用；其余字段都是默认值，不能拿它发起请求。
+     */
+    fun snapshotModel(): Model? {
+        val id = modelId ?: return null
+        val snapshot = modelSnapshot ?: return null
+        return Model(modelId = snapshot.modelId, displayName = snapshot.displayName, id = id)
     }
 
     companion object {
@@ -237,32 +109,163 @@ data class UIMessage(
 }
 
 /**
- * 处理MessageChunk合并
- *
- * @receiver 已有消息列表
- * @param chunk 消息chunk
- * @param model 模型, 可以不传，如果传了，会把模型id写入到消息，标记是哪个模型输出的消息
- * @return 新消息列表
+ * 消息上保存的模型名称快照, 对应 [Model.modelId] 与 [Model.displayName]
  */
-fun List<UIMessage>.handleMessageChunk(chunk: MessageChunk, model: Model? = null): List<UIMessage> {
-    require(this.isNotEmpty()) {
-        "messages must not be empty"
-    }
-    val choice = chunk.choices.getOrNull(0) ?: return this
-    val message = choice.delta ?: choice.message ?: return this
-    if (this.last().role != message.role) {
-        return this + (UIMessage(modelId = model?.id, role = message.role, parts = emptyList()) + chunk)
-    } else {
-        val last = this.last() + chunk
-        return this.dropLast(1) + last
-    }
-}
+@Serializable
+data class ModelSnapshot(
+    val modelId: String,
+    val displayName: String,
+)
 
 /**
  * 判断这个消息是否有有任何用户**可输入内容**
  *
  * 例如: 文本，图片, 文档
  */
+fun List<UIMessagePart>.isEmptyInputMessage(): Boolean {
+    if (this.isEmpty()) return true
+    return this.all { message ->
+        when (message) {
+            is UIMessagePart.Text -> message.text.isBlank()
+            is UIMessagePart.Image -> message.url.isBlank()
+            is UIMessagePart.Document -> message.url.isBlank()
+            is UIMessagePart.Video -> message.url.isBlank()
+            is UIMessagePart.Audio -> message.url.isBlank()
+            else -> true
+        }
+    }
+}
+
+/**
+ * 判断这个消息在UI上是否显示任何内容
+ */
+fun List<UIMessagePart>.isEmptyUIMessage(): Boolean {
+    if (this.isEmpty()) return true
+    return this.all { message ->
+        when (message) {
+            is UIMessagePart.Text -> message.text.isBlank()
+            is UIMessagePart.Image -> message.url.isBlank()
+            is UIMessagePart.Document -> message.url.isBlank()
+            is UIMessagePart.Reasoning -> message.reasoning.isBlank()
+            is UIMessagePart.Video -> message.url.isBlank()
+            is UIMessagePart.Audio -> message.url.isBlank()
+            is UIMessagePart.Tool,
+            is UIMessagePart.ServerTool,
+                -> false
+            else -> true
+        }
+    }
+}
+
+/**
+ * 截断后保留的消息条数占上限的比例
+ *
+ * 越小则截断点前进的步幅越大, 连续命中缓存的轮数越多, 但一次丢弃的上下文也越多
+ */
+private const val CONTEXT_KEEP_RATIO = 0.5f
+
+/**
+ * 截取实际发送给模型的上下文
+ *
+ * 先丢弃最后一个压缩检查点之前的消息(它们只保留给用户查看), 再按 [limit] 限制条数。
+ * 检查点本身是被压缩历史的唯一来源, 始终保留, 条数限制只作用于它之后的消息。
+ *
+ * @param limit 触发截断的消息条数上限, 小于等于 0 表示不限制
+ */
+fun List<UIMessage>.limitContext(limit: Int): List<UIMessage> {
+    val checkpointIndex = indexOfLast { it.isContextCheckpoint }
+    if (checkpointIndex < 0) return limitMessageCount(limit)
+    return listOf(this[checkpointIndex]) + subList(checkpointIndex + 1, size).limitMessageCount(limit)
+}
+
+/**
+ * 按阶梯式(滞回)策略限制上下文消息数量
+ *
+ * 与每轮平移一条的滑动窗口不同, 截断点只在消息数越过 [limit] 时才前进一大步,
+ * 在此之后的连续多轮里保持不动, 使请求前缀保持稳定, 从而命中提示词缓存。
+ * 截断点仅由消息条数推导, 不需要额外持久化状态, 且对追加消息天然稳定。
+ *
+ * 保留的条数始终落在 `[limit * CONTEXT_KEEP_RATIO, limit)` 区间内。
+ *
+ * @param limit 触发截断的消息条数上限, 小于等于 0 表示不限制
+ */
+private fun List<UIMessage>.limitMessageCount(limit: Int): List<UIMessage> {
+    if (limit <= 0 || this.size <= limit) return this
+
+    // 截断后回落到的目标条数, 以及两次截断之间截断点前进的步幅
+    // limit 为 1 时无法构造滞回(步幅至少为 1), 此时退化为逐条平移的滑动窗口
+    val target = (limit * CONTEXT_KEEP_RATIO).roundToInt().coerceIn(1, limit)
+    val stride = (limit - target).coerceAtLeast(1)
+
+    // 每越过一级台阶, 截断点前进 stride 条; 台阶之内截断点不动
+    // 上界兜底保证至少保留一条消息, 正常路径(limit >= 2)不会触发
+    val startIndex = (((this.size - limit) / stride + 1) * stride).coerceAtMost(this.size - 1)
+
+    return this.subList(alignContextStart(startIndex), this.size)
+}
+
+/**
+ * 将截断起点回退到安全边界, 避免把 tool call 与其结果拆散, 或让上下文从半截的工具调用开始
+ *
+ * 只会向前(下标减小)调整, 因此不会破坏 [limitMessageCount] 保留条数的下界。
+ * 调整只依赖 `[0, startIndex]` 区间内的消息, 这部分在追加新消息时不会变化, 结果因此保持稳定。
+ */
+private fun List<UIMessage>.alignContextStart(startIndex: Int): Int {
+    var adjustedStartIndex = startIndex
+
+    // 循环往前查找, 直到满足所有依赖条件
+    var needsAdjustment = true
+    val visitedIndices = mutableSetOf<Int>()
+
+    while (needsAdjustment && adjustedStartIndex > 0) {
+        needsAdjustment = false
+
+        // 防止无限循环
+        if (adjustedStartIndex in visitedIndices) break
+        visitedIndices.add(adjustedStartIndex)
+
+        val currentMessage = this[adjustedStartIndex]
+
+        // 如果当前消息包含已执行的tool（有output），往前查找对应的tool call
+        if (currentMessage.getTools().any { it.isExecuted }) {
+            for (i in adjustedStartIndex - 1 downTo 0) {
+                if (this[i].getTools().any { !it.isExecuted }) {
+                    adjustedStartIndex = i
+                    needsAdjustment = true
+                    break
+                }
+            }
+        }
+
+        // 如果当前消息包含未执行的tool call，往前查找对应的用户消息
+        if (currentMessage.getTools().any { !it.isExecuted }) {
+            for (i in adjustedStartIndex - 1 downTo 0) {
+                if (this[i].role == MessageRole.USER) {
+                    adjustedStartIndex = i
+                    needsAdjustment = true
+                    break
+                }
+            }
+        }
+    }
+
+    return adjustedStartIndex
+}
+
+/**
+ * Sort message parts by type priority:
+ * - Reasoning (-1): shown first
+ * - Text, Tool, ServerTool, ToolCall, ToolResult, Search (0): middle
+ * - Image, Video, Audio, Document (1): shown last
+ *
+ * WARNING: This function is intended for migration only.
+ * Do not use for new messages as it may break the semantic order
+ * when a message contains multiple Reasoning/Text parts.
+ */
+@Deprecated(
+    message = "Only use for migration. May break semantic order for messages with multiple Reasoning/Text parts.",
+    level = DeprecationLevel.WARNING
+)
 fun List<UIMessagePart>.toSortedMessageParts(): List<UIMessagePart> {
     // Skip sorting if multiple Reasoning or Text parts exist to preserve semantic order
     val reasoningCount = count { it is UIMessagePart.Reasoning }
@@ -286,7 +289,6 @@ fun List<UIMessagePart>.toSortedMessageParts(): List<UIMessagePart> {
         }
     }
 }
-
 
 fun UIMessage.finishReasoning(): UIMessage {
     return copy(
@@ -329,7 +331,10 @@ fun UIMessage.finishPendingTools(
     ).finishReasoning()
 }
 
-
+/**
+ * Migrate legacy ToolCall parts to new Tool type within a single message.
+ * This converts ToolCall parts to Tool parts with empty output.
+ */
 @Suppress("DEPRECATION")
 private fun UIMessage.migrateToolParts(): UIMessage {
     val toolCalls = parts.filterIsInstance<UIMessagePart.ToolCall>()
@@ -539,104 +544,3 @@ fun <T> List<T>.migrateToolNodes(
 
     return result
 }
-fun List<UIMessagePart>.isEmptyInputMessage(): Boolean {
-    if (this.isEmpty()) return true
-    return this.all { message ->
-        when (message) {
-            is UIMessagePart.Text -> message.text.isBlank()
-            is UIMessagePart.Image -> message.url.isBlank()
-            is UIMessagePart.Document -> message.url.isBlank()
-            is UIMessagePart.Video -> message.url.isBlank()
-            is UIMessagePart.Audio -> message.url.isBlank()
-            else -> true
-        }
-    }
-}
-
-/**
- * 判断这个消息在UI上是否显示任何内容
- */
-fun List<UIMessagePart>.isEmptyUIMessage(): Boolean {
-    if (this.isEmpty()) return true
-    return this.all { message ->
-        when (message) {
-            is UIMessagePart.Text -> message.text.isBlank()
-            is UIMessagePart.Image -> message.url.isBlank()
-            is UIMessagePart.Document -> message.url.isBlank()
-            is UIMessagePart.Reasoning -> message.reasoning.isBlank()
-            is UIMessagePart.Video -> message.url.isBlank()
-            is UIMessagePart.Audio -> message.url.isBlank()
-            is UIMessagePart.Tool -> false
-            // v4.5.29: ServerTool 为真实 UI 内容 (服务器工具执行状态), 不应视为空消息
-            is UIMessagePart.ServerTool -> false
-            else -> true
-        }
-    }
-}
-
-/**
- * ⚠️ 历史教训（勿启用）：v3.3.0 引入滞回策略导致缓存机制报废，v3.3.5 回滚，
- * v3.3.12 确认（见 decisions D5）。当前无人调用——启用即破坏 DeepSeek 前缀缓存。
- */
-fun List<UIMessage>.limitContext(size: Int): List<UIMessage> {
-    if (size <= 0 || this.size <= size) return this
-
-    val startIndex = this.size - size
-    var adjustedStartIndex = startIndex
-
-    // 循环往前查找，直到满足所有依赖条件
-    var needsAdjustment = true
-    val visitedIndices = mutableSetOf<Int>()
-
-    while (needsAdjustment && adjustedStartIndex > 0) {
-        needsAdjustment = false
-
-        // 防止无限循环
-        if (adjustedStartIndex in visitedIndices) break
-        visitedIndices.add(adjustedStartIndex)
-
-        val currentMessage = this[adjustedStartIndex]
-
-        // 如果当前消息包含已执行的tool（有output），往前查找对应的tool call
-        if (currentMessage.getTools().any { it.isExecuted }) {
-            for (i in adjustedStartIndex - 1 downTo 0) {
-                if (this[i].getTools().any { !it.isExecuted }) {
-                    adjustedStartIndex = i
-                    needsAdjustment = true
-                    break
-                }
-            }
-        }
-
-        // 如果当前消息包含未执行的tool call，往前查找对应的用户消息
-        if (currentMessage.getTools().any { !it.isExecuted }) {
-            for (i in adjustedStartIndex - 1 downTo 0) {
-                if (this[i].role == MessageRole.USER) {
-                    adjustedStartIndex = i
-                    needsAdjustment = true
-                    break
-                }
-            }
-        }
-    }
-
-    return this.subList(adjustedStartIndex, this.size)
-}
-
-
-
-@Serializable
-data class MessageChunk(
-    val id: String,
-    val model: String,
-    val choices: List<UIMessageChoice>,
-    val usage: TokenUsage? = null,
-)
-
-@Serializable
-data class UIMessageChoice(
-    val index: Int,
-    val delta: UIMessage?,
-    val message: UIMessage?,
-    val finishReason: String?
-)

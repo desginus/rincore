@@ -1,9 +1,5 @@
 package me.rerere.common.http
 
-
-/* ───【原版对齐】JsonExpression.kt | 差异 ±2 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -360,7 +356,7 @@ private class Evaluator(private val root: JsonObject) {
                 else elem.doubleOrNull()?.let { Value.Num("%.2f".format(it).toDouble()) } ?: Value.Str(elem.content)
             }
             is JsonObject, is JsonArray -> Value.Str(elem.toString())
-            is JsonNull -> Value.Str("") // 前置 return 已排除, 此处仅为编译器完整性
+            else -> Value.Str(elem.toString())
         }
     }
 

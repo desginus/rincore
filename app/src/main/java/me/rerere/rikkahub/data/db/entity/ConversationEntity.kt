@@ -1,10 +1,4 @@
-/* 【域 I·数据存储】 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.data.db.entity
-
-/* ───【原版对齐】ConversationEntity.kt | 差异 ±5 行 (基线 2.5.1)
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
-
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
@@ -34,11 +28,10 @@ data class ConversationEntity(
     val modeInjectionIds: String = "[]",
     @ColumnInfo("lorebook_ids", defaultValue = "[]")
     val lorebookIds: String = "[]",
-    // legacy 数据壳: v4.5.23 起 CWD 为助手级; 列保留避免 DB 迁移, 无行为分支
     @ColumnInfo("workspace_cwd", defaultValue = "")
     val workspaceCwd: String = "",
     @ColumnInfo("folder_id", defaultValue = "")
     val folderId: String = "",
-    @ColumnInfo("compress_retentions", defaultValue = "")
-    val compressRetentions: String = "",
+    @ColumnInfo("config", defaultValue = "")
+    val config: String = "",
 )

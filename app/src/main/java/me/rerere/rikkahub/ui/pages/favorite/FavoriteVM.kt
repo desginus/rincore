@@ -1,18 +1,12 @@
-/* 【域 I·数据存储】 — 页面 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.ui.pages.favorite
-
-/* ───【原版对齐】FavoriteVM.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.db.entity.FavoriteEntity
-import me.rerere.rikkahub.data.favorite.NodeFavoriteAdapter
+import me.rerere.rikkahub.data.repository.NodeFavoriteAdapter
 import me.rerere.rikkahub.data.model.FavoriteType
 import me.rerere.rikkahub.data.repository.FavoriteRepository
 import kotlin.uuid.Uuid
@@ -50,7 +44,6 @@ class FavoriteVM(
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    // 2.5.3 移植: suspend 化 — 调用侧保证删除/恢复完成时序, 撤销后收藏可正确恢复
     suspend fun removeFavorite(refKey: String) {
         favoriteRepository.deleteByRefKey(refKey)
     }

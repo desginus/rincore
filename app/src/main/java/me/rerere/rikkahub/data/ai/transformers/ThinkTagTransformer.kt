@@ -1,19 +1,5 @@
-/* 【域 B·AI 传输】 | 地图: docs/APP_MAP.md §B */
 package me.rerere.rikkahub.data.ai.transformers
 
-/* ───【原版对齐】ThinkTagTransformer.kt | 差异 ±15 行 (基线 2.5.1)
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
-
-
-/* ───【原版对齐 + 2.4.11 移植】ThinkTagTransformer | v3.9.12 重写
- * 来源: 原版 RikkaHub 2.4.11 (transformThinkTags 重构, 89 行测试覆盖)
- * 关键变化:
- *   1. THINKING_REGEX 仅匹配字符串开头的 <think> (\\A\\s*), 排除正文 mid-tag 干扰
- *   2. 已有 Reasoning Part 的消息不再二次创建 — 避免重复 reasoning 滚雪球
- *   3. 抽出 transformThinkTags(generationFinished) 共享 visualTransform/onGenerationFinish
- *   4. onGenerationFinish 对所有未关闭的 Reasoning Part 强制 finishedAt=now
- * ───────────────────────────────────────────────────────────────*/
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import me.rerere.ai.core.MessageRole

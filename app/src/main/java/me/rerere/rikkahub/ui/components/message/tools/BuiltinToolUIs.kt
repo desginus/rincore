@@ -1,10 +1,5 @@
-/* 【域 F·主题渲染】 — 消息/文档渲染 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.message.tools
 
-
-/* ───【原版对齐】BuiltinToolUIs.kt | 差异 ±5 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -24,11 +19,10 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -42,11 +36,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.util.fastForEach
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -55,8 +49,12 @@ import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.common.http.jsonObjectOrNull
 import me.rerere.highlight.CodeHighlightText
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.ArrowRight01
+import me.rerere.hugeicons.stroke.Book02
+import me.rerere.hugeicons.stroke.ChartColumn
+import me.rerere.hugeicons.stroke.ChartLineData01
+import me.rerere.hugeicons.stroke.ChartScatter
 import me.rerere.hugeicons.stroke.Clipboard
-import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Eraser
 import me.rerere.hugeicons.stroke.GlobalSearch
 import me.rerere.hugeicons.stroke.MagicWand01
@@ -65,25 +63,26 @@ import me.rerere.hugeicons.stroke.QuillWrite01
 import me.rerere.hugeicons.stroke.Refresh01
 import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Calendar03
-import me.rerere.hugeicons.stroke.ChartColumn
-import me.rerere.hugeicons.stroke.ChartLineData01
-import me.rerere.hugeicons.stroke.ChartScatter
 import me.rerere.hugeicons.stroke.CalendarAdd01
 import me.rerere.hugeicons.stroke.SmartPhone01
 import me.rerere.hugeicons.stroke.Time02
 import me.rerere.hugeicons.stroke.VolumeHigh
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.ai.tools.MemoryToolNames
 import me.rerere.rikkahub.data.event.AppEvent
 import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.data.repository.memoryId
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.ui.Favicon
 import me.rerere.rikkahub.ui.components.ui.FaviconRow
+import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.utils.JsonInstantPretty
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
-import me.rerere.rikkahub.utils.toLocalString
 import me.rerere.rikkahub.utils.openUrl
+import me.rerere.rikkahub.utils.toLocalString
 import org.koin.compose.koinInject
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -92,77 +91,106 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
 /**
- * 记忆工具: 按 action 区分标题/图标, 摘要显示记忆内容, 详情附带删除按钮
+ * 记忆库工具: 标题按读/写/删区分, 摘要显示操作的文件路径, 点路径跳到该文件的详情页
  */
-object MemoryToolUI : ToolUIRenderer {
-    private const val ACTION_CREATE = "create"
-    private const val ACTION_EDIT = "edit"
-    private const val ACTION_DELETE = "delete"
-
-    override val toolName: String = "memory_tool"
-
-    private fun action(context: ToolUIContext): String? =
-        context.arguments.getStringContent("action")
-
-    override fun icon(context: ToolUIContext): ImageVector = when (action(context)) {
-        ACTION_DELETE -> HugeIcons.Eraser
+class MemoryFileToolUI(override val toolName: String) : ToolUIRenderer {
+    override fun icon(context: ToolUIContext): ImageVector = when (toolName) {
+        MemoryToolNames.READ, MemoryToolNames.LIST -> HugeIcons.Book02
+        MemoryToolNames.DELETE -> HugeIcons.Eraser
         else -> HugeIcons.QuillWrite01
     }
 
     @Composable
-    override fun title(context: ToolUIContext): String = when (action(context)) {
-        ACTION_CREATE -> stringResource(R.string.chat_message_tool_create_memory)
-        ACTION_EDIT -> stringResource(R.string.chat_message_tool_edit_memory)
-        ACTION_DELETE -> stringResource(R.string.chat_message_tool_delete_memory)
-        else -> stringResource(R.string.chat_message_tool_call_generic, toolName)
-    }
+    override fun title(context: ToolUIContext): String =
+        memoryToolTitle(toolName, context.arguments)
+            ?: stringResource(R.string.chat_message_tool_call_generic, toolName)
 
-    override fun hasSummary(context: ToolUIContext): Boolean =
-        action(context) in listOf(ACTION_CREATE, ACTION_EDIT) &&
-            context.content.getStringContent("content") != null
+    // memory_read 的 path 是数组, 其余工具是单个路径
+    private fun paths(context: ToolUIContext): List<String> =
+        when (val path = context.arguments.jsonObjectOrNull?.get("path")) {
+            is JsonArray -> path.mapNotNull { it.jsonPrimitiveOrNull?.contentOrNull }
+            else -> listOfNotNull(path?.jsonPrimitiveOrNull?.contentOrNull)
+        }
+
+    override fun hasSummary(context: ToolUIContext): Boolean = paths(context).isNotEmpty()
 
     @Composable
     override fun Summary(context: ToolUIContext) {
-        context.content.getStringContent("content")?.let { memoryContent ->
-            Text(
-                text = memoryContent,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.shimmer(isLoading = context.loading),
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-
-    @Composable
-    override fun Preview(context: ToolUIContext, onDismissRequest: () -> Unit) {
-        val memoryRepo: MemoryRepository = koinInject()
-        val scope = rememberCoroutineScope()
-        val memoryId = (context.content as? JsonObject)?.get("id")?.jsonPrimitiveOrNull?.longOrNull
-        DefaultToolPreview(
-            context = context,
-            headerActions = if (action(context) in listOf(ACTION_CREATE, ACTION_EDIT) && memoryId != null) {
-                {
-                    IconButton(
-                        onClick = {
-                            scope.launch {
-                                memoryRepo.deleteMemory(memoryId)
-                                onDismissRequest()
-                            }
+        val navController = LocalNavController.current
+        val paths = paths(context)
+        // 参数还在生成时路径可能不完整; 删掉的文件没有详情可看
+        val memoryId = context.assistant?.memoryId
+            ?.takeIf { !context.loading && toolName != MemoryToolNames.DELETE }
+        Column {
+            paths.take(MAX_SUMMARY_PATHS).fastForEach { path ->
+                Row(
+                    modifier = Modifier
+                        .clip(MaterialTheme.shapes.small)
+                        .clickable(enabled = memoryId != null) {
+                            memoryId?.let { navController.navigate(Screen.MemoryFile(it, path)) }
                         }
-                    ) {
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = path,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .shimmer(isLoading = context.loading),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (memoryId != null) {
                         Icon(
-                            imageVector = HugeIcons.Delete01,
-                            contentDescription = stringResource(R.string.tool_ui_delete_memory)
+                            imageVector = HugeIcons.ArrowRight01,
+                            contentDescription = null,
+                            modifier = Modifier.size(12.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                         )
                     }
                 }
-            } else {
-                null
-            },
-        )
+            }
+            if (paths.size > MAX_SUMMARY_PATHS) {
+                Text(
+                    text = "+${paths.size - MAX_SUMMARY_PATHS}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                )
+            }
+        }
     }
+
+    companion object {
+        private const val MAX_SUMMARY_PATHS = 5
+
+        val all = listOf(
+            MemoryToolNames.READ,
+            MemoryToolNames.WRITE,
+            MemoryToolNames.STR_REPLACE,
+            MemoryToolNames.APPEND,
+            MemoryToolNames.DELETE,
+            MemoryToolNames.LIST,
+        ).map(::MemoryFileToolUI)
+    }
+}
+
+/** 记忆库工具的标题, 聊天消息与导出图片共用; 不是记忆库工具时返回 null */
+@Composable
+internal fun memoryToolTitle(toolName: String, arguments: JsonElement?): String? = when (toolName) {
+    MemoryToolNames.READ -> stringResource(R.string.chat_message_tool_read_memory)
+    MemoryToolNames.LIST -> stringResource(R.string.chat_message_tool_list_memory)
+    MemoryToolNames.WRITE -> if (arguments.getStringContent("if_version") == MemoryRepository.NEW_FILE_VERSION) {
+        stringResource(R.string.chat_message_tool_create_memory)
+    } else {
+        stringResource(R.string.chat_message_tool_edit_memory)
+    }
+
+    MemoryToolNames.STR_REPLACE, MemoryToolNames.APPEND -> stringResource(R.string.chat_message_tool_edit_memory)
+    MemoryToolNames.DELETE -> stringResource(R.string.chat_message_tool_delete_memory)
+    else -> null
 }
 
 /**
@@ -348,16 +376,15 @@ object TextToSpeechToolUI : ToolUIRenderer {
 
 /**
  * 技能调用: 标题显示技能名与路径
- * 匹配所有 skill_ 前缀的工具名
  */
 object UseSkillToolUI : ToolUIRenderer {
-    override val toolName: String = "skill_"  // 前缀匹配, 实际由 ToolUIRegistry.resolve 处理
+    override val toolName: String = "use_skill"
 
     override fun icon(context: ToolUIContext): ImageVector = HugeIcons.MagicWand01
 
     @Composable
     override fun title(context: ToolUIContext): String {
-        val skillName = context.tool.toolName.removePrefix("skill__").removePrefix("skill_")
+        val skillName = context.arguments.getStringContent("name") ?: ""
         val path = context.arguments.getStringContent("path")
         return if (path != null) "Skill: $skillName / $path" else "Skill: $skillName"
     }

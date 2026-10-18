@@ -1,9 +1,4 @@
-/* 【域 I·数据存储】 — 仓库层 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.data.repository
-
-/* ───【原版对齐】FolderRepository.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -27,21 +22,11 @@ class FolderRepository(
         return folderDAO.getFolderById(id.toString())?.toFolder()
     }
 
-    /** v4.8.63: 全部助手的项目包 id 全集 (统计剪枝用) */
-    suspend fun getAllFolderIds(): Set<Uuid> =
-        folderDAO.getAllFolderIds().mapNotNull { runCatching { Uuid.parse(it) }.getOrNull() }.toSet()
-
-    /** 4.8.25: 响应式查询 (CWD 变更自动刷新)。 */
-    fun getFolderFlow(id: Uuid): Flow<Folder?> {
-        return folderDAO.getFolderByIdFlow(id.toString()).map { it?.toFolder() }
-    }
-
-    suspend fun createFolder(assistantId: Uuid, name: String, cwd: String? = null): Folder {
+    suspend fun createFolder(assistantId: Uuid, name: String): Folder {
         val folder = Folder(
             assistantId = assistantId,
             name = name,
             createAt = Instant.now(),
-            cwd = cwd,
         )
         folderDAO.insert(folder.toEntity())
         return folder
@@ -49,11 +34,6 @@ class FolderRepository(
 
     suspend fun renameFolder(id: Uuid, name: String) {
         folderDAO.rename(id.toString(), name)
-    }
-
-    /** 4.8.24: 更新项目包 CWD。 */
-    suspend fun updateCwd(id: Uuid, cwd: String?) {
-        folderDAO.updateCwd(id.toString(), cwd)
     }
 
     /**
@@ -71,7 +51,6 @@ private fun FolderEntity.toFolder(): Folder = Folder(
     name = name,
     sortIndex = sortIndex,
     createAt = Instant.ofEpochMilli(createAt),
-    cwd = cwd,
 )
 
 private fun Folder.toEntity(): FolderEntity = FolderEntity(
@@ -80,5 +59,4 @@ private fun Folder.toEntity(): FolderEntity = FolderEntity(
     name = name,
     sortIndex = sortIndex,
     createAt = createAt.toEpochMilli(),
-    cwd = cwd,
 )

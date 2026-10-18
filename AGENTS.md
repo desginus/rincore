@@ -1,57 +1,45 @@
 # Repository Guidelines
 
-本文档面向贡献者，概述本仓库的模块结构、开发流程，便于快速上手并保持一致的协作质量。
+## Project Overview
+
+RikkaHub is a native Android LLM chat client that supports switching between different AI providers
+for conversations.
+Built with Jetpack Compose, Kotlin, and follows Material 3 Expressive (MD3 Expressive) design language.
+
+## Design Language
+
+The UI follows Material 3 Expressive. New and reworked screens should match it rather than the older baseline
+Material 3 look (cards with dividers, plain forms).
+
+- The app theme is `MaterialExpressiveTheme` (app/src/main/java/me/rerere/rikkahub/ui/theme/Theme.kt); prefer the
+  expressive variants of components, shapes (`MaterialShapes`), emphasized typography (e.g. `titleSmallEmphasized`)
+  and motion from `androidx.compose.material3` over hand-rolled equivalents.
+- Settings-style and form pages use segmented groups via `CardGroup` (
+  app/src/main/java/me/rerere/rikkahub/ui/components/ui/CardGroup.kt) instead of a card with dividers.
+- Favor larger corner radii, filled/tonal containers, and whole-row click targets.
 
 ## Build, Test, and Development Commands
-
-使用 Android Studio 或命令行 Gradle：
 
 ```bash
 ./gradlew assembleDebug          # 构建 Debug APK
 ./gradlew test                   # 运行所有模块的 JVM 单元测试
-./gradlew connectedDebugAndroidTest  # 运行设备/模拟器上的仪器测试
 ./gradlew lint                   # 运行 Android Lint
 ```
-
-构建应用需要在 `app/` 下提供 `google-services.json`（用于 Firebase）。
-`web` 模块会在 `preBuild` 阶段构建 `web-ui/` 并复制静态资源，需要本地可用 `pnpm`。
-
-## Coding Style & Naming Conventions
-
-本仓库使用 `.editorconfig` 统一格式：
-
-- Kotlin/Gradle 脚本：4 空格缩进，最大行长 120。
-- XML/JSON：2 空格缩进。
-- Markdown/YAML：2 空格缩进，允许尾随空格（用于对齐）。
-
-命名习惯：模块名为小写目录（如 `ai/`、`speech/`），Kotlin 类遵循 PascalCase，测试类以 `*Test` 结尾。
-
-## Testing Guidelines
-
-测试框架以 JUnit/AndroidX Test 为主。未设定强制覆盖率门槛，但新逻辑应配套新增/更新测试。测试文件命名建议：
-
-- 单元测试：`FooTest.kt`
-- 仪器测试：`FooInstrumentedTest.kt` 或 `*Test.kt`
 
 ## Module Structure
 
 - **app**: Main application module with UI, ViewModels, and core logic
 - **ai**: AI SDK abstraction layer for different providers (OpenAI, Google, Anthropic)
 - **common**: Common utilities and extensions
-- **search**: Search functionality SDK for multiple providers (Exa, Tavily, Zhipu, Bing, Brave, SearXNG, and others)
-- **speech**: Speech module for TTS and ASR implementations
 - **document**: Document parsing module for handling PDF, DOCX, PPTX, and EPUB files
 - **highlight**: Code syntax highlighting implementation
 - **material3**: Material color utility extensions used by the app UI
-- **web**: Embedded web server module that provides Ktor server startup function and hosts static frontend build files (built from web-ui/ React project)
-- **workspace**: Sandboxed per-workspace file system and shell execution environment exposed to the AI as tools
-- **web-ui**: Web management interface (TypeScript)
-
-RinCore 当前版本 v4.8.9，单产品线（包名 me.rincore.app）。任何代码修改前加载
-`.claude/skills/rincore-project-brief/SKILL.md`；历史知识见 `docs/ecosystem/` 与
-`.claude/skills/` 知识库（changelog / bug-record / decisions / roadmap）。
-**入口必读**: `docs/APP_MAP.md` — 12 功能域地图 + 需求→改动索引 + 历史教训索引。
-B 线 WaterHub 已废弃移除，不再涉及。
+- **ui**: Reusable Compose UI components that do not depend on app logic
+- **search**: Search functionality SDK for multiple providers (Exa, Tavily, Zhipu, Bing, Brave, SearXNG, and others)
+- **speech**: Speech module for TTS and ASR implementations
+- **web**: Embedded web server module that provides Ktor server startup function and hosts static frontend build files (
+  built from web-ui/ React project)
+- **workspace**: Sandboxed per-workspace file system and shell execution environment exposed to the AI as tools.
 
 ## Concepts
 
@@ -62,8 +50,17 @@ B 线 WaterHub 已废弃移除，不再涉及。
 
 - **Conversation**: A persistent conversation thread between the user and an assistant. Each conversation maintains a
   list of MessageNodes in a tree structure to support message branching, along with metadata like title, creation time,
-  update time, pin status, chat suggestions, optional conversation-level system prompt, and prompt injection bindings. (
-  app/src/main/java/me/rerere/rikkahub/data/model/Conversation.kt)
+  update time, pin status, chat suggestions, optional conversation-level system prompt, and prompt injection bindings.
+  Once a conversation is persisted it also holds a `ConversationConfig` snapshot (chat model, reasoning level, search,
+  MCP servers, workspace, skills) taken from the assistant; from then on chat-page changes to those settings stay on
+  the conversation, and code should read them through `Settings.getAssistantOf(conversation)` /
+  `Settings.getChatModelOf(conversation)` instead of the assistant directly. Once loaded, the in-memory
+  `ConversationSession` is the single source of truth: change a conversation through `ChatService` (which applies
+  `session.update { latest -> ... }` and then `flush()`), never by saving a whole `Conversation` snapshot or one read
+  back from the database; deleting also goes through `ChatService` so a running generation cannot re-insert it. (
+  app/src/main/java/me/rerere/rikkahub/data/model/Conversation.kt,
+  app/src/main/java/me/rerere/rikkahub/data/model/ConversationConfig.kt,
+  app/src/main/java/me/rerere/rikkahub/service/ConversationSession.kt)
 
 - **UIMessage**: A platform-agnostic message abstraction that encapsulates chat messages with different types of content
   parts (text, images, documents, reasoning, tool calls/results, etc.). Each message has a role (USER, ASSISTANT,

@@ -1,11 +1,5 @@
-/* 【域 F·主题渲染】 — 消息/文档渲染 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.message
 
-
-/* ───【原版对齐】ChatMessageCot.kt | 差异 ±20 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * v4.8.94 图表工具链: 新增 ChartBlock — 成功的 chart_display 调用原地替换为图表卡片
- * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.ui.util.fastForEachIndexed
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -16,7 +10,7 @@ import me.rerere.rikkahub.utils.JsonInstant
 internal const val CHART_DISPLAY_TOOL_NAME = "chart_display"
 
 /**
- * 思考步骤类型，用于分组 Reasoning 和 Tool
+ * 思考步骤类型，用于分组 Reasoning、客户端 Tool 和 ServerTool
  */
 sealed interface ThinkingStep {
     data class ReasoningStep(
@@ -27,6 +21,9 @@ sealed interface ThinkingStep {
         val tool: UIMessagePart.Tool,
     ) : ThinkingStep
 
+    data class ServerToolStep(
+        val tool: UIMessagePart.ServerTool,
+    ) : ThinkingStep
 }
 
 /**
@@ -42,7 +39,7 @@ sealed interface MessagePartBlock {
 
 /**
  * 将 parts 分组成 ThinkingBlock 和 ContentBlock
- * 连续的 Reasoning 和 Tool 会被分组到一个 ThinkingBlock 中
+ * 连续的 Reasoning、客户端 Tool 和 ServerTool 会被分组到一个 ThinkingBlock 中
  * 成功执行的 chart_display 原地替换为 ChartBlock (会切断所在的 ThinkingBlock);
  * 生成中或失败的调用仍作为普通 ToolStep 展示
  */
@@ -72,6 +69,9 @@ fun List<UIMessagePart>.groupMessageParts(): List<MessagePartBlock> {
                 }
             }
 
+            is UIMessagePart.ServerTool -> {
+                currentThinkingSteps.add(ThinkingStep.ServerToolStep(part))
+            }
 
             else -> {
                 flushThinkingSteps()

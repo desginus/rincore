@@ -1,14 +1,8 @@
-/* 【域 I·数据存储】 — 仓库层 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.data.repository
-
-/* ───【原版对齐】FavoriteRepository.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 import kotlinx.coroutines.flow.Flow
 import me.rerere.rikkahub.data.db.dao.FavoriteDAO
 import me.rerere.rikkahub.data.db.entity.FavoriteEntity
-import me.rerere.rikkahub.data.favorite.NodeFavoriteAdapter
 import me.rerere.rikkahub.data.model.FavoriteType
 import me.rerere.rikkahub.data.model.NodeFavoriteTarget
 import kotlin.uuid.Uuid

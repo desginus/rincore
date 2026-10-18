@@ -1,111 +1,128 @@
-/* 【域 E·设置体系】 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.ui.pages.setting
 
-
-/* ───【原版对齐】SettingPage | 差异 +315 行
- * 来源: 原版移植 + 自研 (能力模块/插件入口/域管理等自研入口)
- * 功能: 设置主页 (分组导航)
- * 差异: 能力模块 (MCP/Skills/插件/内置工具)、域管理入口为自研
- * ───────────────────────────────────────────────────────────────*/
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.Folder01
-import me.rerere.hugeicons.stroke.GlobalSearch
-import me.rerere.hugeicons.stroke.Code
-import me.rerere.hugeicons.stroke.AiEditing
 import me.rerere.hugeicons.stroke.AiMagic
 import me.rerere.hugeicons.stroke.Alert01
-import me.rerere.hugeicons.stroke.Clock02
 import me.rerere.hugeicons.stroke.Book01
-import me.rerere.hugeicons.stroke.Puzzle
+import me.rerere.hugeicons.stroke.Book03
 import me.rerere.hugeicons.stroke.Bookshelf01
-import me.rerere.hugeicons.stroke.BookOpen01
 import me.rerere.hugeicons.stroke.Brain02
-import me.rerere.hugeicons.stroke.Message02
+import me.rerere.hugeicons.stroke.Clapping01
 import me.rerere.hugeicons.stroke.Database02
-import me.rerere.hugeicons.stroke.Wrench01
+import me.rerere.hugeicons.stroke.GlobalSearch
+import me.rerere.hugeicons.stroke.Image02
 import me.rerere.hugeicons.stroke.ImageUpload
+import me.rerere.hugeicons.stroke.InLove
 import me.rerere.hugeicons.stroke.LookTop
 import me.rerere.hugeicons.stroke.McpServer
+import me.rerere.hugeicons.stroke.Megaphone01
+import me.rerere.hugeicons.stroke.Moon02
+import me.rerere.hugeicons.stroke.Package
+import me.rerere.hugeicons.stroke.ServerStack01
 import me.rerere.hugeicons.stroke.Settings03
 import me.rerere.hugeicons.stroke.Share04
+import me.rerere.hugeicons.stroke.SmartPhone01
 import me.rerere.hugeicons.stroke.Sun01
-import me.rerere.hugeicons.stroke.Package
-import me.rerere.hugeicons.stroke.Sorting01
-import me.rerere.hugeicons.stroke.Tools
+import me.rerere.hugeicons.stroke.Tiktok
+import me.rerere.hugeicons.stroke.WavingHand01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
-import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.isNotConfigured
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
-import me.rerere.rikkahub.ui.components.ui.Select
+import me.rerere.rikkahub.ui.components.ui.CardGroupIcon
+import me.rerere.rikkahub.ui.components.ui.ConnectedChoiceButtons
+import me.rerere.rikkahub.ui.components.ui.ConnectedChoiceLabel
 import me.rerere.rikkahub.ui.context.LocalNavController
-import me.rerere.rikkahub.ui.context.Navigator
 import me.rerere.rikkahub.ui.hooks.rememberColorMode
 import me.rerere.rikkahub.ui.theme.ColorMode
 import me.rerere.rikkahub.ui.theme.CustomColors
+import me.rerere.rikkahub.utils.joinQQGroup
+import me.rerere.rikkahub.utils.openUrl
+import me.rerere.rikkahub.utils.plus
+import me.rerere.rikkahub.utils.writeClipboardText
+import me.rerere.ui.icons.DiscordIcon
+import me.rerere.ui.icons.TencentQQIcon
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-import me.rerere.rikkahub.utils.plus
 
 @Composable
 fun SettingPage(vm: SettingVM = koinViewModel()) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val navController = LocalNavController.current
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val launchCount by vm.launchCount.collectAsStateWithLifecycle()
     val filesManager: FilesManager = koinInject()
-    var showDomainPage by remember { mutableStateOf(false) }
-    var showBuiltinToolsPage by remember { mutableStateOf(false) }
 
-    if (showBuiltinToolsPage) {
-        SettingBuiltinToolsPage(onBack = { showBuiltinToolsPage = false })
-        return
-    }
-
-    if (showDomainPage) {
-        SettingZonePage(
-            settings = settings,
-            vm = vm,
-            onBack = { showDomainPage = false },
+    if (!settings.init && launchCount > 100 && (launchCount - settings.sponsorAlertDismissedAt) >= 50) {
+        AlertDialog(
+            onDismissRequest = {
+                vm.updateSettings { it.copy(sponsorAlertDismissedAt = launchCount) }
+            },
+            icon = { Icon(HugeIcons.WavingHand01, null) },
+            title = { Text(stringResource(R.string.setting_page_sponsor_alert_title)) },
+            text = { Text(stringResource(R.string.setting_page_sponsor_alert_desc)) },
+            confirmButton = {
+                Button(onClick = {
+                    vm.updateSettings { it.copy(sponsorAlertDismissedAt = launchCount) }
+                    navController.navigate(Screen.SettingDonate)
+                }) {
+                    Text(stringResource(R.string.setting_page_sponsor_alert_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    vm.updateSettings { it.copy(sponsorAlertDismissedAt = launchCount) }
+                }) {
+                    Text(stringResource(R.string.setting_page_sponsor_alert_dismiss))
+                }
+            },
         )
-        return
     }
 
     Scaffold(
@@ -126,212 +143,145 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = innerPadding + PaddingValues(8.dp),
+            contentPadding = innerPadding + PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             if (settings.isNotConfigured()) {
                 item {
-                    ProviderConfigWarningCard(navController)
+                    ProviderConfigWarningCard(
+                        onClick = { navController.navigate(Screen.SettingProvider) }
+                    )
                 }
             }
 
             item("generalSettings") {
-                val context = LocalContext.current
                 var colorMode by rememberColorMode()
-                val selectedColorModeText = when (colorMode) {
-                    ColorMode.SYSTEM -> stringResource(R.string.setting_page_color_mode_system)
-                    ColorMode.LIGHT -> stringResource(R.string.setting_page_color_mode_light)
-                    ColorMode.DARK -> stringResource(R.string.setting_page_color_mode_dark)
-                }
+                val containerColor = MaterialTheme.colorScheme.primaryContainer
+                val contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                    title = { Text("通用与外观") },
+                    title = { Text(stringResource(R.string.setting_page_general_settings)) },
                 ) {
-                    item(
-                        leadingContent = { Icon(HugeIcons.Sun01, null) },
-                        trailingContent = {
-                            Select(
-                                options = ColorMode.entries,
-                                selectedOption = colorMode,
-                                onOptionSelected = {
-                                    colorMode = it
-                                    // v4.7.22 返回层级加固: 原 inclusive=true 会连当前
-                                    // Setting 一起弹出再重推 (深层路径下导致"返回跳级"
-                                    // 观感)。改为非 inclusive + singleTop: 仅清掉 Setting
-                                    // 之上的残留, 当前页保持, 返回行为永远是上一级。
-                                    navController.navigate(Screen.Setting) {
-                                        popUpTo(Screen.Setting) {
-                                            inclusive = false
-                                        }
-                                        launchSingleTop = true
+                    formItem {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        ) {
+                            CardGroupIcon(colorMode.icon(), containerColor = containerColor, contentColor = contentColor)
+                            Text(stringResource(R.string.setting_page_color_mode))
+                        }
+                        ConnectedChoiceButtons(
+                            options = ColorMode.entries,
+                            selected = colorMode,
+                            onSelect = {
+                                colorMode = it
+                                navController.navigate(Screen.Setting) {
+                                    popUpTo(Screen.Setting) {
+                                        inclusive = true
                                     }
+                                }
+                            },
+                        ) { mode, selected ->
+                            ConnectedChoiceLabel(
+                                text = when (mode) {
+                                    ColorMode.SYSTEM -> stringResource(R.string.setting_page_color_mode_system)
+                                    ColorMode.LIGHT -> stringResource(R.string.setting_page_color_mode_light)
+                                    ColorMode.DARK -> stringResource(R.string.setting_page_color_mode_dark)
                                 },
-                                optionToString = {
-                                    when (it) {
-                                        ColorMode.SYSTEM -> stringResource(R.string.setting_page_color_mode_system)
-                                        ColorMode.LIGHT -> stringResource(R.string.setting_page_color_mode_light)
-                                        ColorMode.DARK -> stringResource(R.string.setting_page_color_mode_dark)
-                                    }
-                                },
-                                modifier = Modifier.width(150.dp)
+                                selected = selected,
+                                icon = mode.icon(),
                             )
-                        },
-                        headlineContent = { Text(stringResource(R.string.setting_page_color_mode)) },
-                        supportingContent = { Text(selectedColorModeText) },
-                    )
+                        }
+                    }
                     item(
                         onClick = { navController.navigate(Screen.SettingPreferences) },
-                        leadingContent = { Icon(HugeIcons.Settings03, null) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Settings03, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(stringResource(R.string.setting_page_preferences_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_preferences)) },
                     )
-                                                        }
-            }
-            
-            item("assistantManagement") {
-                CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                    title = { Text("助手管理") },
-                ) {
-                    // 当前默认助手快捷设置 — 直接编辑默认助手的基础设定/提示词/记忆/本地工具
-                    val defaultAssistant = settings.getCurrentAssistant()
-item(
+                    item(
                         onClick = { navController.navigate(Screen.Assistant) },
-                        leadingContent = { Icon(HugeIcons.LookTop, null) },
+                        leadingContent = { CardGroupIcon(HugeIcons.LookTop, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(stringResource(R.string.setting_page_assistant_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_assistant)) },
                     )
-item(
-                        onClick = { navController.navigate(Screen.AssistantBasic(defaultAssistant.id.toString())) },
-                        leadingContent = { Icon(HugeIcons.Settings03, null) },
-                        supportingContent = { Text("当前默认：${defaultAssistant.name}") },
-                        headlineContent = { Text("基础设定") },
+                    item(
+                        onClick = { navController.navigate(Screen.Extensions) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Package, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_extensions_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_extensions)) },
                     )
-item(
-                        onClick = { navController.navigate(Screen.AssistantPrompt(defaultAssistant.id.toString())) },
-                        leadingContent = { Icon(HugeIcons.Message02, null) },
-                        supportingContent = { Text("当前默认：${defaultAssistant.name}") },
-                        headlineContent = { Text("提示词") },
-                    )
-item(
-                        onClick = { navController.navigate(Screen.AssistantMemory(defaultAssistant.id.toString())) },
-                        leadingContent = { Icon(HugeIcons.Brain02, null) },
-                        supportingContent = { Text("当前默认：${defaultAssistant.name}") },
-                        headlineContent = { Text("记忆") },
-                    )
-item(
-                        onClick = { navController.navigate(Screen.AssistantLocalTool(defaultAssistant.id.toString())) },
-                        leadingContent = { Icon(HugeIcons.BookOpen01, null) },
-                        supportingContent = { Text("当前默认：${defaultAssistant.name}") },
-                        headlineContent = { Text("本地设置") },
-                    )
-
                 }
             }
+
             item("modelServices") {
+                val containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                val contentColor = MaterialTheme.colorScheme.onTertiaryContainer
                 CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                    title = { Text("模型") }, // v3.6.16: 服务已移入高级功能
+                    title = { Text(stringResource(R.string.setting_page_model_and_services)) },
                 ) {
                     item(
                         onClick = { navController.navigate(Screen.SettingModels) },
-                        leadingContent = { Icon(HugeIcons.AiMagic, null) },
+                        leadingContent = { CardGroupIcon(HugeIcons.AiMagic, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(stringResource(R.string.setting_page_default_model_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_default_model)) },
                     )
                     item(
                         onClick = { navController.navigate(Screen.SettingProvider) },
-                        leadingContent = { Icon(HugeIcons.Brain02, null) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Brain02, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(stringResource(R.string.setting_page_providers_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_providers)) },
                     )
-                    // v3.6.16: 搜索/语音/Web 服务已移至「高级功能」统一入口
+                    item(
+                        onClick = { navController.navigate(Screen.SettingSearch) },
+                        leadingContent = { CardGroupIcon(HugeIcons.GlobalSearch, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_search_service_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_search_service)) },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingSpeech) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Megaphone01, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_tts_service_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_tts_service)) },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingMedia) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Image02, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_media_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_media)) },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingMcp) },
+                        leadingContent = { CardGroupIcon(HugeIcons.McpServer, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_mcp_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_mcp)) },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingWeb) },
+                        leadingContent = { CardGroupIcon(HugeIcons.ServerStack01, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_web_server_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_web_server)) },
+                    )
                 }
             }
 
-            item("capabilityModules") {
-                CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                    title = { Text("能力模块") },
-                ) {
-                    item(
-                        onClick = { navController.navigate(Screen.SettingMcp) },
-                        leadingContent = { Icon(HugeIcons.McpServer, null) },
-                        supportingContent = { Text("MCP 服务器连接与管理（SSE / StreamableHTTP / STDIO）") },
-                        headlineContent = { Text("MCP 服务器") },
-                    )
-item(
-                        onClick = { navController.navigate(Screen.Skills) },
-                        leadingContent = { Icon(HugeIcons.Puzzle, null) },
-                        // v4.8.146 (用户定版): 我的技能 + 发现 合并为单一 UI (SkillHubPage 内 Tab 切换)
-                        supportingContent = { Text("我的技能 + 发现（CherryIN / skills.sh）") },
-                        headlineContent = { Text("Agent Skills") },
-                    )
-item(
-                        onClick = { navController.navigate(Screen.SettingPlugins) },
-                        leadingContent = { Icon(HugeIcons.Package, null) },
-                        supportingContent = { Text("插件能力模块（workspace 目录安装：技能 + STDIO MCP 桥接）") },
-                        headlineContent = { Text("插件") },
-                    )
-item(
-                        onClick = { showDomainPage = true },
-                        leadingContent = { Icon(HugeIcons.Sorting01, null) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_domain_management_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_domain_management)) },
-                    )
-item(
-                        onClick = { showBuiltinToolsPage = true },
-                        leadingContent = { Icon(HugeIcons.Tools, null) },
-                        supportingContent = { Text("精确到工具 ID 与数量的全量清单（核对工具总数）") },
-                        headlineContent = { Text("内置工具") },
-                    )
-                }
-            }
-            // v3.6.104: 设置页重排 — 原「扩展与工具」+「系统」+「其他功能」
-            // 重组为两个分区: 任务自动化 (工作流/定时任务/闹钟) +
-            // 数据与日志 (备份/聊天存储/运行日志/更多设置)
-            item("automation") {
-                CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                    title = { Text("任务自动化") },
-                ) {
-                    item(
-                        onClick = { navController.navigate(Screen.Workflows) },
-                        leadingContent = { Icon(HugeIcons.AiEditing, null) },
-                        supportingContent = { Text("触发器 + 条件 + 动作序列") },
-                        headlineContent = { Text("工作流") },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.ScheduledJobs) },
-                        leadingContent = { Icon(HugeIcons.Book01, null) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_scheduled_jobs_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_scheduled_jobs)) },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.SettingAlarms) },
-                        leadingContent = { Icon(HugeIcons.Clock02, null) },
-                        supportingContent = { Text("设备闹钟") },
-                        headlineContent = { Text("闹钟") },
-                    )
-                }
-            }
-            item("dataAndLogs") {
+            item("dataSettings") {
                 val storageState by produceState(-1 to 0L) {
                     value = filesManager.countChatFiles()
                 }
+                val containerColor = MaterialTheme.colorScheme.secondaryContainer
+                val contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                 CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                    title = { Text("数据与日志") },
+                    title = { Text(stringResource(R.string.setting_page_data_settings)) },
                 ) {
                     item(
                         onClick = { navController.navigate(Screen.Backup) },
-                        leadingContent = { Icon(HugeIcons.Database02, null) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Database02, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(stringResource(R.string.setting_page_data_backup_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_data_backup)) },
                     )
                     item(
                         onClick = { navController.navigate(Screen.SettingFiles) },
-                        leadingContent = { Icon(HugeIcons.ImageUpload, null) },
+                        leadingContent = { CardGroupIcon(HugeIcons.ImageUpload, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = {
                             if (storageState.first == -1) {
                                 Text(stringResource(R.string.calculating))
@@ -347,27 +297,6 @@ item(
                         },
                         headlineContent = { Text(stringResource(R.string.setting_page_chat_storage)) },
                     )
-                    item(
-                        onClick = { navController.navigate(Screen.SettingCallTrace) },
-                        leadingContent = { Icon(HugeIcons.Code, null) },
-                        supportingContent = { Text("查看最近一条消息的完整运行流程") },
-                        headlineContent = { Text("运行日志") },
-                    )
-                    item(
-                        // v4.8.146 (用户定版): 收件箱 (Upload) — 上传文件管理 + 使用位置标注
-                        onClick = { navController.navigate(Screen.SettingUploadInbox) },
-                        leadingContent = { Icon(HugeIcons.Folder01, null) },
-                        supportingContent = { Text("Upload 上传文件 — 查看占用与使用位置（头像 / 对话背景等）") },
-                        headlineContent = { Text("收件箱") },
-                    )
-                    item(
-                        // v4.8.145: 改为真实导航 (修"子页返回跳两级"bug — 原为内嵌 remember 状态页,
-                        // 进入其子页后返回时内嵌状态已丢失, 直接落回设置主页)。
-                        onClick = { navController.navigate(Screen.SettingAdvanced) },
-                        leadingContent = { Icon(HugeIcons.Wrench01, null) },
-                        supportingContent = { Text("更多设置项") },
-                        headlineContent = { Text("更多设置") },
-                    )
                 }
             }
 
@@ -376,22 +305,74 @@ item(
                 val shareText = stringResource(R.string.setting_page_share_text)
                 val share = stringResource(R.string.setting_page_share)
                 val noShareApp = stringResource(R.string.setting_page_no_share_app)
+                val containerColor = MaterialTheme.colorScheme.primaryContainer
+                val contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
                     title = { Text(stringResource(R.string.setting_page_about)) },
                 ) {
                     item(
                         onClick = { navController.navigate(Screen.SettingAbout) },
-                        leadingContent = { Icon(HugeIcons.Settings03, null) },
-                        supportingContent = { Text("版本信息 / 分享 / 关于") },
-                        headlineContent = { Text("关于和分享") },
+                        leadingContent = { CardGroupIcon(HugeIcons.Clapping01, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_about_desc)) },
+                        trailingContent = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                var showQQGroupSheet by remember { mutableStateOf(false) }
+                                IconButton(
+                                    onClick = { showQQGroupSheet = true }
+                                ) {
+                                    Icon(
+                                        imageVector = TencentQQIcon,
+                                        contentDescription = "QQ",
+                                        tint = MaterialTheme.colorScheme.secondary
+                                    )
+                                }
+                                if (showQQGroupSheet) {
+                                    QQGroupBottomSheet(
+                                        onDismiss = { showQQGroupSheet = false }
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        context.openUrl("https://discord.gg/9weBqxe5c4")
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = DiscordIcon,
+                                        contentDescription = "Discord",
+                                        tint = MaterialTheme.colorScheme.secondary
+                                    )
+                                }
+                            }
+                        },
+                        headlineContent = { Text(stringResource(R.string.setting_page_about)) },
                     )
-                    // v3.6.16: 工具对照已移至「高级功能」统一入口
+                    item(
+                        onClick = {
+                            val docUrl = if (java.util.Locale.getDefault().language == "zh") {
+                                "https://docs.rikka-ai.com/zh/introduction"
+                            } else {
+                                "https://docs.rikka-ai.com/introduction"
+                            }
+                            context.openUrl(docUrl)
+                        },
+                        leadingContent = { CardGroupIcon(HugeIcons.Book01, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_documentation_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_documentation)) },
+                    )
                     item(
                         onClick = { navController.navigate(Screen.Log) },
-                        leadingContent = { Icon(HugeIcons.Bookshelf01, null) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Bookshelf01, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(stringResource(R.string.setting_page_request_logs_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_request_logs)) },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingDonate) },
+                        leadingContent = { CardGroupIcon(HugeIcons.InLove, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_donate_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_donate)) },
                     )
                     item(
                         onClick = {
@@ -404,7 +385,7 @@ item(
                                 Toast.makeText(context, noShareApp, Toast.LENGTH_SHORT).show()
                             }
                         },
-                        leadingContent = { Icon(HugeIcons.Share04, null) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Share04, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(stringResource(R.string.setting_page_share_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_share)) },
                     )
@@ -414,40 +395,118 @@ item(
     }
 }
 
+private fun ColorMode.icon(): ImageVector = when (this) {
+    ColorMode.SYSTEM -> HugeIcons.SmartPhone01
+    ColorMode.LIGHT -> HugeIcons.Sun01
+    ColorMode.DARK -> HugeIcons.Moon02
+}
+
 @Composable
-private fun ProviderConfigWarningCard(navController: Navigator) {
-    Card(
-        modifier = Modifier.padding(8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer
-        )
+private fun ProviderConfigWarningCard(onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
     ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .background(MaterialTheme.colorScheme.error, MaterialShapes.Cookie9Sided.toShape()),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = HugeIcons.Alert01,
+                        contentDescription = null,
+                        modifier = Modifier.size(28.dp),
+                        tint = MaterialTheme.colorScheme.onError,
+                    )
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.setting_page_config_api_title),
+                        style = MaterialTheme.typography.titleMediumEmphasized,
+                    )
+                    Text(
+                        text = stringResource(R.string.setting_page_config_api_desc),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+            Button(
+                onClick = onClick,
+                modifier = Modifier.align(Alignment.End),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                ),
+            ) {
+                Text(stringResource(R.string.setting_page_config))
+            }
+        }
+    }
+}
+
+private data class QQGroup(
+    val name: String,
+    val key: String? = null,
+    val number: String? = null,
+    val icon: ImageVector = TencentQQIcon,
+)
+
+private val QQ_GROUPS = listOf(
+    QQGroup("RikkaHub 一群", "4POE46u9e_zoy1TkNfWdCvueR9CKFJdk"),
+    QQGroup("RikkaHub 二群", "Qsm0whzbPsm1UyNpR683ulLyMZ2Pqrw0"),
+    QQGroup("RikkaHub 三群", "Qc9oP-9tXioZeQEvEvI2_owWtBAIx3lS"),
+    QQGroup("抖音一群", number = "569655479852", icon = HugeIcons.Tiktok),
+)
+
+@Composable
+private fun QQGroupBottomSheet(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(8.dp),
-            horizontalAlignment = Alignment.End
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            ListItem(
-                supportingContent = {
-                    Text(stringResource(R.string.setting_page_config_api_desc))
-                },
-                leadingContent = {
-                    Icon(HugeIcons.Alert01, null)
-                },
-                colors = ListItemDefaults.colors(
-                    containerColor = Color.Transparent
-                ),
-) {
-                   Text(stringResource(R.string.setting_page_config_api_title))
-               }
-
-            TextButton(
-                onClick = {
-                    navController.navigate(Screen.SettingProvider)
+            QQ_GROUPS.forEach { group ->
+                ListItem(
+                    onClick = {
+                        if (group.number != null) {
+                            context.writeClipboardText(group.number)
+                            Toast.makeText(context, "群号已复制", Toast.LENGTH_SHORT).show()
+                        } else {
+                            context.joinQQGroup(group.key)
+                        }
+                        onDismiss()
+                    },
+                    supportingContent = group.number?.let { number ->
+                        { Text(number) }
+                    },
+                    leadingContent = {
+                        Icon(
+                            imageVector = group.icon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.secondary
+                        )
+                    },
+                ) {
+                    Text(group.name)
                 }
-            ) {
-                Text(stringResource(R.string.setting_page_config))
             }
         }
     }

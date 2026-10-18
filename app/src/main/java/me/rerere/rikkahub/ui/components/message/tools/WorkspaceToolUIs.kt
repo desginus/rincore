@@ -1,10 +1,5 @@
-/* 【域 F·主题渲染】 — 消息/文档渲染 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.message.tools
 
-
-/* ───【原版对齐】WorkspaceToolUIs.kt | 差异 ±16 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,7 +7,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -28,11 +22,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
@@ -40,23 +30,21 @@ import me.rerere.ai.ui.DiffMetadata
 import me.rerere.ai.ui.metadataAs
 import me.rerere.common.http.jsonObjectOrNull
 import me.rerere.highlight.CodeHighlightText
-import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import androidx.compose.ui.res.stringResource
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ComputerTerminal01
-import me.rerere.hugeicons.stroke.File02
 import me.rerere.hugeicons.stroke.FileAdd
 import me.rerere.hugeicons.stroke.FileEdit
 import me.rerere.hugeicons.stroke.FileView
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.ui.components.richtext.DiffAddedColor
-import me.rerere.rikkahub.ui.components.richtext.DiffRemovedColor
-import me.rerere.rikkahub.ui.components.richtext.DiffView
 import me.rerere.rikkahub.ui.components.richtext.HighlightCodeBlock
-import me.rerere.rikkahub.ui.components.richtext.parseDiffStats
 import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.utils.generateUnifiedDiff
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
+import me.rerere.ui.richtext.DiffAddedColor
+import me.rerere.ui.richtext.DiffRemovedColor
+import me.rerere.ui.richtext.DiffView
+import me.rerere.ui.richtext.parseDiffStats
 
 /**
  * 工作空间编辑文件: 摘要显示增删统计与精简 diff, 详情为完整 diff view
@@ -173,8 +161,8 @@ object ReadFileToolUI : ToolUIRenderer {
 
     @Composable
     override fun title(context: ToolUIContext): String {
-        // v3.11.24: Cherry 风格语义化折叠标题 — 完整路径放展开详情, 不再堆在标题
-        return stringResource(R.string.tool_ui_read_file_default)
+        val path = context.arguments.getStringContent("path")
+        return if (path != null) stringResource(R.string.tool_ui_read_file, path) else stringResource(R.string.tool_ui_read_file_default)
     }
 
     /** 已执行时从输出 JSON 读取文件内容 */
@@ -214,8 +202,8 @@ object WriteFileToolUI : ToolUIRenderer {
 
     @Composable
     override fun title(context: ToolUIContext): String {
-        // v3.11.24: Cherry 风格语义化折叠标题 — 完整路径放展开详情, 不再堆在标题
-        return stringResource(R.string.tool_ui_write_file_default)
+        val path = context.arguments.getStringContent("path")
+        return if (path != null) stringResource(R.string.tool_ui_write_file, path) else stringResource(R.string.tool_ui_write_file_default)
     }
 
     private fun textOf(context: ToolUIContext): String? =
@@ -226,8 +214,6 @@ object WriteFileToolUI : ToolUIRenderer {
     @Composable
     override fun Summary(context: ToolUIContext) {
         val text = remember(context) { textOf(context) } ?: return
-        // v4.8.113: 写入图片 (svg 等) 的缩略图
-        RenderUrlsPreview(context.content)
         FileContentSummary(
             text = text,
             path = context.arguments.getStringContent("path"),
@@ -242,32 +228,7 @@ object WriteFileToolUI : ToolUIRenderer {
             DefaultToolPreview(context = context)
             return
         }
-        // v4.8.113: 写入图片 (svg 等) 的缩略图
-        RenderUrlsPreview(context.content)
         FileContentPreview(path = context.arguments.getStringContent("path"), code = text)
-    }
-}
-
-/**
- * 工作空间展示文件: 向用户递交文件, 锚定胶囊窗显示
- */
-object ShowFileToolUI : ToolUIRenderer {
-    override val toolName: String = "workspace_show_file"
-
-    override fun icon(context: ToolUIContext): ImageVector = HugeIcons.File02
-
-    @Composable
-    override fun title(context: ToolUIContext): String {
-        // v4.8.61: 多文件 (paths 数组) — 单文件沿用原样; 多文件显示首名 + 数量
-        val path = context.arguments.getStringContent("path")
-        if (path != null) return stringResource(R.string.tool_ui_show_file, path)
-        val paths = (context.arguments as? JsonObject)?.get("paths") as? JsonArray
-        val first = paths?.firstOrNull()?.jsonPrimitive?.contentOrNull
-        return when {
-            first == null -> stringResource(R.string.tool_ui_show_file_default)
-            paths.size > 1 -> stringResource(R.string.tool_ui_show_file, "$first (+${paths.size - 1})")
-            else -> stringResource(R.string.tool_ui_show_file, first)
-        }
     }
 }
 
@@ -323,26 +284,6 @@ private fun FileContentPreview(path: String?, code: String) {
 }
 
 /**
- * v4.8.76: 后台任务 (workspace_job) — 标题显示动作与命令/任务号预览。
- */
-object JobToolUI : ToolUIRenderer {
-    private const val TITLE_MAX_CHARS = 40
-
-    override val toolName: String = "workspace_job"
-
-    @Composable
-    override fun title(context: ToolUIContext): String {
-        val action = context.arguments.getStringContent("action") ?: "job"
-        val detail = context.arguments.getStringContent("command")?.takeIf { it.isNotBlank() }
-            ?: context.arguments.getStringContent("job_id")
-        val preview = detail?.replace("\n", " ")?.trim()?.let {
-            if (it.length > TITLE_MAX_CHARS) it.take(TITLE_MAX_CHARS) + "…" else it
-        }
-        return if (preview.isNullOrBlank()) "后台任务 · $action" else "后台任务 · $action · $preview"
-    }
-}
-
-/**
  * 工作空间执行 Shell: 摘要显示退出状态与输出首部, 详情为命令 + stdout/stderr
  */
 object ShellToolUI : ToolUIRenderer {
@@ -374,8 +315,6 @@ object ShellToolUI : ToolUIRenderer {
         }
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             ShellExitStatus(content, MaterialTheme.typography.labelSmall)
-            // v4.8.113: 工具产图缩略图 (render_urls)
-            RenderUrlsPreview(content)
             if (combined.isNotEmpty()) {
                 Box(
                     modifier = Modifier
@@ -428,8 +367,6 @@ object ShellToolUI : ToolUIRenderer {
                 )
                 ShellExitStatus(content, MaterialTheme.typography.labelMedium)
             }
-            // v4.8.113: 工具产图缩略图 (render_urls)
-            RenderUrlsPreview(content)
             HighlightCodeBlock(
                 code = if (cwd.isNullOrBlank()) command else "# cwd: $cwd\n$command",
                 language = "bash",
@@ -473,38 +410,6 @@ private fun ShellExitStatus(content: JsonElement, style: androidx.compose.ui.tex
         style = style,
         color = if (ok) DiffAddedColor else MaterialTheme.colorScheme.error,
     )
-}
-
-/** v4.8.113: 工具输出 JSON 的 render_urls 数组 (统一字段, 单图也返回数组)
- *  v4.8.115: 提取逻辑收口 ToolImagePayload (渲染地址单一来源), 此处仅保留调用点。 */
-private fun renderUrlsOf(content: JsonElement?): List<String> =
-    me.rerere.rikkahub.data.ai.tools.extractRenderUrls(content)
-
-private const val MAX_RENDER_PREVIEW = 4
-
-/**
- * v4.8.113 (用户定版"工具产图直接可见"): 从工具输出的 render_urls 渲染内联缩略图。
- * 显示层聚合 (不改请求不改落盘): 模型复述与否图片都在工具段可见, 点击放大。
- */
-@Composable
-private fun RenderUrlsPreview(content: JsonElement?, modifier: Modifier = Modifier) {
-    val urls = remember(content) { renderUrlsOf(content) }
-    if (urls.isEmpty()) return
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        urls.take(MAX_RENDER_PREVIEW).forEach { url ->
-            ZoomableAsyncImage(
-                model = url,
-                contentDescription = null,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(160.dp)
-                    .clip(MaterialTheme.shapes.small),
-            )
-        }
-    }
 }
 
 /** 从工具输出 JSON 读取布尔字段 */

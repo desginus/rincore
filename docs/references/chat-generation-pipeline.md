@@ -34,7 +34,7 @@ ChatService.sendMessage()
             ├─ [若无待处理 Tool] generateInternal()
             │       ├── 构建 internalMessages
             │       │       ├── System message（系统提示 + 记忆 + tool.systemPrompt）
-            │       │       ├── limitContext() 按 contextMessageSize 裁剪历史
+            │       │       ├── limitContext() 按 contextMessageLimit 阶梯式裁剪历史
             │       │       └── InputTransformers 管道
             │       ├── 构建 TextGenerationParams
             │       └── 调用 Provider
@@ -174,6 +174,8 @@ Pending ──── 用户操作 ────► Approved → 执行工具
 - 前 4KB 保留在消息中
 - 完整输出写入 `filesDir/tool_outputs/{toolCallId}.txt`
 - 消息中附带 shell 读取指令提示
+
+`search_web` 不参与截断：结果体积由用户设置的结果数决定，且结果列表 UI 与引用跳转依赖完整的 JSON。
 
 ---
 

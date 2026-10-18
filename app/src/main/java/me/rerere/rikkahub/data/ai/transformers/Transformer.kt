@@ -1,9 +1,4 @@
-/* 【域 B·AI 传输】 | 地图: docs/APP_MAP.md §B */
 package me.rerere.rikkahub.data.ai.transformers
-
-/* ───【原版对齐】Transformer.kt | 差异 ±27 行 (基线 2.5.1)
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,19 +6,14 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.Assistant
-import kotlin.uuid.Uuid
 
 class TransformerContext(
     val context: Context,
     val model: Model,
     val assistant: Assistant,
     val settings: Settings,
-    val conversationModeInjectionIds: Set<Uuid> = emptySet(),
-    val conversationLorebookIds: Set<Uuid> = emptySet(),
     val processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
     val workspaceCwd: String? = null,
-    // v4.8.185 (审计重写): 生成完成固化链用 — 对话媒体快照的归属目录
-    val conversationId: Uuid? = null,
 )
 
 interface MessageTransformer {
@@ -74,8 +64,6 @@ suspend fun List<UIMessage>.transforms(
     model: Model,
     assistant: Assistant,
     settings: Settings,
-    conversationModeInjectionIds: Set<Uuid> = emptySet(),
-    conversationLorebookIds: Set<Uuid> = emptySet(),
     processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
     workspaceCwd: String? = null,
 ): List<UIMessage> {
@@ -84,29 +72,11 @@ suspend fun List<UIMessage>.transforms(
         model = model,
         assistant = assistant,
         settings = settings,
-        conversationModeInjectionIds = conversationModeInjectionIds,
-        conversationLorebookIds = conversationLorebookIds,
         processingStatus = processingStatus,
         workspaceCwd = workspaceCwd,
     )
-    // v3.21.0: 链级异常隔离 (技术债) — 单个 transformer 抛异常不再炸整条
-    // 生成链 (此前任何 transformer 内部 bug = 用户"发送失败"), 降级为跳过
-    // 该 transformer + 用户可见状态提示 + 日志/CallTrace 可查
     return transformers.fold(this) { acc, transformer ->
-        runCatching { transformer.transform(ctx, acc) }
-            .onFailure { e ->
-                // v4.8.109: 取消不是"组件故障" — 必须上抛（旧实现被 runCatching 吞掉,
-                // 用户"停止生成"后组件链仍在继续跑）。
-                if (e is kotlinx.coroutines.CancellationException) throw e
-                android.util.Log.e("Transformer", "${transformer.javaClass.simpleName} failed: ${e.message}", e)
-                // v4.8.109 (用户定版): 不再向 UI 弹"…异常, 已降级继续"状态 —
-                // 降级是内部韧性机制, 不是用户事件; 诊断走日志 + CallTracer（运行日志页可查）。
-                me.rerere.rikkahub.data.ai.CallTracer.event(
-                    "TRANSFORMER", "isolated_failure",
-                    "${transformer.javaClass.simpleName}: ${e.message}",
-                )
-            }
-            .getOrDefault(acc)
+        transformer.transform(ctx, acc)
     }
 }
 
@@ -118,14 +88,9 @@ suspend fun List<UIMessage>.visualTransforms(
     settings: Settings,
 ): List<UIMessage> {
     val ctx = TransformerContext(context, model, assistant, settings)
-    // v3.21.0: 视觉链同样隔离 (输出渲染组件异常不炸消息回写)
     return transformers.fold(this) { acc, transformer ->
         if (transformer is OutputMessageTransformer) {
-            runCatching { transformer.visualTransform(ctx, acc) }
-                .onFailure { e ->
-                    android.util.Log.e("Transformer", "${transformer.javaClass.simpleName} visual failed: ${e.message}", e)
-                }
-                .getOrDefault(acc)
+            transformer.visualTransform(ctx, acc)
         } else {
             acc
         }
@@ -138,27 +103,11 @@ suspend fun List<UIMessage>.onGenerationFinish(
     model: Model,
     assistant: Assistant,
     settings: Settings,
-    conversationId: Uuid? = null,
 ): List<UIMessage> {
-    val ctx = TransformerContext(context, model, assistant, settings, conversationId = conversationId)
-    // v4.8.185 (审计重写): 补齐与 transforms/visualTransforms 同款的链级异常隔离 —
-    // 旧实现裸调用, 任一 finish 组件抛异常会炸整条生成; 取消必须上抛 (对齐 v4.8.109)。
+    val ctx = TransformerContext(context, model, assistant, settings)
     return transformers.fold(this) { acc, transformer ->
         if (transformer is OutputMessageTransformer) {
-            runCatching { transformer.onGenerationFinish(ctx, acc) }
-                .onFailure { e ->
-                    if (e is kotlinx.coroutines.CancellationException) throw e
-                    android.util.Log.e(
-                        "Transformer",
-                        "${transformer.javaClass.simpleName} finish failed: ${e.message}",
-                        e,
-                    )
-                    me.rerere.rikkahub.data.ai.CallTracer.event(
-                        "TRANSFORMER", "finish_isolated_failure",
-                        "${transformer.javaClass.simpleName}: ${e.message}",
-                    )
-                }
-                .getOrDefault(acc)
+            transformer.onGenerationFinish(ctx, acc)
         } else {
             acc
         }

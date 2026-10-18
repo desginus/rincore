@@ -1,10 +1,5 @@
-/* 【域 A·对话核心】 — AI 组件 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.components.ai
 
-
-/* ───【原版对齐】AssistantPicker.kt | 差异 ±16 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -33,9 +28,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -54,17 +51,15 @@ import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.rememberAssistantState
 import kotlin.uuid.Uuid
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 
 @Composable
 fun AssistantPicker(
     settings: Settings,
-    onUpdateSettings: (Settings) -> Unit,
+    onSelectAssistant: (Assistant) -> Unit,
     modifier: Modifier = Modifier,
     onClickSetting: () -> Unit,
 ) {
-    val state = rememberAssistantState(settings, onUpdateSettings)
+    val state = rememberAssistantState(settings, onSelectAssistant)
     val defaultAssistantName = stringResource(R.string.assistant_page_default_assistant)
     var showPicker by remember { mutableStateOf(false) }
 
@@ -221,6 +216,13 @@ private fun AssistantItem(
     onEdit: () -> Unit
 ) {
     ListItem(
+        headlineContent = {
+            Text(
+                text = assistant.name.ifEmpty { defaultAssistantName },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
         leadingContent = {
             UIAvatar(
                 name = assistant.name.ifEmpty { defaultAssistantName },
@@ -240,11 +242,6 @@ private fun AssistantItem(
                 )
             }
         },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent) ) {
-Text(
-                text = assistant.name.ifEmpty { defaultAssistantName },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-}
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+    )
 }
