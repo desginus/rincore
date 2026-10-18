@@ -219,3 +219,22 @@
 - **P8 收件箱动作补全（实施）**：per-file `[分享/删除]`（分享=ChatFileActions.shareLocalFile 单一实现；删除=确认后 `FilesManager.delete(deleteFromDisk=true)`）+ 顶栏「清理未引用」（**usages 改可空 Map：扫描未完成=不显示清理入口，防加载期误删**；清理=仅删未被任何头像/背景/消息引用的文件，弹窗显示数量与可释放空间）。
 - **P4 双解析链分工文档化（实施）**：APP_MAP 域 F + CODE_INDEX 头部明写——**文档内容真值=沙箱工具链（rin-tools officecli/pdf 等）；软件内 document/DocumentRenderEngine 仅 classic 内联兜底与预览**；两链不一致以沙箱为准。
 - **仍待拍板（不动）**：P2 classic 现代化（影响设置面）/ P5 文件中心统一（中远期）/ P6 DocumentAsPrompt 插入位置（需缓存影响评估）。
+
+### G18 v5.0.5 · 文档系统评审最后两件（P2 实施 / P6 评估收口）
+- **P6 DocumentAsPrompt 插入位置 — 评估完成，结论=无需改动（不破缓存）**：
+  - `transformClassic/transformCompat` 对**全部消息**做确定性变换（Document part → 定长块，`add(0, …)` 落在所在消息 parts 头部）；同一对话每轮重跑的结果**逐字节一致** → 序列化前缀跨轮稳定，**不会造成缓存断裂**。
+  - 所谓"位置语义不一致"实为跨层比较：`<UploadFile>` 在消息 parts、`<uploads_in_conversation>` 在系统提示尾部，两层本就独立；把 UploadFile 移到尾部反而会改变历史消息的字节序列（一次性全量缓存失效）且无语义收益 → **保持现状**。
+  - 结论登记：P6 关闭（不改代码）。
+- **P2 classic 模式 — 两件实施**（用户"全部做完"授权下的保守方案，不新增设置项）：
+  1. **文档解析缓存**：`readDocumentContentCached`（key=(绝对路径, mtime, size)，LRU 4 条，synchronized）——此前 classic 每轮都会对**历史里每个文档重跑解析**（PDF/DOCX 解析是重 IO+CPU），长对话每轮都在重复付这份成本；缓存后跨轮/跨请求零重复解析，文件变更（mtime/size 变）自动失效。
+  2. **超大文档自动降级**：单文档提取文本 > **120,000 字符**（≈3 万 token）时，该文档不再全量内联，改为"路径引用块"（沿用 compat 的 workspace 路径 + upload_fetch 码 + 明确说明"超过 classic 内联上限已自动降级"）——正常文档零影响（阈值远高于常规文档），彻底防住"一张几百页 PDF 把上下文打爆"的病态场景。
+  - 未做（按原提案"需拍板"保留）：**淘汰 classic** 选项、阈值用户可调（如需可开口子）。
+- **P5 文件中心统一**：仍为中远期（三面收敛需要信息架构设计与用户拍板），未动。
+
+### G19 v5.0.5 后·文档收口批（2026-10-19 07:2x）
+- **知识库文本损坏修复（替换误伤实锤）**：`rincore-project-brief` 与 `rincore-roadmap` 的基线行存在历史替换事故（「主线已到 **v4.8.182主线已到 **v5.0.3****」/「rincore当前主线已推进到 **v5.0.3**-process」——替换目标串与替换文本交错）。已修复：基线=**v5.0.5**（2026-10-19）+ `rincore-dev-process` 2 处复原 + 版本链当前版本行更新。**全知识库复扫：损坏零残留**。
+- **README×3**：徽章 → v5.0.5；更新日志补 5.0.4/5.0.5 条目（英文条目式 / 简中条目式 / 繁中简版段）。
+- **知识库 changelog**：头部范围 → v2.9.4→v5.0.5；补 5.0.4/5.0.5 两条完整条目（P7 硬链接/P8 收件箱/A5 QwenTTS/A6 九件/P4 文档/parity 终态/D3 约定；P2 缓存+降级/P6 评估关闭）。
+- **知识库 bug-record**：补 **B197**（rin-tools 每工作区副本磁盘成本 → 单副本+硬链接）与 **B198**（收件箱只读 + classic 每轮重解析 + 备份缺件）；教训 #126-128 入册。
+- **project-brief**：补「5.0.x 线」摘要（5.0.0→5.0.5 六版一句话各述）。
+- **发布状态复核**：v5.0.5 正式版（prerelease=False）+ 双 APK 52.15MB 在线 ✓；main=5ad7d06a0 与本地同步 ✓。

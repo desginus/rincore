@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=構建&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/版本-v5.0.3-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/版本-v5.0.5-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/許可-segmented_dual-cyan)](LICENSE)
 
 **手機上一個真正全面的 AI 助手。** 不是套殼，是一台重新打造過的引擎——背後是六週的高強度實測迭代與 400+ 個版本。
@@ -35,6 +35,8 @@ RinCore 的更新是持續的，每個版本號都承載了實打實的改進：
 
 ## 📋 更新日誌（近期）
 
+**v5.0.5** — 文件管線收尾：classic 上傳模式新增文件解析快取（`(路徑,mtime,size)` LRU-4）；單檔超過約 12 萬字元自動降級為路徑引用。P6 評估後關閉（同對話變換具確定性=前綴逐位元組穩定）。
+**v5.0.4** — 待辦清尾：QwenTTS 死欄位/死 UI 移除；rin-tools 共享單副本+硬連結注入（34MB×N→34MB×1）；收件箱逐檔 [分享/刪除] + 「清理未引用」；文件解析鏈分工入檔；parity 帳本終態。
 - **v5.0.3** — 收尾清理：刪 3 個死導航目標與 VideoGen 全鏈（已由上游媒體創作模組取代）；CODE_INDEX 51 條佔位全量補寫；module-map 補 5.0.0 現狀頭。
 - **v5.0.2** — 備份完整性：chat-media / media_creation 納入備份與還原；移植上游內建技能機制（skill-creator 解壓+併庫+/builtin_skills 掛載）。
 - **v5.0.1** — 執行期接線補齊：7 項缺失 Koin 註冊 + 2 個通知通道 + 2 條啟動恢復鏈 + 記憶整理掛到對話管線 + 抽屜「整理中」指示器。

@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=构建&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/版本-v5.0.3-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/版本-v5.0.5-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/许可-segmented_dual-cyan)](LICENSE)
 
 **手机上一个真正全面的 AI 助手。** 不是套壳，是一台重新打造过的引擎——背后是六周的高强度实测迭代与 400+ 个版本。
@@ -80,7 +80,13 @@ RinCore 处于活跃维护中，欢迎 Issue 与 PR。每一个被报告的问�
 
 ## 📋 更新日志
 
-v4.8.54 → v5.0.3（倒序）：
+v4.8.54 → v5.0.5（倒序）：
+
+- **v5.0.5** — 文档管线收尾：classic 上传模式新增文档解析缓存（`(路径,mtime,size)` LRU-4——长对话不再每轮重解析每个 PDF/DOCX）；单文档超过约 12 万字符（≈3 万 token）自动降级为路径引用并附说明。P6（提示词插入位置）评估后关闭（同对话变换确定性=前缀逐字节稳定，不改）。
+
+- **v5.0.4** — 台账收尾：QwenTTS 死字段/死 UI 移除（旧 qwen3-tts 的 languageType 已不被现役 qwen-audio-3.0-tts 消费）；rin-tools 改为共享单副本 + 硬链接注入工作区（磁盘 34MB×N→34MB×1、启动 inode 校验替代 34MB 重读、失败回退复制）；收件箱新增逐文件 [分享/删除] + 「清理未引用」批量动作（扫描中不显示入口防误删）；文档解析链分工写入 APP_MAP/CODE_INDEX；parity 账本终态。
+
+
 
 - **v5.0.3** — 收尾清理：删除 3 个死导航目标（工具中枢/对照/内置工具，页面本身经内联状态使用保留）与 VideoGen 全链（页面/VM/注册/路由，已由上游媒体创作模块取代）；CODE_INDEX 51 条占位全量补写为逐文件职责（0 遗留）；module-map 补 5.0.0 现状头（13 模块清单）。
 

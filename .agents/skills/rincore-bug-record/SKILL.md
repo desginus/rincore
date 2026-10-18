@@ -5,6 +5,18 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 
 # RinCore Bug 记录（全部历史）
 
+## B198 收件箱只读 + classic 每轮重解析 + 备份缺件（v5.0.4/v5.0.5 修复）
+- **现象（静态审计/用户长期体感）**：收件箱只读（无删除/导出）；classic 模式长对话越用越慢（每轮都重解析历史 PDF）；备份恢复后消息图片全断（chat-media 不在备份目录集）。
+- **根因**：①收件箱页只有列表；②`DocumentAsPromptTransformer.transformClassic` 对**全部消息**逐轮重跑解析（无缓存）；③`BackupManager` 收集面/校验面各写各的目录 listOf，缺 MEDIA_CREATION 与 chat-media。
+- **修复**：①收件箱 per-file [分享/删除] + 「清理未引用」（usages 可空 Map 防扫描期误删）；②文档解析缓存（(路径,mtime,size) LRU4）；③备份目录集同源常量化 ATTACHMENT_FOLDERS/NESTED_ATTACHMENT_FOLDERS + 两目录补齐（覆盖本地/WebDAV/S3/恢复四链）。
+- **教训（#127-128）**：①列表纪律第二条=收集面与校验面必须同源常量（第一条见 v5.0.3 的格式契约）；②「每轮重算」类性能债的判据=输入是否确定（确定性输入必须可缓存，key 含 mtime+size）。
+
+## B197 rin-tools 每工作区副本磁盘成本（v5.0.4 修复）
+- **现象**：每工作区向 rootfs `/usr/local/bin` 复制 34MB 工具（officecli 33MB）＝ N×34MB；且每次启动逐文件全量回读校验（34MB IO/工作区）。
+- **根因**：注入实现=逐工作区 `assets → 逐字节写`，幂等判据=内容全读比对。
+- **修复**：共享单副本 `filesDir/rin-tools-shared`（`.staged-version`=BuildConfig.VERSION_NAME，版本变化才重铺）+ 硬链接注入（`Files.createLink`；`isSameFile` 校验=inode 比对）；失败回退逐字节复制（旧行为）。
+- **教训（#126）**：跨工作区共享的只读资产一律「单副本+硬链接」（同文件系统零额外数据块）；硬链接校验=inode 而非内容。
+
 ## B196 「编译干净但运行断」接线缺口族（v5.0.1 修复）
 - **现象（我方静态审计发现，非用户报障）**：v5.0.0 发布后系统排雷——CI 全绿但真机会崩/功能不触发的一族缺口。
 - **根因（七类，均为「迁移只搬代码、未搬接线」）**：①Koin 注册缺失 7 项（TranslationHandler/RemoteFileStore/MediaGenerationManager/MediaCreationService/MemoryFileVM/MediaCreationSessionsVM/MediaCreationVM——打开对应页面即 NoDefinitionFound 崩）；②通知渠道只定义未创建 2 个（media_creation/memory_dream——通知静默丢弃）；③启动恢复链缺失 2 条（媒体生成进程死亡恢复/记忆整理恢复+进后台冲刷）；④记忆整理挂载钩子缺 3 处（onTurnFinished/onConversationForked/onSessionRemoved——「对话后自动整理」根本不触发）；⑤manifest 组件缺失 2 个（MediaCreationForegroundService/MemoryDreamForegroundService——ServiceNotFound 崩）；⑥备份目录集缺 2 项（media_creation/chat-media）；⑦工作区挂载缺 /builtin_skills。

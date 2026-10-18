@@ -3,7 +3,7 @@ name: rincore-changelog
 description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日志。触发词：版本历史、更新日志、changelog、这个版本改了什么、版本对比、回滚历史、版本链。任何需要了解 RinCore 某版本改动/某功能何时引入/何时回滚时加载。不涉及：Bug 根因细节（用 rincore-bug-record）、方案决策（用 rincore-decisions）。"
 ---
 
-# RinCore 更新日志（v2.9.4 → v5.0.3）
+# RinCore 更新日志（v2.9.4 → v5.0.5）
 
 > 结构: 顶部为最新纪元（人工整理）; 中段为纪元摘要 + 归档指针; 底部为旧版历史原文（保留）。
 > 全量逐版本清单（448 条, v3.6.0 起）见同目录 FULL_HISTORY.md。
@@ -13,6 +13,8 @@ description: "[中优先级·RinCore开发对照] RinCore 完整版本更新日�
 > 以下逐版本条目由 git 提交信息自动整理（SHA/日期锚定）; 4.8.36-38 / 4.8.42-53
 > 的大事件完整上下文见 rincore-bug-record（B46-B51）与 rincore-decisions（D9-D14）。
 
+- **v5.0.5**（5ad7d06a0·2026-10-19）: **文档系统评审最后两件（P2 实施 / P6 评估）**。①P2 classic 模式两件：(a) 文档解析缓存 `readDocumentContentCached`（key=(绝对路径,mtime,size)、LRU4、synchronized）——此前 classic 每轮对历史里每个文档重跑解析（PDF/DOCX 重 IO+CPU），长对话每轮重复付成本 → 跨轮/跨请求零重复解析、文件变更自动失效；(b) 超大文档自动降级：单文档提取 >120,000 字符（≈3 万 token）→ 改路径引用块（workspace 路径 + upload_fetch 码 + 降级说明），正常文档零影响。②P6 评估完成=无需改动：transformClassic/Compat 对全部消息做确定性变换（同对话每轮重跑逐字节一致）→ 前缀缓存跨轮稳定；"位置语义不一致"实为跨层比较 → 保持现状。
+- **v5.0.4**（750741215·2026-10-19）: **台账 backlog 收尾批**。①A5 QwenTTS 收口（provider 与上游 3.0.0 零差；现役 qwen-audio-3.0-tts API 不消费 languageType、旧 qwen3-tts 被 require() 拒绝 → 删死字段+死 UI）。②A6 九件细查全定性（头注差异 2 / 零差 2 / 我方功能件 4 / Firebase 剥离 1）。③P7 rin-tools 共享单副本+硬链接注入（`filesDir/rin-tools-shared` + `.staged-version`；`Files.createLink`+isSameFile；34MB×N→34MB×1、启动 34MB 回读→inode 比对；失败回退复制）。④P8 收件箱动作（per-file [分享/删除] + 顶栏「清理未引用」；usages 可空 Map=扫描中不显示入口防误删）。⑤P4 双解析链分工文档化（文档真值=沙箱工具链，写入 APP_MAP/CODE_INDEX）。⑥仓库层补齐（debug 角标 5 件/.editorconfig/CLAUDE.md/coding-agent.skill.md/scripts）。⑦parity-ledger 终态（W 归零，逐项 P/U/D/X）。⑧D3 索引维护约定写入 dev-process §2.4。
 - **v5.0.3**（4e0cc53af+793419b0c·2026-10-19）: **收尾清理批 = 死代码 + 检索文档全量校订**。①删 3 个死导航 Screen 对象（SettingToolHub/SettingToolCompare/SettingBuiltinTools——零引用；三个页面本体仍经 SettingPage/SettingAdvancedPage 内联状态使用，保留）+ **VideoGen 全链删除**（页面×2/VM/注册/Screen/entry——对齐上游 3.0.0 删除；媒体创作 UX 已由 MediaCreation 接管，ImgGen 与上游一致保留【两边均无导航】）。②**CODE_INDEX 51 条占位全量补写**（逐件核读头注+主声明→一句话职责，0 遗留；覆盖 app 数据/UI 组件/设置页/DAO/迁移/web、ai Google、markdown 解析器核心 20 件、common/speech 控制器）。③**module-map 加 5.0.0 现状头**（当前 13 模块清单 + APP_MAP/CODE_INDEX 指引；历史快照标注保留）。④README×3 补 5.0.1/5.0.2/5.0.3 更新日志 + 徽章 5.0.3。
 - **v5.0.2**（0c0eb3853·2026-10-19）: **备份完整性 + 上游内置技能机制移植**。①备份目录集补齐：`BackupManager` 收集面/校验面同源常量化（ATTACHMENT_FOLDERS/NESTED_ATTACHMENT_FOLDERS）+`MEDIA_CREATION`（媒体创作产物，跳过 .part 半成品=上游语义）+`chat-media`（v4.8.185 对话媒体快照——不备份=恢复后消息图片全断）；覆盖本地导出/WebDAV/S3/恢复四链。②内置技能机制（上游 3.0.0）：`data.files.SkillManager` 加 getBuiltinSkillsDir/ensureBuiltinSkillsExtracted + listSkills 合并（同名用户技能覆盖内置）；`RepositoryModule` 加 /builtin_skills 只读挂载；`RikkaHubApp.extractBuiltinSkills()` 启动提取——assets/builtin_skills（skill-creator）真正可用。
 - **v5.0.1**（c2ca1a6b5·2026-10-19）: **运行期接线补齐批（「编译干净但运行断」族排雷）**。①**Koin 注册缺失 7 项**（真崩点 NoDefinitionFound）：DataSourceModule 补 TranslationHandler/RemoteFileStore/MediaGenerationManager/MediaCreationService；ViewModelModule 补 MemoryFileVM(parametersOf 双参)/MediaCreationSessionsVM/MediaCreationVM(parametersOf)。②**通知渠道只定义未创建 2 个**：media_creation/memory_dream 在 createNotificationChannel 补建（缺=通知静默丢弃）。③**启动恢复链缺失 2 条**：resumeMediaCreations（媒体生成进程死亡恢复）+resumeMemoryConsolidation（整理调度恢复+ON_STOP→onAppHidden）。④**记忆整理挂载链 3 钩子**（对话后自动整理此前根本不触发）：ChatService 接 scheduler——onTurnFinished（回合完成，enableMemory 门控）/onConversationForked/ConversationSessionManager.onSessionRemoved→onConversationLeft。⑤抽屉「记忆整理中」指示器（ChatDrawerVM.memoryDreaming+MemoryDreamingEntry）。⑥编译错插曲：Assistant.memoryId 是 data.repository 包扩展 val，跨包必须 import（漏=7 条级联错）→同版重推。

@@ -3,7 +3,7 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=build&logo=github)](https://github.com/desginus/rincore/actions)
 [![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/version-v5.0.3-blue)](https://github.com/desginus/rincore/releases)
+[![Version](https://img.shields.io/badge/version-v5.0.5-blue)](https://github.com/desginus/rincore/releases)
 [![License](https://img.shields.io/badge/license-segmented_dual-cyan)](LICENSE)
 
 **A real, self-contained AI assistant on your phone.** Not a wrapper — a rebuilt engine with six
@@ -129,7 +129,13 @@ changelog entry and a regression guard. Optimizations keep coming.
 
 ## 📋 Changelog
 
-v4.8.54 → v5.0.3 (newest first):
+v4.8.54 → v5.0.5 (newest first):
+
+- **v5.0.5** — Document-pipeline final pass: classic upload mode now caches parsed documents (`(path, mtime, size)` LRU-4, so long conversations stop re-parsing every PDF/DOCX each turn) and auto-degrades any single document over ~120k chars (~30k tokens) to a path reference with a clear note instead of inlining it. P6 (prompt insertion position) evaluated and closed as no-change: the transform is deterministic per conversation, so the serialized prefix stays byte-stable across turns.
+
+- **v5.0.4** — Backlog sweep: QwenTTS dead-field/dead-UI removal (legacy qwen3-tts languageType no longer consumed by the current qwen-audio-3.0-tts provider), rin-tools injected into workspaces via hardlinks from a single shared copy (34MB×N → 34MB×1 on disk, inode check instead of a 34MB re-read per launch, copy fallback), upload inbox gains per-file [share/delete] plus a "clean unreferenced" bulk action (guarded against scanning-in-progress), the document-parsing split is documented (sandbox toolchain = source of truth), parity ledger updated to final state.
+
+
 
 - **v5.0.3** — Cleanup pass: removed 3 dead navigation screens (tool-hub/compare/builtin-tools targets, the pages themselves stay as inline state pages) and the entire legacy VideoGen chain (pages/VM/registration/screen/route) already superseded by the upstream Media Creation module; CODE_INDEX placeholders fully written out (51 -> per-file one-line responsibilities, 0 left); module-map refreshed with the current 13-module layout.
 
