@@ -18,6 +18,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItemColors
 import androidx.compose.material3.ListItemDefaults
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ListItemShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedListItem
@@ -37,7 +38,7 @@ import me.rerere.hugeicons.stroke.Link01
 import me.rerere.hugeicons.stroke.Package
 import me.rerere.hugeicons.stroke.Settings03
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.skills.SkillMetadata
+import me.rerere.rikkahub.data.files.SkillMetadata
 import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.PromptInjection
 import me.rerere.rikkahub.data.model.QuickMessage
