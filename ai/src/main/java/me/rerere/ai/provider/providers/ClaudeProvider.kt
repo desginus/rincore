@@ -1,0 +1,1175 @@
+package me.rerere.ai.provider.providers
+
+
+/* ───【自研】ClaudeProvider.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
+import android.content.Context
+import android.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.channels.onFailure
+import kotlinx.coroutines.flow.Flow
+import me.rerere.ai.ui.StreamChunk
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.flatMapConcat
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonArrayBuilder
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import me.rerere.ai.provider.BuiltInTools
+import me.rerere.ai.provider.ProxyRoute
+import me.rerere.ai.provider.resolveProxy
+import me.rerere.ai.core.MessageRole
+import me.rerere.ai.core.ReasoningLevel
+import me.rerere.ai.core.TokenUsage
+import me.rerere.ai.core.effectiveParameters
+import me.rerere.ai.provider.ClaudePromptCacheTtl
+import me.rerere.ai.provider.ImageGenerationParams
+import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.Provider
+import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.ai.ui.ImageGenerationItem
+import me.rerere.ai.ui.MessageChunk
+import me.rerere.ai.provider.TextGenerationResult
+import me.rerere.ai.ui.toTextGenerationResult
+import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessageChoice
+import me.rerere.ai.ui.ClaudeReasoningMetadata
+import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.ui.metadataAs
+import me.rerere.ai.ui.toMetadata
+import me.rerere.ai.util.KeyRoulette
+import me.rerere.ai.util.configureReferHeaders
+import me.rerere.ai.util.configureSessionHeaders
+import me.rerere.ai.util.encodeBase64
+import me.rerere.ai.util.json
+import me.rerere.ai.util.TraceLogger
+import me.rerere.ai.util.mergeCustomBody
+import me.rerere.ai.util.parseErrorDetail
+import me.rerere.ai.util.stringSafe
+import me.rerere.ai.util.mergeCustomHeaders
+import me.rerere.common.http.await
+import me.rerere.common.http.jsonPrimitiveOrNull
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
+import okhttp3.sse.EventSource
+import okhttp3.sse.EventSourceListener
+import okhttp3.sse.EventSources
+import kotlin.time.Clock
+
+private const val TAG = "ClaudeProvider"
+private const val ANTHROPIC_VERSION = "2023-06-01"
+
+class ClaudeProvider(
+    private val client: OkHttpClient,
+    context: Context? = null,
+    // v3.9.15: 按模型代理路由 (仅 generateText/streamText 生效)
+    private val proxyRoute: ProxyRoute? = null,
+) : Provider<ProviderSetting.Claude> {
+    private val keyRoulette = if (context != null) KeyRoulette.lru(context) else KeyRoulette.default()
+
+    override suspend fun listModels(providerSetting: ProviderSetting.Claude): List<Model> =
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder()
+                .url("${providerSetting.baseUrl}/models")
+                .headers(providerSetting.mergeCustomHeaders())
+                .addHeader("x-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
+                .addHeader("anthropic-version", ANTHROPIC_VERSION)
+                .get()
+                .build()
+
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) {
+                error("Failed to get models: ${response.code} ${response.body.string()}")
+            }
+
+            val bodyStr = response.body.string()
+            val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
+            val data = bodyJson["data"]?.jsonArray ?: return@withContext emptyList()
+
+            data.mapNotNull { modelJson ->
+                val modelObj = modelJson.jsonObject
+                val id = modelObj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                val displayName = modelObj["display_name"]?.jsonPrimitive?.contentOrNull ?: id
+
+                Model(
+                    modelId = id,
+                    displayName = displayName,
+                )
+            }
+        }
+
+    override suspend fun generateImage(
+        providerSetting: ProviderSetting,
+        params: ImageGenerationParams
+    ): Flow<ImageGenerationItem> {
+        error("Claude provider does not support image generation")
+    }
+
+    override suspend fun generateText(
+        providerSetting: ProviderSetting.Claude,
+        messages: List<UIMessage>,
+        params: TextGenerationParams
+    ): TextGenerationResult = withContext(Dispatchers.IO) {
+        // v3.11.9: 2013 降级重试 — MiniMax 等严格校验上游间歇性 invalid params
+        // (服务端波动/未知字段间歇拒绝, 用户实测同一请求随机 400)。
+        // 首次 400+2013 → 用最简请求体 (无 cache_control/thinking) 重试一次。
+        var requestBody = buildMessageRequest(providerSetting, messages, params)
+        var response = null as okhttp3.Response?
+        var attempts = 0
+        while (attempts < 2) {
+            attempts++
+            val request = Request.Builder()
+                .url("${providerSetting.baseUrl}/messages")
+                .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+                .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
+                .addHeader("x-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
+                .addHeader("anthropic-version", ANTHROPIC_VERSION)
+                .configureReferHeaders(providerSetting.baseUrl)
+            .configureSessionHeaders(providerSetting.baseUrl, params.sessionId)
+                .build()
+
+            // 4.1.3 TTFT: 删除全量请求体日志 (qwen Anthropic 直传路径, 同 CC 通道语义)
+
+            response = client.resolveProxy(proxyRoute, params.model.modelId).newCall(request).await()
+            if (response.isSuccessful) break
+            val bodyStr = response.body.string()
+            if (me.rerere.ai.core.MinimalBodyRetry.shouldDegrade(response.code, bodyStr.contains(me.rerere.ai.core.MinimalBodyRetry.MARKER), attempts != 1)) {
+                Log.w(TAG, "generateText: 2013 invalid params — retrying with minimal body")
+                TraceLogger.log("SSE", "generateText 2013 → minimal retry")
+                requestBody = buildMessageRequest(providerSetting, messages, params, minimal = true)
+                continue
+            }
+            throw Exception("Failed to get response: ${response.code} $bodyStr")
+        }
+
+        val bodyStr = response!!.body.string()
+        val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
+
+        // 从 JsonObject 中提取必要的信息
+        val id = bodyJson["id"]?.jsonPrimitive?.contentOrNull ?: ""
+        val model = bodyJson["model"]?.jsonPrimitive?.contentOrNull ?: ""
+        val content = bodyJson["content"]?.jsonArray ?: JsonArray(emptyList())
+        val stopReason = bodyJson["stop_reason"]?.jsonPrimitive?.contentOrNull ?: "unknown"
+        val usage = parseTokenUsage(bodyJson)
+
+        MessageChunk(
+            id = id,
+            model = model,
+            choices = listOf(
+                UIMessageChoice(
+                    index = 0,
+                    delta = null,
+                    message = parseMessage(content),
+                    finishReason = stopReason
+                )
+            ),
+            usage = usage
+        ).toTextGenerationResult()
+    }
+
+    private suspend fun streamTextRaw(
+        providerSetting: ProviderSetting.Claude,
+        messages: List<UIMessage>,
+        params: TextGenerationParams
+    ): Flow<MessageChunk> = callbackFlow {
+        // v3.11.9: 2013 降级重试标记 — MiniMax 等严格校验上游间歇性
+        // invalid params (服务端波动), 首次 400+2013 用最简请求体重试一次
+        // AtomicReference: object expression (EventSourceListener) 内写捕获
+        // 局部 var 受限 (JVM 匿名类 effectively-final), 引用容器绕过
+        var attemptedMinimal = false
+        // v4.8.33 (性能): 请求体构建 + 序列化移出主线程 (与 CC 通道同修) —
+        // buildMessageRequest 含全量消息转换与图片编码, 序列化几百 KB 级,
+        // 本 callbackFlow 收集上下文为 AppScope(Main), 每轮工具调用后重来一遍。
+        val initialBody = withContext(Dispatchers.Default) {
+            buildMessageRequest(providerSetting, messages, params, stream = true)
+        }
+        val requestBodyRef = java.util.concurrent.atomic.AtomicReference(initialBody)
+        val initialBodyJson = withContext(Dispatchers.Default) { json.encodeToString(initialBody) }
+        val request = Request.Builder()
+            .url("${providerSetting.baseUrl}/messages")
+            .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+            .post(initialBodyJson.toRequestBody("application/json".toMediaType()))
+            .addHeader("x-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
+            .addHeader("anthropic-version", ANTHROPIC_VERSION)
+            .addHeader("Content-Type", "application/json")
+            .configureReferHeaders(providerSetting.baseUrl)
+            .configureSessionHeaders(providerSetting.baseUrl, params.sessionId)
+            .build()
+
+        val bodyJson = requestBodyRef.get()
+        val messagesArray = bodyJson["messages"]?.jsonArray
+        // v4.8.33: 删 bodyChars 全量序列化 — release 下 Log 参数同样求值, 每轮
+        // 请求百 KB 级序列化只为一个日志数字 (与 CC 通道 4.1.3 教训同类, 此处漏网)。
+        Log.d(TAG, "streamText: model=${bodyJson["model"]}, messages=${messagesArray?.size ?: 0}")
+
+        val hasData = java.util.concurrent.atomic.AtomicBoolean(false)
+        val streamStartMs = System.currentTimeMillis()
+        // v3.8.5: 完成标记 — Anthropic 协议 message_stop 是唯一正常收尾,
+        // 连接关闭时若未收到 message_stop 视为断流 (输出中途静默中断当
+        // 正常完成保存半截回复的根因修复)。对照 ChatCompletionsAPI
+        // completed/gotFinish 机制 (v3.6.75 双向: 有收尾标记才视为完成)。
+        val completed = java.util.concurrent.atomic.AtomicBoolean(false)
+
+        // 4.0.0 重写: 三阶段 watchdog 状态机统一收敛至 StreamWatchdog
+        // (ai/core/WatchdogPolicy.kt, 与 ChatCompletionsAPI 同一实现) —
+        // 数值/文案/tick 节奏逐字保留
+        val isOpencode = runCatching {
+            providerSetting.baseUrl.toHttpUrl().host == "opencode.ai"
+        }.getOrDefault(false)
+        val headerReceived = java.util.concurrent.atomic.AtomicBoolean(false)
+        val lastEventAt = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
+        val watchdogJob = me.rerere.ai.core.StreamWatchdog.launchIn(
+            this,
+            me.rerere.ai.core.StreamWatchdog(
+                isOpencode = isOpencode,
+                headerReceived = headerReceived,
+                hasData = hasData,
+                lastEventAt = lastEventAt,
+                onTimeout = { close(it) },
+            ),
+        ) { fired ->
+            Log.w(TAG, "Claude SSE idle timeout — closing: $fired")
+        }
+
+        // v3.8.6: SSE 诊断统计 — 输出中途中断/半截时在运行日志页可抓取全部现场
+        val eventCount = java.util.concurrent.atomic.AtomicInteger(0)
+        val dataChars = java.util.concurrent.atomic.AtomicLong(0)
+
+        // v3.11.9: eventSource 容器前置声明 — 局部变量无前向引用,
+        // listener 匿名对象内 (onFailure 降级重试分支) 必须可见
+        val eventSourceRef = java.util.concurrent.atomic.AtomicReference<okhttp3.sse.EventSource?>()
+        val listener = object : EventSourceListener() {
+            // v3.11.13: SSE 200 响应头到达 — 阶段1(建连)结束/阶段2(思考)开始,
+            // 计时起点重置, 后续按首事件/流间隙分别判定
+            override fun onOpen(eventSource: EventSource, response: okhttp3.Response) {
+                headerReceived.set(true)
+                lastEventAt.set(System.currentTimeMillis())
+                TraceLogger.log("SSE", "onOpen: header after ${System.currentTimeMillis() - streamStartMs}ms, code=${response.code}")
+            }
+
+            override fun onEvent(
+                eventSource: EventSource,
+                id: String?,
+                type: String?,
+                data: String
+            ) {
+                Log.d(TAG, "onEvent: type=$type, data=$data")
+                if (data == "[DONE]") {
+                    return
+                }
+                if (data.isNotBlank()) lastEventAt.set(System.currentTimeMillis())
+
+                // v3.8.6: 诊断计数 (每事件累加, 成本可忽略)
+                val seq = eventCount.incrementAndGet()
+                dataChars.addAndGet(data.length.toLong())
+                if (seq == 1) {
+                    TraceLogger.log("SSE", "first event after ${System.currentTimeMillis() - streamStartMs}ms, type=$type, len=${data.length}")
+                } else if (seq % 50 == 1) {
+                    TraceLogger.log("SSE", "progress: events=$seq, dataChars=${dataChars.get()}, lastType=$type")
+                }
+
+                val dataJson = json.parseToJsonElement(data).jsonObject
+                val deltaMessage = parseMessage(buildJsonArray {
+                    val contentBlockObj = dataJson["content_block"]?.jsonObject
+                    val deltaObj = dataJson["delta"]?.jsonObject
+                    if (contentBlockObj != null) {
+                        add(contentBlockObj)
+                    }
+                    if (deltaObj != null) {
+                        add(deltaObj)
+                    }
+                })
+                val tokenUsage = parseTokenUsage(dataJson)
+                val messageChunk = MessageChunk(
+                    id = id ?: "",
+                    model = "",
+                    choices = listOf(
+                        UIMessageChoice(
+                            index = 0,
+                            delta = deltaMessage,
+                            message = null,
+                            finishReason = null
+                        )
+                    ),
+                    usage = tokenUsage
+                )
+
+                trySend(messageChunk).onFailure { e ->
+                    Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
+                }
+                hasData.set(true)
+
+                when (type) {
+                    "message_stop" -> {
+                        Log.d(TAG, "Stream ended")
+                        completed.set(true)
+                        TraceLogger.log("SSE", "message_stop: events=${eventCount.get()}, dataChars=${dataChars.get()}, usage=$tokenUsage")
+                        close()
+                    }
+
+                    "error" -> {
+                        val eventData = json.parseToJsonElement(data).jsonObject
+                        val error = eventData["error"]?.parseErrorDetail()
+                        close(error)
+                    }
+                }
+            }
+
+            override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
+                var exception = t
+
+                t?.printStackTrace()
+                Log.e(TAG, "onFailure: ${t?.javaClass?.name} ${t?.message} / $response")
+                TraceLogger.log("SSE", "onFailure: ${t?.javaClass?.name} ${t?.message} / http=${response?.code}, events=${eventCount.get()}, dataChars=${dataChars.get()}")
+
+                // 流式传输中断恢复: 如果已有部分数据则保留
+                if (t is java.io.IOException &&
+                    (t.message?.contains("stream was reset", ignoreCase = true) == true ||
+                     t.message?.contains("protocol error", ignoreCase = true) == true ||
+                     t.message?.contains("connection reset", ignoreCase = true) == true ||
+                     t.message?.contains("connection abort", ignoreCase = true) == true ||
+                     t.message?.contains("software caused", ignoreCase = true) == true ||
+                     t.message?.contains("timeout", ignoreCase = true) == true ||
+                     t.message?.contains("broken pipe", ignoreCase = true) == true ||
+                     t.message?.contains("connection closed", ignoreCase = true) == true ||
+                     t.message?.contains("canceled", ignoreCase = true) == true)
+                ) {
+                    // 移除静默恢复 (v3.1.0 引入) — 曾致回复缺失无报错感知中断
+                    // 中断传播异常, 用户可见明确错误
+                    Log.w(TAG, "onFailure: recoverable stream error (will propagate): ${t.message} hasData=${hasData.get()}")
+                }
+
+                val bodyRaw = response?.body?.stringSafe()
+
+                // v3.11.9: 2013 降级重试 — 严格校验网关 (MiniMax) 间歇性
+                // invalid params (用户实测同一请求随机 400): 首次 400+2013
+                // 用最简请求体 (无 cache_control/thinking) 重试一次;
+                // 重试仍失败则走正常错误上报
+                if (me.rerere.ai.core.MinimalBodyRetry.shouldDegrade(response?.code, bodyRaw?.contains(me.rerere.ai.core.MinimalBodyRetry.MARKER) == true, attemptedMinimal)) {
+                    attemptedMinimal = true
+                    Log.w(TAG, "2013 invalid params detected — retrying with minimal request body")
+                    TraceLogger.log("SSE", "2013 detected (code=400), retrying minimal body")
+                    requestBodyRef.set(
+                        buildMessageRequest(
+                            providerSetting, messages, params, stream = true, minimal = true
+                        )
+                    )
+                    val retryRequest = Request.Builder()
+                        .url("${providerSetting.baseUrl}/messages")
+                        .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+                        .post(json.encodeToString(requestBodyRef.get()).toRequestBody("application/json".toMediaType()))
+                        .addHeader("x-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
+                        .addHeader("anthropic-version", ANTHROPIC_VERSION)
+                        .addHeader("Content-Type", "application/json")
+                        .configureReferHeaders(providerSetting.baseUrl)
+            .configureSessionHeaders(providerSetting.baseUrl, params.sessionId)
+                        .build()
+                    eventSourceRef.set(
+                        EventSources.createFactory(
+                            client.resolveProxy(proxyRoute, params.model.modelId)
+                        ).newEventSource(retryRequest, this)
+                    )
+                    // 重试连接建立前, 重置 watchdog 计时 — 防止旧 idle 计时
+                    // 在连接/首字节阶段误掐断重试流
+                    lastEventAt.set(System.currentTimeMillis())
+                    return
+                }
+
+                try {
+                    if (!bodyRaw.isNullOrBlank()) {
+                        val bodyElement = Json.parseToJsonElement(bodyRaw)
+                        Log.i(TAG, "Error response: $bodyElement")
+                        exception = bodyElement.parseErrorDetail()
+                        // v3.10.15: 元数据诊断 — 不泄露 system/messages 内容
+                        // (用户警告: 错误详情泄露系统提示词). 只显示结构摘要
+                        val meta = buildString {
+                            append("\nREQ_META: model=").append(requestBodyRef.get()["model"])
+                            val msgs = requestBodyRef.get()["messages"]?.jsonArray
+                            append(" msgCount=").append(msgs?.size ?: 0)
+                            msgs?.forEachIndexed { i, m ->
+                                val o = m.jsonObject
+                                append(" [").append(i).append("]=").append(o["role"])
+                                // v3.11.3: 块类型统计 — 定位严格网关拒绝的具体块
+                                val content = o["content"]
+                                if (content is JsonArray) {
+                                    val counts = mutableMapOf<String, Int>()
+                                    content.forEach { blk ->
+                                        val t = blk.jsonObject["type"]?.jsonPrimitive?.contentOrNull ?: "?"
+                                        counts[t] = (counts[t] ?: 0) + 1
+                                    }
+                                    append("(")
+                                    counts.entries.sortedBy { it.key }.forEach { (t, n) ->
+                                        append(t).append(":").append(n).append(" ")
+                                    }
+                                    append(")")
+                                    // tool_use id 格式提示
+                                    content.firstOrNull { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "tool_use" }?.let { tu ->
+                                        val id = tu.jsonObject["id"]?.jsonPrimitive?.contentOrNull ?: ""
+                                        append(" toolId=${id.take(12)} len=${id.length}")
+                                    }
+                                    // 4.0.5: tool_result 内嵌块统计 (顶层统计看不到
+                                    // 内嵌 image, 15:37 单教训) — 内嵌非文本块 = 兼容
+                                    // 层拒绝的高危结构
+                                    content.firstOrNull { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "tool_result" }?.let { tr ->
+                                        val inner = tr.jsonObject["content"] as? JsonArray
+                                        if (inner != null) {
+                                            val innerCounts = mutableMapOf<String, Int>()
+                                            inner.forEach { b ->
+                                                val bt = b.jsonObject["type"]?.jsonPrimitive?.contentOrNull ?: "?"
+                                                innerCounts[bt] = (innerCounts[bt] ?: 0) + 1
+                                            }
+                                            val nonText = innerCounts.filterKeys { it != "text" && it != "tool_result" }
+                                            if (nonText.isNotEmpty()) {
+                                                append(" innerNonText=$nonText")
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    append("(content=").append(content?.let { it::class.simpleName } ?: "null").append(")")
+                                }
+                            }
+                            append(" maxTokens=").append(requestBodyRef.get()["max_tokens"] ?: "?")
+                            append(" keys=").append(requestBodyRef.get().keys.joinToString(","))
+                        }
+                        // 4.0.5: 极简错误体细化 — 网关 hang/拒绝时回显形如
+                        // {"model":"xxx"} 的零信息 JSON, 原样展示对排障无意义。
+                        // 识别后转可读诊断 (含 http code 与推断方向)。
+                        val rawMsg = exception.message ?: ""
+                        val minimalEcho = rawMsg.startsWith("{") &&
+                            rawMsg.trimEnd().endsWith("}") &&
+                            rawMsg.contains("\"model\"") &&
+                            !rawMsg.contains("error", ignoreCase = true) &&
+                            !rawMsg.contains("message", ignoreCase = true) &&
+                            !rawMsg.contains("detail", ignoreCase = true)
+                        val displayMsg = if (minimalEcho) {
+                            "网关返回空错误体 (${rawMsg.take(80)}) — 请求被上游拒绝或挂起, 无具体原因。常见方向: 请求结构含上游不支持的块类型, 或上游服务异常 (code=${response?.code ?: "无"})"
+                        } else rawMsg
+                        exception = me.rerere.ai.util.HttpException(
+                            "$displayMsg$meta"
+                        )
+                    }
+                } catch (e: Throwable) {
+                    Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
+                    e.printStackTrace()
+                } finally {
+                    // 4.0.4 重写: 服务端瞬时错误转 IOException 进重试链。
+                    // HttpException 是 RuntimeException, 重试链只捕 IOException。
+                    // 判定规则:
+                    //   5xx → 瞬时, 转 IOException 重试
+                    //   4xx → 参数/鉴权类, 保持 HttpException 终态 (重试无意义);
+                    //         例外: 2013 降级已在上方处理
+                    //   response==null / bodyRaw 空 (网关 hang 后裸断, 无状态码
+                    //   可判) → 按瞬时处理 (2026-09-06 报错单: 网关挂起场景
+                    //   曾因无法判定 code 而跳过重试, 用户感知"重试无法重试")
+                    val httpCode = response?.code
+                    val isTransient = when {
+                        httpCode == null -> exception !is java.io.IOException
+                        httpCode in 500..599 -> exception !is java.io.IOException
+                        else -> false
+                    }
+                    if (exception != null && isTransient) {
+                        Log.w(TAG, "transient server failure (code=${httpCode ?: "null"}) — wrapping as IOException for retry chain")
+                        exception = java.io.IOException(
+                            "[${httpCode ?: "hang"}] ${exception.message}",
+                            exception,
+                        )
+                    }
+                    TraceLogger.dumpAndLog(TAG, exception ?: Exception("Unknown"), 60)
+                    close(exception)
+                }
+            }
+
+            override fun onClosed(eventSource: EventSource) {
+                // v3.8.5: 无 message_stop 的连接关闭 = 输出中途静默中断
+                // (中转断流/网关切换), 必须走断流重试而非保存半截回复
+                if (completed.get()) {
+                    TraceLogger.log("SSE", "closed: completed=true, events=${eventCount.get()}, dataChars=${dataChars.get()}")
+                    close()
+                } else {
+                    Log.w(TAG, "Claude SSE closed without message_stop — treating as stream interruption")
+                    TraceLogger.log("SSE", "closed WITHOUT message_stop: events=${eventCount.get()}, dataChars=${dataChars.get()} — treating as stream interruption")
+                    close(java.io.IOException("流未正常结束 (无 message_stop): 平台中断输出"))
+                }
+            }
+        }
+
+        eventSourceRef.set(
+            EventSources.createFactory(
+                client.resolveProxy(proxyRoute, params.model.modelId)
+            ).newEventSource(request, listener)
+        )
+
+        awaitClose {
+            runCatching { watchdogJob.cancel() }
+            Log.d(TAG, "Closing eventSource")
+            eventSourceRef.get()?.cancel()
+        }
+        // trySend 在缓冲满时会静默丢弃 delta，导致回复中间缺字 (#1295)，因此缓冲必须无界
+    }.buffer(Channel.UNLIMITED).flowOn(Dispatchers.IO)
+
+    private fun buildMessageRequest(
+        providerSetting: ProviderSetting.Claude,
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
+        stream: Boolean = false,
+        minimal: Boolean = false
+    ): JsonObject {
+        val reqStartMs = System.currentTimeMillis()
+        // v3.11.9: 家族分离定稿 (调研存档 docs/ecosystem/05-请求体格式调研/):
+        //   - MiniMax 家族 (modelId 含 minimax): 顶层 cache_control (自动缓存
+        //     模式) 不支持 — Pydantic 实证 (MiniMax/OpenRouter/LiteLLM 类网关
+        //     "don't support top-level automatic caching"); 块级 cache_control
+        //     (system 尾块/消息级) 官方 Explicit Prompt Caching 文档支持 ✓ 保留
+        //   - 千问/官方/其他兼容层: 顶层+块级全保留 (v3.11.6 恢复)
+        //   - minimal=true (2013 降级重试): 顶层/块级 cache_control 全关,
+        //     thinking 不发 (平台默认), 最简标准 Anthropic 协议子集
+        // 保留防御: 无签名 thinking 丢弃 / 空文本块丢弃 / BOM strip /
+        // 连续同角色合并 / tool_result 消息净化 (v3.10.12-3.11.3)。
+        val isMiniMaxFamily = params.model.modelId.contains("minimax", ignoreCase = true)
+        // v3.11.11: 历史 thinking 不回放 (非官方通道统一规则) —
+        // 实证 REQ_META msgCount=5帮: minimal 极简请求也 2013 时,
+        // 剩余非常量 Circumstance 只有历史 assistant 回放的 thinking 块
+        // ([1]/[3] thinking:1)。兼容网关下签名与会话绑定不可迁移,
+        // 官方协议要求的历史 thinking 回放在 strict 上游必然验签失败;
+        // 同时其内容每次不同会破坏隐式缓存前缀。官方 api.anthropic.com
+        // 保持回放 (interleave thinking 协议收益); 本地纯文本判断与缓存
+        // 双正向。minimal 原创已然不发 thinking 字段,历史同样剔除。
+        val officialHost = runCatching {
+            providerSetting.baseUrl.toHttpUrl().host == "api.anthropic.com"
+        }.getOrDefault(false)
+        // 4.0.3: OpenCode 网关 (Anthropic 协议→Chat Completions 上游) —
+        // cache_control 是 Anthropic 专属字段, 网关转 CC 后无效; 非标准字段
+        // 透传 CC 上游 (qwen 等) 是 500 嫌疑源 (2026-09-05 19:39 报错单 keys
+        // 含 cache_control)。上游自动前缀缓存靠请求字节稳定 (已达标:
+        // 会话时间基准/幂等 reminder), 不依赖显式断点 — OpenCode 全关。
+        val opencodeHost = runCatching {
+            providerSetting.baseUrl.toHttpUrl().host == "opencode.ai"
+        }.getOrDefault(false)
+        val dropHistoryThinking = !officialHost || minimal
+        // 顶层 cache_control: 仅非 MiniMax 家族且非降级模式且非 OpenCode
+        val useTopLevelCache = providerSetting.promptCaching && !minimal && !isMiniMaxFamily && !opencodeHost
+        // 块级 cache_control (system 尾块 + 消息级): 全家族可用, 降级模式关闭
+        val useBlockCache = providerSetting.promptCaching && !minimal && !opencodeHost
+        return buildJsonObject {
+            put("model", params.model.modelId)
+            put(
+                "messages",
+                buildMessages(messages, useBlockCache, dropHistoryThinking, providerSetting.promptCacheTtl)
+            )
+            // v3.11.9: MiniMax 家族兜底用官方推荐 65536 (M2.x 64K, M3 128K)
+            put("max_tokens", params.maxTokens ?: if (isMiniMaxFamily) 65_536 else 64_000)
+
+            if (useTopLevelCache) {
+                put("cache_control", cacheControlEphemeral(providerSetting.promptCacheTtl))
+            }
+
+            if (params.temperature != null && !params.reasoningLevel.isEnabled) put(
+                "temperature",
+                params.temperature
+            )
+            if (params.topP != null) put("top_p", params.topP)
+
+            put("stream", stream)
+
+            // system prompt
+            val systemMessage = messages.firstOrNull { it.role == MessageRole.SYSTEM }
+            val systemTextParts = systemMessage?.parts?.filterIsInstance<UIMessagePart.Text>().orEmpty()
+            if (systemTextParts.isNotEmpty()) {
+                put("system", buildJsonArray {
+                    systemTextParts.forEachIndexed { index, part ->
+                        add(buildJsonObject {
+                            put("type", "text")
+                            put("text", part.text.trimStart(CHAR_BOM).replace(CHAR_BOM.toString(), ""))
+                            if (useBlockCache && index == systemTextParts.lastIndex) {
+                                put("cache_control", cacheControlEphemeral(providerSetting.promptCacheTtl))
+                            }
+                        })
+                    }
+                })
+            }
+
+            // 4.0.0 重写: thinking 家族三态提取为独立纯函数
+            // 4.1.2: 门控诊断日志 — 思考控制问题直接看此行定位 (档位/abilities/是否发送)
+            val thinkingGate = params.model.abilities.contains(ModelAbility.REASONING) && !minimal
+            Log.i(TAG, "Thinking gate(anthropic): level=${params.reasoningLevel} " +
+                "abilities=${params.model.abilities} minimal=$minimal → send=$thinkingGate")
+            if (thinkingGate) {
+                thinkingFields(isMiniMaxFamily, params.reasoningLevel).forEach { (k, v) -> put(k, v) }
+            }
+
+
+            // 处理工具
+            val useFunctionTools =
+                params.model.abilities.contains(ModelAbility.TOOL) && params.tools.isNotEmpty()
+            val toolDefinitions = buildList {
+                if (useFunctionTools) {
+                    params.tools.forEach { tool ->
+                        add(buildJsonObject {
+                            put("name", tool.name)
+                            put("description", tool.description)
+                            put("input_schema", json.encodeToJsonElement(tool.effectiveParameters()))
+                        })
+                    }
+                }
+                params.model.tools.forEach { builtInTool ->
+                    when (builtInTool) {
+                        BuiltInTools.Search -> add(buildJsonObject {
+                            put("type", "web_search_20250305")
+                            put("name", "web_search")
+                        })
+                        BuiltInTools.UrlContext,
+                        BuiltInTools.ImageGeneration,
+                            -> Unit
+                    }
+                }
+            }
+            if (toolDefinitions.isNotEmpty()) {
+                putJsonArray("tools") {
+                    toolDefinitions.forEachIndexed { index, definition ->
+                        if (useBlockCache && index == toolDefinitions.lastIndex) {
+                            add(JsonObject(
+                                definition + mapOf(
+                                    "cache_control" to cacheControlEphemeral(providerSetting.promptCacheTtl)
+                                )
+                            ))
+                        } else {
+                            add(definition)
+                        }
+                    }
+                }
+            }
+        }.mergeCustomBody(params.customBody).also {
+            Log.d(TAG, "buildMessageRequest done in ${System.currentTimeMillis() - reqStartMs}ms, messages=${messages.size}")
+        }
+    }
+
+    /**
+     * 4.0.0 重写: thinking 字段家族三态 (原 buildMessageRequest 内联块)。
+     *   MiniMax 家族: 仅 type adaptive (无 display/output_config, 严格校验防 2013)
+     *   其他家族: 完整协议 (adaptive + display + output_config effort)
+     * OFF → disabled; AUTO → adaptive 无 effort; 档位 → adaptive + effort。
+     */
+    /**
+     * 4.0.10: thinking 顶层字段集 — 返回键即请求体顶层字段名。
+     * v4.0.0-v4.0.9 语义错误: 旧实现返回 thinking 的值对象再 forEach 平铺,
+     * thinking 内部字段 (type/display/output_config) 被铺平到请求体顶层,
+     * qwen 兼容层 schema 校验非法字段直接 400 且返回极简空错误体
+     * (18:30/20:11 两单 keys 裸 type+display 实证)。
+     * 正确语义: thinking={type,display?} 与 output_config={effort} 是独立的
+     * 顶层字段, 各自完整嵌套 — 与原版内联 put 行为等价。
+     */
+    private fun thinkingFields(isMiniMaxFamily: Boolean, level: ReasoningLevel): Map<String, JsonObject> =
+        when (level) {
+            ReasoningLevel.OFF -> mapOf(
+                "thinking" to buildJsonObject { put("type", "disabled") }
+            )
+            ReasoningLevel.AUTO -> mapOf(
+                "thinking" to buildJsonObject {
+                    put("type", "adaptive")
+                    if (!isMiniMaxFamily) put("display", "summarized")
+                }
+            )
+            else -> buildMap {
+                put("thinking", buildJsonObject {
+                    put("type", "adaptive")
+                    if (!isMiniMaxFamily) put("display", "summarized")
+                })
+                if (!isMiniMaxFamily) {
+                    put("output_config", buildJsonObject {
+                        put("effort", level.effort)
+                    })
+                }
+            }
+        }
+
+    private fun cacheControlEphemeral(promptCacheTtl: ClaudePromptCacheTtl) = buildJsonObject {
+        put("type", "ephemeral")
+        promptCacheTtl.apiValue?.let { put("ttl", it) }
+    }
+
+    private fun buildMessages(
+        messages: List<UIMessage>,
+        promptCaching: Boolean,
+        dropHistoryThinking: Boolean = false,
+        promptCacheTtl: ClaudePromptCacheTtl = ClaudePromptCacheTtl.FIVE_MINUTES
+    ) = buildJsonArray {
+        // v3.10.13: 防御链 — Anthropic 消息硬性规则: 首条 user + 角色交替。
+        // 1) 过滤 SYSTEM/跳过无效; 2) 丢弃前导非 user; 3) 合并连续同角色
+        // (自研 transformer 曾以独立 user 消息注入 time_reminder → 连续 user
+        // → Console Go/Minimax 严格校验 400 (2013), 铁证 REQ_MESSAGES)
+        val clean = messages
+            .filter { it.isValidToUpload() && it.role != MessageRole.SYSTEM }
+            .dropWhile { it.role != MessageRole.USER }
+        val merged = mutableListOf<UIMessage>()
+        for (m in clean) {
+            val last = merged.lastOrNull()
+            if (last != null && last.role == m.role) {
+                merged[merged.size - 1] = last.copy(parts = last.parts + m.parts)
+            } else {
+                merged.add(m)
+            }
+        }
+        // v3.11.11: 历史思考剥离 — 兼容网关场景 MINIMAL_VALIDATE via upstream
+        val finalMsgs = if (!dropHistoryThinking) merged else merged.mapNotNull { m ->
+            if (m.role != MessageRole.ASSISTANT) return@mapNotNull m
+            val kept = m.parts.filterNot { it is UIMessagePart.Reasoning }
+            // 仅含 thinking 的 assistant 剥离后整条跳过 (空 content 必被拒)
+            if (kept.isEmpty()) null else m.copy(parts = kept)
+        }
+        finalMsgs.forEach { message ->
+            if (message.role == MessageRole.ASSISTANT) {
+                addAssistantMessage(message)
+            } else {
+                addUserMessage(message)
+            }
+        }
+    }.let { messagesArray ->
+        normalizeMessageSequence(messagesArray)
+    }.let { messagesArray ->
+        if (!promptCaching) return@let messagesArray
+        insertMessagesCacheControl(messagesArray, promptCacheTtl)
+    }
+
+    /**
+     * 4.0.9: 消息序列统一规范化 — 严格 assistant/user 交替保证。
+     * 网关 (qwen 兼容层) 按官方语义合并连续 user 消息, 合并后 tool_result
+     * 与 text/image 块混排 → CC 转换器挂起 (极简错误体; B118 形状链:
+     * 16:07 同消息混排拒 / 16:42 三连 user 拒 / 18:30 tool_result 后直接
+     * 用户消息拒)。qwen 兼容层唯一安全形状: 严格交替 + user 消息要么纯
+     * tool_result 要么纯 text+image。
+     * 两阶段算法:
+     *   阶段 1: 工具图消息 ([工具返回的图片] 标记) 合并进后继 user
+     *     content 头部 (图+文混合 user, 已验证安全形状)
+     *   阶段 2: 循环修正交替违规, 直到无相邻 user-user:
+     *     任一方含 tool_result → 插 assistant 占位隔离 (合并必产生混排)
+     *     双方均普通 user → 合并 content 块 (官方自动合并语义显式实现)
+     *   循环收敛: 每次合并消息数 -1, 占位打断一对相邻; 违规对单调不增。
+     *   assistant 占位文本 (v4.8.113 升级): 纯中性文本 ("已收到工具结果") 曾被模型
+     *     原样复读当作回答 (用户实证: 工具产图轮模型只回了占位文本)。现文本带引导
+     *     语义 — 提示模型基于工具结果继续作答, 不再可被当作"最终回答"复读。
+     */
+    private fun normalizeMessageSequence(messages: JsonArray): JsonArray {
+        val normStartMs = System.currentTimeMillis()
+        val toolImageMarker = "[工具返回的图片]"
+        val items = messages.map { it.jsonObject }.toMutableList()
+
+        fun role(obj: JsonObject) = obj["role"]?.jsonPrimitive?.contentOrNull
+        fun contentBlocks(obj: JsonObject): List<JsonObject> =
+            (obj["content"] as? JsonArray)?.map { it.jsonObject } ?: emptyList()
+        fun hasBlock(obj: JsonObject, type: String) =
+            contentBlocks(obj).any { it["type"]?.jsonPrimitive?.contentOrNull == type }
+        val isToolImageMsg: (JsonObject) -> Boolean = { obj ->
+            role(obj) == "user" && contentBlocks(obj).any {
+                it["type"]?.jsonPrimitive?.contentOrNull == "text" &&
+                    it["text"]?.jsonPrimitive?.contentOrNull == toolImageMarker
+            }
+        }
+
+        // 阶段 1: 工具图消息 → 合并进后继 user (去标记); 无后继 user 则原样
+        // (阶段 2 会处理它与前条的相邻关系)
+        val stage1 = mutableListOf<JsonObject>()
+        var i = 0
+        while (i < items.size) {
+            val cur = items[i]
+            if (isToolImageMsg(cur) && i + 1 < items.size && role(items[i + 1]) == "user") {
+                val imgBlocks = contentBlocks(cur).filterNot {
+                    it["type"]?.jsonPrimitive?.contentOrNull == "text" &&
+                        it["text"]?.jsonPrimitive?.contentOrNull == toolImageMarker
+                }
+                stage1.add(JsonObject(items[i + 1].toMutableMap().apply {
+                    put("content", JsonArray(imgBlocks + contentBlocks(items[i + 1])))
+                }))
+                i += 2
+            } else {
+                stage1.add(cur)
+                i += 1
+            }
+        }
+
+        // 阶段 2: 循环修正相邻 user-user 直到收敛
+        val seq = stage1.toMutableList()
+        var changed = true
+        var guard = 0
+        while (changed && guard++ < 64) {
+            changed = false
+            var k = 1
+            while (k < seq.size) {
+                val prev = seq[k - 1]
+                val cur = seq[k]
+                if (role(prev) == "user" && role(cur) == "user") {
+                    if (hasBlock(prev, "tool_result") || hasBlock(cur, "tool_result")) {
+                        // 占位隔离 — tool_result 与任何块混排都会挂网关
+                        seq.add(k, buildJsonObject {
+                            put("role", "assistant")
+                            putJsonArray("content") {
+                                add(buildJsonObject {
+                                    put("type", "text")
+                                    put("text", "(工具结果已注入上文，请基于以上工具结果回答用户)")
+                                })
+                            }
+                        })
+                    } else {
+                        // 官方自动合并语义的显式实现 (顺序保留)
+                        seq[k - 1] = JsonObject(cur.toMutableMap().apply {
+                            put("content", JsonArray(contentBlocks(prev) + contentBlocks(cur)))
+                        })
+                        seq.removeAt(k)
+                    }
+                    changed = true
+                }
+                k += 1
+            }
+        }
+        return JsonArray(seq).also {
+            Log.d(TAG, "normalizeMessageSequence done in ${System.currentTimeMillis() - normStartMs}ms, in=${messages.size}, out=${it.size}")
+        }
+    }
+
+    /**
+     * 在倒数第二条非 tool_result 的 user message 的最后一个 content block 上插入 cache_control
+     */
+    private fun insertMessagesCacheControl(
+        messages: JsonArray,
+        promptCacheTtl: ClaudePromptCacheTtl
+    ): JsonArray {
+        val cacheStartMs = System.currentTimeMillis()
+        // 找出所有非 tool_result 的 user message 的索引
+        val realUserIndices = messages.mapIndexedNotNull { index, msg ->
+            val obj = msg.jsonObject
+            if (obj["role"]?.jsonPrimitive?.contentOrNull == "user") {
+                val content = obj["content"]?.jsonArray
+                val isToolResult = content?.any {
+                    it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "tool_result"
+                } == true
+                if (!isToolResult) index else null
+            } else null
+        }
+
+        // 取倒数第二条
+        val targetIndex = if (realUserIndices.size >= 2) {
+            realUserIndices[realUserIndices.size - 2]
+        } else return messages
+
+        // 在目标 message 的最后一个 content block 上添加 cache_control
+        return JsonArray(messages.mapIndexed { index, msg ->
+            if (index == targetIndex) {
+                val obj = msg.jsonObject
+                val content = obj["content"]?.jsonArray ?: return@mapIndexed msg
+                val newContent = JsonArray(content.mapIndexed { contentIndex, block ->
+                    if (contentIndex == content.lastIndex) {
+                        JsonObject(
+                            block.jsonObject + mapOf("cache_control" to cacheControlEphemeral(promptCacheTtl))
+                        )
+                    } else block
+                })
+                JsonObject(obj + mapOf("content" to newContent))
+            } else msg
+        }).also {
+            Log.d(TAG, "insertMessagesCacheControl done in ${System.currentTimeMillis() - cacheStartMs}ms")
+        }
+    }
+
+    private fun JsonArrayBuilder.addAssistantMessage(message: UIMessage) {
+        val groups = groupPartsByToolBoundary(message.parts)
+        val contentBuffer = mutableListOf<JsonObject>()
+
+        for (group in groups) {
+            when (group) {
+                is PartGroup.Content -> {
+                    group.parts.toContentBlocks().forEach { contentBuffer.add(it) }
+                }
+
+                is PartGroup.Tools -> {
+                    // 添加 tool_use 到内容缓冲
+                    group.tools.forEach { contentBuffer.add(it.toToolUseBlock()) }
+
+                    // 输出 assistant 消息
+                    add(buildJsonObject {
+                        put("role", "assistant")
+                        putJsonArray("content") { contentBuffer.forEach { add(it) } }
+                    })
+                    contentBuffer.clear()
+
+                    // 4.0.5 重写: tool_result 消息保持纯 tool_result 块序列,
+                    // 工具图片拆独立后继 user 消息。
+                    // 演进: 15:37 单 tool_result content 内嵌 image 被拒 (v4.0.3
+                    // 及之前) → 16:07 单同消息混排 image+tool_result 仍被拒
+                    // (v4.0.4) — 实证兼容层 (qwen 等) 对含 tool_result 的 user
+                    // 消息要求纯 tool_result 块序列, 同消息混入任何其他块
+                    // (含官方合法的 text/image) 都拒。唯一被本会话验证安全的
+                    // 图片形状是独立 user 图消息 ([0][6][14] 前后邻 assistant
+                    // 正常工作)。拆分后官方通道语义等价 (官方自动合并连续
+                    // user; CCImageCompat v3.13.7 在 CC 通道验证同构形状有效)。
+                    add(buildJsonObject {
+                        put("role", "user")
+                        putJsonArray("content") {
+                            group.tools.forEach { add(it.toToolResultBlock()) }
+                        }
+                    })
+                    val toolImages = group.tools
+                        .flatMap { it.output.filterIsInstance<UIMessagePart.Image>() }
+                    if (toolImages.isNotEmpty()) {
+                        add(buildJsonObject {
+                            put("role", "user")
+                            putJsonArray("content") {
+                                add(buildJsonObject {
+                                    put("type", "text")
+                                    put("text", "[工具返回的图片]")
+                                })
+                                toolImages.forEach { img ->
+                                    img.toContentBlock()?.let { add(it) }
+                                }
+                            }
+                        })
+                    }
+                }
+            }
+        }
+
+        // 输出剩余内容
+        if (contentBuffer.isNotEmpty()) {
+            add(buildJsonObject {
+                put("role", "assistant")
+                putJsonArray("content") { contentBuffer.forEach { add(it) } }
+            })
+        }
+    }
+
+    private fun JsonArrayBuilder.addUserMessage(message: UIMessage) {
+        add(buildJsonObject {
+            put("role", message.role.name.lowercase())
+            putJsonArray("content") {
+                message.parts.flatMap { it.toContentBlocks() }
+                    .map { stripBom(it) }.forEach { add(it) }
+            }
+        })
+    }
+
+    /** v3.10.15: strip BOM (U+FEFF) 等不可见控制符 — 严格网关 JSON parser
+     * 可能拒收. 应用于所有 text 块内容. */
+    // 4.2.0 接口切换: Flow<StreamChunk> (原版 2.5.x 形态) — 内层解析仍产出
+    // MessageChunk, 由 MessageChunkStreamAdapter 桥接 (行为等价, v4.2.1 起内层逐步替换 StreamDecoder)
+    override suspend fun streamText(
+        providerSetting: ProviderSetting.Claude,
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
+    ): Flow<StreamChunk> {
+        val adapter = me.rerere.ai.ui.MessageChunkStreamAdapter()
+        return streamTextRaw(providerSetting, messages, params).flatMapConcat { chunk ->
+            adapter.adapt(chunk).asFlow()
+        }
+    }
+
+
+    private fun stripBom(obj: JsonObject): JsonObject {
+        val text = obj["text"]?.takeIf { it is JsonPrimitive }?.jsonPrimitive?.contentOrNull
+        if (text == null) return obj
+        val cleaned = text.trimStart(CHAR_BOM).replace(CHAR_BOM.toString(), "")
+        if (cleaned == text) return obj
+        return JsonObject(obj.toMutableMap().apply { put("text", JsonPrimitive(cleaned)) })
+    }
+
+    // 原版对应函数含 UIMessagePart.ServerTool 分支 (serverToolContentBlocks) —
+    // 我们未移植 ServerTool part 机制, 仅保留通用分支
+    private fun UIMessagePart.toContentBlocks(): List<JsonObject> =
+        listOfNotNull(toContentBlock())
+
+    // 原版 List 重载 (server tool 按原始 content block index 排序回放);
+    // 我们无 server tool, 顺序转换等价
+    private fun List<UIMessagePart>.toContentBlocks(): List<JsonObject> =
+        flatMap { it.toContentBlocks() }
+
+    private fun UIMessagePart.toContentBlock(): JsonObject? = when (this) {
+        is UIMessagePart.Text -> {
+            // v3.10.12 防御: 空 text 块被严格网关 (Minimax 等) 拒绝
+            if (text.isBlank()) null
+            else buildJsonObject {
+                put("type", "text")
+                put("text", text)
+            }
+        }
+
+        is UIMessagePart.Image -> buildJsonObject {
+            encodeBase64(withPrefix = false).onSuccess { encoded ->
+                put("type", "image")
+                put("source", buildJsonObject {
+                    put("type", "base64")
+                    put("media_type", encoded.mimeType)
+                    put("data", encoded.base64)
+                })
+            }.onFailure {
+                Log.w(TAG, "encode image failed: $url", it)
+                // v4.5.0: 空 text 块被严格网关拒收 (对齐 CC 通道 v4.3.12 防线) —
+                // 编码失败发显式占位, 带原始路径与 read_image 指引, 重取闭环可用
+                put("type", "text")
+                put("text", "[图片编码失败: $url — 需要查看时调用 read_image 工具传入该路径]")
+            }
+        }
+
+        is UIMessagePart.Reasoning -> {
+            // v3.10.12 防御: 无 signature 的 thinking 块 — 兼容网关 (千问等)
+            // 不返回签名, Minimax 等严格校验上游要求历史 thinking 带签名 → 400
+            // (2013)。有签名 (官方 Claude) 保留, 无签名丢弃。
+            val sig = metadataAs<ClaudeReasoningMetadata>()?.signature
+            if (sig != null) {
+                buildJsonObject {
+                    put("type", "thinking")
+                    put("thinking", reasoning)
+                    put("signature", sig)
+                }
+            } else null
+        }
+
+        else -> null
+    }
+
+    private fun UIMessagePart.Tool.toToolUseBlock() = buildJsonObject {
+        put("type", "tool_use")
+        put("id", toolCallId)
+        put("name", toolName)
+        put("input", inputAsJson())
+    }
+
+    // 4.0.4: tool_result content 只保留文本块 — 图片由 PartGroup.Tools
+    // 序列化段重定位到同 user 消息的 tool_result 之后 (网关 CC 转换层
+    // 对 role=tool 非文本 content 严格校验挂起)。空 content 时补占位
+    // 文本块防严格上游拒收空数组。
+    private fun UIMessagePart.Tool.toToolResultBlock() = buildJsonObject {
+        put("type", "tool_result")
+        put("tool_use_id", toolCallId)
+        putJsonArray("content") {
+            val blocks = output.filterNot { it is UIMessagePart.Image }
+                .mapNotNull { it.toContentBlock() }
+            if (blocks.isEmpty()) {
+                add(buildJsonObject {
+                    put("type", "text")
+                    put("text", "(工具结果已送达)")
+                })
+            } else {
+                blocks.forEach { add(it) }
+            }
+        }
+    }
+
+    private fun parseMessage(content: JsonArray): UIMessage {
+        val parts = mutableListOf<UIMessagePart>()
+
+        content.forEach { contentBlock ->
+            val block = contentBlock.jsonObject
+            val type = block["type"]?.jsonPrimitive?.contentOrNull
+
+            when (type) {
+                "text", "text_delta" -> {
+                    val text = block["text"]?.jsonPrimitive?.contentOrNull ?: ""
+                    if (text.isNotEmpty()) {
+                        parts.add(UIMessagePart.Text(text))
+                    }
+                }
+
+                "thinking", "thinking_delta", "signature_delta" -> {
+                    val thinking = block["thinking"]?.jsonPrimitive?.contentOrNull ?: ""
+                    val signature = block["signature"]?.jsonPrimitive?.contentOrNull
+                    if (thinking.isNotEmpty() || signature != null) {
+                        val reasoning = UIMessagePart.Reasoning(
+                            reasoning = thinking,
+                            createdAt = Clock.System.now(),
+                            finishedAt = null
+                        )
+                        if (signature != null) {
+                            reasoning.metadata = ClaudeReasoningMetadata(signature = signature).toMetadata()
+                        }
+                        parts.add(reasoning)
+                    }
+                }
+
+                "redacted_thinking" -> {
+                    val data = block["data"]?.jsonPrimitiveOrNull?.contentOrNull
+                    
+                }
+
+                "tool_use" -> {
+                    val id = block["id"]?.jsonPrimitive?.contentOrNull ?: ""
+                    val name = block["name"]?.jsonPrimitive?.contentOrNull ?: ""
+                    val input = block["input"]?.jsonObject ?: JsonObject(emptyMap())
+                    parts.add(
+                        UIMessagePart.Tool(
+                            toolCallId = id,
+                            toolName = name,
+                            input = if (input.isEmpty()) "" else json.encodeToString(input),
+                            output = emptyList()
+                        )
+                    )
+                }
+
+                "input_json_delta" -> {
+                    // v3.11.3: 空 toolCallId/name 的增量块不保存 —
+                    // 回放会发出 id="" 的 tool_use, 严格网关 (Minimax) 400
+                    val input = block["partial_json"]?.jsonPrimitive?.contentOrNull
+                    if (input.isNullOrBlank()) {
+                        // 无内容则忽略
+                    } else {
+                        parts.add(
+                            UIMessagePart.Tool(
+                                toolCallId = "",
+                                toolName = "",
+                                input = input,
+                                output = emptyList()
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        return UIMessage(
+            role = MessageRole.ASSISTANT,
+            parts = parts
+        )
+    }
+
+    private fun parseTokenUsage(bodyJson: JsonObject?): TokenUsage? {
+        if (bodyJson == null) return null
+
+        // 回退到标准 usage 字段
+        val usageJson = bodyJson["usage"]?.jsonObject
+            ?: bodyJson["message"]?.jsonObject?.get("usage")?.jsonObject
+            ?: return null
+        val inputTokens = usageJson["input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val cachedInputTokens = usageJson["cache_read_input_tokens"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
+        val cachedCreationTokens = usageJson["cache_creation_input_tokens"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
+        val completionTokens = usageJson["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val promptTokens = inputTokens + cachedInputTokens + cachedCreationTokens
+        return TokenUsage(
+            promptTokens = promptTokens,
+            completionTokens = completionTokens,
+            totalTokens = promptTokens + completionTokens,
+            cachedTokens = cachedInputTokens,
+        )
+    }
+}
+
+private const val CHAR_BOM = '\uFEFF'

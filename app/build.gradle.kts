@@ -323,6 +323,16 @@ dependencies {
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
     androidTestImplementation(libs.androidx.room.testing)
+    implementation(libs.hjson) // v4.6.4: HJSON 解析 (Operit 生态包手写格式 — 与 Operit 同款依赖)
+    implementation(libs.quickjs.kt.android) // v4.5.29 岔路口计划·阶段2: Operit 脚本运行时
+    implementation(libs.sonner)
+    implementation(libs.lucide.icons)
+    implementation("com.cronutils:cron-utils:9.2.1")
+    implementation(libs.play.services.location)
+    implementation(libs.kotlinx.coroutines.play.services)
+    implementation("androidx.documentfile:documentfile:1.0.1")
+    implementation(libs.androidx.media)
+
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 }

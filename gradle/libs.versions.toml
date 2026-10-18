@@ -126,6 +126,13 @@ coil-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", versio
 coil-svg = { group = "io.coil-kt.coil3", name = "coil-svg", version.ref = "coil" }
 coil-cache-control = { group = "io.coil-kt.coil3", name = "coil-network-cache-control", version.ref = "coil" }
 quickjs = { module = "io.github.dokar3:quickjs-kt", version.ref = "quickjs" }
+quickjs-wrapper = { module = "wang.harlon.quickjs:wrapper-android", version = "3.2.3" }
+hjson = { group = "org.hjson", name = "hjson", version.ref = "hjson" }
+quickjs-kt-android = { module = "io.github.dokar3:quickjs-kt-android", version.ref = "quickjs-kt" }
+sonner = { module = "io.github.dokar3:sonner", version.ref = "sonner" }
+lucide-icons = { group = "com.composables", name = "icons-lucide", version.ref = "lucide-icons" }
+play-services-location = { module = "com.google.android.gms:play-services-location", version.ref = "play-services-location" }
+kotlinx-coroutines-play-services = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-play-services", version.ref = "kotlinx-coroutines-play-services" }
 koin-bom = { group = "io.insert-koin", name = "koin-bom", version.ref = "koin-bom" }
 koin-android = { group = "io.insert-koin", name = "koin-android" }
 koin-compose = { group = "io.insert-koin", name = "koin-androidx-compose" }

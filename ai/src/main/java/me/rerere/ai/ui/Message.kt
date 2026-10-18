@@ -30,6 +30,7 @@ import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.SerialName
+import kotlinx.serialization.Transient
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -52,8 +53,19 @@ data class UIMessage(
         .toLocalDateTime(TimeZone.currentSystemDefault()),
     val finishedAt: LocalDateTime? = null,
     val modelId: Uuid? = null,
+    // 模型名称的快照：modelId 指向的模型被删除后，靠它继续显示这条消息由谁生成
+    val modelSnapshot: ModelSnapshot? = null,
     val usage: TokenUsage? = null,
-    val translation: String? = null
+    // 模型实际生成耗时（各步从首个 chunk 到响应结束的累计），不含首 token 延迟、工具执行和审批等待
+    val generationTimeMs: Long? = null,
+    // 最后一次请求结束时的上下文占用（prompt + completion），usage 是多步累计值，不能用来看上下文大小
+    val contextTokens: Int? = null,
+    val translation: String? = null,
+    // 压缩检查点：此消息是它之前全部历史的摘要，组装请求时从最后一个检查点开始取
+    val isContextCheckpoint: Boolean = false,
+    // 请求期间生成的内部消息；该标记仅在内存中使用
+    @Transient
+    val isSynthetic: Boolean = false
 ) {
     private fun appendChunk(chunk: MessageChunk): UIMessage {
         val choice = chunk.choices.getOrNull(0)
@@ -191,6 +203,15 @@ data class UIMessage(
     }
 
     fun getTools() = parts.filterIsInstance<UIMessagePart.Tool>()
+
+    /**
+     * 用快照还原出一个只用于展示名称和图标的 Model（仅按 modelId 查不到模型时使用）。
+     */
+    fun snapshotModel(): Model? {
+        val id = modelId ?: return null
+        val snapshot = modelSnapshot ?: return null
+        return Model(modelId = snapshot.modelId, displayName = snapshot.displayName, id = id)
+    }
 
     fun isValidToUpload() = parts.any { part ->
         when (part) {
@@ -539,6 +560,15 @@ fun <T> List<T>.migrateToolNodes(
 
     return result
 }
+/**
+ * 消息上保存的模型名称快照, 对应 Model.modelId 与 Model.displayName
+ */
+@Serializable
+data class ModelSnapshot(
+    val modelId: String,
+    val displayName: String,
+)
+
 fun List<UIMessagePart>.isEmptyInputMessage(): Boolean {
     if (this.isEmpty()) return true
     return this.all { message ->

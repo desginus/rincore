@@ -33,6 +33,7 @@ configurations.matching { it.name.endsWith("UnitTestRuntimeClasspath") }.configu
 }
 
 dependencies {
+    implementation(libs.quickjs.wrapper)
     implementation(project(":ai"))
     implementation(project(":common"))
     implementation(libs.okhttp)
