@@ -18,6 +18,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1
+          submodules: recursive
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -45,6 +46,13 @@ jobs:
           sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools" || true
           sdkmanager "platforms;android-37" "build-tools;37.0.0" 2>/dev/null || true
           sdkmanager "ndk;28.2.13676358" 2>/dev/null || true
+
+      - name: Prepare dummy google-services.json (oracle only)
+        run: |
+          if [ ! -f app/google-services.json ]; then
+            printf '%s' '{"project_info":{"project_number":"0","project_id":"dev-oracle","storage_bucket":"dev-oracle.appspot.com"},"client":[{"client_info":{"mobilesdk_app_id":"1:0:android:0","android_client_info":{"package_name":"me.rerere.rikkahub"}},"oauth_client":[],"api_key":[{"current_key":"AIzaSyDUMMY"}],"services":{"appinvite_service":{"other_platform_oauth_client":[]}}}],"configuration_version":"1"}' > app/google-services.json
+            echo "dummy google-services.json written"
+          fi
 
       - name: Compile oracle (assembleDebug)
         run: |
