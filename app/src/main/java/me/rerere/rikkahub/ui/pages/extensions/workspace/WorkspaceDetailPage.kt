@@ -288,7 +288,22 @@ fun WorkspaceDetailPage(id: String, initialTab: Int = 0, initialPath: String? = 
                     contentPadding = PaddingValues(),
                     onSelectArea = vm::selectArea,
                     onGoUp = vm::goUp,
-                    onOpen = vm::open,
+                    // v5.0.6: 文件点击接线（此前 vm.open 对文件直接 return=点了没反应，死交互+死入口）——
+                    // 文本/SVG → 应用内编辑器（上游 3.0.0 WorkspaceFileEditor）；图片 → 预览；
+                    // 目录与其它类型保持既有行为（其它类型的分享/导出/打开在行尾菜单里）。
+                    onOpen = { entry ->
+                        when {
+                            entry.isDirectory -> vm.open(entry)
+                            entry.name.substringAfterLast('.').equals("svg", ignoreCase = true) ||
+                                entry.detectFileType() == WorkspaceFileType.TEXT ->
+                                navController.navigate(
+                                    Screen.WorkspaceFileEditor(id, state.area.name, entry.path)
+                                )
+                            entry.detectFileType() == WorkspaceFileType.IMAGE ->
+                                vm.openPreview(entry, context.cacheDir)
+                            else -> vm.open(entry)
+                        }
+                    },
                     onDelete = { deleteTarget = it },
                     onRename = { renameTarget = it },
                     onMove = { moveTarget = it },
