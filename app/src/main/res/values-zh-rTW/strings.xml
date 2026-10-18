@@ -628,6 +628,11 @@
   <string name="setting_glass_mask_color_light">淺色</string>
   <string name="setting_glass_noise_title">輸入欄噪點</string>
   <string name="setting_glass_fog_title">輸入欄霧化</string>
+  <string name="setting_glass_radius_title">模糊半徑</string>
+  <string name="setting_glass_line_width_title">描邊粗細</string>
+  <string name="setting_glass_line_brightness_title">描邊亮度</string>
+  <string name="dev_panel_title">開發者調試</string>
+  <string name="dev_panel_subtitle">僅開發者版 · 全部即時生效</string>
   <string name="setting_display_page_enable_latex_rendering_desc">使用 LaTeX 語法呈現數學表達式與公式</string>
   <string name="setting_display_page_enable_latex_rendering_title">啟用 LaTeX 渲染</string>
   <string name="setting_display_page_enable_message_generation_haptic_effect_desc">訊息生成時啟用觸覺回饋效果</string>

@@ -1114,6 +1114,9 @@ data class DisplaySetting(
     val glassMaskColorMode: Int = 0, // v4.8.178: 蒙版颜色 0=跟随主题 1=深色 2=浅色
     val glassNoisePercent: Int = 15, // v4.8.178: 输入栏噪点 0..100 (默认15=Material3 预设默认档 0.15)
     val glassFogPercent: Int = 0, // v4.8.178: 输入栏雾化 0..100 (白色柔雾 上浓下淡; 0=关闭)
+    val glassBlurRadiusDp: Int = 4, // v4.8.179: 输入栏模糊半径 dp (半径回归; 默认 4=干净点)
+    val glassLineWidthDp: Float = 0.5f, // v4.8.179: 输入栏描边粗细 dp (默认 0.5=尽可能细)
+    val glassLineBrightness: Int = 55, // v4.8.179: 输入栏描边亮度 0..100 (默认 55=压低亮线刺眼)
     val chatFontFamily: ChatFontFamily = ChatFontFamily.DEFAULT,
     val chatCustomFontPath: String = "",
     val chatCustomFontName: String = "",

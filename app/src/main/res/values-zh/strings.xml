@@ -659,6 +659,11 @@
   <string name="setting_glass_mask_color_light">浅色</string>
   <string name="setting_glass_noise_title">输入栏噪点</string>
   <string name="setting_glass_fog_title">输入栏雾化</string>
+  <string name="setting_glass_radius_title">模糊半径</string>
+  <string name="setting_glass_line_width_title">描边粗细</string>
+  <string name="setting_glass_line_brightness_title">描边亮度</string>
+  <string name="dev_panel_title">开发者调试</string>
+  <string name="dev_panel_subtitle">仅开发者版 · 全部实时生效</string>
   <string name="setting_display_page_enable_latex_rendering_desc">使用 LaTeX 语法渲染数学表达式和公式</string>
   <string name="setting_display_page_enable_latex_rendering_title">启用 LaTeX 渲染</string>
   <string name="setting_display_page_enable_message_generation_haptic_effect_desc">消息生成时启用触觉反馈效果</string>

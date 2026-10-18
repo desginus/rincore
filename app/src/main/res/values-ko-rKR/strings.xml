@@ -628,6 +628,11 @@
   <string name="setting_glass_mask_color_light">밝게</string>
   <string name="setting_glass_noise_title">입력창 노이즈</string>
   <string name="setting_glass_fog_title">입력창 포그</string>
+  <string name="setting_glass_radius_title">블러 반경</string>
+  <string name="setting_glass_line_width_title">테두리 두께</string>
+  <string name="setting_glass_line_brightness_title">테두리 밝기</string>
+  <string name="dev_panel_title">개발자 디버그</string>
+  <string name="dev_panel_subtitle">개발자 빌드 전용 · 전부 실시간 반영</string>
   <string name="setting_display_page_enable_latex_rendering_desc">LaTeX 구문을 사용해 수식과 공식을 렌더링합니다</string>
   <string name="setting_display_page_enable_latex_rendering_title">LaTeX 렌더링 활성화</string>
   <string name="setting_display_page_enable_message_generation_haptic_effect_desc">메시지 생성 시 진동 피드백 활성화</string>

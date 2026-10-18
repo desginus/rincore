@@ -628,6 +628,11 @@
   <string name="setting_glass_mask_color_light">ライト</string>
   <string name="setting_glass_noise_title">入力欄ノイズ</string>
   <string name="setting_glass_fog_title">入力欄フォグ</string>
+  <string name="setting_glass_radius_title">ぼかし半径</string>
+  <string name="setting_glass_line_width_title">枠線の太さ</string>
+  <string name="setting_glass_line_brightness_title">枠線の明るさ</string>
+  <string name="dev_panel_title">開発者デバッグ</string>
+  <string name="dev_panel_subtitle">開発者版のみ · すべて即時反映</string>
   <string name="setting_display_page_enable_latex_rendering_desc">LaTeX構文を使用して数式や数値表現をレンダリングする</string>
   <string name="setting_display_page_enable_latex_rendering_title">LaTeXレンダリングを有効にする</string>
   <string name="setting_display_page_enable_message_generation_haptic_effect_desc">メッセージ生成時に触覚フィードバックを有効にする</string>

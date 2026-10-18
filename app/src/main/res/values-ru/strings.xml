@@ -628,6 +628,11 @@
   <string name="setting_glass_mask_color_light">Светлый</string>
   <string name="setting_glass_noise_title">Шум поля ввода</string>
   <string name="setting_glass_fog_title">Туман поля ввода</string>
+  <string name="setting_glass_radius_title">Радиус размытия</string>
+  <string name="setting_glass_line_width_title">Толщина обводки</string>
+  <string name="setting_glass_line_brightness_title">Яркость обводки</string>
+  <string name="dev_panel_title">Отладка разработчика</string>
+  <string name="dev_panel_subtitle">Только dev-сборка · всё сразу применяется</string>
   <string name="setting_display_page_enable_latex_rendering_desc">Отображать математические выражения и формулы с использованием синтаксиса LaTeX</string>
   <string name="setting_display_page_enable_latex_rendering_title">Включить рендеринг LaTeX</string>
   <string name="setting_display_page_enable_message_generation_haptic_effect_desc">Включить виброотклик при генерации сообщений</string>

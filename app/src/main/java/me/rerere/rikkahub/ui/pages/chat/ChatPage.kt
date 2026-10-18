@@ -92,12 +92,14 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.Bug01
 import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.LeftToRightListBullet
 import me.rerere.hugeicons.stroke.Menu03
 import me.rerere.hugeicons.stroke.MessageAdd01
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
@@ -446,6 +448,8 @@ private fun ChatPageContent(
     val settingsStoreForPicker: me.rerere.rikkahub.data.datastore.SettingsStore = koinInject()
     val operitToolProviderForPicker: me.rerere.rikkahub.data.operit.runtime.OperitToolProvider = koinInject()
     var previewMode by rememberSaveable { mutableStateOf(false) }
+    // v4.8.179: 开发者调试面板开关 (仅开发者版有入口)
+    var showDevPanel by rememberSaveable { mutableStateOf(false) }
     val hazeState = rememberHazeState()
     // v3.8.9: 分享面板 (外部 Activity) 返回后 Haze 模糊纹理失效成黑框,
     // 进设置再返回能恢复 (导航触发重组), 分享返回不触发任何重组。
@@ -556,6 +560,7 @@ private fun ChatPageContent(
                     bigScreen = bigScreen,
                     drawerState = drawerState,
                     previewMode = previewMode,
+                    onOpenDevPanel = { showDevPanel = true },
                     onNewChat = {
                         // 深度修复: 新建对话归属 = 抽屉实时焦点文件夹 (不是进入本页时的路由参数)
                         // 用户在抽屉里选择文件夹 B 后点新建, 必须归 B
@@ -788,6 +793,21 @@ private fun ChatPageContent(
                     }
                 }
             }
+            // v4.8.179: 开发者调试面板 (仅开发者版) — 悬于内容区顶部; 底栏输入栏保持可见可调
+            if (BuildConfig.DEVELOPER_BUILD && showDevPanel) {
+                RinDevPanel(
+                    current = setting.displaySetting,
+                    onUpdate = { updated -> vm.updateSettings(setting.copy(displaySetting = updated)) },
+                    onDismiss = { showDevPanel = false },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(
+                            top = innerPadding.calculateTopPadding() + 8.dp,
+                            start = 8.dp,
+                            end = 8.dp,
+                        ),
+                )
+            }
             }
         }
         } // LocalHazeState provider 闭合
@@ -941,6 +961,7 @@ private fun TopBar(
     previewMode: Boolean,
     onClickMenu: () -> Unit,
     onNewChat: () -> Unit,
+    onOpenDevPanel: () -> Unit,
     onUpdateTitle: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -1014,6 +1035,16 @@ private fun TopBar(
             }
         },
         actions = {
+            // v4.8.179 (用户定版): 开发者调试入口 — 位于"更多栏/新增对话"左侧; 仅开发者版可见
+            if (BuildConfig.DEVELOPER_BUILD) {
+                IconButton(
+                    onClick = {
+                        onOpenDevPanel()
+                    }
+                ) {
+                    Icon(HugeIcons.Bug01, stringResource(R.string.dev_panel_title))
+                }
+            }
             IconButton(
                 onClick = {
                     onClickMenu()

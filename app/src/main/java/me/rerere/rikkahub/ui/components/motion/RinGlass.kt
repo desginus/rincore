@@ -63,14 +63,14 @@ object RinGlass {
     }
 
     /**
-     * v4.8.178: 输入栏玻璃样式 — 4dp 基座 (119 定版半径, 不提供半径旋钮) + 可调噪点 (0..100)。
-     * 默认 15 = Material3 预设默认档 (beta01 源码已核实: 预设只写 backgroundColor,
-     * 噪点继承 HazeBlurDefaults.noiseFactor=0.15 — 故 15% 与设置前逐字节一致)。
-     * 双层玻璃 (S1 中间片 / S2 第二层) 两层共用本样式。
+     * v4.8.179: 输入栏玻璃样式 — 可调半径 (半径回归) + 可调噪点 (0..100)。
+     * 默认半径 4dp = 干净点; 噪点 15 = Material3 预设默认档 (beta01 源码已核实:
+     * 预设只写 backgroundColor, 噪点继承 HazeBlurDefaults.noiseFactor=0.15)。
+     * 双层玻璃用法: S1(底层) 带噪点 = "先噪点"; S2(顶层) 传 0 = "再模糊" (把底噪糊开)。
      */
     @Composable
-    fun inputBlurStyle(noisePercent: Int): HazeBlurStyle = HazeBlurStyle.Material3 {
-        blurRadius(4.dp)
+    fun inputBlurStyle(radiusDp: Int, noisePercent: Int): HazeBlurStyle = HazeBlurStyle.Material3 {
+        blurRadius(radiusDp.coerceIn(2, 24).dp)
         noiseFactor(noisePercent.coerceIn(0, 100) / 100f)
     }
 

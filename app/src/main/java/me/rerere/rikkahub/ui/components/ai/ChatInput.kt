@@ -161,8 +161,15 @@ fun ChatInput(
 ) {
     val toaster = LocalToaster.current
     val hazeTintColor = MaterialTheme.colorScheme.surfaceContainerLow
-    // v4.8.178: 输入栏外观三旋钮（119 定版 4dp 基座, 半径不再提供旋钮）: 噪点 / 蒙版 / 雾化。
-    val inputHazeStyle = RinGlass.inputBlurStyle(settings.displaySetting.glassNoisePercent)
+    // v4.8.179: 半径回归 + 噪点挪到最底层 — S1(底层)带噪点="先噪点", S2(顶层)零噪点="再模糊"。
+    val inputHazeStyle = RinGlass.inputBlurStyle(
+        radiusDp = settings.displaySetting.glassBlurRadiusDp,
+        noisePercent = settings.displaySetting.glassNoisePercent,
+    )
+    val inputTopHazeStyle = RinGlass.inputBlurStyle(
+        radiusDp = settings.displaySetting.glassBlurRadiusDp,
+        noisePercent = 0,
+    )
     val glassMaskColor = RinGlass.inputMaskColor(
         colorMode = settings.displaySetting.glassMaskColorMode,
         percent = settings.displaySetting.glassMaskPercent,
@@ -276,7 +283,7 @@ fun ChatInput(
                             .clip(containerShape)
                             .hazeBlur(
                                 input = HazeInput.Sources(frostMidState),
-                                style = inputHazeStyle,
+                                style = inputTopHazeStyle,
                             ),
                     )
                     fogBrush?.let { brush ->
@@ -295,8 +302,11 @@ fun ChatInput(
                 shape = containerShape,
                 tonalElevation = 0.dp,
                 border = BorderStroke(
-                    1.dp,
-                    if (darkTheme) Color.White else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                    // v4.8.179: 描边粗细/亮度可调（默认 0.5dp / 55% — "尽可能细、不刺眼"）
+                    settings.displaySetting.glassLineWidthDp.coerceIn(0.5f, 2.0f).dp,
+                    (if (darkTheme) Color.White else MaterialTheme.colorScheme.outlineVariant).copy(
+                        alpha = settings.displaySetting.glassLineBrightness.coerceIn(0, 100) / 100f,
+                    ),
                 ),
                 color = if (settings.displaySetting.enableBlurEffect) glassMaskColor else hazeTintColor,
             ) {

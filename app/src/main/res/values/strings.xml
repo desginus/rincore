@@ -672,6 +672,11 @@
   <string name="setting_glass_mask_color_light">Light</string>
   <string name="setting_glass_noise_title">Input Noise</string>
   <string name="setting_glass_fog_title">Input Fog</string>
+  <string name="setting_glass_radius_title">Blur Radius</string>
+  <string name="setting_glass_line_width_title">Line Width</string>
+  <string name="setting_glass_line_brightness_title">Line Brightness</string>
+  <string name="dev_panel_title">Developer Debug</string>
+  <string name="dev_panel_subtitle">Developer build only · all changes live</string>
   <string name="setting_display_page_enable_latex_rendering_desc">Render mathematical expressions and formulas using LaTeX syntax</string>
   <string name="setting_display_page_enable_latex_rendering_title">Enable LaTeX Rendering</string>
   <string name="setting_display_page_enable_message_generation_haptic_effect_desc">Enable haptic feedback when messages are being generated</string>
