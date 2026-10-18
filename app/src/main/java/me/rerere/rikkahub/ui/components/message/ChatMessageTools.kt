@@ -7,6 +7,7 @@ package me.rerere.rikkahub.ui.components.message
  * 功能: 消息内工具卡 (审批/结果/状态)
  * 差异: 工具审批交互与展示自研调整
  * ───────────────────────────────────────────────────────────────*/
+import me.rerere.rikkahub.data.model.Assistant
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -72,6 +73,7 @@ private const val ASK_USER_TOOL_NAME = "ask_user"
 fun ChainOfThoughtScope.ChatMessageToolStep(
     tool: UIMessagePart.Tool,
     loading: Boolean = false,
+    assistant: Assistant? = null,
     onToolApproval: ((toolCallId: String, approved: Boolean, reason: String) -> Unit)? = null,
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
 ) {
@@ -82,7 +84,7 @@ fun ChainOfThoughtScope.ChatMessageToolStep(
     }
 
     val renderer = remember(tool.toolName) { ToolUIRegistry.resolve(tool.toolName) }
-    val context = remember(tool, loading) {
+    val context = remember(tool, loading, assistant) {
         ToolUIContext(
             tool = tool,
             arguments = tool.inputAsJson(),
@@ -96,6 +98,7 @@ fun ChainOfThoughtScope.ChatMessageToolStep(
                 null
             },
             loading = loading,
+            assistant = assistant,
         )
     }
 

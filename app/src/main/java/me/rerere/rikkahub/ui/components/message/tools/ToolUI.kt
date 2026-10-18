@@ -5,6 +5,7 @@ package me.rerere.rikkahub.ui.components.message.tools
 /* ───【原版对齐】ToolUI.kt | 差异 ±4 行
  * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
  * ───────────────────────────────────────────────────────────────*/
+import me.rerere.rikkahub.data.model.Assistant
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -51,6 +52,8 @@ data class ToolUIContext(
     val content: JsonElement?,
     /** 该工具调用是否在生成中 */
     val loading: Boolean,
+    /** 发起该工具调用的助手, 拿不到时为 null */
+    val assistant: Assistant? = null,
 )
 
 /**
