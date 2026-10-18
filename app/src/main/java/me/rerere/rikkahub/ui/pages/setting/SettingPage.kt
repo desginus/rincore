@@ -52,6 +52,7 @@ import me.rerere.hugeicons.stroke.Clock02
 import me.rerere.hugeicons.stroke.Book01
 import me.rerere.hugeicons.stroke.Puzzle
 import me.rerere.hugeicons.stroke.Bookshelf01
+import me.rerere.hugeicons.stroke.InLove
 import me.rerere.hugeicons.stroke.BookOpen01
 import me.rerere.hugeicons.stroke.Brain02
 import me.rerere.hugeicons.stroke.Message02
@@ -392,6 +393,13 @@ item(
                         leadingContent = { Icon(HugeIcons.Bookshelf01, null) },
                         supportingContent = { Text(stringResource(R.string.setting_page_request_logs_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_request_logs)) },
+                    )
+                    // 5.0.0 并树: 支持开发者入口（上游 3.0.0 SettingDonate 页）
+                    item(
+                        onClick = { navController.navigate(Screen.SettingDonate) },
+                        leadingContent = { Icon(HugeIcons.InLove, null) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_donate_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_donate)) },
                     )
                     item(
                         onClick = {
