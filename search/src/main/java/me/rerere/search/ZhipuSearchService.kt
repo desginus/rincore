@@ -1,9 +1,5 @@
 package me.rerere.search
 
-
-/* ───【原版对齐】ZhipuSearchService.kt | 差异 ±4 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -76,7 +72,7 @@ object ZhipuSearchService : SearchService<SearchServiceOptions.ZhipuOptions> {
 
             val response = httpClient.newCall(request).execute()
             if (response.isSuccessful) {
-                val bodyRaw = response.body.string()
+                val bodyRaw = response.body?.string() ?: error("Failed to get response body")
                 val response = runCatching {
                     json.decodeFromString<ZhipuDto>(bodyRaw)
                 }.onFailure {
@@ -96,7 +92,7 @@ object ZhipuSearchService : SearchService<SearchServiceOptions.ZhipuOptions> {
                         }
                     ))
             } else {
-                println(response.body.string())
+                println(response.body?.string())
                 error("response failed #${response.code}")
             }
         }

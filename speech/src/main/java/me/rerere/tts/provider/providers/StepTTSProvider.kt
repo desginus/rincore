@@ -1,9 +1,5 @@
 package me.rerere.tts.provider.providers
 
-
-/* ───【原版对齐】StepTTSProvider.kt | 差异 ±5 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.flow.Flow
@@ -14,6 +10,7 @@ import me.rerere.tts.model.AudioChunk
 import me.rerere.tts.model.AudioFormat
 import me.rerere.tts.model.TTSRequest
 import me.rerere.tts.provider.TTSProvider
+import me.rerere.tts.provider.TTSProviderException
 import me.rerere.tts.provider.TTSProviderSetting
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -79,13 +76,15 @@ class StepTTSProvider : TTSProvider<TTSProviderSetting.Step> {
         val response = httpClient.newCall(httpRequest).execute()
         if (!response.isSuccessful) {
             // 把错误响应体读出来方便排查 (4xx 通常返回 JSON 错误信息)
-            val errorBody = runCatching { response.body.string() }.getOrNull().orEmpty()
-            throw Exception(
-                "Step TTS request failed: HTTP ${response.code} ${response.message}. body=$errorBody"
+            val errorBody = runCatching { response.body?.string() }.getOrNull().orEmpty()
+            throw TTSProviderException(
+                message = "Step TTS request failed: HTTP ${response.code} ${response.message}. body=$errorBody",
+                statusCode = response.code
             )
         }
 
-        val audioBytes = response.body.bytes()
+        val audioBytes = response.body?.bytes()
+            ?: throw Exception("Step TTS returned empty body")
 
         if (audioBytes.isEmpty()) {
             throw Exception("Step TTS returned 0 bytes")
