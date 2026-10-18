@@ -2,7 +2,7 @@
 
 > 自动生成 + 持续校订 · 全 12 模块 · 基线 v4.8.185。用途：按域查"哪个文件管什么"。
 > 检索层级：`SYMPTOM_ROUTER.md`（症状级）→ `APP_MAP.md`（域卡片级）→ **本文**（全文件级）→ 知识库 `rincore-bug-record`（案例级）。
-> 校订状态：51 条"（待校订）"持续人工补写中。
+> 校订状态：51 条"（待校订）"已全量校订（2026-10-19：逐件核读+一句话职责，0 条遗留）。
 
 > 共 906 个 .kt。格式：`路径 (行数) [来源] — 职责`。分组=模块/域。
 
@@ -13,8 +13,8 @@
 - `data/model/Conversation.kt` (252) [对齐/移植] — v3.8.13: 压缩留存位点 — 最多 3 个, 最新在前。留存的是压缩前的原始消息。
 - `data/model/Favorite.kt` (68) [对齐] — NODE("node"),
 - `data/model/Folder.kt` (23) [对齐] — 会话文件夹（助手内分组）。
-- `data/model/Sponsor.kt` (16) [对齐] — （待校订）
-- `data/model/Tag.kt` (16) [对齐] — （待校订）
+- `data/model/Sponsor.kt` (16) [对齐] — 赞助者数据模型（名称/图标/链接），设置页致谢区消费
+- `data/model/Tag.kt` (16) [对齐] — 助手标签数据模型（id/名称），助手分组与筛选消费
 - `service/CatchupPlanner.kt` (106) [自研] — 原版无此文件
 - `service/ChatNotificationManager.kt` (219) [对齐/移植] — Live Update 通知节流间隔：流式输出每个chunk都会触发一次更新，
 - `service/ChatService.kt` (222) [对齐/移植] — 前台服务生命周期 (setJob/startForeground/stopSelf) ✓。残余风险: 无。
@@ -42,7 +42,7 @@
 - `ui/components/ai/FilesPicker.kt` (198) [对齐/移植] — AI 组件 | 地图: docs/APP_MAP.md §A */
 - `ui/components/ai/McpPicker.kt` (203) [对齐] — AI 组件 | 地图: docs/APP_MAP.md §A */
 - `ui/components/ai/MessageQueuePanel.kt` (168) [对齐] — onRemove: (Uuid) -> Unit,
-- `ui/components/ai/ModelList.kt` (276) [对齐/移植] — （待校订）
+- `ui/components/ai/ModelList.kt` (276) [对齐/移植] — 模型选择器组件族（ModelListState/ModelSelector/ModelListSheet/触发器按钮），输入栏与对话头部模型切换消费
 - `ui/components/ai/ProviderBalanceText.kt` (89) [对齐/移植] — .expireAfterWrite(10, TimeUnit.MINUTES) // v3.6.9: 2min→10min 减少脉冲式刷新
 - `ui/components/ai/ReasoningPicker.kt` (231) [对齐/移植] — 2. 2.4.10 移植移除底部刻度 (v3.6.97 d1e8effc)
 - `ui/components/ai/SubAgentDetailSheet.kt` (186) [自研] — 对话子代理唯一展示窗口
@@ -54,16 +54,16 @@
 - `ui/components/ai/completion/WorkspaceIgnoreMatcher.kt` (143) [对齐] — constructor() : this(DEFAULT_RULES)
 - `ui/pages/chat/Background.kt` (94) [对齐] — MeshGradientBackground(modifier = modifier)
 - `ui/pages/chat/ChatDrawer.kt` (204) [移植] — 职责: 对话抽屉 (会话列表/文件夹/助手切换/新建)
-- `ui/pages/chat/ChatDrawerVM.kt` (199) [对齐] — （待校订）
+- `ui/pages/chat/ChatDrawerVM.kt` (199) [对齐] — 抽屉 VM（对话分页/文件夹/项目包选区与进程级默认页记忆/清理/记忆整理状态），ChatDrawer 与 ChatPage 消费
 - `ui/pages/chat/ChatList.kt` (204) [移植] — 职责: 消息列表渲染 (滚动/多版本消息/长按菜单/预览与搜索)
 - `ui/pages/chat/ChatPage.kt` (198) [移植] — 职责: 对话页组装 (Scaffold/顶栏/输入接线/压缩提示条/分享文档消费)
 - `ui/pages/chat/ChatSizeChecker.kt` (91) [对齐] — 消息节点数量警告阈值
 - `ui/pages/chat/ChatVM.kt` (231) [移植] — 职责: 对话 VM — 发送/编辑/删除/压缩/重新生成/恢复位点
 - `ui/pages/chat/ConversationArtifactsSheet.kt` (202) [-] — 本对话产出胶囊窗 | 地图: docs/APP_MAP.md §A */
-- `ui/pages/chat/ConversationList.kt` (244) [对齐] — （待校订）
+- `ui/pages/chat/ConversationList.kt` (244) [对齐] — 对话列表项组件（日期头/置顶头/对话行），抽屉列表消费（v4.8.36/40 显示项回滚口径）
 - `ui/pages/chat/ConversationSystemPromptCard.kt` (109) [对齐] — onSystemPromptChange: (String?) -> Unit,
 - `ui/pages/chat/EmptyOrbitSelector.kt` (233) [自研] — 新聊天/默认页(无消息)双弧轨道选择器:
-- `ui/pages/chat/Export.kt` (211) [对齐/移植] — （待校订）
+- `ui/pages/chat/Export.kt` (211) [对齐/移植] — 会话导出组件（纯文本/Markdown/本地图片内联 data URI，v4.8.185 带图导出），导出胶囊消费
 - `ui/pages/chat/MeshGradientBackground.kt` (169) [对齐] — Gemini 风格动态渐变背景。
 - `ui/pages/chat/ProjectPackSelection.kt` (38) [-] — 4.8.27: 项目包选区 — 全局内存状态 (跨 VM 只读访问)。
 - `ui/pages/chat/TTSAutoPlay.kt` (49) [对齐] — Auto-play TTS after generation completes
@@ -166,7 +166,7 @@
 - `data/ai/tools/local/FileManagerTool.kt` (227) [自研] — 原版无此文件
 - `data/ai/tools/local/InteractiveToolStreamer.kt` (29) [自研] — 原版无此文件
 - `data/ai/tools/local/JavascriptTool.kt` (80) [对齐] — name = "eval_javascript",
-- `data/ai/tools/local/LocalToolOption.kt` (38) [对齐] — （待校订）
+- `data/ai/tools/local/LocalToolOption.kt` (38) [对齐] — 本地工具开关选项枚举（v4.8.94 图表工具链 +ChartDisplay、v4.8.92 补 Alarm/Workflows），本地设置页消费
 - `data/ai/tools/local/LocalTools.kt` (182) [对齐/移植] — 本地工具集 — 模块: A. 传输链 / tools/local
 - `data/ai/tools/local/LocationTool.kt` (234) [自研] — 原版无此文件
 - `data/ai/tools/local/MediaPlayerTool.kt` (175) [自研] — 原版无此文件
@@ -215,8 +215,8 @@
 - `ui/pages/extensions/workspace/DocumentPreview.kt` (227) [自研] — 4.0.2: 工作区文档预览内容抽取 — 零新依赖 (OOXML=zip+XML, JDK 内置解析)。
 - `ui/pages/extensions/workspace/WorkspaceDetailPage.kt` (179) [移植] — 职责: 文件管理页 (列表/选择模式/操作菜单/传输指示)
 - `ui/pages/extensions/workspace/WorkspaceDetailVM.kt` (248) [移植] — 职责: 文件操作 VM (导入/导出/分享/重命名/批量/压缩包)
-- `ui/pages/extensions/workspace/WorkspacePage.kt` (230) [对齐] — （待校订）
-- `ui/pages/extensions/workspace/WorkspaceTerminalPage.kt` (205) [对齐] — （待校订）
+- `ui/pages/extensions/workspace/WorkspacePage.kt` (230) [对齐] — 工作区列表页（新建/编辑/空态；v4.8.175 上游 3.0.0 对齐版），抽屉与设置入口消费
+- `ui/pages/extensions/workspace/WorkspaceTerminalPage.kt` (205) [对齐] — 工作区终端页（多 Tab 会话/扩展按键栏/会话管理），工作区详情页消费
 - `ui/pages/extensions/workspace/WorkspaceTerminalSession.kt` (265) [对齐] — "--root-id",
 - `ui/pages/extensions/workspace/WorkspaceTerminalSessionManager.kt` (233) [对齐] — Owns workspace terminal sessions independently from the terminal page lifecycle.
 - `ui/pages/extensions/workspace/WorkspaceVM.kt` (40) [对齐] — .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
@@ -262,11 +262,11 @@
 - `ui/pages/setting/SettingClawSkillsPage.kt` (130) [自研] — 原版无此文件
 - `ui/pages/setting/SettingClientPage.kt` (172) [-] — v4.5.5: 客户端设置 — 图片/文件上传模式 (用户可选, 请求体严格按所选模式构造)。
 - `ui/pages/setting/SettingEcosystemPage.kt` (193) [自研] — 原版无此文件
-- `ui/pages/setting/SettingFilesPage.kt` (218) [对齐] — （待校订）
+- `ui/pages/setting/SettingFilesPage.kt` (218) [对齐] — 文件管理设置页（缓存/文件夹清理/文件项展示），设置主页消费
 - `ui/pages/setting/SettingMcpPage.kt` (202) [对齐] — + 自研 stdio 传输 UI 回贴 (上游无 STDIO 条目; 我方 v3.11.2 沙箱启动配套)。
-- `ui/pages/setting/SettingModelPage.kt` (218) [对齐/移植] — （待校订）
+- `ui/pages/setting/SettingModelPage.kt` (218) [对齐/移植] — 模型设置页壳（Tab：模型列表/提示词/建议设置项），设置主页消费
 - `ui/pages/setting/SettingModelPromptPage.kt` (172) [对齐] — LazyColumn(
-- `ui/pages/setting/SettingPage.kt` (200) [对齐/移植] — （待校订）
+- `ui/pages/setting/SettingPage.kt` (200) [对齐/移植] — 设置主页（分组导航 + 能力模块/插件/域管理自研入口 + 支持开发者入口 v5.0.0）
 - `ui/pages/setting/SettingPermissionsPage.kt` (160) [自研] — 原版无此文件
 - `ui/pages/setting/SettingPluginsPage.kt` (191) [自研] — 原版无此文件
 - `ui/pages/setting/SettingPreferencesGeneralPage.kt` (182) [对齐] — mutableFloatStateOf(settings.defaultTTSPlaybackSpeed)
@@ -274,11 +274,11 @@
 - `ui/pages/setting/SettingPreferencesNotificationPage.kt` (132) [对齐/移植] — displaySetting = setting
 - `ui/pages/setting/SettingPreferencesPage.kt` (110) [对齐] — Scaffold(
 - `ui/pages/setting/SettingPreferencesThemePage.kt` (102) [对齐] — Scaffold(
-- `ui/pages/setting/SettingPreferencesUIPage.kt` (190) [对齐] — （待校订）
+- `ui/pages/setting/SettingPreferencesUIPage.kt` (190) [对齐] — 显示偏好页（对话字体/头像/气泡/代码块自动预览等显示开关；v4.8.183 玻璃旋钮已清）
 - `ui/pages/setting/SettingProviderDetailPage.kt` (193) [对齐] — + 自研回贴: 模型删除级联清理 (cleanupDeletedModels)、显示名不 trim。
-- `ui/pages/setting/SettingProviderPage.kt` (206) [对齐/移植] — （待校订）
-- `ui/pages/setting/SettingSearchDetailPage.kt` (223) [对齐/移植] — （待校订）
-- `ui/pages/setting/SettingSearchPage.kt` (225) [对齐] — （待校订）
+- `ui/pages/setting/SettingProviderPage.kt` (206) [对齐/移植] — 模型提供商列表页（增删/二维码导入/grok·OpenCode 条目），设置主页消费
+- `ui/pages/setting/SettingSearchDetailPage.kt` (223) [对齐/移植] — 搜索服务详情页（Tavily/Exa/Doubao/Bing/自定义 JS 等选项编辑 + 连通测试），搜索页消费
+- `ui/pages/setting/SettingSearchPage.kt` (225) [对齐] — 搜索服务列表页（提供商卡/能力标签/公共选项；2.5.5 适配 ItemActionMenu 统一操作）
 - `ui/pages/setting/SettingSkillDiscoverPage.kt` (216) [自研] — 两个提供来源: CherryIN / skills.sh — 搜索 + 热门 + 详情/安装 + 从链接安装。
 - `ui/pages/setting/SettingSkillsEcosystemPage.kt` (60) [自研] — 原版无此文件
 - `ui/pages/setting/SettingSpeechPage.kt` (207) [对齐] — ai 模块无 Volcengine provider — 上游对应分支整体剔除 (我方引擎集不含火山)。
@@ -286,7 +286,7 @@
 - `ui/pages/setting/SettingToolListPage.kt` (199) [-] — 工具列表 —— 逐个/批量调整工具归属（v4.8.85 重写）。
 - `ui/pages/setting/SettingUploadInboxPage.kt` (207) [自研] — 数据与日志 → 收件箱 (Upload): 上传文件管理 UI。
 - `ui/pages/setting/SettingVM.kt` (60) [对齐] — .stateIn(viewModelScope, SharingStarted.Lazily, Settings(init = true, providers = emptyList()))
-- `ui/pages/setting/SettingWebPage.kt` (213) [对齐/移植] — （待校订）
+- `ui/pages/setting/SettingWebPage.kt` (213) [对齐/移植] — 网页服务设置页（Web 服务器开关/端口/令牌），设置主页消费
 - `ui/pages/setting/SettingZonePage.kt` (211) [-] — 工具矩阵 —— 全部工具区的唯一管理界面（v4.8.83 重写）。
 - `ui/pages/setting/ToolPreviewBuilder.kt` (64) [-] — 设置页展示用的工具条目（name + description）
 - `ui/pages/setting/components/ASRProviderConfigure.kt` (232) [对齐] — onValueChange: (ASRProviderSetting) -> Unit
@@ -294,7 +294,7 @@
 - `ui/pages/setting/components/BalanceOption.kt` (119) [对齐] — onEdit: (BalanceOption) -> Unit,
 - `ui/pages/setting/components/PresetThemeButton.kt` (170) [对齐] — onClick: () -> Unit
 - `ui/pages/setting/components/ProviderConfigure.kt` (208) [对齐] — onEdit: (provider: ProviderSetting) -> Unit
-- `ui/pages/setting/components/ProviderConnectionTester.kt` (186) [对齐] — （待校订）
+- `ui/pages/setting/components/ProviderConnectionTester.kt` (186) [对齐] — 提供商连通测试组件（非流式/流式/工具调用三态 + 结果展示），提供商详情页与详情 Sheet 消费
 - `ui/pages/setting/components/TTSProviderConfigure.kt` (189) [对齐/移植] — onValueChange: (TTSProviderSetting) -> Unit
 - `ui/pages/setting/scheduledjobs/ScheduledJobDetailScreen.kt` (201) [自研] — 原版无此文件
 - `ui/pages/setting/scheduledjobs/ScheduledJobSummaries.kt` (95) [自研] — 原版无此文件
@@ -403,7 +403,7 @@
 - `ui/pages/setting/SettingThemePage.kt` (197) [移植] — 职责: 主题设置页 (预设列表/自定义编辑/HSL 三通道调色 v4.8.18)
 - `ui/theme/ChatFont.kt` (67) [对齐] — content: @Composable () -> Unit,
 - `ui/theme/CodeColor.kt` (48) [对齐] — Atom One Dark Theme Colors
-- `ui/theme/Color.kt` (197) [对齐] — （待校订）
+- `ui/theme/Color.kt` (197) [对齐] — 主题扩展色（ExtendColors 亮暗两套 + CustomColors 单例映射），全 UI 消费；v4.8.151 后承载 listItem/card 容器色族
 - `ui/theme/CustomTheme.kt` (76) [-] — 职责: 自定义主题 (三色 ARGB → 完整 ColorScheme 生成, tonal spot)
 - `ui/theme/GoogleSans.kt` (228) [对齐] — Typographic feature axis for (ROND) variations
 - `ui/theme/PresetTheme.kt` (60) [-] — 职责: 预设主题注册表 (PresetThemes 列表 + findPresetTheme/findThemeById)
@@ -486,16 +486,16 @@
 - `data/db/SQLiteConfiguration.kt` (28) [对齐] — Use the same SQLite extensions for the live database and backup validation.
 - `data/db/dao/AlarmDao.kt` (45) [自研] — 原版无此文件
 - `data/db/dao/ConversationDAO.kt` (129) [对齐] — v4.8.62: 未归类对话计数 (进入助手的落地逻辑用; 与分页查询同口径, 排除子代理)
-- `data/db/dao/FavoriteDAO.kt` (44) [对齐] — （待校订）
+- `data/db/dao/FavoriteDAO.kt` (44) [对齐] — 收藏 DAO（消息节点收藏查询/写入/会话维度），收藏页与抽屉消费
 - `data/db/dao/FolderDAO.kt` (52) [对齐] — v4.8.63: 全部助手的项目包 id 全集 (统计剪枝用 — 跨助手不误删)
-- `data/db/dao/GenMediaDAO.kt` (28) [对齐] — （待校订）
-- `data/db/dao/ManagedFileDAO.kt` (42) [对齐] — （待校订）
+- `data/db/dao/GenMediaDAO.kt` (28) [对齐] — 生成媒体 DAO（GenMedia 记录查询/写入），图像生成链消费
+- `data/db/dao/ManagedFileDAO.kt` (42) [对齐] — 托管文件 DAO（上传文件登记/按码查询/对话引用扫描 instr，v4.8.186 收件箱引用标注消费）
 - `data/db/dao/MemoryDAO.kt` (62) [对齐/移植] — v4.8.92: 助手级记忆 = 排除单对话记忆（conversation_id IS NULL）—— 单对话记忆绝不出现在
 - `data/db/dao/MessageNodeDAO.kt` (104) [对齐/移植] — 使用与 messages 相同的 JSON 编码，保守保留所有分支中出现的 URL。
 - `data/db/dao/ScheduledJobDao.kt` (50) [自研] — 原版无此文件
 - `data/db/dao/ScheduledJobRunDao.kt` (52) [自研] — 原版无此文件
 - `data/db/dao/SubAgentRunDao.kt` (42) [自研] — 原版无此文件
-- `data/db/dao/WorkspaceDAO.kt` (38) [对齐] — （待校订）
+- `data/db/dao/WorkspaceDAO.kt` (38) [对齐] — 工作区 DAO（工作区实体查询/写入/删除），WorkspaceRepository 消费
 - `data/db/entity/AlarmEntity.kt` (30) [自研] — 原版无此文件
 - `data/db/entity/ConversationEntity.kt` (45) [对齐] — legacy 数据壳: v4.5.23 起 CWD 为助手级; 列保留避免 DB 迁移, 无行为分支
 - `data/db/entity/FavoriteEntity.kt` (39) [对齐] — tableName = "favorites",
@@ -515,14 +515,14 @@
 - `data/db/migrations/Migration_13_14.kt` (44) [对齐] — Log.i(TAG, "migrate: start migrate from 13 to 14 (UIMessagePart type -> @SerialName)")
 - `data/db/migrations/Migration_14_15.kt` (38) [对齐] — DatabaseMigrationTracker.onMigrationStart(14, 15)
 - `data/db/migrations/Migration_15_16.kt` (91) [对齐] — Log.i(TAG, "migrate: start migrate from 15 to 16 (eager tool message migration)")
-- `data/db/migrations/Migration_16_17.kt` (13) [对齐] — （待校订）
-- `data/db/migrations/Migration_22_23.kt` (13) [对齐] — （待校订）
+- `data/db/migrations/Migration_16_17.kt` (13) [对齐] — DB 迁移 16→17（历史迁移，注册于 AppDatabaseFactory 手写链）
+- `data/db/migrations/Migration_22_23.kt` (13) [对齐] — DB 迁移 22→23（历史迁移，注册于 AppDatabaseFactory 手写链）
 - `data/db/migrations/Migration_24_25.kt` (77) [自研] — 原版无此文件
 - `data/db/migrations/Migration_25_27.kt` (70) [自研] — 原版无此文件
 - `data/db/migrations/Migration_27_28.kt` (19) [自研] — 压缩留存位点持久化
 - `data/db/migrations/Migration_28_29.kt` (46) [自研] — 原版无此文件
 - `data/db/migrations/Migration_6_7.kt` (108) [对齐] — Log.i(TAG, "migrate: start migrate from 6 to 7")
-- `data/db/migrations/Migration_8_9.kt` (13) [对齐] — （待校订）
+- `data/db/migrations/Migration_8_9.kt` (13) [对齐] — DB 迁移 8→9（历史迁移，注册于 AppDatabaseFactory 手写链）
 - `data/event/AppEvent.kt` (50) [对齐] — data object OpenUsageAccessSettings : AppEvent()
 - `data/event/AppEventBus.kt` (26) [对齐] — _events.emit(event)
 - `data/export/ExportHooks.kt` (162) [对齐] — get() = serializer.exportToJson(data)
@@ -573,8 +573,8 @@
 - `web/Exceptions.kt` (19) [对齐/移植] — ) : RuntimeException(message)
 - `web/NsdServiceRegistrar.kt` (136) [对齐/移植] — const val DEFAULT_SERVICE_NAME = "rikkahub"
 - `web/WebApiModule.kt` (225) [对齐] — Configure Web API for the Ktor application.
-- `web/WebServerManager.kt` (155) [对齐] — （待校订）
-- `web/dto/WebDto.kt` (354) [对齐/移植] — （待校订）
+- `web/WebServerManager.kt` (155) [对齐] — Web 服务器管理器（Ktor 启停/状态流/端口），设置页与前台服务消费
+- `web/dto/WebDto.kt` (354) [对齐/移植] — Web API DTO 族（发送/重生成/工具审批/编辑消息/分叉/节点选择请求）
 - `web/routes/AIIconRoutes.kt` (80) [对齐] — ?: throw BadRequestException("Missing name")
 - `web/routes/ConversationDiff.kt` (59) [对齐] — title != current.title ||
 - `web/routes/ConversationRoutes.kt` (206) [对齐] — GET /api/conversations - List conversations of current assistant
@@ -615,7 +615,7 @@
 - `data/network/ProxyConfig.kt` (100) [对齐] — "http", "https" -> Proxy.Type.HTTP
 - `data/permissions/PermissionInventory.kt` (211) [自研] — 原版无此文件
 - `service/AppForegroundState.kt` (54) [自研] — 前后台状态单一事实源 (v4.8.99 线程/能效改革)
-- `ui/activity/SafeModeActivity.kt` (196) [对齐] — （待校订）
+- `ui/activity/SafeModeActivity.kt` (196) [对齐] — 安全模式入口 Activity（助手选择浮层 + 拉起诉求），桌面快捷方式/系统入口消费
 - `ui/activity/ShareReceiverActivity.kt` (204) [自研] — 原版无此文件
 - `ui/activity/ShortcutHandlerActivity.kt` (72) [对齐/移植] — photoURI?.let { uri ->
 - `ui/context/LocalASRState.kt` (13) [对齐] — UI 基础 | 地图: docs/APP_MAP.md §L */
@@ -687,7 +687,7 @@
 - `me/rerere/ai/provider/providers/GoogleProvider.kt` (203) [自研] — 原版无此文件
 - `me/rerere/ai/provider/providers/OpenAIProvider.kt` (220) [自研] — 原版无此文件
 - `me/rerere/ai/provider/providers/ProviderMessageUtils.kt` (63) [对齐] — 消息 parts 按工具边界分组的结果
-- `me/rerere/ai/provider/providers/google/InteractionsAPI.kt` (226) [对齐] — （待校订）
+- `me/rerere/ai/provider/providers/google/InteractionsAPI.kt` (226) [对齐] — Gemini Interactions API 客户端（2.5.6 逐字节；服务器工具调用/结果识别/签名元数据），GoogleProvider 消费
 - `me/rerere/ai/provider/providers/google/InteractionsStreamDecoder.kt` (211) [对齐] — Interactions API 的流按 step 组织：`step.start` → `step.delta`* → `step.stop`，
 - `me/rerere/ai/provider/providers/openai/ChatCompletionsAPI.kt` (224) [对齐/移植] — 审计结论: eventSource 生命周期 (awaitClose 双 cancel) ✓; 重试三轮链
 - `me/rerere/ai/provider/providers/openai/OpenAIImpl.kt` (35) [对齐/移植] — OpenAI Provider 实现 — 模块: A. 传输链 / ai
@@ -718,11 +718,11 @@
 
 ## markdown 模块（103）
 - `org/intellij/markdown/ExperimentalApi.kt` (14) [-] — API elements marked with this annotation should be considered unstable and might change
-- `org/intellij/markdown/IElementType.kt` (8) [-] — （待校订）
-- `org/intellij/markdown/MarkdownElementType.kt` (9) [-] — （待校订）
-- `org/intellij/markdown/MarkdownElementTypes.kt` (71) [-] — （待校订）
-- `org/intellij/markdown/MarkdownParsingException.kt` (3) [-] — （待校订）
-- `org/intellij/markdown/MarkdownTokenTypes.kt` (129) [-] — （待校订）
+- `org/intellij/markdown/IElementType.kt` (8) [-] — 元素类型基类（name/toString），markdown 词法与 AST 全链基础
+- `org/intellij/markdown/MarkdownElementType.kt` (9) [-] — 扩展元素类型（isToken 标记 + Markdown: 前缀），元素类型构造消费
+- `org/intellij/markdown/MarkdownElementTypes.kt` (71) [-] — 块级/行内元素类型全集（MARKDOWN_FILE/列表/表格/数学等），解析与渲染消费
+- `org/intellij/markdown/MarkdownParsingException.kt` (3) [-] — 解析异常类型（IllegalStateException 子类）
+- `org/intellij/markdown/MarkdownTokenTypes.kt` (129) [-] — Token 类型全集（TEXT/EOL/代码/数学定界等），词法器消费
 - `org/intellij/markdown/ast/ASTNode.kt` (23) [-] — visitor.visitNode(this)
 - `org/intellij/markdown/ast/ASTNodeBuilder.kt` (80) [-] — open class ASTNodeBuilder(
 - `org/intellij/markdown/ast/ASTNodeImpl.kt` (9) [-] — final override var parent: ASTNode? = null
@@ -730,14 +730,14 @@
 - `org/intellij/markdown/ast/CompositeASTNode.kt` (18) [-] — open class CompositeASTNode(type: IElementType, final override val children: List<ASTNode>)
 - `org/intellij/markdown/ast/LeafASTNode.kt` (13) [-] — get() = EMPTY_CHILDREN
 - `org/intellij/markdown/ast/impl/ListCompositeNode.kt` (52) [-] — ++newlines
-- `org/intellij/markdown/ast/impl/ListItemCompositeNode.kt` (7) [-] — （待校订）
+- `org/intellij/markdown/ast/impl/ListItemCompositeNode.kt` (7) [-] — 列表项复合节点（列表 AST 构造），解析器消费
 - `org/intellij/markdown/ast/visitors/RecursiveVisitor.kt` (15) [-] — visitNode(child)
-- `org/intellij/markdown/ast/visitors/Visitor.kt` (7) [-] — （待校订）
-- `org/intellij/markdown/flavours/MarkdownFlavourDescriptor.kt` (19) [-] — （待校订）
+- `org/intellij/markdown/ast/visitors/Visitor.kt` (7) [-] — AST 访问者接口（visitNode），HtmlGenerator 等消费
+- `org/intellij/markdown/flavours/MarkdownFlavourDescriptor.kt` (19) [-] — 方言描述符接口（lexer/parser/generators 组装），CommonMark/GFM 方言实现
 - `org/intellij/markdown/flavours/commonmark/CommonMarkFlavourDescriptor.kt` (174) [-] — CommonMark spec based flavour, to be used as a base for other flavours
 - `org/intellij/markdown/flavours/commonmark/CommonMarkMarkerProcessor.kt` (88) [-] — open class CommonMarkMarkerProcessor(productionHolder: ProductionHolder, constraintsBase: MarkdownConstraints)
 - `org/intellij/markdown/flavours/gfm/GFMConstraints.kt` (62) [-] — get() = BASE
-- `org/intellij/markdown/flavours/gfm/GFMElementTypes.kt` (52) [-] — （待校订）
+- `org/intellij/markdown/flavours/gfm/GFMElementTypes.kt` (52) [-] — GFM 扩展元素类型（表格/删除线/任务列表/自动链接），GFM 解析消费
 - `org/intellij/markdown/flavours/gfm/GFMFlavourDescriptor.kt` (143) [-] — GitHub Markdown spec based flavour, to be used as a base for other flavours.
 - `org/intellij/markdown/flavours/gfm/GFMGeneratingProviders.kt` (211) [-] — "</?(?:title|textarea|style|xmp|iframe|noembed|noframes|script|plaintext)(?=\\s|/?>|$)",
 - `org/intellij/markdown/flavours/gfm/GFMMarkerProcessor.kt` (70) [-] — .plus(super.getMarkerBlockProviders())
@@ -751,7 +751,7 @@
 - `org/intellij/markdown/flavours/space/SFMFlavourDescriptor.kt` (28) [-] — JetBrains Space-flavoured markdown
 - `org/intellij/markdown/flavours/space/lexer/_SFMLexer.kt` (226) [-] — The following code was generated by JFlex 1.7.0 tweaked for IntelliJ platform
 - `org/intellij/markdown/html/CommonDefs.kt` (51) [-] — RinCore vendored (源: JetBrains/markdown 0.7.14 + rikkahub CJK 补丁 501ce95c64)
-- `org/intellij/markdown/html/GeneratingProvider.kt` (7) [-] — （待校订）
+- `org/intellij/markdown/html/GeneratingProvider.kt` (7) [-] — HTML 生成提供者接口（processNode），HtmlGenerator 消费
 - `org/intellij/markdown/html/GeneratingProviders.kt` (230) [-] — abstract fun openTag(visitor: HtmlGenerator.HtmlGeneratingVisitor, text: String, node: ASTNode)
 - `org/intellij/markdown/html/HtmlGenerator.kt` (162) [-] — typealias AttributesCustomizer = (node: ASTNode, tagName: CharSequence, attributes: Iterable<CharSequence?>) -
 - `org/intellij/markdown/html/XssSafeLinks.kt` (52) [-] — v4.8.113: file: 放行判定挂点 — 应用侧可注入「本应用私有目录 file:// 放行」。
@@ -760,16 +760,16 @@
 - `org/intellij/markdown/lexer/Compat.kt` (125) [-] — f(codePoint)
 - `org/intellij/markdown/lexer/GeneratedLexer.kt` (23) [-] — add(e)
 - `org/intellij/markdown/lexer/MarkdownLexer.kt` (85) [-] — reset(originalText, bufferStart, bufferEnd, state)
-- `org/intellij/markdown/lexer/TokenInfo.kt` (11) [-] — （待校订）
+- `org/intellij/markdown/lexer/TokenInfo.kt` (11) [-] — 词法 Token 信息（type/tokenStart/tokenEnd/rawIndex），词法器与渲染链消费
 - `org/intellij/markdown/lexer/_MarkdownLexer.kt` (242) [-] — The following code was generated by JFlex 1.7.0 tweaked for IntelliJ platform
 - `org/intellij/markdown/parser/BlockProduction.kt` (41) [-] — Fills [productionHolder] with the blocks of [text], and returns the blocks that are still open at the end of
-- `org/intellij/markdown/parser/CancellationToken.kt` (10) [-] — （待校订）
+- `org/intellij/markdown/parser/CancellationToken.kt` (10) [-] — 解析取消令牌（fun interface + NonCancellable 默认实现），长文档解析保护
 - `org/intellij/markdown/parser/InlineBuilder.kt` (132) [-] — constructor(nodeBuilder: ASTNodeBuilder, tokensCache: TokensCache): this(nodeBuilder, tokensCache, Cancellatio
 - `org/intellij/markdown/parser/LinkMap.kt` (99) [-] — node.children.first { it.type == MarkdownElementTypes.LINK_LABEL }.getTextInNode(text)
 - `org/intellij/markdown/parser/LookaheadText.kt` (151) [-] — CharSequence.split() always copies each piece into a new String (substring() = subSequence().toString()).
 - `org/intellij/markdown/parser/MarkdownParser.kt` (211) [-] — constructor(flavour: MarkdownFlavourDescriptor): this(flavour, true)
 - `org/intellij/markdown/parser/MarkerProcessor.kt` (203) [-] — abstract class MarkerProcessor<T : MarkerProcessor.StateInfo>(private val productionHolder: ProductionHolder,
-- `org/intellij/markdown/parser/MarkerProcessorFactory.kt` (7) [-] — （待校订）
+- `org/intellij/markdown/parser/MarkerProcessorFactory.kt` (7) [-] — Marker 处理器工厂接口（createMarkerProcessor），方言组装消费
 - `org/intellij/markdown/parser/ProductionHolder.kt` (36) [-] — currentPosition = position
 - `org/intellij/markdown/parser/StreamingMarkdownFile.kt` (125) [-] — Mutable AST node that accept appending chunks.
 - `org/intellij/markdown/parser/TopLevelBuilder.kt` (63) [-] — constructor(nodeBuilder: ASTNodeBuilder): this(nodeBuilder, CancellationToken.NonCancellable)
@@ -785,9 +785,9 @@
 - `org/intellij/markdown/parser/markerblocks/impl/BlockQuoteMarkerBlock.kt` (43) [-] — assert(pos.offsetInCurrentLine == -1)
 - `org/intellij/markdown/parser/markerblocks/impl/CodeBlockMarkerBlock.kt` (81) [-] — productionHolder.addProduction(listOf(SequentialParser.Node(
 - `org/intellij/markdown/parser/markerblocks/impl/CodeFenceMarkerBlock.kt` (80) [-] — Eat everything if we're on code line
-- `org/intellij/markdown/parser/markerblocks/impl/HorizontalRuleMarkerBlock.kt` (35) [-] — （待校订）
+- `org/intellij/markdown/parser/markerblocks/impl/HorizontalRuleMarkerBlock.kt` (35) [-] — 水平线 Marker 块（---/**/___ 判定与中断规则），解析器消费
 - `org/intellij/markdown/parser/markerblocks/impl/HtmlBlockMarkerBlock.kt` (70) [-] — productionHolder.addProduction(listOf(SequentialParser.Node(
-- `org/intellij/markdown/parser/markerblocks/impl/LinkReferenceDefinitionMarkerBlock.kt` (40) [-] — （待校订）
+- `org/intellij/markdown/parser/markerblocks/impl/LinkReferenceDefinitionMarkerBlock.kt` (40) [-] — 链接引用定义 Marker 块（[id]: url 判定），解析器消费
 - `org/intellij/markdown/parser/markerblocks/impl/ListItemMarkerBlock.kt` (51) [-] — assert(pos.offsetInCurrentLine == -1)
 - `org/intellij/markdown/parser/markerblocks/impl/ListMarkerBlock.kt` (57) [-] — assert(pos.offsetInCurrentLine == -1)
 - `org/intellij/markdown/parser/markerblocks/impl/ParagraphMarkerBlock.kt` (63) [-] — assert(pos.offsetInCurrentLine == -1)
@@ -800,7 +800,7 @@
 - `org/intellij/markdown/parser/markerblocks/providers/HtmlBlockProvider.kt` (92) [-] — ?: return -1
 - `org/intellij/markdown/parser/markerblocks/providers/LinkReferenceDefinitionProvider.kt` (239) [-] — productionHolder.addProduction(listOf(SequentialParser.Node(
 - `org/intellij/markdown/parser/markerblocks/providers/ListMarkerProvider.kt` (52) [-] — result.add(ListMarkerBlock(nextConstraints, productionHolder.mark(), nextConstraints.types.lastOrNull()!!))
-- `org/intellij/markdown/parser/markerblocks/providers/SetextHeaderProvider.kt` (50) [-] — （待校订）
+- `org/intellij/markdown/parser/markerblocks/providers/SetextHeaderProvider.kt` (50) [-] — Setext 标题 Provider（===/--- 下划线标题判定），解析器消费
 - `org/intellij/markdown/parser/sequentialparsers/DelimiterParser.kt` (118) [-] — Finds all tokens that open or close element represented by this parser.
 - `org/intellij/markdown/parser/sequentialparsers/EmphasisLikeParser.kt` (129) [-] — Should be used to parse emphasis-like elements with the same priority that should be aware of each other.
 - `org/intellij/markdown/parser/sequentialparsers/LexerBasedTokensCache.kt` (58) [-] — cachedTokens = _cachedTokens
@@ -834,7 +834,7 @@
 - `me/rerere/common/android/ContextUtil.kt` (26) [对齐/移植] — dir.mkdirs()
 - `me/rerere/common/android/Logging.kt` (95) [对齐/移植] — abstract val id: Uuid
 - `me/rerere/common/cache/CacheEntry.kt` (61) [对齐/移植] — element("value", valueSerializer.descriptor)
-- `me/rerere/common/cache/CacheStore.kt` (16) [对齐/移植] — （待校订）
+- `me/rerere/common/cache/CacheStore.kt` (16) [对齐/移植] — 通用缓存接口（common 模块；差异 ±0=与上游一致），各缓存消费方注入
 - `me/rerere/common/cache/FileIO.kt` (40) [对齐/移植] — throw IOException("Failed to create directory: $parent")
 - `me/rerere/common/cache/LruCache.kt` (118) [对齐/移植] — store.remove(eldest.key)
 - `me/rerere/common/cache/SingleFileCacheStore.kt` (78) [对齐/移植] — all[key]
@@ -935,18 +935,18 @@
 - `me/rerere/asr/ASRState.kt` (23) [-] — Connecting,
 - `me/rerere/asr/ASRVoiceTurn.kt` (22) [-] — One server-VAD utterance. A stopped event alone does not contain the final transcript.
 - `me/rerere/asr/AudioAmplitude.kt` (34) [-] — .order(ByteOrder.LITTLE_ENDIAN)
-- `me/rerere/asr/providers/DashScopeASRController.kt` (238) [-] — （待校订）
+- `me/rerere/asr/providers/DashScopeASRController.kt` (238) [-] — 阿里 DashScope 实时 ASR 控制器（录音采集→流式转写→会话收尾事件）
 - `me/rerere/asr/providers/MiMoASRController.kt` (253) [对齐/移植] — MiMo 官方限制: 单次请求 base64 不超过 10MB ≈ 7.5MB raw。
-- `me/rerere/asr/providers/OpenAIRealtimeASRController.kt` (240) [-] — （待校订）
+- `me/rerere/asr/providers/OpenAIRealtimeASRController.kt` (240) [-] — OpenAI Realtime ASR 控制器（含 voiceTurn 轮次跟踪 speech_started/stopped/completed，v4.8.187 恢复）
 - `me/rerere/asr/providers/StepASRController.kt` (253) [-] — 提前在 6MB 触发分段, 与 MiMo 一致, 避免单段过大导致网络传输失败.
-- `me/rerere/asr/providers/VolcengineASRController.kt` (232) [-] — （待校订）
+- `me/rerere/asr/providers/VolcengineASRController.kt` (232) [-] — 火山引擎 ASR 控制器（录音采集→流式转写），ASR 设置页消费
 - `me/rerere/asr/providers/VolcengineASRProtocol.kt` (103) [-] — V3 binary framing and full-result decoding, shared by dictation and voice mode.
 - `me/rerere/tts/controller/AudioPlayer.kt` (196) [-] — player.playbackParameters = PlaybackParameters(speed)
 - `me/rerere/tts/controller/TextChunker.kt` (47) [-] — Split long text into speakable chunks with basic punctuation-aware grouping.
 - `me/rerere/tts/controller/TtsController.kt` (286) [-] — TTS 控制器（重构版）
 - `me/rerere/tts/controller/TtsSynthesizer.kt` (47) [-] — Bridge TTS provider flow to a single audio buffer.
 - `me/rerere/tts/model/PlaybackState.kt` (27) [-] — 统一的播放状态（对外暴露给 app 侧使用）。
-- `me/rerere/tts/model/TTSRequest.kt` (19) [-] — （待校订）
+- `me/rerere/tts/model/TTSRequest.kt` (19) [-] — TTS 请求模型（文本 + AudioFormat 枚举），TTS 控制器消费
 - `me/rerere/tts/model/TTSResponse.kt` (72) [-] — other as TTSResponse
 - `me/rerere/tts/provider/TTSManager.kt` (72) [-] — is TTSProviderSetting.OpenAI -> openAIProvider.generateSpeech(context, providerSetting, request)
 - `me/rerere/tts/provider/TTSProvider.kt` (30) [-] — ): Flow<AudioChunk>

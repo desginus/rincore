@@ -1,3 +1,5 @@
+> **5.0.0 现状（2026-10-19 刷新）**：反向换底到上游 3.0.0 底树后，当前 Gradle 模块 = **app / ai / common / document / highlight / markdown / mediagen / oauth / search / speech / ui / web / workspace**（+ build-logic 构建逻辑）。域级检索入口见 `docs/APP_MAP.md §0` 与 `docs/CODE_INDEX.md`（906 文件全量索引）；本文件以下内容仍为 2026-08-03 历史快照。
+>
 > **历史快照（2026-08-03 时点）**：本文档为当时审计结论的历史存档，版本描述停留在 v3.5.x。当前状态以 docs/ecosystem/ 与 .claude/skills 知识库为准（当前 v3.9.2），历史归档仅作追溯参考。
 
 # RinCore 模块地图（分块标注）
