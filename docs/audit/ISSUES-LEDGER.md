@@ -5,8 +5,8 @@
 
 ## 统计（随批更新）
 - 幽灵域：✔已核 941 / ✔已改 9 / 待办 8 / 已标 1
-- 屎山域：✔已改 2 / 待办 3
-- 文档域：✔已改 3 / 待办 3
+- 屎山域：✔已改 4 / 待办 2（B3 README×3 / B4 module-map）
+- 文档域：✔已改 4（D1/D2 部分/C1/P3）/ 待办 2（D2 索引校订续 / B3/B4）
 
 ## A. 幽灵更改（对齐原版 2.5.6）
 - A1 ✔已核 **ALIGNED 665 件**——与 2.5.1 差异 = 仅注记头，代码本体逐字节一致。
@@ -19,13 +19,14 @@
 
 ## B. 屎山消化
 - B1 ✔已改 `.versions` 残留 13 处清除；实验件 6 件归档 `archive/2026-10-experiments`。
-- B2 待办 死代码扫描第一轮：未用常量 / 孤儿文件 / 重复实现 / 陈旧注释抽查（脚本待跑）。
+- B2 ✔已改 死代码扫描第一轮完成：全库词频扫描（906 文件）→ 终审删 5 处零引用代码（VALID_MESSAGES_JSON / BrowserTools.selectorWithFullSchema / DynamicTools.createSkillsLockTool【skills_lock 未注册=死区段 2601 字符】/ ChatService.sanitizeMcpName【旧副本，DynamicTools 现役+注释纠偏】/ ChatCompletionsAPI.estimateImageBytes / CommandCodeUsageApi.parseWindow【旧实现】），净 **−106 行**；C 类"类型零外部引用"229 条经抽核=类型推断假阳性（判据弃用）；strings 真未用仅 2 键（chat_input_placeholder=显式保留决策；skills_page_title 待本地化批；title_activity_safe_mode 经查 manifest 在用）。报告：deadcode-round1.md。
+- B6 ✔已改 ProducedFiles 点目录卫生：.render 渲染缓存/.git 等点目录不再混入"本对话产出"（v4.8.188 批）。
 - B3 待办 README×3 更新日志与徽章同步（现停 v4.8.153 / v4.8.101 / v4.8.56）。
 - B4 待办 `module-map.md` 刷新（+audit 目录说明）。
 - B5 ✔已核 TODO/FIXME/HACK 全库仅 2 处（健康）。
 
 ## C. 文档系统评审（用户点④ · 独立判断"是否最合理/更高效架构"）
-- C1 待办 全链评审：上传 → 解析（pdf/docx/pptx/epub）→ 注入（DocumentAsPrompt classic/compat + UploadsListing）→ 工具（upload_fetch/上传码）→ 渲染/导出（render chain）→ 生成技能（docx/pptx/xlsx+officecli）→ 收件箱；产出提案。
+- C1 ✔已改（评审稿）→ `docs/audit/DOC-SYSTEM-REVIEW.md`：现架构六层全景 + 5 条优点 + **8 项提案**（P1 上传引用四元组解析收口 / P2 classic 现代化【需拍板】/ P3 ✔已修 .render 卫生 / P4 双解析链分工文档化 / P5 文件中心统一【中远期】/ P6 注入位置语义【缓存评估后动】/ P7 rin-tools 磁盘成本 / P8 收件箱动作补全）→ 实施排期待定。
 
 ## D. 检索体系
 - D1 ✔已改 CODE_INDEX（906 文件）/ SYMPTOM_ROUTER（~30 族）/ APP_MAP §0 检索入口（仓库 docs/）。
@@ -33,5 +34,5 @@
 - D3 待办 索引维护约定写入 dev-process（新文件必须带头部标注；索引随版本维护）。
 
 ## E. 阶段推送
-- E1 ✔已推 **v4.8.187**：speech 对齐 6 文件 + 8 件改标 + 审计双文档进仓（docs/audit/）+ 知识库（CI 核验中）。
+- E1 ✔已推 **v4.8.187**（e9d8867cf，**CI 全绿 ~13min**）：speech 对齐 6 文件 + 8 件改标 + 审计双文档进仓（docs/audit/）+ 知识库。下一批已排：B2 死代码扫描 → C1 文档系统评审 → B3/B4 文档同步。
 - E2 已排期 后续批：speech 对齐（A5）→ 死代码（B2）→ 文档系统评审（C1）→ README/module-map（B3/B4）。
