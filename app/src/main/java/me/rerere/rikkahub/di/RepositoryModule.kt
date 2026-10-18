@@ -67,6 +67,11 @@ val repositoryModule = module {
                     target = "/skills",
                 ),
                 WorkspaceBindMount(
+                    // 5.0.2 并树：内置技能只读挂载（skill-creator 指引按 /builtin_skills 路径引用）
+                    source = File(context.filesDir, FileFolders.BUILTIN_SKILLS).apply { mkdirs() },
+                    target = "/builtin_skills",
+                ),
+                WorkspaceBindMount(
                     source = File(context.filesDir, FileFolders.TOOL_OUTPUTS).apply { mkdirs() },
                     target = "/tool_outputs",
                 ),

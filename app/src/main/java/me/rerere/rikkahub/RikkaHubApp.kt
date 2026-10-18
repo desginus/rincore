@@ -222,6 +222,9 @@ class RikkaHubApp : Application() {
         // sync upload files to DB
         syncManagedFiles()
 
+        // Extract builtin skills from assets after install/update（5.0.2 并树：上游 3.0.0）
+        extractBuiltinSkills()
+
         // v4.8.64 (2.5.5 移植): 启动计数 — 原子自增 (不再经 update() 整快照回写)
         incrementLaunchCount()
 
@@ -268,6 +271,16 @@ class RikkaHubApp : Application() {
         resumeMemoryConsolidation()
 
         // Composer.setDiagnosticStackTraceMode(ComposeStackTraceMode.Auto)
+    }
+
+    private fun extractBuiltinSkills() {
+        get<AppScope>().launch(Dispatchers.IO) {
+            runCatching {
+                get<me.rerere.rikkahub.data.files.SkillManager>().ensureBuiltinSkillsExtracted()
+            }.onFailure {
+                Log.e(TAG, "extractBuiltinSkills failed", it)
+            }
+        }
     }
 
     private fun resumeMediaCreations() {

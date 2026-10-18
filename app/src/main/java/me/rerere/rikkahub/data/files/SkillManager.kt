@@ -38,6 +38,30 @@ class SkillManager(
         return dir
     }
 
+    /** 5.0.2 并树：内置技能目录（assets/builtin_skills 解压目标；同时是工作区 /builtin_skills 挂载源）。 */
+    fun getBuiltinSkillsDir(): File {
+        val dir = context.filesDir.resolve(FileFolders.BUILTIN_SKILLS)
+        if (!dir.exists()) dir.mkdirs()
+        return dir
+    }
+
+    @Volatile
+    private var builtinExtracted = false
+
+    /** 确保内置技能已从 assets 解压（每进程一次；上游 3.0.0 机制）。 */
+    fun ensureBuiltinSkillsExtracted() {
+        if (builtinExtracted) return
+        synchronized(this) {
+            if (builtinExtracted) return
+            runCatching {
+                me.rerere.rikkahub.data.skills.BuiltinSkills.extractIfNeeded(context, getBuiltinSkillsDir())
+            }.onFailure {
+                Log.w(TAG, "ensureBuiltinSkillsExtracted failed: ${it.message}")
+            }
+            builtinExtracted = true
+        }
+    }
+
     /**
      * v4.8.88: 出厂预设技能播种（当前只有「习题辅导 physics-tutor」能力包）。
      *
@@ -131,7 +155,20 @@ class SkillManager(
                     }
                 }
                 ?: emptyList()
-            cachedSkills = result + scanDshSkills()
+            // 5.0.2 并树：内置技能并入列表（read-only；同名用户技能覆盖内置）
+            ensureBuiltinSkillsExtracted()
+            val builtin = getBuiltinSkillsDir().listFiles()
+                ?.filter { it.isDirectory && !it.name.startsWith(".") }
+                ?.mapNotNull { dir ->
+                    try {
+                        val skillFile = dir.resolve("SKILL.md")
+                        if (!skillFile.exists()) null else parseSkillFile(skillFile, dir)
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
+                ?: emptyList()
+            cachedSkills = result + builtin.filter { b -> result.none { it.name == b.name } } + scanDshSkills()
             cachedSkills ?: emptyList()
         } catch (e: Exception) {
             Log.w(TAG, "listSkills scan failed: ${e.message}, using cached ${cachedSkills?.size ?: 0}")
