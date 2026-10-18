@@ -33,6 +33,14 @@
 - D2 待办 CODE_INDEX 47 条"待校订"逐批补写。
 - D3 待办 索引维护约定写入 dev-process（新文件必须带头部标注；索引随版本维护）。
 
+## F. 架构锚定工程（用户 2026-10-18 新指令：一个功能一个锚点模组 + 引用标注 + 复核 ×2 + 整段重写）
+- F1 ✔已改 **锚定扫描**：50 标志物全库散布度量化（`anchor-scan.tsv`），判定总表见 `ANCHOR_MAP.md`——多数族已单点锚定（玻璃/产图/固化/上传码/矩阵/预算/技能写入）。
+- F2 ✔已改 **L-A1 标注批**：8 锚点文件头补「全链（引用目的）」行（RinGlass/ToolImagePayload/LocalImageAddress/ChatMediaStore/UploadCodes/ChatDrawerVM/SubAgentBudget/SkillManager）。
+- F3 ✔已改 **L-A2 路由批**：三处专项直引补用途说明（SandboxBridgeServer /render 桥、WorkspaceLinkLauncher 任意文件、ZoomableAsyncImage 失败诊断）；标注勘正 2 处（ChatList/轨道脱链、saveMessageImage 在 FilesManager）。
+- F4 ✔已改 **L-A3 重写批一（任务四首件）**：`UploadRef` 单一解析器新建 + 四消费点整段重写（DocumentAsPrompt/UploadsListing/UploadFetchTool/收件箱）。
+- F5 ✔已改 **L-A4 重写批二**：`EffectiveCwd` 锚点新建 + 四处公式重写改调用（ChatService/ChatPage/FilesPicker/ChatDrawerVM）。
+- F6 ✔已核 **复核一/二（任务二/三）**：标注对账 30 对通过 + 公式残留归零 + 消费面复扫（记录见 ANCHOR_MAP §四/§五）。
+
 ## E. 阶段推送
 - E1 ✔已推 **v4.8.187**（e9d8867cf，**CI 全绿 ~13min**）：speech 对齐 6 文件 + 8 件改标 + 审计双文档进仓（docs/audit/）+ 知识库。下一批已排：B2 死代码扫描 → C1 文档系统评审 → B3/B4 文档同步。
 - E2 已排期 后续批：speech 对齐（A5）→ 死代码（B2）→ 文档系统评审（C1）→ README/module-map（B3/B4）。
