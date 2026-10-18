@@ -18,6 +18,9 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
+import me.rerere.rikkahub.data.ai.MemoryConsolidationStatus
+import me.rerere.rikkahub.data.model.MemoryFile
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
@@ -39,6 +42,7 @@ class AssistantDetailVM(
     private val id: String,
     private val settingsStore: SettingsStore,
     private val memoryRepository: MemoryRepository,
+    private val memoryConsolidationScheduler: MemoryConsolidationScheduler,
     private val filesManager: FilesManager,
     private val skillManager: SkillManager,
     private val workspaceRepository: WorkspaceRepository,
@@ -73,7 +77,8 @@ class AssistantDetailVM(
             scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = Assistant()
         )
 
-    val memories = assistant
+    /** 我方记忆 1.0：助手级记忆条目（「记忆」Tab 列表与管理用；与写入桶同口径）。 */
+    val assistantMemories = assistant
         .flatMapLatest { currentAssistant ->
             if (currentAssistant.useGlobalMemory) {
                 memoryRepository.getGlobalMemoriesFlow()
@@ -83,6 +88,25 @@ class AssistantDetailVM(
         }
         .stateIn(
             scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = emptyList()
+        )
+
+    /** 上游 3.0.0 记忆 2.0：Markdown 记忆文件库（FILES Tab）。 */
+    val memories = assistant
+        .flatMapLatest { currentAssistant ->
+            memoryRepository.getFilesFlow(memoryIdOf(currentAssistant))
+        }
+        .stateIn(
+            scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = emptyList()
+        )
+
+    /** 上游 3.0.0：记忆整理（"做梦"）调度状态。 */
+    val memoryConsolidation: StateFlow<MemoryConsolidationStatus> = assistant
+        .flatMapLatest { currentAssistant ->
+            memoryConsolidationScheduler.statusOf(memoryIdOf(currentAssistant))
+        }
+        .stateIn(
+            scope = viewModelScope, started = SharingStarted.Eagerly,
+            initialValue = MemoryConsolidationStatus()
         )
 
     /** v4.8.92: 该助手名下的全部单对话记忆（管理页「单对话记忆」视图用；与写入桶同口径）。 */
@@ -248,6 +272,28 @@ class AssistantDetailVM(
     fun deleteMemory(memory: AssistantMemory) {
         viewModelScope.launch {
             memoryRepository.deleteMemory(id = memory.id)
+        }
+    }
+
+    // 助手还没加载出来时 assistant 是个占位对象，记忆库要按页面拿到的 assistantId 来定位
+    private fun memoryIdOf(assistant: Assistant) = if (assistant.useGlobalMemory) {
+        MemoryRepository.GLOBAL_MEMORY_ID
+    } else {
+        assistantId.toString()
+    }
+
+    /** 当前助手读写的记忆库 */
+    val memoryId: String get() = memoryIdOf(assistant.value)
+
+    /** 整理所有待整理的对话，并把整个记忆库清理一遍（上游 3.0.0） */
+    fun organizeMemory() {
+        memoryConsolidationScheduler.organize(memoryId)
+    }
+
+    /** 上游 3.0.0：删除记忆文件（与 AssistantMemory 版重载并存） */
+    fun deleteMemory(memory: MemoryFile) {
+        viewModelScope.launch {
+            memoryRepository.deleteFile(memoryIdOf(assistant.value), memory.path)
         }
     }
 
