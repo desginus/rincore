@@ -118,7 +118,7 @@ fun SettingMcpDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
     // 草稿放在页面这一层，切到工具页再切回来不会丢掉没保存的修改
     var draft by remember { mutableStateOf(config) }
 
-    val onSave = {
+    val onSave: () -> Unit = {
         // 只合并基础设置里能改的字段，工具列表和 OAuth 状态以后台同步写回的为准
         vm.updateSettings { latest ->
             latest.copy(

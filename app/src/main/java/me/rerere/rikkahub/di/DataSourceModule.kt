@@ -7,6 +7,11 @@ package me.rerere.rikkahub.di
  * 差异: HTTP/1.1 only (HTTP/2 禁用 PROTOCOL_ERROR 根治)、
  *       ConnectionPool(12, 60s)、readTimeout 3min (v2.9.8 参照)
  * ───────────────────────────────────────────────────────────────*/
+import me.rerere.rikkahub.service.memoryDreamKeepAlive
+import me.rerere.rikkahub.data.ai.MemoryConsolidator
+import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
+import androidx.lifecycle.ProcessLifecycleOwner
+import androidx.lifecycle.Lifecycle
 import android.content.Context
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
@@ -126,6 +131,25 @@ val dataSourceModule = module {
 
     single {
         MessageFtsManager(get())
+    }
+
+    single {
+        MemoryConsolidator(
+            providerManager = get(),
+            memoryRepository = get(),
+            conversationRepo = get(),
+            consolidationDao = get(),
+            settingsStore = get(),
+        )
+    }
+
+    single {
+        MemoryConsolidationScheduler(
+            scope = get<AppScope>(),
+            worker = get<MemoryConsolidator>(),
+            keepAlive = memoryDreamKeepAlive(get<Context>()),
+            isAppVisible = { ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) },
+        )
     }
 
     single { McpManager(settingsStore = get(), appScope = get(), filesManager = get(), workspaceRepository = getOrNull()) }
