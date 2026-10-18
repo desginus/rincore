@@ -7,6 +7,7 @@ package me.rerere.rikkahub.di
  * 差异: HTTP/1.1 only (HTTP/2 禁用 PROTOCOL_ERROR 根治)、
  *       ConnectionPool(12, 60s)、readTimeout 3min (v2.9.8 参照)
  * ───────────────────────────────────────────────────────────────*/
+import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.service.memoryDreamKeepAlive
 import me.rerere.rikkahub.data.ai.MemoryConsolidator
 import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
