@@ -501,6 +501,26 @@ class RikkaHubApp : Application() {
                 .build()
             notificationManager.createNotificationChannel(generationForegroundChannel)
         }.onFailure { Log.e(TAG, "channel generation_foreground failed", it) }
+
+        runCatching {
+            // 5.0.0 并树补齐：媒体创作通知渠道（上游 3.0.0）——缺失则媒体进度通知被系统静默丢弃
+            val mediaCreationChannel = NotificationChannelCompat
+                .Builder(MEDIA_CREATION_NOTIFICATION_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_DEFAULT)
+                .setName(getString(R.string.media_creation_title))
+                .build()
+            notificationManager.createNotificationChannel(mediaCreationChannel)
+        }.onFailure { Log.e(TAG, "channel media_creation failed", it) }
+
+        runCatching {
+            // 5.0.0 并树补齐：记忆整理"做梦"通知渠道（上游 3.0.0）
+            val memoryDreamChannel = NotificationChannelCompat
+                .Builder(MEMORY_DREAM_NOTIFICATION_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_LOW)
+                .setName(getString(R.string.memory_dream_title))
+                .setVibrationEnabled(false)
+                .setShowBadge(false)
+                .build()
+            notificationManager.createNotificationChannel(memoryDreamChannel)
+        }.onFailure { Log.e(TAG, "channel memory_dream failed", it) }
     }
 
     override fun onTerminate() {
