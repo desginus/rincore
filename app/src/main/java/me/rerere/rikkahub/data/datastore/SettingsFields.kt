@@ -147,6 +147,47 @@ internal val SETTINGS_FIELDS: List<SettingsField<*, *>> = with(SettingsStore) {
 
         // 赞助提醒
         plain(SPONSOR_ALERT_DISMISSED_AT, Settings::sponsorAlertDismissedAt) { copy(sponsorAlertDismissedAt = it) },
+
+        // ── RinCore 自研字段族（与原 write 链逐字段对齐）──
+        plain(OPENCODE_API_KEY, Settings::opencodeApiKey) { copy(opencodeApiKey = it) },
+        json(OPENCODE_API_KEYS, Settings::opencodeApiKeys) { copy(opencodeApiKeys = it) },
+        plain(USAGE_VIEW_MODE, Settings::usageViewMode) { copy(usageViewMode = it) },
+        plain(OPENCODE_WARM_ENABLED, Settings::opencodeWarmEnabled) { copy(opencodeWarmEnabled = it) },
+        plain(COMMAND_CODE_WARM_ENABLED, Settings::commandCodeWarmEnabled) { copy(commandCodeWarmEnabled = it) },
+        plain(CC_IMAGE_COMPAT, Settings::ccImageCompat) { copy(ccImageCompat = it) },
+        plain(IMAGE_UPLOAD_MODE, Settings::imageUploadMode) { copy(imageUploadMode = it) },
+        plain(FILE_UPLOAD_MODE, Settings::fileUploadMode) { copy(fileUploadMode = it) },
+        plain(ENABLE_WEB_SEARCH, Settings::enableWebSearch) { copy(enableWebSearch = it) },
+        plain(DEFER_AUTO_REPLY, Settings::deferAutoReply) { copy(deferAutoReply = it) },
+        plain(SWAP_SEND_REASONING_KEYS, Settings::swapSendReasoningKeys) { copy(swapSendReasoningKeys = it) },
+        plain(PROJECT_PACK_CLICK_STATS, Settings::projectPackClickStats) { copy(projectPackClickStats = it) },
+        plain(OPENCODE_REQUEST_MODE, Settings::opencodeRequestMode) { copy(opencodeRequestMode = it) },
+        uuid(VIDEO_GENERATION_MODEL, Settings::videoGenerationModelId) { copy(videoGenerationModelId = it) },
+        uuid(COMPRESS_MODEL, Settings::compressModelId) { copy(compressModelId = it) },
+        plain(COMPRESS_PROMPT, Settings::compressPrompt) { copy(compressPrompt = it) },
+        SettingsField(
+            ROUTING_MODEL, Settings::routingModelId, { copy(routingModelId = it) },
+            encode = { it?.toString() },
+            decode = { Uuid.parse(it) },
+        ),
+        // 工具矩阵
+        json(TOOL_ZONES, Settings::toolZones) { copy(toolZones = it) },
+        json(TOOL_ZONE_LINKS, Settings::toolZoneLinks) { copy(toolZoneLinks = it) },
+        json(HIDDEN_ZONES, Settings::hiddenZones) { copy(hiddenZones = it) },
+        json(TOP_LEVEL_ADDITIONS, Settings::topLevelAdditions) { copy(topLevelAdditions = it) },
+        json(TOP_LEVEL_REMOVALS, Settings::topLevelRemovals) { copy(topLevelRemovals = it) },
+        plain(TOOL_ZONE_SEEDED, Settings::toolZoneSeeded) { copy(toolZoneSeeded = it) },
+        plain(ZONE_MODEL_VERSION, Settings::zoneModelVersion) { copy(zoneModelVersion = it) },
+        // 子代理 / 产出 / 技能
+        plain(SUBAGENT_TOKEN_BUDGET, Settings::subagentTokenBudget) { copy(subagentTokenBudget = it) },
+        plain(SUBAGENT_BUDGET_UPGRADED, Settings::subagentBudgetUpgraded) { copy(subagentBudgetUpgraded = it) },
+        plain(SUBAGENT_CONCURRENCY_UPGRADED, Settings::subagentConcurrencyUpgraded) { copy(subagentConcurrencyUpgraded = it) },
+        json(SUBAGENT_TOKEN_USAGE, Settings::subagentTokenUsage) { copy(subagentTokenUsage = it) },
+        json(CONVERSATION_PRODUCED_FILES, Settings::conversationProducedFiles) { copy(conversationProducedFiles = it) },
+        plain(PRESET_SKILLS_SEED_VERSION, Settings::presetSkillsSeedVersion) { copy(presetSkillsSeedVersion = it) },
+        json(TOOL_DESCRIPTION_OVERRIDES, Settings::toolDescriptionOverrides) { copy(toolDescriptionOverrides = it) },
+        json(TOOL_NAME_OVERRIDES, Settings::toolNameOverrides) { copy(toolNameOverrides = it) },
+        plain(CLASSIFIER_PROMPT, Settings::classifierPrompt) { copy(classifierPrompt = it) },
     )
 }
 

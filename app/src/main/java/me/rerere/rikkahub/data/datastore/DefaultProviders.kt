@@ -293,4 +293,61 @@ val DEFAULT_PROVIDERS = listOf(
         enabled = false,
         builtIn = true,
     ),
+ProviderSetting.OpenAI(
+        id = Uuid.parse("1eeea727-9ee5-4cae-93e6-6fb01a4d051e"),
+        name = "OpenAI",
+        baseUrl = "https://api.openai.com/v1",
+        apiKey = "",
+        builtIn = true
+    ),
+    ProviderSetting.Google(
+        id = Uuid.parse("6ab18148-c138-4394-a46f-1cd8c8ceaa6d"),
+        name = "Gemini",
+        apiKey = "",
+        enabled = true,
+        builtIn = true
+    ),
+    ProviderSetting.OpenAI(
+        id = Uuid.parse("f099ad5b-ef03-446d-8e78-7e36787f780b"),
+        name = "DeepSeek",
+        baseUrl = "https://api.deepseek.com/v1",
+        apiKey = "",
+        builtIn = true,
+        balanceOption = BalanceOption(
+            enabled = true,
+            apiPath = "/user/balance",
+            resultPath = "balance_infos[0].total_balance"
+        )
+    ),
+    ProviderSetting.OpenAI(
+        id = Uuid.parse("d5734028-d39b-4d41-9841-fd648d65440e"),
+        name = "OpenRouter",
+        baseUrl = "https://openrouter.ai/api/v1",
+        apiKey = "",
+        builtIn = true,
+        balanceOption = BalanceOption(
+            enabled = true,
+            apiPath = "/credits",
+            resultPath = "data.total_credits - data.total_usage",
+        )
+    ),
+    ProviderSetting.OpenAI(
+        id = Uuid.parse("f76cae46-069a-4334-ab8e-224e4979e58c"),
+        name = "阿里云百炼",
+        baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        apiKey = "",
+        enabled = false,
+        builtIn = true
+    ),
+    ProviderSetting.OpenAI(
+        // v4.8.70: CS provider-registry 移植 — OpenCode Go (zen go 网关;
+        // 我方按模型分协议路由已覆盖 qwen→Anthropic 直传 / CC→ChatCompletions)
+        id = Uuid.parse("3f9d2c81-7a4e-4b6d-9c25-8e10f5a6b3d7"),
+        name = "OpenCode Go",
+        baseUrl = "https://opencode.ai/zen/go/v1",
+        apiKey = "",
+        enabled = false,
+        builtIn = true
+    ),
+
 )

@@ -8,6 +8,7 @@ import me.rerere.ai.provider.ProviderSetting
 import me.rerere.asr.ASRProviderSetting
 import me.rerere.mediagen.provider.MediaGenerationProviderSetting
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_COMPRESS_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_OCR_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_SUGGESTION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TITLE_PROMPT
@@ -18,6 +19,9 @@ import me.rerere.rikkahub.data.model.Lorebook
 import me.rerere.rikkahub.data.model.PromptInjection
 import me.rerere.rikkahub.data.model.QuickMessage
 import me.rerere.rikkahub.data.model.Tag
+import me.rerere.rikkahub.data.ai.tools.ProducedFile
+import me.rerere.rikkahub.data.ai.tools.routing.ToolZone
+import me.rerere.rikkahub.data.ai.tools.routing.ZONE_MODEL_VERSION_CURRENT
 import me.rerere.rikkahub.data.sync.s3.S3Config
 import me.rerere.rikkahub.ui.theme.CustomTheme
 import me.rerere.rikkahub.ui.theme.PresetThemes
@@ -78,6 +82,42 @@ data class Settings(
     val webServerJwtEnabled: Boolean = false,
     val webServerAccessPassword: String = "",
     val webServerLocalhostOnly: Boolean = false,
+    // ── RinCore 自研字段族（反向换底迁移：一个不少）──
+    val opencodeApiKey: String = "",
+    val opencodeApiKeys: List<String> = emptyList(),
+    val usageViewMode: String = "cards",
+    val opencodeWarmEnabled: Boolean = false,
+    val commandCodeWarmEnabled: Boolean = false,
+    val ccImageCompat: Boolean = false,
+    val imageUploadMode: String = "classic",
+    val fileUploadMode: String = "compat",
+    val enableWebSearch: Boolean = false,
+    val deferAutoReply: Boolean = false,
+    val swapSendReasoningKeys: Boolean = false,
+    val projectPackClickStats: String = "",
+    val opencodeRequestMode: Boolean = false,
+    val videoGenerationModelId: Uuid = Uuid.random(),
+    val compressModelId: Uuid = Uuid.random(),
+    val compressPrompt: String = DEFAULT_COMPRESS_PROMPT,
+    val routingModelId: Uuid? = null,
+    // ── 工具矩阵（v4.8.83 重写）──
+    val toolZones: List<ToolZone> = emptyList(),
+    val toolZoneLinks: Map<String, String> = emptyMap(),
+    val hiddenZones: Set<String> = emptySet(),
+    val topLevelAdditions: Set<String> = emptySet(),
+    val topLevelRemovals: Set<String> = emptySet(),
+    val toolZoneSeeded: Boolean = false,
+    val zoneModelVersion: Int = ZONE_MODEL_VERSION_CURRENT,
+    // ── 子代理/产出/技能（v4.8.88+）──
+    val subagentTokenBudget: Long = 1_000_000L,
+    val subagentBudgetUpgraded: Boolean = false,
+    val subagentConcurrencyUpgraded: Boolean = false,
+    val subagentTokenUsage: Map<String, Long> = emptyMap(),
+    val conversationProducedFiles: Map<String, List<ProducedFile>> = emptyMap(),
+    val presetSkillsSeedVersion: Int = 0,
+    val toolDescriptionOverrides: Map<String, String> = emptyMap(),
+    val toolNameOverrides: Map<String, String> = emptyMap(),
+    val classifierPrompt: String = "",
     val backupReminderConfig: BackupReminderConfig = BackupReminderConfig(),
     val sponsorAlertDismissedAt: Int = 0,
 ) {
@@ -89,11 +129,22 @@ data class Settings(
 
 @Serializable
 data class NetworkSetting(
+    // v3.16.0: UI 与请求注入已移除（字段保留仅为反序列化兼容，恒为 "" 不再消费）
+    @Deprecated("v3.16.0 removed: UI & header injection")
     val userAgent: String = "",
     val proxyUrl: String = "",
     val proxyUsername: String = "",
     val proxyPassword: String = "",
+    // v3.9.15: 代理开关 — false = 完全不走代理
+    val proxyEnabled: Boolean = false,
+    // v3.9.15: 部分开启 — true = 仅勾选模型的请求走代理
+    val proxyPartialEnabled: Boolean = false,
+    // v3.15.0: 自动重试开关（2.4.16 移植）
     val enableAutoRetry: Boolean = true,
+    // v3.16.0: 强兼容模式（Cherry Studio 极简请求格式）
+    val cherryCompatMode: Boolean = false,
+    // v3.9.15: 勾选走代理的模型 id 列表
+    val proxyModelIds: List<String> = emptyList(),
 )
 
 @Serializable
@@ -150,6 +201,10 @@ data class DisplaySetting(
     val enableLiveUpdateNotification: Boolean = false,
     val codeBlockAutoWrap: Boolean = false,
     val codeBlockAutoCollapse: Boolean = false,
+    // v4.8.121（用户定版）：代码块内自动渲染（html/svg/js 自动进入预览）
+    val codeBlockAutoPreview: Boolean = false,
+    // RinCore 自研：更新提示开关（设置→通知 页消费）
+    val showUpdates: Boolean = true,
     val showLineNumbers: Boolean = false,
     val ttsOnlyReadQuoted: Boolean = false,
     val ttsOnlyReadOutsideBrackets: Boolean = false,
