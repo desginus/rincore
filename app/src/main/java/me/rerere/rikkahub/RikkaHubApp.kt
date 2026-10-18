@@ -7,6 +7,11 @@ package me.rerere.rikkahub
  * 问题定位: 启动闪退/黑屏 → 本文件 (先查启动链)
  * 基线: 原版移植 + 自研 (CrashHandler/桥) | 地图: docs/APP_MAP.md §L | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
+import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
+import me.rerere.rikkahub.service.MediaCreationService
+import androidx.lifecycle.ProcessLifecycleOwner
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.Lifecycle
 import android.app.Application
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -257,7 +262,38 @@ class RikkaHubApp : Application() {
             this.filesDir.resolve("ecosystem")
         )
 
+        // 5.0.0 并树补齐：恢复两条上游启动链
+        // Resume media generations interrupted by the last process death
+        resumeMediaCreations()
+        resumeMemoryConsolidation()
+
         // Composer.setDiagnosticStackTraceMode(ComposeStackTraceMode.Auto)
+    }
+
+    private fun resumeMediaCreations() {
+        get<AppScope>().launch(Dispatchers.IO) {
+            runCatching {
+                get<MediaCreationService>().resumePending()
+            }.onFailure {
+                Log.e(TAG, "resumeMediaCreations failed", it)
+            }
+        }
+    }
+
+    private fun resumeMemoryConsolidation() {
+        // 应用被切走后进程随时可能被冻结，等不到空闲计时结束，这时直接开始整理
+        ProcessLifecycleOwner.get().lifecycle.addObserver(
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_STOP) get<MemoryConsolidationScheduler>().onAppHidden()
+            }
+        )
+        get<AppScope>().launch(Dispatchers.IO) {
+            runCatching {
+                get<MemoryConsolidationScheduler>().resumePending()
+            }.onFailure {
+                Log.e(TAG, "resumeMemoryConsolidation failed", it)
+            }
+        }
     }
 
 
