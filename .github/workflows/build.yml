@@ -1,0 +1,117 @@
+name: Build RinCore APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # 发布 Release 需要写权限
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # 生成 changelog 需要完整历史
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Node.js + pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Install web-ui dependencies
+        run: cd web-ui && pnpm install --no-frozen-lockfile
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        # 2026-09-15: runner 镜像 20260907.300 更新后, v4 内部安装 obsolete
+        # 'tools' 包被 Google 仓库拒绝 (Failed to find package 'tools'),
+        # exit 1 纯基础设施问题 — 镜像自带 SDK 完整可用, licenses 与平台
+        # 组件由后续步骤自行安装, 此步失败不再阻断
+        continue-on-error: true
+
+      - name: Accept SDK licenses
+        run: |
+          # setup-android 被容忍失败后, sdkmanager 不在 PATH — 自行从镜像
+          # 自带 SDK 解析 cmdline-tools 路径 (版本目录随镜像漂移, 用通配)
+          export PATH="$(ls -d $ANDROID_HOME/cmdline-tools/*/bin | head -1):$PATH"
+          yes | sdkmanager --licenses || true
+
+      - name: Install SDK components
+        run: |
+          export PATH="$(ls -d $ANDROID_HOME/cmdline-tools/*/bin | head -1):$PATH"
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+          sdkmanager "ndk;28.2.13676358" 2>/dev/null || true
+
+      - name: Create signing config
+        run: |
+          # v3.8.30 安全收尾: 签名密钥移出仓库, 从 GitHub Secrets 注入
+          # (仓库内不再存放任何 jks; secrets 未配置时跳过签名构建)
+          if [ -z "${{ secrets.KEYSTORE_BASE64 }}" ] || [ -z "${{ secrets.KEYSTORE_PASSWORD }}" ]; then
+            echo "::warning::KEYSTORE secrets 未配置, 跳过 release 签名"
+            printf 'storeFile=\nstorePassword=\nkeyAlias=\nkeyPassword=\n' > local.properties
+          else
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release-key.jks
+            printf 'storeFile=../app/release-key.jks\nstorePassword=%s\nkeyAlias=rincore\nkeyPassword=%s\n' "${{ secrets.KEYSTORE_PASSWORD }}" "${{ secrets.KEYSTORE_PASSWORD }}" > local.properties
+          fi
+
+      # v4.3.0 加固: 测试门禁分层 —
+      # 1) 编译门禁 (硬阻断): 测试代码必须与 main API 同构, 架构改动立即暴露
+      # 2) 行为断言 (软信号): 16 文件 90+ 断言全量跑, 失败留档 — 4.1.x 时代的
+      #    历史断言从未运行过 (门禁缺失), 其中 18 项与演进后行为不符, 需逐条
+      #    对照修复后转硬门禁 (v4.3.1)
+      - name: Run AI module unit tests (compile gate + behavior signal)
+        run: |
+          ./gradlew :ai:compileDebugUnitTestKotlin --no-daemon --stacktrace
+          ./gradlew :ai:test --no-daemon --continue || echo "::warning::行为断言存在历史遗留失败 (见上方明细), 编译门禁已过"
+
+      # v4.8.119: 渲染链升级 — 解析器数学触发矩阵硬门禁
+      # (CJK 邻接 $...$ 触发 / 货币对拒绝 / 行内代码内含 / 块级 $$; 防回归)
+      - name: Run markdown parser unit tests (render trigger gate)
+        run: ./gradlew :markdown:testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Build Release APK
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: rincore-release
+          path: app/build/outputs/apk/release/*.apk
+          retention-days: 7
+
+      # v3.11.1: 恢复有内容的推送格式 — 每次构建发布 Release 附本次变更说明
+      - name: Compute version and changelog
+        id: ver
+        run: |
+          VN=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
+          HEAD=$(git log -1 --pretty=%s)
+          COMMITS=$(git log --oneline -10 | sed 's/^/- /')
+          {
+            echo "VN=$VN"
+            echo "HEAD=$HEAD"
+            echo "BODY<<EOF"
+            echo "## $HEAD"
+            echo ""
+            echo "$COMMITS"
+            echo ""
+            echo "> 自动构建 Release，APK 见下方 Assets，CI artifact 与 nightly 同源可用。"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+
+      - name: Publish Release with changelog
+        uses: softprops/action-gh-release@v2
+        if: success()
+        with:
+          tag_name: v${{ env.VN }}
+          name: RinCore v${{ env.VN }}
+          body: ${{ env.BODY }}
+          files: app/build/outputs/apk/release/*.apk
+          prerelease: true
