@@ -10,6 +10,7 @@ package me.rerere.rikkahub.ui.pages.chat
  * ───────────────────────────────────────────────────────────────*/
 
 
+import me.rerere.rikkahub.data.repository.memoryId
 import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
 import kotlinx.coroutines.flow.flowOf
 import android.app.Application
