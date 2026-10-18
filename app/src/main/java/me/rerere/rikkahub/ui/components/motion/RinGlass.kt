@@ -63,15 +63,24 @@ object RinGlass {
     }
 
     /**
-     * v4.8.179: 输入栏玻璃样式 — 可调半径 (半径回归) + 可调噪点 (0..100)。
-     * 默认半径 4dp = 干净点; 噪点 15 = Material3 预设默认档 (beta01 源码已核实:
-     * 预设只写 backgroundColor, 噪点继承 HazeBlurDefaults.noiseFactor=0.15)。
+     * v4.8.181: 输入栏玻璃样式 — 可调半径 + 可调噪点（感知映射, 见 noiseAlpha）。
+     * 默认半径 4dp = 干净点; 噪点 15 = Material3 预设默认档（映射后逐字节不变）。
      * 双层玻璃用法: S1(底层) 带噪点 = "先噪点"; S2(顶层) 传 0 = "再模糊" (把底噪糊开)。
      */
     @Composable
     fun inputBlurStyle(radiusDp: Int, noisePercent: Int): HazeBlurStyle = HazeBlurStyle.Material3 {
         blurRadius(radiusDp.coerceIn(2, 24).dp)
-        noiseFactor(noisePercent.coerceIn(0, 100) / 100f)
+        noiseFactor(noiseAlpha(noisePercent))
+    }
+
+    /**
+     * v4.8.181 (用户定版): 噪点感知映射 — "高了之后脏兮兮"。
+     * 0..40% 线性不变（15% 默认与旧完全一致）; 40..100% 压缩上端:
+     * 100% 等效强度 = 0.60（旧 = 1.0 全强度贴噪 = 脏）。浓而不脏; 上限一个常量可调。
+     */
+    fun noiseAlpha(noisePercent: Int): Float {
+        val p = noisePercent.coerceIn(0, 100) / 100f
+        return if (p <= 0.4f) p else 0.4f + (p - 0.4f) * (1f / 3f)
     }
 
     /** 高光描边 (澎湃 4 玻璃质感 — HyperGlassPanel 同源) */
@@ -98,8 +107,10 @@ object RinGlass {
     }
 
     /**
-     * v4.8.180 (用户定版): 雾化 — 白色柔雾覆盖层 (下浓上淡, 竖向渐变); 0 = 关闭 (返回 null 无雾)。
-     * "雾化从上半部分雾化变为下半部分雾化" — 输入栏与标题栏共用本刷子方向。
+     * v4.8.181 (用户定版): 雾化 — 白色柔雾覆盖层, 两栏镜像:
+     *  · 输入栏 fogBrush = 下浓上淡（雾贴屏幕底边收拢, 朝消息一侧渐隐）;
+     *  · 标题栏 titleFogBrush = 上浓下淡（雾贴顶边收拢, 消息划上来不被接缝浓雾吞掉）。
+     * 0 = 关闭 (返回 null 无雾)。
      */
     fun fogBrush(percent: Int): Brush? {
         val p = percent.coerceIn(0, 100) / 100f
@@ -108,6 +119,18 @@ object RinGlass {
             colors = listOf(
                 Color.White.copy(alpha = 0.15f * p),
                 Color.White.copy(alpha = 0.7f * p),
+            ),
+        )
+    }
+
+    /** v4.8.181: 标题栏雾化 — 上浓下淡（贴顶边收拢; 消息从下方划上来时接缝处清晰、往上渐隐）。 */
+    fun titleFogBrush(percent: Int): Brush? {
+        val p = percent.coerceIn(0, 100) / 100f
+        return if (p <= 0f) null
+        else Brush.verticalGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.7f * p),
+                Color.White.copy(alpha = 0.15f * p),
             ),
         )
     }

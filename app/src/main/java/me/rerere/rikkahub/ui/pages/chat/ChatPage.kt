@@ -564,7 +564,7 @@ private fun ChatPageContent(
                     val titlePanelShape = remember {
                         ContinuousCornerShape(cornerRadius = 20.dp, topStart = false, topEnd = false)
                     }
-                    val titleFogBrush = RinGlass.fogBrush(setting.displaySetting.glassFogPercent)
+                    val titleFogBrush = RinGlass.titleFogBrush(setting.displaySetting.glassFogPercent)
                     if (setting.displaySetting.enableBlurEffect && titleFogBrush != null) {
                         Box(
                             modifier = Modifier
