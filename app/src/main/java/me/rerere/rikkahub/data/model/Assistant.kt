@@ -29,6 +29,8 @@ data class Assistant(
     val streamOutput: Boolean = true,
     val enableMemory: Boolean = false,
     val useGlobalMemory: Boolean = false, // 使用全局共享记忆而非助手隔离记忆
+    // v4.8.92: 单对话记忆模式 — 开启后新记忆只挂载到当前对话（仅在该对话内可见，随对话删除）
+    val conversationScopedMemory: Boolean = false,
     val enableRecentChatsReference: Boolean = false,
     val messageTemplate: String = "{{ message }}",
     val presetMessages: List<UIMessage> = emptyList(),
@@ -40,17 +42,28 @@ data class Assistant(
     val customBodies: List<CustomBody> = emptyList(),
     val mcpServers: Set<Uuid> = emptySet(),
     val localTools: List<LocalToolOption> = listOf(LocalToolOption.TimeInfo),
+    // v3.10.4: 技能过滤开关 — true=按 enabledSkills 过滤（新助手默认；空=无技能工具），false=全量兼容
+    val filterSkills: Boolean = false,
     val enableWebSearch: Boolean = false, // 网络搜索开关(每个助手独立)
     val workspaceId: Uuid? = null,
+    // v4.5.23: 助手级工作目录 — 该助手的全部对话共享（设置一次，整个助手生效）。
+    // 语义变更: 会话级 conversation.workspaceCwd 退役为数据壳，不再参与任何行为。
+    val workspaceCwd: String? = null,
     val background: String? = null, // 聊天页背景图地址(本地文件 URI 或网络 URL), 为 null 时无背景
     val backgroundOpacity: Float = 1.0f, // 背景图不透明度(0~1)
     val useGradientBackground: Boolean = false, // 开启后聊天页使用动态渐变背景
     val modeInjectionIds: Set<Uuid> = emptySet(),      // 关联的模式注入 ID
+    // Phase 15 — 每任务 token 预算（两者都为 null 时不过滤；模型通过「检查用量」查看）
+    val tokenBudgetSoftCap: Int? = null,
+    val tokenBudgetHardCap: Int? = null,
     val lorebookIds: Set<Uuid> = emptySet(),            // 关联的 Lorebook ID
     val enabledSkills: Set<String> = emptySet(),        // 启用的 skill 名称列表
+    val forcedSkills: Set<String> = emptySet(),         // v3.6.105: 对话开始时强制启动的技能（正文注入 system）
     val enableTimeReminder: Boolean = false,            // 时间间隔提醒注入
     val timeReminderIntervalMinutes: Int = 60,          // 时间提醒间隔（分钟，至少 1 分钟）
     val allowConversationSystemPrompt: Boolean = false, // 允许对话单独重写 system prompt
+    val maxConcurrentSubAgents: Int = 7, // 子代理并行上限，1-8（v4.8.121: 默认 3→7，用户定版「最多同时 7 个」）
+    val useLayeredTools: Boolean = true, // 分层工具路由：true=按需加载（省 token），false=全量注入（兜底）
 )
 
 @Serializable
@@ -58,6 +71,16 @@ data class QuickMessage(
     val id: Uuid = Uuid.random(),
     val title: String = "",
     val content: String = "",
+)
+
+@Serializable
+data class AssistantMemory(
+    val id: Long,
+    val content: String = "",
+    // v4.8.92: 非空 = 单对话记忆（仅在该对话内可见；对话删除即销毁）
+    val conversationId: String? = null,
+    // v4.8.92: 助手级记忆的来源对话（UI 小标签；不参与可见性判定）
+    val sourceConversationId: String? = null,
 )
 
 @Serializable

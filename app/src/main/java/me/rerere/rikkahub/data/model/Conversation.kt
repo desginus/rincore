@@ -16,11 +16,37 @@ import java.time.Instant
 import kotlin.uuid.Uuid
 
 @Serializable
+data class CompressedContext(
+    val savedMessageNodes: List<MessageNode>,  // 压缩前存档的原始消息（旧版单留存，新代码不再写入）
+)
+
+// v3.8.13: 压缩留存位点 — 最多 3 个，最新在前；留存的是压缩前的原始消息。
+// 每个位点带时间戳，UI 可查看原文或从此点恢复。
+@Serializable
+data class CompressRetention(
+    val id: Uuid = Uuid.random(),
+    val savedAtEpochMs: Long = System.currentTimeMillis(),
+    val retentionLabel: String = "",
+    val savedMessageNodes: List<MessageNode>,
+    val summaryMessageNodes: List<MessageNode> = emptyList(),
+)
+
+private fun formatCompressTimestamp(epochMs: Long): String {
+    val zdt = java.time.ZonedDateTime.ofInstant(
+        java.time.Instant.ofEpochMilli(epochMs), java.time.ZoneId.systemDefault()
+    )
+    val weekdays = listOf("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
+    return "${'$'}{zdt.year}年${'$'}{zdt.monthValue}月${'$'}{zdt.dayOfMonth}日 ${'$'}{zdt.hour}时${'$'}{zdt.minute}分 ${'$'}{weekdays[zdt.dayOfWeek.value - 1]}"
+}
+
+@Serializable
 data class Conversation(
     val id: Uuid = Uuid.random(),
     val assistantId: Uuid,
     val title: String = "",
     val messageNodes: List<MessageNode>,
+    val compressedContext: CompressedContext? = null,  // 旧版单留存（兼容旧数据，读取后迁移）
+    val compressRetentions: List<CompressRetention> = emptyList(),  // v3.8.13: 多留存位点（最多 3）
     val chatSuggestions: List<String> = emptyList(),
     val isPinned: Boolean = false,
     @Serializable(with = InstantSerializer::class)
@@ -36,6 +62,10 @@ data class Conversation(
     val workspaceCwd: String? = null,
     // 所属文件夹（助手内分组），null 表示未归入任何文件夹
     val folderId: Uuid? = null,
+    // 已加载的工具区（跨对话持久化，仅内存；字段名沿用历史，语义 = 工具区 id）
+    // v3.6.10: Set → List 保序（加载顺序持久化 — tools 数组按加载顺序追加，前缀稳定缓存命中）
+    @Transient
+    val loadedDomains: List<String> = emptyList(),
     @Transient
     val newConversation: Boolean = false
 ) {
@@ -57,12 +87,37 @@ data class Conversation(
         return messageNodes.firstOrNull { node -> node.messages.any { it.id == messageId } }
     }
 
+    fun getMessageNodeByMessage(message: UIMessage): MessageNode? {
+        return messageNodes.firstOrNull { node -> node.messages.contains(message) }
+    }
+
     fun updateCurrentMessages(messages: List<UIMessage>): Conversation {
+        // v4.8.15 性能: 快路径（流式热路径）— 流式期间绝大多数 node 的当前消息
+        // 引用未变，仅尾部 1 条在动；逐条同一性检查可跳过全部 node 重建。
+        run {
+            var same = this.messageNodes.size == messages.size
+            if (same) {
+                for (i in messages.indices) {
+                    if (this.messageNodes[i].currentMessage !== messages[i]) {
+                        same = false
+                        break
+                    }
+                }
+            }
+            if (same) return this
+        }
         val newNodes = this.messageNodes.toMutableList()
+        var anyChanged = false
 
         messages.forEachIndexed { index, message ->
-            val node = newNodes
-                .getOrElse(index) { message.toMessageNode() }
+            // v4.8.19 性能: 逐 node 引用短路 — currentMessage 引用相同则该 node 完全无需重建
+            val existing = if (index <= newNodes.lastIndex) newNodes[index] else null
+            if (existing != null && existing.currentMessage === message) {
+                return@forEachIndexed
+            }
+            anyChanged = true
+
+            val node = existing ?: message.toMessageNode()
 
             val newMessages = node.messages.toMutableList()
             var newMessageIndex = node.selectIndex
@@ -78,7 +133,6 @@ data class Conversation(
                 selectIndex = newMessageIndex
             )
 
-            // 更新newNodes
             if (index > newNodes.lastIndex) {
                 newNodes.add(newNode)
             } else {
@@ -86,8 +140,54 @@ data class Conversation(
             }
         }
 
+        if (!anyChanged) return this
+
         return this.copy(
             messageNodes = newNodes
+        )
+    }
+
+    // v3.8.13: 压缩留存重做 — 由单次撤销改为多留存位点（最多 3）管理
+
+    /** 压缩存档：记录压缩前的原始消息与压缩摘要，最多保留 3 个位点，超出覆盖最旧 */
+    fun addCompressRetention(
+        savedNodes: List<MessageNode>,
+        summaryNodes: List<MessageNode> = emptyList(),
+    ): Conversation {
+        val retention = CompressRetention(
+            savedAtEpochMs = System.currentTimeMillis(),
+            retentionLabel = formatCompressTimestamp(System.currentTimeMillis()),
+            savedMessageNodes = savedNodes,
+            summaryMessageNodes = summaryNodes,
+        )
+        return copy(
+            compressRetentions = (listOf(retention) + compressRetentions).take(3),
+            compressedContext = null,
+        )
+    }
+
+    /** 从留存位点恢复：恢复该位点保存的原始消息，该位点之后（更新）的压缩位点一并撤销 */
+    fun restoreCompressAt(index: Int): Conversation {
+        val retention = compressRetentions.getOrNull(index) ?: return this
+        return copy(
+            messageNodes = retention.savedMessageNodes,
+            compressRetentions = compressRetentions.subList(index + 1, compressRetentions.size),
+            compressedContext = null,
+        )
+    }
+
+    /** 旧版单留存上下文迁移为留存位点（读取到旧数据时惰性执行一次） */
+    fun migrateLegacyCompress(): Conversation {
+        val legacy = compressedContext ?: return this
+        return copy(
+            compressRetentions = listOf(
+                CompressRetention(
+                    savedAtEpochMs = System.currentTimeMillis(),
+                    retentionLabel = formatCompressTimestamp(System.currentTimeMillis()),
+                    savedMessageNodes = legacy.savedMessageNodes,
+                )
+            ),
+            compressedContext = null,
         )
     }
 
@@ -116,12 +216,14 @@ data class Conversation(
             id: Uuid,
             assistantId: Uuid = DEFAULT_ASSISTANT_ID,
             messages: List<MessageNode> = emptyList(),
-            newConversation: Boolean = false
+            newConversation: Boolean = false,
+            folderId: Uuid? = null,
         ) = Conversation(
             id = id,
             assistantId = assistantId,
             messageNodes = messages,
             newConversation = newConversation,
+            folderId = folderId,
         )
     }
 }
