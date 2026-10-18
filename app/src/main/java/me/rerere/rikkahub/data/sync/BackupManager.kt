@@ -5,6 +5,8 @@ package me.rerere.rikkahub.data.sync
  * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
  * ───────────────────────────────────────────────────────────────*/
 
+import me.rerere.rikkahub.data.files.MediaCreationFiles
+import me.rerere.rikkahub.data.files.ChatMediaStore
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -55,12 +57,16 @@ class BackupManager(
                     addFile(zip, snapshot, DatabaseBackup.ARCHIVE_DATABASE)
                 }
                 if (includeFiles) {
-                    for (folder in listOf(FileFolders.UPLOAD, FileFolders.SKILLS, FileFolders.FONTS)) {
+                    for (folder in ATTACHMENT_FOLDERS) {
                         val directory = File(context.filesDir, folder)
-                        val files = if (folder == FileFolders.SKILLS) directory.walkTopDown().asSequence()
+                        val files = if (folder in NESTED_ATTACHMENT_FOLDERS) directory.walkTopDown().asSequence()
                         else directory.listFiles().orEmpty().asSequence()
                         for (file in files.filter { it.isFile }) {
                             currentCoroutineContext().ensureActive()
+                            // 上游语义：正在下载的媒体结果是半成品（完成后改名），不进备份
+                            if (folder == FileFolders.MEDIA_CREATION &&
+                                file.name.endsWith(MediaCreationFiles.PARTIAL_SUFFIX)
+                            ) continue
                             val relative = file.relativeTo(directory).invariantSeparatorsPath
                             PendingRestore.resolveInside(directory, relative)
                             addFile(zip, file, "$folder/$relative")
@@ -145,10 +151,10 @@ class BackupManager(
 
     private fun isAttachment(name: String): Boolean {
         val folder = name.substringBefore('/')
-        if (folder !in listOf(FileFolders.UPLOAD, FileFolders.SKILLS, FileFolders.FONTS) || '/' !in name) return false
+        if (folder !in ATTACHMENT_FOLDERS || '/' !in name) return false
         val relative = name.substringAfter('/')
         require(relative.isNotBlank()) { "Invalid backup attachment: $name" }
-        require(folder == FileFolders.SKILLS || '/' !in relative) { "Invalid backup attachment: $name" }
+        require(folder in NESTED_ATTACHMENT_FOLDERS || '/' !in relative) { "Invalid backup attachment: $name" }
         return true
     }
 
@@ -159,6 +165,14 @@ class BackupManager(
     }
 
     companion object {
+        // 5.0.2: 备份目录集 — 对齐上游 +MEDIA_CREATION（媒体创作产物）；+chat-media（v4.8.185 对话媒体快照）
+        private val ATTACHMENT_FOLDERS =
+            listOf(FileFolders.UPLOAD, FileFolders.SKILLS, FileFolders.FONTS, FileFolders.MEDIA_CREATION, ChatMediaStore.DIR_NAME)
+
+        /** 带子目录备份；其余目录只含顶层文件 */
+        private val NESTED_ATTACHMENT_FOLDERS =
+            setOf(FileFolders.SKILLS, FileFolders.MEDIA_CREATION, ChatMediaStore.DIR_NAME)
+
         private fun pendingRestore(context: Context) = PendingRestore(
             root = File(context.noBackupFilesDir, "backup-restore"),
             databaseFile = context.getDatabasePath(SQLiteConfiguration.DATABASE_NAME),
