@@ -1659,4 +1659,7 @@
     <string name="use_web_search">Web Search</string>
     <string name="video_player_error">Unable to play this video</string>
     <string name="video_player_open_with">Open with another app</string>
+    <!-- RinCore 5.0.0 并树：上游新增键（补充批） -->
+    <string name="chat_message_tool_list_memory">Listed memories</string>
+    <string name="chat_message_tool_read_memory">Read memory</string>
 </resources>

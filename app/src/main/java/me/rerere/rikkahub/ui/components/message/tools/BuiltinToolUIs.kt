@@ -72,6 +72,7 @@ import me.rerere.hugeicons.stroke.CalendarAdd01
 import me.rerere.hugeicons.stroke.SmartPhone01
 import me.rerere.hugeicons.stroke.Time02
 import me.rerere.hugeicons.stroke.VolumeHigh
+import me.rerere.rikkahub.data.ai.tools.MemoryToolNames
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.event.AppEvent
 import me.rerere.rikkahub.data.event.AppEventBus
@@ -907,4 +908,18 @@ private fun ScrapeWebPreview(content: JsonElement) {
             }
         }
     }
+}
+
+internal fun memoryToolTitle(toolName: String, arguments: JsonElement?): String? = when (toolName) {
+    MemoryToolNames.READ -> stringResource(R.string.chat_message_tool_read_memory)
+    MemoryToolNames.LIST -> stringResource(R.string.chat_message_tool_list_memory)
+    MemoryToolNames.WRITE -> if (arguments.getStringContent("if_version") == MemoryRepository.NEW_FILE_VERSION) {
+        stringResource(R.string.chat_message_tool_create_memory)
+    } else {
+        stringResource(R.string.chat_message_tool_edit_memory)
+    }
+
+    MemoryToolNames.STR_REPLACE, MemoryToolNames.APPEND -> stringResource(R.string.chat_message_tool_edit_memory)
+    MemoryToolNames.DELETE -> stringResource(R.string.chat_message_tool_delete_memory)
+    else -> null
 }

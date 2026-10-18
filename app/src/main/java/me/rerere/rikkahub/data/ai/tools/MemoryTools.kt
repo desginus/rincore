@@ -181,3 +181,17 @@ fun buildMemoryTools(
         }
     )
 )
+
+
+object MemoryToolNames {
+    const val READ = "memory_read"
+    const val WRITE = "memory_write"
+    const val STR_REPLACE = "memory_str_replace"
+    const val APPEND = "memory_append"
+    const val DELETE = "memory_delete"
+    const val LIST = "memory_list"
+
+    /** 会改动记忆库的工具 */
+    val WRITES = setOf(WRITE, STR_REPLACE, APPEND, DELETE)
+}
+
