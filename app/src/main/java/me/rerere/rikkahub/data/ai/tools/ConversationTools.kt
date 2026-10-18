@@ -16,6 +16,7 @@ import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.data.db.fts.MessageSearchResult
 import me.rerere.rikkahub.data.db.fts.MessageSearchSort
 import me.rerere.rikkahub.data.repository.ConversationRepository
