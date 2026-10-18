@@ -62,6 +62,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import dev.chrisbanes.haze.hazeSource
@@ -111,7 +113,9 @@ import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.ui.components.ai.ChatAttachmentPickerActions
+import me.rerere.rikkahub.ui.components.motion.ContinuousCornerShape
 import me.rerere.rikkahub.ui.components.motion.LocalHazeState
+import me.rerere.rikkahub.ui.components.motion.RinGlass
 import me.rerere.rikkahub.ui.components.motion.rinGlass
 import me.rerere.rikkahub.ui.components.motion.rinGlassHighlight
 import me.rerere.rikkahub.ui.components.ai.ChatInput
@@ -554,8 +558,23 @@ private fun ChatPageContent(
         ) {
         Scaffold(
             topBar = {
-                TopBar(
-                    settings = setting,
+                // v4.8.180 (用户定版): 整条标题栏 = 雾化面板（下浓上淡）+ 连续曲率圆角（曲率梳平滑, 下方两角）。
+                // 面板铺满标题栏槽位（含状态栏内边距区）, 顶边贴屏幕、圆角做在面向内容的下方两角。
+                Box {
+                    val titlePanelShape = remember {
+                        ContinuousCornerShape(cornerRadius = 20.dp, topStart = false, topEnd = false)
+                    }
+                    val titleFogBrush = RinGlass.fogBrush(setting.displaySetting.glassFogPercent)
+                    if (setting.displaySetting.enableBlurEffect && titleFogBrush != null) {
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .clip(titlePanelShape)
+                                .drawBehind { drawRect(brush = titleFogBrush) },
+                        )
+                    }
+                    TopBar(
+                        settings = setting,
                     conversation = conversation,
                     bigScreen = bigScreen,
                     drawerState = drawerState,
@@ -573,6 +592,7 @@ private fun ChatPageContent(
                         vm.updateTitle(it)
                     }
                 )
+                } // 标题栏雾化面板 Box 闭合 (v4.8.180)
             },
             bottomBar = {
                 val messageQueue by vm.messageQueue.collectAsStateWithLifecycle()

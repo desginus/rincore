@@ -102,6 +102,7 @@ import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Fullscreen
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.ui.components.motion.ContinuousCornerShape
 import me.rerere.rikkahub.ui.components.motion.RinGlass
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
@@ -187,13 +188,9 @@ fun ChatInput(
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
 
-    val themeShape = MaterialTheme.shapes.largeIncreased
-    val containerShape = RoundedCornerShape(
-        topStart = themeShape.topStart,
-        topEnd = themeShape.topEnd,
-        bottomEnd = themeShape.bottomEnd,
-        bottomStart = themeShape.bottomStart,
-    )
+    // v4.8.180 (用户定版): 连续曲率圆角（曲率梳平滑 G2）— 半径与旧形态同值（= M3 largeIncreased
+    // 20dp, androidx 源取证）; 四角保持全圆, 仅把圆弧角换成超椭圆连续曲率角。
+    val containerShape = remember { ContinuousCornerShape(cornerRadius = 20.dp) }
     val modelListState = rememberModelListState(
         modelId = assistant.chatModelId ?: settings.chatModelId,
         providers = settings.providers,

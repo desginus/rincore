@@ -98,15 +98,16 @@ object RinGlass {
     }
 
     /**
-     * v4.8.178: 雾化 — 白色柔雾覆盖层 (上浓下淡, 竖向渐变); 0 = 关闭 (返回 null 无雾)。
+     * v4.8.180 (用户定版): 雾化 — 白色柔雾覆盖层 (下浓上淡, 竖向渐变); 0 = 关闭 (返回 null 无雾)。
+     * "雾化从上半部分雾化变为下半部分雾化" — 输入栏与标题栏共用本刷子方向。
      */
     fun fogBrush(percent: Int): Brush? {
         val p = percent.coerceIn(0, 100) / 100f
         return if (p <= 0f) null
         else Brush.verticalGradient(
             colors = listOf(
-                Color.White.copy(alpha = 0.7f * p),
                 Color.White.copy(alpha = 0.15f * p),
+                Color.White.copy(alpha = 0.7f * p),
             ),
         )
     }
