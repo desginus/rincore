@@ -54,6 +54,12 @@ jobs:
             echo "dummy google-services.json written"
           fi
 
+      # 发布门禁预演（与 build.yml 同款硬门禁）：AI 测试源编译 + markdown 解析器测试
+      - name: Release gates (ai test compile + markdown tests)
+        run: |
+          ./gradlew :ai:compileDebugUnitTestKotlin --no-daemon --stacktrace
+          ./gradlew :markdown:testDebugUnitTest --no-daemon --stacktrace
+
       - name: Compile oracle (assembleDebug)
         run: |
           ./gradlew :app:assembleDebug --no-daemon --stacktrace
