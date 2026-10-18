@@ -129,7 +129,15 @@ changelog entry and a regression guard. Optimizations keep coming.
 
 ## 📋 Changelog
 
-v4.8.54 → v5.0.0 (newest first):
+v4.8.54 → v5.0.3 (newest first):
+
+- **v5.0.3** — Cleanup pass: removed 3 dead navigation screens (tool-hub/compare/builtin-tools targets, the pages themselves stay as inline state pages) and the entire legacy VideoGen chain (pages/VM/registration/screen/route) already superseded by the upstream Media Creation module; CODE_INDEX placeholders fully written out (51 -> per-file one-line responsibilities, 0 left); module-map refreshed with the current 13-module layout.
+
+- **v5.0.2** — Backup completeness: conversation media snapshots (`chat-media`) and media-generation outputs (`media_creation`, staged `.part` downloads skipped) now ride along in local/WebDAV/S3 backups and restores (collect and validate sides share one source of truth). Upstream builtin-skills ported: `assets/builtin_skills` (skill-creator) extracted at launch, merged into the skill library (a user skill overrides a builtin of the same name) and mounted read-only at `/builtin_skills` inside the sandbox.
+
+- **v5.0.1** — Runtime wiring pass ("compiles clean but dies at runtime" sweep): 7 missing Koin bindings restored (translator handler, remote file store, media-generation manager/service, memory-file and media-creation view models — each missing one crashed its page on open); 2 notification channels actually created (media_creation / memory_dream, previously defined but never registered, so their notifications were silently dropped); 2 startup recovery chains re-attached (interrupted media generations resume; memory-consolidation resume + flush when the app goes background); memory-consolidation hooks wired into the chat pipeline (turn-finished / conversation-forked / session-removed) so "auto-organize after conversations" truly fires; drawer gains the "dreaming" indicator.
+
+
 
 - **v5.0.0** — Re-based onto upstream 3.0.0 (reverse adoption): the engine now runs on the upstream base tree with every RinCore feature re-planted on top — generation stability chain (retry policy, completion gates, watchdogs), tool matrix & zones, sub-agent engine, upload pipeline (time codes), CWD chain, sandbox workspace & stdio MCP (SSE/StreamableHTTP/STDIO), codex-derived markdown renderer, memory 2.0 (markdown memory files + consolidation/"dream" scheduler) merged with RinCore's conversation-scoped memory, upstream Media Creation module, and the full upstream 3.0.0 UI (settings / backup / extensions / translator). RinCore's home structure is kept (plus→tool matrix, artifacts corner, dual-orbit selector, lazy tool loading). Excluded by spec: RinCore's legacy input/title-bar blur experiment chain and cookie-shaped avatars (avatars stay circular). Releases before v5.0.0-dev: see 4.9.5-dev / 4.9.0-dev prereleases.
 
