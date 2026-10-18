@@ -118,7 +118,7 @@ fun createUploadFetchTool(filesRoot: File): Tool = Tool(
             else -> listOf(UIMessagePart.Text(buildJsonObject {
                 put("ok", false)
                 put("error", "请传 code（上传码）或 query（文件名片段）。以下是最近上传的文件：")
-                recent(this)
+                recentList()
             }.toString()))
         }
     },
