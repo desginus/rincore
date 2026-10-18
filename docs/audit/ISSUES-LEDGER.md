@@ -211,3 +211,11 @@
 - **知识库随迁（此前未带上的 6 件）**：rincore-bug-record/rincore-changelog(+FULL_HISTORY)/rincore-decisions/rincore-dev-process/rincore-project-brief/rincore-roadmap + .claude/commands/publish-release.md 全部入仓；更新至 5.0.3——changelog 补 4.9.0-dev→5.0.3 六条（B1/B2/B3/接线/备份/清理全记录）；bug-record 补 **B195**（R8 重复类 + lintVital 1161 条 ExtraTranslation）与 **B196**（「编译干净但运行断」接线缺口族七类）；brief/roadmap 基线 v5.0.3。
 - **保底项⑤（Scale 面）核对**：ZoomableAsyncImage 双方均 ContentScale.Fit；StableSizeImage（v4.8.123 首帧稳定占位）在树——对齐 ✓。
 - **发布**：推 adopt（oracle run 39168355353）→ 绿后 FF main → Release **v5.0.3**。
+
+### G17 v5.0.4 收尾批·backlog 消化（2026-10-19 06:3x）
+- **A5 QwenTTS 全链收口**：证据链——`QwenTTSProvider.kt` 与上游 3.0.0 **零差异**（137 行）；现役 API（qwen-audio-3.0-tts）请求体只有 `model/input{text,voice,format,sample_rate}`，**不消费 languageType**；旧 API（qwen3-tts）已被 provider 内 `require(!model.startsWith("qwen3-tts"))` 明确拒绝。→ 删死字段 `TTSProviderSetting.Qwen.languageType`（"旧 API 遗留"）+ 死 UI（"Language Type" 下拉 5 选项 = UI 对用户撒谎项）。零残留核验 ✓。
+- **A6 P2 九件细看（全部定性）**：ItemActionMenu(6+)=仅头注 / ReorderableDrag(5+)=仅头注 / workspace·app·common·document·highlight·ai 的 ExampleUnitTest 与 ai/build.gradle.kts = **零差异** / ExpressivePopup(177+)=我方组件（上游无）/ ConversationSessionManager(9+4-)=onSessionRemoved 钩子（v5.0.1）/ AIRequestInterceptor(41+)=UA 伪装（v4.8.127 定版）/ Workspace.kt(3+)=omittedChars（v4.8.82）/ 根 build.gradle.kts(−2)=Firebase 插件剥离。**结论：九件全部有据（我方功能件或已归零）** → 台账 A6 可标 ✔。
+- **P7 rin-tools 磁盘成本（实施）**：原实现=每工作区复制 34MB（officecli 33MB）+ 每次启动逐文件 34MB 回读校验；改为 **共享单副本（filesDir/rin-tools-shared，按 VERSION_NAME 打 .staged-version 标记，版本变化才重铺）+ 硬链接注入各 rootfs /usr/local/bin（同文件系统=零额外数据块，校验=inode 比对）**；硬链接不可用（跨 FS/不支持）回退逐字节复制（旧行为）；备份面不含 rin-tools-shared（加料外泄为零）。
+- **P8 收件箱动作补全（实施）**：per-file `[分享/删除]`（分享=ChatFileActions.shareLocalFile 单一实现；删除=确认后 `FilesManager.delete(deleteFromDisk=true)`）+ 顶栏「清理未引用」（**usages 改可空 Map：扫描未完成=不显示清理入口，防加载期误删**；清理=仅删未被任何头像/背景/消息引用的文件，弹窗显示数量与可释放空间）。
+- **P4 双解析链分工文档化（实施）**：APP_MAP 域 F + CODE_INDEX 头部明写——**文档内容真值=沙箱工具链（rin-tools officecli/pdf 等）；软件内 document/DocumentRenderEngine 仅 classic 内联兜底与预览**；两链不一致以沙箱为准。
+- **仍待拍板（不动）**：P2 classic 现代化（影响设置面）/ P5 文件中心统一（中远期）/ P6 DocumentAsPrompt 插入位置（需缓存影响评估）。
