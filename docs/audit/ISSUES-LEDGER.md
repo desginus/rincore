@@ -244,6 +244,6 @@
 - **发现与处置**：
   1. **WorkspaceFileEditor（真缺陷，本轮修复）**：B2.7 接的入口零调用方；更深一层的真缺陷=**工作区文件浏览器点文件无反应**——`WorkspaceDetailVM.open` 对文件直接 `return`（`if (!entry.isDirectory) return`），而行卡对文件是 `combinedClickable(onClick=onOpen)`=死交互。修复=按上游 3.0.0 语义接线：**文本/SVG → 应用内编辑器（Screen.WorkspaceFileEditor，同时激活该入口）；图片 → vm.openPreview（既有预览链）；目录不变；其它类型行尾菜单已覆盖**。
   2. **OperitUi / SettingSkillsEcosystem（历史休眠页，非迁移回归）**：两树（v4.8.189 与 adopt）均为「仅 entry、零导航」——OperitUi 的入口随 v4.8.145 用户指令「OperitEcoPage 撤面板 Tab」一并消失；SettingSkillsEcosystem 的入口随 v4.8.146「技能合并进 SkillHub」被取代。页面与 entry 保留（休眠，无运行风险），如需复活请点名（OperitUi 可挂「兼容测试（开发者）」组）。
-  3. **ShareHandler**：经 intent 链 `backStack.add(Screen.ShareHandler(...))` 可达（非 `navigate(Screen.X)` 语法，审计脚本盲区已注记）。
+  3. **ShareHandler（休眠·我方设计使然）**：我方自 v4.8.112 起分享 intent 统一路由到 `Screen.Chat`（分享即开新对话并带入内容），`ShareHandlerPage` 自那时起休眠（v4.8.189 同样只有 entry）；上游 3.0.0 仍用 `Screen.ShareHandler` 路由（其 RouteActivity:234-240）。如未来要恢复上游式分享页，改 intent 路由两行即可（页面/VM/入口均在位、注册齐全）。
   4. **X**：RouteActivity 文件头注释示例（`entry<Screen.X> 注册`）=审计正则误报。
 - **教训 #129**：可达性审计必须包含两类语法（`navigate(Screen.X)` 与 `backStack.add(Screen.X)`）+ 排除注释示例；「entry 存在」≠「可达」——死交互（onClick 调用的 VM 方法对目标类型 no-op）是比死入口更隐蔽的一层。
