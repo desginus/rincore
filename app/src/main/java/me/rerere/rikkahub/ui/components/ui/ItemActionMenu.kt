@@ -1,4 +1,10 @@
+/* 【域 F·主题渲染】 — UI 组件 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.ui
+
+/* ───【原版对齐】ItemActionMenu.kt | 基线 2.5.5 (v4.8.64 适配移植)
+ * 统一列表 item 的次要操作: 点击 item 主操作 (进入详情/编辑), 其余操作收进 ⋮ 菜单,
+ * 破坏性操作标红置底 (destructive), 由调用方负责二次确认。
+ * ───────────────────────────────────────────────────────────────*/
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.DropdownMenu

@@ -231,6 +231,10 @@ class SettingsStore internal constructor(
         val EXEMPT_FROM_DOMAIN_TOOLS = stringPreferencesKey("exempt_from_domain_tools")
 
         // Uses the same DataStore singleton without starting settings flows or requiring Koin.
+        /** RinCore 兼容层：旧两参调用点。 */
+        internal suspend fun restoreBeforeInitialization(context: Context, settings: Settings) =
+            restoreBeforeInitialization(context, settings, settings.launchCount)
+
         internal suspend fun restoreBeforeInitialization(context: Context, settings: Settings, launchCount: Int) {
             require(!settings.init) { "Cannot restore uninitialized settings" }
             // 启动次数和设置在同一次写入里落盘
@@ -257,6 +261,22 @@ class SettingsStore internal constructor(
 
     /** 当前设置。加载完成前是 [Settings.dummy]，需要真实设置时用 [awaitLoaded]。 */
     val settingsFlow: StateFlow<Settings> = state.asStateFlow()
+
+    // ── RinCore 兼容层（B1 并树）：旧 UI/服务层消费的接口在上游 3.0.0 被移除，
+    // 此处保留同名同语义薄适配，避免全层重写；UI 批再逐点收敛。 ──
+    val settingsRevision = MutableStateFlow(0)
+
+    val settingsFlowRaw: StateFlow<Settings> get() = settingsFlow
+
+    fun updateSync(settings: Settings) {
+        if (settings.init) return
+        settingsFlow.value = settings
+        settingsRevision.value = settingsRevision.value + 1
+    }
+
+    suspend fun update(settings: Settings) {
+        update { settings }
+    }
 
     /** 等启动时的读盘完成后返回当前设置，不会返回 [Settings.dummy]。已经加载完时直接返回。 */
     suspend fun awaitLoaded(): Settings = state.first { !it.init }
@@ -317,6 +337,7 @@ class SettingsStore internal constructor(
             val normalized = updated.withOurDataRepairs().normalized()
                 .let { settings -> me.rerere.rikkahub.data.ai.tools.routing.ZoneOps.normalize(settings) }
             state.value = if (normalized == updated) updated else normalized
+            settingsRevision.value = settingsRevision.value + 1
         }
         persist()
     }
@@ -339,6 +360,7 @@ class SettingsStore internal constructor(
                 val normalized = updated.withOurDataRepairs().normalized()
                     .let { settings -> me.rerere.rikkahub.data.ai.tools.routing.ZoneOps.normalize(settings) }
                 state.value = if (normalized == updated) updated else normalized
+            settingsRevision.value = settingsRevision.value + 1
             }
         }
         if (applied) persist()

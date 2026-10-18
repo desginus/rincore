@@ -1,4 +1,9 @@
+/* 【域 A·对话核心】 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.pages.chat
+
+/* ───【原版对齐】MeshGradientBackground.kt | 差异 ±18 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
 
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
@@ -11,7 +16,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -21,14 +25,15 @@ import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
+import androidx.compose.runtime.getValue
 
 /**
  * Gemini 风格动态渐变背景。
  *
  * 原理:
- *  1. 底层一个线性渐变(顶部偏蓝、底部偏白)。
- *  2. 上面叠几个 radialGradient 光斑(中心有色 → 边缘透明),天生就是柔的。
- *  3. 每个光斑用一个独立周期的无限动画,沿正弦/余弦轨迹缓慢漂移。
+ * 1. 底层一个线性渐变(顶部偏蓝、底部偏白)。
+ * 2. 上面叠几个 radialGradient 光斑(中心有色 → 边缘透明),天生就是柔的。
+ * 3. 每个光斑用一个独立周期的无限动画,沿正弦/余弦轨迹缓慢漂移。
  *
  * 不依赖 Modifier.blur,全 API 级别可用,性能也更好。
  */
@@ -48,11 +53,12 @@ fun MeshGradientBackground(
         animationSpec = infiniteRepeatable(tween(durationMillis * loops, easing = LinearEasing)),
         label = label,
     )
+
     // 针对各自身上的乘数，传入消除小数所需的最小公倍数圈数
     val p1 by phase(5_500, loops = 20, "p1") // 1.15 对应 20 圈 (总长 110秒)
-    val p2 by phase(7_000, loops = 1,  "p2") // 1.0  对应 1 圈
-    val p3 by phase(8_500, loops = 10, "p3") // 0.9  对应 10 圈 (总长 85秒)
-    val p4 by phase(6_200, loops = 10, "p4") // 1.1  对应 10 圈 (总长 62秒)
+    val p2 by phase(7_000, loops = 1, "p2") // 1.0 对应 1 圈
+    val p3 by phase(8_500, loops = 10, "p3") // 0.9 对应 10 圈 (总长 85秒)
+    val p4 by phase(6_200, loops = 10, "p4") // 1.1 对应 10 圈 (总长 62秒)
 
     val dark = LocalDarkMode.current
     val baseGradient = if (dark) {

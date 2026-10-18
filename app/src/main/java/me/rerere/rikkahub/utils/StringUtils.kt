@@ -1,5 +1,10 @@
+/* 【域 L·基础设施】 | 地图: docs/APP_MAP.md §L */
 package me.rerere.rikkahub.utils
 
+
+/* ───【原版对齐】StringUtils.kt | 差异 ±25 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import org.apache.commons.text.StringEscapeUtils
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -64,38 +69,25 @@ fun Long.fileSizeToString(): String {
 fun Int.formatNumber(): String {
     val absValue = kotlin.math.abs(this)
     val sign = if (this < 0) "-" else ""
-
     return when {
         absValue < 1000 -> this.toString()
         absValue < 1000000 -> {
             val value = absValue / 1000.0
-            if (value == value.toInt().toDouble()) {
-                "$sign${value.toInt()}K"
-            } else {
-                "$sign${value.toFixed(1)}K"
-            }
+            if (value == value.toInt().toDouble()) "$sign${value.toInt()}K"
+            else "$sign${value.toFixed(1)}K"
         }
-
         absValue < 1000000000 -> {
             val value = absValue / 1000000.0
-            if (value == value.toInt().toDouble()) {
-                "$sign${value.toInt()}M"
-            } else {
-                "$sign${value.toFixed(1)}M"
-            }
+            if (value == value.toInt().toDouble()) "$sign${value.toInt()}M"
+            else "$sign${value.toFixed(1)}M"
         }
-
         else -> {
             val value = absValue / 1000000000.0
-            if (value == value.toInt().toDouble()) {
-                "$sign${value.toInt()}B"
-            } else {
-                "$sign${value.toFixed(1)}B"
-            }
+            if (value == value.toInt().toDouble()) "$sign${value.toInt()}B"
+            else "$sign${value.toFixed(1)}B"
         }
     }
 }
-
 fun Float.toFixed(digits: Int = 0) = "%.${digits}f".format(this)
 fun Double.toFixed(digits: Int = 0) = "%.${digits}f".format(this)
 

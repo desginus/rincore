@@ -1,5 +1,10 @@
+/* 【域 L·基础设施】 | 地图: docs/APP_MAP.md §L */
 package me.rerere.rikkahub.utils
 
+
+/* ───【原版对齐】ContextUtil.kt | 差异 ≈223 行变更（vs 2.5.1·2026-10-18 复核）
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import android.Manifest
 import android.app.Activity
 import android.app.AppOpsManager
@@ -7,10 +12,10 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
+import android.media.MediaScannerConnection
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 
-import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.Process
@@ -82,6 +87,7 @@ fun Context.writeClipboardText(text: String) {
 fun Context.hasUsageStatsPermission(): Boolean {
     val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
     val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        @Suppress("DEPRECATION") // AppOps 查询无公开替代 API
         appOps.unsafeCheckOpNoThrow(
             AppOpsManager.OPSTR_GET_USAGE_STATS,
             Process.myUid(),
@@ -154,105 +160,156 @@ fun Context.exportImage(
     activity: Activity,
     bitmap: Bitmap,
     fileName: String = "RikkaHub_${System.currentTimeMillis()}.png"
-) {
+): Boolean {
     // 检查存储权限（Android 9及以下需要）
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            ActivityCompat.requestPermissions(
-                activity,
-                arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE),
-                1
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+        ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        != PackageManager.PERMISSION_GRANTED
+    ) {
+        ActivityCompat.requestPermissions(
+            activity, arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 1
+        )
+        Log.w(TAG, "exportImage: WRITE_EXTERNAL_STORAGE not granted")
+        return false
+    }
+
+    // v4.8.53 修复 ("提示保存成功但相册没有"): ①Q+ 改 MediaStore 两段式
+    // (IS_PENDING 1 → 写入 → 置 0), 写入失败删除占位行; ②返回真实结果
+    // (原实现静默吞异常, 调用方无条件提示成功 = 假成功); ③日志留痕可查。
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val contentValues = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+            put(MediaStore.MediaColumns.MIME_TYPE, "image/png")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val uri = runCatching {
+            contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+        }.getOrElse { t ->
+            Log.e(TAG, "exportImage: MediaStore insert failed", t)
+            null
+        } ?: return false
+
+        return try {
+            contentResolver.openOutputStream(uri)?.use { outputStream ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
+                outputStream.flush()
+            } ?: error("openOutputStream returned null")
+            contentResolver.update(
+                uri,
+                ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) },
+                null, null
             )
-            return
+            Log.i(TAG, "exportImage: saved to Pictures/$fileName (MediaStore)")
+            true
+        } catch (t: Throwable) {
+            runCatching { contentResolver.delete(uri, null, null) }
+            Log.e(TAG, "exportImage: write failed, pending row removed", t)
+            false
         }
     }
 
-    // 保存到相册
-    var outputStream: OutputStream? = null
-    try {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // Android 10及以上使用MediaStore API
-            val contentValues = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-                put(MediaStore.MediaColumns.MIME_TYPE, "image/png")
-                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
-            }
-            val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
-            uri?.let {
-                outputStream = contentResolver.openOutputStream(it)
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream!!)
-            }
-        } else {
-            // Android 9及以下直接写入文件
-            val imagesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-            val image = File(imagesDir, fileName)
-            outputStream = FileOutputStream(image)
+    // Android 9及以下直接写入文件
+    return try {
+        val imagesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+        if (!imagesDir.exists()) imagesDir.mkdirs()
+        val image = File(imagesDir, fileName)
+        FileOutputStream(image).use { outputStream ->
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
-
-            // 通知图库更新
-            val mediaScanIntent = Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE)
-            mediaScanIntent.data = Uri.fromFile(image)
-            sendBroadcast(mediaScanIntent)
         }
-        Log.i(TAG, "Image saved successfully: $fileName")
-    } catch (e: Exception) {
-        Log.e(TAG, "Failed to save image", e)
-    } finally {
-        outputStream?.close()
+        MediaScannerConnection.scanFile(this, arrayOf(image.absolutePath), null, null)
+        Log.i(TAG, "exportImage: saved to ${image.absolutePath} (legacy)")
+        true
+    } catch (t: Throwable) {
+        Log.e(TAG, "exportImage legacy write failed", t)
+        false
     }
+}
+
+/** v4.8.53: 源文件扩展名 → (相册文件名后缀, MIME)。修正原实现一律 .png/image/png
+ *  把 JPEG/WebP 改名改型 (部分 ROM 图库对名实不符文件处理异常)。 */
+private fun galleryExtAndMime(source: File): Pair<String, String> {
+    val ext = source.name.substringAfterLast('.', "").lowercase().ifBlank { "jpg" }
+    val mime = when (ext) {
+        "png" -> "image/png"
+        "webp" -> "image/webp"
+        "gif" -> "image/gif"
+        "bmp" -> "image/bmp"
+        "heic", "heif" -> "image/heic"
+        "jpg", "jpeg" -> "image/jpeg"
+        else -> "image/jpeg"
+    }
+    return ext to mime
 }
 
 fun Context.exportImageFile(
     activity: Activity,
     file: File,
-    fileName: String = "RikkaHub_${System.currentTimeMillis()}.png"
-) {
+    fileName: String? = null
+): Boolean {
+    if (!file.exists()) {
+        Log.e(TAG, "exportImageFile: source not found: ${file.absolutePath}")
+        return false
+    }
+    val (ext, mime) = galleryExtAndMime(file)
+    val resolvedName = fileName ?: "RikkaHub_${System.currentTimeMillis()}.$ext"
+
     // 检查存储权限（Android 9及以下需要）
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            ActivityCompat.requestPermissions(
-                activity,
-                arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE),
-                1
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+        ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        != PackageManager.PERMISSION_GRANTED
+    ) {
+        ActivityCompat.requestPermissions(
+            activity, arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 1
+        )
+        Log.w(TAG, "exportImageFile: WRITE_EXTERNAL_STORAGE not granted")
+        return false
+    }
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val contentValues = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, resolvedName)
+            put(MediaStore.MediaColumns.MIME_TYPE, mime)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val uri = runCatching {
+            contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+        }.getOrElse { t ->
+            Log.e(TAG, "exportImageFile: MediaStore insert failed", t)
+            null
+        } ?: return false
+
+        return try {
+            contentResolver.openOutputStream(uri)?.use { outputStream ->
+                file.inputStream().use { input -> input.copyTo(outputStream) }
+                outputStream.flush()
+            } ?: error("openOutputStream returned null")
+            contentResolver.update(
+                uri,
+                ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) },
+                null, null
             )
-            return
+            Log.i(TAG, "exportImageFile: saved to Pictures/$resolvedName (MediaStore)")
+            true
+        } catch (t: Throwable) {
+            runCatching { contentResolver.delete(uri, null, null) }
+            Log.e(TAG, "exportImageFile: write failed, pending row removed", t)
+            false
         }
     }
 
-    // 保存到相册
-    var outputStream: OutputStream? = null
-    try {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // Android 10及以上使用MediaStore API
-            val contentValues = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-                put(MediaStore.MediaColumns.MIME_TYPE, "image/png")
-                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
-            }
-            val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
-            uri?.let {
-                outputStream = contentResolver.openOutputStream(it)
-                file.inputStream().copyTo(outputStream!!)
-            }
-        } else {
-            // Android 9及以下直接写入文件
-            val imagesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-            val image = File(imagesDir, fileName)
-            file.copyTo(image, overwrite = true)
-
-            // 通知图库更新
-            val mediaScanIntent = Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE)
-            mediaScanIntent.data = Uri.fromFile(image)
-            sendBroadcast(mediaScanIntent)
-        }
-        Log.i(TAG, "Image file saved successfully: $fileName")
-    } catch (e: Exception) {
-        Log.e(TAG, "Failed to save image file", e)
-    } finally {
-        outputStream?.close()
+    // Android 9及以下直接写入文件
+    return try {
+        val imagesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+        if (!imagesDir.exists()) imagesDir.mkdirs()
+        val image = File(imagesDir, resolvedName)
+        file.copyTo(image, overwrite = true)
+        MediaScannerConnection.scanFile(this, arrayOf(image.absolutePath), null, null)
+        Log.i(TAG, "exportImageFile: saved to ${image.absolutePath} (legacy)")
+        true
+    } catch (t: Throwable) {
+        Log.e(TAG, "exportImageFile legacy write failed", t)
+        false
     }
 }

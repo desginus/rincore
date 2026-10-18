@@ -1,4 +1,9 @@
+/* 【域 B·AI 传输】 | 地图: docs/APP_MAP.md §B */
 package me.rerere.rikkahub.data.ai.transformers
+
+/* ───【原版对齐】TemplateTransformer.kt | 差异 ±3 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
 
 import io.pebbletemplates.pebble.PebbleEngine
 import io.pebbletemplates.pebble.loader.Loader
@@ -25,8 +30,6 @@ class TemplateTransformer(
         val template = engine.getTemplate(ctx.assistant.id.toString())
         val timeZone = TimeZone.currentSystemDefault()
         return messages.map { message ->
-            if (message.isSynthetic) return@map message
-
             // 使用消息本身的发送时间而不是当前时间, 保证多次请求时渲染结果稳定, 不破坏 prompt 缓存
             val createdAt = message.createdAt.toInstant(timeZone).toJavaInstant()
             message.copy(

@@ -1,4 +1,9 @@
+/* 【域 A·对话核心】 — 页面 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.pages.imggen
+
+/* ───【原版对齐】ImgGenPage.kt | 差异 ±16 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
 
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -38,7 +43,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -60,19 +64,18 @@ import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalClipboardManager
+import android.content.ClipData
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -81,7 +84,7 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
 import coil3.compose.AsyncImage
-import me.rerere.ui.toast.ToastType
+import com.dokar.sonner.ToastType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -100,22 +103,22 @@ import me.rerere.hugeicons.stroke.FloppyDisk
 import me.rerere.hugeicons.stroke.Image03
 import me.rerere.hugeicons.stroke.Tools
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.files.FileUtils
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.ImagePreviewDialog
-import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.rikkahub.ui.components.ui.OutlinedNumberInput
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.utils.ImageUtils
-import me.rerere.ui.components.FormItem
-import me.rerere.ui.components.OutlinedNumberInput
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 import java.io.File
 import kotlin.uuid.Uuid
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 @Composable
 fun ImageGenPage(
@@ -124,7 +127,6 @@ fun ImageGenPage(
 ) {
     val pagerState = rememberPagerState { 2 }
     val scope = rememberCoroutineScope()
-    val navController = LocalNavController.current
 
     val isGenerating by vm.isGenerating.collectAsStateWithLifecycle()
     var showCancelDialog by remember { mutableStateOf(false) }
@@ -164,34 +166,15 @@ fun ImageGenPage(
             BottomBar(pagerState, scope)
         },
     ) { innerPadding ->
-        Column(
+        HorizontalPager(
+            state = pagerState,
             modifier = modifier
                 .padding(innerPadding)
                 .consumeWindowInsets(innerPadding)
-        ) {
-            Text(
-                text = stringResource(
-                    R.string.imggen_page_deprecated_warning,
-                    stringResource(R.string.media_creation_title)
-                ),
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.labelMedium,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        navController.navigate(Screen.MediaCreationSessions) { launchSingleTop = true }
-                    }
-                    .padding(horizontal = 16.dp, vertical = 4.dp)
-            )
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.weight(1f)
-            ) { page ->
-                when (page) {
-                    0 -> ImageGenScreen(vm = vm)
-                    1 -> ImageGalleryScreen(vm = vm, isActive = pagerState.currentPage == 1)
-                }
+        ) { page ->
+            when (page) {
+                0 -> ImageGenScreen(vm = vm)
+                1 -> ImageGalleryScreen(vm = vm, isActive = pagerState.currentPage == 1)
             }
         }
     }
@@ -545,7 +528,7 @@ private fun ImageGalleryScreen(
     val generatedImages = vm.generatedImages.collectAsLazyPagingItems()
     val context = LocalContext.current
     val filesManager: FilesManager = koinInject()
-    val clipboardManager = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val pullToRefreshState = rememberPullToRefreshState()
@@ -739,7 +722,9 @@ private fun ImageGalleryScreen(
                                         if (!selectionMode) Row {
                                             IconButton(
                                                 onClick = {
-                                                    clipboardManager.setText(AnnotatedString(it.prompt))
+                                                    scope.launch {
+                                                        clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(null, it.prompt)))
+                                                    }
                                                     toaster.show(
                                                         message = "Prompt copied to clipboard",
                                                         type = ToastType.Success
@@ -757,17 +742,20 @@ private fun ImageGalleryScreen(
                                             IconButton(
                                                 onClick = {
                                                     scope.launch {
-                                                        try {
+                                                        // v4.8.53: 按真实结果提示 (同 ImagePreviewDialog 的假成功修复)
+                                                        val ok = runCatching {
                                                             filesManager.saveMessageImage(context, "file://${it.filePath}")
+                                                        }.onFailure { it.printStackTrace() }.getOrDefault(false)
+                                                        if (ok) {
                                                             toaster.show(
                                                                 message = context.getString(R.string.imggen_page_image_saved_success),
                                                                 type = ToastType.Success
                                                             )
-                                                        } catch (e: Exception) {
+                                                        } else {
                                                             toaster.show(
                                                                 message = context.getString(
                                                                     R.string.imggen_page_save_failed,
-                                                                    e.message
+                                                                    "save returned false"
                                                                 ),
                                                                 type = ToastType.Error
                                                             )

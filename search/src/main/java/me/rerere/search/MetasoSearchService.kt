@@ -1,5 +1,9 @@
 package me.rerere.search
 
+
+/* ───【原版对齐】MetasoSearchService.kt | 差异 ±4 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.text.LinkAnnotation
@@ -73,7 +77,7 @@ object MetasoSearchService : SearchService<SearchServiceOptions.MetasoOptions> {
 
             val response = httpClient.newCall(request).await()
             if (response.isSuccessful) {
-                val bodyRaw = response.body?.string() ?: error("Failed to get response body")
+                val bodyRaw = response.body.string()
                 val searchResponse = runCatching {
                     json.decodeFromString<MetasoSearchResponse>(bodyRaw)
                 }.onFailure {
@@ -94,7 +98,7 @@ object MetasoSearchService : SearchService<SearchServiceOptions.MetasoOptions> {
                     )
                 )
             } else {
-                val errorBody = response.body?.string()
+                val errorBody = response.body.string()
                 println("Metaso search failed with code ${response.code}: $errorBody")
                 error("Search request failed with code ${response.code}: $errorBody")
             }

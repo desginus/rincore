@@ -1,4 +1,9 @@
+/* 【域 E·设置体系】 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.ui.pages.setting.components
+
+/* ───【原版对齐】ProviderConnectionTester.kt | 差异 ±104 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,26 +26,21 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
-import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.Tool
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
-import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.hugeicons.HugeIcons
@@ -50,6 +50,8 @@ import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.utils.UiState
 import org.koin.compose.koinInject
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 @Composable
 fun ProviderConnectionTester(
@@ -58,7 +60,6 @@ fun ProviderConnectionTester(
     var showTestDialog by remember { mutableStateOf(false) }
     val providerManager = koinInject<ProviderManager>()
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
 
     IconButton(onClick = { showTestDialog = true }) {
         Icon(HugeIcons.Connect, null)
@@ -97,19 +98,19 @@ fun ProviderConnectionTester(
                     }
 
                     TestResultItem(
-                        label = stringResource(R.string.setting_provider_page_test_non_streaming),
+                        label = "非流式",
                         state = nonStreamingState,
                         resultText = (nonStreamingState as? UiState.Success)?.data ?: ""
                     )
 
                     TestResultItem(
-                        label = stringResource(R.string.setting_provider_page_test_streaming),
+                        label = "流式",
                         state = streamingState,
                         resultText = streamingText
                     )
 
                     TestResultItem(
-                        label = stringResource(R.string.setting_provider_page_test_tool_call),
+                        label = "工具调用",
                         state = toolsState,
                         resultText = (toolsState as? UiState.Success)?.data ?: ""
                     )
@@ -130,17 +131,14 @@ fun ProviderConnectionTester(
                             launch {
                                 runCatching {
                                     nonStreamingState = UiState.Loading
+                                    // 4.2.0: 非流式返回 TextGenerationResult
                                     val result = provider.generateText(
                                         providerSetting = internalProvider,
-                                        messages = listOf(
-                                            UIMessage.system("You are a helpful assistant"),
-                                            UIMessage.user("hello"),
-                                        ),
+                                        messages = listOf(UIMessage.system("You are a helpful assistant"), UIMessage.user("hello")),
                                         params = TextGenerationParams(
                                             model = model!!,
                                             customHeaders = model!!.customHeaders,
-                                            customBody = model!!.customBodies,
-                                            reasoningLevel = ReasoningLevel.AUTO
+                                            customBody = model!!.customBodies
                                         )
                                     )
                                     val text = result.message.parts
@@ -154,19 +152,16 @@ fun ProviderConnectionTester(
                                     streamingState = UiState.Loading
                                     val flow = provider.streamText(
                                         providerSetting = internalProvider,
-                                        messages = listOf(
-                                            UIMessage.system("You are a helpful assistant"),
-                                            UIMessage.user("hello"),
-                                        ),
+                                        messages = listOf(UIMessage.system("You are a helpful assistant"), UIMessage.user("hello")),
                                         params = TextGenerationParams(
                                             model = model!!,
                                             customHeaders = model!!.customHeaders,
-                                            customBody = model!!.customBodies,
-                                            reasoningLevel = ReasoningLevel.AUTO
+                                            customBody = model!!.customBodies
                                         )
                                     )
                                     flow.collect { chunk ->
-                                        if (chunk is StreamChunk.TextDelta) {
+                                        // 4.2.0: StreamChunk 消费
+                                        if (chunk is me.rerere.ai.ui.StreamChunk.TextDelta) {
                                             streamingText += chunk.text
                                         }
                                     }
@@ -181,40 +176,30 @@ fun ProviderConnectionTester(
                                         description = "Get the current date and time.",
                                         execute = { emptyList() }
                                     )
-                                    val result = provider.generateText(
+                                    val chunk = provider.generateText(
                                         providerSetting = internalProvider,
-                                        messages = listOf(
-                                            UIMessage.system("You are a helpful assistant"),
-                                            UIMessage.user("Use the get_current_time tool."),
-                                        ),
+                                        messages = listOf(UIMessage.system("You are a helpful assistant"), UIMessage.user("Use the get_current_time tool.")),
                                         params = TextGenerationParams(
                                             model = model!!,
                                             tools = listOf(testTool),
                                             customHeaders = model!!.customHeaders,
-                                            customBody = model!!.customBodies,
-                                            reasoningLevel = ReasoningLevel.AUTO
+                                            customBody = model!!.customBodies
                                         )
                                     )
-                                    val message = result.message
+                                    // 4.2.0: TextGenerationResult 直接持 message
+                                    val message = chunk.message
                                     val toolCall = message.parts
                                         .filterIsInstance<UIMessagePart.Tool>()
                                         .firstOrNull()
-                                    val resultText = if (toolCall != null) {
-                                        context.getString(
-                                            R.string.setting_provider_page_test_tool_called,
-                                            toolCall.toolName,
-                                            toolCall.input
-                                        )
+                                    val result = if (toolCall != null) {
+                                        "调用: ${toolCall.toolName}  入参: ${toolCall.input}"
                                     } else {
                                         val text = message.parts
                                             .filterIsInstance<UIMessagePart.Text>()
                                             .joinToString("") { it.text }
-                                        context.getString(
-                                            R.string.setting_provider_page_test_tool_not_called,
-                                            text
-                                        )
+                                        "未调用工具，响应: $text"
                                     }
-                                    toolsState = UiState.Success(resultText)
+                                    toolsState = UiState.Success(result)
                                 }.onFailure { toolsState = UiState.Error(it) }
                             }
                         }
@@ -243,9 +228,7 @@ private fun TestResultItem(
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.width(120.dp),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
+            modifier = Modifier.width(64.dp)
         )
         when (state) {
             is UiState.Idle -> Text(

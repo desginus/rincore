@@ -1,5 +1,9 @@
 package me.rerere.highlight.languages.css
 
+
+/* ───【原版对齐】CssShared.kt | 差异 ±0 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import me.rerere.highlight.core.APOS_STRING_MODE
 import me.rerere.highlight.core.C_BLOCK_COMMENT_MODE
 import me.rerere.highlight.core.Mode

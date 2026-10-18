@@ -9,27 +9,29 @@
         <intent
             android:action="android.intent.action.VIEW"
             android:targetClass="me.rerere.rikkahub.ui.activity.ShortcutHandlerActivity"
-            android:data="rikkahub://shortcut" />
+            android:data="rincoredesk://shortcut" />
         <categories android:name="android.shortcut.conversation" />
     </shortcut>
     <shortcut
-        android:shortcutId="translator"
+        android:shortcutId="translate"
         android:enabled="true"
         android:icon="@drawable/ic_translate"
-        android:shortcutShortLabel="@string/translator_page_title"
-        android:shortcutLongLabel="@string/translator_page_title">
+        android:shortcutShortLabel="@string/shortcut_translate"
+        android:shortcutLongLabel="@string/shortcut_translate">
         <intent
             android:action="me.rerere.rikkahub.action.TRANSLATE"
+            android:targetPackage="${applicationId}"
             android:targetClass="me.rerere.rikkahub.RouteActivity" />
+        <categories android:name="android.shortcut.conversation" />
     </shortcut>
     <shortcut
-        android:shortcutId="media_creation"
+        android:shortcutId="image_gen"
         android:enabled="true"
-        android:icon="@drawable/ic_media_creation"
-        android:shortcutShortLabel="@string/shortcut_media_creation"
-        android:shortcutLongLabel="@string/shortcut_media_creation">
+        android:icon="@drawable/ic_image_generation"
+        android:shortcutShortLabel="@string/imggen_page_title"
+        android:shortcutLongLabel="@string/imggen_page_title">
         <intent
-            android:action="me.rerere.rikkahub.action.MEDIA_CREATION"
+            android:action="me.rerere.rikkahub.action.IMAGE_GEN"
             android:targetClass="me.rerere.rikkahub.RouteActivity" />
     </shortcut>
 </shortcuts>

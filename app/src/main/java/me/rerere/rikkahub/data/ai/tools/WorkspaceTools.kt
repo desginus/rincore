@@ -1,5 +1,18 @@
 package me.rerere.rikkahub.data.ai.tools
 
+
+/* ───【域 C·工具系统】WorkspaceTools.kt
+ * 职责: 工作区工具 (read/write/edit/shell/show 五件套)
+ * 常用改动: 工具行为 → 各 Tool 定义; 引导 → WorkspaceReminderTransformer
+ * 问题定位: 工作区工具报错/路径问题 → 本文件 + WorkspaceManager
+ * 基线: 自研 | 地图: docs/APP_MAP.md §C | 历史: .claude/skills/rincore-bug-record
+ * ───────────────────────────────────────────────────────────────*/
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.JsonObjectBuilder
@@ -23,11 +36,29 @@ import java.io.ByteArrayOutputStream
 private const val SHELL_TIMEOUT_MAX_SECONDS = 600L
 private const val MAX_READ_FILE_BYTES = 8L * 1024 * 1024
 
+// v4.6.1 编程能力增强: read 分页 / search 上限 (对齐业界编程 Agent 设计)
+private const val READ_DEFAULT_LIMIT = 2000
+private const val READ_MAX_LIMIT = 10000
+private const val GREP_DEFAULT_MAX = 100
+private const val GREP_MAX_LIMIT = 500
+
+/**
+ * v4.8.110 (B6): 同路径编辑串行锁 — 并发 read-modify-write 丢更新的根治。
+ * key = workspaceId|cwd|path（保守: 不同 scope 映射各自为锁, 不误并不同物理文件）。
+ */
+private val editPathLocks = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>()
+private const val GLOB_DEFAULT_MAX = 200
+private const val GLOB_MAX_LIMIT = 1000
+
 val WorkspaceToolDefaultApprovals: Map<String, Boolean> = mapOf(
     "workspace_read_file" to false,
     "workspace_write_file" to false,
     "workspace_edit_file" to false,
-    "workspace_shell" to true,
+    "workspace_show_file" to false,
+    "workspace_shell" to false, // v3.6.13: 默认直接执行 (用户: 不弹批复)
+    "workspace_job" to false,   // v4.8.72: 后台任务原语 (默认直接执行)
+    "workspace_grep" to false,  // v4.6.1: 只读搜索, 免审批
+    "workspace_glob" to false,  // v4.6.1: 只读搜索, 免审批
 )
 
 fun resolveWorkspaceToolApproval(name: String, overrides: Map<String, Boolean>): Boolean =
@@ -40,15 +71,44 @@ suspend fun createWorkspaceTools(
 ): List<Tool> {
     if (workspaceId.isNullOrBlank()) return emptyList()
     val approvalOverrides = workspaceRepository.getById(workspaceId)?.toolApprovalOverrides().orEmpty()
+    return createWorkspaceToolsWithApprovals(workspaceId, cwd, approvalOverrides, workspaceRepository)
+}
+
+/** 静态版 — 配置驱动 (workspaceId 非空即注入), 非 suspend, UI 与模型侧共用。
+ *  信源统一: 工具总数/列表与模型侧完全一致 (v3.5.44)。
+ *  approval 用默认 (不查 getById); 需要精确 approval 时用 suspend 版。 */
+fun createWorkspaceToolsStatic(
+    workspaceId: String?,
+    cwd: String? = null,
+    workspaceRepository: WorkspaceRepository? = null,
+): List<Tool> {
+    if (workspaceId.isNullOrBlank()) return emptyList()
+    val repo = workspaceRepository ?: return emptyList()
+    return createWorkspaceToolsWithApprovals(workspaceId, cwd, emptyMap(), repo)
+}
+
+private fun createWorkspaceToolsWithApprovals(
+    workspaceId: String,
+    cwd: String?,
+    approvalOverrides: Map<String, Boolean>,
+    workspaceRepository: WorkspaceRepository,
+): List<Tool> {
     fun needsApproval(name: String) = resolveWorkspaceToolApproval(name, approvalOverrides)
 
-    val shellCwd = cwd?.removePrefix("/workspace/")?.removePrefix("/workspace")
+    val shellCwd = workspaceCwdRel(cwd)
 
     return listOf(
-        createReadFileTool(workspaceId, ::needsApproval, workspaceRepository),
-        createWriteFileTool(workspaceId, ::needsApproval, workspaceRepository),
-        createEditFileTool(workspaceId, ::needsApproval, workspaceRepository),
+        createReadFileTool(workspaceId, ::needsApproval, workspaceRepository, cwd),
+        createWriteFileTool(workspaceId, ::needsApproval, workspaceRepository, cwd),
+        createEditFileTool(workspaceId, ::needsApproval, workspaceRepository, cwd),
+        createShowFileTool(workspaceId, ::needsApproval, workspaceRepository, cwd),
         createShellTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
+        // v4.8.72: 后台任务原语 (长任务跨调用存活; 沙箱实例隔离下的唯一可靠状态源)
+        createJobTool(workspaceId, ::needsApproval, workspaceRepository),
+        // v4.6.1: 代码探索双件套 (对齐 Claude Code 的 Grep/Glob 设计 —
+        // 专用工具优于 shell 拼接: 结构化输出/统一截断/免审批只读)
+        createGrepTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
+        createGlobTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
     )
 }
 
@@ -63,33 +123,108 @@ private fun createReadFileTool(
     workspaceId: String,
     needsApproval: (String) -> Boolean,
     workspaceRepository: WorkspaceRepository,
+    cwd: String? = null,
 ) = Tool(
     name = "workspace_read_file",
     description = """
         Read a file using the assistant's bound workspace Rootfs. Paths must be absolute inside Rootfs.
         Use /workspace for the workspace files area.
+        Text files are returned with line numbers; large files are paginated: use offset (1-based start
+        line) and limit (line count, default $READ_DEFAULT_LIMIT) to read further sections. The result
+        reports totalLines and a continuation hint when truncated.
         Supports UTF-8 text files and image files (png, jpg, jpeg, gif, webp, bmp, svg, heic, heif, avif, ico).
     """.trimIndent().replace("\n", " "),
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
                 putPathProperty(required = true)
+                put("offset", buildJsonObject {
+                    put("type", "integer")
+                    put("description", "1-based line number to start reading from. Defaults to 1.")
+                })
+                put("limit", buildJsonObject {
+                    put("type", "integer")
+                    put("description", "Maximum number of lines to read. Defaults to $READ_DEFAULT_LIMIT.")
+                })
+                put("url_only", buildJsonObject {
+                    put("type", "boolean")
+                    put("description", "Images only: return render_urls/render_markdown WITHOUT loading the image body (no image-budget cost). Use when the file already exists and you only need an inline-render URL. Defaults to false.")
+                })
             },
             required = listOf("path"),
         )
     },
     needsApproval = { needsApproval("workspace_read_file") },
     execute = {
-        val path = it.jsonObject.absolutePath("path")
-        if (path.isImagePath()) {
-            workspaceRepository.readImageInRootfs(workspaceId, path)
-        } else {
-            val text = workspaceRepository.readTextInRootfs(workspaceId, path)
+        val params = it.jsonObject
+        val path = normalizeScopedPath(params.absolutePath("path"), cwd)
+        val cwdRel = workspaceCwdRel(cwd)
+        // v4.7.2: Office 文档引导 — xlsx/docx/pptx 是二进制 zip 容器, 按文本读出来是乱码;
+        // 直接给出结构化读取路径, 避免模型反复用 python 中转重读同一文件 (不可追溯)
+        val officeKind = path.substringAfterLast('.', "").lowercase()
+            .takeIf { it in setOf("xlsx", "docx", "pptx") }
+        if (officeKind != null) {
             listOf(
                 UIMessagePart.Text(
                     buildJsonObject {
                         put("path", path)
-                        put("text", text)
+                        put("error", "This is a binary Office document (.$officeKind) — cannot be read as plain text.")
+                        put("hint", "Use workspace_shell instead: `office-edit $officeKind read <path>` returns structured content (sheets/rows or slides), or `office-check <path>` for a quality report.")
+                    }.toString()
+                )
+            )
+        } else if (path.isImagePath()) {
+            // v4.8.134 (B4): url_only — 已有文件取渲染地址不再重读整图 (旧路要复制+加载, 白耗图片预算)
+            val urlOnly = params["url_only"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() == true
+            if (urlOnly) {
+                listOf(
+                    UIMessagePart.Text(
+                        buildJsonObject {
+                            put("path", path)
+                            put("url_only", true)
+                            // v4.8.142: 单点载荷 — 验存不过不发地址 (宁可没图, 不给死链)
+                            val rpRead = buildRenderPayload(workspaceId, listOf(path), cwdRel)
+                            if (rpRead.urls.isNotEmpty()) {
+                                put("render_urls", buildJsonArray { rpRead.urls.forEach { add(JsonPrimitive(it)) } })
+                                rpRead.markdown?.let { put("render_markdown", it) }
+                            }
+                            if (rpRead.skipped > 0) put("render_note", renderSkippedNote(rpRead.skipped))
+                        }.toString()
+                    )
+                )
+            } else {
+                workspaceRepository.readImageInRootfs(workspaceId, path, cwdRel)
+            }
+        } else {
+            val text = workspaceRepository.readTextInRootfs(workspaceId, path, cwdRel)
+            // v4.6.1: 行号分页 (对齐业界编程 Agent 的 Read 工具设计)
+            val offset = (params.string("offset")?.toIntOrNull() ?: 1).coerceAtLeast(1)
+            val limit = (params.string("limit")?.toIntOrNull() ?: READ_DEFAULT_LIMIT).coerceIn(1, READ_MAX_LIMIT)
+            val allLines = text.split('\n')
+            val totalLines = allLines.size
+            val startIdx = (offset - 1).coerceAtMost(totalLines)
+            val endIdx = (startIdx + limit).coerceAtMost(totalLines)
+            val window = allLines.subList(startIdx, endIdx)
+            val numbered = buildString {
+                window.forEachIndexed { i, line ->
+                    append((startIdx + i + 1).toString().padStart(6))
+                    append('→')
+                    append(line)
+                    if (i < window.size - 1) append('\n')
+                }
+            }
+            listOf(
+                UIMessagePart.Text(
+                    buildJsonObject {
+                        put("path", path)
+                        put("text", numbered)
+                        put("totalLines", totalLines)
+                        put("rangeStart", startIdx + 1)
+                        put("rangeEnd", endIdx)
+                        if (endIdx < totalLines) {
+                            put("truncated", true)
+                            put("continuation", "File has $totalLines lines. Continue with offset=${endIdx + 1}.")
+                        }
                     }.toString()
                 )
             )
@@ -101,6 +236,7 @@ private fun createWriteFileTool(
     workspaceId: String,
     needsApproval: (String) -> Boolean,
     workspaceRepository: WorkspaceRepository,
+    cwd: String? = null,
 ) = Tool(
     name = "workspace_write_file",
     description = """
@@ -119,6 +255,10 @@ private fun createWriteFileTool(
                     put("type", "boolean")
                     put("description", "Whether to overwrite an existing file. Defaults to true.")
                 })
+                put("append", buildJsonObject {
+                    put("type", "boolean")
+                    put("description", "Append to the end of the file instead of replacing it. Defaults to false.")
+                })
             },
             required = listOf("path", "text"),
         )
@@ -126,11 +266,49 @@ private fun createWriteFileTool(
     needsApproval = { needsApproval("workspace_write_file") || it.pathOutsideWritableRoots("path") },
     execute = {
         val params = it.jsonObject
-        val path = params.absolutePath("path")
+        val path = normalizeScopedPath(params.absolutePath("path"), cwd)
+        val cwdRel = workspaceCwdRel(cwd)
         val text = params.string("text") ?: error("text is required")
         val overwrite = params["overwrite"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: true
-        val entry = workspaceRepository.writeTextInRootfs(workspaceId, path, text, overwrite)
-        listOf(UIMessagePart.Text(entry.toJson().toString()))
+        val append = params["append"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
+        // v4.7.2: 覆盖前版本快照 — 多轮覆盖丢内容防护。目标已存在且将覆盖时,
+        // 先复制到同目录 .versions/<name>.<时间戳>, 保留最近 8 份; 快照失败不阻断写入。
+        var previousVersion: String? = null
+        if (!append && overwrite) {
+            runCatching {
+                workspaceRepository.rootfsFileSize(workspaceId, path, cwdRel) // 不存在会抛, 无需覆盖保护
+                val ts = java.time.LocalDateTime.now(java.time.ZoneOffset.ofHours(8))
+                    .format(java.time.format.DateTimeFormatter.ofPattern("MMdd-HHmmss"))
+                val dir = path.substringBeforeLast('/')
+                val name = path.substringAfterLast('/')
+                val vdir = "$dir/.versions"
+                workspaceRepository.executeCommand(
+                    workspaceId,
+                    "mkdir -p '$vdir' && cp -p '$path' '$vdir/$name.$ts' && ls -1t '$vdir' | tail -n +9 | while read f; do rm -f \"$vdir/\$f\"; done",
+                    cwdRel.orEmpty(),
+                    WorkspaceManager.DEFAULT_COMMAND_TIMEOUT_MS,
+                )
+                previousVersion = "$vdir/$name.$ts"
+            }
+        }
+        // v4.8.134 (B3, 用户实证"17KB 写入被取消后零落盘"): 落盘段 NonCancellable —
+        // 取消(停止生成)不再把已开始的写入掐死; 本地 IO 快, 延迟可控, 内容照常完整落盘。
+        val entry = kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+            workspaceRepository.writeTextInRootfs(workspaceId, path, text, overwrite, cwdRel, append)
+        }
+        val resultJson = entry.toJson().toMutableMap()
+        previousVersion?.let { resultJson["previous_version"] = JsonPrimitive(it) }
+        if (path.isImagePath()) {
+            // v4.8.113: 统一 render_urls 数组 + render_markdown 直贴（模型原样复述进正文即显示）
+            // v4.8.142: 单点载荷 — 验存不过不发地址 (宁可没图, 不给死链)
+            val rpWrite = buildRenderPayload(workspaceId, listOf(path), cwdRel)
+            if (rpWrite.urls.isNotEmpty()) {
+                resultJson["render_urls"] = buildJsonArray { rpWrite.urls.forEach { add(JsonPrimitive(it)) } }
+                rpWrite.markdown?.let { resultJson["render_markdown"] = JsonPrimitive(it) }
+            }
+            if (rpWrite.skipped > 0) resultJson["render_note"] = JsonPrimitive(renderSkippedNote(rpWrite.skipped))
+        }
+        listOf(UIMessagePart.Text(JsonObject(resultJson).toString()))
     },
 )
 
@@ -138,6 +316,7 @@ private fun createEditFileTool(
     workspaceId: String,
     needsApproval: (String) -> Boolean,
     workspaceRepository: WorkspaceRepository,
+    cwd: String? = null,
 ) = Tool(
     name = "workspace_edit_file",
     description = """
@@ -169,34 +348,465 @@ private fun createEditFileTool(
     needsApproval = { needsApproval("workspace_edit_file") || it.pathOutsideWritableRoots("path") },
     execute = {
         val params = it.jsonObject
-        val path = params.absolutePath("path")
+        val path = normalizeScopedPath(params.absolutePath("path"), cwd)
+        val cwdRel = workspaceCwdRel(cwd)
         val oldText = params.string("old_text") ?: error("old_text is required")
         val newText = params.string("new_text") ?: error("new_text is required")
         val replaceAll = params["replace_all"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
         require(oldText.isNotEmpty()) { "old_text must not be empty" }
 
-        val original = workspaceRepository.readTextInRootfs(workspaceId, path)
-        // 逐级尝试 exact -> line_trimmed -> block_anchor 替换器, 见 TextReplacers.kt
-        val result = try {
-            replaceText(original, oldText, newText, replaceAll)
-        } catch (e: IllegalArgumentException) {
-            error("${e.message} (path: $path)")
+        // v4.8.110 (B6): 同路径串行化 — 并发批次中对同一文件的 edit 逐条
+        // read-modify-write（旧实现无保护: 并发丢更新 + 回执与最终内容不一致,
+        // 用户实证"4 条并发其中 2 条回执成功但内容未变"）。
+        val lockKey = "$workspaceId|$cwdRel|$path"
+        val lock = editPathLocks.computeIfAbsent(lockKey) { kotlinx.coroutines.sync.Mutex() }
+        lock.withLock {
+            val original = workspaceRepository.readTextInRootfs(workspaceId, path, cwdRel)
+            // 逐级尝试 exact -> line_trimmed -> block_anchor 替换器, 见 TextReplacers.kt
+            val result = try {
+                replaceText(original, oldText, newText, replaceAll)
+            } catch (e: IllegalArgumentException) {
+                error("${e.message} (path: $path)")
+            }
+            val entry = workspaceRepository.writeTextInRootfs(workspaceId, path, result.updated, overwrite = true, cwd = cwdRel)
+            // v4.8.110 (B6): 回执自检字段 — wrote/postHash 反映本次**落盘内容**;
+            // 串行化后回执与最终内容一致（冲突条目会以 0 匹配明确报错, 不假成功）。
+            val postHash = java.security.MessageDigest.getInstance("SHA-256")
+                .digest(result.updated.toByteArray(Charsets.UTF_8))
+                .joinToString("") { b -> "%02x".format(b) }
+            val diff = generateUnifiedDiff(original, result.updated, entry.path)
+            listOf(
+                UIMessagePart.Text(
+                    text = buildJsonObject {
+                        put("path", entry.path)
+                        put("replacements", result.replacements)
+                        if (result.strategy != ExactReplacer.name) put("matchStrategy", result.strategy)
+                        put("sizeBytes", entry.sizeBytes)
+                        put("updatedAt", entry.updatedAt)
+                        put("wrote", true)
+                        put("postHash", postHash)
+                    }.toString(),
+                    // diff 存入 metadata 供 UI 渲染 diff view, 不会随工具结果发送给 API
+                    metadata = diff?.let { d -> DiffMetadata(diff = d).toMetadata() },
+                )
+            )
         }
-        val entry = workspaceRepository.writeTextInRootfs(workspaceId, path, result.updated, overwrite = true)
-        val diff = generateUnifiedDiff(original, result.updated, entry.path)
+    },
+)
+
+/**
+ * 将工作区文件呈现在对话下附的胶囊窗中, 供用户查看/导出/分享。
+ * 仅负责展示锚定 — 写入文件不会自动显示, 需要向用户递交文件时显式调用本工具。
+ */
+private fun createShowFileTool(
+    workspaceId: String,
+    needsApproval: (String) -> Boolean,
+    workspaceRepository: WorkspaceRepository,
+    cwd: String? = null,
+) = Tool(
+    name = "workspace_show_file",
+    description = """
+        Present existing workspace files to the user as file chips attached to the conversation.
+        Use this for documents, reports, or other downloadable files that the user may want to export/share.
+        Show several at once with `paths` (array) — do NOT call this tool repeatedly for separate files.
+        Do NOT use this for images that should appear inline in the chat bubble — image-producing tool results
+        include `render_urls` plus ready-to-echo `render_markdown` lines; copy those lines verbatim into your
+        reply text and the image renders inline in the chat bubble.
+        The files must already exist — writing a file does NOT show it automatically; call this tool explicitly.
+    """.trimIndent().replace("\n", " "),
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                put("path", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Absolute path inside Rootfs. Use /workspace for the workspace files area.")
+                })
+                put("paths", buildJsonObject {
+                    put("type", "array")
+                    put("items", buildJsonObject { put("type", "string") })
+                    put("description", "Multiple files to present at once (alternative to `path`).")
+                })
+            },
+            required = emptyList(),
+        )
+    },
+    needsApproval = { needsApproval("workspace_show_file") },
+    execute = {
+        val json = it.jsonObject
+        // v4.8.61 (用户需求): 多文件递交 — `paths` 数组与单 `path` 二选一 (一次分组
+        // 展示多文件, 免去反复单发); 单文件路径保持原行为 (不存在直接抛异常)
+        val rawPaths = buildList {
+            json["path"]?.jsonPrimitive?.contentOrNull?.takeIf { v -> v.isNotBlank() }?.let { add(it) }
+            (json["paths"] as? JsonArray)?.forEach { e ->
+                e.jsonPrimitive.contentOrNull?.takeIf { v -> v.isNotBlank() }?.let { add(it) }
+            }
+        }.distinct()
+        if (rawPaths.isEmpty()) error("path or paths is required")
+        val cwdRel = workspaceCwdRel(cwd)
+
+        fun absoluteOf(raw: String): String {
+            val p = raw.replace('\\', '/').trim()
+            require(p.isNotBlank()) { "path is required" }
+            require(p.startsWith("/")) { "path must be an absolute path inside Rootfs" }
+            require(!p.contains('\u0000')) { "path contains invalid character" }
+            return p
+        }
+
+        // v4.7.2: 递交回执附带最近版本信息 (write 的覆盖快照) — size 有变化时提示差异
+        suspend fun versionInfo(path: String): Pair<String?, Long?> {
+            var prevVersion: String? = null
+            var prevSize: Long? = null
+            runCatching {
+                val dir = path.substringBeforeLast('/')
+                val name = path.substringAfterLast('/')
+                val r = workspaceRepository.executeCommand(
+                    workspaceId,
+                    "ls -1t '$dir/.versions' 2>/dev/null | grep -F '${name}.' | head -1",
+                    cwdRel.orEmpty(),
+                    WorkspaceManager.DEFAULT_COMMAND_TIMEOUT_MS,
+                )
+                val latest = r.stdout?.trim()?.takeIf { it.isNotEmpty() } ?: return@runCatching
+                prevVersion = "$dir/.versions/$latest"
+                runCatching { prevSize = workspaceRepository.rootfsFileSize(workspaceId, "$dir/.versions/$latest", cwdRel) }
+            }
+            return prevVersion to prevSize
+        }
+
+        suspend fun entryOf(rawPath: String): JsonObject {
+            val path = normalizeScopedPath(absoluteOf(rawPath), cwd)
+            val size = workspaceRepository.rootfsFileSize(workspaceId, path, cwdRel) // 不存在则抛异常
+            val (prevVersion, prevSize) = versionInfo(path)
+            return buildJsonObject {
+                put("path", path)
+                put("size", size)
+                put("status", "shown")
+                prevVersion?.let { put("previous_version", it) }
+                prevSize?.let {
+                    put("previous_size", it)
+                    if (it != size) put("note", "size differs from previous version ($it → $size)")
+                }
+            }
+        }
+
+        if (rawPaths.size == 1) {
+            // 单文件: 原行为 (解析失败/不存在直接抛异常)
+            listOf(UIMessagePart.Text(entryOf(rawPaths[0]).toString()))
+        } else {
+            // 多文件: 逐个独立成败, 失败以 error 条目回报 (不阻断其余)
+            val files = rawPaths.map { rp ->
+                runCatching { entryOf(rp) }.getOrElse { e ->
+                    buildJsonObject {
+                        put("path", rp)
+                        put("status", "error")
+                        put("error", e.message ?: "failed")
+                    }
+                }
+            }
+            listOf(
+                UIMessagePart.Text(
+                    buildJsonObject { put("files", buildJsonArray { files.forEach { add(it) } }) }.toString()
+                )
+            )
+        }
+    },
+)
+
+/**
+ * v4.6.1: 内容搜索 (Grep) — ripgrep 优先, grep 兜底。
+ * 对齐业界编程 Agent: "Content search: Use Grep (NOT shell grep)"。
+ */
+private fun createGrepTool(
+    workspaceId: String,
+    needsApproval: (String) -> Boolean,
+    workspaceRepository: WorkspaceRepository,
+    defaultCwd: String? = null,
+) = Tool(
+    name = "workspace_grep",
+    description = """
+        Search file contents in the workspace (ripgrep when available, grep fallback).
+        Returns matching lines as path:line:content. Use this instead of shell grep/rg for code search.
+        Parameters: pattern (regex, required); path (search root, defaults to /workspace);
+        glob (file filter like "*.kt", optional); maxResults (default $GREP_DEFAULT_MAX).
+    """.trimIndent().replace("\n", " "),
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                put("pattern", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Regex pattern to search for")
+                })
+                putPathProperty(required = false)
+                put("glob", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Optional file filter, e.g. \"*.kt\" or \"*.md\"")
+                })
+                put("maxResults", buildJsonObject {
+                    put("type", "integer")
+                    put("description", "Maximum matching lines to return. Defaults to $GREP_DEFAULT_MAX, max $GREP_MAX_LIMIT.")
+                })
+            },
+            required = listOf("pattern"),
+        )
+    },
+    needsApproval = { needsApproval("workspace_grep") },
+    execute = {
+        val params = it.jsonObject
+        val pattern = params.string("pattern") ?: error("pattern is required")
+        require(pattern.isNotBlank()) { "pattern must not be blank" }
+        val searchPath = normalizeScopedPath(
+            params.string("path")?.takeIf { it.isNotBlank() } ?: "/workspace",
+            defaultCwd,
+        )
+        val glob = params.string("glob")?.takeIf { it.isNotBlank() }
+        val maxResults = (params.string("maxResults")?.toIntOrNull() ?: GREP_DEFAULT_MAX)
+            .coerceIn(1, GREP_MAX_LIMIT)
+        val pathArg = searchPath.shellQuote()
+        val patternArg = pattern.shellQuote()
+        val globArg = glob?.let { " --glob ${it.shellQuote()}" } ?: ""
+        val grepInclude = glob?.let { " --include=${it.shellQuote()}" } ?: ""
+        // v4.8.82: 多取 1 行 —— 只按 head -n N 判定时 "恰好 N 条" 会被误报成已截断,
+        // 模型据此反复换 pattern 重搜纯属浪费。取 N+1 才能区分"正好 N 条"与"不止 N 条"。
+        val fetchLimit = maxResults + 1
+        val command = """
+            if command -v rg >/dev/null 2>&1; then
+              rg --line-number --no-heading --color never -e $patternArg$globArg -- $pathArg 2>/dev/null | head -n $fetchLimit
+            else
+              grep -rn -I -E -e $patternArg$grepInclude -- $pathArg 2>/dev/null | head -n $fetchLimit
+            fi
+            exit 0
+        """.trimIndent()
+        val result = workspaceRepository.executeCommand(workspaceId, command, defaultCwd.orEmpty())
+        val output = (result.stdout ?: "").trim()
+        val lines = if (output.isBlank()) emptyList() else output.split('\n')
+        val truncated = lines.size > maxResults
         listOf(
             UIMessagePart.Text(
-                text = buildJsonObject {
-                    put("path", entry.path)
-                    put("replacements", result.replacements)
-                    if (result.strategy != ExactReplacer.name) put("matchStrategy", result.strategy)
-                    put("sizeBytes", entry.sizeBytes)
-                    put("updatedAt", entry.updatedAt)
-                }.toString(),
-                // diff 存入 metadata 供 UI 渲染 diff view, 不会随工具结果发送给 API
-                metadata = diff?.let { d -> DiffMetadata(diff = d).toMetadata() },
+                buildJsonObject {
+                    put("pattern", pattern)
+                    put("path", searchPath)
+                    if (glob != null) put("glob", glob)
+                    put("matches", lines.size)
+                    if (truncated) {
+                        put("truncated", true)
+                        put("note", "Showing first $maxResults matches; refine pattern/glob for more precision.")
+                    }
+                    put("text", lines.take(maxResults).joinToString("\n"))
+                }.toString()
             )
         )
+    },
+)
+
+/**
+ * v4.6.1: 文件名搜索 (Glob) — 对齐业界: "File search: Use Glob (NOT find or ls)"。
+ * 输出按修改时间倒序 (最新在前)。
+ */
+private fun createGlobTool(
+    workspaceId: String,
+    needsApproval: (String) -> Boolean,
+    workspaceRepository: WorkspaceRepository,
+    defaultCwd: String? = null,
+) = Tool(
+    name = "workspace_glob",
+    description = """
+        Find files by name pattern in the workspace (e.g. "*.kt", "README*", "config.*"). Patterns containing "/" or "**" are matched against the full path at any depth (e.g. "**/*" lists all files; "**/*.kt" all .kt files at any depth).
+        Returns matching file paths sorted by modification time (newest first).
+        Use this instead of shell find/ls for file discovery.
+        Parameters: pattern (required); path (search root, defaults to /workspace);
+        maxResults (default $GLOB_DEFAULT_MAX).
+    """.trimIndent().replace("\n", " "),
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                put("pattern", buildJsonObject {
+                    put("type", "string")
+                    put("description", "File name pattern, e.g. \"*.kt\"")
+                })
+                putPathProperty(required = false)
+                put("maxResults", buildJsonObject {
+                    put("type", "integer")
+                    put("description", "Maximum paths to return. Defaults to $GLOB_DEFAULT_MAX, max $GLOB_MAX_LIMIT.")
+                })
+            },
+            required = listOf("pattern"),
+        )
+    },
+    needsApproval = { needsApproval("workspace_glob") },
+    execute = {
+        val params = it.jsonObject
+        val pattern = params.string("pattern") ?: error("pattern is required")
+        require(pattern.isNotBlank()) { "pattern must not be blank" }
+        val searchPath = normalizeScopedPath(
+            params.string("path")?.takeIf { it.isNotBlank() } ?: "/workspace",
+            defaultCwd,
+        )
+        val maxResults = (params.string("maxResults")?.toIntOrNull() ?: GLOB_DEFAULT_MAX)
+            .coerceIn(1, GLOB_MAX_LIMIT)
+        val pathArg = searchPath.shellQuote()
+        val patternArg = pattern.shellQuote()
+        // v4.8.135 (用户实证: "**/*" 静默返回空): 含 '/' 或 "**" 的模式改按整路径
+        // 匹配 (find -path; GNU find 的 * 可跨目录), 纯文件名模式保持 -name。
+        // 旧实现一律 -name → "**/*" 永不命中且无任何提示 = 把空结果误读成"不存在"。
+        val pathMode = pattern.contains('/') || pattern.contains("**")
+        var findPathPattern = pattern.replace("**/", "*")
+        if (pathMode && !findPathPattern.startsWith("/") && !findPathPattern.startsWith("*")) {
+            findPathPattern = "*/$findPathPattern"
+        }
+        val matchArg = if (pathMode) "-path ${findPathPattern.shellQuote()}" else "-name $patternArg"
+        // mtime 倒序 (find -printf 不支持时降级为原序) — 全路径输出
+        // v4.8.82: 同 grep — 多取 1 行以精确区分"正好 N 个"与"不止 N 个"
+        val fetchLimit = maxResults + 1
+        val command = """
+            if find $pathArg -maxdepth 0 -printf '' 2>/dev/null; then
+              find $pathArg -type f $matchArg -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -n $fetchLimit | cut -d' ' -f2-
+            else
+              find $pathArg -type f $matchArg 2>/dev/null | head -n $fetchLimit
+            fi
+            exit 0
+        """.trimIndent()
+        val result = workspaceRepository.executeCommand(workspaceId, command, defaultCwd.orEmpty())
+        val output = (result.stdout ?: "").trim()
+        val lines = if (output.isBlank()) emptyList() else output.split('\n')
+        val truncated = lines.size > maxResults
+        // v4.8.135: truncated 时给出真实总数 (旧实现只报"已显示数", 无法判断规模)
+        var totalCount: Int? = null
+        if (truncated) {
+            totalCount = runCatching {
+                workspaceRepository.executeCommand(
+                    workspaceId,
+                    "find $pathArg -type f $matchArg 2>/dev/null | wc -l",
+                    defaultCwd.orEmpty(),
+                ).stdout?.trim()?.toIntOrNull()
+            }.getOrNull()
+        }
+        listOf(
+            UIMessagePart.Text(
+                buildJsonObject {
+                    put("pattern", pattern)
+                    put("path", searchPath)
+                    put("count", lines.take(maxResults).size)
+                    if (truncated) {
+                        put("truncated", true)
+                        if (totalCount != null) put("total", totalCount)
+                        put(
+                            "note",
+                            "Showing newest $maxResults of ${totalCount ?: "many"} matching files; refine pattern to narrow down.",
+                        )
+                    } else if (lines.isEmpty()) {
+                        // v4.8.135: 空结果显式声明 (防"静默空"被读成"不存在") + 写法提示
+                        put(
+                            "note",
+                            "No files matched. Patterns: \"*.kt\" matches file names; \"**/*\" matches all files at any depth.",
+                        )
+                    }
+                    put("text", lines.take(maxResults).joinToString("\n"))
+                }.toString()
+            )
+        )
+    },
+)
+
+private fun createJobTool(
+    workspaceId: String,
+    needsApproval: (String) -> Boolean,
+    workspaceRepository: WorkspaceRepository,
+) = Tool(
+    name = "workspace_job",
+    description = "Durable background jobs in the sandbox. Each workspace_shell call is a fresh isolated proot instance whose processes die when the call ends — long tasks MUST run as jobs to survive. " +
+        "action=start launches a job and returns a job_id; action=status returns state (running/done/dead), exit code and log tail; action=kill stops it. " +
+        "Logs persist at /workspace/.rin-jobs/<job_id>.log. Never use ps/pgrep from a new shell call to judge a job (instances are isolated — it will look dead while running).",
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                put("action", buildJsonObject {
+                    put("type", "string")
+                    put("description", "start | status | kill")
+                    put("enum", buildJsonArray {
+                        add(JsonPrimitive("start"))
+                        add(JsonPrimitive("status"))
+                        add(JsonPrimitive("kill"))
+                    })
+                })
+                put("command", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Shell command to run in background (required for action=start)")
+                })
+                put("cwd", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Working directory relative to the workspace files root (optional for start)")
+                })
+                put("job_id", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Job id returned by action=start (required for status/kill)")
+                })
+            },
+            required = listOf("action"),
+        )
+    },
+    needsApproval = { needsApproval("workspace_job") },
+    execute = { input ->
+        val params = input.jsonObject
+        val action = params.string("action") ?: error("action is required")
+        when (action) {
+            "start" -> {
+                val command = params.string("command") ?: error("command is required for action=start")
+                val cwd = workspaceCwdRel(params.string("cwd")).orEmpty()
+                val jobId = "j" + java.lang.Long.toHexString(System.currentTimeMillis()) +
+                    java.lang.Long.toHexString(System.nanoTime() % 0x10000L)
+                workspaceRepository.startJob(workspaceId, command, cwd, jobId)
+                listOf(
+                    UIMessagePart.Text(
+                        buildJsonObject {
+                            put("job_id", jobId)
+                            put("status", "started")
+                            put("log_path", "/workspace/.rin-jobs/$jobId.log")
+                            put("note", "Durable job — keeps running after this call. Check with workspace_job {action:status, job_id}.")
+                        }.toString()
+                    )
+                )
+            }
+            "status" -> {
+                val jobId = params.string("job_id") ?: error("job_id is required for action=status")
+                val status = workspaceRepository.jobStatus(workspaceId, jobId)
+                val logTail = workspaceRepository.jobLogTail(workspaceId, jobId)
+                listOf(
+                    UIMessagePart.Text(
+                        buildJsonObject {
+                            put("job_id", jobId)
+                            if (status == null) {
+                                put("state", "unknown")
+                                put("note", "No such job id (not started here or jobs dir cleaned).")
+                            } else {
+                                put("state", status.state)
+                                status.exitCode?.let { put("exit_code", it) }
+                                if (status.pids.isNotEmpty()) {
+                                    put("pids", buildJsonArray { status.pids.forEach { add(JsonPrimitive(it)) } })
+                                }
+                                put("log_tail", logTail)
+                            }
+                        }.toString()
+                    )
+                )
+            }
+            "kill" -> {
+                val jobId = params.string("job_id") ?: error("job_id is required for action=kill")
+                val killed = workspaceRepository.killJob(workspaceId, jobId)
+                listOf(
+                    UIMessagePart.Text(
+                        buildJsonObject {
+                            put("job_id", jobId)
+                            put("killed_pids", killed)
+                            put(
+                                "note",
+                                if (killed > 0) "SIGKILL sent to all matched processes."
+                                else "No live process matched — job may have already finished."
+                            )
+                        }.toString()
+                    )
+                )
+            }
+            else -> error("unknown action: $action (use start|status|kill)")
+        }
     },
 )
 
@@ -209,11 +819,12 @@ private fun createShellTool(
     name = "workspace_shell",
     description = buildString {
         append("Run a shell command in the assistant's bound workspace Rootfs. The workspace files area is mounted at /workspace. ")
-        append("Use cwd for a path relative to the workspace files root. ")
+        append("Use cwd for a path relative to the workspace files root (the root itself IS /workspace in the sandbox). ")
         if (!defaultCwd.isNullOrBlank()) {
-            append("Defaults to '$defaultCwd'. ")
+            append("Defaults to '$defaultCwd' — i.e. the absolute sandbox path /workspace/$defaultCwd. ")
         }
-        append("Requires Rootfs to be installed and ready.")
+        append("Requires Rootfs to be installed and ready. ")
+        append("Each call runs in a fresh isolated proot instance — processes started here die when the call ends; for long tasks (minutes) use workspace_job (durable background jobs) instead.")
     },
     parameters = {
         InputSchema.Obj(
@@ -227,7 +838,7 @@ private fun createShellTool(
                     put(
                         "description",
                         if (!defaultCwd.isNullOrBlank()) {
-                            "Working directory relative to the workspace files root. Defaults to '$defaultCwd'."
+                            "Working directory relative to the workspace files root (/workspace). Defaults to '$defaultCwd' (= /workspace/$defaultCwd)."
                         } else {
                             "Working directory relative to the workspace files root. Defaults to root."
                         }
@@ -237,7 +848,7 @@ private fun createShellTool(
                     put("type", "integer")
                     put(
                         "description",
-                        "Command timeout in seconds. Defaults to 30, max $SHELL_TIMEOUT_MAX_SECONDS."
+                        "Command timeout in seconds. Defaults to 600, max $SHELL_TIMEOUT_MAX_SECONDS."
                     )
                 })
             },
@@ -248,13 +859,24 @@ private fun createShellTool(
     execute = {
         val params = it.jsonObject
         val command = params.string("command") ?: error("command is required")
-        val cwd = (params.string("cwd") ?: defaultCwd.orEmpty())
-            .removePrefix("/workspace/").removePrefix("/workspace")
+        // 完整归一化 ("/workspace/xxx" / "xxx" / "workspace/xxx" -> "xxx"): 该值同时是
+        // proot 的 /workspace 挂载源选择依据 (v4.5.27), 必须单一精确口径。
+        val cwd = workspaceCwdRel(params.string("cwd") ?: defaultCwd).orEmpty()
         val timeoutMillis = params.string("timeout")?.toLongOrNull()
             ?.coerceIn(1L, SHELL_TIMEOUT_MAX_SECONDS)
             ?.times(1_000L)
             ?: WorkspaceManager.DEFAULT_COMMAND_TIMEOUT_MS
         val result = workspaceRepository.executeCommand(workspaceId, command, cwd, timeoutMillis)
+        val cwdRel = cwd.ifBlank { null }
+        val combinedOutput = (result.stdout ?: "") + "\n" + (result.stderr ?: "")
+        val imagePaths = extractImagePathsFromText(combinedOutput)
+        // v4.7.2: 静默失败感知 — exitCode==0 但 stderr 含错误特征 (多段脚本部分执行:
+        // 前段动作已完成、后段未运行, shell 取最后一条命令的退出码掩盖了失败)
+        val stderrText = result.stderr ?: ""
+        val silentFailure = result.exitCode == 0 && listOf(
+            "Traceback", "SyntaxError", "NameError", "TypeError", "KeyError", "ValueError",
+            "Exception", "command not found", "No such file or directory",
+        ).any { stderrText.contains(it, ignoreCase = false) }
         listOf(
             UIMessagePart.Text(
                 buildJsonObject {
@@ -262,7 +884,37 @@ private fun createShellTool(
                     put("stdout", result.stdout)
                     put("stderr", result.stderr)
                     put("timedOut", result.timedOut)
-                    if (result.truncated) put("truncated", true)
+                    // v4.8.82: 超限/超时都要显式讲清"你看到的不是全部" —— 否则模型会把
+                    // 被省略的中段 (恰恰是编译报错所在) 当作"命令没报错", 直接下错误结论。
+                    if (result.truncated) {
+                        put("truncated", true)
+                        put("omittedChars", result.omittedChars)
+                        put(
+                            "note",
+                            "输出超限: 已保留开头与结尾, 中间省略 ${result.omittedChars} 字符。" +
+                                "完整输出请重定向到文件 (cmd > log 2>&1) 后用 workspace_read_file 分页读取。"
+                        )
+                    }
+                    if (result.timedOut) {
+                        put(
+                            "hint",
+                            "命令超时被强杀, 上面的输出是中途截断的残段, 可能不完整。" +
+                                "分钟级长任务请改用 workspace_job (action=start/status/kill)。"
+                        )
+                    }
+                    if (silentFailure) put(
+                        "warning",
+                        "exitCode=0 but stderr contains error output — a multi-part script may have partially executed (earlier steps done, later steps skipped). Verify actual effects before proceeding."
+                    )
+                    if (imagePaths.isNotEmpty()) {
+                        // v4.8.142: 单点载荷 — 验存不过不发地址 (宁可没图, 不给死链)
+                        val rpShell = buildRenderPayload(workspaceId, imagePaths, cwdRel)
+                        if (rpShell.urls.isNotEmpty()) {
+                            put("render_urls", buildJsonArray { rpShell.urls.forEach { add(JsonPrimitive(it)) } })
+                            rpShell.markdown?.let { put("render_markdown", it) }
+                        }
+                        if (rpShell.skipped > 0) put("render_note", renderSkippedNote(rpShell.skipped))
+                    }
                 }.toString()
             )
         )
@@ -275,37 +927,79 @@ private fun kotlinx.serialization.json.JsonObject.string(name: String): String? 
 private suspend fun WorkspaceRepository.readTextInRootfs(
     workspaceId: String,
     path: String,
-): String = readRootfsBuffer(workspaceId, path).toString(Charsets.UTF_8.name())
+    cwd: String? = null,
+): String = readRootfsBuffer(workspaceId, path, cwd).toString(Charsets.UTF_8.name())
 
 /**
  * 按 Rootfs 内绝对路径读入内存。路径映射交给 WorkspaceManager, 由它统一处理
  * /workspace、bind mount 与 Rootfs 内部路径。
  */
-private suspend fun WorkspaceRepository.readRootfsBuffer(
+internal suspend fun WorkspaceRepository.readRootfsBuffer(
     workspaceId: String,
     path: String,
+    cwd: String? = null,
 ): ByteArrayOutputStream {
-    val size = rootfsFileSize(workspaceId, path)
+    val size = rootfsFileSize(workspaceId, path, cwd)
     require(size <= MAX_READ_FILE_BYTES) {
         "File is too large to read: $path (${size / 1024 / 1024}MB, max ${MAX_READ_FILE_BYTES / 1024 / 1024}MB). Use shell commands like head, tail, or grep to read parts of it."
     }
-    return ByteArrayOutputStream(size.toInt()).also { exportRootfsFile(workspaceId, path, it) }
+    return ByteArrayOutputStream(size.toInt()).also { exportRootfsFile(workspaceId, path, it, cwd) }
 }
+
+/**
+ * 4.0.13: 图片落盘/读取后生成标准本地渲染 URL。
+ * 格式严格对齐当前 resolver 已支持的 host 字面路径:
+ * file:///data/data/<package>/files/workspaces/<UUID>/files/<relPath>
+ * 该路径由 proot -b 参数决定, resolver 通过 HOST_WS_PREFIXES 识别并
+ * normalize 到 /workspace/<rel>, 再遍历 workspace root 命中真实文件。
+ * 模型在回复中原样复述 ![](render_url) 即可被 Markdown/ZoomableAsyncImage
+ * 直接渲染, 无需再自己拼凑地址。
+ */
+/**
+ * 4.0.14: 从 shell stdout/stderr 中启发式提取可能生成的图片路径。
+ * 支持 /workspace/...、workspace://...、file:///data/data/.../files/... 等形态。
+ * 提取结果用于在 shell 返回中附带 render_urls，减少模型再次 read_file 的负担。
+ */
+private fun extractImagePathsFromText(text: String): List<String> {
+    if (text.isBlank()) return emptyList()
+    val regex = """(?i)(?:file://)?(?:/workspace/|workspace://|/data/data/[^\s"'`<>|]*/files/workspaces/[^\s"'`<>|]*/files/)[^\s"'`<>|]+\.(?:png|jpg|jpeg|gif|webp|bmp|svg|heic|heif|avif|ico)""".toRegex()
+    return regex.findAll(text)
+        .map { it.value.trim() }
+        .distinct()
+        .toList()
+}
+
+// v4.8.115/142: buildRenderUrl / buildRenderPayload / encodeMarkdownUrl 已收口至
+// ToolImagePayload.kt (渲染地址单一来源; 规范形态 = percent 编码 file://, 全链唯一)。
+// 本文件三处产出点 (write_file / shell / read_image) 同包直调, 语义不变:
+// render_urls 与 render_markdown 现为同一形态, 不再存在"裸路径/编码串"双形态。
 
 private suspend fun WorkspaceRepository.readImageInRootfs(
     workspaceId: String,
     path: String,
+    cwd: String? = null,
 ): List<UIMessagePart> {
-    val bytes = readRootfsBuffer(workspaceId, path).toByteArray()
+    val bytes = readRootfsBuffer(workspaceId, path, cwd).toByteArray()
 
     val filesManager = getKoin().get<FilesManager>()
     val uris = filesManager.createChatFilesByByteArrays(listOf(bytes))
     return listOf(
+        // v4.8.134 (C3): 图片前置来源标签 — 工具结果与图片混排时可对齐 (省略占位/实际图片)
+        UIMessagePart.Text("[图片] $path"),
         UIMessagePart.Image(url = uris.first().toString()),
         UIMessagePart.Text(
             buildJsonObject {
                 put("path", path)
+                put("image_id", uris.first().lastPathSegment ?: path)  // v4.8.134 (C3): 稳定 id (上传副本文件名, 唯一)
                 put("description", "Image file read successfully")
+                // v4.8.113: 统一 render_urls 数组 + render_markdown 直贴
+                // v4.8.142: 单点载荷 — 验存不过不发地址 (宁可没图, 不给死链)
+                val rpImage = buildRenderPayload(workspaceId, listOf(path), cwd)
+                if (rpImage.urls.isNotEmpty()) {
+                    put("render_urls", buildJsonArray { rpImage.urls.forEach { add(JsonPrimitive(it)) } })
+                    rpImage.markdown?.let { put("render_markdown", it) }
+                }
+                if (rpImage.skipped > 0) put("render_note", renderSkippedNote(rpImage.skipped))
             }.toString()
         ),
     )
@@ -316,13 +1010,16 @@ private suspend fun WorkspaceRepository.writeTextInRootfs(
     path: String,
     text: String,
     overwrite: Boolean,
+    cwd: String? = null,
+    append: Boolean = false,
 ): WorkspaceFileEntry {
     val pathArg = path.shellQuote()
+    val redirect = if (append) ">>" else ">"
     val result = runRootfsCommand(
         workspaceId = workspaceId,
         action = "Write file",
         command = """
-            if [ -e $pathArg ] && [ ${(!overwrite).shellFlag()} = 1 ]; then
+            if [ -e $pathArg ] && [ ${(!overwrite && !append).shellFlag()} = 1 ]; then
               printf '%s\n' ${"File already exists: $path".shellQuote()} >&2
               exit 1
             fi
@@ -332,10 +1029,11 @@ private suspend fun WorkspaceRepository.writeTextInRootfs(
             fi
             parent=${'$'}(dirname -- $pathArg) || exit 1
             mkdir -p -- "${'$'}parent" || exit 1
-            cat > $pathArg || exit 1
+            cat $redirect $pathArg || exit 1
             ${statEntryCommand(path)}
         """.trimIndent(),
         stdin = text.toByteArray(Charsets.UTF_8),
+        cwd = cwd,
     )
     return result.stdout.parseRootfsEntry()
 }
@@ -345,10 +1043,12 @@ private suspend fun WorkspaceRepository.runRootfsCommand(
     action: String,
     command: String,
     stdin: ByteArray? = null,
+    cwd: String? = null,
 ): WorkspaceCommandResult {
     val result = executeCommand(
         id = workspaceId,
         command = command,
+        cwd = cwd.orEmpty(),
         timeoutMillis = WorkspaceManager.DEFAULT_COMMAND_TIMEOUT_MS,
         stdin = stdin,
     )
@@ -402,6 +1102,32 @@ private fun kotlinx.serialization.json.JsonObject.absolutePath(name: String): St
     require(path.startsWith("/")) { "$name must be an absolute path inside Rootfs" }
     require(!path.contains('\u0000')) { "$name contains invalid character" }
     return path
+}
+
+/**
+ * v4.5.27: 助手级 CWD 归一化 — 输入形如 "/workspace/xxx"、"xxx"、"workspace/xxx" 或 "/workspace",
+ * 输出相对 files 的纯子路径 ("xxx") 或 null (无约束)。所有链路的 cwd 参数统一经此口径。
+ */
+private fun workspaceCwdRel(cwd: String?): String? {
+    if (cwd.isNullOrBlank()) return null
+    val raw = cwd.trim('/')
+    val rel = (if (raw == "workspace") "" else raw.removePrefix("workspace/")).trim('/')
+    return rel.ifBlank { null }
+}
+
+/**
+ * v4.5.27: CWD 专一空间 — 模型路径归一化。
+ * 助手文件夹在沙箱内即 /workspace 根 (proot 挂载 + 直读解析同源实现);
+ * 模型若携带 cwd 名前缀 (/workspace/<cwd>/x, 历史惯性) 则剥离之, 保持单一语义。
+ */
+private fun normalizeScopedPath(path: String, cwd: String?): String {
+    val scopeRel = workspaceCwdRel(cwd) ?: return path
+    val scopeAbs = "/workspace/$scopeRel"
+    return when {
+        path == scopeAbs -> "/workspace"
+        path.startsWith("$scopeAbs/") -> "/workspace/" + path.removePrefix("$scopeAbs/")
+        else -> path
+    }
 }
 
 // 免强制审批的可写安全区: 工作区文件目录、临时目录和技能目录

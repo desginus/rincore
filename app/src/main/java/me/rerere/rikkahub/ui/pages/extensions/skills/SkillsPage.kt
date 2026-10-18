@@ -1,8 +1,15 @@
+/* 【域 A·对话核心】 — 页面 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.pages.extensions.skills
 
+
+/* ───【原版对齐】SkillsPage.kt | 差异 ±21 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -10,95 +17,91 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularWavyProgressIndicator
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeFlexibleTopAppBar
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Add01
-import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Download01
+import me.rerere.hugeicons.stroke.Eraser
 import me.rerere.hugeicons.stroke.FileImport
+import me.rerere.hugeicons.stroke.MoreVertical
 import me.rerere.hugeicons.stroke.Puzzle
-import me.rerere.hugeicons.stroke.Search01
-import me.rerere.rikkahub.data.skills.SkillFrontmatterParser
-import me.rerere.rikkahub.data.skills.SkillMetadata
+import me.rerere.hugeicons.stroke.GlobalSearch
+import me.rerere.hugeicons.stroke.Cancel01
+import me.rerere.hugeicons.stroke.Flash
+import me.rerere.rikkahub.data.files.SkillFrontmatterParser
+import me.rerere.rikkahub.data.files.SkillMetadata
 import me.rerere.rikkahub.Screen
-import me.rerere.rikkahub.ui.components.ai.ExtensionEmptyState
 import me.rerere.rikkahub.ui.components.nav.BackButton
-import me.rerere.rikkahub.ui.components.ui.CardGroup
-import me.rerere.rikkahub.ui.components.ui.CardGroupIcon
-import me.rerere.rikkahub.ui.components.ui.ItemAction
-import me.rerere.rikkahub.ui.components.ui.ItemActionMenu
-import me.rerere.rikkahub.ui.components.ui.Tag
+import me.rerere.rikkahub.ui.components.ui.RikkaConfirmDialog
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.CustomColors
-import me.rerere.rikkahub.utils.plus
-import me.rerere.ui.components.RikkaConfirmDialog
 import org.koin.androidx.compose.koinViewModel
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import me.rerere.rikkahub.utils.plus
 
 @Composable
-fun SkillsPage() {
+private fun SkillsLibraryPane() {
     val navController = LocalNavController.current
     val vm = koinViewModel<SkillsVM>()
     val skills by vm.skills.collectAsStateWithLifecycle()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val toaster = LocalToaster.current
     val context = LocalContext.current
     var showImportSheet by rememberSaveable { mutableStateOf(false) }
     var showAddDialog by rememberSaveable { mutableStateOf(false) }
     var showImportDialog by rememberSaveable { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<SkillMetadata?>(null) }
+    // v4.8.81: 一键清空确认
+    var showClearAllDialog by remember { mutableStateOf(false) }
+    // v3.6.104: 技能搜索 — 快速查询特定 Skill
     var searchQuery by rememberSaveable { mutableStateOf("") }
     val filteredSkills = remember(skills, searchQuery) {
-        if (searchQuery.isBlank()) {
-            skills
-        } else {
-            skills.filter { skill ->
-                skill.name.contains(searchQuery, ignoreCase = true) ||
-                    skill.description.contains(searchQuery, ignoreCase = true)
-            }
-        }
+        val q = searchQuery.trim().lowercase()
+        if (q.isEmpty()) skills
+        else skills.filter { it.name.lowercase().contains(q) || it.description.lowercase().contains(q) }
     }
     val fileImportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -113,92 +116,92 @@ fun SkillsPage() {
         }
     }
 
-    Scaffold(
-        topBar = {
-            LargeFlexibleTopAppBar(
-                title = { Text(stringResource(R.string.skills_page_title)) },
-                navigationIcon = { BackButton() },
-                scrollBehavior = scrollBehavior,
-                colors = CustomColors.topBarColors,
-            )
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { showImportSheet = true }) {
-                Icon(HugeIcons.Add01, contentDescription = null)
-            }
-        },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        containerColor = CustomColors.topBarColors.containerColor,
-    ) { innerPadding ->
+    // v4.8.146 (用户定版): 原独立页拆为"内容面板" — 由 SkillHubPage 的双 Tab 承载
+    // (我的技能 = 本面板; 发现 = SettingSkillDiscoverContent)。顶栏/返回由 Hub 提供;
+    // 清空(Eraser)与原导入 FAB 收进右下角按钮列。
+    Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = innerPadding + PaddingValues(
+            contentPadding = PaddingValues(
                 start = 16.dp,
                 end = 16.dp,
-                top = 16.dp,
-                bottom = 16.dp + 72.dp,
+                top = 8.dp,
+                bottom = 16.dp + 72.dp + 60.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (skills.isEmpty()) {
+            // v3.6.104: 搜索框 (页面上方)
+            item {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("搜索技能（名称 / 描述）") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    leadingIcon = { Icon(HugeIcons.GlobalSearch, null, Modifier.size(16.dp)) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) { Icon(HugeIcons.Cancel01, null) }
+                        }
+                    },
+                )
+            }
+            if (filteredSkills.isEmpty()) {
                 item {
-                    ExtensionEmptyState(
-                        message = stringResource(R.string.skills_page_empty_title),
-                        description = stringResource(R.string.skills_page_empty_hint),
-                        icon = HugeIcons.Puzzle,
-                    )
-                }
-            }
-
-            if (skills.isNotEmpty()) {
-                item(key = "search") {
-                    TextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text(stringResource(R.string.skills_page_search_placeholder)) },
-                        leadingIcon = {
-                            Icon(HugeIcons.Search01, contentDescription = null)
-                        },
-                        trailingIcon = {
-                            if (searchQuery.isNotEmpty()) {
-                                IconButton(onClick = { searchQuery = "" }) {
-                                    Icon(HugeIcons.Cancel01, contentDescription = "Clear")
-                                }
-                            }
-                        },
-                        singleLine = true,
-                        shape = CircleShape,
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = MaterialTheme.colorScheme.surfaceBright,
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceBright,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                        ),
-                    )
-                }
-            }
-
-            if (skills.isNotEmpty() && filteredSkills.isEmpty()) {
-                item(key = "no_result") {
-                    Text(
-                        text = stringResource(R.string.skills_page_search_no_result),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 32.dp),
-                        textAlign = TextAlign.Center,
-                    )
+                            .padding(vertical = 48.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Icon(
+                            imageVector = HugeIcons.Puzzle,
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = stringResource(R.string.skills_page_empty_title),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = stringResource(R.string.skills_page_empty_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
 
             items(filteredSkills, key = { it.skillDir.absolutePath }) { skill ->
+                val enabled = vm.isSkillEnabled(skill.name)
+                val forced = vm.isSkillForced(skill.name)
                 SkillCard(
                     skill = skill,
+                    enabled = enabled,
+                    forced = forced,
+                    onToggle = { vm.toggleSkill(skill.name) },
+                    onToggleForced = { vm.toggleForcedSkill(skill.name) },
                     onClick = { navController.navigate(Screen.SkillDetail(skill.name)) },
                     onDelete = { deleteTarget = skill },
                 )
+            }
+        }
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp),
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            // v4.8.81: 一键清空 — 删除全部自建技能, 只读源保留
+            androidx.compose.material3.SmallFloatingActionButton(onClick = { showClearAllDialog = true }) {
+                Icon(HugeIcons.Eraser, contentDescription = "清空全部技能")
+            }
+            FloatingActionButton(onClick = { showImportSheet = true }) {
+                Icon(HugeIcons.Add01, contentDescription = null)
             }
         }
     }
@@ -271,75 +274,172 @@ fun SkillsPage() {
     ) {
         Text(stringResource(R.string.skills_page_delete_message, deleteTarget?.name ?: ""))
     }
+
+    // v4.8.81: 一键清空 — 删除全部自建技能 (内置/只读源技能保留)
+    RikkaConfirmDialog(
+        show = showClearAllDialog,
+        title = "清空全部技能",
+        confirmText = stringResource(R.string.delete),
+        dismissText = stringResource(R.string.cancel),
+        onConfirm = {
+            showClearAllDialog = false
+            vm.deleteAllSkills { count ->
+                toaster.show(if (count > 0) "已清空 $count 个技能" else "没有可清空的技能")
+            }
+        },
+        onDismiss = { showClearAllDialog = false },
+    ) {
+        Text("将删除全部自建技能（内置/只读源技能保留），此操作不可恢复。")
+    }
 }
 
 @Composable
 private fun SkillCard(
     skill: SkillMetadata,
+    enabled: Boolean = true,
+    forced: Boolean = false,
+    onToggle: () -> Unit = {},
+    onToggleForced: () -> Unit = {},
     onClick: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Surface(
+    var menuExpanded by remember { mutableStateOf(false) }
+
+    Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        color = CustomColors.listItemColors.containerColor,
+        colors = CustomColors.cardColorsOnSurfaceContainer,
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = if (skill.builtin) 16.dp else 4.dp),
+                .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            CardGroupIcon(HugeIcons.Puzzle)
+            Icon(
+                imageVector = HugeIcons.Puzzle,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = if (enabled) MaterialTheme.colorScheme.primary
+                       else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+            )
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(horizontal = 16.dp),
+                    .padding(start = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        text = skill.name,
-                        modifier = Modifier.weight(1f, fill = false),
-                        style = MaterialTheme.typography.bodyLarge,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (skill.builtin) {
-                        Tag { Text("Built-in") }
-                    }
-                }
+                Text(
+                    text = skill.name,
+                    style = MaterialTheme.typography.titleSmallEmphasized,
+                    color = if (enabled) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                )
                 Text(
                     text = skill.description,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
                 )
                 if (!skill.compatibility.isNullOrBlank()) {
                     Text(
                         text = skill.compatibility,
-                        style = MaterialTheme.typography.labelMedium,
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.tertiary,
                     )
                 }
             }
-            // 内置技能只读，不提供删除
-            if (!skill.builtin) {
-                ItemActionMenu(
-                    actions = listOf(
-                        ItemAction(
-                            text = stringResource(R.string.delete),
-                            icon = HugeIcons.Delete01,
-                            destructive = true,
-                            onClick = onDelete,
-                        ),
+            Switch(
+                checked = enabled,
+                onCheckedChange = { onToggle() },
+                modifier = Modifier.padding(end = 8.dp),
+            )
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(
+                        imageVector = HugeIcons.MoreVertical,
+                        contentDescription = stringResource(R.string.skills_page_more_actions),
                     )
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false },
+                ) {
+                    // v3.6.105: 对话开始时强制启动
+                    DropdownMenuItem(
+                        text = { Text(if (forced) "取消对话开始时强制启动" else "对话开始时强制启动") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = if (forced) HugeIcons.Cancel01 else HugeIcons.Flash,
+                                contentDescription = null,
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onToggleForced()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = HugeIcons.Delete01,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onDelete()
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * v4.8.146 (用户定版): Agent Skills 与「发现」合并为单一 UI — 同页 Tab 切换。
+ *   · 我的技能 = 本地技能管理 (SkillsLibraryPane, 原 SkillsPage 全量能力)
+ *   · 发现     = CherryIN / skills.sh 两来源 (SettingSkillDiscoverContent, v4.8.145 移植)
+ */
+@Composable
+fun SkillHubPage() {
+    var hubTab by rememberSaveable { mutableIntStateOf(0) }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Agent Skills") },
+                navigationIcon = { BackButton() },
+                colors = CustomColors.topBarColors,
+            )
+        },
+        containerColor = CustomColors.topBarColors.containerColor,
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+        ) {
+            TabRow(selectedTabIndex = hubTab) {
+                Tab(
+                    selected = hubTab == 0,
+                    onClick = { hubTab = 0 },
+                    text = { Text("我的技能") },
                 )
+                Tab(
+                    selected = hubTab == 1,
+                    onClick = { hubTab = 1 },
+                    text = { Text("发现") },
+                )
+            }
+            Box(modifier = Modifier.weight(1f)) {
+                if (hubTab == 0) {
+                    SkillsLibraryPane()
+                } else {
+                    me.rerere.rikkahub.ui.pages.setting.SettingSkillDiscoverContent()
+                }
             }
         }
     }
@@ -364,28 +464,42 @@ private fun SkillImportSheet(
         ) {
             Text(
                 text = stringResource(R.string.skills_page_add_title),
-                style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
-            CardGroup {
-                item(
-                    onClick = onAddManually,
-                    headlineContent = { Text(stringResource(R.string.skills_page_add_manually)) },
-                    leadingContent = { CardGroupIcon(HugeIcons.Add01) },
-                )
-                item(
-                    onClick = onImportFromFile,
-                    headlineContent = { Text(stringResource(R.string.skills_page_import_from_file)) },
-                    leadingContent = { CardGroupIcon(HugeIcons.FileImport) },
-                )
-                item(
-                    onClick = onImportFromGitHub,
-                    headlineContent = { Text(stringResource(R.string.skills_page_import_from_github)) },
-                    leadingContent = { CardGroupIcon(HugeIcons.Download01) },
-                )
-            }
+            SkillImportSheetItem(
+                icon = { Icon(HugeIcons.Add01, contentDescription = null) },
+                text = stringResource(R.string.skills_page_add_manually),
+                onClick = onAddManually,
+            )
+            SkillImportSheetItem(
+                icon = { Icon(HugeIcons.FileImport, contentDescription = null) },
+                text = stringResource(R.string.skills_page_import_from_file),
+                onClick = onImportFromFile,
+            )
+            SkillImportSheetItem(
+                icon = { Icon(HugeIcons.Download01, contentDescription = null) },
+                text = stringResource(R.string.skills_page_import_from_github),
+                onClick = onImportFromGitHub,
+            )
         }
     }
+}
+
+@Composable
+private fun SkillImportSheetItem(
+    icon: @Composable () -> Unit,
+    text: String,
+    onClick: () -> Unit,
+) {
+    ListItem(
+        leadingContent = icon,
+        modifier = Modifier
+            .clip(MaterialTheme.shapes.large)
+            .clickable(onClick = onClick),
+) {
+               Text(text)
+           }
 }
 
 @Composable
@@ -477,7 +591,7 @@ private fun ImportSkillDialog(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        CircularWavyProgressIndicator(modifier = Modifier.size(16.dp))
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                         Text(
                             stringResource(R.string.skills_page_downloading),
                             style = MaterialTheme.typography.bodySmall

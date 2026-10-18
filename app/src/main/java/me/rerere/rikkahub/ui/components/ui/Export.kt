@@ -1,4 +1,9 @@
+/* 【域 F·主题渲染】 — UI 组件 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.ui
+
+/* ───【原版对齐】Export.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -19,7 +24,7 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.File01
 import me.rerere.hugeicons.stroke.Share01
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.ui.hooks.ExporterState
+import me.rerere.rikkahub.data.export.ExporterState
 
 @Composable
 fun <T> ExportDialog(

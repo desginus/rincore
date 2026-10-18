@@ -1,5 +1,11 @@
+/* 【域 D·工作区沙箱】 — 文件/技能 | 地图: docs/APP_MAP.md §D */
 package me.rerere.rikkahub.data.files
 
+
+/* ───【原版对齐】FilesManager | 差异 +62 行
+ * 来源: 原版移植 + 自研 (文件管理增强)
+ * 差异: 会话附件生命周期自研处理
+ * ───────────────────────────────────────────────────────────────*/
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -21,10 +27,16 @@ import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.db.entity.ManagedFileEntity
 import me.rerere.rikkahub.data.repository.FilesRepository
 import me.rerere.rikkahub.utils.exportImage
+import me.rerere.rikkahub.utils.decodeLocalFilePath
+import me.rerere.rikkahub.utils.isAppLocalImageUri
+import me.rerere.rikkahub.utils.resolveLocalImageFile
 import me.rerere.rikkahub.utils.exportImageFile
 import me.rerere.rikkahub.utils.getActivity
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
+
+/** v4.8.110 (B2): MCP 产物归集单文件上限 (与工作区读上限同语义) */
+private const val MAX_RESCUE_BYTES = 8L * 1024 * 1024
 
 class FilesManager(
     private val context: Context,
@@ -112,11 +124,9 @@ class FilesManager(
             runCatching {
                 val sourceName = getFileNameFromUri(uri) ?: uri.lastPathSegment ?: "file"
                 val sourceMime = getFileMimeType(uri)
-                val fileName = buildUuidFileName(displayName = sourceName, mimeType = sourceMime)
-                val file = dir.resolve(fileName)
-                if (!file.exists()) {
-                    file.createNewFile()
-                }
+                // v4.8.91: 上传一律时间码命名（<码>_<原名>.ext），码即文件名前缀
+                // v4.8.134 (B155): 原子取号+创建 (并行上传不再撞号覆盖)
+                val file = FileUtils.createUploadFile(dir, displayName = sourceName, mimeType = sourceMime)
                 val inputStream = context.contentResolver.openInputStream(uri)
                     ?: error("Failed to open input stream for $uri")
                 inputStream.use { input ->
@@ -144,22 +154,15 @@ class FilesManager(
         return newUris
     }
 
-    fun createChatFilesByByteArrays(
-        byteArrays: List<ByteArray>,
-        displayName: String = "image.png",
-        mimeType: String = "image/png",
-    ): List<Uri> {
+    fun createChatFilesByByteArrays(byteArrays: List<ByteArray>): List<Uri> {
         val newUris = mutableListOf<Uri>()
         val dir = context.filesDir.resolve(FileFolders.UPLOAD)
         if (!dir.exists()) {
             dir.mkdirs()
         }
         byteArrays.forEach { byteArray ->
-            val fileName = buildUuidFileName(displayName = displayName, mimeType = mimeType)
-            val file = dir.resolve(fileName)
-            if (!file.exists()) {
-                file.createNewFile()
-            }
+            // v4.8.134 (B155): 原子取号+创建 — 并行读图各自独立文件, 不再同号覆盖
+            val file = FileUtils.createUploadFile(dir, displayName = "image.png", mimeType = "image/png")
             val newUri = file.toUri()
             file.outputStream().use { outputStream ->
                 outputStream.write(byteArray)
@@ -167,8 +170,8 @@ class FilesManager(
             trackManagedFile(
                 folder = FileFolders.UPLOAD,
                 file = file,
-                displayName = displayName,
-                mimeType = mimeType
+                displayName = "image.png",
+                mimeType = "image/png"
             )
             newUris.add(newUri)
         }
@@ -223,6 +226,10 @@ class FilesManager(
         }
     }
 
+    /** v4.8.185 (审计重写): 对话媒体快照整目录清理 — 对话删除时调用。 */
+    fun deleteConversationChatMedia(conversationId: String) =
+        ChatMediaStore.deleteConversationMedia(context, conversationId)
+
     suspend fun countChatFiles(): Pair<Int, Long> = withContext(Dispatchers.IO) {
         val dir = context.filesDir.resolve(FileFolders.UPLOAD)
         if (!dir.exists()) {
@@ -239,8 +246,7 @@ class FilesManager(
         if (!dir.exists()) {
             dir.mkdirs()
         }
-        val fileName = buildUuidFileName(displayName = "pasted_text.txt", mimeType = "text/plain")
-        val file = dir.resolve(fileName)
+        val file = FileUtils.createUploadFile(dir, displayName = "pasted_text.txt", mimeType = "text/plain")
         file.writeText(text)
         trackManagedFile(
             folder = FileFolders.UPLOAD,
@@ -287,55 +293,114 @@ class FilesManager(
     }
 
     @OptIn(ExperimentalEncodingApi::class)
-    suspend fun saveMessageImage(activityContext: Context, image: String) = withContext(Dispatchers.IO) {
-        val activity = requireNotNull(activityContext.getActivity()) { "Activity not found" }
+    suspend fun saveMessageImage(activityContext: Context, image: String): Boolean = withContext(Dispatchers.IO) {
+        val activity = activityContext.getActivity()
+        if (activity == null) {
+            Log.e("FilesManager", "saveMessageImage: activity not found")
+            return@withContext false
+        }
         when {
             image.startsWith("data:image") -> {
                 val byteArray = Base64.decode(image.substringAfter("base64,").toByteArray())
                 val bitmap = BitmapFactory.decodeByteArray(byteArray, 0, byteArray.size)
-                activityContext.exportImage(activity, bitmap)
+                if (bitmap == null) {
+                    logSaveFailure("data_decode_failed", image)
+                    false
+                } else activityContext.exportImage(activity, bitmap)
+            }
+
+            // v4.8.129 (用户实证: "Workspace/上传图片保存失败且运行日志为空"):
+            // 与渲染链同源 — v4.8.115 单一解码点 (isAppLocalImageUri + resolveLocalImageFile)
+            // 认领并解析, 凡渲染认领的本地图片一律可保存。旧实现两处缺陷在此修复:
+            // ①host 前缀误判 (上传图 "file:///data/..." 命中 HOST 前缀 → resolver 对
+            //   非 workspaces 结构判 invalid_path → 保存失败);
+            // ②file:/ 单斜杠形态 (File.toUri() 产出, 中文名 percent 编码) 走
+            //   Uri.toFile() 不解码 → file not found。
+            isAppLocalImageUri(image) -> {
+                val resolved = resolveLocalImageFile(image)
+                if (resolved != null && resolved.isFile) {
+                    activityContext.exportImageFile(activity, resolved)
+                } else {
+                    logSaveFailure("local_unresolved", image)
+                    false
+                }
             }
 
             image.startsWith("file:") -> {
-                val file = image.toUri().toFile()
-                activityContext.exportImageFile(activity, file)
+                val decoded = decodeLocalFilePath(image)
+                val file = decoded?.let { File(it) }
+                if (file == null || !file.isFile) {
+                    logSaveFailure("file_not_found", image)
+                    false
+                } else activityContext.exportImageFile(activity, file)
             }
 
             image.startsWith("/") -> {
-                activityContext.exportImageFile(activity, File(image))
+                val file = File(image)
+                if (!file.isFile) {
+                    logSaveFailure("path_not_found", image)
+                    false
+                } else activityContext.exportImageFile(activity, file)
             }
 
             image.startsWith("http") -> {
                 runCatching {
                     val url = URL(image)
                     val connection = url.openConnection() as HttpURLConnection
-                    connection.connect()
-
-                    if (connection.responseCode == HttpURLConnection.HTTP_OK) {
-                        val bitmap = BitmapFactory.decodeStream(connection.inputStream)
-                        activityContext.exportImage(activity, bitmap)
-                    } else {
-                        Log.e(
-                            TAG,
-                            "saveMessageImage: Failed to download image from $image, response code: ${connection.responseCode}"
-                        )
+                    connection.connectTimeout = 15_000
+                    connection.readTimeout = 30_000
+                    try {
+                        connection.connect()
+                        if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+                            val bitmap = BitmapFactory.decodeStream(connection.inputStream)
+                            if (bitmap == null) {
+                                logSaveFailure("http_decode_failed", image)
+                                false
+                            } else activityContext.exportImage(activity, bitmap)
+                        } else {
+                            logSaveFailure("http_${connection.responseCode}", image)
+                            false
+                        }
+                    } finally {
+                        runCatching { connection.disconnect() }
                     }
-                }.getOrNull()
+                }.getOrElse { t ->
+                    Log.e("FilesManager", "saveMessageImage: http failed: $image", t)
+                    logSaveFailure("http_failed", image)
+                    false
+                }
             }
 
-            else -> error("Invalid image format")
+            else -> {
+                logSaveFailure("unsupported", image)
+                false
+            }
         }
     }
 
+    /**
+     * v4.8.129: 保存失败统一落点 — logcat + 运行日志实落 (空闲期走 CallTracer
+     * 的最近会话兜底, 不再静默丢弃)。此前"详情见运行日志"因事件被丢而名不副实。
+     */
+    private suspend fun logSaveFailure(reason: String, image: String) {
+        Log.e("FilesManager", "saveMessageImage: $reason: ${image.take(300)}")
+        me.rerere.rikkahub.data.ai.CallTracer.event(
+            "SAVE", "save_image_failed", "reason=$reason url=${image.take(300)}"
+        )
+    }
+
+    data class SyncResult(
+        val inserted: Int,
+        val removed: Int,
+    )
+
     suspend fun syncFolder(folder: String = FileFolders.UPLOAD): SyncResult = withContext(Dispatchers.IO) {
-        val dir = File(context.filesDir, folder)
-        val diskFiles = if (dir.exists()) {
-            dir.listFiles()?.filter { it.isFile }
+        val diskFiles = if (File(context.filesDir, folder).exists()) {
+            File(context.filesDir, folder).listFiles()?.filter { it.isFile }
                 ?: return@withContext SyncResult(inserted = 0, removed = 0)
         } else {
             emptyList()
         }
-
         // 磁盘 -> 数据库：补录尚未登记的文件
         var inserted = 0
         val diskRelativePaths = HashSet<String>()
@@ -366,11 +431,26 @@ class FilesManager(
         var removed = 0
         repository.listByFolder(folder).first().forEach { entity ->
             if (entity.relativePath !in diskRelativePaths && !getFile(entity).isFile) {
-                removed += repository.deleteByPath(entity.relativePath)
+                repository.deleteByPath(entity.relativePath)
+                removed += 1
             }
         }
-
         SyncResult(inserted = inserted, removed = removed)
+    }
+
+    suspend fun deleteAll(folder: String = FileFolders.UPLOAD): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val files = repository.listByFolder(folder).first()
+            files.forEach { entity ->
+                val file = getFile(entity)
+                if (file.isFile) file.delete()
+                repository.deleteByPath(entity.relativePath)
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to delete all files in folder: $folder", e)
+            false
+        }
     }
 
     suspend fun delete(id: Long, deleteFromDisk: Boolean = true): Boolean = withContext(Dispatchers.IO) {
@@ -381,31 +461,63 @@ class FilesManager(
         repository.deleteById(id) > 0
     }
 
-    suspend fun deleteAll(folder: String = FileFolders.UPLOAD): Boolean = withContext(Dispatchers.IO) {
-        val dir = File(context.filesDir, folder)
-        val entries = dir.listFiles()
-        if (dir.exists() && entries == null) {
-            return@withContext false
-        }
+    /**
+     * v4.8.110 (B2): MCP 产物归集 — MCP 输出按"全局视角"书写绝对路径, 受限助手
+     * (CWD 工作区) 按子目录视角解读必然失效。对"存在且不在调用方可见范围内"的文件:
+     * 复制到 /tool_outputs/<serverSlug>/rescued/ 并原样改写文本路径。
+     *  ① 可见范围 = 调用方 files 区 (workspaces/<callerRoot>/files + CWD 前缀) 或 /tool_outputs 共享区;
+     *  ② 单文件上限 8MB (与工作区读上限同语义), 超限跳过并在文本尾注说明 (不静默);
+     *  ③ 失败/跳过以尾注说明; 正常归集静默完成。
+     */
+    suspend fun rescueArtifactPathsByPolicy(
+        text: String,
+        serverSlug: String,
+        serverRoot: String?,   // MCP 绑定工作区的 root 目录名 (null=无法解析 /workspace 路径)
+        callerRoot: String?,   // 调用方助手工作区 root 目录名
+        callerCwd: String?,    // 调用方 CWD (相对 files 区; 空=整区可见)
+    ): String = withContext(Dispatchers.IO) {
+        val slug = serverSlug.takeIf { it.isNotBlank() && !it.contains("..") && !it.contains('/') } ?: "server"
+        val pathRegex = Regex("""(/workspace/|/tool_outputs/|/data/data/|/data/user/)[^\s"'`<>()\[\]]+""")
+        val literals = pathRegex.findAll(text).map { it.value }.distinct().toList()
+        if (literals.isEmpty()) return@withContext text
 
-        var allDeletedFromDisk = true
-        entries.orEmpty().forEach { entry ->
-            if (!runCatching { entry.deleteRecursively() }.getOrDefault(false)) {
-                allDeletedFromDisk = false
+        // 与 RepositoryModule 的 WorkspaceManager baseDir 对齐 (布局漂移时两处同步)
+        val workspacesBase = File(context.filesDir, "workspaces")
+        val callerVisibleRoot: File? = callerRoot?.let { root ->
+            val base = File(File(workspacesBase, root), "files")
+            val cwdRel = callerCwd?.trim('/')?.takeIf { it.isNotEmpty() }
+            if (cwdRel == null) base else File(base, cwdRel)
+        }
+        val sharedRootPath = File(context.filesDir, FileFolders.TOOL_OUTPUTS).absolutePath + File.separator
+        val notes = mutableListOf<String>()
+        var out = text
+        for (literal in literals) {
+            val src: File? = when {
+                literal.startsWith("/tool_outputs/") -> continue   // 共享区: 所有工作区可见, 无需归集
+                literal.startsWith("/workspace/") -> serverRoot?.let { root ->
+                    File(File(File(workspacesBase, root), "files"), literal.removePrefix("/workspace/"))
+                }
+                else -> File(literal) // /data/data|/data/user 全物理路径
             }
-        }
-
-        if (allDeletedFromDisk) {
-            repository.deleteByFolder(folder)
-            return@withContext true
-        }
-
-        repository.listByFolder(folder).first().forEach { entity ->
-            if (!getFile(entity).exists()) {
-                repository.deleteById(entity.id)
+            if (src == null || !src.exists() || !src.isFile) continue
+            val srcPath = src.absolutePath
+            val inCallerVisible = callerVisibleRoot?.let { srcPath.startsWith(it.absolutePath + File.separator) } ?: false
+            if (inCallerVisible || srcPath.startsWith(sharedRootPath)) continue
+            if (src.length() > MAX_RESCUE_BYTES) {
+                notes += "「" + src.name + "」超过 " + (MAX_RESCUE_BYTES / 1024 / 1024) + "MB 未归集"
+                continue
             }
+            val ok = runCatching {
+                val dir = File(File(context.filesDir, FileFolders.TOOL_OUTPUTS), "$slug/rescued").apply { mkdirs() }
+                val target = File(dir, src.name)
+                if (!target.exists() || target.length() != src.length()) {
+                    src.copyTo(target, overwrite = true)
+                }
+                out = out.replace(literal, "/tool_outputs/$slug/rescued/" + src.name)
+            }.isSuccess
+            if (!ok) notes += "「" + src.name + "」归集失败 (原路径保留)"
         }
-        false
+        if (notes.isEmpty()) out else out + "\n[产物归集: " + notes.joinToString("; ") + "]"
     }
 
     suspend fun deleteOlderThan(
@@ -437,7 +549,13 @@ class FilesManager(
         if (!dir.exists()) {
             dir.mkdirs()
         }
-        return File(dir, FileUtils.buildUuidFileName(displayName = displayName, mimeType = mimeType))
+        // v4.8.91: upload 目录统一时间码命名；其它目录保持 uuid 命名
+        return if (folder == FileFolders.UPLOAD) {
+            // v4.8.134 (B155): 原子取号+创建
+            FileUtils.createUploadFile(dir, displayName = displayName, mimeType = mimeType)
+        } else {
+            File(dir, FileUtils.buildUuidFileName(displayName = displayName, mimeType = mimeType))
+        }
     }
 
     private fun buildUuidFileName(displayName: String?, mimeType: String?): String =
@@ -509,18 +627,11 @@ class FilesManager(
         FileUtils.guessMimeType(file, fileName)
 }
 
-data class SyncResult(
-    val inserted: Int,
-    val removed: Int,
-)
-
 object FileFolders {
     const val UPLOAD = "upload"
     const val SKILLS = "skills"
-    const val BUILTIN_SKILLS = "builtin_skills"
     const val FONTS = "fonts"
     const val TOOL_OUTPUTS = "tool_outputs"
-    const val MEDIA_CREATION = "media_creation"
 }
 
 suspend fun FilesManager.saveUploadFromUri(

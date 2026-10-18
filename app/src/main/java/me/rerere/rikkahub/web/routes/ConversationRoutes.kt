@@ -1,4 +1,10 @@
+/* 【域 J·Web 服务】 | 地图: docs/APP_MAP.md §J */
 package me.rerere.rikkahub.web.routes
+
+/* ───【原版对齐】ConversationRoutes.kt | 差异 ±2 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
@@ -15,9 +21,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
-import me.rerere.ai.provider.ModelType
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.FolderRepository
 import me.rerere.rikkahub.service.ChatService
@@ -38,7 +42,6 @@ import me.rerere.rikkahub.web.dto.SelectMessageNodeRequest
 import me.rerere.rikkahub.web.dto.SendMessageRequest
 import me.rerere.rikkahub.web.dto.ToolApprovalRequest
 import me.rerere.rikkahub.web.dto.MessageSearchResultDto
-import me.rerere.rikkahub.web.dto.UpdateConversationConfigRequest
 import me.rerere.rikkahub.web.dto.UpdateConversationInjectionsRequest
 import me.rerere.rikkahub.web.dto.UpdateConversationTitleRequest
 import me.rerere.rikkahub.web.dto.toDto
@@ -56,7 +59,7 @@ fun Route.conversationRoutes(
     route("/conversations") {
         // GET /api/conversations - List conversations of current assistant
         get {
-            val settings = settingsStore.awaitLoaded()
+            val settings = settingsStore.settingsFlow.first()
             val generationJobs = chatService.getConversationJobs().first()
             val conversations = conversationRepo
                 .getConversationsOfAssistant(settings.assistantId)
@@ -70,7 +73,7 @@ fun Route.conversationRoutes(
         // GET /api/conversations/paged?offset=0&limit=20&query=foo&folderId=none|<uuid>
         // folderId: absent = all conversations, "none" = unfiled only, <uuid> = that folder
         get("/paged") {
-            val settings = settingsStore.awaitLoaded()
+            val settings = settingsStore.settingsFlow.first()
             val offset = call.request.queryParameters["offset"]?.toIntOrNull() ?: 0
             val limit = call.request.queryParameters["limit"]?.toIntOrNull() ?: 20
             val query = call.request.queryParameters["query"]?.trim().orEmpty()
@@ -146,7 +149,7 @@ fun Route.conversationRoutes(
         // GET /api/conversations/{id} - Get single conversation
         get("/{id}") {
             val uuid = call.parameters["id"].toUuid("conversation id")
-            val conversation = chatService.getConversation(uuid)
+            val conversation = conversationRepo.getConversationById(uuid)
                 ?: throw NotFoundException("Conversation not found")
 
             val isGenerating = chatService.getGenerationJobStateFlow(uuid).first() != null
@@ -156,25 +159,30 @@ fun Route.conversationRoutes(
         // DELETE /api/conversations/{id} - Delete conversation
         delete("/{id}") {
             val uuid = call.parameters["id"].toUuid("conversation id")
-            conversationRepo.requireConversation(uuid)
+            val conversation = conversationRepo.getConversationById(uuid)
+                ?: throw NotFoundException("Conversation not found")
 
-            chatService.deleteConversation(uuid)
+            conversationRepo.deleteConversation(conversation)
             call.respond(HttpStatusCode.NoContent)
         }
 
         // POST /api/conversations/{id}/pin - Toggle pinned status
         post("/{id}/pin") {
             val uuid = call.parameters["id"].toUuid("conversation id")
-            chatService.toggleConversationPinned(uuid)
+            val conversation = conversationRepo.getConversationById(uuid)
+                ?: throw NotFoundException("Conversation not found")
+
+            chatService.saveConversation(uuid, conversation.copy(isPinned = !conversation.isPinned))
             call.respond(HttpStatusCode.OK, mapOf("status" to "updated"))
         }
 
         // POST /api/conversations/{id}/regenerate-title - Regenerate conversation title
         post("/{id}/regenerate-title") {
             val uuid = call.parameters["id"].toUuid("conversation id")
-            conversationRepo.requireConversation(uuid)
+            val conversation = conversationRepo.getConversationById(uuid)
+                ?: throw NotFoundException("Conversation not found")
 
-            chatService.generateTitle(uuid, force = true)
+            chatService.generateTitle(uuid, conversation, force = true)
             call.respond(HttpStatusCode.Accepted, mapOf("status" to "accepted"))
         }
 
@@ -188,9 +196,10 @@ fun Route.conversationRoutes(
                 throw BadRequestException("Title must not be blank")
             }
 
-            conversationRepo.requireConversation(uuid)
+            val conversation = conversationRepo.getConversationById(uuid)
+                ?: throw NotFoundException("Conversation not found")
 
-            chatService.updateTitle(uuid, title)
+            chatService.saveConversation(uuid, conversation.copy(title = title))
             call.respond(HttpStatusCode.OK, mapOf("status" to "updated"))
         }
 
@@ -198,57 +207,31 @@ fun Route.conversationRoutes(
         post("/{id}/injections") {
             val uuid = call.parameters["id"].toUuid("conversation id")
             val request = call.receive<UpdateConversationInjectionsRequest>()
-            conversationRepo.requireConversation(uuid)
+            conversationRepo.getConversationById(uuid)
+                ?: throw NotFoundException("Conversation not found")
+
+            chatService.initializeConversation(uuid)
+            val conversation = chatService.getConversationFlow(uuid).first()
+            val settings = settingsStore.settingsFlow.first()
+            val assistant = settings.assistants.firstOrNull { it.id == conversation.assistantId }
+                ?: throw NotFoundException("Assistant not found")
+            if (!assistant.allowConversationPromptInjection) {
+                throw BadRequestException("Conversation prompt injection is not enabled for this assistant")
+            }
 
             val (modeInjectionIds, lorebookIds) = validateConversationInjectionIds(
-                settings = settingsStore.awaitLoaded(),
+                settings = settings,
                 modeInjectionIds = request.modeInjectionIds,
                 lorebookIds = request.lorebookIds,
             )
-            // 已开始的会话自己持有注入绑定
-            chatService.updateChatAssistant(uuid) {
-                it.copy(modeInjectionIds = modeInjectionIds, lorebookIds = lorebookIds)
-            }
+            val updatedConversation = conversation.copy(
+                modeInjectionIds = modeInjectionIds,
+                lorebookIds = lorebookIds,
+            )
+            chatService.saveConversation(uuid, updatedConversation)
 
             val isGenerating = chatService.getGenerationJobStateFlow(uuid).first() != null
-            call.respond(HttpStatusCode.OK, chatService.getConversationFlow(uuid).first().toDto(isGenerating))
-        }
-
-        // POST /api/conversations/{id}/config - Update the chat configuration held by the conversation
-        post("/{id}/config") {
-            val uuid = call.parameters["id"].toUuid("conversation id")
-            val request = call.receive<UpdateConversationConfigRequest>()
-            conversationRepo.requireConversation(uuid)
-
-            val settings = settingsStore.awaitLoaded()
-            val chatModelId = request.chatModelId?.toUuid("chatModelId")?.also { modelId ->
-                val model = settings.findModelById(modelId)
-                    ?: throw NotFoundException("Model not found")
-                if (model.type != ModelType.CHAT) {
-                    throw BadRequestException("chatModelId must be a chat model")
-                }
-            }
-            val mcpServers = request.mcpServerIds?.map { it.toUuid("mcpServerIds") }?.toSet()?.also { ids ->
-                if (!settings.mcpServers.map { it.id }.containsAll(ids)) {
-                    throw BadRequestException("mcpServerIds contains unknown server id")
-                }
-            }
-
-            if (chatModelId != null || request.reasoningLevel != null || mcpServers != null) {
-                chatService.updateChatAssistant(uuid) { assistant ->
-                    assistant.copy(
-                        chatModelId = chatModelId ?: assistant.chatModelId,
-                        reasoningLevel = request.reasoningLevel ?: assistant.reasoningLevel,
-                        mcpServers = mcpServers ?: assistant.mcpServers,
-                    )
-                }
-            }
-            if (request.enableWebSearch != null || request.builtInSearch != null) {
-                chatService.updateChatSearch(uuid, request.enableWebSearch, request.builtInSearch)
-            }
-
-            val isGenerating = chatService.getGenerationJobStateFlow(uuid).first() != null
-            call.respond(HttpStatusCode.OK, chatService.getConversationFlow(uuid).first().toDto(isGenerating))
+            call.respond(HttpStatusCode.OK, updatedConversation.toDto(isGenerating))
         }
 
         // POST /api/conversations/{id}/move - Move conversation to another assistant
@@ -257,12 +240,15 @@ fun Route.conversationRoutes(
             val request = call.receive<MoveConversationRequest>()
             val targetAssistantId = request.assistantId.toUuid("assistant id")
 
-            val settings = settingsStore.awaitLoaded()
+            val settings = settingsStore.settingsFlow.first()
             if (settings.assistants.none { it.id == targetAssistantId }) {
                 throw BadRequestException("Assistant not found")
             }
 
-            chatService.moveConversationToAssistant(uuid, targetAssistantId)
+            val conversation = conversationRepo.getConversationById(uuid)
+                ?: throw NotFoundException("Conversation not found")
+
+            chatService.saveConversation(uuid, conversation.copy(assistantId = targetAssistantId))
             call.respond(HttpStatusCode.OK, mapOf("status" to "updated"))
         }
 
@@ -291,10 +277,15 @@ fun Route.conversationRoutes(
         post("/{id}/messages") {
             val uuid = call.parameters["id"].toUuid("conversation id")
             val request = call.receive<SendMessageRequest>()
-            val folderId = request.folderId?.takeIf { it.isNotBlank() }?.toUuid("folder id")
 
             chatService.initializeConversation(uuid)
-            if (folderId != null) chatService.updateDraftConversationFolder(uuid, folderId)
+            applyInitialConversationInjections(
+                chatService = chatService,
+                settingsStore = settingsStore,
+                conversationId = uuid,
+                modeInjectionIds = request.modeInjectionIds,
+                lorebookIds = request.lorebookIds,
+            )
             chatService.sendMessage(uuid, request.parts, answer = true)
 
             call.respond(HttpStatusCode.Accepted, mapOf("status" to "accepted"))
@@ -353,13 +344,12 @@ fun Route.conversationRoutes(
             val request = call.receive<RegenerateRequest>()
             val messageId = request.messageId.toUuid("message id")
 
-            val conversation = chatService.getConversation(uuid)
-                ?: throw NotFoundException("Conversation not found")
-            if (conversation.getMessageNodeByMessageId(messageId) == null) {
-                throw NotFoundException("Message not found")
-            }
+            val conversation = chatService.getConversationFlow(uuid).first()
+            val node = conversation.getMessageNodeByMessageId(messageId)
+            val message = node?.messages?.find { it.id == messageId }
+                ?: throw NotFoundException("Message not found")
 
-            chatService.regenerateAtMessage(uuid, messageId)
+            chatService.regenerateAtMessage(uuid, message)
             call.respond(HttpStatusCode.Accepted, mapOf("status" to "accepted"))
         }
 
@@ -383,13 +373,14 @@ fun Route.conversationRoutes(
             val id = call.parameters["id"] ?: return@sse
             val uuid = runCatching { Uuid.parse(id) }.getOrNull() ?: return@sse
 
+            chatService.initializeConversation(uuid)
             chatService.addConversationReference(uuid)
-            try {
-                chatService.initializeConversation(uuid)
-                heartbeat {
-                    period = 1.seconds
-                }
 
+            heartbeat {
+                period = 1.seconds
+            }
+
+            try {
                 var sequence = 0L
                 var previousDto: ConversationDto? = null
 
@@ -499,6 +490,38 @@ private fun validateConversationInjectionIds(
     )
 }
 
-private suspend fun ConversationRepository.requireConversation(id: Uuid) {
-    if (!existsConversationById(id)) throw NotFoundException("Conversation not found")
+private suspend fun applyInitialConversationInjections(
+    chatService: ChatService,
+    settingsStore: SettingsStore,
+    conversationId: Uuid,
+    modeInjectionIds: List<String>?,
+    lorebookIds: List<String>?,
+) {
+    if (modeInjectionIds == null && lorebookIds == null) {
+        return
+    }
+
+    val conversation = chatService.getConversationFlow(conversationId).first()
+    val settings = settingsStore.settingsFlow.first()
+    val assistant = settings.assistants.firstOrNull { it.id == conversation.assistantId }
+        ?: throw NotFoundException("Assistant not found")
+    if (!assistant.allowConversationPromptInjection) {
+        if (modeInjectionIds.orEmpty().isNotEmpty() || lorebookIds.orEmpty().isNotEmpty()) {
+            throw BadRequestException("Conversation prompt injection is not enabled for this assistant")
+        }
+        return
+    }
+
+    val (requestedModeInjectionIds, requestedLorebookIds) = validateConversationInjectionIds(
+        settings = settings,
+        modeInjectionIds = modeInjectionIds ?: conversation.modeInjectionIds.map { it.toString() },
+        lorebookIds = lorebookIds ?: conversation.lorebookIds.map { it.toString() },
+    )
+
+    chatService.updateConversationState(conversationId) {
+        it.copy(
+            modeInjectionIds = requestedModeInjectionIds,
+            lorebookIds = requestedLorebookIds,
+        )
+    }
 }

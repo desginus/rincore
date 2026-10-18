@@ -1,0 +1,183 @@
+/* 【域 C·工具系统】 — 生态/插件 | 地图: docs/APP_MAP.md §C */
+package me.rerere.rikkahub.ecosystem
+
+
+/* ───【自研】EcosystemScanner.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
+import android.util.Log
+import java.io.File
+
+/**
+ * 多生态系统文件扫描器。
+ * 从一个根目录出发, 发现所有已知生态的指令文件。
+ */
+object EcosystemScanner {
+    private const val TAG = "EcosystemScanner"
+
+    /**
+     * 已知的文件发现规则。
+     * Pair(first, second): first=相对路径模式, second=角色
+     */
+    private val DISCOVERY_RULES: Map<EcosystemSource, List<Pair<String, InstructionRole>>> = mapOf(
+        EcosystemSource.OPENCLAW to listOf(
+            "AGENTS.md" to InstructionRole.SYSTEM_RULES,
+            "SOUL.md" to InstructionRole.PERSONALITY,
+            "TOOLS.md" to InstructionRole.SKILL_MANUAL,
+            "MEMORY.md" to InstructionRole.USER_DEFINED,
+        ),
+        EcosystemSource.CLAUDE_CODE to listOf(
+            "CLAUDE.md" to InstructionRole.SYSTEM_RULES,
+            ".claude/settings.json" to InstructionRole.PROJECT_CONTEXT,
+        ),
+        EcosystemSource.CURSOR to listOf(
+            ".cursorrules" to InstructionRole.PROJECT_CONTEXT,
+            ".cursor/instructions.md" to InstructionRole.PROJECT_CONTEXT,
+        ),
+        EcosystemSource.COPILOT to listOf(
+            ".github/copilot-instructions.md" to InstructionRole.PROJECT_CONTEXT,
+        ),
+        EcosystemSource.WINDSURF to listOf(
+            ".windsurfrules" to InstructionRole.PROJECT_CONTEXT,
+        ),
+    )
+
+    /**
+     * 扫描根目录下所有生态文件。
+     */
+    fun scan(rootDir: File): List<EcosystemInstruction> {
+        if (!rootDir.isDirectory) return emptyList()
+
+        val results = mutableListOf<EcosystemInstruction>()
+
+        for ((source, rules) in DISCOVERY_RULES) {
+            for ((relativePath, role) in rules) {
+                val file = File(rootDir, relativePath)
+                if (file.isFile && file.canRead()) {
+                    try {
+                        val content = file.readText()
+                        if (content.isNotBlank()) {
+                            results.add(
+                                EcosystemInstruction(
+                                    source = source,
+                                    fileName = file.name,
+                                    displayPath = file.absolutePath,
+                                    content = content,
+                                    role = role,
+                                )
+                            )
+                            Log.d(TAG, "Found: ${source.displayName} / ${file.name} (${content.length}c)")
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to read ${file.absolutePath}: ${e.message}")
+                    }
+                }
+            }
+        }
+
+        // 扫描 OpenClaw 技能子目录 (使用 ClawSkillLoader 解析元数据)
+        val skillsDir = File(rootDir, "skills")
+        if (skillsDir.isDirectory) {
+            me.rerere.rikkahub.openclaw.ClawSkillLoader.scanDirectory(skillsDir).forEach { skill ->
+                // 提取 SKILL.md frontmatter 中的 slash_commands
+                val slashCommands = extractSlashCommands(skill.body)
+                val instruction = EcosystemInstruction(
+                    source = EcosystemSource.OPENCLAW,
+                    fileName = "SKILL.md (${skill.name})",
+                    displayPath = skill.sourcePath + "/SKILL.md",
+                    content = buildString {
+                        appendLine("# ${skill.name} v${skill.version}")
+                        if (skill.emoji != null) appendLine("图标: ${skill.emoji}")
+                        appendLine("描述: ${skill.description}")
+                        appendLine()
+                        appendLine(skill.body)
+                    },
+                    role = InstructionRole.SKILL_MANUAL,
+                    metadata = mapOf(
+                        "skillName" to skill.name,
+                        "version" to skill.version,
+                        "slash_commands" to slashCommands,
+                    ),
+                )
+                results.add(instruction)
+            }
+        }
+
+        // 扫描 .claude/commands/ 目录
+        val claudeCommandsDir = File(rootDir, ".claude/commands")
+        if (claudeCommandsDir.isDirectory) {
+            claudeCommandsDir.listFiles()?.filter { it.isFile && it.extension == "md" }?.forEach { cmdFile ->
+                try {
+                    val content = cmdFile.readText()
+                    if (content.isNotBlank()) {
+                        results.add(
+                            EcosystemInstruction(
+                                source = EcosystemSource.CLAUDE_CODE,
+                                fileName = "command: ${cmdFile.nameWithoutExtension}",
+                                displayPath = cmdFile.absolutePath,
+                                content = content,
+                                role = InstructionRole.SKILL_MANUAL,
+                            )
+                        )
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+
+        // 扫描插件 skills 目录
+        me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry.getSkillRoots().forEach { pluginSkillRoot ->
+            scanSkillsDirectory(pluginSkillRoot, results)
+        }
+
+        Log.i(TAG, "Scanned ${results.size} ecosystem files from ${rootDir.absolutePath}")
+        return results
+    }
+
+    private fun scanSkillsDirectory(skillsDir: File, results: MutableList<EcosystemInstruction>) {
+        if (!skillsDir.isDirectory) return
+        skillsDir.listFiles()?.filter { it.isDirectory }?.forEach { skillDir ->
+            val skillMd = File(skillDir, "SKILL.md")
+            if (skillMd.isFile && skillMd.canRead()) {
+                try {
+                    val content = skillMd.readText()
+                    if (content.isNotBlank()) {
+                        results.add(
+                            EcosystemInstruction(
+                                source = EcosystemSource.OPENCLAW,
+                                fileName = "SKILL.md (${skillDir.name})",
+                                displayPath = skillMd.absolutePath,
+                                content = content,
+                                role = InstructionRole.SKILL_MANUAL,
+                                metadata = mapOf("skillName" to skillDir.name),
+                            )
+                        )
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    /**
+     * 扫描多个根目录。
+     */
+    fun scanAll(rootDirs: List<File>): List<EcosystemInstruction> {
+        return rootDirs.flatMap { scan(it) }
+    }
+
+    /**
+     * 从 SKILL.md body 提取 frontmatter 中的 slash_commands。
+     * 格式: slash_commands: [/cmd1, /cmd2]
+     */
+    private fun extractSlashCommands(body: String): String {
+        // YAML frontmatter 在第一组 --- 之间
+        val frontmatterMatch = Regex("---\\s*\\n([\\s\\S]*?)\\n---").find(body)
+        if (frontmatterMatch == null) return ""
+        val frontmatter = frontmatterMatch.groupValues[1]
+        val slashLine = frontmatter.lines().firstOrNull {
+            it.trimStart().startsWith("slash_commands") || it.trimStart().startsWith("commands")
+        } ?: return ""
+        // 提取 [...] 中的内容
+        val cmds = Regex("\\[([^\\]]+)\\]").find(slashLine)?.groupValues?.get(1) ?: return ""
+        return cmds.replace("\"", "").replace("'", "").trim()
+    }
+}

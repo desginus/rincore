@@ -1,5 +1,9 @@
 package me.rerere.highlight.core
 
+
+/* ───【原版对齐】Keywords.kt | 差异 ±0 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 /**
  * Raw keyword declaration of a [Mode], mirroring the `keywords` property in `highlight.js`.
  *

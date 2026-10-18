@@ -1,0 +1,369 @@
+/* 【域 L·基础设施】 | 地图: docs/APP_MAP.md §L */
+package me.rerere.rikkahub.utils
+
+
+/* ───【自研】WorkspaceImageResolver.kt — 原版无此文件
+ * v3.11.31: 工作区图片内联渲染 — workspace:// 地址解析器 (纯函数 + 单测覆盖)。
+ * v3.11.32 实测修复: resolver→manager 转发路径语义断裂 — resolveRootfsPath 的
+ * filesDir 分支只认 "/workspace" 开头的 Rootfs 内路径, 旧实现转发 "/x.png" 落
+ * 到 linuxDir 必然 not_found (三前缀一致失败的真实死点, 非跨进程问题)。
+ * 现转发拼接 ROOTFS_WORKSPACE_DIR + rel, 并遍历全部 workspace 求命中。
+ * ───────────────────────────────────────────────────────────────*/
+import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+
+/** 支持的图片扩展名 (与 show_image 声明一致) */
+val WORKSPACE_IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg", "webp", "gif", "bmp")
+
+/**
+ * v3.15.2: host 字面 file:// 前缀识别 (大小写不敏感匹配用)。
+ * 形态: [file://]/data/data|/data/user/0/<pkg>/files/workspaces/<UUID>/files/<rel>
+ * 前缀含包名通配段 — 用尾部锚 "/files/workspaces/" 定位。
+ */
+internal const val HOST_WS_ANCHOR = "/files/workspaces/"
+internal val HOST_WS_PREFIXES = listOf(
+    "file:///data/data/",
+    "file:///data/user/0/",
+    "/data/data/",
+    "/data/user/0/",
+)
+
+/**
+ * v4.0.14: /data/user/0/<pkg> 是 /data/data/<pkg> 的符号链接别名，
+ * resolver 在渲染端无法穿透该别名（症状：stat 可达、字节不通）。
+ * 所有 host 路径入口统一规范化为字面 /data/data 前缀后再处理。
+ */
+internal fun normalizeDataUserAlias(raw: String): String {
+    val lower = raw.lowercase()
+    val prefixUser = "/data/user/0/"
+    val prefixData = "/data/data/"
+    val idx = lower.indexOf(prefixUser)
+    if (idx < 0) return raw
+    val after = raw.substring(idx + prefixUser.length)
+    val slash = after.indexOf('/')
+    return if (slash < 0) raw
+    else raw.substring(0, idx) + prefixData + after
+}
+
+/** host 字面前缀 → 规范化为 /workspace/<rel> (路径归一不含 UUID; UUID 由
+ *  [extractHostWorkspaceUuid] 提取, 供 resolveDetailed 定点优先 — v4.8.185) */
+internal fun normalizeHostWorkspacePath(raw: String): String? {
+    val normalizedRaw = normalizeDataUserAlias(raw)
+    val lower = normalizedRaw.lowercase().trim()
+    val anchorIdx = lower.indexOf(HOST_WS_ANCHOR)
+    if (anchorIdx < 0) return null
+    // workspaces/<UUID>/files/<rel> — 取锚点后第 2 个 '/' 之后
+    val afterAnchor = normalizedRaw.trim().substring(anchorIdx + HOST_WS_ANCHOR.length)
+    val secondSlash = afterAnchor.indexOf('/')
+    if (secondSlash < 0) return null
+    val afterUuid = afterAnchor.substring(secondSlash + 1)
+    if (!afterUuid.lowercase().startsWith("files/")) return null
+    return "/workspace/" + afterUuid.substring("files/".length)
+}
+
+/**
+ * v4.8.185 (审计重写): host 字面地址中的显式工作区 UUID 提取 —
+ * resolveDetailed 据此"定点优先" (地址说什么就解析什么)。旧实现 UUID 段全忽略
+ * + 全库 first-hit: 同名文件会命中错工作区 = 图片偷换机制 B。
+ * 非 host workspaces 形态 (无锚点) 返回 null。
+ */
+internal fun extractHostWorkspaceUuid(raw: String?): String? {
+    if (raw.isNullOrBlank()) return null
+    val normalizedRaw = normalizeDataUserAlias(raw)
+    val lower = normalizedRaw.lowercase().trim()
+    val anchorIdx = lower.indexOf(HOST_WS_ANCHOR)
+    if (anchorIdx < 0) return null
+    val afterAnchor = normalizedRaw.trim().substring(anchorIdx + HOST_WS_ANCHOR.length)
+    val secondSlash = afterAnchor.indexOf('/')
+    if (secondSlash < 0) return null
+    return afterAnchor.substring(0, secondSlash).takeIf { it.isNotBlank() }
+}
+
+/**
+ * v4.8.113: file:// 渲染放行判定 — 仅本应用私有目录 (files/cache)。
+ * 由 Markdown.kt 的 flavour 注入 markdown XSS 安全链 (XssSafeLinks.fileAllowed):
+ * 工具产图 render_url 与聊天附件的 file:///data/data/<pkg>/... 地址放行，
+ * 其余 file:// 维持拦截。渲染端为 Compose+Coil (非 WebView)，无任意文件泄露面。
+ * 判据为字面前缀 (不做解码)：与 buildRenderUrl 产出形态一致。
+ */
+fun isAppPrivateFileUri(url: String, pkg: String = me.rerere.rikkahub.BuildConfig.APPLICATION_ID): Boolean {
+    val lower = url.trim().lowercase()
+    if (!lower.startsWith("file:")) return false
+    val p = pkg.lowercase()
+    val prefixes = listOf(
+        "file:///data/data/$p/files/",
+        "file:///data/data/$p/cache/",
+        "file:///data/user/0/$p/files/",
+        "file:///data/user/0/$p/cache/",
+    )
+    return prefixes.any { lower.startsWith(it) }
+}
+
+/** scheme/前缀是否为工作区地址 (前缀大小写不敏感, 路径本体大小写敏感) */
+fun isWorkspaceUri(raw: String?): Boolean {
+    if (raw == null) return false
+    val lower = raw.lowercase().trim()
+    val bare = raw.trim()
+    return lower.startsWith("workspace://") ||
+        lower.startsWith("file:///workspace/") ||
+        lower.startsWith("file://workspace/") ||
+        bare.startsWith("/workspace/") ||
+        // v3.15.2: host 字面前缀 (教训固化: proot 内 /workspace 与 host 渲染端
+        // 互不可见; 模型可能直接输出 host 真实路径, /data/user/0 为 symlink 别名)
+        HOST_WS_PREFIXES.any { lower.startsWith(it) }
+}
+
+/**
+ * 宽松 percent-decode: 非法 % 序列原样保留不抛错; `+` 保持字面量 (只有查询串才转空格)。
+ * 多字节按 UTF-8 重组 (中文目录名不失真)。
+ */
+fun percentDecodeLenient(s: String): String {
+    if ('%' !in s) return s
+    val out = StringBuilder(s.length)
+    val byteBuf = java.io.ByteArrayOutputStream()
+    fun flushBytes() {
+        if (byteBuf.size() > 0) {
+            out.append(byteBuf.toString("UTF-8"))
+            byteBuf.reset()
+        }
+    }
+    var i = 0
+    while (i < s.length) {
+        val c = s[i]
+        if (c == '%') {
+            val hi = s.getOrNull(i + 1)?.digitToIntOrNull(16)
+            val lo = s.getOrNull(i + 2)?.digitToIntOrNull(16)
+            if (hi != null && lo != null) {
+                byteBuf.write(hi * 16 + lo)
+                i += 3
+                continue
+            }
+        }
+        flushBytes()
+        out.append(c)
+        i++
+    }
+    flushBytes()
+    return out.toString()
+}
+
+/**
+ * v4.2.3: 虚拟 workspace 前缀判定 — 排除 HOST_WS_PREFIXES (host 真实路径)。
+ * host 前缀匹配过宽 (app 私有目录全部命中, 含聊天文件 file:///data/data/...
+ * /files/upload/...), resolveWorkspaceRelPath 对非 workspaces 结构返回 null,
+ * v4.2.2 的流式短路若用它判定会把工具结果里的聊天文件图片误杀为"图片不可用"。
+ * 短路只针对虚拟前缀 (workspace:// 等 — 流式逐字到达的形态)。
+ */
+fun isVirtualWorkspaceUri(raw: String?): Boolean {
+    if (raw == null) return false
+    val lower = raw.lowercase().trim()
+    val bare = raw.trim()
+    return lower.startsWith("workspace://") ||
+        lower.startsWith("file:///workspace/") ||
+        lower.startsWith("file://workspace/") ||
+        bare.startsWith("/workspace/")
+}
+
+/**
+ * 解析 workspace:// 类地址 → Rootfs 内相对路径 (不含前缀)。
+ * 折叠 // 与 .;`..` 在栈空时弹出 = 目录穿越 → 返回 null。
+ * 空路径 (指向根) → null。返回值已规范为 "/a/b/c" 形式。
+ */
+fun resolveWorkspaceRelPath(raw: String): String? {
+    val normalizedRaw = normalizeDataUserAlias(raw)
+    val lower = normalizedRaw.lowercase().trim()
+    // v3.15.2: host 字面前缀先归一化 (file:///data/data|user/0/.../workspaces/<UUID>/files/<rel>)
+    if (HOST_WS_PREFIXES.any { lower.startsWith(it) }) {
+        val normalized = normalizeHostWorkspacePath(normalizedRaw) ?: return null
+        return resolveWorkspaceRelPath(normalized)
+    }
+    val rest: String = when {
+        lower.startsWith("workspace://") -> raw.trim().substring("workspace://".length)
+        lower.startsWith("file:///workspace/") -> raw.trim().substring("file:///workspace/".length)
+        lower.startsWith("file://workspace/") -> raw.trim().substring("file://workspace/".length)
+        raw.trim().startsWith("/workspace/") -> raw.trim().substring("/workspace/".length)
+        else -> return null
+    }
+    if (rest.isBlank()) return null
+    val decoded = percentDecodeLenient(rest)
+    val stack = ArrayDeque<String>()
+    for (seg in decoded.split('/')) {
+        when (seg) {
+            "", "." -> {}
+            ".." -> if (stack.isNotEmpty()) stack.removeLast() else return null
+            else -> stack.addLast(seg)
+        }
+    }
+    if (stack.isEmpty()) return null
+    return "/" + stack.joinToString("/")
+}
+
+/**
+ * 单例 — 渲染链路同步入口。Koin WorkspaceRepository / WorkspaceManager 与
+ * workspace_read_file 同源 (单进程, baseDir = filesDir/workspaces)。
+ */
+object WorkspaceImageResolver {
+    private const val TAG = "WorkspaceImage"
+
+    // ── v4.8.99 线程改革: 工作区列表 TTL 快照 ──
+    // resolveDetailed 是渲染链热路径 (每图每 keyer 调用), 旧实现每次 runBlocking 查库;
+    // 现改为内存快照: 60s TTL 内零查询, 过期后台刷新 (stale-while-revalidate),
+    // 冷路径只发生一次; 工作区增删经 invalidateWorkspaces() 显式失效。
+    private const val SNAPSHOT_TTL_MS = 60_000L
+
+    @Volatile
+    private var cachedWorkspaces: List<me.rerere.rikkahub.data.db.entity.WorkspaceEntity>? = null
+
+    @Volatile
+    private var cachedAtMs = 0L
+
+    @Volatile
+    private var refreshing = false
+
+    private val refreshScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** 工作区集合失效 (创建/删除/恢复后调用) */
+    fun invalidateWorkspaces() {
+        cachedWorkspaces = null
+    }
+
+    /** 启动预热 — 首个调用方不必付冷路径 */
+    fun warmWorkspaces() {
+        if (cachedWorkspaces == null) refreshAsync()
+    }
+
+    private fun refreshAsync() {
+        if (refreshing) return
+        refreshing = true
+        refreshScope.launch {
+            runCatching {
+                val koin = org.koin.core.context.GlobalContext.get()
+                val repo = koin.get<me.rerere.rikkahub.data.repository.WorkspaceRepository>()
+                cachedWorkspaces = repo.getAllWorkspaces()
+                cachedAtMs = System.currentTimeMillis()
+            }
+            refreshing = false
+        }
+    }
+
+    /** 快照读取: 热路径零阻塞; 冷路径 (仅首个调用) 同步取一次 */
+    private fun workspacesSnapshot(
+        fallbackRepo: me.rerere.rikkahub.data.repository.WorkspaceRepository? = null,
+    ): List<me.rerere.rikkahub.data.db.entity.WorkspaceEntity>? {
+        val cached = cachedWorkspaces
+        if (cached != null) {
+            if (System.currentTimeMillis() - cachedAtMs > SNAPSHOT_TTL_MS) refreshAsync()
+            return cached
+        }
+        val fetched = runCatching {
+            val repo = fallbackRepo
+                ?: org.koin.core.context.GlobalContext.get()
+                    .get<me.rerere.rikkahub.data.repository.WorkspaceRepository>()
+            kotlinx.coroutines.runBlocking { repo.getAllWorkspaces() }
+        }.getOrNull()
+        if (fetched != null) {
+            cachedWorkspaces = fetched
+            cachedAtMs = System.currentTimeMillis()
+        }
+        return fetched
+    }
+
+    /**
+     * 全链路解析: 返回 (宿主文件, "ok") 或 (null, 失败环节标签)。
+     * 失败环节: empty_input / prefix_not_recognized / invalid_path / no_workspace /
+     * not_found / extension_rejected — 供 show_image 分级文案与日志定位。
+     * 多 workspace 环境: host 形态地址带 UUID 时定点该工作区 (v4.8.185), 否则
+     * 遍历全部 root 求命中 (同名文件以首个命中为准 — 仅限无 UUID 的旧/虚拟形态)。
+     */
+    // v3.15.3: imageOnly=false 时跳过图片扩展名校验 (链接点击打开任意文件: xlsx/pdf 等)
+    fun resolveDetailed(raw: String?, imageOnly: Boolean = true): WorkspaceResolveResult {
+        if (raw.isNullOrBlank()) return WorkspaceResolveResult(null, "empty_input")
+        val rel = resolveWorkspaceRelPath(raw)
+            ?: return WorkspaceResolveResult(
+                null,
+                if (isWorkspaceUri(raw)) "invalid_path" else "prefix_not_recognized",
+            )
+        val ext = rel.substringAfterLast('.', "").lowercase()
+        if (imageOnly && ext !in WORKSPACE_IMAGE_EXTENSIONS) {
+            return WorkspaceResolveResult(null, "extension_rejected:$ext")
+        }
+
+        val koin = runCatching { org.koin.core.context.GlobalContext.get() }.getOrNull()
+            ?: return WorkspaceResolveResult(null, "no_workspace")
+        val repo = runCatching { koin.get<me.rerere.rikkahub.data.repository.WorkspaceRepository>() }.getOrNull()
+            ?: return WorkspaceResolveResult(null, "no_workspace")
+        val manager = runCatching { koin.get<me.rerere.workspace.WorkspaceManager>() }.getOrNull()
+            ?: return WorkspaceResolveResult(null, "no_workspace")
+        val workspaces = workspacesSnapshot(repo)
+        if (workspaces.isNullOrEmpty()) return WorkspaceResolveResult(null, "no_workspace")
+
+        // v4.8.185 (审计重写): host 形态地址携带显式工作区 UUID 时定点优先 —
+        // "地址说什么就解析什么" (旧实现丢弃 UUID + 全库 first-hit, 同名文件命中
+        // 错工作区 = 图片偷换机制 B); 仅当该 UUID 工作区已不存在时回退全遍历 (兼容旧数据)。
+        val preferredWsId = extractHostWorkspaceUuid(raw)
+        val searchList = if (preferredWsId != null) {
+            val scoped = workspaces.filter { it.id.equals(preferredWsId, ignoreCase = true) }
+            if (scoped.isNotEmpty()) scoped else workspaces
+        } else {
+            workspaces
+        }
+
+        // 转发路径 = ROOTFS_WORKSPACE_DIR 常量拼接 (语义: workspace:// 永远指
+        // Rootfs 内 /workspace 文件区) — v3.11.32 死点修复
+        val rootfsPath = me.rerere.workspace.WorkspaceManager.ROOTFS_WORKSPACE_DIR + rel
+        var lastHostGuess: File? = null
+        for (ws in searchList) {
+            val hit = manager.resolveRootfsFileSafe(ws.root, rootfsPath)
+            if (hit != null) {
+                android.util.Log.i(
+                    TAG,
+                    "pid=${android.os.Process.myPid()} uid=${android.os.Process.myUid()} " +
+                        "ok ws=${ws.root.take(8)} host=${hit.canonicalPath} " +
+                        "mtime=${hit.lastModified()} size=${hit.length()}"
+                )
+                return WorkspaceResolveResult(hit, "ok")
+            }
+            // 记录最后尝试的宿主猜测路径 (linuxDir 误落诊断用)
+            runCatching {
+                lastHostGuess = File(
+                    manager.filesDir(ws.root).parentFile, "linux" + rel
+                )
+            }
+        }
+        // v4.8.73: 双前缀自愈 — 历史消息/工具产物可能携带 "A/A/x" 形态 (cwd 叠加),
+        // 精确路径全 miss 时尝试去掉重复首段一次; 仅新增命中路径, 不改既有语义。
+        run {
+            val segs = rel.trim('/').split('/')
+            if (segs.size > 2 && segs[0].isNotEmpty() && segs[0] == segs[1]) {
+                val collapsed = "/" + segs.drop(1).joinToString("/")
+                val collapsedRootfs = me.rerere.workspace.WorkspaceManager.ROOTFS_WORKSPACE_DIR + collapsed
+                for (ws in searchList) {
+                    val hit = manager.resolveRootfsFileSafe(ws.root, collapsedRootfs)
+                    if (hit != null) {
+                        android.util.Log.i(TAG, "dedup hit: $rel -> $collapsed")
+                        return WorkspaceResolveResult(hit, "ok")
+                    }
+                }
+            }
+        }
+        android.util.Log.w(
+            TAG,
+            "miss path=$rootfsPath reason=not_found " +
+                "workspaces=${workspaces.size} fallbackGuess=${lastHostGuess?.absolutePath} " +
+                "fallbackExists=${lastHostGuess?.exists()}"
+        )
+        return WorkspaceResolveResult(null, "not_found")
+    }
+
+    /** 简单入口: 成功返回宿主 File, 失败返回 null (Coil Fetcher 用) */
+    fun resolve(raw: String?): File? = resolveDetailed(raw).file
+
+    /** v3.15.3: 任意文件解析 (链接点击打开 xlsx/pdf 等, 不限图片扩展名) */
+    fun resolveAnyFile(raw: String?): File? = resolveDetailed(raw, imageOnly = false).file
+}
+
+/** 解析结果 (v3.11.32): file 非 null = ok; 否则 reason = 失败环节 */
+data class WorkspaceResolveResult(val file: File?, val reason: String)

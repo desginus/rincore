@@ -1,4 +1,9 @@
+/* 【域 D·工作区沙箱】 — 文件/技能 | 地图: docs/APP_MAP.md §D */
 package me.rerere.rikkahub.data.files
+
+/* ───【原版对齐】FileUtils.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -16,6 +21,47 @@ object FileUtils {
     private const val TAG = "FileUtils"
 
     fun buildUuidFileName(displayName: String?, mimeType: String?): String {
+        return "${Uuid.random()}.${resolveExtension(displayName, mimeType)}"
+    }
+
+    /**
+     * v4.8.91: 上传文件的命名 —— `<上传码>_<清洗后的原文件名>.<ext>`。
+     * 上传码 = 时间码（月日时分 + 两位补位，东八区，见 [UploadCodes]）；
+     * 前缀即码 ⇒ 沙箱里一眼可读，upload_fetch / Prompt 直接解析，无需任何映射表。
+     */
+    fun buildUploadFileName(dir: File, displayName: String?, mimeType: String?): String {
+        val ext = resolveExtension(displayName, mimeType)
+        val rawBase = displayName?.takeIf { it.isNotBlank() } ?: "file"
+        val base = rawBase
+            .substringBeforeLast('.', rawBase)
+            .replace(Regex("[\\\\/:*?\"<>|\\u0000-\\u001F]"), "_")
+            .replace(Regex("\\s+"), "_")
+            .trim('_', '.', ' ')
+            .take(60)
+            .ifBlank { "file" }
+        return "${UploadCodes.nextCode(dir)}_$base.$ext"
+    }
+
+    /**
+     * v4.8.134 (B155 根修): 原子"取号 + 创建文件" — 在上传目录同一临界区内完成,
+     * 返回已创建的空文件 (调用方直接写入)。旧流程 (取号 → 稍后 createNewFile) 在
+     * 并行工具下会撞号: 两个调用同扫到 max=01 → 都取 02 → 同一文件被两次写入,
+     * 后写覆盖先写 → 两个工具结果指向同一张图 (用户实证: 读 9-1/9-2 得同一张图)。
+     * seqLock 可重入 (JVM monitor), 内层 buildUploadFileName 的 nextCode 安全复用同一把锁。
+     */
+    fun createUploadFile(dir: File, displayName: String?, mimeType: String?): File =
+        synchronized(UploadCodes.seqLock) {
+            // v4.8.137 硬化: createNewFile() 返回 false (= 文件已存在) 时重新取号重试 —
+            // 即便未来出现扫描面识别不了的命名形态, 也不可能再撞号覆盖 (上限 64 次后
+            // 兜底复用旧语义)。
+            repeat(64) {
+                val file = File(dir, buildUploadFileName(dir, displayName, mimeType))
+                if (file.createNewFile()) return file
+            }
+            File(dir, buildUploadFileName(dir, displayName, mimeType))
+        }
+
+    private fun resolveExtension(displayName: String?, mimeType: String?): String {
         val extFromName = displayName
             ?.substringAfterLast('.', "")
             ?.takeIf { it.isNotBlank() && it != displayName }
@@ -24,8 +70,7 @@ object FileUtils {
             ?.let { MimeTypeMap.getSingleton().getExtensionFromMimeType(it.lowercase()) }
             ?.takeIf { it.isNotBlank() }
             ?.lowercase()
-        val ext = extFromName ?: extFromMime ?: "bin"
-        return "${Uuid.random()}.$ext"
+        return extFromName ?: extFromMime ?: "bin"
     }
 
     fun buildRelativePath(folder: String, file: File): String =

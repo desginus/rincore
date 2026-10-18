@@ -1,5 +1,9 @@
 package me.rerere.tts.provider.providers
 
+
+/* ───【原版对齐】XAITTSProvider.kt | 差异 ±2 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.flow.Flow
@@ -8,7 +12,6 @@ import me.rerere.tts.model.AudioChunk
 import me.rerere.tts.model.AudioFormat
 import me.rerere.tts.model.TTSRequest
 import me.rerere.tts.provider.TTSProvider
-import me.rerere.tts.provider.TTSProviderException
 import me.rerere.tts.provider.TTSProviderSetting
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -47,13 +50,10 @@ class XAITTSProvider : TTSProvider<TTSProviderSetting.XAI> {
         val response = httpClient.newCall(httpRequest).execute()
 
         if (!response.isSuccessful) {
-            val errorBody = response.body?.string()
+            val errorBody = response.body.string()
             Log.e(TAG, "generateSpeech: ${response.code} ${response.message}")
             Log.e(TAG, "generateSpeech: $errorBody")
-            throw TTSProviderException(
-                message = "xAI TTS request failed: ${response.code} ${response.message}",
-                statusCode = response.code
-            )
+            throw Exception("xAI TTS request failed: ${response.code} ${response.message}")
         }
 
         val audioData = response.body.bytes()

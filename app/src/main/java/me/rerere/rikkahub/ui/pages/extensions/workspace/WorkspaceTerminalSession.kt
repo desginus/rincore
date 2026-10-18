@@ -1,4 +1,9 @@
+/* 【域 D·工作区沙箱】 | 地图: docs/APP_MAP.md §D */
 package me.rerere.rikkahub.ui.pages.extensions.workspace
+
+/* ───【原版对齐】WorkspaceTerminalSession.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -18,7 +23,6 @@ import com.termux.view.TerminalViewClient
 import me.rerere.rikkahub.data.files.FileFolders
 import me.rerere.workspace.RootfsPatchOptions
 import me.rerere.workspace.RootfsPatcher
-import me.rerere.workspace.WorkspaceManager
 import java.io.File
 
 internal fun createWorkspaceTerminalSession(
@@ -33,11 +37,9 @@ internal fun createWorkspaceTerminalSession(
     val linuxDir = File(workspaceDir, "linux")
     val tempDir = File(workspaceDir, "tmp")
     val skillsDir = File(appContext.filesDir, FileFolders.SKILLS).apply { mkdirs() }
-    val builtinSkillsDir = File(appContext.filesDir, FileFolders.BUILTIN_SKILLS).apply { mkdirs() }
     val nativeLibraryDir = File(appContext.applicationInfo.nativeLibraryDir)
     val proot = File(nativeLibraryDir, "libproot_exec.so")
     val loader = File(nativeLibraryDir, "libproot_loader.so")
-    val shell = WorkspaceManager.rootfsShell(linuxDir)
 
     val args = mutableListOf(
         "--root-id",
@@ -51,8 +53,6 @@ internal fun createWorkspaceTerminalSession(
         "${filesDir.absolutePath}:$WORKSPACE_DIR",
         "-b",
         "${skillsDir.absolutePath}:$SKILLS_DIR",
-        "-b",
-        "${builtinSkillsDir.absolutePath}:$BUILTIN_SKILLS_DIR",
     )
     listOf("/dev", "/proc", "/sys").forEach { path ->
         if (File(path).exists()) {
@@ -69,8 +69,8 @@ internal fun createWorkspaceTerminalSession(
         "LANG=C.UTF-8",
         "LC_ALL=C.UTF-8",
         "USER=root",
-        "SHELL=$shell",
-        shell,
+        "SHELL=/bin/bash",
+        "/bin/bash",
     )
 
     val env = mutableListOf(
@@ -110,7 +110,7 @@ internal fun prepareWorkspaceTerminalSession(context: Context, root: String) {
 
 internal fun workspaceRootfsReady(context: Context, root: String): Boolean {
     val linuxDir = File(File(File(context.applicationContext.filesDir, "workspaces"), root), "linux")
-    return WorkspaceManager.isUsableRootfs(linuxDir)
+    return linuxDir.isDirectory && File(linuxDir, "bin/sh").isFile
 }
 
 internal class WorkspaceTerminalSessionClient(
@@ -328,7 +328,6 @@ internal class WorkspaceTerminalViewClient(
 
 private const val WORKSPACE_DIR = "/workspace"
 private const val SKILLS_DIR = "/skills"
-private const val BUILTIN_SKILLS_DIR = "/builtin_skills"
 
 // 一个 URL 最多还原跨越的软换行行数(向上/向下各算), 足够覆盖任意真实 URL
 private const val URL_MAX_WRAP_ROWS = 50

@@ -1,5 +1,10 @@
 package me.rerere.ai.provider.providers.google
 
+
+/* ───【原版对齐】InteractionsStreamDecoder.kt | 与 2.5.6 逐字节一致（v4.8.94 Interactions API 移植）
+ * 基线: 原版 2.5.6
+ * ───────────────────────────────────────────────────────────────*/
+
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject

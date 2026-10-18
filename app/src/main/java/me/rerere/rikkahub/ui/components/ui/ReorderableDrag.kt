@@ -1,4 +1,9 @@
+/* 【域 F·主题渲染】 — UI 组件 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.ui
+
+/* ───【原版对齐】ReorderableDrag.kt | 基线 2.5.5 (v4.8.64 适配移植)
+ * 统一列表拖拽手势: 长按整卡拖拽 + 触感反馈 + 拖拽缩放 (CollectionItem / ListItem 两版)。
+ * ───────────────────────────────────────────────────────────────*/
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.Composable

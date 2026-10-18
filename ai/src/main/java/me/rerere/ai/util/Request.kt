@@ -1,5 +1,9 @@
 package me.rerere.ai.util
 
+/* ───【原版对齐】Request.kt | 差异 ±9 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -21,6 +25,14 @@ fun List<CustomHeader>.toHeaders(): Headers {
             }
     }.build()
 }
+
+/**
+ * v3.20.0: x-opencode-session 头 — OpenCode 官方 2026-09-06 起强制
+ * (缺头请求可能报错)。仅 opencode.ai host 且有会话 ID 时注入,
+ * 其余 host 零影响; ID 为会话 UUID, 一次对话内稳定。
+ * 4.0.7: 从 ChatCompletionsAPI 私有函数提取为共享 (Anthropic 通道同用 —
+ * qwen3.8 等模型走 ClaudeProvider 时此前缺头)。
+ */
 
 // 提供商级别的请求头优先级最低，会被请求级别(助手/模型)的同名请求头覆盖
 fun ProviderSetting.mergeCustomHeaders(headers: List<CustomHeader> = emptyList()): Headers {
@@ -50,9 +62,13 @@ fun Request.Builder.configureReferHeaders(url: String): Request.Builder {
 fun Request.Builder.configureSessionHeaders(url: String, sessionId: String?): Request.Builder = apply {
     if (sessionId != null) {
         header("X-Session-ID", sessionId)
-        if (url.toHttpUrl().host == "opencode.ai") {
-            header("x-opencode-session", sessionId)
-        }
+        // v4.3.9 (BUG16): host 白名单过窄 — 仅 opencode.ai 发送。用户实证 (fp 诊断
+        // 日志): Console Go (OpenCode Go 自建部署, host≠opencode.ai) 依赖该头做
+        // 会话粘性路由, 头缺失 → 每轮请求被路由到不同上游实例 → 各上游只见过
+        // 部分前缀 → 同会话 fp_stable 不变而命中率 87%→12%→17% 崩塌。改为
+        // sessionId 非空即统一发送 — 标准 HTTP 转发对未知头忽略, 对官方端点
+        // 与其他网关零影响。
+        header("x-opencode-session", sessionId)
     }
 }
 

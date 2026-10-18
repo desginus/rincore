@@ -1,5 +1,10 @@
 package me.rerere.ai.registry
 
+
+/* ───【原版对齐】ModelRegistry | 差异 +68 行
+ * 来源: 原版移植 + 自研 (模型注册扩展)
+ * 差异: grok-4.6 等自研模型定义与能力位
+ * ───────────────────────────────────────────────────────────────*/
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.ModelAbility
 
@@ -227,12 +232,6 @@ object ModelRegistry {
         toolReasoningAbility()
     }
 
-    private val CLAUDE_OPUS_4_8 = defineModel {
-        tokens("claude", "opus", "4", "8")
-        visionInput()
-        toolReasoningAbility()
-    }
-
     private val CLAUDE_SONNET_5 = defineModel {
         tokens("claude", "sonnet", "5")
         notTokens("claude", "sonnet", "4")
@@ -247,6 +246,12 @@ object ModelRegistry {
         visionInput()
         toolReasoningAbility()
         contextLength(1.m)
+    }
+
+    private val CLAUDE_OPUS_4_8 = defineModel {
+        tokens("claude", "opus", "4", "8")
+        visionInput()
+        toolReasoningAbility()
     }
 
     private val CLAUDE_SONNET_5_5 = defineModel {
@@ -304,6 +309,7 @@ object ModelRegistry {
         toolReasoningAbility()
     }
 
+    // 原版 2.5.2 移植: deepseek-flash 模型名识别 (reasoning ability → 思考门控生效)
     private val DEEPSEEK_FLASH = defineModel {
         tokens("deepseek", "flash")
         visionInput()
@@ -316,6 +322,7 @@ object ModelRegistry {
         contextLength(1.m)
     }
 
+    // v3.9.12 (2.4.11 移植): DeepSeek V4 Flash Vision 实验版 (视觉)
     private val DEEPSEEK_V4_FLASH_VISION_EXP = defineModel {
         tokens("deepseek", "v", "4", "flash", "vision", "exp")
         visionInput()
@@ -373,12 +380,6 @@ object ModelRegistry {
         toolReasoningAbility()
     }
 
-    private val QWEN_3_8 = defineModel {
-        tokens("qwen", "3", "8")
-        visionInput()
-        toolReasoningAbility()
-    }
-
     private val QWEN_3_5_MAX = defineModel {
         tokens("qwen", "3", "5", "max")
         toolReasoningAbility()
@@ -426,6 +427,47 @@ object ModelRegistry {
     private val GROK_4 = defineModel {
         tokens("grok", "4")
         visionInput()
+        toolReasoningAbility()
+    }
+
+    private val GROK_4_5 = defineModel {
+        tokens("grok", "4", "5")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val GROK_4_6 = defineModel {
+        tokens("grok", "4", "6")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val XIAOMI_MIMO_V3 = defineModel {
+        tokens("mimo", "v", "3")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val XIAOMI_MIMO_V3_PRO = defineModel {
+        tokens("mimo", "v", "3", "pro")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val MUSE_SPARK = defineModel {
+        tokens("muse", "spark")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val MUSE_GLIMMER = defineModel {
+        tokens("muse", "glimmer")
+        visionInput()
+        toolReasoningAbility()
+    }
+
+    private val GROK_BUILD = defineModel {
+        tokens("grok", "build")
         toolReasoningAbility()
     }
 
@@ -513,17 +555,6 @@ object ModelRegistry {
         toolReasoningAbility()
     }
 
-    private val GLM_5_3 = defineModel {
-        tokens("glm", "5", "3")
-        toolReasoningAbility()
-    }
-
-    private val GLM_5_3_FLASH = defineModel {
-        tokens("glm", "5", "3", "flash")
-        visionInput()
-        toolReasoningAbility()
-    }
-
     private val MINIMAX_M2 = defineModel {
         tokens("minimax", "m", "2")
         toolReasoningAbility()
@@ -566,20 +597,9 @@ object ModelRegistry {
         toolReasoningAbility()
     }
 
+    // 2.5.4 移植: MiMo V2.6
     private val XIAOMI_MIMO_V2_6 = defineModel {
         tokens("mimo", "v", "2", "6")
-        visionInput()
-        toolReasoningAbility()
-    }
-
-    private val XIAOMI_MIMO_V3 = defineModel {
-        tokens("mimo", "v", "3")
-        visionInput()
-        toolReasoningAbility()
-    }
-
-    private val XIAOMI_MIMO_V3_PRO = defineModel {
-        tokens("mimo", "v", "3", "pro")
         visionInput()
         toolReasoningAbility()
     }
@@ -589,25 +609,8 @@ object ModelRegistry {
         toolReasoningAbility()
     }
 
-    private val HY4 = defineModel {
-        tokens("hy", "4")
-        toolReasoningAbility()
-    }
-
     private val LONGCAT_2 = defineModel {
         tokens("longcat", "2", "0")
-        toolReasoningAbility()
-    }
-
-    private val MUSE_SPARK = defineModel {
-        tokens("muse", "spark")
-        visionInput()
-        toolReasoningAbility()
-    }
-
-    private val MUSE_GLIMMER = defineModel {
-        tokens("muse", "glimmer")
-        visionInput()
         toolReasoningAbility()
     }
 
@@ -670,7 +673,6 @@ object ModelRegistry {
         QWEN_3_5,
         QWEN_3_6,
         QWEN_3_7,
-        QWEN_3_8,
         QWEN_3_5_MAX,
         QWEN_3_6_MAX,
         QWEN_3_7_MAX,
@@ -680,6 +682,13 @@ object ModelRegistry {
         DOUBAO_2_0,
         DOUBAO_2_1,
         GROK_4,
+        GROK_4_5,
+        GROK_4_6,
+        GROK_BUILD,
+        XIAOMI_MIMO_V3,
+        XIAOMI_MIMO_V3_PRO,
+        MUSE_SPARK,
+        MUSE_GLIMMER,
         KIMI_K2,
         KIMI_K2_5,
         KIMI_K2_6,
@@ -695,8 +704,6 @@ object ModelRegistry {
         GLM_5,
         GLM_5_1,
         GLM_5_2,
-        GLM_5_3,
-        GLM_5_3_FLASH,
         MINIMAX_M2,
         MINIMAX_M2_5,
         MINIMAX_M2_7,
@@ -706,13 +713,8 @@ object ModelRegistry {
         XIAOMI_MIMO_V2_5,
         XIAOMI_MIMO_V2_5_PRO,
         XIAOMI_MIMO_V2_6,
-        XIAOMI_MIMO_V3,
-        XIAOMI_MIMO_V3_PRO,
         HY3,
-        HY4,
         LONGCAT_2,
-        MUSE_SPARK,
-        MUSE_GLIMMER,
         QWEN_MT
     )
 
@@ -734,6 +736,7 @@ object ModelRegistry {
         }
     }
 
+    // v3.9.12 (2.4.11 移植): 模型上下文长度查询 (按 ModelId 匹配, 取首个)
     val MODEL_CONTEXT_LENGTH = ModelData { modelId ->
         resolveModels(modelId).firstNotNullOfOrNull { it.contextLength }
     }
@@ -790,6 +793,7 @@ object ModelRegistry {
         ability(ModelAbility.TOOL, ModelAbility.REASONING)
     }
 
+    // v3.9.12 (2.4.11 移植): 模型上下文长度 DSL 表达 (k = 千, m = 百万)
     private val Int.k: Int get() = this * 1_000
     private val Int.m: Int get() = this * 1_000_000
 }

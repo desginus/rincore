@@ -1,9 +1,14 @@
+/* ───【原版对齐】UIMessagePart.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.7 StreamChunk 体系移植 — 架构代差清除)
+ * ───────────────────────────────────────────────────────────────*/
+
 package me.rerere.ai.ui
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import me.rerere.ai.util.json
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -187,7 +192,11 @@ sealed class UIMessagePart {
         val input: String,
         val output: List<UIMessagePart> = emptyList(),
         val approvalState: ToolApprovalState = ToolApprovalState.Auto,
-        override var metadata: JsonObject? = null
+        override var metadata: JsonObject? = null,
+        // v4.8.70: 执行计时 (epoch ms) — GenerationHandler 执行现场打点。
+        // null = 未现场执行 (审批拒绝/熔断拦截/缓存回放)。数据源: 过程折叠"用时"与工具卡耗时。
+        val startedAt: Long? = null,
+        val finishedAt: Long? = null
     ) : UIMessagePart() {
         /** Whether the tool has been executed (has output) */
         val isExecuted: Boolean get() = output.isNotEmpty()
@@ -201,7 +210,18 @@ sealed class UIMessagePart {
         /** Parse input string as JsonElement */
         fun inputAsJson(): JsonElement = runCatching {
             json.parseToJsonElement(input.ifBlank { "{}" })
-        }.getOrElse { JsonObject(emptyMap()) }
+        }.getOrElse {
+            // v4.7.22: 上游非法结构防御 — 拒绝按原样处理该结果。
+            // 无法解析的参数不静默变空对象 (空对象会被部分工具当作缺省参数执行),
+            // 而是替换为确定性占位符: 下游 (执行/显示/回传) 统一识别
+            // _invalidStructure 并拒绝执行; _raw 保留原文截断供诊断。
+            JsonObject(
+                mapOf(
+                    "_invalidStructure" to JsonPrimitive(true),
+                    "_raw" to JsonPrimitive(input.take(500)),
+                )
+            )
+        }
 
         fun merge(other: Tool): Tool {
             return Tool(

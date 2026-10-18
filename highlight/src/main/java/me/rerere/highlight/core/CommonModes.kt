@@ -1,5 +1,9 @@
 package me.rerere.highlight.core
 
+
+/* ───【原版对齐】CommonModes.kt | 差异 ±0 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 /**
  * The shared regular expressions and modes exported as `MODES` by `highlight.js` 11.11.1.
  *

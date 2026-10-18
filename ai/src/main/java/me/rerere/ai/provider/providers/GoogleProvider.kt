@@ -1,0 +1,1000 @@
+package me.rerere.ai.provider.providers
+
+
+/* ───【自研】GoogleProvider.kt — 原版无此文件
+ * 来源: RinCore 自研新增 (功能与依赖见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
+import android.util.Base64
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flow
+import java.io.File
+import me.rerere.ai.provider.VideoGenerationParams
+import me.rerere.ai.ui.VideoGenerationItem
+import android.content.Context
+import android.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.channels.onFailure
+import kotlinx.coroutines.flow.Flow
+import me.rerere.ai.ui.StreamChunk
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.flatMapConcat
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonArrayBuilder
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import me.rerere.ai.provider.ProxyRoute
+import me.rerere.ai.provider.resolveProxy
+import me.rerere.ai.core.MessageRole
+import me.rerere.ai.core.ReasoningLevel
+import me.rerere.ai.core.TokenUsage
+import me.rerere.ai.core.effectiveParameters
+import me.rerere.ai.provider.BuiltInTools
+import me.rerere.ai.provider.Modality
+import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.ModelType
+import me.rerere.ai.provider.Provider
+import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.ai.provider.providers.google.InteractionsAPI
+import me.rerere.ai.provider.providers.vertex.ServiceAccountTokenProvider
+import me.rerere.ai.registry.ModelRegistry
+import me.rerere.ai.ui.GoogleThoughtMetadata
+import me.rerere.ai.ui.MessageChunk
+import me.rerere.ai.provider.TextGenerationResult
+import me.rerere.ai.ui.toTextGenerationResult
+import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessageAnnotation
+import me.rerere.ai.ui.UIMessageChoice
+import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.ui.metadataAs
+import me.rerere.ai.ui.toMetadata
+import me.rerere.ai.util.KeyRoulette
+import me.rerere.ai.util.configureReferHeaders
+import me.rerere.ai.util.configureSessionHeaders
+import me.rerere.ai.util.encodeBase64
+import me.rerere.ai.util.json
+import me.rerere.ai.util.TraceLogger
+import me.rerere.ai.util.mergeCustomBody
+import me.rerere.ai.util.removeElements
+import me.rerere.ai.util.stringSafe
+import me.rerere.ai.util.mergeCustomHeaders
+import me.rerere.common.http.await
+import me.rerere.common.http.jsonPrimitiveOrNull
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
+import okhttp3.sse.EventSource
+import okhttp3.sse.EventSourceListener
+import okhttp3.sse.EventSources
+import org.apache.commons.text.StringEscapeUtils
+import kotlin.time.Clock
+import kotlin.uuid.Uuid
+
+private const val TAG = "GoogleProvider"
+
+// v4.8.103: 视频生成轮询总预算 (提交+轮询+下载)
+private const val VIDEO_GENERATION_POLL_BUDGET_MS = 20L * 60 * 1000
+
+class GoogleProvider(
+    private val client: OkHttpClient,
+    context: Context? = null,
+    // v3.9.15: 按模型代理路由 (仅 generateText/streamText 生效)
+    private val proxyRoute: ProxyRoute? = null,
+) : Provider<ProviderSetting.Google> {
+    private val keyRoulette = if (context != null) KeyRoulette.lru(context) else KeyRoulette.default()
+
+    private val interactionsAPI = InteractionsAPI(client = client, keyRoulette = keyRoulette)
+
+    // Interactions API 目前只有 Gemini Developer API 提供，Vertex AI 仍走 generateContent
+    private fun ProviderSetting.Google.usesInteractionsApi() = useInteractionsApi && !vertexAI
+    private val serviceAccountTokenProvider by lazy {
+        ServiceAccountTokenProvider(client)
+    }
+
+    private fun buildUrl(providerSetting: ProviderSetting.Google, path: String): HttpUrl {
+        return if (!providerSetting.vertexAI) {
+            "${providerSetting.baseUrl}/$path".toHttpUrl()
+        } else if (providerSetting.useServiceAccount) {
+            "https://aiplatform.googleapis.com/v1/projects/${providerSetting.projectId}/locations/${providerSetting.location}/$path".toHttpUrl()
+        } else {
+            "https://aiplatform.googleapis.com/v1/$path".toHttpUrl()
+        }
+    }
+
+    private suspend fun transformRequest(
+        providerSetting: ProviderSetting.Google,
+        request: Request
+    ): Request {
+        return if (providerSetting.vertexAI && providerSetting.useServiceAccount) {
+            val accessToken = serviceAccountTokenProvider.fetchAccessToken(
+                serviceAccountEmail = providerSetting.serviceAccountEmail.trim(),
+                privateKeyPem = StringEscapeUtils.unescapeJson(providerSetting.privateKey.trim()),
+            )
+            request.newBuilder()
+                .addHeader("Authorization", "Bearer $accessToken")
+                .build()
+        } else {
+            val key = keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())
+            if (providerSetting.vertexAI) {
+                request.newBuilder()
+                    .url(request.url.newBuilder().addQueryParameter("key", key).build())
+                    .build()
+            } else {
+                request.newBuilder()
+                    .addHeader("x-goog-api-key", key)
+                    .build()
+            }
+        }
+    }
+
+    /* ── v4.8.103: 视频生成 — Google Veo (Gemini API, 双实现对照 googleapis SDK 原文) ──
+     * 提交 POST {baseUrl}/models/{model}:predictLongRunning (x-goog-api-key)
+     *   body {instances:[{prompt, image?:{bytesBase64Encoded,mimeType}}], parameters:{...}}
+     * 轮询 GET {baseUrl}/{operation.name} → done=true 时
+     *   response.generateVideoResponse.generatedSamples[0].video.uri → 带 key 下载 */
+    override suspend fun generateVideo(
+        providerSetting: ProviderSetting,
+        params: VideoGenerationParams
+    ): Flow<VideoGenerationItem> = flow {
+        require(providerSetting is ProviderSetting.Google) { "Expected Google provider setting" }
+        require(!providerSetting.vertexAI) { "Veo 目前仅支持 Gemini Developer API (非 Vertex 模式)" }
+        val key = keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())
+
+        val submitBody = buildJsonObject {
+            putJsonArray("instances") {
+                add(buildJsonObject {
+                    put("prompt", params.prompt)
+                    params.firstFrame?.let { path ->
+                        val bytes = File(path).readBytes()
+                        put("image", buildJsonObject {
+                            put("bytesBase64Encoded", Base64.encodeToString(bytes, Base64.NO_WRAP))
+                            put("mimeType", "image/png")
+                        })
+                    }
+                })
+            }
+            put("parameters", buildJsonObject {
+                put("numberOfVideos", params.numOfVideos)
+                params.aspectRatio.takeIf { it.isNotBlank() }?.let { put("aspectRatio", it) }
+                params.resolution.takeIf { it.isNotBlank() }?.let { put("resolution", it.lowercase()) }
+                params.durationSeconds?.let { put("durationSeconds", it) }
+            })
+        }.mergeCustomBody(params.customBody)
+        val submitUrl = buildUrl(providerSetting, "models/${params.model.modelId}:predictLongRunning")
+        val submitResponse = client.newCall(
+            transformRequest(
+                providerSetting = providerSetting,
+                request = Request.Builder()
+                    .url(submitUrl)
+                    .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+                    .post(json.encodeToString(submitBody).toRequestBody("application/json".toMediaType()))
+                    .configureReferHeaders(providerSetting.baseUrl)
+                    .build()
+            )
+        ).await()
+        val submitText = submitResponse.body.string()
+        if (!submitResponse.isSuccessful) {
+            error("提交视频生成失败 [$submitUrl]: ${submitResponse.code} $submitText")
+        }
+        val operationName = json.parseToJsonElement(submitText).jsonObject["name"]?.jsonPrimitive?.contentOrNull
+            ?: error("提交响应缺少 operation name: $submitText")
+        Log.i(TAG, "generateVideo: operation=$operationName")
+
+        val deadline = System.currentTimeMillis() + VIDEO_GENERATION_POLL_BUDGET_MS
+        while (true) {
+            if (System.currentTimeMillis() > deadline) error("Veo 任务超时 (>20 分钟)")
+            delay(10_000)
+            val pollUrl = buildUrl(providerSetting, operationName)
+            val pollResponse = client.newCall(
+                transformRequest(
+                    providerSetting = providerSetting,
+                    request = Request.Builder()
+                        .url(pollUrl)
+                        .get()
+                        .configureReferHeaders(providerSetting.baseUrl)
+                        .build()
+                )
+            ).await()
+            val pollText = pollResponse.body.string()
+            if (!pollResponse.isSuccessful) {
+                error("轮询视频任务失败 [$pollUrl]: ${pollResponse.code} $pollText")
+            }
+            val pollJson = json.parseToJsonElement(pollText).jsonObject
+            pollJson["error"]?.jsonObject?.let { err ->
+                error("Veo 任务失败: " + (err["message"]?.jsonPrimitive?.contentOrNull ?: pollText.take(300)))
+            }
+            if (pollJson["done"]?.jsonPrimitive?.booleanOrNull == true) {
+                val uri = pollJson["response"]?.jsonObject
+                    ?.get("generateVideoResponse")?.jsonObject
+                    ?.get("generatedSamples")?.jsonArray
+                    ?.getOrNull(0)?.jsonObject
+                    ?.get("video")?.jsonObject
+                    ?.get("uri")?.jsonPrimitive?.contentOrNull
+                    ?: error("Veo 完成但无视频产出: " + pollText.take(400))
+                var download = client.newCall(
+                    transformRequest(
+                        providerSetting = providerSetting,
+                        request = Request.Builder().url(uri).get().build()
+                    )
+                ).await()
+                if (!download.isSuccessful) {
+                    runCatching { download.close() }
+                    val separator = if (uri.contains("?")) "&" else "?"
+                    download = client.newCall(
+                        Request.Builder().url(uri + separator + "key=" + key).get().build()
+                    ).await()
+                }
+                if (!download.isSuccessful) error("视频下载失败: ${download.code}")
+                val tmp = File.createTempFile("rincore_veo_", ".mp4")
+                tmp.writeBytes(download.body.bytes())
+                emit(VideoGenerationItem(file = tmp, mimeType = "video/mp4"))
+                return@flow
+            }
+        }
+    }
+
+    override suspend fun listModels(providerSetting: ProviderSetting.Google): List<Model> =
+        withContext(Dispatchers.IO) {
+            val url = buildUrl(providerSetting = providerSetting, path = "models?pageSize=100")
+            val request = transformRequest(
+                providerSetting = providerSetting,
+                request = Request.Builder()
+                    .url(url)
+                    .headers(providerSetting.mergeCustomHeaders())
+                    .get()
+                    .build()
+            )
+            val response = client.newCall(request).await()
+            if (response.isSuccessful) {
+                val body = response.body.string()
+                Log.d(TAG, "listModels: $body")
+                val bodyObject = json.parseToJsonElement(body).jsonObject
+                val models = bodyObject["models"]?.jsonArray ?: return@withContext emptyList()
+
+                models.mapNotNull {
+                    val modelObject = it.jsonObject
+
+                    // 忽略非chat/embedding模型
+                    val supportedGenerationMethods =
+                        modelObject["supportedGenerationMethods"]!!.jsonArray
+                            .map { method -> method.jsonPrimitive.content }
+                    if ("generateContent" !in supportedGenerationMethods && "embedContent" !in supportedGenerationMethods) {
+                        return@mapNotNull null
+                    }
+
+                    Model(
+                        modelId = modelObject["name"]!!.jsonPrimitive.content.substringAfter("/"),
+                        displayName = modelObject["displayName"]!!.jsonPrimitive.content,
+                        type = if ("generateContent" in supportedGenerationMethods) ModelType.CHAT else ModelType.EMBEDDING,
+                    )
+                }
+            } else {
+                emptyList()
+            }
+        }
+
+    override suspend fun generateText(
+        providerSetting: ProviderSetting.Google,
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
+    ): TextGenerationResult = withContext(Dispatchers.IO) {
+        if (providerSetting.usesInteractionsApi()) {
+            return@withContext interactionsAPI.generateText(providerSetting, messages, params)
+        }
+
+        val requestBody = buildCompletionRequestBody(messages, params)
+
+        val url = buildUrl(
+            providerSetting = providerSetting,
+            path = if (providerSetting.vertexAI) {
+                "publishers/google/models/${params.model.modelId}:generateContent"
+            } else {
+                "models/${params.model.modelId}:generateContent"
+            }
+        )
+
+        val request = transformRequest(
+            providerSetting = providerSetting,
+            request = Request.Builder()
+                .url(url)
+                .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+                .post(
+                    json.encodeToString(requestBody).toRequestBody("application/json".toMediaType())
+                )
+                .configureReferHeaders(providerSetting.baseUrl)
+                .configureSessionHeaders(providerSetting.baseUrl, params.sessionId)
+                .build()
+        )
+
+        val response = client.resolveProxy(proxyRoute, params.model.modelId).newCall(request).await()
+        if (!response.isSuccessful) {
+            throw Exception("Failed to get response: ${response.code} ${response.body.string()}")
+        }
+
+        val bodyStr = response.body.string()
+        val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
+
+        val candidates = bodyJson["candidates"]!!.jsonArray
+        val usage = bodyJson["usageMetadata"]!!.jsonObject
+
+        val messageChunk = MessageChunk(
+            id = Uuid.random().toString(),
+            model = params.model.modelId,
+            choices = candidates.map { candidate ->
+                UIMessageChoice(
+                    message = parseMessage(candidate.jsonObject),
+                    index = 0,
+                    finishReason = null,
+                    delta = null
+                )
+            },
+            usage = parseUsageMeta(usage)
+        )
+
+        messageChunk.toTextGenerationResult()
+    }
+
+    private suspend fun streamTextRaw(
+        providerSetting: ProviderSetting.Google,
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
+    ): Flow<MessageChunk> = callbackFlow {
+        val requestBody = buildCompletionRequestBody(messages, params)
+
+        val url = buildUrl(
+            providerSetting = providerSetting,
+            path = if (providerSetting.vertexAI) {
+                "publishers/google/models/${params.model.modelId}:streamGenerateContent"
+            } else {
+                "models/${params.model.modelId}:streamGenerateContent"
+            }
+        ).newBuilder().addQueryParameter("alt", "sse").build()
+
+        val request = transformRequest(
+            providerSetting = providerSetting,
+            request = Request.Builder()
+                .url(url)
+                .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+                .post(
+                    json.encodeToString(requestBody).toRequestBody("application/json".toMediaType())
+                )
+                .configureReferHeaders(providerSetting.baseUrl)
+                .configureSessionHeaders(providerSetting.baseUrl, params.sessionId)
+                .build()
+        )
+
+        // 4.1.3 TTFT: Log.d 参数在 release 同样求值, 全量序列化纯浪费 — 删除
+
+        var hasData = false
+        // v4.8.112 (B136): 完成信号跟踪 — Gemini 协议正常收尾必带 candidate.finishReason
+        // (STOP/MAX_TOKENS/…)。关流时缺此信号 = 断流, 进上层重试链。
+        var gotFinishReason = false
+        val listener = object : EventSourceListener() {
+            override fun onEvent(
+                eventSource: EventSource,
+                id: String?,
+                type: String?,
+                data: String
+            ) {
+                Log.i(TAG, "onEvent: $data")
+
+                try {
+                    val jsonData = json.parseToJsonElement(data).jsonObject
+                    val reason =
+                        jsonData["promptFeedback"]?.jsonObject?.get("blockReason")?.jsonPrimitiveOrNull?.contentOrNull
+                    if (reason != null) {
+                        close(RuntimeException("Prompt feedback: $reason"))
+                    }
+                    val candidates = jsonData["candidates"]?.jsonArray ?: return
+                    if (candidates.isEmpty()) return
+                    val usage = parseUsageMeta(jsonData["usageMetadata"] as? JsonObject)
+                    val messageChunk = MessageChunk(
+                        id = Uuid.random().toString(),
+                        model = params.model.modelId,
+                        choices = candidates.mapIndexed { index, candidate ->
+                            val candidateObj = candidate.jsonObject
+                            val content = candidateObj["content"]?.jsonObject
+                            val groundingMetadata = candidateObj["groundingMetadata"]?.jsonObject
+                            val finishReason =
+                                candidateObj["finishReason"]?.jsonPrimitive?.contentOrNull
+                            // v4.8.112 (B136): 非空 finishReason 即标准完成信号
+                            if (finishReason != null) gotFinishReason = true
+
+                            val message = content?.let {
+                                parseMessage(buildJsonObject {
+                                    put("role", JsonPrimitive("model"))
+                                    put("content", it)
+                                    groundingMetadata?.let { groundingMetadata ->
+                                        put("groundingMetadata", groundingMetadata)
+                                    }
+                                })
+                            }
+
+                            UIMessageChoice(
+                                index = index,
+                                delta = message,
+                                message = null,
+                                finishReason = finishReason
+                            )
+                        },
+                        usage = usage
+                    )
+
+                    trySend(messageChunk).onFailure { e ->
+                        Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
+                    }
+                    hasData = true
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    Log.w(TAG, "onEvent parse error: $data")
+                }
+            }
+
+            override fun onFailure(
+                eventSource: EventSource,
+                t: Throwable?,
+                response: Response?
+            ) {
+                var exception = t
+
+                t?.printStackTrace()
+                Log.w(TAG, "onFailure: ${t?.message}")
+
+                // 流式传输中断恢复: 如果已有部分数据则保留
+                if (t is java.io.IOException &&
+                    (t.message?.contains("stream was reset", ignoreCase = true) == true ||
+                     t.message?.contains("protocol error", ignoreCase = true) == true ||
+                     t.message?.contains("connection reset", ignoreCase = true) == true ||
+                     t.message?.contains("connection abort", ignoreCase = true) == true ||
+                     t.message?.contains("software caused", ignoreCase = true) == true ||
+                     t.message?.contains("timeout", ignoreCase = true) == true ||
+                     t.message?.contains("broken pipe", ignoreCase = true) == true ||
+                     t.message?.contains("connection closed", ignoreCase = true) == true ||
+                     t.message?.contains("canceled", ignoreCase = true) == true)
+                ) {
+                    // 移除静默恢复 (v3.1.0 引入) — 曾致回复缺失无报错感知中断
+                    // 中断传播异常, 用户可见明确错误
+                    Log.w(TAG, "onFailure: recoverable stream error (will propagate): ${t.message} hasData=$hasData")
+                }
+
+                try {
+                    if (t == null && response != null) {
+                        val bodyStr = response.body.stringSafe()
+                        if (!bodyStr.isNullOrEmpty()) {
+                            val bodyElement = json.parseToJsonElement(bodyStr)
+                            Log.w(TAG, "body: $bodyElement")
+                            if (bodyElement is JsonObject) {
+                                exception = Exception(
+                                    bodyElement["error"]?.jsonObject?.get("message")?.jsonPrimitive?.content
+                                        ?: "unknown"
+                                )
+                            }
+                        } else {
+                            exception = Exception("Unknown error: ${response.code}")
+                        }
+                    }
+                } catch (e: Throwable) {
+                    e.printStackTrace()
+                    exception = e
+                } finally {
+                    TraceLogger.dumpAndLog(TAG, exception ?: Exception("Stream failed"), 60)
+                    close(exception ?: Exception("Stream failed"))
+                }
+            }
+
+            override fun onClosed(eventSource: EventSource) {
+                Log.d(TAG, "onClosed")
+                // v4.8.112 (B136): 正判据完成门 — 无 finishReason 的关流 = 断流, 进重试链
+                // (此前无条件 close(), 半截回复会被静默当正常完成保存)。
+                if (gotFinishReason) {
+                    close()
+                } else {
+                    Log.w(TAG, "onClosed: closed before completion (no finishReason) — treating as interruption")
+                    me.rerere.ai.util.TraceLogger.log("SSE", "google closed before completion — entering retry chain")
+                    close(java.io.IOException("SSE 流在完成前被服务器关闭 (无 finishReason)"))
+                }
+            }
+        }
+
+        val eventSource = EventSources.createFactory(client)
+                .newEventSource(request, listener)
+
+        awaitClose {
+            Log.d(TAG, "awaitClose: cancelling eventSource")
+            eventSource.cancel()
+        }
+        // trySend 在缓冲满时会静默丢弃 delta，导致回复中间缺字 (#1295)，因此缓冲必须无界
+    }.buffer(Channel.UNLIMITED).flowOn(Dispatchers.IO)
+
+    private fun buildCompletionRequestBody(
+        messages: List<UIMessage>,
+        params: TextGenerationParams
+    ): JsonObject = buildJsonObject {
+        // System message if available
+        val systemMessage = messages.firstOrNull { it.role == MessageRole.SYSTEM }
+        if (systemMessage != null && !params.model.outputModalities.contains(Modality.IMAGE)) {
+            put("systemInstruction", buildJsonObject {
+                putJsonArray("parts") {
+                    add(buildJsonObject {
+                        put(
+                            "text",
+                            systemMessage.parts.filterIsInstance<UIMessagePart.Text>()
+                                .joinToString { it.text })
+                    })
+                }
+            })
+        }
+
+        // Generation config
+        put("generationConfig", buildJsonObject {
+            if (params.temperature != null) put("temperature", params.temperature)
+            if (params.topP != null) put("topP", params.topP)
+            if (params.maxTokens != null) put("maxOutputTokens", params.maxTokens)
+            if (params.model.outputModalities.contains(Modality.IMAGE)) {
+                put("responseModalities", buildJsonArray {
+                    add(JsonPrimitive("TEXT"))
+                    add(JsonPrimitive("IMAGE"))
+                })
+            }
+            if (params.model.abilities.contains(ModelAbility.REASONING)) {
+                put("thinkingConfig", buildJsonObject {
+                    put("includeThoughts", true)
+
+                    val isGeminiPro =
+                        params.model.modelId.contains(Regex("2\\.5.*pro", RegexOption.IGNORE_CASE))
+                    val useThinkingLevel =
+                        ModelRegistry.GEMINI_3_SERIES.match(modelId = params.model.modelId) ||
+                            ModelRegistry.GEMINI_4.match(modelId = params.model.modelId)
+
+                    when (params.reasoningLevel) {
+                        ReasoningLevel.AUTO -> {} // 自动模式，不设置参数
+
+                        ReasoningLevel.OFF -> {
+                            if (useThinkingLevel) {
+                                put("thinkingLevel", "minimal")
+                            } else if (!isGeminiPro) {
+                                put("thinkingBudget", 0)
+                                put("includeThoughts", false)
+                            }
+                        }
+
+                        else -> {
+                            if (useThinkingLevel) {
+                                when (params.reasoningLevel) {
+                                    ReasoningLevel.LOW -> put("thinkingLevel", "low")
+                                    ReasoningLevel.MEDIUM -> put("thinkingLevel", "medium")
+                                    else -> put("thinkingLevel", "high") // HIGH, XHIGH
+                                }
+                            } else {
+                                put("thinkingBudget", params.reasoningLevel.budgetTokens)
+                            }
+                        }
+                    }
+                })
+            }
+        })
+
+        // Contents (user messages)
+        put(
+            "contents",
+            buildContents(messages)
+        )
+
+        // Client function tools and model built-in tools share the same array.
+        val useFunctionTools =
+            params.tools.isNotEmpty() && params.model.abilities.contains(ModelAbility.TOOL)
+        if (useFunctionTools || params.model.tools.isNotEmpty()) {
+            putJsonArray("tools") {
+                if (useFunctionTools) {
+                    add(buildJsonObject {
+                        putJsonArray("functionDeclarations") {
+                            params.tools.forEach { tool ->
+                                add(buildJsonObject {
+                                    put("name", JsonPrimitive(tool.name))
+                                    put("description", JsonPrimitive(tool.description))
+                                    put(
+                                        key = "parameters",
+                                        element = json.encodeToJsonElement(tool.effectiveParameters())
+                                            .removeElements(
+                                                listOf(
+                                                    "const",
+                                                    "exclusiveMaximum",
+                                                    "exclusiveMinimum",
+                                                    "format",
+                                                    "additionalProperties",
+                                                    "enum",
+                                                )
+                                            )
+                                    )
+                                })
+                            }
+                        }
+                    })
+                }
+                params.model.tools.forEach { builtInTool ->
+                    when (builtInTool) {
+                        BuiltInTools.Search -> {
+                            add(buildJsonObject {
+                                put("googleSearch", buildJsonObject {})
+                            })
+                        }
+
+                        BuiltInTools.UrlContext -> {
+                            add(buildJsonObject {
+                                put("urlContext", buildJsonObject {})
+                            })
+                        }
+
+                        else -> {}
+                    }
+                }
+            }
+        }
+
+        // Safety Settings
+        putJsonArray("safetySettings") {
+            add(buildJsonObject {
+                put("category", "HARM_CATEGORY_HARASSMENT")
+                put("threshold", "OFF")
+            })
+            add(buildJsonObject {
+                put("category", "HARM_CATEGORY_HATE_SPEECH")
+                put("threshold", "OFF")
+            })
+            add(buildJsonObject {
+                put("category", "HARM_CATEGORY_SEXUALLY_EXPLICIT")
+                put("threshold", "OFF")
+            })
+            add(buildJsonObject {
+                put("category", "HARM_CATEGORY_DANGEROUS_CONTENT")
+                put("threshold", "OFF")
+            })
+            add(buildJsonObject {
+                put("category", "HARM_CATEGORY_CIVIC_INTEGRITY")
+                put("threshold", "OFF")
+            })
+        }
+    }.mergeCustomBody(params.customBody)
+
+    private fun commonRoleToGoogleRole(role: MessageRole): String {
+        return when (role) {
+            MessageRole.USER -> "user"
+            MessageRole.SYSTEM -> "system"
+            MessageRole.ASSISTANT -> "model"
+            MessageRole.TOOL -> "user" // google api中, tool结果是用户role发送的
+        }
+    }
+
+    private fun googleRoleToCommonRole(role: String): MessageRole {
+        return when (role) {
+            "user" -> MessageRole.USER
+            "system" -> MessageRole.SYSTEM
+            "model" -> MessageRole.ASSISTANT
+            else -> error("Unknown role $role")
+        }
+    }
+
+    private fun parseMessage(message: JsonObject): UIMessage {
+        val role = googleRoleToCommonRole(
+            message["role"]?.jsonPrimitive?.contentOrNull ?: "model"
+        )
+        val content = message["content"]?.jsonObject ?: error("No content")
+        val parts = content["parts"]?.jsonArray?.map { part ->
+            parseMessagePart(part.jsonObject)
+        } ?: emptyList()
+
+        val groundingMetadata = message["groundingMetadata"]?.jsonObject
+        Log.i(TAG, "parseMessage: $groundingMetadata")
+        val annotations = parseSearchGroundingMetadata(groundingMetadata)
+
+        return UIMessage(
+            role = role,
+            parts = parts,
+            annotations = annotations
+        )
+    }
+
+    private fun parseSearchGroundingMetadata(jsonObject: JsonObject?): List<UIMessageAnnotation> {
+        if (jsonObject == null) return emptyList()
+        val groundingChunks = jsonObject["groundingChunks"]?.jsonArray ?: emptyList()
+        val chunks = groundingChunks.mapNotNull { chunk ->
+            val web = chunk.jsonObject["web"]?.jsonObject ?: return@mapNotNull null
+            val uri = web["uri"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            val title = web["title"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            UIMessageAnnotation.UrlCitation(
+                title = title,
+                url = uri
+            )
+        }
+        Log.i(TAG, "parseSearchGroundingMetadata: $chunks")
+        return chunks
+    }
+
+    private fun parseMessagePart(jsonObject: JsonObject): UIMessagePart {
+        return when {
+            jsonObject.containsKey("text") -> {
+                val thought = jsonObject["thought"]?.jsonPrimitive?.booleanOrNull ?: false
+                val text = jsonObject["text"]?.jsonPrimitive?.content ?: ""
+                if (thought) UIMessagePart.Reasoning(
+                    reasoning = text,
+                    createdAt = Clock.System.now(),
+                    finishedAt = null
+                ) else UIMessagePart.Text(text)
+            }
+
+            jsonObject.containsKey("functionCall") -> {
+                UIMessagePart.Tool(
+                    toolCallId = Uuid.random().toString(),
+                    toolName = jsonObject["functionCall"]!!.jsonObject["name"]!!.jsonPrimitive.content,
+                    input = json.encodeToString(jsonObject["functionCall"]!!.jsonObject["args"]),
+                    output = emptyList(),
+                    metadata = GoogleThoughtMetadata(
+                        thoughtSignature = jsonObject["thoughtSignature"]?.jsonPrimitive?.contentOrNull
+                    ).toMetadata()
+                )
+            }
+
+            jsonObject.containsKey("inlineData") -> {
+                val inlineData = jsonObject["inlineData"]!!.jsonObject
+                val mime = inlineData["mimeType"]?.jsonPrimitive?.content ?: "image/png"
+                val data = inlineData["data"]?.jsonPrimitive?.content ?: ""
+                val thought = jsonObject["thought"]?.jsonPrimitive?.booleanOrNull ?: false
+                val thoughtSignature = jsonObject["thoughtSignature"]?.jsonPrimitive?.contentOrNull
+                require(mime.startsWith("image/")) {
+                    "Only image mime type is supported"
+                }
+                // 如果是思考过程中的草稿图，直接忽略
+                if (thought) {
+                    return UIMessagePart.Reasoning(
+                        reasoning = "[Draft Image]\n",
+                        createdAt = Clock.System.now(),
+                        finishedAt = null
+                    )
+                }
+                UIMessagePart.Image(
+                    url = data,
+                    metadata = GoogleThoughtMetadata(thoughtSignature = thoughtSignature).toMetadata()
+                )
+            }
+
+            else -> error("unknown message part type: $jsonObject")
+        }
+    }
+
+    private fun buildContents(messages: List<UIMessage>): JsonArray {
+        return buildJsonArray {
+            messages
+                .filter { it.role != MessageRole.SYSTEM && it.isValidToUpload() }
+                .forEach { message ->
+                    if (message.role == MessageRole.ASSISTANT) {
+                        addModelMessage(message)
+                    } else {
+                        addUserMessage(message)
+                    }
+                }
+        }
+    }
+
+    private fun JsonArrayBuilder.addModelMessage(message: UIMessage) {
+        val groups = groupPartsByToolBoundary(message.parts)
+        val partsBuffer = mutableListOf<JsonObject>()
+
+        for (group in groups) {
+            when (group) {
+                is PartGroup.Content -> {
+                    group.parts.mapNotNull { it.toGooglePart() }.forEach { partsBuffer.add(it) }
+                }
+
+                is PartGroup.Tools -> {
+                    // 添加 functionCall 到 parts 缓冲
+                    group.tools.forEach { partsBuffer.add(it.toFunctionCallPart()) }
+
+                    // 输出 model 消息
+                    add(buildJsonObject {
+                        put("role", "model")
+                        putJsonArray("parts") { partsBuffer.forEach { add(it) } }
+                    })
+                    partsBuffer.clear()
+
+                    // 紧跟 functionResponse
+                    add(buildJsonObject {
+                        put("role", "user")
+                        putJsonArray("parts") {
+                            group.tools.forEach { add(it.toFunctionResponsePart()) }
+                        }
+                    })
+                }
+            }
+        }
+
+        // 输出剩余内容
+        if (partsBuffer.isNotEmpty()) {
+            add(buildJsonObject {
+                put("role", "model")
+                putJsonArray("parts") { partsBuffer.forEach { add(it) } }
+            })
+        }
+    }
+
+    private fun JsonArrayBuilder.addUserMessage(message: UIMessage) {
+        add(buildJsonObject {
+            put("role", commonRoleToGoogleRole(message.role))
+            putJsonArray("parts") {
+                message.parts.mapNotNull { it.toGooglePart() }.forEach { add(it) }
+            }
+        })
+    }
+
+    // 4.2.0 接口切换: Flow<StreamChunk> (原版 2.5.x 形态) — 内层解析仍产出
+    // MessageChunk, 由 MessageChunkStreamAdapter 桥接 (行为等价, v4.2.1 起内层逐步替换 StreamDecoder)
+    override suspend fun streamText(
+        providerSetting: ProviderSetting.Google,
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
+    ): Flow<StreamChunk> {
+        if (providerSetting.usesInteractionsApi()) {
+            return interactionsAPI.streamText(providerSetting, messages, params)
+        }
+        val adapter = me.rerere.ai.ui.MessageChunkStreamAdapter()
+        return streamTextRaw(providerSetting, messages, params).flatMapConcat { chunk ->
+            adapter.adapt(chunk).asFlow()
+        }
+    }
+
+
+    private fun UIMessagePart.toGooglePart(): JsonObject? = when (this) {
+        is UIMessagePart.Text -> buildJsonObject {
+            put("text", text)
+        }
+
+        is UIMessagePart.Image -> {
+            encodeBase64(false).getOrNull()?.let { encoded ->
+                buildJsonObject {
+                    put("inlineData", buildJsonObject {
+                        put("mimeType", encoded.mimeType)
+                        put("data", encoded.base64)
+                    })
+                    metadataAs<GoogleThoughtMetadata>()?.thoughtSignature?.let {
+                        put("thoughtSignature", it)
+                    }
+                }
+            }
+        }
+
+        is UIMessagePart.Video -> {
+            encodeBase64(false).getOrNull()?.let { base64Data ->
+                buildJsonObject {
+                    put("inlineData", buildJsonObject {
+                        put("mimeType", "video/mp4")
+                        put("data", base64Data)
+                    })
+                }
+            }
+        }
+
+        is UIMessagePart.Audio -> {
+            encodeBase64(false).getOrNull()?.let { base64Data ->
+                buildJsonObject {
+                    put("inlineData", buildJsonObject {
+                        put("mimeType", "audio/mp3")
+                        put("data", base64Data)
+                    })
+                }
+            }
+        }
+
+        else -> null
+    }
+
+    private fun UIMessagePart.Tool.toFunctionCallPart() = buildJsonObject {
+        put("functionCall", buildJsonObject {
+            put("name", toolName)
+            put("args", inputAsJson())
+        })
+        metadataAs<GoogleThoughtMetadata>()?.thoughtSignature?.let {
+            put("thoughtSignature", it)
+        }
+    }
+
+    private fun UIMessagePart.Tool.toFunctionResponsePart() = buildJsonObject {
+            put("functionResponse", buildJsonObject {
+                put("name", toolName)
+
+                // 1. 拆分出纯文本部分
+                val textParts = output.filterIsInstance<UIMessagePart.Text>()
+                
+                // 2. 提取所有的多模态(图片/视频/音频)，并直接转为 Google 要求的格式
+                // 过滤出最终包含 inlineData 的数据块
+                val mediaGoogleParts = output
+                    .filter { it !is UIMessagePart.Text }
+                    .mapNotNull { it.toGooglePart() }
+                    .filter { it.containsKey("inlineData") } 
+
+                // 3. 构建给模型看的结构化 response 节点
+                put("response", buildJsonObject {
+                    // 处理文本结果
+                    if (textParts.isNotEmpty()) {
+                        put(
+                            "result", 
+                            textParts.joinToString("\n") { it.text }
+                        )
+                    } else if (mediaGoogleParts.isEmpty()) {
+                        // 如果工具啥都没返回，给个兜底成功状态
+                        put("result", " ")
+                    }
+
+                    // 处理媒体数据（图片、音频、视频），打上 $ref 标签
+                    mediaGoogleParts.forEachIndexed { index, _ ->
+                        val refName = "media_ref_$index"
+                        put(refName, buildJsonObject {
+                            put("\$ref", refName)
+                        })
+                    }
+                })
+
+                // 4. 将真实的 Base64 多媒体数据挂载到 parts 中，并建立指针绑定
+                if (mediaGoogleParts.isNotEmpty()) {
+                    putJsonArray("parts") {
+                        mediaGoogleParts.forEachIndexed { index, googlePart ->
+                            val refName = "media_ref_$index"
+                            val inlineData = googlePart["inlineData"]!!.jsonObject
+
+                            add(buildJsonObject {
+                                // 重新组装 inlineData，并在内部注入 displayName
+                                put("inlineData", buildJsonObject {
+                                    // 复制原有的 mimeType 和 data
+                                    inlineData.forEach { (k, v) -> put(k, v) }
+                                    // 添加能够让 $ref 认出它的唯一名称
+                                    put("displayName", refName)
+                                })
+                                
+                                // 保留可能存在的其他字段
+                                googlePart.forEach { (k, v) ->
+                                    if (k != "inlineData") put(k, v)
+                                }
+                            })
+                        }
+                    }
+                }
+            })
+        }
+
+    private fun parseUsageMeta(jsonObject: JsonObject?): TokenUsage? {
+        if (jsonObject == null) {
+            return null
+        }
+        val promptTokens = jsonObject["promptTokenCount"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
+        val thoughtTokens = jsonObject["thoughtsTokenCount"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
+        val cachedTokens = jsonObject["cachedContentTokenCount"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
+        val candidatesTokens = jsonObject["candidatesTokenCount"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
+        val totalTokens = jsonObject["totalTokenCount"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
+        return TokenUsage(
+            promptTokens = promptTokens,
+            completionTokens = candidatesTokens + thoughtTokens,
+            totalTokens = totalTokens,
+            cachedTokens = cachedTokens
+        )
+    }
+}

@@ -1,4 +1,9 @@
+/* 【域 I·数据存储】 — 页面 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.ui.pages.favorite
+
+/* ───【原版对齐】FavoritePage.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
 
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Delete01
@@ -15,7 +20,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
@@ -45,10 +49,10 @@ import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.navigateToChatPage
-import me.rerere.rikkahub.utils.plus
 import me.rerere.rikkahub.utils.toLocalDateTime
 import org.koin.androidx.compose.koinViewModel
 import java.time.Instant
+import me.rerere.rikkahub.utils.plus
 
 @Composable
 fun FavoritePage(vm: FavoriteVM = koinViewModel()) {
@@ -138,8 +142,9 @@ private fun SwipeableFavoriteCard(
         initialValue = SwipeToDismissBoxValue.Settled,
     )
 
-    // Key on settledValue: currentValue flips to the closest anchor mid-animation,
-    // which would restart this effect and cancel it before onDelete() runs.
+    // 2.5.4 移植: 改监听 settledValue — currentValue 在动画中途就翻转为最近
+    // 锚点, 会重启并取消本 effect, 使 onDelete() 来不及执行; settledValue
+    // 只在停稳后变化, 删除动作可靠触发。
     LaunchedEffect(dismissState.settledValue) {
         if (dismissState.settledValue == SwipeToDismissBoxValue.EndToStart) {
             onDelete()

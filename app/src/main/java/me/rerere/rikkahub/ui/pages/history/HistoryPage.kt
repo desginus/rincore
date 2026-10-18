@@ -1,5 +1,10 @@
+/* 【域 A·对话核心】 — 页面 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.pages.history;
 
+
+/* ───【原版对齐】HistoryPage.kt | 差异 ±37 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Pin
 import me.rerere.hugeicons.stroke.PinOff
@@ -36,11 +41,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -54,9 +57,11 @@ import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.utils.navigateToChatPage
-import me.rerere.rikkahub.utils.plus
 import me.rerere.rikkahub.utils.toLocalDateTime
 import org.koin.androidx.compose.koinViewModel
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import me.rerere.rikkahub.utils.plus
 
 @Composable
 fun HistoryPage(vm: HistoryVM = koinViewModel()) {
@@ -234,8 +239,23 @@ private fun ConversationItem(
         modifier = modifier
     ) {
         ListItem(
-            headlineContent = {
-                Row(
+            supportingContent = {
+                Text(conversation.createAt.toLocalDateTime())
+            },
+            trailingContent = {
+                IconButton(
+                    onClick = onTogglePin
+               ) {
+                   Icon(
+                   if (conversation.isPinned) HugeIcons.PinOff else HugeIcons.Pin,
+                   contentDescription = if (conversation.isPinned) stringResource(R.string.history_page_unpin) else stringResource(
+                   R.string.history_page_pin
+                   )
+                   )
+               }
+            },
+) {
+Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
@@ -255,22 +275,6 @@ private fun ConversationItem(
                         style = MaterialTheme.typography.titleMedium,
                     )
                 }
-            },
-            supportingContent = {
-                Text(conversation.createAt.toLocalDateTime())
-            },
-            trailingContent = {
-                IconButton(
-                    onClick = onTogglePin
-                ) {
-                    Icon(
-                        if (conversation.isPinned) HugeIcons.PinOff else HugeIcons.Pin,
-                        contentDescription = if (conversation.isPinned) stringResource(R.string.history_page_unpin) else stringResource(
-                            R.string.history_page_pin
-                        )
-                    )
-                }
-            }
-        )
+                                                                                        }
     }
 }

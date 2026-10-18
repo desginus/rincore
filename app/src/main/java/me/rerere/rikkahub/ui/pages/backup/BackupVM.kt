@@ -1,5 +1,10 @@
+/* 【域 I·数据存储】 — 页面 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.ui.pages.backup
 
+
+/* ───【原版对齐】BackupVM.kt | 差异 ±10 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import android.util.Log
 import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
@@ -42,6 +47,7 @@ class BackupVM(
 
     val webDavBackupItems = MutableStateFlow<UiState<List<WebDavBackupItem>>>(UiState.Idle)
     val s3BackupItems = MutableStateFlow<UiState<List<S3BackupItem>>>(UiState.Idle)
+    // v3.9.12 (2.4.11 移植): 本地备份导入内容选择 — 默认勾选全部条目
     val localBackupItems = MutableStateFlow(WebDavConfig.BackupItem.entries.toList())
 
     init {
@@ -49,14 +55,15 @@ class BackupVM(
         loadS3BackupFileItems()
     }
 
-    fun updateSettings(fn: (Settings) -> Settings) {
-        viewModelScope.launch {
-            settingsStore.update(fn)
-        }
-    }
-
+    // v3.9.12 (2.4.11 移植)
     fun updateLocalBackupItems(items: List<WebDavConfig.BackupItem>) {
         localBackupItems.value = items
+    }
+
+    fun updateSettings(settings: Settings) {
+        viewModelScope.launch {
+            settingsStore.update(settings)
+        }
     }
 
     fun loadBackupFileItems() {
@@ -94,6 +101,7 @@ class BackupVM(
     }
 
     suspend fun exportToFile(): File {
+        // v3.9.12 (2.4.11 移植): 按用户选择内容打包 (webDavConfig.items 复用为本地选择集)
         val file = webDavSync.prepareBackupFile(
             settings.value.webDavConfig.copy(items = localBackupItems.value)
         )
@@ -102,6 +110,7 @@ class BackupVM(
     }
 
     suspend fun restoreFromLocalFile(file: File) {
+        // v3.9.12 (2.4.11 移植): 按用户选择内容导入 (覆盖前已在 UI 弹窗确认)
         webDavSync.restoreFromLocalFile(
             file,
             settings.value.webDavConfig.copy(items = localBackupItems.value),
@@ -179,11 +188,11 @@ class BackupVM(
 
         Log.i(TAG, "restoreFromCherryStudio: import ${importProviders.size} providers: $importProviders")
 
-        updateSettings {
-            it.copy(
-                providers = importProviders + it.providers,
+        updateSettings(
+            settings.value.copy(
+                providers = importProviders + settings.value.providers,
             )
-        }
+        )
     }
 
     // S3 Backup methods

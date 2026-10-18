@@ -1,5 +1,6 @@
 package me.rerere.tts.provider
 
+
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.uuid.Uuid
@@ -82,7 +83,7 @@ sealed class TTSProviderSetting {
         override var name: String = "MiniMax TTS",
         val apiKey: String = "",
         val baseUrl: String = "https://api.minimaxi.com/v1",
-        val model: String = "speech-2.8-hd",
+        val model: String = "speech-2.6-turbo",
         val voiceId: String = "female-shaonv",
         val speed: Float = 1.0f
     ) : TTSProviderSetting() {
@@ -103,11 +104,10 @@ sealed class TTSProviderSetting {
         override var id: Uuid = Uuid.random(),
         override var name: String = "Qwen TTS",
         val apiKey: String = "",
-        val baseUrl: String = "https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api/v1",
-        val model: String = "qwen-audio-3.0-tts-flash",
-        val voice: String = "longanhuan_v3.6",
-        val format: String = "wav",
-        val sampleRate: Int = 24000,
+        val baseUrl: String = "https://dashscope.aliyuncs.com/api/v1",
+        val model: String = "qwen3-tts-flash",
+        val voice: String = "Cherry",
+        val languageType: String = "Auto"
     ) : TTSProviderSetting() {
         override fun copyProvider(
             id: Uuid,
@@ -283,21 +283,6 @@ sealed class TTSProviderSetting {
         }
     }
 
-    @Serializable
-    @SerialName("volcengine")
-    data class Volcengine(
-        override val id: Uuid = Uuid.random(),
-        override val name: String = "Volcengine TTS",
-        val apiKey: String = "",
-        val baseUrl: String = "https://openspeech.bytedance.com",
-        val resourceId: String = "seed-tts-2.0",
-        val speaker: String = "zh_female_vv_uranus_bigtts",
-        val speechRate: Int = 0,
-    ) : TTSProviderSetting() {
-        override fun copyProvider(id: Uuid, name: String): TTSProviderSetting =
-            copy(id = id, name = name)
-    }
-
     companion object {
         val Types by lazy {
             listOf(
@@ -312,7 +297,6 @@ sealed class TTSProviderSetting {
                 ElevenLabs::class,
                 Step::class,
                 FishAudio::class,
-                Volcengine::class,
             )
         }
     }

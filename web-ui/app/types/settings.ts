@@ -1,6 +1,6 @@
 /**
  * Display settings
- * @see app/src/main/java/me/rerere/rikkahub/data/datastore/Settings.kt - DisplaySetting
+ * @see app/src/main/java/me/rerere/rikkahub/data/datastore/PreferencesStore.kt - DisplaySetting
  */
 export interface DisplaySetting {
   userNickname: string;
@@ -64,10 +64,10 @@ export interface AssistantProfile {
   id: string;
   chatModelId?: string | null;
   reasoningLevel?: string | null;
-  enableWebSearch?: boolean;
   mcpServers?: string[];
   modeInjectionIds?: string[];
   lorebookIds?: string[];
+  allowConversationPromptInjection?: boolean;
   allowConversationSystemPrompt?: boolean;
   name: string;
   avatar?: AssistantAvatar;
@@ -136,13 +136,14 @@ export interface SearchServiceOption {
 
 /**
  * App settings (streamed via SSE)
- * @see app/src/main/java/me/rerere/rikkahub/data/datastore/Settings.kt - Settings
+ * @see app/src/main/java/me/rerere/rikkahub/data/datastore/PreferencesStore.kt - Settings
  */
 export interface Settings {
   dynamicColor: boolean;
   themeId: string;
   developerMode: boolean;
   displaySetting: DisplaySetting;
+  enableWebSearch: boolean;
   favoriteModels: string[];
   chatModelId: string;
   assistantId: string;

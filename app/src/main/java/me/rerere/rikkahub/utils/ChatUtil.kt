@@ -1,5 +1,10 @@
+/* 【域 L·基础设施】 | 地图: docs/APP_MAP.md §L */
 package me.rerere.rikkahub.utils
 
+
+/* ───【原版对齐】ChatUtil.kt | 差异 ±2 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import android.content.Context
 import android.net.Uri
 import android.util.Log
@@ -16,6 +21,7 @@ fun navigateToChatPage(
     initText: String? = null,
     initFiles: List<Uri> = emptyList(),
     nodeId: Uuid? = null,
+    folderId: Uuid? = null,
 ) {
     Log.i(TAG, "navigateToChatPage: navigate to $chatId")
     navigator.clearAndNavigate(
@@ -24,6 +30,7 @@ fun navigateToChatPage(
             text = initText,
             files = initFiles.map { it.toString() },
             nodeId = nodeId?.toString(),
+            folderId = folderId?.toString(),
         )
     )
 }

@@ -1,26 +1,23 @@
+/* 【域 F·主题渲染】 — UI 组件 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.ui
 
-import androidx.compose.animation.animateColorAsState
+
+/* ───【原版对齐】CardGroup.kt | 差异 ±3 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemColors
@@ -28,24 +25,17 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEachIndexed
 import me.rerere.rikkahub.ui.theme.CustomColors
+import androidx.compose.runtime.getValue
 
 private val CardGroupCorner = 20.dp
 private val CardGroupItemSpacing = 2.dp
@@ -55,13 +45,11 @@ private data class CardGroupItem(
     val onClick: (() -> Unit)?,
     val modifier: Modifier,
     val overlineContent: (@Composable () -> Unit)?,
-    val headlineContent: (@Composable () -> Unit)?,
+    val headlineContent: @Composable () -> Unit,
     val supportingContent: (@Composable () -> Unit)?,
     val leadingContent: (@Composable () -> Unit)?,
     val trailingContent: (@Composable () -> Unit)?,
     val colors: ListItemColors?,
-    // 不为空时是表单项，标题行下方接这块内容
-    val formContent: (@Composable ColumnScope.() -> Unit)? = null,
 )
 
 @DslMarker
@@ -78,16 +66,6 @@ interface CardGroupScope {
         trailingContent: (@Composable () -> Unit)? = null,
         colors: ListItemColors? = null,
         headlineContent: @Composable () -> Unit,
-    )
-
-    // 表单项：标题行下方带一块自定义内容（输入框、滑块等），不传标题时整项都是自定义内容
-    fun formItem(
-        modifier: Modifier = Modifier,
-        headlineContent: (@Composable () -> Unit)? = null,
-        supportingContent: (@Composable () -> Unit)? = null,
-        leadingContent: (@Composable () -> Unit)? = null,
-        trailingContent: (@Composable () -> Unit)? = null,
-        content: @Composable ColumnScope.() -> Unit,
     )
 }
 
@@ -117,157 +95,6 @@ private class CardGroupScopeImpl : CardGroupScope {
             )
         )
     }
-
-    override fun formItem(
-        modifier: Modifier,
-        headlineContent: (@Composable () -> Unit)?,
-        supportingContent: (@Composable () -> Unit)?,
-        leadingContent: (@Composable () -> Unit)?,
-        trailingContent: (@Composable () -> Unit)?,
-        content: @Composable ColumnScope.() -> Unit,
-    ) {
-        items.add(
-            CardGroupItem(
-                onClick = null,
-                modifier = modifier,
-                overlineContent = null,
-                headlineContent = headlineContent,
-                supportingContent = supportingContent,
-                leadingContent = leadingContent,
-                trailingContent = trailingContent,
-                colors = null,
-                formContent = content,
-            )
-        )
-    }
-}
-
-// 带开关的项，点整行也能切换
-fun CardGroupScope.switchItem(
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    supportingContent: (@Composable () -> Unit)? = null,
-    leadingContent: (@Composable () -> Unit)? = null,
-    headlineContent: @Composable () -> Unit,
-) = item(
-    onClick = if (enabled) {
-        { onCheckedChange(!checked) }
-    } else null,
-    modifier = modifier,
-    supportingContent = supportingContent,
-    leadingContent = leadingContent,
-    trailingContent = {
-        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
-    },
-    headlineContent = headlineContent,
-)
-
-// 分组里第 index 项的形状，给不方便走 CardGroup 的列表（比如可拖拽排序的）用
-fun cardGroupItemShape(index: Int, count: Int): Shape {
-    val top = if (index == 0) CardGroupCorner else CardGroupInnerCorner
-    val bottom = if (index == count - 1) CardGroupCorner else CardGroupInnerCorner
-    return RoundedCornerShape(topStart = top, topEnd = top, bottomStart = bottom, bottomEnd = bottom)
-}
-
-// 列表项开头带圆形底色的图标
-@Composable
-fun CardGroupIcon(
-    icon: ImageVector,
-    modifier: Modifier = Modifier,
-    containerColor: Color = MaterialTheme.colorScheme.secondaryContainer,
-    contentColor: Color = MaterialTheme.colorScheme.onSecondaryContainer,
-) {
-    val animatedContainerColor by animateColorAsState(
-        targetValue = containerColor,
-        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
-    )
-    val animatedContentColor by animateColorAsState(
-        targetValue = contentColor,
-        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
-    )
-    Box(
-        modifier = modifier
-            .size(40.dp)
-            .background(animatedContainerColor, CircleShape),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
-            tint = animatedContentColor,
-        )
-    }
-}
-
-// 标题行右侧显示当前取值的小标签，比如滑块的数值
-@Composable
-fun CardGroupValue(
-    text: String,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier,
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-    ) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-            // 等宽数字，拖动滑块时标签宽度不跳
-            style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
-            maxLines = 1,
-        )
-    }
-}
-
-@Composable
-private fun CardGroupFormItem(
-    item: CardGroupItem,
-    formContent: @Composable ColumnScope.() -> Unit,
-    count: Int,
-    index: Int,
-) {
-    Surface(
-        modifier = item.modifier.fillMaxWidth(),
-        shape = cardGroupItemShape(index, count),
-        color = CustomColors.listItemColors.containerColor,
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            if (item.headlineContent != null || item.leadingContent != null || item.trailingContent != null) {
-                Row(
-                    // 和 ListItem 一致：带说明文字时，两侧内容靠上对齐
-                    verticalAlignment = if (item.supportingContent != null) Alignment.Top else Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    item.leadingContent?.invoke()
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        item.headlineContent?.let { headline ->
-                            ProvideTextStyle(MaterialTheme.typography.bodyLarge, headline)
-                        }
-                        item.supportingContent?.let { supporting ->
-                            CompositionLocalProvider(
-                                LocalContentColor provides MaterialTheme.colorScheme.onSurfaceVariant
-                            ) {
-                                ProvideTextStyle(MaterialTheme.typography.bodyMedium, supporting)
-                            }
-                        }
-                    }
-                    item.trailingContent?.invoke()
-                }
-            }
-            formContent()
-        }
-    }
 }
 
 @Composable
@@ -291,8 +118,9 @@ private fun CardGroupListItem(
         animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
     )
 
+    @Suppress("DEPRECATION") // material3 1.5: lambda 变量不匹配尾随 overload, 保留命名参数
     ListItem(
-        headlineContent = item.headlineContent ?: {},
+        headlineContent = { item.headlineContent() },
         modifier = item.modifier
             .fillMaxWidth()
             .clip(
@@ -341,12 +169,7 @@ fun CardGroup(
         }
         val count = scope.items.size
         scope.items.fastForEachIndexed { index, item ->
-            val formContent = item.formContent
-            if (formContent != null) {
-                CardGroupFormItem(item = item, formContent = formContent, count = count, index = index)
-            } else {
-                CardGroupListItem(item = item, count = count, index = index)
-            }
+            CardGroupListItem(item = item, count = count, index = index)
             if (index != count - 1) {
                 Spacer(modifier = Modifier.height(CardGroupItemSpacing))
             }

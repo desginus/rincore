@@ -1,4 +1,9 @@
+/* 【域 D·工作区沙箱】 | 地图: docs/APP_MAP.md §D */
 package me.rerere.rikkahub.ui.pages.extensions.workspace
+
+/* ───【原版对齐】WorkspaceTerminalSessionManager.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
 
 import android.content.Context
 import android.util.Log
@@ -124,7 +129,7 @@ class WorkspaceTerminalSessionManager internal constructor(
             true
         } else {
             try {
-                withContext(Dispatchers.IO) {
+                withContext(me.rerere.rikkahub.utils.AppDispatchers.Sandbox) {
                     if (!workspaceRootfsReady(appContext, root)) {
                         false
                     } else {

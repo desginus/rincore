@@ -1,7 +1,15 @@
+/* 【域 E·设置体系】 — 页面 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
+
+/* ───【原版对齐】AssistantLocalToolPage | 差异 +237 行
+ * 来源: 原版移植 + 自研 (本地工具选择扩展)
+ * 功能: 助手本地工具开关页
+ * 差异: 本地工具集合扩展 (自研工具清单)
+ * ───────────────────────────────────────────────────────────────*/
 import android.Manifest
-import androidx.annotation.StringRes
+import android.os.Build
+import android.os.Environment
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -10,67 +18,54 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LargeFlexibleTopAppBar
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import me.rerere.ui.toast.ToastType
-import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.Calendar03
-import me.rerere.hugeicons.stroke.ChartLineData01
-import me.rerere.hugeicons.stroke.ClipboardPaste
-import me.rerere.hugeicons.stroke.Clock01
-import me.rerere.hugeicons.stroke.JavaScript
-import me.rerere.hugeicons.stroke.MessageQuestion
-import me.rerere.hugeicons.stroke.SmartPhone01
-import me.rerere.hugeicons.stroke.VolumeHigh
+import com.dokar.sonner.ToastType
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.tools.local.LocalToolOption
+import me.rerere.rikkahub.data.ai.tools.local.PermissionHelper
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
-import me.rerere.rikkahub.ui.components.ui.CardGroupIcon
-import me.rerere.rikkahub.ui.components.ui.CardGroupScope
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionInfo
+import me.rerere.rikkahub.ui.components.ui.permission.PermissionLocation
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
 import me.rerere.rikkahub.ui.components.ui.permission.rememberPermissionState
-import me.rerere.rikkahub.ui.components.ui.switchItem
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.hasUsageStatsPermission
 import me.rerere.rikkahub.utils.openUsageAccessSettings
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 @Composable
 fun AssistantLocalToolPage(id: String) {
-    val vm: AssistantDetailVM = koinViewModel(
-        parameters = {
-            parametersOf(id)
-        }
-    )
+    val vm: AssistantDetailVM = koinViewModel(parameters = { parametersOf(id) })
     val assistant by vm.assistant.collectAsStateWithLifecycle()
+    val settings by vm.settings.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
         topBar = {
             LargeFlexibleTopAppBar(
-                title = {
-                    Text(stringResource(R.string.assistant_page_tab_local_tools))
-                },
-                navigationIcon = {
-                    BackButton()
-                },
+                title = { Text(stringResource(R.string.assistant_page_tab_local_tools)) },
+                navigationIcon = { BackButton() },
                 scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
             )
@@ -81,7 +76,9 @@ fun AssistantLocalToolPage(id: String) {
         AssistantLocalToolContent(
             innerPadding = innerPadding,
             assistant = assistant,
-            onUpdate = { vm.update(it) }
+            displaySetting = settings.displaySetting,
+            onUpdate = { vm.update(it) },
+            onUpdateDisplaySetting = { vm.updateDisplaySetting(it) },
         )
     }
 }
@@ -90,30 +87,45 @@ fun AssistantLocalToolPage(id: String) {
 private fun AssistantLocalToolContent(
     innerPadding: PaddingValues,
     assistant: Assistant,
-    onUpdate: (Assistant) -> Unit
+    displaySetting: me.rerere.rikkahub.data.datastore.DisplaySetting,
+    onUpdate: (Assistant) -> Unit,
+    onUpdateDisplaySetting: (me.rerere.rikkahub.data.datastore.DisplaySetting) -> Unit,
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
-    val permissionRequiredText =
-        stringResource(R.string.assistant_page_local_tools_screen_time_permission_required)
+    val permissionRequiredText = stringResource(R.string.assistant_page_local_tools_screen_time_permission_required)
 
     val calendarPermissionState = rememberPermissionState(
         permissions = setOf(
-            PermissionInfo(
-                permission = Manifest.permission.READ_CALENDAR,
-                displayName = { Text(stringResource(R.string.permission_calendar_read)) },
-                usage = { Text(stringResource(R.string.permission_calendar_read_desc)) },
-                required = true
-            ),
-            PermissionInfo(
-                permission = Manifest.permission.WRITE_CALENDAR,
-                displayName = { Text(stringResource(R.string.permission_calendar_write)) },
-                usage = { Text(stringResource(R.string.permission_calendar_write_desc)) },
-                required = true
-            ),
+            PermissionInfo(permission = Manifest.permission.READ_CALENDAR, displayName = { Text(stringResource(R.string.permission_calendar_read)) }, usage = { Text(stringResource(R.string.permission_calendar_read_desc)) }, required = true),
+            PermissionInfo(permission = Manifest.permission.WRITE_CALENDAR, displayName = { Text(stringResource(R.string.permission_calendar_write)) }, usage = { Text(stringResource(R.string.permission_calendar_write_desc)) }, required = true),
         )
     )
+    val locationPermissionState = rememberPermissionState(permissions = setOf(PermissionLocation))
+
     PermissionManager(permissionState = calendarPermissionState)
+    PermissionManager(permissionState = locationPermissionState)
+
+    // 特殊权限对话框: MANAGE_EXTERNAL_STORAGE 不能用 requestPermissions()
+    var showAllFilesDialog by remember { mutableStateOf(false) }
+    if (showAllFilesDialog) {
+        AlertDialog(
+            onDismissRequest = { showAllFilesDialog = false },
+            title = { Text("需要访问所有文件权限") },
+            text = {
+                Text("文件管理工具需要访问共享存储上的文件。\n\n请在接下来的系统设置页面中，找到 RinCore 并开启「允许访问所有文件」开关。")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showAllFilesDialog = false
+                    context.startActivity(PermissionHelper.allFilesAccessIntent(context))
+                }) { Text("去设置") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAllFilesDialog = false }) { Text("取消") }
+            },
+        )
+    }
 
     fun toggleLocalTool(option: LocalToolOption, enabled: Boolean) {
         if (enabled && option == LocalToolOption.ScreenTime && !context.hasUsageStatsPermission()) {
@@ -124,104 +136,92 @@ private fun AssistantLocalToolContent(
             calendarPermissionState.requestPermissions()
             return
         }
-        val newLocalTools = if (enabled) {
-            assistant.localTools + option
-        } else {
-            assistant.localTools - option
+        if (enabled && option == LocalToolOption.Location && !locationPermissionState.allPermissionsGranted) {
+            locationPermissionState.requestPermissions()
+            return
         }
+        // Files / Download / Archive: MANAGE_EXTERNAL_STORAGE 是特殊权限，不能通过 requestPermissions() 请求
+        if (enabled && (option == LocalToolOption.Files || option == LocalToolOption.Download || option == LocalToolOption.Archive)) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+                showAllFilesDialog = true
+                return
+            }
+        }
+        val newLocalTools = if (enabled) assistant.localTools + option else assistant.localTools - option
         onUpdate(assistant.copy(localTools = newLocalTools))
     }
 
-    fun CardGroupScope.toolItem(
-        option: LocalToolOption,
-        icon: ImageVector,
-        @StringRes title: Int,
-        @StringRes description: Int,
-    ) {
-        val checked = assistant.localTools.contains(option)
-        switchItem(
-            checked = checked,
-            onCheckedChange = { toggleLocalTool(option, it) },
-            // 图标底色跟着开关状态变化
-            leadingContent = {
-                CardGroupIcon(
-                    icon = icon,
-                    containerColor = if (checked) {
-                        MaterialTheme.colorScheme.primaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerHigh
-                    },
-                    contentColor = if (checked) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            },
-            supportingContent = { Text(stringResource(description)) },
-            headlineContent = { Text(stringResource(title)) },
-        )
-    }
-
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp)
-            .padding(innerPadding)
-            .padding(bottom = 16.dp)
-            .imePadding(),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(innerPadding).imePadding(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // ── 显示渲染（v4.8.121 用户定版: 「代码块内自动渲染」）──
+        Text(stringResource(R.string.assistant_page_local_tools_section_render), style = androidx.compose.material3.MaterialTheme.typography.titleSmall, color = androidx.compose.material3.MaterialTheme.colorScheme.primary)
         CardGroup {
-            toolItem(
-                option = LocalToolOption.JavascriptEngine,
-                icon = HugeIcons.JavaScript,
-                title = R.string.assistant_page_local_tools_javascript_engine_title,
-                description = R.string.assistant_page_local_tools_javascript_engine_desc,
+            item(
+                headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_code_autorender_title)) },
+                supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_code_autorender_desc)) },
+                trailingContent = {
+                    Switch(
+                        checked = displaySetting.codeBlockAutoPreview,
+                        onCheckedChange = { onUpdateDisplaySetting(displaySetting.copy(codeBlockAutoPreview = it)) },
+                    )
+                },
             )
-            toolItem(
-                option = LocalToolOption.TimeInfo,
-                icon = HugeIcons.Clock01,
-                title = R.string.assistant_page_local_tools_time_info_title,
-                description = R.string.assistant_page_local_tools_time_info_desc,
-            )
-            toolItem(
-                option = LocalToolOption.Clipboard,
-                icon = HugeIcons.ClipboardPaste,
-                title = R.string.assistant_page_local_tools_clipboard_title,
-                description = R.string.assistant_page_local_tools_clipboard_desc,
-            )
-            toolItem(
-                option = LocalToolOption.Tts,
-                icon = HugeIcons.VolumeHigh,
-                title = R.string.assistant_page_local_tools_tts_title,
-                description = R.string.assistant_page_local_tools_tts_desc,
-            )
-            toolItem(
-                option = LocalToolOption.AskUser,
-                icon = HugeIcons.MessageQuestion,
-                title = R.string.assistant_page_local_tools_ask_user_title,
-                description = R.string.assistant_page_local_tools_ask_user_desc,
-            )
-            toolItem(
-                option = LocalToolOption.ScreenTime,
-                icon = HugeIcons.SmartPhone01,
-                title = R.string.assistant_page_local_tools_screen_time_title,
-                description = R.string.assistant_page_local_tools_screen_time_desc,
-            )
-            toolItem(
-                option = LocalToolOption.Calendar,
-                icon = HugeIcons.Calendar03,
-                title = R.string.assistant_page_local_tools_calendar_title,
-                description = R.string.assistant_page_local_tools_calendar_desc,
-            )
-            toolItem(
-                option = LocalToolOption.ChartDisplay,
-                icon = HugeIcons.ChartLineData01,
-                title = R.string.assistant_page_local_tools_chart_display_title,
-                description = R.string.assistant_page_local_tools_chart_display_desc,
-            )
+        }
+        // ── 基础交互 ──
+        Text(stringResource(R.string.assistant_page_local_tools_section_basic), style = androidx.compose.material3.MaterialTheme.typography.titleSmall, color = androidx.compose.material3.MaterialTheme.colorScheme.primary)
+        CardGroup {
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_javascript_engine_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_javascript_engine_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.JavascriptEngine), onCheckedChange = { toggleLocalTool(LocalToolOption.JavascriptEngine, it) }) })
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_time_info_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_time_info_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.TimeInfo), onCheckedChange = { toggleLocalTool(LocalToolOption.TimeInfo, it) }) })
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_clipboard_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_clipboard_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.Clipboard), onCheckedChange = { toggleLocalTool(LocalToolOption.Clipboard, it) }) })
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_tts_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_tts_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.Tts), onCheckedChange = { toggleLocalTool(LocalToolOption.Tts, it) }) })
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_ask_user_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_ask_user_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.AskUser), onCheckedChange = { toggleLocalTool(LocalToolOption.AskUser, it) }) })
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_screen_time_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_screen_time_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.ScreenTime), onCheckedChange = { toggleLocalTool(LocalToolOption.ScreenTime, it) }) })
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_calendar_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_calendar_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.Calendar), onCheckedChange = { toggleLocalTool(LocalToolOption.Calendar, it) }) })
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_chart_display_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_chart_display_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.ChartDisplay), onCheckedChange = { toggleLocalTool(LocalToolOption.ChartDisplay, it) }) })
+            // v4.8.92: 补上此前遗漏的开关 —— 闹钟（getTools 一直在注入, 但页面无开关）
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_alarm_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_alarm_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.Alarm), onCheckedChange = { toggleLocalTool(LocalToolOption.Alarm, it) }) })
+        }
+        // ── 自动化 ──
+        Text(stringResource(R.string.assistant_page_local_tools_section_auto), style = androidx.compose.material3.MaterialTheme.typography.titleSmall, color = androidx.compose.material3.MaterialTheme.colorScheme.primary)
+        CardGroup {
+            // v4.8.92: 补上此前遗漏的开关 —— 工作流（getTools 一直在注入, 但页面无开关）
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_workflows_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_workflows_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.Workflows), onCheckedChange = { toggleLocalTool(LocalToolOption.Workflows, it) }) })
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_cron_jobs_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_cron_jobs_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.CronJobs), onCheckedChange = { toggleLocalTool(LocalToolOption.CronJobs, it) }) })
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_toast_notification_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_toast_notification_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.ToastAndNotification), onCheckedChange = { toggleLocalTool(LocalToolOption.ToastAndNotification, it) }) })
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_sub_agents_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_sub_agents_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.SubAgents), onCheckedChange = { toggleLocalTool(LocalToolOption.SubAgents, it) }) })
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_system_intents_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_system_intents_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.SystemIntents), onCheckedChange = { toggleLocalTool(LocalToolOption.SystemIntents, it) }) })
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_share_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_share_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.Share), onCheckedChange = { toggleLocalTool(LocalToolOption.Share, it) }) })
+        }
+        // ── 设备感知 ──
+        Text(stringResource(R.string.assistant_page_local_tools_section_sensing), style = androidx.compose.material3.MaterialTheme.typography.titleSmall, color = androidx.compose.material3.MaterialTheme.colorScheme.primary)
+        CardGroup {
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_location_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_location_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.Location), onCheckedChange = { toggleLocalTool(LocalToolOption.Location, it) }) })
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_battery_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_battery_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.Battery), onCheckedChange = { toggleLocalTool(LocalToolOption.Battery, it) }) })
+        }
+        // ── 媒体控制 ──
+        Text(stringResource(R.string.assistant_page_local_tools_section_media), style = androidx.compose.material3.MaterialTheme.typography.titleSmall, color = androidx.compose.material3.MaterialTheme.colorScheme.primary)
+        CardGroup {
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_media_player_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_media_player_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.MediaPlayer), onCheckedChange = { toggleLocalTool(LocalToolOption.MediaPlayer, it) }) })
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_media_scanner_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_media_scanner_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.MediaScanner), onCheckedChange = { toggleLocalTool(LocalToolOption.MediaScanner, it) }) })
+        }
+        // ── 文件管理 ──
+        Text(stringResource(R.string.assistant_page_local_tools_section_files), style = androidx.compose.material3.MaterialTheme.typography.titleSmall, color = androidx.compose.material3.MaterialTheme.colorScheme.primary)
+        CardGroup {
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_files_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_files_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.Files), onCheckedChange = { toggleLocalTool(LocalToolOption.Files, it) }) })
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_download_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_download_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.Download), onCheckedChange = { toggleLocalTool(LocalToolOption.Download, it) }) })
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_archive_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_archive_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.Archive), onCheckedChange = { toggleLocalTool(LocalToolOption.Archive, it) }) })
+        }
+        // ── 浏览器操控 ──
+        Text(stringResource(R.string.assistant_page_local_tools_section_browser), style = androidx.compose.material3.MaterialTheme.typography.titleSmall, color = androidx.compose.material3.MaterialTheme.colorScheme.primary)
+        CardGroup {
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_browser_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_browser_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.Browser), onCheckedChange = { toggleLocalTool(LocalToolOption.Browser, it) }) })
+        }
+        // ── 用量控制 ──
+        Text(stringResource(R.string.assistant_page_local_tools_section_cost), style = androidx.compose.material3.MaterialTheme.typography.titleSmall, color = androidx.compose.material3.MaterialTheme.colorScheme.primary)
+        CardGroup {
+            item(headlineContent = { Text(stringResource(R.string.assistant_page_local_tools_cost_guards_title)) }, supportingContent = { Text(stringResource(R.string.assistant_page_local_tools_cost_guards_desc)) }, trailingContent = { Switch(checked = assistant.localTools.contains(LocalToolOption.CostGuards), onCheckedChange = { toggleLocalTool(LocalToolOption.CostGuards, it) }) })
         }
     }
 }

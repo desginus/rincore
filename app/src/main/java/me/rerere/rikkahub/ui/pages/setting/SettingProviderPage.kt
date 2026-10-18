@@ -1,6 +1,21 @@
+/* 【域 E·设置体系】 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.ui.pages.setting
 
+
+/* ───【原版对齐】SettingProviderPage | 差异 +104 行
+ * 来源: 原版移植 + 自研 (grok/OpenCode 等模型条目)
+ * 功能: 模型提供商页
+ * 差异: 自研提供商条目与推理档位 UI
+ * ───────────────────────────────────────────────────────────────*/
 import android.net.Uri
+import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.Camera01
+import me.rerere.hugeicons.stroke.Delete01
+import me.rerere.hugeicons.stroke.Image02
+import me.rerere.hugeicons.stroke.FileImport
+import me.rerere.hugeicons.stroke.Add01
+import me.rerere.hugeicons.stroke.Search01
+import me.rerere.hugeicons.stroke.Cancel01
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -20,83 +35,62 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeFlexibleTopAppBar
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SheetValue
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.util.fastForEachIndexed
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import me.rerere.ui.toast.ToastType
+import com.dokar.sonner.ToastType
 import io.github.g00fy2.quickie.QRResult
 import io.github.g00fy2.quickie.ScanQRCode
-import kotlin.uuid.Uuid
 import me.rerere.ai.provider.ProviderSetting
-import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.Add01
-import me.rerere.hugeicons.stroke.ArrowRight01
-import me.rerere.hugeicons.stroke.Camera01
-import me.rerere.hugeicons.stroke.Cancel01
-import me.rerere.hugeicons.stroke.Delete01
-import me.rerere.hugeicons.stroke.FileImport
-import me.rerere.hugeicons.stroke.Image02
-import me.rerere.hugeicons.stroke.Search01
-import me.rerere.hugeicons.stroke.Sparkles
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
-import me.rerere.rikkahub.data.datastore.RECOMMENDED_PROVIDERS
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
 import me.rerere.rikkahub.ui.components.ui.ItemAction
 import me.rerere.rikkahub.ui.components.ui.ItemActionMenu
+import me.rerere.rikkahub.ui.components.ui.RikkaConfirmDialog
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
-import me.rerere.rikkahub.ui.components.ui.cardGroupItemShape
 import me.rerere.rikkahub.ui.components.ui.decodeProviderSetting
 import me.rerere.rikkahub.ui.components.ui.longPressReorder
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.hooks.useEditState
+import me.rerere.rikkahub.ui.pages.setting.components.ProviderConfigure
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.ImageUtils
-import me.rerere.rikkahub.utils.plus
-import me.rerere.ui.components.RikkaConfirmDialog
 import org.koin.androidx.compose.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
+import kotlin.uuid.Uuid
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import me.rerere.rikkahub.utils.plus
 
 @Composable
 fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
@@ -104,13 +98,14 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
     val navController = LocalNavController.current
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var searchQuery by remember { mutableStateOf("") }
+    // v4.8.64 (2.5.5 移植): 删除走二次确认 (左滑删除退役)
     var deleteTarget by remember { mutableStateOf<ProviderSetting?>(null) }
     val lazyListState = rememberLazyListState()
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
         val newProviders = settings.providers.toMutableList().apply {
             add(to.index, removeAt(from.index))
         }
-        vm.updateSettings { it.copy(providers = newProviders) }
+        vm.updateSettings(settings.copy(providers = newProviders))
     }
 
     val filteredProviders = remember(settings.providers, searchQuery) {
@@ -133,27 +128,19 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                     BackButton()
                 },
                 actions = {
-                    RecommendProviderButton { provider ->
-                        vm.updateSettings {
-                            it.copy(
-                                providers = listOf(provider.copyProvider(Uuid.random())) + it.providers
-                            )
-                        }
-                    }
                     ImportProviderButton {
-                        vm.updateSettings { latest ->
-                            latest.copy(
-                                providers = listOf(it.copyProvider(Uuid.random())) + latest.providers
+                        vm.updateSettings(
+                            settings.copy(
+                                providers = listOf(it.copyProvider(Uuid.random())) + settings.providers
                             )
-                        }
+                        )
                     }
-                    AddButton { provider ->
-                        vm.updateSettings { latest ->
-                            latest.copy(
-                                providers = listOf(provider) + latest.providers
+                    AddButton {
+                        vm.updateSettings(
+                            settings.copy(
+                                providers = listOf(it) + settings.providers
                             )
-                        }
-                        navController.navigate(Screen.SettingProviderDetail(providerId = provider.id.toString()))
+                        )
                     }
                 },
                 scrollBehavior = scrollBehavior,
@@ -169,7 +156,7 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                 .padding(top = innerPadding.calculateTopPadding())
         ) {
             // Search bar
-            TextField(
+            OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 modifier = Modifier
@@ -188,12 +175,6 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                 },
                 singleLine = true,
                 shape = CircleShape,
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceBright,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceBright,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                ),
             )
 
 
@@ -213,6 +194,7 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                         key = provider.id
                     ) { isDragging ->
                         ProviderItem(
+                            // v4.8.64 (2.5.5 移植): 统一长按整卡拖拽 (触感+缩放); 搜索过滤时禁用拖拽
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .then(longPressReorder(isDragging, enabled = searchQuery.isBlank())),
@@ -230,6 +212,7 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
         }
     }
 
+    // v4.8.64 (2.5.5 移植): 删除二次确认
     RikkaConfirmDialog(
         show = deleteTarget != null,
         title = stringResource(R.string.confirm_delete),
@@ -237,111 +220,13 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
         dismissText = stringResource(R.string.cancel),
         onConfirm = {
             deleteTarget?.let { target ->
-                vm.updateSettings { latest -> latest.copy(providers = latest.providers.filter { it.id != target.id }) }
+                vm.updateSettings(settings.copy(providers = settings.providers.filter { it.id != target.id }))
             }
             deleteTarget = null
         },
         onDismiss = { deleteTarget = null },
     ) {
         Text(stringResource(R.string.setting_provider_page_delete_dialog_text))
-    }
-}
-
-@Composable
-private fun RecommendProviderButton(
-    onAdd: (ProviderSetting) -> Unit
-) {
-    val toaster = LocalToaster.current
-    var showSheet by remember { mutableStateOf(false) }
-    val importSuccessMessage = stringResource(R.string.setting_provider_page_import_success)
-
-    IconButton(
-        onClick = { showSheet = true }
-    ) {
-        Icon(HugeIcons.Sparkles, contentDescription = stringResource(R.string.setting_provider_page_recommend))
-    }
-
-    if (showSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showSheet = false },
-            sheetState = rememberBottomSheetState(
-                initialValue = SheetValue.Hidden,
-                enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)
-            )
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.setting_provider_page_recommend),
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
-                    RECOMMENDED_PROVIDERS.fastForEachIndexed { index, provider ->
-                        RecommendProviderItem(
-                            provider = provider,
-                            shape = cardGroupItemShape(index, RECOMMENDED_PROVIDERS.size),
-                            onAdd = {
-                                onAdd(provider)
-                                toaster.show(
-                                    importSuccessMessage,
-                                    type = ToastType.Success
-                                )
-                            }
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun RecommendProviderItem(
-    provider: ProviderSetting,
-    shape: Shape,
-    onAdd: () -> Unit
-) {
-    Surface(
-        shape = shape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, top = 12.dp, end = 8.dp, bottom = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            AutoAIIcon(
-                name = provider.name,
-                modifier = Modifier.size(40.dp)
-            )
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(
-                    text = provider.name,
-                    style = MaterialTheme.typography.titleMediumEmphasized,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                ProvideTextStyle(MaterialTheme.typography.labelSmall) {
-                    CompositionLocalProvider(LocalContentColor provides LocalContentColor.current.copy(alpha = 0.7f)) {
-                        provider.description()
-                    }
-                }
-            }
-            FilledTonalIconButton(onClick = onAdd) {
-                Icon(HugeIcons.Add01, contentDescription = stringResource(R.string.setting_provider_page_add))
-            }
-        }
     }
 }
 
@@ -479,7 +364,7 @@ private fun ImportProviderButton(
 private fun handleQRResult(
     result: QRResult,
     onAdd: (ProviderSetting) -> Unit,
-    toaster: me.rerere.ui.toast.ToasterState,
+    toaster: com.dokar.sonner.ToasterState,
     context: android.content.Context
 ) {
     runCatching {
@@ -522,7 +407,7 @@ private fun handleQRResult(
 private fun handleImageQRCode(
     uri: Uri,
     onAdd: (ProviderSetting) -> Unit,
-    toaster: me.rerere.ui.toast.ToasterState,
+    toaster: com.dokar.sonner.ToasterState,
     context: android.content.Context
 ) {
     runCatching {
@@ -552,73 +437,54 @@ private fun handleImageQRCode(
 }
 
 
-// 新建时只选类型，其余配置到详情页里填
 @Composable
 private fun AddButton(onAdd: (ProviderSetting) -> Unit) {
-    var showSheet by remember { mutableStateOf(false) }
-    val templates = remember {
-        listOf(ProviderSetting.OpenAI(), ProviderSetting.Google(), ProviderSetting.Claude())
+    val dialogState = useEditState<ProviderSetting> {
+        onAdd(it)
     }
 
     IconButton(
-        onClick = { showSheet = true }
+        onClick = {
+            dialogState.open(ProviderSetting.OpenAI())
+        }
     ) {
         Icon(HugeIcons.Add01, "Add")
     }
 
-    if (showSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showSheet = false },
-            sheetState = rememberBottomSheetState(
-                initialValue = SheetValue.Hidden,
-                enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)
-            )
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.setting_provider_page_add_provider),
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
-                    templates.fastForEachIndexed { index, template ->
-                        Surface(
-                            onClick = {
-                                showSheet = false
-                                onAdd(template.copyProvider(Uuid.random()))
-                            },
-                            shape = cardGroupItemShape(index, templates.size),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                AutoAIIcon(
-                                    name = template.name,
-                                    modifier = Modifier.size(40.dp)
-                                )
-                                Text(
-                                    text = template.name,
-                                    style = MaterialTheme.typography.titleMediumEmphasized,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                Icon(HugeIcons.ArrowRight01, contentDescription = null)
-                            }
-                        }
+    if (dialogState.isEditing) {
+        AlertDialog(
+            onDismissRequest = {
+                dialogState.dismiss()
+            },
+            title = {
+                Text(stringResource(R.string.setting_provider_page_add_provider))
+            },
+            text = {
+                dialogState.currentState?.let {
+                    ProviderConfigure(it) { newState ->
+                        dialogState.currentState = newState
                     }
                 }
-            }
-        }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        dialogState.confirm()
+                    }
+                ) {
+                    Text(stringResource(R.string.setting_provider_page_add))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        dialogState.dismiss()
+                    }
+                ) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
     }
 }
 
@@ -631,7 +497,6 @@ private fun ProviderItem(
 ) {
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (provider.enabled) {
                 CustomColors.listItemColors.containerColor
@@ -642,8 +507,8 @@ private fun ProviderItem(
         }
     ) {
         Row(
-            modifier = Modifier.padding(start = 16.dp, top = 12.dp, end = 4.dp, bottom = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             AutoAIIcon(
@@ -656,7 +521,7 @@ private fun ProviderItem(
             ) {
                 Text(
                     text = provider.name,
-                    style = MaterialTheme.typography.titleMediumEmphasized,
+                    style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -687,6 +552,7 @@ private fun ProviderItem(
                     }
                 }
             }
+            // v4.8.64 (2.5.5 移植): 删除收进 ⋮ 菜单 (内置提供商不可删)
             ItemActionMenu(
                 actions = listOf(
                     ItemAction(

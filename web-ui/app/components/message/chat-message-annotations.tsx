@@ -41,7 +41,7 @@ export function ChatMessageAnnotationsRow({
   return (
     <div
       className={cn(
-        "flex w-full flex-wrap items-center gap-2",
+        "flex w-full flex-wrap items-center gap-2 px-1",
         alignRight ? "justify-end" : "justify-start",
       )}
     >

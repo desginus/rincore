@@ -1,0 +1,160 @@
+/**
+ * 生态管理器 — 模块: D. 生态与技能
+ *
+ * 职责: 生态工具注册/启用管理/扫描 (ecosystem 目录) + getEnabledTools 供给。
+ * 来源: 自研 (fork 无同名模块)。
+ *
+ * 问题定位: 生态工具缺失/重复 → 查本文件 + EcosystemScanner + EcosystemSource
+ */
+package me.rerere.rikkahub.ecosystem
+
+
+/* ───【域 K·生态扩展】EcosystemManager.kt
+ * 职责: 插件/生态管理
+ * 常用改动: 生态扫描 → EcosystemScanner; 桥接 → EcosystemBridge
+ * 问题定位: 插件不加载/生态异常 → 本文件
+ * 基线: 自研 | 地图: docs/APP_MAP.md §K | 历史: .claude/skills/rincore-bug-record
+ * ───────────────────────────────────────────────────────────────*/
+import android.content.Context
+import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import me.rerere.ai.core.Tool
+import java.io.File
+
+/**
+ * 生态系统管理器 — 跨生态指令桥接中心。
+ *
+ * 职责:
+ * - 从多个根目录扫描所有生态的指令文件
+ * - 维护已启用/已禁用的指令集合
+ * - 为 ChatService 提供统一的 Tool 列表
+ */
+object EcosystemManager {
+    private const val TAG = "EcosystemManager"
+    private const val ENABLED_PREFS = "ecosystem_enabled"
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var context: Context? = null
+    private var rootDirs: List<File> = emptyList()
+
+    private val _instructions = MutableStateFlow<List<EcosystemInstruction>>(emptyList())
+    val instructions: StateFlow<List<EcosystemInstruction>> = _instructions.asStateFlow()
+
+    private val _enabledIds = MutableStateFlow<Set<String>>(emptySet())
+    val enabledIds: StateFlow<Set<String>> = _enabledIds.asStateFlow()
+
+    private val _scannedDirs = MutableStateFlow<List<String>>(emptyList())
+    val scannedDirs: StateFlow<List<String>> = _scannedDirs.asStateFlow()
+
+    /**
+     * 初始化。
+     * @param ctx Application context
+     * @param extraDirs 额外扫描目录 (如 ~/.openclaw/workspace, 项目根目录等)
+     */
+    fun initialize(ctx: Context, extraDirs: List<String> = emptyList()) {
+        context = ctx.applicationContext
+        val dirs = mutableListOf<File>()
+
+        // 默认扫描目录
+        dirs.add(File(ctx.filesDir, "openclaw/workspace"))
+        dirs.add(File(ctx.filesDir, "ecosystem"))
+
+        // 用户配置的额外目录
+        extraDirs.forEach { dirs.add(File(it)) }
+
+        rootDirs = dirs
+        _scannedDirs.value = dirs.map { it.absolutePath }
+        loadEnabledSet()
+        // 首次扫描 (同步, 确保第一个对话就能用)
+        refreshBlocking()
+    }
+
+    /**
+     * 重新扫描所有根目录 (后台线程, UI 触发)。
+     */
+    fun refresh() {
+        scope.launch {
+            try {
+                refreshBlocking()
+            } catch (e: Exception) {
+                Log.e(TAG, "Refresh failed: ${e.message}", e)
+            }
+        }
+    }
+
+    private fun refreshBlocking() {
+        val all = EcosystemScanner.scanAll(rootDirs)
+        _instructions.value = all
+        Log.i(TAG, "Scanned ${all.size} instructions from ${rootDirs.size} roots")
+    }
+
+    /**
+     * 获取已启用的 Tool 列表 (含发现工具)。
+     * 调用方: ChatService
+     */
+    fun getEnabledTools(): List<Tool> {
+        val enabledInstrs = _instructions.value.filter { isEnabled(idOf(it)) }
+        // 生态指令工具 (v3.5.45): 移除 list_ecosystem_tools 发现入口 —
+        // 工具系统单一入口统一 (List Domains/Invoke Tools 已覆盖全量)
+        return enabledInstrs.map { EcosystemBridge.toTool(it) }
+    }
+
+    /**
+     * 启用/禁用某个指令。
+     */
+    fun setEnabled(id: String, enabled: Boolean) {
+        val current = _enabledIds.value.toMutableSet()
+        if (enabled) current.add(id) else current.remove(id)
+        _enabledIds.value = current
+        saveEnabledSet()
+    }
+
+    fun isEnabled(id: String): Boolean = _enabledIds.value.contains(id)
+
+    /**
+     * 生成指令唯一 ID。
+     */
+    fun idOf(inst: EcosystemInstruction): String {
+        return "${inst.source.name}_${inst.fileName}_${inst.displayPath.hashCode()}"
+    }
+
+    private fun loadEnabledSet() {
+        val prefs = context?.getSharedPreferences(ENABLED_PREFS, Context.MODE_PRIVATE)
+        _enabledIds.value = prefs?.getStringSet("ids", emptySet()) ?: emptySet()
+    }
+
+    private fun saveEnabledSet() {
+        val prefs = context?.getSharedPreferences(ENABLED_PREFS, Context.MODE_PRIVATE)
+        prefs?.edit()?.putStringSet("ids", _enabledIds.value)?.apply()
+    }
+
+    // ═══ GitHub Token ═══
+
+    fun setGitHubToken(token: String) {
+        context?.getSharedPreferences("eco_tokens", Context.MODE_PRIVATE)
+            ?.edit()?.putString("github_token", token)?.apply()
+    }
+
+    fun getGitHubToken(): String {
+        return context?.getSharedPreferences("eco_tokens", Context.MODE_PRIVATE)
+            ?.getString("github_token", "") ?: ""
+    }
+
+    // v3.6.95: clawhub 网络代理 (fake-ip/VPN 环境) — 格式 host:port (如 127.0.0.1:7890)
+    fun setClawhubProxy(proxy: String) {
+        context?.getSharedPreferences("eco_tokens", Context.MODE_PRIVATE)
+            ?.edit()?.putString("clawhub_proxy", proxy)?.apply()
+    }
+
+    fun getClawhubProxy(): String {
+        return context?.getSharedPreferences("eco_tokens", Context.MODE_PRIVATE)
+            ?.getString("clawhub_proxy", "") ?: ""
+    }
+}
+

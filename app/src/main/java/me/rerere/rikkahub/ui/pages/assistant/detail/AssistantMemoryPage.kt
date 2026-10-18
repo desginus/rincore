@@ -1,43 +1,47 @@
+/* 【域 E·设置体系】 — 页面 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.ui.pages.assistant.detail
+/* ───【原版对齐】AssistantMemoryPage.kt | 基线 2.5.5 (v4.8.64 适配移植)
+ * 来源: 原版 2.5.5 适配移植 (ItemActionMenu 统一操作 + 记忆卡片交互统一)
+ * ───────────────────────────────────────────────────────────────*/
 
-import android.text.format.DateUtils
-import androidx.annotation.StringRes
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Add01
-import me.rerere.hugeicons.stroke.Brain02
 import me.rerere.hugeicons.stroke.Delete01
-import me.rerere.hugeicons.stroke.Settings03
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ContainedLoadingIndicator
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.material3.FilterChip
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -46,39 +50,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEach
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.Screen
-import me.rerere.rikkahub.data.ai.MemoryConsolidationStatus
 import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.MemoryFile
-import me.rerere.rikkahub.data.model.groupByDirectory
-import me.rerere.rikkahub.data.model.memoryTitleOf
+import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.components.ui.ItemAction
 import me.rerere.rikkahub.ui.components.ui.ItemActionMenu
-import me.rerere.rikkahub.ui.components.ui.PagerTab
-import me.rerere.rikkahub.ui.components.ui.PagerTabs
-import me.rerere.rikkahub.ui.components.ui.switchItem
-import me.rerere.rikkahub.ui.context.LocalNavController
-import me.rerere.rikkahub.ui.pages.memory.resultText
+import me.rerere.rikkahub.ui.components.ui.RikkaConfirmDialog
+import me.rerere.rikkahub.ui.hooks.EditStateContent
+import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.theme.CustomColors
-import me.rerere.ui.components.RikkaConfirmDialog
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
-
-// 记忆文件放第一页：从侧边栏的整理入口进来时能直接看到整理状态
-private enum class MemoryTab(
-    override val icon: ImageVector,
-    @param:StringRes private val labelRes: Int,
-) : PagerTab {
-    FILES(HugeIcons.Brain02, R.string.assistant_page_manage_memory_title),
-    SETTINGS(HugeIcons.Settings03, R.string.settings);
-
-    override val label: String
-        @Composable get() = stringResource(labelRes)
-}
 
 @Composable
 fun AssistantMemoryPage(id: String) {
@@ -89,10 +72,9 @@ fun AssistantMemoryPage(id: String) {
     )
     val assistant by vm.assistant.collectAsStateWithLifecycle()
     val memories by vm.memories.collectAsStateWithLifecycle()
-    val consolidation by vm.memoryConsolidation.collectAsStateWithLifecycle()
-    val navController = LocalNavController.current
+    // v4.8.92: 单对话记忆（管理视图 + 来源标签标题解析）
+    val conversationMemories by vm.conversationMemories.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    val pagerState = rememberPagerState { MemoryTab.entries.size }
 
     Scaffold(
         topBar = {
@@ -103,13 +85,6 @@ fun AssistantMemoryPage(id: String) {
                 navigationIcon = {
                     BackButton()
                 },
-                actions = {
-                    if (MemoryTab.entries[pagerState.currentPage] == MemoryTab.FILES) {
-                        IconButton(onClick = { navController.navigate(Screen.MemoryFile(vm.memoryId, null)) }) {
-                            Icon(HugeIcons.Add01, contentDescription = stringResource(R.string.add))
-                        }
-                    }
-                },
                 scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
             )
@@ -117,48 +92,59 @@ fun AssistantMemoryPage(id: String) {
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
-            PagerTabs(
-                pagerState = pagerState,
-                tabs = MemoryTab.entries,
-                modifier = Modifier.padding(bottom = 4.dp),
-                contentPadding = PaddingValues(horizontal = 16.dp),
-            )
-
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-            ) { page ->
-                when (MemoryTab.entries[page]) {
-                    MemoryTab.FILES -> MemoryFilesTab(
-                        memories = memories,
-                        consolidation = consolidation.takeIf { assistant.enableMemory },
-                        onOrganizeMemory = { vm.organizeMemory() },
-                        onOpenMemory = { path -> navController.navigate(Screen.MemoryFile(vm.memoryId, path)) },
-                        onDeleteMemory = { vm.deleteMemory(it) },
-                    )
-
-                    MemoryTab.SETTINGS -> MemorySettingsTab(
-                        assistant = assistant,
-                        onUpdateAssistant = { vm.update(it) },
-                    )
-                }
-            }
-        }
+        AssistantMemoryContent(
+            innerPadding = innerPadding,
+            assistant = assistant,
+            memories = memories,
+            conversationMemories = conversationMemories,
+            loadTitle = { vm.conversationTitle(it) },
+            loadRecentConversations = { vm.recentConversations() },
+            onUpdateAssistant = { vm.update(it) },
+            onDeleteMemory = { vm.deleteMemory(it) },
+            onAddMemory = { vm.addMemory(it) },
+            onUpdateMemory = { vm.updateMemory(it) }
+        )
     }
 }
 
 @Composable
-private fun MemorySettingsTab(
+private fun AssistantMemoryContent(
+    innerPadding: PaddingValues,
     assistant: Assistant,
+    memories: List<AssistantMemory>,
+    conversationMemories: List<AssistantMemory>,
+    loadTitle: suspend (String) -> String?,
+    loadRecentConversations: suspend () -> List<me.rerere.rikkahub.data.model.Conversation>,
     onUpdateAssistant: (Assistant) -> Unit,
+    onAddMemory: (AssistantMemory) -> Unit,
+    onUpdateMemory: (AssistantMemory) -> Unit,
+    onDeleteMemory: (AssistantMemory) -> Unit,
 ) {
+    val memoryDialogState = useEditState<AssistantMemory> {
+        if (it.id == 0L) {
+            onAddMemory(it)
+        } else {
+            onUpdateMemory(it)
+        }
+    }
+    var pendingDeleteMemory by remember { mutableStateOf<AssistantMemory?>(null) }
+
+    // v4.8.92: 记忆范围管理 —— [整个助手] / [单对话记忆]
+    var manageConversationScope by remember { mutableStateOf(false) }
+    var showConversationPicker by remember { mutableStateOf(false) }
+    // 对话标题缓存（来源标签 / 分组头；已删除对话 → 显示"已删除的对话"）
+    val memoryTitles by produceState<Map<String, String>>(
+        initialValue = emptyMap(), memories, conversationMemories,
+    ) {
+        val ids = (
+            memories.mapNotNull { it.sourceConversationId } +
+                conversationMemories.mapNotNull { it.conversationId }
+            ).toSet()
+        val map = HashMap<String, String>()
+        ids.forEach { cid -> loadTitle(cid)?.let { t -> map[cid] = t } }
+        value = map
+    }
+
     var showTimeReminderIntervalDialog by remember(assistant.id) { mutableStateOf(false) }
     var timeReminderIntervalInput by remember(assistant.id) { mutableStateOf("") }
 
@@ -199,80 +185,208 @@ private fun MemorySettingsTab(
         )
     }
 
+    // 记忆对话框
+    memoryDialogState.EditStateContent { memory, update ->
+        AlertDialog(
+            onDismissRequest = {
+                memoryDialogState.dismiss()
+            },
+            title = {
+                Text(stringResource(R.string.assistant_page_manage_memory_title))
+            },
+            text = {
+                TextField(
+                    value = memory.content,
+                    onValueChange = {
+                        update(memory.copy(content = it))
+                    },
+                    label = {
+                        Text(stringResource(R.string.assistant_page_manage_memory_title))
+                    },
+                    minLines = 2,
+                    maxLines = 8
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        memoryDialogState.confirm()
+                    }
+                ) {
+                    Text(stringResource(R.string.assistant_page_save))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        memoryDialogState.dismiss()
+                    }
+                ) {
+                    Text(stringResource(R.string.assistant_page_cancel))
+                }
+            }
+        )
+    }
+
+    // v4.8.92: 新建单对话记忆 → 先选归属对话
+    if (showConversationPicker) {
+        val recentConversations by produceState<List<me.rerere.rikkahub.data.model.Conversation>>(
+            initialValue = emptyList(),
+        ) {
+            value = runCatching { loadRecentConversations() }.getOrDefault(emptyList())
+        }
+        AlertDialog(
+            onDismissRequest = { showConversationPicker = false },
+            title = { Text("选择归属对话") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    recentConversations.forEach { conv ->
+                        TextButton(
+                            onClick = {
+                                showConversationPicker = false
+                                memoryDialogState.open(
+                                    AssistantMemory(0, "", conversationId = conv.id.toString())
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                text = conv.title.ifBlank { "新对话" },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    if (recentConversations.isEmpty()) {
+                        Text("没有可用对话", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showConversationPicker = false }) { Text("取消") }
+            },
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp)
+            .padding(innerPadding)
+            .imePadding(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         CardGroup {
-            switchItem(
-                checked = assistant.enableMemory,
-                onCheckedChange = {
-                    onUpdateAssistant(
-                        assistant.copy(
-                            enableMemory = it
-                        )
-                    )
-                },
-                supportingContent = { Text(stringResource(R.string.assistant_page_memory_desc)) },
+            item(
                 headlineContent = { Text(stringResource(R.string.assistant_page_memory)) },
-            )
-            switchItem(
-                checked = assistant.useGlobalMemory,
-                onCheckedChange = {
-                    onUpdateAssistant(
-                        assistant.copy(
-                            useGlobalMemory = it
-                        )
+                supportingContent = {
+                    Text(
+                        text = stringResource(R.string.assistant_page_memory_desc),
                     )
                 },
-                enabled = assistant.enableMemory,
-                supportingContent = { Text(stringResource(R.string.assistant_page_global_memory_desc)) },
+                trailingContent = {
+                    Switch(
+                        checked = assistant.enableMemory,
+                        onCheckedChange = {
+                            onUpdateAssistant(
+                                assistant.copy(
+                                    enableMemory = it
+                                )
+                            )
+                        }
+                    )
+                }
+            )
+            item(
                 headlineContent = { Text(stringResource(R.string.assistant_page_global_memory)) },
-            )
-            switchItem(
-                checked = assistant.enableRecentChatsReference,
-                onCheckedChange = {
-                    onUpdateAssistant(
-                        assistant.copy(
-                            enableRecentChatsReference = it
-                        )
+                supportingContent = {
+                    Text(
+                        text = stringResource(R.string.assistant_page_global_memory_desc),
                     )
                 },
-                supportingContent = { Text(stringResource(R.string.assistant_page_recent_chats_desc)) },
+                trailingContent = {
+                    Switch(
+                        checked = assistant.useGlobalMemory,
+                        onCheckedChange = {
+                            onUpdateAssistant(
+                                assistant.copy(
+                                    useGlobalMemory = it
+                                )
+                            )
+                        },
+                        enabled = assistant.enableMemory
+                    )
+                }
+            )
+            item(
+                headlineContent = { Text("单对话记忆") },
+                supportingContent = {
+                    Text("开启后，新记忆只挂载到当前对话：仅在该对话内可见，对话删除即销毁。")
+                },
+                trailingContent = {
+                    Switch(
+                        checked = assistant.conversationScopedMemory,
+                        onCheckedChange = {
+                            onUpdateAssistant(
+                                assistant.copy(
+                                    conversationScopedMemory = it
+                                )
+                            )
+                        },
+                        enabled = assistant.enableMemory,
+                    )
+                }
+            )
+            item(
                 headlineContent = { Text(stringResource(R.string.assistant_page_recent_chats)) },
+                supportingContent = {
+                    Text(
+                        text = stringResource(R.string.assistant_page_recent_chats_desc),
+                    )
+                },
+                trailingContent = {
+                    Switch(
+                        checked = assistant.enableRecentChatsReference,
+                        onCheckedChange = {
+                            onUpdateAssistant(
+                                assistant.copy(
+                                    enableRecentChatsReference = it
+                                )
+                            )
+                        }
+                    )
+                }
             )
         }
 
         CardGroup {
-            switchItem(
-                checked = assistant.enableTimeReminder,
-                onCheckedChange = {
-                    onUpdateAssistant(
-                        assistant.copy(
-                            enableTimeReminder = it
-                        )
+            item(
+                headlineContent = { Text(stringResource(R.string.assistant_page_time_reminder)) },
+                supportingContent = {
+                    Text(
+                        text = stringResource(R.string.assistant_page_time_reminder_desc),
                     )
                 },
-                supportingContent = { Text(stringResource(R.string.assistant_page_time_reminder_desc)) },
-                headlineContent = { Text(stringResource(R.string.assistant_page_time_reminder)) },
+                trailingContent = {
+                    Switch(
+                        checked = assistant.enableTimeReminder,
+                        onCheckedChange = {
+                            onUpdateAssistant(
+                                assistant.copy(
+                                    enableTimeReminder = it
+                                )
+                            )
+                        }
+                    )
+                }
             )
             if (assistant.enableTimeReminder) {
                 item(
                     headlineContent = { Text(stringResource(R.string.assistant_page_time_reminder_interval)) },
                     supportingContent = { Text(stringResource(R.string.assistant_page_time_reminder_interval_desc)) },
-                    trailingContent = {
-                        Text(
-                            text = stringResource(
-                                R.string.assistant_page_time_reminder_interval_value,
-                                assistant.timeReminderIntervalMinutes
-                            ),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    },
+                    trailingContent = { Text(stringResource(R.string.assistant_page_time_reminder_interval_value, assistant.timeReminderIntervalMinutes)) },
                     onClick = {
                         timeReminderIntervalInput = assistant.timeReminderIntervalMinutes.toString()
                         showTimeReminderIntervalDialog = true
@@ -280,82 +394,100 @@ private fun MemorySettingsTab(
                 )
             }
         }
-    }
-}
 
-@Composable
-private fun MemoryFilesTab(
-    memories: List<MemoryFile>,
-    // 为 null 时不显示整理入口
-    consolidation: MemoryConsolidationStatus?,
-    onOrganizeMemory: () -> Unit,
-    onOpenMemory: (path: String) -> Unit,
-    onDeleteMemory: (MemoryFile) -> Unit,
-) {
-    var pendingDeleteMemory by remember { mutableStateOf<MemoryFile?>(null) }
-    val memoryGroups = remember(memories) { memories.groupByDirectory() }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.assistant_page_manage_memory_title),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier
+                    .padding(bottom = 8.dp)
+                    .align(Alignment.CenterStart)
+            )
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        if (consolidation != null) {
-            MemoryConsolidationSection(
-                status = consolidation,
-                onOrganize = onOrganizeMemory,
+            IconButton(
+                onClick = {
+                    if (manageConversationScope) {
+                        // 单对话记忆：先选归属对话
+                        showConversationPicker = true
+                    } else {
+                        memoryDialogState.open(AssistantMemory(0, ""))
+                    }
+                },
+                modifier = Modifier.align(Alignment.CenterEnd)
+            ) {
+                Icon(
+                    imageVector = HugeIcons.Add01,
+                    contentDescription = null
+                )
+            }
+        }
+
+        // v4.8.92: 范围切换 —— 分别管理「整个助手」与「单对话记忆」
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FilterChip(
+                selected = !manageConversationScope,
+                onClick = { manageConversationScope = false },
+                label = { Text("整个助手") },
+            )
+            FilterChip(
+                selected = manageConversationScope,
+                onClick = { manageConversationScope = true },
+                label = { Text("单对话记忆") },
             )
         }
 
-        memoryGroups.fastForEach { (directory, files) ->
-            CardGroup(
-                title = { Text(memorySectionTitle(directory)) },
-            ) {
-                files.fastForEach { memory ->
-                    item(
-                        onClick = { onOpenMemory(memory.path) },
-                        trailingContent = {
-                            ItemActionMenu(
-                                actions = listOf(
-                                    ItemAction(
-                                        text = stringResource(R.string.delete),
-                                        icon = HugeIcons.Delete01,
-                                        destructive = true,
-                                        onClick = { pendingDeleteMemory = memory },
-                                    ),
-                                )
-                            )
+        if (!manageConversationScope) {
+            memories.fastForEach { memory ->
+                key(memory.id) {
+                    MemoryItem(
+                        memory = memory,
+                        tag = memory.sourceConversationId?.let { sid ->
+                            memoryTitles[sid]?.let { "来自「$it」" } ?: "来自已删除的对话"
                         },
-                        headlineContent = {
-                            Text(
-                                text = memory.title,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                        onEditMemory = {
+                            memoryDialogState.open(it)
                         },
-                        supportingContent = {
-                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                if (memory.description.isNotEmpty()) {
-                                    Text(
-                                        text = memory.description,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                                Text(
-                                    text = stringResource(
-                                        R.string.assistant_page_memory_updated_at,
-                                        relativeTimeOf(memory.updatedAt),
-                                    ),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.outline,
-                                )
-                            }
-                        },
+                        onDeleteMemory = {
+                            pendingDeleteMemory = it
+                        }
                     )
                 }
+            }
+        } else {
+            // 单对话记忆：按归属对话分组（组头 = 对话标题；已删除 → 明示）
+            conversationMemories.groupBy { it.conversationId }.forEach { (cid, list) ->
+                val title = cid?.let { memoryTitles[it] } ?: "已删除的对话"
+                Text(
+                    text = "$title（${list.size}）",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+                list.fastForEach { memory ->
+                    key(memory.id) {
+                        MemoryItem(
+                            memory = memory,
+                            tag = "仅在该对话内可见",
+                            onEditMemory = { memoryDialogState.open(it) },
+                            onDeleteMemory = { pendingDeleteMemory = it }
+                        )
+                    }
+                }
+            }
+            if (conversationMemories.isEmpty()) {
+                Text(
+                    text = "还没有单对话记忆。点右上角 + 选择归属对话后创建。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                )
             }
         }
     }
@@ -372,7 +504,7 @@ private fun MemoryFilesTab(
         onDismiss = { pendingDeleteMemory = null },
         text = {
             Text(
-                text = pendingDeleteMemory?.path.orEmpty(),
+                text = pendingDeleteMemory?.content.orEmpty(),
                 maxLines = 8,
                 overflow = TextOverflow.Ellipsis
             )
@@ -380,70 +512,54 @@ private fun MemoryFilesTab(
     )
 }
 
-/** 后台整理的状态和手动入口 */
 @Composable
-private fun MemoryConsolidationSection(
-    status: MemoryConsolidationStatus,
-    onOrganize: () -> Unit,
+private fun MemoryItem(
+    memory: AssistantMemory,
+    tag: String? = null,
+    onEditMemory: (AssistantMemory) -> Unit,
+    onDeleteMemory: (AssistantMemory) -> Unit
 ) {
-    val lastRun = status.lastRun
-    CardGroup {
-        item(
-            headlineContent = { Text(stringResource(R.string.memory_dream_title)) },
-            supportingContent = { Text(memoryConsolidationSummary(status)) },
-            trailingContent = {
-                if (status.running) {
-                    ContainedLoadingIndicator(modifier = Modifier.size(32.dp))
-                } else {
-                    FilledTonalButton(onClick = onOrganize) {
-                        Text(
-                            stringResource(
-                                if (lastRun?.error != null) {
-                                    R.string.assistant_page_memory_dream_retry
-                                } else {
-                                    R.string.assistant_page_memory_dream_now
-                                }
-                            )
-                        )
-                    }
+    Card(
+        onClick = { onEditMemory(memory) },
+        modifier = Modifier.fillMaxWidth(),
+        colors = CustomColors.cardColorsOnSurfaceContainer
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = memory.content,
+                    maxLines = 5,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                // v4.8.92: 小标签（来源对话 / 单对话可见性说明）
+                tag?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
+                    )
                 }
-            },
-        )
+            }
+            ItemActionMenu(
+                actions = listOf(
+                    ItemAction(
+                        text = stringResource(R.string.delete),
+                        icon = HugeIcons.Delete01,
+                        destructive = true,
+                        onClick = { onDeleteMemory(memory) },
+                    ),
+                )
+            )
+        }
     }
 }
-
-@Composable
-private fun memoryConsolidationSummary(status: MemoryConsolidationStatus): String {
-    val lastRun = status.lastRun
-    return when {
-        status.running -> stringResource(R.string.memory_dreaming)
-        lastRun?.error != null -> lastRun.resultText()
-        else -> listOfNotNull(
-            status.pendingTurns.takeIf { it > 0 }?.let {
-                stringResource(R.string.assistant_page_memory_dream_pending, it)
-            },
-            lastRun?.let { "${relativeTimeOf(it.finishedAt)}: ${it.resultText()} (${durationTextOf(it.duration)})" },
-        ).joinToString("\n").ifEmpty { stringResource(R.string.assistant_page_memory_dream_hint) }
-    }
-}
-
-// 按整秒显示成 "42s"、"1m 5s"
-private fun durationTextOf(duration: Duration): String = duration.inWholeSeconds.coerceAtLeast(1).seconds.toString()
-
-// 根目录下是 profile 和 preferences，都是关于用户本人的；记忆格式约定的几个目录有译名，其余的从目录名推
-@Composable
-private fun memorySectionTitle(directory: String): String = when (directory) {
-    "/" -> stringResource(R.string.assistant_page_memory_section_you)
-    "/topics" -> stringResource(R.string.assistant_page_memory_section_topics)
-    "/areas" -> stringResource(R.string.assistant_page_memory_section_areas)
-    "/people" -> stringResource(R.string.assistant_page_memory_section_people)
-    else -> memoryTitleOf(directory.removePrefix("/"))
-}
-
-// 一周内显示"41 分钟前"这样的相对时间，更早的显示日期
-private fun relativeTimeOf(time: Long): String = DateUtils.getRelativeTimeSpanString(
-    time,
-    System.currentTimeMillis(),
-    DateUtils.MINUTE_IN_MILLIS,
-    DateUtils.FORMAT_ABBREV_MONTH,
-).toString()

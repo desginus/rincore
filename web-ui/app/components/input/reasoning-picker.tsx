@@ -1,15 +1,7 @@
 import * as React from "react";
 
 import { useMutation } from "@tanstack/react-query";
-import {
-  Brain,
-  BrainCircuit,
-  ChevronDown,
-  Lightbulb,
-  LightbulbOff,
-  LoaderCircle,
-  Sparkles,
-} from "lucide-react";
+import { Brain, BrainCircuit, ChevronDown, Lightbulb, LightbulbOff, LoaderCircle, Sparkles } from "lucide-react";
 import { Slider as SliderPrimitive } from "radix-ui";
 import { useTranslation } from "react-i18next";
 
@@ -19,15 +11,15 @@ import { usePickerPopover } from "~/hooks/use-picker-popover";
 import { extractErrorMessage } from "~/lib/error";
 import { cn } from "~/lib/utils";
 import api from "~/services/api";
-import type { ConversationDto, ProviderModel } from "~/types";
+import type { ProviderModel } from "~/types";
 import { Button } from "~/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 
 import { PickerErrorAlert } from "./picker-error-alert";
 
-type ReasoningLevel = "off" | "auto" | "low" | "medium" | "high" | "xhigh" | "max";
+type ReasoningLevel = "off" | "auto" | "low" | "medium" | "high" | "xhigh";
 
-const REASONING_LEVELS: ReasoningLevel[] = ["off", "auto", "low", "medium", "high", "xhigh", "max"];
+const REASONING_LEVELS: ReasoningLevel[] = ["off", "auto", "low", "medium", "high", "xhigh"];
 
 // Thumb size in px, keep in sync with `size-7` on the thumb below
 const THUMB_SIZE = 28;
@@ -41,7 +33,6 @@ interface ReasoningPreset {
 export interface ReasoningPickerButtonProps {
   disabled?: boolean;
   className?: string;
-  conversation?: ConversationDto | null;
 }
 
 function isReasoningModel(model: ProviderModel | null): boolean {
@@ -52,20 +43,12 @@ function isReasoningModel(model: ProviderModel | null): boolean {
 function ReasoningIcon({ level, className }: { level: ReasoningLevel; className?: string }) {
   const props = { className: cn("size-4", className) };
   switch (level) {
-    case "off":
-      return <LightbulbOff {...props} />;
-    case "auto":
-      return <Sparkles {...props} />;
-    case "low":
-      return <Lightbulb {...props} />;
-    case "medium":
-      return <Lightbulb {...props} />;
-    case "high":
-      return <BrainCircuit {...props} />;
-    case "xhigh":
-      return <Brain {...props} />;
-    case "max":
-      return <Brain {...props} />;
+    case "off":    return <LightbulbOff {...props} />;
+    case "auto":   return <Sparkles {...props} />;
+    case "low":    return <Lightbulb {...props} />;
+    case "medium": return <Lightbulb {...props} />;
+    case "high":   return <BrainCircuit {...props} />;
+    case "xhigh":  return <Brain {...props} />;
   }
 }
 
@@ -93,12 +76,7 @@ function ReasoningSlider({
       className="relative flex h-7 w-full touch-none items-center select-none data-[disabled]:opacity-50"
     >
       <SliderPrimitive.Track className="relative h-7 w-full grow overflow-hidden rounded-full bg-muted">
-        {/* Match the thumb's right edge, including its inset at both ends. */}
-        <span
-          aria-hidden="true"
-          className="absolute left-0 h-full rounded-r-lg bg-primary/75"
-          style={{ width: `calc(${THUMB_SIZE}px + (100% - ${THUMB_SIZE}px) * ${value / max})` }}
-        />
+        <SliderPrimitive.Range className="absolute h-full bg-primary/75" />
         {/* Tick dots inside the track, aligned with thumb travel positions */}
         {REASONING_LEVELS.map((level, i) => (
           <span
@@ -116,15 +94,10 @@ function ReasoningSlider({
   );
 }
 
-export function ReasoningPickerButton({
-  disabled = false,
-  className,
-  conversation = null,
-}: ReasoningPickerButtonProps) {
+export function ReasoningPickerButton({ disabled = false, className }: ReasoningPickerButtonProps) {
   const { t } = useTranslation("input");
   const { settings, currentAssistant } = useCurrentAssistant();
-  const { currentModel } = useCurrentModel(conversation);
-  const config = conversation?.config ?? null;
+  const { currentModel } = useCurrentModel();
 
   const canUse = Boolean(settings && currentAssistant && !disabled);
   const canReasoning = isReasoningModel(currentModel);
@@ -132,50 +105,17 @@ export function ReasoningPickerButton({
 
   const reasoningPresets = React.useMemo<ReasoningPreset[]>(
     () => [
-      {
-        key: "off",
-        label: t("reasoning.presets.off.label"),
-        description: t("reasoning.presets.off.description"),
-      },
-      {
-        key: "auto",
-        label: t("reasoning.presets.auto.label"),
-        description: t("reasoning.presets.auto.description"),
-      },
-      {
-        key: "low",
-        label: t("reasoning.presets.low.label"),
-        description: t("reasoning.presets.low.description"),
-      },
-      {
-        key: "medium",
-        label: t("reasoning.presets.medium.label"),
-        description: t("reasoning.presets.medium.description"),
-      },
-      {
-        key: "high",
-        label: t("reasoning.presets.high.label"),
-        description: t("reasoning.presets.high.description"),
-      },
-      {
-        key: "xhigh",
-        label: t("reasoning.presets.xhigh.label"),
-        description: t("reasoning.presets.xhigh.description"),
-      },
-      {
-        key: "max",
-        label: t("reasoning.presets.max.label"),
-        description: t("reasoning.presets.max.description"),
-      },
+      { key: "off",    label: t("reasoning.presets.off.label"),    description: t("reasoning.presets.off.description") },
+      { key: "auto",   label: t("reasoning.presets.auto.label"),   description: t("reasoning.presets.auto.description") },
+      { key: "low",    label: t("reasoning.presets.low.label"),    description: t("reasoning.presets.low.description") },
+      { key: "medium", label: t("reasoning.presets.medium.label"), description: t("reasoning.presets.medium.description") },
+      { key: "high",   label: t("reasoning.presets.high.label"),   description: t("reasoning.presets.high.description") },
+      { key: "xhigh",  label: t("reasoning.presets.xhigh.label"),  description: t("reasoning.presets.xhigh.description") },
     ],
     [t],
   );
 
-  const currentLevel =
-    ((config ? config.reasoningLevel : currentAssistant?.reasoningLevel) as
-      | ReasoningLevel
-      | null
-      | undefined) ?? "auto";
+  const currentLevel = ((currentAssistant?.reasoningLevel as ReasoningLevel | null | undefined) ?? "auto");
   const currentIndex = Math.max(0, REASONING_LEVELS.indexOf(currentLevel));
 
   const [localIndex, setLocalIndex] = React.useState(currentIndex);
@@ -197,19 +137,11 @@ export function ReasoningPickerButton({
   }, [open]);
 
   const updateReasoningLevelMutation = useMutation({
-    mutationFn: ({
-      assistantId,
-      reasoningLevel,
-    }: {
-      assistantId: string;
-      reasoningLevel: ReasoningLevel;
-    }) =>
-      conversation
-        ? api.post<unknown>(`conversations/${conversation.id}/config`, { reasoningLevel })
-        : api.post<unknown>("settings/assistant/thinking-budget", {
-            assistantId,
-            reasoningLevel,
-          }),
+    mutationFn: ({ assistantId, reasoningLevel }: { assistantId: string; reasoningLevel: ReasoningLevel }) =>
+      api.post<{ status: string }>("settings/assistant/thinking-budget", {
+        assistantId,
+        reasoningLevel,
+      }),
     onError: (updateError) => {
       setError(extractErrorMessage(updateError, t("reasoning.update_failed")));
       setLocalIndex(currentIndex);
@@ -248,7 +180,7 @@ export function ReasoningPickerButton({
         </Button>
       </PopoverTrigger>
 
-      <PopoverContent side="top" sideOffset={8} align="end" className="w-[min(92vw,20rem)] space-y-3 px-4 py-4">
+      <PopoverContent align="end" className="w-[min(92vw,20rem)] space-y-3 px-4 py-4">
         <PickerErrorAlert error={error} />
 
         {/* Faster / Smarter labels */}

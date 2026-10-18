@@ -1,4 +1,9 @@
+/* 【域 B·AI 传输】 — MCP | 地图: docs/APP_MAP.md §B */
 package me.rerere.rikkahub.data.ai.mcp
+
+/* ───【原版对齐】McpOAuthCoordinator.kt | 差异 ±5 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
 
 import android.content.Context
 import android.util.Log
@@ -25,8 +30,6 @@ internal const val MCP_OAUTH_CALLBACK_PORT = 52_134
 internal const val MCP_OAUTH_CALLBACK_PATH = "/oauth/callback"
 internal const val MCP_OAUTH_REDIRECT_URI =
     "http://localhost:$MCP_OAUTH_CALLBACK_PORT$MCP_OAUTH_CALLBACK_PATH"
-// 托管在 GitHub Pages 上的 Client ID Metadata Document，其 redirect_uris 必须与 MCP_OAUTH_REDIRECT_URI 一致
-internal const val MCP_OAUTH_CLIENT_METADATA_URL = "https://rikkahub.github.io/oauth/client.json"
 private val OAUTH_CALLBACK_TIMEOUT = 5.minutes
 
 /**
@@ -123,10 +126,11 @@ internal class McpOAuthCoordinator(
     }
 
     suspend fun needsAuthorization(config: McpServerConfig, error: Throwable): Boolean {
+        if (!looksUnauthorized(error)) return false
+        if (config.commonOptions.oauth?.enabled == true) return true
         if (config.commonOptions.headers.any { it.first.equals("Authorization", ignoreCase = true) }) {
             return false
         }
-        if (looksUnauthorized(error)) return true
         return runCatching { discoveryClient.discoverProtectedResource(config.serverUrl) }
             .onFailure {
                 Log.i(TAG, "OAuth probe failed for ${config.commonOptions.name}: ${it.message}")
@@ -138,20 +142,16 @@ internal class McpOAuthCoordinator(
         val serverUrl = config.serverUrl
         require(serverUrl.isNotBlank()) { "Server URL 为空，无法授权" }
 
-        // 部分服务器（如 Zomato）不提供 RFC 9728 元数据，按旧版规范退回到服务器 origin 作为授权服务器
-        val protectedResource = runCatching { discoveryClient.discoverProtectedResource(serverUrl) }
-            .onFailure { Log.i(TAG, "Protected resource discovery failed, fallback to server origin: ${it.message}") }
-            .getOrNull()
-        val issuer = protectedResource?.authorizationServers?.firstOrNull()
-            ?: McpOAuthDiscoveryClient.serverOrigin(serverUrl)
-            ?: error("无法确定授权服务器")
+        val protectedResource = discoveryClient.discoverProtectedResource(serverUrl)
+        val issuer = protectedResource.authorizationServers.firstOrNull()
+            ?: error("受保护资源未声明授权服务器")
         val metadata = discoveryClient.discoverAuthorizationServer(issuer)
         val authorizationEndpoint = metadata.authorizationEndpoint
             ?: error("授权服务器缺少 authorization_endpoint")
         val tokenEndpoint = metadata.tokenEndpoint
             ?: error("授权服务器缺少 token_endpoint")
         val scope = config.commonOptions.oauth?.scope
-            ?: protectedResource?.scopesSupported?.joinToString(" ")
+            ?: protectedResource.scopesSupported?.joinToString(" ")
             ?: metadata.scopesSupported?.joinToString(" ")
 
         val pkce = oauthClient.generatePkce()
@@ -167,13 +167,6 @@ internal class McpOAuthCoordinator(
             val canReuseClient = existing?.redirectUri == redirectUri && !existing.clientId.isNullOrBlank()
             var clientId = existing?.clientId.takeIf { canReuseClient }
             var clientSecret = existing?.clientSecret.takeIf { canReuseClient }
-            if (clientId.isNullOrBlank() && metadata.registrationEndpoint == null &&
-                metadata.clientIdMetadataDocumentSupported
-            ) {
-                // 无动态注册端点时，使用 Client ID Metadata Document（URL 即 client_id）
-                clientId = MCP_OAUTH_CLIENT_METADATA_URL
-                clientSecret = null
-            }
             if (clientId.isNullOrBlank()) {
                 val registrationEndpoint = metadata.registrationEndpoint
                     ?: error("授权服务器不支持动态注册，且未预配置 client_id")

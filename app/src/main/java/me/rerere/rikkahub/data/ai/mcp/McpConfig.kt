@@ -1,5 +1,10 @@
+/* 【域 B·AI 传输】 — MCP | 地图: docs/APP_MAP.md §B */
 package me.rerere.rikkahub.data.ai.mcp
 
+
+/* ───【原版对齐】McpConfig.kt | 差异 ±17 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import me.rerere.ai.core.InputSchema
@@ -92,6 +97,25 @@ sealed class McpServerConfig {
             return copy(id = id, commonOptions = commonOptions)
         }
     }
+
+    @Serializable
+    @SerialName("stdio")
+    data class StdioTransportServer(
+        override val id: Uuid = Uuid.random(),
+        override val commonOptions: McpCommonOptions = McpCommonOptions(),
+        val command: String = "",   // e.g. "python3 /path/to/server.py"
+        val args: List<String> = emptyList(),
+        val url: String = "",       // 可选: stdio server 暴露的 HTTP 地址
+        val viaWorkspace: Boolean = false, // 通过 workspace 沙箱启动 (沙箱内有 Python/Node 运行时)
+        val workspaceId: String = "",      // 目标 workspace id (viaWorkspace=true 时必填)
+        // v4.8.110 (B4): stdio 环境变量 — 上游 MCP 包普遍声明 environmentVariables
+        // (密钥等不再只能落文件); 经 launchProcess 链注入到 proot 沙箱进程。
+        val env: Map<String, String> = emptyMap(),
+    ) : McpServerConfig() {
+        override fun clone(id: Uuid, commonOptions: McpCommonOptions): McpServerConfig {
+            return copy(id = id, commonOptions = commonOptions)
+        }
+    }
 }
 
 /** MCP Server 的连接地址（作为 OAuth 的 canonical resource 标识）。 */
@@ -99,4 +123,5 @@ val McpServerConfig.serverUrl: String
     get() = when (this) {
         is McpServerConfig.SseTransportServer -> url
         is McpServerConfig.StreamableHTTPServer -> url
+        is McpServerConfig.StdioTransportServer -> url.ifBlank { command }
     }

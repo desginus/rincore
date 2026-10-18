@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+"""doc — .doc (Word 97-2003) read / edit tool.
+
+Why this wrapper exists (both verified in the proot sandbox):
+  1. The Spire.Doc engine randomly aborts in proot (ASLR interaction):
+     measured 9/10 crashes without `setarch -R`, 0/10 with it. This script
+     re-execs itself under `setarch -R` automatically.
+  2. The free Spire.Doc build injects a red evaluation notice at the top of
+     every saved document. After each save this script scrubs it via an
+     equal-length byte replacement (same UTF-16 character count, so .doc
+     internal indexes stay intact; the leftover blank run is invisible).
+
+Usage:
+  doc read <file.doc>                       print the full text
+  doc replace <file.doc> "old" "new"        find/replace, save in place
+  doc replace <file.doc> "old" "new" -o out.doc    save to a new file
+
+For .docx use officecli / office-edit / python-docx instead (no such issues).
+"""
+import os
+import sys
+
+# ---- 1. re-exec under setarch -R (disable ASLR; proot stability fix) ----
+if not os.environ.get("_RIN_DOC_SETARCH"):
+    env = dict(os.environ)
+    env["_RIN_DOC_SETARCH"] = "1"
+    os.execvpe(
+        "setarch",
+        ["setarch", "-R", "python3", os.path.abspath(__file__), *sys.argv[1:]],
+        env,
+    )
+
+EVAL_WARNING = "Evaluation Warning: The document was created with Spire.Doc for Python."
+
+
+def scrub_watermark(path: str) -> bool:
+    """Equal-length byte replacement; keeps .doc internal offsets valid."""
+    data = open(path, "rb").read()
+    w16 = EVAL_WARNING.encode("utf-16-le")
+    if w16 not in data:
+        return False
+    blank16 = (" " * len(EVAL_WARNING)).encode("utf-16-le")
+    data = data.replace(w16, blank16)
+    open(path, "wb").write(data)
+    return True
+
+
+def main() -> None:
+    args = sys.argv[1:]
+    if not args or args[0] in ("-h", "--help"):
+        print(__doc__)
+        return
+    cmd = args[0]
+    try:
+        from spire.doc import Document, FileFormat
+    except ImportError:
+        print("spire.doc is not installed. Install it with:")
+        print("  pip3 install --break-system-packages spire.doc")
+        sys.exit(1)
+
+    if cmd == "read":
+        doc = Document()
+        doc.LoadFromFile(args[1])
+        text = doc.GetText()
+        doc.Close()
+        # strip the notice if this file was previously saved by Spire.Doc
+        print(text.replace(EVAL_WARNING, "").strip())
+
+    elif cmd == "replace":
+        if len(args) < 4:
+            print("usage: doc replace <file.doc> \"old\" \"new\" [-o out.doc]")
+            sys.exit(1)
+        src, old, new = args[1], args[2], args[3]
+        out = args[args.index("-o") + 1] if "-o" in args else src
+        doc = Document()
+        doc.LoadFromFile(src)
+        count = doc.Replace(old, new, False, False)
+        doc.SaveToFile(out, FileFormat.Doc)
+        doc.Close()
+        scrubbed = scrub_watermark(out)
+        note = " [watermark scrubbed]" if scrubbed else ""
+        print(f"replaced {count} occurrence(s) -> {out}{note}")
+
+    else:
+        print(f"unknown command: {cmd}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

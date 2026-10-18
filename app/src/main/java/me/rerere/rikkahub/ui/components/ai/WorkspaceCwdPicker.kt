@@ -1,11 +1,16 @@
+/* 【域 A·对话核心】 — AI 组件 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.components.ai
 
+
+/* ───【原版对齐】WorkspaceCwdPicker.kt | 差异 ±16 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,10 +27,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -44,6 +47,8 @@ import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.workspace.WorkspaceFileEntry
 import me.rerere.workspace.WorkspaceStorageArea
 import org.koin.compose.koinInject
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 @Composable
 fun WorkspaceCwdPickerSheet(
@@ -52,6 +57,9 @@ fun WorkspaceCwdPickerSheet(
     onSelectCwd: (String?) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    // v4.8.138 (用户实证"选择工作目录时被锁定, 点击重置无用"): **废除 4.8.25 的"根限制"**
+    // —— CWD 是便利默认而非牢笼 (与"项目包 CWD 不是把程序锁进沙箱"的语义同源)。
+    // 浏览全程可达工作区根; 起点 = 当前 CWD (无 CWD 则根)。
     val workspaceRepository: WorkspaceRepository = koinInject()
 
     var browsePath by remember { mutableStateOf(fromAbsolutePath(currentCwd)) }
@@ -98,6 +106,7 @@ fun WorkspaceCwdPickerSheet(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 IconButton(
+                    // v4.8.138: 无锁定 — 可一路返回到工作区根 (根限制已废除)
                     enabled = browsePath.isNotBlank(),
                     onClick = {
                         browsePath = browsePath.substringBeforeLast('/', missingDelimiterValue = "")
@@ -117,21 +126,16 @@ fun WorkspaceCwdPickerSheet(
 
             HorizontalDivider()
 
+            // v4.7.23: 布局稳定化 — 原 heightIn(max=350) 在加载前后高度跳变
+            // (空->有内容), 打开后"抽动一下/按钮下移"。改固定高度: 打开即终态布局。
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 350.dp),
+                    .height(350.dp),
             ) {
                 val dirs = entries.filter { it.isDirectory }
                 items(dirs, key = { it.path }) { entry ->
                     ListItem(
-                        headlineContent = {
-                            Text(
-                                text = entry.name,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        },
                         leadingContent = {
                             Icon(
                                 imageVector = HugeIcons.Folder01,
@@ -143,8 +147,13 @@ fun WorkspaceCwdPickerSheet(
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         modifier = Modifier.clickable {
                             browsePath = entry.path
-                        },
-                    )
+                        } ) {
+Text(
+                                text = entry.name,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+}
                 }
 
                 if (!loading && dirs.isEmpty()) {
@@ -175,7 +184,8 @@ fun WorkspaceCwdPickerSheet(
                     }
                 }
                 FilledTonalButton(onClick = {
-                    onSelectCwd(toAbsolutePath(browsePath))
+                    // v4.8.138: 根 (空 browsePath) = 未设置 — 传 null, 不存 "/workspace" 空壳值
+                    onSelectCwd(if (browsePath.isBlank()) null else toAbsolutePath(browsePath))
                     onDismiss()
                 }) {
                     Text(stringResource(R.string.workspace_cwd_set))

@@ -1,0 +1,39 @@
+/* 【域 D·工作区沙箱】 — 文件/技能 | 地图: docs/APP_MAP.md §D */
+package me.rerere.rikkahub.data.files
+
+/* ───【原版对齐】SkillFrontmatterParser.kt | 差异 ±59 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
+object SkillFrontmatterParser {
+    private val frontmatterEndRegex = Regex("""\r?\n---(?:\r?\n|$)""")
+
+    fun parse(content: String): Map<String, String> {
+        val result = mutableMapOf<String, String>()
+        if (!content.startsWith("---")) return result
+        val endRange = findFrontmatterEndRange(content) ?: return result
+        val yaml = content.substring(3, endRange.first).trim()
+        yaml.lines().forEach { line ->
+            val colonIdx = line.indexOf(':')
+            if (colonIdx > 0) {
+                val key = line.substring(0, colonIdx).trim()
+                val value = line.substring(colonIdx + 1).trim().removeSurrounding("\"")
+                if (key.isNotBlank() && value.isNotBlank()) {
+                    result[key] = value
+                }
+            }
+        }
+        return result
+    }
+
+    fun extractBody(content: String): String {
+        if (!content.startsWith("---")) return content
+        val endRange = findFrontmatterEndRange(content) ?: return content
+        return content.substring(endRange.last + 1).trimStart('\r', '\n')
+    }
+
+    private fun findFrontmatterEndRange(content: String): IntRange? {
+        if (!content.startsWith("---")) return null
+        return frontmatterEndRegex.find(content, startIndex = 3)?.range
+    }
+}

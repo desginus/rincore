@@ -1,19 +1,57 @@
+@file:OptIn(DelicateCoroutinesApi::class)
+/* ───【技术债审计 v3.19.0】
+ * 审计结论: eventSource 生命周期 (awaitClose 双 cancel) ✓; 重试三轮链
+ * (局部对象) ✓;
+ * host×家族×档位三维思考控制 ✓。残余风险: Opus 直连/Gemini 兼容未覆盖
+ * (OpenAI 类型走本类, 其他协议在各自 Provider 类)。
+ * ───────────────────────────────────────────────────────────────*/
+/**
+ * ChatCompletions API 传输 — 模块: A. 传输链 / ai
+ *
+ * 职责: messages/tools 序列化 + HTTP 发送 + SSE 流式解析。
+ * 基线: 回滚自 3.2.2 (v3.5.0)。
+ *
+ * 问题定位: 序列化错误/SSE 异常/工具格式问题 → 查本文件
+ */
 package me.rerere.ai.provider.providers.openai
 
+/* ───【原版对齐】ChatCompletionsAPI ────────────────────────────────────
+ * 原版: 有同文件 | RinCore 差异 +338 行
+ * 来源: 原版移植 + v2.9.8 SSE 重试移植 + 自研
+ * 功能: Chat Completions 流式主通道 (DeepSeek/OpenAI/OpenCode 全走此)
+ * 特点: 1. SSE 未收数据自动重试 5 次指数退避 (v2.9.8 移植);
+ *        2. watchdog 只日志不动作; 3. buffer UNLIMITED (丢 delta
+ *        即缺字, #1295); 4. grok 流式完成判断 (usage/cost 行即完成,
+ *        v3.6.78 — OpenCode Zen grok 不发 [DONE]/stop)
+ * 逻辑: callbackFlow + okhttp3.sse EventSource; 请求体零改动原则
+ * 与原版主要差异:
+ *   1. SSE 重试/watchdog (原版无)
+ *   2. grok 通道完成判断 (原版只认 [DONE])
+ *   3. 报错带请求体摘要 (REQ=, v3.6.78)
+ * ────────────────────────────────────────────────────────────────────*/
+
+import java.io.IOException
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.channels.onFailure
 import kotlinx.coroutines.flow.Flow
+import me.rerere.ai.ui.StreamChunk
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.flatMapConcat
 import kotlinx.coroutines.flow.buffer
-import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonArrayBuilder
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -27,36 +65,38 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import me.rerere.ai.core.InputSchema
+import me.rerere.ai.provider.ProxyRoute
+import me.rerere.ai.provider.resolveProxy
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.TokenUsage
+import me.rerere.ai.core.effectiveParameters
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderSetting
-import me.rerere.ai.provider.TextGenerationResult
 import me.rerere.ai.provider.TextGenerationParams
-import me.rerere.ai.provider.stream.SseEvent
 import me.rerere.ai.provider.providers.PartGroup
 import me.rerere.ai.provider.providers.groupPartsByToolBoundary
 import me.rerere.ai.registry.ModelRegistry
-import me.rerere.ai.ui.StreamChunk
-import me.rerere.ai.ui.OpenRouterReasoningMetadata
+import me.rerere.ai.ui.MessageChunk
+import me.rerere.ai.provider.TextGenerationResult
+import me.rerere.ai.ui.toTextGenerationResult
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageAnnotation
+import me.rerere.ai.ui.UIMessageChoice
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.ai.ui.metadataAs
-import me.rerere.ai.ui.toMetadata
 import me.rerere.ai.util.KeyRoulette
 import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.configureSessionHeaders
 import me.rerere.ai.util.encodeBase64
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
-import me.rerere.ai.util.mergeCustomHeaders
+import me.rerere.ai.util.HttpException
 import me.rerere.ai.util.parseErrorDetail
 import me.rerere.ai.util.stringSafe
+import me.rerere.ai.util.mergeCustomHeaders
+import me.rerere.ai.util.TraceLogger
 import me.rerere.common.http.await
 import me.rerere.common.http.jsonArrayOrNull
 import me.rerere.common.http.jsonObjectOrNull
@@ -72,12 +112,51 @@ import okhttp3.sse.EventSourceListener
 import okhttp3.sse.EventSources
 import kotlin.time.Clock
 
+/**
+ * v3.8.32: OpenCode Zen 无完成信号关流的"未确认完成"异常。
+ *
+ * Zen 网关对部分模型 (ox 系免费模型等) 完成时不发 [DONE]/finish_reason/usage,
+ * 直接关闭连接 — 与"服务端中途掐断"在信号层面无法区分。此时保留已生成内容,
+ * 由上层明确提示用户 (不静默吞掉, 也不回滚重试轰炸)。
+ */
+class OpenCodeStreamUnconfirmedException(message: String) : IOException(message)
+
+/** v4.8.56: 掐断疑点判定 — "usage/cost 纯尾包 + 尾部无收尾标点即关流"。
+ *  v4.5.12 实证: opencode 网关会在 usage 心跳后随即中断流 (旧启发式把它掩盖为
+ *  正常完成); 该形态与 grok 正常完结 (usage 尾包) 相同故 grok 豁免; 仅在有
+ *  正文时判定。命中 → 合成 Finish(length) 走 GH 自动续写 (无缝续接, 上限 3 次)。 */
+private fun isOpencodeCloseSuspect(
+    lastChunkWasUsageOnly: Boolean,
+    hasTextContent: Boolean,
+    textTail: String,
+    modelId: String,
+): Boolean {
+    if (!lastChunkWasUsageOnly || !hasTextContent) return false
+    if (modelId.contains("grok", ignoreCase = true)) return false
+    val tail = textTail.trimEnd()
+    if (tail.isBlank()) return false
+    return tail.last() !in "。！？.!?；;’”』」）)】`~…—"
+}
+
 private const val TAG = "ChatCompletionsAPI"
 
 class ChatCompletionsAPI(
     private val client: OkHttpClient,
-    private val keyRoulette: KeyRoulette
+    private val keyRoulette: KeyRoulette,
+    private val proxyRoute: ProxyRoute? = null,
+    // v3.10.5: OpenCode 网关独立长保活池 — 请求侧按 host 切换 (TTFT 专项)
+    private val opencodeClient: OkHttpClient? = null,
 ) : OpenAIImpl {
+    // v3.10.5: opencode.ai 直连场景走长保活池, 其余回落默认池 (代理路由在 resolveProxy 后生效)
+    // v3.17.0: api.commandcode.ai 同入长保活池 — CC 默认池 keepalive 60s,
+    // 预热连接在用户发消息前已被 OkHttp 回收, 预热白做; 300s 池对齐 OpenCode 待遇
+    private fun effClient(providerSetting: ProviderSetting.OpenAI): OkHttpClient {
+        val host = providerSetting.baseUrl.toHttpUrl().host
+        return if (host == "opencode.ai" || host == "api.commandcode.ai") {
+            (opencodeClient ?: client)
+        } else client
+    }
+
     override suspend fun generateText(
         providerSetting: ProviderSetting.OpenAI,
         messages: List<UIMessage>,
@@ -99,14 +178,16 @@ class ChatCompletionsAPI(
             .configureSessionHeaders(providerSetting.baseUrl, params.sessionId)
             .build()
 
-        Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
-
-        val response = client.newCall(request).await()
+        // 4.1.3 TTFT: 删除全量请求体日志 — 大请求体 (工具 schema 多/上下文长) 每请求
+        // 多一次全量 JSON 序列化 + logcat, 纯发送前开销; 错误路径 (下方) 保留完整请求体
+        val response = effClient(providerSetting).resolveProxy(proxyRoute, params.model.modelId).newCall(request).await()
         if (!response.isSuccessful) {
-            throw Exception("Failed to get response: ${response.code} ${response.body?.string()}")
+            // v3.6.78: 报错带完整请求体 — 定位 400 触发字段 (grok 排查)
+            val reqSummary = json.encodeToString(requestBody)
+            throw Exception("Failed to get response: ${response.code} ${response.body.string()} REQ=$reqSummary")
         }
 
-        val bodyStr = response.body?.string() ?: ""
+        val bodyStr = response.body.string()
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
 
         // 从 JsonObject 中提取必要的信息
@@ -121,106 +202,768 @@ class ChatCompletionsAPI(
             ?: "unknown"
         val usage = parseTokenUsage(bodyJson["usage"] as? JsonObject)
 
-        TextGenerationResult(
+        MessageChunk(
             id = id,
             model = model,
-            message = parseMessage(message),
-            finishReason = finishReason,
+            choices = listOf(
+                UIMessageChoice(
+                    index = 0,
+                    delta = null,
+                    message = parseMessage(message),
+                    finishReason = finishReason
+                )
+            ),
             usage = usage
-        )
+        ).toTextGenerationResult()
     }
 
-    override suspend fun streamText(
+    private suspend fun streamTextRaw(
         providerSetting: ProviderSetting.OpenAI,
         messages: List<UIMessage>,
         params: TextGenerationParams,
-    ): Flow<StreamChunk> = callbackFlow {
-        val requestBody = buildChatCompletionRequest(
-            messages = messages,
-            params = params,
-            providerSetting = providerSetting,
-            stream = true,
-        )
+    ): Flow<MessageChunk> = callbackFlow {
+        // v4.8.33 (性能): 请求体构建 + JSON 序列化移出主线程 — 本 callbackFlow 的
+        // 收集上下文为 AppScope(Main): buildChatCompletionRequest 内含全量消息
+        // 转换与图片编码 (解码/压缩/base64), 序列化在几百 KB 时 50-300ms —
+        // 每轮工具调用后重新执行, 直接表现为"工具返回后恢复输出等待过大"。
+        // 两者均为纯计算 (无主线程依赖), 打包进 Dispatchers.Default。
+        val (requestBody, requestBodyJson) = withContext(Dispatchers.Default) {
+            val body = buildChatCompletionRequest(
+                messages = messages,
+                params = params,
+                providerSetting = providerSetting,
+                stream = true,
+            )
+            body to json.encodeToString(body)
+        }
 
         val request = Request.Builder()
             .url("${providerSetting.baseUrl}${providerSetting.chatCompletionsPath}")
             .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
-            .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
+            .post(requestBodyJson.toRequestBody("application/json".toMediaType()))
             .addHeader("Authorization", "Bearer ${keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())}")
             .addHeader("Content-Type", "application/json")
             .configureReferHeaders(providerSetting.baseUrl)
             .configureSessionHeaders(providerSetting.baseUrl, params.sessionId)
             .build()
 
-        Log.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
+        // 4.1.3 TTFT: Log.d 的参数在 release 同样求值 — 每次流式请求都全量序列化
+        // 请求体 (几百 KB 时 50-300ms + GC 压力) 直接加到首包延迟; 彻底删除
 
         // just for debugging response body
         // println(client.newCall(request).await().body?.string())
 
-        val decoder = ChatCompletionsStreamDecoder()
-
-        fun sendChunks(chunks: Iterable<StreamChunk>) {
-            chunks.forEach { chunk ->
-                trySend(chunk).onFailure { e ->
-                    Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
-                }
-            }
+        // SSE 有效数据看门狗: 120s 无有效数据 → 主动断开 (触发收尾+断流重试)。
+        // 教训链: v3.5.14 主动断开误杀长思考 → 改只日志; v3.5.45 缩短到 25s 后
+        // 用户实测误杀 (Trace 95098f39: 平台存在 >25s 静默期, 非断流) —
+        // 25s 假设"推理期间持续有 reasoning chunk"在用户环境不成立。
+        // 4.0.0 重写: 三阶段 watchdog 状态机统一收敛至 StreamWatchdog
+        // (ai/core/WatchdogPolicy.kt) — 数值/文案/tick 节奏逐字保留
+        val hasReceivedData = java.util.concurrent.atomic.AtomicBoolean(false)  // 前置声明 (watchdog 引用)
+        // v4.3.0: 增量流工具调用 id 映射 — CC 协议的 tool_calls[i].index 是归属键,
+        // id/name 仅首 delta 给出, 后续 delta 只有 arguments 增量。维护 index→id
+        // 映射并回填到 parseMessage 产物, 多工具并行交错增量按 index 精确归属
+        // (旧 blank-id "归属最近工具" 在并行交错时会把 tool0 增量拼进 tool1)
+        val deltaToolIds = java.util.concurrent.ConcurrentHashMap<Int, String>()
+        val lastEventAt = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
+        val isOpencode = providerSetting.baseUrl.toHttpUrl().host == "opencode.ai"
+        // v4.8.112 (B136): 聚合网关族判定 — opencode.ai 与 api.commandcode.ai 的流收尾
+        // 语义与官方直连不同: 常态不携带 [DONE] / finish_reason, 以 usage/cost 尾包收尾;
+        // 而"上游死亡前的最后 usage 报告"与"正常完结的 usage 尾包"形态完全相同 (B54 实锤)。
+        // 族群内一律不信任 usage 尾包启发式, 完成判定交 onClosed 详细判据。
+        val isAggregateChannel = isOpencode ||
+            providerSetting.baseUrl.toHttpUrl().host == "api.commandcode.ai"
+        val sentAtMs = System.currentTimeMillis()
+        val firstDataAtMs = java.util.concurrent.atomic.AtomicLong(0)
+        val headerReceived = java.util.concurrent.atomic.AtomicBoolean(false)
+        // v3.8.40: ox 系模型正文走 reasoning_content (社区实锤: opencode 客户端
+        // 将其直接当正文显示, 无独立 content 输出)。开启后 reasoning_content
+        // 提升为正文, 不再作为思考链单独显示 — 与 opencode 行为对齐。
+        val reasoningAsBody = isOpencode && (
+            params.model.displayName.contains("ox", ignoreCase = true) ||
+                params.model.displayName.contains("x-preview", ignoreCase = true) ||
+                params.model.modelId.contains("x-preview", ignoreCase = true)
+            )
+        val watchdog = me.rerere.ai.core.StreamWatchdog(
+            isOpencode = isOpencode,
+            headerReceived = headerReceived,
+            hasData = hasReceivedData,
+            lastEventAt = lastEventAt,
+            onTimeout = { close(it) },
+        )
+        val watchdogJob = me.rerere.ai.core.StreamWatchdog.launchIn(this@callbackFlow, watchdog) { fired ->
+            Log.w(TAG, "SSE idle timeout — closing stream: $fired")
+            // v4.8.125: 判死打点入运行日志 — 用户"断连/恢复慢"排查时可直接区分
+            // "看门狗判死" 与 "上游主动断" (onFailure) 两种来源
+            me.rerere.ai.util.TraceLogger.log("SSE", "watchdog fired: $fired")
         }
 
-        val listener = object : EventSourceListener() {
+        // SSE 连接优化: 首次数据到达前断连时自动重试, 指数退避 (移植 v2.9.8 稳定行为)
+        val completed = java.util.concurrent.atomic.AtomicBoolean(false)  // [DONE] 正常完成标记
+        // v3.6.75: finish_reason=stop/length 已收到即视为完成 — 部分中转 (VPN 代理/
+        // Go 订阅) 不发送 [DONE] 直接断开, 此前被误判为断流 → 回滚重试 → 多轮重复回复
+        val gotFinish = java.util.concurrent.atomic.AtomicBoolean(false)
+        // v4.8.56: "最后数据事件为 usage/cost 纯尾包"跟踪 — 掐断疑点判定用
+        // (usage 尾包后随即关流 = 网关掐断的已知形态; 见 onClosed 疑点判据)
+        val lastChunkWasUsageOnly = java.util.concurrent.atomic.AtomicBoolean(false)
+        // v4.5.12: 完成归因 — 流结束时记录显式 finish_reason (stop/length),
+        // 中断现场日志可直接确证结束来源, 不再只有"正常收尾"一笔带过
+        var lastFinishReason: String? = null
+        val retryCount = java.util.concurrent.atomic.AtomicInteger(0)
+        val maxRetries = 5 // 指数退避 1+2+4+8+16=31s 窗口, 覆盖瞬时网络波动
+        var currentEventSource: EventSource? = null
+        val scope = this@callbackFlow
+        // v3.8.33: 完成信号诊断 + 物理判据 —
+        // SSE 每行 data 必须是完整 JSON; 服务端正常发完关流 = 所有行完整;
+        // 中途掐断 = 最后一行残缺 (parse 失败)。
+        // 事件数与最近 5 条原始数据缓冲, 关流/失败时输出核对服务端收尾形态。
+        var eventCount = 0
+        var lastEventParsed = false
+        // v3.8.36: 文本尾部跟踪 — 服务端"行完整但内容截断"场景 (无完成信号的
+        // 模型输出被平台截短仍按完整行发送), 需内容形态启发辅助判定
+        var textTail = ""
+        // v3.8.39: 正文/思考分离跟踪 — 已实证 ox-alpha-free 流式只发
+        // reasoning_content (思考) 不发 content (正文): 仅思考无正文时
+        // 必须可见报错而非静默"完成"
+        var hasTextContent = false
+        // v4.5.20: 工具调用检测标志 — "无正文关闭"判中断时必须排除正常工具
+        // 回合 (工具流可无正文且部分网关无完成信号), 防误判重试
+        var hasToolCalls = false
+        var reasoningTail = ""
+        // v3.8.42: 思考缓冲 — ox 系无 content 时结束后正文化; 流中思考保持思考链
+        val reasoningBuffer = StringBuilder()
+        // v3.8.38: 最后一条"delta 非空"块原文 + 字段名 — 定位 Zen 网关内容块
+        // 真实结构 (用户实测 287 events tail 仍为空: 网关文本不走 content 字段)
+        var lastDeltaRaw = ""
+        var lastDeltaKeys = ""
+        val lastEvents = ArrayDeque<String>()
+        fun recordEvent(data: String) {
+            val lines = data.trim().split("\n").filter { it.isNotBlank() }
+            for (line in lines) {
+                lastEventParsed =
+                    runCatching { json.parseToJsonElement(line); true }.getOrDefault(false)
+                // 记录最后一条含非空 delta 的 chunk (结构取证)
+                runCatching {
+                    val obj = json.parseToJsonElement(line).jsonObject
+                    val choices = obj["choices"] as? JsonArray
+                    val delta = choices?.firstOrNull()
+                        ?.let { (it as JsonObject)["delta"] as? JsonObject }
+                    if (delta != null && delta.keys.isNotEmpty()) {
+                        lastDeltaKeys = delta.keys.joinToString(",")
+                        lastDeltaRaw = line.take(300)
+                    }
+                }
+            }
+            eventCount++
+            val preview = data.trim().replace("\n", " ")
+            lastEvents.addLast(if (preview.length > 160) preview.take(160) + "…" else preview)
+            while (lastEvents.size > 5) lastEvents.removeFirst()
+        }
+        fun dumpLastEvents(): String = lastEvents.joinToString(" | ") { it.replace("\n", " ") }
+        // v3.8.36: 内容级截断启发 (仅辅助无完成信号模型, DeepSeek 等有官方
+        // finish_reason 信号不启用)。强特征才报, 防误报:
+        // 未闭合代码块 / 以逗号分号顿号冒号破折号收尾 / 以连接词收尾
+        fun looksTruncated(tail: String): Boolean {
+            if (tail.isBlank()) return false
+            if (tail.count { it == '`' } % 2 != 0) return true
+            val last = tail.lastOrNull() ?: return false
+            if (last in ",;，；、:：|_—–".toList()) return true
+            val lower = tail.lowercase()
+            return lower.endsWith(" and") || lower.endsWith(" because") ||
+                lower.endsWith(" but") || lower.endsWith(" the") ||
+                tail.endsWith("但是") || tail.endsWith("因为") ||
+                tail.endsWith("然后") || tail.endsWith("以及") ||
+                tail.endsWith("所以") || tail.endsWith("总之") || tail.endsWith("因此")
+        }
+        lateinit var listener: EventSourceListener
+
+        fun connect() {
+            listener = object : EventSourceListener() {
+            // v3.11.13: 响应头到达 — 阶段2 起, 计时重置
+            override fun onOpen(eventSource: EventSource, response: okhttp3.Response) {
+                headerReceived.set(true)
+                lastEventAt.set(System.currentTimeMillis())
+            }
+
             override fun onEvent(
                 eventSource: EventSource,
                 id: String?,
                 type: String?,
                 data: String
             ) {
-                Log.d(TAG, "onEvent: $data")
-                try {
-                    val result = decoder.accept(SseEvent(id = id, event = type, data = data))
-                    sendChunks(result.chunks)
-                    if (result.completed) close()
-                } catch (e: Throwable) {
-                    close(e)
+                if (data == "[DONE]") {
+                    Log.d(TAG, "onEvent: [DONE]")
+                    completed.set(true)  // 正常完成标记 — onClosed 据此区分静默中断
+                    close()
+                    return
                 }
+                // 仅有效数据刷新空闲标记 — 空行 (keep-alive) 不刷新,
+                // 否则服务器保活会使看门狗永远无法检测真挂起
+                if (data.isNotBlank()) {
+                    lastEventAt.set(System.currentTimeMillis())
+                    // v3.10.5: TTFT 插桩 — 首个有效 data 事件(含网关转换);
+                    // 与 sentAtMs 差即首字延迟, 连接复用/缓存命中场景应显著下降
+                    if (firstDataAtMs.compareAndSet(0, System.currentTimeMillis())) {
+                        Log.i(TAG, "TTFT ${firstDataAtMs.get() - sentAtMs}ms host=${providerSetting.baseUrl.toHttpUrl().host}")
+                    }
+                }
+                recordEvent(data)
+                // v4.7.8: 每 chunk 的 Log.d 全量拼接删除 (release 同样执行字符串拼接 — 热路径开销)
+                data
+                    .trim()
+                    .split("\n")
+                    .filter { it.isNotBlank() }
+                    .map { json.parseToJsonElement(it).jsonObject }
+                    .forEach {
+                        if (it["error"] != null) {
+                            val error = it["error"]!!.parseErrorDetail()
+                            throw error
+                        }
+                        val id = it["id"]?.jsonPrimitive?.contentOrNull ?: ""
+                        val model = it["model"]?.jsonPrimitive?.contentOrNull ?: ""
+
+                        val choices = it["choices"]?.jsonArray ?: JsonArray(emptyList())
+                        val choiceList = buildList {
+                            if (choices.isNotEmpty()) {
+                                val choice = choices[0].jsonObject
+                                // v3.8.31: finish_reason 判定提到 choice 层 —
+                                // 结尾 chunk 常为 delta:null + finish_reason:"stop",
+                                // 原判定写在 message!=null 分支内会漏判 → 误判断流
+                                val finishReason =
+                                    choice["finish_reason"]?.jsonPrimitive?.contentOrNull
+                                if (finishReason == "stop" || finishReason == "length" || finishReason == "tool_calls") {
+                                    // v4.5.20: tool_calls 纳入完成信号 — 工具调用回合的
+                                    // 标准收尾 (finish_reason=tool_calls) 同样是硬完成;
+                                    // 此前只认 stop/length, 工具流走无信号路径靠"有工具"
+                                    // 兜底, 判定链更脆弱
+                                    gotFinish.set(true)
+                                    lastFinishReason = finishReason
+                                    if (finishReason == "length") {
+                                        // v4.5.12: 截断显式化 — max_tokens 用尽时
+                                        // 服务端以 length 正常收尾, 旧逻辑静默完成,
+                                        // 用户感知"思考到一半断了"却无迹可查
+                                        Log.w(TAG, "finish_reason=length: output truncated by max_tokens budget")
+                                    }
+                                }
+                                val message =
+                                    choice["delta"]?.jsonObject ?: choice["message"]?.jsonObject
+                                // v3.8.37: 记录文本尾部 (截断启发用) — 兼容三种 chunk 形态:
+                                // string content (OpenAI 标准) / content 数组 (Claude 风格
+                                // 网关: [{"type":"text","text":"..."}]) / thinking 文本
+                                (choice["delta"] as? JsonObject)?.get("content")?.let { raw ->
+                                    val text = when (raw) {
+                                        is JsonPrimitive -> raw.contentOrNull
+                                        is JsonArray -> raw.mapNotNull {
+                                            (it as? JsonObject)?.get("text")?.jsonPrimitive?.contentOrNull
+                                        }.joinToString("")
+                                        else -> null
+                                    }
+                                    text?.takeIf { it.isNotBlank() }?.let {
+                                        hasTextContent = true
+                                        lastChunkWasUsageOnly.set(false)
+                                        textTail = if (it.length > 80) it.takeLast(80) else it
+                                        // v4.5.12: usage 心跳后仍收到正文 → 撤销完成
+                                        // 标记 (流实际还在输出, usage 是中途统计行)
+                                        if (gotFinish.get()) gotFinish.set(false)
+                                    }
+                                }
+                                // v3.8.39/40: 思考内容跟踪 — 非 ox 模型记录思考尾部
+                                // (无正文场景判定); ox 模型 (reasoningAsBody) 思考即正文,
+                                // 直接提升为正文尾部并视为有正文
+                                val reasoningRaw = (choice["delta"] as? JsonObject)
+                                    ?.get("reasoning_content")?.jsonPrimitiveOrNull?.contentOrNull
+                                    ?: message?.get("reasoning_content")?.jsonPrimitiveOrNull?.contentOrNull
+                                if (reasoningAsBody) {
+                                    // v3.8.42: 流中思考保持思考链实时显示 (不再提升为正文);
+                                    // 缓冲全文, 仅当流结束仍无 content 时才正文化补发
+                                    reasoningRaw?.takeIf { it.isNotBlank() }?.let {
+                                        lastChunkWasUsageOnly.set(false)
+                                        reasoningBuffer.append(it)
+                                    }
+                                } else {
+                                    reasoningRaw?.takeIf { it.isNotBlank() }?.let {
+                                        lastChunkWasUsageOnly.set(false)
+                                        reasoningTail = if (it.length > 80) it.takeLast(80) else it
+                                        // v4.5.12: usage 心跳后仍收到思考 → 撤销完成标记
+                                        if (gotFinish.get()) gotFinish.set(false)
+                                    }
+                                }
+                                if (message != null) {
+                                    var delta = parseMessage(message)
+                                    // v4.5.20: 流中一旦出现工具 part 即标记 (工具回合识别的兜底)
+                                    if (delta.parts.any { it is UIMessagePart.Tool }) {
+                                        hasToolCalls = true
+                                        lastChunkWasUsageOnly.set(false)
+                                    }
+                                    // v4.3.0: 增量流 id 回填 — tool part 与 tool_calls 数组
+                                    // 元素一一对应 (forEach add), 按元素的 index 归属:
+                                    // id 非空记录映射; id 空从映射取回填, 无映射保持空串
+                                    // (桥接器 lastToolId 兜底)
+                                    val tcArr = (choice["delta"] as? JsonObject)?.get("tool_calls") as? JsonArray
+                                    if (tcArr != null) {
+                                        val tools = delta.parts.filterIsInstance<UIMessagePart.Tool>()
+                                        if (tools.isNotEmpty()) {
+                                            var ti = 0
+                                            val patched = delta.parts.map { part ->
+                                                if (part is UIMessagePart.Tool && ti < tcArr.size) {
+                                                    val tcObj = tcArr[ti].jsonObject
+                                                    val idx = tcObj["index"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
+                                                    val id = tcObj["id"]?.jsonPrimitive?.contentOrNull
+                                                    ti++
+                                                    when {
+                                                        !id.isNullOrBlank() -> { deltaToolIds[idx] = id; part }
+                                                        part.toolCallId.isBlank() -> deltaToolIds[idx]?.let { part.copy(toolCallId = it) } ?: part
+                                                        else -> part
+                                                    }
+                                                } else part
+                                            }
+                                            if (patched != delta.parts) {
+                                                delta = delta.copy(parts = patched)
+                                            }
+                                        }
+                                    }
+                                    // v3.8.42: 思考链经 parseMessage 自然成为 Reasoning part,
+                                    // 正文经 content 提取 — 两者不再混淆
+                                    add(
+                                        UIMessageChoice(
+                                            index = 0,
+                                            delta = delta,
+                                            message = null,
+                                            finishReason = finishReason ?: "unknown",
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                        val usage = parseTokenUsage(it["usage"] as? JsonObject)
+                        // v3.6.78: grok 系 (OpenCode Zen) 不发 [DONE] 也不发
+                        // finish_reason=stop, 以 usage/cost 结尾行标记完成 —
+                        // usage 或 cost 收到即视为本轮完成信号
+                        if (usage != null || it["cost"] != null) {
+                            // v4.5.12: 中途 usage 心跳否决 — 网关会对长思考流中途
+                            // 发 usage/cost 行, 旧逻辑立即置完成标记; 若服务器随后
+                            // 中断流, 关流时被掩盖为"正常完成"(用户感知: 思考到
+                            // 一半莫名断)。本 chunk 自带实质内容时不置位。
+                            val chunkDelta = (it["choices"] as? JsonArray)?.firstOrNull()
+                                ?.jsonObject?.get("delta") as? JsonObject
+                            val chunkHasRealDelta =
+                                !chunkDelta?.get("content")?.jsonPrimitive?.contentOrNull.isNullOrBlank() ||
+                                !chunkDelta?.get("reasoning_content")?.jsonPrimitive?.contentOrNull.isNullOrBlank()
+                            lastChunkWasUsageOnly.set(!chunkHasRealDelta)
+                            // v4.8.56 (用户实证"续写不触发/静默截断"): opencode 网关的
+                            // "usage/cost 结尾行"与"上游死亡前的最后 usage 报告"形态完全
+                            // 相同 — 无法据此区分"正常完结"与"被掐断"。opencode 一律不置
+                            // 完成标记, 交 onClosed 详细判据 (truncated 疑点 → 合成
+                            // Finish(length) 自动续写; 完整 → 照常完成)。
+                            // v4.8.56 的心跳否决只覆盖"usage 后仍有内容"场景 — 掐断紧随
+                            // usage 时仍会被旧启发式掩盖 (本轮实锤)。非网关通道维持原行为
+                            // (官方直连常态有 [DONE]/finish_reason, 兼容回退不变)。
+                            // v4.8.112 (B136): 门控扩面到聚合网关族 (含 api.commandcode.ai —
+                            // 此前的盲区: CC 通道走"非 opencode"分支, usage 尾包照旧置完成标记,
+                            // 掐断被静默判为正常完成 = DeepSeek 静默中断的机制根因)。
+                            if (!chunkHasRealDelta && !isAggregateChannel) gotFinish.set(true)
+                        }
+
+                        val messageChunk = MessageChunk(
+                            id = id,
+                            model = model,
+                            choices = choiceList,
+                            usage = usage
+                        )
+                        trySend(messageChunk).onFailure { e ->
+                            Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
+                        }
+                        hasReceivedData.set(true)
+                    }
             }
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
                 var exception = t
-
                 t?.printStackTrace()
-                println("[onFailure] 发生错误: ${t?.javaClass?.name} ${t?.message} / $response")
+                // v3.8.35: 流式失败诊断补齐 — 400/500 平台拒绝时响应体常为空,
+                // 请求体结构摘要是定位唯一线索 (模型/消息数/工具数/maxTokens)
+                val reqSummary = runCatching {
+                    buildString {
+                        append("model=").append(requestBody["model"])
+                        append(", messages=").append((requestBody["messages"] as? JsonArray)?.size)
+                        append(", tools=").append((requestBody["tools"] as? JsonArray)?.size)
+                        append(", maxTokens=").append(requestBody["max_tokens"])
+                        append(", stream=").append(requestBody["stream"])
+                    }
+                }.getOrDefault("?")
+                Log.w(TAG, "onFailure: ${t?.javaClass?.name} ${t?.message} / http=${response?.code} events=$eventCount REQ=$reqSummary")
 
                 val bodyRaw = response?.body?.stringSafe()
+                Log.w(TAG, "onFailure RESP: ${if (bodyRaw.isNullOrBlank()) "<empty>" else bodyRaw.take(600)}")
                 try {
                     if (!bodyRaw.isNullOrBlank()) {
                         val bodyElement = Json.parseToJsonElement(bodyRaw)
-                        println(bodyElement)
                         exception = bodyElement.parseErrorDetail()
                         Log.i(TAG, "onFailure: $exception")
                     }
                 } catch (e: Throwable) {
-                    Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
-                    e.printStackTrace()
-                    exception = e
-                } finally {
-                    close(exception)
+                    // v4.8.109: 错误解析失败不得吞掉真实错误 —— 旧实现把"解析器自身的
+                    // 异常"覆盖为最终错误；保留连接/HTTP 层的原因, 并以响应码兜底。
+                    Log.w(TAG, "onFailure: failed to parse from $bodyRaw: ${e.message}")
+                    if (exception == null) {
+                        exception = HttpException(
+                            "HTTP ${response?.code ?: "?"}" +
+                                (bodyRaw?.take(200)?.let { " - $it" } ?: "")
+                        )
+                    }
                 }
+
+                // 仅在尚未收到任何数据时重试 (避免重复响应) — 移植 v2.9.8 稳定行为
+                // v4.3.13 (BUG20): 4xx 客户端错误 (invalid_request/context length 等)
+                // 终态不重试 — 重试只会原样重发同一大请求, 指数退避串行空转,
+                // 用户感知"彻底卡死"。仅 408 (超时) / 429 (限流) 保留重试价值。
+                val httpCodeForRetry = response?.code ?: 0
+                val clientErrorNoRetry = httpCodeForRetry in 400..499 && httpCodeForRetry != 408 && httpCodeForRetry != 429
+                if (!hasReceivedData.get() && !clientErrorNoRetry && retryCount.incrementAndGet() <= maxRetries && !scope.isClosedForSend) {
+                    val delayMs = 1000L * (1 shl (retryCount.get() - 1))
+                    Log.w(TAG, "SSE pre-data failure, retry ${retryCount.get()}/$maxRetries after ${delayMs}ms: ${exception?.message}")
+                    scope.launch {
+                        delay(delayMs)
+                        if (!scope.isClosedForSend) {
+                            connect()
+                        }
+                    }
+                    return
+                }
+
+                // 4.0.1: 5xx 服务端瞬时错误转 IOException 进重试链 (与 ClaudeProvider 同步) —
+                // HttpException 是 RuntimeException, 重试链只捕 IOException, 不转则 500 终态失败
+                if (exception != null && response?.code in 500..599 && exception !is IOException) {
+                    Log.w(TAG, "server error ${response?.code} — wrapping as IOException for retry chain")
+                    exception = IOException("[${response?.code}] ${exception.message}", exception)
+                }
+
+                // v4.8.54: 聚合网关上游瞬时错误场景分流 (与 v4.8.39 ResponseAPI 同款, 用户实证
+                // 扩展至 CC 通道): "Upstream request failed: Invalid request parameters. Please
+                // check your input and try again." — OpenCode 网关对上游调用的失败包装 (社区
+                // 实证网关侧问题, 重试可恢复)。此类错误常带 4xx (不满足上面 5xx 条件), 需在
+                // 此包装为 IOException 交上层重试链, 否则直接终态弹错。
+                // 隔离: 仅聚合网关 (opencode.ai / api.commandcode.ai) 且消息属瞬时家族时生效。
+                if (exception != null && exception !is IOException) {
+                    val hostForScenario = runCatching { providerSetting.baseUrl.toHttpUrl().host }.getOrNull()
+                    val isAggregateHost = hostForScenario == "opencode.ai" || hostForScenario == "api.commandcode.ai"
+                    val msgForScenario = exception.message.orEmpty()
+                    val isUpstreamTransient =
+                        msgForScenario.contains("Upstream request failed", ignoreCase = true) ||
+                            msgForScenario.contains("Upstream response was not valid JSON", ignoreCase = true) ||
+                            msgForScenario.contains("Endpoint is unavailable", ignoreCase = true)
+                    if (isAggregateHost && isUpstreamTransient) {
+                        Log.w(TAG, "onFailure: aggregate-gateway upstream transient — converting to IOException for retry chain: $msgForScenario")
+                        exception = IOException("Aggregate gateway upstream transient: $msgForScenario", exception)
+                    }
+                }
+                close(exception)
             }
 
             override fun onClosed(eventSource: EventSource) {
-                sendChunks(decoder.onClosed())
-                close()
+                // v4.5.2: 长度截断 + 工具调用不再终态报错 (v4.5.1 方案体验硬) —
+                // 残缺调用的结构化错误由 GH 层在 Finish(length) 时预填 tool output,
+                // 模型下一轮看到错误自动分段, 对话连续, 用户无感。残缺调用依然绝不执行。
+                // 服务器主动关闭连接: [DONE] 或 finish_reason=stop 已收到 → 正常完成;
+                // 否则视为断流 (消息不完整且无报错 → 用户感知"莫名其妙中断")
+                // v3.8.33 物理判据 (替代 v3.8.31/32 的模型名单分流与一律未确认):
+                //   SSE 每行必须是完整 JSON。最后一行解析成功 = 服务端把本段数据
+                //   完整发完 (正常完结, 即使无 [DONE]/stop/usage — Zen 网关常态);
+                //   最后一行残缺 = 服务端中途掐断 (真断流)。
+                //   按物理层的事实判定, 不再猜测模型行为。
+                Log.i(TAG, "stream end: completed=" + completed.get() + " gotFinish=" + gotFinish.get() +
+                    " finishReason=" + lastFinishReason + " events=" + eventCount +
+                    " hasData=" + hasReceivedData.get() + " model=" + params.model.modelId)
+                if (!completed.get() && !gotFinish.get()) {
+                    if (isAggregateChannel && hasReceivedData.get()) {
+                        // v3.8.42: 运行时自适应 —
+                        //   行完整 + 有 content => 正常完成 (思考链与正文泾渭分明);
+                        //   行完整 + 无 content + 有思考缓冲 => 思考正文化补发为正文
+                        //   (ox 系纯思考输出场景, 对齐 opencode 客户端行为);
+                        //   行残缺 / 尾部强截断特征 => 保留内容 + 明确报错。
+                        // v4.5.20 (用户实证"多模型异常中断"): closed-after-data 不再一概
+                        // 当完成 — 无完成信号 + 无正文 + 无工具 = 外部掐流 (真中断),
+                        // 进重试链自动恢复。实证: glm-5.3-flash 142s 全思考被关 /
+                        // deepseek-flash 空流 events=1 被关, 均被旧逻辑静默"完成"。
+                        val truncated = !lastEventParsed || looksTruncated(textTail) || looksTruncated(reasoningTail)
+                        // v4.8.56: 截断/掐断升级为"自动续写" — 合成 Finish(length)
+                        // 复用 GH 的续写机制 (无缝续进同一条消息/上限 3 次/耗尽明确
+                        // 报错), 取代旧的"保留内容 + 通知"止步形态。掐断疑点判定补齐
+                        // "usage 尾包后随即关流"场景 (v4.5.12 实证形态; grok 正常完结
+                        // 同为 usage 尾包故豁免; [DONE]/finish_reason 场景不进入本判据)。
+                        val usageTailSuspect = isOpencodeCloseSuspect(
+                            lastChunkWasUsageOnly.get(),
+                            hasTextContent,
+                            textTail,
+                            params.model.modelId,
+                        )
+                        if (truncated || usageTailSuspect) {
+                            val why = when {
+                                truncated && !lastEventParsed -> "mid-event truncation"
+                                truncated -> "content ends truncated (tail=\"${textTail.take(40)}\")"
+                                else -> "usage-tail suspect close (tail=\"${textTail.take(40)}\")"
+                            }
+                            Log.w(TAG, "onClosed: gateway cut detected ($why, model=${params.model.modelId} events=$eventCount) — synthetic length finish, auto-continue\nlast: ${dumpLastEvents()}")
+                            TraceLogger.log("SSE", "zen cut detected — synthetic length finish, auto-continue (events=$eventCount $why)")
+                            trySend(
+                                MessageChunk(
+                                    id = "",
+                                    model = params.model.modelId,
+                                    choices = listOf(
+                                        UIMessageChoice(
+                                            index = 0,
+                                            delta = UIMessage(role = MessageRole.ASSISTANT, parts = emptyList()),
+                                            message = null,
+                                            finishReason = "length",
+                                        )
+                                    ),
+                                    usage = null,
+                                )
+                            ).onFailure { e -> Log.w(TAG, "onClosed: synthetic length finish dropped (${e?.message})") }
+                            close()
+                        } else if (!hasTextContent && reasoningBuffer.isNotBlank()) {
+                            // 无 content: 缓冲思考提升为正文补发 (思考链已实时显示过,
+                            // 补发使正文区完整 — 与 opencode 将 reasoning_content 当正文一致)
+                            val bodyText = reasoningBuffer.toString()
+                            val bodyTail = if (bodyText.length > 80) bodyText.takeLast(80) else bodyText
+                            if (looksTruncated(bodyTail)) {
+                                Log.w(TAG, "onClosed: gateway reasoning-only truncated (tail=\"${bodyTail.take(40)}\") — keep data, notify")
+                                TraceLogger.log("SSE", "zen reasoning-only truncated — keep data, notify user")
+                                close(OpenCodeStreamUnconfirmedException("OpenCode 输出被截断，已保留已生成内容"))
+                            } else {
+                                TraceLogger.log("SSE", "gateway closed after complete data (events=$eventCount) — no content, promoted reasoning as body (chars=${bodyText.length} tail=\"${bodyTail.take(40)}\")")
+                                trySend(
+                                    MessageChunk(
+                                        id = "",
+                                        model = params.model.modelId,
+                                        choices = listOf(
+                                            UIMessageChoice(
+                                                index = 0,
+                                                delta = UIMessage(
+                                                    role = MessageRole.ASSISTANT,
+                                                    parts = listOf(UIMessagePart.Text(bodyText)),
+                                                ),
+                                                message = null,
+                                                finishReason = "stop",
+                                            )
+                                        ),
+                                        usage = null,
+                                    )
+                                ).onFailure { e -> Log.w(TAG, "onClosed: body promotion chunk dropped (${e?.message})") }
+                                close()
+                            }
+                        } else if (!hasTextContent && !hasToolCalls && reasoningTail.isNotBlank()) {
+                            // v4.5.20 (用户实证): 纯思考无正文的关闭 = 思考阶段被掐,
+                            // 非正常收尾 — 正常回合必有正文或工具。进重试链。
+                            Log.w(TAG, "onClosed: gateway closed during reasoning-only phase (model=${params.model.modelId} events=$eventCount) — treat as interruption, retry\nlast: ${dumpLastEvents()}")
+                            TraceLogger.log("SSE", "gateway closed during reasoning phase (no body/tools, events=$eventCount) — interruption, entering retry chain")
+                            close(IOException("SSE 流在思考阶段被服务器关闭 (无正文输出, 无完成信号)"))
+                        } else if (!hasTextContent && !hasToolCalls) {
+                            // v4.5.20 (用户实证): 零输出空流 (仅角色/心跳块后即关) = 明确中断
+                            Log.w(TAG, "onClosed: gateway closed with zero output (model=${params.model.modelId} events=$eventCount) — treat as interruption, retry\nlast: ${dumpLastEvents()}")
+                            TraceLogger.log("SSE", "gateway closed with zero output (events=$eventCount) — interruption, entering retry chain")
+                            close(IOException("SSE 流在输出任何内容前被服务器关闭 (无完成信号)"))
+                        } else {
+                            TraceLogger.log("SSE", "gateway closed after complete data (events=$eventCount) — treated as complete (body=$hasTextContent tools=$hasToolCalls, no completion signal on this gateway, tail=\"${textTail.take(40)}\" usageTail=${lastChunkWasUsageOnly.get()} lastParsed=$lastEventParsed deltaKeys=\"$lastDeltaKeys\")")
+                            close()
+                        }
+                    } else {
+                        Log.w(TAG, "onClosed: stream closed before completion — unexpected interruption" +
+                                " (completed=${completed.get()} gotFinish=${gotFinish.get()} hasData=${hasReceivedData.get()} aggregate=$isAggregateChannel model=${params.model.modelId} events=$eventCount lastParsed=$lastEventParsed)\nlast: ${dumpLastEvents()}")
+                        close(IOException("SSE 流在完成前被服务器关闭"))
+                    }
+                } else {
+                    // v4.8.112 (B136): 「标准正常结束」正判据 — [DONE] 或真 finish_reason 之外的
+                    // 完成标记必须复核。非网关通道上 usage/cost 尾包会把完成标记置位 (历史
+                    // grok 兼容行为); 该形态与"上游死亡前最后 usage 报告"重合 (B54 实锤),
+                    // 单独作为完成证据时: 行残缺/尾部截断特征 → 有正文合成 Finish(length)
+                    // 走自动续写 (无缝, 有界), 无正文则进重试链 — 不再静默放行。
+                    val usageMaskedComplete = !completed.get() && gotFinish.get() &&
+                        lastFinishReason == null && lastChunkWasUsageOnly.get()
+                    val maskedCut = usageMaskedComplete &&
+                        (!lastEventParsed || looksTruncated(textTail) || looksTruncated(reasoningTail))
+                    if (maskedCut) {
+                        val why = if (!lastEventParsed) "mid-event truncation"
+                        else "content ends truncated (tail=\"${textTail.take(40)}\")"
+                        Log.w(TAG, "onClosed: usage-masked close rejected ($why, model=${params.model.modelId} events=$eventCount) — not treated as complete\nlast: ${dumpLastEvents()}")
+                        TraceLogger.log("SSE", "usage-mask close rejected ($why) — synthetic length finish / retry")
+                        if (hasTextContent) {
+                            trySend(
+                                MessageChunk(
+                                    id = "",
+                                    model = params.model.modelId,
+                                    choices = listOf(
+                                        UIMessageChoice(
+                                            index = 0,
+                                            delta = UIMessage(role = MessageRole.ASSISTANT, parts = emptyList()),
+                                            message = null,
+                                            finishReason = "length",
+                                        )
+                                    ),
+                                    usage = null,
+                                )
+                            ).onFailure { e -> Log.w(TAG, "onClosed: synthetic length finish dropped (${e?.message})") }
+                            close()
+                        } else {
+                            close(IOException("SSE 流疑似在无标准完成信号下被关闭 (usage 尾包, 无正文)"))
+                        }
+                    } else {
+                        // v4.8.56: 显式完成明细入 trace — 用户导出日志可直接区分
+                        // [DONE] / 真 finish_reason 来源与内容尾部
+                        TraceLogger.log("SSE", "stream closed by server (completed=${completed.get()} finishReason=$lastFinishReason events=$eventCount hasText=$hasTextContent tail=\"${textTail.take(40)}\")")
+                        close()
+                    }
+                }
             }
+            }
+
+            currentEventSource = EventSources.createFactory(
+                effClient(providerSetting).resolveProxy(proxyRoute, params.model.modelId)
+            ).newEventSource(request, listener)
         }
 
-        val eventSource = EventSources.createFactory(client).newEventSource(request, listener)
+        connect()
 
         awaitClose {
-            println("[awaitClose] 关闭eventSource ")
-            eventSource.cancel()
+            Log.d(TAG, "awaitClose: cancelling eventSource")
+            watchdogJob.cancel()
+            currentEventSource?.cancel()
         }
         // trySend 在缓冲满时会静默丢弃 delta，导致回复中间缺字 (#1295)，因此缓冲必须无界
     }.buffer(Channel.UNLIMITED).flowOn(Dispatchers.IO)
+
+    /**
+     * v4.3.10 (BUG15 v2): 图片预算的消费端 — 替换已标记降级的图片为占位。
+     * 预算判定与持久标记由 GenerationHandler (app 层) 负责: 降级标记写入
+     * Image.metadata["budget_dropped"], 随消息落盘持久化, 降级不可逆 →
+     * 请求前缀在已降级位置恒定 (消除滚动重算造成的每轮断裂点后移)。
+     * 本层只做确定性替换: 带标记的 Image → 占位文本 (含原路径+read_image 指引)。
+     */
+    // ── v4.8.107: 请求稳定性诊断器 — "上传图片后缓存全崩" 的现场定罪器 ──
+    // 每轮请求对 messages 逐条取稳定表征指纹, 与同会话上一轮对比; "非尾部消息"
+    // 出现变化 = 缓存前缀断裂点, 把第一条漂移消息的序号/角色/两版指纹摘要写入
+    // 运行日志 (tag=REQSTAB)。尾部两条以内的差异属正常演进 (最后消息随生成
+    // 更新/工具写回), 不报。纯只读, 永不影响请求内容。
+    private val requestStabilityCursor =
+        java.util.concurrent.ConcurrentHashMap<String, List<String>>()
+
+    private fun messageStabilityTag(m: UIMessage): String = buildString {
+        append(m.role.name)
+        m.parts.forEach { p ->
+            when (p) {
+                is UIMessagePart.Text -> {
+                    append("|T"); append(p.text.length); append(':'); append(p.text.hashCode())
+                }
+                is UIMessagePart.Reasoning -> {
+                    append("|R"); append(p.reasoning.length); append(':'); append(p.reasoning.hashCode())
+                }
+                is UIMessagePart.Image -> {
+                    append("|I"); append(p.url.length); append(':'); append(p.url.hashCode())
+                }
+                is UIMessagePart.Tool -> {
+                    append("|tool:"); append(p.toolName); append(':'); append(p.input.hashCode())
+                    p.output.forEach { o ->
+                        when (o) {
+                            is UIMessagePart.Text -> { append(':'); append(o.text.hashCode()) }
+                            is UIMessagePart.Image -> { append(":I"); append(o.url.hashCode()) }
+                            else -> append(":?")
+                        }
+                    }
+                }
+                else -> append("|?").append(p.javaClass.simpleName)
+            }
+        }
+    }
+
+    private fun reportRequestStability(key: String, messages: List<UIMessage>) {
+        runCatching {
+            val tags = messages.map { messageStabilityTag(it) }
+            if (requestStabilityCursor.size > 200) requestStabilityCursor.clear()
+            val prev = requestStabilityCursor.put(key, tags) ?: run {
+                me.rerere.ai.util.TraceLogger.log("REQSTAB", "baseline n=${tags.size}")
+                return
+            }
+            val n = minOf(prev.size, tags.size)
+            var idx = -1
+            for (i in 0 until n) {
+                if (prev[i] != tags[i]) { idx = i; break }
+            }
+            if (idx < 0) {
+                if (tags.size > prev.size) {
+                    me.rerere.ai.util.TraceLogger.log(
+                        "REQSTAB", "append-only +${tags.size - prev.size} (prefix ${prev.size} stable)"
+                    )
+                }
+                return
+            }
+            if (idx >= n - 2) return  // 尾部两条内属正常演进
+            val m = messages[idx]
+            me.rerere.ai.util.TraceLogger.log(
+                "REQSTAB",
+                "DRIFT #$idx (${prev.size}->${tags.size}) role=${m.role} now=[${tags[idx].take(90)}] prev=[${prev[idx].take(90)}]"
+            )
+        }
+    }
+
+    private fun applyImageMarkers(messages: List<UIMessage>): List<UIMessage> {
+        // v4.8.107: 无标记短路 — 常规(无降级)对话完全零干预 (原逻辑无论有无标记
+        // 都全量 map 复制); 含图对话的常规路径由此与"无此体系"逐字节一致。
+        var anyMarked = false
+        scan@ for (msg in messages) {
+            for (part in msg.parts) {
+                if (part is UIMessagePart.Image &&
+                    part.metadata?.get("budget_dropped")?.jsonPrimitive?.contentOrNull == "true"
+                ) { anyMarked = true; break@scan }
+                if (part is UIMessagePart.Tool &&
+                    part.output.any { o ->
+                        o is UIMessagePart.Image &&
+                            o.metadata?.get("budget_dropped")?.jsonPrimitive?.contentOrNull == "true"
+                    }
+                ) { anyMarked = true; break@scan }
+            }
+        }
+        if (!anyMarked) return messages
+        // v4.8.134 (A4b): 统计总量/省略量 — 占位文本携带"本请求共 X 张, 已省略 Y 张",
+        // 第一次省略发生时模型(与用户)即拿到明确信号, 不再静默失明。
+        var totalImgs = 0
+        var markedImgs = 0
+        for (msg in messages) for (part in msg.parts) {
+            if (part is UIMessagePart.Image) {
+                totalImgs++
+                if (part.metadata?.get("budget_dropped")?.jsonPrimitive?.contentOrNull == "true") markedImgs++
+            }
+            if (part is UIMessagePart.Tool) for (o in part.output) {
+                if (o is UIMessagePart.Image) {
+                    totalImgs++
+                    if (o.metadata?.get("budget_dropped")?.jsonPrimitive?.contentOrNull == "true") markedImgs++
+                }
+            }
+        }
+        var replaced = 0
+        val out = messages.map { msg ->
+            val newParts = msg.parts.map { part ->
+                when {
+                    part is UIMessagePart.Image && part.metadata?.get("budget_dropped")?.jsonPrimitive?.contentOrNull == "true" ->
+                        UIMessagePart.Text(imageBudgetPlaceholder(part, totalImgs, markedImgs)).also { replaced++ }
+                    part is UIMessagePart.Tool -> part.copy(output = part.output.map { op ->
+                        if (op is UIMessagePart.Image && op.metadata?.get("budget_dropped")?.jsonPrimitive?.contentOrNull == "true") {
+                            UIMessagePart.Text(imageBudgetPlaceholder(op, totalImgs, markedImgs)).also { replaced++ }
+                        } else op
+                    })
+                    else -> part
+                }
+            }
+            msg.copy(parts = newParts)
+        }
+        if (replaced > 0) Log.i(TAG, "Image budget: replaced " + replaced + " marked images with placeholders")
+        return out
+    }
+
+    private fun imageBudgetPlaceholder(image: UIMessagePart.Image, totalImages: Int = 0, droppedImages: Int = 0): String = when {
+        image.url.startsWith("file://") ->
+            "[图片已省略 (超出本请求图片预算): 本请求共 $totalImages 张图, 已省略 $droppedImages 张; 原文件已保存于会话中, 路径: " + image.url + " — 需要查看时调用 read_image 工具传入该路径 (支持百分号编码形态)]"
+        else -> "[图片已省略 (超出本请求图片预算): 内联图片数据未保留]"
+    }
 
     private fun buildChatCompletionRequest(
         messages: List<UIMessage>,
@@ -229,16 +972,23 @@ class ChatCompletionsAPI(
         stream: Boolean = false,
     ): JsonObject {
         val host = providerSetting.baseUrl.toHttpUrl().host
-        val isOpenRouter = host == "openrouter.ai"
+        // v4.3.6 (BUG15): 图片预算裁剪 — 严格端点 (GLM 类) 限制单请求图片数量/体积,
+        // 高强度视觉工作流超限后整个请求被 [too_many_images] 拒绝, 用户全部进度中断。
+        // 裁剪发生在请求副本上 (UI 不受影响), 保留最近图片, 超额部分降级为文本占位。
+        val budgetedMessages = applyImageMarkers(messages)
+        // v4.8.107: 请求稳定性诊断 (REQSTAB) — 只读, 永不影响请求
+        reportRequestStability(
+            key = (params.sessionId ?: "-") + "|" + params.model.modelId,
+            messages = budgetedMessages,
+        )
         return buildJsonObject {
             put("model", params.model.modelId)
             put(
                 "messages",
                 buildMessages(
-                    messages = messages,
+                    messages = budgetedMessages,
                     includeHistoryReasoning = providerSetting.includeHistoryReasoning,
-                    includeOpenRouterReasoningDetails = isOpenRouter,
-                    supportInputModalities = params.model.inputModalities,
+    
                 )
             )
 
@@ -246,7 +996,21 @@ class ChatCompletionsAPI(
                 if (params.temperature != null) put("temperature", params.temperature)
                 if (params.topP != null) put("top_p", params.topP)
             }
-            if (params.maxTokens != null) put("max_tokens", params.maxTokens)
+            // v3.11.8: max_tokens 缺失兜底按家族分离 (用户: 家族冲突时按家族处理,
+            // 一刀切会让部分模型不可用):
+            //   DeepSeek 家族 (V4 输出上限 384K) / 网关默认 → 32K (OpenCode 官方默认)
+            //   Kimi 家族 (K2.5 缺失默认 1024 截断) → 8K
+            //   GLM 家族 (上限 131072, 建议≥1024) → 8K
+            //   Grok 家族 (默认 4096, 上限保守) → 4K
+            // 用户显式设置时尊重设置 (assistant.maxTokens)。
+            val maxTokensFallback = when (host) {
+                "api.deepseek.com" -> 32_768
+                "api.moonshot.cn" -> 8_192
+                "open.bigmodel.cn" -> 8_192
+                "api.x.ai", "api.grok.ai" -> 4_096
+                else -> 32_768  // opencode.ai 网关等: 与 OpenCode 官方默认一致
+            }
+            put("max_tokens", params.maxTokens ?: maxTokensFallback)
 
             put("stream", stream)
             if (stream) {
@@ -258,8 +1022,7 @@ class ChatCompletionsAPI(
             }
 
             // open router适配
-            if(isOpenRouter) {
-                params.sessionId?.let { put("session_id", it) }
+            if(host == "openrouter.ai") {
                 if(params.model.outputModalities.contains(Modality.IMAGE)) {
                     put("modalities", buildJsonArray {
                         add("image")
@@ -268,152 +1031,10 @@ class ChatCompletionsAPI(
                 }
             }
 
-            if (params.model.abilities.contains(ModelAbility.REASONING)) {
-                val level = params.reasoningLevel
-                when (host) {
-                    "openrouter.ai" -> {
-                        // https://openrouter.ai/docs/use-cases/reasoning-tokens
-                        put("reasoning", buildJsonObject {
-                            when (level) {
-                                ReasoningLevel.OFF -> put("effort", "none")
-                                ReasoningLevel.AUTO -> put("enabled", true)
-                                else -> put("effort", level.effort)
-                            }
-                        })
-                    }
-
-                    "dashscope.aliyuncs.com" -> {
-                        // 阿里云百炼
-                        // https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions
-                        if (level != ReasoningLevel.AUTO) {
-                            put("reasoning_effort", level.effort)
-                        }
-                    }
-
-                    "ark.cn-beijing.volces.com" -> {
-                        // 豆包 (火山)
-                        put("thinking", buildJsonObject {
-                            put("type", if (!level.isEnabled) "disabled" else "enabled")
-                        })
-                    }
-
-                    "api.mistral.ai" -> {
-                        // Mistral 不支持
-                    }
-
-                    "chat.intern-ai.org.cn" -> {
-                        // 书生
-                        // https://internlm.intern-ai.org.cn/api/document?lang=zh
-                        put("thinking_mode", level.isEnabled)
-                    }
-
-                    "api.siliconflow.cn" -> {
-                        // https://docs.siliconflow.cn/cn/userguide/capabilities/reasoning#3-1-api-%E5%8F%82%E6%95%B0
-                        val modelId = params.model.modelId
-                        val siliconflowThinkingModels = setOf(
-                            "Pro/moonshotai/Kimi-K2.5",
-                            "Pro/zai-org/GLM-5",
-                            "Pro/zai-org/GLM-5.1",
-                            "Pro/zai-org/GLM-4.7",
-                            "deepseek-ai/DeepSeek-V3.2",
-                            "Pro/deepseek-ai/DeepSeek-V3.2",
-                            "Qwen/Qwen3.5-397B-A17B",
-                            "Qwen/Qwen3.5-122B-A10B",
-                            "Qwen/Qwen3.5-35B-A3B",
-                            "Qwen/Qwen3.5-27B",
-                            "Qwen/Qwen3.5-9B",
-                            "Qwen/Qwen3.5-4B",
-                            "zai-org/GLM-4.6",
-                            "Qwen/Qwen3-8B",
-                            "Qwen/Qwen3-14B",
-                            "Qwen/Qwen3-32B",
-                            "Qwen/Qwen3-30B-A3B",
-                            "tencent/Hunyuan-A13B-Instruct",
-                            "zai-org/GLM-4.5V",
-                            "deepseek-ai/DeepSeek-V3.1-Terminus",
-                            "Pro/deepseek-ai/DeepSeek-V3.1-Terminus",
-                            "deepseek-ai/DeepSeek-V4-Flash",
-                            "Pro/deepseek-ai/DeepSeek-V4-Flash",
-                            "deepseek-ai/DeepSeek-V4-Pro",
-                            "Pro/deepseek-ai/DeepSeek-V4-Pro",
-                        )
-                        if (modelId in siliconflowThinkingModels) {
-                            put("enable_thinking", level.isEnabled)
-                        }
-                    }
-
-                    "aiping.cn" -> {
-                        put("enable_thinking", level.isEnabled)
-                    }
-
-                    "open.bigmodel.cn" -> {
-                        put("thinking", buildJsonObject {
-                            put("type", if (!level.isEnabled) "disabled" else "enabled")
-                        })
-                    }
-
-                    "api.xiaomimimo.com", "token-plan-cn.xiaomimimo.com" -> {
-                        // 小米 MiMo
-                        // https://mimo.mi.com/docs/zh-CN/api/chat/openai-api
-                        put("thinking", buildJsonObject {
-                            put("type", if (!level.isEnabled) "disabled" else "enabled")
-                        })
-                    }
-
-                    "api.moonshot.cn" -> {
-                        put("thinking", buildJsonObject {
-                            put("type", if (!level.isEnabled) "disabled" else "enabled")
-                            // K2.6 的 thinking.keep 默认为 null（忽略历史思考），思考开启时
-                            // 需显式传 "all" 才是保留式思考；文档推荐与 enabled 搭配（#1586）
-                            if (level.isEnabled && ModelRegistry.KIMI_K2_6.match(params.model.modelId)) {
-                                put("keep", "all")
-                            }
-                        })
-                    }
-
-                    "api.deepseek.com" -> {
-                        put("thinking", buildJsonObject {
-                            put("type", if (!level.isEnabled) "disabled" else "enabled")
-                        })
-                        if (level.isEnabled && level != ReasoningLevel.AUTO) {
-                            val effort = when (level) {
-                                ReasoningLevel.MEDIUM, ReasoningLevel.HIGH -> "high"
-                                ReasoningLevel.MAX -> "max"
-                                else -> level.effort
-                            }
-                            put("reasoning_effort", effort)
-                        }
-                    }
-
-                    "integrate.api.nvidia.com" -> {
-                        if ("deepseek-v4" in params.model.modelId.lowercase()) {
-                            if (level != ReasoningLevel.AUTO) {
-                                val effort = when (level) {
-                                    ReasoningLevel.XHIGH, ReasoningLevel.MAX -> "max"
-                                    ReasoningLevel.OFF -> "none"
-                                    else -> "high"
-                                }
-                                put("reasoning_effort", effort)
-                            }
-                        } else {
-                            if (level != ReasoningLevel.AUTO) {
-                                put("reasoning_effort", if (level.effort == "none") "low" else level.effort)
-                            }
-                        }
-                    }
-
-                    "opencode.ai" -> {
-                        if (level != ReasoningLevel.AUTO) {
-                            put("reasoning_effort", level.effort)
-                        }
-                    }
-
-                    else -> {
-                        if (level != ReasoningLevel.AUTO) {
-                            put("reasoning_effort", level.effort)
-                        }
-                    }
-                }
+            // 4.0.0 重写: 思考控制按 host 分派提取为独立纯函数 thinkingControlFields
+            // (原 185 行内联 when — host×家族×档位映射单一可测试)
+            if (params.model.abilities.contains(ModelAbility.REASONING) || isAggregateGateway(host)) {
+                thinkingControlFields(host, params)?.forEach { (k, v) -> put(k, v) }
             }
 
             if (params.model.abilities.contains(ModelAbility.TOOL) && params.tools.isNotEmpty()) {
@@ -427,8 +1048,7 @@ class ChatCompletionsAPI(
                                 put(
                                     "parameters",
                                     json.encodeToJsonElement(
-                                        tool.parameters()
-                                            ?: InputSchema.Obj(properties = JsonObject(emptyMap()))
+                                        tool.effectiveParameters()
                                     )
                                 )
                             })
@@ -439,21 +1059,248 @@ class ChatCompletionsAPI(
         }.mergeCustomBody(params.customBody)
     }
 
+    /** 聚合网关放行判定 (v3.15.2): 网关对不支持参数自行容错, 思考控制不被模型注册吞掉 */
+    private fun isAggregateGateway(host: String): Boolean =
+        host == "opencode.ai" || host == "api.commandcode.ai"
+
+    /**
+     * 4.0.0 重写: 思考控制字段按 host 分派 (原 buildChatCompletionRequest 内联
+     * 185 行 when 块 → 独立纯函数, 输入 host+params, 输出字段集或 null)。
+     * cherryCompatMode 时返回 null (v3.16.0: 强兼容零思考参数)。
+     * 全部分派数值/文案逐字保留 (v3.15.2/3/4 定版语义)。
+     */
+    private fun thinkingControlFields(host: String, params: TextGenerationParams): JsonObject? {
+        // 4.1.2: 门控诊断日志 — level/abilities/是否发送, 思考问题直接看此行
+        val gate = params.model.abilities.contains(ModelAbility.REASONING) || isAggregateGateway(host)
+        Log.i(TAG, "Thinking gate(cc): host=$host level=${params.reasoningLevel} " +
+            "abilities=${params.model.abilities} → send=$gate")
+        if (!gate) return null
+        val level = params.reasoningLevel
+        fun obj(block: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit): JsonObject =
+            buildJsonObject(block)
+        return when (host) {
+            "openrouter.ai" -> obj {
+                // https://openrouter.ai/docs/use-cases/reasoning-tokens
+                put("reasoning", buildJsonObject {
+                    when (level) {
+                        ReasoningLevel.OFF -> put("effort", "none")
+                        ReasoningLevel.AUTO -> put("enabled", true)
+                        else -> put("effort", level.effort)
+                    }
+                })
+            }
+            "dashscope.aliyuncs.com" -> {
+                // 2.5.4 移植: 百炼新 API — 原 enable_thinking/thinking_budget
+                // 已废弃, 统一 reasoning_effort (无档时不发); 关闭思考 (OFF→none)
+                // 直传, 使"关闭"真正生效。
+                if (level != ReasoningLevel.AUTO) {
+                    obj { put("reasoning_effort", level.effort) }
+                } else null
+            }
+            "ark.cn-beijing.volces.com" -> obj {
+                // 豆包 (火山)
+                put("thinking", buildJsonObject {
+                    put("type", if (!level.isEnabled) "disabled" else "enabled")
+                })
+            }
+            "api.mistral.ai" -> null
+            "chat.intern-ai.org.cn" -> obj {
+                // 书生
+                put("thinking_mode", level.isEnabled)
+            }
+            "api.siliconflow.cn" -> {
+                // https://docs.siliconflow.cn/... thinking 白名单模型才发
+                val modelId = params.model.modelId
+                val siliconflowThinkingModels = setOf(
+                    "Pro/moonshotai/Kimi-K2.5",
+                    "Pro/zai-org/GLM-5",
+                    "Pro/zai-org/GLM-5.1",
+                    "Pro/zai-org/GLM-4.7",
+                    "deepseek-ai/DeepSeek-V3.2",
+                    "Pro/deepseek-ai/DeepSeek-V3.2",
+                    "Qwen/Qwen3.5-397B-A17B",
+                    "Qwen/Qwen3.5-122B-A10B",
+                    "Qwen/Qwen3.5-35B-A3B",
+                    "Qwen/Qwen3.5-27B",
+                    "Qwen/Qwen3.5-9B",
+                    "Qwen/Qwen3.5-4B",
+                    "zai-org/GLM-4.6",
+                    "Qwen/Qwen3-8B",
+                    "Qwen/Qwen3-14B",
+                    "Qwen/Qwen3-32B",
+                    "Qwen/Qwen3-30B-A3B",
+                    "tencent/Hunyuan-A13B-Instruct",
+                    "zai-org/GLM-4.5V",
+                    "deepseek-ai/DeepSeek-V3.1-Terminus",
+                    "Pro/deepseek-ai/DeepSeek-V3.1-Terminus",
+                    "deepseek-ai/DeepSeek-V4-Flash",
+                    "Pro/deepseek-ai/DeepSeek-V4-Flash",
+                    "deepseek-ai/DeepSeek-V4-Pro",
+                    "Pro/deepseek-ai/DeepSeek-V4-Pro",
+                )
+                if (modelId in siliconflowThinkingModels) obj {
+                    put("enable_thinking", level.isEnabled)
+                } else null
+            }
+            "aiping.cn" -> obj {
+                put("enable_thinking", level.isEnabled)
+            }
+            "open.bigmodel.cn" -> obj {
+                put("thinking", buildJsonObject {
+                    put("type", if (!level.isEnabled) "disabled" else "enabled")
+                })
+            }
+            "api.xiaomimimo.com", "token-plan-cn.xiaomimimo.com" -> obj {
+                // v3.9.12 (2.4.11 移植): 小米 MiMo
+                put("thinking", buildJsonObject {
+                    put("type", if (!level.isEnabled) "disabled" else "enabled")
+                })
+            }
+            "api.moonshot.cn" -> obj {
+                put("thinking", buildJsonObject {
+                    put("type", if (!level.isEnabled) "disabled" else "enabled")
+                    // v4.5.31 (#1586) 实现恢复: K2.6 思考开启时 keep=all (保留式思考);
+                    // K2.5 不支持 keep 参数 — 仅对 k2.6 且 enabled 时发送。
+                    // (该修复在 v4.7.7 流处理链回滚时被误一并回退, 此处恢复)
+                    if (level.isEnabled && params.model.modelId.contains("k2.6", ignoreCase = true)) {
+                        put("keep", "all")
+                    }
+                })
+            }
+            "api.deepseek.com", "opencode.ai" -> {
+                // v3.15.2: DeepSeek 家族发 thinking/reasoning_effort (官方语义);
+                // 非 DeepSeek 家族走 Bifrost reasoning_effort 全档 (AUTO 不发)
+                val isDeepSeekFamily = host == "api.deepseek.com" ||
+                    params.model.modelId.contains("deepseek", ignoreCase = true)
+                // v4.5.8: thinking 字段仅对确认支持的 host 发送。实测 20260916:
+                // OpenCode 网关 (Console Go) 的 CC 通道 schema 不含 thinking,
+                // Go 端严格解析直接 400 (unknown field) — v4.5.7 的 GLM 家族
+                // 分支在网关侧不可用。智谱直连 (open.bigmodel.cn) 维持原生
+                // thinking.type 二态 (GLM 无档位: OFF=disabled 其余=enabled);
+                // 经网关的 GLM 回退 reasoning_effort (网关 schema 内, 不 400),
+                // 思考开关是否生效取决于网关是否向智谱映射该参数。
+                val isGlmFamily = host == "open.bigmodel.cn" &&
+                    params.model.modelId.contains("glm", ignoreCase = true)
+                // v4.5.9: Grok 4.6 语义 (x.ai 官方) — reasoning_effort 四档
+                // low/medium/high/xhigh, 默认 low, 无 true disabled (Think/Big
+                // Brain flags 已废)。OFF→low 为 xAI 语义下最接近关闭的档位;
+                // 不发任何参数时模型自主决定是否推理, 即"有时思考有时不思考"。
+                val isGrokFamily = params.model.modelId.contains("grok", ignoreCase = true)
+                if (isGrokFamily && (host == "api.x.ai" || host == "api.grok.ai" || host == "opencode.ai")) {
+                    if (level != ReasoningLevel.AUTO) {
+                        val effort = when (level) {
+                            ReasoningLevel.OFF, ReasoningLevel.LOW -> "low"
+                            ReasoningLevel.MEDIUM -> "medium"
+                            ReasoningLevel.HIGH -> "high"
+                            ReasoningLevel.XHIGH, ReasoningLevel.MAX -> "xhigh"
+                        }
+                        obj { put("reasoning_effort", effort) }
+                    } else null
+                } else if (isGlmFamily) {
+                    obj {
+                        put("thinking", buildJsonObject {
+                            put("type", if (!level.isEnabled) "disabled" else "enabled")
+                        })
+                    }
+                } else if (isDeepSeekFamily) {
+                    obj {
+                        put("thinking", buildJsonObject {
+                            put("type", if (!level.isEnabled) "disabled" else "enabled")
+                        })
+                        if (level.isEnabled && level != ReasoningLevel.AUTO) {
+                            // 4.0.7 对齐原版 2.4.17; v4.5.9 按官方档位修订:
+                            // V4 官方档位 low/high/max (low 自 0731 卡片起合法);
+                            // MEDIUM/HIGH→high, XHIGH/MAX→max (xhigh 是 V4.1 才有)
+                            val effort = when (level) {
+                                ReasoningLevel.MEDIUM, ReasoningLevel.HIGH -> "high"
+                                ReasoningLevel.XHIGH, ReasoningLevel.MAX -> "max"
+                                else -> level.effort
+                            }
+                            put("reasoning_effort", effort)
+                        }
+                    }
+                } else if (host == "opencode.ai" && level != ReasoningLevel.AUTO) {
+                    // 4.0.7 对齐原版: effort 直透 (OFF→none 原样发) —
+                    // 撤 v3.15.3 none→minimal 补丁
+                    obj { put("reasoning_effort", level.effort) }
+                } else null
+            }
+            "integrate.api.nvidia.com" -> {
+                if ("deepseek-v4" in params.model.modelId.lowercase()) {
+                    if (level != ReasoningLevel.AUTO) {
+                        val effort = when (level) {
+                            ReasoningLevel.XHIGH, ReasoningLevel.MAX -> "max"
+                            ReasoningLevel.OFF -> "none"
+                            else -> "high"
+                        }
+                        obj { put("reasoning_effort", effort) }
+                    } else null
+                } else {
+                    if (level != ReasoningLevel.AUTO) {
+                        obj { put("reasoning_effort", if (level.effort == "none") "low" else level.effort) }
+                    } else null
+                }
+            }
+
+            else -> {
+                // 2.5.4 移植: 关闭思考直传 — 原实现把 OFF(none) 映射成 "low",
+                // "关闭"实际仍在低档思考; 新语义下 none 原样发送, 真正关闭。
+                if (level != ReasoningLevel.AUTO) {
+                    obj { put("reasoning_effort", level.effort) }
+                } else null
+            }
+        }
+    }
+
     private fun isModelAllowTemperature(model: Model): Boolean {
-        val isMoonshotRestricted = ModelRegistry.KIMI_K2_5.match(model.modelId) ||
-                ModelRegistry.KIMI_K2_6.match(model.modelId) ||
-                ModelRegistry.KIMI_K3.match(model.modelId) ||
-                ModelRegistry.KIMI_K3_ALIAS.match(model.modelId)
-        return !ModelRegistry.OPENAI_O_MODELS.match(model.modelId) &&
-               !ModelRegistry.GPT_5.match(model.modelId) &&
-               !isMoonshotRestricted
+        return !ModelRegistry.OPENAI_O_MODELS.match(model.modelId) && !ModelRegistry.GPT_5.match(model.modelId)
+    }
+
+    private fun JsonArrayBuilder.addCherryNonAssistantMessage(message: UIMessage) {
+        add(buildJsonObject {
+            put("role", JsonPrimitive(message.role.name.lowercase()))
+            if (message.parts.isOnlyTextPart()) {
+                put("content", message.parts.filterIsInstance<UIMessagePart.Text>().first().text)
+            } else if (message.parts.none { p -> p is UIMessagePart.Text || p is UIMessagePart.Image }) {
+                // v4.8.109: 空数组防线 — Document/Video/Audio 等 part 会被下方 when 忽略,
+                // "只有这类 part"的消息 content 会成空数组 → 网关拒绝。补占位文本兜底。
+                put("content", "[附件未加载]")
+            } else {
+                putJsonArray("content") {
+                    message.parts.forEach { part ->
+                        when (part) {
+                            is UIMessagePart.Text -> {
+                                add(buildJsonObject {
+                                    put("type", "text")
+                                    put("text", part.text)
+                                })
+                            }
+                            is UIMessagePart.Image -> {
+                                add(buildJsonObject {
+                                    part.encodeBase64().onSuccess { encodedImage ->
+                                        put("type", "image_url")
+                                        put("image_url", buildJsonObject {
+                                            put("url", encodedImage.base64)
+                                        })
+                                    }.onFailure { e ->
+                                        Log.w(TAG, "encode user image failed: ${part.url}", e)
+                                        put("type", "text")
+                                        put("text", "[图片编码失败: ${part.url} — 需要查看时调用 read_image 工具传入该路径]")
+                                    }
+                                })
+                            }
+                            else -> {}
+                        }
+                    }
+                }
+            }
+        })
     }
 
     private fun buildMessages(
         messages: List<UIMessage>,
         includeHistoryReasoning: Boolean = true,
-        includeOpenRouterReasoningDetails: Boolean = false,
-        supportInputModalities: List<Modality> = listOf(Modality.TEXT, Modality.IMAGE),
+
     ) = buildJsonArray {
         val filteredMessages = messages.filter { it.isValidToUpload() }
 
@@ -462,8 +1309,6 @@ class ChatCompletionsAPI(
                 addAssistantMessages(
                     message = message,
                     includeReasoning = includeHistoryReasoning,
-                    includeOpenRouterReasoningDetails = includeOpenRouterReasoningDetails,
-                    supportInputModalities = supportInputModalities,
                 )
             } else {
                 addNonAssistantMessage(message)
@@ -474,8 +1319,7 @@ class ChatCompletionsAPI(
     private fun JsonArrayBuilder.addAssistantMessages(
         message: UIMessage,
         includeReasoning: Boolean,
-        includeOpenRouterReasoningDetails: Boolean,
-        supportInputModalities: List<Modality>,
+        imageUploadCompat: Boolean = false,
     ) {
         val groups = groupPartsByToolBoundary(message.parts)
         val contentBuffer = mutableListOf<UIMessagePart>()
@@ -500,8 +1344,7 @@ class ChatCompletionsAPI(
                     buildAssistantMessageJson(
                         contentParts = contentBuffer,
                         tools = group.tools,
-                        reasoningPart = reasoningPart,
-                        includeOpenRouterReasoningDetails = includeOpenRouterReasoningDetails,
+                        reasoningPart = reasoningPart
                     )?.let { assistantMessage ->
                         add(assistantMessage)
                     }
@@ -509,11 +1352,54 @@ class ChatCompletionsAPI(
                     reasoningPart = null // 清空，下一个 group 可能有新的 reasoning
 
                     // 紧跟 tool 结果消息
+                    // v4.3.3 (BUG12): 整段重写 — OpenAI 现行标准 role=tool 消息仅
+                    // role/tool_call_id/content 三字段。历史残留的 "name" 字段
+                    // (老版协议的可选字段, 已废弃) 被严格端点拒绝: 用户实证
+                    // [invalid_request_error] messages[3]: "name" is not supported
+                    // by this endpoint — 工具结果回传后第二轮全部被拒, 表现为
+                    // 生成永久卡死。工具归属由 tool_call_id 唯一确定 (v4.3.0 起
+                    // 增量 id 回填保证非空), name 无任何消费方, 移除。
                     group.tools.forEach { tool ->
                         add(buildJsonObject {
                             put("role", "tool")
                             put("tool_call_id", tool.toolCallId)
-                            put("content", tool.toToolResultContent(supportInputModalities))
+                            put("content", tool.toToolResultContent(imageUploadCompat = imageUploadCompat))
+                        })
+                    }
+                    // v4.3.12 (BUG19): 工具结果图转移 — tool content 只能 text
+                    // (GLM 网关硬限制), 图片改为紧随的 user 消息附图: 模型支持
+                    // 图片输入时直接可见 (无需 read_image 二次拉取); 预算降级
+                    // (budget_dropped) 的图在 applyImageMarkers 已替换为占位,
+                    // 此处只处理预算内的图。
+                    // v4.5.5: 图片上传模式分流 — compat 时工具图内嵌 tool content
+                    // (v4.3.12 前形态, 适用于接受工具结果带图的网关), 不转移不降级
+                    val groupImages = if (imageUploadCompat) emptyList() else group.tools
+                        .flatMap { it.output }
+                        .filterIsInstance<UIMessagePart.Image>()
+                        .filter { it.metadata?.get("budget_dropped")?.jsonPrimitive?.contentOrNull != "true" }
+                    if (groupImages.isNotEmpty()) {
+                        add(buildJsonObject {
+                            put("role", "user")
+                            put("content", buildJsonArray {
+                                add(buildJsonObject {
+                                    put("type", "text")
+                                    put("text", "[工具返回的图片]")
+                                })
+                                groupImages.forEach { img ->
+                                    add(buildJsonObject {
+                                        img.encodeBase64().onSuccess { encodedImage ->
+                                            put("type", "image_url")
+                                            put("image_url", buildJsonObject {
+                                                put("url", encodedImage.base64)
+                                            })
+                                        }.onFailure { e ->
+                                            Log.w(TAG, "encode tool-result image failed: ${img.url}", e)
+                                            put("type", "text")
+                                            put("text", "[图片编码失败: ${img.url} — 可调用 read_image 工具传入该路径读取]")
+                                        }
+                                    })
+                                }
+                            })
                         })
                     }
                 }
@@ -525,8 +1411,7 @@ class ChatCompletionsAPI(
             buildAssistantMessageJson(
                 contentParts = contentBuffer,
                 tools = emptyList(),
-                reasoningPart = reasoningPart,
-                includeOpenRouterReasoningDetails = includeOpenRouterReasoningDetails,
+                reasoningPart = reasoningPart
             )?.let { assistantMessage ->
                 add(assistantMessage)
             }
@@ -537,71 +1422,86 @@ class ChatCompletionsAPI(
         contentParts: List<UIMessagePart>,
         tools: List<UIMessagePart.Tool>,
         reasoningPart: UIMessagePart.Reasoning?,
-        includeOpenRouterReasoningDetails: Boolean,
     ): JsonObject? {
-        val hasUsableContent = contentParts.any { part ->
+        // v4.5.18: 判定整段重写 — "模型输出→非法 assistant 消息"系统修复。
+        // 病灶: 模型某轮只输出思考 (正文为空, 含 think 标签全文被剥离入思考
+        // 的场景), 消息存为 Reasoning+空正文; 下一轮序列化后 content=null +
+        // reasoning_content + 无 tool_calls, 被严格上游拒收:
+        // [invalid_request_error] Invalid assistant message: content or
+        // tool_calls must be set (Console Go 实证; 历史上多次同类 —
+        // "模型正常输出, 继续对话发现用不了")。
+        // 处理矩阵 (OpenAI 规范: 无 tool_calls 时 content 必须为有效内容):
+        //   有效正文            → 正常发送
+        //   正文空 + 有思考 + 无工具 → 思考提升为正文兜底 (content 恒非空,
+        //                        保内容不丢; 对齐"思考即输出"的网关语义)
+        //   全空 + 无工具        → 跳过 (返回 null, 该消息不参与请求)
+        //   有 tool_calls       → content 允许 null, 空正文不再引发拒收
+        // 另: 无用的 part (空文本/空 URL 图) 统一在入口过滤, 不再全量下发。
+        val usableContent = contentParts.filter { part ->
             when (part) {
                 is UIMessagePart.Text -> part.text.isNotBlank()
                 is UIMessagePart.Image -> part.url.isNotBlank()
                 else -> false
             }
         }
-        val reasoningDetails = if (includeOpenRouterReasoningDetails) {
-            reasoningPart?.metadataAs<OpenRouterReasoningMetadata>()?.reasoningDetails
-        } else {
-            null
-        }
-        val hasReasoning = !reasoningPart?.reasoning.isNullOrBlank() || !reasoningDetails.isNullOrEmpty()
-        if (!hasUsableContent && !hasReasoning && tools.isEmpty()) {
+        val hasReasoning = !reasoningPart?.reasoning.isNullOrBlank()
+        if (usableContent.isEmpty() && !hasReasoning && tools.isEmpty()) {
             return null
         }
-
         return buildJsonObject {
             put("role", "assistant")
 
-            // reasoning_content
+            // v3.6.53: reasoning_content 回传完全对齐原版 RikkaHub — hasReasoning 就回传
+            // (所有模型、所有轮, 不区分 tool-call/plain)。原版超长对话缓存 99%+ 验证:
+            // reasoning_content 字段时有时无会破坏 token 序列前缀稳定性。
             if (hasReasoning) {
-                if (!reasoningDetails.isNullOrEmpty()) {
-                    put("reasoning_details", reasoningDetails)
-                } else {
-                    put("reasoning_content", reasoningPart?.reasoning.orEmpty())
-                }
+                put("reasoning_content", reasoningPart.reasoning)
             }
 
-            // content
-            if (contentParts.isEmpty()) {
-                put("content", "")
-            } else if (contentParts.size == 1 && contentParts[0] is UIMessagePart.Text) {
-                put("content", (contentParts[0] as UIMessagePart.Text).text)
-            } else {
-                putJsonArray("content") {
-                    contentParts.forEach { part ->
-                        when (part) {
-                            is UIMessagePart.Text -> {
-                                add(buildJsonObject {
-                                    put("type", "text")
-                                    put("text", part.text)
-                                })
-                            }
-
-                            is UIMessagePart.Image -> {
-                                add(buildJsonObject {
-                                    part.encodeBase64().onSuccess { encodedImage ->
-                                        put("type", "image_url")
-                                        put("image_url", buildJsonObject {
-                                            put("url", encodedImage.base64)
+            // content — 无 tool_calls 时必须有有效内容 (上游硬校验)
+            when {
+                usableContent.isNotEmpty() -> {
+                    if (usableContent.size == 1 && usableContent[0] is UIMessagePart.Text) {
+                        put("content", (usableContent[0] as UIMessagePart.Text).text)
+                    } else {
+                        putJsonArray("content") {
+                            usableContent.forEach { part ->
+                                when (part) {
+                                    is UIMessagePart.Text -> {
+                                        add(buildJsonObject {
+                                            put("type", "text")
+                                            put("text", part.text)
                                         })
-                                    }.onFailure {
-                                        it.printStackTrace()
-                                        put("type", "text")
-                                        put("text", "")
                                     }
-                                })
-                            }
 
-                            else -> {}
+                                    is UIMessagePart.Image -> {
+                                        add(buildJsonObject {
+                                            part.encodeBase64().onSuccess { encodedImage ->
+                                                put("type", "image_url")
+                                                put("image_url", buildJsonObject {
+                                                    put("url", encodedImage.base64)
+                                                })
+                                            }.onFailure { e ->
+                                                Log.w(TAG, "encode user image failed: ${part.url}", e)
+                                                put("type", "text")
+                                                put("text", "[图片编码失败: ${part.url} — 需要查看时调用 read_image 工具传入该路径]")
+                                            }
+                                        })
+                                    }
+
+                                    else -> {}
+                                }
+                            }
                         }
                     }
+                }
+                tools.isEmpty() && hasReasoning -> {
+                    // 纯思考消息: 思考提升为正文 — content 或 tool_calls 必须至少有一
+                    put("content", reasoningPart.reasoning)
+                }
+                else -> {
+                    // 有 tool_calls: content null 为 OpenAI 规范允许形态
+                    put("content", JsonNull)
                 }
             }
 
@@ -630,6 +1530,13 @@ class ChatCompletionsAPI(
 
             if (message.parts.isOnlyTextPart()) {
                 put("content", message.parts.filterIsInstance<UIMessagePart.Text>().first().text)
+            } else if (message.parts.none { p ->
+                    p is UIMessagePart.Text || p is UIMessagePart.Image || p is UIMessagePart.Tool
+                }
+            ) {
+                // v4.8.109: 空数组防线（同 cherry 分支 — 网关 zod "expected array to have >=1 items"
+                // 的根因是构建器忽略 Document/Video/Audio 后留下空 content）
+                put("content", "[附件未加载]")
             } else {
                 putJsonArray("content") {
                     message.parts.forEach { part ->
@@ -648,12 +1555,23 @@ class ChatCompletionsAPI(
                                         put("image_url", buildJsonObject {
                                             put("url", encodedImage.base64)
                                         })
-                                    }.onFailure {
-                                        it.printStackTrace()
+                                    }.onFailure { e ->
+                                        Log.w(TAG, "encode non-assistant image failed: ${part.url}", e)
                                         put("type", "text")
-                                        put("text", "")
+                                        put("text", "[图片编码失败: ${part.url} — 需要查看时调用 read_image 工具传入该路径]")
                                     }
                                 })
+                            }
+
+                            // v4.3.16: 导入的 role=tool 消息 (如第三方导入) — 提取结果文本,
+                            // 避免 Tool part 被忽略后 content 为空数组遭上游拒收
+                            is UIMessagePart.Tool -> part.output.forEach { op ->
+                                if (op is UIMessagePart.Text && op.text.isNotBlank()) {
+                                    add(buildJsonObject {
+                                        put("type", "text")
+                                        put("text", op.text)
+                                    })
+                                }
                             }
 
                             else -> {}
@@ -664,51 +1582,49 @@ class ChatCompletionsAPI(
         })
     }
 
-    private fun UIMessagePart.Tool.toToolResultContent(supportInputModalities: List<Modality>): JsonElement {
-        // 只考虑文字和图片;只有模型支持图片输入时,图片才作为多模态内容回传,否则以文本占位,避免发给不支持的模型报错
-        val supportsImageInput = Modality.IMAGE in supportInputModalities
-        val hasImageToSend = output.any { it is UIMessagePart.Image && supportsImageInput }
-        return if (!hasImageToSend) {
-            JsonPrimitive(output.mapNotNull { part ->
-                when (part) {
-                    is UIMessagePart.Text -> part.text
-                    is UIMessagePart.Image -> "[Image output omitted: current model does not support image input]"
-                    else -> null
-                }
-            }.joinToString("\n"))
-        } else {
-            buildJsonArray {
+    /**
+     * v4.3.12 (BUG19): tool content 纯文本化 — 用户实证 GLM 网关硬限制:
+     * messages[N]: tool content: part type "image_url" is not supported;
+     * only text is。即使模型声明了 IMAGE modality, role=tool 的 content
+     * 也不接受 image_url part。改为无条件纯文本: 工具结果中的图片以占位
+     * 文本交代去向, 真正的图片由调用方 (工具分组循环) 转移到紧随其后的
+     * user 消息中 — 模型支持图片输入时直接可见, 不支持时占位提示。
+     */
+    private fun UIMessagePart.Tool.toToolResultContent(imageUploadCompat: Boolean = false): JsonElement {
+        // v4.5.5: 图片模式分流 — compat 时工具图以内嵌 image_url 进入 tool
+        // content (v4.3.12 前形态); classic 时保持占位文本 (图由调用方转移)。
+        // content 结构按是否含图选择: 纯文本=字符串 (兼容严格上游), 含图=块数组。
+        if (imageUploadCompat && output.any { it is UIMessagePart.Image }) {
+            return buildJsonArray {
                 output.forEach { part ->
                     when (part) {
-                        is UIMessagePart.Text -> {
-                            if (part.text.isNotBlank()) {
-                                add(buildJsonObject {
-                                    put("type", "text")
-                                    put("text", part.text)
-                                })
+                        is UIMessagePart.Text -> if (part.text.isNotBlank()) add(buildJsonObject {
+                            put("type", "text")
+                            put("text", part.text)
+                        })
+                        is UIMessagePart.Image -> add(buildJsonObject {
+                            part.encodeBase64().onSuccess { encoded ->
+                                put("type", "image_url")
+                                put("image_url", buildJsonObject { put("url", encoded.base64) })
+                            }.onFailure {
+                                put("type", "text")
+                                put("text", "[图片编码失败: " + part.url + " — 需要查看时调用 read_image 工具传入该路径]")
                             }
-                        }
-
-                        is UIMessagePart.Image -> {
-                            add(buildJsonObject {
-                                part.encodeBase64().onSuccess { encodedImage ->
-                                    put("type", "image_url")
-                                    put("image_url", buildJsonObject {
-                                        put("url", encodedImage.base64)
-                                    })
-                                }.onFailure {
-                                    Log.w(TAG, "encode tool result image failed: ${part.url}", it)
-                                    put("type", "text")
-                                    put("text", "Error: Failed to encode image to base64")
-                                }
-                            })
-                        }
-
+                        })
                         else -> {}
                     }
                 }
             }
         }
+        val lines = output.mapNotNull { part ->
+            when (part) {
+                is UIMessagePart.Text -> part.text
+                is UIMessagePart.Image -> "[图片已省略: 工具返回的图片已作为随后的用户消息附图提供]"
+                else -> null
+            }
+        }
+        // v4.3.16: 空工具输出防线 — OpenCode API 要求 tool content 至少 1 项
+        return JsonPrimitive(lines.filter { it.isNotBlank() }.ifEmpty { listOf("[工具返回为空]") }.joinToString("\n"))
     }
 
     private fun parseMessage(jsonObject: JsonObject): UIMessage {
@@ -716,33 +1632,46 @@ class ChatCompletionsAPI(
             jsonObject["role"]?.jsonPrimitive?.contentOrNull?.uppercase() ?: "ASSISTANT"
         )
 
-        // 也许支持其他模态的输出content?
-        val content = jsonObject["content"]?.jsonPrimitiveOrNull?.contentOrNull ?: ""
+        // content 可能是字符串或 block 数组 (如 [{type:"text",text:"..."}]); 数组时拼接 text 块, 否则文本丢失 (对齐原版)
+        val contentElement = jsonObject["content"]
+        val content = contentElement?.jsonPrimitiveOrNull?.contentOrNull
+            ?: (contentElement as? JsonArray)?.mapNotNull { block ->
+                val obj = block.jsonObjectOrNull ?: return@mapNotNull null
+                if (obj["type"]?.jsonPrimitiveOrNull?.contentOrNull == "text") {
+                    obj["text"]?.jsonPrimitiveOrNull?.contentOrNull
+                } else {
+                    null
+                }
+            }?.joinToString("") ?: ""
         val reasoning = jsonObject["reasoning_content"]?.jsonPrimitiveOrNull?.contentOrNull
             ?: jsonObject["reasoning"]?.jsonPrimitiveOrNull?.contentOrNull
-            ?: jsonObject["content"]?.takeIf { it is JsonArray }?.let { arr ->
-                // Mistral接口
-                // {"id":"","object":"chat.completion.chunk","created":1772351733,"model":"magistral-medium-2509","choices":[{"index":0,"delta":{"content":[{"type":"thinking","thinking":[{"type":"text","text":"好的"}]}]},"finish_reason":null}]}
-                arr.jsonArrayOrNull?.getOrNull(0)?.jsonObject?.get("thinking")?.jsonArrayOrNull?.getOrNull(0)?.jsonObjectOrNull?.get(
-                    "text"
-                )?.jsonPrimitiveOrNull?.contentOrNull
-            }
-        val reasoningMetadata = jsonObject["reasoning_details"]?.jsonArrayOrNull?.let {
-            OpenRouterReasoningMetadata(reasoningDetails = it).toMetadata()
-        }
+            ?: (contentElement as? JsonArray)?.mapNotNull { block ->
+                // v3.10.2: content 数组 thinking 块泛化提取 — 兼容多种网关形态,
+                // 修复 GPT-5.6-Luna (Opencode 订阅) 思考链完全丢失:
+                // 原实现只取第一块 thinking 的嵌套 thinking[0].text (Mistral 形态),
+                // 网关发 thinking 直接带 text / thinking 字符串 / 多块时全部丢失。
+                // 参考: Mistral {"content":[{"type":"thinking","thinking":[{"type":"text","text":"..."}]}]}
+                val obj = block.jsonObjectOrNull ?: return@mapNotNull null
+                if (obj["type"]?.jsonPrimitiveOrNull?.contentOrNull != "thinking") return@mapNotNull null
+                obj["text"]?.jsonPrimitiveOrNull?.contentOrNull
+                    ?: (obj["thinking"] as? JsonArray)?.mapNotNull { t ->
+                        t.jsonObjectOrNull?.get("text")?.jsonPrimitiveOrNull?.contentOrNull
+                            ?: t.jsonObjectOrNull?.toString()?.takeIf { it.isNotBlank() }
+                    }?.joinToString("")
+                    ?: obj["thinking"]?.jsonPrimitiveOrNull?.contentOrNull
+            }?.filter { !it.isNullOrBlank() }?.joinToString("\n")?.takeIf { it.isNotBlank() }
         val toolCalls = jsonObject["tool_calls"] as? JsonArray ?: JsonArray(emptyList())
         val images = jsonObject["images"] as? JsonArray ?: JsonArray(emptyList())
 
         return UIMessage(
             role = role,
             parts = buildList {
-                if (!reasoning.isNullOrEmpty() || reasoningMetadata != null) {
+                if (!reasoning.isNullOrEmpty()) {
                     add(
                         UIMessagePart.Reasoning(
-                            reasoning = reasoning.orEmpty(),
+                            reasoning = reasoning,
                             createdAt = Clock.System.now(),
-                            finishedAt = null,
-                            metadata = reasoningMetadata,
+                            finishedAt = null
                         )
                     )
                 }
@@ -770,7 +1699,7 @@ class ChatCompletionsAPI(
                     if (type != "image_url") return@forEach
                     val url = imageObject["image_url"]?.jsonObjectOrNull?.get("url")?.jsonPrimitive?.contentOrNull ?: return@forEach
                     require(url.startsWith("data:image")) { "Only data uri is supported" }
-                    add(UIMessagePart.Image(url))
+                    add(UIMessagePart.Image(url.substringAfter("data:image/png;base64,")))
                 }
             },
             annotations = parseAnnotations(
@@ -802,22 +1731,71 @@ class ChatCompletionsAPI(
 
     private fun parseTokenUsage(jsonObject: JsonObject?): TokenUsage? {
         if (jsonObject == null) return null
+        // v3.6.44: 缓存命中字段统一解析 — DeepSeek 用顶层 prompt_cache_hit_tokens,
+        // OpenAI 用 prompt_tokens_details.cached_tokens (v3.3.12 回滚时丢失 → DeepSeek 缓存率恒为 0)
+        val promptTokens = jsonObject["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val completionTokens = jsonObject["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        val totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        // v3.6.53: 各 provider 缓存命中字段形状不统一, 按方言兜底解析 (对齐原版 #1576):
+        // OpenAI 嵌套 -> Moonshot 顶层 cached_tokens -> DeepSeek prompt_cache_hit_tokens
+        val cachedTokens = jsonObject["prompt_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
+            ?: jsonObject["cached_tokens"]?.jsonPrimitive?.intOrNull
+            ?: jsonObject["prompt_cache_hit_tokens"]?.jsonPrimitive?.intOrNull
+            ?: 0
+        // v3.8.43: 缓存命中钳制 — cached 不得超过本轮 prompt (中转/网关偶发
+        // 将历史累计命中打包, 显示上出现 cached>prompt 违背直觉的脏数据)
+        val cachedTokensClamped = if (promptTokens > 0) minOf(cachedTokens, promptTokens) else 0
+        if (cachedTokens > 0) {
+            val hitRate = if (promptTokens > 0) cachedTokensClamped * 100 / promptTokens else 0
+            Log.i(TAG, "Cache hit: $cachedTokensClamped/$promptTokens tokens (${hitRate}%)")
+        }
         return TokenUsage(
-            promptTokens = jsonObject["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            completionTokens = jsonObject["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            // 各 provider 汇报缓存命中的字段形状不统一，按方言兜底解析（#1576）：
-            // OpenAI 嵌套 -> Moonshot 顶层 cached_tokens -> DeepSeek prompt_cache_hit_tokens
-            cachedTokens = jsonObject["prompt_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
-                ?: jsonObject["cached_tokens"]?.jsonPrimitive?.intOrNull
-                ?: jsonObject["prompt_cache_hit_tokens"]?.jsonPrimitive?.intOrNull
-                ?: 0
+            promptTokens = promptTokens,
+            completionTokens = completionTokens,
+            totalTokens = totalTokens,
+            cachedTokens = cachedTokensClamped
         )
     }
+
+    // 4.2.0 接口切换: Flow<StreamChunk> (原版 2.5.x 形态) — 内层解析仍产出
+    // MessageChunk, 由 MessageChunkStreamAdapter 桥接 (行为等价, v4.2.1 起内层逐步替换 StreamDecoder)
+    override suspend fun streamText(
+        providerSetting: ProviderSetting.OpenAI,
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
+    ): Flow<StreamChunk> {
+        val adapter = me.rerere.ai.ui.MessageChunkStreamAdapter()
+        return streamTextRaw(providerSetting, messages, params).flatMapConcat { chunk ->
+            adapter.adapt(chunk).asFlow()
+        }
+    }
+
 
     private fun List<UIMessagePart>.isOnlyTextPart(): Boolean {
         val gonnaSend = filter { it is UIMessagePart.Text || it is UIMessagePart.Image }.size
         val texts = filter { it is UIMessagePart.Text }.size
         return gonnaSend == texts && texts == 1
     }
+
+    companion object {
+        /** v4.3.10: 占位文案 — 预算判定/常量在 GenerationHandler (app 层), 此处仅消费标记 */
+        /**
+         * 判断流式传输中断是否为可恢复错误 (stream reset / protocol error).
+         * 对于可恢复错误, 若已有部分数据到达则保留部分响应, 避免整体丢失.
+         */
+        fun isRecoverableStreamError(e: java.io.IOException): Boolean {
+            val msg = e.message ?: return false
+            return msg.contains("stream was reset", ignoreCase = true) ||
+                   msg.contains("protocol error", ignoreCase = true) ||
+                   msg.contains("unexpected end of stream", ignoreCase = true) ||
+                   msg.contains("connection reset", ignoreCase = true) ||
+                   msg.contains("connection abort", ignoreCase = true) ||
+                   msg.contains("software caused", ignoreCase = true) ||
+                   msg.contains("timeout", ignoreCase = true) ||
+                   msg.contains("broken pipe", ignoreCase = true) ||
+                   msg.contains("connection closed", ignoreCase = true) ||
+                   msg.contains("canceled", ignoreCase = true)
+        }
+    }
 }
+

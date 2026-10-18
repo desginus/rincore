@@ -1,0 +1,6 @@
+# Cursor Rules — RikkaHub 项目规则
+
+- 始终使用 me.rerere.rikkahub 包名
+- Compose UI 使用 Material 3
+- Kotlin 协程用于异步操作
+- 使用 koin 进行依赖注入

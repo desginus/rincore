@@ -1,5 +1,6 @@
 package me.rerere.workspace
 
+
 data class Workspace(
     val id: String,
     val name: String,
@@ -63,4 +64,6 @@ data class WorkspaceCommandResult(
     val stderr: String,
     val timedOut: Boolean = false,
     val truncated: Boolean = false,
+    /** v4.8.82: 因输出超限被省略的字符数 (头+尾保留策略下被丢弃的中段) */
+    val omittedChars: Long = 0L,
 )

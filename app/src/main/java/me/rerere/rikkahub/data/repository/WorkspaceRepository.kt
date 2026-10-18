@@ -1,5 +1,13 @@
 package me.rerere.rikkahub.data.repository
 
+
+/* ───【域 D·工作区沙箱】WorkspaceRepository.kt
+ * 职责: 工作区仓库层 (DAO + WorkspaceManager 封装)
+ * 常用改动: 文件操作 → exportFile/exportFolderZip (批量加计数); 沙箱 → launchProcess/executeCommand
+ * 问题定位: 工作区数据异常/导出问题 → 本文件
+ * 基线: 原版移植 + 自研 | 差异 +113 行 | 地图: docs/APP_MAP.md §D | 历史: .claude/skills/rincore-bug-record
+ * ───────────────────────────────────────────────────────────────*/
+import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -18,7 +26,7 @@ import me.rerere.workspace.WorkspaceFileEntry
 import me.rerere.workspace.WorkspaceManager
 import me.rerere.workspace.WorkspaceShellStatus
 import me.rerere.workspace.WorkspaceStorageArea
-import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 import kotlin.uuid.Uuid
@@ -28,8 +36,79 @@ class WorkspaceRepository(
     private val manager: WorkspaceManager,
     private val rootfsInstaller: RootfsInstaller,
     private val settingsStore: SettingsStore,
+    private val context: Context,
 ) {
     fun listFlow(): Flow<List<WorkspaceEntity>> = dao.listFlow()
+
+    /**
+     * v4.8.116: 二进制写入 rootfs（浏览器截图等模型产物统一落盘）。
+     * 与 writeTextInRootfs 同语义（cwd 作用域、路径映射），但走宿主直写
+     * （PNG 走 shell base64 既慢又有长度上限）。仅 /workspace 区可写。
+     * 返回 false = 无绑定映射或写入失败（调用方回退 cache）。
+     */
+    suspend fun writeBinaryInRootfs(
+        workspaceId: String,
+        path: String,
+        bytes: ByteArray,
+        cwd: String? = null,
+    ): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val host = manager.rootfsHostFileForWrite(workspaceId, path, cwd) ?: return@withContext false
+            host.parentFile?.mkdirs()
+            java.io.FileOutputStream(host).use { it.write(bytes) }
+            true
+        }.getOrDefault(false)
+    }
+
+    /**
+     * v4.8.116: 浏览器截图 TTL 清理 — 只清理本应用自产工件
+     * （文件名前缀 [prefix]，默认 shot-），TTL 内的与最新 [keep] 张保留。
+     * 用户文件绝不动（前缀不匹配直接跳过）。
+     */
+    suspend fun sweepBrowserShotsInRootfs(
+        workspaceId: String,
+        cwd: String? = null,
+        subdir: String = "browser-shots",
+        prefix: String = "shot-",
+        ttlMs: Long = 24 * 60 * 60 * 1000L,
+        keep: Int = 50,
+    ): Unit = withContext(Dispatchers.IO) {
+        runCatching {
+            val dir = manager.rootfsHostFileForWrite(workspaceId, "/workspace/$subdir", cwd)?.parentFile
+                ?: return@withContext
+            val ours = dir.listFiles { f -> f.isFile && f.name.startsWith(prefix) } ?: return@withContext
+            val now = System.currentTimeMillis()
+            val sorted = ours.sortedByDescending { it.lastModified() }
+            sorted.forEachIndexed { idx, f ->
+                val expired = now - f.lastModified() > ttlMs
+                if (expired || idx >= keep) runCatching { f.delete() }
+            }
+        }
+    }
+
+
+    /**
+     * v3.6.85: DeepSeek Harness 插件生态兼容 — 刷新 DSH 技能根。
+     * 扫描所有 workspace files 区的 .dsh/skills 与 .agents/skills
+     * (DSH 官方技能发现根), 注入 SkillManager 作为只读技能源。
+     */
+    suspend fun refreshDshSkillRoots(skillManager: me.rerere.rikkahub.data.files.SkillManager) = withContext(Dispatchers.IO) {
+        runCatching {
+            val dshRoots = dao.getAll().flatMap { ws ->
+                listOf(
+                    File(manager.filesDir(ws.root), ".dsh/skills"),
+                    File(manager.filesDir(ws.root), ".agents/skills"),
+                )
+            }
+            // 仅更新 dsh__ 前缀根, 保留 plugin__ 根 (PluginManager 注入)
+            val others = skillManager.extraRootsSnapshot().filter { it.prefix != "dsh__" }
+            skillManager.setExtraSkillRoots(
+                others + dshRoots.map { me.rerere.rikkahub.data.files.SkillManager.ExtraSkillRoot("dsh__", it) }
+            )
+        }.onFailure {
+            Log.w(TAG, "refreshDshSkillRoots failed: ${it.message}")
+        }
+    }
 
     suspend fun checkIntegrity() = withContext(Dispatchers.IO) {
         val workspaces = dao.getAll()
@@ -52,9 +131,50 @@ class WorkspaceRepository(
                 updateShellState(workspace.id, WorkspaceShellStatus.DISABLED.name)
             }
         }
+        // v4.5.24: 每次启动幂等注入内置工具 (新装 / 工具升级自动就位)
+        provisionBuiltinTools()
     }
 
     suspend fun getById(id: String): WorkspaceEntity? = dao.getById(id)
+
+    /**
+     * v4.5.24: 内置工具注入 — 把 assets/rin-tools 下的工具写入各工作区 rootfs 的
+     * /usr/local/bin (proot PATH 已含该目录), 使沙箱开箱具备 Office 文档手术编辑
+     * 能力 (office-edit: 只改被触及的 XML 部件, 其余字节原样保留, 格式不崩)。
+     * 幂等: 内容一致跳过; 工具随版本升级在下次启动/安装完成时自动覆盖。
+     */
+    suspend fun provisionBuiltinTools(workspaceId: String? = null) = withContext(Dispatchers.IO) {
+        val workspaces = if (workspaceId != null) listOfNotNull(dao.getById(workspaceId)) else dao.getAll()
+        for (workspace in workspaces) {
+            if (workspace.shellStatus != WorkspaceShellStatus.READY.name) continue
+            if (!manager.hasRootfs(workspace.root)) continue
+            runCatching { provisionInto(manager.linuxDir(workspace.root)) }
+                .onFailure { Log.w(TAG, "provisionBuiltinTools failed: id=${workspace.id}", it) }
+        }
+    }
+
+    private fun provisionInto(linuxDir: File) {
+        val names = runCatching { context.assets.list(TOOLS_ASSET_DIR)?.toList().orEmpty() }
+            .getOrDefault(emptyList())
+        if (names.isEmpty()) return
+        val binDir = File(linuxDir, "usr/local/bin").apply { mkdirs() }
+        for (name in names) {
+            val target = File(binDir, name)
+            val bytes = context.assets.open("$TOOLS_ASSET_DIR/$name").use { it.readBytes() }
+            val unchanged = target.isFile && target.length() == bytes.size.toLong() &&
+                runCatching { target.readBytes().contentEquals(bytes) }.getOrDefault(false)
+            if (!unchanged) {
+                target.writeBytes(bytes)
+                Log.i(TAG, "provisioned builtin tool: ${target.absolutePath} (${bytes.size} bytes)")
+            }
+            target.setExecutable(true, false)
+            target.setReadable(true, false)
+        }
+    }
+
+
+    /** 全量 workspace 列表 (插件扫描等) */
+    suspend fun getAllWorkspaces(): List<WorkspaceEntity> = dao.getAll()
 
     suspend fun create(name: String): WorkspaceEntity {
         val id = Uuid.random().toString()
@@ -73,6 +193,8 @@ class WorkspaceRepository(
         )
         manager.ensureWorkspace(workspace.root)
         dao.upsert(workspace)
+        // v4.8.99: 工作区集合变化 → 图像解析快照失效 (resolve 热路径零阻塞的前提)
+        me.rerere.rikkahub.utils.WorkspaceImageResolver.invalidateWorkspaces()
         return workspace
     }
 
@@ -126,6 +248,8 @@ class WorkspaceRepository(
                 rootfsInstaller.install(workspace.root, url, onProgress)
             }
             updateShellState(workspace, WorkspaceShellStatus.READY.name)
+            // v4.5.24: 安装完成即注入内置工具, 开箱可用
+            provisionBuiltinTools(workspace.id)
             return true
         } catch (e: CancellationException) {
             withContext(NonCancellable) {
@@ -174,33 +298,6 @@ class WorkspaceRepository(
         manager.writeText(workspace.root, path, text, overwrite)
     }
 
-    /**
-     * 读取文本用于应用内预览/编辑, 支持两个存储区.
-     * FILES 区走 [WorkspaceManager.readText] (自带大小保护); LINUX 区通过 exportFile 读入内存,
-     * 因此这里对 LINUX 区显式做大小限制, 避免大文件撑爆内存.
-     */
-    suspend fun readTextForPreview(
-        id: String,
-        area: WorkspaceStorageArea,
-        path: String,
-    ): String = withContext(Dispatchers.IO) {
-        val workspace = dao.getById(id) ?: error("Workspace not found: $id")
-        manager.ensureWorkspace(workspace.root)
-        when (area) {
-            WorkspaceStorageArea.FILES -> manager.readText(workspace.root, path)
-            WorkspaceStorageArea.LINUX -> {
-                val size = manager.fileSize(workspace.root, path, area)
-                require(size <= MAX_PREVIEW_BYTES) {
-                    "文件过大, 无法预览 (${size} bytes)"
-                }
-                ByteArrayOutputStream().use { out ->
-                    manager.exportFile(workspace.root, path, area, out)
-                    out.toString(Charsets.UTF_8.name())
-                }
-            }
-        }
-    }
-
     suspend fun importFile(
         id: String,
         area: WorkspaceStorageArea,
@@ -242,31 +339,97 @@ class WorkspaceRepository(
         manager.exportFile(workspace.root, path, area, outputStream)
     }
 
-    /** 按 Rootfs 内绝对路径读取文件大小, 支持 /workspace、bind mount 与 Rootfs 内部路径 */
-    suspend fun rootfsFileSize(
+    /**
+     * v4.8.5: 文件夹打包为 zip — 完整导出重写。
+     * v4.5.3 版本经 manager.listFiles 递归, 而 listFiles 内部 take(maxListEntries=500)
+     * 截断 — 单层超 500 条目即静默丢失 (用户实证: 解压后内容丢失/破损)。
+     * 现改走 WorkspaceManager.exportFolderToZip: 直接宿主文件树递归, 全量条目 +
+     * mtime 保留 + 空目录/空文件完整; 返回打包文件数。
+     */
+    suspend fun exportFolderZip(
         id: String,
-        path: String,
+        area: WorkspaceStorageArea,
+        folderPath: String,
+        outputStream: OutputStream,
     ): Long = withContext(Dispatchers.IO) {
         val workspace = dao.getById(id) ?: error("Workspace not found: $id")
         manager.ensureWorkspace(workspace.root)
-        manager.rootfsFileSize(workspace.root, path)
+        val stats = manager.exportFolderToZip(
+            root = workspace.root,
+            folderPath = folderPath,
+            area = area,
+            outputStream = outputStream,
+        )
+        stats.files
     }
 
-    /** Rootfs 内执行命令实际使用的 shell 路径 (/bin/bash 或 /bin/sh) */
-    suspend fun rootfsShell(id: String): String = withContext(Dispatchers.IO) {
+    /** v4.5.2: 工作区 shell 命令执行 (VM 层文件夹打包等工具用途) */
+    suspend fun executeCommand(
+        id: String,
+        command: String,
+        cwd: String = "",
+    ): me.rerere.workspace.WorkspaceCommandResult = withContext(me.rerere.rikkahub.utils.AppDispatchers.Sandbox) {
         val workspace = dao.getById(id) ?: error("Workspace not found: $id")
-        manager.rootfsShell(workspace.root)
+        manager.ensureWorkspace(workspace.root)
+        manager.executeCommand(root = workspace.root, command = command, cwd = cwd)
     }
 
-    /** 按 Rootfs 内绝对路径导出文件内容, 支持 /workspace、bind mount 与 Rootfs 内部路径 */
+    // ── v4.8.72: 后台任务直通 (workspace_job 工具) ──
+    suspend fun startJob(id: String, command: String, cwd: String, jobId: String) = withContext(me.rerere.rikkahub.utils.AppDispatchers.Sandbox) {
+        val workspace = dao.getById(id) ?: error("Workspace not found: $id")
+        manager.ensureWorkspace(workspace.root)
+        manager.startJob(workspace.root, command, cwd, jobId)
+    }
+
+    suspend fun jobStatus(id: String, jobId: String): WorkspaceManager.JobStatus? = withContext(me.rerere.rikkahub.utils.AppDispatchers.Sandbox) {
+        val workspace = dao.getById(id) ?: error("Workspace not found: $id")
+        manager.jobStatus(workspace.root, jobId)
+    }
+
+    suspend fun jobLogTail(id: String, jobId: String, maxBytes: Int = 6000): String = withContext(me.rerere.rikkahub.utils.AppDispatchers.Sandbox) {
+        val workspace = dao.getById(id) ?: error("Workspace not found: $id")
+        val f = manager.jobLogFile(workspace.root, jobId)
+        if (!f.exists()) "" else runCatching {
+            java.io.FileInputStream(f).use { ins ->
+                var toSkip = (f.length() - maxBytes).coerceAtLeast(0L)
+                while (toSkip > 0) {
+                    val n = ins.skip(toSkip)
+                    if (n <= 0) break
+                    toSkip -= n
+                }
+                String(ins.readBytes(), Charsets.UTF_8)
+            }
+        }.getOrDefault("")
+    }
+
+    suspend fun killJob(id: String, jobId: String): Int = withContext(me.rerere.rikkahub.utils.AppDispatchers.Sandbox) {
+        val workspace = dao.getById(id) ?: error("Workspace not found: $id")
+        manager.jobKill(workspace.root, jobId)
+    }
+
+    /** 按 Rootfs 内绝对路径读取文件大小, 支持 /workspace、bind mount 与 Rootfs 内部路径。
+     *  v4.5.27: cwd 非空时 /workspace 解析到助手级子目录 (CWD 专一空间)。 */
+    suspend fun rootfsFileSize(
+        id: String,
+        path: String,
+        cwd: String? = null,
+    ): Long = withContext(Dispatchers.IO) {
+        val workspace = dao.getById(id) ?: error("Workspace not found: $id")
+        manager.ensureWorkspace(workspace.root)
+        manager.rootfsFileSize(workspace.root, path, cwd)
+    }
+
+    /** 按 Rootfs 内绝对路径导出文件内容, 支持 /workspace、bind mount 与 Rootfs 内部路径。
+     *  v4.5.27: cwd 非空时 /workspace 解析到助手级子目录 (CWD 专一空间)。 */
     suspend fun exportRootfsFile(
         id: String,
         path: String,
         outputStream: OutputStream,
+        cwd: String? = null,
     ) = withContext(Dispatchers.IO) {
         val workspace = dao.getById(id) ?: error("Workspace not found: $id")
         manager.ensureWorkspace(workspace.root)
-        manager.exportRootfsFile(workspace.root, path, outputStream)
+        manager.exportRootfsFile(workspace.root, path, outputStream, cwd)
     }
 
     suspend fun deleteFile(
@@ -293,6 +456,53 @@ class WorkspaceRepository(
         manager.moveFile(workspace.root, source, target, overwrite)
     }
 
+    suspend fun renameFile(
+        id: String,
+        area: WorkspaceStorageArea,
+        path: String,
+        newName: String,
+    ): WorkspaceFileEntry {
+        val sourcePath = if (path.startsWith("/")) path else "/$path"
+        val parent = sourcePath.substringBeforeLast('/', "")
+        val targetPath = if (parent.isEmpty()) "/$newName" else "$parent/$newName"
+        return moveFile(id = id, source = sourcePath, target = targetPath, overwrite = false)
+    }
+
+    suspend fun createFolder(
+        id: String,
+        area: WorkspaceStorageArea,
+        path: String,
+        name: String,
+    ) = withContext(Dispatchers.IO) {
+        val workspace = dao.getById(id) ?: error("Workspace not found: $id")
+        manager.ensureWorkspace(workspace.root)
+        val areaRoot = when (area) {
+            WorkspaceStorageArea.FILES -> manager.filesDir(workspace.root)
+            WorkspaceStorageArea.LINUX -> manager.linuxDir(workspace.root)
+        }
+        val resolvedPath = if (path.isBlank()) name else "$path/$name"
+        val dir = java.io.File(areaRoot, resolvedPath)
+        if (!dir.mkdirs() && !dir.isDirectory) error("无法创建文件夹: $name")
+    }
+
+    suspend fun createFile(
+        id: String,
+        area: WorkspaceStorageArea,
+        path: String,
+        name: String,
+    ) = withContext(Dispatchers.IO) {
+        val workspace = dao.getById(id) ?: error("Workspace not found: $id")
+        manager.ensureWorkspace(workspace.root)
+        val areaRoot = when (area) {
+            WorkspaceStorageArea.FILES -> manager.filesDir(workspace.root)
+            WorkspaceStorageArea.LINUX -> manager.linuxDir(workspace.root)
+        }
+        val resolvedPath = if (path.isBlank()) name else "$path/$name"
+        val file = java.io.File(areaRoot, resolvedPath)
+        file.parentFile?.mkdirs()
+        if (!file.exists()) file.createNewFile()
+    }
+
     suspend fun executeCommand(
         id: String,
         command: String,
@@ -302,18 +512,41 @@ class WorkspaceRepository(
     ): WorkspaceCommandResult {
         val workspace = dao.getById(id) ?: error("Workspace not found: $id")
         // runInterruptible 让协程取消转化为线程中断，从而打断阻塞的 Process.waitFor 并杀掉进程
-        return runInterruptible(Dispatchers.IO) {
+        // v4.8.74: shell 耗时观测 — >500ms 写运行日志 (提速核实依据);
+        // runInterruptible 块非挂起上下文, 计时采集与事件上报分离 (报告在块外)。
+        val t0 = System.currentTimeMillis()
+        val result = runInterruptible(Dispatchers.IO) {
             manager.ensureWorkspace(workspace.root)
             manager.executeCommand(
                 workspace.root, command, cwd, timeoutMillis, stdin,
                 shellCompatibilityMode = workspace.shellCompatibilityMode,
             )
         }
+        val costMs = System.currentTimeMillis() - t0
+        if (costMs > 500) {
+            me.rerere.rikkahub.data.ai.CallTracer.event(
+                "WS", "exec_ms",
+                "ms=$costMs exit=${result.exitCode} timeout=${result.timedOut} cmd=${command.take(80)}"
+            )
+        }
+        return result
+    }
+
+    /**
+     * 启动常驻进程 (不等待) — MCP stdio 桥接: 在 workspace 沙箱内启动
+     * Python/Node MCP 服务器, 进程流由调用方接管 (McpManager StdioClientTransport)。
+     */
+    // v4.8.110 (B4): env 透传 — MCP stdio 服务器环境变量注入 (launchProcess 链末端到 proot)
+    suspend fun launchProcess(id: String, command: String, cwd: String = "", env: Map<String, String> = emptyMap()): Process? = withContext(me.rerere.rikkahub.utils.AppDispatchers.Sandbox) {
+        val workspace = dao.getById(id) ?: return@withContext null
+        manager.ensureWorkspace(workspace.root)
+        manager.launchProcess(workspace.root, command, cwd, env)
     }
 
     suspend fun delete(id: String): Boolean {
         val workspace = dao.getById(id) ?: return false
         dao.deleteById(id)
+        me.rerere.rikkahub.utils.WorkspaceImageResolver.invalidateWorkspaces()
         withContext(Dispatchers.IO) {
             manager.deleteWorkspace(workspace.root)
         }
@@ -357,6 +590,6 @@ class WorkspaceRepository(
 
     companion object {
         private const val TAG = "WorkspaceRepository"
-        private const val MAX_PREVIEW_BYTES = 512L * 1024
+        private const val TOOLS_ASSET_DIR = "rin-tools"
     }
 }

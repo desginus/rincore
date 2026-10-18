@@ -1,0 +1,2341 @@
+/**
+ * 【域 B·AI 传输】生成编排器 (地图: docs/APP_MAP.md §B)
+ * 常用改动: 图片限制 → applyImageBudgetMarking (GLM 网关 6 张); 重试 → 重试链; 协议 → MessageProtocol.enforce
+ * 问题定位: 连接中断/工具调用异常/冷启动 token 高 → 本文件 + protocol + transformers
+ * 生成编排器（AI 传输链核心）— 模块: A. 传输链
+ *
+ * 职责:
+ *  - 消息组装: system(缓存锚点+提示+层1概览+框架工具+记忆) + 历史 + 新消息
+ *  - 分层路由: 顶层直连工具 / 工具区工具 分离 + 工具区懒加载 (MCP 走全量池)
+ *  - 协议强制: 发送前 MessageProtocol.enforce (首条 system + tool 配对)
+ *  - 流式输出: GenerationChunk 回调 → 上层落盘
+ *
+ * 基线: 回滚自 3.2.2 (v3.5.0), 保留 v3.5.3 MCP 懒加载 (813af56d 移植)
+ * 来源: 继承原版 + 自研演进
+ *
+ * 问题定位: 连接中断/SETTINGS/工具调用异常/冷启动 token 高 → 查本模块 + protocol + transformers
+ */
+package me.rerere.rikkahub.data.ai
+
+
+/* ───【原版对齐】GenerationHandler ─────────────────────────────────────
+ * 原版: 有同文件 (545 行) | RinCore 差异 +462 行 (893 行)
+ * 来源: 原版移植 + 自研核心扩展
+ * 功能: 生成编排 — system 构建/工具分层注入/流式循环/重试
+ * 特点: 1. 分层动态注入 (框架工具 + 已加载域, 冷启动小 — 用户铁律);
+ *        2. 消息原样发送零改动 (v3.6.74 降维方向废弃);
+ *        3. 豁免工具机制 (v3.6.90 移出域管理 = 框架工具同级);
+ *        4. UI 节流 100ms; 5. 断流自动重试 5 次
+ * 逻辑: 顶层直连工具集 (出厂模板 + 用户提升 − 用户降级) 始终注入;
+ *       loadedDomains LinkedHashSet 保序 (缓存前缀稳定)
+ * 与原版主要差异:
+ *   1. 原版每 chunk 直发无节流 — RinCore 100ms 批处理
+ *   2. 原版无分层 — RinCore 域分层是核心自研
+ *   3. 原版无豁免工具/插件工具注入
+ * ────────────────────────────────────────────────────────────────────*/
+
+import android.content.Context
+import me.rerere.rikkahub.BuildConfig
+import android.util.Log
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import me.rerere.ai.core.MessageRole
+import me.rerere.ai.core.ReasoningLevel
+import me.rerere.ai.core.Tool
+import me.rerere.ai.core.merge
+import me.rerere.ai.provider.CustomBody
+import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.Provider
+import me.rerere.ai.provider.ProviderManager
+import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.providers.opencode.OpencodeProtocol
+import me.rerere.ai.provider.providers.opencode.OpencodeRequestMode
+import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.ai.registry.ModelRegistry
+import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.ui.ToolApprovalState
+import me.rerere.rikkahub.data.ai.protocol.MessageProtocol
+import me.rerere.ai.util.TraceLogger
+import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
+import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
+import me.rerere.rikkahub.data.ai.transformers.OutputMessageTransformer
+import me.rerere.rikkahub.data.files.FileFolders
+import java.io.File
+import me.rerere.rikkahub.data.ai.transformers.onGenerationFinish
+import me.rerere.rikkahub.data.ai.transformers.transforms
+import me.rerere.rikkahub.ecosystem.tools.DynamicTools
+import me.rerere.rikkahub.data.ai.transformers.visualTransforms
+import me.rerere.rikkahub.data.ai.tools.topLevelToolSetOf
+import me.rerere.rikkahub.data.ai.tools.createTaskTool
+import me.rerere.rikkahub.data.ai.tools.repetitionSampleCount
+import me.rerere.rikkahub.data.ai.tools.repetitionTailCount
+import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
+import me.rerere.rikkahub.data.ai.tools.routing.ZoneRouter
+import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.findModelById
+import me.rerere.rikkahub.data.datastore.findProvider
+import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.AssistantMemory
+import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.utils.applyPlaceholders
+import java.util.Locale
+import kotlin.time.Clock
+import kotlin.uuid.Uuid
+import me.rerere.rikkahub.data.ai.CallTracer
+
+/**
+ * v3.15.1: per-request 重试状态 (方法内 val 实例, 闭包捕获堆对象)。
+ * 根除类成员计数在子代理并发生成时的互踩污染 (v3.11.33 教训残余:
+ * 入口归零只救单线程, 救不了并发)。
+ */
+private data class RetryState(
+    var stream: Int = 0,
+    var init: Int = 0,
+    /** 本轮是否收到过任何流数据 (collect 置位) — 发起/流中断判据 */
+    var receivedAnyData: Boolean = false,
+    /** v4.8.137 (用户定版): 本次发送是否已产出过任何输出 (首次收流即置位, 跨轮不清零)。
+     *  发起链 (5 次快速失败 + 可见提示) 只服务"用户刚发完消息、屏幕尚无输出"的建连
+     *  阶段; 一旦有输出 (含工具轮之后的续发轮), 一切失败按流中断链 (18 次) 恢复。
+     *  用户实证: 工具轮后首连失败被按轮判成发起阶段, 仅 5 次即报"已尝试 5 次仍无法
+     *  建立连接" — 此时应继续 18 次。 */
+    var outputStarted: Boolean = false,
+    /** v4.8.76: 上一轮 API 活动时间戳 (epoch ms) — OC/CC 轮间探活的 gap 判据;
+     *  per-generation 持有 (generateInternal 每轮独立调用, 局部变量无法跨轮)。 */
+    var lastApiRoundAt: Long = 0L,
+    /** v4.8.105 (无感衔接 E): 最近一次工具批执行完成时间戳 (epoch ms) —
+     *  工具结束 → 下一轮请求就绪 的 gap 分解埋点 (PREF/resume_gap)。 */
+    var lastToolEndAt: Long = 0L,
+)
+
+/** v4.8.105 (B): 待并行执行的工具 (阶段1顺序入队 → 阶段2并行执行 → 阶段3保序记账) */
+private class QueuedToolExec(
+    val tool: UIMessagePart.Tool,
+    val toolDef: Tool,
+    val args: JsonElement,
+    val idemKey: String,
+    val toolStartAt: Long,
+)
+
+/** v4.8.105 (B): 工具执行产出 (阶段2 → 阶段3); error 非空 = 执行抛错 (转错误回执) */
+private class ToolExecOutcome(
+    val item: QueuedToolExec,
+    val result: List<UIMessagePart>?,
+    val endAt: Long,
+    val error: Throwable?,
+)
+
+/**
+ * v4.8.110 (B·对齐 Claude Code toolOrchestration.partitionToolCalls): 工具执行分区 —
+ * 连续「并发安全」工具并为一批 (并行执行), 单个非安全工具各成一批 (串行)。
+ * 保守原则: 未知工具 = 非安全 (与 CC isConcurrencySafe 默认 false 一致)。
+ * 说明: shell/edit/写文件/MCP/管理操作等共享资源 (沙箱 proot、文件写、会话) 在
+ * 无差别并行下互踩, 正是"并行调用失败"老毛病的机制根因; 只读工具并行无此问题。
+ */
+private val CONCURRENCY_SAFE_TOOLS = setOf(
+    "workspace_read_file", "workspace_grep", "workspace_glob",
+    "read_image", "upload_fetch", "subagent_list", "subagent_get",
+)
+
+private fun partitionExecQueueByConcurrency(queue: List<QueuedToolExec>): List<Pair<List<QueuedToolExec>, Boolean>> {
+    val out = ArrayList<Pair<List<QueuedToolExec>, Boolean>>()
+    var cur = ArrayList<QueuedToolExec>()
+    var curSafe = false
+    for (item in queue) {
+        val safe = item.tool.toolName in CONCURRENCY_SAFE_TOOLS
+        if (cur.isEmpty() || (safe && curSafe)) {
+            cur.add(item); curSafe = safe
+        } else {
+            out.add(cur to curSafe); cur = arrayListOf(item); curSafe = safe
+        }
+    }
+    if (cur.isNotEmpty()) out.add(cur to curSafe)
+    return out
+}
+
+private const val TAG = "GenerationHandler"
+
+/** 顶层直连工具名 — 不参与工具区归类, 分层模式下直接注入 */
+// 顶层直连工具集口径统一于 ToolsBuilder.topLevelToolSetOf (v4.8.83)
+
+/** v4.8.105 (无感衔接 B): 工具并行执行上限 (对齐 openai-agents max_function_tool_concurrency) */
+private const val MAX_PARALLEL_TOOL_EXECUTIONS = 4
+
+private const val MAX_TOOL_OUTPUT_CHARS = 32 * 1024
+private const val TOOL_OUTPUT_PREVIEW_CHARS = 4 * 1024
+
+
+class GenerationHandler(
+    private val context: Context,
+    private val providerManager: ProviderManager,
+    private val json: Json,
+    private val memoryRepo: MemoryRepository,
+    private val settingsStore: SettingsStore,
+    private val skillManager: me.rerere.rikkahub.data.files.SkillManager? = null,
+) {
+
+    /**
+     * v4.5.17: 仿 OpenCode 请求模式 — 对 opencode.ai 网关按模型协议映射
+     * (models.dev 同源) 分派传输 handler: Anthropic / Google / Responses 模型
+     * 走对应协议, Chat Completions 或非 opencode 网关返回 null (原路径)。
+     * 数据来源与行为语义均在 OpencodeRequestMode 内文档化。
+     */
+    private suspend fun resolveOpencodeStream(
+        provider: ProviderSetting,
+        model: Model,
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
+    ): kotlinx.coroutines.flow.Flow<me.rerere.ai.ui.StreamChunk>? {
+        val protocol = OpencodeRequestMode.resolveFor(provider, model.modelId) ?: return null
+        return when (protocol) {
+            OpencodeProtocol.ANTHROPIC -> {
+                val s = OpencodeRequestMode.toClaudeSetting(provider)
+                providerManager.getProviderByType(s).streamText(s, messages, params)
+            }
+            OpencodeProtocol.GOOGLE -> {
+                val s = OpencodeRequestMode.toGoogleSetting(provider)
+                providerManager.getProviderByType(s).streamText(s, messages, params)
+            }
+            OpencodeProtocol.RESPONSES -> {
+                val s = OpencodeRequestMode.toResponseSetting(provider)
+                providerManager.getProviderByType(s).streamText(s, messages, params)
+            }
+            OpencodeProtocol.CHAT_COMPLETIONS -> null
+        }
+    }
+
+    /** v3.11.16: 网关连接超时独立计数 — header 阶段判死每次 15s, 与快失败型
+     *  (毫秒级判死) 恢复机制互斥, 必须分道计数, 否则 30s/次的败因塞进 10s
+     *  快速预算在第二次尝试后必然爆掉 (v3.11.14 实证: "重试 1 次后仍失败") */
+
+    companion object {
+        /** 工具执行超时 (ms): 工具挂起时返回超时错误, 不阻塞整个生成流程 */
+        // v4.8.72 (用户定版): 60s → 700s — 生成类接口实际耗时 70s 起;
+        // 命令预算放宽到 600s (workspace_shell 上限) 之上再留 100s 余量 (沙箱启动/脚本开销)。
+        private const val TOOL_EXECUTION_TIMEOUT_MS = 700_000L
+
+        // v4.8.130: 断流重试预算 = 三轮链 18 次 (RetryPolicy.kt Stream — 每组
+        // 300ms/700ms/1s/2s/3s/5s 递增退避, 用户定版)。旧 v3.11.24 的 45s 时间
+        // 预算常量 (STREAM_RETRY_BUDGET_MS) 经全库核验已无任何消费点 (其注释
+        // 所述"兜风暴总量"在当前实现中不生效), 本次删除; 静默长等待的判定由
+        // ChatCompletionsAPI 三阶段 watchdog 负责。
+
+        /** v3.11.24 (F2): 同一工具在同一轮生成的累计调用上限 (含成功调用)。
+         *  实证 2026-08-31: mcp__sequentialthinking 连调 6 次, 5 次无信息量,
+         *  客户端全部 success 放行 — 既有熔断只看失败形态, 对"成功空转"无防线。 */
+
+        /** v4.3.1 (BUG10): 审批等待超时 — Pending 工具超过该时长自动转为 Denied。
+         *  死锁形态实证: 工具进 Pending 后 break 等待用户审批, 若审批链路任何
+         *  环节断开 (切会话/进程恢复/UI 未渲染), 生成流永远停在"数据彻底卡死"。
+         *  超时自动拒绝让模型收到拒绝文案后可继续决策 — 不再出现无限等待。 */
+        private const val TOOL_APPROVAL_TIMEOUT_MS = 5 * 60_000L
+
+        /** v4.3.5 (BUG14): 缓存前缀指纹跨轮追踪 — fp 变化时输出组件级对比。
+         *  用户实证: 缓存命中率显著低于 v4.1.x 基线, 静态排查未发现明显漂移源
+         *  (system 各组件静态, tools 名单保序, transformers 幂等) — 用指纹对比
+         *  直接定位: fp_stable=客户端前缀无漂移, 缓存低在网关/上游侧;
+         *  fp_drift=前缀真变了, 组件摘要指出漂移源。 */
+        /** v4.3.10 (BUG15 v2): 图片预算判定常量 — 端点硬上限 8 张 (单张 16MiB/总量 64MiB),
+         *  用户定版预算=8 张。降级标记持久写入 Image.metadata["budget_dropped"],
+         *  随消息落盘, 降级不可逆 → 前缀在已降级位置恒定。 */
+        private const val IMAGE_BUDGET_COUNT = 8  // (保留: 仅供诊断语义参考)
+        // v4.7.24: 图片数量限制精细化管理 (用户定版):
+        //  - 仅 GLM 网关 (模型/Provider 字段含 GLM 且含 OpenCode/Command Code) 限制 6 张
+        //    (GLM 网关硬限 8 张 [too_many_images], 6 留安全余量);
+        //  - 其他所有模型不做数量限制 (放弃原全局 8 张预算)。
+        //  字节限制 (单张/总量 5MiB) 保留用于防请求体炸 (网关 TCP payload)。
+        // (4.8.13: GLM_GATEWAY_IMAGE_LIMIT / IMAGE_BUDGET_SINGLE_BYTES /
+        //  IMAGE_BUDGET_TOTAL_BYTES 移至 ImageBudget.kt — 图片预算体系独立文件)
+
+        private val lastCacheFp = java.util.concurrent.ConcurrentHashMap<String, String>()
+        private val lastCacheParts = java.util.concurrent.ConcurrentHashMap<String, String>()
+    }
+
+    fun generateText(
+        settings: Settings,
+        model: Model,
+        messages: List<UIMessage>,
+        inputTransformers: List<InputMessageTransformer> = emptyList(),
+        outputTransformers: List<OutputMessageTransformer> = emptyList(),
+        assistant: Assistant,
+        memories: List<AssistantMemory>? = null,
+        tools: List<Tool> = emptyList(),
+        maxSteps: Int = 256,
+        processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
+        conversationSystemPrompt: String? = null,
+        conversationModeInjectionIds: Set<Uuid> = emptySet(),
+        conversationLorebookIds: Set<Uuid> = emptySet(),
+        workspaceCwd: String? = null,
+        conversationLoadedDomains: List<String>? = null, // v3.6.10: 保序 (Set 曾致跨轮顺序不定),
+        toolPoolProvider: (() -> List<Tool>)? = null, // v3.6.118: invoke_tools 实时域列表
+        // v3.11.27: 子代理对话不注入用户自定义 prompt (其余正常注入) — 由 ChatService 判定传入
+        skipAssistantPrompt: Boolean = false,
+        // v3.20.0: 会话稳定 ID → x-opencode-session 头 (OpenCode 官方 2026-09-06
+        // 起强制, 自动生效非 opt-in; 非 OpenCode host 不发)
+        conversationId: Uuid? = null,
+    ): Flow<GenerationChunk> = flow {
+        // Trace ID 每次生成唯一 — 之前用 model.id 导致所有 trace 同 ID (日志无法区分)
+        CallTracer.startTrace(id = java.util.UUID.randomUUID().toString().take(8))
+        val provider = model.findProvider(settings.providers) ?: error("Provider not found")
+        val providerImpl = providerManager.getProviderByType(provider)
+
+        var messages: List<UIMessage> = messages
+
+        // === 分层路由状态 ===
+        // 注: 消息发送前统一组装, 各步共享同一构建路径 —
+        // 覆盖所有会发送向 API 的消息 (含 step 循环内累积的新工具输出)
+        // v4.8.121 (用户定版): 对话级工具禁用开关已移除 — 工具注入无"总闸"概念
+        val useLayered = assistant.useLayeredTools && tools.isNotEmpty()
+        // 从 Conversation 恢复已加载的域（Feature #4: 跨对话持久化）
+        // v3.6.10: LinkedHashSet 保序去重 — 加载顺序 = tools 数组顺序 (前缀稳定)
+        val loadedDomains = java.util.LinkedHashSet<String>().apply {
+            conversationLoadedDomains?.let { addAll(it) }
+        }
+
+        // 顶层直连工具 vs 工具区工具 —— 唯一判据 = settings 的顶层集合（出厂模板 + 提升 − 降级）。
+        // v4.8.83: 旧的三套集合（框架 / 移出域管理 / 移进域）合并为这一个，且注入链真正消费它；
+        // 旧 demotedFrameworkTools 只被 UI 读写、注入链从不消费 —— "移进域"是死配置，已删除。
+        val topLevelSet = topLevelToolSetOf(settings)
+        val domainTools = tools.filter { it.name !in topLevelSet }
+        val frameworkTools = tools.filter { it.name in topLevelSet }
+        // v4.7.8: 每轮工具池构建的巨串日志删除 (441 工具排序+拼接 — 热路径开销)
+
+        // Skill 已拆分为独立工具 (skill_<name>)，无需集中提取 skillListText
+
+        // G3 平台空流重试计数 (每次生成仅重试一次)
+        var emptyRetryCount = 0
+        // v4.8.55: 输出长度截断自动续写状态 — per-generation 局部对象 (与 RetryState
+        // 同模式, 经参数传入 generateInternal; 子代理并发生成互不串扰)。每次生成
+        // 上限 MAX_LENGTH_CONTINUATIONS 轮; 正文截断与工具截断共用计数。
+        val lengthContinuationState = LengthContinuationState()
+        // v3.15.1: 重试状态 per-request 局部对象 (根除 v3.11.33 教训的残余形态 —
+        // 类成员在子代理并发生成时互相偷预算/归零互踩; 局部 val 经参数传入
+        // generateInternal, 并发安全)。
+        // receivedAnyData: 本轮是否收到过任何流数据 — 发起/流中断判据的事实依据
+        // (替代计数==0 的弱判据: 输出中断流时计数同样是 0)。
+        val retry = RetryState()
+        // v3.15.1: MCP 工具会话内快照 (缓存稳定) — 旧实现每步 getMcpTools()
+        // 实时拉取, MCP 连接波动/重连时工具列表抖动 → tools JSON 变化 →
+        // DeepSeek 前缀缓存每步全灭 (缓存键含 tools 序列)。快照后循环内复用;
+        // manage_mcp_servers 执行后 DynamicTools 置脏, 下一步检测到才刷新。
+        var mcpToolsSnapshot = DynamicTools.getMcpTools()
+        // v4.8.84: 全量池（顶层 + 区工具 + MCP）提到循环外，只在 MCP 变更时重建。
+        // 旧实现每步 `(domainTools + frameworkTools + mcp)` 都 new 一个 List，而下方所有缓存
+        // 都用引用比较（===）判定命中 → **恒不命中 = 死缓存**，矩阵地图每步全量重算。
+        var allDomainTools: List<Tool> = (domainTools + frameworkTools + mcpToolsSnapshot).distinctBy { it.name }
+
+        // v4.8.84: 矩阵地图缓存 —— 键 = 工具区配置（结构相等）+ 工具池（引用相等）。
+        // 只按工具池做键是错的：会话中途用 manage_zone 改了工具区，地图必须立即反映。
+        var matrixCacheCfg: List<Any?>? = null
+        var matrixCacheTools: List<Tool>? = null
+        var matrixCacheVal: String? = null
+        // 已加载区的工具名集缓存状态
+        var domainNamesCacheDomains: List<String>? = null
+        var domainNamesCacheTools: List<Tool>? = null
+        var domainNamesCacheVal: Set<String> = emptySet()
+        // v4.8.84: 已加载工具区**逐步**持久化 —— 旧实现只在"本轮无工具调用"的收尾点发射，
+        // 中途被打断/取消就整轮加载丢失（下轮模型以为工具还在，实际不在请求数组里）。
+        var loadedEmitted: List<String> = loadedDomains.toList()
+        // ── v4.8.105 (无感衔接 A1/D): 跨步骤共享状态 — 写回变换前缀缓存 + 活性信号 ──
+        // ① 工具写回路径的输出变换前缀缓存: 输入序列在生成期内仅追加、前缀实例稳定,
+        //    每步只重算变化尾部 (此前每步对全量消息重跑 transforms, 上下文越长约慢)。
+        var writeBackTransformCacheIn: List<UIMessage> = emptyList()
+        var writeBackTransformCacheOut: List<UIMessage> = emptyList()
+
+        suspend fun cachedWriteBackTransforms(input: List<UIMessage>): List<UIMessage> {
+            var prefixLen = 0
+            while (prefixLen < input.size && prefixLen < writeBackTransformCacheIn.size &&
+                input[prefixLen] === writeBackTransformCacheIn[prefixLen]
+            ) prefixLen++
+            suspend fun transformFrom(index: Int): List<UIMessage> =
+                input.subList(index, input.size).transforms(
+                    transformers = outputTransformers,
+                    context = context,
+                    model = model,
+                    assistant = assistant,
+                    settings = settings
+                )
+            val result = when {
+                prefixLen == input.size && input.size == writeBackTransformCacheIn.size ->
+                    writeBackTransformCacheOut
+                prefixLen == writeBackTransformCacheIn.size ->
+                    if (prefixLen == 0) transformFrom(0)
+                    else writeBackTransformCacheOut.subList(0, prefixLen) + transformFrom(prefixLen)
+                else -> transformFrom(0)
+            }
+            writeBackTransformCacheIn = input
+            writeBackTransformCacheOut = result
+            return result
+        }
+
+        for (stepIndex in 0 until maxSteps) {
+            Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
+            CallTracer.event("STEP", "step_$stepIndex", "Step $stepIndex begin, ${tools.size} tools loaded, messages=${messages.size}")
+
+            // 每步重建路由器，读取最新 settings（工具区声明随时可改，下一步立即生效）
+            val currentSettings = settingsStore.settingsFlow.value
+            val toolRouter = ZoneRouter(
+                zones = currentSettings.toolZones,
+                links = currentSettings.toolZoneLinks,
+                hiddenZones = currentSettings.hiddenZones,
+                topLevelTools = topLevelToolSetOf(currentSettings),
+            )
+            // 每步刷新 MCP 工具 (支持 manage_mcp_servers 运行时添加) — 合并到域池走懒加载,
+            // 不直接注入函数定义 (813af56d 移植: Token 65K → ~6K)
+            // v3.15.1: 快照复用 — 仅 manage_mcp_servers 置脏后才重新拉取
+            if (DynamicTools.isDirty()) {
+                mcpToolsSnapshot = DynamicTools.getMcpTools()
+                allDomainTools = (domainTools + frameworkTools + mcpToolsSnapshot).distinctBy { it.name }
+            }
+            val currentMcpTools = mcpToolsSnapshot
+
+            // v4.8.84: 已加载工具区有变化就立刻持久化（被打断/取消也不丢）
+            val loadedNow = loadedDomains.toList()
+            if (useLayered && loadedNow != loadedEmitted && loadedNow.isNotEmpty()) {
+                loadedEmitted = loadedNow
+                emit(GenerationChunk.LoadedDomains(loadedNow))
+            }
+
+            // v4.8.84 性能: 矩阵地图缓存 —— 工具区配置 + 工具池 双键
+            val zoneCfgKey: List<Any?> = listOf(
+                currentSettings.toolZones, currentSettings.toolZoneLinks,
+                currentSettings.hiddenZones, topLevelToolSetOf(currentSettings),
+            )
+            val matrixPrompt = if (useLayered) {
+                if (matrixCacheCfg == zoneCfgKey && matrixCacheTools === allDomainTools) {
+                    matrixCacheVal
+                } else {
+                    toolRouter.buildMatrixMap(allDomainTools).also {
+                        matrixCacheCfg = zoneCfgKey
+                        matrixCacheTools = allDomainTools
+                        matrixCacheVal = it
+                    }
+                }
+            } else {
+                null
+            }
+
+            // v3.8.27: 顶层白名单 — 已加载域工具的合法名集合 (域内工具),
+            // 顶层 tools 只放行: 批准框架 + 豁免 + 引擎工具 + 本集合成员
+            // 技能/插件等任何工具未经 invoke_tools 加载绝不暴露在请求顶层
+            // v4.8.14 性能: loadedDomainToolNames 缓存 — 原实现每轮对全部已加载域
+            // 遍历 446 工具过滤 (flatMap+map+toSet)。缓存键 = 已加载域列表 + 工具池
+            // 身份 (域加载/工具池变化时自动重算)。
+            val loadedDomainToolNames: Set<String> = if (useLayered) {
+                val domainsNow = loadedDomains.toList()
+                if (domainNamesCacheDomains == domainsNow && domainNamesCacheTools === allDomainTools) {
+                    domainNamesCacheVal
+                } else {
+                    loadedDomains.flatMap { toolRouter.toolsOf(it, allDomainTools) }
+                        .map { it.name }.toSet().also {
+                            domainNamesCacheDomains = domainsNow
+                            domainNamesCacheTools = allDomainTools
+                            domainNamesCacheVal = it
+                        }
+                }
+            } else emptySet()
+
+            val toolsInternal = if (useLayered) {
+                buildList {
+                    Log.i(TAG, "generateInternal: build tools (layered)($assistant)")
+                    // 框架工具 — 始终可调用, 不走域系统
+                    if (assistant.enableMemory == true) {
+                        val memoryAssistantId = if (assistant.useGlobalMemory) {
+                            MemoryRepository.GLOBAL_MEMORY_ID
+                        } else {
+                            assistant.id.toString()
+                        }
+                        buildMemoryTools(
+                            json = json,
+                            onCreation = { content ->
+                                // v4.8.92: 单对话记忆模式开启时新记忆只挂载到当前对话；
+                                // 未开启则挂到助手，并记录来源对话（UI 小标签）。
+                                val convId = conversationId?.toString()
+                                memoryRepo.addMemory(
+                                    assistantId = memoryAssistantId,
+                                    content = content,
+                                    conversationId = convId.takeIf { assistant.conversationScopedMemory },
+                                    sourceConversationId = convId,
+                                )
+                            },
+                            onUpdate = { id, content ->
+                                // v4.8.92: 守卫 —— 其它对话的单对话记忆不可被模型修改
+                                memoryRepo.updateContentChecked(
+                                    id = id,
+                                    content = content,
+                                    allowedAssistantId = memoryAssistantId,
+                                    currentConversationId = conversationId?.toString(),
+                                )
+                            },
+                            onDelete = { id ->
+                                memoryRepo.deleteMemoryChecked(
+                                    id = id,
+                                    allowedAssistantId = memoryAssistantId,
+                                    currentConversationId = conversationId?.toString(),
+                                )
+                            }
+                        ).let(this::addAll)
+                    }
+                    // v3.11.24: 任务清单工具 — 始终注入 (框架工具, 静态, 零 DB;
+                    // 清单存 tool output 随会话消息持久化 — Cherry 任务功能移植)
+                    add(createTaskTool(conversationId?.toString() ?: "global"))  // v4.8.134 (A2): 清单按对话隔离
+                    // 其他框架工具 (search/conversation/workspace) — 始终注入
+                    addAll(frameworkTools.filter { it.name != "memory_tool" })
+                    // invoke_tools 元工具 — 操作 allDomainTools (含MCP), 模型按需加载
+                    add(toolRouter.createInvokeToolsTool(allDomainTools, loadedDomains, toolPoolProvider))
+                    // 已加载域的工具 (含MCP工具, 通过分类归入域) — 分层注入是底层逻辑,
+                    // 请求体只带框架工具 + 已加载域 (冷启动小, v3.5.1 瘦身成果)。
+                    // 工具总数由 layer1 数量统计告知模型 (配置决定, 静态)。
+                    // v3.6.10: 保持加载顺序 (LinkedHashSet) — 新域追加尾部,
+                    // 已加载前缀不变 → 缓存前缀稳定 (v3.5.58 sorted 曾致加载新域
+                    // 后全量重排, 前缀断裂, 上百K只缓存十几K)
+                    for (domain in loadedDomains) {
+                        addAll(toolRouter.toolsOf(domain, allDomainTools))
+                    }
+                    // skill 工具不分层直注 — 全量加载禁止 (用户铁律)。
+                    // skill_<name> 工具经 invoke_tools("技能") 加载后直接可用 (D8),
+                    // 加载一次对话内保持, 无需 use_skill 两步。
+                }.distinctBy { it.name }
+                    // v3.8.27: 顶层白名单硬过滤 — 除批准框架 + 豁免 + 引擎工具
+                    // 外, 任何工具一律剔除并记错。
+                    // v4.7.14 (用户定版 — "喂到嘴边"): 已加载域工具注入请求 schema
+                    // 恢复。v4.5.12 的"域内工具严禁进顶层"被推翻: 断点实证 —
+                    // invoke_tools 返回的是文本描述而非函数 schema, 模型不敢直接
+                    // 调用仅存在于文字里的 mcp__ 工具, 触发"还没启用/需要注册"的
+                    // 错误心智模型 → 被管理工具吸住。现改为: 区工具
+                    // 经 invoke_tools 加载后, 完整函数定义直接出现在请求 tools 数组
+                    // (从"让模型自己找"变为"喂到嘴边")。
+                    // 缓存影响: loadedDomains 为 LinkedHashSet 保序 (v3.6.10),
+                    // 新域追加尾部, 已加载前缀不变 → 缓存前缀在追加点前保持。
+                    .also { built ->
+                        val approved = topLevelSet +
+                            setOf("memory_tool", "invoke_tools") + loadedDomainToolNames
+                        val leaked = built.filter { it.name !in approved }
+                        if (leaked.isNotEmpty()) {
+                            Log.i(TAG, "意外顶层注入 (不在批准集合): ${leaked.map { it.name }}")
+                        }
+                    }
+                    .filter {
+                        it.name in topLevelSet ||
+                            it.name == "memory_tool" || it.name == "invoke_tools" ||
+                            // 已加载工具区的工具放行 — 完整 schema 注入请求 (喂到嘴边)
+                            it.name in loadedDomainToolNames
+                    }
+                    // v3.6.10: 不再整体重排 — 构建顺序 = 框架(固定) + invoke_tools +
+                    // 已加载域(加载顺序, 域内名字序) — 新域追加尾部前缀稳定 (缓存命中)
+                    .also { built ->
+                        val mcpCount = built.count { it.name.startsWith("mcp__") }
+                        val frameworkCount = built.count { it.name in topLevelSet }
+                        Log.i(TAG, "toolsInternal (layered): ${built.size} total" +
+                            " (mcp=$mcpCount framework=$frameworkCount domain=${built.size - mcpCount - frameworkCount})")
+                    }
+            } else {
+                buildList {
+                    Log.i(TAG, "generateInternal: build tools($assistant)")
+                    if (assistant.enableMemory == true) {
+                        val memoryAssistantId = if (assistant.useGlobalMemory) {
+                            MemoryRepository.GLOBAL_MEMORY_ID
+                        } else {
+                            assistant.id.toString()
+                        }
+                        buildMemoryTools(
+                            json = json,
+                            onCreation = { content ->
+                                // v4.8.92: 单对话记忆模式开启时新记忆只挂载到当前对话；
+                                // 未开启则挂到助手，并记录来源对话（UI 小标签）。
+                                val convId = conversationId?.toString()
+                                memoryRepo.addMemory(
+                                    assistantId = memoryAssistantId,
+                                    content = content,
+                                    conversationId = convId.takeIf { assistant.conversationScopedMemory },
+                                    sourceConversationId = convId,
+                                )
+                            },
+                            onUpdate = { id, content ->
+                                // v4.8.92: 守卫 —— 其它对话的单对话记忆不可被模型修改
+                                memoryRepo.updateContentChecked(
+                                    id = id,
+                                    content = content,
+                                    allowedAssistantId = memoryAssistantId,
+                                    currentConversationId = conversationId?.toString(),
+                                )
+                            },
+                            onDelete = { id ->
+                                memoryRepo.deleteMemoryChecked(
+                                    id = id,
+                                    allowedAssistantId = memoryAssistantId,
+                                    currentConversationId = conversationId?.toString(),
+                                )
+                            }
+                        ).let(this::addAll)
+                    }
+                    addAll(tools)
+                    addAll(currentMcpTools)
+                }.distinctBy { it.name }.sortedBy { it.name }.also { built ->
+                    val mcpCount = built.count { it.name.startsWith("mcp__") }
+                    Log.i(TAG, "toolsInternal (full): ${built.size} total (mcp=$mcpCount)")
+                }
+            }
+
+            // Check if we have tool calls ready to continue after user interaction.
+            val pendingTools = messages.lastOrNull()?.getTools()?.filter {
+                it.canResumeExecution
+            } ?: emptyList()
+
+            val toolsToProcess: List<UIMessagePart.Tool>
+
+            // v4.7.17 (发热修复): 视觉变换前缀缓存 — 此前每次 onUpdateMessages
+            // (50ms 节流) 都对全量 messages 跑 visualTransforms; 长对话下这是
+            // 流式期间最大的重复 CPU 负载 (SoC 发热源)。3 个 output transformer
+            // 均为 per-message 独立变换 (ThinkTag/Regex 逐条 map; Base64Image
+            // 仅 onGenerationFinish) → 按"实例身份"复用未变化前缀的变换结果,
+            // 只对变化尾部重算 (典型流式 = 仅最后 1 条)。前缀不连续 (跨轮重建)
+            // 时自动退化全量, 正确性不受影响。
+            var visualTransformCacheIn: List<UIMessage> = emptyList()
+            var visualTransformCacheOut: List<UIMessage> = emptyList()
+
+            // Skip generation if we have approved/denied tool calls to handle
+            if (pendingTools.isEmpty()) {
+                CallTracer.event("SEND", "pre_api", "Calling generateInternal: model=${model.id}, provider=${provider.javaClass.simpleName}")
+                generateInternal(
+                    assistant = assistant,
+                    settings = settings,
+                    retry = retry,
+                    lengthContinuationState = lengthContinuationState,
+                    messages = messages,
+                    onUpdateMessages = {
+                        messages = it.transforms(
+                            transformers = outputTransformers,
+                            context = context,
+                            model = model,
+                            assistant = assistant,
+                            settings = settings
+                        )
+                        // v4.7.17 (发热修复): 视觉变换增量 — 前缀按实例身份复用,
+                        // 只变换变化尾部 (详见 visualTransformCache 声明处注释)。
+                        suspend fun visualOf(input: List<UIMessage>) = input.visualTransforms(
+                            transformers = outputTransformers,
+                            context = context,
+                            model = model,
+                            assistant = assistant,
+                            settings = settings
+                        )
+                        val input = messages
+                        var prefixLen = 0
+                        while (prefixLen < input.size && prefixLen < visualTransformCacheIn.size &&
+                            input[prefixLen] === visualTransformCacheIn[prefixLen]
+                        ) prefixLen++
+                        val visualResult = when {
+                            prefixLen == input.size && input.size == visualTransformCacheIn.size ->
+                                visualTransformCacheOut
+                            prefixLen == visualTransformCacheIn.size ->
+                                if (prefixLen == 0) visualOf(input)
+                                else visualTransformCacheOut.subList(0, prefixLen) + visualOf(
+                                    input.subList(prefixLen, input.size)
+                                )
+                            else -> visualOf(input)
+                        }
+                        visualTransformCacheIn = input
+                        visualTransformCacheOut = visualResult
+                        emit(GenerationChunk.Messages(visualResult))
+                    },
+                    transformers = inputTransformers,
+                    model = model,
+                    providerImpl = providerImpl,
+                    provider = provider,
+                    tools = toolsInternal,
+                    memories = memories ?: emptyList(),
+                    stream = assistant.streamOutput,
+                    processingStatus = processingStatus,
+                    conversationSystemPrompt = conversationSystemPrompt,
+                    conversationModeInjectionIds = conversationModeInjectionIds,
+                    skipAssistantPrompt = skipAssistantPrompt,
+                    conversationLorebookIds = conversationLorebookIds,
+                    workspaceCwd = workspaceCwd,
+                    layer1Prompt = matrixPrompt,
+                    // v3.20.0: 会话 ID 恢复透传 (x-opencode-session 官方强制)
+                    conversationId = conversationId,
+                )
+                CallTracer.event(
+                    "RECV", "post_api",
+                    "generateInternal returned, messages=${messages.size}",
+                    metrics = sseDiagMetrics()
+                )
+                // v4.8.55: 长度截断自动续写产生的相邻 Text 分片合并 — 续写内容与
+                // 原段拼接为一段连续文本 (渲染无接缝)
+                if (lengthContinuationState.continuationsDone > 0) {
+                    messages = mergeAdjacentTextParts(messages)
+                }
+                messages = messages.visualTransforms(
+                    transformers = outputTransformers,
+                    context = context,
+                    model = model,
+                    assistant = assistant,
+                    settings = settings
+                )
+                messages = messages.onGenerationFinish(
+                    transformers = outputTransformers,
+                    context = context,
+                    model = model,
+                    assistant = assistant,
+                    settings = settings,
+                    // v4.8.185: 对话媒体快照归属 (渲染即固化链)
+                    conversationId = conversationId
+                )
+                messages = messages.slice(0 until messages.lastIndex) + messages.last().copy(
+                    finishedAt = Clock.System.now()
+                        .toLocalDateTime(TimeZone.currentSystemDefault())
+                )
+                emit(GenerationChunk.Messages(messages))
+
+                // G3 平台空流重试: 流式正常结束但模型未产出任何内容
+                // (无文本/无思考/无工具调用) — 平台偶发空流, 重试一次
+                val lastMsg = messages.lastOrNull()
+                val emptyResponse = lastMsg != null && lastMsg.role == MessageRole.ASSISTANT &&
+                    lastMsg.parts.none {
+                        it is UIMessagePart.Text || it is UIMessagePart.Reasoning || it is UIMessagePart.Tool
+                    }
+                if (emptyResponse && emptyRetryCount < 1) {
+                    emptyRetryCount++
+                    CallTracer.event("RETRY", "empty_stream", "Empty assistant response, retrying once (step=$stepIndex)")
+                    messages = messages.dropLast(1)
+                    continue
+                }
+
+                // v4.8.55: 输出长度截断自动续写 (用户实证 GLM-5.3-flash "输出异常
+                // 中断、无报错" 的根治) — finish_reason=length 的纯正文截断此前零
+                // 处理: 无续写、无提示, 对话静默收尾。机制: 下一轮请求级注入续写
+                // 引导 (不落盘不显示), 流式内容经 StreamChunkHandler 直接续写进
+                // 同一条 assistant 消息, 用户侧无新气泡、无引导气泡, 输出无缝接续。
+                // 覆盖两种截断形态: ① 纯正文截断 → 引导从断点续写; ② 工具调用
+                // 截断且修复后无待执行工具 → 引导模型读到错误输出并用更小分段重试
+                // (补齐 v4.5.2 反馈链在"全部调用被截断"场景的静默断点)。
+                // 上限 MAX_LENGTH_CONTINUATIONS 次; 耗尽仍截断 → 明确报错
+                // (杜绝静默截断; 内容已全部保留)。
+                if (lengthContinuationState.lastRoundLengthCut) {
+                    val tailMsg = messages.lastOrNull()
+                    val hasVisibleText = tailMsg?.parts?.any {
+                        it is UIMessagePart.Text && it.text.isNotBlank()
+                    } == true
+                    val hasAnyTool = tailMsg?.parts?.any { it is UIMessagePart.Tool } == true
+                    val noPendingTools = tailMsg?.getTools()?.none { !it.isExecuted } == true
+                    val eligible = (hasVisibleText && !hasAnyTool) ||
+                        (lengthContinuationState.lastRoundToolRepaired && hasAnyTool && noPendingTools)
+                    if (eligible) {
+                        if (lengthContinuationState.continuationsDone < MAX_LENGTH_CONTINUATIONS) {
+                            lengthContinuationState.continuationsDone++
+                            lengthContinuationState.pendingNudge = true
+                            CallTracer.event(
+                                "RETRY", "length_continue",
+                                "finish_reason=length — auto-continue ${lengthContinuationState.continuationsDone}/$MAX_LENGTH_CONTINUATIONS (text=$hasVisibleText repairedTools=${lengthContinuationState.lastRoundToolRepaired})"
+                            )
+                            continue
+                        } else {
+                            CallTracer.event(
+                                "FINISH", "length_exhausted",
+                                "已自动续写 $MAX_LENGTH_CONTINUATIONS 次仍被长度上限截断 (text=$hasVisibleText tools=$hasAnyTool)"
+                            )
+                            throw java.io.IOException(
+                                "输出达到长度上限 (max_tokens) 且自动续写 $MAX_LENGTH_CONTINUATIONS 次后仍被截断 — 已保留全部已生成内容"
+                            )
+                        }
+                    }
+                }
+                lengthContinuationState.lastRoundLengthCut = false
+                lengthContinuationState.lastRoundToolRepaired = false
+
+                val tools = messages.last().getTools().filter { !it.isExecuted }
+                if (tools.isEmpty()) {
+                    // no tool calls, break — emit loadedDomains for persistence
+                    if (useLayered && loadedDomains.isNotEmpty()) {
+                        emit(GenerationChunk.LoadedDomains(loadedDomains.toList()))
+                    }
+                    CallTracer.event("FINISH", "no_tools", "Conversation finished, no pending tools")
+                    break
+                }
+
+                // Check for tools that need approval
+                var hasPendingApproval = false
+                val updatedTools = tools.map { tool ->
+                    // v4.5.14: 顶层恒定后域工具查找回退全量池 — 顶层 tools 只决定
+                    // 模型可见性, 执行不依赖顶层定义。invoke_tools 指引"加载后
+                    // 直接调用"的语义由此恢复 (v4.5.12 只改注入未核执行链,
+                    // 域工具调用撞"未找到"—— 整体呈现教训的活案例)
+                    val toolDef = toolsInternal.find { it.name == tool.toolName }
+                        ?: allDomainTools.find { it.name == tool.toolName }
+                    when {
+                        // Tool needs approval and state is Auto -> set to Pending
+                        // v4.3.1: 同时记录 pending_since 时间戳 (metadata), 供超时判定
+                        toolDef?.needsApproval(tool.inputAsJson()) == true &&
+                            tool.approvalState is ToolApprovalState.Auto -> {
+                            hasPendingApproval = true
+                            tool.copy(
+                                approvalState = ToolApprovalState.Pending,
+                                metadata = (tool.metadata ?: kotlinx.serialization.json.buildJsonObject { })
+                                    .takeIf { it.containsKey("pending_since") }
+                                    ?: kotlinx.serialization.json.buildJsonObject {
+                                        (tool.metadata ?: kotlinx.serialization.json.JsonObject(emptyMap()))
+                                            .forEach { (k, v) -> put(k, v) }
+                                        put("pending_since", kotlinx.serialization.json.JsonPrimitive(
+                                            android.os.SystemClock.elapsedRealtime()))
+                                    }
+                            )
+                        }
+                        // State is Pending -> keep waiting, but auto-deny on timeout
+                        // (v4.3.1: 审批链路任何环节断开都不允许永久卡死生成流)
+                        tool.approvalState is ToolApprovalState.Pending -> {
+                            val since = tool.metadata?.get("pending_since")
+                                ?.jsonPrimitive?.contentOrNull?.toLongOrNull()
+                            if (since != null &&
+                                android.os.SystemClock.elapsedRealtime() - since > TOOL_APPROVAL_TIMEOUT_MS) {
+                                Log.w(TAG, "generateText: tool ${tool.toolName} approval timeout, auto-denied")
+                                CallTracer.event("TOOL", "approval_timeout_${tool.toolName}",
+                                    "Pending approval exceeded " + (TOOL_APPROVAL_TIMEOUT_MS / 1000) + "s, auto-denied")
+                                tool.copy(approvalState = ToolApprovalState.Denied(
+                                    "客户端审批等待超时 (${TOOL_APPROVAL_TIMEOUT_MS / 1000} 秒), 已自动拒绝本次调用。"
+                                    + "如确需执行该工具, 请在用户确认授权后重新发起; 或换用其他工具完成意图。"))
+                            } else {
+                                hasPendingApproval = true
+                                tool
+                            }
+                        }
+
+                        else -> tool
+                    }
+                }
+
+                // If any tools were updated to Pending, update the message and break
+                if (updatedTools != tools) {
+                    val lastMessage = messages.last()
+                    val updatedParts = lastMessage.parts.map { part ->
+                        if (part is UIMessagePart.Tool) {
+                            updatedTools.find { it.toolCallId == part.toolCallId } ?: part
+                        } else {
+                            part
+                        }
+                    }
+                    messages = messages.dropLast(1) + lastMessage.copy(parts = updatedParts)
+                    emit(GenerationChunk.Messages(messages))
+                }
+
+                // If there are pending approvals, break and wait for user
+                if (hasPendingApproval) {
+                    Log.i(TAG, "generateText: waiting for tool approval")
+                    CallTracer.event("PAUSE", "tool_approval", "Waiting for user approval on ${pendingTools.size} tools")
+                    break
+                }
+
+                toolsToProcess = updatedTools
+            } else {
+                // Resuming after user interaction - use the resumable tools directly.
+                Log.i(TAG, "generateText: resuming with ${pendingTools.size} resumable tools")
+                toolsToProcess = messages.last().getTools().filter { it.canResumeExecution }
+            }
+
+            // v4.8.105 (C1): 预探活提前到"工具执行开始前" — 整个工具执行时长用于连接变热,
+            // 轮首门只查打点 (关键路径零等待; 旧实现: 工具完成后才发预探活)。
+            run {
+                val pokeBase = ((provider as? ProviderSetting.OpenAI)?.baseUrl
+                    ?: (provider as? ProviderSetting.Claude)?.baseUrl)
+                val pokeKey = (provider as? ProviderSetting.OpenAI)?.apiKey
+                    ?: (provider as? ProviderSetting.Claude)?.apiKey
+                if (pokeBase != null) {
+                    runCatching { me.rerere.rikkahub.service.ConnectionWarmer.pokeAsync(pokeBase, pokeKey) }
+                }
+            }
+
+            // Handle tools (execute approved tools, handle denied tools)
+            // v3.11.17: 工具连续相同失败聚合 — (工具名+参数指纹) 维度计数。
+            // 实证 (bug 报告): 模型锁死在错误工具名 26 次重复空参调用, 每次都
+            // 只回一行 "Missing: name" 等价于一次失败重复 26 遍, 无任何聚合
+            // 反馈 — 低强度错误信号下模型永远走不出惯性通路。阈值 ≥3 时在
+            // 工具结果前置升级警告, 强制打破循环 (作用域: 全部工具轮次共享)
+            val toolFailureCounts = HashMap<String, Int>()
+            // v4.7.10: 同工具连续失败计数 (不论参数) — 防"修参数被吸"循环 (模型对
+            // 同一工具换参数反复试错时同参 key 每次都变, 旧机制不可见)。成功即清零。
+            val toolConsecutiveFailures = HashMap<String, Int>()
+            // v3.11.24 (F2): 同工具累计调用计数 / 思考调用参数指纹 / 思考终结标记
+            val toolCallCounts = HashMap<String, Int>()
+            // v3.11.30 (DL-1/DL-2): 同工具+同参数幂等命中 → 复用上次成功结果,
+            // 不计数不执行 (正常推进不撞熔断; 同参重复提交直接返回, 不空转烧配额)
+            val idempotentCache = HashMap<String, List<UIMessagePart>>()
+            val executedTools = arrayListOf<UIMessagePart.Tool>()
+            // v4.8.105 (B): 阶段2用的执行队列 (顺序前置检查后入队, 随后并行执行)
+            val execQueue = mutableListOf<QueuedToolExec>()
+            toolsToProcess.forEach { tool ->
+                when (tool.approvalState) {
+                    is ToolApprovalState.Denied -> {
+                        // Tool was denied by user
+                        val reason = (tool.approvalState as ToolApprovalState.Denied).reason
+                        executedTools += tool.copy(
+                            output = listOf(
+                                UIMessagePart.Text(
+                                    json.encodeToString(
+                                        buildJsonObject {
+                                            put(
+                                                "error",
+                                                JsonPrimitive("Tool execution denied by user. Reason: ${reason.ifBlank { "No reason provided" }}")
+                                            )
+                                        }
+                                    )
+                                )
+                            )
+                        )
+                    }
+
+                    is ToolApprovalState.Answered -> {
+                        // Tool was answered by user (e.g., ask_user tool)
+                        val answer = (tool.approvalState as ToolApprovalState.Answered).answer
+                        executedTools += tool.copy(
+                            output = listOf(
+                                UIMessagePart.Text(answer)
+                            )
+                        )
+                    }
+
+                    is ToolApprovalState.Pending -> {
+                        // Should not reach here, but just in case
+                    }
+
+                    else -> {
+                        // Auto or Approved - execute the tool
+                        TraceLogger.log("ToolExec", "${tool.toolName}")
+                            runCatching {
+                            val toolDef = tools.find { toolDef -> toolDef.name == tool.toolName }
+                                ?: toolsInternal.find { toolDef -> toolDef.name == tool.toolName }
+                                ?: allDomainTools.find { toolDef -> toolDef.name == tool.toolName }
+                            if (toolDef == null) {
+                                // v3.11.18: 弃用旧名引导 — 历史会话惯性调用 mcp_connect
+                                // 时给出无损过渡指引 (词族根除: 新清单已无此名)
+                                if (tool.toolName == "mcp_connect") {
+                                    error("工具 mcp_connect 已更名为 manage_mcp_servers (避免与 mcp__ 搜索工具混淆)。请使用 manage_mcp_servers 并补齐 {name, transport, url 或 command}; 若你的意图是搜索, 请直接调用已加载的 mcp__ 域搜索工具")
+                                }
+                                error("工具 ${tool.toolName} 未找到")
+                            }
+                            val args = runCatching {
+                                json.parseToJsonElement(tool.input.ifBlank { "{}" })
+                            }.getOrElse {
+                                error("Invalid tool arguments JSON for ${tool.toolName}: ${it.message}")
+                            }
+                            // v4.7.22: 上游非法结构防御 — 拒绝处理。
+                            // ① 占位符识别: 参数解析已在别处失败时 (inputAsJson 占位符
+                            //    标记流), 直接拒绝执行, 防止占位符被当作参数消费;
+                            // ② 顶层类型: 工具参数必须是 JSON 对象, 数组/标量 = 非法结构。
+                            if (args is kotlinx.serialization.json.JsonObject &&
+                                args["_invalidStructure"] != null) {
+                                error("Error: 上游返回的工具参数结构非法, 已自动拒绝执行 (${tool.toolName})。" +
+                                    "请不要重放相同内容, 修正参数结构后重新调用。")
+                            }
+                            // v3.11.24 (F2): 思考类工具运行时协议校验 — 工具描述里的
+                            // 协议约束此前零执行位 (5 类违规全部 success), 退化循环
+                            // 因此自持。四道门全走 error 通路 (进既有失败聚合计数):
+                            // ① 空/占位内容 ② 序号越界 ③ 已宣告终结仍续调 ④ 同参重复
+                            // v3.11.24: args 顶层必为 JsonObject 才可抽样校验
+                            // v4.8.84: 门控判据重写 —— 旧版关键词表过窄，"把搜索区的备注改成X"
+                            // 这种明确指令也会被拦（现场 bug）。新判据 = 意图关键词 ∪ 命中某个
+                            // 工具区名/显示名 ∪ 命中某个工具名(≥6 字符，避免短词误命中)。
+                            // 只有三者全不沾才拦截 —— 既不误伤合法请求，又能打断无关任务里的误用循环。
+                            val manageGateTools = setOf("manage_zone", "manage_mcp_servers")
+                            if (tool.toolName in manageGateTools) {
+                                val userText = messages.filter { it.role == MessageRole.USER }
+                                    .flatMap { msg -> msg.parts }
+                                    .filterIsInstance<UIMessagePart.Text>()
+                                    .joinToString(" ") { p -> p.text }
+                                val intentKeywords = listOf(
+                                    "管理", "新建", "创建", "添加", "增加", "删除", "删掉", "去掉", "移除",
+                                    "移动", "移到", "放到", "挪", "整理", "归类", "归入", "挂载", "分组",
+                                    "修改", "改成", "改为", "改名", "重命名", "备注", "描述", "触发", "关键词",
+                                    "矩阵", "工具区", "子区", "区域", "分区", "顶层", "归属",
+                                    "MCP", "mcp", "连接", "插件", "安装", "技能", "skill",
+                                )
+                                val zoneNameHit = settingsStore.settingsFlow.value.toolZones.any { z ->
+                                    // 内联 shortName/displayName（routing 包的扩展属性，跨包需 import；
+                                    // 这里直接算，避免引入同名扩展与 model.displayName 相冲）
+                                    val names = listOf(z.id, z.id.substringAfterLast('/'), z.title)
+                                    names.any { n -> n.isNotBlank() && userText.contains(n) }
+                                }
+                                val toolNameHit = allDomainTools.any { t -> t.name.length >= 6 && userText.contains(t.name) }
+                                val hasManageIntent = zoneNameHit || toolNameHit ||
+                                    intentKeywords.any { kw -> userText.contains(kw, ignoreCase = true) }
+                                if (!hasManageIntent) {
+                                    error("Error: 已拦截 — 本工具 (${tool.toolName}) 仅响应用户明确的工具矩阵管理指令" +
+                                        " (例如\"把某工具归入某区\"\"改一下某区的备注\"\"连接某MCP服务器\"), 当前对话中用户没有此类指令。" +
+                                        "如果你只是想使用某个工具 (如搜索/查询), 直接调用它即可 — " +
+                                        "所有工具都可以直接调用, 无需移动或注册。请回到用户的原始任务继续。")
+                                }
+                            }
+                            // v3.11.24 (F2): 同工具累计连调预算 — 成功空转同属退化
+                            // (区别于 v3.11.18 的同键失败聚合)。> 6 次物理拦截。
+                            // v3.11.30 (DL-1/DL-2): 幂等命中在计数前短路 — 同参重放
+                            // 返回缓存结果不占用连调预算 (长任务合法多步推进不受影响)。
+                            val idemKey = tool.toolName + "|" + tool.input.toString()
+                            val cachedResult = idempotentCache[idemKey]
+                            if (cachedResult != null) {
+                                CallTracer.event("TOOL", "idempotent_replay",
+                                    "tool=${tool.toolName} (同参重放, 返回上次结果)",
+                                    metrics = sseDiagMetrics())
+                                executedTools += tool.copy(output = cachedResult)
+                                return@forEach
+                            }
+                            val sameToolCallCount = (toolCallCounts[tool.toolName] ?: 0) + 1
+                            toolCallCounts[tool.toolName] = sameToolCallCount
+                            // v4.5.19 (用户令): 同工具每轮累计调用上限熔断已关闭 —
+                            // "关闭每轮 7 次上限的工具熔断"。长任务 (多步文件/命令
+                            // 工作流) 合法深链被误伤。计数保留供诊断 (CallTracer)。
+                            // 物理性保护仍在: 同键失败熔断 (gateKey >= 6) / 幂等重放 /
+                            // 超时控制 / 输出截断, 对"真死循环"依旧兜底。
+                            // v3.11.18: 熔断物理闸门 — 同键 (工具名+参数指纹) 连续失败
+                            // ≥6 次后拒绝下发执行, 直接返回硬阻断信号 (不执行)。
+                            // 提示型纠错 (v3.11.17) 对已锁死的生成通路是低效的 —
+                            // 错误循环必须物理断开; 前序轮次: 1-2 正常执行反馈,
+                            // 3-5 警告执行, 6+ 拦截。
+                            val gateKey = tool.toolName + "|" + tool.input.hashCode()
+                            if ((toolFailureCounts[gateKey] ?: 0) >= 6) {
+                                Log.w(TAG, "generateText: tool gated off (fused): ${tool.toolName}")
+                                CallTracer.event("TOOL", "fused_gate",
+                                    "tool=${tool.toolName} blocked, same-args failures=${toolFailureCounts[gateKey]}",
+                                    metrics = sseDiagMetrics())
+                                executedTools += tool.copy(
+                                    output = listOf(UIMessagePart.Text(
+                                        "⛔ 该调用已被客户端熔断拦截, 本次未执行。" +
+                                        "工具 ${tool.toolName} 已连续以完全相同的参数失败至少 5 次, 客户端已禁止继续执行该参数组合。" +
+                                        "更换参数或工具后才可能通过 (若重新调用会立刻被再次拦截)。" +
+                                        "请回到意图层重新决策: 核对工具名 → 补齐参数 → 或换用其他工具 (invoke_tools) → 或以文字说明放弃该路径。")))
+                                return@runCatching
+                            }
+                            Log.i(TAG, "generateText: queue tool ${toolDef.name} with args: $args")
+                            // v4.8.105 (B): 执行与记账分离 — 此处仅入队;
+                            // 阶段2 并行执行, 阶段3 保序记账 (与旧顺序语义一致)
+                            val toolStartAt = System.currentTimeMillis()
+                            CallTracer.event("TOOL", "exec_${toolDef.name}", "Executing ${toolDef.name}, args=${tool.input.length}c")
+                            execQueue += QueuedToolExec(tool, toolDef, args, idemKey, toolStartAt)
+                        }.onFailure {
+                            // 工具执行超时: 写回超时错误, 让模型继续 (不传播为取消)
+                            if (it is TimeoutCancellationException) {
+                                Log.w(TAG, "generateText: tool ${tool.toolName} timed out after ${TOOL_EXECUTION_TIMEOUT_MS}ms")
+                                CallTracer.event("TOOL", "timeout_${tool.toolName}", "Tool execution timed out")
+                                executedTools += tool.copy(
+                                    output = listOf(
+                                        UIMessagePart.Text(
+                                            json.encodeToString(
+                                                buildJsonObject {
+                                                    put(
+                                                        "error",
+                                                        JsonPrimitive("工具执行超时(${TOOL_EXECUTION_TIMEOUT_MS / 1000}s): ${tool.toolName}")
+                                                    )
+                                                }
+                                            )
+                                        )
+                                    )
+                                )
+                                return@onFailure
+                            }
+                            // 取消必须向上传播，否则停止生成会被误报为工具执行错误
+                            if (it is CancellationException) throw it
+                            it.printStackTrace()
+                            executedTools += tool.copy(
+                                output = listOf(
+                                    UIMessagePart.Text(
+                                        json.encodeToString(
+                                            buildJsonObject {
+                                                put(
+                                                    "error",
+                                                    JsonPrimitive(buildString {
+                                                        // v4.7.9: 堆栈净化 — 完整 Kotlin 堆栈曾全量回传模型,
+                                                        // 污染上下文 (暴露内部结构, 强化"工具系统需管理"错觉;
+                                                        // GLM 吸住现场的报错文本含 java.lang...at me.rerere...
+                                                        // 三连重复)。堆栈只进日志, 模型只见简洁错误。
+                                                        append("[工具错误] ${it.message ?: it.javaClass.simpleName}")
+                                                    })
+                                                )
+                                            }
+                                        )
+                                    )
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
+            // ── v4.8.110 (B·对齐 Claude Code toolOrchestration): 工具执行分区 —
+            //    连续「并发安全」工具 (只读) 成批并行 (有界 4 路); 非安全工具 (shell/
+            //    edit/写文件/管理/MCP 等, 保守默认) 单个串行。v4.8.105 的「无差别并行」
+            //    是有副作用工具互踩的误判根源 (用户实证"并行调用失败"老毛病);
+            //    CC 模型 = partitionToolCalls: 执行可并行, 记账必须保序 (阶段3 不变)。
+            val execOutcomes: List<ToolExecOutcome> = if (execQueue.isEmpty()) {
+                emptyList()
+            } else {
+                val outcomeAcc = ArrayList<ToolExecOutcome>(execQueue.size)
+                partitionExecQueueByConcurrency(execQueue).forEach { (batch, safe) ->
+                    if (safe) {
+                        val batchOutcomes = coroutineScope {
+                            val sem = Semaphore(MAX_PARALLEL_TOOL_EXECUTIONS)
+                            batch.map { item -> async { sem.withPermit { executeToolItemSafe(item) } } }.awaitAll()
+                        }
+                        outcomeAcc += batchOutcomes
+                    } else {
+                        batch.forEach { item -> outcomeAcc += executeToolItemSafe(item) }
+                    }
+                }
+                outcomeAcc
+            }
+
+            // ── v4.8.105 (B): 阶段3 — 保序记账 (截断 → 失败聚合 → 幂等缓存 → 写回;
+            //    与旧串行实现的判定顺序/文本逐字一致, 只把"执行"挪去了阶段2) ──
+            execOutcomes.forEach { outcome ->
+                val tool = outcome.item.tool
+                val toolDef = outcome.item.toolDef
+                val idemKey = outcome.item.idemKey
+                try {
+                    if (outcome.error != null) throw outcome.error
+                    val result = outcome.result ?: error("工具执行无产出")
+                    // v4.8.121「本对话产出」: 写类工作区工具成功 → 登记产出文件
+                    // (update{} 持锁读-改-写, 不整快照覆盖)
+                    runCatching {
+                        val cid = conversationId?.toString() ?: return@runCatching
+                        val produced = me.rerere.rikkahub.data.ai.tools.ProducedFiles.extractPath(
+                            tool.toolName,
+                            outcome.item.args as? kotlinx.serialization.json.JsonObject,
+                            workspaceCwd,
+                        ) ?: return@runCatching
+                        settingsStore.update { s ->
+                            s.copy(
+                                conversationProducedFiles = me.rerere.rikkahub.data.ai.tools.ProducedFiles.record(
+                                    current = s.conversationProducedFiles,
+                                    conversationId = cid,
+                                    toolName = tool.toolName,
+                                    path = produced,
+                                    nowMs = System.currentTimeMillis(),
+                                )
+                            )
+                        }
+                        CallTracer.event("TOOL", "produced_direct", "${tool.toolName}: $produced")
+                    }
+                    val toolStartAt = outcome.item.toolStartAt
+                    val toolEndAt = outcome.endAt
+                    val hasShellAccess = toolsInternal.any { it.name == "workspace_shell" }
+                    val truncated = maybeTruncateToolOutput(tool.toolCallId, result, hasShellAccess, tool.toolName)
+                    // v3.11.17: 连续相同失败熔断 — 判据: 结果文本以失败形态开头
+                    // (Missing:/Error/Invalid/MCP manager not initialized/未找到/超时)。
+                    // key = 工具名 + 参数指纹; 连续 ≥3 次相同失败后在回传文本
+                    // 前插入升级警告: 告知重复无用 + 给出三条修正路径。
+                    val finalOutput: List<UIMessagePart> = run {
+                        val failText = truncated.filterIsInstance<UIMessagePart.Text>()
+                            .joinToString(" ") { it.text }.trim()
+                        // v4.7.10: 判定扩展 — 现场 (GLM 吸住) 的两种错误形态此前
+                        // 均不匹配旧列表: ① 异常路径 JSON "{\"error\":...}"
+                        // (v4.7.9 起 "[工具错误]..."): ② 工具自身错误文本
+                        // "无效目标域..." / "工具 'xxx' 不存在"。失败计数从未
+                        // 累计 → 防循环机制从未触发 — 这就是"没拦住"的代码级原因。
+                        val isFailure = failText.startsWith("Missing:") ||
+                            failText.startsWith("Error") ||
+                            failText.startsWith("Invalid") ||
+                            failText.startsWith("MCP manager not initialized") ||
+                            failText.contains("工具 " + tool.toolName + " 未找到") ||
+                            failText.startsWith("Tool execution timed out") ||
+                            failText.startsWith("无效") ||
+                            failText.startsWith("工具 '") ||
+                            failText.contains("[工具错误]") ||
+                            (failText.startsWith("{") && failText.contains("\"error\""))
+                        if (isFailure) {
+                            val key = tool.toolName + "|" + tool.input.hashCode()
+                            val n = (toolFailureCounts[key] ?: 0) + 1
+                            toolFailureCounts[key] = n
+                            // v4.7.10: 同工具连续失败计数 (不论参数) — 防"修参数被吸"
+                            // 循环。模型对同一工具换参数反复试错时, 同参 key 每次都
+                            // 不同 (旧机制看不见), 此计数专治该形态。
+                            val cn = (toolConsecutiveFailures[tool.toolName] ?: 0) + 1
+                            toolConsecutiveFailures[tool.toolName] = cn
+                            if (n >= 3) {
+                                CallTracer.event("TOOL", "failure_loop_break",
+                                    "same-failure x" + n + ": " + tool.toolName, metrics = sseDiagMetrics())
+                                return@run listOf(UIMessagePart.Text(
+                                    "⚠️ 这是第 " + n + " 次以完全相同的参数调用 " + tool.toolName + " 并得到相同错误 (错误: " + failText.take(120) + ")。" +
+                                    "以相同方式重复该调用不会产生不同结果, 请立即停止重复。可选路径: " +
+                                    "1) 重新确认你实际意图的工具名 (检查工具列表, 是否写错或选了错误工具); " +
+                                    "2) 若是参数问题, 先补齐必填参数再调用; " +
+                                    "3) 若该工具确实不可用, 换用其他工具 (可用 invoke_tools 查看可用工具) 或放弃该路径, 以文字向用户说明情况。" +
+                                    "禁止再发出与本次相同的调用。")) + truncated
+                            }
+                            if (cn >= 2) {
+                                // v4.7.13: 软提示 → 强制指令升级 (分析报告实证:
+                                // "软反馈对已经锚定的错误模式无效, 这是连续 N 次
+                                // 不改的直接原因"; 现场: 思考说 A 动作做 B, 错误
+                                // 历史自锚定)。阈值 3→2 提前打断, 文本改为指令式:
+                                // 明确"停止 X"+"直接调用 Y"的下一步, 不再给选择题。
+                                CallTracer.event("TOOL", "tool_loop_break",
+                                    "consecutive-fail x" + cn + ": " + tool.toolName, metrics = sseDiagMetrics())
+                                return@run listOf(UIMessagePart.Text(
+                                    "【系统强制指令】你已连续 " + cn + " 次调用 " + tool.toolName + " 失败或被拦截。立即停止调用它 — 它无法帮助你完成任务。" +
+                                    "正确的下一步: 直接发出你真正需要的工具调用。例如搜索/查资料任务: 直接调用已加载的搜索工具" +
+                                    " (如 mcp__websearch__webSearchStd, 参数 {\"search_query\": \"你的查询\"})。" +
+                                    "所有已加载工具均已注册、可直接调用 — 无需移动、注册或任何准备动作。" +
+                                    (if (cn >= 4) "【最终警告】再次调用 " + tool.toolName + " 不会被受理, 也不会产生不同结果。" else "") +
+                                    " (原始错误: " + failText.take(100) + ")")) + truncated
+                            }
+                        } else {
+                            toolFailureCounts.remove(tool.toolName + "|" + tool.input.hashCode())
+                            toolConsecutiveFailures.remove(tool.toolName)
+                        }
+                        truncated
+                    }
+                    val outChars = result.filterIsInstance<UIMessagePart.Text>().sumOf { it.text.length }
+                    CallTracer.event("TOOL", "result_${toolDef.name}",
+                        "Exe输出: ${result.size} parts, ${outChars}c",
+                        mapOf("tool" to toolDef.name, "parts" to "${result.size}"))
+                    idempotentCache[idemKey] = finalOutput
+                    executedTools += tool.copy(
+                        output = finalOutput,
+                        startedAt = toolStartAt,
+                        finishedAt = toolEndAt
+                    )
+                    // v4.5.21: 真实行动计数 — 非 task_tool 工具的成功执行。
+                    // 任务清单空转检测的事实依据 (清单更新 vs 真实动作的比例)。
+                    if (toolDef.name != "task_tool") {
+                        me.rerere.rikkahub.data.ai.tools.TaskStateStore.of(conversationId?.toString() ?: "global").realActionCounter += 1  // v4.8.134 (A2): 按对话键
+                    }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    e.printStackTrace()
+                    executedTools += tool.copy(
+                        output = listOf(
+                            UIMessagePart.Text(
+                                json.encodeToString(
+                                    buildJsonObject {
+                                        put(
+                                            "error",
+                                            JsonPrimitive(buildString {
+                                                append("[工具错误] ${e.message ?: e.javaClass.simpleName}")
+                                            })
+                                        )
+                                    }
+                                )
+                            )
+                        )
+                    )
+                }
+            }
+
+            // v4.8.122「本对话产出」·工作区文件系统监控 (用户意见: 编辑/生成/移动等
+            // 全部登记, "容易且效果好"): shell/job 等一切生成路径的兜底 — 扫描本回合
+            // 窗口内被创建/修改的工作区文件并批量登记 (mtime ≥ 回合起点; 排除
+            // .versions 快照; 上限 200; 与直登记同路径去重)。
+            runCatching {
+                val cid = conversationId?.toString() ?: return@runCatching
+                val wsId = assistant.workspaceId?.toString() ?: return@runCatching
+                val scanTools = setOf("workspace_shell", "workspace_job")
+                val hits = execOutcomes.filter { it.item.tool.toolName in scanTools }
+                if (hits.isEmpty()) return@runCatching
+                val sinceMs = hits.minOf { it.item.toolStartAt } - 2_000L
+                val paths = withContext(Dispatchers.IO) {
+                    me.rerere.rikkahub.data.ai.tools.ProducedFiles.scanWorkspaceSince(
+                        wsId, sinceMs, cwdScope = workspaceCwd,
+                    )
+                }
+                if (paths.isEmpty()) return@runCatching
+                settingsStore.update { s ->
+                    // v4.8.146 (用户复核"记录不准确, 多对话场景注意"): 剔除"近期已被其它对话
+                    // 直登记"的路径 — 直登记 (write/edit 工具参数) 是高置信归属, 扫描命中它
+                    // 说明该文件是邻居对话的产出, 不算本对话产出。
+                    val foreignRecent = s.conversationProducedFiles
+                        .filterKeys { it != cid }
+                        .values
+                        .flatten()
+                        .filter { it.atMs >= sinceMs }
+                        .mapTo(HashSet()) { it.path }
+                    val filtered = paths.filter { it !in foreignRecent }
+                    s.copy(
+                        conversationProducedFiles = me.rerere.rikkahub.data.ai.tools.ProducedFiles.recordBatch(
+                            current = s.conversationProducedFiles,
+                            conversationId = cid,
+                            entries = filtered.map { path -> "workspace_scan" to path },
+                            nowMs = System.currentTimeMillis(),
+                        )
+                    )
+                }
+                CallTracer.event(
+                    "TOOL", "produced_scan",
+                    "workspace scan +${paths.size} (cwd=${workspaceCwd ?: "/"}): ${paths.take(6).joinToString()}"
+                )
+            }
+
+            // v3.6.74: 上下文降维方向废弃 — 工具输出原样保留, 不做压缩
+            val compressedTools = executedTools
+
+            if (executedTools.isEmpty()) {
+                // No results to add (all tools were pending)
+                break
+            }
+
+            // Update last message with executed tools (NOT create TOOL message)
+            val lastMessage = messages.last()
+            val updatedParts = lastMessage.parts.map { part ->
+                if (part is UIMessagePart.Tool) {
+                    compressedTools.find { it.toolCallId == part.toolCallId } ?: part
+                } else part
+            }
+            messages = messages.dropLast(1) + lastMessage.copy(parts = updatedParts)
+            emit(
+                GenerationChunk.Messages(
+                    // v4.8.105 (A1): 前缀缓存 — 每步只重算变化的尾部 (此前全量重跑)
+                    cachedWriteBackTransforms(messages)
+                )
+            )
+
+            // v4.8.105 (E): 计时打点 — 工具完成 → 下一轮首包 (resume_gap, 仅诊断)
+            retry.lastToolEndAt = System.currentTimeMillis()
+        }
+        // v3.11.6: 生成结束兜底清除重试提示 — 取消/异常路径不经过
+        // 成功/预算耗尽分支, 提示会残留 (用户: 恢复后提示必须消失)
+        processingStatus.value = null
+        CallTracer.finishTrace()
+
+    }.flowOn(Dispatchers.IO)
+
+    // v3.8.6: 抓取 SSE 诊断现场 (TraceLogger 中 tag=SSE 的最近条目),
+    // 挂到 CallTracer 事件的 metrics, 运行日志页直接可见
+    private fun sseDiagMetrics(): Map<String, String> {
+        val lines = me.rerere.ai.util.TraceLogger.takeTagged("SSE", 12)
+        return if (lines.isEmpty()) emptyMap() else mapOf("sse_diag" to lines.joinToString(" | "))
+    }
+
+
+    private suspend fun generateInternal(
+        assistant: Assistant,
+        settings: Settings,
+        retry: RetryState,
+        lengthContinuationState: LengthContinuationState,
+        messages: List<UIMessage>,
+        onUpdateMessages: suspend (List<UIMessage>) -> Unit,
+        transformers: List<MessageTransformer>,
+        model: Model,
+        providerImpl: Provider<ProviderSetting>,
+        provider: ProviderSetting,
+        tools: List<Tool>,
+        memories: List<AssistantMemory>,
+        stream: Boolean,
+        processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
+        conversationSystemPrompt: String? = null,
+        conversationModeInjectionIds: Set<Uuid> = emptySet(),
+        conversationLorebookIds: Set<Uuid> = emptySet(),
+        workspaceCwd: String? = null,
+        layer1Prompt: String? = null,
+        // v3.11.27: 子代理对话不注入用户自定义 prompt (其余正常注入)
+        skipAssistantPrompt: Boolean = false,
+        conversationId: Uuid? = null,
+    ) {
+        val startMs = System.currentTimeMillis()
+        // v3.6.74 (4.1.1 重申): 消息一律原样发送, 零改动。
+        // 4.1.0 的无条件压缩是严重回归 (4 条裁 2 条/6 条裁 4 条), 已回滚。
+        // 60% 默认算法仅作用于手动"压缩历史"功能的默认保留范围
+        // (ContextCompressor.recommendedKeepMessages), 正常对话严禁任何截断。
+        val effectiveMessages: List<UIMessage> = messages
+        // v4.3.10: 图片预算判定+持久标记 — 标记随流式基准落盘 (降级不可逆),
+        // 请求构造 (internalMessages) 与 UI 回写共用同一标记视图
+        // v4.5.6: 图片上传模式分流 — compat (旧形态) 承诺"不转移、不降级",
+        // 预算持久标记必须整体跳过 (否则工具图/user 图仍会被降级占位, 与
+        // SettingClientPage 的描述不符); classic 维持预算闭环。
+        // v4.7.24: 数量上限按模型判定 — 仅 GLM 网关 (GLM 字段 + OpenCode/CC 字段)
+        // 限 6 张; 其他模型无数量限制 (字节限制仍在 applyImageBudgetMarking 内)
+        // v4.8.107 (用户实证·"上传图片后缓存全崩"根治 — 对账原版后的修正):
+        // 图片预算/降级体系只对**严格网关** (GLM 经 OC/CC — 历史 too_many_images /
+        // TCP payload 场景) 生效; 普通 provider (DeepSeek/OpenAI 等) 回归原版形态 —
+        // 图直发、零预算干预。原版对所有 provider 均无此体系且无此问题; 预算标记
+        // 会改写历史图的 metadata/出站形态, 是"含图对话每轮请求构建"里唯一的
+        // 系统性自有偏差 (每上传即触发, 与原版最简单的路径形成最贵的差异)。
+        val strictImageGateway = isGlmGatewayModel(model, provider)
+        val imageCountLimit = if (strictImageGateway) GLM_GATEWAY_IMAGE_LIMIT
+            else Int.MAX_VALUE
+        val markedMessages: List<UIMessage> =
+            if (settings.imageUploadMode == "compat" || !strictImageGateway) effectiveMessages
+            else applyImageBudgetMarking(effectiveMessages, imageCountLimit)
+
+        // 4.0.7: abilities 根本修复 — 自定义模型 (listModels 不带 abilities,
+        // UI 未编辑过的) abilities 恒空 → 思考控制/工具门控全哑。注册表按
+        // modelId 兜底 (原版 ModelRegistry 语义), 命中即还原真实能力。
+        // 置于 transforms 之前: transformer 链同样消费 abilities/modalities。
+        // 4.1.2 根治 (思考控制反复发作的最终根因): 旧逻辑仅 abilities 完全为空时兜底,
+        // abilities 非空但缺 REASONING 的模型 (历史数据/listModels 部分返回/编辑过的模型)
+        // 永远不兜底 → 发送侧 thinkingControlFields 门控 false → 请求体无 thinking 字段
+        // → 服务端按默认 auto → 用户任何档位调整都无效 ("固定路由到自动")。
+        // 注册表语义 = 该 modelId 真实具备的能力 (原版 ModelRegistry 定义), 差集合并只增
+        // 不减: 命中注册表的模型 abilities 恒正确, 与 UI 门控同源, 单点消除。
+        val modelWithAbilities = model.copy(
+            abilities = model.abilities + ModelRegistry.MODEL_ABILITIES.getData(model.modelId)
+        )
+        if (modelWithAbilities.abilities != model.abilities) {
+            Log.i(TAG, "Abilities resolved: ${model.modelId} ${model.abilities} → ${modelWithAbilities.abilities}")
+        }
+        // 4.8.32 (性能): 请求组装段整体移入 Dispatchers.Default — 此前完全在
+        // 主线程执行 (AppScope=Main): system prompt 拼装 / tools prompt / 变换链 /
+        // 记忆注入 / 指纹诊断 / enforce。每轮 step 重复执行, 长会话与工具循环时
+        // 直接抢占主线程 (发送瞬间/流式期间的卡顿源之一)。
+        // 段内无主线程依赖: CallTracer.event 有 mutex, lastCacheFp/Parts 为
+        // ConcurrentHashMap, transforms 为 suspend 纯数据链。
+        var internalMessages = withContext(Dispatchers.Default) {
+        var built: List<UIMessage> = buildList {
+            val sysPromptLen: Int
+            val memPromptLen: Int
+            val toolsPromptLen: Int
+            var layer1Len: Int = 0
+
+            // 原版 SystemPromptBuilder (stable/volatile 分区) 移植:
+            // stable = 缓存锚点 + 系统提示 + Layer1 + 工具提示 (跨请求字节一致 → 缓存前缀)
+            // volatile = 记忆 (易变 → 放前缀之后, 不破坏缓存)
+            // 原版注释: "Volatile text in the prefix busts the cache every turn"
+            val effectiveSystemPrompt =
+                if (assistant.allowConversationSystemPrompt && !conversationSystemPrompt.isNullOrBlank()) {
+                    conversationSystemPrompt
+                } else {
+                    assistant.systemPrompt
+                }
+            // stable 部分: 缓存锚点 (静态规则块 ~870c) + 系统提示 + Layer1 域概览
+            val stablePrompt = buildString {
+                // 缓存锚点 — 静态规则块 + 当前模型名 (v3.6.6: 模型配置是缓存键一部分,
+                // 模型切换 → Prompt 同步变化 → 缓存按模型隔离, 同模型前缀稳定)
+                append(buildCacheAnchor(model.displayName))
+                // v3.11.27: 子代理对话跳过用户 prompt (用户要求: 不注入用户设置的 prompt,
+                // 其余正常注入) — 子代理有独立 system prompt (SubAgentRun), 注入会污染其行为
+                if (!skipAssistantPrompt && effectiveSystemPrompt.isNotBlank()) {
+                    appendLine()
+                    append(effectiveSystemPrompt)
+                }
+                // Layer1 域概览 — 静态 (域配置变化才更新)
+                if (layer1Prompt != null) {
+                    appendLine()
+                    append(layer1Prompt)
+                }
+            }
+            sysPromptLen = stablePrompt.length
+            layer1Len = layer1Prompt?.length ?: 0
+
+            // 框架工具 systemPrompt (瘦身 — v2.9.4/v3.5.1: 其余工具描述在请求 tools 数组,
+            // 全量注入会导致工具池膨胀时冷启动 system 70K+ tokens)
+            val toolPrompts = tools
+                .filter { it.name in topLevelToolSetOf(settings) && it.name != "invoke_tools" }
+                .map { tool -> tool.systemPrompt(model, effectiveMessages) }
+                .filter { it.isNotBlank() }
+            toolsPromptLen = toolPrompts.sumOf { it.length }
+
+            // volatile 部分: 记忆 (易变, 放缓存前缀之后)
+            val memoryPrompt = if (assistant.enableMemory) buildMemoryPrompt(memories = memories) else ""
+            memPromptLen = memoryPrompt.length
+
+            // v3.6.105: 强制启动技能 — 对话开始时把技能正文注入 system 尾部
+            // (模型每轮必读; 缓存前缀不含尾部追加, 不影响命中)
+            val forcedSkillAddendum = buildString {
+                for (skillName in assistant.forcedSkills) {
+                    val body = runCatching {
+                        skillManager?.readSkillBody(skillName)
+                    }.getOrNull()?.trim()
+                    if (!body.isNullOrBlank()) {
+                        if (isNotEmpty()) appendLine()
+                        appendLine("## Forced Skill: $skillName (对话开始时强制启动, 每轮必须遵守)")
+                        appendLine(body)
+                    }
+                }
+            }.ifBlank { null }
+
+            val (stableSystem, volatileSystem) = SystemPromptBuilder().buildSections(
+                assistantPrompt = stablePrompt,
+                // v4.5.3: 记忆不再进 system — 记忆在轮间变化 (memory_tool 写入),
+                // 位于历史之前时每次变化都把其后全部历史缓存打断 (19:37 trace:
+                // 图片会话调 memory_tool 后多轮 cached=0, 无图会话 92% 对照)。
+                // 记忆改注入消息尾部 (见 transforms 之后), 其前历史全部稳定。
+                memoryPrompt = "",
+                recentChatsPrompt = "",   // 本项目未启用 recent chats 参考
+                toolPrompts = toolPrompts,
+                systemAddendum = forcedSkillAddendum,
+            )
+            // v4.5.3 记忆位置策略 (根治): 记忆放消息尾部 (历史之后) — 动态内容
+            // 在历史之前会使其后全部缓存失效, 只有尾部追加才缓存友好
+            val cacheFpSystem = listOf(stableSystem, volatileSystem).filter { it.isNotBlank() }.joinToString("\n")
+            // v3.5.58 缓存核验: 请求体前缀指纹 (stable system+tools 序列化稳定)
+            // v4.3.5 (BUG14): 组件级漂移自诊断 — fp 相同=前缀稳定 (缓存低在网关侧);
+            // fp 变化=客户端前缀漂移, 组件摘要直接指出漂移源 (stable/volatile/工具名单)
+            // v4.8.14: segHash 记忆化状态 (单轮 step 生命周期, 见下方 segHash 实现)
+            var segHashLastInput: String? = null
+            var segHashLastOutput: String = ""
+            try {
+                // v4.3.10: 历史稳定性摘要 — 排除尾部 2 条 (每轮合法追加), 若更早的
+                // 历史被改写 (压缩/截断/降级文本变化), 摘要变化 → fp_drift 直接指出
+                val histStable = markedMessages.dropLast(2)
+                val histSum = histStable.sumOf { m -> m.parts.sumOf { p ->
+                    when (p) {
+                        is UIMessagePart.Text -> p.text.length
+                        is UIMessagePart.Reasoning -> p.reasoning.length
+                        is UIMessagePart.Tool -> p.output.sumOf { o -> (o as? UIMessagePart.Text)?.text?.length ?: 0 }
+                        else -> 0
+                    }
+                } }
+                val histFp = "${histStable.size}:${histSum}"
+                // v4.8.57: tools 全量签名 (名称+描述+入参 schema) — 原仅名称哈希, schema/
+                // 描述漂移 (MCP 更新/工具定义变化) 时 fp_stable 假象 (缓存被打断却归因
+                // 不到); Tool 含函数字段不可直接 hashCode, 显式取稳定字段。
+                val toolsSig = tools.joinToString("|") { t ->
+                    t.name + "#" + t.description + "#" +
+                        runCatching { t.parameters() }.getOrNull().toString()
+                }
+                val fp = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest((cacheFpSystem + toolsSig + "|" + histFp).toByteArray())
+                    .take(8).joinToString("") { "%02x".format(it) }
+                // v4.5.4: fp 分量化 — 此前只打各段长度, 长度相同而内容变化时
+                // (如记忆条目 update) drift 归因失明, 全落在 hist 上。各段带短
+                // hash 后 drift 直接指认变化段。
+                // v4.8.14 性能: segHash 记忆化 — stableSystem/volatileSystem 在同一
+                // 生成链的每轮 step 中内容恒定, 原实现每轮对二者做 SHA-256 (含大
+                // system 字符串) 属重复计算。按内容缓存, 变化时自动重算。
+                val segHash: (String) -> String = { s ->
+                    if (s == segHashLastInput) segHashLastOutput
+                    else {
+                        val out = java.security.MessageDigest.getInstance("SHA-256")
+                            .digest(s.toByteArray()).take(4).joinToString("") { "%02x".format(it) }
+                        segHashLastInput = s
+                        segHashLastOutput = out
+                        out
+                    }
+                }
+                // v4.8.14 性能: 诊断摘要轻量化 — 原 hist 段对全部消息 ID 做
+                // joinToString + SHA-256 (长会话 O(M) 字符串构建, 256 轮工具循环
+                // 下线性累积)。改用 size+sum+首尾 ID 组合的 O(1) 摘要, 诊断语义
+                // 等效 (ID 序变化/数量变化/内容长度变化均可检出)。
+                // v4.8.57: 中位 ID 纳入 (首/中/尾) — 中段消息被改写时可检出
+                val histEdge = (histStable.firstOrNull()?.id?.toString() ?: "") +
+                    "|" + (histStable.getOrNull(histStable.size / 2)?.id?.toString() ?: "") +
+                    "|" + (histStable.lastOrNull()?.id?.toString() ?: "")
+                val parts = "stable=${stableSystem.length}c#${segHash(stableSystem)} " +
+                    "volatile=${volatileSystem.length}c#${segHash(volatileSystem)} " +
+                    "ntools=${tools.size} toolsHash=${toolsSig.hashCode()} hist=${histStable.size}m/${histSum}c#${histEdge.hashCode()}"
+                val key = conversationId?.toString() ?: "global"
+                val prev = lastCacheFp.put(key, fp)
+                when {
+                    prev == null ->
+                        CallTracer.event("CACHE", "fp_init", "fp=$fp | $parts")
+                    prev == fp ->
+                        CallTracer.event("CACHE", "fp_stable", "fp=$fp unchanged | $parts")
+                    else -> CallTracer.event("CACHE", "fp_drift",
+                        "PREFIX CHANGED prev=$prev now=$fp | prev[${lastCacheParts[key]}] now[$parts]")
+                }
+                lastCacheParts[key] = parts
+                Log.i(TAG, "cache-fp: $fp (system=${cacheFpSystem.length}c tools=${tools.size})")
+            } catch (_: Exception) {
+                // 技术债审计 (v3.19.0): 此处吞错仅影响 cache-fp 诊断日志, 不在
+                // 用户链路 — 静默保留属设计权衡, 非缺陷
+            }
+            // v4.5.3: stable → 历史/当前轮 (记忆已移至消息尾部, 不在前缀内)
+            val fullSystem = listOf(stableSystem, volatileSystem).filter { it.isNotBlank() }.joinToString("\n")
+            if (fullSystem.isNotBlank()) {
+                val estTokens = fullSystem.length / 2.5
+                Log.i(TAG, "System prompt breakdown: system=${sysPromptLen}c (~${(sysPromptLen/2.5).toInt()}t)" +
+                    " layer1=${layer1Len}c (~${(layer1Len/2.5).toInt()}t)" +
+                    " tools=${toolsPromptLen}c (~${(toolsPromptLen/2.5).toInt()}t)" +
+                    " memory=${memPromptLen}c (~${(memPromptLen/2.5).toInt()}t)" +
+                    " total=${fullSystem.length}c (~${estTokens.toInt()}t)")
+                add(UIMessage.system(prompt = fullSystem))
+            }
+            addAll(markedMessages)
+        }.transforms(
+            transformers = transformers,
+            context = context,
+            model = modelWithAbilities,
+            assistant = assistant,
+            settings = settings,
+            conversationModeInjectionIds = conversationModeInjectionIds,
+            conversationLorebookIds = conversationLorebookIds,
+            processingStatus = processingStatus,
+            workspaceCwd = workspaceCwd,
+        )
+
+        // v4.5.3: 记忆尾部注入 — 记忆块追加到最后一条 user 消息尾部 (无 user
+        // 消息时独立成条)。记忆位于全部历史之后, memory_tool 每轮写入只影响
+        // 尾部追加, 之前的图片/文档/工具历史缓存全部保留。
+        if (assistant.enableMemory) {
+            // buildList 内的 memoryPrompt 局部变量作用域不外泄, 在此重算
+            val tailMemoryPrompt = buildMemoryPrompt(memories = memories)
+            if (tailMemoryPrompt.isNotBlank()) {
+                val memBlock = "\n\n<memory>\n" + tailMemoryPrompt + "\n</memory>"
+                val lastUserIdx = built.indexOfLast { it.role == MessageRole.USER }
+                built = if (lastUserIdx >= 0) {
+                    val target = built[lastUserIdx]
+                    val parts = target.parts.toMutableList()
+                    val ti = parts.indexOfLast { it is UIMessagePart.Text }
+                    if (ti >= 0) {
+                        val t = parts[ti] as UIMessagePart.Text
+                        parts[ti] = t.copy(text = t.text + memBlock)
+                    } else {
+                        parts.add(UIMessagePart.Text(memBlock.trim()))
+                    }
+                    built.toMutableList().also { it[lastUserIdx] = target.copy(parts = parts) }
+                } else {
+                    built + UIMessage.user(tailMemoryPrompt)
+                }
+            }
+        }
+
+        val buildInternalMs = System.currentTimeMillis() - startMs
+        // v4.8.19 性能: 单遍无分配 (原每轮 filterIsInstance 分配中间列表)
+        var totalChars = 0
+        for (msg in built) {
+            for (p in msg.parts) {
+                if (p is UIMessagePart.Text) totalChars += p.text.length
+            }
+        }
+        val estTotalTokens = totalChars / 2.5
+        Log.i(TAG, "Request total: ${built.size} messages, ${totalChars}c (~${estTotalTokens.toInt()}t), internalBuild=${buildInternalMs}ms")
+
+        // 协议层: 发送前结构性保证 (首条 system + tool 配对) — 幂等, 合规消息零修改
+        val protocolMessages = MessageProtocol.enforce(built)
+        if (protocolMessages != built) {
+            Log.i(TAG, "MessageProtocol: 消息序列已修复 (${built.size} → ${protocolMessages.size})")
+        }
+        protocolMessages
+        }
+        // v4.8.55: 正文长度截断自动续写 — 请求级注入续写引导 (仅本次请求: 不落盘、
+        // 不显示; 流式内容续写进同一条 assistant 消息, 用户侧无新气泡无引导气泡)。
+        if (lengthContinuationState.pendingNudge) {
+            lengthContinuationState.pendingNudge = false
+            internalMessages = internalMessages + UIMessage.user(LENGTH_CONTINUATION_NUDGE)
+            Log.i(TAG, "length-continuation nudge injected (request-only)")
+        }
+
+        // v4.8.57: 最终 system 指纹 (fp2, 变换后实测) — 原 fp 在 buildList 内计算, 早于
+        // .transforms (工作区提醒系统追加/模板/注入链), 变换导致的 system 字节漂移此前
+        // 是诊断盲区 (fp_stable 但缓存被打断 → 归因失明; 用户实证"缓存极不稳定")。
+        // fp2 对最终发送形态的 system 全文取指纹; fp_stable + fp2_drift = 变换层漂移,
+        // fp2_stable + 低命中 = 网关/上游侧 (路由/TTL/缓存生成状态)。
+        // v4.8.132: fp2 稳定性标记 — 低缓存命中时的自动归因判据 (fp2 稳定 + 低命中 =
+        // 缓存块丢失在网关/上游侧; 见下方 CACHE/gateway_miss 判定)
+        var finalSystemStable = false
+        runCatching {
+            val sysText = internalMessages.firstOrNull { it.role == MessageRole.SYSTEM }
+                ?.parts?.filterIsInstance<UIMessagePart.Text>()?.joinToString("") { it.text } ?: ""
+            val d = java.security.MessageDigest.getInstance("SHA-256").digest(sysText.toByteArray())
+            val sysH = d.take(4).joinToString("") { "%02x".format(it) }
+            val fp2 = d.take(8).joinToString("") { "%02x".format(it) }
+            val key2 = (conversationId?.toString() ?: "global") + ":final"
+            val prev2 = lastCacheFp.put(key2, fp2)
+            when {
+                prev2 == null -> CallTracer.event("CACHE", "fp2_init", "fp2=$fp2 | sys=${sysText.length}c#${sysH}")
+                prev2 == fp2 -> {
+                    finalSystemStable = true
+                    CallTracer.event("CACHE", "fp2_stable", "fp2=$fp2 unchanged | sys=${sysText.length}c#${sysH}")
+                }
+                else -> CallTracer.event("CACHE", "fp2_drift",
+                    "FINAL SYSTEM CHANGED prev=$prev2 now=$fp2 | sys=${sysText.length}c#${sysH}")
+            }
+        }
+
+        // v4.8.132: fp3 尾段全内容指纹 — fp/hist 只覆盖"排除尾部两条"且仅尺寸+首中尾 ID,
+        // 当前轮用户消息 (含变换注入) 与全量内容字节稳定性此前是盲区; 本指纹对除"增长中
+        // 消息"外的全部消息做全内容 SHA-256 (post-transform 形态; 每轮百 KB 级, ~1-3ms),
+        // 任何字节级改写 (变换注入漂移/历史改写) 都会被 fp3_drift 直接指认。
+        runCatching {
+            val preTail = internalMessages.dropLast(1)
+            val sb3 = StringBuilder()
+            for (m in preTail) {
+                sb3.append(m.role.name).append('|').append(m.id).append('\n')
+                for (p in m.parts) {
+                    when (p) {
+                        is UIMessagePart.Text -> sb3.append("T:").append(p.text)
+                        is UIMessagePart.Reasoning -> sb3.append("R:").append(p.reasoning)
+                        is UIMessagePart.Tool -> {
+                            sb3.append("TOOL:").append(p.toolName).append(':').append(p.input)
+                            p.output.forEach { o -> if (o is UIMessagePart.Text) sb3.append("O:").append(o.text) }
+                        }
+                        else -> sb3.append("?:").append(p.javaClass.simpleName)
+                    }
+                    sb3.append('\u0001')
+                }
+            }
+            val d3 = java.security.MessageDigest.getInstance("SHA-256").digest(sb3.toString().toByteArray())
+            val fp3 = d3.take(8).joinToString("") { "%02x".format(it) }
+            val key3 = (conversationId?.toString() ?: "global") + ":pretail"
+            val prev3 = lastCacheFp.put(key3, fp3)
+            val desc3 = "preTail=${preTail.size}m/${sb3.length}c"
+            when {
+                prev3 == null -> CallTracer.event("CACHE", "fp3_init", "fp3=$fp3 | $desc3")
+                prev3 == fp3 -> CallTracer.event("CACHE", "fp3_stable", "fp3=$fp3 unchanged | $desc3")
+                else -> CallTracer.event("CACHE", "fp3_drift",
+                    "PRE-TAIL CONTENT CHANGED prev=$prev3 now=$fp3 | $desc3")
+            }
+        }
+
+        // v3.6.34: 流式基准 = 原始消息 (关键) — 压缩包只进请求 (internalMessages),
+        // 流式累积/onUpdateMessages 回写必须用原始消息, 否则 UI 消息被替换成压缩包
+        // v4.3.10: 基准 = markedMessages — 图片预算标记在 metadata (内容零改动,
+        // UI 渲染不受影响), 标记随 onUpdateMessages 落盘跨轮持久; 无图片场景
+        // markedMessages 与原始消息逐条相等
+        var messages: List<UIMessage> = markedMessages
+        val params = TextGenerationParams(
+            model = modelWithAbilities,
+            temperature = assistant.temperature,
+            topP = assistant.topP,
+            maxTokens = assistant.maxTokens,
+            tools = tools,
+            reasoningLevel = assistant.reasoningLevel,
+            imageUploadMode = settings.imageUploadMode,
+            customHeaders = buildList {
+                addAll(assistant.customHeaders)
+                addAll(model.customHeaders)
+                // v3.6.80: 删除自研 x-opencode-session 头 — 原版无此头且 grok 正常,
+                // 该头疑似触发 OpenCode grok 通道 400
+            },
+            customBody = buildList {
+                addAll(assistant.customBodies)
+                addAll(model.customBodies)
+            },
+            // 4.1.0: sessionId 双头注入 (X-Session-ID + x-opencode-session), API 层按 host 自动补全
+            // v4.8.126 (OC 合规): null 兜底随机 — OC 网关"无状态调用也要求 session 归属"
+            // (anomalyco/opencode generate.ts: "Gateways require session attribution even
+            // for a stateless call"), 不再出现任何无头请求
+            sessionId = conversationId?.toString() ?: java.util.UUID.randomUUID().toString(),
+        )
+        if (stream) {
+            // 断流自动恢复 (v3.5.46 根治): 输出中连接中断 (切后台网络切换/
+            // NAT 超时/平台断流 — IOException) → 回滚本次已输出内容 → 自动重试。
+            // 用户核心诉求: 一直保持连接, 不自己中断。重试请求消息相同 → 缓存命中。
+            // 4.8.22: 网络恢复等待预算 (per-request 安全阀 — 防网络闪断循环
+            // 无限挂起; 等待网络恢复本身不消耗重试次数, 由本预算限总时长)
+            var networkWaitBudgetMs = 15 * 60 * 1000L
+            // v4.8.55: 本轮 finish_reason=length 截断标记 (自动续写判据; 每轮重置 —
+            // 写入 per-generation 状态对象, 供 generateText 侧决策)
+            lengthContinuationState.lastRoundLengthCut = false
+            lengthContinuationState.lastRoundToolRepaired = false
+            // v4.8.131 审计修复: 轮边界重置 receivedAnyData — 该标记语义 = "本轮是否
+            // 收到过流数据", 每次进入流循环前归零 (轮内判据)。
+            // v4.8.137 (用户定版修正): 分类判据 = 本轮数据 OR 本次发送已产出
+            // (retry.outputStarted, 跨轮不清零) — 发起链只服务建连阶段 (尚无任何
+            // 输出); 工具轮之后的续发轮属"已开始有输出", 一律流中断链 (18 次) 恢复。
+            retry.receivedAnyData = false
+            streamLoop@ while (true) {
+            // v4.8.74 (OC/CC 定向): 距上轮 >15s (工具长执行后) 先轻量探活再发真实请求 —
+            // 半死连接 4s 内剔除+清池 (否则真实请求整段等 readTimeout, 用户感知"工具后
+            // 模型久久不开口"); 快速重试 (gap 小) 不触发, 零额外开销。
+            // v4.8.132: 探活等待单列上报 — 用户排查"工具后恢复间隔"时, 14921ms 的
+            // "assembly" 实为探活等待 (曾误导归因); pokeMs 单列后可区分"探活慢"与"组装慢"
+            var pokeWaitMs = 0L
+            run {
+                val nowAt = System.currentTimeMillis()
+                val gapMs = if (retry.lastApiRoundAt > 0) nowAt - retry.lastApiRoundAt else 0L
+                retry.lastApiRoundAt = nowAt
+                if (gapMs > 15_000L) {
+                    val pokeBase = ((provider as? ProviderSetting.OpenAI)?.baseUrl
+                        ?: (provider as? ProviderSetting.Claude)?.baseUrl)
+                        ?.takeIf { it.contains("opencode.ai") || it.contains("commandcode.ai") }
+                    if (pokeBase != null) {
+                        val pokeKey = (provider as? ProviderSetting.OpenAI)?.apiKey
+                            ?: (provider as? ProviderSetting.Claude)?.apiKey
+                        val pokeT0 = System.currentTimeMillis()
+                        val ok = runCatching {
+                            // v4.8.98: 仅在非新鲜时等待 — 最近心跳/探活成功 (≤70s) 零等待;
+                            // 工具后已发起的后台预探活在此 join (上限 1.5s)
+                            me.rerere.rikkahub.service.ConnectionWarmer.awaitPokeIfStale(pokeBase, pokeKey)
+                        }.getOrDefault(false)
+                        pokeWaitMs = System.currentTimeMillis() - pokeT0
+                        CallTracer.event("CONN", "poke", "host=$pokeBase gapMs=$gapMs ok=$ok waitMs=$pokeWaitMs")
+                    }
+                }
+            }
+            // v4.8.131 核校: 本计时仅服务 stream retry 诊断日志 (本次尝试时长);
+            // 45s 时间预算自 v3.14.0 三轮链改造起即无消费点 (预算 = 18 次计数),
+            // 旧 v3.11.10 注释描述的"预算起算"语义已不存在 (v4.8.130 已删死常量)。
+            val attemptStartMs = System.currentTimeMillis()
+            val preStreamMessages = messages
+            // v3.6.49: UI 更新节流 — 每 chunk 调 onUpdateMessages 触发整个 ChatPage
+            // 重组, 流式期间高频重组是卡顿/发热/120Hz 掉帧根因。
+            // v3.8.6: 50ms→5ms 用户实测 — 顿挫感反而极严重: 5ms 下每个 chunk
+            // 都触发重组, UI 线程被重组任务淹没, 渲染帧率被拖低形成掉帧式
+            // 顿挫 (与预热期 60Hz vsync 不匹配)。v3.8.7 回 50ms: OpenCode 大块
+            // chunk 间隔本就大于 50ms, 节流不产生额外延迟, 密集时批处理保帧率。
+            var lastUiUpdateMs = 0L
+            var repetitionCheckedLen = 0
+            try {
+            // v3.11.4: 工具轮次诊断 — 运行日志页 SSE 现场可区分首轮/工具轮请求
+            // v4.8.19 性能: 单遍无分配统计 (原 flatMap + filterIsInstance 每轮
+            // 分配两个中间列表, 长会话 × 256 轮工具循环属纯浪费)
+            var toolRound = 0
+            for (m in internalMessages) {
+                for (p in m.parts) {
+                    if (p is me.rerere.ai.ui.UIMessagePart.Tool && p.output.isNotEmpty()) toolRound++
+                }
+            }
+            me.rerere.ai.util.TraceLogger.log(
+                "SSE", "round: toolResultCount=$toolRound messages=${internalMessages.size}"
+            )
+            val preStreamMs = System.currentTimeMillis() - startMs
+            Log.i(TAG, "Pre-stream ready in ${preStreamMs}ms, calling provider...")
+            // v4.8.105 (E): 无感衔接分解埋点 — 工具结束 → 请求就绪 (含组装/序列化/门)
+            if (retry.lastToolEndAt > 0) {
+                val postToolMs = System.currentTimeMillis() - retry.lastToolEndAt
+                me.rerere.ai.util.TraceLogger.log(
+                    "SSE", "resume: toolEnd→preStream=${postToolMs}ms (assembly=${preStreamMs}ms, poke=${pokeWaitMs}ms)"
+                )
+                CallTracer.event("PERF", "resume_gap", "toolEnd→preStream=${postToolMs}ms assembly=${preStreamMs}ms poke=${pokeWaitMs}ms")
+                retry.lastToolEndAt = 0L
+            }
+            // 4.2.0: 消费侧切原版 StreamChunkHandler (2.5.x 架构)
+            val streamHandler = me.rerere.ai.ui.StreamChunkHandler(model = model)
+            // v4.5.17: 仿 OpenCode 请求模式 — 开启且目标为 opencode.ai 网关时,
+            // 按模型协议映射切换传输 handler (严格对齐 OpenCode 客户端);
+            // 关闭或非 opencode 网关: null → 走原 providerImpl 路径, 零行为变化
+            val opencodeStream = if (settings.opencodeRequestMode) {
+                resolveOpencodeStream(provider, model, internalMessages, params)
+            } else null
+            (opencodeStream ?: providerImpl.streamText(
+                providerSetting = provider,
+                messages = internalMessages,
+                params = params
+            )).collect { chunk ->
+                messages = streamHandler.handle(messages, chunk)
+                // v4.5.2: 长度截断的工具调用修复 — finish_reason=length 时最后一条
+                // 助手消息里 input JSON 解析失败的调用 = 参数被 token 上限掐断。
+                // 不终态报错 (v4.5.1 方案体验硬), 不静默执行 (执行 = 文件写一半):
+                // 预填结构化错误 output, 模型下一轮看到错误自动改用更小分段,
+                // 对话连续, 用户无感。截断检测依据 provider 层 truncatedByLength。
+                if (chunk is me.rerere.ai.ui.StreamChunk.Finish && chunk.finishReason == "length") {
+                    val (repairedMessages, repairedAny) = repairLengthTruncatedToolCalls(messages)
+                    messages = repairedMessages
+                    lengthContinuationState.lastRoundLengthCut = true
+                    lengthContinuationState.lastRoundToolRepaired = repairedAny
+                } else if (chunk is me.rerere.ai.ui.StreamChunk.TextDelta ||
+                    chunk is me.rerere.ai.ui.StreamChunk.ReasoningDelta
+                ) {
+                    // v4.8.55: 心跳类 length 误标撤销 (后续仍有输出 = 流未真截断)
+                    lengthContinuationState.lastRoundLengthCut = false
+                    lengthContinuationState.lastRoundToolRepaired = false
+                }
+                // v3.15.1: 收到任何流数据即置位 — StreamChunk 判据 (Finish 之外均视为有效数据)
+                // v4.8.131 审计修复: 重试成功进入流式 — 发起期重试提示即刻清除
+                // (此前"网络连接失败，自动重试中"会滞留到流结束, 与流内容并存显示)
+                if (chunk !is me.rerere.ai.ui.StreamChunk.Finish) {
+                    if (!retry.receivedAnyData) processingStatus.value = null
+                    retry.receivedAnyData = true
+                    retry.outputStarted = true  // v4.8.137: 本次发送已产出 — 此后一切失败走流中断链 (18 次)
+                }
+                // 4.2.1 bug 修复: usage 合并已在 StreamChunkHandler.Usage 内完成
+                // (copy(usage = usage.merge)), 此处不得再 merge — v4.2.0 双重合并
+                // 使 token 统计翻倍。保留缓存诊断日志。
+                (chunk as? me.rerere.ai.ui.StreamChunk.Usage)?.usage?.let { usage ->
+                    if (usage.promptTokens > 0) {
+                        val cacheHitRate = usage.cachedTokens * 100 / usage.promptTokens
+                        CallTracer.event("CACHE", "usage",
+                            "prompt=${usage.promptTokens} cached=${usage.cachedTokens} hit=$cacheHitRate%")
+                        // v4.8.132 (用户实证"缓存退化"): 低命中且客户端前缀无漂移 → 直接给出
+                        // 归因结论 (缓存块丢失在网关/上游侧 — 路由/TTL/负载), 免去每次人工比对
+                        // fp/fp2。阈值 60%: 正常轮 90-99%, 断裂轮 0-48%, 分离度充足。
+                        if (cacheHitRate < 60 && finalSystemStable) {
+                            CallTracer.event("CACHE", "gateway_miss",
+                                "低命中但客户端前缀无漂移 (fp/fp2 stable) — 缓存块丢失在网关/上游侧 (路由/TTL/负载), 非客户端问题")
+                        }
+                        Log.i(
+                            TAG,
+                            "cache: prompt=${usage.promptTokens} cached=${usage.cachedTokens}" +
+                                " hit=$cacheHitRate%"
+                        )
+                    }
+                }
+                // v3.11.24 (F3): 复读看门狗 — 每 384 个新增可见字符评估一次。
+                // 判据 = repetitionSampleCount (96 字符片段全文出现 >=4 次)。
+                // 2026-08-31 案: 可见思考逐字复读工具列表直至轮次燃尽, 客户端无检测。
+                // 触发 → 抛 ClientGenerationGuardException (catch 链保留内容+终态, 不重试)
+                val assistantVisibleLen = messages.lastOrNull()?.parts?.sumOf { p ->
+                    when (p) {
+                        is UIMessagePart.Text -> p.text.length
+                        is UIMessagePart.Reasoning -> p.reasoning.length
+                        else -> 0
+                    }
+                } ?: 0
+                if (assistantVisibleLen - repetitionCheckedLen >= 384) {
+                    repetitionCheckedLen = assistantVisibleLen
+                    val assistantFull = messages.lastOrNull()?.parts?.joinToString("") { p ->
+                        when (p) {
+                            is UIMessagePart.Text -> p.text
+                            is UIMessagePart.Reasoning -> p.reasoning
+                            else -> ""
+                        }
+                    }.orEmpty()
+                    // v3.11.30: 误杀修复 — 全文 4 次重复单独出现于长文档 (表格行/
+                    // 清单模板) 属正常结构; 真复读退化的强特征是片段在尾部窗口内
+                    // 近邻重复。双条件: 全文 >=4 且尾窗 768 内 >=3 才熔断。
+                    // (v3.11.24 案的连续复读在尾窗内必累积多次, 检出力保留)
+                    if (repetitionSampleCount(assistantFull) >= 4 &&
+                        repetitionTailCount(assistantFull) >= 3
+                    ) {
+                        throw ClientGenerationGuardException(
+                            "检测到生成内容陷入自重复循环 (同一长片段重复 4 次以上), 已熔断并保留现有内容"
+                        )
+                    }
+                }
+                val now = System.currentTimeMillis()
+                if (now - lastUiUpdateMs >= 50) {
+                    onUpdateMessages(messages)
+                    lastUiUpdateMs = now
+                }
+            }
+            // 流式成功完成 — 补一次 UI 更新, 确保节流期间的最后内容完整显示
+            processingStatus.value = null  // v3.11.4: 重试提示清除
+            onUpdateMessages(messages)
+            break@streamLoop  // 流式成功完成, 退出重试循环
+            } catch (e: ClientGenerationGuardException) {
+                // v3.11.24 (F3): 复读熔断 — 保留已生成内容, 不回滚不重试
+                // (同 prompt 重采样大概率复现退化), 以明确状态收尾并告知用户。
+                processingStatus.value = null
+                onUpdateMessages(messages)
+                Log.e(TAG, "repetition guard fired: ${e.message}")
+                CallTracer.event("GUARD", "repetition_break", e.message ?: "repetition",
+                    metrics = sseDiagMetrics())
+                throw java.io.IOException(
+                    "[v${BuildConfig.VERSION_NAME}] ${e.message}", e
+                )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e  // 用户主动停止 — 不重试
+            } catch (e: me.rerere.ai.util.HttpException) {
+                // 4.0.3 双保险: 5xx HttpException → IOException 进重试链
+                // (正常路径 Provider 层已转换; 此处防回归/防其他通道裸抛)。
+                // 非 5xx (4xx 参数/鉴权) 保持冒泡终态报错。
+                val isServer = Regex("""\\[[5]\\d\\d\\]""").containsMatchIn(e.message ?: "") ||
+                    e.message?.contains("Internal server error", ignoreCase = true) == true
+                if (!isServer) throw e
+                Log.w(TAG, "HttpException 5xx fallback — converting to IOException for retry chain: ${e.message}")
+                throw java.io.IOException(e.message ?: "server error", e)
+            } catch (e: me.rerere.ai.provider.providers.openai.OpenCodeStreamUnconfirmedException) {
+                // v3.8.32: OpenCode Zen 无完成信号关流 (ox 系等) — 服务端已完成或
+                // 中途掐断在信号层面无法区分。保留已生成内容 (已随 chunk 流入
+                // messages), 不回滚不重试, 交上层明确报错 — 杜绝静默截断。
+                Log.w(TAG, "stream unconfirmed (${e.message}) — keep partial content, no retry")
+                onUpdateMessages(messages)
+                throw e
+            } catch (e: java.io.IOException) {
+                // 4.8.22 后台稳定性强化: 设备级离线时挂起等待网络恢复 — 不消耗
+                // 重试次数 (网络切换/信号盲区/后台网络冻结的恢复窗口内自动续连;
+                // 用户诉求: 一直保持连接, 不自己中断)。恢复后清池 + 立即重试。
+                if (networkWaitBudgetMs > 0 && isDeviceOffline()) {
+                    val waitStart = System.currentTimeMillis()
+                    processingStatus.value = "网络已断开，正在等待网络恢复…"
+                    val restored = awaitNetworkRestore(
+                        kotlin.math.min(10 * 60 * 1000L, networkWaitBudgetMs)
+                    )
+                    val waitedMs = System.currentTimeMillis() - waitStart
+                    networkWaitBudgetMs -= waitedMs
+                    processingStatus.value = null
+                    if (restored) {
+                        me.rerere.ai.provider.ProviderManager.evictAllPools()
+                        Log.w(TAG, "network restored after ${waitedMs}ms — retry without consuming budget")
+                        CallTracer.event("RETRY", "network_restored", "waitMs=$waitedMs")
+                        retry.receivedAnyData = false
+                        messages = preStreamMessages
+                        onUpdateMessages(messages)
+                        continue@streamLoop
+                    }
+                    Log.w(TAG, "network wait timeout (${waitedMs}ms) — fallback to normal retry chain")
+                }
+                // v4.8.114: 连接期失败识别 — Retry/Abort 两分支据此做可见化与文案
+                val connectPhase = isConnectPhaseFailure(e)
+                if (connectPhase) {
+                    CallTracer.event("NET", "connect_fail",
+                        "${e.javaClass.simpleName}: ${e.message}", metrics = sseDiagMetrics())
+                }
+                // 4.0.0 重写: 重试策略全部收敛至 RetryPolicy.kt (策略对象模式),
+                // 本处只保留职责原语: 分类 → 判决 → 回滚/delay/continue 或 终态抛出。
+                // 数值与文案逐字保留, 行为与旧嵌套链完全等价。
+                // v4.8.137 (用户定版): 分类判据加入"本次发送是否已产出" — 发起链只服务
+                // 建连阶段 (无任何输出); 有输出后 (含工具轮续发) 一律流中断链 18 次恢复。
+                val failure = StreamFailureClassifier.classify(e, retry.receivedAnyData || retry.outputStarted)
+                val phase: RetryPhase = when (failure) {
+                    is StreamFailure.InitPhase -> RetryPhase.Init(used = retry.init)
+                    else -> RetryPhase.Stream(used = retry.stream)
+                }
+                when (val verdict = RetryDecision.decide(failure, phase, settings.networkSetting.enableAutoRetry)) {
+                    is RetryVerdict.Retry -> {
+                        // 计数推进 (阶段计数器单一职责)
+                        when (phase) {
+                            is RetryPhase.Init -> retry.init++
+                            is RetryPhase.Stream -> retry.stream++
+                            else -> {}
+                        }
+                        // v4.8.114: 重试可见化 — 连接期失败明确展示"正在重试",
+                        // 消除用户感知的数分钟静默"加载中" (成功/终态/离线等待路径
+                        // 都会覆盖或清空该状态, 无残留风险)
+                        // v4.8.131 (用户指令): 撤掉流中断可见化 — 仅「发起阶段」
+                        // (本轮尚未收到任何流数据) 的连接类失败显示重试状态;
+                        // 一切流中断 (socket 断连/看门狗判死/网关掐流) 的自动恢复
+                        // 回到静默 (v4.8.125 引入的"输出中断，正在自动恢复"撤除;
+                        // 注意: 中途 socket 断连同样静默 — 门控看阶段而非异常类型)。
+                        if (connectPhase && phase is RetryPhase.Init) {
+                            processingStatus.value = "网络连接失败，自动重试中（第 ${retry.init} 次）…"
+                        } else {
+                            processingStatus.value = null  // 流中断恢复静默; 顺带清残留提示
+                        }
+                        // v4.7.18: 重试前清理连接池 — 断流多为连接层失效 (网络抖动/
+                        // 僵尸连接/网卡问题), 复用陈旧连接会让重试立即再失败; 清理后
+                        // 重试走全新连接, 配合退避 delay 显著提高恢复成功率。
+                        me.rerere.ai.provider.ProviderManager.evictAllPools()
+                        if (verdict.delayMs > 0) kotlinx.coroutines.delay(verdict.delayMs)
+                        Log.w(TAG, "stream retry $verdict.logDetail (attempt ${System.currentTimeMillis() - attemptStartMs}ms): ${e.message}")
+                        CallTracer.event("RETRY", "stream_retry",
+                            "${verdict.logDetail} | ${e.javaClass.simpleName}: ${e.message}",
+                            metrics = sseDiagMetrics())
+                        messages = preStreamMessages  // 丢弃半截内容, 回滚 UI
+                        onUpdateMessages(messages)
+                        // v4.3.11 (BUG18): receivedAnyData 语义是"本轮是否收到过流数据"
+                        // — 重试开新轮必须重置, 否则首轮收过数据、次轮发起即败时
+                        // classify 拿着上轮残留误判为 StreamInterrupted, 发起类失败
+                        // 被塞进 18 次流中断链 (每次立即失败) 而不是 5 次快速失败
+                        // 终态, 重试风暴打在死连接上白耗 1 分钟+
+                        retry.receivedAnyData = false
+                        continue@streamLoop
+                    }
+                    is RetryVerdict.Abort -> {
+                        processingStatus.value = null
+                        onUpdateMessages(messages)
+                        Log.e(TAG, "retry aborted: ${verdict.message} — last error: ${e.message}")
+                        // v4.8.114: 连接期失败终态文案可操作化 — 给出排查面而不是裸
+                        // 技术信息 (用户实证: 系统级按应用联网封锁时表现为数分钟
+                        // "加载中"后报连接失败, 用户无从下手)
+                        val abortMsg = if (connectPhase) {
+                            val proxyOn = settings.networkSetting.proxyEnabled
+                            "[v${BuildConfig.VERSION_NAME}] ${verdict.message} — 连接服务失败。" +
+                                "请检查：①系统联网控制/省流是否放行本应用（WLAN 与流量都查）" +
+                                (if (proxyOn) "；②应用内代理在当前网络是否可达（设置 → 偏好设置 → 网络，可先关闭代理对照）"
+                                 else "；②应用内代理设置（若曾开启过，见 设置 → 偏好设置 → 网络）") +
+                                "；③切换 WLAN/流量后重试。(${e.message ?: "连接中断"})"
+                        } else {
+                            "[v${BuildConfig.VERSION_NAME}] ${verdict.message} (${e.message ?: "连接中断"})"
+                        }
+                        throw java.io.IOException(abortMsg, e)
+                    }
+                }
+            }
+            }
+        } else {
+            // 4.2.0: 非流式返回 TextGenerationResult (原版 2.5.x 形态)
+            val result = providerImpl.generateText(
+                providerSetting = provider,
+                messages = internalMessages,
+                params = params,
+            )
+            messages = if (messages.lastOrNull()?.role == result.message.role) {
+                messages.dropLast(1) + result.message
+            } else {
+                messages + result.message
+            }
+            result.usage?.let { usage ->
+                messages = messages.mapIndexed { index, message ->
+                    if (index == messages.lastIndex) {
+                        message.copy(
+                            usage = message.usage.merge(usage)
+                        )
+                    } else {
+                        message
+                    }
+                }
+            }
+            onUpdateMessages(messages)
+        }
+    }
+
+    /**
+     * 4.8.22: 设备级离线判定 — 无默认网络或无 INTERNET 能力。
+     * 只有"设备确实离线"才进入网络恢复等待; 在线但服务端不可达
+     * (连接重置/网关故障) 走正常重试链, 避免把服务端故障误判为网络问题。
+     */
+    private fun isDeviceOffline(): Boolean {
+        return runCatching {
+            val cm = context.getSystemService(android.net.ConnectivityManager::class.java)
+                ?: return@runCatching false
+            val network = cm.activeNetwork ?: return@runCatching true
+            val caps = cm.getNetworkCapabilities(network) ?: return@runCatching true
+            !caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        }.getOrDefault(false)
+    }
+
+    /**
+     * 4.8.22: 等待网络恢复 (2s 轮询); 返回是否已恢复。
+     */
+    private suspend fun awaitNetworkRestore(maxWaitMs: Long): Boolean {
+        val deadline = System.currentTimeMillis() + maxWaitMs
+        while (System.currentTimeMillis() < deadline) {
+            if (!isDeviceOffline()) return true
+            kotlinx.coroutines.delay(2000)
+        }
+        return !isDeviceOffline()
+    }
+
+    /**
+     * v4.8.114: 连接期失败识别 — 用户实证 (2026-10-09): 系统按应用联网封锁
+     * (澎湃 OS 联网控制/省流) 不会清掉 NET_CAPABILITY_INTERNET, isDeviceOffline()
+     * 拦不住 → 请求照发, connect 30s×多地址×重试链 = 数分钟静默"加载中"。
+     * 本判据用于 ①重试可见化 ②终态文案可操作化 ③NET 打点。保守匹配明确的
+     * 连接期异常类型 + 常见报错短语, 宁漏勿误 (误判会让服务端错误被贴上网络标签)。
+     */
+    private fun isConnectPhaseFailure(e: Throwable): Boolean {
+        if (e is java.net.UnknownHostException ||
+            e is java.net.ConnectException ||
+            e is java.net.SocketTimeoutException ||
+            e is java.net.NoRouteToHostException ||
+            e is java.net.SocketException
+        ) return true
+        val msg = (e.message ?: "").lowercase()
+        return msg.contains("failed to connect") ||
+            msg.contains("unable to resolve") ||
+            msg.contains("network is unreachable") ||
+            msg.contains("connect timed out") ||
+            msg.contains("connection refused")
+    }
+
+    // invoke_tools 输出 exempt from truncation (工具列表必须完整)
+    private val EXEMPT_FROM_TRUNCATION = setOf("invoke_tools")
+
+    /**
+     * v4.8.110 (B): 单个工具执行 (阶段2 执行单元) — 超时/取消/错误三态与旧实现逐字
+     * 一致; 并行批与串行批共用同一执行体。附 TOOLEXEC 诊断: 每个工具的耗时与结局
+     * 进运行日志 (CallTracer), 是并行批次失败时的直接证据。
+     */
+    private suspend fun executeToolItemSafe(item: QueuedToolExec): ToolExecOutcome {
+        val t0 = System.currentTimeMillis()
+        val outcome = try {
+            val value = withTimeout(TOOL_EXECUTION_TIMEOUT_MS) {
+                item.toolDef.execute(item.args)
+            }
+            ToolExecOutcome(item, value, System.currentTimeMillis(), null)
+        } catch (e: TimeoutCancellationException) {
+            CallTracer.event("TOOL", "timeout_${item.tool.toolName}",
+                "tool timed out after ${TOOL_EXECUTION_TIMEOUT_MS / 1000}s",
+                metrics = sseDiagMetrics())
+            ToolExecOutcome(
+                item,
+                listOf(UIMessagePart.Text(
+                    "Error: Tool execution timed out after ${TOOL_EXECUTION_TIMEOUT_MS / 1000}s (${item.tool.toolName}). " +
+                        "The tool may be hanging on network/IO. Reconsider: different parameters, another tool (invoke_tools), or answer in text."
+                )),
+                System.currentTimeMillis(),
+                null,
+            )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            ToolExecOutcome(item, null, System.currentTimeMillis(), e)
+        }
+        CallTracer.event(
+            "TOOLEXEC", item.tool.toolName,
+            "dt=" + (System.currentTimeMillis() - t0) + "ms " +
+                (outcome.error?.let { "fail=" + it.javaClass.simpleName + ": " + it.message?.take(120) } ?: "ok"),
+        )
+        return outcome
+    }
+
+    private fun maybeTruncateToolOutput(
+        toolCallId: String,
+        output: List<UIMessagePart>,
+        hasShellAccess: Boolean,
+        toolName: String = "",
+    ): List<UIMessagePart> {
+        // 特定工具(如 invoke_tools)不截断, 保证数据完整性
+        if (toolName in EXEMPT_FROM_TRUNCATION) return output
+
+        val textParts = output.filterIsInstance<UIMessagePart.Text>()
+        val nonTextParts = output.filter { it !is UIMessagePart.Text }
+        val totalChars = textParts.sumOf { it.text.length }
+
+        if (totalChars <= MAX_TOOL_OUTPUT_CHARS || !hasShellAccess) return output
+
+        Log.i(TAG, "maybeTruncateToolOutput: truncating tool $toolCallId output ($totalChars chars)")
+
+        val fullText = textParts.joinToString("\n") { it.text }
+        val preview = fullText.take(TOOL_OUTPUT_PREVIEW_CHARS)
+
+        val fileName = "${toolCallId}.txt"
+        val outputDir = File(context.filesDir, FileFolders.TOOL_OUTPUTS).apply { mkdirs() }
+        File(outputDir, fileName).writeText(fullText)
+
+        return listOf(
+            UIMessagePart.Text(
+                buildString {
+                    appendLine("[Tool output truncated: $totalChars characters total]")
+                    appendLine("Full output saved to: /tool_outputs/$fileName")
+                    appendLine("Use shell to read: `cat /tool_outputs/$fileName`")
+                    appendLine("Use shell to search: `grep \"pattern\" /tool_outputs/$fileName`")
+                    appendLine()
+                    append(preview)
+                }
+            )
+        ) + nonTextParts
+    }
+
+    fun translateText(
+        settings: Settings,
+        sourceText: String,
+        targetLanguage: Locale,
+        onStreamUpdate: ((String) -> Unit)? = null
+    ): Flow<String> = flow {
+        val model = settings.providers.findModelById(settings.translateModeId)
+            ?: error("Translation model not found")
+        val provider = model.findProvider(settings.providers)
+            ?: error("Translation provider not found")
+
+        val providerHandler = providerManager.getProviderByType(provider)
+
+        if (!ModelRegistry.QWEN_MT.match(model.modelId)) {
+            // Use regular translation with prompt
+            val prompt = settings.translatePrompt.applyPlaceholders(
+                "source_text" to sourceText,
+                "target_lang" to targetLanguage.toString(),
+            )
+
+            var messages = listOf(UIMessage.user(prompt))
+            var translatedText = ""
+
+            // 4.2.0: 消费侧切 StreamChunkHandler (翻译通道)
+            val translateHandler = me.rerere.ai.ui.StreamChunkHandler()
+            // v4.5.17: 仿 OpenCode 请求模式 — 翻译同受协议分派约束 (同一模型)
+            val translateParams = TextGenerationParams(
+                model = model,
+                reasoningLevel = ReasoningLevel.fromBudgetTokens(settings.translateThinkingBudget),
+            )
+            val opencodeTranslate = if (settings.opencodeRequestMode) {
+                resolveOpencodeStream(provider, model, messages, translateParams)
+            } else null
+            (opencodeTranslate ?: providerHandler.streamText(
+                providerSetting = provider,
+                messages = messages,
+                params = translateParams,
+            )).collect { chunk ->
+                messages = translateHandler.handle(messages, chunk)
+                translatedText = messages.lastOrNull()?.toText() ?: ""
+
+                if (translatedText.isNotBlank()) {
+                    onStreamUpdate?.invoke(translatedText)
+                    emit(translatedText)
+                }
+            }
+        } else {
+            // Use Qwen MT model with special translation options
+            val messages = listOf(UIMessage.user(sourceText))
+            val result = providerHandler.generateText(
+                providerSetting = provider,
+                messages = messages,
+                params = TextGenerationParams(
+                    model = model,
+                    temperature = 0.3f,
+                    topP = 0.95f,
+                    customBody = listOf(
+                        CustomBody(
+                            key = "translation_options",
+                            value = buildJsonObject {
+                                put("source_lang", JsonPrimitive("auto"))
+                                put(
+                                    "target_lang",
+                                    JsonPrimitive(targetLanguage.getDisplayLanguage(Locale.ENGLISH))
+                                )
+                            }
+                        )
+                    )
+                ),
+            )
+            // 4.2.0: TextGenerationResult 直接持 message
+            val translatedText = result.message.toText()
+
+            if (translatedText.isNotBlank()) {
+                onStreamUpdate?.invoke(translatedText)
+                emit(translatedText)
+            }
+        }
+    }.flowOn(Dispatchers.IO)
+}
+
+/**
+ * v3.11.24 (F3): 生成复读熔断异常 — 非重试语义, 进入生成终态。
+ * 触发时保留已生成内容, 不回滚不重试 (同 prompt 重采样大概率再退化)。
+ */
+internal class ClientGenerationGuardException(message: String) : RuntimeException(message)
+
+/** v4.5.2: 修复 finish_reason=length 截断的工具调用 — input JSON 解析失败的
+ *  未执行调用预填结构化错误 output (isExecuted 随 output 非空成立), 防止残缺
+ *  参数照常执行 (文件写一半), 同时把失败原因与正确出路 (分段) 反馈给模型。
+ *  v4.8.55: 返回 (修复后消息, 是否发生修复) — 供自动续写判定。 */
+private fun repairLengthTruncatedToolCalls(messages: List<UIMessage>): Pair<List<UIMessage>, Boolean> {
+    val last = messages.lastOrNull() ?: return messages to false
+    var repairedAny = false
+    val repaired = last.parts.map { part ->
+        if (part is UIMessagePart.Tool && part.output.isEmpty() && part.input.isNotBlank()) {
+            val parses = runCatching { kotlinx.serialization.json.Json.parseToJsonElement(part.input) }.isSuccess
+            if (!parses) {
+                repairedAny = true
+                part.copy(output = listOf(UIMessagePart.Text(
+                    "[调用未执行: 模型输出达到长度上限 (max_tokens), 本次工具调用的参数在传输中被截断。" +
+                    "请把同样的任务拆成多个更小的调用完成 — 例如分段写入文件 (先写主体, 再追加剩余部分), " +
+                    "或减小单次参数的内容量, 然后重新调用。]"
+                )))
+            } else part
+        } else part
+    }
+    return (if (repaired != last.parts) {
+        messages.dropLast(1) + last.copy(parts = repaired)
+    } else messages) to repairedAny
+}
+
+/** v4.8.55: 长度截断自动续写状态 — per-generation 局部对象 (与 RetryState 同模式:
+ *  经参数传入 generateInternal, 子代理并发生成互不串扰)。
+ *  - continuationsDone: 已自动续写轮数 (上限 MAX_LENGTH_CONTINUATIONS)
+ *  - pendingNudge: 下一轮请求是否注入续写引导 (请求级, 不落盘不显示)
+ *  - lastRoundLengthCut / lastRoundToolRepaired: generateInternal 流结束时写回
+ *    的本轮结论 (generateText 侧自动续写决策判据) */
+private class LengthContinuationState {
+    var continuationsDone = 0
+    var pendingNudge = false
+    var lastRoundLengthCut = false
+    var lastRoundToolRepaired = false
+}
+
+// v4.8.55: 长度截断自动续写上限 (正文与工具截断共用; 3 次 ≈ 单回答最多 4×max_tokens)
+private const val MAX_LENGTH_CONTINUATIONS = 3
+
+// v4.8.55: 续写引导 — 请求级注入 (不落盘不显示; 覆盖正文截断与工具截断两种指引)
+private const val LENGTH_CONTINUATION_NUDGE =
+    "（系统自动续写）上一条输出因长度上限被截断。请接着未完成的部分继续：工具调用参数若被截断，" +
+    "请把任务拆成更小分段重新调用；正文若被截断，请直接从断点处继续输出，不要重复已输出内容，不要重新开头。"
+
+/** v4.8.55: 合并末条 assistant 消息中的相邻 Text 分片 (长度截断自动续写产生多
+ *  分片 → 拼接为连续文本, 渲染无接缝; 图片/工具/思考等 part 作为边界不动)。 */
+private fun mergeAdjacentTextParts(messages: List<UIMessage>): List<UIMessage> {
+    val last = messages.lastOrNull() ?: return messages
+    if (last.role != MessageRole.ASSISTANT ||
+        last.parts.count { it is UIMessagePart.Text } < 2
+    ) return messages
+    val merged = ArrayList<UIMessagePart>(last.parts.size)
+    for (p in last.parts) {
+        val prev = merged.lastOrNull()
+        if (p is UIMessagePart.Text && prev is UIMessagePart.Text) {
+            merged[merged.size - 1] = prev.copy(text = prev.text + p.text)
+        } else {
+            merged.add(p)
+        }
+    }
+    return if (merged.size != last.parts.size) {
+        messages.dropLast(1) + last.copy(parts = merged)
+    } else messages
+}

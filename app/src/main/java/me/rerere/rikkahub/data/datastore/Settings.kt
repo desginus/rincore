@@ -120,6 +120,8 @@ data class Settings(
     val classifierPrompt: String = "",
     val backupReminderConfig: BackupReminderConfig = BackupReminderConfig(),
     val sponsorAlertDismissedAt: Int = 0,
+    // RinCore 兼容层：旧消费面（统计/调试页）仍读 Settings.launchCount；上游 3.0.0 已改为独立 flow
+    val launchCount: Int = 0,
 ) {
     companion object {
         // 构造一个用于初始化的settings, 但它不能用于保存，防止使用初始值存储

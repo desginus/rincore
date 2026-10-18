@@ -1,57 +1,65 @@
+/* 【域 A·对话核心】 — AI 组件 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.components.ai
 
-import androidx.compose.foundation.interaction.MutableInteractionSource
+
+/* ───【原版对齐】ReasoningPicker | 差异 +68 行
+ * 来源: 原版移植 + 自研 (MAX 档 + 简化)
+ * 功能: 推理程度选择器
+ * 差异: 1. 自研 MAX 档灯泡呼吸闪烁 (v3.6.70-72);
+ *        2. 2.4.10 移植移除底部刻度 (v3.6.97 d1e8effc)
+ * ───────────────────────────────────────────────────────────────*/
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.SliderState
 import androidx.compose.material3.Text
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import androidx.graphics.shapes.RoundedPolygon
-import kotlinx.coroutines.flow.drop
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Idea
 import me.rerere.hugeicons.stroke.Idea01
 import me.rerere.rikkahub.R
-import me.rerere.ui.components.ToggleSurface
-import me.rerere.ui.icons.ReasoningHigh
-import me.rerere.ui.icons.ReasoningLow
-import me.rerere.ui.icons.ReasoningMedium
+import me.rerere.rikkahub.ui.components.ui.ToggleSurface
+import me.rerere.rikkahub.ui.components.ui.icons.ReasoningHigh
+import me.rerere.rikkahub.ui.components.ui.icons.ReasoningLow
+import me.rerere.rikkahub.ui.components.ui.icons.ReasoningMedium
 import kotlin.math.roundToInt
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.setValue
 
 private val levels = ReasoningLevel.entries
 private val levelCount = levels.size
-private val levelShapes = levels.map { it.shape() }
-
 @Composable
 fun ReasoningButton(
     modifier: Modifier = Modifier,
@@ -83,7 +91,7 @@ fun ReasoningButton(
                 modifier = Modifier.size(24.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(reasoningLevel.icon(), null)
+                ReasoningIcon(reasoningLevel)
             }
             if (!onlyIcon) Text(stringResource(R.string.setting_provider_page_reasoning))
         }
@@ -97,26 +105,13 @@ fun ReasoningPicker(
     onUpdateReasoningLevel: (ReasoningLevel) -> Unit,
 ) {
     val currentIndex = levels.indexOf(reasoningLevel).coerceAtLeast(0)
-    val sliderState = remember {
-        SliderState(
-            value = currentIndex.toFloat(),
-            trackRange = 0f..(levelCount - 1).toFloat(),
-            steps = levelCount - 2,
-        )
-    }
-    val interactionSource = remember { MutableInteractionSource() }
-    val hapticFeedback = LocalHapticFeedback.current
-    // 拖动过程中就跟随滑块预览，松手后才真正提交
-    val previewLevel = levels[sliderState.value.roundToInt().coerceIn(0, levelCount - 1)]
+    // 原版 2.5.2 将此 Slider 迁移到 SliderState API, 该形态依赖更新版
+    // material3 (随 2.5.2 的 libs.versions.toml 升级)。本项目依赖未跟进,
+    // 保持行为等价的 value/onValueChange 形态: 吸附/同步/回调语义一致。
+    var sliderValue by remember { mutableFloatStateOf(currentIndex.toFloat()) }
 
     LaunchedEffect(currentIndex) {
-        sliderState.value = currentIndex.toFloat()
-    }
-
-    LaunchedEffect(sliderState) {
-        snapshotFlow { sliderState.value.roundToInt() }
-            .drop(1)
-            .collect { hapticFeedback.performHapticFeedback(HapticFeedbackType.SegmentTick) }
+        sliderValue = currentIndex.toFloat()
     }
 
     ModalBottomSheet(
@@ -127,55 +122,82 @@ fun ReasoningPicker(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
-                .padding(bottom = 16.dp),
+                .padding(bottom = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            PickerValueHeader(
-                title = stringResource(R.string.reasoning_picker_title),
-                value = previewLevel,
-                hint = stringResource(R.string.reasoning_picker_hint),
-                label = { it.label() },
+            // 标题
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                // 等级越高形状越「激烈」
-                PickerHero(
-                    shapes = levelShapes,
-                    index = levels.indexOf(previewLevel),
-                    icon = previewLevel.icon(),
-                    containerColor = when {
-                        !previewLevel.isEnabled -> MaterialTheme.colorScheme.surfaceContainerHighest
-                        previewLevel >= ReasoningLevel.HIGH -> MaterialTheme.colorScheme.primary
-                        else -> MaterialTheme.colorScheme.primaryContainer
-                    },
-                    contentColor = when {
-                        !previewLevel.isEnabled -> MaterialTheme.colorScheme.onSurfaceVariant
-                        previewLevel >= ReasoningLevel.HIGH -> MaterialTheme.colorScheme.onPrimary
-                        else -> MaterialTheme.colorScheme.onPrimaryContainer
-                    },
+                Text(
+                    text = stringResource(R.string.reasoning_picker_title),
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                Text(
+                    text = stringResource(R.string.reasoning_picker_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
                 )
             }
 
+            // 当前等级展示
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                val iconColor by animateColorAsState(
+                    if (reasoningLevel.isEnabled) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurface
+                )
+                ReasoningIcon(
+                    level = reasoningLevel,
+                    modifier = Modifier.size(32.dp),
+                    tint = iconColor,
+                )
+                Text(
+                    text = reasoningLevel.label(),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
+
+            // v3.6.97 移植原版 d1e8effc: 移除底部刻度 (简化推理选择页面)
             Slider(
-                state = sliderState,
-                onValueChange = { sliderState.value = it },
+                value = sliderValue,
+                onValueChange = { sliderValue = it },
                 onValueChangeFinished = {
-                    val snappedIndex = sliderState.value.roundToInt().coerceIn(0, levelCount - 1)
-                    sliderState.value = snappedIndex.toFloat()
+                    val snappedIndex = sliderValue.roundToInt().coerceIn(0, levelCount - 1)
+                    sliderValue = snappedIndex.toFloat()
                     onUpdateReasoningLevel(levels[snappedIndex])
                 },
+                // v4.5.10 修复: 2.5.2 移植回退时漏恢复区间参数, Slider 落回默认
+                // 0f..1f, 7 档滑块被锁死在头两档 (表现为"只有开启/关闭两档")
+                valueRange = 0f..(levelCount - 1).toFloat(),
+                steps = levelCount - 2,
                 modifier = Modifier.fillMaxWidth(),
-                interactionSource = interactionSource,
                 thumb = {
-                    SliderDefaults.Thumb(
-                        interactionSource = interactionSource,
-                        isVertical = false,
-                        thumbSize = DpSize(4.dp, 52.dp),
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.onPrimary)
+                        )
+                    }
                 },
                 track = { sliderState ->
                     SliderDefaults.Track(
                         sliderState = sliderState,
-                        trackCornerSize = 12.dp,
-                        modifier = Modifier.height(40.dp),
+                        drawStopIndicator = null,
+                        thumbTrackGapSize = 0.dp,
                     )
                 }
             )
@@ -183,24 +205,58 @@ fun ReasoningPicker(
     }
 }
 
-private fun ReasoningLevel.icon(): ImageVector = when (this) {
-    ReasoningLevel.OFF -> HugeIcons.Idea
-    ReasoningLevel.AUTO -> HugeIcons.Idea01
-    ReasoningLevel.LOW -> ReasoningLow
-    ReasoningLevel.MEDIUM -> ReasoningMedium
-    ReasoningLevel.HIGH -> ReasoningHigh
-    ReasoningLevel.XHIGH -> ReasoningHigh
-    ReasoningLevel.MAX -> ReasoningHigh
-}
-
-private fun ReasoningLevel.shape(): RoundedPolygon = when (this) {
-    ReasoningLevel.OFF -> MaterialShapes.Circle
-    ReasoningLevel.AUTO -> MaterialShapes.Cookie4Sided
-    ReasoningLevel.LOW -> MaterialShapes.Cookie6Sided
-    ReasoningLevel.MEDIUM -> MaterialShapes.Cookie7Sided
-    ReasoningLevel.HIGH -> MaterialShapes.Cookie9Sided
-    ReasoningLevel.XHIGH -> MaterialShapes.Cookie12Sided
-    ReasoningLevel.MAX -> MaterialShapes.SoftBurst
+@Composable
+private fun ReasoningIcon(
+    level: ReasoningLevel,
+    modifier: Modifier = Modifier,
+    tint: Color? = null,
+) {
+    // v3.6.71: MAX 档灯泡呼吸闪烁 — 全局统一 (输入栏按钮 + 深度选择器)
+    // v3.6.72: tint 改为 nullable — 此前默认 Color.Unspecified 传入 Icon
+    // 导致图标渲染透明, 主页灯泡完全消失
+    val maxPulse = rememberInfiniteTransition(label = "reasoning_max_pulse")
+    val maxAlpha by maxPulse.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.3f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 650),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "reasoning_max_alpha",
+    )
+    // v3.11.18: XHIGH 档渐变闪烁 — 与 MAX 同款呼吸但频率慢 3 倍以上
+    // (全周期 4000ms vs MAX 1300ms = 3.08x), 视觉上区分 XHIGH/HIGH 同图标静态档
+    val xhighPulse = rememberInfiniteTransition(label = "reasoning_xhigh_pulse")
+    val xhighAlpha by xhighPulse.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.35f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 2000),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "reasoning_xhigh_alpha",
+    )
+    val iconModifier = modifier.graphicsLayer {
+        alpha = when (level) {
+            ReasoningLevel.MAX -> maxAlpha
+            ReasoningLevel.XHIGH -> xhighAlpha
+            else -> 1f
+        }
+    }
+    val image = when (level) {
+        ReasoningLevel.OFF -> HugeIcons.Idea
+        ReasoningLevel.AUTO -> HugeIcons.Idea01
+        ReasoningLevel.LOW -> ReasoningLow
+        ReasoningLevel.MEDIUM -> ReasoningMedium
+        ReasoningLevel.HIGH -> ReasoningHigh
+        ReasoningLevel.XHIGH -> ReasoningHigh
+        ReasoningLevel.MAX -> ReasoningHigh
+    }
+    if (tint != null) {
+        Icon(image, null, modifier = iconModifier, tint = tint)
+    } else {
+        Icon(image, null, modifier = iconModifier)
+    }
 }
 
 @Composable

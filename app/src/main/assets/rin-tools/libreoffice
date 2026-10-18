@@ -1,0 +1,17 @@
+#!/bin/sh
+# soffice shim — LibreOffice is NOT available in this sandbox.
+# Root cause: proot rootfs has no standard /proc mount; LibreOffice aborts at
+# startup ("ERROR: /proc not mounted"). It cannot be fixed inside the sandbox.
+# This shim gives the AI agent a clear, actionable message instead of a mystery
+# failure, and points to the working alternatives (all verified available).
+echo "ERROR: LibreOffice (soffice) is not available in this sandbox." >&2
+echo "Reason: proot environment has no standard /proc mount (Cannot be fixed in-sandbox)." >&2
+echo "" >&2
+echo "Use these instead — all installed and verified:" >&2
+echo "  officecli view <file> screenshot   render a preview image (docx/xlsx/pptx)" >&2
+echo "  officecli view <file> html         render to HTML" >&2
+echo "  officecli view <file> text         read structured content" >&2
+echo "  officecli add/set/remove <file>..  edit documents" >&2
+echo "  pandoc <in> -o <out>               format conversion (md/html/docx/epub)" >&2
+echo "  office-edit / office-check         surgical edit / delivery QA" >&2
+exit 1

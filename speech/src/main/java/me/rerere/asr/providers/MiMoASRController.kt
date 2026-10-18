@@ -1,5 +1,9 @@
 package me.rerere.asr.providers
 
+
+/* ───【原版对齐】MiMoASRController.kt | 差异 ±2 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
@@ -253,7 +257,7 @@ class MiMoASRController(
 
         val text = withContext(Dispatchers.IO) {
             httpClient.newCall(request).execute().use { resp ->
-                val respBody = resp.body?.string().orEmpty()
+                val respBody = resp.body.string().orEmpty()
                 if (!resp.isSuccessful) {
                     throw IOException("MiMo ASR HTTP ${resp.code}: $respBody")
                 }

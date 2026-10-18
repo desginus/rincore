@@ -147,6 +147,7 @@ internal val SETTINGS_FIELDS: List<SettingsField<*, *>> = with(SettingsStore) {
 
         // 赞助提醒
         plain(SPONSOR_ALERT_DISMISSED_AT, Settings::sponsorAlertDismissedAt) { copy(sponsorAlertDismissedAt = it) },
+        plain(LAUNCH_COUNT, Settings::launchCount) { copy(launchCount = it) },
 
         // ── RinCore 自研字段族（与原 write 链逐字段对齐）──
         plain(OPENCODE_API_KEY, Settings::opencodeApiKey) { copy(opencodeApiKey = it) },

@@ -1,4 +1,9 @@
+/* 【域 F·主题渲染】 — 消息/文档渲染 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.richtext
+
+/* ───【原版对齐】Mermaid.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
 
 import android.graphics.BitmapFactory
 import android.util.Base64
@@ -22,23 +27,23 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import me.rerere.ui.toast.ToastType
+import com.dokar.sonner.ToastType
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Download01
 import me.rerere.hugeicons.stroke.View
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.ui.components.webview.WEB_VIEW_ASSET_URL
+import me.rerere.rikkahub.ui.components.webview.WEB_VIEW_BASE_URL
+import me.rerere.rikkahub.ui.components.webview.WebView
+import me.rerere.rikkahub.ui.components.webview.WebViewContentCache
+import me.rerere.rikkahub.ui.components.webview.rememberWebViewState
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.escapeHtml
 import me.rerere.rikkahub.utils.exportImage
 import me.rerere.rikkahub.utils.toCssHex
-import me.rerere.ui.webview.WEB_VIEW_ASSET_URL
-import me.rerere.ui.webview.WEB_VIEW_BASE_URL
-import me.rerere.ui.webview.WebView
-import me.rerere.ui.webview.WebViewContentCache
-import me.rerere.ui.webview.rememberWebViewState
 
 @Composable
 fun Mermaid(
@@ -56,24 +61,34 @@ fun Mermaid(
         MermaidInterface(
             onExportImage = { base64Image ->
                 runCatching {
-                    activity?.let {
+                    // v4.8.53: 按真实结果提示 (原实现无条件"导出成功")
+                    val ok = activity?.let { act ->
                         try {
                             val imageBytes = Base64.decode(base64Image, Base64.DEFAULT)
                             val bitmap =
                                 BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
-                            context.exportImage(
-                                it,
+                            if (bitmap == null) false
+                            else context.exportImage(
+                                act,
                                 bitmap,
                                 "mermaid_${System.currentTimeMillis()}.png"
                             )
                         } catch (e: Exception) {
                             e.printStackTrace()
+                            false
                         }
+                    } ?: false
+                    if (ok) {
+                        toaster.show(
+                            context.getString(R.string.mermaid_export_success),
+                            type = ToastType.Success
+                        )
+                    } else {
+                        toaster.show(
+                            context.getString(R.string.mermaid_export_failed),
+                            type = ToastType.Error
+                        )
                     }
-                    toaster.show(
-                        context.getString(R.string.mermaid_export_success),
-                        type = ToastType.Success
-                    )
                 }.onFailure {
                     it.printStackTrace()
                     toaster.show(

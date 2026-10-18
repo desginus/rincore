@@ -1,4 +1,10 @@
+/* 【域 I·数据存储】 — 仓库层 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.data.repository
+
+/* ───【原版对齐】ConversationRepository.kt | 差异 ±17 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 
 import android.database.sqlite.SQLiteBlobTooBigException
 import androidx.paging.Pager
@@ -7,12 +13,10 @@ import androidx.paging.PagingData
 import androidx.paging.PagingSource
 import androidx.paging.map
 import androidx.room.withTransaction
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import me.rerere.ai.ui.UIMessage
-import me.rerere.rikkahub.data.datastore.ConversationSortOrder
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.fts.MessageFtsManager
 import me.rerere.rikkahub.data.db.fts.MessageSearchSort
@@ -43,6 +47,14 @@ class ConversationRepository(
 
     suspend fun hasFileReference(fileUrl: String): Boolean =
         messageNodeDAO.hasFileReference(JsonInstant.encodeToString(fileUrl))
+
+    /** v4.8.186: 收件箱 — 引用该子串(如 "upload/<上传码>")的对话 ID 轻查。 */
+    suspend fun conversationIdsReferencing(needle: String): List<String> =
+        messageNodeDAO.conversationIdsContaining(needle)
+
+    /** v4.8.186: 收件箱 — 按对话 ID 直取标题 (String 形态, 免 Uuid 解析)。 */
+    suspend fun conversationTitleByIdRaw(conversationId: String): String? =
+        conversationDAO.getConversationById(conversationId)?.title
 
     suspend fun getRecentConversations(assistantId: Uuid, limit: Int = 10): List<Conversation> {
         return conversationDAO.getRecentConversationsOfAssistant(
@@ -78,42 +90,35 @@ class ConversationRepository(
         }
     }
 
-    fun getUnfiledConversationsOfAssistantPaging(
-        assistantId: Uuid,
-        sortOrder: ConversationSortOrder = ConversationSortOrder.UPDATE_TIME,
-    ): Flow<PagingData<Conversation>> = Pager(
+    fun getUnfiledConversationsOfAssistantPaging(assistantId: Uuid): Flow<PagingData<Conversation>> = Pager(
         config = PagingConfig(
             pageSize = PAGE_SIZE,
             initialLoadSize = INITIAL_LOAD_SIZE,
             enablePlaceholders = false
         ),
-        pagingSourceFactory = {
-            conversationDAO.getUnfiledConversationsOfAssistantPaging(
-                assistantId = assistantId.toString(),
-                sortByCreateTime = sortOrder == ConversationSortOrder.CREATE_TIME,
-            )
-        }
+        pagingSourceFactory = { conversationDAO.getUnfiledConversationsOfAssistantPaging(assistantId.toString()) }
     ).flow.map { pagingData ->
         pagingData.map { entity ->
             conversationSummaryToConversation(entity)
         }
     }
 
-    fun getConversationsOfFolderPaging(
-        folderId: Uuid,
-        sortOrder: ConversationSortOrder = ConversationSortOrder.UPDATE_TIME,
-    ): Flow<PagingData<Conversation>> = Pager(
+    /** v4.8.62: 未归类对话计数 (落地逻辑判定; 与分页查询同口径) */
+    /** v4.8.77: 项目包移出为助手 — 包内全部对话批量转移给新助手。 */
+    suspend fun reassignFolderConversations(folderId: Uuid, assistantId: Uuid) {
+        conversationDAO.reassignFolderConversations(folderId.toString(), assistantId.toString())
+    }
+
+    suspend fun countUnfiledConversationsOfAssistant(assistantId: Uuid): Int =
+        conversationDAO.countUnfiledConversationsOfAssistant(assistantId.toString())
+
+    fun getConversationsOfFolderPaging(folderId: Uuid): Flow<PagingData<Conversation>> = Pager(
         config = PagingConfig(
             pageSize = PAGE_SIZE,
             initialLoadSize = INITIAL_LOAD_SIZE,
             enablePlaceholders = false
         ),
-        pagingSourceFactory = {
-            conversationDAO.getConversationsOfFolderPaging(
-                folderId = folderId.toString(),
-                sortByCreateTime = sortOrder == ConversationSortOrder.CREATE_TIME,
-            )
-        }
+        pagingSourceFactory = { conversationDAO.getConversationsOfFolderPaging(folderId.toString()) }
     ).flow.map { pagingData ->
         pagingData.map { entity ->
             conversationSummaryToConversation(entity)
@@ -191,7 +196,7 @@ class ConversationRepository(
         offset: Int,
         limit: Int,
     ): ConversationPageResult = loadConversationPage(
-        conversationDAO.getUnfiledConversationsOfAssistantPaging(assistantId.toString(), sortByCreateTime = false),
+        conversationDAO.getUnfiledConversationsOfAssistantPaging(assistantId.toString()),
         offset,
         limit,
     )
@@ -201,7 +206,7 @@ class ConversationRepository(
         offset: Int,
         limit: Int,
     ): ConversationPageResult = loadConversationPage(
-        conversationDAO.getConversationsOfFolderPaging(folderId.toString(), sortByCreateTime = false),
+        conversationDAO.getConversationsOfFolderPaging(folderId.toString()),
         offset,
         limit,
     )
@@ -288,6 +293,12 @@ class ConversationRepository(
             }
         }
 
+    // v3.8.15: 清理聊天内容候选 (非置顶 + 早于 cutoff) — 完整转换供删除
+    suspend fun getConversationsEligibleForCleanup(cutoffEpochMs: Long): List<Conversation> {
+        return conversationDAO.getCleanupCandidates(cutoffEpochMs)
+            .map { conversationEntityToConversation(it, emptyList()) }
+    }
+
     suspend fun getConversationById(uuid: Uuid): Conversation? {
         val entity = conversationDAO.getConversationById(uuid.toString())
         return if (entity != null) {
@@ -300,14 +311,15 @@ class ConversationRepository(
         return conversationDAO.existsById(uuid.toString())
     }
 
-    suspend fun countConversations(): Int {
-        return conversationDAO.countAll()
-    }
-
+    // v4.8.64 (2.5.5 移植): 数据恢复页 — 聊天记录中的助手分布 (含已从设置消失的助手)
     suspend fun countConversationsByAssistant(): Map<Uuid, Int> {
         return conversationDAO.countByAssistant().mapNotNull { row ->
             runCatching { Uuid.parse(row.assistantId) }.getOrNull()?.let { it to row.count }
         }.toMap()
+    }
+
+    suspend fun countConversations(): Int {
+        return conversationDAO.countAll()
     }
 
     suspend fun insertConversation(conversation: Conversation) {
@@ -347,17 +359,19 @@ class ConversationRepository(
             )
         }
         filesManager.deleteChatFiles(fullConversation.files)
+        // v4.8.185 (审计重写): 对话媒体快照随对话删除 (files/chat-media/<对话ID>/)
+        filesManager.deleteConversationChatMedia(conversation.id.toString())
+        // v4.8.92: 单对话记忆随对话删除（该记忆只在对应对话可见，对话没了即销毁）
+        runCatching {
+            database.memoryDao().deleteMemoriesOfConversation(conversation.id.toString())
+        }
     }
 
     suspend fun searchMessages(
         keyword: String,
         sort: MessageSearchSort = MessageSearchSort.RELEVANCE,
         assistantId: Uuid? = null,
-    ) = messageFtsManager.search(keyword, sort, assistantId?.let { listOf(it.toString()) })
-
-    /** 只在 [assistantIds] 这些助手的对话里搜索 */
-    suspend fun searchMessagesOfAssistants(keyword: String, assistantIds: Set<Uuid>) =
-        messageFtsManager.search(keyword, MessageSearchSort.RELEVANCE, assistantIds.map { it.toString() })
+    ) = messageFtsManager.search(keyword, sort, assistantId?.toString())
 
     suspend fun rebuildAllIndexes(onProgress: (current: Int, total: Int) -> Unit = { _, _ -> }) {
         messageFtsManager.deleteAll()
@@ -372,6 +386,12 @@ class ConversationRepository(
         }
     }
 
+    suspend fun deleteConversationOfAssistant(assistantId: Uuid) {
+        getConversationsOfAssistant(assistantId).first().forEach { conversation ->
+            deleteConversation(conversation)
+        }
+    }
+
     fun conversationToConversationEntity(conversation: Conversation): ConversationEntity {
         require(conversation.messageNodes.none { it.messages.any { message -> message.hasBase64Part() } })
         return ConversationEntity(
@@ -383,12 +403,13 @@ class ConversationRepository(
             assistantId = conversation.assistantId.toString(),
             chatSuggestions = JsonInstant.encodeToString(conversation.chatSuggestions),
             isPinned = conversation.isPinned,
+            compressRetentions = JsonInstant.encodeToString(conversation.compressRetentions),
             customSystemPrompt = conversation.customSystemPrompt ?: "",
             modeInjectionIds = JsonInstant.encodeToString(conversation.modeInjectionIds),
             lorebookIds = JsonInstant.encodeToString(conversation.lorebookIds),
+            // legacy 数据壳: v4.5.23 起 CWD 为助手级 (Assistant.workspaceCwd), 本列仅数据兼容
             workspaceCwd = conversation.workspaceCwd ?: "",
             folderId = conversation.folderId?.toString() ?: "",
-            config = conversation.config?.let { JsonInstant.encodeToString(it) } ?: "",
         )
     }
 
@@ -405,12 +426,16 @@ class ConversationRepository(
             assistantId = Uuid.parse(conversationEntity.assistantId),
             chatSuggestions = JsonInstant.decodeFromString(conversationEntity.chatSuggestions),
             isPinned = conversationEntity.isPinned,
+            compressRetentions = runCatching {
+                JsonInstant.decodeFromString<List<me.rerere.rikkahub.data.model.CompressRetention>>(
+                    conversationEntity.compressRetentions
+                )
+            }.getOrDefault(emptyList()),
             customSystemPrompt = conversationEntity.customSystemPrompt.ifEmpty { null },
             modeInjectionIds = JsonInstant.decodeFromString(conversationEntity.modeInjectionIds),
             lorebookIds = JsonInstant.decodeFromString(conversationEntity.lorebookIds),
-            workspaceCwd = conversationEntity.workspaceCwd.ifEmpty { null },
+            workspaceCwd = conversationEntity.workspaceCwd.ifEmpty { null }, // legacy 数据壳 (v4.5.23 助手级接管)
             folderId = conversationEntity.folderId.ifEmpty { null }?.let { Uuid.parse(it) },
-            config = conversationEntity.config.ifEmpty { null }?.let { JsonInstant.decodeFromString(it) },
         )
     }
 
@@ -424,43 +449,10 @@ class ConversationRepository(
             }
     }
 
-    suspend fun updatePinStatus(conversationId: Uuid, isPinned: Boolean) {
+    suspend fun togglePinStatus(conversationId: Uuid) {
         conversationDAO.updatePinStatus(
             id = conversationId.toString(),
-            isPinned = isPinned,
-        )
-    }
-
-    suspend fun updateConversationAssistant(conversationId: Uuid, assistantId: Uuid) {
-        conversationDAO.updateAssistantId(conversationId.toString(), assistantId.toString())
-    }
-
-    /**
-     * 只更新会话持有的配置（含注入绑定和工作目录），不重写消息节点。
-     */
-    suspend fun updateConversationConfig(conversation: Conversation) {
-        conversationDAO.updateConfig(
-            id = conversation.id.toString(),
-            config = conversation.config?.let { JsonInstant.encodeToString(it) } ?: "",
-            modeInjectionIds = JsonInstant.encodeToString(conversation.modeInjectionIds),
-            lorebookIds = JsonInstant.encodeToString(conversation.lorebookIds),
-            workspaceCwd = conversation.workspaceCwd ?: "",
-        )
-    }
-
-    suspend fun updateTitle(conversationId: Uuid, title: String) {
-        conversationDAO.updateTitle(conversationId.toString(), title)
-        messageFtsManager.updateTitle(conversationId.toString(), title)
-    }
-
-    suspend fun updateCustomSystemPrompt(conversationId: Uuid, customSystemPrompt: String?) {
-        conversationDAO.updateCustomSystemPrompt(conversationId.toString(), customSystemPrompt ?: "")
-    }
-
-    suspend fun updateChatSuggestions(conversationId: Uuid, chatSuggestions: List<String>) {
-        conversationDAO.updateChatSuggestions(
-            id = conversationId.toString(),
-            chatSuggestions = JsonInstant.encodeToString(chatSuggestions),
+            isPinned = !(getConversationById(conversationId)?.isPinned ?: false)
         )
     }
 
@@ -504,9 +496,6 @@ class ConversationRepository(
                     e.printStackTrace()
                     offset += pageSize
                     continue
-                } catch (e: CancellationException) {
-                    // CancellationException 是 IllegalStateException 的子类，必须先重新抛出，否则取消后会在事务内无限循环
-                    throw e
                 } catch (e: IllegalStateException) {
                     e.printStackTrace()
                     offset += pageSize

@@ -1,7 +1,11 @@
+/* 【域 F·主题渲染】 — UI 组件 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.ui
 
+/* ───【原版对齐】TTSController.kt | 差异 ±19 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import androidx.compose.animation.AnimatedVisibility
-import me.rerere.ui.toast.ToastType
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
@@ -18,13 +22,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowLeft01
@@ -34,26 +37,19 @@ import me.rerere.hugeicons.stroke.Forward02
 import me.rerere.hugeicons.stroke.Pause
 import me.rerere.hugeicons.stroke.Play
 import me.rerere.rikkahub.ui.context.LocalTTSState
-import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.CustomTtsState
 import me.rerere.tts.model.PlaybackState
 import me.rerere.tts.model.PlaybackStatus
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 @Composable
 fun TTSController() {
+    val context = LocalContext.current
     val ttsState = LocalTTSState.current
-    val toaster = LocalToaster.current
 
     val isSpeaking by ttsState.isSpeaking.collectAsState()
     var isVisible by remember { mutableStateOf(false) }
-
-    LaunchedEffect(ttsState, toaster) {
-        ttsState.error.collect { error ->
-            if (error != null) {
-                toaster.show(message = error, type = ToastType.Error)
-            }
-        }
-    }
 
     LaunchedEffect(isSpeaking) {
         if (isSpeaking) {

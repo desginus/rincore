@@ -1,7 +1,13 @@
 package me.rerere.rikkahub.ui.theme
 
+/* ───【域 F·主题渲染】CustomTheme.kt
+ * 职责: 自定义主题 (三色 ARGB → 完整 ColorScheme 生成, tonal spot)
+ * 常用改动: 生成算法 → generateColorScheme; 颜色字段 → primary/secondary/tertiary
+ * 问题定位: 自定义色板异常 → 本文件 + SettingThemePage
+ * 基线: 与 2.5.1 逐字节一致 | 地图: docs/APP_MAP.md §F | 历史: .claude/skills/rincore-bug-record
+ * ───────────────────────────────────────────────────────────────*/
+
 import androidx.compose.material3.ColorScheme
-import dynamiccolor.ColorSpec
 import dynamiccolor.ColorSpecs
 import dynamiccolor.DynamicScheme
 import dynamiccolor.Variant
@@ -21,7 +27,7 @@ data class CustomTheme(
 ) {
     fun generateColorScheme(dark: Boolean): ColorScheme {
         val sourceHct = Hct.fromInt(primaryColorArgb.toInt())
-        val specVersion = ColorSpec.SpecVersion.SPEC_2025
+        val specVersion = DynamicScheme.DEFAULT_SPEC_VERSION
         val platform = DynamicScheme.DEFAULT_PLATFORM
         val contrastLevel = 0.0
         val colorSpec = ColorSpecs.get(specVersion)

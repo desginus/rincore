@@ -1,11 +1,11 @@
+/* 【域 I·数据存储】 — 页面 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.ui.pages.log
 
-import android.content.ClipData
-import android.widget.Toast
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.ClipEntry
+
+/* ───【原版对齐】LogPage.kt | 差异 ±37 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.Copy01
 import me.rerere.hugeicons.stroke.Delete01
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -32,14 +32,11 @@ import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Switch
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -55,6 +52,8 @@ import me.rerere.rikkahub.utils.JsonInstantPretty
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 @Composable
 fun LogPage() {
@@ -257,9 +256,6 @@ private fun RequestLogCard(log: LogEntry.RequestLog, onClick: () -> Unit) {
 @Composable
 private fun RequestLogDetail(log: LogEntry.RequestLog) {
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()) }
-    val clipboard = LocalClipboard.current
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
 
     SelectionContainer {
         LazyColumn(
@@ -325,40 +321,12 @@ private fun RequestLogDetail(log: LogEntry.RequestLog) {
             log.requestBody?.let { body ->
                 item {
                     HorizontalDivider()
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "Request Body",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(top = 8.dp)
-                        )
-                        IconButton(
-                            onClick = {
-                                scope.launch {
-                                    try {
-                                        clipboard.setClipEntry(
-                                            ClipEntry(ClipData.newPlainText("Request Body", body))
-                                        )
-                                    } catch (e: RuntimeException) {
-                                        // 内容过大时 Binder 会抛出 TransactionTooLargeException (被包装为 RuntimeException)
-                                        Toast.makeText(
-                                            context,
-                                            "Copy failed: content too large for clipboard",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
-                                }
-                            }
-                        ) {
-                            Icon(
-                                imageVector = HugeIcons.Copy01,
-                                contentDescription = stringResource(R.string.copy)
-                            )
-                        }
-                    }
+                    Text(
+                        text = "Request Body",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
                     val jsonElement = remember(body) {
                         runCatching { JsonInstantPretty.parseToJsonElement(body) }.getOrNull()
                     }

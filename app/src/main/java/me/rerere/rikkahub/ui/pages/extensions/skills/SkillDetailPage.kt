@@ -1,7 +1,11 @@
+/* 【域 A·对话核心】 — 页面 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.pages.extensions.skills
 
+/* ───【原版对齐】SkillDetailPage.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -13,16 +17,15 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -34,41 +37,37 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEach
 import me.rerere.rikkahub.R
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.Add01
-import me.rerere.hugeicons.stroke.ArrowDown01
-import me.rerere.hugeicons.stroke.Delete01
-import me.rerere.hugeicons.stroke.File02
-import me.rerere.hugeicons.stroke.Folder01
-import me.rerere.hugeicons.stroke.FolderOpen
+import com.composables.icons.lucide.ChevronDown
+import com.composables.icons.lucide.ChevronRight
+import com.composables.icons.lucide.FilePen
+import com.composables.icons.lucide.FileText
+import com.composables.icons.lucide.Folder
+import com.composables.icons.lucide.FolderOpen
+import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Plus
+import com.composables.icons.lucide.Trash2
 import me.rerere.rikkahub.ui.components.nav.BackButton
-import me.rerere.rikkahub.ui.components.ui.CardGroupIcon
-import me.rerere.rikkahub.ui.components.ui.ItemAction
-import me.rerere.rikkahub.ui.components.ui.ItemActionMenu
+import me.rerere.rikkahub.ui.components.ui.RikkaConfirmDialog
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.CustomColors
-import me.rerere.rikkahub.utils.fileSizeToString
-import me.rerere.rikkahub.utils.plus
-import me.rerere.ui.components.RikkaConfirmDialog
 import org.koin.androidx.compose.koinViewModel
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import me.rerere.rikkahub.utils.plus
 
 @Composable
 fun SkillDetailPage(skillName: String) {
@@ -76,7 +75,6 @@ fun SkillDetailPage(skillName: String) {
     LaunchedEffect(skillName) { vm.init(skillName) }
 
     val tree by vm.tree.collectAsStateWithLifecycle()
-    val readOnly by vm.readOnly.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val toaster = LocalToaster.current
 
@@ -106,12 +104,12 @@ fun SkillDetailPage(skillName: String) {
         },
         floatingActionButton = {
             AnimatedVisibility(
-                visible = fabVisible && !readOnly,
+                visible = fabVisible,
                 enter = fadeIn() + scaleIn(),
                 exit = fadeOut() + scaleOut(),
             ) {
                 FloatingActionButton(onClick = { showAddDialog = true }) {
-                    Icon(HugeIcons.Add01, contentDescription = null)
+                    Icon(Lucide.Plus, contentDescription = null)
                 }
             }
         },
@@ -122,33 +120,20 @@ fun SkillDetailPage(skillName: String) {
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(scrollState)
-                .padding(innerPadding + PaddingValues(16.dp)),
+                .padding(innerPadding + PaddingValues(8.dp)),
         ) {
-            // 整棵文件树放在一个圆角容器里，行的点击水波纹跟着容器的圆角裁剪
-            if (tree.isNotEmpty()) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    color = CustomColors.listItemColors.containerColor,
-                ) {
-                    Column {
-                        FileTree(
-                            nodes = tree,
-                            depth = 0,
-                            readOnly = readOnly,
-                            onEdit = { editingFile = it },
-                            onDelete = { deleteTarget = it },
-                        )
-                    }
-                }
-            }
+            FileTree(
+                nodes = tree,
+                depth = 0,
+                onEdit = { editingFile = it },
+                onDelete = { deleteTarget = it },
+            )
         }
     }
 
     editingFile?.let { skillFile ->
         EditFileDialog(
             skillFile = skillFile,
-            readOnly = readOnly,
             initialContent = remember(skillFile.relativePath) { vm.readFile(skillFile) },
             onDismiss = { editingFile = null },
             onConfirm = { content ->
@@ -195,7 +180,6 @@ fun SkillDetailPage(skillName: String) {
 private fun FileTree(
     nodes: List<SkillFileNode>,
     depth: Int,
-    readOnly: Boolean,
     onEdit: (SkillFile) -> Unit,
     onDelete: (SkillFile) -> Unit,
 ) {
@@ -204,7 +188,6 @@ private fun FileTree(
             is SkillFileNode.FileNode -> FileItem(
                 skillFile = node.skillFile,
                 depth = depth,
-                readOnly = readOnly,
                 onEdit = { onEdit(node.skillFile) },
                 onDelete = { onDelete(node.skillFile) },
             )
@@ -212,7 +195,6 @@ private fun FileTree(
             is SkillFileNode.DirNode -> DirItem(
                 node = node,
                 depth = depth,
-                readOnly = readOnly,
                 onEdit = onEdit,
                 onDelete = onDelete,
             )
@@ -220,58 +202,59 @@ private fun FileTree(
     }
 }
 
-// 每深一层缩进这么多
-private val TreeIndent = 24.dp
-
 @Composable
 private fun FileItem(
     skillFile: SkillFile,
     depth: Int,
-    readOnly: Boolean,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    // SKILL.md 是技能的入口文件，不能删
-    val deletable = !readOnly && skillFile.relativePath != "SKILL.md"
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onEdit)
-            .heightIn(min = 64.dp)
-            .padding(start = 16.dp + TreeIndent * depth, end = if (deletable) 4.dp else 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface,
     ) {
-        CardGroupIcon(HugeIcons.File02)
-        Column(
+        Row(
             modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+                .fillMaxWidth()
+                .padding(start = (16 + depth * 20).dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = skillFile.name,
-                style = MaterialTheme.typography.bodyLarge,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            Icon(
+                imageVector = Lucide.FileText,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.primary,
             )
             Text(
-                text = skillFile.size.fileSizeToString(),
+                text = skillFile.file.name,
                 style = MaterialTheme.typography.bodyMedium,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 8.dp),
+            )
+            Text(
+                text = "${skillFile.file.length()} B",
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        }
-        if (deletable) {
-            ItemActionMenu(
-                actions = listOf(
-                    ItemAction(
-                        text = stringResource(R.string.delete),
-                        icon = HugeIcons.Delete01,
-                        destructive = true,
-                        onClick = onDelete,
-                    ),
+            IconButton(onClick = onEdit, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    imageVector = Lucide.FilePen,
+                    contentDescription = stringResource(R.string.edit),
+                    modifier = Modifier.size(16.dp),
                 )
-            )
+            }
+            if (skillFile.relativePath != "SKILL.md") {
+                IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        imageVector = Lucide.Trash2,
+                        contentDescription = stringResource(R.string.delete),
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
         }
     }
 }
@@ -280,58 +263,53 @@ private fun FileItem(
 private fun DirItem(
     node: SkillFileNode.DirNode,
     depth: Int,
-    readOnly: Boolean,
     onEdit: (SkillFile) -> Unit,
     onDelete: (SkillFile) -> Unit,
 ) {
     var expanded by rememberSaveable(node.relativePath) { mutableStateOf(false) }
-    val arrowRotation by animateFloatAsState(
-        targetValue = if (expanded) 180f else 0f,
-        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
-    )
 
-    Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { expanded = !expanded }
-                .heightIn(min = 64.dp)
-                .padding(start = 16.dp + TreeIndent * depth, end = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            CardGroupIcon(
-                icon = if (expanded) HugeIcons.FolderOpen else HugeIcons.Folder01,
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-            Text(
-                text = node.name,
-                style = MaterialTheme.typography.bodyLarge,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface,
+    ) {
+        Column {
+            Row(
                 modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 16.dp),
-            )
-            Icon(
-                imageVector = HugeIcons.ArrowDown01,
-                contentDescription = null,
-                modifier = Modifier
-                    .size(20.dp)
-                    .rotate(arrowRotation),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        AnimatedVisibility(visible = expanded) {
-            Column {
-                FileTree(
-                    nodes = node.children,
-                    depth = depth + 1,
-                    readOnly = readOnly,
-                    onEdit = onEdit,
-                    onDelete = onDelete,
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .padding(start = (16 + depth * 20).dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    imageVector = if (expanded) Lucide.ChevronDown else Lucide.ChevronRight,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Icon(
+                    imageVector = if (expanded) Lucide.FolderOpen else Lucide.Folder,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.tertiary,
+                )
+                Text(
+                    text = node.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            AnimatedVisibility(visible = expanded) {
+                Column {
+                    FileTree(
+                        nodes = node.children,
+                        depth = depth + 1,
+                        onEdit = onEdit,
+                        onDelete = onDelete,
+                    )
+                }
             }
         }
     }
@@ -340,12 +318,11 @@ private fun DirItem(
 @Composable
 private fun EditFileDialog(
     skillFile: SkillFile,
-    readOnly: Boolean,
     initialContent: String,
     onDismiss: () -> Unit,
     onConfirm: (content: String) -> Unit,
 ) {
-    var content by remember(skillFile.relativePath) { mutableStateOf(initialContent) }
+    var content by rememberSaveable(skillFile.relativePath) { mutableStateOf(initialContent) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -354,7 +331,6 @@ private fun EditFileDialog(
             OutlinedTextField(
                 value = content,
                 onValueChange = { content = it },
-                readOnly = readOnly,
                 label = { Text(stringResource(R.string.skill_detail_page_content)) },
                 minLines = 10,
                 maxLines = 20,
@@ -363,16 +339,10 @@ private fun EditFileDialog(
             )
         },
         confirmButton = {
-            if (readOnly) {
-                TextButton(onClick = onDismiss) { Text("Close") }
-            } else {
-                TextButton(onClick = { onConfirm(content) }) { Text(stringResource(R.string.skill_detail_page_save)) }
-            }
+            TextButton(onClick = { onConfirm(content) }) { Text(stringResource(R.string.skill_detail_page_save)) }
         },
         dismissButton = {
-            if (!readOnly) {
-                TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
-            }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         },
     )
 }

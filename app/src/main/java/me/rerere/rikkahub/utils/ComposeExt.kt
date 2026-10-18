@@ -1,4 +1,9 @@
+/* 【域 L·基础设施】 | 地图: docs/APP_MAP.md §L */
 package me.rerere.rikkahub.utils
+
+/* ───【原版对齐】ComposeExt.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
 
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.calculateEndPadding
@@ -6,13 +11,10 @@ import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.insert
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 
@@ -28,11 +30,6 @@ operator fun PaddingValues.plus(other: PaddingValues): PaddingValues {
         bottom = this.calculateBottomPadding() + other.calculateBottomPadding()
     )
 }
-
-// 用于未开启 autoMirror、但在当前语境下有方向含义的图标
-@Composable
-fun Modifier.mirrorForRtl(): Modifier =
-    if (LocalLayoutDirection.current == LayoutDirection.Rtl) scale(scaleX = -1f, scaleY = 1f) else this
 
 fun Color.toCssHex(): String {
     val alpha = (alpha * 255).toInt()

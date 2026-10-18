@@ -1,5 +1,9 @@
 package me.rerere.ai.ui
 
+/* ───【原版对齐】MessageMetadata.kt | 差异 ±8 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
@@ -88,7 +92,7 @@ data class OpenRouterReasoningMetadata(
 ) : PartMetadata
 
 /**
- * Google Gemini 部件的 thoughtSignature，回传时需要携带
+ * Google Gemini 部件(functionCall/inlineData)的 thoughtSignature, 回传时需要携带
  */
 @Serializable
 data class GoogleThoughtMetadata(

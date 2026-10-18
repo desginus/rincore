@@ -1,9 +1,38 @@
+/**
+ * 本地工具集 — 模块: A. 传输链 / tools/local
+ *
+ * 职责: 按 LocalToolOption 门控构建本地工具 (时间/剪贴板/TTS/闹钟/日历/屏幕时间/
+ *       电量/位置/JS 引擎/询问用户等)。
+ * 来源: 自研 (fork 无此体系)。
+ *
+ * 问题定位: 本地工具缺失/开关不生效 → 查本文件 + LocalToolOption + 对应工具文件
+ */
+/* 【域 C·工具系统】 | 地图: docs/APP_MAP.md §C */
 package me.rerere.rikkahub.data.ai.tools.local
 
+
+/* ───【原版对齐】LocalTools | 差异 +176 行
+ * 来源: 原版移植 + 自研 (本地工具集合扩展)
+ * 差异: 自研本地工具 (定时任务/AgentRun 等)
+ * ───────────────────────────────────────────────────────────────*/
 import android.content.Context
 import me.rerere.ai.core.Tool
+import me.rerere.rikkahub.costguards.checkTokenUsageTool
+import me.rerere.rikkahub.data.ai.tools.ToolInvocationContext
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.event.AppEventBus
+import me.rerere.rikkahub.data.repository.ConversationRepository
+import me.rerere.rikkahub.data.repository.ScheduledJobRepository
+import me.rerere.rikkahub.data.repository.ScheduledJobRunRepository
+import me.rerere.rikkahub.service.CronJobScheduler
+import me.rerere.rikkahub.subagent.SubAgentEngine
+import me.rerere.rikkahub.subagent.SubAgentRegistry
+import me.rerere.rikkahub.subagent.subagentCancelTool
+import me.rerere.rikkahub.subagent.subagentDispatchTool
+import me.rerere.rikkahub.subagent.subagentGetTool
+import me.rerere.rikkahub.subagent.subagentListTool
+import me.rerere.rikkahub.browser.BrowserPreferences
+import me.rerere.rikkahub.browser.BrowserToolDefaults
 import me.rerere.tts.provider.TTSManager
 
 class LocalTools(
@@ -11,51 +40,151 @@ class LocalTools(
     private val eventBus: AppEventBus,
     private val ttsManager: TTSManager,
     private val settingsStore: SettingsStore,
+    private val scheduledJobRepository: ScheduledJobRepository,
+    private val scheduledJobRunRepository: ScheduledJobRunRepository,
+    private val cronJobScheduler: CronJobScheduler,
+    private val subAgentEngine: SubAgentEngine,
+    private val subAgentRegistry: SubAgentRegistry,
+    private val conversationRepo: ConversationRepository,
+    private val browserPreferences: BrowserPreferences,
+    private val workflowRepository: me.rerere.rikkahub.workflow.repository.WorkflowRepository,
+    private val workflowEngine: me.rerere.rikkahub.workflow.execution.WorkflowEngine,
 ) {
     val javascriptTool by lazy { buildJavascriptTool() }
-
     val timeTool by lazy { buildTimeInfoTool() }
-
     val clipboardTool by lazy { buildClipboardTool(context) }
-
     val ttsTool by lazy { buildTextToSpeechTool(eventBus, ttsManager, settingsStore) }
-
     val askUserTool by lazy { buildAskUserTool() }
-
     val screenTimeTool by lazy { buildScreenTimeTool(context, eventBus) }
-
     val calendarQueryTool by lazy { buildCalendarQueryTool(context) }
-
     val calendarCreateTool by lazy { buildCalendarCreateTool(context) }
-
     val chartDisplayTool by lazy { buildChartDisplayTool() }
+    val costGuardTool by lazy { checkTokenUsageTool(settingsStore, conversationRepo) }
 
-    fun getTools(options: List<LocalToolOption>): List<Tool> {
+    fun getTools(
+        options: List<LocalToolOption>,
+        invocationContext: ToolInvocationContext = ToolInvocationContext.EMPTY,
+    ): List<Tool> {
         val tools = mutableListOf<Tool>()
-        if (options.contains(LocalToolOption.JavascriptEngine)) {
-            tools.add(javascriptTool)
+        if (options.contains(LocalToolOption.JavascriptEngine)) tools.add(javascriptTool)
+        if (options.contains(LocalToolOption.TimeInfo)) tools.add(timeTool)
+        if (options.contains(LocalToolOption.Clipboard)) tools.add(clipboardTool)
+        if (options.contains(LocalToolOption.Tts)) tools.add(ttsTool)
+        if (options.contains(LocalToolOption.Battery)) tools.add(batteryTool(context))
+        if (options.contains(LocalToolOption.Alarm)) {
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.alarmCreateTool())
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.alarmListTool())
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.alarmDeleteTool())
         }
-        if (options.contains(LocalToolOption.TimeInfo)) {
-            tools.add(timeTool)
+        if (options.contains(LocalToolOption.Workflows)) {
+            val knownToolNames = { tools.map { it.name } }
+            tools.add(me.rerere.rikkahub.workflow.tools.workflowCreateTool(
+                workflowRepository,
+                knownToolNamesProvider = knownToolNames,
+                callerContext = invocationContext,
+            ))
+            tools.add(me.rerere.rikkahub.workflow.tools.workflowListTool(workflowRepository))
+            tools.add(me.rerere.rikkahub.workflow.tools.workflowGetTool(workflowRepository))
+            tools.add(me.rerere.rikkahub.workflow.tools.workflowUpdateTool(
+                workflowRepository,
+                knownToolNamesProvider = knownToolNames,
+                callerContext = invocationContext,
+            ))
+            tools.add(me.rerere.rikkahub.workflow.tools.workflowDeleteTool(workflowRepository))
+            tools.add(me.rerere.rikkahub.workflow.tools.workflowSetEnabledTool(workflowRepository))
+            tools.add(me.rerere.rikkahub.workflow.tools.workflowRunTool(workflowEngine, workflowRepository))
         }
-        if (options.contains(LocalToolOption.Clipboard)) {
-            tools.add(clipboardTool)
-        }
-        if (options.contains(LocalToolOption.Tts)) {
-            tools.add(ttsTool)
-        }
-        if (options.contains(LocalToolOption.AskUser)) {
-            tools.add(askUserTool)
-        }
-        if (options.contains(LocalToolOption.ScreenTime)) {
-            tools.add(screenTimeTool)
-        }
+        if (options.contains(LocalToolOption.AskUser)) tools.add(askUserTool)
+        if (options.contains(LocalToolOption.ScreenTime)) tools.add(screenTimeTool)
         if (options.contains(LocalToolOption.Calendar)) {
             tools.add(calendarQueryTool)
             tools.add(calendarCreateTool)
+            tools.add(createCalendarEventTool(context))
         }
         if (options.contains(LocalToolOption.ChartDisplay)) {
             tools.add(chartDisplayTool)
+        }
+        if (options.contains(LocalToolOption.CronJobs)) {
+            val knownToolNamesProvider: () -> List<String> = {
+                this.getTools(options, invocationContext).map { it.name }
+            }
+            tools.add(scheduleJobTool(scheduledJobRepository, cronJobScheduler, settingsStore, knownToolNamesProvider))
+            tools.add(listJobsTool(scheduledJobRepository))
+            tools.add(deleteJobTool(scheduledJobRepository, scheduledJobRunRepository, cronJobScheduler))
+            tools.add(pauseJobTool(scheduledJobRepository, cronJobScheduler))
+            tools.add(resumeJobTool(scheduledJobRepository, cronJobScheduler))
+            tools.add(triggerJobNowTool(scheduledJobRepository, cronJobScheduler))
+            tools.add(getJobHistoryTool(scheduledJobRepository, scheduledJobRunRepository))
+        }
+        if (options.contains(LocalToolOption.ToastAndNotification)) {
+            tools.add(toastTool(context))
+            tools.add(notificationTool(context, invocationContext))
+        }
+        if (options.contains(LocalToolOption.SubAgents)) {
+            tools.add(subagentDispatchTool(subAgentEngine, invocationContext))
+            tools.add(subagentListTool(subAgentRegistry))
+            tools.add(subagentGetTool(subAgentRegistry))
+            tools.add(subagentCancelTool(subAgentRegistry))
+        }
+        if (options.contains(LocalToolOption.SystemIntents)) {
+            tools.add(showLocationOnMapTool(context))
+        }
+        if (options.contains(LocalToolOption.Share)) {
+            tools.add(shareTool(context))
+        }
+        if (options.contains(LocalToolOption.Location)) {
+            tools.add(locationTool(context))
+        }
+        if (options.contains(LocalToolOption.Battery)) {
+            tools.add(batteryTool(context))
+        }
+        if (options.contains(LocalToolOption.MediaPlayer)) {
+            tools.add(playMediaTool(context, invocationContext))
+            tools.add(stopMediaTool(context))
+            tools.add(pauseMediaTool(context))
+            tools.add(resumeMediaTool(context))
+            tools.add(seekMediaTool(context))
+            tools.add(getMediaStatusTool())
+        }
+        if (options.contains(LocalToolOption.MediaScanner)) {
+            tools.add(mediaScannerTool(context))
+        }
+        if (options.contains(LocalToolOption.Files)) {
+            tools.add(listFilesTool())
+            tools.add(readFileTool())
+            tools.add(writeBinaryFileTool())
+            tools.add(deleteFileTool())
+            tools.add(moveFileTool())
+            tools.add(copyFileTool())
+            tools.add(createDirectoryTool())
+            tools.add(fileInfoTool())
+            tools.add(findFilesTool())
+            tools.add(openFileTool(context, invocationContext))
+            tools.add(batchCopyTool())
+            tools.add(batchMoveTool())
+            tools.add(batchDeleteTool())
+        }
+        if (options.contains(LocalToolOption.Download)) {
+            tools.add(downloadTool(context))
+            tools.add(writeTextFileTool(context))
+        }
+        if (options.contains(LocalToolOption.Archive)) {
+            tools.add(zipFilesTool(context))
+            tools.add(unzipFileTool(context))
+            tools.add(listZipContentsTool(context))
+        }
+        if (options.contains(LocalToolOption.CostGuards)) {
+            tools.add(costGuardTool)
+        }
+        if (options.contains(LocalToolOption.Browser)) {
+            val enabledTools = browserPreferences.getAllEnabled()
+            val convId = invocationContext.callerConversationId ?: ""
+            val convIdProvider = { convId }
+            BrowserToolDefaults.ALL_TOOLS.forEach { name ->
+                if (enabledTools[name] == true) {
+                    createBrowserTool(name, context, convIdProvider, invocationContext)?.let { tools.add(it) }
+                }
+            }
         }
         return tools
     }

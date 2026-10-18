@@ -1,4 +1,9 @@
+/* 【域 F·主题渲染】 — UI 组件 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.ui
+
+/* ───【原版对齐】ChainOfThought.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
@@ -23,10 +28,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,6 +50,10 @@ import me.rerere.hugeicons.stroke.ArrowUp01
 import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Sparkles
 import me.rerere.rikkahub.R
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+
+private val LocalCardColor = staticCompositionLocalOf { Color.White }
 
 /**
  * 以时间线/步骤卡片的形式展示一组思考过程。
@@ -76,85 +85,90 @@ fun <T> ChainOfThought(
     val canCollapse = steps.size > collapsedVisibleCount
     val shouldFillCollapseControlWidth = expanded || !collapsedAdaptiveWidth
 
-    Card(
-        modifier = modifier,
-        colors = cardColors,
-        shape = RoundedCornerShape(20.dp),
+    CompositionLocalProvider(
+        LocalCardColor provides cardColors.containerColor
     ) {
-        Column(
-            modifier = Modifier
-                .padding(horizontal = 12.dp, vertical = 4.dp)
-                .animateContentSize(
-                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()
-                ),
+        Card(
+            modifier = modifier,
+            colors = cardColors,
+            shape = RoundedCornerShape(16.dp),
         ) {
-            val visibleSteps = if (expanded || !canCollapse) {
-                steps
-            } else {
-                steps.takeLast(collapsedVisibleCount)
-            }
-
-            // 显示展开/折叠按钮（统一在顶部）
-            if (canCollapse) {
-                Row(
-                    modifier = Modifier
-                        .then(
-                            if (shouldFillCollapseControlWidth) {
-                                Modifier.fillMaxWidth()
-                            } else {
-                                Modifier
-                            }
-                        )
-                        .clip(MaterialTheme.shapes.small)
-                        .clickable { expanded = !expanded }
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    // 左侧：图标区域（24.dp，和步骤图标对齐）
-                    Box(
-                        modifier = Modifier.width(24.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = if (expanded) HugeIcons.ArrowUp01 else HugeIcons.ArrowDown01,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-
-                    // 右侧：文字区域（8.dp 间距后开始，和步骤 label 对齐）
-                    Text(
-                        modifier = Modifier.padding(start = 8.dp),
-                        text = if (expanded) {
-                            stringResource(R.string.chain_of_thought_collapse)
-                        } else {
-                            stringResource(
-                                R.string.chain_of_thought_show_more_steps,
-                                steps.size - collapsedVisibleCount
-                            )
-                        },
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
+            Column(
+                modifier = Modifier
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                    .animateContentSize(
+                        animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()
+                    ),
+            ) {
+                val visibleSteps = if (expanded || !canCollapse) {
+                    steps
+                } else {
+                    steps.takeLast(collapsedVisibleCount)
                 }
-            }
 
-            val lineColor = MaterialTheme.colorScheme.outlineVariant
-            // 每个步骤只绘制自己的连线分段并在节点处留空，
-            // 避免使用离屏合成 + BlendMode.Clear（离屏层过大时部分设备会退化，节点区域被清成黑块）。
-            Column {
-                visibleSteps.fastForEachIndexed { index, step ->
-                    val isFirst = index == 0
-                    val isLast = index == visibleSteps.lastIndex
-                    val scope = remember(isFirst, isLast, lineColor) {
-                        ChainOfThoughtScopeImpl(
-                            isFirst = isFirst,
-                            isLast = isLast,
-                            lineColor = lineColor,
+                // 显示展开/折叠按钮（统一在顶部）
+                if (canCollapse) {
+                    Row(
+                        modifier = Modifier
+                            .then(
+                                if (shouldFillCollapseControlWidth) {
+                                    Modifier.fillMaxWidth()
+                                } else {
+                                    Modifier
+                                }
+                            )
+                            .clip(MaterialTheme.shapes.small)
+                            .clickable { expanded = !expanded }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // 左侧：图标区域（24.dp，和步骤图标对齐）
+                        Box(
+                            modifier = Modifier.width(24.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = if (expanded) HugeIcons.ArrowUp01 else HugeIcons.ArrowDown01,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+
+                        // 右侧：文字区域（8.dp 间距后开始，和步骤 label 对齐）
+                        Text(
+                            modifier = Modifier.padding(start = 8.dp),
+                            text = if (expanded) {
+                                stringResource(R.string.chain_of_thought_collapse)
+                            } else {
+                                stringResource(
+                                    R.string.chain_of_thought_show_more_steps,
+                                    steps.size - collapsedVisibleCount
+                                )
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
                         )
                     }
-                    scope.content(step)
+                }
+
+                val lineColor = MaterialTheme.colorScheme.outlineVariant
+                // 2.5.4 移植: 每个步骤只绘制自己的连线分段并在节点处留空 —
+                // 取代"单条贯穿线 + 节点背景遮盖"的旧形态 (线段与节点自然
+                // 衔接, 无遮盖色块; 首/尾步自动省略外侧线段)。
+                Column {
+                    visibleSteps.fastForEachIndexed { index, step ->
+                        val isFirst = index == 0
+                        val isLast = index == visibleSteps.lastIndex
+                        val scope = remember(isFirst, isLast, lineColor) {
+                            ChainOfThoughtScopeImpl(
+                                isFirst = isFirst,
+                                isLast = isLast,
+                                lineColor = lineColor,
+                            )
+                        }
+                        scope.content(step)
+                    }
                 }
             }
         }
@@ -233,6 +247,9 @@ private class ChainOfThoughtScopeImpl(
     ) {
         var expanded by remember { mutableStateOf(false) }
         ChainOfThoughtStepContent(
+            isFirst = isFirst,
+            isLast = isLast,
+            lineColor = lineColor,
             icon = icon,
             label = label,
             extra = extra,
@@ -258,6 +275,9 @@ private class ChainOfThoughtScopeImpl(
         content: @Composable (() -> Unit)?
     ) {
         ChainOfThoughtStepContent(
+            isFirst = isFirst,
+            isLast = isLast,
+            lineColor = lineColor,
             icon = icon,
             label = label,
             extra = extra,
@@ -272,6 +292,9 @@ private class ChainOfThoughtScopeImpl(
 
     @Composable
     private fun ChainOfThoughtStepContent(
+        isFirst: Boolean,
+        isLast: Boolean,
+        lineColor: Color,
         icon: @Composable (() -> Unit)?,
         label: @Composable (() -> Unit),
         extra: @Composable (() -> Unit)?,
@@ -298,7 +321,8 @@ private class ChainOfThoughtScopeImpl(
             Row(
                 modifier = Modifier
                     .drawBehind {
-                        // 节点上下的连线分段，节点（20.dp）区域留空
+                        // 2.5.4 移植: 本步骤的连线上/下分段 (节点 20.dp 区域留空);
+                        // 首步无上段、尾步无下段。
                         val x = 12.dp.toPx()
                         val centerY = size.height / 2
                         val gap = 10.dp.toPx()
@@ -344,11 +368,14 @@ private class ChainOfThoughtScopeImpl(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // Icon（不透明背景遮住背后的连线）
                 Box(
                     modifier = Modifier.width(24.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Box(
+                        // 2.5.4 移植: 不再需要背景遮盖 — 连线已在节点处天然留空
+                        // (见 Row.drawBehind 分段绘制)。
                         modifier = Modifier.size(20.dp),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -410,14 +437,8 @@ private class ChainOfThoughtScopeImpl(
             if (contentVisible && hasContent) {
                 Box(
                     modifier = Modifier
-                        .then(
-                            if (shouldFillMaxWidth) {
-                                Modifier.fillMaxWidth()
-                            } else {
-                                Modifier
-                            }
-                        )
                         .drawBehind {
+                            // 2.5.4 移植: 内容区左侧连线续段 (尾步不画)
                             if (!isLast) {
                                 val x = 12.dp.toPx()
                                 drawLine(
@@ -428,6 +449,13 @@ private class ChainOfThoughtScopeImpl(
                                 )
                             }
                         }
+                        .then(
+                            if (shouldFillMaxWidth) {
+                                Modifier.fillMaxWidth()
+                            } else {
+                                Modifier
+                            }
+                        )
                         .padding(start = 32.dp, top = 4.dp, bottom = 8.dp)
                 ) {
                     content()

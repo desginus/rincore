@@ -1,5 +1,10 @@
 package me.rerere.rikkahub.data.ai.mcp
 
+/* ───【域 B·AI 传输】McpToolSchema.kt
+ * 职责: MCP 工具 inputSchema → 内部 InputSchema ($ref 内联展开; 修悬空引用致网关 400)
+ * 基线: 原版 2.5.6 (v4.8.94 移植) | 地图: docs/APP_MAP.md §B
+ * ───────────────────────────────────────────────────────────────*/
+
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -18,7 +23,7 @@ private const val REF = "\$ref"
 internal fun ToolSchema.toSchema(): InputSchema {
     val properties = properties ?: JsonObject(emptyMap())
     val root = JsonObject(buildMap {
-        put("type", type ?: JsonPrimitive("object"))
+        put("type", JsonPrimitive(type))
         put("properties", properties)
         defs?.let { put("\$defs", it) }
     })

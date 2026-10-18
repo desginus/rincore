@@ -1,4 +1,9 @@
+/* 【域 B·AI 传输】 | 地图: docs/APP_MAP.md §B */
 package me.rerere.rikkahub.data.ai.prompts
+
+/* ───【原版对齐】OcrPrompt.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
 
 val DEFAULT_OCR_PROMPT =
     """

@@ -1,14 +1,17 @@
+/* 【域 J·Web 服务】 | 地图: docs/APP_MAP.md §J */
 package me.rerere.rikkahub.web.dto
 
+
+/* ───【原版对齐】WebDto.kt | 差异 ±11 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.Serializable
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.TokenUsage
-import me.rerere.ai.ui.ModelSnapshot
 import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.model.Conversation
-import me.rerere.rikkahub.data.model.ConversationConfig
 import me.rerere.rikkahub.data.model.MessageNode
 
 // ========== Request DTOs ==========
@@ -16,8 +19,8 @@ import me.rerere.rikkahub.data.model.MessageNode
 @Serializable
 data class SendMessageRequest(
     val parts: List<UIMessagePart>,
-    // 新会话首条消息归入的文件夹；已存在的会话忽略
-    val folderId: String? = null,
+    val modeInjectionIds: List<String>? = null,
+    val lorebookIds: List<String>? = null,
 )
 
 @Serializable
@@ -62,16 +65,6 @@ data class UpdateConversationTitleRequest(
 data class UpdateConversationInjectionsRequest(
     val modeInjectionIds: List<String>,
     val lorebookIds: List<String>,
-)
-
-// 只更新传了值的字段；会话开始前这些修改落在助手上
-@Serializable
-data class UpdateConversationConfigRequest(
-    val chatModelId: String? = null,
-    val reasoningLevel: ReasoningLevel? = null,
-    val mcpServerIds: List<String>? = null,
-    val enableWebSearch: Boolean? = null,
-    val builtInSearch: Boolean? = null,
 )
 
 @Serializable
@@ -123,7 +116,6 @@ data class UpdateAssistantInjectionsRequest(
 
 @Serializable
 data class UpdateSearchEnabledRequest(
-    val assistantId: String,
     val enabled: Boolean,
 )
 
@@ -204,7 +196,6 @@ data class ConversationDto(
     val customSystemPrompt: String? = null,
     val modeInjectionIds: List<String> = emptyList(),
     val lorebookIds: List<String> = emptyList(),
-    val config: ConversationConfig? = null,
     val workspaceCwd: String? = null,
     val folderId: String? = null,
     val createAt: Long,
@@ -228,11 +219,8 @@ data class MessageDto(
     val createdAt: String,
     val finishedAt: String? = null,
     val modelId: String? = null,
-    val modelSnapshot: ModelSnapshot? = null,
     val usage: TokenUsage? = null,
-    val generationTimeMs: Long? = null,
-    val translation: String? = null,
-    val isContextCheckpoint: Boolean = false,
+    val translation: String? = null
 )
 
 @Serializable
@@ -266,11 +254,6 @@ data class ErrorResponse(
 
 // ========== SSE Event DTOs ==========
 
-@Serializable
-data class ConversationUpdateEvent(
-    val type: String = "update",
-    val conversation: ConversationDto
-)
 
 @Serializable
 data class ConversationSnapshotEvent(
@@ -293,11 +276,6 @@ data class ConversationNodeUpdateEvent(
     val serverTime: Long = System.currentTimeMillis()
 )
 
-@Serializable
-data class GenerationDoneEvent(
-    val type: String = "done",
-    val conversationId: String
-)
 
 @Serializable
 data class ErrorEvent(
@@ -349,7 +327,6 @@ fun Conversation.toDto(isGenerating: Boolean = false) = ConversationDto(
     customSystemPrompt = customSystemPrompt,
     modeInjectionIds = modeInjectionIds.map { it.toString() },
     lorebookIds = lorebookIds.map { it.toString() },
-    config = config,
     workspaceCwd = workspaceCwd,
     folderId = folderId?.toString(),
     createAt = createAt.toEpochMilli(),
@@ -371,9 +348,6 @@ fun UIMessage.toDto() = MessageDto(
     createdAt = createdAt.toString(),
     finishedAt = finishedAt?.toString(),
     modelId = modelId?.toString(),
-    modelSnapshot = modelSnapshot,
     usage = usage,
-    generationTimeMs = generationTimeMs,
-    translation = translation,
-    isContextCheckpoint = isContextCheckpoint,
+    translation = translation
 )

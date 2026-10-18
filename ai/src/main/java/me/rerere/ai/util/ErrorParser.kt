@@ -1,11 +1,15 @@
 package me.rerere.ai.util
 
+/* ───【原版对齐】ErrorParser.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 class HttpException(
     message: String
@@ -39,8 +43,9 @@ fun JsonElement.parseErrorDetail(): HttpException {
         }
 
         is JsonPrimitive -> {
-            // 对于基本类型，直接使用其内容
-            HttpException(this.jsonPrimitive.content)
+            // v4.8.109: contentOrNull 防御 — 错误解析链自身绝不再抛（旧形态在极端
+            // 内容上会以解析器异常覆盖真实错误）
+            HttpException(this.contentOrNull ?: this.toString())
         }
 
         else -> {

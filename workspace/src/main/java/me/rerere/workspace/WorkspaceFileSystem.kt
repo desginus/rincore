@@ -1,5 +1,13 @@
 package me.rerere.workspace
 
+/* ───【域 D·工作区沙箱】WorkspaceFileSystem.kt
+ * 职责: 文件系统 (路径解析/列表[含 500 条截断语义-仅供 UI 层]/读写/搜索/glob)
+ * 常用改动: 文件语义 → list (take maxListEntries — 导出器勿复用); 容量限制 → WorkspaceConfig
+ * 问题定位: 路径逃逸报错/列表截断/读写失败 → 本文件
+ * 基线: 原版移植 + 自研 | 地图: docs/APP_MAP.md §D | 历史: .claude/skills/rincore-bug-record
+ * ───────────────────────────────────────────────────────────────*/
+
+
 import java.io.File
 import java.io.InputStream
 import java.nio.charset.Charset
@@ -19,7 +27,9 @@ class WorkspaceFileSystem(
         return dir.listFiles()
             .orEmpty()
             .filter { !it.name.startsWith(".l2s.") }
-            .sortedWith(compareBy<File> { !it.isDirectory }.thenBy { it.name.lowercase() })
+            // v4.8.91 (用户定版): 默认排序 = 创建先后（时间戳升序，名字做稳定次键），
+            // 替代此前的"目录优先+按名"混沌序；改名/移动产生的顺序变化由后续手动排序另议。
+            .sortedWith(compareBy<File> { it.lastModified() }.thenBy { it.name.lowercase() })
             .take(config.maxListEntries)
             .map { it.toEntry(root) }
     }

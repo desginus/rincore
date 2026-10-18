@@ -1,5 +1,10 @@
+/* 【域 J·Web 服务】 | 地图: docs/APP_MAP.md §J */
 package me.rerere.rikkahub.web.routes
 
+
+/* ───【原版对齐】SettingsRoutes.kt | 差异 ±8 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
@@ -31,7 +36,7 @@ fun Route.settingsRoutes(
             val request = call.receive<UpdateAssistantRequest>()
             val assistantId = request.assistantId.toUuid("assistantId")
 
-            settingsStore.selectAssistant(assistantId)
+            settingsStore.updateAssistant(assistantId)
             call.respond(HttpStatusCode.OK, mapOf("status" to "ok"))
         }
 
@@ -127,14 +132,10 @@ fun Route.settingsRoutes(
 
         post("/search/enabled") {
             val request = call.receive<UpdateSearchEnabledRequest>()
-            val assistantId = request.assistantId.toUuid("assistantId")
 
-            val settings = settingsStore.settingsFlow.value
-            if (settings.assistants.none { it.id == assistantId }) {
-                throw NotFoundException("Assistant not found")
+            settingsStore.update { settings ->
+                settings.copy(enableWebSearch = request.enabled)
             }
-
-            settingsStore.updateAssistantWebSearch(assistantId, request.enabled)
             call.respond(HttpStatusCode.OK, mapOf("status" to "ok"))
         }
 

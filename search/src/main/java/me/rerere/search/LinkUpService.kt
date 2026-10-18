@@ -1,5 +1,9 @@
 package me.rerere.search
 
+
+/* ───【原版对齐】LinkUpService.kt | 差异 ±4 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import android.util.Log
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -104,7 +108,7 @@ object LinkUpService : SearchService<SearchServiceOptions.LinkUpOptions> {
                     )
                 )
             } else {
-                error("response failed #${response.code}: ${response.body?.string()}")
+                error("response failed #${response.code}: ${response.body.string()}")
             }
         }
     }
@@ -148,7 +152,7 @@ object LinkUpService : SearchService<SearchServiceOptions.LinkUpOptions> {
                     )
                 )
             } else {
-                error("response failed #${response.code}: ${response.body?.string()}")
+                error("response failed #${response.code}: ${response.body.string()}")
             }
         }
     }

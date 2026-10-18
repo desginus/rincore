@@ -1,0 +1,30 @@
+/* 【域 L·基础设施】 — API | 地图: docs/APP_MAP.md §L */
+package me.rerere.rikkahub.data.api
+
+/* ───【原版对齐】SponsorAPI.kt | 与 2.5.1 逐字节一致
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
+import me.rerere.rikkahub.data.model.Sponsor
+import me.rerere.rikkahub.utils.JsonInstant
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import retrofit2.Retrofit
+import retrofit2.converter.kotlinx.serialization.asConverterFactory
+import retrofit2.http.GET
+
+interface SponsorAPI {
+    @GET("/sponsors")
+    suspend fun getSponsors(): List<Sponsor>
+
+    companion object {
+        fun create(httpClient: OkHttpClient): SponsorAPI {
+            return Retrofit.Builder()
+                .client(httpClient)
+                .baseUrl("https://sponsors.rikka-ai.com")
+                .addConverterFactory(JsonInstant.asConverterFactory("application/json".toMediaType()))
+                .build()
+                .create(SponsorAPI::class.java)
+        }
+    }
+}

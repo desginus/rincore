@@ -1,4 +1,9 @@
+/* 【域 E·设置体系】 — 页面 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.ui.pages.assistant
+/* ───【原版对齐】AssistantPage.kt | 基线 2.5.5 (v4.8.64 适配移植)
+ * 来源: 原版 2.5.5 适配移植 (ItemActionMenu 统一操作) + 自研语义回贴:
+ *   新助手默认技能过滤 (v3.10.4); 删除门槛 = 至少保留一个助手 (非默认 ID 限制不采用)。
+ * ───────────────────────────────────────────────────────────────*/
 
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Copy01
@@ -6,7 +11,6 @@ import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Cancel01
-import me.rerere.hugeicons.stroke.Tick01
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -19,17 +23,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeFlexibleTopAppBar
@@ -40,8 +40,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
@@ -52,7 +50,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -62,13 +59,14 @@ import androidx.compose.ui.util.fastForEach
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
-import me.rerere.rikkahub.data.datastore.DEFAULT_ASSISTANTS_IDS
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.MemoryFile
+import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.ItemAction
 import me.rerere.rikkahub.ui.components.ui.ItemActionMenu
+import me.rerere.rikkahub.ui.components.ui.RikkaConfirmDialog
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
@@ -80,11 +78,11 @@ import me.rerere.rikkahub.ui.hooks.heroAnimation
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantImporter
 import me.rerere.rikkahub.ui.theme.CustomColors
-import me.rerere.ui.components.RikkaConfirmDialog
 import org.koin.androidx.compose.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlin.uuid.Uuid
+import androidx.compose.foundation.lazy.items as lazyItems
 
 @Composable
 fun AssistantPage(vm: AssistantVM = koinViewModel()) {
@@ -128,7 +126,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                 actions = {
                     IconButton(
                         onClick = {
-                            createState.open(Assistant())
+                            createState.open(Assistant(filterSkills = true)) // v3.10.4 (+2.5.5 适配): 新助手默认技能过滤 (不自动全开)
                         }) {
                         Icon(HugeIcons.Add01, stringResource(R.string.assistant_page_add))
                     }
@@ -155,12 +153,12 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                     val newAssistants = settings.assistants.toMutableList().apply {
                         add(to.index, removeAt(from.index))
                     }
-                    vm.updateSettings { it.copy(assistants = newAssistants) }
+                    vm.updateSettings(settings.copy(assistants = newAssistants))
                 }
             }
 
             // 搜索框
-            TextField(
+            OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 modifier = Modifier
@@ -178,13 +176,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                     }
                 },
                 singleLine = true,
-                shape = CircleShape,
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceBright,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceBright,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                ),
+                shape = RoundedCornerShape(12.dp)
             )
 
             // 标签过滤器
@@ -201,11 +193,11 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                 modifier = Modifier
                     .fillMaxSize()
                     .imePadding(),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 state = lazyListState,
             ) {
-                items(filteredAssistants, key = { assistant -> assistant.id }) { assistant ->
+                lazyItems(filteredAssistants, key = { assistant -> assistant.id }) { assistant ->
                     ReorderableItem(
                         state = reorderableState,
                         key = assistant.id,
@@ -215,6 +207,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                         )
                         AssistantItem(
                             assistant = assistant,
+                            assistantCount = settings.assistants.size,
                             settings = settings,
                             memories = memories,
                             onEdit = {
@@ -300,7 +293,7 @@ private fun AssistantTagsFilterRow(
             val newTags = settings.assistantTags.toMutableList().apply {
                 add(to.index, removeAt(from.index))
             }
-            vm.updateSettings { it.copy(assistantTags = newTags) }
+            vm.updateSettings(settings.copy(assistantTags = newTags))
         }
 
         LazyRow(
@@ -308,7 +301,7 @@ private fun AssistantTagsFilterRow(
             modifier = Modifier.padding(horizontal = 16.dp),
             state = tagsListState
         ) {
-            items(items = settings.assistantTags, key = { tag -> tag.id }) { tag ->
+            lazyItems(items = settings.assistantTags, key = { tag -> tag.id }) { tag ->
                 ReorderableItem(
                     state = tagsReorderableState, key = tag.id
                 ) { isDragging ->
@@ -330,16 +323,7 @@ private fun AssistantTagsFilterRow(
                                 Text(tag.name)
                             },
                             selected = tag.id in selectedTagIds,
-                            leadingIcon = if (tag.id in selectedTagIds) {
-                                {
-                                    Icon(
-                                        imageVector = HugeIcons.Tick01,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(FilterChipDefaults.IconSize),
-                                    )
-                                }
-                            } else null,
-                            shape = CircleShape,
+                            shape = RoundedCornerShape(50),
                             modifier = longPressReorder(isDragging)
                         )
                     }
@@ -368,28 +352,35 @@ private fun AssistantCreationSheet(
                     .padding(horizontal = 16.dp, vertical = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                OutlinedTextField(
-                    value = assistant.name,
-                    onValueChange = {
-                        update(
-                            assistant.copy(
-                                name = it
-                            )
-                        )
-                    },
-                    label = { Text(stringResource(R.string.assistant_page_name)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                AssistantImporter(
-                    onUpdate = {
-                        update(it)
-                        state.confirm()
-                    },
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                )
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    FormItem(
+                        label = {
+                            Text(stringResource(R.string.assistant_page_name))
+                        },
+                    ) {
+                        OutlinedTextField(
+                            value = assistant.name, onValueChange = {
+                                update(
+                                    assistant.copy(
+                                        name = it
+                                    )
+                                )
+                            }, modifier = Modifier.fillMaxWidth()
+                        )
+                    }
 
+                    AssistantImporter(
+                        onUpdate = {
+                            update(it)
+                            state.confirm()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
@@ -400,7 +391,7 @@ private fun AssistantCreationSheet(
                         }) {
                         Text(stringResource(R.string.assistant_page_cancel))
                     }
-                    Button(
+                    TextButton(
                         onClick = {
                             state.confirm()
                         }) {
@@ -415,9 +406,10 @@ private fun AssistantCreationSheet(
 @Composable
 private fun AssistantItem(
     assistant: Assistant,
+    assistantCount: Int,
     settings: Settings,
     modifier: Modifier = Modifier,
-    memories: List<MemoryFile>,
+    memories: List<AssistantMemory>,
     onEdit: () -> Unit,
     onCopy: () -> Unit,
     onDelete: () -> Unit,
@@ -425,7 +417,6 @@ private fun AssistantItem(
     Card(
         modifier = modifier.fillMaxWidth(),
         onClick = onEdit,
-        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = CustomColors.listItemColors.containerColor
         )
@@ -433,8 +424,8 @@ private fun AssistantItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, top = 12.dp, end = 4.dp, bottom = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             UIAvatar(
@@ -452,7 +443,7 @@ private fun AssistantItem(
 
                 Text(
                     text = assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) },
-                    style = MaterialTheme.typography.titleMediumEmphasized,
+                    style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -472,7 +463,7 @@ private fun AssistantItem(
                             val tag = settings.assistantTags.find { it.id == tagId }
                                 ?: return@fastForEach
                             Surface(
-                                shape = CircleShape,
+                                shape = RoundedCornerShape(50),
                                 color = MaterialTheme.colorScheme.tertiaryContainer,
                             ) {
                                 Text(
@@ -504,7 +495,9 @@ private fun AssistantItem(
                         text = stringResource(R.string.assistant_page_delete),
                         icon = HugeIcons.Delete01,
                         destructive = true,
-                        enabled = assistant.id !in DEFAULT_ASSISTANTS_IDS,
+                        // v3.10.4 (+2.5.5 适配): 所有助手均可删除 — 仅剩最后一个助手时禁止
+                        // (避免无助手可用; 上游"仅非默认 ID 可删"语义不采用)
+                        enabled = assistantCount > 1,
                         onClick = onDelete,
                     ),
                 )

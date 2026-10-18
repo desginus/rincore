@@ -1,5 +1,10 @@
+/* 【域 L·基础设施】 | 地图: docs/APP_MAP.md §L */
 package me.rerere.rikkahub.utils
 
+
+/* ───【原版对齐】TimeUtil.kt | 差异 ±21 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -89,4 +94,25 @@ private fun isMonthFirstLocale(locale: Locale): Boolean {
         "CN", // 中国
     )
     return monthFirstCountries.contains(locale.country)
+}
+
+data class RelativeTimeStrings(
+    val justNow: String,
+    val secondsAgo: String,
+    val minutesAgo: String,
+    val hoursAgo: String,
+    val daysAgo: String,
+)
+
+fun formatRelativeAgo(thenMs: Long, nowMs: Long, strings: RelativeTimeStrings): String {
+    val diffMs = nowMs - thenMs
+    if (diffMs < 10_000) return strings.justNow
+    val seconds = diffMs / 1000
+    if (seconds < 60) return strings.secondsAgo.format(seconds)
+    val minutes = seconds / 60
+    if (minutes < 60) return strings.minutesAgo.format(minutes)
+    val hours = minutes / 60
+    if (hours < 24) return strings.hoursAgo.format(hours)
+    val days = hours / 24
+    return strings.daysAgo.format(days)
 }

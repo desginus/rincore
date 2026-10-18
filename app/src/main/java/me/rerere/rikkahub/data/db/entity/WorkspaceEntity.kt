@@ -1,4 +1,9 @@
+/* 【域 I·数据存储】 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.data.db.entity
+
+/* ───【原版对齐】WorkspaceEntity.kt | 差异 ±2 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
@@ -33,6 +38,7 @@ data class WorkspaceEntity(
     // 工具审批的用户覆盖项 (toolName -> needsApproval)，未覆盖的工具沿用默认值
     @ColumnInfo("tool_approvals", defaultValue = "{}")
     val toolApprovals: String = "{}",
+    // 4.1.0: Shell 兼容模式 (2.5.1 移植) — 开启后禁用 PRoot seccomp 加速
     @ColumnInfo("shell_compatibility_mode", defaultValue = "0")
     val shellCompatibilityMode: Boolean = false,
 ) {

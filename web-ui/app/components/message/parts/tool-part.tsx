@@ -4,7 +4,6 @@ import { useTranslation } from "react-i18next";
 import {
   AudioLines,
   BookHeart,
-  BookOpen,
   BookX,
   Check,
   Clipboard,
@@ -51,6 +50,7 @@ interface ToolPartProps {
 }
 
 const TOOL_NAMES = {
+  MEMORY: "memory_tool",
   SEARCH_WEB: "search_web",
   SCRAPE_WEB: "scrape_web",
   GET_TIME_INFO: "get_time_info",
@@ -58,14 +58,10 @@ const TOOL_NAMES = {
   ASK_USER: "ask_user",
 } as const;
 
-// 记忆库工具：按文件读写
-const MEMORY_FILE_TOOLS = {
-  READ: "memory_read",
-  WRITE: "memory_write",
-  STR_REPLACE: "memory_str_replace",
-  APPEND: "memory_append",
-  DELETE: "memory_delete",
-  LIST: "memory_list",
+const MEMORY_ACTIONS = {
+  CREATE: "create",
+  EDIT: "edit",
+  DELETE: "delete",
 } as const;
 
 const CLIPBOARD_ACTIONS = {
@@ -99,14 +95,14 @@ function getArrayField(data: unknown, key: string): unknown[] {
 }
 
 function getToolIcon(toolName: string, action?: string) {
-  if (toolName === MEMORY_FILE_TOOLS.READ || toolName === MEMORY_FILE_TOOLS.LIST) return BookOpen;
-  if (toolName === MEMORY_FILE_TOOLS.DELETE) return BookX;
-  if (
-    toolName === MEMORY_FILE_TOOLS.WRITE ||
-    toolName === MEMORY_FILE_TOOLS.STR_REPLACE ||
-    toolName === MEMORY_FILE_TOOLS.APPEND
-  ) {
-    return BookHeart;
+  if (toolName === TOOL_NAMES.MEMORY) {
+    if (action === MEMORY_ACTIONS.CREATE || action === MEMORY_ACTIONS.EDIT) {
+      return BookHeart;
+    }
+    if (action === MEMORY_ACTIONS.DELETE) {
+      return BookX;
+    }
+    return Wrench;
   }
 
   if (toolName === TOOL_NAMES.SEARCH_WEB) return Search;
@@ -126,18 +122,10 @@ function getToolIcon(toolName: string, action?: string) {
 function getToolTitle(toolName: string, args: unknown, t: TFunction): string {
   const action = getStringField(args, "action");
 
-  if (toolName === MEMORY_FILE_TOOLS.READ) return t("tool_part.memory_read");
-  if (toolName === MEMORY_FILE_TOOLS.LIST) return t("tool_part.memory_list");
-  if (toolName === MEMORY_FILE_TOOLS.DELETE) return t("tool_part.memory_delete");
-  if (toolName === MEMORY_FILE_TOOLS.WRITE && getStringField(args, "if_version") === "new") {
-    return t("tool_part.memory_create");
-  }
-  if (
-    toolName === MEMORY_FILE_TOOLS.WRITE ||
-    toolName === MEMORY_FILE_TOOLS.STR_REPLACE ||
-    toolName === MEMORY_FILE_TOOLS.APPEND
-  ) {
-    return t("tool_part.memory_edit");
+  if (toolName === TOOL_NAMES.MEMORY) {
+    if (action === MEMORY_ACTIONS.CREATE) return t("tool_part.memory_create");
+    if (action === MEMORY_ACTIONS.EDIT) return t("tool_part.memory_edit");
+    if (action === MEMORY_ACTIONS.DELETE) return t("tool_part.memory_delete");
   }
 
   if (toolName === TOOL_NAMES.SEARCH_WEB) {
@@ -256,7 +244,6 @@ interface AskUserQuestion {
   id: string;
   question: string;
   options: string[];
-  selectionType: "text" | "single" | "multi";
 }
 
 function parseAskUserQuestions(args: unknown): AskUserQuestion[] {
@@ -271,11 +258,7 @@ function parseAskUserQuestions(args: unknown): AskUserQuestion[] {
         if (!id || !question) return null;
         const rawOptions = Array.isArray(record.options) ? record.options : [];
         const options = rawOptions.filter((o): o is string => typeof o === "string");
-        const selectionType: AskUserQuestion["selectionType"] =
-          record.selection_type === "single" || record.selection_type === "multi"
-            ? record.selection_type
-            : "text";
-        return { id, question, options, selectionType } satisfies AskUserQuestion;
+        return { id, question, options } satisfies AskUserQuestion;
       })
       .filter((q): q is AskUserQuestion => q !== null);
   } catch {
@@ -296,9 +279,8 @@ function AskUserToolStep({
   const args = React.useMemo(() => safeJsonParse(tool.input), [tool.input]);
   const questions = React.useMemo(() => parseAskUserQuestions(args), [args]);
   const [answers, setAnswers] = React.useState<Record<string, string>>({});
-  const [multiAnswers, setMultiAnswers] = React.useState<Record<string, string[]>>({});
 
-  const isPending = tool.output.length === 0 && tool.approvalState.type === "pending";
+  const isPending = tool.approvalState.type === "pending";
   const isAnswered = tool.approvalState.type === "answered";
 
   const firstQuestion = questions[0]?.question ?? "...";
@@ -307,36 +289,18 @@ function AskUserToolStep({
       ? firstQuestion
       : t("tool_part.ask_user_questions_count", { count: questions.length });
 
-  const getAnswer = (q: AskUserQuestion): string => {
-    const text = answers[q.id] ?? "";
-    return q.selectionType === "multi"
-      ? [...(multiAnswers[q.id] ?? []), ...(text.trim() ? [text] : [])].join(", ")
-      : text;
-  };
-  const allAnswered = questions.length > 0 && questions.every((q) => getAnswer(q).trim());
+  const allAnswered = questions.length > 0 && questions.every((q) => answers[q.id]?.trim());
 
   const handleSubmit = () => {
     if (!onToolApproval || !allAnswered) return;
     const payload = JSON.stringify({
-      answers: Object.fromEntries(questions.map((q) => [q.id, getAnswer(q)])),
+      answers: Object.fromEntries(questions.map((q) => [q.id, answers[q.id] ?? ""])),
     });
     void onToolApproval(tool.toolCallId, true, "", payload);
   };
 
   const setAnswer = (questionId: string, value: string) => {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
-  };
-
-  const toggleOption = (questionId: string, option: string) => {
-    setMultiAnswers((prev) => {
-      const selected = prev[questionId] ?? [];
-      return {
-        ...prev,
-        [questionId]: selected.includes(option)
-          ? selected.filter((value) => value !== option)
-          : [...selected, option],
-      };
-    });
   };
 
   // Parse answered state for display
@@ -380,16 +344,9 @@ function AskUserToolStep({
                       <button
                         key={option}
                         type="button"
-                        aria-pressed={q.selectionType === "multi"
-                          ? (multiAnswers[q.id] ?? []).includes(option)
-                          : answers[q.id] === option}
-                        onClick={() => q.selectionType === "multi"
-                          ? toggleOption(q.id, option)
-                          : setAnswer(q.id, option)}
+                        onClick={() => setAnswer(q.id, option)}
                         className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                          (q.selectionType === "multi"
-                            ? (multiAnswers[q.id] ?? []).includes(option)
-                            : answers[q.id] === option)
+                          answers[q.id] === option
                             ? "border-primary bg-primary/10 text-primary"
                             : "border-muted-foreground/30 text-muted-foreground hover:border-primary/50"
                         }`}
@@ -480,14 +437,18 @@ export function ToolPart({
     [tool.output],
   );
 
+  const memoryAction = getStringField(args, "action");
   const title = getToolTitle(tool.toolName, args, t);
-  const isPending = tool.output.length === 0 && tool.approvalState.type === "pending";
+  const isPending = tool.approvalState.type === "pending";
   const isDenied = tool.approvalState.type === "denied";
   const deniedReason =
     tool.approvalState.type === "denied" ? (tool.approvalState.reason ?? "") : "";
   const isExecuted = tool.output.length > 0;
 
   const hasExtraContent =
+    (tool.toolName === TOOL_NAMES.MEMORY &&
+      (memoryAction === MEMORY_ACTIONS.CREATE || memoryAction === MEMORY_ACTIONS.EDIT) &&
+      Boolean(getStringField(outputContent, "content"))) ||
     (tool.toolName === TOOL_NAMES.SEARCH_WEB &&
       (Boolean(getStringField(outputContent, "answer")) ||
         getArrayField(outputContent, "items").length > 0)) ||
@@ -496,7 +457,7 @@ export function ToolPart({
     hasMediaOutput;
 
   const canOpenDrawer = isPending || isExecuted;
-  const Icon = getToolIcon(tool.toolName, getStringField(args, "action"));
+  const Icon = getToolIcon(tool.toolName, memoryAction);
 
   const handleApprove = async (event: React.MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
@@ -543,6 +504,13 @@ export function ToolPart({
       >
         {hasExtraContent && (
           <div className="space-y-1">
+            {tool.toolName === TOOL_NAMES.MEMORY &&
+              (memoryAction === MEMORY_ACTIONS.CREATE || memoryAction === MEMORY_ACTIONS.EDIT) && (
+                <div className="line-clamp-3 text-muted-foreground text-xs">
+                  {getStringField(outputContent, "content")}
+                </div>
+              )}
+
             {tool.toolName === TOOL_NAMES.SEARCH_WEB && getStringField(outputContent, "answer") && (
               <div className="line-clamp-3 text-muted-foreground text-xs">
                 {getStringField(outputContent, "answer")}

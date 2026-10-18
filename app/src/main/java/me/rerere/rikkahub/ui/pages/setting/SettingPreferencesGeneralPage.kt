@@ -1,40 +1,49 @@
+/* 【域 E·设置体系】 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.ui.pages.setting
 
+/* ───【原版对齐】SettingPreferencesGeneralPage.kt | 差异 ±16 行 (基线 2.5.1)
+ * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * ───────────────────────────────────────────────────────────────*/
+
 import androidx.compose.foundation.layout.Arrangement
+
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlin.math.roundToInt
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.datastore.BackgroundEffectType
 import me.rerere.rikkahub.data.datastore.DisplaySetting
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
-import me.rerere.rikkahub.ui.components.ui.CardGroupValue
-import me.rerere.rikkahub.ui.components.ui.ConnectedChoiceButtons
-import me.rerere.rikkahub.ui.components.ui.ConnectedChoiceLabel
-import me.rerere.rikkahub.ui.components.ui.switchItem
 import me.rerere.rikkahub.ui.hooks.rememberSharedPreferenceBoolean
 import me.rerere.rikkahub.ui.theme.CustomColors
-import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
+
+import kotlin.math.roundToInt
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import me.rerere.rikkahub.utils.plus
 
 @Composable
 fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
@@ -46,7 +55,7 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
 
     fun updateDisplaySetting(setting: DisplaySetting) {
         displaySetting = setting
-        vm.updateSettings { it.copy(displaySetting = setting) }
+        vm.updateSettings(settings.copy(displaySetting = setting))
     }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -69,7 +78,7 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
     ) { contentPadding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = contentPadding + PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            contentPadding = contentPadding + PaddingValues(8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
@@ -77,185 +86,343 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
                     "create_new_conversation_on_start",
                     true
                 )
-                CardGroup {
-                    switchItem(
-                        checked = createNewConversationOnStart,
-                        onCheckedChange = { createNewConversationOnStart = it },
-                        supportingContent = { Text(stringResource(R.string.setting_display_page_create_new_conversation_on_start_desc)) },
+                CardGroup(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                ) {
+                    item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_create_new_conversation_on_start_title)) },
+                        supportingContent = { Text(stringResource(R.string.setting_display_page_create_new_conversation_on_start_desc)) },
+                        trailingContent = {
+                            Switch(
+                                checked = createNewConversationOnStart,
+                                onCheckedChange = { createNewConversationOnStart = it }
+                            )
+                        },
                     )
-                    switchItem(
-                        checked = displaySetting.sendOnEnter,
-                        onCheckedChange = { updateDisplaySetting(displaySetting.copy(sendOnEnter = it)) },
-                        supportingContent = { Text(stringResource(R.string.setting_display_page_send_on_enter_desc)) },
+                    item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_send_on_enter_title)) },
+                        supportingContent = { Text(stringResource(R.string.setting_display_page_send_on_enter_desc)) },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.sendOnEnter,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(sendOnEnter = it))
+                                }
+                            )
+                        },
                     )
-                }
-            }
-
-            item {
-                CardGroup {
-                    switchItem(
-                        checked = displaySetting.showMessageJumper,
-                        onCheckedChange = { updateDisplaySetting(displaySetting.copy(showMessageJumper = it)) },
-                        supportingContent = { Text(stringResource(R.string.setting_display_page_show_message_jumper_desc)) },
+                    item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_show_message_jumper_title)) },
+                        supportingContent = { Text(stringResource(R.string.setting_display_page_show_message_jumper_desc)) },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.showMessageJumper,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(showMessageJumper = it))
+                                }
+                            )
+                        },
                     )
                     if (displaySetting.showMessageJumper) {
-                        switchItem(
-                            checked = displaySetting.messageJumperOnLeft,
-                            onCheckedChange = { updateDisplaySetting(displaySetting.copy(messageJumperOnLeft = it)) },
-                            supportingContent = { Text(stringResource(R.string.setting_display_page_message_jumper_position_desc)) },
+                        item(
                             headlineContent = { Text(stringResource(R.string.setting_display_page_message_jumper_position_title)) },
+                            supportingContent = { Text(stringResource(R.string.setting_display_page_message_jumper_position_desc)) },
+                            trailingContent = {
+                                Switch(
+                                    checked = displaySetting.messageJumperOnLeft,
+                                    onCheckedChange = {
+                                        updateDisplaySetting(displaySetting.copy(messageJumperOnLeft = it))
+                                    }
+                                )
+                            },
                         )
                     }
-                    switchItem(
-                        checked = displaySetting.enableAutoScroll,
-                        onCheckedChange = { updateDisplaySetting(displaySetting.copy(enableAutoScroll = it)) },
-                        supportingContent = { Text(stringResource(R.string.setting_display_page_enable_auto_scroll_desc)) },
+                    item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_enable_auto_scroll_title)) },
+                        supportingContent = { Text(stringResource(R.string.setting_display_page_enable_auto_scroll_desc)) },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.enableAutoScroll,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(enableAutoScroll = it))
+                                }
+                            )
+                        },
                     )
-                }
-            }
-
-            item {
-                CardGroup {
-                    switchItem(
-                        checked = displaySetting.enableBlurEffect,
-                        onCheckedChange = { updateDisplaySetting(displaySetting.copy(enableBlurEffect = it)) },
-                        supportingContent = { Text(stringResource(R.string.setting_display_page_background_effect_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_display_page_background_effect_title)) },
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_display_page_use_app_icon_style_loading_indicator_title)) },
+                        supportingContent = {
+                            Text(stringResource(R.string.setting_display_page_use_app_icon_style_loading_indicator_desc))
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.useAppIconStyleLoadingIndicator,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(useAppIconStyleLoadingIndicator = it))
+                                }
+                            )
+                        },
                     )
-                    if (displaySetting.enableBlurEffect) {
-                        formItem(
-                            headlineContent = { Text(stringResource(R.string.setting_display_page_background_effect_type)) },
-                        ) {
-                            ConnectedChoiceButtons(
-                                options = BackgroundEffectType.entries,
-                                selected = displaySetting.backgroundEffectType,
-                                onSelect = { updateDisplaySetting(displaySetting.copy(backgroundEffectType = it)) },
-                            ) { type, selected ->
-                                ConnectedChoiceLabel(
-                                    text = when (type) {
-                                        BackgroundEffectType.BLUR -> stringResource(R.string.setting_display_page_background_effect_blur)
-                                        BackgroundEffectType.GLASS -> stringResource(R.string.setting_display_page_background_effect_glass)
+                    // 4.1.0: 恢复 — 输入框液态玻璃开关 (v4.0.16 误删)
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_display_page_enable_blur_effect_title)) },
+                        supportingContent = { Text(stringResource(R.string.setting_display_page_enable_blur_effect_desc)) },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.enableBlurEffect,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(enableBlurEffect = it))
+                                }
+                            )
+                        },
+                    )
+                    // v4.8.177: 输入栏蒙版 — 叠加在模糊层之上的一层可调透明度覆盖层 (0%=关闭, 默认)
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_glass_mask_title)) },
+                        supportingContent = {
+                            Column {
+                                Slider(
+                                    value = displaySetting.glassMaskPercent.toFloat(),
+                                    onValueChange = {
+                                        updateDisplaySetting(
+                                            displaySetting.copy(glassMaskPercent = it.toInt().coerceIn(0, 100))
+                                        )
                                     },
-                                    selected = selected,
+                                    valueRange = 0f..100f,
+                                )
+                                Text("${displaySetting.glassMaskPercent}%")
+                            }
+                        },
+                    )
+                    // v4.8.178: 蒙版颜色 — 深/浅可选（透明 = 把浓度拉到 0%）
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_glass_mask_color_title)) },
+                        supportingContent = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                FilterChip(
+                                    selected = displaySetting.glassMaskColorMode == 0,
+                                    onClick = { updateDisplaySetting(displaySetting.copy(glassMaskColorMode = 0)) },
+                                    label = { Text(stringResource(R.string.setting_glass_mask_color_theme)) },
+                                )
+                                FilterChip(
+                                    selected = displaySetting.glassMaskColorMode == 1,
+                                    onClick = { updateDisplaySetting(displaySetting.copy(glassMaskColorMode = 1)) },
+                                    label = { Text(stringResource(R.string.setting_glass_mask_color_dark)) },
+                                )
+                                FilterChip(
+                                    selected = displaySetting.glassMaskColorMode == 2,
+                                    onClick = { updateDisplaySetting(displaySetting.copy(glassMaskColorMode = 2)) },
+                                    label = { Text(stringResource(R.string.setting_glass_mask_color_light)) },
                                 )
                             }
-                        }
-                    }
-                    switchItem(
-                        checked = displaySetting.enableMessageGenerationHapticEffect,
-                        onCheckedChange = {
-                            updateDisplaySetting(displaySetting.copy(enableMessageGenerationHapticEffect = it))
                         },
-                        supportingContent = { Text(stringResource(R.string.setting_display_page_enable_message_generation_haptic_effect_desc)) },
+                    )
+                    // v4.8.178: 输入栏噪点（0-100%; 15%=Material3 预设档）
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_glass_noise_title)) },
+                        supportingContent = {
+                            Column {
+                                Slider(
+                                    value = displaySetting.glassNoisePercent.toFloat(),
+                                    onValueChange = {
+                                        updateDisplaySetting(
+                                            displaySetting.copy(glassNoisePercent = it.toInt().coerceIn(0, 100))
+                                        )
+                                    },
+                                    valueRange = 0f..100f,
+                                )
+                                Text("${displaySetting.glassNoisePercent}%")
+                            }
+                        },
+                    )
+                    // v4.8.178: 输入栏雾化（白色柔雾 上浓下淡; 0=关闭）
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_glass_fog_title)) },
+                        supportingContent = {
+                            Column {
+                                Slider(
+                                    value = displaySetting.glassFogPercent.toFloat(),
+                                    onValueChange = {
+                                        updateDisplaySetting(
+                                            displaySetting.copy(glassFogPercent = it.toInt().coerceIn(0, 100))
+                                        )
+                                    },
+                                    valueRange = 0f..100f,
+                                )
+                                Text("${displaySetting.glassFogPercent}%")
+                            }
+                        },
+                    )
+                    item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_enable_message_generation_haptic_effect_title)) },
+                        supportingContent = { Text(stringResource(R.string.setting_display_page_enable_message_generation_haptic_effect_desc)) },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.enableMessageGenerationHapticEffect,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(enableMessageGenerationHapticEffect = it))
+                                }
+                            )
+                        },
                     )
-                }
-            }
-
-            item {
-                CardGroup {
-                    switchItem(
-                        checked = displaySetting.skipCropImage,
-                        onCheckedChange = { updateDisplaySetting(displaySetting.copy(skipCropImage = it)) },
-                        supportingContent = { Text(stringResource(R.string.setting_display_page_skip_crop_image_desc)) },
+                    item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_skip_crop_image_title)) },
+                        supportingContent = { Text(stringResource(R.string.setting_display_page_skip_crop_image_desc)) },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.skipCropImage,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(skipCropImage = it))
+                                }
+                            )
+                        },
                     )
-                    switchItem(
-                        checked = displaySetting.pasteLongTextAsFile,
-                        onCheckedChange = { updateDisplaySetting(displaySetting.copy(pasteLongTextAsFile = it)) },
-                        supportingContent = { Text(stringResource(R.string.setting_display_page_paste_long_text_as_file_desc)) },
+                    item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_paste_long_text_as_file_title)) },
+                        supportingContent = { Text(stringResource(R.string.setting_display_page_paste_long_text_as_file_desc)) },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.pasteLongTextAsFile,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(pasteLongTextAsFile = it))
+                                }
+                            )
+                        },
                     )
                     if (displaySetting.pasteLongTextAsFile) {
-                        formItem(
+                        item(
                             headlineContent = { Text(stringResource(R.string.setting_display_page_paste_long_text_threshold_title)) },
-                            trailingContent = { CardGroupValue("${displaySetting.pasteLongTextThreshold}") },
-                        ) {
-                            Slider(
-                                value = displaySetting.pasteLongTextThreshold.toFloat(),
-                                onValueChange = {
-                                    updateDisplaySetting(displaySetting.copy(pasteLongTextThreshold = it.toInt()))
-                                },
-                                valueRange = 100f..10000f,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
+                            supportingContent = {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Slider(
+                                        value = displaySetting.pasteLongTextThreshold.toFloat(),
+                                        onValueChange = {
+                                            updateDisplaySetting(displaySetting.copy(pasteLongTextThreshold = it.toInt()))
+                                        },
+                                        valueRange = 100f..10000f,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(text = "${displaySetting.pasteLongTextThreshold}")
+                                }
+                            },
+                        )
                     }
-                }
-            }
-
-            item {
-                CardGroup {
-                    switchItem(
-                        checked = displaySetting.enableVolumeKeyScroll,
-                        onCheckedChange = { updateDisplaySetting(displaySetting.copy(enableVolumeKeyScroll = it)) },
-                        supportingContent = { Text(stringResource(R.string.setting_display_page_volume_key_scroll_desc)) },
+                    item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_volume_key_scroll_title)) },
+                        supportingContent = { Text(stringResource(R.string.setting_display_page_volume_key_scroll_desc)) },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.enableVolumeKeyScroll,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(enableVolumeKeyScroll = it))
+                                }
+                            )
+                        },
                     )
                     if (displaySetting.enableVolumeKeyScroll) {
-                        formItem(
+                        item(
                             headlineContent = { Text(stringResource(R.string.setting_display_page_volume_key_scroll_ratio)) },
-                            trailingContent = { CardGroupValue("${(displaySetting.volumeKeyScrollRatio * 100).toInt()}%") },
-                        ) {
-                            Slider(
-                                value = displaySetting.volumeKeyScrollRatio,
-                                onValueChange = {
-                                    updateDisplaySetting(displaySetting.copy(volumeKeyScrollRatio = it))
-                                },
-                                valueRange = 0.25f..1.0f,
-                                steps = 2,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
+                            supportingContent = {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Slider(
+                                        value = displaySetting.volumeKeyScrollRatio,
+                                        onValueChange = {
+                                            updateDisplaySetting(displaySetting.copy(volumeKeyScrollRatio = it))
+                                        },
+                                        valueRange = 0.25f..1.0f,
+                                        steps = 2,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(text = "${(displaySetting.volumeKeyScrollRatio * 100).toInt()}%")
+                                }
+                            }
+                        )
                     }
                 }
             }
 
             item {
                 CardGroup(
+                    modifier = Modifier.padding(horizontal = 8.dp),
                     title = { Text(stringResource(R.string.setting_page_tts_settings)) },
                 ) {
-                    formItem(
-                        headlineContent = { Text(stringResource(R.string.setting_tts_page_default_playback_speed)) },
-                        supportingContent = { Text(stringResource(R.string.setting_tts_page_default_playback_speed_description)) },
-                        trailingContent = { CardGroupValue("x${"%.1f".format(ttsPlaybackSpeed)}") },
-                    ) {
-                        Slider(
-                            value = ttsPlaybackSpeed,
-                            onValueChange = {
-                                ttsPlaybackSpeed = (it * 10).roundToInt() / 10f
-                            },
-                            onValueChangeFinished = {
-                                vm.updateSettings {
-                                    it.copy(defaultTTSPlaybackSpeed = ttsPlaybackSpeed)
+                                        item(
+                        headlineContent = {
+                            Text(stringResource(R.string.setting_tts_page_default_playback_speed))
+                        },
+                        supportingContent = {
+                            Column {
+                                Text(stringResource(R.string.setting_tts_page_default_playback_speed_description))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Slider(
+                                        value = ttsPlaybackSpeed,
+                                        onValueChange = {
+                                            ttsPlaybackSpeed = (it * 10).roundToInt() / 10f
+                                        },
+                                        onValueChangeFinished = {
+                                            vm.updateSettings(
+                                                settings.copy(defaultTTSPlaybackSpeed = ttsPlaybackSpeed)
+                                            )
+                                        },
+                                        valueRange = 0.5f..2.0f,
+                                        steps = 14,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    Text(text = "x${"%.1f".format(ttsPlaybackSpeed)}")
                                 }
-                            },
-                            valueRange = 0.5f..2.0f,
-                            steps = 14,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                    switchItem(
-                        checked = displaySetting.ttsOnlyReadQuoted,
-                        onCheckedChange = { updateDisplaySetting(displaySetting.copy(ttsOnlyReadQuoted = it)) },
-                        supportingContent = { Text(stringResource(R.string.setting_display_page_tts_only_read_quoted_desc)) },
+                            }
+                        },
+                    )
+item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_tts_only_read_quoted_title)) },
+                        supportingContent = { Text(stringResource(R.string.setting_display_page_tts_only_read_quoted_desc)) },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.ttsOnlyReadQuoted,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(ttsOnlyReadQuoted = it))
+                                }
+                            )
+                        },
                     )
-                    switchItem(
-                        checked = displaySetting.ttsOnlyReadOutsideBrackets,
-                        onCheckedChange = { updateDisplaySetting(displaySetting.copy(ttsOnlyReadOutsideBrackets = it)) },
-                        supportingContent = { Text(stringResource(R.string.setting_display_page_tts_read_outside_brackets_desc)) },
+                    item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_tts_read_outside_brackets_title)) },
+                        supportingContent = { Text(stringResource(R.string.setting_display_page_tts_read_outside_brackets_desc)) },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.ttsOnlyReadOutsideBrackets,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(ttsOnlyReadOutsideBrackets = it))
+                                }
+                            )
+                        },
                     )
-                    switchItem(
-                        checked = displaySetting.autoPlayTTSAfterGeneration,
-                        onCheckedChange = { updateDisplaySetting(displaySetting.copy(autoPlayTTSAfterGeneration = it)) },
-                        supportingContent = { Text(stringResource(R.string.setting_display_page_auto_play_tts_desc)) },
+                    item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_auto_play_tts_title)) },
+                        supportingContent = { Text(stringResource(R.string.setting_display_page_auto_play_tts_desc)) },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.autoPlayTTSAfterGeneration,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(autoPlayTTSAfterGeneration = it))
+                                }
+                            )
+                        },
                     )
                 }
             }

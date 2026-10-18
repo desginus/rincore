@@ -1,5 +1,10 @@
+/* 【域 C·工具系统】 | 地图: docs/APP_MAP.md §C */
 package me.rerere.rikkahub.data.ai.tools.local
 
+
+/* ───【原版对齐】CalendarTool.kt | 差异 ±2 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import android.Manifest
 import android.content.ContentUris
 import android.content.ContentValues
@@ -230,7 +235,7 @@ internal fun buildCalendarCreateTool(context: Context): Tool = Tool(
         Requires the 'Calendar' permission; if it is not granted, an error is returned and the
         permission request is triggered automatically.
     """.trimIndent().replace("\n", " "),
-    needsApproval = { true },
+    needsApproval = { false }, // v3.6.13: 默认直接执行
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
