@@ -16,6 +16,7 @@ import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.data.db.fts.MessageSearchResult
 import me.rerere.rikkahub.data.db.fts.MessageSearchSort
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.model.Conversation
@@ -115,6 +116,50 @@ fun createConversationTools(
             listOf(UIMessagePart.Text(JsonInstantPretty.encodeToString(payload)))
         }
     )
+)
+
+private fun conversationSearchTool(search: suspend (query: String) -> List<MessageSearchResult>) = Tool(
+    name = "conversation_search",
+    description = """
+        Full-text search across the user's past conversations to recall specific information they mentioned before.
+        Use focused keywords. Run multiple searches with different keywords if needed.
+        Each result includes the conversation title, a snippet with matched keywords wrapped in [brackets], and the date.
+    """.trimIndent(),
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                put("query", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Keywords to search for in past conversation messages")
+                })
+                put("limit", buildJsonObject {
+                    put("type", "integer")
+                    put(
+                        "description",
+                        "Maximum number of results to return (default: 15, max: 50)"
+                    )
+                })
+            },
+            required = listOf("query")
+        )
+    },
+    execute = {
+        val query = it.jsonObject["query"]?.jsonPrimitive?.contentOrNull
+            ?: error("query is required")
+        val limit = (it.jsonObject["limit"]?.jsonPrimitive?.intOrNull ?: 15).coerceIn(1, 50)
+        val results = search(query).take(limit)
+        val payload = buildJsonArray {
+            results.forEach { result ->
+                add(buildJsonObject {
+                    put("conversation_id", result.conversationId)
+                    put("title", result.title.ifBlank { "Untitled" })
+                    put("snippet", result.snippet)
+                    put("date", result.updateAt.toLocalDate())
+                })
+            }
+        }
+        listOf(UIMessagePart.Text(JsonInstantPretty.encodeToString(payload)))
+    }
 )
 
 // ══ RinCore 兼容层（B1 并树）：上游记忆整理用的「对话证据」工具 ══

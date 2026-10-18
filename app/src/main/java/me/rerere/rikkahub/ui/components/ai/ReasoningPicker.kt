@@ -172,34 +172,9 @@ fun ReasoningPicker(
                     sliderValue = snappedIndex.toFloat()
                     onUpdateReasoningLevel(levels[snappedIndex])
                 },
-                // v4.5.10 修复: 2.5.2 移植回退时漏恢复区间参数, Slider 落回默认
-                // 0f..1f, 7 档滑块被锁死在头两档 (表现为"只有开启/关闭两档")
                 valueRange = 0f..(levelCount - 1).toFloat(),
                 steps = levelCount - 2,
                 modifier = Modifier.fillMaxWidth(),
-                thumb = {
-                    Box(
-                        modifier = Modifier
-                            .size(24.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(10.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.onPrimary)
-                        )
-                    }
-                },
-                track = { sliderState ->
-                    SliderDefaults.Track(
-                        sliderState = sliderState,
-                        drawStopIndicator = null,
-                        thumbTrackGapSize = 0.dp,
-                    )
-                }
             )
         }
     }

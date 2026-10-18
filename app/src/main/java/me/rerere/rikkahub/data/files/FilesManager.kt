@@ -628,7 +628,6 @@ class FilesManager(
 }
 
 object FileFolders {
-    const val SKILLS = "skills"
     const val BUILTIN_SKILLS = "builtin_skills"
     const val MEDIA_CREATION = "media_creation"
     const val UPLOAD = "upload"

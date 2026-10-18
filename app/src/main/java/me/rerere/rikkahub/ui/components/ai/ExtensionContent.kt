@@ -5,6 +5,8 @@ package me.rerere.rikkahub.ui.components.ai
 /* ───【原版对齐】ExtensionContent.kt | 差异 ±30 行
  * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
  * ───────────────────────────────────────────────────────────────*/
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,6 +34,7 @@ import com.composables.icons.lucide.ExternalLink
 import com.composables.icons.lucide.Lucide
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Link01
+import me.rerere.hugeicons.stroke.Package
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.files.SkillMetadata
 import me.rerere.rikkahub.data.model.Lorebook
@@ -208,7 +211,6 @@ private fun ManageButton(onClick: () -> Unit) {
     }
 }
 
-@Composable
 @Composable
 fun ExtensionEmptyState(
     message: String,

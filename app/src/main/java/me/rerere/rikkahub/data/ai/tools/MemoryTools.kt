@@ -8,6 +8,7 @@ package me.rerere.rikkahub.data.ai.tools
  * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.add
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -16,6 +17,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
@@ -25,6 +27,7 @@ import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.repository.MemoryWriteResult
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.model.MemoryFile
+import java.time.Instant
 
 /** v3.11.24 记忆内容长度上限 (F1 污染以 30+ 同构巨块写入实测) */
 internal const val MEMORY_CONTENT_LIMIT_CHARS = 4000
