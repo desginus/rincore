@@ -7,6 +7,8 @@ package me.rerere.rikkahub.data.repository
  * 问题定位: 工作区数据异常/导出问题 → 本文件
  * 基线: 原版移植 + 自研 | 差异 +113 行 | 地图: docs/APP_MAP.md §D | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
+import me.rerere.rikkahub.BuildConfig
+import java.nio.file.Files
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.CancellationException
@@ -147,27 +149,68 @@ class WorkspaceRepository(
      */
     suspend fun provisionBuiltinTools(workspaceId: String? = null) = withContext(Dispatchers.IO) {
         val workspaces = if (workspaceId != null) listOfNotNull(dao.getById(workspaceId)) else dao.getAll()
+        if (workspaces.isEmpty()) return@withContext
+        // v5.0.4 (P7): 共享单副本只对齐一次（34MB 仅在 App 版本变化时写一次），
+        // 随后各工作区走硬链接注入（同文件系统=零额外数据块，校验退化为 inode 比对）。
+        val sharedDir = prepareSharedTools() ?: return@withContext
         for (workspace in workspaces) {
             if (workspace.shellStatus != WorkspaceShellStatus.READY.name) continue
             if (!manager.hasRootfs(workspace.root)) continue
-            runCatching { provisionInto(manager.linuxDir(workspace.root)) }
+            runCatching { provisionInto(manager.linuxDir(workspace.root), sharedDir) }
                 .onFailure { Log.w(TAG, "provisionBuiltinTools failed: id=${workspace.id}", it) }
         }
     }
 
-    private fun provisionInto(linuxDir: File) {
+    /**
+     * v5.0.4 (P7): 资产解压到 filesDir/rin-tools-shared 单副本（按 versionName 打标记，
+     * 版本不变则零 IO；版本变化整批重铺）。返回 null = 资产不可用（静默跳过）。
+     */
+    private fun prepareSharedTools(): File? {
         val names = runCatching { context.assets.list(TOOLS_ASSET_DIR)?.toList().orEmpty() }
             .getOrDefault(emptyList())
+        if (names.isEmpty()) return null
+        val dir = File(context.filesDir, TOOLS_SHARED_DIR).apply { mkdirs() }
+        val marker = File(dir, ".staged-version")
+        val version = runCatching { BuildConfig.VERSION_NAME }.getOrDefault("")
+        val upToDate = marker.isFile && runCatching { marker.readText() }.getOrDefault("") == version &&
+            names.all { File(dir, it).isFile }
+        if (!upToDate) {
+            for (name in names) {
+                runCatching {
+                    context.assets.open("$TOOLS_ASSET_DIR/$name").use { input ->
+                        File(dir, name).outputStream().use { output -> input.copyTo(output) }
+                    }
+                }.onFailure { Log.w(TAG, "stage shared tool failed: $name", it) }
+            }
+            runCatching { marker.writeText(version) }
+        }
+        return dir
+    }
+
+    /**
+     * v5.0.4 (P7): 硬链接注入（旧实现=每工作区复制 34MB + 每次启动整份回读校验）。
+     * 硬链接不可用（跨文件系统/不支持）时回退逐字节复制，行为与旧版一致。
+     */
+    private fun provisionInto(linuxDir: File, sharedDir: File) {
+        val names = sharedDir.listFiles()?.filter { !it.name.startsWith(".") }?.map { it.name }.orEmpty()
         if (names.isEmpty()) return
         val binDir = File(linuxDir, "usr/local/bin").apply { mkdirs() }
         for (name in names) {
+            val shared = File(sharedDir, name)
+            if (!shared.isFile) continue
             val target = File(binDir, name)
-            val bytes = context.assets.open("$TOOLS_ASSET_DIR/$name").use { it.readBytes() }
-            val unchanged = target.isFile && target.length() == bytes.size.toLong() &&
-                runCatching { target.readBytes().contentEquals(bytes) }.getOrDefault(false)
-            if (!unchanged) {
-                target.writeBytes(bytes)
-                Log.i(TAG, "provisioned builtin tool: ${target.absolutePath} (${bytes.size} bytes)")
+            val linked = runCatching {
+                if (target.exists() && Files.isSameFile(shared.toPath(), target.toPath())) {
+                    true
+                } else {
+                    if (target.exists()) target.delete()
+                    Files.createLink(target.toPath(), shared.toPath())
+                    true
+                }
+            }.getOrDefault(false)
+            if (!linked) {
+                runCatching { shared.copyTo(target, overwrite = true) }
+                    .onFailure { Log.w(TAG, "provision copy fallback failed: $name", it) }
             }
             target.setExecutable(true, false)
             target.setReadable(true, false)
@@ -616,5 +659,7 @@ class WorkspaceRepository(
     companion object {
         private const val TAG = "WorkspaceRepository"
         private const val TOOLS_ASSET_DIR = "rin-tools"
+        // v5.0.4 (P7): 共享工具目录（解压单副本，各工作区硬链接引用）
+        private const val TOOLS_SHARED_DIR = "rin-tools-shared"
     }
 }
