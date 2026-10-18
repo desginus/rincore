@@ -1,6 +1,7 @@
-/* 【自研】RinDevPanel.kt — 开发者调试面板（仅开发者版可见；全部选项实时作用于真实输入栏） */
-
+/* 【域 A·对话核心】 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.pages.chat
+
+/* ───【自研】RinDevPanel.kt — 开发者调试面板（仅开发者版可见；全部选项实时作用于真实输入栏） */
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column

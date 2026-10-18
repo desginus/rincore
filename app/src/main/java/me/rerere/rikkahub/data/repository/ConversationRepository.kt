@@ -48,6 +48,14 @@ class ConversationRepository(
     suspend fun hasFileReference(fileUrl: String): Boolean =
         messageNodeDAO.hasFileReference(JsonInstant.encodeToString(fileUrl))
 
+    /** v4.8.186: 收件箱 — 引用该子串(如 "upload/<上传码>")的对话 ID 轻查。 */
+    suspend fun conversationIdsReferencing(needle: String): List<String> =
+        messageNodeDAO.conversationIdsContaining(needle)
+
+    /** v4.8.186: 收件箱 — 按对话 ID 直取标题 (String 形态, 免 Uuid 解析)。 */
+    suspend fun conversationTitleByIdRaw(conversationId: String): String? =
+        conversationDAO.getConversationById(conversationId)?.title
+
     suspend fun getRecentConversations(assistantId: Uuid, limit: Int = 10): List<Conversation> {
         return conversationDAO.getRecentConversationsOfAssistant(
             assistantId = assistantId.toString(),

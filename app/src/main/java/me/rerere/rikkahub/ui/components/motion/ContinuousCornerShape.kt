@@ -1,6 +1,7 @@
-/* 【自研】ContinuousCornerShape.kt — 连续曲率圆角（曲率梳平滑 / G2 连续） */
-
+/* 【域 F·主题渲染】 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.motion
+
+/* ───【自研】ContinuousCornerShape.kt — 连续曲率圆角（曲率梳平滑 / G2 连续） */
 
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size

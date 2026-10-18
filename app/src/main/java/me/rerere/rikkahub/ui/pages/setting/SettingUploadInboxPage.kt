@@ -1,11 +1,12 @@
 /* 【域 E·设置体系】 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.ui.pages.setting
 
-/* ───【自研】SettingUploadInboxPage.kt — v4.8.146 (用户定版)
+/* ───【自研】SettingUploadInboxPage.kt — v4.8.146 (用户定版); v4.8.186 修订
  * 数据与日志 → 收件箱 (Upload): 上传文件管理 UI。
- * 每个文件标注"正在被什么地方使用" — 引用面: 用户头像 / 各助手头像 / 各助手对话背景
- * (v4.8.146 首版; 消息附件等引用面见交付说明)。匹配口径 = 文件名后缀 (物理名带
- * 上传码, 唯一; 兼容 file:// 百分号编码形态)。
+ * v4.8.186 (用户定版): ① 删除"未被使用"标注 — 有引用才标注, 无引用不显示任何文案；
+ *   ② 引用面补齐 — 此前只扫 用户头像/助手头像/助手背景 三个面, 消息附件作为
+ *   主使用面未扫描 ("全是未被使用"的根因)。匹配 = 上传码 (ASCII 前缀, 唯一,
+ *   兼容 file:// 百分号编码形态) → message_node.messages 子串查 → 对话标题标注。
  * ───────────────────────────────────────────────────────────────*/
 
 import androidx.compose.foundation.layout.Arrangement
@@ -28,17 +29,20 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.db.entity.ManagedFileEntity
 import me.rerere.rikkahub.data.files.FileFolders
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.data.repository.ConversationRepository
 import org.koin.compose.koinInject
 import java.net.URLDecoder
 import java.text.SimpleDateFormat
@@ -49,12 +53,16 @@ import java.util.Locale
 fun SettingUploadInboxPage(onBack: () -> Unit) {
     val filesManager: FilesManager = koinInject()
     val settingsStore: SettingsStore = koinInject()
+    val conversationRepo: ConversationRepository = koinInject()
     val files by filesManager.observe(FileFolders.UPLOAD).collectAsStateWithLifecycle(initialValue = emptyList())
     val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
 
-    // 引用面扫描 (设置快照 × 文件清单; 变化时重算)
-    val usages = remember(files, settings) {
-        files.associate { f -> f.id to uploadUsageLabels(f, settings) }
+    // v4.8.186: 引用面扫描 — 设置快照 (头像/背景, 同步部分) + 消息附件 (DB 子串查)。
+    // 异步执行 (消息查询走 message_node), 加载完成前不显示标注, 完成后自动重组。
+    val usages by produceState(initialValue = emptyMap<String, List<String>>(), files, settings) {
+        value = withContext(Dispatchers.IO) {
+            files.associate { f -> f.id to uploadUsageLabels(f, settings, conversationRepo) }
+        }
     }
 
     Scaffold(
@@ -121,14 +129,10 @@ fun SettingUploadInboxPage(onBack: () -> Unit) {
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Spacer(Modifier.height(4.dp))
-                        if (labels.isEmpty()) {
-                            Text(
-                                "未被使用",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        } else {
+                        // v4.8.186 (用户定版): 有引用才标注; 无引用不显示任何文案
+                        // (撤除旧版"未被使用"四字)。
+                        if (labels.isNotEmpty()) {
+                            Spacer(Modifier.height(4.dp))
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -167,11 +171,16 @@ private fun uploadCodeOf(f: ManagedFileEntity): String? {
 }
 
 /**
- * 使用位置标注 (v4.8.146 引用面: 用户头像 / 各助手头像 / 各助手对话背景)。
+ * 使用位置标注 — v4.8.146 引用面: 用户头像 / 各助手头像 / 各助手对话背景；
+ * v4.8.186 增补: 消息附件 (经上传码 uniqueness 定位引用对话, 标对话标题)。
  * 匹配 = 引用串(含 file:// 百分号编码形态) 包含该文件物理名或显示名 —
  * 上传文件物理名带唯一上传码, 误配面可忽略。
  */
-private fun uploadUsageLabels(f: ManagedFileEntity, settings: Settings): List<String> {
+private suspend fun uploadUsageLabels(
+    f: ManagedFileEntity,
+    settings: Settings,
+    conversationRepo: ConversationRepository,
+): List<String> {
     val physical = f.relativePath.substringAfterLast('/')
     val candidates = listOf(physical, f.displayName).filter { it.isNotBlank() }
     fun hit(raw: String?): Boolean {
@@ -188,6 +197,32 @@ private fun uploadUsageLabels(f: ManagedFileEntity, settings: Settings): List<St
         val name = a.name.ifBlank { "未命名" }
         if (hit((a.avatar as? Avatar.Image)?.url)) out += "助手「$name」头像"
         if (hit(a.background)) out += "助手「$name」对话背景"
+    }
+
+    // v4.8.186: 消息附件引用 — 上传码唯一 (ASCII, 不随中文名的 percent 编码失配),
+    // 路径片段 "upload/<码>" 只在消息/工具结果真实引用了该文件时出现
+    // (模型正文单独提码不会命中, 因为缺 "upload/" 前缀)。
+    val code = uploadCodeOf(f)
+    if (code != null) {
+        val ids = runCatching { conversationRepo.conversationIdsReferencing("upload/$code") }
+            .getOrDefault(emptyList())
+        if (ids.isNotEmpty()) {
+            val titles = ids.take(3).mapNotNull { id ->
+                runCatching { conversationRepo.conversationTitleByIdRaw(id) }
+                    .getOrNull()?.takeIf { it.isNotBlank() }
+            }
+            val head = if (titles.isNotEmpty()) {
+                titles.joinToString("、") { "「$it」" }
+            } else {
+                "共 ${ids.size} 个对话"
+            }
+            val tail = if (titles.isNotEmpty() && ids.size > titles.size) {
+                " 等 ${ids.size} 个对话"
+            } else {
+                ""
+            }
+            out += "消息附件 · $head$tail"
+        }
     }
     return out
 }

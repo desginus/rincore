@@ -24,7 +24,7 @@ android {
 // 比较 — 相同 code + 相同签名 = 任意替换安装 (升/降/同级均可)。
 // versionName 正常递增用于显示与归档; 发版只改 versionName。
 versionCode = 9999
-versionName = "4.8.185"
+versionName = "4.8.186"
 
             // v4.8.179: 开发者版本开关 — true=开发者版(含"开发者调试"入口/面板); v4.8.183 正式版=false
             buildConfigField("Boolean", "DEVELOPER_BUILD", "false")

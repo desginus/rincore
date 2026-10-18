@@ -21,6 +21,10 @@ interface MessageNodeDAO {
     @Query("SELECT EXISTS(SELECT 1 FROM message_node WHERE instr(messages, :encodedFileUrl) > 0)")
     suspend fun hasFileReference(encodedFileUrl: String): Boolean
 
+    // v4.8.186: 收件箱使用标注 — 返回引用指定子串(如 "upload/<上传码>")的对话 ID。
+    @Query("SELECT DISTINCT conversation_id FROM message_node WHERE instr(messages, :needle) > 0 LIMIT 60")
+    suspend fun conversationIdsContaining(needle: String): List<String>
+
     @Query("SELECT * FROM message_node WHERE conversation_id = :conversationId ORDER BY node_index ASC")
     suspend fun getNodesOfConversation(conversationId: String): List<MessageNodeEntity>
 
