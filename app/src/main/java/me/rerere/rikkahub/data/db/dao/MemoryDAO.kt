@@ -1,31 +1,61 @@
+/* 【域 I·数据存储】 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.data.db.dao
 
+
+/* ───【原版对齐】MemoryDAO.kt | 差异 ±4 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.room.Dao
+import androidx.room.Insert
 import androidx.room.Query
-import androidx.room.Upsert
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
-import me.rerere.rikkahub.data.db.entity.MemoryFileEntity
+import me.rerere.rikkahub.data.db.entity.MemoryEntity
 
 @Dao
 interface MemoryDAO {
-    @Query("SELECT * FROM memory_file WHERE assistant_id = :assistantId ORDER BY path")
-    fun getFilesOfAssistantFlow(assistantId: String): Flow<List<MemoryFileEntity>>
+    // v4.8.92: 助手级记忆 = 排除单对话记忆（conversation_id IS NULL）—— 单对话记忆绝不出现在
+    // 其它对话的注入与"整个助手"列表里（用户定版：其它对话无法观测/修改/阅读）。
+    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId AND conversation_id IS NULL ORDER BY id ASC")
+    fun getMemoriesOfAssistantFlow(assistantId: String): Flow<List<MemoryEntity>>
 
-    @Query("SELECT * FROM memory_file WHERE assistant_id = :assistantId ORDER BY path")
-    suspend fun getFilesOfAssistant(assistantId: String): List<MemoryFileEntity>
+    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId AND conversation_id IS NULL ORDER BY id ASC")
+    suspend fun getMemoriesOfAssistant(assistantId: String): List<MemoryEntity>
 
-    @Query("SELECT * FROM memory_file WHERE assistant_id = :assistantId AND path = :path")
-    suspend fun getFile(assistantId: String, path: String): MemoryFileEntity?
+    // ── v4.8.92: 单对话记忆 ──
+    @Query("SELECT * FROM memoryentity WHERE conversation_id = :conversationId ORDER BY id ASC")
+    fun getMemoriesOfConversationFlow(conversationId: String): Flow<List<MemoryEntity>>
 
-    @Upsert
-    suspend fun upsertFile(file: MemoryFileEntity)
+    @Query("SELECT * FROM memoryentity WHERE conversation_id = :conversationId ORDER BY id ASC")
+    suspend fun getMemoriesOfConversation(conversationId: String): List<MemoryEntity>
 
-    @Upsert
-    suspend fun upsertFiles(files: List<MemoryFileEntity>)
+    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId AND conversation_id IS NOT NULL ORDER BY conversation_id ASC, id ASC")
+    fun getConversationMemoriesOfAssistantFlow(assistantId: String): Flow<List<MemoryEntity>>
 
-    @Query("DELETE FROM memory_file WHERE assistant_id = :assistantId AND path = :path")
-    suspend fun deleteFile(assistantId: String, path: String)
+    @Query("DELETE FROM memoryentity WHERE conversation_id = :conversationId")
+    suspend fun deleteMemoriesOfConversation(conversationId: String)
 
-    @Query("DELETE FROM memory_file WHERE assistant_id = :assistantId")
-    suspend fun deleteFilesOfAssistant(assistantId: String)
+    @Query("SELECT * FROM memoryentity")
+    fun getAllMemoriesFlow(): Flow<List<MemoryEntity>>
+
+    @Query("SELECT * FROM memoryentity")
+    suspend fun getAllMemories(): List<MemoryEntity>
+
+    @Query("SELECT * FROM memoryentity WHERE id = :id")
+    suspend fun getMemoryById(id: Long): MemoryEntity?
+
+    @Insert
+    suspend fun insertMemory(memory: MemoryEntity): Long
+
+    @Insert
+    suspend fun insertMemories(memories: List<MemoryEntity>)
+
+    @Update
+    suspend fun updateMemory(memory: MemoryEntity)
+
+    @Query("DELETE FROM memoryentity WHERE id = :id")
+    suspend fun deleteMemory(id: Long)
+
+    @Query("DELETE FROM memoryentity WHERE assistant_id = :assistantId")
+    suspend fun deleteMemoriesOfAssistant(assistantId: String)
 }
