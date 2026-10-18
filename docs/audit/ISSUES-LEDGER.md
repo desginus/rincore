@@ -183,3 +183,23 @@
 - **构建**：run 39158926722 conclusion=success，head=`49b65b836`（main 已同步），含全部门禁（AI 测试编译/markdown 测试/签名/lintVital）。
 - **5.0.0 交付面**：反向换底到上游 3.0.0 底树；B1 基础设施（4.9.0-dev）→ B2 UI 批（4.9.5-dev）→ B3 收尾（记忆 2.0/MCP 详情/媒体入口/Koin+manifest 修复/版本与文档）三批全部合入 main。
 - **发布后待办（下轮）**：真机验证清单执行（14 项）+ 按反馈 hotfix（若有）+ 检索体系文档（CODE_INDEX 校订）持续维护 + 生态与插件（P3 插件页 hub 形态）等用户拍板项。
+
+### G14 v5.0.1 运行期接线补齐批（2026-10-19 04:xx）—「编译干净但运行断」族排雷
+> 发现方法：Koin 绑定审计（VM/单例注册 vs 消费面）+ Manifest 组件对账 + 渠道创建对账 + 上游挂载链对照。**此族编译期不可见（CI 全绿），必须靠静态接线审计**。
+- **① Koin 注册缺失 7 项（真崩点：NoDefinitionFoundException）**：
+  - `DataSourceModule` 补 4 singles：`TranslationHandler`（翻译器页 TranslatorVM 依赖）/`RemoteFileStore`（S3 远程文件，SettingMediaPage koinInject）/`MediaGenerationManager`/`MediaCreationService`（媒体创作 VM 链依赖）。
+  - `ViewModelModule` 补 3 VMs：`MemoryFileVM`（带 parametersOf(memoryId, path) 双参）/`MediaCreationSessionsVM`/`MediaCreationVM`（带 parametersOf(id)）。
+- **② 通知渠道只定义未创建 2 个**：`MEDIA_CREATION_NOTIFICATION_CHANNEL_ID`/`MEMORY_DREAM_NOTIFICATION_CHANNEL_ID` 常量在但 `RikkaHubApp.createNotificationChannel()` 从未创建 → 两服务通知被系统静默丢弃。已补建（IMPORTANCE_DEFAULT/LOW，上游同款）。
+- **③ 启动恢复链缺失 2 条**（上游 onCreate）：`resumeMediaCreations()`（媒体生成进程死亡后恢复 `MediaCreationService.resumePending()`）+ `resumeMemoryConsolidation()`（`MemoryConsolidationScheduler.resumePending()` + ProcessLifecycleOwner ON_STOP → `onAppHidden()`）。已补。
+- **④ 记忆整理挂载链缺失 3 钩子（「对话后自动整理」根本不触发）**：`ChatService.onTurnFinished`（回合完成登记，assistant.enableMemory 门控）/`onConversationForked`（fork 登记）/`ConversationSessionManager.onSessionRemoved` → `onConversationLeft`（会话回收）；ChatService 构造 + AppModule 传参同步。
+- **⑤ 抽屉「记忆整理中」指示器**（上游 MemoryDreamingEntry）：ChatDrawerVM.memoryDreaming StateFlow + ChatDrawer 入口（点击进记忆页）。
+- **⑥ 编译错插曲**：`Assistant.memoryId` 是 `data.repository` 包扩展 val，跨包使用必须 `import me.rerere.rikkahub.data.repository.memoryId`（漏 import → 7 条级联错）→ 同版重推。
+- **已核无问题的面**：DB 19 DAO 全注册（12 in DSM + 7 via AppModule repositories）；VM 注册复查=零遗漏；FileProvider paths 覆盖 filesDir 全树（chat-media 可共享）；foregroundServiceType/permission 齐备；koinInject 全库仅 SponsorAPI/WorkspaceRepository（均已注册）。
+
+### G15 v5.0.1 已发布 + 备份目录集补齐（2026-10-19 04:46）
+- **v5.0.1 已发布**：https://github.com/desginus/rincore/releases/tag/v5.0.1 （RinCore v5.0.1，APK 52.17MB×2，已转正式版 make_latest；构建 run 39163398667 success，head=c2ca1a6b5）。内容 = G14 的运行期接线补齐批（Koin 注册 7 项/通知渠道 2 个/恢复链 2 条/记忆整理挂载 3 钩子/抽屉指示器）。
+- **备份目录集补齐（5.0.2 批）**：`BackupManager` 收集面与校验面同源常量化 `ATTACHMENT_FOLDERS`/`NESTED_ATTACHMENT_FOLDERS`（此前两处各写各的 listOf）。新增两目录：
+  - `MEDIA_CREATION`（上游媒体创作产物；跳过 `.part` 半成品——上游语义）
+  - `chat-media`（我方 v4.8.185 对话媒体快照；不备份=恢复后消息图片全断）
+  覆盖面：本地导出、WebDAV 备份、S3 备份、恢复（stageRestore→isAttachment）四链同源 ✓；`PendingRestore.resolveInside` 路径穿越守卫保留 ✓。
+- **前三处同类「列表各写各的」教训**：收集/校验两面必须同源常量（本批已收口）；同族先例=v4.8.137 UploadCodes 格式契约四处各写各的。
