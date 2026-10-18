@@ -344,13 +344,14 @@ private fun ChatListNormal(
         ChatFontProvider(displaySetting = settings.displaySetting) {
             LazyColumn(
                 state = state,
-                contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 16.dp) + PaddingValues(bottom = 32.dp + innerPadding.calculateBottomPadding()),
+                // v4.8.182 (用户定版): 顶部内边距改由 contentPadding 承担——消息可向上滑入标题栏下方
+                // （标题栏半透明, 划过内容可见）; 静止态位置与滚动语义与旧版逐位等价。
+                contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 16.dp + innerPadding.calculateTopPadding()) + PaddingValues(bottom = 32.dp + innerPadding.calculateBottomPadding()),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier
                     .fillMaxSize()
-                    .hazeSource(state = hazeState)
-                    .padding(top = innerPadding.calculateTopPadding()),
+                    .hazeSource(state = hazeState),
             ) {
             itemsIndexed(
                 items = conversation.messageNodes,
