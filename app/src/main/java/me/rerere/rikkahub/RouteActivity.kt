@@ -1113,4 +1113,21 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object Stats : Screen
+
+
+    // ── RinCore 5.0.0 并树：上游 3.0.0 新增目的地（其页面导航依赖） ──
+    @Serializable
+    data class MediaCreation(val id: String) : Screen
+    @Serializable
+    data object MediaCreationSessions : Screen
+    @Serializable
+    data class MemoryFile(val memoryId: String, val path: String? = null) : Screen
+    @Serializable
+    data object SettingDonate : Screen
+    @Serializable
+    data class SettingMcpDetail(val serverId: String) : Screen
+    @Serializable
+    data object SettingMedia : Screen
+    @Serializable
+    data class WorkspaceFileEditor(val id: String, val area: String, val path: String) : Screen
 }

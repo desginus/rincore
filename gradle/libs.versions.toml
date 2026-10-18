@@ -25,6 +25,7 @@ okhttp = "5.5.0"
 retrofit = "3.0.0"
 coil = "3.6.3"
 quickjs = "1.0.15"
+androidx-media = "1.7.0"
 hjson = "3.0.0"
 kotlinx-coroutines-play-services = "1.11.0"
 lucide-icons = "1.1.0"
@@ -133,6 +134,7 @@ coil-svg = { group = "io.coil-kt.coil3", name = "coil-svg", version.ref = "coil"
 coil-cache-control = { group = "io.coil-kt.coil3", name = "coil-network-cache-control", version.ref = "coil" }
 quickjs = { module = "io.github.dokar3:quickjs-kt", version.ref = "quickjs" }
 quickjs-wrapper = { module = "wang.harlon.quickjs:wrapper-android", version = "3.2.3" }
+androidx-media = { module = "androidx.media:media", version.ref = "androidx-media" }
 hjson = { group = "org.hjson", name = "hjson", version.ref = "hjson" }
 quickjs-kt-android = { module = "io.github.dokar3:quickjs-kt-android", version.ref = "quickjs-kt" }
 sonner = { module = "io.github.dokar3:sonner", version.ref = "sonner" }
