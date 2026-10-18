@@ -504,7 +504,22 @@ class SettingsStore(
                 opencodeApiKeys = preferences[OPENCODE_API_KEYS]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: emptyList(),
-                displaySetting = JsonInstant.decodeFromString(preferences[DISPLAY_SETTING] ?: "{}"),
+                // v4.8.183 (用户定版): 玻璃预设一次性迁移 — 未升级设备整租切到定版参数集
+                // (半径2/噪点100/蒙版50/蒙版色深色/雾化3/线宽1/线亮30 + 模糊开启); 升级后不再改写。
+                displaySetting = JsonInstant.decodeFromString<DisplaySetting>(preferences[DISPLAY_SETTING] ?: "{}").let { ds ->
+                    if (ds.glassPresetUpgraded) ds
+                    else ds.copy(
+                        enableBlurEffect = true,
+                        glassBlurRadiusDp = 2,
+                        glassNoisePercent = 100,
+                        glassMaskPercent = 50,
+                        glassMaskColorMode = 1,
+                        glassFogPercent = 3,
+                        glassLineWidthDp = 1.0f,
+                        glassLineBrightness = 30,
+                        glassPresetUpgraded = true,
+                    )
+                },
                 networkSetting = JsonInstant.decodeFromString(preferences[NETWORK_SETTING] ?: "{}"),
                 searchServices = preferences[SEARCH_SERVICES]?.let {
                     JsonInstant.decodeFromString(it)
@@ -1109,14 +1124,15 @@ data class DisplaySetting(
     val sendOnEnter: Boolean = false,
     val enableAutoScroll: Boolean = true,
     val enableLatexRendering: Boolean = true,
-    val enableBlurEffect: Boolean = false,
-    val glassMaskPercent: Int = 0, // v4.8.177: 输入栏蒙版不透明度 0..100 (0=关闭; 叠加在模糊层之上)
-    val glassMaskColorMode: Int = 0, // v4.8.178: 蒙版颜色 0=跟随主题 1=深色 2=浅色
-    val glassNoisePercent: Int = 15, // v4.8.178: 输入栏噪点 0..100 (默认15=Material3 预设默认档 0.15)
-    val glassFogPercent: Int = 0, // v4.8.178: 输入栏雾化 0..100 (白色柔雾 上浓下淡; 0=关闭)
-    val glassBlurRadiusDp: Int = 4, // v4.8.179: 输入栏模糊半径 dp (半径回归; 默认 4=干净点)
-    val glassLineWidthDp: Float = 0.5f, // v4.8.179: 输入栏描边粗细 dp (默认 0.5=尽可能细)
-    val glassLineBrightness: Int = 55, // v4.8.179: 输入栏描边亮度 0..100 (默认 55=压低亮线刺眼)
+    val enableBlurEffect: Boolean = true,
+    val glassMaskPercent: Int = 50, // v4.8.183: 输入栏蒙版不透明度 0..100 (定版默认 50)
+    val glassMaskColorMode: Int = 1, // v4.8.183: 蒙版颜色 0=跟随主题 1=深色 2=浅色 (定版默认 1; "深色仅深色模式生效")
+    val glassNoisePercent: Int = 100, // v4.8.183: 输入栏噪点 0..100 (定版默认 100; 感知映射后等效 0.60)
+    val glassFogPercent: Int = 3, // v4.8.183: 输入栏雾化 0..100 (定版默认 3)
+    val glassBlurRadiusDp: Int = 2, // v4.8.183: 输入栏模糊半径 dp (定版默认 2=干净点)
+    val glassLineWidthDp: Float = 1.0f, // v4.8.183: 输入栏描边粗细 dp (定版默认 1)
+    val glassLineBrightness: Int = 30, // v4.8.183: 输入栏描边亮度 0..100 (定版默认 30)
+    val glassPresetUpgraded: Boolean = false, // v4.8.183: 玻璃预设一次性迁移标记 (随 JSON 落盘)
     val chatFontFamily: ChatFontFamily = ChatFontFamily.DEFAULT,
     val chatCustomFontPath: String = "",
     val chatCustomFontName: String = "",

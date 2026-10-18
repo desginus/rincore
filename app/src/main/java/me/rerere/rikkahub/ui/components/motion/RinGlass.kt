@@ -83,6 +83,17 @@ object RinGlass {
         return if (p <= 0.4f) p else 0.4f + (p - 0.4f) * (1f / 3f)
     }
 
+    /**
+     * v4.8.183 (用户定版): 第二层(顶层)样式 — 半径加倍（上限 10dp=30px, 恒在无伪影区 <32px）、零噪点。
+     * "能再模糊一下、细腻一下最好"：串行等效 σ≈√(2²+4²)≈4.5dp，在无格栅区内多给一档糊度。
+     * 主输入栏与标题栏共用（"模糊的逻辑和输入栏一样"）。
+     */
+    @Composable
+    fun inputTopStyle(radiusDp: Int): HazeBlurStyle = inputBlurStyle(
+        radiusDp = (radiusDp * 2).coerceIn(2, 10),
+        noisePercent = 0,
+    )
+
     /** 高光描边 (澎湃 4 玻璃质感 — HyperGlassPanel 同源) */
     val highlightColor: Color = Color.White.copy(alpha = 0.14f)
 
@@ -98,8 +109,13 @@ object RinGlass {
     fun inputMaskColor(colorMode: Int, percent: Int): Color {
         val p = percent.coerceIn(0, 100) / 100f
         if (p <= 0f) return Color.Transparent
+        // v4.8.183 (用户定版): "深色仅深色模式生效" — 浅色模式回落跟随主题色。
+        val darkTheme = run {
+            val s = MaterialTheme.colorScheme.surface
+            (s.red + s.green + s.blue) / 3f < 0.5f
+        }
         val base = when (colorMode) {
-            1 -> Color.Black
+            1 -> if (darkTheme) Color.Black else MaterialTheme.colorScheme.surfaceContainerLow
             2 -> Color.White
             else -> MaterialTheme.colorScheme.surfaceContainerLow
         }

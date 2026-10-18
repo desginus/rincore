@@ -63,9 +63,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import dev.chrisbanes.haze.HazeInput
+import dev.chrisbanes.haze.blur.hazeBlur
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import androidx.activity.ComponentActivity
@@ -564,13 +565,30 @@ private fun ChatPageContent(
                     val titlePanelShape = remember {
                         ContinuousCornerShape(cornerRadius = 20.dp, topStart = false, topEnd = false)
                     }
-                    val titleFogBrush = RinGlass.titleFogBrush(setting.displaySetting.glassFogPercent)
-                    if (setting.displaySetting.enableBlurEffect && titleFogBrush != null) {
+                    val titleMidState = rememberHazeState()
+                    if (setting.displaySetting.enableBlurEffect) {
                         Box(
                             modifier = Modifier
                                 .matchParentSize()
                                 .clip(titlePanelShape)
-                                .drawBehind { drawRect(brush = titleFogBrush) },
+                                .hazeSource(state = titleMidState)
+                                .hazeBlur(
+                                    input = HazeInput.Sources(hazeState),
+                                    style = RinGlass.inputBlurStyle(
+                                        radiusDp = setting.displaySetting.glassBlurRadiusDp,
+                                        noisePercent = setting.displaySetting.glassNoisePercent,
+                                    ),
+                                ),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .padding(3.dp)
+                                .clip(titlePanelShape)
+                                .hazeBlur(
+                                    input = HazeInput.Sources(titleMidState),
+                                    style = RinGlass.inputTopStyle(setting.displaySetting.glassBlurRadiusDp),
+                                ),
                         )
                     }
                     TopBar(

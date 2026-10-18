@@ -166,10 +166,7 @@ fun ChatInput(
         radiusDp = settings.displaySetting.glassBlurRadiusDp,
         noisePercent = settings.displaySetting.glassNoisePercent,
     )
-    val inputTopHazeStyle = RinGlass.inputBlurStyle(
-        radiusDp = settings.displaySetting.glassBlurRadiusDp,
-        noisePercent = 0,
-    )
+    val inputTopHazeStyle = RinGlass.inputTopStyle(settings.displaySetting.glassBlurRadiusDp)
     val glassMaskColor = RinGlass.inputMaskColor(
         colorMode = settings.displaySetting.glassMaskColorMode,
         percent = settings.displaySetting.glassMaskPercent,
