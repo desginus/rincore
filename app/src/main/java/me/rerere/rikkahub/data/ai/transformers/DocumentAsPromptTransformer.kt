@@ -48,15 +48,31 @@ object DocumentAsPromptTransformer : InputMessageTransformer {
                                 // ("Too small: expected array to have >=1 items" 的根源)。
                                 val prompt = runCatching {
                                     val ref = UploadRef.resolveDocumentUrl(document.url)
-                                    val content = readDocumentContent(ref?.hostFile, document)
+                                    val content = readDocumentContentCached(ref?.hostFile, document)
                                     val attrs = buildString {
                                         append(" name=\"").append(document.fileName).append('"')
                                         ref?.let { append(" code=\"").append(it.code).append('"') }
                                         ref?.let { append(" path=\"").append(it.sandboxPath).append('"') }
                                     }
-                                    "<UploadFile" + attrs + ">\n" +
-                                        "```\n" + content + "\n```\n" +
-                                        "</UploadFile>"
+                                    // v5.0.5 (P2): 超大文档自动降级为路径引用 — classic 只内联小文件，
+                                    // 阈值 12 万字符（≈3 万 token），正常文档零影响；降级块自带说明与读取路径。
+                                    if (content.length > CLASSIC_INLINE_MAX_CHARS && ref != null) {
+                                        buildString {
+                                            append("<UploadFile").append(attrs).append(">\n")
+                                            append("[该文档过大（").append(content.length)
+                                            append(" 字符，超过 classic 内联上限 ").append(CLASSIC_INLINE_MAX_CHARS)
+                                            append("），已自动降级为路径引用]\n")
+                                            append("[完整内容在工作区路径: ").append(ref.sandboxPath)
+                                            append(" — 需要查看时调用 workspace_read_file 工具传入该路径]\n")
+                                            append("[上传码 ").append(ref.code)
+                                            append("：之后任何时候都可用 upload_fetch(code) 直取该文件。]\n")
+                                            append("</UploadFile>")
+                                        }
+                                    } else {
+                                        "<UploadFile" + attrs + ">\n" +
+                                            "```\n" + content + "\n```\n" +
+                                            "</UploadFile>"
+                                    }
                                 }.getOrElse { e ->
                                     "<UploadFile name=\"" + document.fileName + "\">\n" +
                                         "[附件读取失败: " + (e.message ?: e.javaClass.simpleName) +
@@ -117,6 +133,27 @@ object DocumentAsPromptTransformer : InputMessageTransformer {
                 }
             )
         }
+
+    // ── v5.0.5 (P2): 文档解析结果缓存 ──
+    // classic 模式每轮都会对历史消息中的每个文档重跑解析（PDF/DOCX 解析尤重），
+    // 按 (路径, mtime, size) 记忆最近 4 份提取文本 —— 跨轮/跨请求零重复解析（文件变更自动失效）。
+    private data class ParsedDocKey(val path: String, val mtime: Long, val size: Long)
+    private const val CLASSIC_INLINE_MAX_CHARS = 120_000
+    private const val PARSED_CACHE_MAX = 4
+    private val parsedCache = object : LinkedHashMap<ParsedDocKey, String>(PARSED_CACHE_MAX, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<ParsedDocKey, String>): Boolean =
+            size > PARSED_CACHE_MAX
+    }
+    private val parsedCacheLock = Any()
+
+    private fun readDocumentContentCached(file: File?, document: UIMessagePart.Document): String {
+        if (file == null || !file.exists() || !file.isFile) return readDocumentContent(file, document)
+        val key = ParsedDocKey(file.absolutePath, file.lastModified(), file.length())
+        synchronized(parsedCacheLock) { parsedCache[key]?.let { return it } }
+        val text = readDocumentContent(file, document)
+        synchronized(parsedCacheLock) { parsedCache[key] = text }
+        return text
+    }
 
     // 上传文件保存在 filesDir/upload 下, 该目录通过 proot 挂载到 workspace 的 /upload。
     // 宿主文件一律经 UploadRef 解析 (v4.8.189 收口); 解析不到返回 null —— 调用方绝不编造路径。
