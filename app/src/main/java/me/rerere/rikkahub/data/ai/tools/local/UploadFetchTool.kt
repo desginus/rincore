@@ -10,6 +10,8 @@ package me.rerere.rikkahub.data.ai.tools.local
  *
  * 纯文件系统实现（不依赖 DB）：码本身就是相对路径的确定性派生，扫目录算码即可命中；
  * 未命中时返回最近上传列表兜底（让模型能把候选报给用户确认），绝不静默乱猜。
+ *
+ * v4.8.189 (L-A3): 码扫描/列表/路径派生一律经 UploadRef 单一解析器 (撤本文件直扫逻辑)。
  */
 
 import kotlinx.serialization.json.addJsonObject
@@ -24,6 +26,7 @@ import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.files.FileFolders
 import me.rerere.rikkahub.data.files.UploadCodes
+import me.rerere.rikkahub.data.files.UploadRef
 import java.io.File
 
 fun createUploadFetchTool(filesRoot: File): Tool = Tool(
@@ -55,26 +58,24 @@ fun createUploadFetchTool(filesRoot: File): Tool = Tool(
         val query = params["query"]?.jsonPrimitive?.contentOrNull?.trim()?.lowercase()
 
         val uploadDir = filesRoot.resolve(FileFolders.UPLOAD)
-        val files = uploadDir.listFiles()
-            ?.filter { it.isFile }
-            ?.sortedByDescending { it.lastModified() }
-            .orEmpty()
 
         fun describe(f: File) = buildJsonObject {
-            put("code", UploadCodes.codeForFileName(f.name))
+            val ref = UploadRef.fromPhysicalName(f.name)
+            put("code", ref.code)
             put("name", f.name)
-            put("path", "/upload/${f.name}")
+            put("path", ref.sandboxPath)
             put("size_bytes", f.length())
             put("modified_ms", f.lastModified())
+        }
+        fun kotlinx.serialization.json.JsonObjectBuilder.recentList() {
+            put("recent", buildJsonArray { UploadRef.listRecent(uploadDir).forEach { addJsonObject { describe(it) } } })
         }
 
         when {
             // ① 按码直取（主用法）
             !codeRaw.isNullOrBlank() -> {
                 val norm = UploadCodes.normalize(codeRaw)
-                val matches = files.filter {
-                    UploadCodes.codeForFileName(it.name) == norm
-                }
+                val matches = UploadRef.findFilesByCode(uploadDir, codeRaw)
                 when {
                     matches.size == 1 -> listOf(UIMessagePart.Text(buildJsonObject {
                         put("ok", true)
@@ -85,29 +86,30 @@ fun createUploadFetchTool(filesRoot: File): Tool = Tool(
                     matches.size > 1 -> listOf(UIMessagePart.Text(buildJsonObject {
                         put("ok", false)
                         put("error", "该码命中 ${matches.size} 个文件（极罕见碰撞），请按 name 区分。")
-                        put("candidates", buildJsonArray { matches.forEach { addJsonObject { put("name", it.name); put("path", "/upload/${it.name}") } } })
+                        put("candidates", buildJsonArray { matches.forEach { addJsonObject { put("name", it.name); put("path", UploadRef.fromPhysicalName(it.name).sandboxPath) } } })
                     }.toString()))
                     else -> listOf(UIMessagePart.Text(buildJsonObject {
                         put("ok", false)
                         put("error", "没有文件的码是 $norm" + (if (UploadCodes.hasCodeFormat(codeRaw)) "。" else "（注意：这不是合法上传码格式）。") +
                             "可改用 query 按文件名找，或见下方最近上传列表（把候选报给用户确认）。")
-                        put("recent", buildJsonArray { files.take(10).forEach { addJsonObject { put("file", describe(it)) } } })
+                        recentList()
                     }.toString()))
                 }
             }
             // ② 物理名兜底
             !query.isNullOrBlank() -> {
-                val matches = files.filter { it.name.lowercase().contains(query) }
+                val matches = (uploadDir.listFiles() ?: emptyArray())
+                    .filter { it.isFile && it.name.lowercase().contains(query) }
                 when {
                     matches.isEmpty() -> listOf(UIMessagePart.Text(buildJsonObject {
                         put("ok", false)
                         put("error", "没有物理名包含「$query」的上传文件。上传码才是稳定引用，建议向用户索取。")
-                        put("recent", buildJsonArray { files.take(10).forEach { addJsonObject { put("file", describe(it)) } } })
+                        recentList()
                     }.toString()))
                     else -> listOf(UIMessagePart.Text(buildJsonObject {
                         put("ok", true)
                         put("resolved_by", "query")
-                        put("files", buildJsonArray { matches.take(10).forEach { addJsonObject { put("file", describe(it)) } } })
+                        put("files", buildJsonArray { matches.take(10).forEach { addJsonObject { describe(it) } } })
                         put("hint", "多个命中时优先选 modified_ms 最新的一条，或向用户确认 code。")
                     }.toString()))
                 }
@@ -116,7 +118,7 @@ fun createUploadFetchTool(filesRoot: File): Tool = Tool(
             else -> listOf(UIMessagePart.Text(buildJsonObject {
                 put("ok", false)
                 put("error", "请传 code（上传码）或 query（文件名片段）。以下是最近上传的文件：")
-                put("recent", buildJsonArray { files.take(10).forEach { addJsonObject { put("file", describe(it)) } } })
+                recent(this)
             }.toString()))
         }
     },

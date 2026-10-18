@@ -6,6 +6,9 @@ package me.rerere.rikkahub.data.files
  * 来源: 原版移植 + 自研 (技能管理增强)
  * 差异: 额外技能根 (dsh__/plugin__ 只读源, v3.6.85-88)、扫描缓存
  *       加固 (v3.6.12)、原子写入
+ * 全链: saveSkillFileBytesAtomically = 安装唯一写入点 —— SkillDiscover(网络安装·写入) /
+ *       SkillsVM(导入·写入) / RikkaHubApp(初始化·生命周期) / GenerationHandler·ToolsBuilder(技能工具·消费) ｜
+ *       持久化根: FileFolders.SKILLS。
  * ───────────────────────────────────────────────────────────────*/
 import android.content.Context
 import android.util.Log

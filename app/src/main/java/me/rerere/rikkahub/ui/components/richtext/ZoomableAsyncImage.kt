@@ -148,6 +148,8 @@ fun ZoomableAsyncImage(
                 // v4.5.16: 图片不渲染现场诊断 — 失败时记录 url 形态与 resolve
                 // 结果 (resolve 失败即数据/路径层问题; resolve 成功即解码层),
                 // 用户报"图片不可见"时 logcat 一行定论。
+                // ★直引说明: 此处为诊断专用直引 (勿效仿) — 显示/保存链必须走
+                // LocalImageAddress 单一解析点 (v4.8.185 定版)。
                 android.util.Log.w("ZoomableAsyncImage", "load failed: model=" +
                     model?.take(160) + " ws=" + workspaceFetch +
                     " resolve=" + runCatching {

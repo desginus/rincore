@@ -8,6 +8,8 @@ package me.rerere.rikkahub.data.ai.tools
  *   产出 (模型侧)  = buildRenderPayload / buildRenderUrl (启用前验存, 死链零输出)
  *   提取 (显示侧)  = extractRenderUrls
  *   编码 (规范形态) = encodeMarkdownUrl
+ * 全链: WorkspaceTools(读/写/壳三生产点·写入) / BrowserTools(截图·写入) / WorkspaceToolUIs(工具段提取·显示) ｜
+ *       一切地址构造/提取必须经本文件, 别处不得自建 (v4.8.115 用户定版)。
  *
  * 规范地址形态 = percent 编码的 file:///data/data/<pkg>/files/workspaces/<id>/files/<rel>
  *  - markdown 语法安全 (中文/空格/括号不中断解析) — 模型可逐字复述;

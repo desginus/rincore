@@ -204,6 +204,7 @@ object SandboxBridgeServer {
                     }
                     // v4.8.98: 软件-沙箱一体化 — 沙箱内 `rin render <path>` 直接在应用
                     // 原生渲染弹窗中打开工作区文档 (docx/xlsx/pptx/pdf/图片等, 渲染机统一处理)
+                    // ★直引说明: /render 桥端点定点解析 (resolveDetailed, 任意文件) — 桥专用, 与图片显示链分属两条链。
                     post("/render") {
                         if (!authorized(call.request.headers["X-Rin-Token"])) {
                             call.respondText(errJson("unauthorized"), io.ktor.http.ContentType.Application.Json, HttpStatusCode.Unauthorized); return@post

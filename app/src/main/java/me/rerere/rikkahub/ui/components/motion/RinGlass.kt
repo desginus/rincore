@@ -3,6 +3,8 @@ package me.rerere.rikkahub.ui.components.motion
 
 /* ───【自研】RinGlass.kt | 原版无此文件
  * 4.7.22 统一玻璃基建 — 全 app 玻璃渲染的单一来源。
+ * 全链: ChatInput(输入栏玻璃·消费) / ChatPage(标题栏·消费) / HyperMotion(弹层规格引用·消费) ｜
+ *       一切玻璃配方必须出自本文件, 别处不得自建参数 (v4.8.188 复核勘正: ChatList/轨道已随玻璃回滚脱链)。
  * ───────────────────────────────────────────────────────────────*/
 
 import androidx.compose.foundation.background

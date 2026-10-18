@@ -87,6 +87,7 @@ import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
+import me.rerere.rikkahub.data.workspace.EffectiveCwd
 import me.rerere.hugeicons.stroke.BubbleChatQuestion
 import me.rerere.rikkahub.subagent.SubAgentRegistry
 import me.rerere.rikkahub.subagent.SubAgentStatus
@@ -148,7 +149,7 @@ internal fun FilesPicker(
         conversation.folderId?.let { fid -> folderRepository.getFolderFlow(fid).map { it?.cwd } }
             ?: flowOf(null)
     }.collectAsStateWithLifecycle(initialValue = null)
-    val effectiveCwd = folderCwd ?: assistant.workspaceCwd
+    val effectiveCwd = EffectiveCwd.pick(folderCwd, assistant.workspaceCwd)
     val pickerScope = rememberCoroutineScope()
     val memories by memoryRepository.getMemoriesOfAssistantFlow(assistant.id.toString())
         .collectAsStateWithLifecycle(initialValue = emptyList())

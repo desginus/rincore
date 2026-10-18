@@ -3,6 +3,10 @@ package me.rerere.rikkahub.ui.pages.chat
 
 /* ───【原版对齐】ChatDrawerVM.kt | 差异 ≈362 行变更（vs 2.5.1·2026-10-18 复核） (基线 2.5.1)
  * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * 全链: selectFolder = 项目包选择单入口 (选区/进程记忆/点击统计一次到位) —— 调用方:
+ *       ChatDrawer(抽屉点选·显示) / ChatPage(空态轨道内弧等同入口·显示) ｜
+ *       本类只管"选择态"; 对话归属(folderId)写入由使用方经 ChatService 入口 (moveConversationToFolder /
+ *       新建默认) 执行, 本类不直接写 conversation.folderId。
  * ───────────────────────────────────────────────────────────────*/
 
 
@@ -35,6 +39,7 @@ import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.model.Folder
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.FolderRepository
+import me.rerere.rikkahub.data.workspace.EffectiveCwd
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.utils.toLocalString
 import kotlinx.serialization.json.Json
@@ -341,7 +346,7 @@ class ChatDrawerVM(
             val newAssistant = source.copy(
                 id = Uuid.random(),
                 name = folder.name,
-                workspaceCwd = folder.cwd ?: source.workspaceCwd,
+                workspaceCwd = EffectiveCwd.pick(folder.cwd, source.workspaceCwd),
             )
             settingsStore.update(
                 settings.copy(assistants = settings.assistants + newAssistant)

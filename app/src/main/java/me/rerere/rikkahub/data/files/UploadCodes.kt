@@ -9,6 +9,8 @@ import java.util.TimeZone
 
 /**
  * v4.8.91: 上传码 v2 —— **时间码**。
+ * 全链: FileUtils.createUploadFile(命名落盘·写入) / DocumentAsPrompt(<UploadFile code> 注入·消费) /
+ *       UploadFetchTool(码直取·消费) / UploadsListingTransformer + 收件箱(注记与使用标注·消费)。
  *
  * 格式：`月日时分`（MMddHHmm，8 位）+ `顺序补位`（≥2 位），共 10 位起；24 小时制、固定东八区（Asia/Shanghai）：
  *   · 10 月 3 日 00:29 的第 1 个上传 → `1003002901`（00 时 = 24 小时制的 00 点）

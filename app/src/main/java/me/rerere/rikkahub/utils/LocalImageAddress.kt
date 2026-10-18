@@ -10,6 +10,10 @@ package me.rerere.rikkahub.utils
  *   规范形态 = percent 编码 file:///data/data/<pkg>/files/...
  *   解码收口 = decodeLocalFilePath (percentDecodeLenient, 回环有单测);
  *   其余一切位置只透传字符串, 不自行转换。
+ * 全链: WorkspaceImageFetch(Coil 认领·消费) / StableSizeImage(尺寸预读·消费) /
+ *       MessageImageSnapshotTransformer(固化器·消费) / FilesManager(保存图片 saveMessageImage·消费) /
+ *       Export(导出内联·消费) ｜ 直引 WorkspaceImageResolver 的专项点不属本链:
+ *       SandboxBridgeServer(/render 桥) / WorkspaceLinkLauncher(任意文件打开) / ZoomableAsyncImage(失败诊断)。
  * ───────────────────────────────────────────────────────────────*/
 
 /**

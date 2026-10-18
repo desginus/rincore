@@ -7,6 +7,7 @@ package me.rerere.rikkahub.ui.pages.setting
  *   ② 引用面补齐 — 此前只扫 用户头像/助手头像/助手背景 三个面, 消息附件作为
  *   主使用面未扫描 ("全是未被使用"的根因)。匹配 = 上传码 (ASCII 前缀, 唯一,
  *   兼容 file:// 百分号编码形态) → message_node.messages 子串查 → 对话标题标注。
+ * v4.8.189 (L-A3): 码解析经 UploadRef 单一解析器 (撤本地手搓前缀)。
  * ───────────────────────────────────────────────────────────────*/
 
 import androidx.compose.foundation.layout.Arrangement
@@ -41,6 +42,7 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.db.entity.ManagedFileEntity
 import me.rerere.rikkahub.data.files.FileFolders
 import me.rerere.rikkahub.data.files.FilesManager
+import me.rerere.rikkahub.data.files.UploadRef
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import org.koin.compose.koinInject
@@ -163,11 +165,11 @@ fun SettingUploadInboxPage(onBack: () -> Unit) {
     }
 }
 
-/** 物理文件名 `[码_]<原名>` — 上传码 = 前缀 10-12 位数字。 */
+/** 物理名 → 上传码（经 UploadRef 单一解析器; v4.8.189 L-A3 收口）。
+ *  仅展示时间码形态 (10-12 位数字); 历史哈希码不展示 (与旧行为一致)。 */
 private fun uploadCodeOf(f: ManagedFileEntity): String? {
-    val base = f.relativePath.substringAfterLast('/')
-    val code = base.substringBefore('_')
-    return code.takeIf { it.length in 10..12 && it.all(Char::isDigit) }
+    val ref = UploadRef.fromPhysicalName(f.relativePath.substringAfterLast('/'))
+    return ref.code.takeIf { it.length in 10..12 && it.all(Char::isDigit) }
 }
 
 /**

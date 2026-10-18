@@ -33,6 +33,7 @@ import java.util.concurrent.ConcurrentHashMap
  *  2. 展示口径此前只读落盘值（跑动中的子代理数字不动）—— live 改为 StateFlow，
  *     UI 用「落盘 + live」显示真实进度。
  *  另：flush/reset 用互斥锁串行化，防并发双写重复记账（旧实现靠 remove 原子性，改造后补回）。
+ * 全链: SubAgentEngine(闸门/看门狗结算·消费) / ChatList(速览预算面板·显示) / PreferencesStore(上限持久化·写入) ｜ 持久化: Settings.subagentTokenBudget/subagentTokenUsage。
  */
 class SubAgentBudget(private val settingsStore: SettingsStore) {
 

@@ -1,15 +1,15 @@
 /* 【域 B·AI 传输】 | 地图: docs/APP_MAP.md §B */
 package me.rerere.rikkahub.data.ai.transformers
 
-/* ───【原版对齐】DocumentAsPromptTransformer.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+/* ───【原版对齐】DocumentAsPromptTransformer.kt | 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
  * v4.5.5: 上传模式分流 — classic=原版全量内联 (全文提取进 prompt) /
  *         compat=当前路径引用 (占位+workspace_read_file 按需读取)。
  *         客户端设置 (SettingClientPage) 决定, 请求体严格按所选模式构造。
+ * v4.8.109: 兜底纪律 — Document part 绝不残留 (残留=出站空数组被网关拒收)。
+ * v4.8.189 (L-A3 整段重写): 上传四元组收口 — 码/宿主文件/沙箱路径一律经
+ *   UploadRef 单一解析器; 本文件不再自建解析 (旧 resolveUploadFile 已删)。
  * ───────────────────────────────────────────────────────────────*/
 
-import androidx.core.net.toFile
-import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.rerere.ai.ui.UIMessage
@@ -18,7 +18,7 @@ import me.rerere.document.DocxParser
 import me.rerere.document.EpubParser
 import me.rerere.document.PdfParser
 import me.rerere.document.PptxParser
-import me.rerere.rikkahub.data.files.UploadCodes
+import me.rerere.rikkahub.data.files.UploadRef
 import java.io.File
 
 object DocumentAsPromptTransformer : InputMessageTransformer {
@@ -47,14 +47,12 @@ object DocumentAsPromptTransformer : InputMessageTransformer {
                                 // 构建器被忽略 → 消息 content 变空数组 → 网关拒绝
                                 // ("Too small: expected array to have >=1 items" 的根源)。
                                 val prompt = runCatching {
-                                    val content = readDocumentContent(document)
-                                    val file = resolveUploadFile(document)
-                                    val path = file?.let { "/upload/" + it.name }
-                                    val code = file?.let { UploadCodes.codeForFileName(it.name) }
+                                    val ref = UploadRef.resolveDocumentUrl(document.url)
+                                    val content = readDocumentContent(ref?.hostFile, document)
                                     val attrs = buildString {
                                         append(" name=\"").append(document.fileName).append('"')
-                                        if (code != null) append(" code=\"").append(code).append('"')
-                                        if (path != null) append(" path=\"").append(path).append('"')
+                                        ref?.let { append(" code=\"").append(it.code).append('"') }
+                                        ref?.let { append(" path=\"").append(it.sandboxPath).append('"') }
                                     }
                                     "<UploadFile" + attrs + ">\n" +
                                         "```\n" + content + "\n```\n" +
@@ -82,21 +80,19 @@ object DocumentAsPromptTransformer : InputMessageTransformer {
                     if (documents.isNotEmpty()) {
                         documents.forEach { document ->
                           runCatching {
-                            val file = resolveUploadFile(document)
-                            val path = file?.let { "/upload/" + it.name }
-                            val code = file?.let { UploadCodes.codeForFileName(it.name) }
+                            val ref = UploadRef.resolveDocumentUrl(document.url)
                             remove(document)
                             val attrs = buildString {
                                 append(" name=\"").append(document.fileName).append('"')
-                                if (code != null) append(" code=\"").append(code).append('"')
-                                if (path != null) append(" path=\"").append(path).append('"')
+                                ref?.let { append(" code=\"").append(it.code).append('"') }
+                                ref?.let { append(" path=\"").append(it.sandboxPath).append('"') }
                             }
                             val body = buildString {
                                 append("<UploadFile").append(attrs).append(">")
-                                if (path != null && code != null) {
-                                    append("\n[文件未内联到上下文。完整内容在工作区路径: ").append(path)
+                                if (ref != null) {
+                                    append("\n[文件未内联到上下文。完整内容在工作区路径: ").append(ref.sandboxPath)
                                     append(" — 需要查看时调用 workspace_read_file 工具传入该路径]")
-                                    append("\n[上传码 ").append(code)
+                                    append("\n[上传码 ").append(ref.code)
                                     append("：之后任何时候都可用 upload_fetch(code) 直取该文件，无需翻找 /upload。]")
                                 } else {
                                     // v4.8.90 修复: 旧实现在解析失败时回退到 "/upload/<原文件名>" —— 物理名其实是
@@ -122,42 +118,18 @@ object DocumentAsPromptTransformer : InputMessageTransformer {
             )
         }
 
-    private fun parsePdfAsText(file: File): String {
-        return PdfParser.parserPdf(file)
-    }
-
-    private fun parseDocxAsText(file: File): String {
-        return DocxParser.parse(file)
-    }
-
-    private fun parsePptxAsText(file: File): String {
-        return PptxParser.parse(file)
-    }
-
-    private fun parseEpubAsText(file: File): String {
-        return EpubParser.parse(file)
-    }
-
-    // 上传文件保存在 filesDir/upload 下, 该目录通过 proot 挂载到 workspace 的 /upload
-    // 解析出物理文件（供拼路径 + 派生上传码）；解析不到返回 null —— 调用方绝不编造路径。
-    private fun resolveUploadFile(document: UIMessagePart.Document): File? {
-        val file = runCatching { document.url.toUri().toFile() }.getOrNull() ?: return null
-        if (file.parentFile?.name != "upload") return null
-        return file
-    }
-
-    private fun readDocumentContent(document: UIMessagePart.Document): String {
-        val file = runCatching { document.url.toUri().toFile() }.getOrNull()
-            ?: return "[ERROR, invalid file uri: " + document.fileName + "]"
-        if (!file.exists() || !file.isFile) {
+    // 上传文件保存在 filesDir/upload 下, 该目录通过 proot 挂载到 workspace 的 /upload。
+    // 宿主文件一律经 UploadRef 解析 (v4.8.189 收口); 解析不到返回 null —— 调用方绝不编造路径。
+    private fun readDocumentContent(file: File?, document: UIMessagePart.Document): String {
+        if (file == null || !file.exists() || !file.isFile) {
             return "[ERROR, file not found: " + document.fileName + "]"
         }
         return runCatching {
             when (document.mime) {
-                "application/pdf" -> parsePdfAsText(file)
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> parseDocxAsText(file)
-                "application/vnd.openxmlformats-officedocument.presentationml.presentation" -> parsePptxAsText(file)
-                "application/epub+zip" -> parseEpubAsText(file)
+                "application/pdf" -> PdfParser.parserPdf(file)
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> DocxParser.parse(file)
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation" -> PptxParser.parse(file)
+                "application/epub+zip" -> EpubParser.parse(file)
                 else -> {
                     // v4.8.109: 二进制表格（xlsx/xls）不 readText 乱码 — 给出明确指引
                     val lower = document.fileName.lowercase()

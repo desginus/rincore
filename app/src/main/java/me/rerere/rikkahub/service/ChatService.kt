@@ -126,6 +126,7 @@ import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.FolderRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
+import me.rerere.rikkahub.data.workspace.EffectiveCwd
 import me.rerere.rikkahub.web.BadRequestException
 import me.rerere.rikkahub.web.NotFoundException
 import me.rerere.rikkahub.utils.applyPlaceholders
@@ -774,9 +775,10 @@ class ChatService(
 
             // 4.8.24 项目包 CWD 解析 — 对话所属项目包 cwd 优先 (项目包锚定),
             // 否则助手级 CWD; 「聊天」(无项目包) = 全助手权限默认空间
-            val effectiveWorkspaceCwd = runCatching {
-                conversation.folderId?.let { fid -> folderRepository.getFolderById(fid)?.cwd }
-            }.getOrNull() ?: assistant.workspaceCwd
+            // v4.8.189 (L-A4): 解析收口 EffectiveCwd (全库唯一优先级判定点)。
+            val effectiveWorkspaceCwd = EffectiveCwd.resolve(
+                folderRepository, conversation.folderId, assistant.workspaceCwd,
+            )
 
             // start generating
             val session = sessionManager.getOrCreate(conversationId)

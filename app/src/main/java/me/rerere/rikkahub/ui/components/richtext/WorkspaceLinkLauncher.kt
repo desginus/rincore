@@ -24,6 +24,8 @@ import me.rerere.rikkahub.utils.isWorkspaceUri
  *   FileProvider content:// URI → ACTION_VIEW (系统应用打开 xlsx/pdf 等)
  * - 解析失败 → Toast 提示 (不崩溃不静默)
  * - http/https 等其他 scheme → 系统默认打开
+ * 直引说明: 任意文件打开 (resolveAnyFile) — 与图片显示链 (LocalImageAddress 单一解析点)
+ * 分属两条链, 勿混用 (本处不受图片链约束)。
  */
 fun openWorkspaceLink(url: String) {
     // v3.15.3: application context — 链路深处 (AnnotatedString builder lambda)

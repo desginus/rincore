@@ -139,6 +139,7 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.db.dao.ConversationDAO
 import me.rerere.rikkahub.data.db.dao.MessageNodeDAO
 import me.rerere.rikkahub.data.usage.UsageQuery
+import me.rerere.rikkahub.data.workspace.EffectiveCwd
 import me.rerere.rikkahub.ui.pages.stats.StatsCache
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
@@ -496,7 +497,7 @@ private fun ChatPageContent(
 
     // 4.8.24: 项目包 CWD — 对话所属项目包 cwd 优先 (项目包锚定), 否则助手级
     val conversationFolderCwd by vm.conversationFolderCwd.collectAsStateWithLifecycle()
-    val effectiveCwd = conversationFolderCwd ?: assistant.workspaceCwd
+    val effectiveCwd = EffectiveCwd.pick(conversationFolderCwd, assistant.workspaceCwd)
     val completionProviders = remember(assistant.workspaceId, effectiveCwd, workspaceRepository) {
         assistant.workspaceId?.let { workspaceId ->
             listOf(

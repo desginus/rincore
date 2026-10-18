@@ -17,15 +17,15 @@ package me.rerere.rikkahub.data.ai.transformers
  *   ④ 模型知晓：新文档在消息末端有明确提示（旧系统提示清单被边缘化, 模型"无法知晓"）；
  *   ⑤ 不突出：单行方括号、无格式噪音；无文档 → 零注入。
  *
- * 注册位置保持在 DocumentAsPromptTransformer **之前**（后者会把 Document part 转文本/移除）。
+ * v4.8.189 (L-A3): 文档附件识别/路径派生一律经 UploadRef 单一解析器 (撤 Uri 截取手搓)。
+ * 全链: UploadRef(解析·依赖) / 注册位置保持在 DocumentAsPromptTransformer **之前**
+ *       （后者会把 Document part 转文本/移除）。
  */
 
-import android.net.Uri
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.rikkahub.data.files.UploadCodes
-import java.io.File
+import me.rerere.rikkahub.data.files.UploadRef
 
 object UploadsListingTransformer : InputMessageTransformer {
 
@@ -37,19 +37,13 @@ object UploadsListingTransformer : InputMessageTransformer {
         val out = messages.map { msg ->
             if (msg.role != MessageRole.USER) return@map msg
             val docs = msg.parts.filterIsInstance<UIMessagePart.Document>()
-                .filter { UploadCodes.codeForLocation(it.url) != null }
+                .mapNotNull { d -> UploadRef.resolveDocumentUrl(d.url)?.let { ref -> d.fileName to ref } }
             if (docs.isEmpty()) return@map msg
             val note = buildString {
                 append("\n\n[用户上传了文档: ")
-                append(docs.joinToString("、") { it.fileName })
+                append(docs.joinToString("、") { it.first })
                 append("（路径: ")
-                append(
-                    docs.mapNotNull { d ->
-                        runCatching { Uri.parse(d.url).path }.getOrNull()?.let { p ->
-                            "/upload/" + File(p).name
-                        }
-                    }.joinToString("、")
-                )
+                append(docs.joinToString("、") { it.second.sandboxPath })
                 append("）]")
             }
             val updated = msg.parts.toMutableList()

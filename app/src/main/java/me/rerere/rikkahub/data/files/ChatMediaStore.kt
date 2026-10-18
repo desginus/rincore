@@ -9,6 +9,9 @@ package me.rerere.rikkahub.data.files
  * (filesDir/chat-media/<conversationId>/), 消息内地址由固化器重写为快照地址;
  * 此后显示 (XSS 门/Coil 认领层) 与导出全链走既有 file:// 私有路径解析, 零新机制。
  * 生命周期: 对话删除时整目录清理 (deleteConversationMedia)。
+ * 全链: MessageImageSnapshotTransformer(唯一写入方) / ConversationRepository(经
+ *       FilesManager.deleteConversationChatMedia 删除清理·生命周期) / Export(快照文件经单一解析点导出·间接消费) ｜
+ *       快照命名唯一 = 机制A(活引用回灌) 的根治面。
  * ───────────────────────────────────────────────────────────────*/
 
 import android.content.Context
