@@ -48,7 +48,8 @@ internal fun normalizeDataUserAlias(raw: String): String {
     else raw.substring(0, idx) + prefixData + after
 }
 
-/** host 字面前缀 → 规范化为 /workspace/<rel> (UUID 段忽略, 遍历命中由 resolve 完成) */
+/** host 字面前缀 → 规范化为 /workspace/<rel> (路径归一不含 UUID; UUID 由
+ *  [extractHostWorkspaceUuid] 提取, 供 resolveDetailed 定点优先 — v4.8.185) */
 internal fun normalizeHostWorkspacePath(raw: String): String? {
     val normalizedRaw = normalizeDataUserAlias(raw)
     val lower = normalizedRaw.lowercase().trim()
@@ -61,6 +62,24 @@ internal fun normalizeHostWorkspacePath(raw: String): String? {
     val afterUuid = afterAnchor.substring(secondSlash + 1)
     if (!afterUuid.lowercase().startsWith("files/")) return null
     return "/workspace/" + afterUuid.substring("files/".length)
+}
+
+/**
+ * v4.8.185 (审计重写): host 字面地址中的显式工作区 UUID 提取 —
+ * resolveDetailed 据此"定点优先" (地址说什么就解析什么)。旧实现 UUID 段全忽略
+ * + 全库 first-hit: 同名文件会命中错工作区 = 图片偷换机制 B。
+ * 非 host workspaces 形态 (无锚点) 返回 null。
+ */
+internal fun extractHostWorkspaceUuid(raw: String?): String? {
+    if (raw.isNullOrBlank()) return null
+    val normalizedRaw = normalizeDataUserAlias(raw)
+    val lower = normalizedRaw.lowercase().trim()
+    val anchorIdx = lower.indexOf(HOST_WS_ANCHOR)
+    if (anchorIdx < 0) return null
+    val afterAnchor = normalizedRaw.trim().substring(anchorIdx + HOST_WS_ANCHOR.length)
+    val secondSlash = afterAnchor.indexOf('/')
+    if (secondSlash < 0) return null
+    return afterAnchor.substring(0, secondSlash).takeIf { it.isNotBlank() }
 }
 
 /**
@@ -256,7 +275,8 @@ object WorkspaceImageResolver {
      * 全链路解析: 返回 (宿主文件, "ok") 或 (null, 失败环节标签)。
      * 失败环节: empty_input / prefix_not_recognized / invalid_path / no_workspace /
      * not_found / extension_rejected — 供 show_image 分级文案与日志定位。
-     * 多 workspace 环境遍历全部 root 求命中 (同名文件以首个命中为准)。
+     * 多 workspace 环境: host 形态地址带 UUID 时定点该工作区 (v4.8.185), 否则
+     * 遍历全部 root 求命中 (同名文件以首个命中为准 — 仅限无 UUID 的旧/虚拟形态)。
      */
     // v3.15.3: imageOnly=false 时跳过图片扩展名校验 (链接点击打开任意文件: xlsx/pdf 等)
     fun resolveDetailed(raw: String?, imageOnly: Boolean = true): WorkspaceResolveResult {
@@ -280,11 +300,22 @@ object WorkspaceImageResolver {
         val workspaces = workspacesSnapshot(repo)
         if (workspaces.isNullOrEmpty()) return WorkspaceResolveResult(null, "no_workspace")
 
+        // v4.8.185 (审计重写): host 形态地址携带显式工作区 UUID 时定点优先 —
+        // "地址说什么就解析什么" (旧实现丢弃 UUID + 全库 first-hit, 同名文件命中
+        // 错工作区 = 图片偷换机制 B); 仅当该 UUID 工作区已不存在时回退全遍历 (兼容旧数据)。
+        val preferredWsId = extractHostWorkspaceUuid(raw)
+        val searchList = if (preferredWsId != null) {
+            val scoped = workspaces.filter { it.id.equals(preferredWsId, ignoreCase = true) }
+            if (scoped.isNotEmpty()) scoped else workspaces
+        } else {
+            workspaces
+        }
+
         // 转发路径 = ROOTFS_WORKSPACE_DIR 常量拼接 (语义: workspace:// 永远指
         // Rootfs 内 /workspace 文件区) — v3.11.32 死点修复
         val rootfsPath = me.rerere.workspace.WorkspaceManager.ROOTFS_WORKSPACE_DIR + rel
         var lastHostGuess: File? = null
-        for (ws in workspaces) {
+        for (ws in searchList) {
             val hit = manager.resolveRootfsFileSafe(ws.root, rootfsPath)
             if (hit != null) {
                 android.util.Log.i(
@@ -309,7 +340,7 @@ object WorkspaceImageResolver {
             if (segs.size > 2 && segs[0].isNotEmpty() && segs[0] == segs[1]) {
                 val collapsed = "/" + segs.drop(1).joinToString("/")
                 val collapsedRootfs = me.rerere.workspace.WorkspaceManager.ROOTFS_WORKSPACE_DIR + collapsed
-                for (ws in workspaces) {
+                for (ws in searchList) {
                     val hit = manager.resolveRootfsFileSafe(ws.root, collapsedRootfs)
                     if (hit != null) {
                         android.util.Log.i(TAG, "dedup hit: $rel -> $collapsed")

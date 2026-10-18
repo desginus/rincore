@@ -15,7 +15,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import me.rerere.rikkahub.utils.WorkspaceImageResolver
+import me.rerere.rikkahub.utils.resolveLocalImageFile
 
 /**
  * v4.8.123 (用户实证: 上滑途中消息跳动/抽动 — "没有成功渲染就留太小"):
@@ -47,7 +47,10 @@ internal object ImagePixelSizeMemo {
 
 /** 本地图片 intrinsic 像素尺寸 (只读文件头, 不解码整图); 非本地/失败返回 null。 */
 internal fun precomputeLocalPixelSize(model: String): IntSize? = runCatching {
-    val file = WorkspaceImageResolver.resolve(model) ?: return null
+    // v4.8.185 (审计重写): 与 Coil 认领层同源 (utils.LocalImageAddress 单一解析点) —
+    // 旧实现只走 WorkspaceImageResolver, 对 host 私有直读形态 (upload/chat-media 等)
+    // 解析失败 → 这类图片没有首帧尺寸预留 (回弹占位)。
+    val file = resolveLocalImageFile(model) ?: return null
     if (!file.isFile) return null
     val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeFile(file.absolutePath, opts)

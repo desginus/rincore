@@ -22,6 +22,8 @@ class TransformerContext(
     val conversationLorebookIds: Set<Uuid> = emptySet(),
     val processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
     val workspaceCwd: String? = null,
+    // v4.8.185 (审计重写): 生成完成固化链用 — 对话媒体快照的归属目录
+    val conversationId: Uuid? = null,
 )
 
 interface MessageTransformer {
@@ -136,11 +138,27 @@ suspend fun List<UIMessage>.onGenerationFinish(
     model: Model,
     assistant: Assistant,
     settings: Settings,
+    conversationId: Uuid? = null,
 ): List<UIMessage> {
-    val ctx = TransformerContext(context, model, assistant, settings)
+    val ctx = TransformerContext(context, model, assistant, settings, conversationId = conversationId)
+    // v4.8.185 (审计重写): 补齐与 transforms/visualTransforms 同款的链级异常隔离 —
+    // 旧实现裸调用, 任一 finish 组件抛异常会炸整条生成; 取消必须上抛 (对齐 v4.8.109)。
     return transformers.fold(this) { acc, transformer ->
         if (transformer is OutputMessageTransformer) {
-            transformer.onGenerationFinish(ctx, acc)
+            runCatching { transformer.onGenerationFinish(ctx, acc) }
+                .onFailure { e ->
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    android.util.Log.e(
+                        "Transformer",
+                        "${transformer.javaClass.simpleName} finish failed: ${e.message}",
+                        e,
+                    )
+                    me.rerere.rikkahub.data.ai.CallTracer.event(
+                        "TRANSFORMER", "finish_isolated_failure",
+                        "${transformer.javaClass.simpleName}: ${e.message}",
+                    )
+                }
+                .getOrDefault(acc)
         } else {
             acc
         }

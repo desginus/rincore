@@ -351,6 +351,8 @@ class ConversationRepository(
             )
         }
         filesManager.deleteChatFiles(fullConversation.files)
+        // v4.8.185 (审计重写): 对话媒体快照随对话删除 (files/chat-media/<对话ID>/)
+        filesManager.deleteConversationChatMedia(conversation.id.toString())
         // v4.8.92: 单对话记忆随对话删除（该记忆只在对应对话可见，对话没了即销毁）
         runCatching {
             database.memoryDao().deleteMemoriesOfConversation(conversation.id.toString())

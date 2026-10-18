@@ -27,9 +27,9 @@ import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.db.entity.ManagedFileEntity
 import me.rerere.rikkahub.data.repository.FilesRepository
 import me.rerere.rikkahub.utils.exportImage
-import me.rerere.rikkahub.ui.components.richtext.decodeLocalFilePath
-import me.rerere.rikkahub.ui.components.richtext.isAppLocalImageUri
-import me.rerere.rikkahub.ui.components.richtext.resolveLocalImageFile
+import me.rerere.rikkahub.utils.decodeLocalFilePath
+import me.rerere.rikkahub.utils.isAppLocalImageUri
+import me.rerere.rikkahub.utils.resolveLocalImageFile
 import me.rerere.rikkahub.utils.exportImageFile
 import me.rerere.rikkahub.utils.getActivity
 import kotlin.io.encoding.Base64
@@ -225,6 +225,10 @@ class FilesManager(
             }
         }
     }
+
+    /** v4.8.185 (审计重写): 对话媒体快照整目录清理 — 对话删除时调用。 */
+    fun deleteConversationChatMedia(conversationId: String) =
+        ChatMediaStore.deleteConversationMedia(context, conversationId)
 
     suspend fun countChatFiles(): Pair<Int, Long> = withContext(Dispatchers.IO) {
         val dir = context.filesDir.resolve(FileFolders.UPLOAD)

@@ -94,6 +94,7 @@ import me.rerere.rikkahub.data.ai.tools.local.LocalTools
 import me.rerere.rikkahub.data.ai.tools.buildAssistantToolPool
 import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.data.ai.transformers.Base64ImageToLocalFileTransformer
+import me.rerere.rikkahub.data.ai.transformers.MessageImageSnapshotTransformer
 import me.rerere.rikkahub.data.ai.transformers.CCImageCompatTransformer
 import me.rerere.rikkahub.data.ai.transformers.DocumentAsPromptTransformer
 import me.rerere.rikkahub.data.ai.transformers.OcrTransformer
@@ -199,6 +200,9 @@ private val outputTransformers by lazy {
         ThinkTagTransformer,
         Base64ImageToLocalFileTransformer,
         RegexOutputTransformer,
+        // v4.8.185 (审计重写): 渲染即固化 — 生成完成后把消息内图片地址复制为
+        // 对话媒体快照 (files/chat-media/<对话>/) 并重写地址; 历史消息首轮自动回填。
+        MessageImageSnapshotTransformer,
     )
 }
 

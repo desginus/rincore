@@ -700,7 +700,9 @@ class GenerationHandler(
                     context = context,
                     model = model,
                     assistant = assistant,
-                    settings = settings
+                    settings = settings,
+                    // v4.8.185: 对话媒体快照归属 (渲染即固化链)
+                    conversationId = conversationId
                 )
                 messages = messages.slice(0 until messages.lastIndex) + messages.last().copy(
                     finishedAt = Clock.System.now()

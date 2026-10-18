@@ -72,14 +72,15 @@ import coil3.request.allowHardware
 import coil3.request.crossfade
 import com.dokar.sonner.ToastType
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.isEmptyUIMessage
-import me.rerere.ai.util.encodeBase64
 import me.rerere.common.android.appTempFolder
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
@@ -160,12 +161,15 @@ fun ChatExportSheet(
                     stringResource(id = R.string.chat_page_export_success, "Markdown")
                 OutlinedCard(
                     onClick = {
-                        exportToMarkdown(context, conversation, selectedMessages, exportOptions)
-                        toaster.show(
-                            markdownSuccessMessage,
-                            type = ToastType.Success
-                        )
-                        onDismissRequest()
+                        // v4.8.185 (审计重写): 图片内联为 data URI 属重活 (读盘+base64) — 移入协程
+                        scope.launch {
+                            exportToMarkdown(context, conversation, selectedMessages, exportOptions)
+                            toaster.show(
+                                markdownSuccessMessage,
+                                type = ToastType.Success
+                            )
+                            onDismissRequest()
+                        }
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -519,7 +523,7 @@ private fun shareAsText(
     context.startActivity(chooser)
 }
 
-private fun exportToMarkdown(
+private suspend fun exportToMarkdown(
     context: Context,
     conversation: Conversation,
     messages: List<UIMessage>,
@@ -527,7 +531,9 @@ private fun exportToMarkdown(
 ) {
     val filename = "chat-export-${LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))}.md"
 
-    val sb = buildAnnotatedString {
+    // v4.8.185 (审计重写): 组装含 data URI 读盘/base64 — 移出主线程 (闭合见 try 前)。
+    val sb = withContext(Dispatchers.IO) {
+    buildAnnotatedString {
         append("# ${conversation.title}\n\n")
         append("*Exported on ${LocalDateTime.now().toLocalString()}*\n\n")
 
@@ -537,12 +543,14 @@ private fun exportToMarkdown(
             message.parts.forEach { part ->
                 when (part) {
                     is UIMessagePart.Text -> {
-                        append(part.text)
+                        // v4.8.185 (审计重写): 本地图片地址内联为 data URI — 导出把图片带走
+                        append(inlineLocalImageUrls(part.text))
                         appendLine()
                     }
 
                     is UIMessagePart.Image -> {
-                        append("![Image](${part.encodeBase64().getOrNull()?.base64})")
+                        val dataUri = localImageDataUri(part.url)
+                        append(if (dataUri != null) "![Image]($dataUri)" else "![Image](${part.url})")
                         appendLine()
                     }
 
@@ -598,7 +606,8 @@ private fun exportToMarkdown(
                                     }
 
                                     is UIMessagePart.Image -> {
-                                        append("![Tool Image](${outputPart.encodeBase64().getOrNull()?.base64})")
+                                        val toolDataUri = localImageDataUri(outputPart.url)
+                                        append(if (toolDataUri != null) "![Tool Image]($toolDataUri)" else "![Tool Image](${outputPart.url})")
                                         appendLine()
                                     }
 
@@ -632,6 +641,7 @@ private fun exportToMarkdown(
             appendLine()
         }
     }
+    } // v4.8.185: withContext(Dispatchers.IO) 闭合
 
     try {
         val dir = context.appTempFolder
@@ -642,8 +652,10 @@ private fun exportToMarkdown(
             file.delete()
             file.createNewFile()
         }
-        FileOutputStream(file).use {
-            it.write(sb.toString().toByteArray())
+        withContext(Dispatchers.IO) {
+            FileOutputStream(file).use {
+                it.write(sb.toString().toByteArray())
+            }
         }
 
         // Share the file
@@ -656,6 +668,46 @@ private fun exportToMarkdown(
 
     } catch (e: Exception) {
         e.printStackTrace()
+    }
+}
+
+/** v4.8.185 (审计重写): 导出携图 — 应用本地图片地址词法 (规范形态无空白/引号/括号)。 */
+private val LOCAL_IMAGE_URL_REGEX =
+    Regex("(?:file:/{1,3}|workspace://)[^\\s\"'`<>\\[\\]()]+")
+
+private val EXPORT_IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg", "webp", "gif", "bmp", "svg")
+
+private fun exportMimeFor(ext: String): String = when (ext.lowercase()) {
+    "jpg", "jpeg" -> "image/jpeg"
+    "gif" -> "image/gif"
+    "webp" -> "image/webp"
+    "bmp" -> "image/bmp"
+    "svg" -> "image/svg+xml"
+    else -> "image/png"
+}
+
+/** 本地图片地址 → data URI (不识别/读失败返回 null, 调用方保留原文本)。 */
+private fun localImageDataUri(url: String): String? {
+    val trimmed = url.trim()
+    if (!me.rerere.rikkahub.utils.isAppLocalImageUri(trimmed)) return null
+    val file = me.rerere.rikkahub.utils.resolveLocalImageFile(trimmed) ?: return null
+    if (file.extension.lowercase() !in EXPORT_IMAGE_EXTENSIONS) return null
+    return runCatching {
+        val bytes = file.readBytes()
+        if (bytes.isEmpty()) {
+            null
+        } else {
+            "data:${exportMimeFor(file.extension)};base64," +
+                android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+        }
+    }.getOrNull()
+}
+
+/** 正文 Markdown: 应用本地图片地址内联为 data URI (单文件自带图片), 其余原样。 */
+private fun inlineLocalImageUrls(text: String): String {
+    if (!text.contains("file:") && !text.contains("workspace://")) return text
+    return LOCAL_IMAGE_URL_REGEX.replace(text) { m ->
+        localImageDataUri(m.value) ?: m.value
     }
 }
 

@@ -21,8 +21,8 @@ import me.rerere.rikkahub.data.ai.tools.encodeMarkdownUrl
 import me.rerere.rikkahub.data.ai.tools.extractRenderUrls
 import me.rerere.rikkahub.data.ai.tools.renderMarkdownOf
 import me.rerere.rikkahub.data.ai.tools.renderUrlCandidates
-import me.rerere.rikkahub.ui.components.richtext.decodeLocalFilePath
-import me.rerere.rikkahub.ui.components.richtext.isAppLocalImageUri
+import me.rerere.rikkahub.utils.decodeLocalFilePath
+import me.rerere.rikkahub.utils.isAppLocalImageUri
 import me.rerere.rikkahub.BuildConfig
 
 class WorkspacePathResolverTest {
