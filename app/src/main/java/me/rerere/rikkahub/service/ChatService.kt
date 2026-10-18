@@ -35,6 +35,7 @@ package me.rerere.rikkahub.service
  *   3. 非法 MCP 名不弹窗只剔除 (v3.6.96)
  * ────────────────────────────────────────────────────────────────────*/
 
+import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
 import android.app.Application
 import okhttp3.OkHttpClient
 import android.util.Log
@@ -225,6 +226,8 @@ class ChatService(
     private val skillManager: SkillManager,
     private val workspaceRepository: WorkspaceRepository,
     private val folderRepository: FolderRepository,
+    // 5.0.0 并树：记忆整理调度（对话后自动整理想 — 上游 3.0.0）
+    private val memoryConsolidationScheduler: MemoryConsolidationScheduler,
     private val pluginManager: me.rerere.rikkahub.data.plugin.PluginManager? = null,
     private val operitToolProvider: me.rerere.rikkahub.data.operit.runtime.OperitToolProvider? = null,
 ) {
@@ -257,6 +260,7 @@ class ChatService(
             )
         },
         onGenerationFinished = ::onSessionGenerationFinished,
+        onSessionRemoved = memoryConsolidationScheduler::onConversationLeft,
     )
 
     // 错误状态
@@ -1005,6 +1009,14 @@ class ChatService(
             launchWithConversationReference(conversationId) {
                 generateSuggestion(conversationId, finalConversation)
             }
+            // 5.0.0 并树：记忆整理登记（对话后自动整理；仅 enableMemory 助手）
+            runCatching {
+                val assistant = settingsStore.settingsFlow.value.assistants
+                    .find { it.id == finalConversation.assistantId }
+                if (assistant?.enableMemory == true) {
+                    memoryConsolidationScheduler.onTurnFinished(finalConversation)
+                }
+            }.onFailure { Logging.log(TAG, "memory onTurnFinished failed: $it") }
         }
         // 强制停表 (顽固 bug 根治): 无论成功/失败/取消, 生成结束即停 reasoning 计时。
         // onCompletion 已停表但存在缝隙 (挂起路径), 此处兜底 — finishReasoning 幂等。
@@ -1587,6 +1599,9 @@ class ChatService(
         )
 
         saveConversation(forkConversation.id, forkConversation)
+        // 5.0.0 并树：fork 会话同步记忆整理登记
+        runCatching { memoryConsolidationScheduler.onConversationForked(forkConversation) }
+            .onFailure { Logging.log(TAG, "memory onConversationForked failed: $it") }
         return forkConversation
     }
 

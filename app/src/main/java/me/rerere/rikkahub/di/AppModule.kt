@@ -187,6 +187,7 @@ val appModule = module {
             skillManager = get(),
             workspaceRepository = get(),
             folderRepository = get(),
+            memoryConsolidationScheduler = get(),
             pluginManager = getOrNull(),
             operitToolProvider = getOrNull(), // v4.5.31 岔路口计划: Operit 脚本工具注入
         )
