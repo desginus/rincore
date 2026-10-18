@@ -6,6 +6,8 @@
 
 > 共 906 个 .kt。格式：`路径 (行数) [来源] — 职责`。分组=模块/域。
 
+> **解析链分工约定（v5.0.4 P4）**：`document/` 与 `ui/components/render/` = 软件内预览/classic 兜底；文档内容真值 = 沙箱工具链（`assets/rin-tools/` → 各工作区 `/usr/local/bin`，见 WorkspaceRepository.provisionBuiltinTools）。
+
 ## app 模块（按域）
 ### A·对话核心（80）
 - `data/model/Assistant.kt` (267) [对齐/移植] — 上下文消息条数上限, 超出后阶梯式截断; 0 表示不限制

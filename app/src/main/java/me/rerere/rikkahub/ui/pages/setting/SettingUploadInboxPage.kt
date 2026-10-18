@@ -10,6 +10,21 @@ package me.rerere.rikkahub.ui.pages.setting
  * v4.8.189 (L-A3): 码解析经 UploadRef 单一解析器 (撤本地手搓前缀)。
  * ───────────────────────────────────────────────────────────────*/
 
+import me.rerere.rikkahub.ui.components.ui.RikkaConfirmDialog
+import me.rerere.rikkahub.ui.components.ui.ItemActionMenu
+import me.rerere.rikkahub.ui.components.ui.ItemAction
+import me.rerere.rikkahub.ui.components.message.shareLocalFile
+import me.rerere.hugeicons.stroke.Share03
+import me.rerere.hugeicons.stroke.Delete01
+import me.rerere.hugeicons.HugeIcons
+import kotlinx.coroutines.launch
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -58,13 +73,24 @@ fun SettingUploadInboxPage(onBack: () -> Unit) {
     val conversationRepo: ConversationRepository = koinInject()
     val files by filesManager.observe(FileFolders.UPLOAD).collectAsStateWithLifecycle(initialValue = emptyList())
     val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    // v5.0.4 (P8): 收件箱动作 — 分享 / 删除 / 批量清理未引用
+    var pendingDelete by remember { mutableStateOf<ManagedFileEntity?>(null) }
+    var showCleanupDialog by remember { mutableStateOf(false) }
 
     // v4.8.186: 引用面扫描 — 设置快照 (头像/背景, 同步部分) + 消息附件 (DB 子串查)。
     // 异步执行 (消息查询走 message_node), 加载完成前不显示标注, 完成后自动重组。
-    val usages by produceState(initialValue = emptyMap<Long, List<String>>(), files, settings) {
+    // v5.0.4 (P8): 可空 = 扫描未完成（避免加载期把所有文件当"未引用"批量误删）
+    val usages by produceState<Map<Long, List<String>>?>(initialValue = null, files, settings) {
         value = withContext(Dispatchers.IO) {
             files.associate { f -> f.id to uploadUsageLabels(f, settings, conversationRepo) }
         }
+    }
+    val unreferenced = remember(files, usages) {
+        val u = usages ?: return@remember emptyList()
+        files.filter { u[it.id].orEmpty().isEmpty() }
     }
 
     Scaffold(
@@ -73,6 +99,18 @@ fun SettingUploadInboxPage(onBack: () -> Unit) {
                 title = { Text("收件箱") },
                 navigationIcon = {
                     TextButton(onClick = onBack) { Text("返回") }
+                },
+                actions = {
+                    // v5.0.4 (P8): 批量清理未引用文件（仅扫描完成后出现）
+                    if (unreferenced.isNotEmpty()) {
+                        IconButton(onClick = { showCleanupDialog = true }) {
+                            Icon(
+                                HugeIcons.Delete01,
+                                contentDescription = "清理未引用文件",
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
@@ -103,7 +141,7 @@ fun SettingUploadInboxPage(onBack: () -> Unit) {
                 }
             } else {
                 items(files, key = { it.id }) { f ->
-                    val labels = usages[f.id].orEmpty()
+                    val labels = usages?.get(f.id).orEmpty()
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -120,6 +158,24 @@ fun SettingUploadInboxPage(onBack: () -> Unit) {
                                 formatSize(f.sizeBytes),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            ItemActionMenu(
+                                actions = listOf(
+                                    ItemAction(
+                                        text = "分享",
+                                        icon = HugeIcons.Share03,
+                                        onClick = {
+                                            runCatching { shareLocalFile(context, filesManager.getFile(f)) }
+                                        },
+                                    ),
+                                    ItemAction(
+                                        text = "删除",
+                                        icon = HugeIcons.Delete01,
+                                        destructive = true,
+                                        onClick = { pendingDelete = f },
+                                    ),
+                                )
                             )
                         }
                         Text(
@@ -162,6 +218,44 @@ fun SettingUploadInboxPage(onBack: () -> Unit) {
                 }
             }
         }
+    }
+
+    // v5.0.4 (P8): 单件删除确认
+    pendingDelete?.let { f ->
+        RikkaConfirmDialog(
+            show = true,
+            title = "删除上传文件？",
+            confirmText = "删除",
+            dismissText = "取消",
+            onConfirm = {
+                val id = f.id
+                pendingDelete = null
+                scope.launch { runCatching { filesManager.delete(id, deleteFromDisk = true) } }
+            },
+            onDismiss = { pendingDelete = null },
+            text = { Text("将同时从磁盘删除「${f.displayName}」。若消息仍引用该文件，删除后将无法打开。") },
+        )
+    }
+
+    // v5.0.4 (P8): 批量清理未引用
+    if (showCleanupDialog) {
+        val count = unreferenced.size
+        val bytes = unreferenced.sumOf { it.sizeBytes }
+        RikkaConfirmDialog(
+            show = true,
+            title = "清理未引用文件？",
+            confirmText = "清理 $count 个",
+            dismissText = "取消",
+            onConfirm = {
+                val ids = unreferenced.map { it.id }
+                showCleanupDialog = false
+                scope.launch {
+                    ids.forEach { id -> runCatching { filesManager.delete(id, deleteFromDisk = true) } }
+                }
+            },
+            onDismiss = { showCleanupDialog = false },
+            text = { Text("将删除 $count 个未被任何头像/背景/消息引用的上传文件，释放 ${formatSize(bytes)}。") },
+        )
     }
 }
 
