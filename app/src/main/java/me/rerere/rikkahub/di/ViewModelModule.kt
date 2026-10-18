@@ -5,6 +5,9 @@ package me.rerere.rikkahub.di
 /* ───【原版对齐】ViewModelModule.kt | 差异 ±4 行
  * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
  * ───────────────────────────────────────────────────────────────*/
+import me.rerere.rikkahub.ui.pages.mediacreation.MediaCreationVM
+import me.rerere.rikkahub.ui.pages.mediacreation.MediaCreationSessionsVM
+import me.rerere.rikkahub.ui.pages.memory.MemoryFileVM
 import me.rerere.rikkahub.ui.pages.assistant.AssistantVM
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantDetailVM
 import me.rerere.rikkahub.ui.pages.backup.BackupVM
@@ -62,6 +65,26 @@ val viewModelModule = module {
             skillManager = get(),
             workspaceRepository = get(),
             conversationRepository = get(),
+        )
+    }
+    // ── 5.0.0 并树补齐（B-FIX）：上游媒体创作/记忆文件 VM（此前未注册=页面打开即崩）──
+    viewModel<MemoryFileVM> {
+        MemoryFileVM(
+            memoryId = it[0],
+            path = it[1],
+            memoryRepository = get(),
+        )
+    }
+    viewModelOf(::MediaCreationSessionsVM)
+    viewModel<MediaCreationVM> {
+        MediaCreationVM(
+            id = it.get(),
+            context = get(),
+            settingsStore = get(),
+            repository = get(),
+            service = get(),
+            remoteFileStore = get(),
+            appScope = get(),
         )
     }
     viewModelOf(::TranslatorVM)

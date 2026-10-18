@@ -7,6 +7,10 @@ package me.rerere.rikkahub.di
  * 差异: HTTP/1.1 only (HTTP/2 禁用 PROTOCOL_ERROR 根治)、
  *       ConnectionPool(12, 60s)、readTimeout 3min (v2.9.8 参照)
  * ───────────────────────────────────────────────────────────────*/
+import me.rerere.rikkahub.service.MediaCreationService
+import me.rerere.mediagen.provider.MediaGenerationManager
+import me.rerere.rikkahub.data.remote.RemoteFileStore
+import me.rerere.rikkahub.data.ai.TranslationHandler
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.service.memoryDreamKeepAlive
 import me.rerere.rikkahub.data.ai.MemoryConsolidator
@@ -418,6 +422,36 @@ val dataSourceModule = module {
 
     single<RikkaHubAPI> {
         get<Retrofit>().create(RikkaHubAPI::class.java)
+    }
+
+    // ── 5.0.0 并树补齐（B-FIX）：上游件注册 ──
+    // 此前缺失 = 打开 媒体创作/翻译器/S3远程文件 相关页面 NoDefinitionFoundException 崩溃
+    single {
+        TranslationHandler(providerManager = get())
+    }
+
+    single {
+        RemoteFileStore(
+            settingsStore = get(),
+            httpClient = get(),
+            scope = get<AppScope>(),
+        )
+    }
+
+    single {
+        MediaGenerationManager(client = get())
+    }
+
+    single {
+        MediaCreationService(
+            context = get(),
+            appScope = get(),
+            settingsStore = get(),
+            repository = get(),
+            manager = get(),
+            remoteFileStore = get(),
+            okHttpClient = get(),
+        )
     }
 }
 
