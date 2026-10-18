@@ -168,7 +168,6 @@ androidx-browser = { group = "androidx.browser", name = "browser", version.ref =
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 ucrop = { group = "com.github.yalantis", name = "ucrop", version.ref = "ucrop" }
-floatingx-app = { group = "io.github.petterpx", name = "floatingx-app", version.ref = "floatingx" }
 floatingx = { group = "io.github.petterpx", name = "floatingx", version.ref = "floatingx" }
 floatingx-compose = { group = "io.github.petterpx", name = "floatingx-compose", version.ref = "floatingx" }
 haze = { module = "dev.chrisbanes.haze:haze", version.ref = "haze" }
