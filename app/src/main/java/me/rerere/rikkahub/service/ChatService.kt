@@ -1733,20 +1733,3 @@ class ChatService(
     }
 }
 
-/**
- * Sanitize MCP server/tool names to be ASCII-only for DeepSeek compatibility.
- * Converts Chinese characters to pinyin-like representation, removes invalid chars.
- */
-private fun sanitizeMcpName(name: String): String {
-    // Replace Chinese characters with underscore-separated segments
-    val sanitized = name.map { c ->
-        when {
-            c in 'a'..'z' || c in 'A'..'Z' || c in '0'..'9' || c == '_' || c == '-' -> c
-            c.code in 0x4E00..0x9FFF -> "_" // Chinese character range
-            else -> "_"
-        }
-    }.joinToString("")
-    
-    // Remove consecutive underscores and trim
-    return sanitized.replace(Regex("_+"), "_").trim('_').ifEmpty { "tool" }
-}

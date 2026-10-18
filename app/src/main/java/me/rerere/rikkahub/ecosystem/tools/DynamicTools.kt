@@ -3,7 +3,7 @@
  *
  * 职责: 生态工具 (mcp_connect/plugin_install 等 5 个) + MCP 运行时工具注入。
  * 懒加载 (v3.5.3): MCP 工具经 getMcpTools 合并到域池, 不直接注入函数定义。
- * sanitize 与 ChatService.sanitizeMcpName 保持一致 (去重关键)。
+ * sanitize 规则: ASCII(保大小写) 保留 + 中文→下划线 映射 (去重关键; 历史 ChatService 副本已删除)。
  *
  * 问题定位: MCP 工具不出现/冷启动 token 高 → 查本文件 + GenerationHandler
  */
@@ -138,7 +138,7 @@ object DynamicTools {
     }
 
     private fun sanitize(name: String): String {
-        // 与 ChatService.sanitizeMcpName 保持一致 — 保留大小写, 确保 distinctBy 能去重
+        // 保留大小写, 确保 distinctBy 能去重 (规则与历史 ChatService 副本一致; 该旧副本已删除)
         val sanitized = name.map { c ->
             when {
                 c in 'a'..'z' || c in 'A'..'Z' || c in '0'..'9' || c == '_' || c == '-' -> c
@@ -491,60 +491,6 @@ object DynamicTools {
                 listOf(UIMessagePart.Text(summary))
             } catch (e: Exception) {
                 listOf(UIMessagePart.Text("Plugin install failed: ${e.message}"))
-            }
-        },
-    )
-
-    // ═══ skills_lock — P1 锁定文件管理 ═══════════════════════
-
-    private fun createSkillsLockTool(): Tool = Tool(
-        name = "skills_lock",
-        description = "List or manage installed skills. Args: {action: list|remove, name: skill name for remove}",
-        parameters = {
-            InputSchema.Obj(
-                properties = buildJsonObject {
-                    put("action", buildJsonObject {
-                        put("type", "string")
-                        put("enum", buildJsonArray { add(JsonPrimitive("list")); add(JsonPrimitive("install")); add(JsonPrimitive("remove")) })
-                        put("description", "操作类型, 默认 list")
-                    })
-                    put("name", buildJsonObject {
-                        put("type", "string")
-                        put("description", "remove/install 时的技能名")
-                    })
-                },
-                required = listOf("action")
-            )
-        },
-        systemPrompt = { _, _ -> "" },
-        needsApproval = { false },
-        execute = { input: JsonElement ->
-            val lockFile = File(ecosystemWorkspaceRoot, "skills-lock.json")
-            val obj = input as? JsonObject
-            val action = obj?.get("action")?.jsonPrimitive?.content ?: "list"
-
-            when (action) {
-                "list" -> {
-                    if (!lockFile.isFile) {
-                        return@Tool listOf(UIMessagePart.Text("No installed skills (skills-lock.json not found)"))
-                    }
-                    val content = lockFile.readText()
-                    listOf(UIMessagePart.Text("Installed skills:\n\n$content"))
-                }
-                "remove" -> {
-                    val name = obj?.get("name")?.jsonPrimitive?.content
-                        ?: return@Tool listOf(UIMessagePart.Text("Missing: name"))
-                    if (!lockFile.isFile) {
-                        return@Tool listOf(UIMessagePart.Text("No lock file to remove from"))
-                    }
-                    // Simple remove: rewrite without the entry
-                    val current = lockFile.readText()
-                    val pattern = Regex("\"$name\"\\s*:\\s*\\{[^}]*\\},?")
-                    val updated = pattern.replace(current, "").replace(",,", ",").replace("{,", "{").replace(",}", "}")
-                    lockFile.writeText(updated)
-                    listOf(UIMessagePart.Text("Removed: $name from skills-lock.json"))
-                }
-                else -> listOf(UIMessagePart.Text("Unknown action: $action. Use list or remove."))
             }
         },
     )

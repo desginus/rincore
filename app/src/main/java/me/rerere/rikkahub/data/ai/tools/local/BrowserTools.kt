@@ -885,14 +885,6 @@ fun browserDoneTool(callerConvId: () -> String): Tool = Tool(
 
 // ---- Internal helpers ---------------------------------------------------------------------
 
-private fun selectorWithFullSchema(description: String): InputSchema = InputSchema.Obj(
-    properties = buildJsonObject {
-        put("selector", buildJsonObject { put("type", "string"); put("description", description) })
-        put("full", buildJsonObject { put("type", "boolean"); put("description", "If true, skip page-text diff (default false)") })
-    },
-    required = listOf("selector"),
-)
-
 private fun selectorAndMaxCharsSchema(defaultMax: Int, required: Boolean): InputSchema = InputSchema.Obj(
     properties = buildJsonObject {
         put("selector", buildJsonObject { put("type", "string"); put("description", "CSS selector (default 'body')") })

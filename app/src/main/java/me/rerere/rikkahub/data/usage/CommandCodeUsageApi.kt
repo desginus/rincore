@@ -124,18 +124,6 @@ object CommandCodeUsageApi {
         }
     }
 
-    private fun parseWindow(limits: JSONObject, key: String): WindowInfo? {
-        val w = limits.optJSONObject(key) ?: return null
-        val reset = w.optLong("resetAt", 0L)
-        return WindowInfo(
-            used = if (w.has("used")) w.optDouble("used") else null,
-            cap = if (w.has("cap")) w.optDouble("cap") else null,
-            resetAtMs = if (reset > 0) reset else null,
-            exceeded = limits.optBoolean("exceeded", false) &&
-                limits.optString("exceeded").length > 4, // 占位, 语义见 credits 顶层
-        )
-    }
-
     suspend fun fetchUsage(apiKey: String): FetchOutcome = withContext(Dispatchers.IO) {
         if (apiKey.isBlank()) return@withContext FetchOutcome(null, "未配置 API Key")
         runCatching {

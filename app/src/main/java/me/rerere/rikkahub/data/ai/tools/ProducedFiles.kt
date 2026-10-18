@@ -131,11 +131,13 @@ object ProducedFiles {
             // 多对话并行共用同一工作区时, 全根 mtime 扫描会把邻居对话/用户手改的文件
             // 记到本对话 (跨对话污染); CWD 域把"本对话项目范围"作为归属边界。
             // CWD 为空或路径不存在时退回全根 (保持旧行为, 避免漏报)。
+            // v4.8.188: 点目录整体排除 — .versions(版本快照) / .render(渲染缓存) /
+            // .git 等内部目录不属"对话产出"（.render 的 cache-*/page1.html 曾被卷进产出列表）。
             val scopeRel = cwdScope?.trim()?.trim('/')?.takeIf { it.isNotEmpty() }
             val scopeRoot = scopeRel?.let { File(base, it) }?.takeIf { it.isDirectory } ?: base
 
             val out = ArrayList<String>()
-            val seq = scopeRoot.walkTopDown().onEnter { dir -> dir.name != ".versions" }
+            val seq = scopeRoot.walkTopDown().onEnter { dir -> !dir.name.startsWith(".") }
             for (f in seq) {
                 if (out.size >= 200) break
                 if (f.isFile && f.lastModified() >= sinceMs) {

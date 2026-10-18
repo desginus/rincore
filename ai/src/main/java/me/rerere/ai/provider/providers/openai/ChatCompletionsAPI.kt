@@ -959,16 +959,6 @@ class ChatCompletionsAPI(
         return out
     }
 
-    private fun estimateImageBytes(image: UIMessagePart.Image): Long {
-        return when {
-            image.url.startsWith("data:") -> image.url.length.toLong()  // base64 内联: 字符数量级≈字节数
-            image.url.startsWith("file://") -> runCatching {
-                java.io.File(image.url.removePrefix("file://")).length()
-            }.getOrDefault(0L)
-            else -> 0L  // 公网 URL: 无法本地计量, 仅计入张数预算
-        }
-    }
-
     private fun imageBudgetPlaceholder(image: UIMessagePart.Image, totalImages: Int = 0, droppedImages: Int = 0): String = when {
         image.url.startsWith("file://") ->
             "[图片已省略 (超出本请求图片预算): 本请求共 $totalImages 张图, 已省略 $droppedImages 张; 原文件已保存于会话中, 路径: " + image.url + " — 需要查看时调用 read_image 工具传入该路径 (支持百分号编码形态)]"
