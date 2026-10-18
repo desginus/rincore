@@ -94,6 +94,19 @@ object RinGlass {
         noisePercent = 0,
     )
 
+    /**
+     * v4.8.184 (用户定版): 标题栏专用模糊 — "完全看不出来被做了模糊处理":
+     * 透明底（撤掉 Material3 预设的不透明底料 = 标题栏可见"板带/分界线"的元凶）
+     * + 零噪点（S1 噪点曾在整层铺灰颗粒=又亮又起砂）。
+     * 空背景上 = 纯模糊背景（与背景无痕无色差）；正文滑入其下 = 被磨掉。
+     */
+    @Composable
+    fun titleBlurStyle(radiusDp: Int): HazeBlurStyle = HazeBlurStyle.Material3 {
+        blurRadius(radiusDp.coerceIn(2, 24).dp)
+        noiseFactor(0f)
+        backgroundColor(Color.Transparent)
+    }
+
     /** 高光描边 (澎湃 4 玻璃质感 — HyperGlassPanel 同源) */
     val highlightColor: Color = Color.White.copy(alpha = 0.14f)
 

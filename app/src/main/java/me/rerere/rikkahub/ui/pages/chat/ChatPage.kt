@@ -559,35 +559,23 @@ private fun ChatPageContent(
         ) {
         Scaffold(
             topBar = {
-                // v4.8.180 (用户定版): 整条标题栏 = 雾化面板（下浓上淡）+ 连续曲率圆角（曲率梳平滑, 下方两角）。
-                // 面板铺满标题栏槽位（含状态栏内边距区）, 顶边贴屏幕、圆角做在面向内容的下方两角。
+                // v4.8.184 (用户定版): 标题栏 = 单层纯模糊（透明底 + 零噪点, 无描边/无雾/无蒙版）——
+                // "完全看不出来被做了模糊处理": 空背景上与背景无痕（无线/无板/无颗粒）;
+                // 正文往上滑入其下时被磨掉。
                 Box {
                     val titlePanelShape = remember {
                         ContinuousCornerShape(cornerRadius = 20.dp, topStart = false, topEnd = false)
                     }
-                    val titleMidState = rememberHazeState()
                     if (setting.displaySetting.enableBlurEffect) {
                         Box(
                             modifier = Modifier
                                 .matchParentSize()
                                 .clip(titlePanelShape)
-                                .hazeSource(state = titleMidState)
                                 .hazeBlur(
                                     input = HazeInput.Sources(hazeState),
-                                    style = RinGlass.inputBlurStyle(
-                                        radiusDp = setting.displaySetting.glassBlurRadiusDp,
-                                        noisePercent = setting.displaySetting.glassNoisePercent,
+                                    style = RinGlass.titleBlurStyle(
+                                        radiusDp = setting.displaySetting.glassBlurRadiusDp * 2,
                                     ),
-                                ),
-                        )
-                        Box(
-                            modifier = Modifier
-                                .matchParentSize()
-                                .padding(3.dp)
-                                .clip(titlePanelShape)
-                                .hazeBlur(
-                                    input = HazeInput.Sources(titleMidState),
-                                    style = RinGlass.inputTopStyle(setting.displaySetting.glassBlurRadiusDp),
                                 ),
                         )
                     }
