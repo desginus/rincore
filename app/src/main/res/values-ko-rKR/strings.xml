@@ -1707,4 +1707,14 @@ mDNS 주소: .local 호스트네임을 사용하며, IP를 몰라도 같은 네�
     <string name="sketch_dialog_brush_flat">플랫 펜</string>
     <string name="sketch_dialog_text">텍스트</string>
     <string name="sketch_dialog_select">선택</string>
+    <string name="setting_page_crash_reports">크래시 리포트</string>
+    <string name="crash_reports_desc">크래시 리포트(Markdown). 전체 스택 트레이스를 내보내거나 공유할 수 있습니다.</string>
+    <string name="crash_report_export">다운로드로 내보내기</string>
+    <string name="crash_report_share">공유</string>
+    <string name="crash_report_copy">복사</string>
+    <string name="crash_report_exported">%1$s(으)로 내보냈습니다</string>
+    <string name="crash_report_export_failed">내보내기 실패</string>
+    <string name="crash_reports_empty">크래시 리포트가 없습니다.</string>
+    <string name="safe_mode_export">내보내기</string>
+    <string name="safe_mode_share">공유</string>
 </resources>

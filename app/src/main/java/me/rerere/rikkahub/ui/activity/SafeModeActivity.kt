@@ -1,8 +1,10 @@
 /* 【域 L·基础设施】 | 地图: docs/APP_MAP.md §L */
 package me.rerere.rikkahub.ui.activity
 
-/* ───【原版对齐】SafeModeActivity.kt | 与 2.5.1 逐字节一致
+/* ───【原版对齐】SafeModeActivity.kt | 基线 2.5.1 + v5.0.9 自研追加
  * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+ * v5.0.9: 崩溃报告行追加 [导出 Markdown][分享] 按钮（崩溃时唯一稳定反馈通道 —
+ *   导出到 下载/RinCore-crashes/ 或分享 .md 文件，绕开不可靠的剪贴板复制）
  * ───────────────────────────────────────────────────────────────*/
 
 import android.content.ClipData
@@ -10,6 +12,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -133,13 +136,48 @@ class SafeModeActivity : ComponentActivity() {
                                     text = stringResource(R.string.safe_mode_crash_report),
                                     style = MaterialTheme.typography.titleSmall,
                                 )
-                                OutlinedButton(
-                                    onClick = {
-                                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                        cm.setPrimaryClip(ClipData.newPlainText("crash", stackTrace))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                            cm.setPrimaryClip(ClipData.newPlainText("crash", stackTrace))
+                                        }
+                                    ) {
+                                        Text(stringResource(R.string.safe_mode_copy))
                                     }
-                                ) {
-                                    Text(stringResource(R.string.safe_mode_copy))
+                                    // v5.0.9: 导出 Markdown 到共享下载目录（绕开剪贴板不可靠问题）
+                                    OutlinedButton(
+                                        onClick = {
+                                            val f = CrashHandler.latestReport(context)
+                                            val path = f?.let { CrashHandler.exportToDownloads(context, it) }
+                                            Toast.makeText(
+                                                context,
+                                                if (path != null) context.getString(R.string.crash_report_exported, path)
+                                                else context.getString(R.string.crash_report_export_failed),
+                                                Toast.LENGTH_LONG,
+                                            ).show()
+                                        }
+                                    ) {
+                                        Text(stringResource(R.string.safe_mode_export))
+                                    }
+                                    // v5.0.9: 分享报告文件（系统分享面板）
+                                    OutlinedButton(
+                                        onClick = {
+                                            val f = CrashHandler.latestReport(context)
+                                            if (f != null) {
+                                                runCatching {
+                                                    context.startActivity(
+                                                        Intent.createChooser(
+                                                            CrashHandler.shareIntent(context, f),
+                                                            context.getString(R.string.safe_mode_share),
+                                                        )
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    ) {
+                                        Text(stringResource(R.string.safe_mode_share))
+                                    }
                                 }
                             }
                             Card(

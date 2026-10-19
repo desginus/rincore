@@ -1759,4 +1759,14 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
     <string name="sketch_dialog_brush_flat">平头笔</string>
     <string name="sketch_dialog_text">文字</string>
     <string name="sketch_dialog_select">选择</string>
+    <string name="setting_page_crash_reports">崩溃报告</string>
+    <string name="crash_reports_desc">崩溃报告（Markdown）——完整堆栈，可导出或分享，便于反馈问题。</string>
+    <string name="crash_report_export">导出到下载</string>
+    <string name="crash_report_share">分享</string>
+    <string name="crash_report_copy">复制</string>
+    <string name="crash_report_exported">已导出到 %1$s</string>
+    <string name="crash_report_export_failed">导出失败</string>
+    <string name="crash_reports_empty">暂无崩溃报告。</string>
+    <string name="safe_mode_export">导出</string>
+    <string name="safe_mode_share">分享</string>
 </resources>

@@ -1647,4 +1647,14 @@
     <string name="chart_mode_table">جدول</string>
     <string name="chart_series">سلسلة</string>
     <string name="chart_series_name">سلسلة %1$d</string>
+    <string name="setting_page_crash_reports">تقارير الأعطال</string>
+    <string name="crash_reports_desc">تقارير الأعطال (Markdown) — يمكن تصدير سجل التتبع الكامل أو مشاركته.</string>
+    <string name="crash_report_export">تصدير إلى التنزيلات</string>
+    <string name="crash_report_share">مشاركة</string>
+    <string name="crash_report_copy">نسخ</string>
+    <string name="crash_report_exported">تم التصدير إلى %1$s</string>
+    <string name="crash_report_export_failed">فشل التصدير</string>
+    <string name="crash_reports_empty">لا توجد تقارير أعطال.</string>
+    <string name="safe_mode_export">تصدير</string>
+    <string name="safe_mode_share">مشاركة</string>
 </resources>

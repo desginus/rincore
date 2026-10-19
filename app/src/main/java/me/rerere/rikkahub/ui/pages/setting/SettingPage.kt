@@ -355,6 +355,13 @@ item(
                         headlineContent = { Text("运行日志") },
                     )
                     item(
+                        // v5.0.9: 崩溃报告 — Markdown 导出/分享（崩溃反馈通道；崩溃后 SafeMode 页同功能）
+                        onClick = { navController.navigate(Screen.CrashReports) },
+                        leadingContent = { Icon(HugeIcons.Alert01, null) },
+                        supportingContent = { Text("导出崩溃报告（Markdown）——完整堆栈，便于反馈问题") },
+                        headlineContent = { Text("崩溃报告") },
+                    )
+                    item(
                         // v4.8.146 (用户定版): 收件箱 (Upload) — 上传文件管理 + 使用位置标注
                         onClick = { navController.navigate(Screen.SettingUploadInbox) },
                         leadingContent = { Icon(HugeIcons.Folder01, null) },

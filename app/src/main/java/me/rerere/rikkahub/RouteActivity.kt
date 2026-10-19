@@ -147,6 +147,7 @@ import me.rerere.rikkahub.ui.pages.setting.AlarmSettingsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPermissionsPage
 import me.rerere.rikkahub.workflow.ui.WorkflowsScreen
 import me.rerere.rikkahub.ui.pages.setting.SettingCallTracePage
+import me.rerere.rikkahub.ui.pages.setting.SettingCrashReportsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingSkillsEcosystemPage
 import me.rerere.rikkahub.ui.pages.setting.SettingMcpPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPluginsPage
@@ -792,6 +793,9 @@ class RouteActivity : ComponentActivity() {
                             entry<Screen.SettingCallTrace> {
                                 SettingCallTracePage()
                             }
+                            entry<Screen.CrashReports> {
+                                SettingCrashReportsPage()
+                            }
                             entry<Screen.SettingAlarms> {
                                 AlarmSettingsPage(onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } })
                             }
@@ -1063,6 +1067,10 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object SettingCallTrace : Screen
+
+    /** v5.0.9: 崩溃报告（Markdown 导出/分享 — 崩溃反馈通道）。 */
+    @Serializable
+    data object CrashReports : Screen
 
     @Serializable
     data object SettingAlarms : Screen

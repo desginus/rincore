@@ -1707,4 +1707,14 @@ mDNSアドレス: .localホスト名を使用し、IPを知らなくても同じ
     <string name="sketch_dialog_brush_flat">フラットペン</string>
     <string name="sketch_dialog_text">テキスト</string>
     <string name="sketch_dialog_select">選択</string>
+    <string name="setting_page_crash_reports">クラッシュレポート</string>
+    <string name="crash_reports_desc">クラッシュレポート（Markdown）。完全なスタックトレースを書き出し・共有できます。</string>
+    <string name="crash_report_export">ダウンロードへ書き出し</string>
+    <string name="crash_report_share">共有</string>
+    <string name="crash_report_copy">コピー</string>
+    <string name="crash_report_exported">%1$s に書き出しました</string>
+    <string name="crash_report_export_failed">書き出しに失敗しました</string>
+    <string name="crash_reports_empty">クラッシュレポートはありません。</string>
+    <string name="safe_mode_export">書き出し</string>
+    <string name="safe_mode_share">共有</string>
 </resources>

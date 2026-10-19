@@ -1705,4 +1705,14 @@
     <string name="sketch_dialog_brush_flat">平頭筆</string>
     <string name="sketch_dialog_text">文字</string>
     <string name="sketch_dialog_select">選擇</string>
+    <string name="setting_page_crash_reports">崩潰報告</string>
+    <string name="crash_reports_desc">崩潰報告（Markdown）——完整堆疊，可匯出或分享，便於回報問題。</string>
+    <string name="crash_report_export">匯出到下載</string>
+    <string name="crash_report_share">分享</string>
+    <string name="crash_report_copy">複製</string>
+    <string name="crash_report_exported">已匯出到 %1$s</string>
+    <string name="crash_report_export_failed">匯出失敗</string>
+    <string name="crash_reports_empty">暫無崩潰報告。</string>
+    <string name="safe_mode_export">匯出</string>
+    <string name="safe_mode_share">分享</string>
 </resources>

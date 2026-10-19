@@ -1707,4 +1707,14 @@
     <string name="sketch_dialog_brush_flat">Плоское перо</string>
     <string name="sketch_dialog_text">Текст</string>
     <string name="sketch_dialog_select">Выбрать</string>
+    <string name="setting_page_crash_reports">Отчёты о сбоях</string>
+    <string name="crash_reports_desc">Отчёты о сбоях (Markdown). Полную трассировку можно экспортировать или отправить.</string>
+    <string name="crash_report_export">Экспорт в Загрузки</string>
+    <string name="crash_report_share">Поделиться</string>
+    <string name="crash_report_copy">Копировать</string>
+    <string name="crash_report_exported">Экспортировано в %1$s</string>
+    <string name="crash_report_export_failed">Ошибка экспорта</string>
+    <string name="crash_reports_empty">Отчётов о сбоях нет.</string>
+    <string name="safe_mode_export">Экспорт</string>
+    <string name="safe_mode_share">Поделиться</string>
 </resources>
