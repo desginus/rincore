@@ -1013,8 +1013,16 @@ class ChatService(
             runCatching {
                 val assistant = settingsStore.settingsFlow.value.assistants
                     .find { it.id == finalConversation.assistantId }
-                if (assistant?.enableMemory == true) {
-                    memoryConsolidationScheduler.onTurnFinished(finalConversation)
+                if (assistant?.enableMemory == true && assistant.memoryDreamEnabled) {
+                    // v5.0.16 做梦范围（0=整个助手 / 1=项目包内 / 2=当前对话）
+                    val dreamScope = assistant.memoryDreamScope
+                    val folderIds: Set<Uuid> = if (dreamScope == 1) {
+                        finalConversation.folderId?.let { fid ->
+                            runCatching { conversationRepo.getConversationIdsOfFolder(fid).toSet() }
+                                .getOrDefault(emptySet())
+                        } ?: emptySet()
+                    } else emptySet()
+                    memoryConsolidationScheduler.onTurnFinished(finalConversation, dreamScope, folderIds)
                 }
             }.onFailure { Logging.log(TAG, "memory onTurnFinished failed: $it") }
         }

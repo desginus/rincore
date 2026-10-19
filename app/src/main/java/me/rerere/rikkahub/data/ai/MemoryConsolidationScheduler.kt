@@ -110,8 +110,13 @@ class MemoryConsolidationScheduler(
     fun statusOf(memoryId: String): Flow<MemoryConsolidationStatus> =
         status.map { it[memoryId] ?: MemoryConsolidationStatus() }.distinctUntilChanged()
 
-    /** 一轮对话结束：空闲一段时间后整理，攒够轮数就不再等 */
-    fun onTurnFinished(conversation: Conversation) {
+    /** 一轮对话结束：空闲一段时间后整理，攒够轮数就不再等。
+     *  v5.0.16 做梦范围（用户定案）：0=整个助手（原逻辑）/ 1=项目包内 / 2=当前对话 */
+    fun onTurnFinished(
+        conversation: Conversation,
+        scope: Int = 0,
+        folderConversationIds: Set<Uuid> = emptySet(),
+    ) {
         // 应用不在前台时，聊天生成的前台服务一释放进程就可能被冻结，空闲计时走不完。
         // 所以趁它还在先把保活占住，一直占到这次整理结束
         val hold = if (isAppVisible()) null else keepAlive.acquire()
@@ -120,11 +125,17 @@ class MemoryConsolidationScheduler(
             try {
                 val item = worker.pendingOf(conversation) ?: return@launch
                 markPending(item)
-                if (item.turns >= maxPendingTurns) {
-                    runAutomatically(item.memoryId)
-                } else {
-                    restartTimer(item.memoryId, hold)
-                    handedOver = true
+                when (scope) {
+                    // 项目包内：只整理本包对话（无包归属时退化为单对话）
+                    1 -> runScoped(item.memoryId, (folderConversationIds + conversation.id).toSet())
+                    // 当前对话：只整理这一条
+                    2 -> runScoped(item.memoryId, setOf(conversation.id))
+                    else -> if (item.turns >= maxPendingTurns) {
+                        runAutomatically(item.memoryId)
+                    } else {
+                        restartTimer(item.memoryId, hold)
+                        handedOver = true
+                    }
                 }
             } finally {
                 if (!handedOver) hold?.close()
@@ -187,16 +198,24 @@ class MemoryConsolidationScheduler(
         run(memoryId, fullReview = false)
     }
 
+    // 只整理给定的对话集合（做梦范围=项目包/单对话时使用）
+    private suspend fun runScoped(memoryId: String, conversationIds: Set<Uuid>) {
+        cancelTimer(memoryId)
+        run(memoryId, fullReview = false, conversationIds = conversationIds)
+    }
+
     // 整理这个记忆库下所有待整理的对话
     private suspend fun run(
         memoryId: String,
         fullReview: Boolean,
+        // v5.0.16：显式限定整理面（null=记忆库下全部待整理对话）
+        conversationIds: Set<Uuid>? = null,
     ): MemoryConsolidationRun? = synchronized(lock) { runLocks.getOrPut(memoryId) { Mutex() } }.withLock {
         val ids = synchronized(lock) {
             // 失败后不自动重试，免得模型一直出错时每次切走应用、离开对话都再调用一遍；
             // 待整理的内容留着，等下一轮对话结束或用户手动触发
             if (!fullReview && memoryId in failed) return null
-            pending[memoryId]?.keys.orEmpty()
+            conversationIds ?: pending[memoryId]?.keys.orEmpty()
         }
         if (ids.isEmpty() && !fullReview) return null
 

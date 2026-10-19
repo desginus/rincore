@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.rerere.ai.provider.Model
@@ -34,6 +35,7 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.getAssistantOf
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
@@ -178,6 +180,51 @@ class ChatVM(
     val enableWebSearch = settings.map {
         it.enableWebSearch
     }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    // ==== 上游 3.0.0 ChatPage 接口面（v5.0.16：ChatPage 整件采用上游原文，VM 面补齐）====
+    // 会话视角下的助手：会话开始后，模型、思考级别、搜索等以会话上固定的配置为准
+    val assistant: StateFlow<Assistant> = combine(settings, conversation) { s, c ->
+        s.getAssistantOf(c)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, settings.value.getAssistantOf(conversation.value))
+
+    fun selectMessageNode(nodeId: Uuid, selectIndex: Int) {
+        viewModelScope.launch {
+            runCatching { chatService.selectMessageNode(_conversationId, nodeId, selectIndex) }
+        }
+    }
+
+    fun updateConversationSystemPrompt(systemPrompt: String?) {
+        viewModelScope.launch {
+            updateConversation(conversation.value.copy(customSystemPrompt = systemPrompt))
+            saveConversationAsync()
+        }
+    }
+
+    fun updateDraftFolder(folderId: Uuid?) {
+        viewModelScope.launch {
+            updateConversation(conversation.value.copy(folderId = folderId))
+            saveConversationAsync()
+        }
+    }
+
+    // 搜索恒开启 = 本地搜索（v5.0.15 用户定版：开关 UI 已移除，无切换面）
+    @Suppress("UNUSED_PARAMETER")
+    fun updateSearch(enableWebSearch: Boolean, builtInSearch: Boolean) = Unit
+
+    fun updateAssistant(updated: Assistant) {
+        updateSettings(
+            settings.value.copy(
+                assistants = settings.value.assistants.map { a -> if (a.id == updated.id) updated else a }
+            )
+        )
+    }
+
+    fun updateWorkspaceCwd(workspaceCwd: String?) {
+        viewModelScope.launch {
+            updateConversation(conversation.value.copy(workspaceCwd = workspaceCwd))
+            saveConversationAsync()
+        }
+    }
 
     // 当前模型
     val currentChatModel = settings.map { settings ->

@@ -40,6 +40,10 @@ interface ConversationDAO {
     @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, folder_id as folderId FROM conversationentity WHERE folder_id = :folderId AND title NOT LIKE '[Sub-agent]%' ORDER BY is_pinned DESC, update_at DESC")
     fun getConversationsOfFolderPaging(folderId: String): PagingSource<Int, LightConversationEntity>
 
+    // v5.0.16 做梦范围=项目包：取包内对话 id
+    @Query("SELECT id FROM conversationentity WHERE folder_id = :folderId AND title NOT LIKE '[Sub-agent]%'")
+    suspend fun getConversationIdsOfFolder(folderId: String): List<Uuid>
+
     @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId AND title NOT LIKE '[Sub-agent]%' ORDER BY is_pinned DESC, update_at DESC LIMIT :limit")
     suspend fun getRecentConversationsOfAssistant(assistantId: String, limit: Int): List<ConversationEntity>
 

@@ -271,6 +271,35 @@ private fun MemorySettingsTab(
                 supportingContent = { Text("开启后，新记忆只挂载到当前对话：仅在该对话内可见，对话删除即销毁。") },
                 headlineContent = { Text("单对话记忆") },
             )
+            // v5.0.16 用户定案：做梦（记忆整理）独立开关 + 范围限定
+            switchItem(
+                checked = assistant.memoryDreamEnabled,
+                onCheckedChange = {
+                    onUpdateAssistant(assistant.copy(memoryDreamEnabled = it))
+                },
+                enabled = assistant.enableMemory,
+                supportingContent = { Text("允许模型在对话结束后通过做梦主动整理并记录记忆") },
+                headlineContent = { Text("做梦主动记录") },
+            )
+            item(
+                headlineContent = { Text("做梦范围") },
+                supportingContent = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            0 to "整个助手",
+                            1 to "项目包内",
+                            2 to "当前对话",
+                        ).forEach { (value, label) ->
+                            FilterChip(
+                                selected = assistant.memoryDreamScope == value,
+                                onClick = { onUpdateAssistant(assistant.copy(memoryDreamScope = value)) },
+                                label = { Text(label) },
+                                enabled = assistant.enableMemory,
+                            )
+                        }
+                    }
+                },
+            )
             switchItem(
                 checked = assistant.enableRecentChatsReference,
                 onCheckedChange = {

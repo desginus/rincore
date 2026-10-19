@@ -1,10 +1,3 @@
-/* 【域 A·对话页】 | 地图: docs/APP_MAP.md §A */
-
-/* ───【上游对齐】ChatInput.kt | v5.0.11 切换上游 3.0.0
- * （底部渐变遮罩 + chatInputHaze 玻璃（模糊/液态玻璃双分支）+ 消息编辑改思考内容）
- * 回贴我方件: /@ 工具矩阵选择器（toolPickerProvider/detectToolMention/ToolPickerState）
- *            + 文本粘贴自管插入（v4.8.144 光标落尾修复）
- * ───────────────────────────────────────────────────────────────*/
 package me.rerere.rikkahub.ui.components.ai
 
 import androidx.compose.animation.AnimatedVisibility
@@ -134,11 +127,12 @@ fun ChatInput(
     assistant: Assistant,
     chatModel: Model?,
     hazeState: HazeState,
+    onUpdateSearchMode: (SearchMode) -> Unit,
     modifier: Modifier = Modifier,
     completionProviders: List<ChatCompletionProvider> = emptyList(),
-    toolPickerProvider: (suspend () -> ToolMatrixPickerData?)? = null,
     onUpdateChatModel: (Model) -> Unit,
     onUpdateAssistant: (Assistant) -> Unit,
+    onUpdateSearchService: (Int) -> Unit,
     onMoreClick: () -> Unit,
     onCancelClick: () -> Unit,
     onSendClick: () -> Unit,
@@ -280,7 +274,6 @@ fun ChatInput(
                         state = state,
                         assistant = assistant,
                         completionProviders = completionProviders,
-                        toolPickerProvider = toolPickerProvider,
                         onSendMessage = { sendMessage() },
                     )
 
@@ -303,17 +296,6 @@ fun ChatInput(
                                 onlyIcon = true,
                                 modifier = Modifier,
                             )
-
-                            // Reasoning
-                            if (chatModel?.abilities?.contains(ModelAbility.REASONING) == true) {
-                                ReasoningButton(
-                                    reasoningLevel = assistant.reasoningLevel,
-                                    onUpdateReasoningLevel = {
-                                        onUpdateAssistant(assistant.copy(reasoningLevel = it))
-                                    },
-                                    onlyIcon = true,
-                                )
-                            }
 
                         }
 
@@ -353,6 +335,18 @@ fun ChatInput(
 
                         if (loading) {
                             KeepScreenOn()
+                        }
+
+
+                        // v5.0.16 用户定案：思考程度 UI 与发送/停止 UI 互换位置（防误触）
+                        if (chatModel?.abilities?.contains(ModelAbility.REASONING) == true) {
+                            ReasoningButton(
+                                reasoningLevel = assistant.reasoningLevel,
+                                onUpdateReasoningLevel = {
+                                    onUpdateAssistant(assistant.copy(reasoningLevel = it))
+                                },
+                                onlyIcon = true,
+                            )
                         }
 
                         AnimatedVisibility(
@@ -451,7 +445,6 @@ private fun TextInputRow(
     state: ChatInputState,
     assistant: Assistant,
     completionProviders: List<ChatCompletionProvider>,
-    toolPickerProvider: (suspend () -> ToolMatrixPickerData?)? = null,
     onSendMessage: () -> Unit,
 ) {
     val settings = LocalSettings.current
@@ -496,15 +489,10 @@ private fun TextInputRow(
         var isFocused by remember { mutableStateOf(false) }
         var isFullScreen by remember { mutableStateOf(false) }
         var completionList by remember { mutableStateOf<ChatCompletionList?>(null) }
-        // v4.8.90: /@ 工具矩阵选择器状态（打开时记录触发位置与下钻栈）
-        var toolPicker by remember { mutableStateOf<ToolPickerState?>(null) }
         val receiveContentListener = remember(
             settings.displaySetting.pasteLongTextAsFile, settings.displaySetting.pasteLongTextThreshold
         ) {
             ReceiveContentListener { transferableContent ->
-                // v4.8.144: 文本粘贴自管插入 — 显式把光标落到插入段末尾 (修"粘贴后光标停在
-                // 原位不动"); handled 防剪贴板多表示 (text/plain+text/html) 双插入/双建文件。
-                var handled = false
                 when {
                     transferableContent.hasMediaType(MediaType.Image) -> {
                         transferableContent.consume { item ->
@@ -520,26 +508,15 @@ private fun TextInputRow(
                         }
                     }
 
-                    transferableContent.hasMediaType(MediaType.Text) -> {
+                    settings.displaySetting.pasteLongTextAsFile && transferableContent.hasMediaType(MediaType.Text) -> {
                         transferableContent.consume { item ->
                             val text = item.text?.toString()
-                            if (text.isNullOrEmpty()) {
-                                false
-                            } else if (settings.displaySetting.pasteLongTextAsFile &&
-                                text.length > settings.displaySetting.pasteLongTextThreshold
-                            ) {
-                                if (!handled) {
-                                    handled = true
-                                    val document = filesManager.createChatTextFile(text)
-                                    state.addFiles(listOf(document))
-                                }
-                                true
-                            } else if (handled) {
+                            if (text != null && text.length > settings.displaySetting.pasteLongTextThreshold) {
+                                val document = filesManager.createChatTextFile(text)
+                                state.addFiles(listOf(document))
                                 true
                             } else {
-                                handled = true
-                                state.pasteInsertText(text)
-                                true
+                                false
                             }
                         }
                     }
@@ -549,10 +526,9 @@ private fun TextInputRow(
             }
         }
 
-        LaunchedEffect(completionProviders, toolPickerProvider, isFocused) {
-            if (!isFocused || (completionProviders.isEmpty() && toolPickerProvider == null)) {
+        LaunchedEffect(completionProviders, isFocused) {
+            if (!isFocused || completionProviders.isEmpty()) {
                 completionList = null
-                toolPicker = null
                 return@LaunchedEffect
             }
 
@@ -562,30 +538,6 @@ private fun TextInputRow(
                     selection = state.textContent.selection,
                 )
             }.collectLatest { context ->
-                // ── v4.8.90: `/@` 工具矩阵选择器 ──
-                // 触发：光标恰在 `/@` 之后；与「空格 @」workspace 补全天然分流（@ 前是 '/' 不是边界符）。
-                val slashAt = detectToolMention(context.text, context.cursor)
-                if (slashAt == null || toolPickerProvider == null) {
-                    if (toolPicker != null) toolPicker = null
-                } else {
-                    val opened = toolPicker
-                    if (opened == null || opened.triggerStart != slashAt) {
-                        val data = try {
-                            toolPickerProvider()
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (_: Exception) {
-                            null
-                        }
-                        toolPicker = data?.let { ToolPickerState(it, slashAt) }
-                    }
-                }
-                // 选择器开着时，常规补全让位（视觉互斥，防止两个弹层叠罗汉）
-                if (toolPicker != null) {
-                    completionList = null
-                    return@collectLatest
-                }
-
                 val lists = completionProviders.mapNotNull { provider ->
                     try {
                         provider.complete(context)
@@ -611,38 +563,6 @@ private fun TextInputRow(
                     list.copy(items = mergedItems)
                 }
             }
-        }
-
-        // v4.8.90: /@ 工具矩阵选择器弹层（根区 → 子区 → 工具，可上下滑动）
-        toolPicker?.let { picker ->
-            ToolMatrixPickerPopup(
-                data = picker.data,
-                zoneStack = picker.zoneStack,
-                onPush = { id -> toolPicker = picker.copy(zoneStack = picker.zoneStack + id) },
-                onBack = {
-                    toolPicker = if (picker.zoneStack.isEmpty()) null
-                    else picker.copy(zoneStack = picker.zoneStack.dropLast(1))
-                },
-                onPick = { tool ->
-                    // 收回弹层 + 在输入栏留下 `@工具名 `（模型据此精确调用该工具）
-                    val end = state.textContent.selection.max.coerceAtLeast(picker.triggerStart + 2)
-                    state.applyCompletion(
-                        TextRange(picker.triggerStart, end),
-                        ChatCompletionItem(label = tool.name, insertText = "@${tool.name} "),
-                    )
-                    toolPicker = null
-                },
-                onPickZone = { zone ->
-                    // v4.8.92: 选整个工具区 —— 留下 `@完整路径`，模型据此 invoke_tools 加载/使用该区
-                    val end = state.textContent.selection.max.coerceAtLeast(picker.triggerStart + 2)
-                    state.applyCompletion(
-                        TextRange(picker.triggerStart, end),
-                        ChatCompletionItem(label = zone.id, insertText = "@${zone.id} "),
-                    )
-                    toolPicker = null
-                },
-                onDismiss = { toolPicker = null },
-            )
         }
 
         completionList?.takeIf { it.items.isNotEmpty() }?.let { list ->
@@ -914,36 +834,3 @@ private fun FullScreenEditor(
         }
     }
 }
-
-/**
- * v4.8.144: 文本粘贴自管插入 —— 显式把光标落到插入段末尾。
- * 用户实证"有时候粘贴后光标停在原位不动": 自管插入使选择更新成为本函数的确定性责任,
- * 不再依赖内部接收路径的隐式行为; 语义与平台默认纯文本粘贴一致 (单次, 纯文本)。
- */
-private fun ChatInputState.pasteInsertText(text: String) {
-    val textLength = textContent.text.length
-    textContent.edit {
-        val start = selection.min.coerceIn(0, textLength)
-        val end = selection.max.coerceIn(start, textLength)
-        replace(start, end, text)
-        selection = TextRange(start + text.length)
-    }
-}
-
-/**
- * v4.8.90: `/@` 触发检测 —— 光标恰在 `/@` 两个字符之后。
- * 与 WorkspaceCompletionProvider 的「空格 @」互不冲突：那边要求 @ 前是边界符
- * （空格/括号/引号），这里的 @ 前是 '/'，两边各走各的。
- */
-private fun detectToolMention(text: String, cursor: Int): Int? {
-    if (cursor < 2 || cursor > text.length) return null
-    if (text[cursor - 1] != '@' || text[cursor - 2] != '/') return null
-    return cursor - 2
-}
-
-/** v4.8.90: /@ 选择器会话状态（数据 + 触发位置 + 下钻栈） */
-private data class ToolPickerState(
-    val data: ToolMatrixPickerData,
-    val triggerStart: Int,
-    val zoneStack: List<String> = emptyList(),
-)

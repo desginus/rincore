@@ -33,6 +33,10 @@ data class Assistant(
     val useGlobalMemory: Boolean = false, // 使用全局共享记忆而非助手隔离记忆
     // v4.8.92: 单对话记忆模式 — 开启后新记忆只挂载到当前对话（仅在该对话内可见，随对话删除）
     val conversationScopedMemory: Boolean = false,
+    // v5.0.16（用户定案）：做梦（记忆整理）独立开关 + 范围。
+    // 范围：0=整个助手 / 1=项目包内 / 2=当前对话
+    val memoryDreamEnabled: Boolean = true,
+    val memoryDreamScope: Int = 0,
     val enableRecentChatsReference: Boolean = false,
     val messageTemplate: String = "{{ message }}",
     val presetMessages: List<UIMessage> = emptyList(),

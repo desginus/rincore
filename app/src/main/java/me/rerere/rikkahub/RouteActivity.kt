@@ -559,7 +559,8 @@ class RouteActivity : ComponentActivity() {
                                 metadata = NavDisplay.transitionSpec { fadeIn() togetherWith fadeOut() }
                                     + NavDisplay.popTransitionSpec { fadeIn() togetherWith fadeOut() }
                             ) { key ->
-                                ChatPage(
+                                // v5.0.16: 外挂宿主（原版 ChatPage 逐字 + 我方功能浮层）
+                                me.rerere.rikkahub.ui.pages.chat.ChatPageHost(
                                     id = Uuid.parse(key.id),
                                     text = key.text,
                                     files = key.files.map { it.toUri() },
