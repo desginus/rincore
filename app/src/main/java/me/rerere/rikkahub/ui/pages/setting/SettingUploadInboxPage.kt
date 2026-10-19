@@ -86,7 +86,7 @@ fun SettingUploadInboxPage(onBack: () -> Unit) {
     // v4.8.186: 引用面扫描 — 设置快照 (头像/背景, 同步部分) + 消息附件 (DB 子串查)。
     // 异步执行 (消息查询走 message_node), 加载完成前不显示标注, 完成后自动重组。
     // v5.0.4 (P8): 可空 = 扫描未完成（避免加载期把所有文件当"未引用"批量误删）
-    val usages by produceState<Map<Long, List<String>>?>(initialValue = null, files, settings) {
+    val usages by produceState<Map<Long, List<UsageLabel>>?>(initialValue = null, files, settings) {
         value = withContext(Dispatchers.IO) {
             files.associate { f -> f.id to uploadUsageLabels(f, settings, conversationRepo) }
         }
