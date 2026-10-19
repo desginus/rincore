@@ -5,6 +5,19 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 
 # RinCore Bug 记录（全部历史）
 
+## B200 长思考必被客户端判死（v5.0.12 修复）
+- **现象（用户实证）**：对话建立后模型长思考 3~4 分钟必被中断并静默重试；极端场景反复截断导致模型输出退化成碎片（上轮对话整轮报废）。
+- **根因（上游对照实锤）**：上游 3.0.0 无 watchdog / readTimeout 10min / onClosed 无正文不判中断；我方移植链 = 看门狗 first-event 150s + readTimeout 3min，思考链被网关缓冲或中途静默即判死，18 次静默重试每次从头再付整段思考。
+- **修复**：readTimeout 3→10min（上游同值）/ first-event 480s / 新增 thinking 阶段（思考 delta 出现过且无正文→480s）/ DataTimeout 独立 1 次重试小预算链 / 正文流断流 150s+18 次链不变。
+- **教训（#130-131）**：①判死类修复的终极对照面=上游行为——"原版是对的"是可执行的定位工具（对账清单：watchdog/超时/关流判定三面）；②$常量 插值后邻 CJK 字符会被 Kotlin 并入同一标识符（${} 显式界定）。
+
+## B199 R8 类键改写 Koin 定义→启动即崩（v5.0.8/4.8.190 修复，补录）
+- **现象（用户实证）**：5.x 各版打开即崩（Koin NoDefinitionFound: androidx.room.Room——真名被 R8 遮蔽）。
+- **根因**：反向换底带入上游 optimization{enable=true}=本项目首次全量 R8+零 keep 规则；Koin 以 KClass 为键的定义/查找被 R8 类合并改写（androguard 解剖 DEX 实锤：MemoryRepository 查找被改写为 Room）。
+- **修复**：release 关 R8（isMinifyEnabled=false）；另发现 RepositoryModule 三注册并进同一 single{} 块=只有最后表达式被注册（MemoryRepository/TranslationHistoryRepository 从未注册）——拆成独立块（v5.0.10）。
+- **教训**：①"编译干净但运行断"第八类=构建优化期改写（凡 Koin KClass 键/反射/序列化身份，R8 是独立嫌疑维度）；②APK 体量骤降=R8 首启信号；③Koin「块内多构造器」=静默丢注册形态（看到构造调用≠已注册）。
+
+
 ## B198 收件箱只读 + classic 每轮重解析 + 备份缺件（v5.0.4/v5.0.5 修复）
 - **现象（静态审计/用户长期体感）**：收件箱只读（无删除/导出）；classic 模式长对话越用越慢（每轮都重解析历史 PDF）；备份恢复后消息图片全断（chat-media 不在备份目录集）。
 - **根因**：①收件箱页只有列表；②`DocumentAsPromptTransformer.transformClassic` 对**全部消息**逐轮重跑解析（无缓存）；③`BackupManager` 收集面/校验面各写各的目录 listOf，缺 MEDIA_CREATION 与 chat-media。
