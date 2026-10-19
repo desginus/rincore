@@ -168,27 +168,26 @@ jobs:
           name: rincore-release
           path: apk
 
-      - name: Compute version
+      - name: Compute version and notes path
         id: ver
         run: |
           VN=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
           echo "VN=$VN" >> "$GITHUB_ENV"
+          # 发布说明优先取仓库内 docs/RELEASE-NOTES.md（rc release 生成），否则现场合成
           if [ -s docs/RELEASE-NOTES.md ]; then
             echo "BODY_FILE=docs/RELEASE-NOTES.md" >> "$GITHUB_ENV"
+          else
+            {
+              echo "## RinCore v$VN"
+              echo ""
+              echo "### 本次提交"
+              git log --oneline -8 | sed 's/^/- /'
+              echo ""
+              echo "> 自动构建发布 · APK 见下方 Assets"
+            } > "$RUNNER_TEMP/release-notes.md"
+            echo "BODY_FILE=$RUNNER_TEMP/release-notes.md" >> "$GITHUB_ENV"
           fi
-
-      - name: Compose fallback notes
-        if: env.BODY_FILE == ''
-        run: |
-          {
-            echo "## RinCore v${{ env.VN }}"
-            echo ""
-            echo "### 本次提交"
-            git log --oneline -8 | sed 's/^/- /'
-            echo ""
-            echo "> 自动构建发布 · APK 见下方 Assets"
-          } > "$RUNNER_TEMP/release-notes.md"
-          echo "BODY_FILE=$RUNNER_TEMP/release-notes.md" >> "$GITHUB_ENV"
+          echo "notes=$([ -s docs/RELEASE-NOTES.md ] && echo repo || echo generated)"
 
       - name: Publish Release (正式版)
         uses: softprops/action-gh-release@v2
