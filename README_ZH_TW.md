@@ -1,100 +1,96 @@
 <div align="center">
-  <h1>RinCore</h1>
+  <img src="docs/icon.png" alt="App 圖標" width="100" />
+  <h1>RikkaHub</h1>
 
-[![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=構建&logo=github)](https://github.com/desginus/rincore/actions)
-[![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/版本-v5.0.5-blue)](https://github.com/desginus/rincore/releases)
-[![License](https://img.shields.io/badge/許可-segmented_dual-cyan)](LICENSE)
+一個原生Android LLM 聊天客戶端，支持切換不同的供應商進行聊天 🤖💬
 
-**手機上一個真正全面的 AI 助手。** 不是套殼，是一台重新打造過的引擎——背後是六週的高強度實測迭代與 400+ 個版本。
+點擊加入我們的Discord伺服器 👉 [【RikkaHub】](https://discord.gg/9weBqxe5c4)
 
-RinCore 是 [RikkaHub](https://github.com/re-ovo/rikkahub) 的獨立分支持續維護。它繼承了 Rika 系一貫的基因（原生 Android、Material You、多 Provider），然後把底層的引擎重新做了一遍——更便宜、更穩定、更可控，並注入設備級的 Agent 能力。
+[English](README.md) | 繁體中文 | [简体中文](README_ZH_CN.md)
 
-> **真機實測：** 400+ 工具載入、疊加超長角色預設上下文，冷啟動只需約 10K token。（全量注入時代是 70K~100K+。）
+</div>
 
-[English](README.md) | [简体中文](README_ZH_CN.md) | 繁體中文
-
+<div align="center">
+  <img src="docs/img/poster.png" alt="RikkaHub" width="800" />
 </div>
 
 ## 🚀 下載
 
-RinCore 每次推送都會建置。兩種方式取得最新 APK：
+🔗 [前往官網下載](https://rikka-ai.com/download)（推薦）
 
-1. **GitHub Releases（推薦）** —— `nightly` 預發佈版每晚重新發佈，始終指向最新建置：<https://github.com/desginus/rincore/releases>
-2. **GitHub Actions 產物** —— 每次 CI 通過都會產出即時 APK，打開最新執行、展開 `rincore-release` 即可下載：<https://github.com/desginus/rincore/actions>
+🔗 [前往 Google Play 下載](https://play.google.com/store/apps/details?id=me.rerere.rikkahub)
 
-下載後直接安裝，無需任何商店。
+> [!WARNING]
+> RikkaHub 存在許多 fork 版本，fork 版本出現問題與 RikkaHub 無關，請謹慎使用 fork 版本，避免隱私洩露或者過度索要權限問題。
 
-## 🔁 更新節奏：快，且每一步都是真的
+## 💖 贊助商
 
-RinCore 的更新是持續的，每個版本號都承載了實打實的改進：
+| 贊助商 | 介紹 |
+|:---:|:---|
+| <img src="docs/sponsors/aihubmix.png" alt="Aihubmix" width="50" /><br /><b>Aihubmix</b> | 感謝 <a href="https://aihubmix.com?aff=pG7r">aihubmix.com</a> 的資金支持。我們推薦使用 aihubmix 作為全球主流模型的一站式服務平台。（OpenAI、Claude、Google Gemini、DeepSeek、Qwen 以及數百種其他模型）。 |
+| <img src="docs/sponsors/api-mart.png" alt="APIMart" width="50" /><br /><b><a href="https://go.apimart.ai/gh-rikkahub">APIMart</a></b> | 感謝 APIMart 贊助了本專案！APIMart 是專注 AI 圖片/影片生成的低價 API 平台，GPT-Image-2 低至 $0.006/張，1 美元可出圖 160+ 張。圖片、影片一套非同步 API 通吃，提交任務拿 ID、回呼取結果，批次生成萬張不逾時、換模型不改程式碼。按量付費、無月費，透過<a href="https://go.apimart.ai/gh-rikkahub">此註冊連結</a>註冊即可開始使用。 |
+| <img src="docs/sponsors/suixiang.jpg" alt="隨想AI網關" width="50" /><br /><b>隨想AI網關</b> | 感謝隨想AI網關對本項目的贊助！隨想AI網關 是一家可靠高效的 API 中繼服務提供商，提供 Claude、Codex、Gemini 等的中繼服務。注重隱私的中轉站·無數據倒賣·無模型摻水，隱私，透明，極速售後。新帳戶註冊每日簽到就送 0.5 元測試額度，儲值額度 1:1，無需訂閱，按量付費。多線路冗餘、跨區域容災、自動故障切換，長鏈路 SSE 不中斷。99.9% 可用性，關鍵呼叫從不掉隊。 |
+| <img src="docs/sponsors/maru.png" alt="MaruCode" width="50" /><br /><b><a href="https://api.muteki.site/register?aff=Rikkahub&promo=Rikkahub">MaruCode</a></b> | <b><a href="https://api.muteki.site/register?aff=Rikkahub&promo=Rikkahub">MaruCode</a></b> 是一家偶爾做做慈善的小破站 API，自營號池，主要提供 Codex、Claude Code、GPT Image 等主流模型，支援 Websocket 協定，明碼標價(Codex 0.25x, CC 1.5x)，透明匯率(1:1)，<a href="https://api.muteki.site/register?aff=Rikkahub&promo=Rikkahub">新用戶註冊送 2 刀</a>。<a href="https://images-2.muteki.site">生图工作台🖼️</a> |
 
-- 專案歷史約 **6 週**（2026 年 7 月起），累計 **400+ 個版本發佈**，近 30 天 **540+ 次提交**。
-- 每個版本都是真實的一步：每一個設計與修改都來自**日常使用的實測**——用著不舒服就記錄，量出問題就改，改完就發版。
-- 更新日誌公開可查，沒有空轉版本號、沒有為發而發。
+## ✨ 功能特色
 
-## 📋 更新日誌（近期）
+- 🎨 現代化安卓APP設計（Material 3 Expressive / 預測性返回）和 🌙 暗色模式
+- 📦 工作區：基於 proot 的 Linux 智能體環境
+- 🎬 媒體生成（圖片、影片）
+- 🖥️ Web多端訪問支持
+- 🛠️ MCP 與 Skills 支持
+- 🔄 多種類型的供應商支持，自定義 API / URL / 模型（目前支持 OpenAI、Google、Anthropic）
+- 🖼️ 多模態輸入支持
+- 📝 Markdown 渲染（支持代碼高亮、數學公式、表格、Mermaid）
+- 🔍 搜尋功能（Exa、Tavily、Zhipu、LinkUp、Brave、Perplexity、..）
+- 🧩 Prompt 變量（模型名稱、時間等）
+- 🤳 二維碼導出和導入提供商
+- 🤖 智能體自定義
+- 🧠 基於檔案的記憶
+- 📝 AI翻譯
+- 🌐 自定義HTTP請求頭和請求體
 
-**v5.0.5** — 文件管線收尾：classic 上傳模式新增文件解析快取（`(路徑,mtime,size)` LRU-4）；單檔超過約 12 萬字元自動降級為路徑引用。P6 評估後關閉（同對話變換具確定性=前綴逐位元組穩定）。
-**v5.0.4** — 待辦清尾：QwenTTS 死欄位/死 UI 移除；rin-tools 共享單副本+硬連結注入（34MB×N→34MB×1）；收件箱逐檔 [分享/刪除] + 「清理未引用」；文件解析鏈分工入檔；parity 帳本終態。
-- **v5.0.3** — 收尾清理：刪 3 個死導航目標與 VideoGen 全鏈（已由上游媒體創作模組取代）；CODE_INDEX 51 條佔位全量補寫；module-map 補 5.0.0 現狀頭。
-- **v5.0.2** — 備份完整性：chat-media / media_creation 納入備份與還原；移植上游內建技能機制（skill-creator 解壓+併庫+/builtin_skills 掛載）。
-- **v5.0.1** — 執行期接線補齊：7 項缺失 Koin 註冊 + 2 個通知通道 + 2 條啟動恢復鏈 + 記憶整理掛到對話管線 + 抽屜「整理中」指示器。
-- **v5.0.0** — 反向換底到上游 3.0.0 + 全功能回植（詳見英文版完整更新日誌）。
+## ✨ 開發
 
-## 🏗️ 這是一次重建，不是加功能
+> [!IMPORTANT]
+> 本項目不接受 Pull Request（PR）。
 
-RinCore 不是「RikkaHub 加了些功能」。核心是被日常使用推著重做出來的：
+本項目使用[Android Studio](https://developer.android.com/studio)開發。
 
-- **單一信源（SSOT）** —— UI、域名列表、工具注入、Prompt 全部派生自同一個設定源，任何視圖只讀同一份資料，逐層漂移在機制上不可能發生。
-- **網路與快取，按失敗資料重寫** —— SSE 斷流指數退避重試、掛起看門狗、純 HTTP/1.1 傳輸（弱網失敗的真根因）、TCP+TLS 連線預熱壓首字延遲、斷流續傳、快取指紋診斷（精確告訴你 DeepSeek 前綴快取在哪一環斷了）。中斷與靜默被殺，全部從根上修。
-- **壓縮機制重做** —— 不再按固定條數截斷。保留邊界按對話輪 + token 數（60%）定位、四捨五入到最近的整輪；絕不壓縮你剛發出的內容，且按下壓縮必然真正壓縮到東西。
-- **成本從設計上降低** —— 工具區分層使冷啟動從 100K+ 降到約 10K，請求前綴保持穩定，Provider 的 Prompt 快取持續命中。
+技術棧文檔:
 
-## ✨ 為什麼選 RinCore —— 引擎級的差異
-
-- **工具矩陣分層管理（成本殺手）** —— 400+ 工具按**工具區**歸類，經 `invoke_tools` 按需載入，不再把全部工具塞進每個請求。工具矩陣全程可視化：新建/刪除工具區、調整工具歸屬、按區計數、一致性自校驗。
-- **完整 MCP，含 STDIO** —— HTTP / Streamable HTTP / SSE / **STDIO** 全支援。STDIO 伺服器在沙箱工作區以程序方式啟動（設備端無需 Python）；工具宣告靜態化，連線波動不影響請求前綴與快取；OAuth 令牌透明刷新。
-- **外掛與技能** —— `ecosystem/plugins` 即裝即卸；技能以一級工具存在（`skill__名稱`）。請求頂層只放行批准的框架工具與使用者豁免工具，其餘一律藏在 `invoke_tools` 之內。
-- **手機 Agent，劃好安全線** —— 值得搬的 Agent 能力幾乎全部移植並在設備端執行：proot Linux 工作區、檔案管理（批次/歸檔/讀寫/下載）、瀏覽器、媒體播放、鬧鐘、行事曆、電量、真實定位 + 地圖、剪貼簿、TTS、通知、螢幕常亮、定時任務、互動式串流輸出、需要時向你確認。**高風險行為——替你操作螢幕（點擊/滑動）——明確不做**。Agent 處理的是你的資料與檔案，不是你的螢幕。
-- **OpenCode / OpenCode Zen 專項適配** —— 看門狗、無 `[DONE]` 串流完成判定、模型定義、推理模式對齊，上游打不順的這裡能跑。
-- **容量隨時可見** —— 用量面板：多金鑰卡片、即時餘額、剩餘時間倒數、精確重置時段，額度心裡有數。同時提供便捷的容量查詢入口。
-- **一個軟體，多份工作** —— 常規設定之後，圖片生成、工作區資料分析、文件生成與匯出、學習助手模式，與核心聊天體驗一起扛。
-- **一整打體驗級修復** —— 延遲自動回覆（訊息先排隊，模型不會打斷你輸入）、訊息多版本編輯、記憶 ID 時間戳化、時間感知排程、液態玻璃輸入、可重現崩潰日誌，等等。
-
-## 🎨 能力傳承
-
-**繼承自原版 RikkaHub（保留且可用）：**
-
-Material You + 深色模式 · 多 Provider（自訂 API/位址/模型，OpenAI/Anthropic/Google 相容）· 多模態輸入（圖片/文字/PDF/DOCX）· proot Linux 工作區 · Web 多端 · MCP · Markdown（程式碼高亮/LaTeX/表格/Mermaid）· 訊息分支 · 多引擎搜尋（Exa/Tavily/Zhipu/LinkUp/Brave/Perplexity 等）· Prompt 變數 · 設定 QR Code 匯入匯出 · 助手客製 · 類 ChatGPT 記憶 · AI 翻譯 · 自訂請求頭與請求體 · Silly Tavern 角色卡匯入。
-
-**自 Agent 系移植（設備端執行，去掉高風險項）：**
-
-設備工具——鬧鐘、行事曆、電量、定位與地圖、媒體播放與掃描、通知、剪貼簿、TTS、螢幕常亮、系統意圖 · 檔案管理（批次與歸檔）· 定時任務 · 內建瀏覽器/網頁抓取 · 跨對話讀取 · 時間戳記憶 · 互動式串流工具輸出。
-
-*（替你點擊/滑動螢幕的螢幕控制，是我們不越的那條線。）*
-
-## 🛠️ 建置
-
-使用 [Android Studio](https://developer.android.com/studio) 開發。
-
-技術棧： [Kotlin](https://kotlinlang.org/) · [Jetpack Compose](https://developer.android.com/jetpack/compose) · [Koin](https://insert-koin.io/) · [DataStore](https://developer.android.com/topic/libraries/architecture/datastore) · [Room](https://developer.android.com/training/data-storage/room) · [Coil](https://coil-kt.github.io/coil/) · [Material You](https://m3.material.io/) · [OkHttp](https://square.github.io/okhttp/) · [kotlinx.serialization](https://github.com/Kotlin/kotlinx.serialization)
+- [Kotlin](https://kotlinlang.org/) (開發語言)
+- [Koin](https://insert-koin.io/) (依賴注入)
+- [Jetpack Compose](https://developer.android.com/jetpack/compose) (UI 框架)
+- [DataStore](https://developer.android.com/topic/libraries/architecture/datastore?hl=zh-cn#preferences-datastore) (
+  偏好數據存儲)
+- [Room](https://developer.android.com/training/data-storage/room) (數據庫)
+- [Coil](https://coil-kt.github.io/coil/) (圖片加載)
+- [Material 3 Expressive](https://m3.material.io/) (UI 設計)
+- [Navigation 3](https://developer.android.com/guide/navigation/navigation-3) (導航)
+- [Okhttp](https://square.github.io/okhttp/) (HTTP 客戶端)
+- [kotlinx.serialization](https://github.com/Kotlin/kotlinx.serialization) (Json序列化)
 
 > [!TIP]
-> 本地建置需要 `app` 目錄下存在 `google-services.json`。
+> 你需要在 `app` 資料夾下添加 `google-services.json` 檔案才能構建應用。
 
-## 🔧 維護與支援
+## 💰 捐贈
 
-RinCore 處於活躍維護中，歡迎 Issue 與 PR。每一個被報告的問題都會進入更新日誌並轉化為回歸防線。優化與適配持續進行。
+* [Ko-fi](https://ko-fi.com/reovodev)
+* [愛發電](https://afdian.com/a/reovo)
 
-## 🤝 致謝
+## ⭐ Star History
 
-- 基於 [RikkaHub](https://github.com/re-ovo/rikkahub)（作者 re-ovo 及貢獻者）二次開發，感謝 Rika 系客戶端為這個專案打下的基礎。
-- 如果你喜歡這類產品但想要其他呈現方式，這些同樣是非常優秀的軟體：
-  - **RikkaHub**（原版）—— 同類型客戶端
-  - **RikkaHub Agent** —— Agent 能力強化版
-  - **Orange Chat** —— AI 伴侶向優化版
+如果喜歡這個項目，請給個Star ⭐
 
-## 📄 許可
+<a href="https://www.star-history.com/?type=date&repos=re-ovo%2Frikkahub">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=re-ovo/rikkahub&type=date&theme=dark&legend=top-left&sealed_token=qSytWeq7LkzQQViTjK0MYlvvA_qkfuwjOxOqgbRpLUZZwok5rO6LXhpVL7Mq-q3o89BfKpzE7g66BCy18H6eiqTsD8czD0J-HejLqmHy-npcvCTHu11wZw" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=re-ovo/rikkahub&type=date&legend=top-left&sealed_token=qSytWeq7LkzQQViTjK0MYlvvA_qkfuwjOxOqgbRpLUZZwok5rO6LXhpVL7Mq-q3o89BfKpzE7g66BCy18H6eiqTsD8czD0J-HejLqmHy-npcvCTHu11wZw" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=re-ovo/rikkahub&type=date&legend=top-left&sealed_token=qSytWeq7LkzQQViTjK0MYlvvA_qkfuwjOxOqgbRpLUZZwok5rO6LXhpVL7Mq-q3o89BfKpzE7g66BCy18H6eiqTsD8czD0J-HejLqmHy-npcvCTHu11wZw" />
+ </picture>
+</a>
 
-[許可協議](LICENSE)
+## 📄 許可證
+
+本項目基於 [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0) 開源。

@@ -1,10 +1,5 @@
-/* 【域 A·对话核心】 — 页面 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.pages.extensions.skills
 
-
-/* ───【原版对齐】SkillsVM.kt | 差异 ±41 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
@@ -20,17 +15,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.files.FileUtils
-import me.rerere.rikkahub.data.files.SkillFrontmatterParser
-import me.rerere.rikkahub.data.files.SkillManager
-import me.rerere.rikkahub.data.files.SkillMetadata
-import me.rerere.rikkahub.data.datastore.getCurrentAssistant
-import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.skills.SkillFrontmatterParser
+import me.rerere.rikkahub.data.skills.SkillManager
+import me.rerere.rikkahub.data.skills.SkillMetadata
 import org.json.JSONArray
 import kotlin.collections.iterator
 
 class SkillsVM(
     private val skillManager: SkillManager,
-    private val settingsStore: me.rerere.rikkahub.data.datastore.SettingsStore,
 ) : ViewModel() {
     private val _skills = MutableStateFlow<List<SkillMetadata>>(emptyList())
     val skills = _skills.asStateFlow()
@@ -45,72 +37,9 @@ class SkillsVM(
         }
     }
 
-    fun isSkillEnabled(skillName: String): Boolean {
-        val settings = settingsStore.settingsFlow.value
-        val assistant = settings.getCurrentAssistant()
-        return skillName in assistant.enabledSkills
-    }
-
-    /** v3.6.105: 对话开始时强制启动开关 */
-    fun toggleForcedSkill(skillName: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val settings = settingsStore.settingsFlow.value
-            val assistant = settings.getCurrentAssistant()
-            val newForced = if (skillName in assistant.forcedSkills) {
-                assistant.forcedSkills - skillName
-            } else {
-                assistant.forcedSkills + skillName
-            }
-            val updatedAssistant = assistant.copy(forcedSkills = newForced)
-            val updatedSettings = settings.copy(
-                assistants = settings.assistants.map { a ->
-                    if (a.id == updatedAssistant.id) updatedAssistant else a
-                }
-            )
-            settingsStore.update(updatedSettings)
-        }
-    }
-
-    /** v3.6.105: 是否强制启动 */
-    fun isSkillForced(skillName: String): Boolean {
-        return skillName in settingsStore.settingsFlow.value.getCurrentAssistant().forcedSkills
-    }
-
-    fun toggleSkill(skillName: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val settings = settingsStore.settingsFlow.value
-            val assistant = settings.getCurrentAssistant()
-            val newEnabled = if (skillName in assistant.enabledSkills) {
-                assistant.enabledSkills - skillName
-            } else {
-                assistant.enabledSkills + skillName
-            }
-            val updatedAssistant = assistant.copy(enabledSkills = newEnabled)
-            val updatedSettings = settings.copy(
-                assistants = settings.assistants.map { assistant ->
-                    if (assistant.id == updatedAssistant.id) updatedAssistant else assistant
-                }
-            )
-            settingsStore.update(updatedSettings)
-        }
-    }
-
     fun saveSkill(name: String, content: String, onResult: (Boolean) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             val result = skillManager.saveSkill(name, content)
-            if (result != null) {
-                // 新增 Skill 默认开启 — 加入当前默认助手 enabledSkills (激活路径对齐)
-                val settings = settingsStore.settingsFlow.value
-                val current = settings.getCurrentAssistant()
-                if (name !in current.enabledSkills) {
-                    settingsStore.update { old ->
-                        old.copy(assistants = old.assistants.map { a ->
-                            if (a.id != current.id) a
-                            else a.copy(enabledSkills = a.enabledSkills + name)
-                        })
-                    }
-                }
-            }
             _skills.value = skillManager.listSkills()
             withContext(Dispatchers.Main) {
                 onResult(result != null)
@@ -122,15 +51,6 @@ class SkillsVM(
         viewModelScope.launch(Dispatchers.IO) {
             skillManager.deleteSkill(name)
             _skills.value = skillManager.listSkills()
-        }
-    }
-
-    /** v4.8.81: 一键清空 — 删除全部自建技能 (只读源保留), 回调删除数。 */
-    fun deleteAllSkills(onDone: (Int) -> Unit) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val count = skillManager.deleteAllSkills()
-            _skills.value = skillManager.listSkills()
-            withContext(Dispatchers.Main) { onDone(count) }
         }
     }
 
@@ -184,21 +104,22 @@ class SkillsVM(
                     return@launch
                 }
 
-                val skillMdContent = downloadText(skillMdEntry.second) ?: run {
+                val skillMdBytes = downloadBytes(skillMdEntry.second) ?: run {
                     withContext(Dispatchers.Main) { onResult(false, "下载 SKILL.md 失败，请检查链接或网络") }
                     return@launch
                 }
 
-                val frontmatter = SkillFrontmatterParser.parse(skillMdContent)
+                val frontmatter = SkillFrontmatterParser.parse(skillMdBytes.toString(Charsets.UTF_8))
                 val name = frontmatter["name"]
                 if (name.isNullOrBlank()) {
                     withContext(Dispatchers.Main) { onResult(false, "SKILL.md 格式错误：缺少 name 字段") }
                     return@launch
                 }
 
-                val fileContents = LinkedHashMap<String, String>()
+                // 按字节下载保存，避免图片等二进制附属文件被当作 UTF-8 文本解码而损坏
+                val fileContents = LinkedHashMap<String, ByteArray>()
                 for ((relativePath, downloadUrl) in files) {
-                    val content = downloadText(downloadUrl)
+                    val content = if (relativePath == "SKILL.md") skillMdBytes else downloadBytes(downloadUrl)
                     if (content == null) {
                         withContext(Dispatchers.Main) { onResult(false, "下载文件失败：$relativePath") }
                         return@launch
@@ -206,7 +127,7 @@ class SkillsVM(
                     fileContents[relativePath] = content
                 }
 
-                val saved = skillManager.saveSkillFilesAtomically(name, fileContents)
+                val saved = skillManager.saveSkillFileBytesAtomically(name, fileContents)
                 if (!saved) {
                     withContext(Dispatchers.Main) { onResult(false, "保存失败") }
                     return@launch
@@ -346,7 +267,7 @@ class SkillsVM(
         result: MutableList<Pair<String, String>>,
     ): Boolean {
         val apiUrl = "https://api.github.com/repos/$owner/$repo/contents/$dirPath?ref=$branch"
-        val json = downloadText(apiUrl) ?: return false
+        val json = downloadBytes(apiUrl)?.toString(Charsets.UTF_8) ?: return false
         val array = JSONArray(json)
         for (i in 0 until array.length()) {
             val item = array.getJSONObject(i)
@@ -390,14 +311,18 @@ class SkillsVM(
         return GitHubRepoInfo(owner, repo, branch, subPath)
     }
 
-    private fun downloadText(url: String): String? {
+    private fun downloadBytes(url: String): ByteArray? {
         val connection = URL(url).openConnection() as HttpURLConnection
         connection.connectTimeout = 10_000
         connection.readTimeout = 30_000
         connection.setRequestProperty("Accept", "application/vnd.github+json")
         return try {
-            if (connection.responseCode == 200) connection.inputStream.bufferedReader().readText()
-            else null
+            val code = connection.responseCode
+            // 未登录的 GitHub API 每小时仅 60 次，超限时给出明确提示而不是笼统的"读取失败"
+            if ((code == 403 || code == 429) && connection.getHeaderField("X-RateLimit-Remaining") == "0") {
+                error("GitHub API 请求次数已达上限，请稍后再试")
+            }
+            if (code == 200) connection.inputStream.use { it.readBytes() } else null
         } finally {
             connection.disconnect()
         }

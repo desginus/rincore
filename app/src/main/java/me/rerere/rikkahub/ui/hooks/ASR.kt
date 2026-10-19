@@ -1,9 +1,4 @@
-/* 【域 L·基础设施】 — UI 基础 | 地图: docs/APP_MAP.md §L */
 package me.rerere.rikkahub.ui.hooks
-
-/* ───【原版对齐】ASR.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 import android.content.Context
 import android.media.AudioAttributes
@@ -11,6 +6,7 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -28,7 +24,6 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
 import okhttp3.OkHttpClient
 import org.koin.compose.koinInject
-import androidx.compose.runtime.getValue
 
 @Composable
 fun rememberCustomAsrState(): CustomAsrState {

@@ -1,9 +1,4 @@
-/* 【域 B·AI 传输】 | 地图: docs/APP_MAP.md §B */
 package me.rerere.rikkahub.data.ai.prompts
-
-/* ───【原版对齐】Suggestion.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 internal val DEFAULT_SUGGESTION_PROMPT = """
     I will provide you with some chat content in the `<content>` block, including conversations between the User and the AI assistant.

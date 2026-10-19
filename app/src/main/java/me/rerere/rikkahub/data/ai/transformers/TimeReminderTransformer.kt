@@ -1,28 +1,12 @@
-/**
- * 时间提醒转换器 — 模块: A. 传输链 / transformers
- *
- * 职责: 按消息固定时间戳注入当前时间 (缓存友好 — 不引入动态前缀)。
- * 注入策略: 基于消息时间戳, 保证 system 前缀稳定 → 缓存命中不被打断。
- *
- * 问题定位: 缓存断层与时间注入相关 → 查本文件注入位置与时戳取值
- */
-/* 【域 B·AI 传输】 | 地图: docs/APP_MAP.md §B */
 package me.rerere.rikkahub.data.ai.transformers
 
-
-/* ───【原版对齐】TimeReminderTransformer.kt | 差异 ±25 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
-import kotlinx.datetime.toLocalDateTime
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.utils.toLocalDateTime
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.time.format.FormatStyle
 import java.time.format.TextStyle
 import java.util.Locale
 import kotlin.time.toJavaInstant
@@ -47,95 +31,45 @@ internal fun applyTimeReminder(
     intervalMinutes: Int = 60,
 ): List<UIMessage> {
     val thresholdSeconds = intervalMinutes.coerceAtLeast(1).toLong() * 60
-    // v3.6.63: 幂等 — 已注入过时间提醒则直接返回, 不再重复插入。
-    // 根因: 工具循环每个 step 都重新执行本转换器, 之前每次对第一条 USER 重新插
-    // <time_reminder> USER 消息 → windowStart 每轮后移 2 → history 每轮 +2
-    // → 降维压缩包每轮增量追加 → 缓存断在压缩包 (16.9K 后停)。
-    // v3.10.13: 合并模式 (根治 Console Go 400) — 之前插入独立 <time_reminder>
-    // USER 消息 → 消息序列出现连续 user → Anthropic 角色交替硬校验 →
-    // invalid params 400 (2013)。reminder 文本合并进目标 USER 消息文本开头,
-    // 消息数量/角色序列不变; 原版无此 transformer 故从未触发。
-    // v3.11.24: 幂等检查收窄 — 旧条件 toText().contains() 会被"消息体引用/粘贴了
-    // <time_reminder> 字样"误命中而整体跳过注入。合并模式下提醒文本恒在被合并
-    // Text part 开头, 前缀匹配已覆盖全部注入形态, 且不受消息内容误干扰。
-    val hasReminder = messages.any { msg ->
-        msg.role == MessageRole.USER && msg.parts.any {
-            it is me.rerere.ai.ui.UIMessagePart.Text && it.text.startsWith("<time_reminder>")
-        }
-    }
-    if (hasReminder) return messages
     val result = mutableListOf<UIMessage>()
-    // v4.8.91 (用户定版): 模型看到的时间恒为东八区 — 不随设备时区漂移
-    val tz = TimeZone.of("Asia/Shanghai")
+    val tz = TimeZone.currentSystemDefault()
 
     var firstUserFound = false
     for (i in messages.indices) {
         val current = messages[i]
         if (current.role == MessageRole.USER) {
-            // v3.11.3: 工具结果消息 (含 Tool part) 不合并 reminder —
-            // tool_result 消息混入文本块会被严格网关 (Minimax) 拒收
-            val isToolResultMessage = current.parts.any { it is me.rerere.ai.ui.UIMessagePart.Tool }
-            if (isToolResultMessage) {
-                result.add(current)
-                continue
-            }
             val currInstant = current.createdAt.toInstant(tz)
             if (!firstUserFound) {
                 firstUserFound = true
-                result.add(mergeTimeReminder(current, null, currInstant))
+                result.add(buildTimeReminderMessage(null, currInstant))
             } else {
                 val previous = messages[i - 1]
                 val prevInstant = previous.createdAt.toInstant(tz)
                 val gapSeconds = (currInstant - prevInstant).inWholeSeconds
 
                 if (gapSeconds > thresholdSeconds) {
-                    result.add(mergeTimeReminder(current, gapSeconds, currInstant))
-                } else {
-                    result.add(current)
+                    result.add(buildTimeReminderMessage(gapSeconds, currInstant))
                 }
             }
-        } else {
-            result.add(current)
         }
+        result.add(current)
     }
 
     return result
 }
 
-/** v3.10.13: reminder 文本合并进消息第一个 Text part (无 Text part 则前插) */
-private fun mergeTimeReminder(
-    message: UIMessage,
-    gapSeconds: Long?,
-    instant: Instant,
-): UIMessage {
-    val reminder = buildTimeReminderContent(gapSeconds, instant)
-    val parts = message.parts
-    val textIdx = parts.indexOfFirst { it is me.rerere.ai.ui.UIMessagePart.Text }
-    val newParts = if (textIdx >= 0) {
-        val t = parts[textIdx] as me.rerere.ai.ui.UIMessagePart.Text
-        parts.toMutableList().apply { this[textIdx] = t.copy(text = reminder + t.text) }
-    } else {
-        listOf(me.rerere.ai.ui.UIMessagePart.Text(reminder)) + parts
-    }
-    return message.copy(parts = newParts)
-}
-
-private fun buildTimeReminderContent(gapSeconds: Long?, instant: Instant): String {
+private fun buildTimeReminderMessage(gapSeconds: Long?, instant: Instant): UIMessage {
     val javaInstant = instant.toJavaInstant()
-    // v4.8.91: 固定东八区展示（此前 systemDefault — 设备时区漂移时模型会看到非北京时间）
-    val cnZone = ZoneId.of("Asia/Shanghai")
-    val dayOfWeek = javaInstant.atZone(cnZone).dayOfWeek
+    val dayOfWeek = javaInstant.atZone(ZoneId.systemDefault()).dayOfWeek
         .getDisplayName(TextStyle.FULL, Locale.getDefault())
-    val timeStr = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)
-        .withLocale(Locale.getDefault())
-        .withZone(cnZone)
-        .format(javaInstant)
-    return if (gapSeconds != null) {
+    val timeStr = javaInstant.toLocalDateTime()
+    val content = if (gapSeconds != null) {
         val gapText = formatGap(gapSeconds)
         "<time_reminder>Current time: $dayOfWeek, $timeStr ($gapText since last message)</time_reminder>"
     } else {
         "<time_reminder>Current time: $dayOfWeek, $timeStr</time_reminder>"
     }
+    return UIMessage.user(content).copy(isSynthetic = true)
 }
 
 private fun formatGap(seconds: Long): String {

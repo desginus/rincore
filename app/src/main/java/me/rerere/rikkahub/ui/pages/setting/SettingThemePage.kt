@@ -1,23 +1,9 @@
 package me.rerere.rikkahub.ui.pages.setting
 
-
-/* ───【域 F·主题渲染】SettingThemePage.kt
- * 职责: 主题设置页 (预设列表/自定义编辑/HSL 三通道调色 v4.8.18)
- * 常用改动: 新预设注册链 → PresetTheme.kt + strings; 自定义交互 → HslChannelSliders
- * 问题定位: 主题显示异常/自定义色不对 → 本文件 + Theme.kt
- * 基线: 原版移植 + 自研 (色相条/预设) | 地图: docs/APP_MAP.md §F | 历史: .claude/skills/rincore-bug-record
- * ───────────────────────────────────────────────────────────────*/
 import android.content.ClipData
 import androidx.compose.foundation.Canvas
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -55,10 +41,12 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -72,7 +60,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.ColorUtils
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.dokar.sonner.ToastType
+import me.rerere.ui.toast.ToastType
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -80,25 +68,23 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.FileImport
 import me.rerere.hugeicons.stroke.PencilEdit01
-import me.rerere.hugeicons.stroke.Share03
 import me.rerere.hugeicons.stroke.PlusSign
+import me.rerere.hugeicons.stroke.Share03
 import me.rerere.hugeicons.stroke.Tick01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.ItemAction
 import me.rerere.rikkahub.ui.components.ui.ItemActionMenu
-import me.rerere.rikkahub.ui.components.ui.RikkaConfirmDialog
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.pages.setting.components.PresetThemeButtonGroup
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.ui.theme.CustomTheme
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.utils.plus
+import me.rerere.ui.components.RikkaConfirmDialog
 import org.koin.androidx.compose.koinViewModel
 import kotlin.math.roundToInt
 import kotlin.uuid.Uuid
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-import me.rerere.rikkahub.utils.plus
 
 private val themeJson = Json {
     ignoreUnknownKeys = true
@@ -176,7 +162,7 @@ fun SettingThemePage(vm: SettingVM = koinViewModel()) {
                                 themeId = settings.themeId,
                                 modifier = Modifier.fillMaxWidth(),
                                 onChangeTheme = {
-                                    vm.updateSettings(settings.copy(themeId = it))
+                                    vm.updateSettings { latest -> latest.copy(themeId = it) }
                                 }
                             )
                         }
@@ -240,7 +226,7 @@ fun SettingThemePage(vm: SettingVM = koinViewModel()) {
                         theme = theme,
                         isSelected = settings.themeId == theme.id,
                         onSelect = {
-                            vm.updateSettings(settings.copy(themeId = theme.id))
+                            vm.updateSettings { it.copy(themeId = theme.id) }
                         },
                         onExport = {
                             val json = themeJson.encodeToString(theme)
@@ -274,12 +260,12 @@ fun SettingThemePage(vm: SettingVM = koinViewModel()) {
                 } else {
                     settings.customThemes + theme
                 }
-                vm.updateSettings(
-                    settings.copy(
+                vm.updateSettings {
+                    it.copy(
                         customThemes = newThemes,
                         themeId = theme.id
                     )
-                )
+                }
                 showEditSheet = false
             }
         )
@@ -290,12 +276,12 @@ fun SettingThemePage(vm: SettingVM = koinViewModel()) {
             onDismiss = { showImportDialog = false },
             onImport = { theme ->
                 val importedTheme = theme.copy(id = Uuid.random().toString())
-                vm.updateSettings(
-                    settings.copy(
-                        customThemes = settings.customThemes + importedTheme,
+                vm.updateSettings {
+                    it.copy(
+                        customThemes = it.customThemes + importedTheme,
                         themeId = importedTheme.id
                     )
-                )
+                }
                 showImportDialog = false
                 toaster.show(importSuccessMsg, type = ToastType.Success)
             }
@@ -311,7 +297,7 @@ fun SettingThemePage(vm: SettingVM = koinViewModel()) {
             deletingTheme?.let { theme ->
                 val newThemes = settings.customThemes.filter { it.id != theme.id }
                 val newThemeId = if (settings.themeId == theme.id) "sakura" else settings.themeId
-                vm.updateSettings(settings.copy(customThemes = newThemes, themeId = newThemeId))
+                vm.updateSettings { it.copy(customThemes = newThemes, themeId = newThemeId) }
             }
             deletingTheme = null
         },
@@ -339,30 +325,31 @@ private fun CustomThemeItem(
             .padding(horizontal = 8.dp)
             .clip(RoundedCornerShape(16.dp))
             .clickable { onSelect() },
+        headlineContent = { Text(theme.name.ifEmpty { "Unnamed" }) },
         leadingContent = {
             Box(contentAlignment = Alignment.Center) {
                 Canvas(
                     modifier = Modifier
                         .clip(CircleShape)
                         .size(40.dp)
-               ) {
-                   drawRect(color = scheme.primaryContainer, size = size)
-                   drawRect(
-                   color = scheme.secondaryContainer,
-                   size = size,
-                   topLeft = Offset(x = size.width / 2, y = 0f)
-                   )
-                   drawRect(
-                   color = scheme.tertiaryContainer,
-                   size = size,
-                   topLeft = Offset(x = size.width / 2, y = size.height / 2)
-                   )
-                   drawCircle(
-                   color = scheme.primary,
-                   radius = if (isSelected) 10.dp.toPx() else 6.dp.toPx(),
-                   center = Offset(x = size.width / 2, y = size.height / 2)
-                   )
-               }
+                ) {
+                    drawRect(color = scheme.primaryContainer, size = size)
+                    drawRect(
+                        color = scheme.secondaryContainer,
+                        size = size,
+                        topLeft = Offset(x = size.width / 2, y = 0f)
+                    )
+                    drawRect(
+                        color = scheme.tertiaryContainer,
+                        size = size,
+                        topLeft = Offset(x = size.width / 2, y = size.height / 2)
+                    )
+                    drawCircle(
+                        color = scheme.primary,
+                        radius = if (isSelected) 10.dp.toPx() else 6.dp.toPx(),
+                        center = Offset(x = size.width / 2, y = size.height / 2)
+                    )
+                }
                 if (isSelected) {
                     Icon(
                         HugeIcons.Tick01,
@@ -374,7 +361,6 @@ private fun CustomThemeItem(
             }
         },
         trailingContent = {
-            // v4.8.64 (2.5.5 移植): 三图标行 → ⋮ 统一操作菜单 (删除标红置底)
             ItemActionMenu(
                 actions = listOf(
                     ItemAction(
@@ -396,9 +382,8 @@ private fun CustomThemeItem(
                 )
             )
         },
-        colors = CustomColors.listItemColors ) {
-Text(theme.name.ifEmpty { "Unnamed" })
-                                                                                                                                        }
+        colors = CustomColors.listItemColors,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -449,27 +434,41 @@ private fun CustomThemeEditSheet(
                     text = stringResource(R.string.setting_theme_page_primary_color),
                     style = MaterialTheme.typography.titleSmall,
                 )
-                HslChannelSliders(
-                    selectedArgb = currentTheme.primaryColorArgb,
-                    onSelect = { currentTheme = currentTheme.copy(primaryColorArgb = it) },
+                ColorPickerRow(
+                    color = Color(currentTheme.primaryColorArgb.toInt()),
+                    onColorChange = {
+                        currentTheme = currentTheme.copy(primaryColorArgb = it.toArgb().toLong() and 0xFFFFFFFFL)
+                    }
                 )
 
                 Text(
                     text = stringResource(R.string.setting_theme_page_secondary_color),
                     style = MaterialTheme.typography.titleSmall,
                 )
-                HslChannelSliders(
-                    selectedArgb = currentTheme.secondaryColorArgb,
-                    onSelect = { currentTheme = currentTheme.copy(secondaryColorArgb = it) },
+                ColorPickerRow(
+                    color = if (currentTheme.secondaryColorArgb != null) {
+                        Color(currentTheme.secondaryColorArgb!!.toInt())
+                    } else {
+                        Color(currentTheme.generateColorScheme(false).secondary.toArgb())
+                    },
+                    onColorChange = {
+                        currentTheme = currentTheme.copy(secondaryColorArgb = it.toArgb().toLong() and 0xFFFFFFFFL)
+                    }
                 )
 
                 Text(
                     text = stringResource(R.string.setting_theme_page_tertiary_color),
                     style = MaterialTheme.typography.titleSmall,
                 )
-                HslChannelSliders(
-                    selectedArgb = currentTheme.tertiaryColorArgb,
-                    onSelect = { currentTheme = currentTheme.copy(tertiaryColorArgb = it) },
+                ColorPickerRow(
+                    color = if (currentTheme.tertiaryColorArgb != null) {
+                        Color(currentTheme.tertiaryColorArgb!!.toInt())
+                    } else {
+                        Color(currentTheme.generateColorScheme(false).tertiary.toArgb())
+                    },
+                    onColorChange = {
+                        currentTheme = currentTheme.copy(tertiaryColorArgb = it.toArgb().toLong() and 0xFFFFFFFFL)
+                    }
                 )
 
                 ThemePreview(currentTheme)
@@ -548,95 +547,137 @@ private fun ImportThemeDialog(
     )
 }
 
-// v4.8.18: HSL 三通道调色 (用户定版: "亮度、饱和度，这都是需要看的。
-// 而且颜色怎么只能选这些色域？把色域开得更广") — 每色三个通道条:
-//   ① 色相 (全色相环 0..360°, 渐变基于当前 S/L 实时渲染)
-//   ② 饱和度 (0..100%, 灰→艳)
-//   ③ 亮度 (0..100%, 黑→白)
-// 任何 H/S/L 组合可达, 色域全开 (原 v4.8.9 只开色相, S/L 固定柔和档)。
-
-/** HSL 安全转 ARGB (越界收敛)。 */
-private fun hslToArgbSafe(h: Float, s: Float, l: Float): Long {
-    return Color.hsl(
-        h.coerceIn(0f, 360f),
-        s.coerceIn(0f, 1f),
-        l.coerceIn(0f, 1f)
-    ).toArgb().toLong() and 0xFFFFFFFFL
-}
-
 @Composable
-private fun HslChannelSliders(
-    selectedArgb: Long?,
-    onSelect: (Long) -> Unit,
+private fun ColorPickerRow(
+    color: Color,
+    onColorChange: (Color) -> Unit,
 ) {
-    val hsl = FloatArray(3).also {
-        if (selectedArgb != null) {
-            ColorUtils.colorToHSL(selectedArgb.toInt(), it)
-        } else {
-            it[0] = 220f; it[1] = 0.62f; it[2] = 0.55f
-        }
+    val hsl = remember(color) {
+        FloatArray(3).also { ColorUtils.colorToHSL(color.toArgb(), it) }
     }
-    val hue = hsl[0]; val sat = hsl[1]; val lum = hsl[2]
+    var hue by remember(color) { mutableFloatStateOf(hsl[0]) }
+    var saturation by remember(color) { mutableFloatStateOf(hsl[1]) }
+    var lightness by remember(color) { mutableFloatStateOf(hsl[2]) }
+    var hslCode by remember(color) { mutableStateOf(formatHslCode(hsl[0], hsl[1], hsl[2])) }
+    var hslCodeError by remember(color) { mutableStateOf(false) }
 
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        // ① 色相条 — 当前 S/L 下的全色相环
-        ChannelSlider(
-            fraction = (hue / 360f).coerceIn(0f, 1f),
-            gradient = (0..24).map { i ->
-                Color.hsl((i * 15f) % 360f, sat.coerceAtLeast(0.02f), lum.coerceIn(0.06f, 0.94f))
-            },
-            thumbColor = hslToArgbSafe(hue, sat, lum).toInt(),
-            onFractionChange = { onSelect(hslToArgbSafe(it * 360f, sat, lum)) },
-        )
-        // ② 饱和度条 — (h, 0, l) → (h, 1, l)
-        ChannelSlider(
-            fraction = sat.coerceIn(0f, 1f),
-            gradient = listOf(Color.hsl(hue, 0f, lum), Color.hsl(hue, 1f, lum.coerceIn(0.06f, 0.94f))),
-            thumbColor = hslToArgbSafe(hue, sat, lum).toInt(),
-            onFractionChange = { onSelect(hslToArgbSafe(hue, it, lum)) },
-        )
-        // ③ 亮度条 — 黑 → 本色 → 白
-        ChannelSlider(
-            fraction = lum.coerceIn(0f, 1f),
-            gradient = listOf(Color.hsl(hue, sat, 0f), Color.hsl(hue, sat, 0.5f), Color.hsl(hue, sat, 1f)),
-            thumbColor = hslToArgbSafe(hue, sat, lum).toInt(),
-            onFractionChange = { onSelect(hslToArgbSafe(hue, sat, it)) },
-        )
+    fun updateColor(newHue: Float, newSaturation: Float, newLightness: Float) {
+        hue = newHue
+        saturation = newSaturation
+        lightness = newLightness
+        hslCode = formatHslCode(newHue, newSaturation, newLightness)
+        hslCodeError = false
+        onColorChange(Color(ColorUtils.HSLToColor(floatArrayOf(newHue, newSaturation, newLightness))))
     }
-}
 
-@Composable
-private fun ChannelSlider(
-    fraction: Float,
-    gradient: List<Color>,
-    thumbColor: Int,
-    onFractionChange: (Float) -> Unit,
-) {
-    Canvas(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(26.dp)
-            .clip(RoundedCornerShape(13.dp))
-            .pointerInput(Unit) {
-                detectTapGestures { offset ->
-                    onFractionChange((offset.x / size.width).coerceIn(0f, 1f))
+    Column(
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Canvas(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+            ) {
+                drawCircle(color = color)
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("H", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(16.dp))
+                    Slider(
+                        value = hue,
+                        onValueChange = {
+                            updateColor(it, saturation, lightness)
+                        },
+                        valueRange = 0f..360f,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("S", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(16.dp))
+                    Slider(
+                        value = saturation,
+                        onValueChange = {
+                            updateColor(hue, it, lightness)
+                        },
+                        valueRange = 0f..1f,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("L", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(16.dp))
+                    Slider(
+                        value = lightness,
+                        onValueChange = {
+                            updateColor(hue, saturation, it)
+                        },
+                        valueRange = 0f..1f,
+                        modifier = Modifier.weight(1f),
+                    )
                 }
             }
-            .pointerInput(Unit) {
-                detectDragGestures { change, _ ->
-                    onFractionChange((change.position.x / size.width).coerceIn(0f, 1f))
+        }
+
+        OutlinedTextField(
+            value = hslCode,
+            onValueChange = { value ->
+                hslCode = value
+                val parsedHsl = parseHslCode(value)
+                hslCodeError = parsedHsl == null
+                if (parsedHsl != null) {
+                    hue = parsedHsl[0]
+                    saturation = parsedHsl[1]
+                    lightness = parsedHsl[2]
+                    onColorChange(Color(ColorUtils.HSLToColor(parsedHsl)))
                 }
             },
-    ) {
-        drawRoundRect(
-            brush = Brush.horizontalGradient(colors = gradient),
-            cornerRadius = CornerRadius(size.height / 2f),
+            label = { Text("HSL") },
+            placeholder = { Text("hsl(267 36% 48%)") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            isError = hslCodeError,
+            supportingText = if (hslCodeError) {
+                { Text("Use hsl(267 36% 48%)") }
+            } else {
+                null
+            },
         )
-        val x = fraction.coerceIn(0f, 1f) * size.width
-        val cy = size.height / 2f
-        drawCircle(Color.White, radius = size.height * 0.42f, center = Offset(x, cy))
-        drawCircle(Color(thumbColor), radius = size.height * 0.30f, center = Offset(x, cy))
     }
+}
+
+private val hslNumberRegex = Regex("""[-+]?\d*\.?\d+""")
+
+private fun parseHslCode(value: String): FloatArray? {
+    val values = buildList {
+        for (match in hslNumberRegex.findAll(value)) {
+            add(match.value.toFloatOrNull() ?: return null)
+            if (size == 3) break
+        }
+    }
+
+    if (values.size != 3) return null
+
+    val hue = values[0].coerceIn(0f, 360f)
+    val saturation = parseHslPercentOrFraction(values[1]) ?: return null
+    val lightness = parseHslPercentOrFraction(values[2]) ?: return null
+
+    return floatArrayOf(hue, saturation, lightness)
+}
+
+private fun parseHslPercentOrFraction(value: Float): Float? {
+    if (!value.isFinite()) return null
+    return if (value > 1f) {
+        (value / 100f).coerceIn(0f, 1f)
+    } else {
+        value.coerceIn(0f, 1f)
+    }
+}
+
+private fun formatHslCode(hue: Float, saturation: Float, lightness: Float): String {
+    return "hsl(${hue.roundToInt()} ${(saturation * 100).roundToInt()}% ${(lightness * 100).roundToInt()}%)"
 }
 
 @Composable

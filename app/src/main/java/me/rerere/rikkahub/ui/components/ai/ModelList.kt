@@ -1,7 +1,3 @@
-/* 【域 A·对话核心】 — AI 组件 | 地图: docs/APP_MAP.md §A */
-
-/* ───【上游对齐】ModelList.kt | v5.0.11 切换上游 3.0.0（含 ModelField 胶囊按钮）
- * ───────────────────────────────────────────────────────────────*/
 package me.rerere.rikkahub.ui.components.ai
 
 import androidx.compose.foundation.LocalIndication
@@ -864,8 +860,6 @@ fun ModelTypeTag(model: Model) {
                     ModelType.CHAT -> R.string.setting_provider_page_chat_model
                     ModelType.EMBEDDING -> R.string.setting_provider_page_embedding_model
                     ModelType.IMAGE -> R.string.setting_provider_page_image_model
-                    // v5.0.11: 本树 ModelType 含 VIDEO（上游 3.0.0 无）— 补分支（同 ProviderDetail 口径）
-                    ModelType.VIDEO -> R.string.setting_provider_page_video_model
                 }
             )
         )

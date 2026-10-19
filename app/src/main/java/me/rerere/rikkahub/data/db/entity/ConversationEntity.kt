@@ -34,8 +34,4 @@ data class ConversationEntity(
     val folderId: String = "",
     @ColumnInfo("config", defaultValue = "")
     val config: String = "",
-
-    // RinCore v3.8.13: 压缩留存位点 JSON（最多 3 个）
-    @ColumnInfo("compress_retentions", defaultValue = "")
-    val compressRetentions: String = "",
 )

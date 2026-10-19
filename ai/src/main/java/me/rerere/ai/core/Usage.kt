@@ -1,9 +1,5 @@
 package me.rerere.ai.core
 
-/* ───【原版对齐】Usage.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
-
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -14,6 +10,10 @@ data class TokenUsage(
     val totalTokens: Int = 0,
 )
 
+/**
+ * 合并同一次请求内的 usage 快照：各字段取最新的非零值。
+ * 跨请求（如多轮工具调用的各个步骤）累计请用 [sum]。
+ */
 fun TokenUsage?.merge(other: TokenUsage): TokenUsage {
     val promptTokens = if (other.promptTokens > 0) {
         other.promptTokens

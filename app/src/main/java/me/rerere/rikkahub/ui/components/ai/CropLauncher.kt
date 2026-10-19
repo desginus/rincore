@@ -1,9 +1,4 @@
-/* 【域 A·对话核心】 — AI 组件 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.components.ai
-
-/* ───【原版对齐】CropLauncher.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 import android.content.Intent
 import android.graphics.Bitmap
@@ -12,20 +7,19 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.net.toFile
-import com.dokar.sonner.ToastType
+import me.rerere.ui.toast.ToastType
 import com.yalantis.ucrop.UCrop
 import com.yalantis.ucrop.UCropActivity
 import me.rerere.common.android.Logging
 import me.rerere.common.android.appTempFolder
 import me.rerere.rikkahub.ui.context.LocalToaster
 import java.io.File
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 
 @Composable
 internal fun useCropLauncher(
@@ -36,17 +30,14 @@ internal fun useCropLauncher(
 ): Pair<ActivityResultLauncher<Intent>, (Uri) -> Unit> {
     val context = LocalContext.current
     val toaster = LocalToaster.current
-    // v4.8.112: 裁剪输出状态用 rememberSaveable (String 路径) — Activity 重建后回执
-    // 仍能读到输出文件 (旧实现状态丢失 → RESULT_OK 分支拿 null → 裁剪结果被静默丢弃)
-    var cropOutputPath by rememberSaveable { mutableStateOf<String?>(null) }
-    fun cropOutputUriNow(): Uri? = cropOutputPath?.let { Uri.fromFile(File(it)) }
+    var cropOutputUri by remember { mutableStateOf<Uri?>(null) }
 
     val cropActivityLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         when (result.resultCode) {
             android.app.Activity.RESULT_OK -> {
-                cropOutputUriNow()?.let { croppedUri ->
+                cropOutputUri?.let { croppedUri ->
                     onCroppedImageReady(croppedUri)
                 }
             }
@@ -63,21 +54,23 @@ internal fun useCropLauncher(
                 )
             }
         }
-        cropOutputUriNow()?.toFile()?.delete()
-        cropOutputPath = null
+        cropOutputUri?.toFile()?.delete()
+        cropOutputUri = null
         onCleanup?.invoke()
     }
 
     val launchCrop: (Uri) -> Unit = { sourceUri ->
         val outputFile = File(context.appTempFolder, "crop_output_${System.currentTimeMillis()}.jpg")
-        cropOutputPath = outputFile.absolutePath
+        cropOutputUri = Uri.fromFile(outputFile)
 
-        var crop = UCrop.of(sourceUri, Uri.fromFile(outputFile)).withOptions(UCrop.Options().apply {
+        var crop = UCrop.of(sourceUri, cropOutputUri!!).withOptions(UCrop.Options().apply {
             setFreeStyleCropEnabled(freeStyleCropEnabled)
             setAllowedGestures(
                 UCropActivity.SCALE, UCropActivity.ROTATE, UCropActivity.NONE
             )
-            // 2.5.3 移植: 裁剪输出用 JPEG (PNG 对大图编码极慢且无收益, 加速确认响应)
+            // Chat attachments are written to a .jpg output file. PNG encoding is
+            // particularly expensive for large camera/gallery images and provides
+            // no benefit for this flow, so use JPEG to keep confirmation responsive.
             setCompressionFormat(Bitmap.CompressFormat.JPEG)
             setCompressionQuality(90)
         }).withMaxResultSize(4096, 4096)

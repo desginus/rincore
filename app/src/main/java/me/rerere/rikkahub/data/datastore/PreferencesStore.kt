@@ -13,7 +13,6 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
-import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
 import kotlinx.coroutines.CancellationException
@@ -33,19 +32,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import io.pebbletemplates.pebble.PebbleEngine
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV1Migration
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV2Migration
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV3Migration
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV4Migration
-import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV5Migration
 import me.rerere.rikkahub.data.model.Assistant
 import java.io.File
 import kotlin.time.Duration.Companion.milliseconds
-import org.koin.core.component.KoinComponent
-import org.koin.core.component.get
 import kotlin.uuid.Uuid
 
 private const val TAG = "PreferencesStore"
@@ -82,7 +77,6 @@ private fun createSettingsDataStore(context: Context): DataStore<Preferences> {
             PreferenceStoreV2Migration(),
             PreferenceStoreV3Migration(),
             PreferenceStoreV4Migration(),
-            PreferenceStoreV5Migration(),
         ),
         produceFile = { file },
     )
@@ -97,7 +91,7 @@ private fun createSettingsDataStore(context: Context): DataStore<Preferences> {
 class SettingsStore internal constructor(
     private val dataStore: DataStore<Preferences>,
     scope: CoroutineScope,
-) : KoinComponent {
+) {
     constructor(context: Context, scope: AppScope) : this(context.settingsStore, scope)
 
     companion object {
@@ -185,57 +179,7 @@ class SettingsStore internal constructor(
         // 赞助提醒
         val SPONSOR_ALERT_DISMISSED_AT = intPreferencesKey("sponsor_alert_dismissed_at")
 
-        // ── RinCore 自研键族（反向换底迁移：与原 write 链逐字段对齐）──
-        val OPENCODE_API_KEY = stringPreferencesKey("opencode_api_key")
-        val OPENCODE_API_KEYS = stringPreferencesKey("opencode_api_keys")
-        val OPENCODE_WARM_ENABLED = booleanPreferencesKey("opencode_warm_enabled")
-        val COMMAND_CODE_WARM_ENABLED = booleanPreferencesKey("command_code_warm_enabled")
-        val CC_IMAGE_COMPAT = booleanPreferencesKey("cc_image_compat")
-        val IMAGE_UPLOAD_MODE = stringPreferencesKey("image_upload_mode")
-        val FILE_UPLOAD_MODE = stringPreferencesKey("file_upload_mode")
-        val USAGE_VIEW_MODE = stringPreferencesKey("usage_view_mode")
-        val ENABLE_WEB_SEARCH = booleanPreferencesKey("enable_web_search")
-        val DEFER_AUTO_REPLY = booleanPreferencesKey("defer_auto_reply")
-        val SWAP_SEND_REASONING_KEYS = booleanPreferencesKey("swap_send_reasoning_keys")
-        val PROJECT_PACK_CLICK_STATS = stringPreferencesKey("project_pack_click_stats")
-        val OPENCODE_REQUEST_MODE = booleanPreferencesKey("opencode_request_mode")
-        val VIDEO_GENERATION_MODEL = stringPreferencesKey("video_generation_model")
-        val COMPRESS_MODEL = stringPreferencesKey("compress_model")
-        val COMPRESS_PROMPT = stringPreferencesKey("compress_prompt")
-        val ROUTING_MODEL = stringPreferencesKey("routing_model")
-        // 工具矩阵（v4.8.83）
-        val TOOL_ZONES = stringPreferencesKey("tool_zones")
-        val TOOL_ZONE_LINKS = stringPreferencesKey("tool_zone_links")
-        val HIDDEN_ZONES = stringPreferencesKey("hidden_zones")
-        val TOP_LEVEL_ADDITIONS = stringPreferencesKey("top_level_additions")
-        val TOP_LEVEL_REMOVALS = stringPreferencesKey("top_level_removals")
-        val TOOL_ZONE_SEEDED = booleanPreferencesKey("tool_zone_seeded")
-        val ZONE_MODEL_VERSION = intPreferencesKey("zone_model_version")
-        // 子代理 / 产出 / 技能
-        val SUBAGENT_TOKEN_BUDGET = longPreferencesKey("subagent_token_budget")
-        val SUBAGENT_TOKEN_USAGE = stringPreferencesKey("subagent_token_usage")
-        val CONVERSATION_PRODUCED_FILES = stringPreferencesKey("conversation_produced_files")
-        val SUBAGENT_BUDGET_UPGRADED = booleanPreferencesKey("subagent_budget_upgraded")
-        val SUBAGENT_CONCURRENCY_UPGRADED = booleanPreferencesKey("subagent_concurrency_upgraded")
-        val PRESET_SKILLS_SEED_VERSION = intPreferencesKey("preset_skills_seed_version")
-        val TOOL_DESCRIPTION_OVERRIDES = stringPreferencesKey("tool_description_overrides")
-        val TOOL_NAME_OVERRIDES = stringPreferencesKey("tool_name_overrides")
-        val CLASSIFIER_PROMPT = stringPreferencesKey("classifier_prompt")
-        // 旧「工具域」键（仅 V5 迁移期读取）
-        val TOOL_DOMAIN_OVERRIDES = stringPreferencesKey("tool_domain_overrides")
-        val CUSTOM_DOMAIN_DESCRIPTIONS = stringPreferencesKey("custom_domain_descriptions")
-        val CUSTOM_DOMAINS = stringPreferencesKey("custom_domains")
-        val CUSTOM_DOMAIN_KEYWORDS = stringPreferencesKey("custom_domain_keywords")
-        val DOMAIN_NAME_OVERRIDES = stringPreferencesKey("domain_name_overrides")
-        val HIDDEN_DOMAINS = stringPreferencesKey("hidden_domains")
-        val REMOVED_BUILTIN_DOMAINS = stringPreferencesKey("removed_builtin_domains")
-        val EXEMPT_FROM_DOMAIN_TOOLS = stringPreferencesKey("exempt_from_domain_tools")
-
         // Uses the same DataStore singleton without starting settings flows or requiring Koin.
-        /** RinCore 兼容层：旧两参调用点。 */
-        internal suspend fun restoreBeforeInitialization(context: Context, settings: Settings) =
-            restoreBeforeInitialization(context, settings, settings.launchCount)
-
         internal suspend fun restoreBeforeInitialization(context: Context, settings: Settings, launchCount: Int) {
             require(!settings.init) { "Cannot restore uninitialized settings" }
             // 启动次数和设置在同一次写入里落盘
@@ -263,22 +207,6 @@ class SettingsStore internal constructor(
     /** 当前设置。加载完成前是 [Settings.dummy]，需要真实设置时用 [awaitLoaded]。 */
     val settingsFlow: StateFlow<Settings> = state.asStateFlow()
 
-    // ── RinCore 兼容层（B1 并树）：旧 UI/服务层消费的接口在上游 3.0.0 被移除，
-    // 此处保留同名同语义薄适配，避免全层重写；UI 批再逐点收敛。 ──
-    val settingsRevision = MutableStateFlow(0)
-
-    val settingsFlowRaw: StateFlow<Settings> get() = settingsFlow
-
-    fun updateSync(settings: Settings) {
-        if (settings.init) return
-        state.value = settings
-        settingsRevision.value = settingsRevision.value + 1
-    }
-
-    suspend fun update(settings: Settings) {
-        update { settings }
-    }
-
     /** 等启动时的读盘完成后返回当前设置，不会返回 [Settings.dummy]。已经加载完时直接返回。 */
     suspend fun awaitLoaded(): Settings = state.first { !it.init }
 
@@ -293,8 +221,7 @@ class SettingsStore internal constructor(
         // 整份设置的 JSON 解码很重，不能放在主线程
         scope.launch(Dispatchers.Default) {
             state.value = try {
-                preferencesFlow.first().toSettings().withOurDataRepairs().normalized()
-                    .let { settings -> me.rerere.rikkahub.data.ai.tools.routing.ZoneOps.normalize(settings) }
+                preferencesFlow.first().toSettings().normalized()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -302,12 +229,6 @@ class SettingsStore internal constructor(
                 Log.e(TAG, "Failed to load settings", e)
                 Runtime.getRuntime().halt(1)
                 throw e
-            }
-        }
-        // RinCore：Pebble 模板缓存随设置变化失效（模板变量/注入变化立即可见）
-        scope.launch {
-            state.collect { loaded ->
-                if (!loaded.init) runCatching { get<PebbleEngine>().templateCache.invalidateAll() }
             }
         }
     }
@@ -335,38 +256,10 @@ class SettingsStore internal constructor(
                 return
             }
             // 规整会重建提供商、助手等对象，而界面按引用判断它们有没有变：规整没改动任何东西时保留传入的实例
-            val normalized = updated.withOurDataRepairs().normalized()
-                .let { settings -> me.rerere.rikkahub.data.ai.tools.routing.ZoneOps.normalize(settings) }
+            val normalized = updated.normalized()
             state.value = if (normalized == updated) updated else normalized
-            settingsRevision.value = settingsRevision.value + 1
         }
         persist()
-    }
-
-    /**
-     * RinCore v4.8.89：原子读-改-写并返回操作结果 — 供工具矩阵事务（ZoneOps.applyZoneOp）
-     * 在锁内计算并携带结果。修改与 [update] 同语义：内存立即生效、落盘后台进行。
-     */
-    suspend fun <T> updateWithResult(fn: (Settings) -> Pair<Settings, T>): T {
-        if (state.value.init) awaitLoaded()
-        var applied = false
-        var result: Any? = null
-        synchronized(stateLock) {
-            val (updated, r) = fn(state.value)
-            if (updated.init) {
-                Log.w(TAG, "Cannot update dummy settings")
-            } else {
-                applied = true
-                result = r
-                val normalized = updated.withOurDataRepairs().normalized()
-                    .let { settings -> me.rerere.rikkahub.data.ai.tools.routing.ZoneOps.normalize(settings) }
-                state.value = if (normalized == updated) updated else normalized
-            settingsRevision.value = settingsRevision.value + 1
-            }
-        }
-        if (applied) persist()
-        @Suppress("UNCHECKED_CAST")
-        return result as T
     }
 
     // 连续修改只写最新的一份：排队等锁的调用拿到锁时，它的修改多半已经被前一次写盘带上了。
@@ -403,9 +296,6 @@ class SettingsStore internal constructor(
     suspend fun selectAssistant(assistantId: Uuid) {
         update { it.copy(assistantId = assistantId) }
     }
-
-    /** RinCore 兼容层：旧调用点（切换当前助手）。 */
-    suspend fun updateAssistant(assistantId: Uuid) = selectAssistant(assistantId)
 
     private suspend fun updateAssistant(assistantId: Uuid, transform: (Assistant) -> Assistant) {
         update { settings ->

@@ -1,9 +1,4 @@
-/* 【域 F·主题渲染】 — UI 组件 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.ui
-
-/* ───【原版对齐】ImagePreviewDialog.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,7 +19,7 @@ import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import coil3.compose.rememberAsyncImagePainter
-import com.dokar.sonner.ToastType
+import me.rerere.ui.toast.ToastType
 import com.jvziyaoyao.scale.image.pager.ImagePager
 import com.jvziyaoyao.scale.zoomable.pager.rememberZoomablePagerState
 import kotlinx.coroutines.launch
@@ -56,13 +51,7 @@ fun ImagePreviewDialog(
                 modifier = Modifier.fillMaxSize(),
                 pagerState = state,
                 imageLoader = { index ->
-                    // v4.8.2: 大图预览同样走版本键请求 (改图覆盖后显示新图)
-                    val painter = rememberAsyncImagePainter(
-                        me.rerere.rikkahub.ui.components.richtext.buildVersionedImageRequest(
-                            context = LocalContext.current,
-                            model = images[index],
-                        )
-                    )
+                    val painter = rememberAsyncImagePainter(images[index])
                     return@ImagePager Pair(painter, painter.intrinsicSize)
                 },
             )
@@ -77,22 +66,17 @@ fun ImagePreviewDialog(
                 IconButton(
                     onClick = {
                         lifecycleOwner.lifecycleScope.launch {
-                            toaster.show("正在保存")
-                            val imgUrl = images[state.currentPage]
-                            // v4.8.53: 按真实结果提示 (原实现无条件"已保存" —
-                            // 保存链静默失败时即"提示成功但相册没有"的假成功)
-                            val ok = runCatching { filesManager.saveMessageImage(context, imgUrl) }
-                                .onFailure { it.printStackTrace() }
-                                .getOrDefault(false)
-                            if (ok) {
+                            runCatching {
+                                toaster.show("正在保存")
+                                val imgUrl = images[state.currentPage]
+                                filesManager.saveMessageImage(context, imgUrl)
                                 toaster.show(message = "已保存图片", type = ToastType.Success)
-                            } else {
-                                // v4.8.73: 失败写入运行日志 (此前仅 logcat — 用户查运行日志为空,
-                                // "详情见运行日志"名不副实)
-                                me.rerere.rikkahub.data.ai.CallTracer.event(
-                                    "SAVE", "save_image_failed", "url=${imgUrl.take(200)}"
+                            }.onFailure {
+                                it.printStackTrace()
+                                toaster.show(
+                                    message = it.toString(),
+                                    type = ToastType.Error
                                 )
-                                toaster.show(message = "保存失败 (详情见运行日志)", type = ToastType.Error)
                             }
                         }
                     }

@@ -25,13 +25,6 @@ okhttp = "5.5.0"
 retrofit = "3.0.0"
 coil = "3.6.3"
 quickjs = "1.0.15"
-androidx-media = "1.7.0"
-hjson = "3.0.0"
-kotlinx-coroutines-play-services = "1.11.0"
-lucide-icons = "1.1.0"
-play-services-location = "21.3.0"
-quickjs-kt = "1.0.15"
-sonner = "0.4.0"
 room = "2.8.5"
 koin-bom = "4.2.2"
 datastore = "1.2.1"
@@ -57,7 +50,7 @@ browser = "1.10.0"
 appcompat = "1.8.0"
 material = "1.14.0"
 ucrop = "2.2.11-native"
-floatingx = "2.3.7"
+floatingx = "3.0.0"
 haze = "2.0.1"
 uiautomator = "2.4.0"
 benchmarkMacroJunit4 = "1.5.0"
@@ -133,14 +126,6 @@ coil-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", versio
 coil-svg = { group = "io.coil-kt.coil3", name = "coil-svg", version.ref = "coil" }
 coil-cache-control = { group = "io.coil-kt.coil3", name = "coil-network-cache-control", version.ref = "coil" }
 quickjs = { module = "io.github.dokar3:quickjs-kt", version.ref = "quickjs" }
-quickjs-wrapper = { module = "wang.harlon.quickjs:wrapper-android", version = "3.2.3" }
-androidx-media = { module = "androidx.media:media", version.ref = "androidx-media" }
-hjson = { group = "org.hjson", name = "hjson", version.ref = "hjson" }
-quickjs-kt-android = { module = "io.github.dokar3:quickjs-kt-android", version.ref = "quickjs-kt" }
-sonner = { module = "io.github.dokar3:sonner", version.ref = "sonner" }
-lucide-icons = { group = "com.composables", name = "icons-lucide", version.ref = "lucide-icons" }
-play-services-location = { module = "com.google.android.gms:play-services-location", version.ref = "play-services-location" }
-kotlinx-coroutines-play-services = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-play-services", version.ref = "kotlinx-coroutines-play-services" }
 koin-bom = { group = "io.insert-koin", name = "koin-bom", version.ref = "koin-bom" }
 koin-android = { group = "io.insert-koin", name = "koin-android" }
 koin-compose = { group = "io.insert-koin", name = "koin-androidx-compose" }
@@ -168,7 +153,7 @@ androidx-browser = { group = "androidx.browser", name = "browser", version.ref =
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 ucrop = { group = "com.github.yalantis", name = "ucrop", version.ref = "ucrop" }
-floatingx = { group = "io.github.petterpx", name = "floatingx", version.ref = "floatingx" }
+floatingx-app = { group = "io.github.petterpx", name = "floatingx-app", version.ref = "floatingx" }
 floatingx-compose = { group = "io.github.petterpx", name = "floatingx-compose", version.ref = "floatingx" }
 haze = { module = "dev.chrisbanes.haze:haze", version.ref = "haze" }
 haze-blur = { module = "dev.chrisbanes.haze:haze-blur", version.ref = "haze" }

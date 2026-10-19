@@ -1,71 +1,57 @@
-/* 【域 E·设置体系】 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.di
 
-
-/* ───【原版对齐】DataSourceModule | 差异 +97 行
- * 来源: 原版移植 + 自研 (连接配置根治)
- * 差异: HTTP/1.1 only (HTTP/2 禁用 PROTOCOL_ERROR 根治)、
- *       ConnectionPool(12, 60s)、readTimeout 10min (v5.0.12 对齐上游 3.0.0; 旧 3min 是"长思考必被中断"元凶之一)
- * ───────────────────────────────────────────────────────────────*/
-import me.rerere.rikkahub.service.MediaCreationService
-import me.rerere.mediagen.provider.MediaGenerationManager
-import me.rerere.rikkahub.data.remote.RemoteFileStore
-import me.rerere.rikkahub.data.ai.TranslationHandler
-import me.rerere.rikkahub.AppScope
-import me.rerere.rikkahub.service.memoryDreamKeepAlive
-import me.rerere.rikkahub.data.ai.MemoryConsolidator
-import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
-import androidx.lifecycle.ProcessLifecycleOwner
-import androidx.lifecycle.Lifecycle
 import android.content.Context
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ProcessLifecycleOwner
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.http.HttpHeaders
 import io.pebbletemplates.pebble.PebbleEngine
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.common.http.AcceptLanguageBuilder
+import me.rerere.mediagen.provider.MediaGenerationManager
+import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.data.ai.AIRequestInterceptor
 import me.rerere.rikkahub.data.ai.RequestLoggingInterceptor
 import me.rerere.rikkahub.data.ai.transformers.AssistantTemplateLoader
-import me.rerere.rikkahub.data.ai.GenerationHandler
+import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
+import me.rerere.rikkahub.data.ai.MemoryConsolidator
+import me.rerere.rikkahub.data.ai.TranslationHandler
+import me.rerere.rikkahub.data.ai.ConversationMetaGenerator
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
-import me.rerere.rikkahub.data.api.RikkaHubAPI
-import me.rerere.rikkahub.data.api.SponsorAPI
+import me.rerere.rikkahub.data.remote.RikkaHubAPI
+import me.rerere.rikkahub.data.remote.SponsorAPI
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.remote.RemoteFileStore
 import me.rerere.rikkahub.data.sync.BackupManager
 import me.rerere.rikkahub.data.db.AppDatabaseFactory
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.fts.MessageFtsManager
 import me.rerere.rikkahub.data.ai.mcp.McpManager
-import me.rerere.rikkahub.data.network.SettingsProxySelector
-import me.rerere.rikkahub.data.network.SettingsProxyAuthenticator
-import me.rerere.rikkahub.data.network.SettingsSocks5Authenticator
+import me.rerere.rikkahub.data.remote.SettingsProxySelector
+import me.rerere.rikkahub.data.remote.SettingsProxyAuthenticator
+import me.rerere.rikkahub.data.remote.SettingsSocks5Authenticator
 import me.rerere.rikkahub.data.sync.webdav.WebDavSync
 import me.rerere.search.SearchService
 import me.rerere.rikkahub.data.sync.S3Sync
-import okhttp3.ConnectionPool
-import okhttp3.Dispatcher
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
-import okhttp3.Protocol
 import okhttp3.logging.HttpLoggingInterceptor
-import org.koin.core.qualifier.named
+import me.rerere.rikkahub.service.memoryDreamKeepAlive
 import org.koin.dsl.module
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
-import java.net.Socket
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
-import javax.net.SocketFactory
 
 val dataSourceModule = module {
     single {
         SettingsStore(context = get(), scope = get())
     }
-    single { me.rerere.rikkahub.data.datastore.DraftStore(context = get()) }
 
     single {
         val context: Context = get()
@@ -77,11 +63,17 @@ val dataSourceModule = module {
     }
 
     single {
-        PebbleEngine.Builder()
+        val engine = PebbleEngine.Builder()
             .loader(get<AssistantTemplateLoader>())
             .defaultLocale(Locale.getDefault())
             .autoEscaping(false)
             .build()
+        // 消息模板按助手 ID 缓存，内容取自设置，设置变了就让已编译的模板失效
+        val settingsStore = get<SettingsStore>()
+        get<AppScope>().launch {
+            settingsStore.settingsFlow.collect { engine.templateCache.invalidateAll() }
+        }
+        engine
     }
 
     single { TemplateTransformer(engine = get(), settingsStore = get()) }
@@ -95,19 +87,7 @@ val dataSourceModule = module {
     }
 
     single {
-        get<AppDatabase>().memoryFileDao()
-    }
-
-    single {
         get<AppDatabase>().memoryConsolidationDao()
-    }
-
-    single {
-        get<AppDatabase>().mediaCreationDao()
-    }
-
-    single {
-        get<AppDatabase>().translationHistoryDao()
     }
 
     single {
@@ -135,8 +115,18 @@ val dataSourceModule = module {
     }
 
     single {
+        get<AppDatabase>().mediaCreationDao()
+    }
+
+    single {
+        get<AppDatabase>().translationHistoryDao()
+    }
+
+    single {
         MessageFtsManager(get())
     }
+
+    single { McpManager(settingsStore = get(), appScope = get(), filesManager = get()) }
 
     single {
         MemoryConsolidator(
@@ -157,63 +147,60 @@ val dataSourceModule = module {
         )
     }
 
-    single { McpManager(settingsStore = get(), appScope = get(), filesManager = get(), workspaceRepository = getOrNull()) }
+    single {
+        TranslationHandler(providerManager = get())
+    }
 
     single {
-        GenerationHandler(
-            context = get(),
-            providerManager = get(),
-            json = get(),
-            memoryRepo = get(),
-            settingsStore = get(),
-            skillManager = getOrNull()
-        )
+        ConversationMetaGenerator(context = get(), providerManager = get())
     }
 
     single<OkHttpClient> {
         val settingsStore: SettingsStore = get()
         val acceptLang = AcceptLanguageBuilder.fromAndroid(get())
             .build()
-        // DNS 缓存: 中国网络环境下 DNS 解析频繁抖动的缓冲
-        val dnsCache = okhttp3.Cache(
-            directory = java.io.File(get<android.content.Context>().cacheDir, "okhttp-dns"),
-            maxSize = 4L * 1024 * 1024 // 4MB
-        )
-        val dispatcher = Dispatcher().apply {
-            maxRequestsPerHost = 8
-        }
-        // v3.9.15: 默认 client 不挂代理 — 代理仅由 named("proxy") client 承接,
-        // 按 ProxyRoute 判定是否走代理 (全局开关 / 部分开启 / 模型勾选)
-        OkHttpClient.Builder()
-            // ALPN 协商到 h2 后报 stream was reset: PROTOCOL_ERROR
-            // (okhttp3.internal.http2.StreamResetException)。
-            // protocols(HTTP_1_1, HTTP_2) 顺序不影响 ALPN — 服务端支持 h2 必选 h2,
-            // 唯一可靠方案是协议列表只留 HTTP_1_1
-            .protocols(listOf(Protocol.HTTP_1_1))
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(10, TimeUnit.MINUTES)
-            .writeTimeout(120, TimeUnit.SECONDS) // 对齐 v2.9.8 — 大请求体写入宽容
-            .pingInterval(30, TimeUnit.SECONDS) // 对齐 v2.9.8
-            .connectionPool(
-                // 12 连接对齐 v2.9.8; v4.8.35: keepalive 60s → 180s — 当时 60s 的
-                // 前提是"无心跳保活时池里陈旧连接必死" (长 keepalive 复用陈旧连接
-                // → unexpected end of stream, 工具执行 60s+ 后必触发)。4.8.34 起
-                // 全 provider 家族均有 60s 心跳同池刷新, 池内连接持续被使用/保鲜;
-                // 180s 长窗口作为心跳偶发失败的缓冲 (心跳抖动一次不至于清连接)。
-                ConnectionPool(12, 180, TimeUnit.SECONDS)
+        java.net.Authenticator.setDefault(SettingsSocks5Authenticator(settingsStore))
+        val initialNetworkSetting = settingsStore.settingsFlow.value.networkSetting
+        val appliedProxySetting = AtomicReference(
+            Triple(
+                initialNetworkSetting.proxyUrl,
+                initialNetworkSetting.proxyUsername,
+                initialNetworkSetting.proxyPassword,
             )
-            .dispatcher(dispatcher)
-            .socketFactory(BufferedSocketFactory)
+        )
+        lateinit var client: OkHttpClient
+        client = OkHttpClient.Builder()
+            .proxySelector(SettingsProxySelector(settingsStore))
+            .proxyAuthenticator(SettingsProxyAuthenticator(settingsStore))
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.MINUTES)
+            .writeTimeout(120, TimeUnit.SECONDS)
             .followSslRedirects(true)
             .followRedirects(true)
             .retryOnConnectionFailure(true)
-            .cache(dnsCache)
             .addInterceptor { chain ->
-                val orig = chain.request()
-                val req = orig.newBuilder()
+                val networkSetting = settingsStore.settingsFlow.value.networkSetting
+                val currentProxySetting = Triple(
+                    networkSetting.proxyUrl,
+                    networkSetting.proxyUsername,
+                    networkSetting.proxyPassword,
+                )
+                if (appliedProxySetting.getAndSet(currentProxySetting) != currentProxySetting) {
+                    client.connectionPool.evictAll()
+                }
+
+                val originalRequest = chain.request()
+                val requestBuilder = originalRequest.newBuilder()
                     .addHeader(HttpHeaders.AcceptLanguage, acceptLang)
-                    .build()
-                chain.proceed(req)
+
+                if (originalRequest.header(HttpHeaders.UserAgent) == null) {
+                    val userAgent = settingsStore.settingsFlow.value.networkSetting.userAgent
+                        .trim()
+                        .ifEmpty { "RikkaHub-Android/${BuildConfig.VERSION_NAME}" }
+                    requestBuilder.addHeader(HttpHeaders.UserAgent, userAgent)
+                }
+
+                chain.proceed(requestBuilder.build())
             }
             .addNetworkInterceptor { chain ->
                 val request = chain.request()
@@ -236,135 +223,10 @@ val dataSourceModule = module {
             .addInterceptor(AIRequestInterceptor())
             .addInterceptor(HttpLoggingInterceptor().apply {
                 redactHeader("Proxy-Authorization")
-                level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.HEADERS
-                        else HttpLoggingInterceptor.Level.NONE
+                level = HttpLoggingInterceptor.Level.HEADERS
             })
             .build()
-            .also { SearchService.init(it, get()) }
-    }
-
-    // v3.9.15: 代理 client — 与默认 client 同配置, 额外挂 ProxySelector/
-    // ProxyAuthenticator/SOCKS5 鉴权 + 代理参数热变更 evictAll。
-    // 仅在 ProxyRoute 判定命中 (开关 + 模型勾选) 时被 AI 请求选用。
-    single<OkHttpClient>(named("proxy")) {
-        val settingsStore: SettingsStore = get()
-        val acceptLang = AcceptLanguageBuilder.fromAndroid(get())
-            .build()
-        val dnsCache = okhttp3.Cache(
-            directory = java.io.File(get<android.content.Context>().cacheDir, "okhttp-dns-proxy"),
-            maxSize = 4L * 1024 * 1024 // 4MB
-        )
-        val dispatcher = Dispatcher().apply {
-            maxRequestsPerHost = 8
-        }
-        java.net.Authenticator.setDefault(SettingsSocks5Authenticator(settingsStore))
-        val initialNetworkSetting = settingsStore.settingsFlow.value.networkSetting
-        val appliedProxySetting = AtomicReference(
-            Triple(
-                initialNetworkSetting.proxyUrl,
-                initialNetworkSetting.proxyUsername,
-                initialNetworkSetting.proxyPassword,
-            )
-        )
-        lateinit var proxyClient: OkHttpClient
-        proxyClient = OkHttpClient.Builder()
-            .proxySelector(SettingsProxySelector(settingsStore))
-            .proxyAuthenticator(SettingsProxyAuthenticator(settingsStore))
-            .protocols(listOf(Protocol.HTTP_1_1))
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(10, TimeUnit.MINUTES)
-            .writeTimeout(120, TimeUnit.SECONDS)
-            .pingInterval(30, TimeUnit.SECONDS)
-            .connectionPool(ConnectionPool(12, 180, TimeUnit.SECONDS))
-            .dispatcher(dispatcher)
-            .socketFactory(BufferedSocketFactory)
-            .followSslRedirects(true)
-            .followRedirects(true)
-            .retryOnConnectionFailure(true)
-            .cache(dnsCache)
-            .addInterceptor { chain ->
-                // 代理参数变更 → 驱逐全部连接, 让新连接走新代理
-                val networkSetting = settingsStore.settingsFlow.value.networkSetting
-                val currentProxySetting = Triple(
-                    networkSetting.proxyUrl,
-                    networkSetting.proxyUsername,
-                    networkSetting.proxyPassword,
-                )
-                if (appliedProxySetting.getAndSet(currentProxySetting) != currentProxySetting) {
-                    proxyClient.connectionPool.evictAll()
-                }
-                val orig = chain.request()
-                chain.proceed(
-                    orig.newBuilder()
-                        .addHeader(HttpHeaders.AcceptLanguage, acceptLang)
-                        .build()
-                )
-            }
-            .addNetworkInterceptor(RequestLoggingInterceptor())
-            .addInterceptor(AIRequestInterceptor())
-            .addInterceptor(HttpLoggingInterceptor().apply {
-                redactHeader("Proxy-Authorization")
-                level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.HEADERS
-                        else HttpLoggingInterceptor.Level.NONE
-            })
-            .build()
-        proxyClient
-    }
-
-    // v3.9.15: 按模型代理路由 — 读 Settings.networkSetting 三个开关状态
-    single<me.rerere.ai.provider.ProxyRoute> {
-        val settingsStore: SettingsStore = get()
-        val proxyClient: OkHttpClient = get(named("proxy"))
-        me.rerere.ai.provider.ProxyRoute { default, modelId ->
-            val ns = settingsStore.settingsFlow.value.networkSetting
-            val proxyOn = ns.proxyEnabled && ns.proxyUrl.isNotBlank() &&
-                (!ns.proxyPartialEnabled || modelId in ns.proxyModelIds)
-            // 注意: 不做 default === defaultClient 判定, Claude 独立连接池 (claudeClient)
-            // 的请求同样需要能走代理 — 勾选模型即代理, 与来源 client 无关
-            if (proxyOn) proxyClient else default
-        }
-    }
-
-    // v3.7.1: Claude/Anthropic 中转 (OpenCode Zen) 独立连接池 —
-    // 中转环境空闲关闭比 DeepSeek 慢, keepalive 300s 减少连接重建,
-    // 稳定首字延迟 (TTFT)。DeepSeek 的 60s 不变 (避免陈旧连接复发)。
-    // v3.10.5: OpenCode 网关独立长保活池 — 核心场景 (OpenCode Anthropic
-    // 流式 Chat Completions): 中转环境空闲关闭慢, keepalive 300s + ping 30s
-    // 显著减少连接重建, 稳定 TTFT。DeepSeek 的 60s 不变 (避免陈旧连接复发)。
-    single<OkHttpClient>(named("opencode")) {
-        OkHttpClient.Builder()
-            .protocols(listOf(Protocol.HTTP_1_1))
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(10, TimeUnit.MINUTES)
-            .writeTimeout(120, TimeUnit.SECONDS)
-            .pingInterval(30, TimeUnit.SECONDS)
-            .connectionPool(ConnectionPool(12, 300, TimeUnit.SECONDS))
-            .socketFactory(BufferedSocketFactory)
-            .followSslRedirects(true)
-            .followRedirects(true)
-            .retryOnConnectionFailure(true)
-            // v4.8.126/127: 网关客户端身份伪装 (AIRequestInterceptor: opencode/codex UA, 缺省才补)
-            .addInterceptor(AIRequestInterceptor())
-            .build()
-            .also { me.rerere.ai.provider.ProviderManager.opencodeClient = it }
-    }
-
-    single<OkHttpClient>(named("claude")) {
-        OkHttpClient.Builder()
-            .protocols(listOf(Protocol.HTTP_1_1))
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(10, TimeUnit.MINUTES)
-            .writeTimeout(120, TimeUnit.SECONDS)
-            .pingInterval(30, TimeUnit.SECONDS)
-            .connectionPool(ConnectionPool(12, 300, TimeUnit.SECONDS))
-            .socketFactory(BufferedSocketFactory)
-            .followSslRedirects(true)
-            .followRedirects(true)
-            .retryOnConnectionFailure(true)
-            // v4.8.126/127: 网关客户端身份伪装 (AIRequestInterceptor: opencode/codex UA, 缺省才补)
-            .addInterceptor(AIRequestInterceptor())
-            .build()
-            .also { me.rerere.ai.provider.ProviderManager.claudeClient = it }
+        client.also { SearchService.init(it, get()) }
     }
 
     single {
@@ -372,12 +234,7 @@ val dataSourceModule = module {
     }
 
     single {
-        ProviderManager(
-            client = get(),
-            context = get(),
-            proxyRoute = getOrNull(),
-            opencodeClient = getOrNull(named("opencode")),
-        )
+        ProviderManager(client = get(), context = get())
     }
 
     single { BackupManager(context = get(), database = get(), settingsStore = get(), json = get()) }
@@ -413,6 +270,18 @@ val dataSourceModule = module {
         )
     }
 
+    single {
+        RemoteFileStore(
+            settingsStore = get(),
+            httpClient = get(),
+            scope = get<AppScope>()
+        )
+    }
+
+    single {
+        MediaGenerationManager(client = get())
+    }
+
     single<Retrofit> {
         Retrofit.Builder()
             .baseUrl("https://api.rikka-ai.com")
@@ -422,67 +291,5 @@ val dataSourceModule = module {
 
     single<RikkaHubAPI> {
         get<Retrofit>().create(RikkaHubAPI::class.java)
-    }
-
-    // ── 5.0.0 并树补齐（B-FIX）：上游件注册 ──
-    // 此前缺失 = 打开 媒体创作/翻译器/S3远程文件 相关页面 NoDefinitionFoundException 崩溃
-    single {
-        TranslationHandler(providerManager = get())
-    }
-
-    single {
-        RemoteFileStore(
-            settingsStore = get(),
-            httpClient = get(),
-            scope = get<AppScope>(),
-        )
-    }
-
-    single {
-        MediaGenerationManager(client = get())
-    }
-
-    single {
-        MediaCreationService(
-            context = get(),
-            appScope = get(),
-            settingsStore = get(),
-            repository = get(),
-            manager = get(),
-            remoteFileStore = get(),
-            okHttpClient = get(),
-        )
-    }
-}
-
-/**
- * SocketFactory 包装: 为新创建的 Socket 设置 SO_RCVBUF=512KB。
- * 增大接收缓冲区减少 TCP 窗口停等, 改善 Deepseek V4 Pro 等模型的
- * 突发式 Token 输出的平滑度。
- *
- * 作用于 OkHttp 的所有连接, 内存上限: 512KB × 连接池(12) ≈ 6MB。
- */
-private object BufferedSocketFactory : SocketFactory() {
-    private const val RECEIVE_BUFFER_SIZE = 512 * 1024 // 512KB
-    private val delegate = SocketFactory.getDefault()
-
-    override fun createSocket(): Socket {
-        return delegate.createSocket().apply { receiveBufferSize = RECEIVE_BUFFER_SIZE }
-    }
-
-    override fun createSocket(host: String, port: Int): Socket {
-        return delegate.createSocket(host, port).apply { receiveBufferSize = RECEIVE_BUFFER_SIZE }
-    }
-
-    override fun createSocket(host: String, port: Int, localHost: java.net.InetAddress, localPort: Int): Socket {
-        return delegate.createSocket(host, port, localHost, localPort).apply { receiveBufferSize = RECEIVE_BUFFER_SIZE }
-    }
-
-    override fun createSocket(address: java.net.InetAddress, port: Int): Socket {
-        return delegate.createSocket(address, port).apply { receiveBufferSize = RECEIVE_BUFFER_SIZE }
-    }
-
-    override fun createSocket(address: java.net.InetAddress, port: Int, localAddress: java.net.InetAddress, localPort: Int): Socket {
-        return delegate.createSocket(address, port, localAddress, localPort).apply { receiveBufferSize = RECEIVE_BUFFER_SIZE }
     }
 }

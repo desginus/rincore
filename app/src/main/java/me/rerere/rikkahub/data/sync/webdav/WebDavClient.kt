@@ -1,9 +1,4 @@
-/* 【域 I·数据存储】 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.data.sync.webdav
-
-/* ───【原版对齐】WebDavClient.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 import android.util.Log
 import android.util.Xml
@@ -14,6 +9,7 @@ import io.ktor.client.request.prepareRequest
 import io.ktor.client.request.request
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.HttpStatement
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpMethod

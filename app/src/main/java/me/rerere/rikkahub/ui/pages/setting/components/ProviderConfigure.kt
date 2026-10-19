@@ -23,7 +23,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import com.dokar.sonner.ToastType
+import me.rerere.ui.toast.ToastType
 import me.rerere.ai.provider.ClaudePromptCacheTtl
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.R
@@ -483,15 +483,5 @@ private fun ProviderConfigureGoogle(
                 onValueChange = { onEdit(provider.copy(projectId = it.trim())) },
             )
         }
-    }
-}
-
-/** v5.0.11: 我方 ProviderDetail 页消费 — 重置 baseUrl 到默认值（上游 3.0.0 未含此 helper，回贴）。 */
-internal fun ProviderSetting.resetBaseUrlToDefault(): ProviderSetting {
-    val defaultBaseUrl = defaultBaseUrlForReset()
-    return when (this) {
-        is ProviderSetting.OpenAI -> this.copy(baseUrl = defaultBaseUrl)
-        is ProviderSetting.Google -> this.copy(baseUrl = defaultBaseUrl)
-        is ProviderSetting.Claude -> this.copy(baseUrl = defaultBaseUrl)
     }
 }

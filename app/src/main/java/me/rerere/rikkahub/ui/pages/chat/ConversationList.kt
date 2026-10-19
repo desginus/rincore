@@ -1,9 +1,4 @@
-/* 【域 A·对话核心】 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.pages.chat
-
-/* ───【原版对齐】ConversationList.kt | 差异 ±4 行 (基线 2.5.1)
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Folder01
@@ -38,13 +33,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -54,12 +51,14 @@ import androidx.compose.ui.unit.dp
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.itemKey
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.datastore.ConversationSortOrder
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.ui.theme.extendColors
+import me.rerere.rikkahub.utils.mirrorForRtl
+import me.rerere.rikkahub.utils.toLocalString
 import java.time.LocalDate
+import java.time.ZoneId
 import kotlin.uuid.Uuid
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 
 /**
  * Represents different types of items in the conversation list
@@ -67,7 +66,8 @@ import androidx.compose.runtime.setValue
 sealed class ConversationListItem {
     data class DateHeader(
         val date: LocalDate,
-        val label: String
+        val label: String,
+        val sortOrder: ConversationSortOrder = ConversationSortOrder.UPDATE_TIME,
     ) : ConversationListItem()
     data object PinnedHeader : ConversationListItem()
     data class Item(
@@ -133,7 +133,8 @@ fun ColumnScope.ConversationList(
             count = conversations.itemCount,
             key = conversations.itemKey { item ->
                 when (item) {
-                    is ConversationListItem.DateHeader -> "date_${item.date}"
+                    // key 带上排序方式，避免切换排序后列表锚定到另一种排序下的同日期分组而发生跳动
+                    is ConversationListItem.DateHeader -> "date_${item.sortOrder}_${item.date}"
                     is ConversationListItem.PinnedHeader -> "pinned_header"
                     is ConversationListItem.Item -> item.conversation.id.toString()
                 }
@@ -239,11 +240,8 @@ private fun ConversationItem(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val focusManager = LocalFocusManager.current
-    // 4.8.28: 选中态高对比修复 — surfaceColorAtElevation(8dp) 在深色主题下与
-    // 背景几乎无差 ("深色模式标注看不清", 用户实证); 改用 Material3 标准选中色
-    // secondaryContainer (深/浅色主题下均清晰可辨)。
     val backgroundColor = if (selected) {
-        MaterialTheme.colorScheme.secondaryContainer
+        MaterialTheme.colorScheme.surfaceColorAtElevation(8.dp)
     } else {
         Color.Transparent
     }
@@ -274,8 +272,7 @@ private fun ConversationItem(
             Text(
                 text = conversation.title.ifBlank { stringResource(id = R.string.chat_page_new_message) },
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else Color.Unspecified,
+                overflow = TextOverflow.Ellipsis
             )
             Spacer(Modifier.weight(1f))
 
@@ -343,7 +340,7 @@ private fun ConversationItem(
                         showDropdownMenu = false
                     },
                     leadingIcon = {
-                        Icon(HugeIcons.Forward02, null)
+                        Icon(HugeIcons.Forward02, null, modifier = Modifier.mirrorForRtl())
                     }
                 )
 

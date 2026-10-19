@@ -1,61 +1,45 @@
 package me.rerere.rikkahub
 
-
-/* ───【域 L·基础设施】RikkaHubApp.kt
- * 职责: Application 启动装配 (Koin/崩溃捕获/桥服务/后台任务)
- * 常用改动: 启动顺序 → onCreate; 崩点定位 → CrashHandler 最先
- * 问题定位: 启动闪退/黑屏 → 本文件 (先查启动链)
- * 基线: 原版移植 + 自研 (CrashHandler/桥) | 地图: docs/APP_MAP.md §L | 历史: .claude/skills/rincore-bug-record
- * ───────────────────────────────────────────────────────────────*/
-import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
-import me.rerere.rikkahub.service.MediaCreationService
-import androidx.lifecycle.ProcessLifecycleOwner
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.Lifecycle
 import android.app.Application
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
-import okhttp3.OkHttpClient
+import android.widget.Toast
+import androidx.compose.foundation.ComposeFoundationFlags
 import androidx.compose.runtime.Composer
 import androidx.compose.runtime.tooling.ComposeStackTraceMode
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.ProcessLifecycleOwner
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.Lifecycle
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import me.rerere.rikkahub.data.agentrun.AgentRunBootRecovery
-import me.rerere.rikkahub.data.ai.tools.local.AgentWorkspace
+import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
 import me.rerere.rikkahub.data.files.FileFolders
-import me.rerere.rikkahub.data.files.SkillManager
-import me.rerere.rikkahub.data.log.LogSessionStore
+import me.rerere.rikkahub.data.skills.SkillManager
 import java.io.File
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.first
 import me.rerere.common.android.appTempFolder
-import com.whl.quickjs.android.QuickJSLoader
 import me.rerere.rikkahub.di.appModule
 import me.rerere.rikkahub.di.dataSourceModule
 import me.rerere.rikkahub.di.repositoryModule
-import me.rerere.rikkahub.di.operitModule
 import me.rerere.rikkahub.di.viewModelModule
 import me.rerere.rikkahub.data.files.FilesManager
-import me.rerere.rikkahub.data.datastore.DEFAULT_PROVIDERS
-import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import android.widget.Toast
-import kotlinx.coroutines.runBlocking
 import me.rerere.rikkahub.data.sync.BackupManager
 import me.rerere.rikkahub.data.sync.RestoreFailedException
 import me.rerere.rikkahub.utils.JsonInstant
+import me.rerere.rikkahub.service.MediaCreationService
 import me.rerere.rikkahub.service.WebServerService
-import me.rerere.rikkahub.service.ConnectionWarmer
 import me.rerere.rikkahub.utils.CrashHandler
 import me.rerere.rikkahub.utils.DatabaseUtil
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
@@ -69,28 +53,15 @@ import org.koin.core.context.startKoin
 private const val TAG = "RikkaHubApp"
 
 const val CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID = "chat_completed"
-/** v4.8.88: 子代理完成通知独立频道（与主模型聊天完成分开，可单独管控） */
-const val SUBAGENT_COMPLETED_NOTIFICATION_CHANNEL_ID = "subagent_completed"
 const val CHAT_LIVE_UPDATE_NOTIFICATION_CHANNEL_ID = "chat_live_update"
 const val WEB_SERVER_NOTIFICATION_CHANNEL_ID = "web_server"
 const val MEDIA_CREATION_NOTIFICATION_CHANNEL_ID = "media_creation"
 const val MEMORY_DREAM_NOTIFICATION_CHANNEL_ID = "memory_dream"
-const val GENERATION_FOREGROUND_NOTIFICATION_CHANNEL_ID = "generation_foreground"
 
 class RikkaHubApp : Application() {
     override fun onCreate() {
         super.onCreate()
-        // v4.6.6: 崩溃收集器第一时间安装 (原位置在 startKoin 之后 — v4.6.5 出现
-        // "启动即崩且无日志"的盲区, 任何初始化阶段崩溃必须可观测)
-        CrashHandler.install(this)
-        // v4.5.5: 全局时区强制北京时间 — 工作区计时器等所有依赖默认时区的
-        // 格式化 (SimpleDateFormat/DateTimeFormatter/日志时间戳) 统一按
-        // UTC+8 呈现, 不随设备时区漂移。根修于应用入口, 非逐点打补丁。
-        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Shanghai"))
-        java.util.Locale.setDefault(java.util.Locale.SIMPLIFIED_CHINESE)
-        // 4.0.1 (原版 2.4.17): 备份恢复前置 — 必须在 Koin/Room/SettingsFlow
-        // 初始化前完成安装 (部分恢复的 DB 不能被 Room 打开)。runBlocking(IO)
-        // 为数据一致性刚需: 启动阻塞换完整性 (恢复只在有 pending 时实际做 IO)。
+        // Restore files and settings before eager Koin singletons or workers can access them.
         try {
             val restored = runBlocking(Dispatchers.IO) {
                 BackupManager.applyPendingRestore(this@RikkaHubApp, JsonInstant)
@@ -102,110 +73,19 @@ class RikkaHubApp : Application() {
             Log.e(TAG, "Backup restore rolled back", e)
             Toast.makeText(this, "备份恢复失败，已保留原数据。请重新导入备份。", Toast.LENGTH_LONG).show()
         }
-        // v3.8.34: 运行日志持久化存储初始化 (轮次会话, 最多 10 轮)
-        LogSessionStore.init(this)
-        // v3.9.14: 设备环境检测日志 — 澎湃 OS4 / 骁龙 8 Elite 适配诊断铺垫。
-        // 记录: Android API / 系统版本 / 页大小(16KB 设备) / SoC / ABI 列表。
-        // 用于发行后线上问题追溯: 若 16KB 页设备上出现 native 崩溃,
-        // 通过本条日志即可确认设备页大小与镜像版本。
-        logDeviceEnvironment()
-        // 连接预热: 冷启动后预解析 DNS + 预建 TCP 到 API 端点, 首次请求延迟降低 200-500ms
-        // v3.11.10: 补 Claude 型 provider — 旧实现只暖 OpenAI 型, Console Go 等
-        // Claude 通道网关完全不预热 (用户: 打开软件就预热)
-        val warmUrls = DEFAULT_PROVIDERS
-            .filterIsInstance<me.rerere.ai.provider.ProviderSetting.OpenAI>()
-            .mapNotNull { it.baseUrl.takeIf { u -> u.isNotEmpty() } }
-        val warmClaudeUrls = DEFAULT_PROVIDERS
-            .filterIsInstance<me.rerere.ai.provider.ProviderSetting.Claude>()
-            .mapNotNull { it.baseUrl.takeIf { u -> u.isNotEmpty() } }
-        ConnectionWarmer.warmConfiguredProviders(this, warmUrls + warmClaudeUrls)
         startKoin {
             androidLogger()
             androidContext(this@RikkaHubApp)
             workManagerFactory()
-            modules(appModule, viewModelModule, dataSourceModule, repositoryModule, operitModule)
+            modules(appModule, viewModelModule, dataSourceModule, repositoryModule)
         }
-        // v4.5.29 岔路口计划·阶段2: 刷新已启用 Operit 脚本工具缓存
-        get<me.rerere.rikkahub.data.operit.runtime.OperitToolProvider>().let { provider ->
-            get<AppScope>().launch(Dispatchers.IO) {
-                runCatching { provider.refresh() }
-            }
-        }
-        // v3.6.45: 异步预热用户自定义 provider host (含 OpenCode Zen) —
-        // 首次请求跳过 DNS+TCP, 降低首字延迟。DEFAULT_PROVIDERS 已在上面同步预热。
-        Thread({
-            runCatching {
-                // v3.11.10: 按类型分流预热 — 池必须与主请求一致否则白做:
-                //   OpenAI 型 → 默认池 (opencode.ai 域进长保活池)
-                //   Claude 型 → claudeClient 长保活池 (300s keepalive + ping),
-                //     与 ClaudeProvider 主请求同池 (Console Go 等网关首次预热生效)
-                val providers = get<SettingsStore>().settingsFlow.value.providers
-                val userUrls = providers
-                    .filterIsInstance<ProviderSetting.OpenAI>()
-                    .mapNotNull { it.baseUrl.takeIf { u -> u.isNotEmpty() } }
-                val claudeUrls = providers
-                    .filterIsInstance<ProviderSetting.Claude>()
-                    .mapNotNull { it.baseUrl.takeIf { u -> u.isNotEmpty() } }
-                // v3.10.5: OkHttp 级预热 — 连接真实进池 (默认池 60s / opencode 池 300s),
-                // 跳过 DNS+TCP+TLS 缩短 TTFT; 裸 socket 预热保留作 DNS 兜底
-                val httpClient = get<OkHttpClient>()
-                val opencodeClient = me.rerere.ai.provider.ProviderManager.opencodeClient
-                userUrls.forEach { url -> ConnectionWarmer.warmWithOkHttp(httpClient, url, opencodeClient) }
-                claudeUrls.forEach { url ->
-                    ConnectionWarmer.warmWithOkHttp(
-                        me.rerere.ai.provider.ProviderManager.claudeClient ?: httpClient, url
-                    )
-                }
-                ConnectionWarmer.warmConfiguredProviders(this@RikkaHubApp, userUrls + claudeUrls)
-                // v3.13.4: Command Code 启动即预热 (用户定版: 应用启动预热,
-                // 非"发消息时") — 焦点 key 为 user_ 且开关开时, 启动线程预热
-                // api.commandcode.ai, 冷启动 10-20s 窗口在首条消息前消化
-                val st = get<SettingsStore>().settingsFlow.value
-                if (st.opencodeApiKey.startsWith("user_", ignoreCase = true) && st.commandCodeWarmEnabled) {
-                    // v3.17.0: CC 预热必须进长保活池 (与 v3.17.0 起 CC 主请求同池)
-                    ConnectionWarmer.warmWithOkHttp(
-                        httpClient,
-                        "https://api.commandcode.ai/provider/v1",
-                        me.rerere.ai.provider.ProviderManager.opencodeClient,
-                    )
-                }
-                // 4.1.3: 常驻保活心跳 — 服务端 (CF 系) 空闲 ~100s 关连接, 静态预热
-                // 只覆盖启动窗口; 心跳每 60s 同池刷连接, 任意时刻发送都是热连接。
-                // 取代生成前预热 (同 key 串行化, v3.12.6 实测反拉长首包)。
-                ConnectionWarmer.startProviderKeepAlive(
-                    appScope = get<AppScope>(),
-                    httpClient = httpClient,
-                    opencodeClient = me.rerere.ai.provider.ProviderManager.opencodeClient,
-                    apiKey = st.opencodeApiKey,
-                    commandCodeEnabled = st.commandCodeWarmEnabled,
-                    opencodeEnabled = st.opencodeWarmEnabled,
-                )
-                // v4.7.18: 网络切换监听 — 接口变化时清理连接池 (防旧连接复用断流)
-                ConnectionWarmer.startNetworkMonitor(this@RikkaHubApp)
-            }
-        }, "warmup-user-providers").start()
         this.createNotificationChannel()
-
-        // v4.8.50: 预热管线 — 铺展瞬时高负载 (启动预热 + 会话预热消费者;
-        // 只填充解析缓存, 不改变任何可见渲染行为)。
-        get<AppScope>().launch(Dispatchers.IO) {
-            runCatching { me.rerere.rikkahub.service.warm.WarmPipeline.startOnAppStart(this@RikkaHubApp) }
-        }
 
         // set cursor window size to 32MB
         DatabaseUtil.setCursorWindowSize(32 * 1024 * 1024)
 
-        // install crash handler — v4.6.6 已提前至 onCreate 最前 (此处原位置留注释防重复)
-        // CrashHandler.install(this)
-
-        // Init QuickJS native library
-        QuickJSLoader.init()
-        AgentWorkspace.init(this)
-
-        // v4.8.88: 预设技能播种（出厂「习题辅导」能力包）— 一次性+版本化；只补缺失、不复活已删
-        get<AppScope>().launch(Dispatchers.IO) {
-            runCatching { get<me.rerere.rikkahub.data.files.SkillManager>().seedPresetSkills() }
-        }
+        // install crash handler
+        CrashHandler.install(this)
 
         // delete temp files
         deleteTempFiles()
@@ -222,65 +102,20 @@ class RikkaHubApp : Application() {
         // sync upload files to DB
         syncManagedFiles()
 
-        // Extract builtin skills from assets after install/update（5.0.2 并树：上游 3.0.0）
+        // Extract builtin skills from assets after install/update
         extractBuiltinSkills()
-
-        // v4.8.64 (2.5.5 移植): 启动计数 — 原子自增 (不再经 update() 整快照回写)
-        incrementLaunchCount()
 
         // Start WebServer if enabled in settings
         startWebServerIfEnabled()
-        // v4.8.0: 沙箱一体化桥 — 无条件启动 (loopback only, 端口 17526),
-        // 供沙箱内进程/脚本 (rin 命令) 回连软件侧能力 (通知/AI/剪贴板/打开/分享).
-        // v4.8.1: 挪 IO 后台线程 — token 文件 IO + Ktor 初始化不再阻塞主线程
-        // (用户实证: v4.8.0 启动首页黑屏/卡顿; 铁律"主线程禁 file IO")。
-        get<AppScope>().launch(Dispatchers.IO) {
-            runCatching { me.rerere.rikkahub.sandbox.SandboxBridgeServer.start(this@RikkaHubApp) }
-        }
-        // v4.8.98: 沙箱预热 — 启动即后台把 proot/rootfs patch 走一遍 (30 分钟窗口节流),
-        // 首个 workspace 工具调用不再付冷启动成本 (软件-沙箱一体化的"常驻感")。
-        runCatching { me.rerere.rikkahub.service.SandboxPrewarmer.warmAsync(get<AppScope>()) }
-        // v4.8.99 线程改革: 前后台状态单一事实源 (心跳能效策略消费) + 图像解析快照预热
-        me.rerere.rikkahub.service.AppForegroundState.register(this)
-        get<AppScope>().launch(Dispatchers.IO) {
-            runCatching { me.rerere.rikkahub.utils.WorkspaceImageResolver.warmWorkspaces() }
-        }
-        startWorkflowRegistry()
 
-        // AgentRun boot recovery — flip stranded in-flight runs to process_lost
-        get<AgentRunBootRecovery>().runSweep()
-
-        // 初始化诊断日志
-        me.rerere.rikkahub.data.ai.diagnostics.DiagnosticLogger.initialize(this)
-        // 多生态系统兼容层
-        me.rerere.rikkahub.ecosystem.EcosystemManager.initialize(this)
-        // 插件管理器
-        me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry.initialize(this)
-        // Hooks 执行引擎
-        me.rerere.rikkahub.ecosystem.plugin.HookEngine.refresh(
-            me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry.getSkillRoots().map { it.parentFile!! }
-        )
-        // Agent 注册表
-        me.rerere.rikkahub.ecosystem.plugin.AgentRegistry.loadFromDir(
-            this.filesDir.resolve("ecosystem")
-        )
-
-        // 5.0.0 并树补齐：恢复两条上游启动链
         // Resume media generations interrupted by the last process death
         resumeMediaCreations()
         resumeMemoryConsolidation()
 
-        // Composer.setDiagnosticStackTraceMode(ComposeStackTraceMode.Auto)
-    }
+        // Increment launch count
+        incrementLaunchCount()
 
-    private fun extractBuiltinSkills() {
-        get<AppScope>().launch(Dispatchers.IO) {
-            runCatching {
-                get<me.rerere.rikkahub.data.files.SkillManager>().ensureBuiltinSkillsExtracted()
-            }.onFailure {
-                Log.e(TAG, "extractBuiltinSkills failed", it)
-            }
-        }
+        // Composer.setDiagnosticStackTraceMode(ComposeStackTraceMode.Auto)
     }
 
     private fun resumeMediaCreations() {
@@ -297,11 +132,7 @@ class RikkaHubApp : Application() {
         // 应用被切走后进程随时可能被冻结，等不到空闲计时结束，这时直接开始整理
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             LifecycleEventObserver { _, event ->
-                // v5.0.8: 观察者内解析全程兜底 —— 生命周期回调里任何异常都会直接杀进程
-                if (event == Lifecycle.Event.ON_STOP) {
-                    runCatching { get<MemoryConsolidationScheduler>().onAppHidden() }
-                        .onFailure { Log.e(TAG, "memory consolidation onAppHidden failed", it) }
-                }
+                if (event == Lifecycle.Event.ON_STOP) get<MemoryConsolidationScheduler>().onAppHidden()
             }
         )
         get<AppScope>().launch(Dispatchers.IO) {
@@ -313,28 +144,14 @@ class RikkaHubApp : Application() {
         }
     }
 
-
-    /**
-     * v3.9.14: 设备环境检测日志。
-     * 澎湃 OS4 (HyperOS, Android 17 底层) 与骁龙 8 Elite (8 Gen 4) 适配铺垫:
-     * Android 平台 API / 系统版本 / 页大小 / SoC / ABI 全量落运行日志,
-     * 16KB 页设备如在发行后出现 native 加载问题可立即定位镜像版本。
-     */
-    private fun logDeviceEnvironment() {
-        runCatching {
-            val abi = Build.SUPPORTED_ABIS.joinToString(",")
-            val pageSizeKb = try {
-                // sysconf(_SC_PAGESIZE) — 16KB 页设备返回 16384
-                android.system.Os.sysconf(android.system.OsConstants._SC_PAGESIZE) / 1024
-            } catch (_: Throwable) { 4 }
-            android.util.Log.i(
-                "RinCoreEnv",
-                "api=${Build.VERSION.SDK_INT} release=${Build.VERSION.RELEASE} " +
-                    "manufacturer=${Build.MANUFACTURER} model=${Build.MODEL} " +
-                    "soc=${if (Build.VERSION.SDK_INT >= 31) Build.SOC_MODEL else Build.HARDWARE} " +
-                    "pageSize=${pageSizeKb}KB abi=$abi " +
-                    "miuiVersion=${Build.VERSION.INCREMENTAL ?: ""}"
-            )
+    private fun incrementLaunchCount() {
+        get<AppScope>().launch {
+            runCatching {
+                val count = get<SettingsStore>().incrementLaunchCount()
+                Log.i(TAG, "incrementLaunchCount: $count")
+            }.onFailure {
+                Log.e(TAG, "incrementLaunchCount failed", it)
+            }
         }
     }
 
@@ -352,33 +169,6 @@ class RikkaHubApp : Application() {
         get<AppScope>().launch(Dispatchers.IO) {
             runCatching {
                 get<WorkspaceRepository>().checkIntegrity()
-                // v3.6.85: DSH 插件生态 — 刷新 workspace 的 DSH 技能根
-                get<WorkspaceRepository>().refreshDshSkillRoots(get())
-                // v3.6.112: 插件与技能彻底隔开 — 不再把插件 skills 拆包进技能系统。
-                // 插件技能经 plugin__<插件名>__<技能> 工具读取 (插件域), 桥接经
-                // STDIO MCP (mcp__plugin__<插件名>__<工具>)。仅迁移 v3.6.109 误落
-                // /skills 的历史残留回插件目录。
-                runCatching {
-                    val skillManager = get<me.rerere.rikkahub.data.files.SkillManager>()
-                    me.rerere.rikkahub.ecosystem.plugin.ClawPluginRegistry
-                        .migrateLegacySkills(skillManager.getSkillsDir())
-                    // v3.6.121: 回滚收尾 — 移除 v3.6.112-119 自动注册的 plugin__ 服务器
-                    // 残留 (viaWorkspace STDIO 桥接), 清理后 MCP 连接恢复干净状态
-                    get<me.rerere.rikkahub.data.datastore.SettingsStore>().update { s ->
-                        val stale = s.mcpServers.filter { it.commonOptions.name.startsWith("plugin__") }
-                        if (stale.isEmpty()) return@update s
-                        val staleIds = stale.map { it.id }.toSet()
-                        Log.i(TAG, "cleanup stale plugin bridges: ${stale.map { it.commonOptions.name }}")
-                        s.copy(
-                            mcpServers = s.mcpServers.filter { it !in stale },
-                            assistants = s.assistants.map { a ->
-                                a.copy(mcpServers = a.mcpServers.filter { it !in staleIds }.toSet())
-                            },
-                        )
-                    }
-                }.onFailure { Log.e(TAG, "claw plugin setup failed", it) }
-                // v3.6.86: 插件生态 — 扫描 .plugins 并注册桥接 (技能 + STDIO MCP)
-                get<me.rerere.rikkahub.data.plugin.PluginManager>().refresh()
             }.onFailure {
                 Log.e(TAG, "checkWorkspaceIntegrity failed", it)
             }
@@ -395,36 +185,19 @@ class RikkaHubApp : Application() {
     }
 
     private fun cleanupToolOutputs() {
-        // v4.8.110 (B3, 用户定版): /tool_outputs 语义 = 跨工作区共享产物区,
-        // **不参与整目录回收**。旧实现为冷启动无条件 deleteRecursively() 整目录 —
-        // 用户产物与历史引用 ("Full output saved to: /tool_outputs/xxx") 全部断链
-        // (用户实证: 整目录清空事件)。现在只做"转存文件"老龄回收:
-        // 仅顶层 .txt、文件名匹配工具调用 id 形态 (call_* / toolu_* / tool_* / uuid),
-        // 且超过 7 天; 产物子目录与其它文件一律豁免。
         get<AppScope>().launch(Dispatchers.IO) {
             runCatching {
                 val dir = File(filesDir, FileFolders.TOOL_OUTPUTS)
-                if (!dir.exists()) return@runCatching
-                val cutoff = System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000
-                val transcodedName = Regex("^(call_|toolu_|tool_)[A-Za-z0-9_-]+\\.txt$|^[0-9a-fA-F\\-]{36}\\.txt$")
-                dir.listFiles()?.forEach { f ->
-                    if (f.isFile && transcodedName.matches(f.name) && f.lastModified() < cutoff) {
-                        runCatching { f.delete() }
-                    }
+                if (dir.exists()) {
+                    dir.deleteRecursively()
                 }
             }
         }
     }
 
-
-    private fun incrementLaunchCount() {
-        get<AppScope>().launch {
-            runCatching {
-                val count = get<SettingsStore>().incrementLaunchCount()
-                Log.i(TAG, "incrementLaunchCount: $count")
-            }.onFailure {
-                Log.e(TAG, "incrementLaunchCount failed", it)
-            }
+    private fun extractBuiltinSkills() {
+        get<AppScope>().launch(Dispatchers.IO) {
+            get<SkillManager>().ensureBuiltinSkillsExtracted()
         }
     }
 
@@ -438,24 +211,11 @@ class RikkaHubApp : Application() {
         }
     }
 
-    private fun startWorkflowRegistry() {
-        get<AppScope>().launch(Dispatchers.IO) {
-            runCatching {
-                val registry = get<me.rerere.rikkahub.workflow.trigger.TriggerRegistry>()
-                val engine = get<me.rerere.rikkahub.workflow.execution.WorkflowEngine>()
-                registry.setEngineCallback(engine.triggerCallback)
-                registry.start()
-            }.onFailure {
-                Log.e(TAG, "startWorkflowRegistry failed", it)
-            }
-        }
-    }
-
     private fun startWebServerIfEnabled() {
         get<AppScope>().launch {
             runCatching {
                 delay(500)
-                val settings = get<SettingsStore>().settingsFlowRaw.first()
+                val settings = get<SettingsStore>().awaitLoaded()
                 if (settings.webServerEnabled) {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                         ContextCompat.checkSelfPermission(
@@ -490,90 +250,48 @@ class RikkaHubApp : Application() {
     }
 
     private fun createNotificationChannel() {
-        // 4.8.23: 每个渠道独立防护 — 单个渠道创建失败不应导致应用启动崩溃
-        // (4.8.20 generation_foreground 渠道缺 setName 被系统侧非空校验拒绝,
-        // IllegalArgumentException 发生在 Application.onCreate → 启动即崩的教训)。
-        // 渠道 name 是系统强校验项: 任何新渠道必须 setName (非空)。
         val notificationManager = NotificationManagerCompat.from(this)
+        val chatCompletedChannel = NotificationChannelCompat
+            .Builder(
+                CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID,
+                NotificationManagerCompat.IMPORTANCE_HIGH
+            )
+            .setName(getString(R.string.notification_channel_chat_completed))
+            .setVibrationEnabled(true)
+            .build()
+        notificationManager.createNotificationChannel(chatCompletedChannel)
 
-        runCatching {
-            val chatCompletedChannel = NotificationChannelCompat
-                .Builder(
-                    CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID,
-                    NotificationManagerCompat.IMPORTANCE_HIGH
-                )
-                .setName(getString(R.string.notification_channel_chat_completed))
-                .setVibrationEnabled(true)
-                .build()
-            notificationManager.createNotificationChannel(chatCompletedChannel)
-        }.onFailure { Log.e(TAG, "channel chat_completed failed", it) }
+        val chatLiveUpdateChannel = NotificationChannelCompat
+            .Builder(
+                CHAT_LIVE_UPDATE_NOTIFICATION_CHANNEL_ID,
+                NotificationManagerCompat.IMPORTANCE_LOW
+            )
+            .setName(getString(R.string.notification_channel_chat_live_update))
+            .setVibrationEnabled(false)
+            .build()
+        notificationManager.createNotificationChannel(chatLiveUpdateChannel)
 
-        runCatching {
-            // v4.8.88: 子代理完成独立频道 — 与主模型聊天完成分开管控（名称必设，缺则系统拒收）
-            val subagentChannel = NotificationChannelCompat
-                .Builder(
-                    SUBAGENT_COMPLETED_NOTIFICATION_CHANNEL_ID,
-                    NotificationManagerCompat.IMPORTANCE_DEFAULT
-                )
-                .setName(getString(R.string.notification_channel_subagent))
-                .setVibrationEnabled(false)
-                .build()
-            notificationManager.createNotificationChannel(subagentChannel)
-        }.onFailure { Log.e(TAG, "channel subagent_completed failed", it) }
+        val webServerChannel = NotificationChannelCompat
+            .Builder(WEB_SERVER_NOTIFICATION_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_LOW)
+            .setName(getString(R.string.notification_channel_web_server))
+            .setVibrationEnabled(false)
+            .setShowBadge(false)
+            .build()
+        notificationManager.createNotificationChannel(webServerChannel)
 
-        runCatching {
-            val chatLiveUpdateChannel = NotificationChannelCompat
-                .Builder(
-                    CHAT_LIVE_UPDATE_NOTIFICATION_CHANNEL_ID,
-                    NotificationManagerCompat.IMPORTANCE_LOW
-                )
-                .setName(getString(R.string.notification_channel_chat_live_update))
-                .setVibrationEnabled(false)
-                .build()
-            notificationManager.createNotificationChannel(chatLiveUpdateChannel)
-        }.onFailure { Log.e(TAG, "channel chat_live_update failed", it) }
+        val mediaCreationChannel = NotificationChannelCompat
+            .Builder(MEDIA_CREATION_NOTIFICATION_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_DEFAULT)
+            .setName(getString(R.string.media_creation_title))
+            .build()
+        notificationManager.createNotificationChannel(mediaCreationChannel)
 
-        runCatching {
-            val webServerChannel = NotificationChannelCompat
-                .Builder(WEB_SERVER_NOTIFICATION_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_LOW)
-                .setName(getString(R.string.notification_channel_web_server))
-                .setVibrationEnabled(false)
-                .setShowBadge(false)
-                .build()
-            notificationManager.createNotificationChannel(webServerChannel)
-        }.onFailure { Log.e(TAG, "channel web_server failed", it) }
-
-        runCatching {
-            // 4.8.20: 生成保活前台服务渠道 (静默低打扰 — 任务在后台持续运行)
-            // 4.8.23: 补 setName — 原缺 name 被系统校验拒绝致启动崩溃 (根因修复)
-            val generationForegroundChannel = NotificationChannelCompat
-                .Builder(GENERATION_FOREGROUND_NOTIFICATION_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_LOW)
-                .setName(getString(R.string.notification_channel_generation_foreground))
-                .setVibrationEnabled(false)
-                .setShowBadge(false)
-                .build()
-            notificationManager.createNotificationChannel(generationForegroundChannel)
-        }.onFailure { Log.e(TAG, "channel generation_foreground failed", it) }
-
-        runCatching {
-            // 5.0.0 并树补齐：媒体创作通知渠道（上游 3.0.0）——缺失则媒体进度通知被系统静默丢弃
-            val mediaCreationChannel = NotificationChannelCompat
-                .Builder(MEDIA_CREATION_NOTIFICATION_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_DEFAULT)
-                .setName(getString(R.string.media_creation_title))
-                .build()
-            notificationManager.createNotificationChannel(mediaCreationChannel)
-        }.onFailure { Log.e(TAG, "channel media_creation failed", it) }
-
-        runCatching {
-            // 5.0.0 并树补齐：记忆整理"做梦"通知渠道（上游 3.0.0）
-            val memoryDreamChannel = NotificationChannelCompat
-                .Builder(MEMORY_DREAM_NOTIFICATION_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_LOW)
-                .setName(getString(R.string.memory_dream_title))
-                .setVibrationEnabled(false)
-                .setShowBadge(false)
-                .build()
-            notificationManager.createNotificationChannel(memoryDreamChannel)
-        }.onFailure { Log.e(TAG, "channel memory_dream failed", it) }
+        val memoryDreamChannel = NotificationChannelCompat
+            .Builder(MEMORY_DREAM_NOTIFICATION_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_LOW)
+            .setName(getString(R.string.memory_dream_title))
+            .setVibrationEnabled(false)
+            .setShowBadge(false)
+            .build()
+        notificationManager.createNotificationChannel(memoryDreamChannel)
     }
 
     override fun onTerminate() {

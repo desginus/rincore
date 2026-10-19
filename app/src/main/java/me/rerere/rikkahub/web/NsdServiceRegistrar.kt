@@ -1,14 +1,7 @@
-/* 【域 J·Web 服务】 | 地图: docs/APP_MAP.md §J */
 package me.rerere.rikkahub.web
 
-
-/* ───【原版对齐】NsdServiceRegistrar.kt | 差异 ±23 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import android.content.Context
-import android.net.ConnectivityManager
 import android.net.wifi.WifiManager
-import java.net.Inet4Address
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -119,14 +112,21 @@ class NsdServiceRegistrar(
     }
 
     private fun getLocalIpAddress(): InetAddress? {
-        // WifiInfo.ipAddress 已弃用 — 改用 ConnectivityManager LinkProperties
         return try {
-            val cm = context.applicationContext
-                .getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val network = cm.activeNetwork ?: return null
-            val linkProps = cm.getLinkProperties(network) ?: return null
-            val ipv4 = linkProps.linkAddresses.firstOrNull { it.address is Inet4Address }?.address
-            ipv4 ?: linkProps.linkAddresses.firstOrNull()?.address
+            val wifiManager = context.applicationContext
+                .getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            val wifiInfo = wifiManager?.connectionInfo
+            val ipInt = wifiInfo?.ipAddress ?: return null
+
+            if (ipInt == 0) return null
+
+            val ipBytes = byteArrayOf(
+                (ipInt and 0xff).toByte(),
+                (ipInt shr 8 and 0xff).toByte(),
+                (ipInt shr 16 and 0xff).toByte(),
+                (ipInt shr 24 and 0xff).toByte()
+            )
+            InetAddress.getByAddress(ipBytes)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get local IP address", e)
             null

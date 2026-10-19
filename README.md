@@ -1,290 +1,98 @@
 <div align="center">
-  <h1>RinCore</h1>
+  <img src="docs/icon.png" alt="App Icon" width="100" />
+  <h1>RikkaHub</h1>
 
-[![Build](https://img.shields.io/github/actions/workflow/status/desginus/rincore/build.yml?label=build&logo=github)](https://github.com/desginus/rincore/actions)
-[![Last commit](https://img.shields.io/github/last-commit/desginus/rincore?logo=git)](https://github.com/desginus/rincore/commits)
-[![Version](https://img.shields.io/badge/version-v5.0.12-blue)](https://github.com/desginus/rincore/releases)
-[![License](https://img.shields.io/badge/license-segmented_dual-cyan)](LICENSE)
+A native Android LLM chat client that supports switching between different providers for
+conversations 🤖💬
 
-**A real, self-contained AI assistant on your phone.** Not a wrapper — a rebuilt engine with six
-weeks of daily-driven iteration and 400+ releases behind it.
-
-RinCore is an independently maintained fork of [RikkaHub](https://github.com/re-ovo/rikkahub).
-It keeps the Rika-series philosophy — native Android, Material You, multi-provider — then redoes
-the engine underneath to be cheap, stable and controllable, and fills it with device-level agent
-capabilities.
-
-> **Measured on a real device:** with 400+ tools loaded and a very long character-preset context,
-> RinCore cold-starts at ~10K tokens. (The full-injection era took 70K–100K+.)
+Click to join our Discord server 👉 [【RikkaHub】](https://discord.gg/9weBqxe5c4)
 
 [简体中文](README_ZH_CN.md) | [繁體中文](README_ZH_TW.md) | English
+</div>
 
+<div align="center">
+  <img src="docs/img/poster.png" alt="RikkaHub" width="800" />
 </div>
 
 ## 🚀 Download
 
-RinCore builds on every push. Two ways to get the latest APK:
+🔗 [Download from Website](https://rikka-ai.com/download) (Recommended)
 
-1. **GitHub Releases (recommended)** — the `nightly` prerelease is re-published daily and always
-   points to the latest build: <https://github.com/desginus/rincore/releases>
-2. **GitHub Actions artifacts** — every green build produces an instant APK. Open the latest run,
-   expand `rincore-release`, and download: <https://github.com/desginus/rincore/actions>
+🔗 [Download from Google Play](https://play.google.com/store/apps/details?id=me.rerere.rikkahub)
 
-Install the APK directly. No store required.
+> [!WARNING]
+> There are many forked versions of RikkaHub. Issues with forks are unrelated to RikkaHub, so please use forks with caution to avoid privacy leaks or excessive permission requests.
 
-## 🔁 Moving fast, on purpose
+## 💖 Sponsors
 
-RinCore is updated relentlessly and every release earns its version number:
+| Sponsor | Description |
+|:---:|:---|
+| <img src="docs/sponsors/aihubmix.png" alt="Aihubmix" width="50" /><br /><b>Aihubmix</b> | Thanks to <a href="https://aihubmix.com?aff=pG7r">aihubmix.com</a> for their financial support. We recommend using aihubmix as a one-stop shop for mainstream models worldwide. (OpenAI, Claude, Google Gemini, DeepSeek, Qwen, and hundreds more). |
+| <img src="docs/sponsors/api-mart.png" alt="APIMart" width="50" /><br /><b><a href="https://go.apimart.ai/gh-rikkahub">APIMart</a></b> | Thanks to APIMart for sponsoring this project! APIMart is a low-cost API platform for AI image & video generation — GPT-Image-2 from $0.006/image, 160+ images per dollar. One async API covers both image and video: submit a task, get an ID, fetch results via polling or callback. Batch tens of thousands of images without timeouts, switch models without changing code. Pay-as-you-go with no monthly fee — <a href="https://go.apimart.ai/gh-rikkahub">sign up here</a> to get started. |
+| <img src="docs/sponsors/suixiang.jpg" alt="随想AI中转" width="50" /><br /><b><a href="https://sui-xiang.com">随想AI中转</a></b> | 感谢<a href="https://sui-xiang.com">随想AI中转</a>对本项目的赞助！随想AI中转 是一家可靠高效的 API 中继服务提供商，提供 Claude、Codex、Gemini 等的中继服务。注重隐私的中转站·无数据倒卖·无模型掺水，隐私，透明，极速售后。新账户注册每日签到就送 0.5 元测试额度，充值额度 1:1，无需订阅，按量付费。多线路冗余、跨区域容灾、自动故障切换，长链路 SSE 不中断。99.9% 可用性，关键调用从不掉队。 |
+| <img src="docs/sponsors/ztest.png" alt="真测 ztest.ai" width="50" /><br /><b><a href="https://ztest.ai">真测 ztest.ai</a></b> | 感谢<a href="https://ztest.ai">真测 ztest.ai</a>对本项目的赞助！真测 ztest.ai 是一个 AI 中转站模型检测平台，检测结果数据全公开，23 项探针覆盖协议、身份、能力、内容完整性、安全性、性能六大维度，交叉印证识别伪造与降级。作为独立第三方验证平台，实时监测 AI 中转站的模型真实性、响应质量与服务可用性。 |
+| <img src="docs/sponsors/maru.png" alt="MaruCode" width="50" /><br /><b><a href="https://api.muteki.site/register?aff=Rikkahub&promo=Rikkahub">MaruCode</a></b> | <b><a href="https://api.muteki.site/register?aff=Rikkahub&promo=Rikkahub">MaruCode</a></b> 是一家偶尔做做慈善的小破站 API，自营号池，主要提供 Codex、Claude Code、GPT Image 等主流模型，支持 Websocket 协议，明码标价(Codex 0.25x, CC 1.5x)，透明汇率(1:1)，<a href="https://api.muteki.site/register?aff=Rikkahub&promo=Rikkahub">新用户注册送 2 刀</a>。<a href="https://images-2.muteki.site">生图工作台🖼️</a> |
 
-- **~6 weeks of history** (Jul 2026 → now), **400+ versioned releases**, **540+ commits in the
-  last 30 days**.
-- Each version is a real step: every design decision and modification comes from daily hands-on
-  usage, not from theory. We log what we felt, we measure what we changed, and we ship the fix.
-- The changelog is maintained and public. There are no placeholder or vanity version bumps.
+## ✨ Features
 
-## 🏗️ This is a rebuild, not an upgrade
+- 🎨 Material 3 Expressive design and 🌙 Dark mode
+- 📦 Workspace: a proot-based Linux agent environment
+- 🎬 Media generation (image and video)
+- 🔄 Multiple AI Provider Support: custom API / URL / models (all OpenAI, Google, Anthropic compatible api)
+- 🖼️ Multimodal input support (Image, Text Documentation, PDF, Docx)
+- 🖥️ Web access for multi-platform use
+- 🛠️ MCP and Skills support
+- 📝 Markdown Rendering (with code highlighting, Latex formulas, tables, Mermaid)
+- 🔍 Search capabilities (Exa, Tavily, Zhipu, LinkUp, Brave, Perplexity, etc.)
+- 🧩 Prompt variables (model name, time, etc.)
+- 🤳 QR code export and import for providers
+- 🤖 Agent customization
+- 🧠 File-based memory
+- 📝 AI Translation
+- 🌐 Custom HTTP request headers and request bodies
+- 💌 Silly Tavern character card import
 
-RinCore is not "RikkaHub plus some features". The core was rebuilt in place, driven by how the
-app is actually used day to day:
+## ✨ Development
 
-- **One source of truth** — UI, domain list, tool injection and prompts all derive from a single
-  settings source; every view reads the same data, nothing drifts out of sync.
-- **Network & cache, rewritten from failure data** — SSE auto-retry with exponential backoff, a
-  watchdog for hangs, HTTP/1.1-only transport (the real fix for weak-network failures),
-  connection pre-warm to cut first-word latency, stream resume on drop, and a cache fingerprint
-  tool that reports *exactly* where DeepSeek's prompt-cache broke. Interruptions and silent
-  kills are fixed at the root.
-- **Smarter compression, rebuilt** — compression no longer cuts a fixed number of messages. The
-  boundary is located by conversation rounds and token count (60%), rounded to the nearest whole
-  round. It never compresses what you just sent, and it always actually compresses something.
-- **Cost by design** — with a layered tool-domain system, cold-start dropped from 100K+ to ~10K
-  while the request prefix stays stable, so provider prompt-cache keeps hitting.
+> [!IMPORTANT]
+> This project does not accept pull requests (PRs).
 
-## ✨ Why RinCore — engine-level changes
+This project is developed using [Android Studio](https://developer.android.com/studio).
 
-- **Layered tool domains (the cost killer)** — 400+ tools are grouped into domains and delivered
-  on demand through `invoke_tools`, instead of dumping everything into every request. The whole
-  domain system is manageable visually: edit domains, move tools, see per-domain counts, and run
-  a consistency checker that flags ghosts and contradictions.
-- **Full MCP, including STDIO** — HTTP / Streamable HTTP / SSE / **STDIO**. STDIO servers run as
-  processes inside the sandboxed workspace (no Python dependency on-device); declarations are
-  static so connection noise can't break your cache prefix; OAuth refresh is transparent.
-- **Plugins & skills** — install/uninstall plugins from `ecosystem/plugins`; skills live as
-  first-class tools (`skill__name`). A small set of approved framework tools + user-exempted tools
-  is all that ever hits the top level — everything else stays behind `invoke_tools`.
-- **In-phone agent, with a hard safety line** — the phone agents that matter are nearly fully
-  ported and run *on-device*: proot Linux workspace, file manager (batch/archive/read/write/
-  download), browser, media playback, alarms, calendar, battery, real location + map, clipboard,
-  TTS, notifications, screen-keep-awake, cron jobs, interactive streaming output, and Ask-You
-  confirmation. **High-risk screen control (tapping/swiping for you) is deliberately not
-  supported** — the agent works with your data and files, not over your screen.
-- **OpenCode / OpenCode Zen tuning** — watchdogs, `[DONE]`-less streaming completion detection,
-  model definitions, and reasoner-mode alignment make it work where upstream struggled.
-- **Capacity, visible** — a quota dashboard with per-API-key cards, live balance, remaining-time
-  countdown and precise reset windows, so you always know where your quota stands.
-- **One app, many jobs** — with normal configuration, RinCore also covers image generation,
-  data analysis in the workspace, document generation & export, and a learning-assistant mode —
-  alongside the core chat experience.
-- **Dozen-level quality-of-life fixes** — deferred auto-reply (queue your message, the model
-  won't interrupt), multi-version message editing, timestamp-based memory IDs, quota-aware
-  scheduling, liquid-glass input, reproducible crash logs, and more.
+Technology stack documentation:
 
-## 🎨 Feature lineage
-
-**Inherited from the original RikkaHub (kept & working):**
-
-Material You + dark mode · multi-provider (custom API / base URL / models, OpenAI/Anthropic/
-Google compatible) · multimodal input (image, text, PDF, DOCX) · proot Linux workspace · web
-access · MCP · Markdown (code highlight, LaTeX, tables, Mermaid) · message branching ·
-multi-engine search (Exa, Tavily, Zhipu, LinkUp, Brave, Perplexity, …) · prompt variables · QR
-provider import/export · agent customization · ChatGPT-like memory · AI translation · custom
-HTTP headers/bodies · Silly Tavern character-card import.
-
-**Brought in from the agent-line (running on-device, minus high-risk items):**
-
-device tools — alarms, calendar, battery, location & map, media playback & scanning,
-notifications, clipboard, TTS, screen-keep-awake, system intents · file manager with batch &
-archive · scheduled cron jobs · in-app browser / web fetch · cross-conversation reading ·
-memory with timestamp IDs · interactive streaming tool output.
-
-*(Screen control — tapping/swiping/typing for the user — is the one line we will not cross.)*
-
-## 🛠️ Building
-
-Developed with [Android Studio](https://developer.android.com/studio).
-
-Stack: [Kotlin](https://kotlinlang.org/) · [Jetpack Compose](https://developer.android.com/jetpack/compose) ·
-[Koin](https://insert-koin.io/) · [DataStore](https://developer.android.com/topic/libraries/architecture/datastore) ·
-[Room](https://developer.android.com/training/data-storage/room) ·
-[Coil](https://coil-kt.github.io/coil/) · [Material You](https://m3.material.io/) ·
-[OkHttp](https://square.github.io/okhttp/) · [kotlinx.serialization](https://github.com/Kotlin/kotlinx.serialization)
+- [Kotlin](https://kotlinlang.org/) (Development language)
+- [Koin](https://insert-koin.io/) (Dependency Injection)
+- [Jetpack Compose](https://developer.android.com/jetpack/compose) (UI framework)
+- [DataStore](https://developer.android.com/topic/libraries/architecture/datastore) (Preference data
+  storage)
+- [Room](https://developer.android.com/training/data-storage/room) (Database)
+- [Coil](https://coil-kt.github.io/coil/) (Image loading)
+- [Material 3 Expressive](https://m3.material.io/) (UI design)
+- [Navigation 3](https://developer.android.com/guide/navigation/navigation-3) (Navigation)
+- [Okhttp](https://square.github.io/okhttp/) (HTTP client)
+- [kotlinx.serialization](https://github.com/Kotlin/kotlinx.serialization) (JSON serialization)
 
 > [!TIP]
-> A `google-services.json` in the `app` folder is required to build.
+> You need a `google-services.json` file at `app` folder to build the app.
 
-## 🔧 Maintenance
+## 💰 Donate
 
-RinCore is actively maintained. Issues and PRs are welcome — every problem reported becomes a
-changelog entry and a regression guard. Optimizations keep coming.
+* [Ko-fi](https://ko-fi.com/reovodev)
+* [爱发电](https://afdian.com/a/reovo)
 
-## 📋 Changelog
+## ⭐ Star History
 
-v4.8.54 → v5.0.5 (newest first):
+If you like this project, please give it a star ⭐
 
-- **v5.0.5** — Document-pipeline final pass: classic upload mode now caches parsed documents (`(path, mtime, size)` LRU-4, so long conversations stop re-parsing every PDF/DOCX each turn) and auto-degrades any single document over ~120k chars (~30k tokens) to a path reference with a clear note instead of inlining it. P6 (prompt insertion position) evaluated and closed as no-change: the transform is deterministic per conversation, so the serialized prefix stays byte-stable across turns.
-
-- **v5.0.4** — Backlog sweep: QwenTTS dead-field/dead-UI removal (legacy qwen3-tts languageType no longer consumed by the current qwen-audio-3.0-tts provider), rin-tools injected into workspaces via hardlinks from a single shared copy (34MB×N → 34MB×1 on disk, inode check instead of a 34MB re-read per launch, copy fallback), upload inbox gains per-file [share/delete] plus a "clean unreferenced" bulk action (guarded against scanning-in-progress), the document-parsing split is documented (sandbox toolchain = source of truth), parity ledger updated to final state.
-
-
-
-- **v5.0.3** — Cleanup pass: removed 3 dead navigation screens (tool-hub/compare/builtin-tools targets, the pages themselves stay as inline state pages) and the entire legacy VideoGen chain (pages/VM/registration/screen/route) already superseded by the upstream Media Creation module; CODE_INDEX placeholders fully written out (51 -> per-file one-line responsibilities, 0 left); module-map refreshed with the current 13-module layout.
-
-- **v5.0.2** — Backup completeness: conversation media snapshots (`chat-media`) and media-generation outputs (`media_creation`, staged `.part` downloads skipped) now ride along in local/WebDAV/S3 backups and restores (collect and validate sides share one source of truth). Upstream builtin-skills ported: `assets/builtin_skills` (skill-creator) extracted at launch, merged into the skill library (a user skill overrides a builtin of the same name) and mounted read-only at `/builtin_skills` inside the sandbox.
-
-- **v5.0.1** — Runtime wiring pass ("compiles clean but dies at runtime" sweep): 7 missing Koin bindings restored (translator handler, remote file store, media-generation manager/service, memory-file and media-creation view models — each missing one crashed its page on open); 2 notification channels actually created (media_creation / memory_dream, previously defined but never registered, so their notifications were silently dropped); 2 startup recovery chains re-attached (interrupted media generations resume; memory-consolidation resume + flush when the app goes background); memory-consolidation hooks wired into the chat pipeline (turn-finished / conversation-forked / session-removed) so "auto-organize after conversations" truly fires; drawer gains the "dreaming" indicator.
-
-
-
-- **v5.0.0** — Re-based onto upstream 3.0.0 (reverse adoption): the engine now runs on the upstream base tree with every RinCore feature re-planted on top — generation stability chain (retry policy, completion gates, watchdogs), tool matrix & zones, sub-agent engine, upload pipeline (time codes), CWD chain, sandbox workspace & stdio MCP (SSE/StreamableHTTP/STDIO), codex-derived markdown renderer, memory 2.0 (markdown memory files + consolidation/"dream" scheduler) merged with RinCore's conversation-scoped memory, upstream Media Creation module, and the full upstream 3.0.0 UI (settings / backup / extensions / translator). RinCore's home structure is kept (plus→tool matrix, artifacts corner, dual-orbit selector, lazy tool loading). Excluded by spec: RinCore's legacy input/title-bar blur experiment chain and cookie-shaped avatars (avatars stay circular). Releases before v5.0.0-dev: see 4.9.5-dev / 4.9.0-dev prereleases.
-
-- **v4.8.153** — Soft glass finalized as "semi-transparent + gaussian blur": the message list leaves the blur sources (fixes the glow/ghost feel on bubbles and message action icons), the material tint layer is removed.
-
-- **v4.8.152** — Fix the page-wide dark/light veil (backdrop glass layers must carry no material tint); orbit selection now highlights the icon itself (primary glow) instead of a ring outline.
-
-- **v4.8.151** — Orbit inner arc gains the default "Chat" space entry; smoother fade for the highlighted item (shorter window, smoothstep, retreat scale). Also ships the final soft-light glass spec (zero noise + material tint) after a same-version compile fix.
-
-- **v4.8.150** — Soft-light glass final spec: deep full-quality blur (8dp, no half-res), zero noise, and a theme-adaptive material tint (surface @ 0.5) — validated by pixel-level simulation against the Cherry Studio v0.2.1 Android recipe.
-
-- **v4.8.149** — Pack selection from the empty-chat orbit now truly "enters" the pack (classification + drawer selection + stats via a single entry point); the drawer remembers the pack you entered per assistant for the rest of the session (no more pack-picker page every time); landing signal is consumed exactly once.
-
-- **v4.8.148** — Orbit selector polish (guide lines removed; glass circular icons; always-on name labels; fade in/out at track ends; uniform AiMagic fallback icon) + fix: tapping an assistant now actually switches (empty conversations were never persisted, making the old path a silent no-op) + glass radius corrected to stay under haze's 32px input-scale threshold (fixes the "grille" artifact).
-
-- **v4.8.147** — Rounded panel margin aligned to bubble margin; glass upgraded to deep frosted "light-wave" blur (20dp, zero noise); input placeholder removed and composer slimmed ~8dp (text field untouched); title bar moved down 5dp; project-pack pill after the title; new-chat empty page gains a two-arc orbit selector (outer=assistants, inner=project packs, conveyor-loop animation).
-
-- **v4.8.146** — Rounded glass sheet at the title/content seam; Agent Skills and Discover merged into one tabbed page; a "testing in progress" note on the plugins page; new Upload inbox (with usage annotations for avatars/chat backgrounds); produced-files tracking scoped per conversation (CWD scope + cross-conversation filtering) plus real-data stress tests of the skills installer.
-
-- **v4.8.145** — Settings back-stack fixed (deep feature pages no longer skip a level on back); the Operit eco page keeps only Tool Packages (labeled as the Operit plugin-ecosystem compatibility-testing dev option, isolated); plugin-page note texts removed; **Skills Discover ported from Cherry Studio v0.2.1** — two public sources (CherryIN + skills.sh), search/popular/install into the local Skills library, plus install-from-link.
-
-- **v4.8.144** — Drawer width restored to upstream's fixed 300dp (the v4.8.66 adaptive width was never rolled back); title bar raised (top inset = status-bar height × 2/5); the composer and the fullscreen editor are always translucent now (blur-off falls back to a semi-transparent tint; the fullscreen editor was rewritten as a glass panel); pasted text is inserted with an explicit cursor move (fixing a "cursor stuck after paste" bug).
-
-- **v4.8.143** — Motion system reworked to Cherry Studio mobile v0.2.1 (phase 1): ported its motion vocabulary (Settle/Overshoot curves, 200·250·350ms, critically-damped spring, 0.97 popup resting scale, opacity-based press with no ripple); dialogs now truly play their scale-in (0.97→1, 350ms overshoot) and animate their scrim/back close; the scroll-to-bottom FAB uses the 0.8-scale fade visibility motion.
-
-- **v4.8.142** — Tool image render-URL triple fix: a mount-table based path mapping (/workspace /upload /tool_outputs /skills, sourced from the same bindMounts table), existence gating before emitting ANY url (isFile && canRead; no dead links ever, no wrong-file fallbacks), and a single buildRenderPayload used by all five producers; skipped paths yield a render_note instead of a misleading "echo to display" line.
-
-- **v4.8.141** — Scroll-history "bubble twitch" root fix: the streaming-oriented two-stage render (first-frame terminal render + async incremental re-render written back to state) leaked into the viewport re-entry path (LazyColumn recycle-rebuild), causing a full second recomposition per message per scroll-in — the exact "first-frame → async swap" transition v4.7.26 banned. Fixed by skipping the redundant first emission when it equals the content the first frame already rendered (streaming behavior unchanged).
-
-- **v4.8.140** — Sub-agent outputs landing in the wrong CWD: sub-agent conversations did not inherit the parent conversation's project-pack (folder) id, so their effective working directory fell back to the assistant-level CWD (folder.cwd ?: assistant CWD resolution) while the parent chat lived in a pack. Fixed by inheriting parentFolderId at conversation creation.
-
-- **v4.8.139** — Sub-agent concurrency "only 3" root fix: the 3→7 default bump (v4.8.121) only affected NEW assistants; existing assistants keep the persisted old default 3. One-time migration now upgrades exactly-3 values to 7 (manually set other values untouched; one-shot flag pattern). Also documents the two-commit/two-run release race and the verification method.
-
-- **v4.8.138** — Working-directory picker fixed: the 4.8.25 browse fence (restricted to the assistant CWD subtree) is removed — browsing reaches the whole workspace root; and Reset now clears the effective chain (pack level + still-effective assistant level) so it always returns to root (was a no-op when the value came from the assistant level). "Set as CWD" at root stores null instead of a "/workspace" shell value.
-
-- **v4.8.137** — Upload filename-collision root fix: the upload-code regex expected 12-digit names while real names are 10 digits, so same-minute files with the same basename (tool images are always image.png) all shared the 01 slot and overwrote each other — multiple image tool-results pointed at one file. Regex/validators aligned + regression test. Also: retry-phase semantics (init 5-attempt quick-fail only before any output; 18-attempt stream chain afterwards, incl. post-tool rounds), /dev/shm binding for Python multiprocessing, pdf script per-page no-text-layer notices, and truthful per-tool install hints in toolbox.
-
-- **v4.8.136** — Conversation-artifacts sheet "tap does nothing" root fix: a dismissed-while-options-shown sheet left `open=true` + hidden state (Material3's onDismissRequest fires after the sheet is already hidden), so reopen taps became no-ops until the page state was recreated. Dismiss now always fully closes; the options→list step moved to the system back key. Plus scroll support for the 80-item produced-files list.
-
-- **v4.8.135** — Two priority fixes: `workspace_glob` now supports `**`/path patterns (previously `**/*` silently returned empty) with a real total count when truncated; `buildRenderUrl` stats before emitting and recomputes (cwd-prefix variants + bounded same-name search) to stop stale render links. Same-version compile fix included.
-- **v4.8.134** — Test-report full sweep (13 items): image-mismatch root cause = upload-copy naming race (allocate + create now atomic), per-conversation task lists, sub-agent activity heartbeat, read_image percent-decode + /workspace paths, dispatch queueing, budget transparency, NonCancellable writes, url_only reads, environment notes.
-
-- **v4.8.133** — Sub-agent timeout truth alignment: a full audit found no "420" constant anywhere (code, resources, UI, DB, assets, history) — the number came from the model-facing surfaces, which after the earlier parameter removal had no authoritative statement of the real cap (and carried a stale budget figure, 100K vs the actual 1000K). The dispatch tool description now states the fixed 1800-second (30-minute) cap, a supplied `timeout_seconds` is explicitly reported as ignored, and legacy per-run values are annotated as historical. Engine behavior unchanged (fixed 1800s).
-
-- **v4.8.132** — Cache-degradation verdict & resume-latency cleanup: a full audit of a typical 475-event session log proved the prompt-cache misses are server-side (client fingerprints stable throughout; fixed miss position + a match-point regression), and identified the resume-latency contributors (three 60s gateway hangs, cache misses, one 13.5s probe stall). Fixes: probe failure cooldown + bounded sync probe (6s), separate probe-wait timing in diagnostics, an automatic "gateway_miss" verdict event, and a new full-content fingerprint covering the current-turn message.
-
-- **v4.8.131** — Stream-retry refinement & full connection-chain audit: mid-stream interruption recovery is now completely silent again (the "recovering" status text was removed; only initial-connection failures still show a retry notice). The connection-initiation retry pool was raised from 4 to 5 retries. A full audit of the retry/keepalive/warmup chain also fixed two real issues: a stale "received data" flag across tool rounds (which could push a first-attempt connection failure into the long stream-retry chain) and a retry notice that lingered through streaming after a successful retry; plus dead code and stale comments cleanup.
-
-- **v4.8.130** — Stream-retry pacing revamp (user-specified): mid-stream interruption recovery now waits 300ms → 700ms → 1s → 2s → 3s → 5s per group, six attempts per group, three groups (18 attempts unchanged) — a gradual backoff instead of the previous fixed-interval storm, aligned with community findings that fixed-interval retries worsen 429/503 rate limiting. Also includes a full v4.8.92↔HEAD stream-chain audit (conclusion: no client-side regression; the earlier build's "better" feel is explained by upstream degradation timing plus recovery now being made visible).
-
-- **v4.8.129** — File-interaction unification & image-saving fix: the conversation-output sheet and the in-conversation file chips now share one implementation (new ChatFileActions core) with the same three actions — export / share / render — replacing the earlier "open with other apps" (removed; its separate resolution chain caused false "file not found" errors). Image saving from the preview dialog now uses the same resolution chain as image rendering (fixing save failures for workspace/uploaded images, especially Chinese filenames), and save failures now actually appear in the run log.
-
-- **v4.8.128** — LaTeX rendering: protection against formula-killing commands. jlatexmath parses a formula as all-or-nothing — a single AMS numbering/meta command (`\tag{1}`) made an entire formula fall back to raw source text. A pre-render sanitizer now converts `\tag{X}`→`\quad(X)` (number stays visible), strips `\label`/`\nonumber`/`\notag`, unwraps `equation` environments, and normalizes `\bm`→`\boldsymbol` — the reported physics formula (with `\boxed` and `\tag`) now renders in full.
-
-- **v4.8.127** — Gateway client-identity disguise (per user: don't expose our own client): AI requests now present identities of validated clients instead of a self-declared one — `opencode/latest/1.19.0/cli` (the exact format the official OpenCode CLI sends) for the opencode.ai gateway, and `codex_cli_rs/0.162.1 (Linux 6.8.0; x86_64)` (Codex CLI's real format, widely recognized by gateways) for other AI providers. Only AI traffic is affected; non-AI requests and callers with explicit UAs are untouched.
-
-- **v4.8.126** — OpenCode gateway client compliance: all AI requests now send a self-identifying User-Agent (`RinCore/<version>` instead of OkHttp's default — the OpenCode Go docs explicitly ask clients to identify with their own user agent rather than a generic HTTP-library name, as traffic is abuse-monitored), and session attribution is completed across auxiliary calls (title/suggestion/compression now carry the conversation's stable `x-opencode-session`; no request can go out without one). Also verified via a full diff that the v4.8.115→v4.8.116 delta contained browser-tool changes only — the streaming chain was untouched, so the interruption issue was not introduced there.
-
-- **v4.8.125** — Output-recovery tuning (without re-introducing any cut-detection gate): the stream-phase idle watchdog limit is now a unified 150s (was 90/120s — the tighter values were killing slow upstreams, and replay-based retries amplified the interruption experience); stream-interruption retries now show a visible status ("output interrupted, auto-recovering — attempt N"); workspace output paths are canonicalized so a single file never appears twice in the conversation-output list; and the file chips / output sheet were rewritten with three options (render / export / open with), dropping "share" (which duplicated open-with) — every action now gives visible feedback.
-
-- **v4.8.124** — Rolled back the output completion gate completely (per user verdict): clean-boundary stream closes without completion evidence are once again treated as complete — no synthetic continue requests, which had been provoking gateway errors ("Upstream stream ended before terminal chunk") and breaking conversations. The v4.8.117/118 parallel-cut detection and evidence-based gate are removed; the v4.8.112 channel-completion guards remain in place.
-
-- **v4.8.123** — Images now reserve their final size while loading (local images are measured from the file header, remote ones remembered after first load), so scrolling up through history no longer makes messages jump; every file capsule (documents, video, audio, and the conversation-output list) now opens an options sheet — render / share / export / open-with — instead of jumping straight into system pages; sending is no longer grayed out during context compression — the message queues like during generation and goes out automatically once compression (or the previous turn) finishes.
-
-- **v4.8.122** — Root-cause fix for images failing to render when the address contains an underscore: the render pipeline used to treat image/link addresses as ordinary text (its word-internal underscore / tilde protective passes rewrote `_`→fullwidth and `~`→∼ inside URLs, corrupting the address so the real file could never be found). Addresses are now opaque URL tokens (a scanner protects markdown destinations, autolinks and bare URLs). Plus: "conversation output" now also tracks files produced via shell/job rounds (workspace file-system scan); tapping an uploaded file chip now opens an options sheet (render / share / open-with); message list side margin 16→8dp and bubble inner padding 8→6dp; drawer edge gap rolled back to 64dp.
-
-- **v4.8.121** — Sub-agent retrieval gained a script-polling mode (wait_until_done: checks every 10s and returns the moment the run finishes); the model can no longer pass a custom timeout (fixed at the 1800s ceiling), and per-assistant concurrent sub-agents now default to 7; new "auto-render in code blocks" setting (HTML/JS/SVG render as previews, switch back to code anytime); horizontal swipes on a code block no longer open the chat drawer; the feather "minimal mode" toggle has been removed; drawer edge gap tightened to 40dp; new "conversation output" panel — tap a file the model produced and it opens directly.
-- **v4.8.120** — Tables wrapped in md/markdown code fences now render as real tables (fence unwrapping ported from OpenAI Codex); GFM column alignment (:---:) is honored; sub-agent default timeout raised to 1800 seconds.
-- **v4.8.119** — Markdown/math rendering upgrade: inline $...$ math now triggers even when adjacent to Chinese text (the main cause of "math not rendering"); nested inline content inside links renders correctly; table cells render inline Markdown directly instead of a re-parse round-trip; parser regression tests added to CI.
-- **v4.8.118** — Stream-cut handling v2: evidence-based detection of upstream cuts (auto-continue) while gateways without end signals keep rendering normally; fixed the invoke_tools lazy pool binding to the focused assistant instead of the conversation's own; run logs are now keyed per conversation, so parallel chats stop contaminating each other's traces.
-- **v4.8.117** — Fixed background (unfocused) conversations being cut off and never retrying while multiple chats generate at the same time (parallel-stream registry + synthetic length continuation + fake-cancel distinction).
-
-- **v4.8.116** — Fixed browser tools returning stale URL/title after navigation (now waits for the page to actually finish loading); fixed unreachable pages still reporting success (now returns explicit error codes); fixed typing into React/Vue inputs having no effect (native setter + input/change events); fixed reads racing an in-flight navigation in the same batch; added the browser_wait_for_load tool; screenshots now land in the workspace — sandbox-readable and displayable inline.
-- **v4.8.115** — Fixed tool-generated images having inconsistent render-address formats across entry points (one canonical form, one decode point); local image caches now keyed by file mtime, so overwritten images show the new version immediately.
-- **v4.8.114** — Fixed long silent waits when the network is down: now shows "network failure, retrying (attempt N)" and an actionable message after final failure (connectivity control / in-app proxy / switch network).
-- **v4.8.113** — Fixed tool-generated images not rendering inside chat bubbles (private file:// allowed + unified field + verbatim-echoable image lines); thumbnails now show inside the tool section, tap to zoom.
-- **v4.8.112** — Fixed DeepSeek-family outputs being silently treated as "finished" at the halfway cut-off (completion criteria completed for all channels; abnormal endings now continue or retry); fixed occasional empty shares and lost photos; fixed conversation cache being flushed by @ mentions; English proper nouns no longer mistranslated.
-- **v4.8.111** — Fixed switching assistants jumping to another conversation (switching now switches only, no navigation).
-- **v4.8.110** — Completed the B1–B6 feature list; tool parallelism aligned with Claude Code (bounded concurrency, ordered output).
-- **v4.8.109** — Fixed XLSX upload exceptions, the degradation dialog, and cache discontinuity across upload rounds.
-- **v4.8.108** — Fixed sub-agent budget false trips.
-- **v4.8.107** — Fixed all conversation caches breaking after an image upload (root-caused against upstream).
-- **v4.8.106** — Removed the "tool done, still generating…" banner; restored the poke-gate fallback.
-- **v4.8.105** — Shorter wait between tool completion and resumed output: earlier pre-poke, zero-wait gate, TTFT breakdown tracing.
-- **v4.8.104** — Drawer "feature fold" removed; new quick-overview entry; tap-blank-to-return; minimal-mode tool gate.
-- **v4.8.103** — Fixed the video-generation page crash; video flow aligned with image generation.
-- **v4.8.102** — Video generation actually works (Google Veo direct); rendering speedups.
-- **v4.8.101** — Fixed "file not found" when opening rendered documents (artifact filename now matches the viewer contract); video-gen page aligned with image-gen.
-- **v4.8.100** — Document-rendering gaps closed (PPT / real officecli rendering); video generation added.
-- **v4.8.99** — Threading reform: unified dispatchers + sandbox process-family isolation pool.
-- **v4.8.98** — Fixed long PPTs showing only the left half (true canvas size); document rendering speedups.
-- **v4.8.97** — Repo-wide cleanup: 107 unused string keys, 4 unused icons, 3 dead files removed; caching improvements.
-- **v4.8.96** — Fixed the MCP stdio connection regression.
-- **v4.8.95** — GoogleProvider request headers completed; 30 string keys added across three languages; more precise title-model errors.
-- **v4.8.94** — Upstream 2.5.6 port: in-chat chart tool (chart_display); MCP OAuth callback 403 fixed; MCP tool schema $refs expanded.
-- **v4.8.93** — Restored the drawer's "AI translate / image generation" entries; stats page ported; two duplicate entries removed.
-- **v4.8.92** — "Factory reset" removed (mis-taps revived deleted configs); /@ picker can select whole zones + tool origin labels; sub-agent budget false-zero fixed; per-conversation memory added; local settings gained alarm/workflow switches.
-- **v4.8.91** — Upload codes are now time codes (MMDDHHmm, UTC+8, embedded in filenames); in-conversation upload listing; warm connection on app resume (faster first token); workspaces sorted by creation time.
-- **v4.8.90** — New /@ tool-matrix picker (3-level drill-down, tap to fill); new upload-code fetch tool; UI tool pool now matches the model tool pool.
-- **v4.8.89** — Fixed the "says it saved but didn't" family in the tool matrix (single transactional write path; false success/failure fixed).
-- **v4.8.88** — Built-in physics-tutor preset skill; sub-agent token budget (100K/conversation default, trip on exceed); separate notification channel for sub-agents; cancel now truly stops the underlying request.
-- **v4.8.87** — Tool-matrix architecture rewrite (identity separated from path; single write entry).
-- **v4.8.86** — Streaming render rewrite (MarkdownStream engine), no per-chunk full reparse — smoother long chats.
-- **v4.8.85** — Minimal mode added (zero tool injection); tools can be moved back to top-level direct.
-- **v4.8.84** — Tool matrix gains model-side management (four actions); fixed dead caches, gate false-blocks, hidden-zone disconnects, load loss.
-- **v4.8.83** — Tool matrix fully rewritten: builtin/custom split removed, unified declarative zones; deletes actually delete; config surfaces cut from 9 to 5.
-- **v4.8.82** — Compile-log readability: shell output keeps head+tail, errors no longer truncated away (model no longer misreads "no errors").
-- **v4.8.81** — One-tap clear for capability modules (MCP / Skills).
-- **v4.8.80** — Fixed MCP tool-schema dangling $refs; null parameters fallback.
-- **v4.8.79** — "Provider balance" module rolled back; CC empty-plan criteria fixed.
-- **v4.8.78** — async scope-extension call fix (compile fix with the version).
-- **v4.8.77** — Missing share icon import (compile fix).
-- **v4.8.76** — Poke timestamp now held across tool rounds (compile fix).
-- **v4.8.75** — ask_user cards exempt from folding; pending-phase direct send fixed.
-- **v4.8.74** — runInterruptible context fix (compile fix).
-- **v4.8.73** — Live segmented wrapping; CWD-pack render/reset/log fixes.
-- **v4.8.72** — Sandbox background jobs (workspace_job); command timeout relaxed to 600s.
-- **v4.8.71** — Segmented thinking/tool folding (capsules); OC/CC heartbeat at startup.
-- **v4.8.70** — DI layer fix + Markdown incremental-parse type visibility (compile fixes).
-- **v4.8.69** — Selective revert of the material-library upgrade (glass-effect investigation).
-- **v4.8.68** — Block-level parsing pipeline (speed mechanism, rendering unchanged).
-- **v4.8.67** — Render path rolled back to the stable form; fold scope corrected (thinking + tools only).
-- **v4.8.66** — List-iteration compatibility fix (compile fix).
-- **v4.8.65** — Chat-list composable fix (compile fix).
-- **v4.8.64** — MCP stdio branch fixes; material-library migration (compile fixes).
-- **v4.8.63** — Three-line spec rewrite: sort persistence, branch ownership, MCP CWD-lock removal, file-parsing engine.
-- **v4.8.62** — Accessibility semantics completed (compile fix).
-- **v4.8.61** — Workspace tool suspend calls fixed (compile fix).
-- **v4.8.60** — Usage page tidy-up ("in use" removed, key reveal); sandbox diagnostics (doccheck / blockscan).
-- **v4.8.59** — Ownership snapshot; expand-arrow direction fixed; usage query page rewritten.
-- **v4.8.58** — Project-pack smart ordering + expanded vertical list; capsule-window export semantics fixed.
-- **v4.8.57** — Capsule-window file-chain CWD resolution; request-fingerprint hardening.
-- **v4.8.56** — "Silent truncation" fixed: usage-tail packets no longer count as completion; cut-off output auto-continues.
-- **v4.8.55** — Continuation-decision fix (compile fix).
-- **v4.8.54** — Error triage extended on OC/CC gateways.
-
-## 🤝 Credits
-
-- **desginus** — design, development and maintenance
-- **Claude** — model-side collaborator
+<a href="https://www.star-history.com/?type=date&repos=re-ovo%2Frikkahub">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=re-ovo/rikkahub&type=date&theme=dark&legend=top-left&sealed_token=qSytWeq7LkzQQViTjK0MYlvvA_qkfuwjOxOqgbRpLUZZwok5rO6LXhpVL7Mq-q3o89BfKpzE7g66BCy18H6eiqTsD8czD0J-HejLqmHy-npcvCTHu11wZw" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=re-ovo/rikkahub&type=date&legend=top-left&sealed_token=qSytWeq7LkzQQViTjK0MYlvvA_qkfuwjOxOqgbRpLUZZwok5rO6LXhpVL7Mq-q3o89BfKpzE7g66BCy18H6eiqTsD8czD0J-HejLqmHy-npcvCTHu11wZw" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=re-ovo/rikkahub&type=date&legend=top-left&sealed_token=qSytWeq7LkzQQViTjK0MYlvvA_qkfuwjOxOqgbRpLUZZwok5rO6LXhpVL7Mq-q3o89BfKpzE7g66BCy18H6eiqTsD8czD0J-HejLqmHy-npcvCTHu11wZw" />
+ </picture>
+</a>
 
 ## 📄 License
 
-[License](LICENSE)
+This project is licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0).

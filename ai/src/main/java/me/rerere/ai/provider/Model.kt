@@ -1,9 +1,5 @@
 package me.rerere.ai.provider
 
-/* ───【原版对齐】Model.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
-
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.uuid.Uuid
@@ -21,7 +17,7 @@ data class Model(
     val abilities: List<ModelAbility> = emptyList(),
     val tools: Set<BuiltInTools> = emptySet(),
     val providerOverwrite: ProviderSetting? = null,
-    // 5.0.0 并树：上下文窗口大小(token)，上游 3.0.0 字段（默认 1M，序列化向后兼容）
+    // 上下文窗口大小(token)
     val contextLength: Int = 1_000_000,
 )
 
@@ -30,8 +26,6 @@ enum class ModelType {
     CHAT,
     IMAGE,
     EMBEDDING,
-    // v4.8.103: 视频生成模型 (对齐图像生成流程 — Google Veo / 阿里云 HappyHorse)
-    VIDEO,
 }
 
 @Serializable

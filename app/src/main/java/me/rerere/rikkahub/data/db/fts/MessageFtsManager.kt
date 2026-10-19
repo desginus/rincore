@@ -1,9 +1,4 @@
-/* 【域 I·数据存储】 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.data.db.fts
-
-/* ───【原版对齐】MessageFtsManager.kt | 差异 ±2 行 (基线 2.5.1)
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
@@ -56,6 +51,10 @@ class MessageFtsManager(private val database: AppDatabase) {
                 }
             }
         }
+    }
+
+    suspend fun updateTitle(conversationId: String, title: String) = withContext(Dispatchers.IO) {
+        db.execSQL("UPDATE message_fts SET title = ? WHERE conversation_id = ?", arrayOf(title, conversationId))
     }
 
     suspend fun deleteConversation(conversationId: String) = withContext(Dispatchers.IO) {

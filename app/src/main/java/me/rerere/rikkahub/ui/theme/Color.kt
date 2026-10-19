@@ -1,14 +1,9 @@
-/* 【域 F·主题渲染】 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.theme
 
-/* ───【原版对齐】Color.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
-
 import androidx.compose.material3.CardColors
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingToolbarColors
 import androidx.compose.material3.FloatingToolbarDefaults
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ListItemColors
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme.colorScheme
@@ -177,10 +172,6 @@ fun darkExtendColors(): ExtendColors = ExtendColors(
 )
 
 object CustomColors {
-
-    // RinCore 兼容层（B1 并树）：上游 3.0.0 FloatingToolbar 配色
-    val floatingToolbarColors: FloatingToolbarColors
-        @Composable get() = FloatingToolbarDefaults.vibrantFloatingToolbarColors()
     var black = false
 
     val topBarColors: TopAppBarColors
@@ -199,4 +190,8 @@ object CustomColors {
 
     val listItemColors: ListItemColors
         @Composable get() = ListItemDefaults.colors(containerColor = colorScheme.surfaceBright)
+
+    // 浅色模式下页面背景和悬浮工具栏默认的底色相同，用强调色的版本才分得开
+    val floatingToolbarColors: FloatingToolbarColors
+        @Composable get() = FloatingToolbarDefaults.vibrantFloatingToolbarColors()
 }

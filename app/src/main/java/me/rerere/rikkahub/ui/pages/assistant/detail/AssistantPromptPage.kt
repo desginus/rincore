@@ -223,23 +223,6 @@ private fun AssistantPromptContent(
                     Text(stringResource(R.string.assistant_page_allow_conversation_system_prompt))
                 },
             )
-            // 5.0.0 回贴：本对话提示词注入开关（我方功能，上游 3.0.0 无此项）
-            switchItem(
-                checked = assistant.allowConversationPromptInjection,
-                onCheckedChange = {
-                    onUpdate(
-                        assistant.copy(
-                            allowConversationPromptInjection = it
-                        )
-                    )
-                },
-                supportingContent = {
-                    Text(stringResource(R.string.assistant_page_allow_conversation_prompt_injection_desc))
-                },
-                headlineContent = {
-                    Text(stringResource(R.string.assistant_page_allow_conversation_prompt_injection))
-                },
-            )
         }
 
         CardGroup {

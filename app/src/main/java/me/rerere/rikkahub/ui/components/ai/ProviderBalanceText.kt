@@ -1,10 +1,5 @@
-/* 【域 A·对话核心】 — AI 组件 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.components.ai
 
-
-/* ───【原版对齐】ProviderBalanceText.kt | 差异 ±9 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
@@ -30,7 +25,7 @@ import org.koin.compose.koinInject
 import java.util.concurrent.TimeUnit
 
 private val cache = SimpleCache.builder<String, String>()
-    .expireAfterWrite(10, TimeUnit.MINUTES) // v3.6.9: 2min→10min 减少脉冲式刷新
+    .expireAfterWrite(2, TimeUnit.MINUTES)
     .build()
 
 @Composable
@@ -60,9 +55,10 @@ fun ProviderBalanceText(
                 cache.put("${providerSetting.id},${providerSetting.balanceOption.hashCode()}", balance)
                 value = balance
             }.onFailure {
-                // v3.6.9: 失败保留旧值 (不闪 Error — 静默; 下次进入再拉)
-                val cached = cache.getIfPresent("${providerSetting.id},${providerSetting.balanceOption.hashCode()}")
-                if (cached != null) value = cached else value = "~"
+                // Handle error
+                val errorMsg = "Error: ${it.message}"
+                // Don't cache error messages
+                value = errorMsg
             }
         }
     }

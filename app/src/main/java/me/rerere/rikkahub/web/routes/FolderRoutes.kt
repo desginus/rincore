@@ -1,10 +1,4 @@
-/* 【域 J·Web 服务】 | 地图: docs/APP_MAP.md §J */
 package me.rerere.rikkahub.web.routes
-
-/* ───【原版对齐】FolderRoutes.kt | 差异 ±2 行 (基线 2.5.1)
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
-
 
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
@@ -33,7 +27,7 @@ fun Route.folderRoutes(
     route("/folders") {
         // GET /api/folders - List folders of current assistant
         get {
-            val settings = settingsStore.settingsFlow.first()
+            val settings = settingsStore.awaitLoaded()
             val folders = folderRepo.getFoldersOfAssistant(settings.assistantId).first()
             call.respond(folders.map { it.toDto() })
         }
@@ -46,7 +40,7 @@ fun Route.folderRoutes(
                 throw BadRequestException("Folder name must not be blank")
             }
 
-            val settings = settingsStore.settingsFlow.first()
+            val settings = settingsStore.awaitLoaded()
             val folder = folderRepo.createFolder(settings.assistantId, name)
             call.respond(HttpStatusCode.Created, folder.toDto())
         }

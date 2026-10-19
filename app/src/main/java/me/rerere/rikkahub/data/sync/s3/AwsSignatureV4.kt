@@ -1,11 +1,4 @@
-/* 【域 I·数据存储】 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.data.sync.s3
-
-import kotlin.time.Duration
-
-/* ───【原版对齐】AwsSignatureV4.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 import java.net.URLEncoder
 import java.security.MessageDigest
@@ -14,12 +7,13 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
+import kotlin.time.Duration
 
 internal object AwsSignatureV4 {
-    private const val MAX_PRESIGN_SECONDS = 7 * 24 * 60 * 60L
     private const val ALGORITHM = "AWS4-HMAC-SHA256"
     private const val SERVICE = "s3"
     private const val UNSIGNED_PAYLOAD = "UNSIGNED-PAYLOAD"
+    private const val MAX_PRESIGN_SECONDS = 7 * 24 * 60 * 60L
 
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyyMMdd")
     private val timestampFormatter = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")
@@ -46,21 +40,11 @@ internal object AwsSignatureV4 {
 
         val resolvedPayloadHash = payloadHash ?: payload?.sha256Hex() ?: UNSIGNED_PAYLOAD
 
-        val host = config.host
-        val canonicalUri = if (config.pathStyle) {
-            "/${config.bucket}$path"
-        } else {
-            path
-        }.let { if (it.isEmpty()) "/" else it }
-
-        val hostAlreadyContainsBucket = host.startsWith("${config.bucket}.")
+        val host = requestHost(config)
+        val canonicalUri = canonicalUri(config, path)
 
         val allHeaders = mutableMapOf(
-            "host" to when {
-                config.pathStyle -> host
-                hostAlreadyContainsBucket -> host
-                else -> "${config.bucket}.$host"
-            },
+            "host" to host,
             "x-amz-content-sha256" to resolvedPayloadHash,
             "x-amz-date" to amzDate,
         )
@@ -116,13 +100,7 @@ internal object AwsSignatureV4 {
 
         val url = buildString {
             append(if (config.isHttps) "https://" else "http://")
-            append(
-                when {
-                    config.pathStyle -> host
-                    hostAlreadyContainsBucket -> host
-                    else -> "${config.bucket}.$host"
-                }
-            )
+            append(host)
             append(canonicalUri)
             if (canonicalQueryString.isNotEmpty()) {
                 append("?$canonicalQueryString")
@@ -135,70 +113,9 @@ internal object AwsSignatureV4 {
         )
     }
 
-    private fun requestHost(config: S3Config): String {
-        val host = config.host
-        return if (config.pathStyle || host.startsWith("${config.bucket}.")) {
-            host
-        } else {
-            "${config.bucket}.$host"
-        }
-    }
-
-    private fun canonicalUri(config: S3Config, path: String): String {
-        return if (config.pathStyle) {
-            "/${config.bucket}$path"
-        } else {
-            path
-        }.let { if (it.isEmpty()) "/" else it }
-    }
-
-
-    private fun getSignatureKey(
-        key: String,
-        dateStamp: String,
-        region: String,
-        service: String
-    ): ByteArray {
-        val kDate = hmacSha256("AWS4$key".toByteArray(), dateStamp)
-        val kRegion = hmacSha256(kDate, region)
-        val kService = hmacSha256(kRegion, service)
-        return hmacSha256(kService, "aws4_request")
-    }
-
-    private fun hmacSha256(key: ByteArray, data: String): ByteArray {
-        val mac = Mac.getInstance("HmacSHA256")
-        mac.init(SecretKeySpec(key, "HmacSHA256"))
-        return mac.doFinal(data.toByteArray(Charsets.UTF_8))
-    }
-
-    private fun ByteArray.sha256Hex(): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        return digest.digest(this).toHexString()
-    }
-
-    private fun String.sha256Hex(): String {
-        return this.toByteArray(Charsets.UTF_8).sha256Hex()
-    }
-
-    private fun ByteArray.toHexString(): String {
-        return joinToString("") { "%02x".format(it) }
-    }
-
-    private fun String.urlEncode(): String {
-        return URLEncoder.encode(this, "UTF-8")
-            .replace("+", "%20")
-            .replace("*", "%2A")
-            .replace("%7E", "~")
-    }
-
-    private fun String.urlEncodePath(): String {
-        return split("/").joinToString("/") { segment ->
-            if (segment.isEmpty()) segment else segment.urlEncode()
-        }
-    }
-
     /**
-     * 生成带签名的临时 GET 地址（签名放查询参数），[expires] 内免凭据下载。
+     * 生成带签名的临时 GET 地址。签名放在查询参数里，拿到地址的人在 [expires] 内不需要凭据就能下载，
+     * 过期后存储服务返回 403；对象本身不受影响。
      */
     fun presignGetUrl(
         config: S3Config,
@@ -259,6 +176,67 @@ internal object AwsSignatureV4 {
             append(encodedPath)
             append("?$canonicalQueryString")
             append("&X-Amz-Signature=$signature")
+        }
+    }
+
+    private fun requestHost(config: S3Config): String {
+        val host = config.host
+        return if (config.pathStyle || host.startsWith("${config.bucket}.")) {
+            host
+        } else {
+            "${config.bucket}.$host"
+        }
+    }
+
+    private fun canonicalUri(config: S3Config, path: String): String {
+        return if (config.pathStyle) {
+            "/${config.bucket}$path"
+        } else {
+            path
+        }.let { if (it.isEmpty()) "/" else it }
+    }
+
+    private fun getSignatureKey(
+        key: String,
+        dateStamp: String,
+        region: String,
+        service: String
+    ): ByteArray {
+        val kDate = hmacSha256("AWS4$key".toByteArray(), dateStamp)
+        val kRegion = hmacSha256(kDate, region)
+        val kService = hmacSha256(kRegion, service)
+        return hmacSha256(kService, "aws4_request")
+    }
+
+    private fun hmacSha256(key: ByteArray, data: String): ByteArray {
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(key, "HmacSHA256"))
+        return mac.doFinal(data.toByteArray(Charsets.UTF_8))
+    }
+
+    private fun ByteArray.sha256Hex(): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        return digest.digest(this).toHexString()
+    }
+
+    private fun String.sha256Hex(): String {
+        return this.toByteArray(Charsets.UTF_8).sha256Hex()
+    }
+
+    private fun ByteArray.toHexString(): String {
+        return joinToString("") { "%02x".format(it) }
+    }
+
+    private fun String.urlEncode(): String {
+        return URLEncoder.encode(this, "UTF-8")
+            .replace("+", "%20")
+            .replace("*", "%2A")
+            .replace("%7E", "~")
+    }
+
+    private fun String.urlEncodePath(): String {
+        return split("/").joinToString("/") { segment ->
+            if (segment.isEmpty()) segment else segment.urlEncode()
         }
     }
 }

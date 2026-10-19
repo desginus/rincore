@@ -62,9 +62,10 @@ import androidx.compose.ui.util.fastForEach
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.datastore.DEFAULT_ASSISTANTS_IDS
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.AssistantMemory
+import me.rerere.rikkahub.data.model.MemoryFile
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.ItemAction
 import me.rerere.rikkahub.ui.components.ui.ItemActionMenu
@@ -127,7 +128,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                 actions = {
                     IconButton(
                         onClick = {
-                            createState.open(Assistant(filterSkills = true)) // v3.10.4: 新助手默认技能过滤（不自动全开）
+                            createState.open(Assistant())
                         }) {
                         Icon(HugeIcons.Add01, stringResource(R.string.assistant_page_add))
                     }
@@ -214,7 +215,6 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                         )
                         AssistantItem(
                             assistant = assistant,
-                            assistantCount = settings.assistants.size,
                             settings = settings,
                             memories = memories,
                             onEdit = {
@@ -415,10 +415,9 @@ private fun AssistantCreationSheet(
 @Composable
 private fun AssistantItem(
     assistant: Assistant,
-    assistantCount: Int,
     settings: Settings,
     modifier: Modifier = Modifier,
-    memories: List<AssistantMemory>,
+    memories: List<MemoryFile>,
     onEdit: () -> Unit,
     onCopy: () -> Unit,
     onDelete: () -> Unit,
@@ -505,8 +504,7 @@ private fun AssistantItem(
                         text = stringResource(R.string.assistant_page_delete),
                         icon = HugeIcons.Delete01,
                         destructive = true,
-                        // v3.10.4: 所有助手均可删除 — 仅剩最后一个助手时禁止（上游「仅非默认 ID 可删」语义不采用）
-                        enabled = assistantCount > 1,
+                        enabled = assistant.id !in DEFAULT_ASSISTANTS_IDS,
                         onClick = onDelete,
                     ),
                 )

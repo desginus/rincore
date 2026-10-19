@@ -1,24 +1,18 @@
-/* 【域 E·设置体系】 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.di
 
-
-/* ───【原版对齐】RepositoryModule.kt | 差异 ±9 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import android.content.Context
 import me.rerere.rikkahub.data.files.FileFolders
 import me.rerere.rikkahub.data.files.FilesManager
-import me.rerere.rikkahub.data.files.SkillManager
+import me.rerere.rikkahub.data.skills.SkillManager
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.FavoriteRepository
 import me.rerere.rikkahub.data.repository.FolderRepository
 import me.rerere.rikkahub.data.repository.FilesRepository
 import me.rerere.rikkahub.data.repository.GenMediaRepository
+import me.rerere.rikkahub.data.repository.MediaCreationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.repository.TranslationHistoryRepository
-import me.rerere.rikkahub.data.repository.MediaCreationRepository
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
-import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceTerminalSessionManager
 import me.rerere.workspace.ProotShellRunner
 import me.rerere.workspace.RootfsInstaller
 import me.rerere.workspace.WorkspaceBindMount
@@ -36,7 +30,7 @@ val repositoryModule = module {
     }
 
     single {
-        MemoryRepository(memoryDAO = get(), memoryFileDAO = get())
+        MemoryRepository(get())
     }
 
     single {
@@ -44,11 +38,11 @@ val repositoryModule = module {
     }
 
     single {
-        MediaCreationRepository(context = get(), database = get(), dao = get(), json = get())
+        GenMediaRepository(get())
     }
 
     single {
-        GenMediaRepository(get())
+        MediaCreationRepository(context = get(), database = get(), dao = get(), json = get())
     }
 
     single {
@@ -73,7 +67,6 @@ val repositoryModule = module {
                     target = "/skills",
                 ),
                 WorkspaceBindMount(
-                    // 5.0.2 并树：内置技能只读挂载（skill-creator 指引按 /builtin_skills 路径引用）
                     source = File(context.filesDir, FileFolders.BUILTIN_SKILLS).apply { mkdirs() },
                     target = "/builtin_skills",
                 ),
@@ -94,12 +87,7 @@ val repositoryModule = module {
     }
 
     single {
-        WorkspaceTerminalSessionManager(get(), get())
-    }
-
-    single {
-        // v4.5.24: + Context (内置工具注入 assets/rin-tools → rootfs /usr/local/bin)
-        WorkspaceRepository(get(), get(), get(), get(), get())
+        WorkspaceRepository(get(), get(), get(), get())
     }
 
     single {
@@ -108,14 +96,5 @@ val repositoryModule = module {
 
     single {
         SkillManager(get(), get())
-    }
-
-    // v3.6.86: 插件管理器 (workspace 插件格式 — 技能 + STDIO MCP 桥接)
-    single {
-        me.rerere.rikkahub.data.plugin.PluginManager(
-            workspaceRepository = get(),
-            workspaceManager = get(),
-            mcpManager = get(),
-        )
     }
 }

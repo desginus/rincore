@@ -1,13 +1,5 @@
-/* 【域 E·设置体系】 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.di
 
-
-/* ───【原版对齐】ViewModelModule.kt | 差异 ±4 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
-import me.rerere.rikkahub.ui.pages.mediacreation.MediaCreationVM
-import me.rerere.rikkahub.ui.pages.mediacreation.MediaCreationSessionsVM
-import me.rerere.rikkahub.ui.pages.memory.MemoryFileVM
 import me.rerere.rikkahub.ui.pages.assistant.AssistantVM
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantDetailVM
 import me.rerere.rikkahub.ui.pages.backup.BackupVM
@@ -18,8 +10,10 @@ import me.rerere.rikkahub.ui.pages.favorite.FavoriteVM
 import me.rerere.rikkahub.ui.pages.search.SearchVM
 import me.rerere.rikkahub.ui.pages.history.HistoryVM
 import me.rerere.rikkahub.ui.pages.stats.StatsVM
-import me.rerere.rikkahub.ui.pages.setting.scheduledjobs.ScheduledJobsViewModel
 import me.rerere.rikkahub.ui.pages.imggen.ImgGenVM
+import me.rerere.rikkahub.ui.pages.mediacreation.MediaCreationSessionsVM
+import me.rerere.rikkahub.ui.pages.mediacreation.MediaCreationVM
+import me.rerere.rikkahub.ui.pages.memory.MemoryFileVM
 import me.rerere.rikkahub.ui.pages.extensions.PromptVM
 import me.rerere.rikkahub.ui.pages.extensions.QuickMessagesVM
 import me.rerere.rikkahub.ui.pages.extensions.skills.SkillDetailVM
@@ -37,16 +31,13 @@ val viewModelModule = module {
     viewModel<ChatVM> { params ->
         ChatVM(
             id = params.get(),
-            folderId = params.getOrNull(),
             context = get(),
             settingsStore = get(),
-            conversationRepo = get(),
             chatService = get(),
             updateChecker = get(),
+            analytics = get(),
             filesManager = get(),
             favoriteRepository = get(),
-            folderRepository = get(),
-            draftStore = get(),
         )
     }
     viewModelOf(::ChatDrawerVM)
@@ -63,10 +54,8 @@ val viewModelModule = module {
             filesManager = get(),
             skillManager = get(),
             workspaceRepository = get(),
-            conversationRepository = get(),
         )
     }
-    // ── 5.0.0 并树补齐（B-FIX）：上游媒体创作/记忆文件 VM（此前未注册=页面打开即崩）──
     viewModel<MemoryFileVM> {
         MemoryFileVM(
             memoryId = it[0],
@@ -74,6 +63,15 @@ val viewModelModule = module {
             memoryRepository = get(),
         )
     }
+    viewModelOf(::TranslatorVM)
+    viewModel<ShareHandlerVM> {
+        ShareHandlerVM(
+            text = it.get(),
+            settingsStore = get(),
+        )
+    }
+    viewModelOf(::BackupVM)
+    viewModelOf(::ImgGenVM)
     viewModelOf(::MediaCreationSessionsVM)
     viewModel<MediaCreationVM> {
         MediaCreationVM(
@@ -86,15 +84,6 @@ val viewModelModule = module {
             appScope = get(),
         )
     }
-    viewModelOf(::TranslatorVM)
-    viewModel<ShareHandlerVM> {
-        ShareHandlerVM(
-            text = it.get(),
-            settingsStore = get(),
-        )
-    }
-    viewModelOf(::BackupVM)
-    viewModelOf(::ImgGenVM)
     viewModelOf(::PromptVM)
     viewModelOf(::QuickMessagesVM)
     viewModelOf(::SkillsVM)
@@ -103,12 +92,11 @@ val viewModelModule = module {
     viewModel<WorkspaceDetailVM> {
         WorkspaceDetailVM(
             id = it.get(),
-            initialPath = it.get(),
             repository = get(),
+            terminalSessionManager = get(),
         )
     }
     viewModelOf(::FavoriteVM)
     viewModelOf(::SearchVM)
     viewModelOf(::StatsVM)
-    viewModel { ScheduledJobsViewModel(get(), get(), get()) }
 }

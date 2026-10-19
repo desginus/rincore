@@ -1,10 +1,5 @@
-/* 【域 C·工具系统】 | 地图: docs/APP_MAP.md §C */
 package me.rerere.rikkahub.data.ai.tools
 
-
-/* ───【原版对齐】SearchTools.kt | 差异 ±3 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -15,8 +10,11 @@ import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.utils.JsonInstantPretty
+import me.rerere.rikkahub.utils.toLocalString
 import me.rerere.search.SearchService
 import me.rerere.search.SearchServiceOptions
+import java.time.LocalDate
+import kotlin.time.Clock
 import kotlin.uuid.Uuid
 
 fun createSearchTools(settings: Settings): Set<Tool> {
@@ -33,6 +31,7 @@ fun createSearchTools(settings: Settings): Set<Tool> {
                     If a date or primary source is missing, or sources conflict, run another focused search
                     or use scrape_web to verify the most relevant source before answering.
                     Generate focused keywords and run multiple searches if needed.
+                    Today is ${LocalDate.now().toLocalString(true)}.
 
                     Response format:
                     - retrievedAt is the local retrieval time, never a publication date
@@ -69,7 +68,7 @@ fun createSearchTools(settings: Settings): Set<Tool> {
                         params = it.jsonObject,
                         commonOptions = settings.searchCommonOptions,
                         serviceOptions = options,
-                    ).getOrThrow().copy(retrievedAt = java.time.Instant.now().toString())
+                    ).getOrThrow().copy(retrievedAt = Clock.System.now().toString())
                     val results =
                         JsonInstantPretty.encodeToJsonElement(result).jsonObject.let { json ->
                             val map = json.toMutableMap()
@@ -117,10 +116,8 @@ fun createSearchTools(settings: Settings): Set<Tool> {
                             params = it.jsonObject,
                             commonOptions = settings.searchCommonOptions,
                             serviceOptions = options,
-                        )
-                        val payload = JsonInstantPretty.encodeToJsonElement(
-                            result.getOrThrow().copy(retrievedAt = java.time.Instant.now().toString())
-                        ).jsonObject
+                        ).getOrThrow().copy(retrievedAt = Clock.System.now().toString())
+                        val payload = JsonInstantPretty.encodeToJsonElement(result).jsonObject
                         listOf(UIMessagePart.Text(payload.toString()))
                     }
                 ))

@@ -15,9 +15,6 @@ android {
 }
 
 dependencies {
-    // RinCore 兼容层（B1 并树）：FloatingWindow（app 经 :common 传递）
-    api(libs.floatingx)
-    api(libs.floatingx.compose)
     // okhttp
     api(libs.okhttp)
     api(libs.okhttp.sse)
@@ -33,6 +30,8 @@ dependencies {
 
     // floating
     // https://github.com/Petterpx/FloatingX
+    api(libs.floatingx.app)
+    api(libs.floatingx.compose)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)

@@ -1,30 +1,15 @@
 package me.rerere.rikkahub.data.ai.mcp
 
-/* ───【域 B·AI 传输】McpSessionRegistry.kt
- * 职责: MCP 会话 (连接/重连/stdio 桥/状态机; v4.8.6 补连定版)
- * 常用改动: 连接 → connectSession; 重连 → requestReconnect (sourceClient=null 陷阱, 见 v4.8.6); stdio → createTransport
- * 问题定位: MCP 断联/"连接关闭"/重启后不可用 → 本文件
- * 基线: 原版 2.5.1 + 自研 (viaWorkspace stdio) | 差异 ±72 行 | 地图: docs/APP_MAP.md §B | 历史: .claude/skills/rincore-bug-record
- * ───────────────────────────────────────────────────────────────*/
-
 import android.util.Log
 import io.ktor.client.HttpClient
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.util.StringValues
-import io.modelcontextprotocol.kotlin.sdk.ExperimentalMcpApi
 import io.modelcontextprotocol.kotlin.sdk.client.Client
-import io.modelcontextprotocol.kotlin.sdk.client.ClientOptions
 import io.modelcontextprotocol.kotlin.sdk.client.SseClientTransport
 import io.modelcontextprotocol.kotlin.sdk.client.StreamableHttpClientTransport
-import io.modelcontextprotocol.kotlin.sdk.client.ProtocolEra
-import io.modelcontextprotocol.kotlin.sdk.client.StdioClientTransport
-import kotlinx.io.asSink
-import kotlinx.io.asSource
-import kotlinx.io.buffered
 import io.modelcontextprotocol.kotlin.sdk.shared.AbstractTransport
 import io.modelcontextprotocol.kotlin.sdk.shared.RequestOptions
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
-import io.modelcontextprotocol.kotlin.sdk.types.RequestMeta
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequestParams
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
@@ -48,11 +33,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.Uuid
@@ -109,27 +91,13 @@ internal class McpStatusStore {
  * 每个 serverId 对应一个 [McpSession]，该 Session 的连接、同步、关闭和重连通过同一把 Mutex 串行执行。
  * Client 只有在 connect 与首次工具同步都成功后才对外可见。
  */
-
-/**
- * v4.8.110 (B1): MCP 调用方上下文 — 随 callTool 下传。
- * 服务端经 params._meta 读取 (rincore/workspaceCwd | workspaceId | rootfsFilesRoot),
- * 客户端产物归集 (B2) 也复用同一上下文判定"调用方可见范围"。
- */
-data class McpCallContext(
-    val workspaceId: String?,   // 调用方助手工作区 id (uuid 字符串)
-    val workspaceCwd: String?,  // 调用方助手 CWD (原样, 例 党课-CWD)
-)
-
 internal class McpSessionRegistry(
     private val settingsStore: SettingsStore,
     private val appScope: AppScope,
     private val httpClient: HttpClient,
     private val oauthCoordinator: McpOAuthCoordinator,
     private val statusStore: McpStatusStore,
-    // v3.11.2 兼容分支: STDIO viaWorkspace 沙箱启动 (原版无此能力)
-    private val workspaceRepository: me.rerere.rikkahub.data.repository.WorkspaceRepository? = null,
 ) {
-    private val stdioProcesses = ConcurrentHashMap<Uuid, Process>()
     private val sessions = ConcurrentHashMap<Uuid, McpSession>()
 
     fun getClient(configId: Uuid): Client? = sessions[configId]?.client
@@ -160,17 +128,13 @@ internal class McpSessionRegistry(
 
             val mustReconnect = !hasSameConnectionParameters(existing.config, newConfig)
             existing.config = newConfig
-            // v4.8.6: 补连 (修复"重启后永久断联") —
-            // 既有 session 但从未连上 (client == null 且无重连任务在跑) 时必须补连:
-            // 此前仅配置变化才重连, 启动首连失败 (如更新版本后首启、沙箱初始化中)
-            // 后即使后续 settings emit 也永不重试 → 所有 MCP 表现为永久断联。
-            if (mustReconnect || (existing.client == null && existing.reconnectJob?.isActive != true)) {
+            if (mustReconnect) {
                 appScope.launch { addClient(newConfig) }
             }
         }
     }
 
-    suspend fun callTool(serverId: Uuid, toolName: String, args: JsonObject, ctx: McpCallContext? = null): CallToolResult {
+    suspend fun callTool(serverId: Uuid, toolName: String, args: JsonObject): CallToolResult {
         val session = sessions[serverId]
             ?: throw McpClientUnavailableException("No MCP session for server $serverId")
         val freshConfig = oauthCoordinator.ensureFreshToken(session.config)
@@ -186,19 +150,7 @@ internal class McpSessionRegistry(
         return try {
             sdkClient.callTool(
                 request = CallToolRequest(
-                    // v4.8.110 (B1): 调用方上下文写进 _meta (独立字段, 不污染工具入参 schema;
-                    // 服务端约定: 读到 rincore/workspaceCwd 时把产物写到调用方工作区)
-                    params = CallToolRequestParams(
-                        name = toolName,
-                        arguments = args,
-                        meta = ctx?.workspaceId?.takeIf { it.isNotBlank() }?.let { wsId ->
-                            RequestMeta(buildJsonObject {
-                                put("rincore/workspaceCwd", ctx.workspaceCwd.orEmpty())
-                                put("rincore/workspaceId", wsId)
-                                put("rincore/rootfsFilesRoot", "/workspace")
-                            })
-                        },
-                    ),
+                    params = CallToolRequestParams(name = toolName, arguments = args),
                 ),
                 options = RequestOptions(timeout = 120.seconds),
             )
@@ -279,9 +231,7 @@ internal class McpSessionRegistry(
             oldClient?.let { closeClient(it, config.commonOptions.name) }
 
             val sdkClient = createSdkClient(config)
-            // v4.8.99: 传输创建含 stdio 进程启动 (ProcessBuilder/proot) — 此前在调用方
-            // 上下文执行 (appScope=Main 触发链 → 主线程付进程启动); 统一移入 Io。
-            val transport = withContext(me.rerere.rikkahub.utils.AppDispatchers.Io) { createTransport(config) }
+            val transport = createTransport(config)
             installTransportCallbacks(config, sdkClient, transport)
 
             try {
@@ -312,12 +262,6 @@ internal class McpSessionRegistry(
                     ConnectResult.NeedsAuthorization
                 } else {
                     statusStore.update(config.id, McpStatus.Error.from(e))
-                    // v4.8.6: 首次连接失败也进入重连链 — 此前只有"已连接后断开"
-                    // (onClose/onError) 才触发重连; 启动首连失败 (沙箱初始化中/
-                    // 瞬时网络抖动) 直接永久 Error (用户实证"重启后断联")。
-                    // sourceClient = null: 连接失败路径 session.client 仍为 null,
-                    // 传 sdkClient 会被"sourceClient !== session.client"校验跳过重连。
-                    requestReconnect(config.id, sourceClient = null, retryAfterFailure = true)
                     ConnectResult.Failed
                 }
             }
@@ -479,17 +423,11 @@ internal class McpSessionRegistry(
             .onFailure { Log.w(TAG, "Failed to close MCP client $serverName", it) }
     }
 
-    // v4.8.96: 修复 fork SDK 的 server/discover 探测导致 stdio 连接失败 ——
-    // 探测请求会让老服务器把 "unknown method" 记到 stderr（含 "error"），触发传输层
-    // FATAL 停机 → "Connection closed"。强制 Legacy 纪元 = 恢复官方 0.15.0 的
-    // initialize 握手流程（本地复现验证: Auto=FAIL / Legacy=OK）。
-    @OptIn(ExperimentalMcpApi::class)
     private fun createSdkClient(config: McpServerConfig): Client = Client(
-        Implementation(name = config.commonOptions.name, version = "1.0"),
-        ClientOptions().apply { protocolEra = ProtocolEra.Legacy },
+        clientInfo = Implementation(name = config.commonOptions.name, version = "1.0")
     )
 
-    private suspend fun createTransport(config: McpServerConfig): AbstractTransport = when (config) {
+    private fun createTransport(config: McpServerConfig): AbstractTransport = when (config) {
         is McpServerConfig.SseTransportServer -> SseClientTransport(
             urlString = config.url,
             client = httpClient,
@@ -501,68 +439,6 @@ internal class McpSessionRegistry(
             client = httpClient,
             requestBuilder = { appendResolvedHeaders(config) },
         )
-
-        // v3.11.2 兼容分支: STDIO — workspace 沙箱启动 (viaWorkspace)
-        // 或直接本地进程, 失败自动回退沙箱。状态机与图标与原版完全一致。
-        // v4.8.63 (用户明确): MCP 服务不受任何 CWD 约束 — 项目包/助手 CWD 只用于
-        // 模型产物的整理规划, 不是沙箱锁; stdio 进程一律以工作区全量视图启动
-        // (cwd="", /workspace = 完整 files 区), 否则 MCP 基础设施目录不可达 →
-        // 进程起不来 → 连接超时 (用户实证: 绑定非当前助手/设置项目包后无法连接;
-        // v4.5.27 的"助手 CWD 作用域对齐"于此撤销)。
-        is McpServerConfig.StdioTransportServer -> {
-            check(config.command.isNotBlank()) { "stdio mode requires: command" }
-            val cmdParts = config.command.split(Regex("\\s+")).filter { it.isNotBlank() }
-            val process = if (config.viaWorkspace) {
-                val repo = workspaceRepository
-                    ?: throw IllegalStateException("viaWorkspace stdio requires WorkspaceRepository")
-                val p = runCatching {
-                    repo.launchProcess(config.workspaceId, config.command, "", config.env)
-                }.getOrElse { e ->
-                    Log.e("McpSessionRegistry", "viaWorkspace launch failed: ${e.message}")
-                    throw IllegalStateException("workspace 启动 MCP 服务器失败: ${e.message}", e)
-                }
-                if (p == null) throw IllegalStateException("workspace 启动失败: workspace 不存在或 proot 不可用")
-                p
-            } else {
-                val process2 = try {
-                    ProcessBuilder(cmdParts + config.args).start()
-                } catch (e: java.io.IOException) {
-                    Log.w("McpSessionRegistry", "direct stdio launch failed: ${e.message}, falling back to workspace")
-                    // 目标 workspace: 配置指定优先 (绑定助手/基础设施所在), 无则回退当前助手
-                    val workspaceId = config.workspaceId.takeIf { it.isNotBlank() }
-                        ?: settingsStore.settingsFlow.value.getCurrentAssistant().workspaceId?.toString()
-                        ?: throw e
-                    val wp = workspaceRepository?.launchProcess(workspaceId, config.command, "", config.env)
-                        ?: throw e
-                    runCatching {
-                        settingsStore.update { cur ->
-                            cur.copy(mcpServers = cur.mcpServers.map { s ->
-                                if (s.id == config.id && s is McpServerConfig.StdioTransportServer) {
-                                    s.copy(viaWorkspace = true, workspaceId = workspaceId)
-                                } else s
-                            })
-                        }
-                    }
-                    wp
-                }
-                process2
-            }
-            stdioProcesses[config.id] = process
-            StdioClientTransport(
-                input = process.inputStream.asSource().buffered(),
-                output = process.outputStream.asSink().buffered(),
-                error = process.errorStream.asSource().buffered(),
-            ) { line ->
-                // v4.8.96: 永不返回 FATAL —— FATAL 会 stopProcessing 直接停掉整个传输。
-                // 真实服务器在 stderr 打含 "error" 的良性日志很常见（如对未知方法的告警），
-                // 旧分类器会误杀连接（本次 stdio 回归的放大器）；进程真死由 EOF/onClose 正常处理。
-                when {
-                    line.contains("error", ignoreCase = true) -> StdioClientTransport.StderrSeverity.WARNING
-                    line.contains("warning", ignoreCase = true) -> StdioClientTransport.StderrSeverity.WARNING
-                    else -> StdioClientTransport.StderrSeverity.INFO
-                }
-            }
-        }
     }
 
     private fun HttpRequestBuilder.appendResolvedHeaders(config: McpServerConfig) {
@@ -596,7 +472,6 @@ internal fun McpServerConfig.connectionKey(): McpConnectionKey = McpConnectionKe
     transportType = when (this) {
         is McpServerConfig.SseTransportServer -> "sse"
         is McpServerConfig.StreamableHTTPServer -> "streamable_http"
-        is McpServerConfig.StdioTransportServer -> "stdio"
     },
     serverUrl = serverUrl,
     clientName = commonOptions.name,
@@ -609,7 +484,7 @@ private fun hasSameConnectionParameters(
 ): Boolean = left != null && right != null && left.connectionKey() == right.connectionKey()
 
 private fun McpServerConfig.resolvedHeaders(): List<Pair<String, String>> {
-    // v4.8.64 (2.5.5 移植): 设置页"添加请求头"后未填写会留下空名称, OkHttp 直接抛 "name is empty" (#1949)
+    // 设置页“添加请求头”后未填写会留下空名称，OkHttp 会直接抛出 "name is empty"
     val base = commonOptions.headers.filter { it.first.isNotBlank() }
     val token = commonOptions.oauth?.takeIf { it.enabled }?.accessToken
     val hasAuthorization = base.any { it.first.equals("Authorization", ignoreCase = true) }
@@ -634,4 +509,3 @@ private fun mergeTools(storedTools: List<McpTool>, serverTools: List<Tool>): Lis
         )
     }
 }
-

@@ -1,34 +1,13 @@
 package me.rerere.rikkahub.ui.pages.chat
 
-
-/* ───【域 A·对话核心】ChatPage.kt
- * 职责: 对话页组装 (Scaffold/顶栏/输入接线/压缩提示条/分享文档消费)
- * 常用改动: 压缩提示条 → "正在压缩上下文"块; 分享文档 → shareArgsConsumed; 顶栏 → TopBar 调用
- * 问题定位: 页面卡顿/压缩 UI 异常/分享文档幽灵重现 → 本文件 (渲染细节在 components/message)
- * 基线: 原版移植 + 自研 (延时回复/插件等) | 差异 +107 行 | 地图: docs/APP_MAP.md §A | 历史: .claude/skills/rincore-bug-record
- * ───────────────────────────────────────────────────────────────*/
 import android.net.Uri
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
-
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.ui.Alignment
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
@@ -47,66 +26,44 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.compose.ui.unit.DpSize
-import androidx.compose.ui.unit.dp
+import androidx.compose.material3.adaptive.currentWindowDpSize
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
-import dev.chrisbanes.haze.HazePerformanceMode
-import dev.chrisbanes.haze.LocalHazePerformanceMode
-import dev.chrisbanes.haze.hazeSource
-import dev.chrisbanes.haze.rememberHazeState
-import androidx.activity.ComponentActivity
 import androidx.compose.ui.platform.LocalContext
-
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
-
-import com.dokar.sonner.ToastType
-import kotlinx.coroutines.FlowPreview
+import me.rerere.ui.toast.ToastType
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.filterNot
-import kotlinx.coroutines.flow.map
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.Bug01
 import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.LeftToRightListBullet
 import me.rerere.hugeicons.stroke.Menu03
 import me.rerere.hugeicons.stroke.MessageAdd01
-import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
-import me.rerere.rikkahub.data.datastore.getCurrentAssistant
-import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Assistant
@@ -114,18 +71,10 @@ import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.ui.components.ai.ChatAttachmentPickerActions
-import me.rerere.rikkahub.ui.components.motion.LocalHazeState
-import me.rerere.rikkahub.ui.components.motion.RinGlass
-import me.rerere.rikkahub.ui.components.motion.rinGlass
-import me.rerere.rikkahub.ui.components.motion.rinGlassHighlight
 import me.rerere.rikkahub.ui.components.ai.ChatInput
-import me.rerere.rikkahub.ui.components.ai.SearchMode
 import me.rerere.rikkahub.ui.components.ai.FilesPicker
+import me.rerere.rikkahub.ui.components.ai.SearchMode
 import me.rerere.rikkahub.ui.components.ai.completion.WorkspaceCompletionProvider
-import me.rerere.rikkahub.ui.components.ai.ToolMatrixPickerData
-import me.rerere.rikkahub.ui.components.ai.buildToolMatrixPickerData
-import me.rerere.rikkahub.ui.pages.setting.asShellTools
-import me.rerere.rikkahub.ui.pages.setting.buildToolList
 import me.rerere.rikkahub.ui.components.ai.rememberChatAttachmentPickerActions
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
@@ -135,31 +84,17 @@ import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.utils.base64Decode
 import me.rerere.rikkahub.utils.navigateToChatPage
-import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.data.db.dao.ConversationDAO
-import me.rerere.rikkahub.data.db.dao.MessageNodeDAO
-import me.rerere.rikkahub.data.usage.UsageQuery
-import me.rerere.rikkahub.data.workspace.EffectiveCwd
-import me.rerere.rikkahub.ui.pages.stats.StatsCache
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
-import kotlinx.coroutines.delay
-import okhttp3.OkHttpClient
-import me.rerere.ai.provider.ProviderManager
-import me.rerere.rikkahub.service.ConnectionWarmer
-import me.rerere.rikkahub.service.warm.WarmPipeline
 import org.koin.core.parameter.parametersOf
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.uuid.Uuid
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 
-@OptIn(FlowPreview::class)
 @Composable
-fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, folderId: Uuid? = null) {
+fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
     val vm: ChatVM = koinViewModel(
         parameters = {
-            parametersOf(id.toString(), folderId)
+            parametersOf(id.toString())
         }
     )
     val filesManager: FilesManager = koinInject()
@@ -171,8 +106,15 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
     val loadingJob by vm.conversationJob.collectAsStateWithLifecycle()
     val processingStatus by vm.processingStatus.collectAsStateWithLifecycle()
     val currentChatModel by vm.currentChatModel.collectAsStateWithLifecycle()
-    val enableWebSearch by vm.enableWebSearch.collectAsStateWithLifecycle()
+    val assistant by vm.assistant.collectAsStateWithLifecycle()
     val errors by vm.errors.collectAsStateWithLifecycle()
+
+    // 新会话发出第一条消息前，跟随抽屉当前选中的文件夹（#2133）
+    val drawerVm: ChatDrawerVM = koinViewModel(viewModelStoreOwner = LocalContext.current as ComponentActivity)
+    val selectedFolderId by drawerVm.selectedFolderId.collectAsStateWithLifecycle()
+    LaunchedEffect(selectedFolderId) {
+        vm.updateDraftFolder(selectedFolderId)
+    }
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val softwareKeyboardController = LocalSoftwareKeyboardController.current
@@ -185,7 +127,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
         }
     }
 
-    // Hide keyboard when drawer is open
+    // Clear input focus so popup transitions cannot reopen the keyboard.
     LaunchedEffect(drawerState.isOpen) {
         if (drawerState.isOpen) {
             focusManager.clearFocus(force = true)
@@ -193,24 +135,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
         }
     }
 
-    // v4.8.96 (用户定版): 抽屉打开瞬间预热 —— 用量查询 / 统计页后台先算,
-    // 用户点进对应页面时直接出结果 (缓存直出), 不再看到加载过程。
-    val conversationDaoForWarm: ConversationDAO = koinInject()
-    val messageNodeDaoForWarm: MessageNodeDAO = koinInject()
-    val settingsStoreForWarm: SettingsStore = koinInject()
-    LaunchedEffect(drawerState.isOpen) {
-        if (drawerState.isOpen) {
-            scope.launch { runCatching { UsageQuery.prefetch(settingsStoreForWarm.settingsFlow.value) } }
-            scope.launch { runCatching { StatsCache.refresh(conversationDaoForWarm, messageNodeDaoForWarm, settingsStoreForWarm) } }
-        }
-    }
-
-    val windowInfo = LocalWindowInfo.current
-    val windowDensity = LocalDensity.current
-    val windowAdaptiveInfo = DpSize(
-        (windowInfo.containerSize.width / windowDensity.density).dp,
-        (windowInfo.containerSize.height / windowDensity.density).dp
-    )
+    val windowAdaptiveInfo = currentWindowDpSize()
     val isBigScreen =
         windowAdaptiveInfo.width > windowAdaptiveInfo.height && windowAdaptiveInfo.width >= 1100.dp
 
@@ -226,106 +151,35 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
 
     val inputState = vm.inputState
 
-    // v3.10.7: 打字防抖预热 — 输入停顿 1.5s 且未生成时预建连接
-    // 比发送时预热更提前 (覆盖组装窗口不足), 进一步压缩 TTFT
-    val httpClient: OkHttpClient = koinInject()
-    LaunchedEffect(inputState.textContent.text) {
-        val text = inputState.textContent.text
-        if (text.isNotBlank() && loadingJob == null) {
-            delay(1_500)
-            val s = setting
-            val p = s.getCurrentChatModel()?.findProvider(s.providers)
-            if (p is ProviderSetting.OpenAI && p.baseUrl.isNotBlank()) {
-                ConnectionWarmer.warmWithOkHttp(
-                    httpClient, p.baseUrl,
-                    ProviderManager.opencodeClient
-                )
-            }
-        }
-    }
-
     // 初始化输入状态（处理传入的 files 和 text 参数）
-    // v4.7.23: 一次性消费 + 追加语义 —
-    //   ① vm.shareArgsConsumed: 首帧消费后置位, 页面重建 (抽屉→设置→返回) 不再重复
-    //      填充 (修复"已发送的分享文档幽灵重现");
-    //   ② 附件/文本追加到现有输入, 不覆盖 (修复"分享文档抹除输入框已有内容")。
-    val shareToaster = LocalToaster.current
-    val shareContext = LocalContext.current
     LaunchedEffect(files, text) {
-        if (vm.shareArgsConsumed) return@LaunchedEffect
-        if (files.isEmpty() && text.isNullOrEmpty()) return@LaunchedEffect
-        vm.shareArgsConsumed = true
         if (files.isNotEmpty()) {
-            // v4.8.112 (空分享加固): 导入异常/零产物不得静默 — 旧实现异常即中断消费，
-            // 产物为空时用户只看到"跳转过来但什么都没有"。
-            val localFiles = runCatching {
-                filesManager.createChatFilesByContents(files)
-            }.onFailure { e ->
-                android.util.Log.e("ChatPage", "share file import failed", e)
-            }.getOrDefault(emptyList())
+            val localFiles = filesManager.createChatFilesByContents(files)
             val contentTypes = files.mapNotNull { file ->
                 filesManager.getFileMimeType(file)
             }
-            // v4.5.2: mapNotNull 会剔除解析失败的条目导致 files/names 索引错位 —
-            // 第 i 个胶囊显示第 j (j≠i) 个文件的名字。改为保留 null 占位对齐索引;
-            // 兜底名取原始 uri 的路径段 (原文件名), 绝不取复制后 UUID 存储名
-            val fileNames = files.map { file ->
-                filesManager.getFileNameFromUri(file)
-            }
             val parts = buildList {
-                localFiles.forEachIndexed { index, localUri ->
+                localFiles.forEachIndexed { index, file ->
                     val type = contentTypes.getOrNull(index)
-                    val name = fileNames.getOrNull(index)
-                    when {
-                        type?.startsWith("image/") == true -> add(UIMessagePart.Image(url = localUri.toString()))
-                        type?.startsWith("video/") == true -> add(UIMessagePart.Video(url = localUri.toString()))
-                        type?.startsWith("audio/") == true -> add(UIMessagePart.Audio(url = localUri.toString()))
-                        // 非媒体文件: PDF/DOCX/XLSX 等, 作为 Document 附件
-                        else -> add(UIMessagePart.Document(
-                            url = localUri.toString(),
-                            fileName = name
-                                ?: files.getOrNull(index)?.lastPathSegment?.substringAfterLast('/')
-                                ?: "file",
-                            mime = type ?: "application/octet-stream"
-                        ))
+                    if (type?.startsWith("image/") == true) {
+                        add(UIMessagePart.Image(url = file.toString()))
+                    } else if (type?.startsWith("video/") == true) {
+                        add(UIMessagePart.Video(url = file.toString()))
+                    } else if (type?.startsWith("audio/") == true) {
+                        add(UIMessagePart.Audio(url = file.toString()))
                     }
                 }
             }
-            if (parts.isEmpty()) {
-                // v4.8.112: 失败可见 — 分享的文件全部未能读取 (源授权失效/来源文件不可读)
-                val names = fileNames.filterNotNull().joinToString("、").ifBlank { "${files.size} 个文件" }
-                shareToaster.show(
-                    shareContext.getString(R.string.chat_input_file_read_failed, names),
-                    type = ToastType.Error,
-                )
-            }
-            // 追加而非替换 (不抹除用户已写内容)
-            inputState.messageContent = inputState.messageContent + parts
+            inputState.messageContent = parts
         }
         text?.base64Decode()?.let { decodedText ->
             if (decodedText.isNotEmpty()) {
-                val existing = inputState.textContent.text.toString()
-                inputState.setMessageText(
-                    if (existing.isBlank()) decodedText else "$existing\n$decodedText"
-                )
+                inputState.setMessageText(decodedText)
             }
         }
     }
 
     val chatListState = rememberLazyListState()
-    // v4.8.50: 铺展架构 — 进入对话后周边预热 + 滚动停稳补热。
-    // 只填充解析缓存; 渲染保持原版形态 (首帧即终态), 连续性零破坏。
-    LaunchedEffect(conversation.id) {
-        delay(400) // 让首帧/首屏先行, 之后后台分时铺展
-        val current = vm.conversation.value
-        WarmPipeline.warmAround(current, current.messageNodes.lastIndex)
-        snapshotFlow { chatListState.isScrollInProgress to chatListState.firstVisibleItemIndex }
-            .filterNot { it.first }
-            .map { it.second }
-            .distinctUntilChanged()
-            .debounce(1_200.milliseconds)
-            .collect { index -> WarmPipeline.warmAround(vm.conversation.value, index) }
-    }
     LaunchedEffect(nodeId, conversation.messageNodes.size) {
         if (!vm.chatListInitialized && conversation.messageNodes.isNotEmpty()) {
             if (nodeId != null) {
@@ -334,15 +188,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
                     chatListState.scrollToItem(index)
                 }
             } else {
-                // v3.8.29: 锁定最新一条消息 (与发送者无关) 并滚动到底部对齐。
-                // 原因: 原 currentMessages.size+5 超界索引被 clamp 到最后一条
-                // 顶部对齐 — 最后一条为长消息(模型大段回复)时, 视口显示的是
-                // 该消息开头而非对话真正末尾, 表现为"锁定到模型最后回复"。
-                // scrollOffset=Int.MAX_VALUE 强制底部对齐, 真正显示最新内容。
-                val last = conversation.messageNodes.lastIndex
-                if (last >= 0) {
-                    chatListState.scrollToItem(last, Int.MAX_VALUE)
-                }
+                chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
             }
             vm.chatListInitialized = true
         }
@@ -371,7 +217,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
                     navController = navController,
                     vm = vm,
                     chatListState = chatListState,
-                    enableWebSearch = enableWebSearch,
+                    assistant = assistant,
                     currentChatModel = currentChatModel,
                     bigScreen = true,
                     errors = errors,
@@ -389,9 +235,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
                         navController = navController,
                         current = conversation,
                         vm = vm,
-                        settings = setting,
-                        // v4.8.110: 切换助手原地停留时收起抽屉 (对话页切助手行为不变)
-                        onRequestCloseDrawer = { scope.launch { drawerState.close() } },
+                        settings = setting
                     )
                 }
             ) {
@@ -406,7 +250,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null, fo
                     navController = navController,
                     vm = vm,
                     chatListState = chatListState,
-                    enableWebSearch = enableWebSearch,
+                    assistant = assistant,
                     currentChatModel = currentChatModel,
                     bigScreen = false,
                     errors = errors,
@@ -434,58 +278,18 @@ private fun ChatPageContent(
     navController: Navigator,
     vm: ChatVM,
     chatListState: LazyListState,
-    enableWebSearch: Boolean,
+    assistant: Assistant,
     currentChatModel: Model?,
     errors: List<ChatError>,
     onDismissError: (Uuid) -> Unit,
     onClearAllErrors: () -> Unit,
 ) {
-
-    // 抽屉共享 VM — 新建对话时读取当前焦点文件夹 (抽屉里实时选择的)
-    val drawerVm: ChatDrawerVM = koinViewModel(viewModelStoreOwner = LocalContext.current as ComponentActivity)
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val workspaceRepository: WorkspaceRepository = koinInject()
-    // v4.8.90: /@ 工具矩阵选择器 —— 与设置页/模型侧同一 buildToolList 口径
-    val localToolsForPicker: me.rerere.rikkahub.data.ai.tools.local.LocalTools = koinInject()
-    val skillManagerForPicker: me.rerere.rikkahub.data.files.SkillManager = koinInject()
-    val mcpManagerForPicker: me.rerere.rikkahub.data.ai.mcp.McpManager = koinInject()
-    val conversationRepoForPicker: me.rerere.rikkahub.data.repository.ConversationRepository = koinInject()
-    val settingsStoreForPicker: me.rerere.rikkahub.data.datastore.SettingsStore = koinInject()
-    val operitToolProviderForPicker: me.rerere.rikkahub.data.operit.runtime.OperitToolProvider = koinInject()
+
     var previewMode by rememberSaveable { mutableStateOf(false) }
-    // v4.8.179: 开发者调试面板开关 (仅开发者版有入口)
-    var showDevPanel by rememberSaveable { mutableStateOf(false) }
     val hazeState = rememberHazeState()
-    // v3.8.9: 分享面板 (外部 Activity) 返回后 Haze 模糊纹理失效成黑框,
-    // 进设置再返回能恢复 (导航触发重组), 分享返回不触发任何重组。
-    // ON_RESUME 递增 tick 强制背景重组, 重建模糊纹理。
-    // v4.8.11: 扩展自愈 — 用户实证"输入框液态玻璃偶发静默消失, 打开抽屉进设置
-    // 再返回才恢复"(= 需要一次强制重绘重建纹理)。除 ON_RESUME 外新增两个恢复触发:
-    //   ① 软键盘显隐 (IME inset 变化 = 窗口表面重配, beta01 下偶发纹理丢失);
-    //   ② 周期心跳兜底 (失效后最多 5 分钟自动恢复; 代价 = 一次背景重绘, 可忽略)。
-    var hazeRebuildTick by remember { mutableStateOf(0) }
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                hazeRebuildTick++
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-    // v4.8.11 ①: 键盘显隐触发重建
-    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-    LaunchedEffect(imeVisible) { hazeRebuildTick++ }
-    // v4.8.11 ②: 周期心跳兜底 (5 分钟)
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(5 * 60 * 1000L)
-            hazeRebuildTick++
-        }
-    }
-    val assistant = setting.getCurrentAssistant()
     var showFilesSheet by remember { mutableStateOf(false) }
     val attachmentPickerActions = rememberChatAttachmentPickerActions(
         inputState = inputState,
@@ -493,46 +297,18 @@ private fun ChatPageContent(
         onAttachmentAdded = { showFilesSheet = false },
     )
     val allowAudioVideoAttachments =
-        setting.getCurrentChatModel()?.findProvider(setting.providers) is ProviderSetting.Google
+        currentChatModel?.findProvider(setting.providers) is ProviderSetting.Google
 
-    // 4.8.24: 项目包 CWD — 对话所属项目包 cwd 优先 (项目包锚定), 否则助手级
-    val conversationFolderCwd by vm.conversationFolderCwd.collectAsStateWithLifecycle()
-    val effectiveCwd = EffectiveCwd.pick(conversationFolderCwd, assistant.workspaceCwd)
-    val completionProviders = remember(assistant.workspaceId, effectiveCwd, workspaceRepository) {
+    val completionProviders = remember(assistant.workspaceId, conversation.workspaceCwd, workspaceRepository) {
         assistant.workspaceId?.let { workspaceId ->
             listOf(
                 WorkspaceCompletionProvider(
                     workspaceId = workspaceId.toString(),
                     repository = workspaceRepository,
-                    currentCwd = effectiveCwd,
+                    currentCwd = conversation.workspaceCwd,
                 )
             )
         }.orEmpty()
-    }
-
-    // v4.8.90: /@ 选择器数据源 —— **懒构建**：只在用户真敲出 `/@` 时才跑一次全量工具池
-    val pickerFilesRoot = LocalContext.current.applicationContext.filesDir
-    val toolPickerProvider: suspend () -> ToolMatrixPickerData? = remember(
-        setting, localToolsForPicker, skillManagerForPicker, mcpManagerForPicker,
-        conversationRepoForPicker, settingsStoreForPicker, workspaceRepository, operitToolProviderForPicker,
-        pickerFilesRoot,
-    ) {
-        {
-            runCatching {
-                val previews = buildToolList(
-                    settings = setting,
-                    localTools = localToolsForPicker,
-                    skillManager = skillManagerForPicker,
-                    mcpManager = mcpManagerForPicker,
-                    conversationRepo = conversationRepoForPicker,
-                    settingsStore = settingsStoreForPicker,
-                    workspaceRepository = workspaceRepository,
-                    operitToolProvider = operitToolProviderForPicker,
-                    filesRoot = pickerFilesRoot,
-                )
-                buildToolMatrixPickerData(settings = setting, tools = previews.asShellTools())
-            }.getOrNull()
-        }
     }
 
     TTSAutoPlay(vm = vm, setting = setting, conversation = conversation)
@@ -541,43 +317,19 @@ private fun ChatPageContent(
         color = MaterialTheme.colorScheme.background,
         modifier = Modifier.fillMaxSize()
     ) {
-        AssistantBackground(
-            setting = setting,
-            modifier = Modifier
-                .hazeSource(hazeState)
-                .drawWithContent {
-                    @Suppress("UNUSED_EXPRESSION")
-                    hazeRebuildTick
-                    drawContent()
-                }
-        )
-        // v3.6.13: 对话设置对话框 — 延迟自动回复开关
-
-        // 4.1.5: 弹窗柔光玻璃 source — 全局弹窗经 LocalHazeState 消费
-        // 本页背景 source (HyperDialog/HyperGlassPanel 真模糊)
-        // v5.0.13: 全页 haze 保真度钉 Quality —— 覆盖 BLUR/GLASS 输入栏之外的其余
-        // 效果消费端（轨道图标/弹窗玻璃），消除任何降采样档位漂移（Balanced 默认
-        // 0.79 缩放链是尖锐色斑网格的机制根因，见 ChatInputHaze 注）。
-        androidx.compose.runtime.CompositionLocalProvider(
-            LocalHazeState provides hazeState,
-            LocalHazePerformanceMode provides HazePerformanceMode.Quality,
-        ) {
+        AssistantBackground(setting = setting, modifier = Modifier.hazeSource(hazeState))
         Scaffold(
             topBar = {
-                // v5.0.11 (用户定版): 标题栏按原版 3.0.0 重做 — 透明 TopAppBar；
-                // "渐变"由消息列表顶部渐隐遮罩承担（ChatList.topFadingEdge：消息滚到标题栏下
-                // 方时内容自身逐渐透明，不再铺任何模糊/底色面板）。
                 TopBar(
                     settings = setting,
+                    assistant = assistant,
+                    chatModel = currentChatModel,
                     conversation = conversation,
                     bigScreen = bigScreen,
                     drawerState = drawerState,
                     previewMode = previewMode,
-                    onOpenDevPanel = { showDevPanel = true },
                     onNewChat = {
-                        // 深度修复: 新建对话归属 = 抽屉实时焦点文件夹 (不是进入本页时的路由参数)
-                        // 用户在抽屉里选择文件夹 B 后点新建, 必须归 B
-                        navigateToChatPage(navController, folderId = drawerVm.selectedFolderId.value)
+                        navigateToChatPage(navController)
                     },
                     onClickMenu = {
                         previewMode = !previewMode
@@ -591,7 +343,6 @@ private fun ChatPageContent(
                 val messageQueue by vm.messageQueue.collectAsStateWithLifecycle()
                 val voiceState by vm.voiceSession.state.collectAsStateWithLifecycle()
                 ChatInput(
-                    hazeState = hazeState,
                     onStartVoiceMode = onStartVoiceMode,
                     voiceState = voiceState,
                     onStopVoiceMode = vm.voiceSession::stop,
@@ -603,26 +354,18 @@ private fun ChatPageContent(
                     onResumeMessageQueue = vm::resumeMessageQueue,
                     loading = loadingJob != null,
                     settings = setting,
-                    // v5.0.11: 上游 3.0.0 签名适配 — 会话视角助手/模型 + 搜索模式
                     assistant = assistant,
                     chatModel = currentChatModel,
-                    onUpdateSearchMode = { mode ->
-                        // v5.0.11: 搜索模式写回（上游语义映射本树字段）——LOCAL=开启网络搜索
-                        //（每助手字段 assistant.enableWebSearch，ChatToolFactory 消费）；
-                        // OFF/BUILT_IN=不启用网络搜索服务（内置搜索=模型侧工具，无持久字段）。
-                        val updated = assistant.copy(enableWebSearch = mode == SearchMode.LOCAL)
-                        vm.updateSettings(
-                            setting.copy(
-                                assistants = setting.assistants.map { a ->
-                                    if (a.id == updated.id) updated else a
-                                }
-                            )
-                        )
-                    },
+                    hazeState = hazeState,
                     completionProviders = completionProviders,
-                    toolPickerProvider = toolPickerProvider,
                     onCancelClick = {
                         vm.stopGeneration()
+                    },
+                    onUpdateSearchMode = { mode ->
+                        vm.updateSearch(
+                            enableWebSearch = mode == SearchMode.LOCAL,
+                            builtInSearch = mode == SearchMode.BUILT_IN,
+                        )
                     },
                     onSendClick = {
                         if (currentChatModel == null) {
@@ -637,6 +380,7 @@ private fun ChatPageContent(
                         } else {
                             vm.handleMessageSend(inputState.getContents())
                             scope.launch {
+                                delay(100.milliseconds)
                                 chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
                             }
                         }
@@ -656,28 +400,10 @@ private fun ChatPageContent(
                         }
                         inputState.clearInput()
                     },
-                    onUpdateChatModel = {
-                        vm.setChatModel(assistant = setting.getCurrentAssistant(), model = it)
-                    },
-                    onUpdateAssistant = {
-                        vm.updateSettings(
-                            setting.copy(
-                                assistants = setting.assistants.map { assistant ->
-                                    if (assistant.id == it.id) {
-                                        it
-                                    } else {
-                                        assistant
-                                    }
-                                }
-                            )
-                        )
-                    },
+                    onUpdateChatModel = vm::setChatModel,
+                    onUpdateAssistant = vm::updateAssistant,
                     onUpdateSearchService = { index ->
-                        vm.updateSettings(
-                            setting.copy(
-                                searchServiceSelected = index
-                            )
-                        )
+                        vm.updateSettings { it.copy(searchServiceSelected = index) }
                     },
                     onMoreClick = {
                         showFilesSheet = true
@@ -686,48 +412,15 @@ private fun ChatPageContent(
             },
             containerColor = Color.Transparent,
         ) { innerPadding ->
-            // v4.8.6: 压缩中页内提示 (非模态, 仅作用于本对话) — 压缩弹窗可关闭
-            // "后台运行", 此条随本对话可见; 切走其他对话/工作区完全自由。
-            val compressing by vm.compressing.collectAsStateWithLifecycle()
-            Box(modifier = Modifier.fillMaxSize()) {
             ChatList(
                 innerPadding = innerPadding,
-                hazeState = hazeState,
                 conversation = conversation,
-                folderCwd = conversationFolderCwd,
                 state = chatListState,
                 loading = loadingJob != null,
                 processingStatus = processingStatus,
                 previewMode = previewMode,
                 settings = setting,
-                // v4.8.104: 速览页快捷入口（翻译 / 图像生成）+ 点空白处返回
-                onOpenTranslator = { navController.navigate(Screen.Translator) },
-                // v5.0.11 (用户定版): 媒体创作入口 — 自抽屉移入速览快捷行（替换原图片生成位）
-                onOpenMediaCreation = { navController.navigate(Screen.MediaCreationSessions) },
-                onExitPreview = { previewMode = false },
-                // v4.8.88: 子代理预算（速览页弹窗直接回写 Settings）
-                onUpdateSettings = { updated -> vm.updateSettings(updated) },
-                // v4.8.147: 空态轨道选择器接线 — 切助手=复用"移对话到助手"(含归属清理与全局切换);
-                // 选项目包=回写本对话 folderId。
-                onOrbitSelectAssistant = { id ->
-                    // v4.8.148 (B169 修复): 旧版走 moveConversationToAssistant — 但空对话
-                    // 尚未入库 (saveConversation 明文"新会话且为空时不保存"), 其首行
-                    // getConversationById ?: return 直接静默退出, 且 updateAssistant 藏在该
-                    // 分支内 → 点击"只点亮不切换"。修复 = ①直切全局助手 (设置层, 永远生效)
-                    // ②会话归属内存态同步 (空对话发送时随 saveConversation 入库)。
-                    vm.updateSettings(setting.copy(assistantId = id))
-                    vm.updateConversation(conversation.copy(assistantId = id, folderId = null))
-                    vm.saveConversationAsync()
-                },
-                onOrbitSelectFolder = { fid ->
-                    // v4.8.149 (用户: "切换项目包没修好"): 旧实现只写了 conversation.folderId
-                    // — 没有"进入项目包" (抽屉选区/本次进程默认页/智能排序统计全不动),
-                    // 用户感知 = 没切换。修复 = 归属写入 + 同走抽屉 selectFolder 单入口
-                    // (选区/进程记忆/统计一次到位)。
-                    vm.updateConversation(conversation.copy(folderId = fid))
-                    vm.saveConversationAsync()
-                    drawerVm.selectFolder(fid)
-                },
+                hazeState = hazeState,
                 errors = errors,
                 onDismissError = onDismissError,
                 onClearAllErrors = onClearAllErrors,
@@ -752,17 +445,7 @@ private fun ChatPageContent(
                     }
                 },
                 onUpdateMessage = { newNode ->
-                    vm.updateConversation(
-                        conversation.copy(
-                            messageNodes = conversation.messageNodes.map { node ->
-                                if (node.id == newNode.id) {
-                                    newNode
-                                } else {
-                                    node
-                                }
-                            }
-                        ))
-                    vm.saveConversationAsync()
+                    vm.selectMessageNode(newNode.id, newNode.selectIndex)
                 },
                 onClickSuggestion = { suggestion ->
                     inputState.editingMessage = null
@@ -790,57 +473,10 @@ private fun ChatPageContent(
                     vm.toggleMessageFavorite(node)
                 },
                 onConversationSystemPromptChange = { newPrompt ->
-                    vm.updateConversation(conversation.copy(customSystemPrompt = newPrompt))
-                    vm.saveConversationAsync()
+                    vm.updateConversationSystemPrompt(newPrompt)
                 },
             )
-            // v4.8.9: 提示条移至 ChatList 之后声明 — Compose Box 中后声明者绘制在上层,
-            // 此前在 ChatList 前声明导致被消息列表覆盖 (用户实证"小弹窗被消息覆盖")。
-            if (compressing) {
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(innerPadding)
-                        .padding(top = 8.dp),
-                    shape = RoundedCornerShape(50),
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    tonalElevation = 4.dp,
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .clickable { vm.cancelCompress() }
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Text("正在压缩上下文…", style = MaterialTheme.typography.labelMedium)
-                        // v4.8.8: 取消入口 — 点击整条取消压缩
-                        Icon(
-                            HugeIcons.Cancel01, null,
-                            modifier = Modifier.size(14.dp),
-                        )
-                    }
-                }
-            }
-            // v4.8.179: 开发者调试面板 (仅开发者版) — 悬于内容区顶部; 底栏输入栏保持可见可调
-            if (BuildConfig.DEVELOPER_BUILD && showDevPanel) {
-                RinDevPanel(
-                    current = setting.displaySetting,
-                    onUpdate = { updated -> vm.updateSettings(setting.copy(displaySetting = updated)) },
-                    onDismiss = { showDevPanel = false },
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(
-                            top = innerPadding.calculateTopPadding() + 8.dp,
-                            start = 8.dp,
-                            end = 8.dp,
-                        ),
-                )
-            }
-            }
         }
-        } // LocalHazeState provider 闭合
 
         if (showFilesSheet) {
             ChatFilesPickerSheet(
@@ -848,6 +484,7 @@ private fun ChatPageContent(
                 setting = setting,
                 conversation = conversation,
                 assistant = assistant,
+                chatModel = currentChatModel,
                 vm = vm,
                 attachmentPickerActions = attachmentPickerActions,
                 onStartVoiceMode = onStartVoiceMode,
@@ -863,6 +500,7 @@ private fun ChatFilesPickerSheet(
     setting: Settings,
     conversation: Conversation,
     assistant: Assistant,
+    chatModel: Model?,
     vm: ChatVM,
     attachmentPickerActions: ChatAttachmentPickerActions,
     onStartVoiceMode: () -> Unit,
@@ -871,11 +509,9 @@ private fun ChatFilesPickerSheet(
     val voiceState by vm.voiceSession.state.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
-    var showInjectionSheet by remember { mutableStateOf(false) }
     var showCompressDialog by remember { mutableStateOf(false) }
 
     fun dismissAll() {
-        showInjectionSheet = false
         showCompressDialog = false
         onDismiss()
     }
@@ -887,61 +523,25 @@ private fun ChatFilesPickerSheet(
     ModalBottomSheet(
         sheetState = filesSheetState,
         onDismissRequest = { dismissAll() },
-        scrimColor = Color.Transparent,
-        // v4.7.22 统一体验: 面板容器全透明, 玻璃由内容层 RinGlass 承载
-        // (与输入框/弹窗同一渲染规格 — 柔光玻璃视觉语言)
-        containerColor = Color.Transparent,
     ) {
-        val pickerShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .rinGlass(hazeState = LocalHazeState.current, shape = pickerShape)
-                .rinGlassHighlight(pickerShape),
-        ) {
         FilesPicker(
             conversation = conversation,
             state = inputState,
             assistant = assistant,
+            chatModel = chatModel,
             mcpManager = vm.mcpManager,
-            onCompressContext = { additionalPrompt, targetTokens, keepRecentMessages ->
-                vm.handleCompressContext(additionalPrompt, targetTokens, keepRecentMessages)
-            },
-            onRestoreCompressAt = { index ->
-                vm.restoreCompressAt(index)
-            },
-            onUpdateAssistant = {
-                vm.updateSettings(
-                    setting.copy(
-                        assistants = setting.assistants.map { assistant ->
-                            if (assistant.id == it.id) {
-                                it
-                            } else {
-                                assistant
-                            }
-                        }
-                    )
-                )
-            },
-            onUpdateConversation = {
-                vm.updateConversation(it)
-                vm.saveConversationAsync()
-            },
-            showInjectionSheet = showInjectionSheet,
-            onShowInjectionSheetChange = { showInjectionSheet = it },
+            onCompressContext = vm::handleCompressContext,
+            onUpdateAssistant = vm::updateAssistant,
+            onUpdateWorkspaceCwd = vm::updateWorkspaceCwd,
             showCompressDialog = showCompressDialog,
             onShowCompressDialogChange = { showCompressDialog = it },
-            deferAutoReply = setting.deferAutoReply,
-            onToggleDeferAutoReply = { checked ->
-                // v3.11.30: 立即同步写 — toggle 后立刻发消息也必生效 (拦截不再概率性失败)
-                vm.toggleDeferAutoReply(checked)
-            },
             onDismiss = { dismissAll() },
             onTakePic = attachmentPickerActions.onTakePicture,
             onPickImage = attachmentPickerActions.onPickImage,
             onPickVideo = attachmentPickerActions.onPickVideo,
             onPickAudio = attachmentPickerActions.onPickAudio,
             onPickFile = attachmentPickerActions.onPickFile,
+            onSketch = attachmentPickerActions.onSketch,
             onStartVoiceMode = if (
                 setting.getSelectedASRProvider()?.supportsServerVadVoiceMode == true &&
                 voiceState.phase == VoicePhase.Off
@@ -954,44 +554,20 @@ private fun ChatFilesPickerSheet(
                 }
             } else null,
         )
-        } // 玻璃承载 Column 闭合 (v4.7.22 统一玻璃)
-    }
-}
-
-/** v4.8.147 (用户定版): 对话归属项目包时的标题便签胶囊 (全圆角, 内容=项目包名)。 */
-@Composable
-private fun ConversationFolderPill(folderId: Uuid?) {
-    val id = folderId ?: return
-    val folderRepo: me.rerere.rikkahub.data.repository.FolderRepository =
-        org.koin.compose.koinInject()
-    val folder by remember(id) { folderRepo.getFolderFlow(id) }
-        .collectAsStateWithLifecycle(initialValue = null)
-    val name = folder?.name?.takeIf { it.isNotBlank() } ?: return
-    Surface(
-        shape = RoundedCornerShape(50),
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        modifier = Modifier.widthIn(max = 120.dp),
-    ) {
-        Text(
-            text = name,
-            style = MaterialTheme.typography.labelSmall,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-        )
     }
 }
 
 @Composable
 private fun TopBar(
     settings: Settings,
+    assistant: Assistant,
+    chatModel: Model?,
     conversation: Conversation,
     drawerState: DrawerState,
     bigScreen: Boolean,
     previewMode: Boolean,
     onClickMenu: () -> Unit,
     onNewChat: () -> Unit,
-    onOpenDevPanel: () -> Unit,
     onUpdateTitle: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -1000,7 +576,6 @@ private fun TopBar(
         onUpdateTitle(it)
     }
 
-    // v5.0.11 (用户定版): 按原版 3.0.0 重做 — 使用 TopAppBar 默认窗口内边距（撤我方 2/5+15dp 定制）。
     TopAppBar(
         colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
         navigationIcon = {
@@ -1027,27 +602,16 @@ private fun TopBar(
                 color = Color.Transparent,
             ) {
                 Column {
-                    val assistant = settings.getCurrentAssistant()
-                    val model = settings.getCurrentChatModel()
-                    val provider = model?.findProvider(providers = settings.providers, checkOverwrite = false)
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
+                    val provider = chatModel?.findProvider(providers = settings.providers, checkOverwrite = false)
+                    Text(
+                        text = conversation.title.ifBlank { stringResource(R.string.chat_page_new_chat) },
+                        maxLines = 1,
+                        style = MaterialTheme.typography.bodyMedium,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (chatModel != null && provider != null) {
                         Text(
-                            text = conversation.title.ifBlank { stringResource(R.string.chat_page_new_chat) },
-                            maxLines = 1,
-                            style = MaterialTheme.typography.bodyMedium,
-                            overflow = TextOverflow.Ellipsis,
-                            // fill=false: 标题按需占宽, 胶囊紧随其后; 超长时标题先省略
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
-                        // v4.8.147 (用户定版): 对话归属项目包时, 标题后加小便签胶囊 (大圆角)
-                        ConversationFolderPill(folderId = conversation.folderId)
-                    }
-                    if (model != null && provider != null) {
-                        Text(
-                            text = "${assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) }} / ${model.displayName} (${provider.name})",
+                            text = "${assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) }} / ${chatModel.displayName} (${provider.name})",
                             overflow = TextOverflow.Ellipsis,
                             maxLines = 1,
                             color = LocalContentColor.current.copy(0.65f),
@@ -1060,16 +624,6 @@ private fun TopBar(
             }
         },
         actions = {
-            // v4.8.179 (用户定版): 开发者调试入口 — 位于"更多栏/新增对话"左侧; 仅开发者版可见
-            if (BuildConfig.DEVELOPER_BUILD) {
-                IconButton(
-                    onClick = {
-                        onOpenDevPanel()
-                    }
-                ) {
-                    Icon(HugeIcons.Bug01, stringResource(R.string.dev_panel_title))
-                }
-            }
             IconButton(
                 onClick = {
                     onClickMenu()

@@ -1,9 +1,5 @@
 package me.rerere.common.http
 
-
-/* ───【原版对齐】AcceptLang.kt | 差异 ±1 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import java.util.Locale
 
 /**
@@ -62,7 +58,6 @@ class AcceptLanguageBuilder private constructor(
                 val list = cfg.locales
                 (0 until list.size()).map { idx -> list[idx] }
             } else {
-                @Suppress("DEPRECATION") // API 24 以下无替代
                 listOf(cfg.locale)
             }
         }

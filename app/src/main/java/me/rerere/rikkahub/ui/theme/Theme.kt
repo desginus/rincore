@@ -1,13 +1,5 @@
 package me.rerere.rikkahub.ui.theme
 
-/* ───【域 F·主题渲染】Theme.kt
- * 职责: 主题装配 (预设/自定义解析 → ColorScheme 应用)
- * 常用改动: 主题解析 → findThemeById; 应用 → RikkaHubTheme
- * 问题定位: 主题不生效/id 回退 → 本文件 + PresetTheme
- * 基线: 原版移植 + 自研 | 地图: docs/APP_MAP.md §F | 历史: .claude/skills/rincore-bug-record
- * ───────────────────────────────────────────────────────────────*/
-
-import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -21,6 +13,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -30,7 +23,7 @@ import kotlinx.serialization.Serializable
 import me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode
 import me.rerere.rikkahub.ui.hooks.rememberCurrentColorMode
 import me.rerere.rikkahub.ui.hooks.rememberUserSettingsState
-import androidx.compose.runtime.getValue
+import me.rerere.rikkahub.utils.getActivity
 
 private val ExtendLightColors = lightExtendColors()
 private val ExtendDarkColors = darkExtendColors()
@@ -86,9 +79,11 @@ fun RikkahubTheme(
 
     // 更新状态栏图标颜色
     val view = LocalView.current
-    if (!view.isInEditMode) {
-        DisposableEffect(view, darkTheme) {
-            val window = (view.context as Activity).window
+    val activity = view.context.getActivity()
+    // 浮窗可能使用 Application Context，没有可更新系统栏的 Activity。
+    if (!view.isInEditMode && activity != null) {
+        DisposableEffect(view, activity, darkTheme) {
+            val window = activity.window
             val controller = WindowCompat.getInsetsController(window, view)
             val previousLightStatusBars = controller.isAppearanceLightStatusBars
             val previousLightNavigationBars = controller.isAppearanceLightNavigationBars
@@ -107,7 +102,7 @@ fun RikkahubTheme(
     CompositionLocalProvider(
         LocalDarkMode provides darkTheme,
         LocalExtendColors provides extendColors,
-        LocalOverscrollFactory provides null
+        // LocalOverscrollFactory provides null
     ) {
         MaterialExpressiveTheme(
             colorScheme = colorSchemeConverted,

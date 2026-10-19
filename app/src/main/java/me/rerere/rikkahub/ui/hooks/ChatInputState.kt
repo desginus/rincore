@@ -1,7 +1,3 @@
-/* 【域 L·基础设施】 — UI 基础 | 地图: docs/APP_MAP.md §L */
-
-/* ───【上游对齐】ChatInputState.kt | v5.0.11 切换上游 3.0.0（含消息编辑改思考内容）
- * ───────────────────────────────────────────────────────────────*/
 package me.rerere.rikkahub.ui.hooks
 
 import android.net.Uri

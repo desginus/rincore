@@ -61,18 +61,6 @@ import me.rerere.rikkahub.ui.components.ui.PagerTabs
 import me.rerere.rikkahub.ui.components.ui.switchItem
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.pages.memory.resultText
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.material3.Card
-import androidx.compose.material3.FilterChip
-import androidx.compose.runtime.key
-import androidx.compose.runtime.produceState
-import androidx.compose.ui.Alignment
-import me.rerere.hugeicons.stroke.Book02
-import me.rerere.rikkahub.data.model.AssistantMemory
-import me.rerere.rikkahub.data.model.Conversation
-import me.rerere.rikkahub.ui.hooks.EditStateContent
-import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.ui.components.RikkaConfirmDialog
 import org.koin.androidx.compose.koinViewModel
@@ -86,8 +74,6 @@ private enum class MemoryTab(
     @param:StringRes private val labelRes: Int,
 ) : PagerTab {
     FILES(HugeIcons.Brain02, R.string.assistant_page_manage_memory_title),
-    // 5.0.0 回贴：我方记忆条目（助手级 + 单对话记忆）
-    MEMORIES(HugeIcons.Book02, R.string.assistant_page_memory),
     SETTINGS(HugeIcons.Settings03, R.string.settings);
 
     override val label: String
@@ -104,9 +90,6 @@ fun AssistantMemoryPage(id: String) {
     val assistant by vm.assistant.collectAsStateWithLifecycle()
     val memories by vm.memories.collectAsStateWithLifecycle()
     val consolidation by vm.memoryConsolidation.collectAsStateWithLifecycle()
-    // 5.0.0 回贴：我方记忆条目（助手级）+ 单对话记忆
-    val assistantMemories by vm.assistantMemories.collectAsStateWithLifecycle()
-    val conversationMemories by vm.conversationMemories.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val pagerState = rememberPagerState { MemoryTab.entries.size }
@@ -158,16 +141,6 @@ fun AssistantMemoryPage(id: String) {
                         consolidation = consolidation.takeIf { assistant.enableMemory },
                         onOrganizeMemory = { vm.organizeMemory() },
                         onOpenMemory = { path -> navController.navigate(Screen.MemoryFile(vm.memoryId, path)) },
-                        onDeleteMemory = { vm.deleteMemory(it) },
-                    )
-
-                    MemoryTab.MEMORIES -> MemoryMemoriesTab(
-                        memories = assistantMemories,
-                        conversationMemories = conversationMemories,
-                        loadTitle = { vm.conversationTitle(it) },
-                        loadRecentConversations = { vm.recentConversations() },
-                        onAddMemory = { vm.addMemory(it) },
-                        onUpdateMemory = { vm.updateMemory(it) },
                         onDeleteMemory = { vm.deleteMemory(it) },
                     )
 
@@ -258,18 +231,6 @@ private fun MemorySettingsTab(
                 enabled = assistant.enableMemory,
                 supportingContent = { Text(stringResource(R.string.assistant_page_global_memory_desc)) },
                 headlineContent = { Text(stringResource(R.string.assistant_page_global_memory)) },
-            )
-            // 5.0.0 回贴：我方单对话记忆开关
-            switchItem(
-                checked = assistant.conversationScopedMemory,
-                onCheckedChange = {
-                    onUpdateAssistant(
-                        assistant.copy(conversationScopedMemory = it)
-                    )
-                },
-                enabled = assistant.enableMemory,
-                supportingContent = { Text("开启后，新记忆只挂载到当前对话：仅在该对话内可见，对话删除即销毁。") },
-                headlineContent = { Text("单对话记忆") },
             )
             switchItem(
                 checked = assistant.enableRecentChatsReference,
@@ -486,261 +447,3 @@ private fun relativeTimeOf(time: Long): String = DateUtils.getRelativeTimeSpanSt
     DateUtils.MINUTE_IN_MILLIS,
     DateUtils.FORMAT_ABBREV_MONTH,
 ).toString()
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 5.0.0 回贴：我方记忆条目 Tab —— 助手级记忆 + 单对话记忆（v4.8.92 语义完整保留）
-// ─────────────────────────────────────────────────────────────────────────────
-@Composable
-private fun MemoryMemoriesTab(
-    memories: List<AssistantMemory>,
-    conversationMemories: List<AssistantMemory>,
-    loadTitle: suspend (String) -> String?,
-    loadRecentConversations: suspend () -> List<Conversation>,
-    onAddMemory: (AssistantMemory) -> Unit,
-    onUpdateMemory: (AssistantMemory) -> Unit,
-    onDeleteMemory: (AssistantMemory) -> Unit,
-) {
-    val memoryDialogState = useEditState<AssistantMemory> {
-        if (it.id == 0L) onAddMemory(it) else onUpdateMemory(it)
-    }
-    var pendingDeleteMemory by remember { mutableStateOf<AssistantMemory?>(null) }
-
-    // v4.8.92: 记忆范围管理 —— [整个助手] / [单对话记忆]
-    var manageConversationScope by remember { mutableStateOf(false) }
-    var showConversationPicker by remember { mutableStateOf(false) }
-    // 对话标题缓存（来源标签 / 分组头；已删除对话 → 显示"已删除的对话"）
-    val memoryTitles by produceState<Map<String, String>>(
-        initialValue = emptyMap(), memories, conversationMemories,
-    ) {
-        val ids = (
-            memories.mapNotNull { it.sourceConversationId } +
-                conversationMemories.mapNotNull { it.conversationId }
-            ).toSet()
-        val map = HashMap<String, String>()
-        ids.forEach { cid -> loadTitle(cid)?.let { t -> map[cid] = t } }
-        value = map
-    }
-
-    // 记忆编辑/新建对话框
-    memoryDialogState.EditStateContent { memory, update ->
-        AlertDialog(
-            onDismissRequest = { memoryDialogState.dismiss() },
-            title = { Text(stringResource(R.string.assistant_page_manage_memory_title)) },
-            text = {
-                TextField(
-                    value = memory.content,
-                    onValueChange = { update(memory.copy(content = it)) },
-                    label = { Text(stringResource(R.string.assistant_page_manage_memory_title)) },
-                    minLines = 2,
-                    maxLines = 8,
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { memoryDialogState.confirm() }) {
-                    Text(stringResource(R.string.assistant_page_save))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { memoryDialogState.dismiss() }) {
-                    Text(stringResource(R.string.assistant_page_cancel))
-                }
-            },
-        )
-    }
-
-    // v4.8.92: 新建单对话记忆 → 先选归属对话
-    if (showConversationPicker) {
-        val recentConversations by produceState<List<Conversation>>(initialValue = emptyList()) {
-            value = runCatching { loadRecentConversations() }.getOrDefault(emptyList())
-        }
-        AlertDialog(
-            onDismissRequest = { showConversationPicker = false },
-            title = { Text("选择归属对话") },
-            text = {
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    recentConversations.forEach { conv ->
-                        TextButton(
-                            onClick = {
-                                showConversationPicker = false
-                                memoryDialogState.open(
-                                    AssistantMemory(0, "", conversationId = conv.id.toString())
-                                )
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(
-                                text = conv.title.ifBlank { "新对话" },
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                    if (recentConversations.isEmpty()) {
-                        Text("没有可用对话", style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { showConversationPicker = false }) { Text("取消") }
-            },
-        )
-    }
-
-    RikkaConfirmDialog(
-        show = pendingDeleteMemory != null,
-        title = stringResource(R.string.confirm_delete),
-        confirmText = stringResource(R.string.confirm),
-        dismissText = stringResource(R.string.cancel),
-        onConfirm = {
-            pendingDeleteMemory?.let(onDeleteMemory)
-            pendingDeleteMemory = null
-        },
-        onDismiss = { pendingDeleteMemory = null },
-        text = {
-            Text(
-                text = pendingDeleteMemory?.content.orEmpty(),
-                maxLines = 8,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
-    )
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = stringResource(R.string.assistant_page_manage_memory_title),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.align(Alignment.CenterStart),
-            )
-            IconButton(
-                onClick = {
-                    if (manageConversationScope) {
-                        // 单对话记忆：先选归属对话
-                        showConversationPicker = true
-                    } else {
-                        memoryDialogState.open(AssistantMemory(0, ""))
-                    }
-                },
-                modifier = Modifier.align(Alignment.CenterEnd),
-            ) {
-                Icon(imageVector = HugeIcons.Add01, contentDescription = null)
-            }
-        }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(
-                selected = !manageConversationScope,
-                onClick = { manageConversationScope = false },
-                label = { Text("整个助手") },
-            )
-            FilterChip(
-                selected = manageConversationScope,
-                onClick = { manageConversationScope = true },
-                label = { Text("单对话记忆") },
-            )
-        }
-
-        if (!manageConversationScope) {
-            memories.fastForEach { memory ->
-                key(memory.id) {
-                    MemoryItem(
-                        memory = memory,
-                        tag = memory.sourceConversationId?.let { sid ->
-                            memoryTitles[sid]?.let { "来自「$it」" } ?: "来自已删除的对话"
-                        },
-                        onEditMemory = { memoryDialogState.open(it) },
-                        onDeleteMemory = { pendingDeleteMemory = it },
-                    )
-                }
-            }
-        } else {
-            // 单对话记忆：按归属对话分组（组头 = 对话标题；已删除 → 明示）
-            conversationMemories.groupBy { it.conversationId }.forEach { (cid, list) ->
-                val title = cid?.let { memoryTitles[it] } ?: "已删除的对话"
-                Text(
-                    text = "$title（${list.size}）",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                )
-                list.fastForEach { memory ->
-                    key(memory.id) {
-                        MemoryItem(
-                            memory = memory,
-                            tag = "仅在该对话内可见",
-                            onEditMemory = { memoryDialogState.open(it) },
-                            onDeleteMemory = { pendingDeleteMemory = it },
-                        )
-                    }
-                }
-            }
-            if (conversationMemories.isEmpty()) {
-                Text(
-                    text = "还没有单对话记忆。点右上角 + 选择归属对话后创建。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun MemoryItem(
-    memory: AssistantMemory,
-    tag: String? = null,
-    onEditMemory: (AssistantMemory) -> Unit,
-    onDeleteMemory: (AssistantMemory) -> Unit,
-) {
-    Card(
-        onClick = { onEditMemory(memory) },
-        modifier = Modifier.fillMaxWidth(),
-        colors = CustomColors.cardColorsOnSurfaceContainer,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(
-                    text = memory.content,
-                    maxLines = 5,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                // v4.8.92: 小标签（来源对话 / 单对话可见性说明）
-                tag?.let {
-                    Text(
-                        text = it,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
-                    )
-                }
-            }
-            ItemActionMenu(
-                actions = listOf(
-                    ItemAction(
-                        text = stringResource(R.string.delete),
-                        icon = HugeIcons.Delete01,
-                        destructive = true,
-                        onClick = { onDeleteMemory(memory) },
-                    ),
-                )
-            )
-        }
-    }
-}

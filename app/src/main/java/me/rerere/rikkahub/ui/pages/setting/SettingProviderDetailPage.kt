@@ -1,8 +1,5 @@
 package me.rerere.rikkahub.ui.pages.setting
 
-import me.rerere.rikkahub.ui.pages.setting.components.resetBaseUrlToDefault
-import me.rerere.rikkahub.ui.pages.setting.components.isUsingDefaultBaseUrl
-import me.rerere.hugeicons.stroke.Refresh03
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -81,7 +78,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastFilter
 import androidx.compose.ui.util.fastForEach
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.dokar.sonner.ToastType
+import me.rerere.ui.toast.ToastType
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -371,19 +368,6 @@ private fun SettingProviderConfigPage(
                         ) {
                             Icon(HugeIcons.Delete01, stringResource(R.string.delete))
                         }
-                    }
-
-                    // v3.9.14 回贴：重置 Base URL 为默认值（我方功能）
-                    IconButton(
-                        onClick = {
-                            internalProvider = internalProvider.resetBaseUrlToDefault()
-                        },
-                        enabled = !internalProvider.isUsingDefaultBaseUrl(),
-                    ) {
-                        Icon(
-                            imageVector = HugeIcons.Refresh03,
-                            contentDescription = stringResource(R.string.setting_model_page_reset_to_default)
-                        )
                     }
                 },
             ) {
@@ -1081,8 +1065,6 @@ private fun ModelTypeSelector(
                     ModelType.CHAT -> R.string.setting_provider_page_chat_model
                     ModelType.EMBEDDING -> R.string.setting_provider_page_embedding_model
                     ModelType.IMAGE -> R.string.setting_provider_page_image_model
-                    // v4.8.103 回贴：视频生成模型类型
-                    ModelType.VIDEO -> R.string.setting_provider_page_video_model
                 }
             ),
             selected = selected,

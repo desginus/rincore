@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.data.datastore
 
 import me.rerere.ai.provider.ProviderSetting
-import me.rerere.ai.registry.ModelRegistry
 
 /** 读盘后和每次修改后都要过一遍，保证内存里的设置始终是规整的。 */
 internal fun Settings.normalized(): Settings =
@@ -25,8 +24,12 @@ internal fun Settings.withBuiltInDefaults(): Settings {
             )
         } else provider
     }.toMutableList()
-    // RinCore：仅当完全为空时兜底默认助手，不自动补回被用户删除的默认助手
     val assistants = this.assistants.ifEmpty { DEFAULT_ASSISTANTS }.toMutableList()
+    DEFAULT_ASSISTANTS.forEach { defaultAssistant ->
+        if (assistants.none { it.id == defaultAssistant.id }) {
+            assistants.add(defaultAssistant.copy())
+        }
+    }
     val ttsProviders = this.ttsProviders.ifEmpty { DEFAULT_TTS_PROVIDERS }.toMutableList()
     DEFAULT_TTS_PROVIDERS.forEach { defaultTTSProvider ->
         if (ttsProviders.none { provider -> provider.id == defaultTTSProvider.id }) {
@@ -102,37 +105,3 @@ private fun Settings.withValuesInRange(): Settings = copy(
     searchServiceSelected = searchServiceSelected.coerceIn(0, (searchServices.size - 1).coerceAtLeast(0)),
     defaultTTSPlaybackSpeed = defaultTTSPlaybackSpeed.coerceIn(0.5f, 2.0f),
 )
-
-// ── RinCore 自研数据修复（原 PreferencesStore 解码链，迁移至规整阶段；幂等）──
-/**
- * 1) 4.0.7.1 模型 abilities 数据层兜底（历史模型缺 abilities → 思考/工具门控哑火）
- * 2) v4.8.108 子代理预算 100K→1000K 一次性升级（旧默认值自动升值；手动值尊重保留）
- * 3) v4.8.139 子代理并发 3→7 一次性升级（存量助手 JSON 里固定旧默认）
- */
-internal fun Settings.withOurDataRepairs(): Settings {
-    var s = this
-    if (s.providers.any { p -> p.models.any { it.abilities.isEmpty() } }) {
-        s = s.copy(
-            providers = s.providers.map { provider ->
-                if (provider.models.none { it.abilities.isEmpty() }) provider
-                else provider.copyProvider(
-                    models = provider.models.map { model ->
-                        if (model.abilities.isEmpty()) {
-                            model.copy(abilities = ModelRegistry.MODEL_ABILITIES.getData(model.modelId))
-                        } else model
-                    }
-                )
-            }
-        )
-    }
-    val budget = if (s.subagentBudgetUpgraded) s.subagentTokenBudget
-    else if (s.subagentTokenBudget == 100_000L) 1_000_000L else s.subagentTokenBudget
-    val assistants = if (s.subagentConcurrencyUpgraded) s.assistants
-    else s.assistants.map { a -> if (a.maxConcurrentSubAgents == 3) a.copy(maxConcurrentSubAgents = 7) else a }
-    return s.copy(
-        subagentTokenBudget = budget,
-        subagentBudgetUpgraded = true,
-        subagentConcurrencyUpgraded = true,
-        assistants = assistants,
-    )
-}

@@ -1,10 +1,5 @@
-/* 【域 E·设置体系】 — 页面 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.ui.pages.assistant
 
-
-/* ───【原版对齐】AssistantVM.kt | 差异 ±8 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -17,39 +12,28 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
-import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.data.repository.memoryId
+import me.rerere.rikkahub.service.ChatService
 
 class AssistantVM(
     private val settingsStore: SettingsStore,
     private val memoryRepository: MemoryRepository,
-    private val conversationRepo: ConversationRepository,
+    private val chatService: ChatService,
     private val filesManager: FilesManager,
 ) : ViewModel() {
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, Settings.dummy())
 
-    /** 上游 3.0.0 风格重载：以最新值为基线更新（5.0.0 并树补） */
     fun updateSettings(fn: (Settings) -> Settings) {
         viewModelScope.launch {
             settingsStore.update(fn)
         }
     }
 
-    fun updateSettings(settings: Settings) {
-        viewModelScope.launch {
-            settingsStore.update(settings)
-        }
-    }
-
     fun addAssistant(assistant: Assistant) {
         viewModelScope.launch {
-            val settings = settings.value
-            settingsStore.update(
-                settings.copy(
-                    assistants = settings.assistants.plus(assistant)
-                )
-            )
+            settingsStore.update { it.copy(assistants = it.assistants.plus(assistant)) }
         }
     }
 
@@ -57,20 +41,11 @@ class AssistantVM(
         viewModelScope.launch {
             cleanupAssistantFiles(assistant)
 
-            val settings = settings.value
-            val remaining = settings.assistants.filter { it.id != assistant.id }
-            // 删除的是当前默认助手时, 指向剩余第一个 (避免 assistantId 脏值)
-            val newAssistantId = if (settings.assistantId == assistant.id) {
-                remaining.firstOrNull()?.id ?: settings.assistantId
-            } else settings.assistantId
-            settingsStore.update(
-                settings.copy(
-                    assistants = remaining,
-                    assistantId = newAssistantId
-                )
-            )
-            memoryRepository.deleteMemoriesOfAssistant(assistant.id.toString())
-            conversationRepo.deleteConversationOfAssistant(assistant.id)
+            settingsStore.update { settings ->
+                settings.copy(assistants = settings.assistants.filter { it.id != assistant.id })
+            }
+            memoryRepository.deleteFilesOfAssistant(assistant.id.toString())
+            chatService.deleteConversationsOfAssistant(assistant.id)
         }
     }
 
@@ -87,19 +62,14 @@ class AssistantVM(
 
     fun copyAssistant(assistant: Assistant, copyMemories: Boolean = false) {
         viewModelScope.launch {
-            val settings = settings.value
             val copiedAssistant = assistant.copy(
                 id = kotlin.uuid.Uuid.random(),
                 name = "${assistant.name} (Clone)",
                 avatar = if(assistant.avatar is Avatar.Image) Avatar.Dummy else assistant.avatar,
             )
-            settingsStore.update(
-                settings.copy(
-                    assistants = settings.assistants.plus(copiedAssistant)
-                )
-            )
+            settingsStore.update { it.copy(assistants = it.assistants.plus(copiedAssistant)) }
             if (copyMemories) {
-                memoryRepository.copyMemories(
+                memoryRepository.copyFiles(
                     fromAssistantId = assistant.id.toString(),
                     toAssistantId = copiedAssistant.id.toString(),
                 )
@@ -107,10 +77,5 @@ class AssistantVM(
         }
     }
 
-    fun getMemories(assistant: Assistant) =
-        if (assistant.useGlobalMemory) {
-            memoryRepository.getGlobalMemoriesFlow()
-        } else {
-            memoryRepository.getMemoriesOfAssistantFlow(assistant.id.toString())
-        }
+    fun getMemories(assistant: Assistant) = memoryRepository.getFilesFlow(assistant.memoryId)
 }

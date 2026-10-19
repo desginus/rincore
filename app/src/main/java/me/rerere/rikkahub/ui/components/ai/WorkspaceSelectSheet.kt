@@ -1,10 +1,5 @@
-/* 【域 A·对话核心】 — AI 组件 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.components.ai
 
-
-/* ───【原版对齐】WorkspaceSelectSheet.kt | 差异 ±24 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -96,6 +91,9 @@ internal fun WorkspaceSelectSheet(
                 leadingContent = {
                     Icon(HugeIcons.Codesandbox, contentDescription = null)
                 },
+                headlineContent = {
+                    Text(stringResource(R.string.workspace_manage))
+                },
                 trailingContent = {
                     Icon(
                         imageVector = HugeIcons.ArrowRight01,
@@ -106,9 +104,8 @@ internal fun WorkspaceSelectSheet(
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 modifier = Modifier
                     .clip(MaterialTheme.shapes.large)
-                    .clickable { onManage() } ) {
-Text(stringResource(R.string.workspace_manage))
-}
+                    .clickable { onManage() },
+            )
         }
     }
 }
@@ -123,6 +120,13 @@ private fun WorkspaceSelectRow(
     ListItem(
         leadingContent = {
             Icon(HugeIcons.Codesandbox, contentDescription = null)
+        },
+        headlineContent = {
+            Text(
+                text = title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         },
         supportingContent = status?.let {
             {
@@ -153,11 +157,6 @@ private fun WorkspaceSelectRow(
         ),
         modifier = Modifier
             .clip(MaterialTheme.shapes.large)
-            .clickable { onClick() } ) {
-Text(
-                text = title,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-}
+            .clickable { onClick() },
+    )
 }

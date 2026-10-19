@@ -1,10 +1,5 @@
 package me.rerere.ai.provider.providers.google
 
-
-/* ───【原版对齐】InteractionsAPI.kt | 与 2.5.6 逐字节一致（v4.8.94 Interactions API 移植）
- * 基线: 原版 2.5.6
- * ───────────────────────────────────────────────────────────────*/
-
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -115,9 +110,6 @@ internal class InteractionsAPI(
         Log.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
 
         val decoder = InteractionsStreamDecoder(fallbackModel = params.model.modelId)
-        // v4.8.112 (B136): 完成信号跟踪 — interaction.completed / [DONE]。
-        // 关流时缺此信号 = 断流, 进上层重试链。
-        var completedSeen = false
 
         fun sendChunks(chunks: Iterable<StreamChunk>) {
             chunks.forEach { chunk ->
@@ -138,10 +130,7 @@ internal class InteractionsAPI(
                 try {
                     val result = decoder.accept(SseEvent(id = id, event = type, data = data))
                     sendChunks(result.chunks)
-                    if (result.completed) {
-                        completedSeen = true
-                        close()
-                    }
+                    if (result.completed) close()
                 } catch (e: Throwable) {
                     Log.e(TAG, "Failed to parse stream event: $data", e)
                     close(e)
@@ -166,16 +155,8 @@ internal class InteractionsAPI(
             }
 
             override fun onClosed(eventSource: EventSource) {
-                // v4.8.112 (B136): 正判据完成门 — 无 interaction.completed/[DONE] 的关流 = 断流,
-                // 交上层重试链 (禁止静默把半截回复当完成)。
-                if (completedSeen) {
-                    sendChunks(decoder.onClosed())
-                    close()
-                } else {
-                    Log.w(TAG, "onClosed: closed before interaction completion — treating as interruption")
-                    sendChunks(decoder.onClosed())
-                    close(java.io.IOException("SSE 流在 interaction 完成前被关闭 (无 interaction.completed)"))
-                }
+                sendChunks(decoder.onClosed())
+                close()
             }
         }
 

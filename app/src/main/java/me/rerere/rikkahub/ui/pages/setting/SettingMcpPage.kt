@@ -314,8 +314,6 @@ private fun McpServerItem(
                         when (item) {
                             is McpServerConfig.SseTransportServer -> Text("SSE")
                             is McpServerConfig.StreamableHTTPServer -> Text("Streamable HTTP")
-                            // 5.0.0 回贴：第三传输 STDIO（workspace 沙箱启动）
-                            is McpServerConfig.StdioTransportServer -> Text("STDIO")
                         }
                     }
                 }

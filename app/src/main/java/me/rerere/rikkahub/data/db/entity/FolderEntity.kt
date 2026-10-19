@@ -27,8 +27,4 @@ data class FolderEntity(
     val sortIndex: Int = 0,
     @ColumnInfo("create_at")
     val createAt: Long,
-
-    // 4.8.24: 项目包 CWD（工作区相对路径）— null = 未设置（回退助手级 CWD）
-    @ColumnInfo("cwd")
-    val cwd: String? = null,
 )

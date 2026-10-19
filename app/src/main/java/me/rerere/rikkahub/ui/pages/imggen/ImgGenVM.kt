@@ -1,9 +1,4 @@
-/* 【域 A·对话核心】 — 页面 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.pages.imggen
-
-/* ───【原版对齐】ImgGenVM.kt | 差异 ±28 行 (基线 2.5.1)
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 import android.app.Application
 import android.util.Log
@@ -19,11 +14,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import me.rerere.ai.provider.ImageEditParams
 import me.rerere.ai.provider.ImageGenerationParams
@@ -45,35 +39,32 @@ data class GeneratedImage(
     val id: Int,
     val prompt: String,
     val filePath: String,
-    val renderUrl: String,
     val timestamp: Long,
     val model: String
 )
 
-
-/**
- * 4.0.14: AI 图片生成后返回标准本地渲染 URL。
- * 图片保存在 context.filesDir/images/ 下，格式为:
- * file:///data/data/me.rincore.app/files/images/<filename>
- */
-private fun buildImageRenderUrl(filePath: String): String {
-    val file = java.io.File(filePath)
-    return "file:///data/data/me.rincore.app/files/images/${file.name}"
-}
-
 private fun GenMediaEntity.toGeneratedImage(filesManager: FilesManager): GeneratedImage {
     val imagesDir = filesManager.getImagesDir()
-    val fullPath = File(imagesDir, this.path.removePrefix("images/")).absolutePath
+    val name = this.path.removePrefix("images/")
+    val file = File(imagesDir, name)
+    // 旧版本直接把含 "/" 的模型名拼进文件名，图片实际落在子目录里，而记录只存了最后一段
+    val fullPath = if (file.exists() || '/' !in modelId) {
+        file.absolutePath
+    } else {
+        File(imagesDir, "${createAt}_${modelId.substringBeforeLast('/')}/$name").absolutePath
+    }
 
     return GeneratedImage(
         id = this.id,
         prompt = this.prompt,
         filePath = fullPath,
-        renderUrl = buildImageRenderUrl(fullPath),
         timestamp = this.createAt,
         model = this.modelId
     )
 }
+
+// 模型名可能含 "/"（如 OpenRouter 的 vendor/model），直接拼进文件名会变成子目录
+private fun String.toFileNamePart(): String = replace(Regex("""[\\/:*?"<>|]"""), "_")
 
 class ImgGenVM(
     context: Application,
@@ -162,7 +153,7 @@ class ImgGenVM(
                 _error.value = null
                 _currentGeneratedImages.value = emptyList()
 
-                val settings = settingsStore.settingsFlow.first()
+                val settings = settingsStore.awaitLoaded()
                 val model = settings.findModelById(settings.imageGenerationModelId)
                     ?: throw IllegalStateException("No model selected")
 
@@ -206,7 +197,7 @@ class ImgGenVM(
                 _error.value = null
                 _currentGeneratedImages.value = emptyList()
 
-                val settings = settingsStore.settingsFlow.first()
+                val settings = settingsStore.awaitLoaded()
                 val model = settings.findModelById(settings.imageGenerationModelId)
                     ?: throw IllegalStateException("No model selected")
 
@@ -273,7 +264,6 @@ class ImgGenVM(
                     id = 0,
                     prompt = prompt,
                     filePath = imageFile.absolutePath,
-                    renderUrl = buildImageRenderUrl(imageFile.absolutePath),
                     timestamp = System.currentTimeMillis(),
                     model = modelName
                 )
@@ -293,7 +283,6 @@ class ImgGenVM(
                         id = 0, // Will be updated after database insertion
                         prompt = prompt,
                         filePath = imageFile.absolutePath,
-                        renderUrl = buildImageRenderUrl(imageFile.absolutePath),
                         timestamp = System.currentTimeMillis(),
                         model = modelName
                     )
@@ -310,7 +299,10 @@ class ImgGenVM(
         index: Int,
     ): File {
         val timestamp = System.currentTimeMillis()
-        val imageFile = File(getApplication<Application>().appTempFolder, "imggen_${timestamp}_${modelName}_$index.png")
+        val imageFile = File(
+            getApplication<Application>().appTempFolder,
+            "imggen_${timestamp}_${modelName.toFileNamePart()}_$index.png"
+        )
         return filesManager.createImageFileFromBase64(item.data, imageFile.absolutePath)
     }
 
@@ -325,7 +317,7 @@ class ImgGenVM(
         val imagesDir = filesManager.getImagesDir()
 
         val timestamp = System.currentTimeMillis()
-        val filename = "${timestamp}_${modelName}_$index.png"
+        val filename = "${timestamp}_${modelName.toFileNamePart()}_$index.png"
         val imageFile = File(imagesDir, filename)
 
         val createdFile = filesManager.createImageFileFromBase64(item.data, imageFile.absolutePath)
@@ -367,7 +359,7 @@ class ImgGenVM(
         withContext(Dispatchers.IO) {
             images.filter { image ->
                 try {
-                    val file = java.io.File(image.filePath)
+                    val file = File(image.filePath)
                     check(!file.exists() || file.delete()) { "Failed to delete image file" }
                     genMediaRepository.deleteMedia(image.id)
                     false

@@ -1,6 +1,5 @@
 package me.rerere.baselineprofile
 
-
 import androidx.benchmark.macro.BaselineProfileMode
 import androidx.benchmark.macro.CompilationMode
 import androidx.benchmark.macro.StartupMode

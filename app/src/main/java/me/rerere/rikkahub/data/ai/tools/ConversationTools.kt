@@ -1,9 +1,4 @@
-/* 【域 C·工具系统】 | 地图: docs/APP_MAP.md §C */
 package me.rerere.rikkahub.data.ai.tools
-
-/* ───【原版对齐】ConversationTools.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -15,12 +10,12 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.Tool
-import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.db.fts.MessageSearchResult
 import me.rerere.rikkahub.data.db.fts.MessageSearchSort
-import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.utils.JsonInstantPretty
 import me.rerere.rikkahub.utils.toLocalDate
 import kotlin.uuid.Uuid
@@ -72,51 +67,7 @@ fun createConversationTools(
             listOf(UIMessagePart.Text(JsonInstantPretty.encodeToString(payload)))
         }
     ),
-    Tool(
-        name = "conversation_search",
-        description = """
-            Full-text search across the user's past conversations to recall specific information they mentioned before.
-            Use focused keywords. Run multiple searches with different keywords if needed.
-            Each result includes the conversation title, a snippet with matched keywords wrapped in [brackets], and the date.
-        """.trimIndent(),
-        parameters = {
-            InputSchema.Obj(
-                properties = buildJsonObject {
-                    put("query", buildJsonObject {
-                        put("type", "string")
-                        put("description", "Keywords to search for in past conversation messages")
-                    })
-                    put("limit", buildJsonObject {
-                        put("type", "integer")
-                        put(
-                            "description",
-                            "Maximum number of results to return (default: 15, max: 50)"
-                        )
-                    })
-                },
-                required = listOf("query")
-            )
-        },
-        execute = {
-            val query = it.jsonObject["query"]?.jsonPrimitive?.contentOrNull
-                ?: error("query is required")
-            val limit = (it.jsonObject["limit"]?.jsonPrimitive?.intOrNull ?: 15).coerceIn(1, 50)
-            val results = conversationRepo
-                .searchMessages(query, MessageSearchSort.RELEVANCE)
-                .take(limit)
-            val payload = buildJsonArray {
-                results.forEach { result ->
-                    add(buildJsonObject {
-                        put("conversation_id", result.conversationId)
-                        put("title", result.title.ifBlank { "Untitled" })
-                        put("snippet", result.snippet)
-                        put("date", result.updateAt.toLocalDate())
-                    })
-                }
-            }
-            listOf(UIMessagePart.Text(JsonInstantPretty.encodeToString(payload)))
-        }
-    )
+    conversationSearchTool { query -> conversationRepo.searchMessages(query, MessageSearchSort.RELEVANCE) },
 )
 
 private fun conversationSearchTool(search: suspend (query: String) -> List<MessageSearchResult>) = Tool(
@@ -163,7 +114,6 @@ private fun conversationSearchTool(search: suspend (query: String) -> List<Messa
     }
 )
 
-// ══ RinCore 兼容层（B1 并树）：上游记忆整理用的「对话证据」工具 ══
 private const val READ_DEFAULT_LIMIT = 20
 private const val READ_MAX_LIMIT = 40
 private const val READ_MESSAGE_LENGTH = 12_000

@@ -1,0 +1,35 @@
+name: Upstream Blur Test
+on:
+  push:
+    branches: [upstream-blur-test]
+    paths-ignore: ['**.md']
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Prepare dummy google-services.json
+        run: |
+          printf '%s' '{"project_info":{"project_number":"0","project_id":"dev-oracle","storage_bucket":"dev-oracle.appspot.com"},"client":[{"client_info":{"mobilesdk_app_id":"1:0:android:0","android_client_info":{"package_name":"me.rerere.rikkahub"}},"oauth_client":[],"api_key":[{"current_key":"AIzaSyDUMMY"}],"services":{"appinvite_service":{"other_platform_oauth_client":[]}}}],"configuration_version":"1"}' > app/google-services.json
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Build debug APK (R8-free, same as RinCore 5.x release)
+        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v3.0.0-blurtest
+          name: "RikkaHub 3.0.0 原版 · 模糊对照实验包"
+          body: "上游 3.0.0 原汁原味（仅 enableBlurEffect 默认 true 一行）。与 RinCore 5.0.13 同设备对照：看输入栏模糊是否有同样的网格色斑。"
+          files: app/build/outputs/apk/debug/app-debug.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

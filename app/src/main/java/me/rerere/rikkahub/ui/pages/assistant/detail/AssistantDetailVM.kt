@@ -1,9 +1,4 @@
-/* 【域 E·设置体系】 — 页面 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.ui.pages.assistant.detail
-
-/* ───【原版对齐】AssistantDetailVM.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 import android.util.Log
 import androidx.core.net.toUri
@@ -20,18 +15,16 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
 import me.rerere.rikkahub.data.ai.MemoryConsolidationStatus
-import me.rerere.rikkahub.data.model.MemoryFile
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.files.FilesManager
-import me.rerere.rikkahub.data.files.SkillManager
-import me.rerere.rikkahub.data.files.SkillMetadata
+import me.rerere.rikkahub.data.skills.SkillManager
+import me.rerere.rikkahub.data.skills.SkillMetadata
 import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.AssistantMemory
+import me.rerere.rikkahub.data.model.MemoryFile
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Tag
-import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import kotlin.uuid.Uuid
@@ -46,7 +39,6 @@ class AssistantDetailVM(
     private val filesManager: FilesManager,
     private val skillManager: SkillManager,
     private val workspaceRepository: WorkspaceRepository,
-    private val conversationRepository: ConversationRepository,
 ) : ViewModel() {
     private val assistantId = Uuid.parse(id)
 
@@ -77,20 +69,6 @@ class AssistantDetailVM(
             scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = Assistant()
         )
 
-    /** 我方记忆 1.0：助手级记忆条目（「记忆」Tab 列表与管理用；与写入桶同口径）。 */
-    val assistantMemories = assistant
-        .flatMapLatest { currentAssistant ->
-            if (currentAssistant.useGlobalMemory) {
-                memoryRepository.getGlobalMemoriesFlow()
-            } else {
-                memoryRepository.getMemoriesOfAssistantFlow(assistantId.toString())
-            }
-        }
-        .stateIn(
-            scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = emptyList()
-        )
-
-    /** 上游 3.0.0 记忆 2.0：Markdown 记忆文件库（FILES Tab）。 */
     val memories = assistant
         .flatMapLatest { currentAssistant ->
             memoryRepository.getFilesFlow(memoryIdOf(currentAssistant))
@@ -99,39 +77,13 @@ class AssistantDetailVM(
             scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = emptyList()
         )
 
-    /** 上游 3.0.0：记忆整理（"做梦"）调度状态。 */
     val memoryConsolidation: StateFlow<MemoryConsolidationStatus> = assistant
         .flatMapLatest { currentAssistant ->
             memoryConsolidationScheduler.statusOf(memoryIdOf(currentAssistant))
         }
         .stateIn(
-            scope = viewModelScope, started = SharingStarted.Eagerly,
-            initialValue = MemoryConsolidationStatus()
+            scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = MemoryConsolidationStatus()
         )
-
-    /** v4.8.92: 该助手名下的全部单对话记忆（管理页「单对话记忆」视图用；与写入桶同口径）。 */
-    val conversationMemories = assistant
-        .flatMapLatest { currentAssistant ->
-            val scopeId = if (currentAssistant.useGlobalMemory) {
-                MemoryRepository.GLOBAL_MEMORY_ID
-            } else {
-                assistantId.toString()
-            }
-            memoryRepository.getConversationMemoriesOfAssistantFlow(scopeId)
-        }
-        .stateIn(
-            scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = emptyList()
-        )
-
-    /** v4.8.92: 对话标题（来源标签/分组头展示；已删除对话返回 null）。 */
-    suspend fun conversationTitle(conversationId: String): String? = runCatching {
-        conversationRepository.getConversationById(Uuid.parse(conversationId))?.title
-    }.getOrNull()
-
-    /** v4.8.92: 创建单对话记忆时的归属对话候选。 */
-    suspend fun recentConversations() = runCatching {
-        conversationRepository.getRecentConversations(assistantId, limit = 50)
-    }.getOrDefault(emptyList())
 
     val providers = settingsStore
         .settingsFlow
@@ -159,12 +111,7 @@ class AssistantDetailVM(
 
     fun updateTags(tagIds: List<Uuid>, tags: List<Tag>) {
         viewModelScope.launch {
-            val settings = settings.value
-            settingsStore.update(
-                settings = settings.copy(
-                    assistantTags = tags
-                )
-            )
+            settingsStore.update { it.copy(assistantTags = tags) }
             update(
                 assistant.value.copy(
                     tags = tagIds.toList()
@@ -175,103 +122,65 @@ class AssistantDetailVM(
         }
     }
 
-    /** v4.8.121: 显示设置写入口 (「代码块内自动渲染」等全局 displaySetting 开关) */
-    fun updateDisplaySetting(displaySetting: me.rerere.rikkahub.data.datastore.DisplaySetting) {
-        viewModelScope.launch {
-            val current = settings.value
-            settingsStore.update(
-                settings = current.copy(
-                    displaySetting = displaySetting
-                )
-            )
-        }
-    }
-
     fun cleanupUnusedTags() {
         viewModelScope.launch {
-            val settings = settings.value
-            val validTagIds = settings.assistantTags.map { it.id }.toSet()
+            settingsStore.update { settings ->
+                val validTagIds = settings.assistantTags.map { it.id }.toSet()
 
-            // 清理 assistant 中的无效 tag id
-            val cleanedAssistants = settings.assistants.map { assistant ->
-                val validTags = assistant.tags.filter { tagId ->
-                    validTagIds.contains(tagId)
+                // 清理 assistant 中的无效 tag id
+                val cleanedAssistants = settings.assistants.map { assistant ->
+                    val validTags = assistant.tags.filter { tagId ->
+                        validTagIds.contains(tagId)
+                    }
+                    if (validTags.size != assistant.tags.size) {
+                        assistant.copy(tags = validTags)
+                    } else {
+                        assistant
+                    }
                 }
-                if (validTags.size != assistant.tags.size) {
-                    assistant.copy(tags = validTags)
-                } else {
-                    assistant
+
+                // 获取清理后的 assistant 中使用的 tag id
+                val usedTagIds = cleanedAssistants.flatMap { it.tags }.toSet()
+
+                // 清理未使用的 tags
+                val cleanedTags = settings.assistantTags.filter { tag ->
+                    usedTagIds.contains(tag.id)
                 }
-            }
 
-            // 获取清理后的 assistant 中使用的 tag id
-            val usedTagIds = cleanedAssistants.flatMap { it.tags }.toSet()
+                // 检查是否需要更新
+                val needUpdateAssistants = cleanedAssistants != settings.assistants
+                val needUpdateTags = cleanedTags.size != settings.assistantTags.size
 
-            // 清理未使用的 tags
-            val cleanedTags = settings.assistantTags.filter { tag ->
-                usedTagIds.contains(tag.id)
-            }
-
-            // 检查是否需要更新
-            val needUpdateAssistants = cleanedAssistants != settings.assistants
-            val needUpdateTags = cleanedTags.size != settings.assistantTags.size
-
-            if (needUpdateAssistants || needUpdateTags) {
-                settingsStore.update(
-                    settings = settings.copy(
+                if (needUpdateAssistants || needUpdateTags) {
+                    settings.copy(
                         assistants = cleanedAssistants,
                         assistantTags = cleanedTags
                     )
-                )
+                } else {
+                    settings
+                }
             }
         }
     }
 
     fun update(assistant: Assistant) {
         viewModelScope.launch {
-            val settings = settings.value
-            settingsStore.update(
-                settings = settings.copy(
+            var replaced: Assistant? = null
+            settingsStore.update { settings ->
+                settings.copy(
                     assistants = settings.assistants.map {
                         if (it.id == assistant.id) {
-                            checkAvatarDelete(old = it, new = assistant) // 删除旧头像
-                            checkBackgroundDelete(old = it, new = assistant) // 删除旧背景
+                            replaced = it
                             assistant
                         } else {
                             it
                         }
                     })
-            )
-        }
-    }
-
-    fun addMemory(memory: AssistantMemory) {
-        viewModelScope.launch {
-            val memoryAssistantId = if (assistant.value.useGlobalMemory) {
-                MemoryRepository.GLOBAL_MEMORY_ID
-            } else {
-                assistantId.toString()
             }
-            memoryRepository.addMemory(
-                assistantId = memoryAssistantId,
-                content = memory.content,
-                // v4.8.92: 单对话记忆 —— 在「单对话记忆」视图创建时带归属对话；
-                // 助手级记忆记录来源对话（UI 小标签）。
-                conversationId = memory.conversationId,
-                sourceConversationId = memory.conversationId ?: memory.sourceConversationId,
-            )
-        }
-    }
-
-    fun updateMemory(memory: AssistantMemory) {
-        viewModelScope.launch {
-            memoryRepository.updateContent(id = memory.id, content = memory.content)
-        }
-    }
-
-    fun deleteMemory(memory: AssistantMemory) {
-        viewModelScope.launch {
-            memoryRepository.deleteMemory(id = memory.id)
+            replaced?.let { old ->
+                checkAvatarDelete(old = old, new = assistant) // 删除旧头像
+                checkBackgroundDelete(old = old, new = assistant) // 删除旧背景
+            }
         }
     }
 
@@ -285,12 +194,11 @@ class AssistantDetailVM(
     /** 当前助手读写的记忆库 */
     val memoryId: String get() = memoryIdOf(assistant.value)
 
-    /** 整理所有待整理的对话，并把整个记忆库清理一遍（上游 3.0.0） */
+    /** 整理所有待整理的对话，并把整个记忆库清理一遍 */
     fun organizeMemory() {
         memoryConsolidationScheduler.organize(memoryId)
     }
 
-    /** 上游 3.0.0：删除记忆文件（与 AssistantMemory 版重载并存） */
     fun deleteMemory(memory: MemoryFile) {
         viewModelScope.launch {
             memoryRepository.deleteFile(memoryIdOf(assistant.value), memory.path)

@@ -1,12 +1,5 @@
 package me.rerere.workspace
 
-
-/* ───【域 D·工作区沙箱】ProotShellRunner.kt
- * 职责: proot 命令构造/常驻进程/MCP stdio 桥启动
- * 常用改动: 启动 → launchProcess; 命令构造 → buildCommand (env -i 真空)
- * 问题定位: 沙箱启动失败/proot 报错 → 本文件
- * 基线: 原版移植 + 自研 (常驻进程) | 地图: docs/APP_MAP.md §D | 历史: .claude/skills/rincore-bug-record
- * ───────────────────────────────────────────────────────────────*/
 import java.io.File
 
 data class WorkspaceBindMount(
@@ -22,42 +15,35 @@ class ProotShellRunner(
     private val nativeLibraryDir: File,
     private val patcher: RootfsPatcher = RootfsPatcher(),
 ) : WorkspaceShellRunner {
-    // v4.8.74: rootfs patch 节流 — 原每次 shell 调用跑全套 etc 检查 (resolv/hosts/
-    // locale/groups/tmp 读盘+比较), 属每次调用的重复性开销; 进程内每 rootfs 10 分钟
-    // 至多一次 (DNS/网络变更仍能在窗口内收敛; 冷启动首调必定执行)。
-    private val lastPatchedAtMs = java.util.concurrent.ConcurrentHashMap<String, Long>()
-
-    private fun patchThrottled(linuxDir: File) {
-        val now = System.currentTimeMillis()
-        val key = linuxDir.absolutePath
-        val last = lastPatchedAtMs[key] ?: 0L
-        if (now - last < 10 * 60 * 1000L) return
-        lastPatchedAtMs[key] = now
-        patcher.patch(linuxDir)
-    }
-
     override fun execute(context: WorkspaceShellContext): WorkspaceCommandResult {
-        val process = launchProcess(context)
-            ?: return WorkspaceCommandResult(
+        if (!WorkspaceManager.isUsableRootfs(context.linuxDir)) {
+            return WorkspaceCommandResult(
                 exitCode = 127,
                 stdout = "",
-                stderr = "proot executable not found: ${File(nativeLibraryDir, PROOT_EXEC).absolutePath}",
+                stderr = "Rootfs is not installed",
             )
-        return process.readResult(context.timeoutMillis, context.stdin)
-    }
-
-    /** 启动 proot 常驻进程 (不等待) — 供 MCP stdio 桥接: workspace 内有 Python/Node 运行时 */
-    override fun launchProcess(context: WorkspaceShellContext): Process? {
-        if (!context.linuxDir.hasUsableRootfs()) return null
+        }
 
         val proot = File(nativeLibraryDir, PROOT_EXEC)
         val loader = File(nativeLibraryDir, PROOT_LOADER)
-        if (!proot.isFile) return null
-        if (!loader.isFile) return null
+        if (!proot.isFile) {
+            return WorkspaceCommandResult(
+                exitCode = 127,
+                stdout = "",
+                stderr = "proot executable not found: ${proot.absolutePath}",
+            )
+        }
+        if (!loader.isFile) {
+            return WorkspaceCommandResult(
+                exitCode = 127,
+                stdout = "",
+                stderr = "proot loader not found: ${loader.absolutePath}",
+            )
+        }
 
         context.tempDir.mkdirs()
-        patchThrottled(context.linuxDir)
-        return ProcessBuilder(buildCommand(context, proot))
+        patcher.patch(context.linuxDir)
+        val process = ProcessBuilder(buildCommand(context, proot))
             .directory(context.filesDir)
             .redirectErrorStream(false)
             .apply {
@@ -71,36 +57,25 @@ class ProotShellRunner(
                 environment()["TMPDIR"] = context.tempDir.absolutePath
             }
             .start()
+
+        return process.readResult(context.timeoutMillis, context.stdin)
     }
 
     private fun buildCommand(
         context: WorkspaceShellContext,
         proot: File,
     ): List<String> {
-        // v4.5.27: CWD 专一空间 — cwd 非空时把 /workspace 直接挂到该子目录,
-        // 沙箱内根本看不到兄弟目录 (浏览与读写同时物理受限);
-        // cwd 为空维持整区挂载 (用户终端 / 无 CWD 助手行为不变)。
-        val scopedCwd = context.cwd.trim().trim('/')
-        val mountSource = if (scopedCwd.isEmpty()) {
-            context.filesDir
-        } else {
-            File(context.filesDir, scopedCwd)
-        }
         val command = mutableListOf(
             proot.absolutePath,
             "--root-id",
             "--link2symlink",
-        )
-        // v4.8.72: 后台任务支持 — killOnExit=false 时省略 --kill-on-exit;
-        // detached 子进程在 proot 退出后继续存活 (前台调用默认保持原语义)。
-        if (context.killOnExit) command += "--kill-on-exit"
-        command += listOf(
+            "--kill-on-exit",
             "-r",
             context.linuxDir.absolutePath,
             "-w",
-            WORKSPACE_DIR,
+            context.prootCwd(),
             "-b",
-            "${mountSource.absolutePath}:$WORKSPACE_DIR",
+            "${context.filesDir.absolutePath}:$WORKSPACE_DIR",
         )
 
         context.bindMounts.forEach { mount ->
@@ -117,19 +92,6 @@ class ProotShellRunner(
             }
         }
 
-        // v4.8.137 (用户实证: Python multiprocessing 在沙箱内 SemLock 构造即
-        // FileNotFoundError 崩溃 — 根因 = guest 缺 /dev/shm; 宿主 Android 的
-        // /dev 下本就没有 shm, 内核 fs 绑定又整体覆盖 guest /dev)。修复: 自建
-        // 宿主目录绑定到 /dev/shm (置于内核 fs 绑定之后 = 更具体的路径优先),
-        // 并预创建 guest 挂载点。glibc sem_open()/Python 共享内存全部落在
-        // /dev/shm — 绑定后 multiprocessing 可用。
-        runCatching {
-            File(context.linuxDir, "dev/shm").mkdirs()
-            val shmHost = File(context.tempDir, "shm").apply { mkdirs() }
-            command += "-b"
-            command += "${shmHost.absolutePath}:/dev/shm"
-        }
-
         command += listOf(
             "/usr/bin/env",
             "-i",
@@ -138,27 +100,30 @@ class ProotShellRunner(
             "TERM=xterm-256color",
             "LANG=C.UTF-8",
             "LC_ALL=C.UTF-8",
-        )
-        // v4.8.110 (B4): 调用方环境变量 — `env -i` 白名单之后追加 (重建环境时注入)。
-        // key 必须合法环境变量名 (非法跳过); 值经 argv 传递, 无 shell 解析, 无需转义。
-        context.env.entries
-            .filter { it.key.matches(Regex("[A-Za-z_][A-Za-z0-9_]*")) }
-            .forEach { entry -> command += "${entry.key}=${entry.value}" }
-        command += listOf(
-            "/bin/bash",
+            // 非交互执行约定, 抑制各类 CLI 的交互行为 (确认提示/分页器/颜色转义)
+            "CI=true",
+            "NO_COLOR=1",
+            "PAGER=cat",
+            WorkspaceManager.rootfsShell(context.linuxDir),
             "-l",
             "-c",
             // 命令通过位置参数传入, 避免任何转义; eval "$2" 对命令文本只求值一次, 等价于 bash -c "$cmd"
             "cd -- \"\$1\" && eval \"\$2\"",
             "rikkahub",
-            WORKSPACE_DIR,
+            context.prootCwd(),
             context.command,
         )
         return command
     }
 
-    private fun File.hasUsableRootfs(): Boolean =
-        isDirectory && File(this, "bin/sh").isFile
+    private fun WorkspaceShellContext.prootCwd(): String {
+        val normalized = cwd.trim().trim('/')
+        return if (normalized.isBlank()) {
+            WORKSPACE_DIR
+        } else {
+            "$WORKSPACE_DIR/$normalized"
+        }
+    }
 
     private companion object {
         private const val PROOT_EXEC = "libproot_exec.so"

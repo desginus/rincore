@@ -9,6 +9,8 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.google.services)
+    alias(libs.plugins.firebase.crashlytics)
     alias(libs.plugins.baselineprofile)
 }
 
@@ -21,21 +23,17 @@ android {
     }
 
     defaultConfig {
-        applicationId = "me.rincore.app"
+        applicationId = "me.rerere.rikkahub"
         minSdk = 26
         targetSdk = 37
-        versionCode = 9999
-        versionName = "5.0.13"
-
-        // v4.8.179: 开发者版本开关 — true=开发者版(含“开发者调试”入口/面板); 正式版=false
-        buildConfigField("Boolean", "DEVELOPER_BUILD", "false")
+        versionCode = 192
+        versionName = "3.0.0-blurtest"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // v5.0.10: 本块原设 ndk.abiFilters=arm64-v8a，与下方 splits.abi(include=arm64-v8a,
-        //   isUniversalApk=false) 冲突（AGP: "Conflicting configuration : 'arm64-v8a' in ndk
-        //   abiFilters cannot be present when splits abi filters are set"）→ 移除；
-        //   ABI 过滤统一由 splits 负责（只产 arm64-v8a、无 Universal）。
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
     }
 
     splits {
@@ -45,9 +43,8 @@ android {
             val isBuildingBundle = gradle.startParameter.taskNames.any { it.lowercase().contains("bundle") }
             isEnable = !isBuildingBundle
             reset()
-            include("arm64-v8a")
-            // v5.0.10 用户定版：只产 arm64-v8a（不再生成 Universal APK）
-            isUniversalApk = false
+            include("arm64-v8a", "x86_64")
+            isUniversalApk = true
         }
     }
 
@@ -79,14 +76,8 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
-            // v5.0.8 (B199): 关闭 R8 —— 反向换底带入上游 3.0.0 的 optimization 配置后，
-            // 本项目史上首次全量 R8 运行：无 keep 规则下类合并改写了 Koin 类键
-            // （DEX 实锤：MemoryConsolidator 的 MemoryRepository 查找被改写为 androidx.room.Room
-            //  → NoDefinitionFound → 启动/退后台即崩）。v4.8.189 及之前从未启用 R8（APK 78MB 为证）。
-            // 恢复可用性优先；如需重新启用 R8，必须先制定并逐项验证 keep 规则集。
-            isMinifyEnabled = false
             optimization {
-                enable = false
+                enable = true
             }
             buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
@@ -165,13 +156,12 @@ kotlin {
 configurations.matching { it.name.endsWith("UnitTestRuntimeClasspath") }.configureEach {
     resolutionStrategy.dependencySubstitution {
         substitute(module("io.github.dokar3:quickjs-kt-android"))
-            .using(module("io.github.dokar3:quickjs-kt-jvm:1.0.15"))
+            .using(module("io.github.dokar3:quickjs-kt-jvm:${libs.versions.quickjs.get()}"))
     }
 }
 
 dependencies {
     implementation(libs.quickjs)
-    implementation(libs.quickjs.wrapper)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.process)
@@ -197,6 +187,11 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.navigation3)
     implementation(libs.androidx.material3.adaptive.navigation3)
 
+    // Firebase
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.analytics)
+    implementation(libs.firebase.crashlytics)
+
     // DataStore
     implementation(libs.androidx.datastore.preferences)
 
@@ -216,9 +211,6 @@ dependencies {
     implementation(libs.koin.android)
     implementation(libs.koin.compose)
     implementation(libs.koin.androidx.workmanager)
-
-    // jetbrains markdown parser (vendored: 0.7.14 + CJK fix — 见 :markdown 模块)
-    implementation(project(":markdown"))
 
     // okhttp
     implementation(libs.okhttp)
@@ -335,16 +327,6 @@ dependencies {
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
     androidTestImplementation(libs.androidx.room.testing)
-    implementation(libs.hjson) // v4.6.4: HJSON 解析 (Operit 生态包手写格式 — 与 Operit 同款依赖)
-    implementation(libs.quickjs.kt.android) // v4.5.29 岔路口计划·阶段2: Operit 脚本运行时
-    implementation(libs.sonner)
-    implementation(libs.lucide.icons)
-    implementation("com.cronutils:cron-utils:9.2.1")
-    implementation(libs.play.services.location)
-    implementation(libs.kotlinx.coroutines.play.services)
-    implementation("androidx.documentfile:documentfile:1.0.1")
-    implementation(libs.androidx.media)
-
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 }

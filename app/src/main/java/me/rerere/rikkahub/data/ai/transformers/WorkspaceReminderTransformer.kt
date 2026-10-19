@@ -1,26 +1,23 @@
-/* 【域 B·AI 传输】 | 地图: docs/APP_MAP.md §B */
 package me.rerere.rikkahub.data.ai.transformers
 
-
-/* ───【原版对齐】WorkspaceReminderTransformer.kt | 差异 ±7 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
 import android.util.Log
 import kotlinx.coroutines.CancellationException
-import java.io.ByteArrayOutputStream
-import java.nio.file.Paths
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.workspace.WorkspaceShellStatus
+import java.io.ByteArrayOutputStream
+import java.nio.file.Paths
 
 /**
  * Workspace 系统提示注入转换器
  *
  * 当助手绑定了一个 shell 已就绪的 workspace 时, 在系统提示词中追加一段引导,
  * 让模型了解 workspace 环境与 workspace_* 工具的使用方式。
+ * 提示中包含 Rootfs 实际使用的 shell 与发行版, 避免模型默认按 bash / apt 来写命令。
+ * 同时读取 ~/.agents、/workspace 和会话当前目录中的 AGENTS.md 作为工作区指令。
  */
 class WorkspaceReminderTransformer(
     private val workspaceRepository: WorkspaceRepository,
@@ -31,184 +28,130 @@ class WorkspaceReminderTransformer(
     ): List<UIMessage> {
         val workspaceId = ctx.assistant.workspaceId?.toString() ?: return messages
         val workspace = workspaceRepository.getById(workspaceId) ?: return messages
-        // 与 ChatService.createWorkspaceToolsIfReady 保持一致: 仅在 shell 就绪时注入
+        // 与 ChatToolFactory.createWorkspaceToolsIfReady 保持一致: 仅在 shell 就绪时注入
         if (workspace.shellStatus != WorkspaceShellStatus.READY.name) return messages
 
-        // 2.5.2/2.5.3 移植: 读取工作区 AGENTS.md (项目级指令) 并入系统提示
-        val prompt = buildWorkspacePrompt(workspace, ctx.workspaceCwd) +
-            buildAgentsPrompt(workspaceRepository, workspaceId, ctx.workspaceCwd)
+        val prompt = buildWorkspacePrompt(
+            workspace = workspace,
+            shell = workspaceRepository.rootfsShell(workspaceId),
+            distro = readDistroName(workspaceId),
+            cwd = ctx.workspaceCwd,
+        ) + buildAgentsPrompt(workspaceId, ctx.workspaceCwd)
 
         // 追加到第一条 system 消息; 若不存在则插入一条
         val systemIndex = messages.indexOfFirst { it.role == MessageRole.SYSTEM }
         return if (systemIndex >= 0) {
             messages.toMutableList().apply {
-                this[systemIndex] = this[systemIndex].appendText("\n\n$prompt")
+                this[systemIndex] = this[systemIndex]
+                    .appendText("\n\n$prompt")
+                    .copy(isSynthetic = true)
             }
         } else {
-            listOf(UIMessage.system(prompt)) + messages
+            listOf(UIMessage.system(prompt).copy(isSynthetic = true)) + messages
         }
     }
-}
 
-/**
- * v4.7.10: AGENTS.md 读取缓存 — 每轮请求此前做最多 6 次重 IO (查大小+读全文 ×3
- * 路径; 每次含 Room 查询 + ensureWorkspace + 沙箱文件操作), 是"工具返回结果后
- * 等待很久"的主要来源。TTL + size 双机制: TTL(10s) 内直接命中 (零 IO);
- * 过期后仅查 size (轻), 未变续期用缓存, 变了才读全文; 不存在也缓存空条目
- * (避免每轮 3 次异常探测)。文件编辑后最多 10s 生效 (可接受)。
- */
-private data class AgentsCacheEntry(val size: Long, val content: String, val at: Long)
-private val agentsCache = java.util.concurrent.ConcurrentHashMap<String, AgentsCacheEntry>()
-// v4.8.35: TTL 10s → 120s — 原 10s 意在"文件编辑后最多 10s 生效", 但代价是
-// 每 10s 一次 size 探测 (Room 查询 + 沙箱文件操作) 横跨生成链每轮 step 反复
-// 命中; 120s 大幅降低探测频率 (文件变更最迟 2 分钟生效, 该语义与对话天然
-// 对齐 — 新一轮请求自然读到最新)。
-private const val AGENTS_CACHE_TTL_MS = 120_000L
-
-/**
- * 2.5.2/2.5.3 移植: AGENTS.md 读取 — /root/.agents、/workspace 根、会话当前目录三处。
- * 超过 64KB 跳过 (提示词膨胀保护), 读不到静默跳过。
- */
-private suspend fun buildAgentsPrompt(
-    workspaceRepository: WorkspaceRepository,
-    workspaceId: String,
-    cwd: String?,
-): String {
-    // ProotShellRunner 将 HOME 固定为 /root; 相对 PWD 按 /workspace 解析。
-    val workingDirectory = Paths.get("/workspace")
-        .resolve(cwd?.takeIf { it.isNotBlank() } ?: ".")
-        .normalize()
-    val paths = linkedSetOf(
-        "/root/.agents/AGENTS.md",
-        "/workspace/AGENTS.md",
-        workingDirectory.resolve("AGENTS.md").toString(),
-    )
-    val instructions = paths.mapNotNull { path ->
-        val cacheKey = "$workspaceId|$path"
-        val now = System.currentTimeMillis()
-        val cached = agentsCache[cacheKey]
-        // TTL 内直接命中 — 零 IO
-        if (cached != null && now - cached.at < AGENTS_CACHE_TTL_MS) {
-            return@mapNotNull if (cached.content.isBlank()) null else path to cached.content
+    private suspend fun buildAgentsPrompt(workspaceId: String, cwd: String?): String {
+        // ProotShellRunner 将 HOME 固定为 /root；相对 PWD 按 /workspace 解析。
+        val workingDirectory = Paths.get("/workspace")
+            .resolve(cwd?.takeIf { it.isNotBlank() } ?: ".")
+            .normalize()
+        val paths = linkedSetOf(
+            "/root/.agents/AGENTS.md",
+            "/workspace/AGENTS.md",
+            workingDirectory.resolve("AGENTS.md").toString(),
+        )
+        val instructions = paths.mapNotNull { path ->
+            readRootfsText(workspaceId, path, MAX_AGENTS_BYTES)?.let { path to it }
         }
+        if (instructions.isEmpty()) return ""
+        return buildString {
+            appendLine()
+            appendLine()
+            appendLine("<workspace_instructions>")
+            appendLine("Follow the AGENTS.md instructions below.")
+            instructions.forEach { (path, content) ->
+                appendLine()
+                appendLine("AGENTS.md source: $path")
+                appendLine(content)
+            }
+            append("</workspace_instructions>")
+        }
+    }
+
+    private suspend fun readDistroName(workspaceId: String): String? =
+        OS_RELEASE_PATHS.firstNotNullOfOrNull { path ->
+            readRootfsText(workspaceId, path, MAX_OS_RELEASE_BYTES)?.let(::parseOsReleaseName)
+        }
+
+    // 文件不存在、过大或不可读时返回 null, 不影响提示词的其余部分
+    private suspend fun readRootfsText(workspaceId: String, path: String, maxBytes: Long): String? =
         try {
             val size = workspaceRepository.rootfsFileSize(workspaceId, path)
-            require(size <= MAX_AGENTS_BYTES) { "AGENTS.md exceeds $MAX_AGENTS_BYTES bytes" }
-            // size 未变 — 续期用缓存 (省全文读)
-            if (cached != null && cached.size == size) {
-                agentsCache[cacheKey] = cached.copy(at = now)
-                return@mapNotNull if (cached.content.isBlank()) null else path to cached.content
-            }
+            require(size <= maxBytes) { "$path exceeds $maxBytes bytes" }
             val content = ByteArrayOutputStream().use { output ->
                 workspaceRepository.exportRootfsFile(workspaceId, path, output)
                 output.toString(Charsets.UTF_8.name())
             }
-            agentsCache[cacheKey] = AgentsCacheEntry(size, content, now)
-            content.takeIf { it.isNotBlank() }?.let { path to it }
+            content.takeIf { it.isNotBlank() }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            // 不存在/读取失败 — 缓存空条目 (TTL 内不重复探测)
-            agentsCache[cacheKey] = AgentsCacheEntry(-1L, "", now)
-            Log.d("WorkspaceReminder", "Skipping workspace instructions: $path", e)
+            Log.d("WorkspaceReminder", "Skipping workspace file: $path", e)
             null
         }
-    }
-    if (instructions.isEmpty()) return ""
-    return buildString {
-        appendLine()
-        appendLine()
-        appendLine("<workspace_instructions>")
-        appendLine("Follow the AGENTS.md instructions below.")
-        instructions.forEach { (path, content) ->
-            appendLine()
-            appendLine("AGENTS.md source: $path")
-            appendLine(content)
-        }
-        append("</workspace_instructions>")
+
+    private companion object {
+        const val MAX_AGENTS_BYTES = 64L * 1024
+        const val MAX_OS_RELEASE_BYTES = 16L * 1024
+        val OS_RELEASE_PATHS = listOf("/etc/os-release", "/usr/lib/os-release")
     }
 }
 
-private fun buildWorkspacePrompt(workspace: WorkspaceEntity, cwd: String? = null): String = buildString {
+private const val MAX_DISTRO_NAME_LENGTH = 80
+
+/** 从 os-release 内容中取发行版名称, 优先 PRETTY_NAME, 其次 NAME + VERSION_ID */
+internal fun parseOsReleaseName(content: String): String? {
+    val values = content.lineSequence()
+        .map { it.trim() }
+        .filter { !it.startsWith("#") && it.indexOf('=') > 0 }
+        .associate { line ->
+            line.substringBefore('=') to line.substringAfter('=').trim().removeSurrounding("\"").removeSurrounding("'")
+        }
+    val name = values["PRETTY_NAME"]?.takeIf { it.isNotBlank() }
+        ?: listOfNotNull(values["NAME"], values["VERSION_ID"]).joinToString(" ")
+    // 内容来自 Rootfs 内的文件, 拼进系统提示前去掉控制字符并限制长度
+    return name.filterNot { it.isISOControl() }.trim().take(MAX_DISTRO_NAME_LENGTH).ifBlank { null }
+}
+
+private fun buildWorkspacePrompt(
+    workspace: WorkspaceEntity,
+    shell: String,
+    distro: String?,
+    cwd: String? = null,
+): String = buildString {
     appendLine("<workspace>")
     appendLine("You have access to a persistent Linux workspace named \"${workspace.name}\", running in a sandboxed proot rootfs environment.")
     appendLine("- The workspace files area is mounted at `/workspace`. Use it as your working directory; files written there persist across turns of this conversation.")
     appendLine("- All paths passed to workspace tools must be absolute and inside the Rootfs (for example `/workspace/notes.md`).")
+    if (distro != null) {
+        appendLine("- The Rootfs distribution is $distro. Use its native package manager when you need to install missing tools.")
+    }
+    if (shell == "/bin/bash") {
+        appendLine("- `workspace_shell` runs commands with `/bin/bash`.")
+    } else {
+        appendLine("- `workspace_shell` runs commands with `$shell`, a POSIX shell. Bash is not installed, so avoid bash-only syntax such as arrays, here-strings (`<<<`) and brace expansion.")
+    }
     appendLine("- Available tools:")
-    appendLine("  - `workspace_read_file`: read file contents — line-numbered, paginated via offset/limit (large files).")
+    appendLine("  - `workspace_read_file`: read file contents.")
     appendLine("  - `workspace_write_file` / `workspace_edit_file`: create files, or make precise edits to existing files.")
-    appendLine("  - `workspace_grep`: search file contents (regex), with optional glob filter — find definitions/usages/callers.")
-    appendLine("  - `workspace_glob`: find files by name pattern (e.g. \"*.kt\") — newest first.")
-    appendLine("  - `workspace_shell`: run shell commands (the files area is mounted at /workspace). Each call is a fresh isolated proot instance — `ps`/`pgrep` inside a call only see that call own processes; NEVER judge another task liveness from a different call (it will look dead while still running).")
-    appendLine("  - `workspace_job`: durable background jobs — action=start (command [+cwd]) returns a job_id that KEEPS RUNNING after the call ends (use for builds / generation / long downloads); action=status reports running/done/dead + exit code + log tail; action=kill stops it. Logs: /workspace/.rin-jobs/<job_id>.log.")
-    appendLine("- File work: prefer the dedicated tools over shell equivalents — `workspace_glob` (NOT find/ls), `workspace_grep` (NOT grep/rg), `workspace_read_file` (NOT cat/head/tail), `workspace_edit_file` (NOT sed) — they return structured output with unified truncation.")
-    appendLine("- Large files: `workspace_read_file` reports totalLines and a continuation hint; keep reading with offset when truncated (default window 2000 lines).")
-    // v4.8.113 (用户定版): 图片内联渲染统一口径 — 工具结果自带 render_urls + render_markdown
-    appendLine("- Inline images: when a tool result contains `render_urls` (images produced by shell/python/officecli), copy the `render_markdown` lines VERBATIM into your reply text — the image then renders inside the chat bubble. Never retype or re-encode the URL yourself.")
-    appendLine("- Run `toolbox` any time to list the sandbox's built-in tools — it also shows per-tool availability of the document chain (weasyprint / img2pdf / pdftoppm / qpdf / ghostscript / ImageMagick / tesseract / Playwright — each with a real install/workaround hint; some are NOT installed in a given rootfs) and the diagnostics tools. Check it BEFORE concluding a capability is missing.")
-    appendLine("- Back to the app — software-sandbox bridge (`rin` command calls RinCore features from inside the sandbox; run `rin help` for all):")
-    appendLine("  `rin notify \"title\" \"body\"` system notification (reaches the user even in background) · `rin toast \"text\"` in-app toast · `rin clip get|set <text>` clipboard.")
-    appendLine("  `rin ai \"prompt\"` asks the current model and prints the reply (pipe-friendly: `cat data.csv | rin ai -` · `rin ai --system \"You are a summarizer\" ...`) —")
-    appendLine("    use it to summarize / classify / translate / extract inside scripts without reimplementing NLP locally.")
-    appendLine("  `rin open <url-or-uri>` opens a link or another app · `rin share <text>` system share sheet · `rin render <workspace-path>` opens a document (pptx/docx/xlsx/pdf/images) in the app's native renderer · `rin info` device info · `rin log <text>` writes app log.")
-    appendLine("- Office/document toolchain — the core of this app. The principle: work on the document AS IT IS (native form), edit surgically, never rebuild from scratch:")
-    appendLine("  - VIEW a document (default for reading / analysis / answering questions):")
-    appendLine("    `officecli view <f> screenshot` renders docx/xlsx/pptx to PNG — open the image and look at the REAL layout (better than any text extraction).")
-    appendLine("    PDF visual layout when needed: `pdf <f.pdf> --png` (renders pages to temp files for viewing) · `officecli view <f> html` also available.")
-    appendLine("  - EXTRACT text only with a concrete purpose (search / exact quoting / locating an edit):")
-    appendLine("    `pdf <f.pdf>` prints the embedded text layer (the PDF's own data) · `officecli view <f> text` · `markitdown <file>` (docx/xlsx/pptx/pdf/html -> markdown tables).")
-    appendLine("    Scanned documents: view the rendered pages (`pdf <f.pdf> --png`) — OCR (`pdf <f.pdf> --ocr`) only for explicit text needs.")
-    appendLine("    Layout QA before delivery: `doccheck <f.pdf>` — per-page ink/text/images, flags sparse-blank pages + inconsistent figure widths, writes a thumbnails sheet PNG (open it and look).")
-    appendLine("    Scans / handwriting regions: `blockscan <img> --crops` — numbered bands/blocks + annotated PNG, so you can locate each problem's region without repeated guessing.")
-    appendLine("  - EDIT surgically — patch the original in place; NEVER regenerate the whole document for a small change:")
-    appendLine("    `office-edit` (built-in): `office-edit docx|pptx read <f>` · `office-edit docx|pptx replace <f> \"old\" \"new\"` · `office-edit xlsx set <f> <sheet> <cell> \"value\"` — byte-preserving, atomic.")
-    appendLine("    `officecli add|set|remove|move <f> <path> ...` (DOM-like paths — /body/p[1], /Sheet1/A1) · atomic batch: `officecli batch <f> --commands '[{\"command\":\"set\",\"path\":\"/Sheet1/A1\",\"props\":{\"value\":\"x\"}}]'`.")
-    appendLine("    `doc` (built-in): legacy .doc (Word 97-2003) — `doc read <f.doc>` · `doc replace <f.doc> \"old\" \"new\" [-o out.doc]`")
-    appendLine("      (wraps Spire.Doc + auto setarch -R + evaluation-notice scrub; if missing: `pip3 install --break-system-packages spire.doc`).")
-    appendLine("  - Before delivering any office file run `office-check <file>` (structural check + leftover placeholder scan: {xxx} / 【xxx】 / TODO).")
-    appendLine("  - Convert formats only on explicit request or a clear gain: `pandoc` (md/html/docx/epub; PDF via --pdf-engine=xelatex).")
-    appendLine("  - CJK PDF via xelatex: the default Latin Modern font LACKS Greek letters (\u03c9/\u03b1) and circled digits (\u2460\u2461\u2462) \u2014 pass `-V CJKmainfont=\"Noto Serif CJK SC\"` for Chinese text and a Greek-capable `-V mainfont=\"DejaVu Serif\"` when formulas use Greek letters (missing glyphs only produce log warnings).")
-    appendLine("    HTML -> PDF: `weasyprint <f.html> <out.pdf>` (Playwright/Chromium when pixel-exact CSS is needed); PDF pages -> PNG: `pdftoppm`.")
-    appendLine("  - Handwriting / scans: re-verify EVERY transcribed content against the source image before delivery (self-check pass); for long batches produce 1-2 sample pages first and confirm with the user before full production.")
-    appendLine("  - NEW documents (creation only — not an editing strategy): python-docx / python-pptx / openpyxl / reportlab / PyMuPDF via a short script;")
-    appendLine("    extra libraries: `pip3 install --break-system-packages <pkg>`. Save output under /workspace and report the path.")
-    appendLine("  - ⚠️ LibreOffice / soffice is NOT available (proot sandbox has no standard /proc — unfixable). NEVER call `soffice`/`libreoffice`;")
-    appendLine("    for document preview / rendering use `officecli view <f> screenshot` (or `pdf <f.pdf>`) instead.")
-    appendLine("- Code & text edits: prefer `apply-patch` (built-in) for precise multi-file edits — write a Codex-style patch and pipe it in:")
-    appendLine("    apply-patch <<'PATCH'")
-    appendLine("    *** Begin Patch … *** Update File: <path> … @@ <context> … -old … +new … *** End Patch")
-    appendLine("    PATCH")
-    appendLine("    Hunks are located by context lines (tolerant of whitespace differences); the whole patch applies in one transaction — if any hunk fails, nothing is written. Read files before editing; after a successful apply-patch, do not re-read them — trust the result. Run one-off python as `python3 -B` (stale __pycache__ silently reproduces fixed bugs).")
-    appendLine("- Code tasks — work like a professional coding agent (this workflow prevents 90% of rework):")
-    appendLine("  1. Explore before editing. Search first (rg / `workspace_grep` / `workspace_glob`), then read the target file AND its context")
-    appendLine("     (imports, neighboring files, call sites). Mimic the project's existing conventions — same style, same libraries, same patterns.")
-    appendLine("     NEVER assume a library is available: check the project's own files/config first.")
-    appendLine("  2. Edit small and testable — one logical change at a time. Prefer `apply-patch` (multi-file, context-located, transactional);")
-    appendLine("     use write/edit tools for new files; use scripts for bulk search-replace or generated content.")
-    appendLine("  3. Constraints: ASCII by default (non-ASCII only when the file already uses it); comments only where the code is non-obvious (rare);")
-    appendLine("     never log or commit secrets/keys.")
-    appendLine("  4. Verify before you finish. Run the project's own lint / typecheck / test commands (find them in README, package.json, pyproject.toml,")
-    appendLine("     Makefile). The sandbox ships: black, ruff, mypy (Python) · eslint, tsc (JS/TS) · node/npm, python3, git, rg, fdfind, jq, yq, ast-grep (note: `tree` is NOT installed \u2014 use find/fdfind instead).")
-    appendLine("     Structure-aware code search: `ast-grep -p 'for \$X in \$L: \$\$\$BODY' --lang python src/` (`--json` for machine output).")
-    appendLine("     AST rewrite: `ast-grep -p '<pattern>' --rewrite '<replacement>' -U <file>` — check formatting after (missing? `npm install -g @ast-grep/cli`; yq: `pip3 install --break-system-packages yq`).")
-    appendLine("     If the project defines no checks, say so explicitly in your final message.")
-    appendLine("  5. Git hygiene: NEVER revert changes you did not make; never run destructive commands (git reset --hard, git checkout --);")
-    appendLine("     do not commit unless the user asks.")
-    appendLine("- Frontend/UI tasks: avoid bland generic ('AI slop') layouts — expressive type, a clear color direction (not purple-on-white by default),")
-    appendLine("  a few meaningful animations, non-flat backgrounds. Preserve an existing design system when present.")
+    appendLine("  - `workspace_shell`: run shell commands (the files area is mounted at /workspace).")
+    appendLine("- Prefer `workspace_shell` for tasks that standard Unix tools handle well, and prefer `workspace_edit_file` for targeted edits over rewriting whole files.")
     appendLine("- The skills directory is mounted at `/skills`. Each skill is a subdirectory `/skills/<skill-name>/` containing a `SKILL.md` (with `name` and `description` frontmatter) plus any supporting files. Read a skill's `SKILL.md` before using it, and follow its instructions.")
-    appendLine("- Keep the /workspace root tidy: create a dedicated subfolder per task/project and put its files there, instead of dumping loose files and directories at the root.")
+    appendLine("- Built-in skills shipped with the app are mounted at `/builtin_skills/<skill-name>/` with the same layout. Treat `/builtin_skills` as READ-ONLY: you may read files and run scripts there, but never modify, overwrite, or delete anything. A skill in `/skills` with the same name overrides the built-in one.")
     appendLine("- Files the user uploaded are mounted at `/upload`. Treat `/upload` as READ-ONLY: read uploaded files from `/upload/<file-name>`, but never modify, overwrite, or delete anything there. If you need to change an uploaded file, copy it into `/workspace` first and edit the copy.")
-    // v4.8.110 (B3): /tool_outputs 语义定版 — 跨工作区共享产物区 (此前提示未交代, 模型不知道它存在)
-    appendLine("- The shared directory `/tool_outputs` is mounted in EVERY workspace (cross-workspace shared area). Use it to hand files between workspaces or to drop artifacts other assistants should see; its non-transcoded files are never auto-pruned.")
-    // v4.8.91: 上传码直取 — 新文件是时间码 (MMddHHmm+序号, 10 位起; 即文件名前缀), 历史文件 8 位码; 禁止猜路径
-    appendLine("- Every attachment carries an **upload code** (shown as `code=\"...\"` in its <UploadFile> tag; for new uploads it is the **filename prefix** — a 10+ digit time code like `1003002901` = upload time MMddHHmm + sequence). When the user refers to a file by code, or you need an uploaded file whose exact path you don't know, call `upload_fetch` with the code — it returns the precise `/upload/...` path directly. Never guess /upload paths or browse that folder blindly.")
-    // v4.5.27: 助手级 CWD = 该助手的专一空间, 物理隔离在挂载层实现 —
-    // 该文件夹即沙箱内 /workspace 根 (proot 挂载 + 文件工具解析同源), 外部目录不可见/不可达。
-    val rawCwd = cwd?.trim('/').orEmpty()
-    val scopeRel = (if (rawCwd == "workspace") "" else rawCwd.removePrefix("workspace/")).trim('/')
-    if (scopeRel.isNotEmpty()) {
-        appendLine("- This assistant's exclusive folder \"$scopeRel\" is mounted directly at `/workspace` — everything under /workspace is yours; areas outside it are not visible or reachable from this sandbox. Start by listing /workspace to see what you have.")
+    if (!cwd.isNullOrBlank()) {
+        appendLine("- Current working directory: `$cwd`. Use this as the default context for file operations and shell commands.")
     }
     append("</workspace>")
 }
@@ -224,5 +167,3 @@ private fun UIMessage.appendText(extra: String): UIMessage {
     }
     return copy(parts = updatedParts)
 }
-
-private val MAX_AGENTS_BYTES: Long = 64L * 1024

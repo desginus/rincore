@@ -1,23 +1,12 @@
-/* 【域 I·数据存储】 — 仓库层 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.data.repository
-
-/* ───【原版对齐】MemoryRepository.kt | 基线 2.5.1 + v4.8.92 单对话记忆扩展
- * 5.0.0 并树：并入上游 3.0.0 记忆 2.0「文件式记忆库」API（memory_file 表 + 乐观锁写），
- * 与我方「记忆行式」API（MemoryEntity + 单对话记忆）双面共存：
- *  · 文件式 = 上游记忆库（MemoryConsolidator / MemoryFileVM / ChatRequestFactory 消费）
- *  · 行式   = 我方 2.5.x 记忆 + v4.8.92 单对话记忆（MemoryTools / AssistantMemoryPage 消费）
- * ───────────────────────────────────────────────────────────────*/
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import me.rerere.rikkahub.data.db.dao.MemoryDAO
-import me.rerere.rikkahub.data.db.dao.MemoryFileDAO
-import me.rerere.rikkahub.data.db.entity.MemoryEntity
 import me.rerere.rikkahub.data.db.entity.MemoryFileEntity
 import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.model.MemoryFile
 
 sealed interface MemoryWriteResult {
@@ -31,34 +20,29 @@ sealed interface MemoryWriteResult {
 }
 
 /**
- * 记忆仓库（双面）：
- * - 文件式记忆库（上游 3.0.0）：每个助手（或全局）一组 Markdown 文件，写操作带 ifVersion 乐观锁。
- * - 行式记忆（我方 2.5.x + v4.8.92 单对话记忆）：[AssistantMemory.conversationId] 非空 = 该记忆挂载到对应对话，
- *   只在它所属的对话里被注入；修改/删除走带守卫的 checked 方法；对话删除时级联销毁。
+ * 记忆库：每个助手（或全局）一组 Markdown 文件。
+ *
+ * 写操作都带 ifVersion 做乐观锁：传 [NEW_FILE_VERSION] 表示新建，传版本号表示基于该版本修改，
+ * 传 null 则不校验（用户在界面里直接编辑）。
  */
-class MemoryRepository(
-    private val memoryDAO: MemoryDAO,
-    private val memoryFileDAO: MemoryFileDAO,
-) {
+class MemoryRepository(private val memoryDAO: MemoryDAO) {
     companion object {
         const val GLOBAL_MEMORY_ID = "__global__"
         const val NEW_FILE_VERSION = "new"
     }
 
-    // ═══════════ 一、文件式记忆库（上游 3.0.0 记忆 2.0） ═══════════
-
     // 读取、校验版本、写入必须一起完成，否则两个写入方会互相覆盖
     private val writeLock = Mutex()
 
     fun getFilesFlow(assistantId: String): Flow<List<MemoryFile>> =
-        memoryFileDAO.getFilesOfAssistantFlow(assistantId).map { entities -> entities.map { it.toMemoryFile() } }
+        memoryDAO.getFilesOfAssistantFlow(assistantId).map { entities -> entities.map { it.toMemoryFile() } }
 
     suspend fun getFiles(assistantId: String): List<MemoryFile> =
-        memoryFileDAO.getFilesOfAssistant(assistantId).map { it.toMemoryFile() }
+        memoryDAO.getFilesOfAssistant(assistantId).map { it.toMemoryFile() }
 
     suspend fun getFile(assistantId: String, path: String): MemoryFile? {
         val normalized = MemoryFile.normalizePath(path) ?: return null
-        return memoryFileDAO.getFile(assistantId, normalized)?.toMemoryFile()
+        return memoryDAO.getFile(assistantId, normalized)?.toMemoryFile()
     }
 
     /** 新建或整体覆盖 */
@@ -83,6 +67,7 @@ class MemoryRepository(
             index < 0 -> Edit.Reject("old_str was not found in $path.")
             current.indexOf(oldStr, index + 1) >= 0 ->
                 Edit.Reject("old_str matches more than one place in $path; include more surrounding text to make it unique.")
+
             else -> Edit.Content(current.replaceAt(index, oldStr.length, newStr))
         }
     }
@@ -104,22 +89,22 @@ class MemoryRepository(
         ifVersion: String? = null,
     ): MemoryWriteResult = writeLock.withLock {
         val normalized = MemoryFile.normalizePath(path) ?: return invalidPath(path)
-        val current = memoryFileDAO.getFile(assistantId, normalized)?.toMemoryFile()
+        val current = memoryDAO.getFile(assistantId, normalized)?.toMemoryFile()
         if (current == null || (ifVersion != null && ifVersion != current.version)) {
             return MemoryWriteResult.Conflict(current)
         }
-        memoryFileDAO.deleteFile(assistantId, normalized)
+        memoryDAO.deleteFile(assistantId, normalized)
         MemoryWriteResult.Success(null)
     }
 
     suspend fun deleteFilesOfAssistant(assistantId: String) {
-        memoryFileDAO.deleteFilesOfAssistant(assistantId)
+        memoryDAO.deleteFilesOfAssistant(assistantId)
     }
 
     suspend fun copyFiles(fromAssistantId: String, toAssistantId: String) {
-        val files = memoryFileDAO.getFilesOfAssistant(fromAssistantId)
+        val files = memoryDAO.getFilesOfAssistant(fromAssistantId)
         if (files.isEmpty()) return
-        memoryFileDAO.upsertFiles(files.map { it.copy(assistantId = toAssistantId) })
+        memoryDAO.upsertFiles(files.map { it.copy(assistantId = toAssistantId) })
     }
 
     private sealed interface Edit {
@@ -135,7 +120,7 @@ class MemoryRepository(
         edit: (current: String) -> Edit,
     ): MemoryWriteResult = writeLock.withLock {
         val normalized = MemoryFile.normalizePath(path) ?: return invalidPath(path)
-        val current = memoryFileDAO.getFile(assistantId, normalized)?.toMemoryFile()
+        val current = memoryDAO.getFile(assistantId, normalized)?.toMemoryFile()
         val versionMatches = when (ifVersion) {
             null -> current != null || allowCreate
             NEW_FILE_VERSION -> current == null && allowCreate
@@ -159,153 +144,13 @@ class MemoryRepository(
             content = content,
             updatedAt = System.currentTimeMillis(),
         )
-        memoryFileDAO.upsertFile(entity)
+        memoryDAO.upsertFile(entity)
         MemoryWriteResult.Success(entity.toMemoryFile())
     }
 
     private fun invalidPath(path: String) = MemoryWriteResult.Rejected(
         "Invalid path \"$path\". Use an absolute path ending in .md, e.g. /topics/food.md."
     )
-
-    // ═══════════ 二、行式记忆（我方 2.5.x + v4.8.92 单对话记忆） ═══════════
-
-    private fun MemoryEntity.toModel(): AssistantMemory = AssistantMemory(
-        id = id,
-        content = content,
-        conversationId = conversationId,
-        sourceConversationId = sourceConversationId,
-    )
-
-    fun getMemoriesOfAssistantFlow(assistantId: String): Flow<List<AssistantMemory>> =
-        memoryDAO.getMemoriesOfAssistantFlow(assistantId)
-            .map { entities -> entities.map { it.toModel() } }
-
-    suspend fun getMemoriesOfAssistant(assistantId: String): List<AssistantMemory> {
-        return memoryDAO.getMemoriesOfAssistant(assistantId).map { it.toModel() }
-    }
-
-    fun getGlobalMemoriesFlow(): Flow<List<AssistantMemory>> =
-        memoryDAO.getMemoriesOfAssistantFlow(GLOBAL_MEMORY_ID)
-            .map { entities -> entities.map { it.toModel() } }
-
-    suspend fun getGlobalMemories(): List<AssistantMemory> {
-        return memoryDAO.getMemoriesOfAssistant(GLOBAL_MEMORY_ID).map { it.toModel() }
-    }
-
-    // ── v4.8.92: 单对话记忆 ──
-
-    fun getMemoriesOfConversationFlow(conversationId: String): Flow<List<AssistantMemory>> =
-        memoryDAO.getMemoriesOfConversationFlow(conversationId)
-            .map { entities -> entities.map { it.toModel() } }
-
-    suspend fun getMemoriesOfConversation(conversationId: String): List<AssistantMemory> {
-        return memoryDAO.getMemoriesOfConversation(conversationId).map { it.toModel() }
-    }
-
-    /** 某助手（或全局桶）名下的全部单对话记忆（管理页「单对话记忆」视图用） */
-    fun getConversationMemoriesOfAssistantFlow(assistantId: String): Flow<List<AssistantMemory>> =
-        memoryDAO.getConversationMemoriesOfAssistantFlow(assistantId)
-            .map { entities -> entities.map { it.toModel() } }
-
-    suspend fun deleteMemoriesOfAssistant(assistantId: String) {
-        memoryDAO.deleteMemoriesOfAssistant(assistantId)
-    }
-
-    /** v4.8.92: 对话删除时的级联清理（单对话记忆随对话销毁） */
-    suspend fun deleteMemoriesOfConversation(conversationId: String) {
-        memoryDAO.deleteMemoriesOfConversation(conversationId)
-    }
-
-    suspend fun updateContent(id: Long, content: String): AssistantMemory {
-        val old = memoryDAO.getMemoryById(id) ?: error("Memory record #$id not found")
-        val newMemory = old.copy(content = content)
-        memoryDAO.updateMemory(newMemory)
-        return newMemory.toModel()
-    }
-
-    /**
-     * v4.8.92: 带守卫的修改（模型侧用）—— 其它对话的单对话记忆不可被观测/修改。
-     * 守卫失败抛错，回执由错误信息生成。
-     */
-    suspend fun updateContentChecked(
-        id: Long,
-        content: String,
-        allowedAssistantId: String,
-        currentConversationId: String?,
-    ): AssistantMemory {
-        val old = memoryDAO.getMemoryById(id) ?: error("记忆 #$id 不存在")
-        guardMemoryAccess(old, allowedAssistantId, currentConversationId)
-        val newMemory = old.copy(content = content)
-        memoryDAO.updateMemory(newMemory)
-        return newMemory.toModel()
-    }
-
-    suspend fun addMemory(
-        assistantId: String,
-        content: String,
-        conversationId: String? = null,
-        sourceConversationId: String? = null,
-    ): AssistantMemory {
-        // v3.8.29: 记忆 ID 改为创建时间戳 YYMMDDHHMMSS (如 260820213001)，
-        // 不再自增 1,2,3。同秒冲突顺延 (id+1) 保证唯一。
-        var id: Long = java.text.SimpleDateFormat("yyMMddHHmmss", java.util.Locale.US)
-            .format(java.util.Date()).toLong()
-        while (memoryDAO.getMemoryById(id) != null) {
-            id++
-        }
-        val memory = AssistantMemory(
-            id = id,
-            content = content,
-            conversationId = conversationId,
-            sourceConversationId = sourceConversationId,
-        )
-        memoryDAO.insertMemory(
-            MemoryEntity(
-                id = memory.id,
-                assistantId = assistantId,
-                content = memory.content,
-                conversationId = memory.conversationId,
-                sourceConversationId = memory.sourceConversationId,
-            )
-        )
-        return memory
-    }
-
-    suspend fun copyMemories(fromAssistantId: String, toAssistantId: String) {
-        val memories = memoryDAO.getMemoriesOfAssistant(fromAssistantId)
-        if (memories.isEmpty()) return
-        memoryDAO.insertMemories(
-            memories.map { MemoryEntity(assistantId = toAssistantId, content = it.content) }
-        )
-    }
-
-    suspend fun deleteMemory(id: Long) {
-        memoryDAO.deleteMemory(id)
-    }
-
-    /** v4.8.92: 带守卫的删除（模型侧用）—— 其它对话的单对话记忆不可被删除。 */
-    suspend fun deleteMemoryChecked(
-        id: Long,
-        allowedAssistantId: String,
-        currentConversationId: String?,
-    ) {
-        val entity = memoryDAO.getMemoryById(id) ?: error("记忆 #$id 不存在")
-        guardMemoryAccess(entity, allowedAssistantId, currentConversationId)
-        memoryDAO.deleteMemory(id)
-    }
-
-    private fun guardMemoryAccess(
-        entity: MemoryEntity,
-        allowedAssistantId: String,
-        currentConversationId: String?,
-    ) {
-        if (entity.assistantId != allowedAssistantId) {
-            error("该记忆不属于当前上下文，无法访问")
-        }
-        if (entity.conversationId != null && entity.conversationId != currentConversationId) {
-            error("该记忆属于另一个对话，无法访问（单对话记忆只在它所属的对话里可用）")
-        }
-    }
 }
 
 /** 助手读写的记忆库：开启全局记忆后所有助手共用一份 */
@@ -314,5 +159,16 @@ val Assistant.memoryId: String
 
 private fun MemoryFileEntity.toMemoryFile() = MemoryFile(path = path, content = content, updatedAt = updatedAt)
 
-private fun String.replaceAt(index: Int, length: Int, replacement: String): String =
-    substring(0, index) + replacement + substring(index + length)
+// 删掉的是完整一行时连换行一起去掉，不留空行
+private fun String.replaceAt(index: Int, length: Int, replacement: String): String {
+    var start = index
+    var end = index + length
+    if (replacement.isEmpty()) {
+        val atLineStart = start == 0 || this[start - 1] == '\n'
+        val atLineEnd = end == this.length || this[end] == '\n'
+        if (atLineStart && atLineEnd) {
+            if (end < this.length) end++ else if (start > 0) start--
+        }
+    }
+    return substring(0, start) + replacement + substring(end)
+}

@@ -1,9 +1,4 @@
-/* 【域 I·数据存储】 — 页面 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.ui.pages.stats
-
-/* ───【原版对齐】StatsPage.kt | 与 2.5.6 逐字节一致（v4.8.93 整体复刻）
- * 基线: 原版 2.5.6
- * ───────────────────────────────────────────────────────────────*/
 
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ChartColumn

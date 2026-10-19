@@ -36,11 +36,9 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowRight01
 import me.rerere.hugeicons.stroke.Heading
 import me.rerere.hugeicons.stroke.Idea01
-import me.rerere.hugeicons.stroke.MagicWand01
 import me.rerere.hugeicons.stroke.ScanText
 import me.rerere.hugeicons.stroke.Translate
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.ai.prompts.DEFAULT_COMPRESS_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_OCR_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_SUGGESTION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TITLE_PROMPT
@@ -158,15 +156,6 @@ private enum class PromptSlot(
         default = DEFAULT_OCR_PROMPT,
         get = { it.ocrPrompt },
         set = { settings, value -> settings.copy(ocrPrompt = value) },
-    ),
-    // 5.0.0 回贴：会话压缩提示词（我方功能，上游 3.0.0 无此项）
-    COMPRESS(
-        icon = HugeIcons.MagicWand01,
-        title = R.string.setting_model_page_prompt_compress,
-        variables = R.string.setting_model_page_compress_prompt_vars,
-        default = DEFAULT_COMPRESS_PROMPT,
-        get = { it.compressPrompt },
-        set = { settings, value -> settings.copy(compressPrompt = value) },
     ),
 }
 

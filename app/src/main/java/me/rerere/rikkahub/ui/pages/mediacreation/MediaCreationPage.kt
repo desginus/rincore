@@ -68,8 +68,8 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import com.dokar.sonner.ToastType
-import com.dokar.sonner.ToasterState
+import me.rerere.ui.toast.ToastType
+import me.rerere.ui.toast.ToasterState
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.CheckList

@@ -11,17 +11,14 @@ import { extractErrorMessage } from "~/lib/error";
 import { safeStringArray } from "~/lib/type-guards";
 import { cn } from "~/lib/utils";
 import api from "~/services/api";
-import type { McpServerConfig, McpToolOption } from "~/types";
+import type { ConversationDto, McpToolOption } from "~/types";
 import { Button } from "~/components/ui/button";
 import {
   Popover,
   PopoverContent,
-  PopoverDescription,
-  PopoverHeader,
   PopoverTitle,
   PopoverTrigger,
 } from "~/components/ui/popover";
-import { ScrollArea } from "~/components/ui/scroll-area";
 import { Switch } from "~/components/ui/switch";
 
 import { PickerErrorAlert } from "./picker-error-alert";
@@ -29,6 +26,7 @@ import { PickerErrorAlert } from "./picker-error-alert";
 export interface McpPickerButtonProps {
   disabled?: boolean;
   className?: string;
+  conversation?: ConversationDto | null;
 }
 
 function getEnabledToolsCount(tools: McpToolOption[] | undefined): {
@@ -44,7 +42,11 @@ function getEnabledToolsCount(tools: McpToolOption[] | undefined): {
   return { enabled, total };
 }
 
-export function McpPickerButton({ disabled = false, className }: McpPickerButtonProps) {
+export function McpPickerButton({
+  disabled = false,
+  className,
+  conversation = null,
+}: McpPickerButtonProps) {
   const { t } = useTranslation("input");
   const { settings, currentAssistant } = useCurrentAssistant();
 
@@ -65,9 +67,13 @@ export function McpPickerButton({ disabled = false, className }: McpPickerButton
     [enabledServers],
   );
 
+  // 会话开始后以会话上固定的 MCP 服务器为准
+  const selectedServers = conversation?.config
+    ? conversation.config.mcpServers
+    : currentAssistant?.mcpServers;
   const selectedServerIds = React.useMemo(
-    () => safeStringArray(currentAssistant?.mcpServers),
-    [currentAssistant?.mcpServers],
+    () => safeStringArray(selectedServers),
+    [selectedServers],
   );
 
   const selectedServerIdSet = React.useMemo(() => new Set(selectedServerIds), [selectedServerIds]);
@@ -91,10 +97,14 @@ export function McpPickerButton({ disabled = false, className }: McpPickerButton
       assistantId: string;
       serverId: string;
     }) =>
-      api.post<{ status: string }>("settings/assistant/mcp", {
-        assistantId,
-        mcpServerIds: nextServerIds,
-      }),
+      conversation
+        ? api.post<unknown>(`conversations/${conversation.id}/config`, {
+            mcpServerIds: nextServerIds,
+          })
+        : api.post<unknown>("settings/assistant/mcp", {
+            assistantId,
+            mcpServerIds: nextServerIds,
+          }),
     onError: (updateError) => {
       setError(extractErrorMessage(updateError, t("mcp.update_failed")));
     },
@@ -133,6 +143,8 @@ export function McpPickerButton({ disabled = false, className }: McpPickerButton
       <PopoverTrigger asChild>
         <Button
           type="button"
+          aria-label={t("mcp.title")}
+          title={t("mcp.title")}
           variant="ghost"
           size="sm"
           disabled={!canUse || updateMcpMutation.isPending}
@@ -155,18 +167,13 @@ export function McpPickerButton({ disabled = false, className }: McpPickerButton
         </Button>
       </PopoverTrigger>
 
-      <PopoverContent align="end" className="w-[min(92vw,22rem)] gap-0 p-0">
-        <PopoverHeader className="border-b px-3 py-2.5">
-          <PopoverTitle className="text-sm">{t("mcp.title")}</PopoverTitle>
-          <PopoverDescription className="text-[11px]">
-            {t("mcp.description")}
-          </PopoverDescription>
-        </PopoverHeader>
+      <PopoverContent side="top" align="end" sideOffset={8} className="w-[min(92vw,20rem)] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto space-y-3 p-4">
+        <PopoverTitle className="text-sm">{t("mcp.title")}</PopoverTitle>
 
-        <div className="space-y-2 px-2.5 py-2.5">
+        <div className="space-y-3">
           <PickerErrorAlert error={error} />
 
-          <ScrollArea className="h-[32vh] pr-1.5">
+          <div className="max-h-64 overflow-y-auto">
             {enabledServers.length > 0 ? (
               <div className="space-y-1">
                 {enabledServers.map((server) => {
@@ -180,8 +187,8 @@ export function McpPickerButton({ disabled = false, className }: McpPickerButton
                     <div
                       key={server.id}
                       className={cn(
-                        "flex items-center gap-1.5 rounded-md border px-2 py-1.5 transition",
-                        selected && "border-primary bg-primary/5",
+                        "flex items-center gap-2 rounded-lg px-2 py-2 transition hover:bg-muted",
+                        selected && "bg-primary/5",
                       )}
                     >
                       <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted">
@@ -193,10 +200,10 @@ export function McpPickerButton({ disabled = false, className }: McpPickerButton
                       </div>
 
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-[11px] font-medium leading-tight">
+                        <div className="truncate text-sm font-medium leading-tight">
                           {getDisplayName(server.commonOptions?.name, t("mcp.unnamed_server"))}
                         </div>
-                        <div className="text-muted-foreground text-[10px] leading-tight">
+                        <div className="text-muted-foreground text-xs leading-tight">
                           {t("mcp.tools_enabled", {
                             enabled: tools.enabled,
                             total: tools.total,
@@ -217,11 +224,11 @@ export function McpPickerButton({ disabled = false, className }: McpPickerButton
                 })}
               </div>
             ) : (
-              <div className="rounded-md border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
+              <div className="px-2 py-4 text-center text-sm text-muted-foreground">
                 {t("mcp.empty")}
               </div>
             )}
-          </ScrollArea>
+          </div>
         </div>
       </PopoverContent>
     </Popover>

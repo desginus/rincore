@@ -1,9 +1,4 @@
-/* 【域 E·设置体系】 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.data.datastore.migration
-
-/* ───【原版对齐】SettingsJsonMigrator.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 import android.util.Log
 import kotlinx.serialization.json.JsonArray
@@ -64,6 +59,12 @@ object SettingsJsonMigrator {
                     )
                     root["quickMessages"] = merged
                 }
+            }
+
+            // V4: 移除 assistants 的 allowConversationPromptInjection 开关
+            root["assistants"]?.let { element ->
+                val migrated = migrateAssistantsConversationInjections(JsonInstant.encodeToString(element))
+                root["assistants"] = JsonInstant.parseToJsonElement(migrated)
             }
 
             JsonInstant.encodeToString(JsonObject(root))

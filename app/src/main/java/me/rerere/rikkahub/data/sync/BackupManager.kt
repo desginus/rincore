@@ -1,12 +1,5 @@
-/* 【域 I·数据存储】 | 地图: docs/APP_MAP.md §I */
 package me.rerere.rikkahub.data.sync
 
-/* ───【原版对齐】BackupManager.kt | 差异 ±4 行 (基线 2.5.1)
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
-
-import me.rerere.rikkahub.data.files.MediaCreationFiles
-import me.rerere.rikkahub.data.files.ChatMediaStore
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -16,6 +9,12 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.migration.SettingsJsonMigrator
@@ -23,6 +22,7 @@ import me.rerere.rikkahub.data.db.AppDatabaseFactory
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.SQLiteConfiguration
 import me.rerere.rikkahub.data.files.FileFolders
+import me.rerere.rikkahub.data.files.MediaCreationFiles
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.file.Files
@@ -46,10 +46,11 @@ class BackupManager(
         val archive = File.createTempFile("backup_${timestamp}_", ".zip", context.cacheDir)
         val staging = Files.createTempDirectory(context.cacheDir.toPath(), "backup-").toFile()
         try {
-            val settings = settingsStore.settingsFlow.first()
+            val settings = settingsStore.awaitLoaded()
             ZipOutputStream(FileOutputStream(archive)).use { zip ->
                 zip.putNextEntry(ZipEntry("settings.json"))
-                zip.write(json.encodeToString(settings).toByteArray(Charsets.UTF_8))
+                val settingsJson = json.encodeSettings(settings, settingsStore.launchCountFlow.first())
+                zip.write(settingsJson.toByteArray(Charsets.UTF_8))
                 zip.closeEntry()
                 if (includeDatabase) {
                     val snapshot = File(staging, SQLiteConfiguration.DATABASE_NAME)
@@ -63,7 +64,7 @@ class BackupManager(
                         else directory.listFiles().orEmpty().asSequence()
                         for (file in files.filter { it.isFile }) {
                             currentCoroutineContext().ensureActive()
-                            // 上游语义：正在下载的媒体结果是半成品（完成后改名），不进备份
+                            // A media result still being downloaded is incomplete and gets renamed when it finishes.
                             if (folder == FileFolders.MEDIA_CREATION &&
                                 file.name.endsWith(MediaCreationFiles.PARTIAL_SUFFIX)
                             ) continue
@@ -136,10 +137,11 @@ class BackupManager(
 
                     val settingsFile = File(staging, "settings.json")
                     if (settingsFile.exists()) {
-                        val settings = json.decodeFromString<Settings>(SettingsJsonMigrator.migrate(settingsFile.readText()))
+                        val migrated = SettingsJsonMigrator.migrate(settingsFile.readText())
+                        val settings = json.decodeFromString<Settings>(migrated)
                         require(!settings.init) { "Backup contains uninitialized settings" }
                         // Persist the migrated value once, including generated IDs, for restart/retry consistency.
-                        PendingRestore.writeDurably(settingsFile, json.encodeToString(settings))
+                        PendingRestore.writeDurably(settingsFile, json.encodeSettings(settings, json.launchCountOf(migrated)))
                     }
                     currentCoroutineContext().ensureActive()
                     restore.publish(staging)
@@ -165,13 +167,23 @@ class BackupManager(
     }
 
     companion object {
-        // 5.0.2: 备份目录集 — 对齐上游 +MEDIA_CREATION（媒体创作产物）；+chat-media（v4.8.185 对话媒体快照）
         private val ATTACHMENT_FOLDERS =
-            listOf(FileFolders.UPLOAD, FileFolders.SKILLS, FileFolders.FONTS, FileFolders.MEDIA_CREATION, ChatMediaStore.DIR_NAME)
+            listOf(FileFolders.UPLOAD, FileFolders.SKILLS, FileFolders.FONTS, FileFolders.MEDIA_CREATION)
 
-        /** 带子目录备份；其余目录只含顶层文件 */
-        private val NESTED_ATTACHMENT_FOLDERS =
-            setOf(FileFolders.SKILLS, FileFolders.MEDIA_CREATION, ChatMediaStore.DIR_NAME)
+        /** Backed up with their subdirectories; the other folders only contain top-level files. */
+        private val NESTED_ATTACHMENT_FOLDERS = setOf(FileFolders.SKILLS, FileFolders.MEDIA_CREATION)
+
+        // 启动次数不在 Settings 里，备份文件里仍放在 settings.json 的这个字段，和旧备份保持一致
+        private const val LAUNCH_COUNT_KEY = "launchCount"
+
+        private fun Json.encodeSettings(settings: Settings, launchCount: Int): String {
+            val fields = encodeToJsonElement(settings).jsonObject + (LAUNCH_COUNT_KEY to JsonPrimitive(launchCount))
+            return encodeToString(JsonObject(fields))
+        }
+
+        // 更早的备份没有这个字段，按 0 恢复，和它还在 Settings 里时的默认值一致
+        private fun Json.launchCountOf(settingsJson: String): Int =
+            parseToJsonElement(settingsJson).jsonObject[LAUNCH_COUNT_KEY]?.jsonPrimitive?.intOrNull ?: 0
 
         private fun pendingRestore(context: Context) = PendingRestore(
             root = File(context.noBackupFilesDir, "backup-restore"),
@@ -182,7 +194,11 @@ class BackupManager(
         /** Must finish before Koin, Room, SettingsStore or any background consumers are initialized. */
         suspend fun applyPendingRestore(context: Context, json: Json): Boolean = withContext(Dispatchers.IO) {
             pendingRestore(context).apply { settingsJson ->
-                SettingsStore.restoreBeforeInitialization(context, json.decodeFromString<Settings>(settingsJson))
+                SettingsStore.restoreBeforeInitialization(
+                    context = context,
+                    settings = json.decodeFromString<Settings>(settingsJson),
+                    launchCount = json.launchCountOf(settingsJson),
+                )
             }
         }
     }
