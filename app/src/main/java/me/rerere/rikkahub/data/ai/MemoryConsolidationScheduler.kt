@@ -114,7 +114,7 @@ class MemoryConsolidationScheduler(
      *  v5.0.16 做梦范围（用户定案）：0=整个助手（原逻辑）/ 1=项目包内 / 2=当前对话 */
     fun onTurnFinished(
         conversation: Conversation,
-        scope: Int = 0,
+        dreamScope: Int = 0,
         folderConversationIds: Set<Uuid> = emptySet(),
     ) {
         // 应用不在前台时，聊天生成的前台服务一释放进程就可能被冻结，空闲计时走不完。
@@ -125,7 +125,7 @@ class MemoryConsolidationScheduler(
             try {
                 val item = worker.pendingOf(conversation) ?: return@launch
                 markPending(item)
-                when (scope) {
+                when (dreamScope) {
                     // 项目包内：只整理本包对话（无包归属时退化为单对话）
                     1 -> runScoped(item.memoryId, (folderConversationIds + conversation.id).toSet())
                     // 当前对话：只整理这一条

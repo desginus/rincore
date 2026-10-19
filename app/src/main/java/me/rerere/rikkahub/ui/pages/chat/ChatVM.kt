@@ -393,6 +393,11 @@ class ChatVM(
     // v4.8.8: 压缩任务引用 — 供页内提示条取消
     private var compressJob: kotlinx.coroutines.Job? = null
 
+    /** 上游 3.0.0 页面用单参形态（CompressContextDialog 上游逐字调用点）。
+     *  targetTokens=4000（我方默认档）、keepRecentMessages=0（自动推荐保留）。 */
+    fun handleCompressContext(additionalPrompt: String): Job =
+        handleCompressContext(additionalPrompt, 4000, 0)
+
     fun handleCompressContext(additionalPrompt: String, targetTokens: Int, keepRecentMessages: Int): Job {
         // v4.8.32: 生成中禁止压缩 (用户定版) — 生成期间消息流式变化, 压缩会与
         // 生成链写同一会话对象 (后写的全量保存覆盖对方), 且压缩本身是重操作,
