@@ -1,10 +1,8 @@
 name: Daily Build
 
 on:
-  # 每天 UTC 09:00、18:00 触发（北京时间 17:00、次日 02:00）
-  schedule:
-    - cron: '0 9,18 * * *'
-  # 也支持手动触发
+  # 2026-10-20: 定时 nightly 已停用 —— 正式版从 build.yml 单链出（一次推送=一个版本），
+  # 定时包纯耗配额。需要时手动 workflow_dispatch 触发。
   workflow_dispatch:
 
 jobs:

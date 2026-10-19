@@ -1,3 +1,4 @@
+# 实验分支 oracle（2026-10-20 起：主流程只推 main，本 workflow 仅供实验分支用手动触发）
 # Dev build oracle for the reverse-adoption branch (adopt-3.0.0).
 # Purpose: compile feedback for the 3.0.0 base swap + migration work.
 # Does NOT publish releases and does NOT touch main.
