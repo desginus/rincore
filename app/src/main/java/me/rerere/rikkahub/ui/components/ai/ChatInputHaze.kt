@@ -6,7 +6,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeInput
-import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.HazeBlurStyle
 import dev.chrisbanes.haze.blur.hazeBlur
@@ -35,21 +34,10 @@ internal fun Modifier.chatInputHaze(
 ): Modifier {
     if (!displaySetting.enableBlurEffect) return this
     return when (displaySetting.backgroundEffectType) {
-        // v5.0.13 (用户实证 2026-10-19 截图): 性能模式钉死 Quality。
-        // haze 2.0.1 默认 Balanced=Fixed(0.5) → 输入缩放 sqrt(0.625)≈0.79:
-        // 源内容先降采样到 79% 渲染再 1.26× 放大回 = "降清→模糊→放大"三连,
-        // 叠加 Material3 预设默认噪点 0.15 的 SrcAtop 颗粒层 = 用户截图中的
-        // 尖锐色斑网格 (PIL 验尸: 列向 10px 周期/自相关 0.84, 与 4.8.170 同源)。
-        // Quality=Fixed(1f) → 全分辨率捕获零重采样链 (haze 文档: "If an effect
-        // looks too pixelated, try a higher value")。
-        // 与上游 3.0.0 的有意差异: 上游 enableBlurEffect 默认 false (无人跑这条
-        // 管线), 我方 4.8.157/162 迁移强制开启 → 唯一受影响方, 修复必须做在这里。
         BackgroundEffectType.BLUR -> hazeBlur(
             input = HazeInput.Sources(hazeState),
-            performanceMode = HazePerformanceMode.Quality,
             style = HazeBlurStyle.Material3 {
                 blurRadius(12.dp)
-                noiseFactor(0f)
             },
         )
 
@@ -57,7 +45,6 @@ internal fun Modifier.chatInputHaze(
             val darkMode = LocalDarkMode.current
             hazeGlass(
                 input = HazeInput.Sources(hazeState),
-                performanceMode = HazePerformanceMode.Quality,  // v5.0.13: 同 BLUR——玻璃分支同受 0.79 降采样链影响（用户实证较轻但存在）
                 style = GlassStyle.Material3(
                     containerColor = containerColor,
                     tint = containerColor.copy(alpha = 0.3f),

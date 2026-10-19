@@ -134,13 +134,11 @@ fun ChatInput(
     assistant: Assistant,
     chatModel: Model?,
     hazeState: HazeState,
-    onUpdateSearchMode: (SearchMode) -> Unit,
     modifier: Modifier = Modifier,
     completionProviders: List<ChatCompletionProvider> = emptyList(),
     toolPickerProvider: (suspend () -> ToolMatrixPickerData?)? = null,
     onUpdateChatModel: (Model) -> Unit,
     onUpdateAssistant: (Assistant) -> Unit,
-    onUpdateSearchService: (Int) -> Unit,
     onMoreClick: () -> Unit,
     onCancelClick: () -> Unit,
     onSendClick: () -> Unit,
@@ -304,29 +302,6 @@ fun ChatInput(
                                 state = modelListState,
                                 onlyIcon = true,
                                 modifier = Modifier,
-                            )
-
-                            // Search
-                            val enableSearchMsg = stringResource(R.string.web_search_enabled)
-                            val disableSearchMsg = stringResource(R.string.web_search_disabled)
-                            SearchPickerButton(
-                                enableSearch = assistant.enableWebSearch,
-                                settings = settings,
-                                onUpdateSearchMode = { mode ->
-                                    onUpdateSearchMode(mode)
-                                    val enabled = mode != SearchMode.OFF
-                                    toaster.show(
-                                        message = if (enabled) enableSearchMsg else disableSearchMsg,
-                                        duration = 1.seconds,
-                                        type = if (enabled) {
-                                            ToastType.Success
-                                        } else {
-                                            ToastType.Normal
-                                        }
-                                    )
-                                },
-                                onUpdateSearchService = onUpdateSearchService,
-                                model = chatModel,
                             )
 
                             // Reasoning
@@ -690,9 +665,6 @@ private fun TextInputRow(
                     isFocused = it.isFocused
                 },
             shape = MaterialTheme.shapes.largeIncreased,
-            placeholder = {
-                Text(stringResource(R.string.chat_input_placeholder))
-            },
             lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.Sentences,
@@ -733,7 +705,7 @@ private fun TextInputRow(
         if (isFullScreen) {
             FullScreenEditor(
                 textState = state.textContent,
-                placeholder = stringResource(R.string.chat_input_placeholder),
+                placeholder = "",
             ) {
                 isFullScreen = false
             }

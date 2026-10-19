@@ -29,7 +29,9 @@ private const val TOOL_OUTPUT_PREVIEW_CHARS = 4 * 1024
 private val TOOLS_WITHOUT_OUTPUT_TRUNCATION = setOf("search_web")
 
 internal fun shouldUseExternalWebSearch(assistant: Assistant, model: Model): Boolean {
-    return assistant.enableWebSearch && BuiltInTools.Search !in model.tools
+    // v5.0.15（用户定版）: 搜索恒开启 = 本地搜索。UI 开关已移除，状态永久为开启
+    // （LOCAL 语义 = 启用本应用的搜索服务，ChatToolFactory 注入 web_search 工具）。
+    return BuiltInTools.Search !in model.tools
 }
 
 class InvalidMcpServerNamesException(val names: List<String>) :

@@ -75,9 +75,8 @@ fun buildAssistantToolPool(
     filesRoot?.let { add(createUploadFetchTool(it)) }
     // v3.11.25: 任务清单工具 (Cherry Studio Agent 任务功能移植) — 框架工具, 静态
     add(createTaskTool(conversationId))  // v4.8.134 (A2): 按对话隔离
-    if (settings.enableWebSearch) {
-        addAll(createSearchTools(settings))
-    }
+    // v5.0.15（用户定版）: 搜索恒开启 = 本地搜索（UI 开关已移除）
+    addAll(createSearchTools(settings))
     addAll(localTools.getTools(
         assistant.localTools,
         ToolInvocationContext(

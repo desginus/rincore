@@ -65,8 +65,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
-import dev.chrisbanes.haze.HazePerformanceMode
-import dev.chrisbanes.haze.LocalHazePerformanceMode
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import androidx.activity.ComponentActivity
@@ -457,34 +455,6 @@ private fun ChatPageContent(
     // v4.8.179: 开发者调试面板开关 (仅开发者版有入口)
     var showDevPanel by rememberSaveable { mutableStateOf(false) }
     val hazeState = rememberHazeState()
-    // v3.8.9: 分享面板 (外部 Activity) 返回后 Haze 模糊纹理失效成黑框,
-    // 进设置再返回能恢复 (导航触发重组), 分享返回不触发任何重组。
-    // ON_RESUME 递增 tick 强制背景重组, 重建模糊纹理。
-    // v4.8.11: 扩展自愈 — 用户实证"输入框液态玻璃偶发静默消失, 打开抽屉进设置
-    // 再返回才恢复"(= 需要一次强制重绘重建纹理)。除 ON_RESUME 外新增两个恢复触发:
-    //   ① 软键盘显隐 (IME inset 变化 = 窗口表面重配, beta01 下偶发纹理丢失);
-    //   ② 周期心跳兜底 (失效后最多 5 分钟自动恢复; 代价 = 一次背景重绘, 可忽略)。
-    var hazeRebuildTick by remember { mutableStateOf(0) }
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                hazeRebuildTick++
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-    // v4.8.11 ①: 键盘显隐触发重建
-    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-    LaunchedEffect(imeVisible) { hazeRebuildTick++ }
-    // v4.8.11 ②: 周期心跳兜底 (5 分钟)
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(5 * 60 * 1000L)
-            hazeRebuildTick++
-        }
-    }
     val assistant = setting.getCurrentAssistant()
     var showFilesSheet by remember { mutableStateOf(false) }
     val attachmentPickerActions = rememberChatAttachmentPickerActions(
@@ -543,13 +513,7 @@ private fun ChatPageContent(
     ) {
         AssistantBackground(
             setting = setting,
-            modifier = Modifier
-                .hazeSource(hazeState)
-                .drawWithContent {
-                    @Suppress("UNUSED_EXPRESSION")
-                    hazeRebuildTick
-                    drawContent()
-                }
+            modifier = Modifier.hazeSource(hazeState)
         )
         // v3.6.13: 对话设置对话框 — 延迟自动回复开关
 
@@ -560,7 +524,6 @@ private fun ChatPageContent(
         // 0.79 缩放链是尖锐色斑网格的机制根因，见 ChatInputHaze 注）。
         androidx.compose.runtime.CompositionLocalProvider(
             LocalHazeState provides hazeState,
-            LocalHazePerformanceMode provides HazePerformanceMode.Quality,
         ) {
         Scaffold(
             topBar = {
@@ -606,19 +569,6 @@ private fun ChatPageContent(
                     // v5.0.11: 上游 3.0.0 签名适配 — 会话视角助手/模型 + 搜索模式
                     assistant = assistant,
                     chatModel = currentChatModel,
-                    onUpdateSearchMode = { mode ->
-                        // v5.0.11: 搜索模式写回（上游语义映射本树字段）——LOCAL=开启网络搜索
-                        //（每助手字段 assistant.enableWebSearch，ChatToolFactory 消费）；
-                        // OFF/BUILT_IN=不启用网络搜索服务（内置搜索=模型侧工具，无持久字段）。
-                        val updated = assistant.copy(enableWebSearch = mode == SearchMode.LOCAL)
-                        vm.updateSettings(
-                            setting.copy(
-                                assistants = setting.assistants.map { a ->
-                                    if (a.id == updated.id) updated else a
-                                }
-                            )
-                        )
-                    },
                     completionProviders = completionProviders,
                     toolPickerProvider = toolPickerProvider,
                     onCancelClick = {
@@ -669,13 +619,6 @@ private fun ChatPageContent(
                                         assistant
                                     }
                                 }
-                            )
-                        )
-                    },
-                    onUpdateSearchService = { index ->
-                        vm.updateSettings(
-                            setting.copy(
-                                searchServiceSelected = index
                             )
                         )
                     },
