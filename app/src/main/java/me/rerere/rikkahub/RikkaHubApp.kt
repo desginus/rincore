@@ -297,7 +297,11 @@ class RikkaHubApp : Application() {
         // 应用被切走后进程随时可能被冻结，等不到空闲计时结束，这时直接开始整理
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             LifecycleEventObserver { _, event ->
-                if (event == Lifecycle.Event.ON_STOP) get<MemoryConsolidationScheduler>().onAppHidden()
+                // v5.0.8: 观察者内解析全程兜底 —— 生命周期回调里任何异常都会直接杀进程
+                if (event == Lifecycle.Event.ON_STOP) {
+                    runCatching { get<MemoryConsolidationScheduler>().onAppHidden() }
+                        .onFailure { Log.e(TAG, "memory consolidation onAppHidden failed", it) }
+                }
             }
         )
         get<AppScope>().launch(Dispatchers.IO) {

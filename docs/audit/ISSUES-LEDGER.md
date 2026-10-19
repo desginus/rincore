@@ -256,3 +256,10 @@
 - **收件箱使用标注导航（P8 延伸）**：`uploadUsageLabels` 返回 `UsageLabel(text, conversationId?)`；「消息附件」标注携带首个引用对话 ID → 点击直接跳转该对话（其余标注纯展示）。RouteActivity 零改动（页内 `LocalNavController` 直取）。
 - **复发审计**：死入口零残留（仅剩 ShareHandler = 设计性休眠，v4.8.112 起分享路由到 Chat；恢复路径已注记）+ X=注释误报。
 - **发布**：v5.0.7（oracle → main FF → Release）。
+
+### G22 v5.0.8 · B199 启动即崩根因定案（R8 首次启用 × 零 keep 规则）
+- **现象（用户实录）**：装 v5.0.7 打开应用即崩（"之前的版本也装也崩，可用性以实际为0"）；栈：`Koin InstanceFactory.create → MemoryConsolidationScheduler → MemoryConsolidator → NoDefinitionFoundException: No definition found for type 'androidx.room.Room'`。
+- **取证链（三层，全部实锤）**：①静态闭包审计：ChatVM/MemoryConsolidator 全依赖闭包在**源码面零缺失**（递归解析 97 注册/62 节点）→ 排除"漏注册"。②Koin 语义取证：拉取 Koin 4.2.2 `InstanceFactory.kt:56` 源码，确认报错=`InstanceCreationException` 包裹的**真实异常 e**（即被截断的"Caused by"）。③**DEX 终极取证（androguard 解剖线上 v5.0.7 APK）**：`AppModuleKt$$ExternalSyntheticLambda1::invoke` 的 MemoryConsolidator 用例（[258..292]）在 resolve `ProviderManager` 后，**第 2 个 resolve 的 const-class 字面量 = `Landroidx/room/Room;`** —— 源码里那行是 `memoryRepository = get()`（应为 `MemoryRepository::class`）→ **R8 的类合并改写了 Koin 的类键**。
+- **根因**：反向换底带入上游 3.0.0 的 `optimization { enable = true }` —— **本项目史上首次全量 R8**（v4.8.189 及之前从未启用，APK 78MB 为证；5.x 骤降 52MB）。R8 全优化（类合并/内联）在**零 keep 规则**下改写/统一了 Koin 以 KClass 为键的定义与查找 → 运行时按键找不到定义 → 生命周期回调（ON_STOP→记忆整理调度）解析即崩。
+- **修复（v5.0.8）**：①`release` 关 R8（`isMinifyEnabled = false` + `optimization { enable = false }`），回到 v4.8.189 的实际运行配置；②观察者回调内解析全程 `runCatching` 兜底（生命周期回调内异常=杀进程）。**重新启用 R8 列为后续项目（前置条件=制定并逐项验证 keep 规则集 + 每次构建 DEX 复扫）。**
+- **交付前验证闭环**：新版 APK 构建后，用同一 androguard 脚本复扫 —— 确认 MemoryConsolidator 用例的 resolve 字面量恢复为 `MemoryRepository`（不再出现 Room 键）。

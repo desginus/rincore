@@ -25,7 +25,7 @@ android {
         minSdk = 26
         targetSdk = 37
         versionCode = 9999
-        versionName = "5.0.7"
+        versionName = "5.0.8"
 
         // v4.8.179: 开发者版本开关 — true=开发者版(含“开发者调试”入口/面板); 正式版=false
         buildConfigField("Boolean", "DEVELOPER_BUILD", "false")
@@ -77,8 +77,14 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
+            // v5.0.8 (B199): 关闭 R8 —— 反向换底带入上游 3.0.0 的 optimization 配置后，
+            // 本项目史上首次全量 R8 运行：无 keep 规则下类合并改写了 Koin 类键
+            // （DEX 实锤：MemoryConsolidator 的 MemoryRepository 查找被改写为 androidx.room.Room
+            //  → NoDefinitionFound → 启动/退后台即崩）。v4.8.189 及之前从未启用 R8（APK 78MB 为证）。
+            // 恢复可用性优先；如需重新启用 R8，必须先制定并逐项验证 keep 规则集。
+            isMinifyEnabled = false
             optimization {
-                enable = true
+                enable = false
             }
             buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
