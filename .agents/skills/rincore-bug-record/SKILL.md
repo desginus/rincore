@@ -5,6 +5,15 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 
 # RinCore Bug 记录（全部历史）
 
+## B201 模糊/玻璃尖锐色斑网格（v5.0.13 修复）★4.8.170 同源伪影的 5.x 定案
+- **现象（用户截图 9149/6770）**：输入框模糊态=满屏尖锐色斑网格；玻璃态=同族网纹较淡。理论状态=完全晕染。
+- **像素验尸**：列向 10px 周期、自相关 0.84——与 v4.8.170 验尸分毫不差（同源伪影）。
+- **根因（haze 2.0.1 源码级）**：默认 performanceMode=Balanced=Fixed(0.5)→resolveBlurInputScale=sqrt(0.25+0.75×0.5)≈0.79→createScaledContentLayer 把源内容降采样到 79% 渲染→模糊(半径×0.79)→drawScaledContent 1.26× 放大回；Material3 预设不写 noiseFactor（库默认 0.15，噪点贴图 SrcAtop 叠在模糊之上、按 1/0.79≈1.27× 放大）=「降清→模糊→放大+噪点叠加」。
+- **"基线不会有问题"的两层真相**：①原版 2.5.6 用 haze beta01（无 Fixed(0.5) 全局默认）；②上游 3.0.0 enableBlurEffect 默认 false——基线用户根本不跑模糊管线；我方 4.8.157/162 两次强制开启迁移=全社区唯一点亮者。**"哪段移植代码"的答案=强制开启迁移×2.0.1 保真度默认的组合，非业务代码。**
+- **修复**：BLUR=performanceMode.Quality(Fixed(1f)=全分辨率零重采样)+noiseFactor(0f)；GLASS=钉 Quality；ChatPage CompositionLocalProvider(LocalHazePerformanceMode=Quality) 全页覆盖（轨道/弹窗玻璃同族）。
+- **教训（#132-133）**：①性能/保真度策略是"参数逐字一致仍观感不同"的隐形变量——三方库的默认策略枚举（Balanced/Adaptive/Quality）必须纳入对账清单；②上游默认关闭的管线（开关默认 false）上游社区从未充分测试——「基线是好的」必须先问"基线开过这个功能吗"。
+
+
 ## B200 长思考必被客户端判死（v5.0.12 修复）
 - **现象（用户实证）**：对话建立后模型长思考 3~4 分钟必被中断并静默重试；极端场景反复截断导致模型输出退化成碎片（上轮对话整轮报废）。
 - **根因（上游对照实锤）**：上游 3.0.0 无 watchdog / readTimeout 10min / onClosed 无正文不判中断；我方移植链 = 看门狗 first-event 150s + readTimeout 3min，思考链被网关缓冲或中途静默即判死，18 次静默重试每次从头再付整段思考。
