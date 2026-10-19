@@ -5,6 +5,12 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 
 # RinCore Bug 记录（全部历史）
 
+## B204 设置页/输入栏/工具箱三批 UI 重构（2026-10-20 凌晨）
+- 用户三批需求：①设置页按功能分类排序 + 当前焦点助手设置（记忆/MCP/技能/其他）搬回；②输入栏左=模型+思考、右=+（CS 式 AI 交互窗：拍照/图片/文件）与纸箱工具箱图标，工具箱统计环改剩余额度；③「更多」四项挪进工具箱、删 MCP/技能两项、空位放草图。
+- **实现要点**：设置页 8 组 + 助手组（getCurrentAssistant + MemoryRepository.produceState + Assistant* 直达）；ChatInput 加 3 回调 + Popup 菜单 + 纸箱图标；FilesPicker 删 2 项加 6 项 + 统计环 ContextUsageRing(remaining) 语义翻转 + SketchDialog 接线。
+- **编译错误（1 轮）**：FilesPicker 的 showSketch/scope/filesManager 等声明在 `AnimatedContent { when(page) { MAIN -> Column{...} } }` 的 MAIN 分支 lambda 内，而弹窗代码插在函数级 → 13 个 Unresolved reference。修复=声明提升到函数级（与 showCwdSheet 同级），scope 改名 sketchScope。
+- **教训 #134**：Compose 里跨作用域引用弹窗状态必须先确认 lambda 嵌套层级（AnimatedContent/when/Column 多层）；"在文件里能看到声明"≠"在该处可见"——同名变量易被误认为同作用域。
+
 ## B203 模糊色斑终审执行：渲染模块整件上游化 + 本地编译检查工具（2026-10-19 深夜）
 - 用户定版（第三次否决"驱动/非移植"论）："直接把原版负责这个整个模块的文件全copy过来，一个字不要改…功能上的东西做成外挂形式，不要动里面的逻辑；仅限输入框模糊这一个东西。"
 - 执行：渲染模块 8+16 件上游 3.0.0 逐字（含 message/ 全目录）；功能改外挂（ChatPageHost）；输入栏三处用户任务改动不触碰模糊链。
