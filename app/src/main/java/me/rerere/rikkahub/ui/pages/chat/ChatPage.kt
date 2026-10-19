@@ -601,9 +601,16 @@ private fun ChatPageContent(
                     assistant = assistant,
                     chatModel = currentChatModel,
                     onUpdateSearchMode = { mode ->
-                        vm.updateSearch(
-                            enableWebSearch = mode == SearchMode.LOCAL,
-                            builtInSearch = mode == SearchMode.BUILT_IN,
+                        // v5.0.11: 搜索模式写回（上游语义映射本树字段）——LOCAL=开启网络搜索
+                        //（每助手字段 assistant.enableWebSearch，ChatToolFactory 消费）；
+                        // OFF/BUILT_IN=不启用网络搜索服务（内置搜索=模型侧工具，无持久字段）。
+                        val updated = assistant.copy(enableWebSearch = mode == SearchMode.LOCAL)
+                        vm.updateSettings(
+                            setting.copy(
+                                assistants = setting.assistants.map { a ->
+                                    if (a.id == updated.id) updated else a
+                                }
+                            )
                         )
                     },
                     completionProviders = completionProviders,

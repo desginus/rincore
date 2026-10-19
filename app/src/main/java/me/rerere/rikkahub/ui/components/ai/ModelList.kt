@@ -864,6 +864,8 @@ fun ModelTypeTag(model: Model) {
                     ModelType.CHAT -> R.string.setting_provider_page_chat_model
                     ModelType.EMBEDDING -> R.string.setting_provider_page_embedding_model
                     ModelType.IMAGE -> R.string.setting_provider_page_image_model
+                    // v5.0.11: 本树 ModelType 含 VIDEO（上游 3.0.0 无）— 补分支（同 ProviderDetail 口径）
+                    ModelType.VIDEO -> R.string.setting_provider_page_video_model
                 }
             )
         )
