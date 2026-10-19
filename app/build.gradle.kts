@@ -25,7 +25,7 @@ android {
         minSdk = 26
         targetSdk = 37
         versionCode = 9999
-        versionName = "5.0.9"
+        versionName = "5.0.10"
 
         // v4.8.179: 开发者版本开关 — true=开发者版(含“开发者调试”入口/面板); 正式版=false
         buildConfigField("Boolean", "DEVELOPER_BUILD", "false")
@@ -45,7 +45,8 @@ android {
             isEnable = !isBuildingBundle
             reset()
             include("arm64-v8a")
-            isUniversalApk = true
+            // v5.0.10 用户定版：只产 arm64-v8a（不再生成 Universal APK）
+            isUniversalApk = false
         }
     }
 

@@ -37,7 +37,13 @@ val repositoryModule = module {
 
     single {
         MemoryRepository(memoryDAO = get(), memoryFileDAO = get())
+    }
+
+    single {
         TranslationHistoryRepository(get())
+    }
+
+    single {
         MediaCreationRepository(context = get(), database = get(), dao = get(), json = get())
     }
 
