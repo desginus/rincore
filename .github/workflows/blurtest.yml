@@ -21,7 +21,15 @@ jobs:
         run: |
           printf '%s' '{"project_info":{"project_number":"0","project_id":"dev-oracle","storage_bucket":"dev-oracle.appspot.com"},"client":[{"client_info":{"mobilesdk_app_id":"1:0:android:0","android_client_info":{"package_name":"me.rerere.rikkahub"}},"oauth_client":[],"api_key":[{"current_key":"AIzaSyDUMMY"}],"services":{"appinvite_service":{"other_platform_oauth_client":[]}}}],"configuration_version":"1"}' > app/google-services.json
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        continue-on-error: true
+      - name: Install SDK components
+        run: |
+          export PATH="$(ls -d $ANDROID_HOME/cmdline-tools/*/bin | head -1):$PATH"
+          yes | sdkmanager --licenses || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools" || true
+          sdkmanager "platforms;android-37" "build-tools;37.0.0" 2>/dev/null || true
+          sdkmanager "ndk;28.2.13676358" 2>/dev/null || true
       - name: Build debug APK (R8-free, same as RinCore 5.x release)
         run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
       - name: Release
