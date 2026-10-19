@@ -1,12 +1,11 @@
-package me.rerere.rikkahub.ui.components.ai
+/* 【域 A·对话页】 | 地图: docs/APP_MAP.md §A */
 
-
-/* ───【域 A·对话核心】ChatInput.kt
- * 职责: 输入区 (发送/思考键/消息队列卡片/语音/附件入口)
- * 常用改动: 发送键状态 → SendButton (v4.8.123: 压缩期可发送一排队); 键位互换 → swapKeys; 语音 → VoiceMode
- * 问题定位: 发送键异常/输入区布局错位 → 本文件
- * 基线: 原版移植 + 自研 (键位互换/发送禁用) | 差异 ≈404 行变更（vs 2.5.1·2026-10-18 复核） | 地图: docs/APP_MAP.md §A | 历史: .claude/skills/rincore-bug-record
+/* ───【上游对齐】ChatInput.kt | v5.0.11 切换上游 3.0.0
+ * （底部渐变遮罩 + chatInputHaze 玻璃（模糊/液态玻璃双分支）+ 消息编辑改思考内容）
+ * 回贴我方件: /@ 工具矩阵选择器（toolPickerProvider/detectToolMention/ToolPickerState）
+ *            + 文本粘贴自管插入（v4.8.144 光标落尾修复）
  * ───────────────────────────────────────────────────────────────*/
+package me.rerere.rikkahub.ui.components.ai
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -27,10 +26,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -43,8 +44,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
@@ -58,16 +59,18 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -76,22 +79,16 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
-import dev.chrisbanes.haze.HazeInput
+import me.rerere.ui.toast.ToastType
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.blur.HazeBlurStyle
-import dev.chrisbanes.haze.blur.hazeBlur
-import dev.chrisbanes.haze.blur.material3.Material3
-import dev.chrisbanes.haze.hazeSource
-import dev.chrisbanes.haze.rememberHazeState
-import com.dokar.sonner.ToastType
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collectLatest
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
-import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.asr.ASRStatus
@@ -102,10 +99,7 @@ import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Fullscreen
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.ui.components.motion.RinGlass
 import me.rerere.rikkahub.data.datastore.Settings
-import me.rerere.rikkahub.data.datastore.getCurrentAssistant
-import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.data.datastore.getQuickMessagesOfAssistant
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Assistant
@@ -126,20 +120,23 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.utils.SoundEffectPlayer
 import org.koin.compose.koinInject
+import kotlin.time.Duration.Companion.seconds
 import me.rerere.rikkahub.ui.pages.chat.VoicePhase
 import me.rerere.rikkahub.ui.pages.chat.VoiceSessionState
 import kotlin.uuid.Uuid
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 
 @Composable
 fun ChatInput(
     state: ChatInputState,
     loading: Boolean,
     settings: Settings,
+    // 会话视角下的助手和模型：会话开始后以会话上固定的配置为准
+    assistant: Assistant,
+    chatModel: Model?,
+    hazeState: HazeState,
+    onUpdateSearchMode: (SearchMode) -> Unit,
     modifier: Modifier = Modifier,
     completionProviders: List<ChatCompletionProvider> = emptyList(),
-    // v4.8.90: `/@` 工具矩阵选择器数据源（null = 不启用；懒构建，只在呼出时调用）
     toolPickerProvider: (suspend () -> ToolMatrixPickerData?)? = null,
     onUpdateChatModel: (Model) -> Unit,
     onUpdateAssistant: (Assistant) -> Unit,
@@ -148,8 +145,6 @@ fun ChatInput(
     onCancelClick: () -> Unit,
     onSendClick: () -> Unit,
     onLongSendClick: () -> Unit,
-    hazeState: HazeState,
-    // 4.1.0: 消息发送队列 (2.5.0 移植)
     messageQueue: MessageQueueState = MessageQueueState(),
     onRemoveQueuedMessage: (Uuid) -> Unit = {},
     onBeginEditQueuedMessage: (Uuid) -> QueuedMessage? = { null },
@@ -160,31 +155,11 @@ fun ChatInput(
     onStopVoiceMode: () -> Unit = {},
 ) {
     val toaster = LocalToaster.current
-    val hazeTintColor = MaterialTheme.colorScheme.surfaceContainerLow
-    // v4.8.179: 半径回归 + 噪点挪到最底层 — S1(底层)带噪点="先噪点", S2(顶层)零噪点="再模糊"。
-    val inputHazeStyle = RinGlass.inputBlurStyle(
-        radiusDp = settings.displaySetting.glassBlurRadiusDp,
-        noisePercent = settings.displaySetting.glassNoisePercent,
-    )
-    val inputTopHazeStyle = RinGlass.inputTopStyle(settings.displaySetting.glassBlurRadiusDp)
-    val glassMaskColor = RinGlass.inputMaskColor(
-        colorMode = settings.displaySetting.glassMaskColorMode,
-        percent = settings.displaySetting.glassMaskPercent,
-    )
-    // v4.8.178: 雾化 — 白色柔雾覆盖层（上浓下淡）; null = 关闭。
-    val fogBrush = RinGlass.fogBrush(settings.displaySetting.glassFogPercent)
-    // v4.8.178: 深色主题 → 输入栏描边 = 纯白线（用户定版）。
-    val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    // v4.8.178 双层玻璃（用户定版: 第一层输出的再模糊一遍、输入栏再圈出来、边缘约3dp只模糊一遍做层次）:
-    //   S1 = 对源(背景)单次模糊, 同槽位兄弟节点, 同时作为第二层模糊的源（天然对齐零坐标计算）;
-    //   S2 = 对 S1 输出再模糊一遍、内缩 3dp → 边缘一圈露出 S1 单模糊 = 层次;
-    //   最差情形（第二层捕获失败）退化 = 单层模糊, 不会黑/不会坏。
-    val frostMidState = rememberHazeState()
-    val assistant = settings.getCurrentAssistant()
+    val containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
 
-    // v4.8.181 (用户定版): 曲率梳圆角回滚 — 输入栏恢复圆弧角（标题栏保留连续曲率角）。
     val themeShape = MaterialTheme.shapes.largeIncreased
     val containerShape = RoundedCornerShape(
         topStart = themeShape.topStart,
@@ -193,7 +168,7 @@ fun ChatInput(
         bottomStart = themeShape.bottomStart,
     )
     val modelListState = rememberModelListState(
-        modelId = assistant.chatModelId ?: settings.chatModelId,
+        modelId = chatModel?.id,
         providers = settings.providers,
         type = ModelType.CHAT,
     )
@@ -241,8 +216,19 @@ fun ChatInput(
         }
     }
 
+    // 底部渐变遮罩：从输入区顶部一直过渡到屏幕底部（键盘弹出时到键盘上沿），避免消息透到系统导航栏
+    val scrimColor = MaterialTheme.colorScheme.background
+    val imeInsets = WindowInsets.ime
     Surface(
         color = Color.Transparent,
+        modifier = Modifier.drawWithCache {
+            val brush = Brush.verticalGradient(
+                colors = listOf(scrimColor.copy(alpha = 0f), scrimColor),
+                startY = 0f,
+                endY = (size.height - imeInsets.getBottom(this)).coerceAtLeast(1f),
+            )
+            onDrawBehind { drawRect(brush) }
+        },
     ) {
         Column(
             modifier = modifier
@@ -259,58 +245,23 @@ fun ChatInput(
                 onFinishEdit = onFinishEditQueuedMessage,
                 onResume = onResumeMessageQueue,
             )
-            // v3.6.36: 页面完全静默 — 降维开启/关闭页面无差别 (状态与统计移至设置-其他功能)
-            // v4.8.178 双层玻璃 (用户定版): S1 中间玻璃片=对源单次模糊并作为第二层的源; S2=对 S1
-            // 输出再模糊一遍、内缩 3dp → 边缘一圈只显单模糊做层次; 雾化/蒙版在层之上内容之下。
-            Box(modifier = Modifier.fillMaxWidth()) {
-                if (settings.displaySetting.enableBlurEffect) {
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .clip(containerShape)
-                            .hazeSource(state = frostMidState)
-                            .hazeBlur(
-                                input = HazeInput.Sources(hazeState),
-                                style = inputHazeStyle,
-                            ),
-                    )
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .padding(3.dp)
-                            .clip(containerShape)
-                            .hazeBlur(
-                                input = HazeInput.Sources(frostMidState),
-                                style = inputTopHazeStyle,
-                            ),
-                    )
-                    fogBrush?.let { brush ->
-                        Box(
-                            modifier = Modifier
-                                .matchParentSize()
-                                .clip(containerShape)
-                                .drawBehind { drawRect(brush = brush) },
-                        )
-                    }
-                }
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(containerShape),
+                    .clip(containerShape)
+                    .chatInputHaze(
+                        hazeState = hazeState,
+                        displaySetting = settings.displaySetting,
+                        containerColor = containerColor,
+                        shape = containerShape,
+                    ),
                 shape = containerShape,
                 tonalElevation = 0.dp,
-                border = BorderStroke(
-                    // v4.8.179: 描边粗细/亮度可调（默认 0.5dp / 55% — "尽可能细、不刺眼"）
-                    settings.displaySetting.glassLineWidthDp.coerceIn(0.5f, 2.0f).dp,
-                    (if (darkTheme) Color.White else MaterialTheme.colorScheme.outlineVariant).copy(
-                        alpha = settings.displaySetting.glassLineBrightness.coerceIn(0, 100) / 100f,
-                    ),
-                ),
-                color = if (settings.displaySetting.enableBlurEffect) glassMaskColor else hazeTintColor,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                color = if (settings.displaySetting.enableBlurEffect) Color.Transparent else containerColor,
             ) {
                 Column(
-                    // v4.8.147: 上下内边距 4→2 (再省 2dp×2, 不影响正文框)
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     if (voiceState.phase != VoicePhase.Off) {
@@ -329,20 +280,12 @@ fun ChatInput(
 
                     TextInputRow(
                         state = state,
+                        assistant = assistant,
                         completionProviders = completionProviders,
                         toolPickerProvider = toolPickerProvider,
                         onSendMessage = { sendMessage() },
-
                     )
 
-                    // v4.8.3: 发送键/思考键互换 — 开启时两键位置与图标对调,
-                    // 防止生成中误触右下角打断键导致生成中断。判定在此提取,
-                    // 左侧 scroll 区与最右侧两处渲染点共用。
-                    val swapKeys = settings.swapSendReasoningKeys
-                    val reasoningModel = settings.getCurrentChatModel()
-                    val hasReasoning = reasoningModel != null &&
-                        (reasoningModel.abilities + ModelRegistry.MODEL_ABILITIES.getData(reasoningModel.modelId))
-                            .contains(ModelAbility.REASONING)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -354,9 +297,6 @@ fun ChatInput(
                             modifier = Modifier
                                 .weight(1f)
                                 .horizontalScroll(rememberScrollState()),
-                            // v4.8.4: 垂直居中 (互换后发送键置于此位, 内层默认 Top 对齐
-                            // 使大尺寸发送键视觉上移; 居中后与标准位置同高)
-                            verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
                             // Model Picker
@@ -366,41 +306,50 @@ fun ChatInput(
                                 modifier = Modifier,
                             )
 
-                            // v3.6.9: 联网图标已删除 (UI 更整齐; enableWebSearch 由设置页控制)
+                            // Search
+                            val enableSearchMsg = stringResource(R.string.web_search_enabled)
+                            val disableSearchMsg = stringResource(R.string.web_search_disabled)
+                            SearchPickerButton(
+                                enableSearch = assistant.enableWebSearch,
+                                settings = settings,
+                                onUpdateSearchMode = { mode ->
+                                    onUpdateSearchMode(mode)
+                                    val enabled = mode != SearchMode.OFF
+                                    toaster.show(
+                                        message = if (enabled) enableSearchMsg else disableSearchMsg,
+                                        duration = 1.seconds,
+                                        type = if (enabled) {
+                                            ToastType.Success
+                                        } else {
+                                            ToastType.Normal
+                                        }
+                                    )
+                                },
+                                onUpdateSearchService = onUpdateSearchService,
+                                model = chatModel,
+                            )
 
                             // Reasoning
-                            // 4.1.2: 门控与发送侧同源 — 注册表差集合并后的 abilities
-                            // v4.8.3: 互换开启时此位为发送(打断)键, 思考键去右下角
-                            if (hasReasoning) {
-                                if (!swapKeys) {
-                                    ReasoningButton(
-                                        reasoningLevel = assistant.reasoningLevel,
-                                        onUpdateReasoningLevel = {
-                                            onUpdateAssistant(assistant.copy(reasoningLevel = it))
-                                        },
-                                        onlyIcon = true,
-                                    )
-                                } else {
-                                    SendButton(
-                                        loading = loading,
-                                        empty = state.isEmpty(),
-                                        onClick = { sendMessage() },
-                                        onLongClick = { sendMessageWithoutAnswer() },
-                                    )
-                                }
+                            if (chatModel?.abilities?.contains(ModelAbility.REASONING) == true) {
+                                ReasoningButton(
+                                    reasoningLevel = assistant.reasoningLevel,
+                                    onUpdateReasoningLevel = {
+                                        onUpdateAssistant(assistant.copy(reasoningLevel = it))
+                                    },
+                                    onlyIcon = true,
+                                )
                             }
 
                         }
 
-
-                            ActionIconButton(
-                                onClick = onMoreClick
-                            ) {
-                                Icon(
-                                    imageVector = HugeIcons.Add01,
-                                    contentDescription = stringResource(R.string.more_options)
-                                )
-                            }
+                        ActionIconButton(
+                            onClick = onMoreClick
+                        ) {
+                            Icon(
+                                imageVector = HugeIcons.Add01,
+                                contentDescription = stringResource(R.string.more_options)
+                            )
+                        }
 
                         if (!voiceState.isActive && (asrState.isAvailable || asrState.isRecording)) {
                             AsrButton(
@@ -423,38 +372,28 @@ fun ChatInput(
 
                                         ASRStatus.Connecting, ASRStatus.Stopping -> {}
                                     }
-
                                 }
                             )
                         }
 
-                            AnimatedVisibility(
-                                visible = !asrState.isRecording,
-                                enter = fadeIn() + scaleIn(),
-                                exit = fadeOut() + scaleOut(),
-                            ) {
-                                // v4.8.3: 互换开启时右下角为思考键 (误触改变思考深度,
-                                // 不会打断生成); 模型不支持思考时兜底仍为发送键。
-                                if (swapKeys && hasReasoning) {
-                                    ReasoningButton(
-                                        reasoningLevel = assistant.reasoningLevel,
-                                        onUpdateReasoningLevel = {
-                                            onUpdateAssistant(assistant.copy(reasoningLevel = it))
-                                        },
-                                        onlyIcon = true,
-                                    )
-                                } else {
-                                    SendButton(
-                                        loading = loading,
-                                        empty = state.isEmpty(),
-                                        onClick = { sendMessage() },
-                                        onLongClick = { sendMessageWithoutAnswer() },
-                                    )
-                                }
-                            }
+                        if (loading) {
+                            KeepScreenOn()
+                        }
+
+                        AnimatedVisibility(
+                            visible = !asrState.isRecording,
+                            enter = fadeIn() + scaleIn(),
+                            exit = fadeOut() + scaleOut(),
+                        ) {
+                            SendButton(
+                                loading = loading,
+                                empty = state.isEmpty(),
+                                onClick = { sendMessage() },
+                                onLongClick = { sendMessageWithoutAnswer() },
+                            )
+                        }
                     }
                 }
-            }
             }
 
         }
@@ -466,7 +405,6 @@ fun ChatInput(
     )
 }
 
-
 @Composable
 private fun SendButton(
     loading: Boolean,
@@ -476,8 +414,6 @@ private fun SendButton(
     modifier: Modifier = Modifier,
 ) {
     val showStop = loading && empty
-    // v4.8.123 (用户定版): 压缩期可发送 — 发送键不再有"压缩中禁用"态; 压缩期发出的
-    // 消息与模型输出期同款排队"等待中", 压缩完成后自动发出 (见 ChatVM/ChatService)。
     val containerColor = when {
         showStop -> MaterialTheme.colorScheme.errorContainer
         empty -> MaterialTheme.colorScheme.surfaceContainerHigh
@@ -506,9 +442,6 @@ private fun SendButton(
             color = containerColor,
             content = {},
         )
-        if (loading) {
-            KeepScreenOn()
-        }
         Icon(
             imageVector = if (showStop) HugeIcons.Cancel01 else HugeIcons.ArrowUp02,
             contentDescription = stringResource(if (showStop) R.string.stop else R.string.send),
@@ -516,7 +449,6 @@ private fun SendButton(
             modifier = Modifier.size(18.dp)
         )
     }
-
 }
 
 @Composable
@@ -539,25 +471,25 @@ private fun ActionIconButton(
     }
 }
 
-
 @Composable
 private fun TextInputRow(
     state: ChatInputState,
+    assistant: Assistant,
     completionProviders: List<ChatCompletionProvider>,
     toolPickerProvider: (suspend () -> ToolMatrixPickerData?)? = null,
     onSendMessage: () -> Unit,
 ) {
     val settings = LocalSettings.current
     val filesManager: FilesManager = koinInject()
-    val assistant = settings.getCurrentAssistant()
     val quickMessages = remember(settings.quickMessages, assistant.quickMessageIds) {
         settings.getQuickMessagesOfAssistant(assistant)
     }
 
+    var isEditingReasoning by remember { mutableStateOf(false) }
+
     Column(
         modifier = Modifier.fillMaxWidth(),
-        // v4.8.147 (用户定版): 工具行上移 — 正文框不动, 仅收掉工具行上方间距 (4→0)
-        verticalArrangement = Arrangement.spacedBy(0.dp)
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         if (state.isEditing()) {
             Surface(
@@ -572,6 +504,11 @@ private fun TextInputRow(
                 ) {
                     Text(text = stringResource(R.string.editing))
                     Spacer(Modifier.weight(1f))
+                    if (state.editingReasoning != null) {
+                        TextButton(onClick = { isEditingReasoning = true }) {
+                            Text(stringResource(R.string.chat_input_edit_reasoning))
+                        }
+                    }
                     Icon(
                         imageVector = HugeIcons.Cancel01,
                         contentDescription = stringResource(R.string.cancel_edit),
@@ -753,10 +690,13 @@ private fun TextInputRow(
                     isFocused = it.isFocused
                 },
             shape = MaterialTheme.shapes.largeIncreased,
+            placeholder = {
+                Text(stringResource(R.string.chat_input_placeholder))
+            },
             lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
             keyboardOptions = KeyboardOptions(
-                imeAction = if (settings.displaySetting.sendOnEnter) ImeAction.Send else ImeAction.Default,
-                capitalization = KeyboardCapitalization.Sentences, // v3.6.97 移植 2.4.10: 英文句首自动大写
+                capitalization = KeyboardCapitalization.Sentences,
+                imeAction = if (settings.displaySetting.sendOnEnter) ImeAction.Send else ImeAction.Default
             ),
             onKeyboardAction = {
                 if (settings.displaySetting.sendOnEnter && !state.isEmpty()) {
@@ -781,7 +721,6 @@ private fun TextInputRow(
                             }) {
                             Icon(HugeIcons.Fullscreen, null)
                         }
-
                     }
                 }
             },
@@ -792,8 +731,17 @@ private fun TextInputRow(
             } else null,
         )
         if (isFullScreen) {
-            FullScreenEditor(state = state, receiveContent = receiveContentListener) {
+            FullScreenEditor(
+                textState = state.textContent,
+                placeholder = stringResource(R.string.chat_input_placeholder),
+            ) {
                 isFullScreen = false
+            }
+        }
+        val reasoningState = state.editingReasoning
+        if (isEditingReasoning && reasoningState != null) {
+            FullScreenEditor(textState = reasoningState, placeholder = stringResource(R.string.chat_input_reasoning_placeholder)) {
+                isEditingReasoning = false
             }
         }
     }
@@ -880,39 +828,6 @@ private fun ChatInputState.applyCompletion(
     }
 }
 
-/**
- * v4.8.144: 粘贴自管插入 — 选区替换/光标处插入, 并**显式把光标落到插入段末尾**。
- * 用户实证"有时候粘贴后光标停在原位不动": 自管插入使选择更新成为本函数的确定性责任,
- * 不再依赖内部接收路径的隐式行为; 语义与平台默认纯文本粘贴一致 (单次, 纯文本)。
- */
-private fun ChatInputState.pasteInsertText(text: String) {
-    val textLength = textContent.text.length
-    textContent.edit {
-        val start = selection.min.coerceIn(0, textLength)
-        val end = selection.max.coerceIn(start, textLength)
-        replace(start, end, text)
-        selection = TextRange(start + text.length)
-    }
-}
-
-/**
- * v4.8.90: `/@` 触发检测 —— 光标恰在 `/@` 两个字符之后。
- * 与 WorkspaceCompletionProvider 的「空格 @」互不冲突：那边要求 @ 前是边界符
- * （空格/括号/引号），这里的 @ 前是 '/'，两边各走各的。
- */
-private fun detectToolMention(text: String, cursor: Int): Int? {
-    if (cursor < 2 || cursor > text.length) return null
-    if (text[cursor - 1] != '@' || text[cursor - 2] != '/') return null
-    return cursor - 2
-}
-
-/** v4.8.90: /@ 选择器会话状态（数据 + 触发位置 + 下钻栈） */
-private data class ToolPickerState(
-    val data: ToolMatrixPickerData,
-    val triggerStart: Int,
-    val zoneStack: List<String> = emptyList(),
-)
-
 @Composable
 private fun QuickMessageButton(
     quickMessages: List<QuickMessage>,
@@ -963,14 +878,10 @@ private fun QuickMessageButton(
 
 @Composable
 private fun FullScreenEditor(
-    state: ChatInputState,
-    receiveContent: ReceiveContentListener,
+    textState: TextFieldState,
+    placeholder: String,
     onDone: () -> Unit
 ) {
-    // v4.8.176 (渲染回滚 4.8.119): 全屏编辑器 = 普通面板 (无玻璃无描边, 顶角 16dp);
-    // 粘贴走同一 ReceiveContentListener (长文转文件/图片附件/光标自管插入行为一致)。
-    val settings = LocalSettings.current
-    val shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
     BasicAlertDialog(
         onDismissRequest = {
             onDone()
@@ -990,7 +901,7 @@ private fun FullScreenEditor(
                 modifier = Modifier
                     .widthIn(max = 800.dp)
                     .fillMaxHeight(0.9f),
-                shape = shape,
+                shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
             ) {
                 Column(
                     modifier = Modifier
@@ -1008,14 +919,16 @@ private fun FullScreenEditor(
                         }
                     }
                     TextField(
-                        state = state.textContent,
+                        state = textState,
                         modifier = Modifier
                             .padding(bottom = 2.dp)
-                            .fillMaxSize()
-                            .contentReceiver(receiveContent),
+                            .fillMaxSize(),
                         shape = RoundedCornerShape(32.dp),
+                        placeholder = {
+                            Text(placeholder)
+                        },
                         keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Sentences, // v3.6.97 移植 2.4.10
+                            capitalization = KeyboardCapitalization.Sentences,
                         ),
                         colors = TextFieldDefaults.colors().copy(
                             unfocusedIndicatorColor = Color.Transparent,
@@ -1029,3 +942,36 @@ private fun FullScreenEditor(
         }
     }
 }
+
+/**
+ * v4.8.144: 文本粘贴自管插入 —— 显式把光标落到插入段末尾。
+ * 用户实证"有时候粘贴后光标停在原位不动": 自管插入使选择更新成为本函数的确定性责任,
+ * 不再依赖内部接收路径的隐式行为; 语义与平台默认纯文本粘贴一致 (单次, 纯文本)。
+ */
+private fun ChatInputState.pasteInsertText(text: String) {
+    val textLength = textContent.text.length
+    textContent.edit {
+        val start = selection.min.coerceIn(0, textLength)
+        val end = selection.max.coerceIn(start, textLength)
+        replace(start, end, text)
+        selection = TextRange(start + text.length)
+    }
+}
+
+/**
+ * v4.8.90: `/@` 触发检测 —— 光标恰在 `/@` 两个字符之后。
+ * 与 WorkspaceCompletionProvider 的「空格 @」互不冲突：那边要求 @ 前是边界符
+ * （空格/括号/引号），这里的 @ 前是 '/'，两边各走各的。
+ */
+private fun detectToolMention(text: String, cursor: Int): Int? {
+    if (cursor < 2 || cursor > text.length) return null
+    if (text[cursor - 1] != '@' || text[cursor - 2] != '/') return null
+    return cursor - 2
+}
+
+/** v4.8.90: /@ 选择器会话状态（数据 + 触发位置 + 下钻栈） */
+private data class ToolPickerState(
+    val data: ToolMatrixPickerData,
+    val triggerStart: Int,
+    val zoneStack: List<String> = emptyList(),
+)

@@ -65,8 +65,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
-import dev.chrisbanes.haze.HazeInput
-import dev.chrisbanes.haze.blur.hazeBlur
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import androidx.activity.ComponentActivity
@@ -114,12 +112,12 @@ import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.ui.components.ai.ChatAttachmentPickerActions
-import me.rerere.rikkahub.ui.components.motion.ContinuousCornerShape
 import me.rerere.rikkahub.ui.components.motion.LocalHazeState
 import me.rerere.rikkahub.ui.components.motion.RinGlass
 import me.rerere.rikkahub.ui.components.motion.rinGlass
 import me.rerere.rikkahub.ui.components.motion.rinGlassHighlight
 import me.rerere.rikkahub.ui.components.ai.ChatInput
+import me.rerere.rikkahub.ui.components.ai.SearchMode
 import me.rerere.rikkahub.ui.components.ai.FilesPicker
 import me.rerere.rikkahub.ui.components.ai.completion.WorkspaceCompletionProvider
 import me.rerere.rikkahub.ui.components.ai.ToolMatrixPickerData
@@ -560,28 +558,11 @@ private fun ChatPageContent(
         ) {
         Scaffold(
             topBar = {
-                // v4.8.184 (用户定版): 标题栏 = 单层纯模糊（透明底 + 零噪点, 无描边/无雾/无蒙版）——
-                // "完全看不出来被做了模糊处理": 空背景上与背景无痕（无线/无板/无颗粒）;
-                // 正文往上滑入其下时被磨掉。
-                Box {
-                    val titlePanelShape = remember {
-                        ContinuousCornerShape(cornerRadius = 20.dp, topStart = false, topEnd = false)
-                    }
-                    if (setting.displaySetting.enableBlurEffect) {
-                        Box(
-                            modifier = Modifier
-                                .matchParentSize()
-                                .clip(titlePanelShape)
-                                .hazeBlur(
-                                    input = HazeInput.Sources(hazeState),
-                                    style = RinGlass.titleBlurStyle(
-                                        radiusDp = setting.displaySetting.glassBlurRadiusDp * 2,
-                                    ),
-                                ),
-                        )
-                    }
-                    TopBar(
-                        settings = setting,
+                // v5.0.11 (用户定版): 标题栏按原版 3.0.0 重做 — 透明 TopAppBar；
+                // "渐变"由消息列表顶部渐隐遮罩承担（ChatList.topFadingEdge：消息滚到标题栏下
+                // 方时内容自身逐渐透明，不再铺任何模糊/底色面板）。
+                TopBar(
+                    settings = setting,
                     conversation = conversation,
                     bigScreen = bigScreen,
                     drawerState = drawerState,
@@ -599,7 +580,6 @@ private fun ChatPageContent(
                         vm.updateTitle(it)
                     }
                 )
-                } // 标题栏雾化面板 Box 闭合 (v4.8.180)
             },
             bottomBar = {
                 val messageQueue by vm.messageQueue.collectAsStateWithLifecycle()
@@ -617,6 +597,15 @@ private fun ChatPageContent(
                     onResumeMessageQueue = vm::resumeMessageQueue,
                     loading = loadingJob != null,
                     settings = setting,
+                    // v5.0.11: 上游 3.0.0 签名适配 — 会话视角助手/模型 + 搜索模式
+                    assistant = assistant,
+                    chatModel = currentChatModel,
+                    onUpdateSearchMode = { mode ->
+                        vm.updateSearch(
+                            enableWebSearch = mode == SearchMode.LOCAL,
+                            builtInSearch = mode == SearchMode.BUILT_IN,
+                        )
+                    },
                     completionProviders = completionProviders,
                     toolPickerProvider = toolPickerProvider,
                     onCancelClick = {
@@ -700,7 +689,8 @@ private fun ChatPageContent(
                 settings = setting,
                 // v4.8.104: 速览页快捷入口（翻译 / 图像生成）+ 点空白处返回
                 onOpenTranslator = { navController.navigate(Screen.Translator) },
-                onOpenImageGen = { navController.navigate(Screen.ImageGen) },
+                // v5.0.11 (用户定版): 媒体创作入口 — 自抽屉移入速览快捷行（替换原图片生成位）
+                onOpenMediaCreation = { navController.navigate(Screen.MediaCreationSessions) },
                 onExitPreview = { previewMode = false },
                 // v4.8.88: 子代理预算（速览页弹窗直接回写 Settings）
                 onUpdateSettings = { updated -> vm.updateSettings(updated) },
@@ -997,13 +987,8 @@ private fun TopBar(
         onUpdateTitle(it)
     }
 
-    // v4.8.144 (用户定版): 标题栏上移 — 标题文本与状态栏(时间/电量)间距过大;
-    // 顶部边距 = 原来的 2/5 (状态栏内边距按比例缩小, 文字随之整体上提)。
-    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    // v5.0.11 (用户定版): 按原版 3.0.0 重做 — 使用 TopAppBar 默认窗口内边距（撤我方 2/5+15dp 定制）。
     TopAppBar(
-        // v4.8.147 (用户定版): 上次上移过多 — 下移 5dp (2/5 状态栏 + 5dp)
-        // v4.8.178 (用户定版): 再下移 10dp (2/5 状态栏 + 15dp)
-        windowInsets = WindowInsets(top = statusBarTop * 2f / 5f + 15.dp),
         colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
         navigationIcon = {
             if (!bigScreen) {

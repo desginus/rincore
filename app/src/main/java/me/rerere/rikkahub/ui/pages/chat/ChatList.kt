@@ -10,7 +10,7 @@ package me.rerere.rikkahub.ui.pages.chat
 import me.rerere.hugeicons.HugeIcons
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import me.rerere.hugeicons.stroke.LanguageCircle
-import me.rerere.hugeicons.stroke.Image02
+import me.rerere.hugeicons.stroke.ImageToVideo
 import me.rerere.hugeicons.stroke.Tick01
 import me.rerere.hugeicons.stroke.ArrowDown01
 import me.rerere.hugeicons.stroke.ArrowUp01
@@ -82,6 +82,13 @@ import dev.chrisbanes.haze.blur.hazeBlur
 import dev.chrisbanes.haze.HazeInput
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.graphics.Color
@@ -160,7 +167,7 @@ fun ChatList(
     onUpdateSettings: (Settings) -> Unit = {},
     // v4.8.104: 速览页快捷入口（翻译 / 图像生成）+ 点空白处返回默认对话
     onOpenTranslator: () -> Unit = {},
-    onOpenImageGen: () -> Unit = {},
+    onOpenMediaCreation: () -> Unit = {},
     onExitPreview: () -> Unit = {},
     // v4.8.147: 空态轨道选择器 (外弧=助手 / 内弧=项目包)
     onOrbitSelectAssistant: (Uuid) -> Unit = {},
@@ -182,7 +189,7 @@ fun ChatList(
                 onJumpToMessage = onJumpToMessage,
                 onUpdateSettings = onUpdateSettings,
                 onOpenTranslator = onOpenTranslator,
-                onOpenImageGen = onOpenImageGen,
+                onOpenMediaCreation = onOpenMediaCreation,
                 onExitPreview = onExitPreview,
                 animatedVisibilityScope = this@AnimatedContent,
             )
@@ -218,6 +225,25 @@ fun ChatList(
         }
     }
 }
+
+// 顶部渐隐（上游 3.0.0）：消息滚到标题栏下面时逐渐透明，从状态栏一直淡出到标题栏下沿之外，保证标题可读。
+// 让内容自己变透明而不是盖一层背景色，背景图和动态渐变背景才不会被盖住。
+private fun Modifier.topFadingEdge(height: Dp): Modifier = this
+    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithCache {
+        val fadeHeight = height.toPx()
+        val brush = Brush.verticalGradient(
+            0f to Color.Transparent,
+            0.6f to Color.Black.copy(alpha = 0.15f),
+            1f to Color.Black,
+            startY = 0f,
+            endY = fadeHeight,
+        )
+        onDrawWithContent {
+            drawContent()
+            drawRect(brush, size = Size(size.width, fadeHeight), blendMode = BlendMode.DstIn)
+        }
+    }
 
 @Composable
 private fun ChatListNormal(
@@ -351,6 +377,8 @@ private fun ChatListNormal(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier
                     .fillMaxSize()
+                    // v5.0.11: 标题栏渐变（上游 3.0.0 topFadingEdge）— 内容滚入标题栏区渐隐
+                    .topFadingEdge(innerPadding.calculateTopPadding() + 24.dp)
                     .hazeSource(state = hazeState),
             ) {
             itemsIndexed(
@@ -662,7 +690,7 @@ private fun ChatListPreview(
     onJumpToMessage: (Int) -> Unit,
     onUpdateSettings: (Settings) -> Unit = {},
     onOpenTranslator: () -> Unit = {},
-    onOpenImageGen: () -> Unit = {},
+    onOpenMediaCreation: () -> Unit = {},
     onExitPreview: () -> Unit = {},
 ) {
     var searchQuery by remember { mutableStateOf("") }
@@ -738,10 +766,11 @@ private fun ChatListPreview(
                     modifier = Modifier.size(22.dp),
                 )
             }
-            IconButton(onClick = onOpenImageGen) {
+            // v5.0.11 (用户定版): 媒体创作入口 — 自抽屉移入此处（替换原图片生成位）
+            IconButton(onClick = onOpenMediaCreation) {
                 Icon(
-                    imageVector = HugeIcons.Image02,
-                    contentDescription = stringResource(R.string.chat_page_menu_image_generation),
+                    imageVector = HugeIcons.ImageToVideo,
+                    contentDescription = stringResource(R.string.media_creation_title),
                     modifier = Modifier.size(22.dp),
                 )
             }

@@ -1,16 +1,15 @@
-/* 【域 E·设置体系】 | 地图: docs/APP_MAP.md §E */
 package me.rerere.rikkahub.ui.pages.setting
 
-
-/* ───【原版对齐】SettingAboutPage.kt | 差异 ±32 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
-import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.Code
-import me.rerere.hugeicons.stroke.SmartPhone01
+import android.graphics.Rect
+import android.graphics.drawable.AdaptiveIconDrawable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,42 +17,79 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Icon
-import androidx.compose.material3.LargeFlexibleTopAppBar
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.toPath
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Matrix
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.center
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
+import androidx.compose.ui.unit.toOffset
+import androidx.compose.ui.util.fastForEach
+import androidx.core.content.ContextCompat
+import androidx.graphics.shapes.Morph
+import kotlin.math.roundToInt
+import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.Code
+import me.rerere.hugeicons.stroke.Earth
+import me.rerere.hugeicons.stroke.File02
+import me.rerere.hugeicons.stroke.Github
+import me.rerere.hugeicons.stroke.SmartPhone01
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.ui.components.nav.BackButton
-import me.rerere.rikkahub.ui.components.easteregg.EmojiBurstHost
 import me.rerere.rikkahub.ui.components.ui.CardGroup
+import me.rerere.rikkahub.ui.components.ui.CardGroupIcon
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.theme.CustomColors
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
+import me.rerere.rikkahub.utils.SoundEffectPlayer
+import me.rerere.rikkahub.utils.openUrl
 import me.rerere.rikkahub.utils.plus
+import me.rerere.ui.easteregg.EmojiBurstHost
 
 @Composable
 fun SettingAboutPage() {
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
+    val context = LocalContext.current
     val navController = LocalNavController.current
+    val soundOptions = remember { listOf(R.raw.bingbingbing, R.raw.gangguan) }
+    val soundEffectPlayer = remember(context) { SoundEffectPlayer(context) }
+    DisposableEffect(soundEffectPlayer) {
+        soundEffectPlayer.preload(*soundOptions.toIntArray())
+        onDispose {
+            soundEffectPlayer.release()
+        }
+    }
     val emojiOptions = remember {
         listOf(
             "🎉", "✨", "🌟", "💫", "🎊", "🥳", "🎈", "🎆", "🎇", "🧨",
@@ -65,10 +101,17 @@ fun SettingAboutPage() {
             "💡", "🔥", "💥", "🚀", "⭐", "🌙"
         )
     }
-    var logoCenterPx by remember { mutableStateOf(Offset.Zero) }
+    // 直接画图标的各层：整张图标带着系统的图标蒙版，会和变形的轮廓叠在一起
+    val logoLayers = remember(context) {
+        val icon = ContextCompat.getDrawable(context, R.mipmap.ic_launcher)
+        if (icon is AdaptiveIconDrawable) listOfNotNull(icon.background, icon.foreground) else listOfNotNull(icon)
+    }
+    // 表情从 logo 中心喷出，坐标要换算到 EmojiBurstHost 里
+    var hostCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var logoCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = {
                     Text(stringResource(R.string.about_page_title))
                 },
@@ -83,66 +126,102 @@ fun SettingAboutPage() {
         containerColor = CustomColors.topBarColors.containerColor,
     ) { innerPadding ->
         EmojiBurstHost(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .onGloballyPositioned { hostCoordinates = it },
             emojiOptions = emojiOptions,
             burstCount = 12
         ) { onBurst ->
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = innerPadding + PaddingValues(8.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = innerPadding + PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
+                    val interactionSource = remember { MutableInteractionSource() }
+                    val pressed by interactionSource.collectIsPressedAsState()
+                    val logoScale by animateFloatAsState(
+                        targetValue = if (pressed) 0.88f else 1f,
+                        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+                    )
+                    // 每点一次，轮廓变形到下一个形状
+                    var shapeIndex by remember { mutableIntStateOf(0) }
+                    val shapePosition by animateFloatAsState(
+                        targetValue = shapeIndex.toFloat(),
+                        animationSpec = MaterialTheme.motionScheme.slowSpatialSpec(),
+                    )
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(8.dp),
+                            .padding(start = 8.dp, end = 8.dp, bottom = 16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        AsyncImage(
-                            model = R.mipmap.ic_launcher,
-                            contentDescription = "Logo",
+                        Box(
                             modifier = Modifier
-                                .clip(CircleShape)
-                                .size(150.dp)
-                                .onGloballyPositioned { coordinates ->
-                                    val position = coordinates.positionInParent()
-                                    val size = coordinates.size
-                                    logoCenterPx = Offset(
-                                        position.x + size.width / 2f,
-                                        position.y + size.height / 2f
+                                .size(136.dp)
+                                .semantics { contentDescription = "Logo" }
+                                .onGloballyPositioned { logoCoordinates = it }
+                                .graphicsLayer {
+                                    scaleX = logoScale
+                                    scaleY = logoScale
+                                    val segment = shapePosition.toInt()
+                                    shape = MorphShape(
+                                        morph = LogoMorphs[segment % LogoMorphs.size],
+                                        // 弹簧会过冲，过冲的部分落在下一段变形的开头
+                                        progress = shapePosition - segment,
+                                        rotation = shapePosition * 90f,
                                     )
+                                    clip = true
                                 }
-                                .clickable {
-                                    onBurst(logoCenterPx)
+                                .clickable(
+                                    interactionSource = interactionSource,
+                                    indication = LocalIndication.current,
+                                ) {
+                                    val host = hostCoordinates
+                                    val logo = logoCoordinates
+                                    if (host != null && logo != null && host.isAttached && logo.isAttached) {
+                                        onBurst(host.localPositionOf(logo, logo.size.center.toOffset()))
+                                    }
+                                    soundEffectPlayer.play(soundOptions.random())
+                                    shapeIndex++
+                                }
+                                .drawBehind {
+                                    drawIntoCanvas { canvas ->
+                                        logoLayers.fastForEach { layer ->
+                                            layer.bounds = logoLayerBounds(size)
+                                            layer.draw(canvas.nativeCanvas)
+                                        }
+                                    }
                                 }
                         )
 
                         Text(
                             text = "RinCore",
-                            style = MaterialTheme.typography.displaySmall,
+                            style = MaterialTheme.typography.headlineLargeEmphasized.copy(
+                                fontWeight = FontWeight.Black,
+                            ),
                         )
                     }
                 }
 
                 item {
-                    CardGroup(
-                        modifier = Modifier.padding(horizontal = 8.dp),
-                    ) {
+                    val containerColor = MaterialTheme.colorScheme.primaryContainer
+                    val contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    CardGroup {
                         item(
                             modifier = Modifier.combinedClickable(
                                 onClick = {},
                                 onLongClick = { navController.navigate(Screen.Debug) },
                             ),
-                            leadingContent = { Icon(HugeIcons.Code, null) },
+                            leadingContent = { CardGroupIcon(HugeIcons.Code, containerColor = containerColor, contentColor = contentColor) },
                             supportingContent = {
                                 Text("${BuildConfig.VERSION_NAME} / ${BuildConfig.VERSION_CODE}")
                             },
                             headlineContent = { Text(stringResource(R.string.about_page_version)) },
                         )
                         item(
-                            leadingContent = { Icon(HugeIcons.SmartPhone01, null) },
+                            leadingContent = { CardGroupIcon(HugeIcons.SmartPhone01, containerColor = containerColor, contentColor = contentColor) },
                             supportingContent = {
                                 Text("${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} / Android ${android.os.Build.VERSION.RELEASE} / SDK ${android.os.Build.VERSION.SDK_INT}")
                             },
@@ -150,7 +229,75 @@ fun SettingAboutPage() {
                         )
                     }
                 }
+
+                item {
+                    val containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                    val contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                    CardGroup {
+                        item(
+                            onClick = { context.openUrl("https://rikka-ai.com/") },
+                            leadingContent = { CardGroupIcon(HugeIcons.Earth, containerColor = containerColor, contentColor = contentColor) },
+                            supportingContent = { Text("https://rikka-ai.com") },
+                            headlineContent = { Text(stringResource(R.string.about_page_website)) },
+                        )
+                        item(
+                            onClick = { context.openUrl("https://github.com/rikkahub/rikkahub") },
+                            leadingContent = { CardGroupIcon(HugeIcons.Github, containerColor = containerColor, contentColor = contentColor) },
+                            supportingContent = { Text("https://github.com/rikkahub/rikkahub") },
+                            headlineContent = { Text(stringResource(R.string.about_page_github)) },
+                        )
+                        item(
+                            onClick = { context.openUrl("https://github.com/rikkahub/rikkahub/blob/master/LICENSE") },
+                            leadingContent = { CardGroupIcon(HugeIcons.File02, containerColor = containerColor, contentColor = contentColor) },
+                            supportingContent = { Text("https://github.com/rikkahub/rikkahub/blob/master/LICENSE") },
+                            headlineContent = { Text(stringResource(R.string.about_page_license)) },
+                        )
+                    }
+                }
             }
         }
     }
 }
+
+// 自适应图标的图层是 108dp，可见的只有中间 72dp，四周各多出四分之一
+private fun logoLayerBounds(size: Size): Rect {
+    val insetX = (size.width / 4f).roundToInt()
+    val insetY = (size.height / 4f).roundToInt()
+    return Rect(-insetX, -insetY, size.width.roundToInt() + insetX, size.height.roundToInt() + insetY)
+}
+
+// logo 依次变成的形状，最后一个接回第一个
+private val LogoShapes = listOf(
+    MaterialShapes.Cookie12Sided,
+    MaterialShapes.Clover4Leaf,
+    MaterialShapes.Cookie9Sided,
+    MaterialShapes.Sunny,
+    MaterialShapes.Cookie6Sided,
+    MaterialShapes.Flower,
+    MaterialShapes.Cookie4Sided,
+)
+
+private val LogoMorphs = LogoShapes.indices.map { index ->
+    Morph(LogoShapes[index], LogoShapes[(index + 1) % LogoShapes.size])
+}
+
+// 停在两个形状之间某一帧的轮廓
+private class MorphShape(
+    private val morph: Morph,
+    private val progress: Float,
+    private val rotation: Float,
+) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val path = morph.toPath(progress = progress)
+        // MaterialShapes 是归一化到 1x1 的，先放大到实际尺寸，再绕中心旋转
+        val matrix = Matrix().apply {
+            translate(size.width / 2f, size.height / 2f)
+            rotateZ(rotation)
+            translate(-size.width / 2f, -size.height / 2f)
+            scale(size.width, size.height)
+        }
+        path.transform(matrix)
+        return Outline.Generic(path)
+    }
+}
+

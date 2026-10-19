@@ -83,7 +83,6 @@ import me.rerere.hugeicons.stroke.Share03
 import me.rerere.hugeicons.stroke.Folder01
 import me.rerere.hugeicons.stroke.FolderAdd
 import me.rerere.hugeicons.stroke.InLove
-import me.rerere.hugeicons.stroke.ImageToVideo
 import me.rerere.hugeicons.stroke.PencilEdit01
 import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Settings03
@@ -298,19 +297,7 @@ fun ChatDrawerContent(
                 onCleanupClick = { showCleanupDialog = true },
             )
 
-            // 5.0.0 并树: 媒体创作入口（上游 3.0.0 mediagen — MediaCreation 会话列表）
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp),
-            ) {
-                DrawerActionBlock(
-                    label = stringResource(R.string.media_creation_title),
-                    icon = HugeIcons.ImageToVideo,
-                    onClick = { navController.navigate(Screen.MediaCreationSessions) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
+            // v5.0.11 (用户定版): 媒体创作入口已从抽屉移出 → 对话页速览快捷行（替换图片生成位）。
             if (memoryDreaming) {
                 MemoryDreamingEntry(
                     onClick = { navController.navigate(Screen.AssistantMemory(settings.assistantId.toString())) },

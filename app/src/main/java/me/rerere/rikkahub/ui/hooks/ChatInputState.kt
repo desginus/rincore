@@ -1,23 +1,26 @@
 /* 【域 L·基础设施】 — UI 基础 | 地图: docs/APP_MAP.md §L */
-package me.rerere.rikkahub.ui.hooks
 
-/* ───【原版对齐】ChatInputState.kt | 差异 ±4 行 (基线 2.5.1)
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
+/* ───【上游对齐】ChatInputState.kt | v5.0.11 切换上游 3.0.0（含消息编辑改思考内容）
  * ───────────────────────────────────────────────────────────────*/
+package me.rerere.rikkahub.ui.hooks
 
 import android.net.Uri
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import me.rerere.ai.ui.UIMessagePart
 import kotlin.uuid.Uuid
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 
 class ChatInputState {
     val textContent = TextFieldState()
     var messageContent by mutableStateOf(listOf<UIMessagePart>())
     var editingMessage by mutableStateOf<Uuid?>(null)
+
+    /** 编辑中的消息允许改思考内容时不为 null，见 [setContents] */
+    var editingReasoning by mutableStateOf<TextFieldState?>(null)
+        private set
     private var editingParts: List<UIMessagePart>? = null
     private var editingAttachmentUrls: Set<String> = emptySet()
 
@@ -25,6 +28,7 @@ class ChatInputState {
         textContent.setTextAndPlaceCursorAtEnd("")
         messageContent = emptyList()
         editingMessage = null
+        editingReasoning = null
         editingParts = null
         editingAttachmentUrls = emptySet()
     }
@@ -47,7 +51,9 @@ class ChatInputState {
             ""
         }
         textContent.setTextAndPlaceCursorAtEnd(text)
-        messageContent = contents.filter { it !is UIMessagePart.Text }
+        val reasoning = contents.editableReasoningOrNull()
+        editingReasoning = reasoning?.let { TextFieldState(it.reasoning) }
+        messageContent = contents.filter { it !is UIMessagePart.Text && (reasoning == null || it !is UIMessagePart.Reasoning) }
         editingParts = contents
         editingAttachmentUrls = contents.mapNotNull { it.attachmentUrlOrNull() }.toSet()
     }
@@ -75,6 +81,13 @@ class ChatInputState {
                             }
                         }
 
+                        part is UIMessagePart.Reasoning && editingReasoning != null -> {
+                            val reasoning = editingReasoning!!.text.toString()
+                            if (reasoning.isNotBlank()) {
+                                merged.add(part.copy(reasoning = reasoning))
+                            }
+                        }
+
                         else -> {
                             val currentIndex = remainingAttachments.indexOf(part)
                             if (currentIndex >= 0) {
@@ -83,10 +96,10 @@ class ChatInputState {
                         }
                     }
                 }
-                // Newly added attachments are appended in insertion order.
                 if (editedTextIndex < 0 && text.isNotBlank()) {
                     merged.add(0, UIMessagePart.Text(text))
                 }
+                // Newly added attachments are appended in insertion order.
                 merged.addAll(remainingAttachments)
                 return merged
             }
@@ -139,6 +152,16 @@ class ChatInputState {
         val url = part.attachmentUrlOrNull() ?: return false
         if (!url.startsWith("file:")) return false
         return !isEditing() || url !in editingAttachmentUrls
+    }
+
+    /**
+     * 只有一段思考加正文的消息才允许改思考内容。
+     * 带 metadata 的思考（Claude/Gemini 签名、OpenAI 加密内容等）回传时要和原文对得上，改了会失效或被拒，不允许编辑。
+     */
+    private fun List<UIMessagePart>.editableReasoningOrNull(): UIMessagePart.Reasoning? {
+        if (!all { it is UIMessagePart.Text || it is UIMessagePart.Reasoning }) return null
+        val reasoning = filterIsInstance<UIMessagePart.Reasoning>().singleOrNull() ?: return null
+        return reasoning.takeIf { it.metadata.isNullOrEmpty() }
     }
 
     private fun UIMessagePart.attachmentUrlOrNull(): String? {

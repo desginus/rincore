@@ -20,8 +20,15 @@ class SettingVM(
     private val mcpManager: McpManager
 ) :
     ViewModel() {
+    // v5.0.11（对齐上游 3.0.0）：初始值直接取当前值——用占位值的话，
+    // 每次进设置页第一帧都是默认设置，随后才跳成真实数据。
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
-        .stateIn(viewModelScope, SharingStarted.Lazily, Settings(init = true, providers = emptyList()))
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Lazily,
+            initialValue = settingsStore.settingsFlow.value.takeUnless { it.init }
+                ?: Settings(init = true, providers = emptyList()),
+        )
 
     fun updateSettings(settings: Settings) {
         viewModelScope.launch {
