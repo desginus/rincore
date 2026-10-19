@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- v5.0.9: debug(研究版) 变体专属应用名 —— 与救援版(me.rincore.app)共存时一眼可辨 -->
+    <string name="app_name">RinCore Study</string>
+</resources>
