@@ -1,8 +1,5 @@
 package me.rerere.rikkahub.ui.components.message.tools
 
-import me.rerere.hugeicons.stroke.Delete01
-import kotlinx.serialization.json.JsonObject
-import androidx.compose.material3.IconButton
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -936,75 +933,5 @@ private fun ScrapeWebPreview(content: JsonElement) {
                 }
             }
         }
-    }
-}
-object MemoryToolUI : ToolUIRenderer {
-    private const val ACTION_CREATE = "create"
-    private const val ACTION_EDIT = "edit"
-    private const val ACTION_DELETE = "delete"
-
-    override val toolName: String = "memory_tool"
-
-    private fun action(context: ToolUIContext): String? =
-        context.arguments.getStringContent("action")
-
-    override fun icon(context: ToolUIContext): ImageVector = when (action(context)) {
-        ACTION_DELETE -> HugeIcons.Eraser
-        else -> HugeIcons.QuillWrite01
-    }
-
-    @Composable
-    override fun title(context: ToolUIContext): String = when (action(context)) {
-        ACTION_CREATE -> stringResource(R.string.chat_message_tool_create_memory)
-        ACTION_EDIT -> stringResource(R.string.chat_message_tool_edit_memory)
-        ACTION_DELETE -> stringResource(R.string.chat_message_tool_delete_memory)
-        else -> stringResource(R.string.chat_message_tool_call_generic, toolName)
-    }
-
-    override fun hasSummary(context: ToolUIContext): Boolean =
-        action(context) in listOf(ACTION_CREATE, ACTION_EDIT) &&
-            context.content.getStringContent("content") != null
-
-    @Composable
-    override fun Summary(context: ToolUIContext) {
-        context.content.getStringContent("content")?.let { memoryContent ->
-            Text(
-                text = memoryContent,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.shimmer(isLoading = context.loading),
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-
-    @Composable
-    override fun Preview(context: ToolUIContext, onDismissRequest: () -> Unit) {
-        val memoryRepo: MemoryRepository = koinInject()
-        val scope = rememberCoroutineScope()
-        val memoryId = (context.content as? JsonObject)?.get("id")?.jsonPrimitiveOrNull?.longOrNull
-        DefaultToolPreview(
-            context = context,
-            headerActions = if (action(context) in listOf(ACTION_CREATE, ACTION_EDIT) && memoryId != null) {
-                {
-                    IconButton(
-                        onClick = {
-                            scope.launch {
-                                memoryRepo.deleteMemory(memoryId)
-                                onDismissRequest()
-                            }
-                        }
-                    ) {
-                        Icon(
-                            imageVector = HugeIcons.Delete01,
-                            contentDescription = stringResource(R.string.tool_ui_delete_memory)
-                        )
-                    }
-                }
-            } else {
-                null
-            },
-        )
     }
 }

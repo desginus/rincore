@@ -1,13 +1,5 @@
-/* 【域 F·主题渲染】 — 消息/文档渲染 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.message
 
-
-/* ───【原版对齐】ChatMessageTools | 差异 +116 行
- * 来源: 原版移植 + 自研 (工具卡渲染)
- * 功能: 消息内工具卡 (审批/结果/状态)
- * 差异: 工具审批交互与展示自研调整
- * ───────────────────────────────────────────────────────────────*/
-import me.rerere.rikkahub.data.model.Assistant
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -34,9 +26,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -52,22 +46,51 @@ import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.Tools
 import me.rerere.hugeicons.stroke.BubbleChatQuestion
 import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Tick01
+import me.rerere.hugeicons.stroke.Tools
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.ui.components.message.tools.DefaultToolPreview
 import me.rerere.rikkahub.ui.components.message.tools.ToolUIContext
 import me.rerere.rikkahub.ui.components.message.tools.ToolUIRegistry
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.ui.ChainOfThoughtScope
-import me.rerere.rikkahub.ui.components.ui.DotLoading
 import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.utils.JsonInstant
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
+import me.rerere.ui.components.DotLoading
 
 private const val ASK_USER_TOOL_NAME = "ask_user"
+
+@Composable
+fun ChainOfThoughtScope.ChatMessageServerToolStep(tool: UIMessagePart.ServerTool) {
+    val loading = !tool.isFinished
+    ChainOfThoughtStep(
+        icon = {
+            if (loading) {
+                DotLoading(size = 10.dp)
+            } else {
+                Icon(
+                    imageVector = HugeIcons.Tools,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = LocalContentColor.current.copy(alpha = 0.7f),
+                )
+            }
+        },
+        label = {
+            Text(
+                text = stringResource(R.string.chat_message_tool_call_generic, tool.toolName),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.shimmer(isLoading = loading),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+    )
+}
 
 @Composable
 fun ChainOfThoughtScope.ChatMessageToolStep(
@@ -84,19 +107,24 @@ fun ChainOfThoughtScope.ChatMessageToolStep(
     }
 
     val renderer = remember(tool.toolName) { ToolUIRegistry.resolve(tool.toolName) }
+    val outputJson = remember(tool) {
+        if (tool.isExecuted) {
+            runCatching {
+                JsonInstant.parseToJsonElement(
+                    tool.output.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text }
+                )
+            }.getOrNull()
+        } else {
+            null
+        }
+    }
+    // 输出不是 JSON (例如超长被截断后只剩文本预览) 时, 定制渲染器读不到任何字段, 详情改用默认渲染展示原文
+    val outputUnparsable = tool.isExecuted && outputJson == null
     val context = remember(tool, loading, assistant) {
         ToolUIContext(
             tool = tool,
             arguments = tool.inputAsJson(),
-            content = if (tool.isExecuted) {
-                runCatching {
-                    JsonInstant.parseToJsonElement(
-                        tool.output.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text }
-                    )
-                }.getOrElse { JsonObject(emptyMap()) }
-            } else {
-                null
-            },
+            content = if (tool.isExecuted) outputJson ?: JsonObject(emptyMap()) else null,
             loading = loading,
             assistant = assistant,
         )
@@ -105,10 +133,9 @@ fun ChainOfThoughtScope.ChatMessageToolStep(
     var showResult by remember { mutableStateOf(false) }
     var showDenyDialog by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(true) }
-    val isPending = tool.approvalState is ToolApprovalState.Pending
+    val isPending = tool.isPending
     val isDenied = tool.approvalState is ToolApprovalState.Denied
     val images = tool.output.filterIsInstance<UIMessagePart.Image>()
-
 
     // 摘要由注册的渲染器决定; 图片输出与拒绝原因为所有工具通用
     val hasExtraContent = renderer.hasSummary(context) || isDenied || images.isNotEmpty()
@@ -142,76 +169,28 @@ fun ChainOfThoughtScope.ChatMessageToolStep(
         },
         extra = if (isPending && onToolApproval != null) {
             {
-                var showReplyInput by remember { mutableStateOf(false) }
-                var replyText by remember { mutableStateOf("") }
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilledTonalIconButton(
+                        onClick = { showDenyDialog = true },
+                        modifier = Modifier.size(28.dp),
                     ) {
-                        FilledTonalIconButton(
-                            onClick = { showDenyDialog = true },
-                            modifier = Modifier.size(28.dp),
-                        ) {
-                            Icon(
-                                imageVector = HugeIcons.Cancel01,
-                                contentDescription = stringResource(R.string.chat_message_tool_deny),
-                                modifier = Modifier.size(14.dp)
-                            )
-                        }
-                        FilledTonalIconButton(
-                            onClick = { onToolApproval(tool.toolCallId, true, "") },
-                            modifier = Modifier.size(28.dp),
-                        ) {
-                            Icon(
-                                imageVector = HugeIcons.Tick01,
-                                contentDescription = stringResource(R.string.chat_message_tool_approve),
-                                modifier = Modifier.size(14.dp)
-                            )
-                        }
-                        // 文本回复按钮: 展开/收起输入框
-                        FilledTonalIconButton(
-                            onClick = { showReplyInput = !showReplyInput },
-                            modifier = Modifier.size(28.dp),
-                        ) {
-                            Icon(
-                                imageVector = HugeIcons.BubbleChatQuestion,
-                                contentDescription = stringResource(R.string.chat_message_tool_reply),
-                                modifier = Modifier.size(14.dp),
-                            )
-                        }
-                    }
-                    // 文本回复输入区
-                    if (showReplyInput) {
-                        OutlinedTextField(
-                            value = replyText,
-                            onValueChange = { replyText = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            textStyle = MaterialTheme.typography.bodySmall,
-                            placeholder = { Text(stringResource(R.string.chat_message_tool_reply_hint)) },
-                            singleLine = false,
-                            minLines = 2,
-                            maxLines = 4,
+                        Icon(
+                            imageVector = HugeIcons.Cancel01,
+                            contentDescription = stringResource(R.string.chat_message_tool_deny),
+                            modifier = Modifier.size(14.dp)
                         )
-                        FilledTonalButton(
-                            onClick = {
-                                val answer = replyText.trim()
-                                if (answer.isNotEmpty() && onToolAnswer != null) {
-                                    onToolAnswer(tool.toolCallId, answer)
-                                }
-                            },
-                            enabled = replyText.isNotBlank(),
-                            modifier = Modifier.align(Alignment.End),
-                        ) {
-                            Icon(
-                                imageVector = HugeIcons.Tick01,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Text(
-                                text = stringResource(R.string.chat_message_tool_send_reply),
-                                modifier = Modifier.padding(start = 4.dp),
-                            )
-                        }
+                    }
+                    FilledTonalIconButton(
+                        onClick = { onToolApproval(tool.toolCallId, true, "") },
+                        modifier = Modifier.size(28.dp),
+                    ) {
+                        Icon(
+                            imageVector = HugeIcons.Tick01,
+                            contentDescription = stringResource(R.string.chat_message_tool_approve),
+                            modifier = Modifier.size(14.dp)
+                        )
                     }
                 }
             }
@@ -273,10 +252,14 @@ fun ChainOfThoughtScope.ChatMessageToolStep(
             ),
             onDismissRequest = { showResult = false },
             content = {
-                renderer.Preview(
-                    context = context,
-                    onDismissRequest = { showResult = false },
-                )
+                if (outputUnparsable) {
+                    DefaultToolPreview(context = context)
+                } else {
+                    renderer.Preview(
+                        context = context,
+                        onDismissRequest = { showResult = false },
+                    )
+                }
             },
         )
     }
@@ -289,7 +272,7 @@ private fun ChainOfThoughtScope.AskUserToolStep(
     loading: Boolean,
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)?,
 ) {
-    val isPending = tool.approvalState is ToolApprovalState.Pending
+    val isPending = tool.isPending
     val isAnswered = tool.approvalState is ToolApprovalState.Answered
     val arguments = tool.inputAsJson()
 
@@ -312,9 +295,6 @@ private fun ChainOfThoughtScope.AskUserToolStep(
     val answers = remember { mutableStateMapOf<String, String>() }
     // Track selected options for multi questions
     val multiAnswers = remember { mutableStateMapOf<String, Set<String>>() }
-    // v3.19.0: 默认存在的开放输入框 (用户定版) — 不依赖问题列表, 恒显示;
-    // 内容并入答案顶层 followup 字段, 不影响模型对 answers 的正常解析
-    var followUp by remember { mutableStateOf("") }
 
     val firstQuestion = questions.firstOrNull()?.question ?: "..."
 
@@ -362,8 +342,6 @@ private fun ChainOfThoughtScope.AskUserToolStep(
                         )
 
                         if (isPending && onToolAnswer != null) {
-                            // 4.1.0 (2.5.1 移植): 所有选项题统一 chips + 自由文本 —
-                            // single 可改用自定义文本, multi 的自定义文本可与已选项组合
                             if (q.options.isNotEmpty()) {
                                 FlowRow(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -399,7 +377,6 @@ private fun ChainOfThoughtScope.AskUserToolStep(
                                 }
                             }
 
-                            // 每题自由文本输入 (所有 selectionType 均可用)
                             OutlinedTextField(
                                 value = answers[q.id] ?: "",
                                 onValueChange = { answers[q.id] = it },
@@ -427,36 +404,6 @@ private fun ChainOfThoughtScope.AskUserToolStep(
                     }
                 }
 
-                // v3.19.0: answered 态显示已提交的补充说明
-                if (isAnswered) {
-                    val answeredState = tool.approvalState as ToolApprovalState.Answered
-                    val followupText = runCatching {
-                        JsonInstant.parseToJsonElement(answeredState.answer)
-                            .jsonObject["followup"]?.jsonPrimitive?.contentOrNull
-                    }.getOrNull()
-                    if (!followupText.isNullOrBlank()) {
-                        Text(
-                            text = "补充: $followupText",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
-
-                // v3.19.0: 默认开放输入框 — 模型未问到的内容用户也可主动补充
-                if (isPending && onToolAnswer != null) {
-                    OutlinedTextField(
-                        value = followUp,
-                        onValueChange = { followUp = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        textStyle = MaterialTheme.typography.bodySmall,
-                        label = { Text("补充说明 (可选)") },
-                        singleLine = false,
-                        minLines = 1,
-                        maxLines = 4,
-                    )
-                }
-
                 // Submit button
                 if (isPending && onToolAnswer != null) {
                     FilledTonalButton(
@@ -474,10 +421,6 @@ private fun ChainOfThoughtScope.AskUserToolStep(
                                         }
                                     }
                                 })
-                                // v3.19.0: 开放输入框内容并入顶层 followup (可选字段)
-                                if (followUp.isNotBlank()) {
-                                    put("followup", JsonPrimitive(followUp.trim()))
-                                }
                             }
                             onToolAnswer(tool.toolCallId, answerPayload.toString())
                         },
@@ -545,34 +488,5 @@ private fun ToolDenyReasonDialog(
                 Text(stringResource(android.R.string.cancel))
             }
         }
-    )
-}
-
-@Composable
-fun ChainOfThoughtScope.ChatMessageServerToolStep(tool: UIMessagePart.ServerTool) {
-    val loading = !tool.isFinished
-    ChainOfThoughtStep(
-        icon = {
-            if (loading) {
-                DotLoading(size = 10.dp)
-            } else {
-                Icon(
-                    imageVector = HugeIcons.Tools,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = LocalContentColor.current.copy(alpha = 0.7f),
-                )
-            }
-        },
-        label = {
-            Text(
-                text = stringResource(R.string.chat_message_tool_call_generic, tool.toolName),
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.shimmer(isLoading = loading),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
     )
 }

@@ -1,11 +1,5 @@
-/* 【域 F·主题渲染】 — 消息/文档渲染 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.message.tools
 
-
-/* ───【原版对齐】ToolUI.kt | 差异 ±4 行
- * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
- * ───────────────────────────────────────────────────────────────*/
-import me.rerere.rikkahub.data.model.Assistant
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -33,13 +27,13 @@ import me.rerere.common.http.jsonObjectOrNull
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Tools
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.richtext.HighlightCodeBlock
-import me.rerere.rikkahub.ui.components.richtext.StableSizeImage
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
-import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.JsonInstantPretty
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
+import me.rerere.ui.components.FormItem
 
 /**
  * 工具调用的渲染上下文, 预解析好工具入参与输出, 避免各渲染器重复解析
@@ -89,28 +83,9 @@ interface ToolUIRenderer {
     }
 }
 
-/** 未注册工具使用的默认渲染器 — title 按 Snake name 动词语义化 (Cherry 风格折叠标题) */
+/** 未注册工具使用的默认渲染器, 全部行为来自 [ToolUIRenderer] 的默认实现 */
 private object DefaultToolUIRenderer : ToolUIRenderer {
     override val toolName: String get() = ""
-
-    private val verbMap = linkedMapOf(
-        "write" to "写入", "read" to "读取", "edit" to "编辑", "create" to "创建",
-        "delete" to "删除", "execute" to "执行", "shell" to "执行命令", "search" to "搜索",
-        "scrape" to "抓取", "fetch" to "抓取", "get" to "获取", "list" to "列出",
-        "show" to "展示", "speak" to "朗读", "send" to "发送", "manage" to "管理",
-        "invoke" to "调用", "install" to "安装", "move" to "移动", "use" to "使用",
-    )
-
-    @Composable
-    override fun title(context: ToolUIContext): String {
-        val name = context.tool.toolName
-        val verb = name.split("_", "-", ".").firstOrNull { verbMap.containsKey(it.lowercase()) }
-        return if (verb != null) {
-            "${verbMap[verb.lowercase()]} ($name)"
-        } else {
-            stringResource(R.string.chat_message_tool_call_generic, name)
-        }
-    }
 }
 
 /**
@@ -118,8 +93,6 @@ private object DefaultToolUIRenderer : ToolUIRenderer {
  */
 object ToolUIRegistry {
     private val renderers: Map<String, ToolUIRenderer> = listOf(
-        TaskToolUI,
-        MemoryToolUI,
         SearchWebToolUI,
         ScrapeWebToolUI,
         GetTimeInfoToolUI,
@@ -135,14 +108,11 @@ object ToolUIRegistry {
         EditFileToolUI,
         ReadFileToolUI,
         WriteFileToolUI,
-        ShowFileToolUI,
         ShellToolUI,
-        JobToolUI,
     ).plus(MemoryFileToolUI.all).associateBy { it.toolName }
 
     /** 查找工具对应的渲染器, 未注册时返回默认渲染器 */
-    fun resolve(toolName: String): ToolUIRenderer =
-        renderers[toolName] ?: if (toolName.startsWith("skill_")) UseSkillToolUI else DefaultToolUIRenderer
+    fun resolve(toolName: String): ToolUIRenderer = renderers[toolName] ?: DefaultToolUIRenderer
 }
 
 internal fun JsonElement?.getStringContent(key: String): String? =
@@ -207,9 +177,10 @@ fun DefaultToolPreview(
                                 style = TextStyle(fontSize = 10.sp, lineHeight = 12.sp)
                             )
 
-                            is UIMessagePart.Image -> StableSizeImage(
-                                src = part.url,
+                            is UIMessagePart.Image -> ZoomableAsyncImage(
+                                model = part.url,
                                 contentDescription = null,
+                                modifier = Modifier.fillMaxWidth(),
                             )
 
                             else -> {}
