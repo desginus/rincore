@@ -49,6 +49,7 @@ jobs:
           tag_name: v3.0.0-blurtest
           name: "RikkaHub 3.0.0 原版 · 模糊对照实验包"
           body: "上游 3.0.0 原汁原味（仅 enableBlurEffect 默认 true 一行）。与 RinCore 5.0.13 同设备对照：看输入栏模糊是否有同样的网格色斑。"
-          files: app/build/outputs/apk/debug/app-debug.apk
+          files: app/build/outputs/apk/debug/*.apk
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
