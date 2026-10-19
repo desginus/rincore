@@ -295,6 +295,14 @@ class ChatVM(
     }
 
     // 设置聊天模型
+    /** 上游 3.0.0 页面用单参形态（会话级模型切换）。 */
+    fun setChatModel(model: Model) {
+        viewModelScope.launch {
+            updateConversation(conversation.value.copy(chatModelId = model.id))
+            saveConversationAsync()
+        }
+    }
+
     fun setChatModel(assistant: Assistant, model: Model) {
         viewModelScope.launch {
             settingsStore.update { settings ->
