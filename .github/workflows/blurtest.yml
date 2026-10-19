@@ -3,6 +3,8 @@ on:
   push:
     branches: [upstream-blur-test]
     paths-ignore: ['**.md']
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
