@@ -5,6 +5,12 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 
 # RinCore Bug 记录（全部历史）
 
+## B202 模糊色斑"移植代码"终审归零 + 上游原味对照实验（2026-10-19）
+- 用户追问"到底哪个移植代码导致"；穷尽对账=模糊渲染链执行性差异归零；5.0.13（Quality+零噪点）真机无改进=haze 缩放链排除。
+- 像素判别新证据：9149 的 10px 网格分布于全图（含模糊区外）；GLASS 周期 4px 与 BLUR 10px 不同——两效果类型不同周期=内容/参数相关信号，指向 GPU 驱动大半径模糊内部分块而非 haze 固有档。
+- 决定性对照实验部署：upstream-blur-test（上游 3.0.0 原汁原味+仅开关一行，debug 无 R8 同条件）→ v3.0.0-blurtest。判读规则：上游网格=非移植代码（驱动×大半径），我方后续走"小半径+串行补强"路线需用户拍板；上游干净=我树有真差异，继续二分。
+- 教训 #135：CI 实验包四连坑（setup-android v3 license 崩/统一用 v4+licenses yes||true；google-services 按变体包名匹配 client（.debug 后缀需第二 client）；上游含 web-ui 需 node+pnpm；softprops 发 Release 需 permissions: contents: write）；上游历史对象远端缺失 → push 被拒（"did not receive expected object"）→ **嫁接法**：commit-tree 上游树+我方 parent 单 commit 推送。
+
 ## B201 模糊/玻璃尖锐色斑网格（v5.0.13 修复）★4.8.170 同源伪影的 5.x 定案
 - **现象（用户截图 9149/6770）**：输入框模糊态=满屏尖锐色斑网格；玻璃态=同族网纹较淡。理论状态=完全晕染。
 - **像素验尸**：列向 10px 周期、自相关 0.84——与 v4.8.170 验尸分毫不差（同源伪影）。
