@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.widget.Toast
@@ -60,6 +61,7 @@ import me.rerere.hugeicons.stroke.Puzzle
 import me.rerere.hugeicons.stroke.Sorting01
 import me.rerere.hugeicons.stroke.Tools
 import me.rerere.hugeicons.stroke.Wrench01
+import me.rerere.hugeicons.stroke.BookOpen01
 import me.rerere.hugeicons.stroke.Brain02
 import me.rerere.hugeicons.stroke.Clapping01
 import me.rerere.hugeicons.stroke.Database02
@@ -69,6 +71,7 @@ import me.rerere.hugeicons.stroke.ImageUpload
 import me.rerere.hugeicons.stroke.InLove
 import me.rerere.hugeicons.stroke.LookTop
 import me.rerere.hugeicons.stroke.McpServer
+import me.rerere.hugeicons.stroke.Message02
 import me.rerere.hugeicons.stroke.Megaphone01
 import me.rerere.hugeicons.stroke.Moon02
 import me.rerere.hugeicons.stroke.Package
@@ -82,6 +85,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.isNotConfigured
 import me.rerere.rikkahub.data.files.FilesManager
+import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.components.ui.CardGroupIcon
@@ -152,6 +156,86 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                 }
             }
 
+            item("assistantManagement") {
+                val containerColor = MaterialTheme.colorScheme.secondaryContainer
+                val contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                val currentAssistant = settings.getCurrentAssistant()
+                val memoryRepository: MemoryRepository = koinInject()
+                val memoryStats by produceState(initialValue = null as Pair<Int, Int>?, currentAssistant.id) {
+                    value = runCatching {
+                        memoryRepository.getMemoriesOfAssistant(currentAssistant.id.toString()).size to
+                            memoryRepository.getFiles(currentAssistant.id.toString()).size
+                    }.getOrNull()
+                }
+                val enabledMcpCount = settings.mcpServers.count { it.commonOptions.enable }
+                val enabledSkillCount = currentAssistant.enabledSkills.size
+                CardGroup(
+                    title = { Text("助手（当前焦点）") },
+                ) {
+                    item(
+                        onClick = { navController.navigate(Screen.AssistantDetail(currentAssistant.id.toString())) },
+                        leadingContent = { CardGroupIcon(HugeIcons.LookTop, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = {
+                            Text(
+                                buildString {
+                                    append("记忆 ")
+                                    append(memoryStats?.let { "${it.first} 条 / ${it.second} 文件" } ?: "…")
+                                    append(" · MCP ")
+                                    append(enabledMcpCount)
+                                    append(" · 技能 ")
+                                    append(enabledSkillCount)
+                                }
+                            )
+                        },
+                        headlineContent = { Text("当前助手 · ${currentAssistant.name}") },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.AssistantBasic(currentAssistant.id.toString())) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Settings03, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text("模型 / 思考级别 / 头像等基础项") },
+                        headlineContent = { Text("基础设定") },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.AssistantPrompt(currentAssistant.id.toString())) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Message02, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text("系统提示词 / 模式注入 / 预设消息") },
+                        headlineContent = { Text("提示词") },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.AssistantMemory(currentAssistant.id.toString())) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Brain02, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = {
+                            Text(memoryStats?.let { "记忆条目 ${it.first} 条 · 记忆文件 ${it.second} 个" } ?: "记忆条目加载中…")
+                        },
+                        headlineContent = { Text("记忆内容") },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingMcp) },
+                        leadingContent = { CardGroupIcon(HugeIcons.McpServer, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text("已启用 $enabledMcpCount 个 / 共 ${settings.mcpServers.size} 个") },
+                        headlineContent = { Text("MCP 状态") },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.Skills) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Puzzle, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text("已启用 $enabledSkillCount 个技能") },
+                        headlineContent = { Text("技能状态") },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.AssistantLocalTool(currentAssistant.id.toString())) },
+                        leadingContent = { CardGroupIcon(HugeIcons.BookOpen01, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text("内置工具开关 / 本地能力") },
+                        headlineContent = { Text("本地设置") },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.Assistant) },
+                        leadingContent = { CardGroupIcon(HugeIcons.LookTop, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_assistant_desc)) },
+                        headlineContent = { Text("助手列表") },
+                    )
+                }
+            }
+
             item("generalSettings") {
                 var colorMode by rememberColorMode()
                 val containerColor = MaterialTheme.colorScheme.primaryContainer
@@ -197,12 +281,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         headlineContent = { Text(stringResource(R.string.setting_page_preferences)) },
                     )
                     item(
-                        onClick = { navController.navigate(Screen.Assistant) },
-                        leadingContent = { CardGroupIcon(HugeIcons.LookTop, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_assistant_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_assistant)) },
-                    )
-                    item(
                         onClick = { navController.navigate(Screen.Extensions) },
                         leadingContent = { CardGroupIcon(HugeIcons.Package, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(stringResource(R.string.setting_page_extensions_desc)) },
@@ -211,11 +289,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                 }
             }
 
+            // ── 模型 ─────────────────────────────────────────
             item("modelServices") {
                 val containerColor = MaterialTheme.colorScheme.tertiaryContainer
                 val contentColor = MaterialTheme.colorScheme.onTertiaryContainer
                 CardGroup(
-                    title = { Text(stringResource(R.string.setting_page_model_and_services)) },
+                    title = { Text("模型") },
                 ) {
                     item(
                         onClick = { navController.navigate(Screen.SettingModels) },
@@ -229,37 +308,22 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = { Text(stringResource(R.string.setting_page_providers_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_providers)) },
                     )
-                    item(
-                        onClick = { navController.navigate(Screen.SettingSearch) },
-                        leadingContent = { CardGroupIcon(HugeIcons.GlobalSearch, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_search_service_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_search_service)) },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.SettingSpeech) },
-                        leadingContent = { CardGroupIcon(HugeIcons.Megaphone01, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_tts_service_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_tts_service)) },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.SettingMedia) },
-                        leadingContent = { CardGroupIcon(HugeIcons.Image02, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_media_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_media)) },
-                    )
+                }
+            }
+
+            // ── 能力模块 ─────────────────────────────────────
+            item("capabilityModules") {
+                val containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                val contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                CardGroup(
+                    title = { Text("能力模块") },
+                ) {
                     item(
                         onClick = { navController.navigate(Screen.SettingMcp) },
                         leadingContent = { CardGroupIcon(HugeIcons.McpServer, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(stringResource(R.string.setting_page_mcp_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_mcp)) },
                     )
-                    item(
-                        onClick = { navController.navigate(Screen.SettingWeb) },
-                        leadingContent = { CardGroupIcon(HugeIcons.ServerStack01, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_web_server_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_web_server)) },
-                    )
-                    // v5.0.14 回贴: Agent Skills / 插件（我方能力模块）
                     item(
                         onClick = { navController.navigate(Screen.Skills) },
                         leadingContent = { CardGroupIcon(HugeIcons.Puzzle, containerColor = containerColor, contentColor = contentColor) },
@@ -286,6 +350,41 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     )
                 }
             }
+
+            // ── 服务（搜索 / 语音 / 媒体 / Web） ────────────────
+            item("servicesSettings") {
+                val containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                val contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                CardGroup(
+                    title = { Text("服务") },
+                ) {
+                    item(
+                        onClick = { navController.navigate(Screen.SettingSearch) },
+                        leadingContent = { CardGroupIcon(HugeIcons.GlobalSearch, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_search_service_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_search_service)) },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingSpeech) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Megaphone01, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_tts_service_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_tts_service)) },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingMedia) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Image02, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_media_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_media)) },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingWeb) },
+                        leadingContent = { CardGroupIcon(HugeIcons.ServerStack01, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_web_server_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_web_server)) },
+                    )
+                }
+            }
+
 
             item("dataSettings") {
                 val storageState by produceState(-1 to 0L) {

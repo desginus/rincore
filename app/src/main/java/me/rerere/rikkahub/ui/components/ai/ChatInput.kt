@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.components.ai
 
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.window.Popup
+import me.rerere.hugeicons.stroke.Package
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -64,6 +68,7 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -86,6 +91,9 @@ import me.rerere.ai.provider.ModelType
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.asr.ASRStatus
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.Camera01
+import me.rerere.hugeicons.stroke.Image02
+import me.rerere.hugeicons.stroke.File02
 import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.ArrowUp02
 import me.rerere.hugeicons.stroke.Cancel01
@@ -145,6 +153,10 @@ fun ChatInput(
     onStartVoiceMode: (() -> Unit)? = null,
     voiceState: VoiceSessionState = VoiceSessionState(),
     onStopVoiceMode: () -> Unit = {},
+    // v5.0.17 用户定案：输入栏 + 号 AI 交互窗（拍照 / 图片 / 上传文件）
+    onTakePic: () -> Unit = {},
+    onPickImage: () -> Unit = {},
+    onPickFile: () -> Unit = {},
 ) {
     val toaster = LocalToaster.current
     val containerColor = MaterialTheme.colorScheme.surfaceContainerLow
@@ -297,15 +309,51 @@ fun ChatInput(
                                 modifier = Modifier,
                             )
 
+                            // v5.0.17：思考程度回到左侧（模型旁），右侧留给 + / 工具箱
+                            if (chatModel?.abilities?.contains(ModelAbility.REASONING) == true) {
+                                ReasoningButton(
+                                    reasoningLevel = assistant.reasoningLevel,
+                                    onUpdateReasoningLevel = {
+                                        onUpdateAssistant(assistant.copy(reasoningLevel = it))
+                                    },
+                                    onlyIcon = true,
+                                )
+                            }
+
                         }
 
+                        // v5.0.17 用户定案：+ 号 = AI 交互窗（CS 风格逐步放出）；纸箱 = 工具箱
+                        var showPlusMenu by remember { mutableStateOf(false) }
+                        ActionIconButton(
+                            onClick = { showPlusMenu = true }
+                        ) {
+                            Icon(
+                                imageVector = HugeIcons.Add01,
+                                contentDescription = "AI 交互"
+                            )
+                        }
                         ActionIconButton(
                             onClick = onMoreClick
                         ) {
                             Icon(
-                                imageVector = HugeIcons.Add01,
+                                imageVector = HugeIcons.Package,
                                 contentDescription = stringResource(R.string.more_options)
                             )
+                        }
+                        if (showPlusMenu) {
+                            Popup(
+                                alignment = Alignment.BottomEnd,
+                                offset = IntOffset(0, -8),
+                                onDismissRequest = { showPlusMenu = false },
+                                properties = PopupProperties(focusable = true),
+                            ) {
+                                PlusActionMenu(
+                                    onTakePic = onTakePic,
+                                    onPickImage = onPickImage,
+                                    onPickFile = onPickFile,
+                                    onDismiss = { showPlusMenu = false },
+                                )
+                            }
                         }
 
                         if (!voiceState.isActive && (asrState.isAvailable || asrState.isRecording)) {
@@ -338,16 +386,6 @@ fun ChatInput(
                         }
 
 
-                        // v5.0.16 用户定案：思考程度 UI 与发送/停止 UI 互换位置（防误触）
-                        if (chatModel?.abilities?.contains(ModelAbility.REASONING) == true) {
-                            ReasoningButton(
-                                reasoningLevel = assistant.reasoningLevel,
-                                onUpdateReasoningLevel = {
-                                    onUpdateAssistant(assistant.copy(reasoningLevel = it))
-                                },
-                                onlyIcon = true,
-                            )
-                        }
 
                         AnimatedVisibility(
                             visible = !asrState.isRecording,
@@ -372,6 +410,58 @@ fun ChatInput(
         state = modelListState,
         onSelect = onUpdateChatModel,
     )
+}
+
+@Composable
+private fun PlusActionMenu(
+    onTakePic: () -> Unit,
+    onPickImage: () -> Unit,
+    onPickFile: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Surface(
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 3.dp,
+        shadowElevation = 6.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(6.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            PlusMenuItem(HugeIcons.Camera01, "拍照", onTakePic, onDismiss)
+            PlusMenuItem(HugeIcons.Image02, "图片", onPickImage, onDismiss)
+            PlusMenuItem(HugeIcons.File02, "上传文件", onPickFile, onDismiss)
+        }
+    }
+}
+
+@Composable
+private fun PlusMenuItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .clip(MaterialTheme.shapes.large)
+            .clickable {
+                onDismiss()
+                onClick()
+            }
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(text = label, style = MaterialTheme.typography.bodyMedium)
+    }
 }
 
 @Composable

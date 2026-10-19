@@ -408,6 +408,10 @@ private fun ChatPageContent(
                     onMoreClick = {
                         showFilesSheet = true
                     },
+                    // v5.0.17 用户定案：输入栏 + 号 AI 交互窗（拍照 / 图片 / 上传文件）
+                    onTakePic = attachmentPickerActions.onTakePicture,
+                    onPickImage = attachmentPickerActions.onPickImage,
+                    onPickFile = attachmentPickerActions.onPickFile,
                 )
             },
             containerColor = Color.Transparent,

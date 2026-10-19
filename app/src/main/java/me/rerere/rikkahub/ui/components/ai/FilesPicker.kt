@@ -1,5 +1,12 @@
 package me.rerere.rikkahub.ui.components.ai
 
+import kotlinx.coroutines.launch
+import me.rerere.ui.sketch.SketchResult
+import me.rerere.ui.sketch.SketchDialog
+import me.rerere.rikkahub.ui.pages.chat.ConversationArtifactsSheet
+import me.rerere.rikkahub.subagent.SubAgentRegistry
+import me.rerere.rikkahub.data.files.FilesManager
+import me.rerere.rikkahub.data.ai.tools.ProducedFile
 import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
@@ -34,8 +41,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,6 +60,9 @@ import kotlinx.coroutines.Job
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.PencilEdit01
+import me.rerere.hugeicons.stroke.Activity01
+import me.rerere.hugeicons.stroke.LanguageCircle
 import me.rerere.hugeicons.stroke.ArrowLeft01
 import me.rerere.hugeicons.stroke.ArrowRight01
 import me.rerere.hugeicons.stroke.Camera01
@@ -58,6 +70,7 @@ import me.rerere.hugeicons.stroke.Codesandbox
 import me.rerere.hugeicons.stroke.ComputerTerminal01
 import me.rerere.hugeicons.stroke.Files02
 import me.rerere.hugeicons.stroke.Folder01
+import me.rerere.hugeicons.stroke.Gauge
 import me.rerere.hugeicons.stroke.Image02
 import me.rerere.hugeicons.stroke.MusicNote03
 import me.rerere.hugeicons.stroke.Package
@@ -184,10 +197,27 @@ internal fun FilesPicker(
 
                 // 分段列表：各项按显示条件依次占位，首尾项才有大圆角
                 val showWorkspace = workspaces.isNotEmpty()
-                val showMcp = settings.mcpServers.isNotEmpty()
                 // 限制了上下文消息数就是滚动上下文，旧消息会自动移出，不需要压缩
                 val showCompress = assistant.contextMessageLimit <= 0
-                val itemCount = 1 + listOf(showWorkspace, showWorkspace && showCwd, showMcp, showCompress).count { it }
+                // v5.0.17 用户定案：工具箱收纳对话功能入口（原「更多」菜单四项 + 本对话产出 + 草图），
+                // 移除 MCP / 技能（已归位设置页），空位放原版草图
+                val scope = rememberCoroutineScope()
+                val filesManager: FilesManager = koinInject()
+                val subAgentRegistry: SubAgentRegistry = koinInject()
+                var showSketch by remember { mutableStateOf(false) }
+                var showSubAgentSheet by remember { mutableStateOf(false) }
+                var showArtifactsSheet by remember { mutableStateOf(false) }
+                val subAgentRuns by subAgentRegistry.runs.collectAsStateWithLifecycle()
+                val conversationRuns = remember(subAgentRuns, conversation.id) {
+                    subAgentRuns.values
+                        .filter { it.parentChatId == conversation.id.toString() }
+                        .sortedByDescending { it.startedAtMs }
+                }
+                val producedFiles = settings.conversationProducedFiles[conversation.id.toString()].orEmpty()
+                val itemCount = 1 + listOf(
+                    true, true, true, true, true, true,
+                    showWorkspace, showWorkspace && showCwd, showCompress
+                ).count { it }
                 var itemIndex = 0
                 Column(
                     verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
@@ -237,38 +267,68 @@ internal fun FilesPicker(
                         }
                     }
 
-                    if (showMcp) {
-                        McpPickerListItem(
-                            assistant = assistant,
-                            servers = settings.mcpServers,
-                            mcpManager = mcpManager,
-                            shapes = ListItemDefaults.segmentedShapes(index = itemIndex++, count = itemCount),
-                            onClick = { page = FilesPickerPage.MCP },
-                        )
-                    }
-
-                    // Extensions (Quick Messages + Prompt Injections + Skills)
-                    val activeCount =
-                        assistant.quickMessageIds.size +
-                            assistant.modeInjectionIds.size +
-                            assistant.lorebookIds.size +
-                            assistant.enabledSkills.size
+                    // ── v5.0.17：对话功能入口（原「更多」菜单收纳） ──────
                     SegmentedListItem(
-                        onClick = { page = FilesPickerPage.EXTENSIONS },
-                        shapes = ListItemDefaults.segmentedShapes(index = itemIndex++, count = itemCount),
-                        leadingContent = {
-                            Icon(
-                                imageVector = HugeIcons.Package,
-                                contentDescription = null,
-                            )
+                        onClick = {
+                            onDismiss()
+                            navController.navigate(Screen.Translator)
                         },
+                        shapes = ListItemDefaults.segmentedShapes(index = itemIndex++, count = itemCount),
+                        leadingContent = { Icon(HugeIcons.LanguageCircle, contentDescription = null) },
+                    ) {
+                        Text("翻译")
+                    }
+                    SegmentedListItem(
+                        onClick = {
+                            onDismiss()
+                            navController.navigate(Screen.MediaCreationSessions)
+                        },
+                        shapes = ListItemDefaults.segmentedShapes(index = itemIndex++, count = itemCount),
+                        leadingContent = { Icon(HugeIcons.Image02, contentDescription = null) },
+                    ) {
+                        Text("媒体生成")
+                    }
+                    SegmentedListItem(
+                        onClick = { showSubAgentSheet = true },
+                        shapes = ListItemDefaults.segmentedShapes(index = itemIndex++, count = itemCount),
+                        leadingContent = { Icon(HugeIcons.Gauge, contentDescription = null) },
                         trailingContent = {
-                            if (activeCount > 0) {
-                                CountBadge(count = activeCount)
+                            if (conversationRuns.isNotEmpty()) {
+                                CountBadge(count = conversationRuns.size)
                             }
                         },
                     ) {
-                        Text(stringResource(R.string.assistant_page_tab_extensions))
+                        Text("子代理情况")
+                    }
+                    SegmentedListItem(
+                        onClick = {
+                            onDismiss()
+                            navController.navigate(Screen.SettingCallTrace)
+                        },
+                        shapes = ListItemDefaults.segmentedShapes(index = itemIndex++, count = itemCount),
+                        leadingContent = { Icon(HugeIcons.Activity01, contentDescription = null) },
+                    ) {
+                        Text("观测（运行日志）")
+                    }
+                    SegmentedListItem(
+                        onClick = { showArtifactsSheet = true },
+                        shapes = ListItemDefaults.segmentedShapes(index = itemIndex++, count = itemCount),
+                        leadingContent = { Icon(HugeIcons.Folder01, contentDescription = null) },
+                        trailingContent = {
+                            if (producedFiles.isNotEmpty()) {
+                                CountBadge(count = producedFiles.size)
+                            }
+                        },
+                    ) {
+                        Text("本对话产出")
+                    }
+                    // 原版草图（Sketch）入口 — 用户定案：MCP/技能让位后的空位放草图
+                    SegmentedListItem(
+                        onClick = { showSketch = true },
+                        shapes = ListItemDefaults.segmentedShapes(index = itemIndex++, count = itemCount),
+                        leadingContent = { Icon(HugeIcons.PencilEdit01, contentDescription = null) },
+                    ) {
+                        Text("草图")
                     }
 
                     // Compress History Button
@@ -292,6 +352,13 @@ internal fun FilesPicker(
                                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                                 ) {
                                     Column(horizontalAlignment = Alignment.End) {
+                                        if (contextTokens != null && contextLength != null) {
+                                            Text(
+                                                text = "${contextTokens / 1000}K / ${contextLength / 1000}K",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
                                         if (conversation.messageNodes.isNotEmpty()) {
                                             Text(
                                                 text = stringResource(R.string.chat_page_message_count, conversation.messageNodes.size),
@@ -299,16 +366,11 @@ internal fun FilesPicker(
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
                                         }
-                                        if (contextTokens != null && contextLength != null) {
-                                            Text(
-                                                text = "${contextTokens.formatNumber()} / ${contextLength.formatNumber()}",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
                                     }
                                     if (contextTokens != null && contextLength != null) {
-                                        ContextUsageRing(fraction = contextTokens.toFloat() / contextLength)
+                                        // v5.0.17 用户定案：小圆环=当前窗口剩余额度占比
+                                        val used = (contextTokens.toFloat() / contextLength).coerceIn(0f, 1f)
+                                        ContextUsageRing(remaining = 1f - used)
                                     }
                                 }
                             },
@@ -319,6 +381,39 @@ internal fun FilesPicker(
                 }
             }
         }
+    }
+
+    if (showSketch) {
+        SketchDialog(
+            onDismiss = { showSketch = false },
+            onConfirm = { result: SketchResult ->
+                showSketch = false
+                scope.launch {
+                    filesManager.createChatFileBySketch(result)?.let { uri ->
+                        state.addImages(listOf(uri))
+                    }
+                }
+                onDismiss()
+            },
+        )
+    }
+
+    if (showSubAgentSheet) {
+        SubAgentDetailSheet(
+            runs = conversationRuns,
+            onCancel = { runId -> subAgentRegistry.requestCancel(runId) },
+            onDismiss = { showSubAgentSheet = false },
+        )
+    }
+
+    if (showArtifactsSheet) {
+        ConversationArtifactsSheet(
+            open = showArtifactsSheet,
+            files = producedFiles,
+            assistant = assistant,
+            folderCwd = conversation.workspaceCwd,
+            onOpenChange = { showArtifactsSheet = it },
+        )
     }
 
     if (showCwdSheet && boundWorkspace != null) {
@@ -548,14 +643,14 @@ internal fun CountBadge(count: Int) {
 
 // 上下文使用量进度环，接近上限时变色提醒压缩
 @Composable
-private fun ContextUsageRing(fraction: Float) {
+private fun ContextUsageRing(remaining: Float) {
     val color = when {
-        fraction >= 0.9f -> MaterialTheme.colorScheme.error
-        fraction >= 0.7f -> MaterialTheme.colorScheme.tertiary
+        remaining <= 0.1f -> MaterialTheme.colorScheme.error
+        remaining <= 0.3f -> MaterialTheme.colorScheme.tertiary
         else -> MaterialTheme.colorScheme.primary
     }
     CircularProgressIndicator(
-        progress = { fraction.coerceIn(0f, 1f) },
+        progress = { remaining.coerceIn(0f, 1f) },
         modifier = Modifier.size(24.dp),
         color = color,
         strokeWidth = 3.dp,
