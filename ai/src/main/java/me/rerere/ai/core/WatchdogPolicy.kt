@@ -103,7 +103,7 @@ class StreamWatchdog(
             hasData.get() && contentSeen -> Phase("stream", streamLimitMs,
                 "生成无有效数据超时 (${streamLimitMs / 1000}s): $TAIL_STREAM_BREAK")
             hasData.get() && reasoningSeen -> Phase("thinking", thinkingLimitMs,
-                "生成无有效数据超时 (${thinkingLimitMs / 1000}s): $TAIL_THINKING或上游卡死")
+                "生成无有效数据超时 (${thinkingLimitMs / 1000}s): ${TAIL_THINKING}或上游卡死")
             // 有数据但调用方未接思考标记 (旧调用面) — 保持正文流档, 行为不变
             hasData.get() -> Phase("stream", streamLimitMs,
                 "生成无有效数据超时 (${streamLimitMs / 1000}s): $TAIL_STREAM_BREAK")
