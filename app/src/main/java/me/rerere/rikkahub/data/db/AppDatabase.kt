@@ -142,6 +142,27 @@ val MIGRATION_31_32 = object : androidx.room.migration.Migration(31, 32) {
     }
 }
 
+/**
+ * 4.8.190-hf: 5.x(DB v33) → 4.8.x(DB v32) 降级迁移（救援版）。
+ * 背景: 用户设备被 5.x 升级到 v33 后再无法回装 4.8.189（无降级路径 → 打开即崩
+ * "A migration from 33 to 32 was required but not found"）。本迁移把 v33 相对
+ * v32 的全部新增整体移除——数据本就为空（5.x 从未成功运行），零损失：
+ *  · conversationentity.config 列（v33 新增：会话固定配置快照）
+ *  · 5.x 新增六表（记忆 2.0 / 媒体创作 / 翻译历史）
+ * 事后若再升级 5.x：32→33 迁移会原样重建上述内容（KE 表 IF NOT EXISTS），往返安全。
+ */
+val MIGRATION_33_32 = object : androidx.room.migration.Migration(33, 32) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `conversationentity` DROP COLUMN `config`")
+        db.execSQL("DROP TABLE IF EXISTS `memory_file`")
+        db.execSQL("DROP TABLE IF EXISTS `memory_consolidation`")
+        db.execSQL("DROP TABLE IF EXISTS `media_creation_session`")
+        db.execSQL("DROP TABLE IF EXISTS `media_creation_node`")
+        db.execSQL("DROP TABLE IF EXISTS `media_creation_record`")
+        db.execSQL("DROP TABLE IF EXISTS `translation_history`")
+    }
+}
+
 /** 4.1.0: Shell 兼容模式字段 (25+ schema json 缺失, 手写迁移 — 同 28_29 先例) */
 val MIGRATION_29_30 = object : androidx.room.migration.Migration(29, 30) {
     override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
