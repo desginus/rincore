@@ -33,6 +33,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
@@ -65,8 +67,6 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
-import me.rerere.rikkahub.ui.components.motion.CherryDuration
-import me.rerere.rikkahub.ui.components.motion.CherryEasing
 import coil3.annotation.ExperimentalCoilApi
 import coil3.ImageLoader
 import coil3.compose.setSingletonImageLoaderFactory
@@ -540,47 +540,24 @@ class RouteActivity : ComponentActivity() {
                         modifier = Modifier.fillMaxSize(),
                         onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } },
                         transitionSpec = {
-                            // v4.8.156 (用户: "切换动画柔和而不是生硬"): 转场柔和化 — 统一 CS
-                            // 令牌 (settle 曲线 cubic-bezier(0.22,1,0.36,1) · 250ms); 位移大幅
-                            // 削减 (整屏滑入+0.7 缩放+半屏滑出 → 1/8 滑入 + 交叉淡入淡出)。
-                            val softF = tween<Float>(CherryDuration.BASE, easing = CherryEasing.Settle)
-                            val softI = tween<IntOffset>(CherryDuration.BASE, easing = CherryEasing.Settle)
-                            if (backStack.size == 1) fadeIn(softF) togetherWith fadeOut(softF)
+                            if (backStack.size == 1) fadeIn() togetherWith fadeOut()
                             else {
-                                (slideInHorizontally(softI) { it / 8 } + fadeIn(softF)) togetherWith
-                                    (slideOutHorizontally(softI) { -it / 16 } + fadeOut(softF))
+                                slideInHorizontally { it } togetherWith
+                                    slideOutHorizontally { -it / 2 } + scaleOut(targetScale = 0.7f) + fadeOut()
                             }
                         },
                         popTransitionSpec = {
-                            val softF = tween<Float>(CherryDuration.BASE, easing = CherryEasing.Settle)
-                            val softI = tween<IntOffset>(CherryDuration.BASE, easing = CherryEasing.Settle)
-                            (slideInHorizontally(softI) { -it / 16 } + fadeIn(softF)) togetherWith
-                                (slideOutHorizontally(softI) { it / 8 } + fadeOut(softF))
+                            slideInHorizontally { -it / 2 } + scaleIn(initialScale = 0.7f) + fadeIn() togetherWith
+                                slideOutHorizontally { it }
                         },
                         predictivePopTransitionSpec = {
-                            val softF = tween<Float>(CherryDuration.BASE, easing = CherryEasing.Settle)
-                            val softI = tween<IntOffset>(CherryDuration.BASE, easing = CherryEasing.Settle)
-                            (slideInHorizontally(softI) { -it / 16 } + fadeIn(softF)) togetherWith
-                                (slideOutHorizontally(softI) { it / 8 } + fadeOut(softF))
+                            slideInHorizontally { -it / 2 } + scaleIn(initialScale = 0.7f) + fadeIn() togetherWith
+                                slideOutHorizontally { it }
                         },
                         entryProvider = entryProvider {
                             entry<Screen.Chat>(
-                                metadata = NavDisplay.transitionSpec {
-                                    // v4.8.157 (用户: "不同对话的切换...做一个淡入淡出的过渡...系统根本
-                                    // 来不及反应, 有的时候它会闪一下卡一下"): 对话切换 = **fade-through**
-                                    // — 抽屉切对话走 clearAndNavigate(清栈直切): 旧内容瞬间消失 + 新页面
-                                    // 重组合全部暴露 → 闪/卡。改为: 旧内容 140ms 快速淡出 → 背景停顿窗
-                                    // (新页面在此完成重组合, 卡顿被盖住) → 新内容延迟 200ms 起 260ms 柔和
-                                    // 淡入 — 用户只看到一次干净的"淡出 → 淡入"。
-                                    fadeIn(
-                                        tween<Float>(260, delayMillis = 200, easing = CherryEasing.Settle)
-                                    ) togetherWith fadeOut(
-                                        tween<Float>(140, easing = CherryEasing.Settle)
-                                    )
-                                } + NavDisplay.popTransitionSpec {
-                                    fadeIn(tween<Float>(260, delayMillis = 200, easing = CherryEasing.Settle)) togetherWith
-                                        fadeOut(tween<Float>(140, easing = CherryEasing.Settle))
-                                }
+                                metadata = NavDisplay.transitionSpec { fadeIn() togetherWith fadeOut() }
+                                    + NavDisplay.popTransitionSpec { fadeIn() togetherWith fadeOut() }
                             ) { key ->
                                 ChatPage(
                                     id = Uuid.parse(key.id),

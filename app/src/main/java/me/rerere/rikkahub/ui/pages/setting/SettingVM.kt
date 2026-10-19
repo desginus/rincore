@@ -30,6 +30,9 @@ class SettingVM(
                 ?: Settings(init = true, providers = emptyList()),
         )
 
+    val launchCount: StateFlow<Int> = settingsStore.launchCountFlow
+        .stateIn(viewModelScope, SharingStarted.Lazily, 0)
+
     fun updateSettings(settings: Settings) {
         viewModelScope.launch {
             settingsStore.update(settings)
