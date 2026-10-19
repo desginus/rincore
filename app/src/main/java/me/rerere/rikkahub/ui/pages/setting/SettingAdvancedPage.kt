@@ -166,6 +166,22 @@ fun SettingAdvancedPage(
                     supportingContent = { Text("Operit 插件生态的兼容测试开发者选项") },
                     headlineContent = { Text("工具包") },
                 )
+                // v5.0.7 复活：插件界面渲染页（原 OperitEco「面板」Tab 载体；
+                // 该 Tab 于 v4.8.145 撤除后此页失去入口，页面/路由一直在位）
+                item(
+                    onClick = { navController.navigate(Screen.OperitUi) },
+                    leadingContent = { Icon(HugeIcons.Puzzle, null) },
+                    supportingContent = { Text("Operit 插件界面渲染页（原面板入口）") },
+                    headlineContent = { Text("插件界面渲染") },
+                )
+                // v5.0.7 复活：技能与生态（OpenClaw 技能 + 生态系统巡检；
+                // 其入口随 v4.8.146「技能合并进 SkillHub」消失，页面/路由一直在位）
+                item(
+                    onClick = { navController.navigate(Screen.SettingSkillsEcosystem) },
+                    leadingContent = { Icon(HugeIcons.GlobalSearch, null) },
+                    supportingContent = { Text("OpenClaw 技能 + 生态系统文件巡检（兼容性开发工具）") },
+                    headlineContent = { Text("技能与生态") },
+                )
             }
 
             Text(

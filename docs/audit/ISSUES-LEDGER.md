@@ -247,3 +247,12 @@
   3. **ShareHandler（休眠·我方设计使然）**：我方自 v4.8.112 起分享 intent 统一路由到 `Screen.Chat`（分享即开新对话并带入内容），`ShareHandlerPage` 自那时起休眠（v4.8.189 同样只有 entry）；上游 3.0.0 仍用 `Screen.ShareHandler` 路由（其 RouteActivity:234-240）。如未来要恢复上游式分享页，改 intent 路由两行即可（页面/VM/入口均在位、注册齐全）。
   4. **X**：RouteActivity 文件头注释示例（`entry<Screen.X> 注册`）=审计正则误报。
 - **教训 #129**：可达性审计必须包含两类语法（`navigate(Screen.X)` 与 `backStack.add(Screen.X)`）+ 排除注释示例；「entry 存在」≠「可达」——死交互（onClick 调用的 VM 方法对目标类型 no-op）是比死入口更隐蔽的一层。
+
+### G21 v5.0.7 · 休眠页复活 + 收件箱标注导航（死入口族收口）
+- **三处休眠页接线（全为历史休眠、页面/路由/注册一直在位）**：
+  1. `WorkspaceFileEditor`（v5.0.6 已修）：工作区文件点击 → 文本/SVG 进应用内编辑器（顺带修复「点文件没反应」死交互）。
+  2. `OperitUi`（本轮）：挂入「兼容测试（开发者）」组 →「插件界面渲染」（原 OperitEco「面板」Tab 载体，该 Tab v4.8.145 撤除后失去入口）。
+  3. `SettingSkillsEcosystem`（本轮）：挂入同组 →「技能与生态」（OpenClaw 技能 + 生态系统文件巡检；入口随 v4.8.146「技能合并进 SkillHub」消失）。
+- **收件箱使用标注导航（P8 延伸）**：`uploadUsageLabels` 返回 `UsageLabel(text, conversationId?)`；「消息附件」标注携带首个引用对话 ID → 点击直接跳转该对话（其余标注纯展示）。RouteActivity 零改动（页内 `LocalNavController` 直取）。
+- **复发审计**：死入口零残留（仅剩 ShareHandler = 设计性休眠，v4.8.112 起分享路由到 Chat；恢复路径已注记）+ X=注释误报。
+- **发布**：v5.0.7（oracle → main FF → Release）。

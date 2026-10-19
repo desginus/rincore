@@ -10,6 +10,8 @@ package me.rerere.rikkahub.ui.pages.setting
  * v4.8.189 (L-A3): 码解析经 UploadRef 单一解析器 (撤本地手搓前缀)。
  * ───────────────────────────────────────────────────────────────*/
 
+import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.ui.components.ui.RikkaConfirmDialog
 import me.rerere.rikkahub.ui.components.ui.ItemActionMenu
 import me.rerere.rikkahub.ui.components.ui.ItemAction
@@ -75,6 +77,7 @@ fun SettingUploadInboxPage(onBack: () -> Unit) {
     val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val navController = LocalNavController.current
 
     // v5.0.4 (P8): 收件箱动作 — 分享 / 删除 / 批量清理未引用
     var pendingDelete by remember { mutableStateOf<ManagedFileEntity?>(null) }
@@ -201,15 +204,33 @@ fun SettingUploadInboxPage(onBack: () -> Unit) {
                                     color = MaterialTheme.colorScheme.primary,
                                 )
                                 labels.forEach { label ->
-                                    Surface(
-                                        shape = MaterialTheme.shapes.small,
-                                        color = MaterialTheme.colorScheme.primaryContainer,
-                                    ) {
-                                        Text(
-                                            label,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                        )
+                                    // v5.0.7: 消息附件标注可点 → 跳转该对话（其余标注为纯展示）
+                                    val openChat: (() -> Unit)? = label.conversationId?.let { id ->
+                                        { navController.navigate(Screen.Chat(id)) }
+                                    }
+                                    if (openChat != null) {
+                                        Surface(
+                                            shape = MaterialTheme.shapes.small,
+                                            color = MaterialTheme.colorScheme.primaryContainer,
+                                            onClick = openChat,
+                                        ) {
+                                            Text(
+                                                label.text,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                            )
+                                        }
+                                    } else {
+                                        Surface(
+                                            shape = MaterialTheme.shapes.small,
+                                            color = MaterialTheme.colorScheme.primaryContainer,
+                                        ) {
+                                            Text(
+                                                label.text,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -266,9 +287,13 @@ private fun uploadCodeOf(f: ManagedFileEntity): String? {
     return ref.code.takeIf { it.length in 10..12 && it.all(Char::isDigit) }
 }
 
+/** v5.0.7: 使用位置标注条目 — conversationId 非空时 UI 可点击跳转该对话。 */
+private data class UsageLabel(val text: String, val conversationId: String? = null)
+
 /**
  * 使用位置标注 — v4.8.146 引用面: 用户头像 / 各助手头像 / 各助手对话背景；
- * v4.8.186 增补: 消息附件 (经上传码 uniqueness 定位引用对话, 标对话标题)。
+ * v4.8.186 增补: 消息附件 (经上传码 uniqueness 定位引用对话, 标对话标题)；
+ * v5.0.7: 消息附件条带首个对话 ID（点击跳转）。
  * 匹配 = 引用串(含 file:// 百分号编码形态) 包含该文件物理名或显示名 —
  * 上传文件物理名带唯一上传码, 误配面可忽略。
  */
@@ -276,7 +301,7 @@ private suspend fun uploadUsageLabels(
     f: ManagedFileEntity,
     settings: Settings,
     conversationRepo: ConversationRepository,
-): List<String> {
+): List<UsageLabel> {
     val physical = f.relativePath.substringAfterLast('/')
     val candidates = listOf(physical, f.displayName).filter { it.isNotBlank() }
     fun hit(raw: String?): Boolean {
@@ -285,14 +310,14 @@ private suspend fun uploadUsageLabels(
         return candidates.any { c -> raw.contains(c) || decoded.contains(c) }
     }
 
-    val out = mutableListOf<String>()
+    val out = mutableListOf<UsageLabel>()
     if (hit((settings.displaySetting.userAvatar as? Avatar.Image)?.url)) {
-        out += "用户头像"
+        out += UsageLabel("用户头像")
     }
     settings.assistants.forEach { a ->
         val name = a.name.ifBlank { "未命名" }
-        if (hit((a.avatar as? Avatar.Image)?.url)) out += "助手「$name」头像"
-        if (hit(a.background)) out += "助手「$name」对话背景"
+        if (hit((a.avatar as? Avatar.Image)?.url)) out += UsageLabel("助手「$name」头像")
+        if (hit(a.background)) out += UsageLabel("助手「$name」对话背景")
     }
 
     // v4.8.186: 消息附件引用 — 上传码唯一 (ASCII, 不随中文名的 percent 编码失配),
@@ -317,7 +342,7 @@ private suspend fun uploadUsageLabels(
             } else {
                 ""
             }
-            out += "消息附件 · $head$tail"
+            out += UsageLabel("消息附件 · $head$tail", conversationId = ids.first())
         }
     }
     return out
