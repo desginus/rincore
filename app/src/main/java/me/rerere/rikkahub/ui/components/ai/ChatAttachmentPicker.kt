@@ -1,28 +1,30 @@
-/* 【域 A·对话核心】 — AI 组件 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.components.ai
-
-/* ───【原版对齐】ChatAttachmentPicker.kt | 与 2.5.1 逐字节一致
- * 基线: 原版 2.5.1 (v4.1.6 拉齐工程标注补全)
- * ───────────────────────────────────────────────────────────────*/
 
 import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import com.dokar.sonner.ToastType
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.common.android.appTempFolder
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.files.FilesManager
+import me.rerere.ui.sketch.SketchDialog
+import me.rerere.ui.sketch.SketchResult
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionCamera
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
 import me.rerere.rikkahub.ui.components.ui.permission.rememberPermissionState
@@ -33,8 +35,6 @@ import me.rerere.rikkahub.utils.isAllowedFileType
 import org.koin.compose.koinInject
 import java.io.File
 import kotlin.uuid.Uuid
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 
 internal data class ChatAttachmentPickerActions(
     val onTakePicture: () -> Unit,
@@ -42,6 +42,7 @@ internal data class ChatAttachmentPickerActions(
     val onPickVideo: () -> Unit,
     val onPickAudio: () -> Unit,
     val onPickFile: () -> Unit,
+    val onSketch: () -> Unit,
 )
 
 @Composable
@@ -57,73 +58,57 @@ internal fun rememberChatAttachmentPickerActions(
     val cameraPermission = rememberPermissionState(PermissionCamera)
     PermissionManager(permissionState = cameraPermission)
 
-    // v4.8.112 (用户实证"拍完的照片小概率丢失"): 相机输出状态用 rememberSaveable —
-    // 相机全屏期间 Activity 被低内存回收/重建后, 回执依然到达但 remember 状态已丢,
-    // 旧实现拿 null → 照片被静默删除。路径 (String) 可安全跨进程恢复。
-    var cameraOutputPath by rememberSaveable { mutableStateOf<String?>(null) }
-    fun cameraFileNow(): File? = cameraOutputPath?.let { File(it) }
+    var cameraOutputUri by remember { mutableStateOf<Uri?>(null) }
+    var cameraOutputFile by remember { mutableStateOf<File?>(null) }
     val (_, launchCameraCrop) = useCropLauncher(
         onCroppedImageReady = { croppedUri ->
             inputState.addImages(filesManager.createChatFilesByContents(listOf(croppedUri)))
             onAttachmentAdded()
         },
         onCleanup = {
-            cameraFileNow()?.delete()
-            cameraOutputPath = null
+            cameraOutputFile?.delete()
+            cameraOutputFile = null
+            cameraOutputUri = null
         }
     )
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { captureSuccessful ->
-        if (captureSuccessful) {
-            // v4.8.112: 兜底恢复 — 状态仍缺失时找回最近拍摄的缓存照片 (15 分钟窗口)
-            val file = cameraFileNow()
-                ?: recoverRecentCameraCapture(context)?.also { cameraOutputPath = it.absolutePath }
-            if (file != null && file.exists()) {
-                if (setting.displaySetting.skipCropImage) {
-                    inputState.addImages(filesManager.createChatFilesByContents(listOf(file.toUri())))
-                    file.delete()
-                    cameraOutputPath = null
-                    onAttachmentAdded()
-                } else {
-                    launchCameraCrop(file.toUri())
-                }
+        if (captureSuccessful && cameraOutputUri != null) {
+            if (setting.displaySetting.skipCropImage) {
+                inputState.addImages(filesManager.createChatFilesByContents(listOf(cameraOutputUri!!)))
+                cameraOutputFile?.delete()
+                cameraOutputFile = null
+                cameraOutputUri = null
+                onAttachmentAdded()
             } else {
-                // v4.8.112: 失败可见 — 照片确实找不到时明确提示 (禁止静默丢弃)
-                toaster.show(
-                    resources.getString(R.string.chat_input_file_read_failed, "camera"),
-                    type = ToastType.Error,
-                )
-                cameraFileNow()?.delete()
-                cameraOutputPath = null
+                launchCameraCrop(cameraOutputUri!!)
             }
         } else {
-            cameraFileNow()?.delete()
-            cameraOutputPath = null
+            cameraOutputFile?.delete()
+            cameraOutputFile = null
+            cameraOutputUri = null
         }
     }
     val onTakePicture: () -> Unit = {
         if (cameraPermission.allRequiredPermissionsGranted) {
-            val file = context.cacheDir.resolve("camera_${Uuid.random()}.jpg")
-            val uri = FileProvider.getUriForFile(
-                context, "${context.packageName}.fileprovider", file
+            cameraOutputFile = context.cacheDir.resolve("camera_${Uuid.random()}.jpg")
+            cameraOutputUri = FileProvider.getUriForFile(
+                context, "${context.packageName}.fileprovider", cameraOutputFile!!
             )
-            cameraOutputPath = file.absolutePath
-            cameraLauncher.launch(uri)
+            cameraLauncher.launch(cameraOutputUri!!)
         } else {
             cameraPermission.requestPermissions()
         }
     }
 
-    // v4.8.112: 同上 — 裁剪流程被重建打断时, 清理与引用均以路径状态为准
-    var preCropTempPath by rememberSaveable { mutableStateOf<String?>(null) }
-    fun preCropFileNow(): File? = preCropTempPath?.let { File(it) }
+    var preCropTempFile by remember { mutableStateOf<File?>(null) }
     val (_, launchImageCrop) = useCropLauncher(
         onCroppedImageReady = { croppedUri ->
             inputState.addImages(filesManager.createChatFilesByContents(listOf(croppedUri)))
             onAttachmentAdded()
         },
         onCleanup = {
-            preCropFileNow()?.delete()
-            preCropTempPath = null
+            preCropTempFile?.delete()
+            preCropTempFile = null
         }
     )
     val imagePickerLauncher =
@@ -145,7 +130,7 @@ internal fun rememberChatAttachmentPickerActions(
                                 tempFile.outputStream().use { output -> input.copyTo(output) }
                             }
                         }
-                        preCropTempPath = tempFile.absolutePath
+                        preCropTempFile = tempFile
                         launchImageCrop(tempFile.toUri())
                     }.onFailure {
                         Log.e("ImagePickButton", "Failed to copy image to temp, falling back", it)
@@ -207,23 +192,36 @@ internal fun rememberChatAttachmentPickerActions(
             }
         }
 
+    val scope = rememberCoroutineScope()
+    var showSketch by remember { mutableStateOf(false) }
+    if (showSketch) {
+        SketchDialog(
+            onDismiss = { showSketch = false },
+            onConfirm = { result ->
+                showSketch = false
+                scope.launch {
+                    inputState.addImages(listOfNotNull(filesManager.createChatFileBySketch(result)))
+                    onAttachmentAdded()
+                }
+            },
+        )
+    }
+
     return ChatAttachmentPickerActions(
         onTakePicture = onTakePicture,
         onPickImage = { imagePickerLauncher.launch("image/*") },
         onPickVideo = { videoPickerLauncher.launch("video/*") },
         onPickAudio = { audioPickerLauncher.launch("audio/*") },
         onPickFile = { filePickerLauncher.launch(arrayOf("*/*")) },
+        onSketch = { showSketch = true },
     )
 }
 
-/**
- * v4.8.112: 相机回执兜底 — 状态丢失 (极端进程回收且保存态未覆盖) 时找回最近拍摄的
- * 缓存照片。仅当 TakePicture 回执为成功时调用; 15 分钟窗口 + 命名前缀双重限定,
- * 不误取旧文件 (正常路径的照片在消费后即被删除)。
- */
-private fun recoverRecentCameraCapture(context: android.content.Context): File? {
-    val cutoff = System.currentTimeMillis() - 15 * 60 * 1000L
-    return context.cacheDir.listFiles { f ->
-        f.isFile && f.name.startsWith("camera_") && f.name.endsWith(".jpg") && f.lastModified() >= cutoff
-    }?.maxByOrNull { it.lastModified() }
+/** 把画板的结果存成聊天附件。 */
+internal suspend fun FilesManager.createChatFileBySketch(result: SketchResult): Uri? = withContext(Dispatchers.IO) {
+    createChatFilesByByteArrays(
+        byteArrays = listOf(result.encode()),
+        displayName = "sketch.${result.extension}",
+        mimeType = result.mimeType,
+    ).firstOrNull()
 }

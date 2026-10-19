@@ -270,6 +270,11 @@ class ChatVM(
     }
 
     // 更新设置
+    /** 上游 3.0.0 页面用 lambda 形态（读-改-写原子）。 */
+    fun updateSettings(fn: (Settings) -> Settings): Job {
+        return updateSettings(fn(settingsStore.settingsFlow.value))
+    }
+
     fun updateSettings(newSettings: Settings): Job {
         return viewModelScope.launch {
             val oldSettings = settings.value
