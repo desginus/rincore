@@ -32,9 +32,10 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        ndk {
-            abiFilters += listOf("arm64-v8a")
-        }
+        // v5.0.10: 本块原设 ndk.abiFilters=arm64-v8a，与下方 splits.abi(include=arm64-v8a,
+        //   isUniversalApk=false) 冲突（AGP: "Conflicting configuration : 'arm64-v8a' in ndk
+        //   abiFilters cannot be present when splits abi filters are set"）→ 移除；
+        //   ABI 过滤统一由 splits 负责（只产 arm64-v8a、无 Universal）。
     }
 
     splits {
