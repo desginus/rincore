@@ -6,6 +6,7 @@ package me.rerere.rikkahub.data.db.dao
  * ───────────────────────────────────────────────────────────────*/
 
 
+import kotlin.uuid.Uuid
 import androidx.paging.PagingSource
 import androidx.room.Dao
 import androidx.room.Delete
