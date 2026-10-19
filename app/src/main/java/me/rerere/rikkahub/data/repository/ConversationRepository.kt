@@ -112,9 +112,10 @@ class ConversationRepository(
     suspend fun countUnfiledConversationsOfAssistant(assistantId: Uuid): Int =
         conversationDAO.countUnfiledConversationsOfAssistant(assistantId.toString())
 
-    // v5.0.16 做梦范围=项目包：包内对话 id（不含子代理会话）
+    // v5.0.16 做梦范围=项目包：包内对话 id（不含子代理会话；存储为 TEXT，解析回 Uuid）
     suspend fun getConversationIdsOfFolder(folderId: Uuid): List<Uuid> =
-        conversationDAO.getConversationIdsOfFolder(folderId.toString())
+        conversationDAO.getConversationIdStringsOfFolder(folderId.toString())
+            .mapNotNull { runCatching { Uuid.parse(it) }.getOrNull() }
 
     fun getConversationsOfFolderPaging(folderId: Uuid): Flow<PagingData<Conversation>> = Pager(
         config = PagingConfig(

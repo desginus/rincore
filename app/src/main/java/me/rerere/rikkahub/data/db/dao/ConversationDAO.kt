@@ -6,7 +6,6 @@ package me.rerere.rikkahub.data.db.dao
  * ───────────────────────────────────────────────────────────────*/
 
 
-import kotlin.uuid.Uuid
 import androidx.paging.PagingSource
 import androidx.room.Dao
 import androidx.room.Delete
@@ -41,9 +40,9 @@ interface ConversationDAO {
     @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, folder_id as folderId FROM conversationentity WHERE folder_id = :folderId AND title NOT LIKE '[Sub-agent]%' ORDER BY is_pinned DESC, update_at DESC")
     fun getConversationsOfFolderPaging(folderId: String): PagingSource<Int, LightConversationEntity>
 
-    // v5.0.16 做梦范围=项目包：取包内对话 id
+    // v5.0.16 做梦范围=项目包：取包内对话 id（id 列为 TEXT，交由 Repository 解析）
     @Query("SELECT id FROM conversationentity WHERE folder_id = :folderId AND title NOT LIKE '[Sub-agent]%'")
-    suspend fun getConversationIdsOfFolder(folderId: String): List<Uuid>
+    suspend fun getConversationIdStringsOfFolder(folderId: String): List<String>
 
     @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId AND title NOT LIKE '[Sub-agent]%' ORDER BY is_pinned DESC, update_at DESC LIMIT :limit")
     suspend fun getRecentConversationsOfAssistant(assistantId: String, limit: Int): List<ConversationEntity>
