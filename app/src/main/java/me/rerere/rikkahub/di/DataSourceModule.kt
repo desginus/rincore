@@ -5,7 +5,7 @@ package me.rerere.rikkahub.di
 /* ───【原版对齐】DataSourceModule | 差异 +97 行
  * 来源: 原版移植 + 自研 (连接配置根治)
  * 差异: HTTP/1.1 only (HTTP/2 禁用 PROTOCOL_ERROR 根治)、
- *       ConnectionPool(12, 60s)、readTimeout 3min (v2.9.8 参照)
+ *       ConnectionPool(12, 60s)、readTimeout 10min (v5.0.12 对齐上游 3.0.0; 旧 3min 是"长思考必被中断"元凶之一)
  * ───────────────────────────────────────────────────────────────*/
 import me.rerere.rikkahub.service.MediaCreationService
 import me.rerere.mediagen.provider.MediaGenerationManager
@@ -191,7 +191,7 @@ val dataSourceModule = module {
             // 唯一可靠方案是协议列表只留 HTTP_1_1
             .protocols(listOf(Protocol.HTTP_1_1))
             .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(3, TimeUnit.MINUTES)
+            .readTimeout(10, TimeUnit.MINUTES)
             .writeTimeout(120, TimeUnit.SECONDS) // 对齐 v2.9.8 — 大请求体写入宽容
             .pingInterval(30, TimeUnit.SECONDS) // 对齐 v2.9.8
             .connectionPool(
@@ -272,7 +272,7 @@ val dataSourceModule = module {
             .proxyAuthenticator(SettingsProxyAuthenticator(settingsStore))
             .protocols(listOf(Protocol.HTTP_1_1))
             .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(3, TimeUnit.MINUTES)
+            .readTimeout(10, TimeUnit.MINUTES)
             .writeTimeout(120, TimeUnit.SECONDS)
             .pingInterval(30, TimeUnit.SECONDS)
             .connectionPool(ConnectionPool(12, 180, TimeUnit.SECONDS))
@@ -335,7 +335,7 @@ val dataSourceModule = module {
         OkHttpClient.Builder()
             .protocols(listOf(Protocol.HTTP_1_1))
             .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(3, TimeUnit.MINUTES)
+            .readTimeout(10, TimeUnit.MINUTES)
             .writeTimeout(120, TimeUnit.SECONDS)
             .pingInterval(30, TimeUnit.SECONDS)
             .connectionPool(ConnectionPool(12, 300, TimeUnit.SECONDS))
@@ -353,7 +353,7 @@ val dataSourceModule = module {
         OkHttpClient.Builder()
             .protocols(listOf(Protocol.HTTP_1_1))
             .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(3, TimeUnit.MINUTES)
+            .readTimeout(10, TimeUnit.MINUTES)
             .writeTimeout(120, TimeUnit.SECONDS)
             .pingInterval(30, TimeUnit.SECONDS)
             .connectionPool(ConnectionPool(12, 300, TimeUnit.SECONDS))

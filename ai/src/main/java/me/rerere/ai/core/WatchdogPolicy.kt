@@ -12,10 +12,17 @@ import kotlinx.coroutines.launch
  * 4.0.0 重写工程 · 模块 2: 流式三阶段 watchdog (原 ChatCompletionsAPI 与
  * ClaudeProvider 各自内联 ~60 行逐字复制的同一套状态机 → 单一实现双族共用)。
  *
- * 三阶段状态机 (v3.11.13 定版, "多尝试, 少静默"):
- *   阶段1 header 建连/响应头前 25s — 网关冷启动/挂起快速断开 → 上层快速重试
- *   阶段2 first-event 已连接未出首事件 150s — 上游思考, 重试无意义, 耐心等
- *   阶段3 stream 流出中 150s (v4.8.125 统一; 原 90/120s) — 流间隙上限
+ * 阶段状态机 (v3.11.13 定版, "多尝试, 少静默"; v5.0.12 思考安全化改版):
+ *   阶段1 header 建连/响应头前 60s — 网关冷启动/挂起快速断开 → 上层快速重试
+ *   阶段2 first-event 已连接未出首事件 480s — 上游思考/排队, 重试无意义, 耐心等
+ *     (v5.0.12: 150s → 480s。用户实证: 思考链被网关缓冲时长思考在 150s 被判死 →
+ *      静默重试重放 → 再判死 = "对话建立时长思考必被中断" 的根因之一。480s <
+ *      readTimeout 600s, 保证判死走本路径而不是 SocketTimeout 误判发起阶段)
+ *   阶段3 thinking 思考已开始未见正文 480s — 思考链 delta 到过但中途静默
+ *     (v5.0.12 新增: reasoning delta 刷新过空闲标记后, 中途静默是模型在算,
+ *      不是断流; 正文一旦出现立即回到阶段4)
+ *   阶段4 stream 正文流出中 150s (v4.8.125 统一; 原 90/120s) — 流间隙上限
+ *     (正文间隙 >150s 是真断流, 走无缝续写/重试链, 本版不动)
  *
  * 行为等价不变量:
  * - 每 15s tick 检查一次
@@ -30,6 +37,10 @@ class StreamWatchdog(
     private val hasData: java.util.concurrent.atomic.AtomicBoolean,
     private val lastEventAt: java.util.concurrent.atomic.AtomicLong,
     private val onTimeout: (java.io.IOException) -> Unit,
+    // v5.0.12: 思考阶段感知 (可选; 不传 = 思考阶段不可识别, 保持旧行为)
+    // reasoningSeen: 思考链 delta 已到过; contentSeen: 正文 delta 已到过
+    private val reasoningSeen: java.util.concurrent.atomic.AtomicBoolean? = null,
+    private val contentSeen: java.util.concurrent.atomic.AtomicBoolean? = null,
 ) {
     // v3.11.35: header 判死 25s — 吸收网关冷启动典型 10-20s
     // v4.3.2 (BUG11): 25s 误杀大上下文慢网关 — 用户实证: 428 工具 schema + 工具
@@ -37,38 +48,30 @@ class StreamWatchdog(
     // 重试 → 又 25s → 重试链耗尽 → "数据彻底卡死"表象。60s 吸收重负载 TTFT;
     // 真死网关 60s 后仍走重试链, 最终报错不受影响。
     val headerLimitMs = 60_000L
-    val firstEventLimitMs = 150_000L
+    // v5.0.12: first-event 150s → 480s — 150s 是"长思考必被中断"的元凶之一
+    // (设计注释本写明"上游思考, 重试无意义, 耐心等", 150s 与该承诺矛盾)。
+    // 必须 < readTimeout(600s), 否则 OkHttp SocketTimeout 抢先触发会被误分类
+    // 为发起阶段 (可见"网络连接失败"且走 6 次链, 每次再等满 10 分钟)。
+    val firstEventLimitMs = 480_000L
     // v4.8.125 (用户实证: "输出途中莫名其妙中断, 重试很久"): 流阶段上限 90/120s → 150s 统一。
     // 旧 90s (OC 通道) 对慢上游 (长思考/间歇静默 — keepalive 不刷新空闲标记) 误杀面
     // 偏大; "误杀 → 重试重放 → 再误杀" 正是"断连 + 恢复慢"的放大器。真死连接由
-    // readTimeout (180s) 兜底, 且与 first-event 段 (150s, 设计即"上游思考耐心等")
-    // 对齐为同一耐心档 — "多尝试, 少静默" 前提是别误杀。
+    // readTimeout (600s, v5.0.12 对齐上游) 兜底。正文流出后的间隙判死保持耐心档
+    // 但不放大 — 那是真断流域, 走无缝续写/重试链。
     val streamLimitMs = 150_000L
+    // v5.0.12: 思考阶段上限 — 思考链 delta 出现过、正文未出现时的静默容忍。
+    // 与 first-event 同档 (480s): 两者都是"上游在算, 杀了就是全部重来"。
+    val thinkingLimitMs = 480_000L
 
     data class Phase(val name: String, val limitMs: Long, val closeMsg: String)
 
-    fun currentPhase(): Phase = when {
-        hasData.get() -> Phase("stream", streamLimitMs,
-            "生成无有效数据超时 (${streamLimitMs / 1000}s): 平台断流或卡死")
-        headerReceived.get() -> Phase("first-event", firstEventLimitMs,
-            "生成无有效数据超时 (${firstEventLimitMs / 1000}s): 上游思考或排队中无输出")
-        else -> Phase("header", headerLimitMs,
-            "平台连接无响应 (${headerLimitMs / 1000}s): 网关冷启动或挂起")
-    }
-
-    /** 单次检查 (供协程循环调用); 超时返回触发文案, 未超时返回 null */
-    fun tick(): String? {
-        val idleMs = System.currentTimeMillis() - lastEventAt.get()
-        val phase = currentPhase()
-        return if (idleMs > phase.limitMs) {
-            val msg = phase.closeMsg
-            onTimeout(java.io.IOException(msg))
-            msg
-        } else null
-    }
-
+    // v5.0.12: 判据尾串常量 — GenerationHandler 重试分类按尾串区分
+    // 思考类超时 (小预算) 与正文流断流 (18 次无缝续写链)。
     companion object {
         const val TICK_INTERVAL_MS = 15_000L
+        const val TAIL_FIRST_EVENT = "上游思考或排队中无输出"
+        const val TAIL_THINKING = "思考阶段长时间静默"
+        const val TAIL_STREAM_BREAK = "平台断流或卡死"
 
         /** 流阶段上限 (秒, 供日志展示) — v4.8.125: 统一 150s */
         fun streamLimitSec(isOpencode: Boolean): Long = 150L
@@ -91,6 +94,35 @@ class StreamWatchdog(
                 }
             }
         }
+    }
+
+    fun currentPhase(): Phase {
+        val contentSeen = contentSeen?.get() == true
+        val reasoningSeen = reasoningSeen?.get() == true
+        return when {
+            hasData.get() && contentSeen -> Phase("stream", streamLimitMs,
+                "生成无有效数据超时 (${streamLimitMs / 1000}s): $TAIL_STREAM_BREAK")
+            hasData.get() && reasoningSeen -> Phase("thinking", thinkingLimitMs,
+                "生成无有效数据超时 (${thinkingLimitMs / 1000}s): $TAIL_THINKING或上游卡死")
+            // 有数据但调用方未接思考标记 (旧调用面) — 保持正文流档, 行为不变
+            hasData.get() -> Phase("stream", streamLimitMs,
+                "生成无有效数据超时 (${streamLimitMs / 1000}s): $TAIL_STREAM_BREAK")
+            headerReceived.get() -> Phase("first-event", firstEventLimitMs,
+                "生成无有效数据超时 (${firstEventLimitMs / 1000}s): $TAIL_FIRST_EVENT")
+            else -> Phase("header", headerLimitMs,
+                "平台连接无响应 (${headerLimitMs / 1000}s): 网关冷启动或挂起")
+        }
+    }
+
+    /** 单次检查 (供协程循环调用); 超时返回触发文案, 未超时返回 null */
+    fun tick(): String? {
+        val idleMs = System.currentTimeMillis() - lastEventAt.get()
+        val phase = currentPhase()
+        return if (idleMs > phase.limitMs) {
+            val msg = phase.closeMsg
+            onTimeout(java.io.IOException(msg))
+            msg
+        } else null
     }
 }
 

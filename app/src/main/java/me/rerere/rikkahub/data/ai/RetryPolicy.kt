@@ -61,6 +61,19 @@ sealed class RetryPhase {
         fun exhaustedMessage(): String =
             "生成中断: 自动恢复 3 轮 (共 $used 次) 已达上限，已保留已生成内容"
     }
+
+    /**
+     * 数据超时阶段 (v5.0.12 新增): 建连成功但思考/排队静默超时 (看门狗 first-event/
+     * thinking 阶段判死)。与正文流断流本质不同: 每次重试都要从头再付整段思考,
+     * 大预算链只会把"长思考被杀"放大成马拉松。预算 = 1 次重试 (2 次尝试),
+     * 耗尽后显式报错 (不静默丢弃)。
+     */
+    data class DataTimeout(override val used: Int = 0) : RetryPhase() {
+        override val total get() = 1
+        fun next() = copy(used = used + 1)
+        fun exhaustedMessage(): String =
+            "上游长时间无输出: 已等待并重试 $used 次仍无任何数据 (思考静默超时)，已保留输入内容，请稍后重试"
+    }
 }
 
 /** 失败分类 — 字符串嗅探收敛于此 (原 catch 链内散落的 message.contains 判定) */
@@ -71,6 +84,11 @@ sealed class StreamFailure {
     data object Unconfirmed : StreamFailure()
     /** 发起阶段失败: 从未收到任何流数据 */
     data class InitPhase(val headerDead: Boolean) : StreamFailure()
+    /**
+     * 数据超时 (v5.0.12): 建连成功但思考/排队静默超时 (watchdog first-event/
+     * thinking 判死) — 独立小预算链, 不进 18 次流中断链。
+     */
+    data object DataTimeout : StreamFailure()
     /** 流中断: 收到过数据或 watchdog 数据超时 */
     data object StreamInterrupted : StreamFailure()
 }
@@ -93,9 +111,15 @@ object StreamFailureClassifier {
     private const val HEADER_DEAD = "平台连接无响应"
 
     fun classify(e: java.io.IOException, receivedAnyData: Boolean): StreamFailure {
+        val msg = e.message ?: ""
         return when {
-            !receivedAnyData && e.message?.contains(WATCHDOG_DATA_TIMEOUT) != true ->
-                StreamFailure.InitPhase(headerDead = e.message?.contains(HEADER_DEAD) == true)
+            // v5.0.12: 思考/排队静默超时 (first-event/thinking 判死, 非"平台断流") —
+            // 独立小预算链。正文流断流尾串 ("平台断流或卡死") 仍走 18 次续写链。
+            msg.contains(WATCHDOG_DATA_TIMEOUT) &&
+                !msg.contains(me.rerere.ai.core.StreamWatchdog.TAIL_STREAM_BREAK) ->
+                StreamFailure.DataTimeout
+            !receivedAnyData && !msg.contains(WATCHDOG_DATA_TIMEOUT) ->
+                StreamFailure.InitPhase(headerDead = msg.contains(HEADER_DEAD))
             else -> StreamFailure.StreamInterrupted
         }
     }
@@ -131,6 +155,18 @@ object RetryDecision {
             else -> {
                 val p = phase as RetryPhase.Stream
                 RetryVerdict.Retry(p.delayMs(), "${p.describe()} retry ${p.used + 1}/${p.total}")
+            }
+        }
+        // v5.0.12: 思考/排队静默超时 — 小预算 (1 次重试), 2s 固定退避。
+        // 重试无意义场景 (再等满 480s) 不该吃满 18 次链。
+        is StreamFailure.DataTimeout -> when {
+            !autoRetryEnabled -> RetryVerdict.Abort(
+                "生成中断: 自动重试已关闭"
+            )
+            !phase.hasQuota -> RetryVerdict.Abort((phase as RetryPhase.DataTimeout).exhaustedMessage())
+            else -> {
+                val p = phase as RetryPhase.DataTimeout
+                RetryVerdict.Retry(2000L, "data-timeout retry ${p.used + 1}/${p.total}")
             }
         }
         // Guarded/Unconfirmed 在 catch 链薄分支直接终态, 不进入决策

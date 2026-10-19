@@ -114,6 +114,8 @@ import me.rerere.rikkahub.data.ai.CallTracer
 private data class RetryState(
     var stream: Int = 0,
     var init: Int = 0,
+    /** v5.0.12: 思考/排队静默超时计数 — 独立小预算链 (1 次重试) */
+    var dataTimeout: Int = 0,
     /** 本轮是否收到过任何流数据 (collect 置位) — 发起/流中断判据 */
     var receivedAnyData: Boolean = false,
     /** v4.8.137 (用户定版): 本次发送是否已产出过任何输出 (首次收流即置位, 跨轮不清零)。
@@ -1967,6 +1969,7 @@ class GenerationHandler(
                 val failure = StreamFailureClassifier.classify(e, retry.receivedAnyData || retry.outputStarted)
                 val phase: RetryPhase = when (failure) {
                     is StreamFailure.InitPhase -> RetryPhase.Init(used = retry.init)
+                    is StreamFailure.DataTimeout -> RetryPhase.DataTimeout(used = retry.dataTimeout)
                     else -> RetryPhase.Stream(used = retry.stream)
                 }
                 when (val verdict = RetryDecision.decide(failure, phase, settings.networkSetting.enableAutoRetry)) {
@@ -1975,6 +1978,7 @@ class GenerationHandler(
                         when (phase) {
                             is RetryPhase.Init -> retry.init++
                             is RetryPhase.Stream -> retry.stream++
+                            is RetryPhase.DataTimeout -> retry.dataTimeout++
                             else -> {}
                         }
                         // v4.8.114: 重试可见化 — 连接期失败明确展示"正在重试",

@@ -260,6 +260,10 @@ class ChatCompletionsAPI(
         // 4.0.0 重写: 三阶段 watchdog 状态机统一收敛至 StreamWatchdog
         // (ai/core/WatchdogPolicy.kt) — 数值/文案/tick 节奏逐字保留
         val hasReceivedData = java.util.concurrent.atomic.AtomicBoolean(false)  // 前置声明 (watchdog 引用)
+        // v5.0.12: 思考阶段感知 — 思考/正文 delta 分别标记, watchdog 据此区分
+        // "思考阶段静默" (480s 耐心) 与 "正文流断流" (150s 判死走续写链)
+        val reasoningSeen = java.util.concurrent.atomic.AtomicBoolean(false)
+        val contentSeen = java.util.concurrent.atomic.AtomicBoolean(false)
         // v4.3.0: 增量流工具调用 id 映射 — CC 协议的 tool_calls[i].index 是归属键,
         // id/name 仅首 delta 给出, 后续 delta 只有 arguments 增量。维护 index→id
         // 映射并回填到 parseMessage 产物, 多工具并行交错增量按 index 精确归属
@@ -289,6 +293,8 @@ class ChatCompletionsAPI(
             headerReceived = headerReceived,
             hasData = hasReceivedData,
             lastEventAt = lastEventAt,
+            reasoningSeen = reasoningSeen,
+            contentSeen = contentSeen,
             onTimeout = { close(it) },
         )
         val watchdogJob = me.rerere.ai.core.StreamWatchdog.launchIn(this@callbackFlow, watchdog) { fired ->
@@ -460,6 +466,7 @@ class ChatCompletionsAPI(
                                     }
                                     text?.takeIf { it.isNotBlank() }?.let {
                                         hasTextContent = true
+                                        contentSeen.set(true)  // v5.0.12: 正文已开始 (watchdog 流阶段判据)
                                         lastChunkWasUsageOnly.set(false)
                                         textTail = if (it.length > 80) it.takeLast(80) else it
                                         // v4.5.12: usage 心跳后仍收到正文 → 撤销完成
@@ -478,11 +485,13 @@ class ChatCompletionsAPI(
                                     // 缓冲全文, 仅当流结束仍无 content 时才正文化补发
                                     reasoningRaw?.takeIf { it.isNotBlank() }?.let {
                                         lastChunkWasUsageOnly.set(false)
+                                        contentSeen.set(true)  // v5.0.12: ox 系思考即正文, 按正文流档
                                         reasoningBuffer.append(it)
                                     }
                                 } else {
                                     reasoningRaw?.takeIf { it.isNotBlank() }?.let {
                                         lastChunkWasUsageOnly.set(false)
+                                        reasoningSeen.set(true)  // v5.0.12: 思考已开始 (watchdog 思考阶段判据)
                                         reasoningTail = if (it.length > 80) it.takeLast(80) else it
                                         // v4.5.12: usage 心跳后仍收到思考 → 撤销完成标记
                                         if (gotFinish.get()) gotFinish.set(false)
