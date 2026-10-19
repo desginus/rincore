@@ -137,6 +137,22 @@ internal fun FilesPicker(
     val showCwd = boundWorkspace != null && boundWorkspace.shellStatus == WorkspaceShellStatus.READY.name
     var showCwdSheet by remember { mutableStateOf(false) }
 
+    // v5.0.17 用户定案：工具箱收纳对话功能入口（原「更多」菜单四项 + 本对话产出 + 草图），
+    // 移除 MCP / 技能（已归位设置页），空位放原版草图
+    val sketchScope = rememberCoroutineScope()
+    val filesManager: FilesManager = koinInject()
+    val subAgentRegistry: SubAgentRegistry = koinInject()
+    var showSketch by remember { mutableStateOf(false) }
+    var showSubAgentSheet by remember { mutableStateOf(false) }
+    var showArtifactsSheet by remember { mutableStateOf(false) }
+    val subAgentRuns by subAgentRegistry.runs.collectAsStateWithLifecycle()
+    val conversationRuns = remember(subAgentRuns, conversation.id) {
+        subAgentRuns.values
+            .filter { it.parentChatId == conversation.id.toString() }
+            .sortedByDescending { it.startedAtMs }
+    }
+    val producedFiles = settings.conversationProducedFiles[conversation.id.toString()].orEmpty()
+
     var page by remember { mutableStateOf(FilesPickerPage.MAIN) }
     // 在子页面时，返回键回到主页面而不是关闭 sheet
     BackHandler(enabled = page != FilesPickerPage.MAIN) {
@@ -199,21 +215,6 @@ internal fun FilesPicker(
                 val showWorkspace = workspaces.isNotEmpty()
                 // 限制了上下文消息数就是滚动上下文，旧消息会自动移出，不需要压缩
                 val showCompress = assistant.contextMessageLimit <= 0
-                // v5.0.17 用户定案：工具箱收纳对话功能入口（原「更多」菜单四项 + 本对话产出 + 草图），
-                // 移除 MCP / 技能（已归位设置页），空位放原版草图
-                val scope = rememberCoroutineScope()
-                val filesManager: FilesManager = koinInject()
-                val subAgentRegistry: SubAgentRegistry = koinInject()
-                var showSketch by remember { mutableStateOf(false) }
-                var showSubAgentSheet by remember { mutableStateOf(false) }
-                var showArtifactsSheet by remember { mutableStateOf(false) }
-                val subAgentRuns by subAgentRegistry.runs.collectAsStateWithLifecycle()
-                val conversationRuns = remember(subAgentRuns, conversation.id) {
-                    subAgentRuns.values
-                        .filter { it.parentChatId == conversation.id.toString() }
-                        .sortedByDescending { it.startedAtMs }
-                }
-                val producedFiles = settings.conversationProducedFiles[conversation.id.toString()].orEmpty()
                 val itemCount = 1 + listOf(
                     true, true, true, true, true, true,
                     showWorkspace, showWorkspace && showCwd, showCompress
@@ -388,7 +389,7 @@ internal fun FilesPicker(
             onDismiss = { showSketch = false },
             onConfirm = { result: SketchResult ->
                 showSketch = false
-                scope.launch {
+                sketchScope.launch {
                     filesManager.createChatFileBySketch(result)?.let { uri ->
                         state.addImages(listOf(uri))
                     }
