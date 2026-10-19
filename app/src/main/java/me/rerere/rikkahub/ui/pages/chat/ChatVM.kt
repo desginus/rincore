@@ -38,6 +38,7 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.getAssistantOf
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.ConversationConfig
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.data.model.NodeFavoriteTarget
 import me.rerere.rikkahub.data.repository.ConversationRepository
@@ -298,7 +299,9 @@ class ChatVM(
     /** 上游 3.0.0 页面用单参形态（会话级模型切换）。 */
     fun setChatModel(model: Model) {
         viewModelScope.launch {
-            updateConversation(conversation.value.copy(chatModelId = model.id))
+            val conv = conversation.value
+            val cfg = conv.config ?: ConversationConfig()
+            updateConversation(conv.copy(config = cfg.copy(chatModelId = model.id)))
             saveConversationAsync()
         }
     }
