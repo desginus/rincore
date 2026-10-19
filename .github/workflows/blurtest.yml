@@ -19,7 +19,7 @@ jobs:
         with: { node-version: '20' }
       - name: Prepare dummy google-services.json
         run: |
-          printf '%s' '{"project_info":{"project_number":"0","project_id":"dev-oracle","storage_bucket":"dev-oracle.appspot.com"},"client":[{"client_info":{"mobilesdk_app_id":"1:0:android:0","android_client_info":{"package_name":"me.rerere.rikkahub"}},"oauth_client":[],"api_key":[{"current_key":"AIzaSyDUMMY"}],"services":{"appinvite_service":{"other_platform_oauth_client":[]}}}],"configuration_version":"1"}' > app/google-services.json
+          printf '%s' '{"project_info":{"project_number":"0","project_id":"dev-oracle","storage_bucket":"dev-oracle.appspot.com"},"client":[{"client_info":{"mobilesdk_app_id":"1:0:android:0","android_client_info":{"package_name":"me.rerere.rikkahub"}},"oauth_client":[],"api_key":[{"current_key":"AIzaSyDUMMY"}],"services":{"appinvite_service":{"other_platform_oauth_client":[]}}},{"client_info":{"mobilesdk_app_id":"1:0:android:0","android_client_info":{"package_name":"me.rerere.rikkahub.debug"}},"oauth_client":[],"api_key":[{"current_key":"AIzaSyDUMMY"}],"services":{"appinvite_service":{"other_platform_oauth_client":[]}}}],"configuration_version":"1"}' > app/google-services.json
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
         continue-on-error: true
