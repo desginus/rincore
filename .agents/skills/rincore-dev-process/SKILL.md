@@ -31,7 +31,8 @@ description: "[最高优先级·RinCore开发必加载] RinCore 开发与发布�
 - 查 run：`GET /repos/desginus/rincore/actions/runs?head_sha=<sha>`（取 run id）。
 - 查 jobs：`/actions/runs/<id>/jobs`（job id + 步骤状态）。
 - 拉日志：`/actions/jobs/<id>/logs`（`curl -sSL` + Authorization）→ grep `e: \|error:\|FAILED`。
-- 轮询：`/workspace/scripts/ci_poll.sh <sha> <窗口秒>`（串行轮询；失败即诊断修复重推）。
+- 轮询：**`/workspace/scripts/ci.sh`（2026-10-19 用户定版：查询 CI 严禁使用其他命令/裸 curl/API——统一本脚本，30s 一轮网页直读）**。子命令：`ci.sh watch <run_id>`（30s 轮询到终态）/ `status` 单查 / `find <分支>` 列 runs / `log <run_id>` 失败日志关键行（唯一用 API 的子命令）/ `release <tag>` 查资产 / `rerun <run_id>` 网络抖动重跑。旧 ci_poll.sh/watch_ci_html.sh 退役为兼容备件。
+- **发布产物纪律（2026-10-19 用户警告）**：任何发版只出现正式版 APK——dev-build.yml（oracle）已改为 release 变体编译门禁（compileReleaseKotlin）且**零工件上传**；严禁 debug APK/Dev Debug 版本出现在任何用户可见面。
 ### 2.2 知识库（随用随更）
 - /skills/rincore-changelog（版本链摘要 + FULL_HISTORY.md 全量归档 448 条）
 - /skills/rincore-bug-record（B 编号：根因/修复/教训）· /skills/rincore-decisions（D 编号）· /skills/rincore-roadmap

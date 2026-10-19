@@ -60,14 +60,6 @@ jobs:
           ./gradlew :ai:compileDebugUnitTestKotlin --no-daemon --stacktrace
           ./gradlew :markdown:testDebugUnitTest --no-daemon --stacktrace
 
-      - name: Compile oracle (assembleDebug)
+      - name: Compile oracle (release-variant compile gate)
         run: |
-          ./gradlew :app:assembleDebug --no-daemon --stacktrace
-
-      - name: Upload APK (informational)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dev-debug-apk
-          path: app/build/outputs/apk/**/*.apk
-          if-no-files-found: ignore
+          ./gradlew :app:compileReleaseKotlin --no-daemon --stacktrace

@@ -65,6 +65,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import dev.chrisbanes.haze.HazePerformanceMode
+import dev.chrisbanes.haze.LocalHazePerformanceMode
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import androidx.activity.ComponentActivity
@@ -553,8 +555,12 @@ private fun ChatPageContent(
 
         // 4.1.5: 弹窗柔光玻璃 source — 全局弹窗经 LocalHazeState 消费
         // 本页背景 source (HyperDialog/HyperGlassPanel 真模糊)
+        // v5.0.13: 全页 haze 保真度钉 Quality —— 覆盖 BLUR/GLASS 输入栏之外的其余
+        // 效果消费端（轨道图标/弹窗玻璃），消除任何降采样档位漂移（Balanced 默认
+        // 0.79 缩放链是尖锐色斑网格的机制根因，见 ChatInputHaze 注）。
         androidx.compose.runtime.CompositionLocalProvider(
             LocalHazeState provides hazeState,
+            LocalHazePerformanceMode provides HazePerformanceMode.Quality,
         ) {
         Scaffold(
             topBar = {
