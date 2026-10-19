@@ -148,3 +148,12 @@ internal suspend fun resolveScopedFile(
     val best = hits.filter { suffixDepth(it) == maxDepth }.sorted()
     return if (best.size == 1) ScopedResolution.Resolved(best[0]) else ScopedResolution.Ambiguous(best)
 }
+
+internal suspend fun exportResolvedFile(
+    repository: WorkspaceRepository,
+    workspaceId: String,
+    rootfsPath: String,
+    output: java.io.OutputStream,
+) {
+    repository.exportRootfsFile(workspaceId, rootfsPath, output, null)
+}
