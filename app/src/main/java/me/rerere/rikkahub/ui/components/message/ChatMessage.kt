@@ -407,7 +407,7 @@ private fun MessagePartsBlock(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = settings.displaySetting.bubbleOpacity),
                         ),
                     ) { step ->
-                        when (step) {
+                        when (step) { /* else done */ /* else done */ /* else done */ /* else done */
                             is ThinkingStep.ReasoningStep -> {
                                 key(step.reasoning.createdAt) {
                                     ChatMessageReasoningStep(
@@ -433,6 +433,7 @@ private fun MessagePartsBlock(
                                     )
                                 }
                             }
+                            else -> Unit
                         }
                     }
                 }
@@ -693,6 +694,7 @@ private fun MessagePartsBlock(
                                     val en = step.tool.finishedAt
                                     if (st != null && en != null && en > st) (en - st) / 1000 else 0L
                                 }
+                                else -> 0L
                             }
                         }.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
                     }
