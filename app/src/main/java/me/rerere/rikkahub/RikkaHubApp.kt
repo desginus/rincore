@@ -78,11 +78,56 @@ const val MEMORY_DREAM_NOTIFICATION_CHANNEL_ID = "memory_dream"
 const val GENERATION_FOREGROUND_NOTIFICATION_CHANNEL_ID = "generation_foreground"
 
 class RikkaHubApp : Application() {
+    /**
+     * v5.0.29 用户定案：一次性数据重置。
+     *
+     * 保留：`files/workspaces/`（工作区，全部内容，绝对不动）
+     * 清除：databases（聊天/设置/记忆）、shared_prefs、datastore、files 下其余项、cache
+     *
+     * 幂等：完成后在 `files/.wipe_v5029_done` 写标记，后续启动不再执行。
+     */
+    private fun performOneTimeWipeKeepingWorkspace() {
+        runCatching {
+            val files = filesDir ?: return
+            val flag = java.io.File(files, ".wipe_v5029_done")
+            if (flag.exists()) return
+
+            val workspaces = java.io.File(files, "workspaces")
+            val workspacesExisted = workspaces.exists()
+
+            // 1) 应用私有根目录下的数据库与偏好
+            runCatching { java.io.File(files.parentFile, "databases").deleteRecursively() }
+            runCatching { java.io.File(files.parentFile, "shared_prefs").deleteRecursively() }
+
+            // 2) files 下除 workspaces 外全部清除
+            files.listFiles()?.forEach { child ->
+                if (child.name != "workspaces" && child.name != flag.name) {
+                    runCatching { child.deleteRecursively() }
+                }
+            }
+
+            // 3) 缓存
+            runCatching { cacheDir?.deleteRecursively() }
+
+            // 4) 完成标记（写在 files 下，删除流程之后）
+            runCatching { flag.writeText("done") }
+
+            android.util.Log.i(
+                "RikkaHubApp",
+                "v5.0.29 one-time wipe done (workspaces kept: $workspacesExisted, path=${workspaces.absolutePath})"
+            )
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         // v4.6.6: 崩溃收集器第一时间安装 (原位置在 startKoin 之后 — v4.6.5 出现
         // "启动即崩且无日志"的盲区, 任何初始化阶段崩溃必须可观测)
         CrashHandler.install(this)
+        // v5.0.29 用户定案：一次性数据重置（**只保留工作区**，其余全部清零）。
+        // 目的：把"遗传性数据"连根拔掉，让正式版回到干净态，再由用户导入备份恢复聊天。
+        // 必须在 Koin / Room / DataStore / 备份恢复之前执行（此处是最早可用的安全点）。
+        performOneTimeWipeKeepingWorkspace()
         // v4.5.5: 全局时区强制北京时间 — 工作区计时器等所有依赖默认时区的
         // 格式化 (SimpleDateFormat/DateTimeFormatter/日志时间戳) 统一按
         // UTC+8 呈现, 不随设备时区漂移。根修于应用入口, 非逐点打补丁。
