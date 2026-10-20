@@ -7,6 +7,9 @@ package me.rerere.rikkahub.ui.pages.chat
  * 问题定位: 抽屉内容/新建归属错误 → 本文件 + ChatDrawerVM
  * 基线: 原版移植 + 自研 (文件夹/入口) | 地图: docs/APP_MAP.md §A | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
+import dev.chrisbanes.haze.HazeInput
+import dev.chrisbanes.haze.blur.HazeBlurStyle
+import dev.chrisbanes.haze.blur.material3.Material3
 import androidx.compose.foundation.layout.fillMaxHeight
 import dev.chrisbanes.haze.blur.hazeBlur
 import androidx.compose.material3.ContainedLoadingIndicator
@@ -234,8 +237,8 @@ fun ChatDrawerContent(
                 .then(
                     if (hazeState != null) {
                         Modifier.hazeBlur(
-                            input = dev.chrisbanes.haze.HazeInput.Sources(hazeState),
-                            style = dev.chrisbanes.haze.blur.HazeBlurStyle.Material3 {
+                            input = HazeInput.Sources(hazeState),
+                            style = HazeBlurStyle.Material3 {
                                 blurRadius(24.dp)
                             },
                         )
