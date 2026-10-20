@@ -42,29 +42,14 @@ fun ChatPageHost(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null
         // ── 原版页面（逐字，零修改） ──
         ChatPage(id = id, text = text, files = files, nodeId = nodeId)
 
-        // ── 外挂：双星轨（空对话才浮出） ──
-        if (conversation.messageNodes.isEmpty()) {
-            EmptyOrbitSelector(
-                currentFolderId = conversation.folderId,
-                onSelectAssistant = { assistantId ->
-                    // 全局切助手 + 内存态同步归属（与 v4.8.148 定版一致）
-                    vm.updateSettings(setting.copy(assistantId = assistantId))
-                    vm.updateConversation(
-                        conversation.copy(assistantId = assistantId, folderId = null)
-                    )
-                    vm.saveConversationAsync()
-                },
-                onSelectFolder = { folderId ->
-                    // 归属写回（空对话未入库，saveConversationAsync 尽力落盘）
-                    vm.updateConversation(conversation.copy(folderId = folderId))
-                    vm.saveConversationAsync()
-                },
-                hazeState = null, // 外挂层无源（原版 hazeState 在页面内部）→ 图标走半透明回退
-                blurEnabled = false,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(top = 88.dp, bottom = 88.dp),
-            )
-        }
+        // ── v5.0.18 紧急撤除：双星轨浮层 ──────────────────────────────
+        // 事故（用户 2026-10-20）：该浮层作为 Box 第二层、fillMaxSize 画在
+        // ChatPage 之上，而抽屉（ModalNavigationDrawer）在 ChatPage 内部
+        // → 抽屉拉开后被浮层整片覆盖，空对话时铺满页面，用户完全无法操作。
+        // 结论：外挂层不得承载"全屏交互浮层"——它永远在页面内部层（抽屉/
+        // 输入栏/标题栏）之上。
+        // 正确回归方式（下版）：把双星轨挂到聊天页的"空态内容区"（与消息
+        // 列表同级、抽屉之下），或由 ChatPage 提供空态插槽后再接入。
+        // 本体保留在 EmptyOrbitSelector.kt，未删除。
     }
 }
