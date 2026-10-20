@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.components.ai
 
+import dev.chrisbanes.haze.blur.material3.Material3
+import dev.chrisbanes.haze.blur.hazeBlur
+import dev.chrisbanes.haze.blur.HazeBlurStyle
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -7,13 +10,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.glass.GlassDefaults
-import dev.chrisbanes.haze.glass.GlassStyle
-import dev.chrisbanes.haze.glass.GlassStyleScope
-import dev.chrisbanes.haze.glass.OpticalSizeValue
-import dev.chrisbanes.haze.glass.hazeGlass
-import dev.chrisbanes.haze.glass.material3.Material3
-import me.rerere.rikkahub.data.datastore.BackgroundEffectType
 import me.rerere.rikkahub.data.datastore.DisplaySetting
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
@@ -30,44 +26,19 @@ internal fun Modifier.chatInputHaze(
     shape: RoundedCornerShape,
 ): Modifier {
     if (!displaySetting.enableBlurEffect) return this
-    // v5.0.20 用户定案：效果类型统一为「玻璃」——删除模糊/玻璃二选一。
-    // 仍读 backgroundEffectType 字段以保持旧数据兼容，但渲染恒定走玻璃分支。
-    val darkMode = LocalDarkMode.current
-    return hazeGlass(
+    // v5.0.22 (B203 用户实证终局): 恒定走 hazeBlur —— 即原版 3.0.0 的 BLUR 分支逐字。
+    // 事故链：ChatInputHaze 的 GLASS 分支 = hazeGlass（液态光学折射管线）——
+    //   ①用户设置里 backgroundEffectType 历史残留 = GLASS → 从 5.0.x 起这台设备一直走光学管线
+    //   （哪怕 5.0.16 该文件与上游 0 diff：0 diff 只保证代码一致，不保证走到同一分支）；
+    //   ②v5.0.20 我又把 GLASS 强制成唯一分支，等于把坑钉死；
+    //   ③光学折射在低分辨率源上呈现规则采样网格/条纹，与半径/噪点/alpha 无关（参数域无解）。
+    // 用户 4.8.161 定版："原版就根本没有一个模糊和液态玻璃的分支"——液态玻璃分类整体作废。
+    return hazeBlur(
         input = HazeInput.Sources(hazeState),
-        style = GlassStyle.Material3(
-            containerColor = containerColor,
-            tint = containerColor.copy(alpha = 0.3f),
-        ) {
-            appearanceResponse(dark = darkMode)
-            // Keep background text from competing with the input text.
-            optics(
-                GlassDefaults.optics.copy(
-                    blurRadius = OpticalSizeValue.Fixed(16.dp),
-                    depth = OpticalSizeValue.Fixed(0.5f),
-                )
-            )
-            shape(shape)
+        style = HazeBlurStyle.Material3 {
+            blurRadius(12.dp)
         },
     )
 }
 
-// Haze 按系统夜间模式选玻璃的明暗预设，应用内单独设置主题时会选错（深色主题下被提亮发白），
-// 所以按应用主题显式写入。深色数值对应库里 internal 的 GlassStyle.regularDark。
-private fun GlassStyleScope.appearanceResponse(dark: Boolean) {
-    if (dark) {
-        specularIntensity(0.38f)
-        edgeShadow(Color.Black.copy(alpha = 0.32f))
-        ambientResponse(0.08f)
-        contrast(0.08f)
-        whitePoint(-0.22f)
-        chromaMultiplier(1.1f)
-    } else {
-        specularIntensity(GlassDefaults.specularIntensity)
-        edgeShadow(GlassDefaults.edgeShadow)
-        ambientResponse(GlassDefaults.ambientResponse)
-        contrast(GlassDefaults.contrast)
-        whitePoint(GlassDefaults.whitePoint)
-        chromaMultiplier(GlassDefaults.chromaMultiplier)
-    }
-}
+// v5.0.22: 液态玻璃分支已整体移除（用户定版：没有模糊/液态玻璃之分，只有原版模糊）。

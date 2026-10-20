@@ -40,7 +40,9 @@ import me.rerere.rikkahub.data.db.entity.MemoryFileEntity
 import me.rerere.rikkahub.data.db.entity.MessageNodeEntity
 import me.rerere.rikkahub.data.db.entity.ScheduledJobEntity
 import me.rerere.rikkahub.data.db.entity.ScheduledJobRunEntity
+import me.rerere.rikkahub.data.db.dao.UsageRecordDAO
 import me.rerere.rikkahub.data.db.entity.SubAgentRunEntity
+import me.rerere.rikkahub.data.db.entity.UsageRecordEntity
 import me.rerere.rikkahub.data.db.entity.TranslationHistoryEntity
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.db.migrations.Migration_16_17
@@ -80,8 +82,9 @@ import me.rerere.rikkahub.workflow.db.WorkflowRunEntity
         WorkflowEntity::class,
         WorkflowRunEntity::class,
         SubAgentRunEntity::class,
+        UsageRecordEntity::class,
     ],
-    version = 33,
+    version = 34,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -143,6 +146,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun agentRunDao(): AgentRunDao
 
     abstract fun subAgentRunDao(): SubAgentRunDao
+
+    abstract fun usageRecordDao(): UsageRecordDAO
 }
 
 object TokenUsageConverter {

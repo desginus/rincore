@@ -7,6 +7,7 @@ package me.rerere.rikkahub.sandbox
  * 基线: 自研 (v4.8.0) — 原版无此文件 | 地图: docs/APP_MAP.md §D | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
 
+import me.rerere.rikkahub.BuildConfig
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.ClipData
@@ -57,8 +58,13 @@ private const val TAG = "SandboxBridge"
 
 object SandboxBridgeServer {
 
-    /** 桥端口 — 固定值 (与 webServer 8080 不同域), 仅绑定 127.0.0.1 */
-    const val PORT = 17526
+    /**
+     * 桥端口 — 仅绑定 127.0.0.1。
+     * v5.0.22 共存修复：正式版(me.rincore.app) 与测试版(me.rincore.app.test) 可能同时运行，
+     * 固定端口会让后启动方 bind 失败（Address already in use）→ 沙箱桥静默失效。
+     * 现按包名派生偏移（正式版偏移 0 保持旧值），各变体互不冲突。
+     */
+    val PORT: Int = 17526 + (BuildConfig.APPLICATION_ID.hashCode().let { if (it < 0) -it else it } % 512)
     private const val HOST = "127.0.0.1"
     private const val TOKEN_DIR = ".rin-bridge"
     private const val TOKEN_FILE = "token"

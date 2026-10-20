@@ -107,7 +107,7 @@ fun RikkahubTheme(
     CompositionLocalProvider(
         LocalDarkMode provides darkTheme,
         LocalExtendColors provides extendColors,
-        LocalOverscrollFactory provides null
+        // LocalOverscrollFactory provides null   // v5.0.22: 对齐上游 3.0.0（上游此行注释=启用系统默认 overscroll）
     ) {
         MaterialExpressiveTheme(
             colorScheme = colorSchemeConverted,
