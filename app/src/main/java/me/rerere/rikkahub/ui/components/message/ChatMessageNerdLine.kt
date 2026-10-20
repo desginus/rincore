@@ -36,6 +36,8 @@ fun ChatMessageNerdLine(
     message: UIMessage,
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f),
+    /** v5.0.36：5.0.15 调用签名兼容 */
+    isLast: Boolean = false,
 ) {
     val settings = LocalSettings.current.displaySetting
 

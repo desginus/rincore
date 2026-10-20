@@ -42,8 +42,6 @@ import org.koin.androidx.compose.koinViewModel
 
 @Composable
 fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    var backgroundHealthReport by remember { mutableStateOf<List<me.rerere.rikkahub.data.diagnostics.BackgroundHealth.Entry>?>(null) }
     val settings by vm.settings.collectAsStateWithLifecycle()
     var displaySetting by remember(settings) { mutableStateOf(settings.displaySetting) }
     var ttsPlaybackSpeed by remember(settings.defaultTTSPlaybackSpeed) {
@@ -150,15 +148,6 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
                                     selected = selected,
                                 )
                             }
-                        }
-                    }
-                    // v5.0.27 用户定案：背景图体检 —— 输入栏条纹的根因入口（低清/失效背景图）
-                    formItem(
-                        headlineContent = { Text("背景图体检") },
-                        supportingContent = { Text("扫描失效或低清背景图（会导致输入栏条纹）") },
-                    ) {
-                        TextButton(onClick = { backgroundHealthReport = BackgroundHealth.scan(context, settings.assistants) }) {
-                            Text("扫描")
                         }
                     }
                     switchItem(
@@ -278,37 +267,5 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
         }
     }
 
-    backgroundHealthReport?.let { report ->
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { backgroundHealthReport = null },
-            title = { Text("背景图体检") },
-            text = {
-                Column {
-                    if (report.isEmpty()) {
-                        Text("没有可体检的助手")
-                    }
-                    report.forEach { e ->
-                        Text("${e.assistantName}: ${e.detail}")
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val bad = report.filter { me.rerere.rikkahub.data.diagnostics.BackgroundHealth.needsCleanup(it) }
-                    if (bad.isNotEmpty()) {
-                        val ids = bad.map { it.assistantId }.toSet()
-                        vm.updateSettings { latest ->
-                            latest.copy(assistants = latest.assistants.map { a ->
-                                if (a.id.toString() in ids) a.copy(background = null) else a
-                            })
-                        }
-                    }
-                    backgroundHealthReport = null
-                }) { Text("清理失效/低清背景") }
-            },
-            dismissButton = {
-                TextButton(onClick = { backgroundHealthReport = null }) { Text("关闭") }
-            },
-        )
-    }
+
 }

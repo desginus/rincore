@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.message.tools
 
+import me.rerere.hugeicons.stroke.File02
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -410,6 +411,312 @@ private fun ShellExitStatus(content: JsonElement, style: androidx.compose.ui.tex
         style = style,
         color = if (ok) DiffAddedColor else MaterialTheme.colorScheme.error,
     )
+}
+
+/** 从工具输出 JSON 读取布尔字段 */
+private fun JsonElement?.boolean(key: String): Boolean? =
+    this?.jsonObjectOrNull?.get(key)?.jsonPrimitiveOrNull?.booleanOrNull
+
+/** 从工具输出 JSON 读取整型字段 */
+private fun JsonElement?.int(key: String): Int? =
+    this?.jsonObjectOrNull?.get(key)?.jsonPrimitiveOrNull?.intOrNull
+
+/** 从工具输出 JSON 读取长整型字段 */
+private fun JsonElement?.long(key: String): Long? =
+    this?.jsonObjectOrNull?.get(key)?.jsonPrimitiveOrNull?.longOrNull
+
+private const val FILE_SUMMARY_MAX_LINES = 10
+
+/** 由文件扩展名推断语法高亮语言 */
+private fun languageOf(path: String?): String = when (
+    path?.substringAfterLast('.', "")?.lowercase().orEmpty()
+) {
+    "kt", "kts" -> "kotlin"
+    "java" -> "java"
+    "js", "mjs", "cjs" -> "javascript"
+    "ts" -> "typescript"
+    "tsx" -> "tsx"
+    "jsx" -> "jsx"
+    "py" -> "python"
+    "rb" -> "ruby"
+    "go" -> "go"
+    "rs" -> "rust"
+    "c", "h" -> "c"
+    "cpp", "cc", "cxx", "hpp", "hxx" -> "cpp"
+    "cs" -> "csharp"
+    "swift" -> "swift"
+    "php" -> "php"
+    "sh", "bash", "zsh" -> "bash"
+    "json" -> "json"
+    "xml" -> "xml"
+    "html", "htm" -> "html"
+    "css" -> "css"
+    "scss" -> "scss"
+    "yaml", "yml" -> "yaml"
+    "toml" -> "toml"
+    "md", "markdown" -> "markdown"
+    "sql" -> "sql"
+    "gradle" -> "groovy"
+    else -> "plaintext"
+}
+
+/**
+ * 工作空间展示文件: 向用户递交文件, 锚定胶囊窗显示
+ */
+object ShowFileToolUI : ToolUIRenderer {
+    override val toolName: String = "workspace_show_file"
+
+    override fun icon(context: ToolUIContext): ImageVector = HugeIcons.File02
+
+    @Composable
+    override fun title(context: ToolUIContext): String {
+        // v4.8.61: 多文件 (paths 数组) — 单文件沿用原样; 多文件显示首名 + 数量
+        val path = context.arguments.getStringContent("path")
+        if (path != null) return stringResource(R.string.tool_ui_show_file, path)
+        val paths = (context.arguments as? JsonObject)?.get("paths") as? JsonArray
+        val first = paths?.firstOrNull()?.jsonPrimitive?.contentOrNull
+        return when {
+            first == null -> stringResource(R.string.tool_ui_show_file_default)
+            paths.size > 1 -> stringResource(R.string.tool_ui_show_file, "$first (+${paths.size - 1})")
+            else -> stringResource(R.string.tool_ui_show_file, first)
+        }
+    }
+}
+
+/** 内联摘要: 按扩展名语法高亮展示文件内容首部若干行 */
+@Composable
+private fun FileContentSummary(text: String, path: String?, loading: Boolean) {
+    val preview = remember(text) {
+        text.lineSequence().take(FILE_SUMMARY_MAX_LINES).joinToString("\n")
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.small)
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .shimmer(isLoading = loading),
+    ) {
+        CodeHighlightText(
+            code = preview,
+            language = languageOf(path),
+            fontSize = 11.sp,
+            lineHeight = 14.sp,
+            maxLines = FILE_SUMMARY_MAX_LINES,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+/** BottomSheet 详情: 文件路径 + 按扩展名语法高亮的完整内容 */
+@Composable
+private fun FileContentPreview(path: String?, code: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxHeight(0.8f)
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = path ?: stringResource(R.string.tool_ui_file),
+            style = MaterialTheme.typography.titleMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        HighlightCodeBlock(
+            code = code,
+            language = languageOf(path),
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+/**
+ * v4.8.76: 后台任务 (workspace_job) — 标题显示动作与命令/任务号预览。
+ */
+object JobToolUI : ToolUIRenderer {
+    private const val TITLE_MAX_CHARS = 40
+
+    override val toolName: String = "workspace_job"
+
+    @Composable
+    override fun title(context: ToolUIContext): String {
+        val action = context.arguments.getStringContent("action") ?: "job"
+        val detail = context.arguments.getStringContent("command")?.takeIf { it.isNotBlank() }
+            ?: context.arguments.getStringContent("job_id")
+        val preview = detail?.replace("\n", " ")?.trim()?.let {
+            if (it.length > TITLE_MAX_CHARS) it.take(TITLE_MAX_CHARS) + "…" else it
+        }
+        return if (preview.isNullOrBlank()) "后台任务 · $action" else "后台任务 · $action · $preview"
+    }
+}
+
+/**
+ * 工作空间执行 Shell: 摘要显示退出状态与输出首部, 详情为命令 + stdout/stderr
+ */
+object ShellToolUI : ToolUIRenderer {
+    private const val TITLE_MAX_CHARS = 40
+    private const val SUMMARY_MAX_LINES = 8
+
+    override val toolName: String = "workspace_shell"
+
+    override fun icon(context: ToolUIContext): ImageVector = HugeIcons.ComputerTerminal01
+
+    @Composable
+    override fun title(context: ToolUIContext): String {
+        val command = context.arguments.getStringContent("command") ?: return stringResource(R.string.tool_ui_shell_default)
+        val preview = command.replace("\n", " ").trim()
+        val truncated = if (preview.length > TITLE_MAX_CHARS) preview.take(TITLE_MAX_CHARS) + "…" else preview
+        return stringResource(R.string.tool_ui_shell, truncated)
+    }
+
+    override fun hasSummary(context: ToolUIContext): Boolean = context.content != null
+
+    @Composable
+    override fun Summary(context: ToolUIContext) {
+        val content = context.content ?: return
+        val combined = remember(content) {
+            listOf(content.getStringContent("stdout"), content.getStringContent("stderr"))
+                .filterNot { it.isNullOrBlank() }
+                .joinToString("\n")
+                .trim()
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            ShellExitStatus(content, MaterialTheme.typography.labelSmall)
+            // v4.8.113: 工具产图缩略图 (render_urls)
+            RenderUrlsPreview(content)
+            if (combined.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(MaterialTheme.shapes.small)
+                        .background(MaterialTheme.colorScheme.surfaceContainer)
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                        .shimmer(isLoading = context.loading),
+                ) {
+                    Text(
+                        text = combined.lineSequence().take(SUMMARY_MAX_LINES).joinToString("\n"),
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        fontSize = 11.sp,
+                        lineHeight = 14.sp,
+                        maxLines = SUMMARY_MAX_LINES,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+
+    @Composable
+    override fun Preview(context: ToolUIContext, onDismissRequest: () -> Unit) {
+        val content = context.content
+        if (content == null) {
+            DefaultToolPreview(context = context)
+            return
+        }
+        val command = context.arguments.getStringContent("command").orEmpty()
+        val cwd = context.arguments.getStringContent("cwd")
+        val stdout = content.getStringContent("stdout").orEmpty()
+        val stderr = content.getStringContent("stderr").orEmpty()
+        Column(
+            modifier = Modifier
+                .fillMaxHeight(0.8f)
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.tool_ui_shell_default),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                ShellExitStatus(content, MaterialTheme.typography.labelMedium)
+            }
+            // v4.8.113: 工具产图缩略图 (render_urls)
+            RenderUrlsPreview(content)
+            HighlightCodeBlock(
+                code = if (cwd.isNullOrBlank()) command else "# cwd: $cwd\n$command",
+                language = "bash",
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (stdout.isNotEmpty()) {
+                Text(text = "stdout", style = MaterialTheme.typography.labelMedium)
+                HighlightCodeBlock(
+                    code = stdout,
+                    language = "plaintext",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            if (stderr.isNotEmpty()) {
+                Text(
+                    text = "stderr",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                HighlightCodeBlock(
+                    code = stderr,
+                    language = "plaintext",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+/** Shell 退出状态文本: exit code 为 0 显示绿色, 超时或非零显示错误色 */
+@Composable
+private fun ShellExitStatus(content: JsonElement, style: androidx.compose.ui.text.TextStyle) {
+    val exitCode = content.int("exitCode")
+    val timedOut = content.boolean("timedOut") ?: false
+    val ok = !timedOut && exitCode == 0
+    Text(
+        text = when {
+            timedOut -> stringResource(R.string.tool_ui_shell_timeout)
+            else -> stringResource(R.string.tool_ui_shell_exit, exitCode?.toString() ?: "?")
+        },
+        style = style,
+        color = if (ok) DiffAddedColor else MaterialTheme.colorScheme.error,
+    )
+}
+
+/** v4.8.113: 工具输出 JSON 的 render_urls 数组 (统一字段, 单图也返回数组)
+ *  v4.8.115: 提取逻辑收口 ToolImagePayload (渲染地址单一来源), 此处仅保留调用点。 */
+private fun renderUrlsOf(content: JsonElement?): List<String> =
+    me.rerere.rikkahub.data.ai.tools.extractRenderUrls(content)
+
+private const val MAX_RENDER_PREVIEW = 4
+
+/**
+ * v4.8.113 (用户定版"工具产图直接可见"): 从工具输出的 render_urls 渲染内联缩略图。
+ * 显示层聚合 (不改请求不改落盘): 模型复述与否图片都在工具段可见, 点击放大。
+ */
+@Composable
+private fun RenderUrlsPreview(content: JsonElement?, modifier: Modifier = Modifier) {
+    val urls = remember(content) { renderUrlsOf(content) }
+    if (urls.isEmpty()) return
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        urls.take(MAX_RENDER_PREVIEW).forEach { url ->
+            ZoomableAsyncImage(
+                model = url,
+                contentDescription = null,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(160.dp)
+                    .clip(MaterialTheme.shapes.small),
+            )
+        }
+    }
 }
 
 /** 从工具输出 JSON 读取布尔字段 */

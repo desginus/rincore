@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Files02
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
@@ -105,41 +106,18 @@ import org.koin.compose.koinInject
 
 @Composable
 fun SettingPage(vm: SettingVM = koinViewModel()) {
-    // v5.0.28：工作区整包导出/导入
-    val wsContext = androidx.compose.ui.platform.LocalContext.current
-    val wsScope = androidx.compose.runtime.rememberCoroutineScope()
-    val toaster = me.rerere.rikkahub.ui.context.LocalToaster.current
-    val workspaceExportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        contract = androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/zip"),
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        wsScope.launch {
-            runCatching {
-                wsContext.contentResolver.openOutputStream(uri)?.use { os ->
-                    me.rerere.rikkahub.data.workspace.WorkspaceArchive.exportTo(wsContext, os)
-                } ?: error("无法写入目标")
-            }.onSuccess { r -> toaster.show("工作区已导出：${r.files} 个文件（${r.bytes / 1024 / 1024}MB）") }
-                .onFailure { e -> toaster.show("导出失败：${e.message?.take(120)}") }
-        }
-    }
-    val workspaceImportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        wsScope.launch {
-            runCatching {
-                wsContext.contentResolver.openInputStream(uri)?.use { ins ->
-                    me.rerere.rikkahub.data.workspace.WorkspaceArchive.importFrom(wsContext, ins)
-                } ?: error("无法读取文件")
-            }.onSuccess { r -> toaster.show("工作区已导入：${r.files} 个文件（${r.bytes / 1024 / 1024}MB）") }
-                .onFailure { e -> toaster.show("导入失败：${e.message?.take(120)}") }
-        }
-    }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val navController = LocalNavController.current
     val settings by vm.settings.collectAsStateWithLifecycle()
     val launchCount by vm.launchCount.collectAsStateWithLifecycle()
     val filesManager: FilesManager = koinInject()
+
+    // v5.0.37 用户实证：工作区导入/导出残留把存储撑到 70G → 一键清理
+    val cleanupContext = androidx.compose.ui.platform.LocalContext.current
+    val cleanupScope = androidx.compose.runtime.rememberCoroutineScope()
+    val cleanupToaster = me.rerere.rikkahub.ui.context.LocalToaster.current
+    var cleanupReport by remember { mutableStateOf<me.rerere.rikkahub.data.workspace.StorageCleanup.Report?>(null) }
+    var cleaning by remember { mutableStateOf(false) }
 
     // v5.0.14 回贴: 工具矩阵 / 内置工具 内嵌页（我方功能, 上游无此入口）
     var showDomainPage by remember { mutableStateOf(false) }
@@ -470,38 +448,21 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = { Text("导出崩溃报告（Markdown）——完整堆栈，便于反馈问题") },
                         headlineContent = { Text("崩溃报告") },
                     )
-                    // v5.0.28 用户定案：工作区整包导出/导入（备份不包含 files/workspaces，这是唯一通道）
-                    item(
-                        onClick = { workspaceExportLauncher.launch("RinCore-workspaces-${System.currentTimeMillis()}.zip") },
-                        leadingContent = { CardGroupIcon(HugeIcons.Folder01, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = { Text("把工作区（含全部对话文件与沙箱）打成 zip —— 换机/重装前先导出") },
-                        headlineContent = { Text("导出工作区") },
-                    )
-                    item(
-                        onClick = { workspaceImportLauncher.launch(arrayOf("application/zip", "*/*")) },
-                        leadingContent = { CardGroupIcon(HugeIcons.Files02, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = { Text("从 zip 恢复工作区（覆盖同名文件，保留其余）") },
-                        headlineContent = { Text("导入工作区") },
-                    )
-                    // v5.0.32 用户定案：工作区锁状态 / 一键解锁
-                    val workspaceLocked = me.rerere.rikkahub.data.workspace.WorkspaceLock.isLocked(wsContext)
+                    // v5.0.37：清理工作区导入/导出残留（备份目录 / 导出压缩包 / 缓存）
                     item(
                         onClick = {
-                            if (workspaceLocked) {
-                                me.rerere.rikkahub.data.workspace.WorkspaceLock.unlock(wsContext)
-                                toaster.show("工作区已解锁：请手动重启应用，沙箱桥与工作区功能将恢复")
-                            } else {
-                                toaster.show("工作区当前为解锁状态")
+                            cleanupScope.launch {
+                                val r = me.rerere.rikkahub.data.workspace.StorageCleanup.scan(cleanupContext)
+                                if (r.items.isEmpty()) {
+                                    cleanupToaster.show("没有可清理的残留")
+                                } else {
+                                    cleanupReport = r
+                                }
                             }
                         },
-                        leadingContent = { CardGroupIcon(HugeIcons.Settings03, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = {
-                            Text(
-                                if (workspaceLocked) "当前已锁定：不启动沙箱桥、不访问工作区数据（点击解锁，需重启）"
-                                else "当前已解锁：沙箱桥与工作区功能正常"
-                            )
-                        },
-                        headlineContent = { Text(if (workspaceLocked) "工作区：已锁定" else "工作区：已解锁") },
+                        leadingContent = { CardGroupIcon(HugeIcons.Delete01, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text("工作区导入备份 / 导出压缩包 / 缓存（不会动工作区正文）") },
+                        headlineContent = { Text("清理残留文件") },
                     )
                     item(
                         onClick = { navController.navigate(Screen.SettingAdvanced) },
@@ -644,5 +605,43 @@ private fun ProviderConfigWarningCard(onClick: () -> Unit) {
             }
         }
     }
+    // v5.0.37：清理确认对话框
+    cleanupReport?.let { report ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { if (!cleaning) cleanupReport = null },
+            title = { Text("可清理 ${"%.1f".format(report.totalBytes / 1024.0 / 1024.0 / 1024.0)} GB") },
+            text = {
+                Column {
+                    report.items.take(6).forEach { item ->
+                        Text(
+                            "· ${item.label}：${"%.1f".format(item.bytes / 1024.0 / 1024.0 / 1024.0)} GB",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    if (report.items.size > 6) Text("… 共 ${report.items.size} 项", style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(8.dp))
+                    Text("只删除导入/导出产生的备份与缓存，工作区正文不会被动。", style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !cleaning,
+                    onClick = {
+                        cleaning = true
+                        cleanupScope.launch {
+                            val freed = me.rerere.rikkahub.data.workspace.StorageCleanup.clean(cleanupContext, report)
+                            cleaning = false
+                            cleanupReport = null
+                            cleanupToaster.show("已释放 ${"%.1f".format(freed / 1024.0 / 1024.0 / 1024.0)} GB")
+                        }
+                    },
+                ) { Text(if (cleaning) "清理中…" else "清理") }
+            },
+            dismissButton = {
+                TextButton(enabled = !cleaning, onClick = { cleanupReport = null }) { Text("取消") }
+            },
+        )
+    }
+
 }
 

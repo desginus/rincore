@@ -86,86 +86,13 @@ class RikkaHubApp : Application() {
      *
      * 幂等：完成后在 `files/.wipe_v5029_done` 写标记，后续启动不再执行。
      */
-    /**
-     * v5.0.32 用户定案（最终形态）：
-     *  - **绝对保留**：`files/workspaces/`（工作区全部数据）+ `files/.rin-bridge/`（桥 token）；
-     *  - **绝对清除**：`/data/data/<pkg>/` 下除 `files` 外的一切（databases / shared_prefs /
-     *    cache / code_cache / no_backup / app_webview / app_textures …）+ `files` 下除保留项的一切；
-     *  - **长期锁定**：写入 `files/.workspace_locked` —— 不启动沙箱桥、不预热 rootfs、不访问工作区；
-     *    只有用户在设置里手动解锁才会恢复（`.workspace_unlocked` 反向标记）。
-     *
-     * 安全措施：删除前用 canonicalPath 校验，工作区路径绝不进入删除集合。
-     * 幂等：`files/.wipe_v5032_done` 存在则跳过。
-     */
-    private fun performOneTimeWipeKeepingWorkspace() {
-        val pkg = packageName
-        if (pkg.endsWith(".test") || pkg.endsWith(".debug")) return
-        runCatching {
-            val files = filesDir ?: return
-            val flag = java.io.File(files, ".wipe_v5032_done")
-            if (flag.exists()) return
 
-            val workspaces = java.io.File(files, "workspaces")
-            val bridgeDir = java.io.File(files, ".rin-bridge")
-            // v5.0.35 用户实证修复：upload/ 是聊天附件实体文件（备份会打包它），
-            // 绝不能当"其他"清掉——否则导入备份后所有附件引用都会「未找到该文件」。
-            val keepInFiles = setOf(
-                "workspaces",   // 工作区（用户指定绝对保留）
-                ".rin-bridge",  // 桥 token
-                "upload",       // 聊天附件（文档/图片/音频实体）
-                flag.name,
-            )
-
-            // 安全基准：工作区与桥目录的规范路径（任何情况下都不得进入删除集合）
-            val uploadDir = java.io.File(files, "upload")
-            val protectedPaths = setOfNotNull(
-                runCatching { workspaces.canonicalPath }.getOrNull(),
-                runCatching { bridgeDir.canonicalPath }.getOrNull(),
-                runCatching { uploadDir.canonicalPath }.getOrNull(),
-            )
-            fun isProtected(file: java.io.File): Boolean =
-                runCatching { file.canonicalPath }.getOrNull() in protectedPaths
-
-            // ① /data/data/<pkg>/ 下：只留 files 目录本身，其余全删
-            val dataDir = files.parentFile
-            dataDir?.listFiles()?.forEach { child ->
-                if (child.name == "files" || isProtected(child)) return@forEach
-                runCatching { child.deleteRecursively() }
-            }
-
-            // ② files 下：只留 workspaces 与 .rin-bridge（及其路径），其余全删
-            files.listFiles()?.forEach { child ->
-                if (child.name in keepInFiles || isProtected(child)) return@forEach
-                runCatching { child.deleteRecursively() }
-            }
-
-            // ③ 缓存双保险（若上一步因目录被占用未删净）
-            runCatching { cacheDir?.deleteRecursively() }
-            runCatching { codeCacheDir?.deleteRecursively() }
-
-            // ④ 长期锁定工作区（只写标记，0 字节数据改动）
-            me.rerere.rikkahub.data.workspace.WorkspaceLock.lock(this)
-
-            // ⑤ 完成标记
-            runCatching { flag.writeText("done") }
-
-            android.util.Log.i(
-                "RikkaHubApp",
-                "v5.0.32 wipe+lock done | workspaces exists=${workspaces.exists()} " +
-                    "path=${workspaces.absolutePath} | bridgeToken=${java.io.File(bridgeDir, "token").exists()}"
-            )
-        }
-    }
 
     override fun onCreate() {
         super.onCreate()
         // v4.6.6: 崩溃收集器第一时间安装 (原位置在 startKoin 之后 — v4.6.5 出现
         // "启动即崩且无日志"的盲区, 任何初始化阶段崩溃必须可观测)
         CrashHandler.install(this)
-        // v5.0.29 用户定案：一次性数据重置（**只保留工作区**，其余全部清零）。
-        // 目的：把"遗传性数据"连根拔掉，让正式版回到干净态，再由用户导入备份恢复聊天。
-        // 必须在 Koin / Room / DataStore / 备份恢复之前执行（此处是最早可用的安全点）。
-        performOneTimeWipeKeepingWorkspace()
         // v4.5.5: 全局时区强制北京时间 — 工作区计时器等所有依赖默认时区的
         // 格式化 (SimpleDateFormat/DateTimeFormatter/日志时间戳) 统一按
         // UTC+8 呈现, 不随设备时区漂移。根修于应用入口, 非逐点打补丁。
@@ -317,20 +244,12 @@ class RikkaHubApp : Application() {
         // 供沙箱内进程/脚本 (rin 命令) 回连软件侧能力 (通知/AI/剪贴板/打开/分享).
         // v4.8.1: 挪 IO 后台线程 — token 文件 IO + Ktor 初始化不再阻塞主线程
         // (用户实证: v4.8.0 启动首页黑屏/卡顿; 铁律"主线程禁 file IO")。
-        // v5.0.32 用户定案：工作区锁定时「断桥」——不启动桥服务、不预热 rootfs。
-        // 桥的 token（files/.rin-bridge/token）与工作区数据原样保留，解锁后自动恢复。
-        if (!me.rerere.rikkahub.data.workspace.WorkspaceLock.isLocked(this@RikkaHubApp)) {
-            get<AppScope>().launch(Dispatchers.IO) {
-                runCatching { me.rerere.rikkahub.sandbox.SandboxBridgeServer.start(this@RikkaHubApp) }
-            }
-        } else {
-            android.util.Log.i("RikkaHubApp", "workspace locked → sandbox bridge NOT started")
+        get<AppScope>().launch(Dispatchers.IO) {
+            runCatching { me.rerere.rikkahub.sandbox.SandboxBridgeServer.start(this@RikkaHubApp) }
         }
         // v4.8.98: 沙箱预热 — 启动即后台把 proot/rootfs patch 走一遍 (30 分钟窗口节流),
         // 首个 workspace 工具调用不再付冷启动成本 (软件-沙箱一体化的"常驻感")。
-        if (!me.rerere.rikkahub.data.workspace.WorkspaceLock.isLocked(this)) {
-            runCatching { me.rerere.rikkahub.service.SandboxPrewarmer.warmAsync(get<AppScope>()) }
-        }
+        runCatching { me.rerere.rikkahub.service.SandboxPrewarmer.warmAsync(get<AppScope>()) }
         // v4.8.99 线程改革: 前后台状态单一事实源 (心跳能效策略消费) + 图像解析快照预热
         me.rerere.rikkahub.service.AppForegroundState.register(this)
         get<AppScope>().launch(Dispatchers.IO) {
