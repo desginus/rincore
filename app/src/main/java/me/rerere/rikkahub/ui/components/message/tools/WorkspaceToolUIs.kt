@@ -418,121 +418,12 @@ private fun JsonElement?.boolean(key: String): Boolean? =
     this?.jsonObjectOrNull?.get(key)?.jsonPrimitiveOrNull?.booleanOrNull
 
 /** 从工具输出 JSON 读取整型字段 */
-private fun JsonElement?.int(key: String): Int? =
-    this?.jsonObjectOrNull?.get(key)?.jsonPrimitiveOrNull?.intOrNull
-
-/** 从工具输出 JSON 读取长整型字段 */
-private fun JsonElement?.long(key: String): Long? =
-    this?.jsonObjectOrNull?.get(key)?.jsonPrimitiveOrNull?.longOrNull
-
-private const val FILE_SUMMARY_MAX_LINES = 10
-
-/** 由文件扩展名推断语法高亮语言 */
-private fun languageOf(path: String?): String = when (
-    path?.substringAfterLast('.', "")?.lowercase().orEmpty()
-) {
-    "kt", "kts" -> "kotlin"
-    "java" -> "java"
-    "js", "mjs", "cjs" -> "javascript"
-    "ts" -> "typescript"
-    "tsx" -> "tsx"
-    "jsx" -> "jsx"
-    "py" -> "python"
-    "rb" -> "ruby"
-    "go" -> "go"
-    "rs" -> "rust"
-    "c", "h" -> "c"
-    "cpp", "cc", "cxx", "hpp", "hxx" -> "cpp"
-    "cs" -> "csharp"
-    "swift" -> "swift"
-    "php" -> "php"
-    "sh", "bash", "zsh" -> "bash"
-    "json" -> "json"
-    "xml" -> "xml"
-    "html", "htm" -> "html"
-    "css" -> "css"
-    "scss" -> "scss"
-    "yaml", "yml" -> "yaml"
-    "toml" -> "toml"
-    "md", "markdown" -> "markdown"
-    "sql" -> "sql"
-    "gradle" -> "groovy"
-    else -> "plaintext"
-}
-
-/**
- * 工作空间展示文件: 向用户递交文件, 锚定胶囊窗显示
- */
-object ShowFileToolUI : ToolUIRenderer {
-    override val toolName: String = "workspace_show_file"
-
-    override fun icon(context: ToolUIContext): ImageVector = HugeIcons.File02
-
-    @Composable
-    override fun title(context: ToolUIContext): String {
-        // v4.8.61: 多文件 (paths 数组) — 单文件沿用原样; 多文件显示首名 + 数量
-        val path = context.arguments.getStringContent("path")
-        if (path != null) return stringResource(R.string.tool_ui_show_file, path)
-        val paths = (context.arguments as? JsonObject)?.get("paths") as? JsonArray
-        val first = paths?.firstOrNull()?.jsonPrimitive?.contentOrNull
-        return when {
-            first == null -> stringResource(R.string.tool_ui_show_file_default)
-            paths.size > 1 -> stringResource(R.string.tool_ui_show_file, "$first (+${paths.size - 1})")
-            else -> stringResource(R.string.tool_ui_show_file, first)
-        }
-    }
-}
 
 /** 内联摘要: 按扩展名语法高亮展示文件内容首部若干行 */
 @Composable
-private fun FileContentSummary(text: String, path: String?, loading: Boolean) {
-    val preview = remember(text) {
-        text.lineSequence().take(FILE_SUMMARY_MAX_LINES).joinToString("\n")
-    }
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.small)
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .padding(horizontal = 8.dp, vertical = 6.dp)
-            .shimmer(isLoading = loading),
-    ) {
-        CodeHighlightText(
-            code = preview,
-            language = languageOf(path),
-            fontSize = 11.sp,
-            lineHeight = 14.sp,
-            maxLines = FILE_SUMMARY_MAX_LINES,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
-}
 
 /** BottomSheet 详情: 文件路径 + 按扩展名语法高亮的完整内容 */
 @Composable
-private fun FileContentPreview(path: String?, code: String) {
-    Column(
-        modifier = Modifier
-            .fillMaxHeight(0.8f)
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(
-            text = path ?: stringResource(R.string.tool_ui_file),
-            style = MaterialTheme.typography.titleMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        HighlightCodeBlock(
-            code = code,
-            language = languageOf(path),
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
-}
 
 /**
  * v4.8.76: 后台任务 (workspace_job) — 标题显示动作与命令/任务号预览。
@@ -560,19 +451,6 @@ object JobToolUI : ToolUIRenderer {
 
 /** Shell 退出状态文本: exit code 为 0 显示绿色, 超时或非零显示错误色 */
 @Composable
-private fun ShellExitStatus(content: JsonElement, style: androidx.compose.ui.text.TextStyle) {
-    val exitCode = content.int("exitCode")
-    val timedOut = content.boolean("timedOut") ?: false
-    val ok = !timedOut && exitCode == 0
-    Text(
-        text = when {
-            timedOut -> stringResource(R.string.tool_ui_shell_timeout)
-            else -> stringResource(R.string.tool_ui_shell_exit, exitCode?.toString() ?: "?")
-        },
-        style = style,
-        color = if (ok) DiffAddedColor else MaterialTheme.colorScheme.error,
-    )
-}
 
 /** v4.8.113: 工具输出 JSON 的 render_urls 数组 (统一字段, 单图也返回数组)
  *  v4.8.115: 提取逻辑收口 ToolImagePayload (渲染地址单一来源), 此处仅保留调用点。 */
@@ -607,20 +485,37 @@ private fun RenderUrlsPreview(content: JsonElement?, modifier: Modifier = Modifi
 }
 
 /** 从工具输出 JSON 读取布尔字段 */
-private fun JsonElement?.boolean(key: String): Boolean? =
     this?.jsonObjectOrNull?.get(key)?.jsonPrimitiveOrNull?.booleanOrNull
 
 /** 从工具输出 JSON 读取整型字段 */
-private fun JsonElement?.int(key: String): Int? =
     this?.jsonObjectOrNull?.get(key)?.jsonPrimitiveOrNull?.intOrNull
 
 /** 从工具输出 JSON 读取长整型字段 */
-private fun JsonElement?.long(key: String): Long? =
     this?.jsonObjectOrNull?.get(key)?.jsonPrimitiveOrNull?.longOrNull
 
-private const val FILE_SUMMARY_MAX_LINES = 10
 
 /** 由文件扩展名推断语法高亮语言 */
+
+object ShowFileToolUI : ToolUIRenderer {
+    override val toolName: String = "workspace_show_file"
+
+    override fun icon(context: ToolUIContext): ImageVector = HugeIcons.File02
+
+    @Composable
+    override fun title(context: ToolUIContext): String {
+        // v4.8.61: 多文件 (paths 数组) — 单文件沿用原样; 多文件显示首名 + 数量
+        val path = context.arguments.getStringContent("path")
+        if (path != null) return stringResource(R.string.tool_ui_show_file, path)
+        val paths = (context.arguments as? JsonObject)?.get("paths") as? JsonArray
+        val first = paths?.firstOrNull()?.jsonPrimitive?.contentOrNull
+        return when {
+            first == null -> stringResource(R.string.tool_ui_show_file_default)
+            paths.size > 1 -> stringResource(R.string.tool_ui_show_file, "$first (+${paths.size - 1})")
+            else -> stringResource(R.string.tool_ui_show_file, first)
+        }
+    }
+}
+
 private fun languageOf(path: String?): String = when (
     path?.substringAfterLast('.', "")?.lowercase().orEmpty()
 ) {
