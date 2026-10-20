@@ -489,6 +489,9 @@ private class AttachmentAction(
  * 工具箱方形入口（v5.0.20 用户定版）：输入栏同源玻璃卡片——
  * 半透明底 + 圆角 + 1dp 高光描边，4 列 × 3 行，只要方形不要条形。
  */
+/** v5.0.24 用户定案：上下文环基准恒定 1M（不随模型 contextLength 变化）。 */
+private const val CONTEXT_WINDOW_BASELINE_TOKENS = 1_000_000f
+
 @Composable
 private fun GlassToolTile(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
