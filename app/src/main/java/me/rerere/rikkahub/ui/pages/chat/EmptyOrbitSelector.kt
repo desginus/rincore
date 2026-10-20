@@ -112,9 +112,11 @@ fun EmptyOrbitSelector(
     Box(modifier = modifier.fillMaxSize().onSizeChanged { area = it }) {
         if (area.width <= 0 || area.height <= 0) return@Box
 
-        // v5.0.26 用户定案：左下角锚定 —— A=右上(屏高 38% 处) → B=左下角; C=弦中点沿法线外凸
-        val a = Offset2(area.width - edgePx, area.height * ORBIT_TOP_RATIO)
+        // v5.0.26 用户定案：左下角锚定 + 右上角相对左下角高度差「上移 50%」
+        // 设 B=左下角, baseTop=屏高 38%；原高差 = B.y - baseTop；A.y = baseTop - 高差*0.5
         val b = Offset2(edgePx, area.height - bottomEdgePx)
+        val baseTop = area.height * ORBIT_TOP_RATIO
+        val a = Offset2(area.width - edgePx, baseTop - (b.y - baseTop) * 0.5f)
         val abx = b.x - a.x
         val aby = b.y - a.y
         val abLen = hypot(abx, aby).coerceAtLeast(1f)

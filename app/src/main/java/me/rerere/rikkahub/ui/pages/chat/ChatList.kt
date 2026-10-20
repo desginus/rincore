@@ -305,23 +305,6 @@ private fun ChatListNormal(
         modifier = Modifier
             .fillMaxSize(),
     ) {
-        // v5.0.24 用户定案：双层星轨回归——挂在空态内容区（ChatList 内部），
-        // 因此天然位于抽屉之下、输入栏之上（v5.0.18 事故教训：绝不再挂外挂层）。
-        if (onOrbitSelectAssistant != null && onOrbitSelectFolder != null &&
-            conversation.messageNodes.isEmpty() && !loading
-        ) {
-            EmptyOrbitSelector(
-                currentFolderId = conversation.folderId,
-                onSelectAssistant = onOrbitSelectAssistant,
-                onSelectFolder = onOrbitSelectFolder,
-                hazeState = hazeState,
-                blurEnabled = settings.displaySetting.enableBlurEffect,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(bottom = innerPadding.calculateBottomPadding()),
-            )
-        }
-
         // 自动滚动到底部
         if (settings.displaySetting.enableAutoScroll) {
             LaunchedEffect(state) {
@@ -464,6 +447,23 @@ private fun ChatListNormal(
             }
             }
         }
+        // v5.0.26 用户实证：星轨「只能看不能点」= 它画在 LazyColumn 之前被列表盖住。
+        // 现移到列表之后（Box 内最后 → 最上层 → 可点击）；层级仍在抽屉之下、输入栏之上。
+        if (onOrbitSelectAssistant != null && onOrbitSelectFolder != null &&
+            conversation.messageNodes.isEmpty() && !loading
+        ) {
+            EmptyOrbitSelector(
+                currentFolderId = conversation.folderId,
+                onSelectAssistant = onOrbitSelectAssistant,
+                onSelectFolder = onOrbitSelectFolder,
+                hazeState = hazeState,
+                blurEnabled = settings.displaySetting.enableBlurEffect,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = innerPadding.calculateBottomPadding()),
+            )
+        }
+
 
         Box(
             modifier = Modifier

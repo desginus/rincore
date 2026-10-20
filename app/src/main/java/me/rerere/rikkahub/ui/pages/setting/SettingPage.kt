@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -103,6 +104,36 @@ import org.koin.compose.koinInject
 
 @Composable
 fun SettingPage(vm: SettingVM = koinViewModel()) {
+    // v5.0.28：工作区整包导出/导入
+    val wsContext = androidx.compose.ui.platform.LocalContext.current
+    val wsScope = androidx.compose.runtime.rememberCoroutineScope()
+    val toaster = me.rerere.rikkahub.ui.context.LocalToaster.current
+    val workspaceExportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/zip"),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        wsScope.launch {
+            runCatching {
+                wsContext.contentResolver.openOutputStream(uri)?.use { os ->
+                    me.rerere.rikkahub.data.workspace.WorkspaceArchive.exportTo(wsContext, os)
+                } ?: error("无法写入目标")
+            }.onSuccess { r -> toaster.show("工作区已导出：${r.files} 个文件（${r.bytes / 1024 / 1024}MB）") }
+                .onFailure { e -> toaster.show("导出失败：${e.message?.take(120)}") }
+        }
+    }
+    val workspaceImportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        wsScope.launch {
+            runCatching {
+                wsContext.contentResolver.openInputStream(uri)?.use { ins ->
+                    me.rerere.rikkahub.data.workspace.WorkspaceArchive.importFrom(wsContext, ins)
+                } ?: error("无法读取文件")
+            }.onSuccess { r -> toaster.show("工作区已导入：${r.files} 个文件（${r.bytes / 1024 / 1024}MB）") }
+                .onFailure { e -> toaster.show("导入失败：${e.message?.take(120)}") }
+        }
+    }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val navController = LocalNavController.current
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -437,6 +468,19 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         leadingContent = { CardGroupIcon(HugeIcons.Alert01, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text("导出崩溃报告（Markdown）——完整堆栈，便于反馈问题") },
                         headlineContent = { Text("崩溃报告") },
+                    )
+                    // v5.0.28 用户定案：工作区整包导出/导入（备份不包含 files/workspaces，这是唯一通道）
+                    item(
+                        onClick = { workspaceExportLauncher.launch("RinCore-workspaces-${System.currentTimeMillis()}.zip") },
+                        leadingContent = { CardGroupIcon(HugeIcons.Folder02, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text("把工作区（含全部对话文件与沙箱）打成 zip —— 换机/重装前先导出") },
+                        headlineContent = { Text("导出工作区") },
+                    )
+                    item(
+                        onClick = { workspaceImportLauncher.launch(arrayOf("application/zip", "*/*")) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Folder03, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text("从 zip 恢复工作区（覆盖同名文件，保留其余）") },
+                        headlineContent = { Text("导入工作区") },
                     )
                     item(
                         onClick = { navController.navigate(Screen.SettingAdvanced) },
