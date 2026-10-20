@@ -7,6 +7,8 @@ package me.rerere.rikkahub.ui.pages.chat
  * 问题定位: 抽屉内容/新建归属错误 → 本文件 + ChatDrawerVM
  * 基线: 原版移植 + 自研 (文件夹/入口) | 地图: docs/APP_MAP.md §A | 历史: .claude/skills/rincore-bug-record
  * ───────────────────────────────────────────────────────────────*/
+import androidx.compose.foundation.layout.fillMaxHeight
+import dev.chrisbanes.haze.blur.hazeBlur
 import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.clickable
@@ -123,6 +125,8 @@ fun ChatDrawerContent(
     current: Conversation,
     // v4.8.110: 抽屉收起回调 (小屏 Modal 传入; 大屏常驻抽屉为 null 且无需收起)
     onRequestCloseDrawer: (() -> Unit)? = null,
+    // v5.0.25 用户定案：抽屉 = 模糊效果（毛玻璃底），不是液态玻璃
+    hazeState: dev.chrisbanes.haze.HazeState? = null,
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -219,10 +223,25 @@ fun ChatDrawerContent(
     // 对话条)只剩很短一条; "之前改错了、没改回来" = 此改动从未回滚 (v4.8.122 只回滚了
     // 40dp 露边条插曲)。恢复**原版 300dp 固定宽度** (上游 RikkaHub 原样)。
     ModalDrawerSheet(
-        modifier = Modifier.width(300.dp)
+        modifier = Modifier.width(300.dp),
+        // v5.0.25：底板透明，由内容层做 hazeBlur（模糊），观感=毛玻璃
+        drawerContainerColor = if (hazeState != null) Color.Transparent
+        else MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         Column(
-            modifier = Modifier.padding(8.dp),
+            modifier = Modifier
+                .fillMaxHeight()
+                .then(
+                    if (hazeState != null) {
+                        Modifier.hazeBlur(
+                            input = dev.chrisbanes.haze.HazeInput.Sources(hazeState),
+                            style = dev.chrisbanes.haze.blur.HazeBlurStyle.Material3 {
+                                blurRadius(24.dp)
+                            },
+                        )
+                    } else Modifier
+                )
+                .padding(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (settings.displaySetting.showUpdates && !isPlayStore) {

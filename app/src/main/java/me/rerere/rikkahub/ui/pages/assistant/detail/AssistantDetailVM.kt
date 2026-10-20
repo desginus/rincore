@@ -110,6 +110,11 @@ class AssistantDetailVM(
         )
 
     /** v4.8.92: 该助手名下的全部单对话记忆（管理页「单对话记忆」视图用；与写入桶同口径）。 */
+    /** v5.0.25：助手名下全部项目包记忆（记忆页「项目包」范围） */
+    val folderMemories = assistant
+        .map { it.id }
+        .flatMapLatest { id -> memoryRepository.getFolderMemoriesOfAssistantFlow(id.toString()) }
+
     val conversationMemories = assistant
         .flatMapLatest { currentAssistant ->
             val scopeId = if (currentAssistant.useGlobalMemory) {

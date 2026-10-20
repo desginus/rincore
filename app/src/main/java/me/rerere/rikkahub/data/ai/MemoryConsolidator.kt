@@ -276,7 +276,9 @@ private fun Settings.memoryIdOf(conversation: Conversation): String? =
 private fun Settings.consolidationModel(conversation: Conversation?, assistant: Assistant): Model? {
     val fastModel = findModelById(fastModelId)?.takeIf { ModelAbility.TOOL in it.abilities }
     val chatModel = conversation?.let { getChatModelOf(it) } ?: findModelById(assistant.chatModelId ?: chatModelId)
-    return (fastModel ?: chatModel)?.copy(tools = emptySet())
+    // v5.0.25 用户定案：记忆有专用模型优先用它（做梦/整理），未配置再回落 fastModel
+    val memoryModel = memoryModelId?.let { findModelById(it) }
+    return (memoryModel ?: fastModel ?: chatModel)?.copy(tools = emptySet())
 }
 
 /**

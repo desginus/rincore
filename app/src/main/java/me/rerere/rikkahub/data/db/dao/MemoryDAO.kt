@@ -30,6 +30,10 @@ interface MemoryDAO {
     @Query("SELECT * FROM memoryentity WHERE folder_id = :folderId AND conversation_id IS NULL ORDER BY id ASC")
     suspend fun getMemoriesOfFolder(folderId: String): List<MemoryEntity>
 
+    // v5.0.25: 助手名下全部项目包记忆（按包分组展示）
+    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId AND folder_id IS NOT NULL AND conversation_id IS NULL ORDER BY folder_id ASC, id ASC")
+    fun getFolderMemoriesOfAssistantFlow(assistantId: String): Flow<List<MemoryEntity>>
+
     @Query("SELECT * FROM memoryentity WHERE conversation_id = :conversationId ORDER BY id ASC")
     fun getMemoriesOfConversationFlow(conversationId: String): Flow<List<MemoryEntity>>
 

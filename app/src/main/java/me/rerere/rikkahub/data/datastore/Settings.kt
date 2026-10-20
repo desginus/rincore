@@ -98,6 +98,8 @@ data class Settings(
     val opencodeRequestMode: Boolean = false,
     val videoGenerationModelId: Uuid = Uuid.random(),
     val compressModelId: Uuid = Uuid.random(),
+    // v5.0.25 用户定案：记忆专用模型（做梦/记忆整理用；null = 回落 fastModel → chatModel）
+    val memoryModelId: Uuid? = null,
     val compressPrompt: String = DEFAULT_COMPRESS_PROMPT,
     val routingModelId: Uuid? = null,
     // ── 工具矩阵（v4.8.83 重写）──

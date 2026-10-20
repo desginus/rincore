@@ -199,6 +199,11 @@ class MemoryRepository(
         memoryDAO.getMemoriesOfConversationFlow(conversationId)
             .map { entities -> entities.map { it.toModel() } }
 
+    // v5.0.25: 助手名下全部项目包记忆（UI 分组）
+    fun getFolderMemoriesOfAssistantFlow(assistantId: String): Flow<List<AssistantMemory>> =
+        memoryDAO.getFolderMemoriesOfAssistantFlow(assistantId)
+            .map { entities -> entities.map { it.toModel() } }
+
     // v5.0.24: 项目包记忆
     fun getMemoriesOfFolderFlow(folderId: String): Flow<List<AssistantMemory>> =
         memoryDAO.getMemoriesOfFolderFlow(folderId).map { entities -> entities.map { it.toModel() } }

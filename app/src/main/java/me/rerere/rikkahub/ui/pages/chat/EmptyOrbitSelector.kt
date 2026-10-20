@@ -70,7 +70,8 @@ import org.koin.compose.koinInject
 // 一圈 100 秒 — 直接按用户口径定为 100s (154:78s / 157:52s 均被本值取代)。
 private const val ORBIT_DURATION_MS = 100_000
 private val ORBIT_EDGE_DP = 52.dp
-private val ORBIT_TOP_DP = 44.dp
+// v5.0.25 用户实证：标题栏遮住右上角后上侧铆钉偏上 → 下移到标题栏之下
+private val ORBIT_TOP_DP = 76.dp
 private val INNER_GAP_DP = 64.dp
 private val ICON_DP = 42.dp
 private const val BOW_FACTOR = 0.16f

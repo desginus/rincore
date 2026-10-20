@@ -323,8 +323,9 @@ fun ChatInput(
                             }
                             if (showPlusMenu) {
                                 Popup(
+                                    // v5.0.25 用户定案：菜单相对加号稍微往右上偏
                                     alignment = Alignment.TopStart,
-                                    offset = IntOffset(0, 8),
+                                    offset = IntOffset(14, 4),
                                     onDismissRequest = { showPlusMenu = false },
                                     properties = PopupProperties(focusable = true),
                                 ) {

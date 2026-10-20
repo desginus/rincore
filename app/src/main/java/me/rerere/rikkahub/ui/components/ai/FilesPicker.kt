@@ -290,8 +290,12 @@ internal fun FilesPicker(
                             )
                         )
                     }
-                    // v5.0.24 用户定案：「工作区」入口删除（文件页统一走「应用文件」，锚定当前对话）
-                    Spacer(Modifier.weight(1f))
+                    // v5.0.25 用户定案：第 12 格 = 子代理预算（与「子代理」运行详情并列）
+                    GlassToolTile(
+                        HugeIcons.Gauge, "子代理预算",
+                        badge = conversationRuns.size,
+                        modifier = Modifier.weight(1f),
+                    ) { showSubAgentBudgetSheet = true }
                     GlassToolTile(HugeIcons.ComputerTerminal01, "工作目录", modifier = Modifier.weight(1f)) {
                         showCwdSheet = true
                     }
@@ -320,6 +324,13 @@ internal fun FilesPicker(
             runs = conversationRuns,
             onCancel = { runId -> subAgentRegistry.requestCancel(runId) },
             onDismiss = { showSubAgentSheet = false },
+        )
+    }
+
+    if (showSubAgentBudgetSheet) {
+        SubAgentBudgetSheet(
+            runs = conversationRuns,
+            onDismiss = { showSubAgentBudgetSheet = false },
         )
     }
 

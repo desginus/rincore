@@ -202,7 +202,8 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
                         navController = navController,
                         current = conversation,
                         vm = vm,
-                        settings = setting
+                        settings = setting,
+                        hazeState = hazeState,
                     )
                 }
             ) {
@@ -235,7 +236,8 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
                         navController = navController,
                         current = conversation,
                         vm = vm,
-                        settings = setting
+                        settings = setting,
+                        hazeState = hazeState,
                     )
                 }
             ) {
@@ -535,6 +537,8 @@ private fun ChatFilesPickerSheet(
     ModalBottomSheet(
         sheetState = filesSheetState,
         onDismissRequest = { dismissAll() },
+        // v5.0.25 用户定案：工具箱 = 玻璃底（与输入栏同族）
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.78f),
     ) {
         FilesPicker(
             conversation = conversation,
