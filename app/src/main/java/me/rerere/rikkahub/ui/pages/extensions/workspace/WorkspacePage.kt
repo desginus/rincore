@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.extensions.workspace
 
+import me.rerere.hugeicons.stroke.FileImport
 import androidx.compose.material3.IconButton
 import me.rerere.hugeicons.stroke.FileExport
 import kotlinx.coroutines.launch
