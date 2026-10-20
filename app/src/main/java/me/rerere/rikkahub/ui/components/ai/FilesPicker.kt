@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.components.ai
 
+import me.rerere.hugeicons.stroke.AiBrain01
+import me.rerere.hugeicons.stroke.Clock02
 import me.rerere.hugeicons.stroke.Clock01
 import me.rerere.hugeicons.stroke.BubbleChatQuestion
 import androidx.compose.ui.draw.clip
@@ -235,7 +237,7 @@ internal fun FilesPicker(
                         navController.navigate(Screen.MediaCreationSessions)
                     }
                     GlassToolTile(
-                        HugeIcons.Gauge, "子代理", badge = conversationRuns.size, modifier = Modifier.weight(1f)
+                        HugeIcons.AiBrain01, "子代理", badge = conversationRuns.size, modifier = Modifier.weight(1f)
                     ) { showSubAgentSheet = true }
                 }
 
@@ -244,7 +246,7 @@ internal fun FilesPicker(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    GlassToolTile(HugeIcons.Activity01, "观测", modifier = Modifier.weight(1f)) {
+                    GlassToolTile(HugeIcons.Clock02, "观测", modifier = Modifier.weight(1f)) {
                         onDismiss()
                         navController.navigate(Screen.SettingCallTrace)
                     }

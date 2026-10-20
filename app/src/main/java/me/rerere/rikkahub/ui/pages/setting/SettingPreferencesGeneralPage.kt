@@ -126,7 +126,26 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = { Text(stringResource(R.string.setting_display_page_background_effect_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_display_page_background_effect_title)) },
                     )
-                    // v5.0.20 用户定案：效果类型统一玻璃，选择器已移除
+                    // v5.0.23：效果类型二选一恢复（模糊 / 液态玻璃）
+                    if (displaySetting.enableBlurEffect) {
+                        formItem(
+                            headlineContent = { Text(stringResource(R.string.setting_display_page_background_effect_type)) },
+                        ) {
+                            ConnectedChoiceButtons(
+                                options = BackgroundEffectType.entries,
+                                selected = displaySetting.backgroundEffectType,
+                                onSelect = { updateDisplaySetting(displaySetting.copy(backgroundEffectType = it)) },
+                            ) { type, selected ->
+                                ConnectedChoiceLabel(
+                                    text = when (type) {
+                                        BackgroundEffectType.BLUR -> stringResource(R.string.setting_display_page_background_effect_blur)
+                                        BackgroundEffectType.GLASS -> stringResource(R.string.setting_display_page_background_effect_glass)
+                                    },
+                                    selected = selected,
+                                )
+                            }
+                        }
+                    }
                     switchItem(
                         checked = displaySetting.enableMessageGenerationHapticEffect,
                         onCheckedChange = {
