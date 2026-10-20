@@ -559,8 +559,11 @@ class RouteActivity : ComponentActivity() {
                                 metadata = NavDisplay.transitionSpec { fadeIn() togetherWith fadeOut() }
                                     + NavDisplay.popTransitionSpec { fadeIn() togetherWith fadeOut() }
                             ) { key ->
-                                // v5.0.16: 外挂宿主（原版 ChatPage 逐字 + 我方功能浮层）
-                                me.rerere.rikkahub.ui.pages.chat.ChatPageHost(
+                                // v5.0.20 用户定案：撤销外挂宿主，恢复常规调用链
+                                // （ChatPageHost 的 Box 包装层已移除——用户判断输入框纹理
+                                //  不是模糊本体问题，而是"其他地方渲染截流/少了渲染层"，
+                                //  外挂层正是最可疑的多余渲染层）
+                                me.rerere.rikkahub.ui.pages.chat.ChatPage(
                                     id = Uuid.parse(key.id),
                                     text = key.text,
                                     files = key.files.map { it.toUri() },

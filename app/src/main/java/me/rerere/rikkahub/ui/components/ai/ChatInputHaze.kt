@@ -7,9 +7,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.blur.HazeBlurStyle
-import dev.chrisbanes.haze.blur.hazeBlur
-import dev.chrisbanes.haze.blur.material3.Material3
 import dev.chrisbanes.haze.glass.GlassDefaults
 import dev.chrisbanes.haze.glass.GlassStyle
 import dev.chrisbanes.haze.glass.GlassStyleScope
@@ -33,35 +30,26 @@ internal fun Modifier.chatInputHaze(
     shape: RoundedCornerShape,
 ): Modifier {
     if (!displaySetting.enableBlurEffect) return this
-    return when (displaySetting.backgroundEffectType) {
-        BackgroundEffectType.BLUR -> hazeBlur(
-            input = HazeInput.Sources(hazeState),
-            style = HazeBlurStyle.Material3 {
-                blurRadius(12.dp)
-            },
-        )
-
-        BackgroundEffectType.GLASS -> {
-            val darkMode = LocalDarkMode.current
-            hazeGlass(
-                input = HazeInput.Sources(hazeState),
-                style = GlassStyle.Material3(
-                    containerColor = containerColor,
-                    tint = containerColor.copy(alpha = 0.3f),
-                ) {
-                    appearanceResponse(dark = darkMode)
-                    // Keep background text from competing with the input text.
-                    optics(
-                        GlassDefaults.optics.copy(
-                            blurRadius = OpticalSizeValue.Fixed(16.dp),
-                            depth = OpticalSizeValue.Fixed(0.5f),
-                        )
-                    )
-                    shape(shape)
-                },
+    // v5.0.20 用户定案：效果类型统一为「玻璃」——删除模糊/玻璃二选一。
+    // 仍读 backgroundEffectType 字段以保持旧数据兼容，但渲染恒定走玻璃分支。
+    val darkMode = LocalDarkMode.current
+    return hazeGlass(
+        input = HazeInput.Sources(hazeState),
+        style = GlassStyle.Material3(
+            containerColor = containerColor,
+            tint = containerColor.copy(alpha = 0.3f),
+        ) {
+            appearanceResponse(dark = darkMode)
+            // Keep background text from competing with the input text.
+            optics(
+                GlassDefaults.optics.copy(
+                    blurRadius = OpticalSizeValue.Fixed(16.dp),
+                    depth = OpticalSizeValue.Fixed(0.5f),
+                )
             )
-        }
-    }
+            shape(shape)
+        },
+    )
 }
 
 // Haze 按系统夜间模式选玻璃的明暗预设，应用内单独设置主题时会选错（深色主题下被提亮发白），

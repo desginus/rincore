@@ -546,6 +546,8 @@ private fun ChatFilesPickerSheet(
             onPickAudio = attachmentPickerActions.onPickAudio,
             onPickFile = attachmentPickerActions.onPickFile,
             onSketch = attachmentPickerActions.onSketch,
+            // v5.0.20 用户定版：工具箱 12 格 → 延迟自动回复开关
+            onToggleDeferAutoReply = { vm.toggleDeferAutoReply(it) },
             onStartVoiceMode = if (
                 setting.getSelectedASRProvider()?.supportsServerVadVoiceMode == true &&
                 voiceState.phase == VoicePhase.Off

@@ -1,5 +1,13 @@
 package me.rerere.rikkahub.ui.components.ai
 
+import me.rerere.hugeicons.stroke.Clock01
+import me.rerere.hugeicons.stroke.BubbleChatQuestion
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.background
 import kotlinx.coroutines.launch
 import me.rerere.ui.sketch.SketchResult
 import me.rerere.ui.sketch.SketchDialog
@@ -124,6 +132,8 @@ internal fun FilesPicker(
     onPickFile: () -> Unit,
     onSketch: () -> Unit,
     onStartVoiceMode: (() -> Unit)? = null,
+    // v5.0.20 用户定版：工具箱 12 格 → 延迟自动回复开关
+    onToggleDeferAutoReply: (Boolean) -> Unit = {},
 ) {
     val settings = LocalSettings.current
     val provider = chatModel?.findProvider(providers = settings.providers)
@@ -188,196 +198,87 @@ internal fun FilesPicker(
                 onDismissAll = onDismiss,
             )
 
+            // v5.0.20 用户定版：工具箱 = 12 个方形入口（4 × 3），只要方形 UI 不要条形 UI。
+            // 删除拍照 / 照片 / 上传文件（草图保留）；整格使用输入栏同源玻璃卡片风格。
             FilesPickerPage.MAIN -> Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
                     .padding(bottom = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                AttachmentGrid(
-                    actions = buildList {
-                        add(AttachmentAction(HugeIcons.Camera01, R.string.take_picture, onTakePic))
-                        add(AttachmentAction(HugeIcons.Image02, R.string.photo, onPickImage))
-                        add(AttachmentAction(HugeIcons.PaintBoard, R.string.sketch, onSketch))
-                        if (provider != null && provider is ProviderSetting.Google) {
-                            add(AttachmentAction(HugeIcons.Video01, R.string.video, onPickVideo))
-                            add(AttachmentAction(HugeIcons.MusicNote03, R.string.audio, onPickAudio))
-                        }
-                        add(AttachmentAction(HugeIcons.Files02, R.string.upload_file, onPickFile))
-                        onStartVoiceMode?.let { start ->
-                            add(AttachmentAction(HugeIcons.Voice, R.string.chat_page_voice_title, start))
-                        }
-                    }
-                )
+                val contextTokens = remember(conversation.messageNodes) { conversation.lastContextTokens() }
+                val contextLength = chatModel?.contextLength?.takeIf { it > 0 }
+                val remainingText = if (contextTokens != null && contextLength != null) {
+                    "剩 " + ((contextLength - contextTokens).coerceAtLeast(0) / 1000) + "K"
+                } else null
+                val messageText = conversation.messageNodes.size.toString() + " 条"
 
-                // 分段列表：各项按显示条件依次占位，首尾项才有大圆角
-                val showWorkspace = workspaces.isNotEmpty()
-                // 限制了上下文消息数就是滚动上下文，旧消息会自动移出，不需要压缩
-                val showCompress = assistant.contextMessageLimit <= 0
-                val itemCount = 1 + listOf(
-                    true, true, true, true, true, true,
-                    showWorkspace, showWorkspace && showCwd, showCompress
-                ).count { it }
-                var itemIndex = 0
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+                // 第 1 行：草图 / 翻译 / 媒体生成 / 子代理情况
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    if (showWorkspace) {
-                        WorkspacePickerListItem(
-                            assistant = assistant,
-                            workspaces = workspaces,
-                            shapes = ListItemDefaults.segmentedShapes(index = itemIndex++, count = itemCount),
-                            onUpdateAssistant = onUpdateAssistant,
-                            onNavigateToDetail = { id ->
-                                onDismiss()
-                                navController.navigate(Screen.WorkspaceDetail(id))
-                            },
-                            onNavigateToTerminal = { id ->
-                                onDismiss()
-                                navController.navigate(Screen.WorkspaceTerminal(id))
-                            },
-                            onNavigateToManage = {
-                                onDismiss()
-                                navController.navigate(Screen.Workspaces)
-                            },
+                    GlassToolTile(HugeIcons.PaintBoard, "草图", modifier = Modifier.weight(1f)) { showSketch = true }
+                    GlassToolTile(HugeIcons.LanguageCircle, "翻译", modifier = Modifier.weight(1f)) {
+                        onDismiss()
+                        navController.navigate(Screen.Translator)
+                    }
+                    GlassToolTile(HugeIcons.Image02, "媒体生成", modifier = Modifier.weight(1f)) {
+                        onDismiss()
+                        navController.navigate(Screen.MediaCreationSessions)
+                    }
+                    GlassToolTile(
+                        HugeIcons.Gauge, "子代理", badge = conversationRuns.size, modifier = Modifier.weight(1f)
+                    ) { showSubAgentSheet = true }
+                }
+
+                // 第 2 行：观测 / 本对话产出 / 上下文速览 / 压缩历史
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    GlassToolTile(HugeIcons.Activity01, "观测", modifier = Modifier.weight(1f)) {
+                        onDismiss()
+                        navController.navigate(Screen.SettingCallTrace)
+                    }
+                    GlassToolTile(
+                        HugeIcons.Folder01, "本对话产出", badge = producedFiles.size, modifier = Modifier.weight(1f)
+                    ) { showArtifactsSheet = true }
+                    GlassToolTile(
+                        HugeIcons.BubbleChatQuestion, "上下文速览", subtitle = remainingText, modifier = Modifier.weight(1f)
+                    ) { onShowCompressDialogChange(true) }
+                    GlassToolTile(
+                        HugeIcons.Package01, "压缩历史", subtitle = messageText, modifier = Modifier.weight(1f)
+                    ) { onShowCompressDialogChange(true) }
+                }
+
+                // 第 3 行：延迟回复 / 应用文件 / 工作区 / 工作目录
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    GlassToolTile(
+                        HugeIcons.Clock01, "延迟回复",
+                        active = settings.deferAutoReply,
+                        modifier = Modifier.weight(1f),
+                    ) { onToggleDeferAutoReply(!settings.deferAutoReply) }
+                    GlassToolTile(HugeIcons.Files02, "应用文件", modifier = Modifier.weight(1f)) {
+                        val workspaceId = assistant.workspaceId ?: return@GlassToolTile
+                        onDismiss()
+                        navController.navigate(
+                            Screen.WorkspaceDetail(
+                                id = workspaceId.toString(),
+                                initialPath = conversation.workspaceCwd,
+                            )
                         )
-
-                        // Workspace CWD
-                        if (showCwd) {
-                            SegmentedListItem(
-                                onClick = { showCwdSheet = true },
-                                shapes = ListItemDefaults.segmentedShapes(index = itemIndex++, count = itemCount),
-                                leadingContent = {
-                                    Icon(
-                                        imageVector = HugeIcons.Folder01,
-                                        contentDescription = stringResource(R.string.workspace_cwd_select_directory),
-                                    )
-                                },
-                                trailingContent = {
-                                    Icon(HugeIcons.ArrowRight01, contentDescription = null)
-                                },
-                            ) {
-                                Text(
-                                    text = conversation.workspaceCwd ?: "/workspace",
-                                    // 路径的末尾更有辨识度，放不下时省略开头
-                                    maxLines = 1,
-                                    overflow = TextOverflow.StartEllipsis,
-                                )
-                            }
-                        }
                     }
-
-                    // ── v5.0.17：对话功能入口（原「更多」菜单收纳） ──────
-                    SegmentedListItem(
-                        onClick = {
-                            onDismiss()
-                            navController.navigate(Screen.Translator)
-                        },
-                        shapes = ListItemDefaults.segmentedShapes(index = itemIndex++, count = itemCount),
-                        leadingContent = { Icon(HugeIcons.LanguageCircle, contentDescription = null) },
-                    ) {
-                        Text("翻译")
+                    GlassToolTile(HugeIcons.Codesandbox, "工作区", modifier = Modifier.weight(1f)) {
+                        onDismiss()
+                        navController.navigate(Screen.Workspaces)
                     }
-                    SegmentedListItem(
-                        onClick = {
-                            onDismiss()
-                            navController.navigate(Screen.MediaCreationSessions)
-                        },
-                        shapes = ListItemDefaults.segmentedShapes(index = itemIndex++, count = itemCount),
-                        leadingContent = { Icon(HugeIcons.Image02, contentDescription = null) },
-                    ) {
-                        Text("媒体生成")
-                    }
-                    SegmentedListItem(
-                        onClick = { showSubAgentSheet = true },
-                        shapes = ListItemDefaults.segmentedShapes(index = itemIndex++, count = itemCount),
-                        leadingContent = { Icon(HugeIcons.Gauge, contentDescription = null) },
-                        trailingContent = {
-                            if (conversationRuns.isNotEmpty()) {
-                                CountBadge(count = conversationRuns.size)
-                            }
-                        },
-                    ) {
-                        Text("子代理情况")
-                    }
-                    SegmentedListItem(
-                        onClick = {
-                            onDismiss()
-                            navController.navigate(Screen.SettingCallTrace)
-                        },
-                        shapes = ListItemDefaults.segmentedShapes(index = itemIndex++, count = itemCount),
-                        leadingContent = { Icon(HugeIcons.Activity01, contentDescription = null) },
-                    ) {
-                        Text("观测（运行日志）")
-                    }
-                    SegmentedListItem(
-                        onClick = { showArtifactsSheet = true },
-                        shapes = ListItemDefaults.segmentedShapes(index = itemIndex++, count = itemCount),
-                        leadingContent = { Icon(HugeIcons.Folder01, contentDescription = null) },
-                        trailingContent = {
-                            if (producedFiles.isNotEmpty()) {
-                                CountBadge(count = producedFiles.size)
-                            }
-                        },
-                    ) {
-                        Text("本对话产出")
-                    }
-                    // 原版草图（Sketch）入口 — 用户定案：MCP/技能让位后的空位放草图
-                    SegmentedListItem(
-                        onClick = { showSketch = true },
-                        shapes = ListItemDefaults.segmentedShapes(index = itemIndex++, count = itemCount),
-                        leadingContent = { Icon(HugeIcons.PencilEdit01, contentDescription = null) },
-                    ) {
-                        Text("草图")
-                    }
-
-                    // Compress History Button
-                    if (showCompress) {
-                        SegmentedListItem(
-                            onClick = { onShowCompressDialogChange(true) },
-                            shapes = ListItemDefaults.segmentedShapes(index = itemIndex++, count = itemCount),
-                            leadingContent = {
-                                Icon(
-                                    imageVector = HugeIcons.Package01,
-                                    contentDescription = null,
-                                )
-                            },
-                            trailingContent = {
-                                val contextTokens = remember(conversation.messageNodes) {
-                                    conversation.lastContextTokens()
-                                }
-                                val contextLength = chatModel?.contextLength?.takeIf { it > 0 }
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                ) {
-                                    Column(horizontalAlignment = Alignment.End) {
-                                        if (contextTokens != null && contextLength != null) {
-                                            Text(
-                                                text = "${contextTokens / 1000}K / ${contextLength / 1000}K",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
-                                        if (conversation.messageNodes.isNotEmpty()) {
-                                            Text(
-                                                text = stringResource(R.string.chat_page_message_count, conversation.messageNodes.size),
-                                                style = MaterialTheme.typography.labelMedium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
-                                    }
-                                    if (contextTokens != null && contextLength != null) {
-                                        // v5.0.17 用户定案：小圆环=当前窗口剩余额度占比
-                                        val used = (contextTokens.toFloat() / contextLength).coerceIn(0f, 1f)
-                                        ContextUsageRing(remaining = 1f - used)
-                                    }
-                                }
-                            },
-                        ) {
-                            Text(stringResource(R.string.chat_page_compress_context))
-                        }
+                    GlassToolTile(HugeIcons.ComputerTerminal01, "工作目录", modifier = Modifier.weight(1f)) {
+                        showCwdSheet = true
                     }
                 }
             }
@@ -569,6 +470,72 @@ private class AttachmentAction(
 )
 
 // 附件入口：一行最多四个，再多就均分成两行
+/**
+ * 工具箱方形入口（v5.0.20 用户定版）：输入栏同源玻璃卡片——
+ * 半透明底 + 圆角 + 1dp 高光描边，4 列 × 3 行，只要方形不要条形。
+ */
+@Composable
+private fun GlassToolTile(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    badge: Int = 0,
+    active: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val containerColor = if (active) {
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.62f)
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.55f)
+    }
+    val contentColor = if (active) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val secondary = subtitle ?: if (badge > 0) badge.toString() + " 项" else null
+
+    Column(
+        modifier = modifier
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(20.dp))
+            .background(containerColor)
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.32f),
+                shape = RoundedCornerShape(20.dp),
+            )
+            .clickable(onClick = onClick)
+            .padding(6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            modifier = Modifier.size(24.dp),
+            tint = contentColor,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (secondary != null) {
+            Text(
+                text = secondary,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
 @Composable
 private fun AttachmentGrid(
     actions: List<AttachmentAction>,
