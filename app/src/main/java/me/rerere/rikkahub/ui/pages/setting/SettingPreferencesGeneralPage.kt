@@ -297,7 +297,7 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
                     val bad = report.filter { me.rerere.rikkahub.data.diagnostics.BackgroundHealth.needsCleanup(it) }
                     if (bad.isNotEmpty()) {
                         val ids = bad.map { it.assistantId }.toSet()
-                        updateSettings { latest ->
+                        vm.updateSettings { latest ->
                             latest.copy(assistants = latest.assistants.map { a ->
                                 if (a.id.toString() in ids) a.copy(background = null) else a
                             })

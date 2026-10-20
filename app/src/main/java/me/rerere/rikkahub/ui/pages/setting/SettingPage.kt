@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.hugeicons.stroke.Files02
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import android.content.ActivityNotFoundException
