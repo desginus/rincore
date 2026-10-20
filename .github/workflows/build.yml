@@ -141,7 +141,7 @@ jobs:
           tag_name: ${{ env.TEST_TAG }}
           name: RinCore v${{ env.VN }} 测试版（可与正式版共存）
           body_path: ${{ env.BODY_FILE }}
-          files: app/build/outputs/apk/release/*.apk
+          files: app/build/outputs/apk/research/*.apk
           prerelease: true
           make_latest: false
           fail_on_unmatched_files: true
