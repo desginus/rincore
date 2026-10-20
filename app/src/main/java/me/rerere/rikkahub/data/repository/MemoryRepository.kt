@@ -174,6 +174,7 @@ class MemoryRepository(
         content = content,
         conversationId = conversationId,
         sourceConversationId = sourceConversationId,
+        folderId = folderId,
     )
 
     fun getMemoriesOfAssistantFlow(assistantId: String): Flow<List<AssistantMemory>> =
@@ -197,6 +198,14 @@ class MemoryRepository(
     fun getMemoriesOfConversationFlow(conversationId: String): Flow<List<AssistantMemory>> =
         memoryDAO.getMemoriesOfConversationFlow(conversationId)
             .map { entities -> entities.map { it.toModel() } }
+
+    // v5.0.24: 项目包记忆
+    fun getMemoriesOfFolderFlow(folderId: String): Flow<List<AssistantMemory>> =
+        memoryDAO.getMemoriesOfFolderFlow(folderId).map { entities -> entities.map { it.toModel() } }
+
+    suspend fun getMemoriesOfFolder(folderId: String): List<AssistantMemory> {
+        return memoryDAO.getMemoriesOfFolder(folderId).map { it.toModel() }
+    }
 
     suspend fun getMemoriesOfConversation(conversationId: String): List<AssistantMemory> {
         return memoryDAO.getMemoriesOfConversation(conversationId).map { it.toModel() }
@@ -245,6 +254,7 @@ class MemoryRepository(
         content: String,
         conversationId: String? = null,
         sourceConversationId: String? = null,
+        folderId: String? = null,
     ): AssistantMemory {
         // v3.8.29: 记忆 ID 改为创建时间戳 YYMMDDHHMMSS (如 260820213001)，
         // 不再自增 1,2,3。同秒冲突顺延 (id+1) 保证唯一。
@@ -258,6 +268,7 @@ class MemoryRepository(
             content = content,
             conversationId = conversationId,
             sourceConversationId = sourceConversationId,
+            folderId = folderId,
         )
         memoryDAO.insertMemory(
             MemoryEntity(
@@ -266,6 +277,7 @@ class MemoryRepository(
                 content = memory.content,
                 conversationId = memory.conversationId,
                 sourceConversationId = memory.sourceConversationId,
+                folderId = memory.folderId,
             )
         )
         return memory

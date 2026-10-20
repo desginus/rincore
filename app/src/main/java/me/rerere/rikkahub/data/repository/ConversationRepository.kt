@@ -338,6 +338,7 @@ class ConversationRepository(
     }
 
     suspend fun updateConversation(conversation: Conversation) {
+        var nodesWritten = false
         database.withTransaction {
             conversationDAO.update(
                 conversationToConversationEntity(conversation)
@@ -346,13 +347,27 @@ class ConversationRepository(
             // 事故链：ChatPage 打开即 updateDraftFolder(空壳) → saveConversation →
             // 此处 deleteByConversation + 写入 0 条 = 该对话消息全部永久删除。
             val existing = messageNodeDAO.countByConversation(conversation.id.toString())
-            if (conversation.messageNodes.isNotEmpty() || existing == 0) {
+            val incoming = conversation.messageNodes.size
+            // v5.0.24 用户明令「不希望再看见任何形式的删除上下文」：
+            // 第二道守卫 —— 非空但骤减（少于已有一半）一律视为数据丢失特征，拒绝写节点。
+            // 正常编辑/重新生成/分支切换只会等量或小幅变化，不会腰斩。
+            val suspiciousShrink = existing > 0 && incoming > 0 && incoming < existing / 2
+            if (suspiciousShrink) {
+                android.util.Log.w(
+                    "ConversationRepository",
+                    "updateConversation: REFUSE suspicious shrink ${conversation.id} ($existing -> $incoming) — metadata only"
+                )
+            } else if (conversation.messageNodes.isNotEmpty() || existing == 0) {
                 // 删除旧的节点，插入新的节点
                 messageNodeDAO.deleteByConversation(conversation.id.toString())
                 saveMessageNodes(conversation.id.toString(), conversation.messageNodes)
+                nodesWritten = true
             }
         }
-        messageFtsManager.indexConversation(conversation)
+        // v5.0.24: 节点未写入时不得用空壳重建索引（否则 FTS 也被清空）
+        if (nodesWritten || conversation.messageNodes.isNotEmpty()) {
+            messageFtsManager.indexConversation(conversation)
+        }
     }
 
     suspend fun deleteConversation(conversation: Conversation) {

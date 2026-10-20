@@ -300,6 +300,8 @@ fun ChatInput(
                             modifier = Modifier
                                 .weight(1f)
                                 .horizontalScroll(rememberScrollState()),
+                            // v5.0.24 用户实证：加号偏上 = 本行默认顶部对齐 + 30dp vs 36dp 高度差
+                            verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
                             // Model Picker
@@ -524,7 +526,8 @@ private fun ActionIconButton(
 ) {
     Surface(
         onClick = onClick,
-        modifier = Modifier.size(30.dp),
+        // v5.0.24 用户实证：与 ModelSelectorButton 的 36dp 对齐（原 30dp 视觉偏上/偏小）
+        modifier = Modifier.size(36.dp),
         shape = CircleShape,
         tonalElevation = 0.dp,
         color = Color.Transparent,

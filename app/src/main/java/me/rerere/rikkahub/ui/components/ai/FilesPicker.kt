@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.components.ai
 
+import androidx.compose.foundation.layout.Box
+import me.rerere.hugeicons.stroke.Book02
 import me.rerere.hugeicons.stroke.AiBrain01
 import me.rerere.hugeicons.stroke.Clock02
 import me.rerere.hugeicons.stroke.Clock01
@@ -246,18 +248,24 @@ internal fun FilesPicker(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    GlassToolTile(HugeIcons.Clock02, "观测", modifier = Modifier.weight(1f)) {
+                    // v5.0.24 用户定案：观测删除 → 记忆（三范围：单对话 / 项目包 / 助手）
+                    GlassToolTile(HugeIcons.Book02, "记忆", modifier = Modifier.weight(1f)) {
                         onDismiss()
-                        navController.navigate(Screen.SettingCallTrace)
+                        navController.navigate(Screen.AssistantMemory(assistant.id.toString()))
                     }
                     GlassToolTile(
                         HugeIcons.Folder01, "本对话产出", badge = producedFiles.size, modifier = Modifier.weight(1f)
                     ) { showArtifactsSheet = true }
+                    // v5.0.24 用户定案：环形 UI（基准固定 1M，亮色填充=已用占比，中心=当前消息条数）
                     GlassToolTile(
-                        HugeIcons.BubbleChatQuestion, "上下文速览", subtitle = remainingText, modifier = Modifier.weight(1f)
+                        HugeIcons.BubbleChatQuestion, "上下文速览",
+                        ringProgress = ((contextTokens ?: 0).toFloat() / CONTEXT_WINDOW_BASELINE_TOKENS)
+                            .coerceIn(0f, 1f),
+                        ringCenterText = conversation.messageNodes.size.toString(),
+                        modifier = Modifier.weight(1f)
                     ) { onShowCompressDialogChange(true) }
                     GlassToolTile(
-                        HugeIcons.Package01, "压缩历史", subtitle = messageText, modifier = Modifier.weight(1f)
+                        HugeIcons.Package01, "压缩历史", modifier = Modifier.weight(1f)
                     ) { onShowCompressDialogChange(true) }
                 }
 
@@ -281,10 +289,8 @@ internal fun FilesPicker(
                             )
                         )
                     }
-                    GlassToolTile(HugeIcons.Codesandbox, "工作区", modifier = Modifier.weight(1f)) {
-                        onDismiss()
-                        navController.navigate(Screen.Workspaces)
-                    }
+                    // v5.0.24 用户定案：「工作区」入口删除（文件页统一走「应用文件」，锚定当前对话）
+                    Spacer(Modifier.weight(1f))
                     GlassToolTile(HugeIcons.ComputerTerminal01, "工作目录", modifier = Modifier.weight(1f)) {
                         showCwdSheet = true
                     }
@@ -490,6 +496,9 @@ private fun GlassToolTile(
     subtitle: String? = null,
     badge: Int = 0,
     active: Boolean = false,
+    // v5.0.24（用户定案）：上下文速览=环形 UI（基准 1M，亮色填充，中心消息条数）
+    ringProgress: Float? = null,
+    ringCenterText: String? = null,
     onClick: () -> Unit,
 ) {
     val containerColor = if (active) {
@@ -519,12 +528,29 @@ private fun GlassToolTile(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            modifier = Modifier.size(24.dp),
-            tint = contentColor,
-        )
+        if (ringProgress != null) {
+            Box(modifier = Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(
+                    progress = { ringProgress },
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    strokeWidth = 3.dp,
+                )
+                Text(
+                    text = ringCenterText.orEmpty(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        } else {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                modifier = Modifier.size(24.dp),
+                tint = contentColor,
+            )
+        }
         Spacer(Modifier.height(4.dp))
         Text(
             text = label,

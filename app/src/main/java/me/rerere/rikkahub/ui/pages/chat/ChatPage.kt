@@ -479,6 +479,12 @@ private fun ChatPageContent(
                 onConversationSystemPromptChange = { newPrompt ->
                     vm.updateConversationSystemPrompt(newPrompt)
                 },
+                // v5.0.24 用户定案：双层星轨接线（空态切助手/选项目包）
+                onOrbitSelectAssistant = { id -> vm.moveConversationToAssistant(conversation, id) },
+                onOrbitSelectFolder = { folderId ->
+                    vm.updateConversation(conversation.copy(folderId = folderId))
+                    drawerVm.selectFolder(folderId)
+                },
             )
         }
 

@@ -16,13 +16,20 @@ import me.rerere.rikkahub.data.db.entity.MemoryEntity
 interface MemoryDAO {
     // v4.8.92: 助手级记忆 = 排除单对话记忆（conversation_id IS NULL）—— 单对话记忆绝不出现在
     // 其它对话的注入与"整个助手"列表里（用户定版：其它对话无法观测/修改/阅读）。
-    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId AND conversation_id IS NULL ORDER BY id ASC")
+    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId AND conversation_id IS NULL AND folder_id IS NULL ORDER BY id ASC")
     fun getMemoriesOfAssistantFlow(assistantId: String): Flow<List<MemoryEntity>>
 
-    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId AND conversation_id IS NULL ORDER BY id ASC")
+    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId AND conversation_id IS NULL AND folder_id IS NULL ORDER BY id ASC")
     suspend fun getMemoriesOfAssistant(assistantId: String): List<MemoryEntity>
 
     // ── v4.8.92: 单对话记忆 ──
+    // v5.0.24: 项目包记忆 —— 该包内所有对话可见
+    @Query("SELECT * FROM memoryentity WHERE folder_id = :folderId AND conversation_id IS NULL ORDER BY id ASC")
+    fun getMemoriesOfFolderFlow(folderId: String): Flow<List<MemoryEntity>>
+
+    @Query("SELECT * FROM memoryentity WHERE folder_id = :folderId AND conversation_id IS NULL ORDER BY id ASC")
+    suspend fun getMemoriesOfFolder(folderId: String): List<MemoryEntity>
+
     @Query("SELECT * FROM memoryentity WHERE conversation_id = :conversationId ORDER BY id ASC")
     fun getMemoriesOfConversationFlow(conversationId: String): Flow<List<MemoryEntity>>
 

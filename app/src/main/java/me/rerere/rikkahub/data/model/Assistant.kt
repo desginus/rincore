@@ -87,6 +87,8 @@ data class AssistantMemory(
     val conversationId: String? = null,
     // v4.8.92: 助手级记忆的来源对话（UI 小标签；不参与可见性判定）
     val sourceConversationId: String? = null,
+    // v5.0.24: 记忆三范围 —— 非空 = 项目包记忆（该包内对话可见）
+    val folderId: String? = null,
 )
 
 @Serializable

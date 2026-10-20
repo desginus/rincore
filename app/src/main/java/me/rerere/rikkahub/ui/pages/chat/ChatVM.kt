@@ -548,14 +548,17 @@ class ChatVM(
 
     fun moveConversationToAssistant(conversation: Conversation, targetAssistantId: Uuid) {
         viewModelScope.launch {
-            val conversationFull = conversationRepo.getConversationById(conversation.id) ?: return@launch
+            // v5.0.24 空对话修复（v4.8.148 教训）：未入库的空会话 getConversationById 返回 null，
+            // 旧实现直接 return → 双星轨点击「点亮但没切换」。改为：DB 缺失时以内存态为基线。
+            val conversationFull = conversationRepo.getConversationById(conversation.id) ?: conversation
             // 文件夹是助手内分组，切换助手后原文件夹在新助手下不可见，需清空归属避免会话丢失
             val updatedConversation = conversationFull.copy(
                 assistantId = targetAssistantId,
                 folderId = null,
             )
             if (conversation.id == _conversationId) {
-                chatService.saveConversation(_conversationId, updatedConversation)
+                // 空会话不入库：只更新内存态；发送时随机制落库
+                chatService.updateConversationState(_conversationId) { updatedConversation }
                 settingsStore.updateAssistant(targetAssistantId)
             } else {
                 conversationRepo.updateConversation(updatedConversation)

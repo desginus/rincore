@@ -842,8 +842,12 @@ class ChatService(
                     } else {
                         memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
                     }
-                    // v4.8.92: 单对话记忆 —— 只在"它所属的对话"里注入（其它对话不可观测）
-                    base + runCatching {
+                    // v5.0.24 三范围：助手级/全局（base） + 项目包（当前对话归属的包） + 单对话
+                    val folderMemories = conversation.folderId?.let { folderId ->
+                        runCatching { memoryRepository.getMemoriesOfFolder(folderId.toString()) }
+                            .getOrDefault(emptyList())
+                    } ?: emptyList()
+                    base + folderMemories + runCatching {
                         memoryRepository.getMemoriesOfConversation(conversation.id.toString())
                     }.getOrDefault(emptyList())
                 },

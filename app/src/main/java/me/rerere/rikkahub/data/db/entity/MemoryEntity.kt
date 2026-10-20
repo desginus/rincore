@@ -24,4 +24,7 @@ data class MemoryEntity(
     // v4.8.92: 来源对话 —— 助手级记忆标注"从哪个对话产生"（UI 小标签用；不参与可见性判定）
     @ColumnInfo("source_conversation_id")
     val sourceConversationId: String? = null,
+    // v5.0.24 用户定案：记忆三范围 —— 非空 = 项目包记忆（仅在该项目包内的对话可见）
+    @ColumnInfo("folder_id")
+    val folderId: String? = null,
 )

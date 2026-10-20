@@ -142,6 +142,8 @@ fun ChatList(
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onToggleFavorite: ((MessageNode) -> Unit)? = null,
     onConversationSystemPromptChange: ((String?) -> Unit)? = null,
+    onOrbitSelectAssistant: ((Uuid) -> Unit)? = null,
+    onOrbitSelectFolder: ((Uuid?) -> Unit)? = null,
 ) {
     AnimatedContent(
         targetState = previewMode,
@@ -184,6 +186,8 @@ fun ChatList(
                 onToolAnswer = onToolAnswer,
                 onToggleFavorite = onToggleFavorite,
                 onConversationSystemPromptChange = onConversationSystemPromptChange,
+                onOrbitSelectAssistant = onOrbitSelectAssistant,
+                onOrbitSelectFolder = onOrbitSelectFolder,
             )
         }
     }
@@ -233,6 +237,9 @@ private fun ChatListNormal(
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onToggleFavorite: ((MessageNode) -> Unit)? = null,
     onConversationSystemPromptChange: ((String?) -> Unit)? = null,
+    // v5.0.24 用户定案：双层星轨回归（空态内容区，抽屉之下、输入栏之上）
+    onOrbitSelectAssistant: ((Uuid) -> Unit)? = null,
+    onOrbitSelectFolder: ((Uuid?) -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val loadingState by rememberUpdatedState(loading)
@@ -298,6 +305,23 @@ private fun ChatListNormal(
         modifier = Modifier
             .fillMaxSize(),
     ) {
+        // v5.0.24 用户定案：双层星轨回归——挂在空态内容区（ChatList 内部），
+        // 因此天然位于抽屉之下、输入栏之上（v5.0.18 事故教训：绝不再挂外挂层）。
+        if (onOrbitSelectAssistant != null && onOrbitSelectFolder != null &&
+            conversation.messageNodes.isEmpty() && !loading
+        ) {
+            EmptyOrbitSelector(
+                currentFolderId = conversation.folderId,
+                onSelectAssistant = onOrbitSelectAssistant,
+                onSelectFolder = onOrbitSelectFolder,
+                hazeState = hazeState,
+                blurEnabled = settings.displaySetting.enableBlurEffect,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = innerPadding.calculateBottomPadding()),
+            )
+        }
+
         // 自动滚动到底部
         if (settings.displaySetting.enableAutoScroll) {
             LaunchedEffect(state) {
