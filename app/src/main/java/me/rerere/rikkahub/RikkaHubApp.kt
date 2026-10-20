@@ -88,7 +88,7 @@ class RikkaHubApp : Application() {
      */
     private fun performOneTimeWipeKeepingWorkspace() {
         // v5.0.30：只在正式版（me.rincore.app）执行；测试版/调试版跳过（它们本就是干净数据）
-        val pkg = applicationId ?: packageName
+        val pkg = packageName
         if (pkg.endsWith(".test") || pkg.endsWith(".debug")) return
         runCatching {
             val files = filesDir ?: return
