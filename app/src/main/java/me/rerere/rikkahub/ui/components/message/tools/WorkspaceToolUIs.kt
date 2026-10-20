@@ -1,6 +1,10 @@
+/* 【域 F·主题渲染】 — 消息/文档渲染 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.message.tools
 
-import me.rerere.hugeicons.stroke.File02
+
+/* ───【原版对齐】WorkspaceToolUIs.kt | 差异 ±16 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -8,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -23,7 +28,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
@@ -31,27 +40,27 @@ import me.rerere.ai.ui.DiffMetadata
 import me.rerere.ai.ui.metadataAs
 import me.rerere.common.http.jsonObjectOrNull
 import me.rerere.highlight.CodeHighlightText
+import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import androidx.compose.ui.res.stringResource
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ComputerTerminal01
+import me.rerere.hugeicons.stroke.File02
 import me.rerere.hugeicons.stroke.FileAdd
 import me.rerere.hugeicons.stroke.FileEdit
 import me.rerere.hugeicons.stroke.FileView
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.ui.components.richtext.DiffAddedColor
+import me.rerere.rikkahub.ui.components.richtext.DiffRemovedColor
+import me.rerere.rikkahub.ui.components.richtext.DiffView
 import me.rerere.rikkahub.ui.components.richtext.HighlightCodeBlock
+import me.rerere.rikkahub.ui.components.richtext.parseDiffStats
 import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.utils.generateUnifiedDiff
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
-import me.rerere.ui.richtext.DiffAddedColor
-import me.rerere.ui.richtext.DiffRemovedColor
-import me.rerere.ui.richtext.DiffView
-import me.rerere.ui.richtext.parseDiffStats
 
 /**
  * 工作空间编辑文件: 摘要显示增删统计与精简 diff, 详情为完整 diff view
  */
-private const val FILE_SUMMARY_MAX_LINES = 12
-
 object EditFileToolUI : ToolUIRenderer {
     private const val SUMMARY_MAX_LINES = 10
 
@@ -164,8 +173,8 @@ object ReadFileToolUI : ToolUIRenderer {
 
     @Composable
     override fun title(context: ToolUIContext): String {
-        val path = context.arguments.getStringContent("path")
-        return if (path != null) stringResource(R.string.tool_ui_read_file, path) else stringResource(R.string.tool_ui_read_file_default)
+        // v3.11.24: Cherry 风格语义化折叠标题 — 完整路径放展开详情, 不再堆在标题
+        return stringResource(R.string.tool_ui_read_file_default)
     }
 
     /** 已执行时从输出 JSON 读取文件内容 */
@@ -205,8 +214,8 @@ object WriteFileToolUI : ToolUIRenderer {
 
     @Composable
     override fun title(context: ToolUIContext): String {
-        val path = context.arguments.getStringContent("path")
-        return if (path != null) stringResource(R.string.tool_ui_write_file, path) else stringResource(R.string.tool_ui_write_file_default)
+        // v3.11.24: Cherry 风格语义化折叠标题 — 完整路径放展开详情, 不再堆在标题
+        return stringResource(R.string.tool_ui_write_file_default)
     }
 
     private fun textOf(context: ToolUIContext): String? =
@@ -217,6 +226,8 @@ object WriteFileToolUI : ToolUIRenderer {
     @Composable
     override fun Summary(context: ToolUIContext) {
         val text = remember(context) { textOf(context) } ?: return
+        // v4.8.113: 写入图片 (svg 等) 的缩略图
+        RenderUrlsPreview(context.content)
         FileContentSummary(
             text = text,
             path = context.arguments.getStringContent("path"),
@@ -231,7 +242,32 @@ object WriteFileToolUI : ToolUIRenderer {
             DefaultToolPreview(context = context)
             return
         }
+        // v4.8.113: 写入图片 (svg 等) 的缩略图
+        RenderUrlsPreview(context.content)
         FileContentPreview(path = context.arguments.getStringContent("path"), code = text)
+    }
+}
+
+/**
+ * 工作空间展示文件: 向用户递交文件, 锚定胶囊窗显示
+ */
+object ShowFileToolUI : ToolUIRenderer {
+    override val toolName: String = "workspace_show_file"
+
+    override fun icon(context: ToolUIContext): ImageVector = HugeIcons.File02
+
+    @Composable
+    override fun title(context: ToolUIContext): String {
+        // v4.8.61: 多文件 (paths 数组) — 单文件沿用原样; 多文件显示首名 + 数量
+        val path = context.arguments.getStringContent("path")
+        if (path != null) return stringResource(R.string.tool_ui_show_file, path)
+        val paths = (context.arguments as? JsonObject)?.get("paths") as? JsonArray
+        val first = paths?.firstOrNull()?.jsonPrimitive?.contentOrNull
+        return when {
+            first == null -> stringResource(R.string.tool_ui_show_file_default)
+            paths.size > 1 -> stringResource(R.string.tool_ui_show_file, "$first (+${paths.size - 1})")
+            else -> stringResource(R.string.tool_ui_show_file, first)
+        }
     }
 }
 
@@ -287,6 +323,26 @@ private fun FileContentPreview(path: String?, code: String) {
 }
 
 /**
+ * v4.8.76: 后台任务 (workspace_job) — 标题显示动作与命令/任务号预览。
+ */
+object JobToolUI : ToolUIRenderer {
+    private const val TITLE_MAX_CHARS = 40
+
+    override val toolName: String = "workspace_job"
+
+    @Composable
+    override fun title(context: ToolUIContext): String {
+        val action = context.arguments.getStringContent("action") ?: "job"
+        val detail = context.arguments.getStringContent("command")?.takeIf { it.isNotBlank() }
+            ?: context.arguments.getStringContent("job_id")
+        val preview = detail?.replace("\n", " ")?.trim()?.let {
+            if (it.length > TITLE_MAX_CHARS) it.take(TITLE_MAX_CHARS) + "…" else it
+        }
+        return if (preview.isNullOrBlank()) "后台任务 · $action" else "后台任务 · $action · $preview"
+    }
+}
+
+/**
  * 工作空间执行 Shell: 摘要显示退出状态与输出首部, 详情为命令 + stdout/stderr
  */
 object ShellToolUI : ToolUIRenderer {
@@ -318,6 +374,8 @@ object ShellToolUI : ToolUIRenderer {
         }
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             ShellExitStatus(content, MaterialTheme.typography.labelSmall)
+            // v4.8.113: 工具产图缩略图 (render_urls)
+            RenderUrlsPreview(content)
             if (combined.isNotEmpty()) {
                 Box(
                     modifier = Modifier
@@ -370,6 +428,8 @@ object ShellToolUI : ToolUIRenderer {
                 )
                 ShellExitStatus(content, MaterialTheme.typography.labelMedium)
             }
+            // v4.8.113: 工具产图缩略图 (render_urls)
+            RenderUrlsPreview(content)
             HighlightCodeBlock(
                 code = if (cwd.isNullOrBlank()) command else "# cwd: $cwd\n$command",
                 language = "bash",
@@ -415,45 +475,6 @@ private fun ShellExitStatus(content: JsonElement, style: androidx.compose.ui.tex
     )
 }
 
-/** 从工具输出 JSON 读取布尔字段 */
-private fun JsonElement?.boolean(key: String): Boolean? =
-    this?.jsonObjectOrNull?.get(key)?.jsonPrimitiveOrNull?.booleanOrNull
-
-/** 从工具输出 JSON 读取整型字段 */
-
-/** 内联摘要: 按扩展名语法高亮展示文件内容首部若干行 */
-@Composable
-
-/** BottomSheet 详情: 文件路径 + 按扩展名语法高亮的完整内容 */
-@Composable
-
-/**
- * v4.8.76: 后台任务 (workspace_job) — 标题显示动作与命令/任务号预览。
- */
-object JobToolUI : ToolUIRenderer {
-    private const val TITLE_MAX_CHARS = 40
-
-    override val toolName: String = "workspace_job"
-
-    @Composable
-    override fun title(context: ToolUIContext): String {
-        val action = context.arguments.getStringContent("action") ?: "job"
-        val detail = context.arguments.getStringContent("command")?.takeIf { it.isNotBlank() }
-            ?: context.arguments.getStringContent("job_id")
-        val preview = detail?.replace("\n", " ")?.trim()?.let {
-            if (it.length > TITLE_MAX_CHARS) it.take(TITLE_MAX_CHARS) + "…" else it
-        }
-        return if (preview.isNullOrBlank()) "后台任务 · $action" else "后台任务 · $action · $preview"
-    }
-}
-
-/**
- * 工作空间执行 Shell: 摘要显示退出状态与输出首部, 详情为命令 + stdout/stderr
- */
-
-/** Shell 退出状态文本: exit code 为 0 显示绿色, 超时或非零显示错误色 */
-@Composable
-
 /** v4.8.113: 工具输出 JSON 的 render_urls 数组 (统一字段, 单图也返回数组)
  *  v4.8.115: 提取逻辑收口 ToolImagePayload (渲染地址单一来源), 此处仅保留调用点。 */
 private fun renderUrlsOf(content: JsonElement?): List<String> =
@@ -487,37 +508,20 @@ private fun RenderUrlsPreview(content: JsonElement?, modifier: Modifier = Modifi
 }
 
 /** 从工具输出 JSON 读取布尔字段 */
+private fun JsonElement?.boolean(key: String): Boolean? =
     this?.jsonObjectOrNull?.get(key)?.jsonPrimitiveOrNull?.booleanOrNull
 
 /** 从工具输出 JSON 读取整型字段 */
+private fun JsonElement?.int(key: String): Int? =
     this?.jsonObjectOrNull?.get(key)?.jsonPrimitiveOrNull?.intOrNull
 
 /** 从工具输出 JSON 读取长整型字段 */
+private fun JsonElement?.long(key: String): Long? =
     this?.jsonObjectOrNull?.get(key)?.jsonPrimitiveOrNull?.longOrNull
 
+private const val FILE_SUMMARY_MAX_LINES = 10
 
 /** 由文件扩展名推断语法高亮语言 */
-
-object ShowFileToolUI : ToolUIRenderer {
-    override val toolName: String = "workspace_show_file"
-
-    override fun icon(context: ToolUIContext): ImageVector = HugeIcons.File02
-
-    @Composable
-    override fun title(context: ToolUIContext): String {
-        // v4.8.61: 多文件 (paths 数组) — 单文件沿用原样; 多文件显示首名 + 数量
-        val path = context.arguments.getStringContent("path")
-        if (path != null) return stringResource(R.string.tool_ui_show_file, path)
-        val paths = (context.arguments as? JsonObject)?.get("paths") as? JsonArray
-        val first = paths?.firstOrNull()?.jsonPrimitive?.contentOrNull
-        return when {
-            first == null -> stringResource(R.string.tool_ui_show_file_default)
-            paths.size > 1 -> stringResource(R.string.tool_ui_show_file, "$first (+${paths.size - 1})")
-            else -> stringResource(R.string.tool_ui_show_file, first)
-        }
-    }
-}
-
 private fun languageOf(path: String?): String = when (
     path?.substringAfterLast('.', "")?.lowercase().orEmpty()
 ) {
