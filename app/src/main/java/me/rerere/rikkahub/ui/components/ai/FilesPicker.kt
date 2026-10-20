@@ -159,6 +159,7 @@ internal fun FilesPicker(
     val subAgentRegistry: SubAgentRegistry = koinInject()
     var showSketch by remember { mutableStateOf(false) }
     var showSubAgentSheet by remember { mutableStateOf(false) }
+    var showSubAgentBudgetSheet by remember { mutableStateOf(false) }
     var showArtifactsSheet by remember { mutableStateOf(false) }
     val subAgentRuns by subAgentRegistry.runs.collectAsStateWithLifecycle()
     val conversationRuns = remember(subAgentRuns, conversation.id) {
