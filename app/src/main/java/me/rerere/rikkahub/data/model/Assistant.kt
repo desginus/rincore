@@ -89,6 +89,8 @@ data class AssistantMemory(
     val sourceConversationId: String? = null,
     // v5.0.24: 记忆三范围 —— 非空 = 项目包记忆（该包内对话可见）
     val folderId: String? = null,
+    // v5.0.26: 来源（manual=模型主动写入 / user=用户添加 / dream=做梦整理）
+    val source: String = "manual",
 )
 
 @Serializable

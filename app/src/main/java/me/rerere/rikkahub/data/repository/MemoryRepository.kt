@@ -175,6 +175,7 @@ class MemoryRepository(
         conversationId = conversationId,
         sourceConversationId = sourceConversationId,
         folderId = folderId,
+        source = source,
     )
 
     fun getMemoriesOfAssistantFlow(assistantId: String): Flow<List<AssistantMemory>> =
@@ -260,6 +261,7 @@ class MemoryRepository(
         conversationId: String? = null,
         sourceConversationId: String? = null,
         folderId: String? = null,
+        source: String = "manual",
     ): AssistantMemory {
         // v3.8.29: 记忆 ID 改为创建时间戳 YYMMDDHHMMSS (如 260820213001)，
         // 不再自增 1,2,3。同秒冲突顺延 (id+1) 保证唯一。
@@ -274,6 +276,7 @@ class MemoryRepository(
             conversationId = conversationId,
             sourceConversationId = sourceConversationId,
             folderId = folderId,
+            source = source,
         )
         memoryDAO.insertMemory(
             MemoryEntity(
@@ -283,6 +286,7 @@ class MemoryRepository(
                 conversationId = memory.conversationId,
                 sourceConversationId = memory.sourceConversationId,
                 folderId = memory.folderId,
+                source = memory.source,
             )
         )
         return memory

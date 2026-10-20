@@ -112,8 +112,8 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
     // 新会话发出第一条消息前，跟随抽屉当前选中的文件夹（#2133）
     val drawerVm: ChatDrawerVM = koinViewModel(viewModelStoreOwner = LocalContext.current as ComponentActivity)
     val selectedFolderId by drawerVm.selectedFolderId.collectAsStateWithLifecycle()
-    // v5.0.25：hazeState 提升到页面主作用域 —— 抽屉模糊与内容层共用同一源
-    val hazeState = rememberHazeState()
+    // v5.0.26 用户实证回退：hazeState 必须在 ChatPageContent 内自建（5.0.25 的"提升到主作用域"
+    // 改变了模糊源捕获路径 → 输入栏模糊退化/条纹。5.0.24 测试版正常 = 内部自建态）
     LaunchedEffect(selectedFolderId) {
         vm.updateDraftFolder(selectedFolderId)
     }
@@ -205,12 +205,10 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
                         current = conversation,
                         vm = vm,
                         settings = setting,
-                        hazeState = hazeState,
                     )
                 }
             ) {
                 ChatPageContent(
-                    hazeState = hazeState,
                     onStartVoiceMode = startVoiceMode,
                     inputState = inputState,
                     loadingJob = loadingJob,
@@ -240,12 +238,10 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
                         current = conversation,
                         vm = vm,
                         settings = setting,
-                        hazeState = hazeState,
                     )
                 }
             ) {
                 ChatPageContent(
-                    hazeState = hazeState,
                     onStartVoiceMode = startVoiceMode,
                     inputState = inputState,
                     loadingJob = loadingJob,
@@ -273,7 +269,6 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
 
 @Composable
 private fun ChatPageContent(
-    hazeState: dev.chrisbanes.haze.HazeState,
     onStartVoiceMode: () -> Unit,
     inputState: ChatInputState,
     loadingJob: Job?,
@@ -291,6 +286,8 @@ private fun ChatPageContent(
     onDismissError: (Uuid) -> Unit,
     onClearAllErrors: () -> Unit,
 ) {
+    // v5.0.26：恢复 5.0.24 的正确态 —— 页面内部自建 hazeState
+    val hazeState = rememberHazeState()
     // v5.0.24：轨道选包需与抽屉同一 VM（同 storeOwner=同一实例）
     val drawerVm: ChatDrawerVM = koinViewModel(viewModelStoreOwner = LocalContext.current as ComponentActivity)
     val scope = rememberCoroutineScope()

@@ -126,26 +126,7 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = { Text(stringResource(R.string.setting_display_page_background_effect_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_display_page_background_effect_title)) },
                     )
-                    // v5.0.23：效果类型二选一恢复（模糊 / 液态玻璃）
-                    if (displaySetting.enableBlurEffect) {
-                        formItem(
-                            headlineContent = { Text(stringResource(R.string.setting_display_page_background_effect_type)) },
-                        ) {
-                            ConnectedChoiceButtons(
-                                options = BackgroundEffectType.entries,
-                                selected = displaySetting.backgroundEffectType,
-                                onSelect = { updateDisplaySetting(displaySetting.copy(backgroundEffectType = it)) },
-                            ) { type, selected ->
-                                ConnectedChoiceLabel(
-                                    text = when (type) {
-                                        BackgroundEffectType.BLUR -> stringResource(R.string.setting_display_page_background_effect_blur)
-                                        BackgroundEffectType.GLASS -> stringResource(R.string.setting_display_page_background_effect_glass)
-                                    },
-                                    selected = selected,
-                                )
-                            }
-                        }
-                    }
+                    // v5.0.26 用户定案：效果类型固定为模糊（液态玻璃分支已作废，选择器移除）
                     switchItem(
                         checked = displaySetting.enableMessageGenerationHapticEffect,
                         onCheckedChange = {

@@ -70,8 +70,10 @@ import org.koin.compose.koinInject
 // 一圈 100 秒 — 直接按用户口径定为 100s (154:78s / 157:52s 均被本值取代)。
 private const val ORBIT_DURATION_MS = 100_000
 private val ORBIT_EDGE_DP = 52.dp
-// v5.0.25 用户实证：标题栏遮住右上角后上侧铆钉偏上 → 下移到标题栏之下
-private val ORBIT_TOP_DP = 76.dp
+// v5.0.26 用户定案：轨道改为「左下角锚定」——上端高度按屏高比例取，不再从顶部起算
+// （顶部锚定会被标题栏吞掉；底部锚定与标题栏无关，任何机型都稳定）
+private val ORBIT_BOTTOM_EDGE_DP = 52.dp
+private const val ORBIT_TOP_RATIO = 0.38f
 private val INNER_GAP_DP = 64.dp
 private val ICON_DP = 42.dp
 private const val BOW_FACTOR = 0.16f
@@ -103,16 +105,16 @@ fun EmptyOrbitSelector(
     var area by remember { mutableStateOf(IntSize.Zero) }
     val density = LocalDensity.current
     val edgePx = with(density) { ORBIT_EDGE_DP.toPx() }
-    val topPx = with(density) { ORBIT_TOP_DP.toPx() }
+    val bottomEdgePx = with(density) { ORBIT_BOTTOM_EDGE_DP.toPx() }
     val gapPx = with(density) { INNER_GAP_DP.toPx() }
     val iconPx = with(density) { ICON_DP.toPx() }
 
     Box(modifier = modifier.fillMaxSize().onSizeChanged { area = it }) {
         if (area.width <= 0 || area.height <= 0) return@Box
 
-        // 外弧: A=右上(新增对话下方) → B=左下(输入栏左上方); C=弦中点沿法线外凸 (缓弧)
-        val a = Offset2(area.width - edgePx, topPx)
-        val b = Offset2(edgePx, area.height - topPx)
+        // v5.0.26 用户定案：左下角锚定 —— A=右上(屏高 38% 处) → B=左下角; C=弦中点沿法线外凸
+        val a = Offset2(area.width - edgePx, area.height * ORBIT_TOP_RATIO)
+        val b = Offset2(edgePx, area.height - bottomEdgePx)
         val abx = b.x - a.x
         val aby = b.y - a.y
         val abLen = hypot(abx, aby).coerceAtLeast(1f)

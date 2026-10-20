@@ -268,11 +268,12 @@ fun AssistantMemoryPage(id: String) {
                     )
                 } else {
                     // 主动写入 = 条目式记忆，按范围过滤
+                    // v5.0.26：主动写入 = manual/user 来源的条目（dream 来源归「做梦整理」分类）
                     val scopedMemories = when (memoryScope) {
                         MemoryScope.ASSISTANT -> assistantMemories
                         MemoryScope.FOLDER -> folderMemories
                         MemoryScope.CONVERSATION -> emptyList()
-                    }
+                    }.filter { it.source != "dream" }
                     MemoryMemoriesTab(
                         memories = scopedMemories,
                         conversationMemories = if (memoryScope == MemoryScope.CONVERSATION) conversationMemories else emptyList(),

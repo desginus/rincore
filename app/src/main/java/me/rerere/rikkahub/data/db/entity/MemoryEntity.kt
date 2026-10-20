@@ -27,4 +27,7 @@ data class MemoryEntity(
     // v5.0.24 用户定案：记忆三范围 —— 非空 = 项目包记忆（仅在该项目包内的对话可见）
     @ColumnInfo("folder_id")
     val folderId: String? = null,
+    // v5.0.26 用户定案：记忆来源 —— manual=模型主动写入 / user=用户手动添加 / dream=做梦整理
+    @ColumnInfo("source")
+    val source: String = "manual",
 )
