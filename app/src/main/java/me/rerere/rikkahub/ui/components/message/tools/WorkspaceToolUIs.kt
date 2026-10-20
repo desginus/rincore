@@ -50,6 +50,8 @@ import me.rerere.ui.richtext.parseDiffStats
 /**
  * 工作空间编辑文件: 摘要显示增删统计与精简 diff, 详情为完整 diff view
  */
+private const val FILE_SUMMARY_MAX_LINES = 12
+
 object EditFileToolUI : ToolUIRenderer {
     private const val SUMMARY_MAX_LINES = 10
 
