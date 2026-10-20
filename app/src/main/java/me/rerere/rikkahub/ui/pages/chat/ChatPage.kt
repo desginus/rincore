@@ -112,6 +112,8 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
     // 新会话发出第一条消息前，跟随抽屉当前选中的文件夹（#2133）
     val drawerVm: ChatDrawerVM = koinViewModel(viewModelStoreOwner = LocalContext.current as ComponentActivity)
     val selectedFolderId by drawerVm.selectedFolderId.collectAsStateWithLifecycle()
+    // v5.0.25：hazeState 提升到页面主作用域 —— 抽屉模糊与内容层共用同一源
+    val hazeState = rememberHazeState()
     LaunchedEffect(selectedFolderId) {
         vm.updateDraftFolder(selectedFolderId)
     }
@@ -208,6 +210,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
                 }
             ) {
                 ChatPageContent(
+                    hazeState = hazeState,
                     onStartVoiceMode = startVoiceMode,
                     inputState = inputState,
                     loadingJob = loadingJob,
@@ -242,6 +245,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
                 }
             ) {
                 ChatPageContent(
+                    hazeState = hazeState,
                     onStartVoiceMode = startVoiceMode,
                     inputState = inputState,
                     loadingJob = loadingJob,
@@ -269,6 +273,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
 
 @Composable
 private fun ChatPageContent(
+    hazeState: dev.chrisbanes.haze.HazeState,
     onStartVoiceMode: () -> Unit,
     inputState: ChatInputState,
     loadingJob: Job?,
@@ -293,7 +298,6 @@ private fun ChatPageContent(
     val workspaceRepository: WorkspaceRepository = koinInject()
 
     var previewMode by rememberSaveable { mutableStateOf(false) }
-    val hazeState = rememberHazeState()
     var showFilesSheet by remember { mutableStateOf(false) }
     val attachmentPickerActions = rememberChatAttachmentPickerActions(
         inputState = inputState,
