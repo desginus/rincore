@@ -1,6 +1,6 @@
 package me.rerere.rikkahub.ui.components.message
 
-import android.net.toUri
+import androidx.core.net.toUri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
