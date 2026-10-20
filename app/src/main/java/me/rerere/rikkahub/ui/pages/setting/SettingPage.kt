@@ -472,13 +472,13 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     // v5.0.28 用户定案：工作区整包导出/导入（备份不包含 files/workspaces，这是唯一通道）
                     item(
                         onClick = { workspaceExportLauncher.launch("RinCore-workspaces-${System.currentTimeMillis()}.zip") },
-                        leadingContent = { CardGroupIcon(HugeIcons.Folder02, containerColor = containerColor, contentColor = contentColor) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Folder01, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text("把工作区（含全部对话文件与沙箱）打成 zip —— 换机/重装前先导出") },
                         headlineContent = { Text("导出工作区") },
                     )
                     item(
                         onClick = { workspaceImportLauncher.launch(arrayOf("application/zip", "*/*")) },
-                        leadingContent = { CardGroupIcon(HugeIcons.Folder03, containerColor = containerColor, contentColor = contentColor) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Files02, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text("从 zip 恢复工作区（覆盖同名文件，保留其余）") },
                         headlineContent = { Text("导入工作区") },
                     )

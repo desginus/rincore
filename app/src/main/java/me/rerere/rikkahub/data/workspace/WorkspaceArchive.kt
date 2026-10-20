@@ -52,31 +52,55 @@ object WorkspaceArchive {
             Result(count, bytes)
         }
 
-    /** 从输入流导入（覆盖同名文件）。 */
+    /**
+     * 从输入流导入（覆盖同名文件）。
+     *
+     * v5.0.28 用户定案「首先保证工作区数据安全」：
+     *  1. 解压前把现有 workspaces 整目录**改名备份**（不删任何字节）；
+     *  2. 解压失败 → 立即回滚（删除半成品，把备份改名回来）；
+     *  3. 解压成功 → 备份目录保留为 `workspaces.backup-<时间戳>`，由用户自行清理（本工具永不删除备份）。
+     */
     suspend fun importFrom(context: Context, input: java.io.InputStream): Result =
         withContext(Dispatchers.IO) {
             val root = workspacesRoot(context)
+            val backup = File(root.parentFile, "workspaces.backup-${System.currentTimeMillis()}")
+            var movedAway = false
+            if (root.exists() && root.listFiles()?.isNotEmpty() == true) {
+                // 整目录改名（原子操作，失败则中止导入，绝不动原数据）
+                if (!root.renameTo(backup)) {
+                    error("无法备份现有工作区（改名失败），出于安全已中止导入")
+                }
+                movedAway = true
+            }
             var count = 0
             var bytes = 0L
-            ZipInputStream(input.buffered()).use { zis ->
-                var entry: ZipEntry? = zis.nextEntry
-                while (entry != null) {
-                    val name = entry.name.replace('\\', '/')
-                    // 只接受 workspaces/ 前缀，拒绝路径穿越
-                    if (name.startsWith("$ROOT_DIR/") && !name.contains("..")) {
-                        val rel = name.removePrefix("$ROOT_DIR/")
-                        if (rel.isNotBlank() && !entry.isDirectory) {
-                            val target = File(root, rel)
-                            target.parentFile?.mkdirs()
-                            FileOutputStream(target).use { out -> out.write(zis.readBytes()) }
-                            count++
-                            bytes += target.length()
+            try {
+                root.mkdirs()
+                ZipInputStream(input.buffered()).use { zis ->
+                    var entry: ZipEntry? = zis.nextEntry
+                    while (entry != null) {
+                        val name = entry.name.replace('\\', '/')
+                        // 只接受 workspaces/ 前缀，拒绝路径穿越
+                        if (name.startsWith("$ROOT_DIR/") && !name.contains("..")) {
+                            val rel = name.removePrefix("$ROOT_DIR/")
+                            if (rel.isNotBlank() && !entry.isDirectory) {
+                                val target = File(root, rel)
+                                target.parentFile?.mkdirs()
+                                FileOutputStream(target).use { out -> out.write(zis.readBytes()) }
+                                count++
+                                bytes += target.length()
+                            }
                         }
+                        zis.closeEntry()
+                        entry = zis.nextEntry
                     }
-                    zis.closeEntry()
-                    entry = zis.nextEntry
                 }
+                Result(count, bytes)
+            } catch (t: Throwable) {
+                // 失败回滚：清掉半成品，把备份改回原名
+                runCatching { root.deleteRecursively() }
+                if (movedAway) runCatching { backup.renameTo(root) }
+                throw t
             }
-            Result(count, bytes)
         }
 }
