@@ -53,6 +53,57 @@ object WorkspaceArchive {
         }
 
     /**
+     * v5.0.31 用户定案：把 zip 解压到**指定的新工作区目录**（导入工作区）。
+     *
+     * zip 结构：`workspaces/<源id>/<工作区根下的相对路径>`。
+     * 导入时剥掉 `workspaces/<源id>/` 前缀，内容落到 `workspaces/<目标id>/` 下，
+     * 从而与 `WorkspaceRepository.create()` 新建的目录结构完全一致（DB 记录由调用方创建）。
+     *
+     * 安全：目标目录已存在且有内容 → 先整目录改名备份（`<id>.import-backup-<ts>`），
+     * 失败回滚；备份永不自动删除。
+     */
+    suspend fun extractInto(context: Context, targetWorkspaceId: String, input: java.io.InputStream): Result =
+        withContext(Dispatchers.IO) {
+            val root = File(workspacesRoot(context), targetWorkspaceId)
+            val backup = File(workspacesRoot(context), "$targetWorkspaceId.import-backup-${System.currentTimeMillis()}")
+            var movedAway = false
+            if (root.exists() && root.listFiles()?.isNotEmpty() == true) {
+                if (!root.renameTo(backup)) error("无法备份目标工作区目录，已中止导入")
+                movedAway = true
+            }
+            var count = 0
+            var bytes = 0L
+            try {
+                root.mkdirs()
+                ZipInputStream(input.buffered()).use { zis ->
+                    var entry: ZipEntry? = zis.nextEntry
+                    while (entry != null) {
+                        val name = entry.name.replace('\\', '/')
+                        if (!entry.isDirectory && name.startsWith("$ROOT_DIR/") && !name.contains("..")) {
+                            // 剥掉 workspaces/<源id>/
+                            val afterRoot = name.removePrefix("$ROOT_DIR/")
+                            val rel = afterRoot.substringAfter('/', "")
+                            if (rel.isNotBlank()) {
+                                val target = File(root, rel)
+                                target.parentFile?.mkdirs()
+                                FileOutputStream(target).use { out -> out.write(zis.readBytes()) }
+                                count++
+                                bytes += target.length()
+                            }
+                        }
+                        zis.closeEntry()
+                        entry = zis.nextEntry
+                    }
+                }
+                Result(count, bytes)
+            } catch (t: Throwable) {
+                runCatching { root.deleteRecursively() }
+                if (movedAway) runCatching { backup.renameTo(root) }
+                throw t
+            }
+        }
+
+    /**
      * v5.0.30 用户定案：单个工作区导出（入口 = 工作区列表 → 重命名/删除之间的「导出工作区」）。
      * 只读源目录，不写不删；zip 内路径统一为 `workspaces/<workspaceId>/...`，与整包导出同构。
      */

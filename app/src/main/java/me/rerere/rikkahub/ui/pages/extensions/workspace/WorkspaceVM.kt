@@ -19,6 +19,10 @@ class WorkspaceVM(
     val workspaces = repository.listFlow()
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
+    /** v5.0.31：导入工作区需要创建后立刻拿到 id（repository.create 是挂起的） */
+    suspend fun createWorkspace(name: String): me.rerere.rikkahub.data.db.entity.WorkspaceEntity? =
+        runCatching { repository.create(name) }.getOrNull()
+
     fun create(name: String) {
         viewModelScope.launch {
             runCatching { repository.create(name) }

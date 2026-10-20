@@ -103,14 +103,14 @@ jobs:
           ./gradlew :ai:compileDebugUnitTestKotlin :markdown:testDebugUnitTest :app:compileReleaseKotlin \
             --no-daemon --stacktrace --build-cache --parallel
 
-      - name: Build Release APK
-        run: ./gradlew assembleRelease --no-daemon --stacktrace --build-cache --parallel
+      - name: Build APK (research = 测试版/可与正式版共存)
+        run: ./gradlew assembleResearch --no-daemon --stacktrace --build-cache --parallel
 
       - name: Upload APK
         uses: actions/upload-artifact@v6
         with:
           name: rincore-release
-          path: app/build/outputs/apk/release/*.apk
+          path: app/build/outputs/apk/research/*.apk
           retention-days: 7
 
       - name: Compute version and notes path
@@ -133,14 +133,14 @@ jobs:
             echo "BODY_FILE=$RUNNER_TEMP/release-notes.md" >> "$GITHUB_ENV"
           fi
 
-      - name: Publish Release (正式版)
+      - name: Publish Release (测试版)
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ env.VN }}
-          name: RinCore v${{ env.VN }}
+          tag_name: ${{ env.TEST_TAG }}
+          name: RinCore v${{ env.VN }} 测试版（导入工作区）
           body_path: ${{ env.BODY_FILE }}
-          files: app/build/outputs/apk/release/*.apk
-          prerelease: false
-          make_latest: true
+          files: app/build/outputs/apk/research/*.apk
+          prerelease: true
+          make_latest: false
           fail_on_unmatched_files: true

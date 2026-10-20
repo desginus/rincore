@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.extensions.workspace
 
+import androidx.compose.material3.IconButton
 import me.rerere.hugeicons.stroke.FileExport
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
@@ -88,6 +89,26 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
             }
         }
     }
+    val importZipLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        exportScope.launch {
+            runCatching {
+                val created = vm.createWorkspace("导入的工作区")
+                    ?: error("创建工作区失败（重名或写库失败）")
+                exportContext.contentResolver.openInputStream(uri)?.use { ins ->
+                    me.rerere.rikkahub.data.workspace.WorkspaceArchive.extractInto(
+                        exportContext, created.id, ins
+                    )
+                } ?: error("无法读取 zip")
+            }.onSuccess { r ->
+                exportToaster.show("已导入工作区：${r.files} 个文件（${r.bytes / 1024 / 1024}MB）")
+            }.onFailure { e ->
+                exportToaster.show("导入失败：${e.message?.take(120)}")
+            }
+        }
+    }
     androidx.compose.runtime.LaunchedEffect(exportLauncherTarget) {
         exportLauncherTarget?.let {
             exportZipLauncher.launch("RinCore-${it.name}-${System.currentTimeMillis()}.zip")
@@ -99,6 +120,12 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
             LargeFlexibleTopAppBar(
                 title = { Text(stringResource(R.string.workspace_page_title)) },
                 navigationIcon = { BackButton() },
+                actions = {
+                    // v5.0.31 用户定案：导入工作区（zip）
+                    IconButton(onClick = { importZipLauncher.launch(arrayOf("application/zip", "*/*")) }) {
+                        Icon(HugeIcons.FileImport, contentDescription = "导入工作区")
+                    }
+                },
                 scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
             )
