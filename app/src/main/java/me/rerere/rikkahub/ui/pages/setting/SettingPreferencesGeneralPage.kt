@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import me.rerere.rikkahub.data.diagnostics.BackgroundHealth
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -38,6 +42,8 @@ import org.koin.androidx.compose.koinViewModel
 
 @Composable
 fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var backgroundHealthReport by remember { mutableStateOf<List<me.rerere.rikkahub.data.diagnostics.BackgroundHealth.Entry>?>(null) }
     val settings by vm.settings.collectAsStateWithLifecycle()
     var displaySetting by remember(settings) { mutableStateOf(settings.displaySetting) }
     var ttsPlaybackSpeed by remember(settings.defaultTTSPlaybackSpeed) {
@@ -126,7 +132,35 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = { Text(stringResource(R.string.setting_display_page_background_effect_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_display_page_background_effect_title)) },
                     )
-                    // v5.0.26 用户定案：效果类型固定为模糊（液态玻璃分支已作废，选择器移除）
+                    // v5.0.27 用户定案：玻璃效果回归（问题不在玻璃分支，条纹根因=低清背景图）
+                    if (displaySetting.enableBlurEffect) {
+                        formItem(
+                            headlineContent = { Text(stringResource(R.string.setting_display_page_background_effect_type)) },
+                        ) {
+                            ConnectedChoiceButtons(
+                                options = BackgroundEffectType.entries,
+                                selected = displaySetting.backgroundEffectType,
+                                onSelect = { updateDisplaySetting(displaySetting.copy(backgroundEffectType = it)) },
+                            ) { type, selected ->
+                                ConnectedChoiceLabel(
+                                    text = when (type) {
+                                        BackgroundEffectType.BLUR -> stringResource(R.string.setting_display_page_background_effect_blur)
+                                        BackgroundEffectType.GLASS -> stringResource(R.string.setting_display_page_background_effect_glass)
+                                    },
+                                    selected = selected,
+                                )
+                            }
+                        }
+                    }
+                    // v5.0.27 用户定案：背景图体检 —— 输入栏条纹的根因入口（低清/失效背景图）
+                    formItem(
+                        headlineContent = { Text("背景图体检") },
+                        supportingContent = { Text("扫描失效或低清背景图（会导致输入栏条纹）") },
+                    ) {
+                        TextButton(onClick = { backgroundHealthReport = BackgroundHealth.scan(context, settings.assistants) }) {
+                            Text("扫描")
+                        }
+                    }
                     switchItem(
                         checked = displaySetting.enableMessageGenerationHapticEffect,
                         onCheckedChange = {
@@ -242,5 +276,39 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
                 }
             }
         }
+    }
+
+    backgroundHealthReport?.let { report ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { backgroundHealthReport = null },
+            title = { Text("背景图体检") },
+            text = {
+                Column {
+                    if (report.isEmpty()) {
+                        Text("没有可体检的助手")
+                    }
+                    report.forEach { e ->
+                        Text("${e.assistantName}: ${e.detail}")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val bad = report.filter { me.rerere.rikkahub.data.diagnostics.BackgroundHealth.needsCleanup(it) }
+                    if (bad.isNotEmpty()) {
+                        val ids = bad.map { it.assistantId }.toSet()
+                        updateSettings { latest ->
+                            latest.copy(assistants = latest.assistants.map { a ->
+                                if (a.id.toString() in ids) a.copy(background = null) else a
+                            })
+                        }
+                    }
+                    backgroundHealthReport = null
+                }) { Text("清理失效/低清背景") }
+            },
+            dismissButton = {
+                TextButton(onClick = { backgroundHealthReport = null }) { Text("关闭") }
+            },
+        )
     }
 }
