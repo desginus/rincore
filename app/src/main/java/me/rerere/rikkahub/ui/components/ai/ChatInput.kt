@@ -309,7 +309,33 @@ fun ChatInput(
                                 modifier = Modifier,
                             )
 
-                            // v5.0.17：思考程度回到左侧（模型旁），右侧留给 + / 工具箱
+                            // v5.0.21 用户定案：AI 交互窗「+」位于模型选择与思考程度之间（输入栏下侧靠左）
+                            var showPlusMenu by remember { mutableStateOf(false) }
+                            ActionIconButton(
+                                onClick = { showPlusMenu = true }
+                            ) {
+                                Icon(
+                                    imageVector = HugeIcons.Add01,
+                                    contentDescription = "AI 交互"
+                                )
+                            }
+                            if (showPlusMenu) {
+                                Popup(
+                                    alignment = Alignment.TopStart,
+                                    offset = IntOffset(0, 8),
+                                    onDismissRequest = { showPlusMenu = false },
+                                    properties = PopupProperties(focusable = true),
+                                ) {
+                                    PlusActionMenu(
+                                        onTakePic = onTakePic,
+                                        onPickImage = onPickImage,
+                                        onPickFile = onPickFile,
+                                        onDismiss = { showPlusMenu = false },
+                                    )
+                                }
+                            }
+
+                            // v5.0.17：思考程度回到左侧（模型旁）
                             if (chatModel?.abilities?.contains(ModelAbility.REASONING) == true) {
                                 ReasoningButton(
                                     reasoningLevel = assistant.reasoningLevel,
@@ -322,16 +348,7 @@ fun ChatInput(
 
                         }
 
-                        // v5.0.17 用户定案：+ 号 = AI 交互窗（CS 风格逐步放出）；纸箱 = 工具箱
-                        var showPlusMenu by remember { mutableStateOf(false) }
-                        ActionIconButton(
-                            onClick = { showPlusMenu = true }
-                        ) {
-                            Icon(
-                                imageVector = HugeIcons.Add01,
-                                contentDescription = "AI 交互"
-                            )
-                        }
+                        // v5.0.20 用户定案：纸箱 = 工具箱（+ 已移到模型与思考之间）
                         ActionIconButton(
                             onClick = onMoreClick
                         ) {
@@ -339,21 +356,6 @@ fun ChatInput(
                                 imageVector = HugeIcons.Package,
                                 contentDescription = stringResource(R.string.more_options)
                             )
-                        }
-                        if (showPlusMenu) {
-                            Popup(
-                                alignment = Alignment.BottomEnd,
-                                offset = IntOffset(0, -8),
-                                onDismissRequest = { showPlusMenu = false },
-                                properties = PopupProperties(focusable = true),
-                            ) {
-                                PlusActionMenu(
-                                    onTakePic = onTakePic,
-                                    onPickImage = onPickImage,
-                                    onPickFile = onPickFile,
-                                    onDismiss = { showPlusMenu = false },
-                                )
-                            }
                         }
 
                         if (!voiceState.isActive && (asrState.isAvailable || asrState.isRecording)) {
@@ -419,11 +421,16 @@ private fun PlusActionMenu(
     onPickFile: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    // v5.0.21 用户定案：交互窗 = 玻璃观感（半透明底 + 1dp 高光描边，与输入栏/工具箱同族）
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 3.dp,
-        shadowElevation = 6.dp,
+        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.62f),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.32f),
+        ),
+        tonalElevation = 0.dp,
+        shadowElevation = 8.dp,
     ) {
         Column(
             modifier = Modifier.padding(6.dp),

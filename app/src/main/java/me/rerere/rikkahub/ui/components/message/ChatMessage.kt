@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.message
 
+import android.net.toUri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
@@ -439,16 +440,38 @@ private fun MessagePartsBlock(
                     }
 
                     is UIMessagePart.Video -> {
+                        // v5.0.21 用户定案回滚：文件胶囊 = [导出/分享/渲染] 三选项（不是直接打开）
+                        var chipOptionsOpen by remember { mutableStateOf(false) }
                         ChatMessageMediaTile(
                             icon = HugeIcons.Video01,
-                            onClick = { context.openLocalFile(part.url) },
+                            onClick = { chipOptionsOpen = true },
+                        )
+                        val chipFile = remember(part.url) {
+                            runCatching { part.url.toUri().toFile() }.getOrNull()
+                        }
+                        FileChipOptionsHost(
+                            open = chipOptionsOpen,
+                            file = chipFile,
+                            fileName = part.url.substringAfterLast('/'),
+                            onOpenChange = { chipOptionsOpen = it },
                         )
                     }
 
                     is UIMessagePart.Audio -> {
+                        // v5.0.21 用户定案回滚：文件胶囊 = [导出/分享/渲染] 三选项
+                        var chipOptionsOpen by remember { mutableStateOf(false) }
                         ChatMessageMediaTile(
                             icon = HugeIcons.MusicNote03,
-                            onClick = { context.openLocalFile(part.url) },
+                            onClick = { chipOptionsOpen = true },
+                        )
+                        val chipFile = remember(part.url) {
+                            runCatching { part.url.toUri().toFile() }.getOrNull()
+                        }
+                        FileChipOptionsHost(
+                            open = chipOptionsOpen,
+                            file = chipFile,
+                            fileName = part.url.substringAfterLast('/'),
+                            onOpenChange = { chipOptionsOpen = it },
                         )
                     }
 
@@ -475,9 +498,11 @@ private fun MessagePartsBlock(
                     }
 
                     is UIMessagePart.Document -> {
+                        // v5.0.21 用户定案回滚：文档胶囊 = [导出/分享/渲染] 三选项
+                        var chipOptionsOpen by remember { mutableStateOf(false) }
                         ChatMessageFileChip(
                             text = part.fileName,
-                            onClick = { context.openLocalFile(part.url) },
+                            onClick = { chipOptionsOpen = true },
                             icon = {
                                 when (part.mime) {
                                     "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> {
@@ -505,6 +530,15 @@ private fun MessagePartsBlock(
                                     }
                                 }
                             },
+                        )
+                        val chipFile = remember(part.url) {
+                            runCatching { part.url.toUri().toFile() }.getOrNull()
+                        }
+                        FileChipOptionsHost(
+                            open = chipOptionsOpen,
+                            file = chipFile,
+                            fileName = part.fileName,
+                            onOpenChange = { chipOptionsOpen = it },
                         )
                     }
 

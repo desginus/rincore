@@ -25,7 +25,7 @@ android {
         minSdk = 26
         targetSdk = 37
         versionCode = 9999
-        versionName = "5.0.20"
+        versionName = "5.0.21"
 
         // v4.8.179: 开发者版本开关 — true=开发者版(含“开发者调试”入口/面板); 正式版=false
         buildConfigField("Boolean", "DEVELOPER_BUILD", "false")
@@ -90,6 +90,15 @@ android {
             }
             buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
+        }
+        // v5.0.21 用户定案：测试版 = 可与正式版共存的独立包名变体
+        // （.test 后缀 → 独立应用身份/独立数据目录，可与 me.rincore.app 正式版同时安装）
+        create("research") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".test"
+            versionNameSuffix = "-test"
+            resValue("string", "app_name", "RinCore 测试版")
+            matchingFallbacks.add("release")
         }
         debug {
             applicationIdSuffix = ".debug"

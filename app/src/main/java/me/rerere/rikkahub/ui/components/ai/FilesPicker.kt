@@ -161,7 +161,13 @@ internal fun FilesPicker(
             .filter { it.parentChatId == conversation.id.toString() }
             .sortedByDescending { it.startedAtMs }
     }
-    val producedFiles = settings.conversationProducedFiles[conversation.id.toString()].orEmpty()
+    // v5.0.21 用户定案：按模型最后交互时间自上而下（新→旧），去空去重
+    val producedFiles = remember(settings.conversationProducedFiles, conversation.id) {
+        settings.conversationProducedFiles[conversation.id.toString()].orEmpty()
+            .filter { it.path.isNotBlank() }
+            .distinctBy { it.path }
+            .sortedByDescending { it.atMs }
+    }
 
     var page by remember { mutableStateOf(FilesPickerPage.MAIN) }
     // 在子页面时，返回键回到主页面而不是关闭 sheet

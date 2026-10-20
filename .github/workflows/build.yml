@@ -98,19 +98,20 @@ jobs:
 
       # 门禁（任一失败即中止，不会进入打包）
       - name: Release gates (compile + tests)
+        # v5.0.21 编译提速：三个任务合并为一次 Gradle 启动（省 2 次冷启动 ≈60-90s）+ 构建缓存
         run: |
-          ./gradlew :ai:compileDebugUnitTestKotlin --no-daemon --stacktrace
-          ./gradlew :markdown:testDebugUnitTest --no-daemon --stacktrace
-          ./gradlew :app:compileReleaseKotlin --no-daemon --stacktrace
+          ./gradlew :ai:compileDebugUnitTestKotlin :markdown:testDebugUnitTest :app:compileReleaseKotlin \
+            --no-daemon --stacktrace --build-cache --parallel
 
-      - name: Build Release APK
-        run: ./gradlew assembleRelease --no-daemon --stacktrace
+      - name: Build APK (research = 可与正式版共存的测试版)
+        # v5.0.21 用户定案：先发测试版（applicationId .test，可与 me.rincore.app 正式版并存）
+        run: ./gradlew assembleResearch --no-daemon --stacktrace --build-cache --parallel
 
       - name: Upload APK
         uses: actions/upload-artifact@v6
         with:
           name: rincore-release
-          path: app/build/outputs/apk/release/*.apk
+          path: app/build/outputs/apk/research/*.apk
           retention-days: 7
 
       - name: Compute version and notes path
@@ -118,6 +119,7 @@ jobs:
         run: |
           VN=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
           echo "VN=$VN" >> "$GITHUB_ENV"
+          echo "TEST_TAG=v${VN}-test" >> "$GITHUB_ENV"
           if [ -s docs/RELEASE-NOTES.md ]; then
             echo "BODY_FILE=docs/RELEASE-NOTES.md" >> "$GITHUB_ENV"
           else
@@ -132,14 +134,14 @@ jobs:
             echo "BODY_FILE=$RUNNER_TEMP/release-notes.md" >> "$GITHUB_ENV"
           fi
 
-      - name: Publish Release (正式版)
+      - name: Publish Release (测试版·共存)
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ env.VN }}
-          name: RinCore v${{ env.VN }}
+          tag_name: ${{ env.TEST_TAG }}
+          name: RinCore v${{ env.VN }} 测试版（可与正式版共存）
           body_path: ${{ env.BODY_FILE }}
           files: app/build/outputs/apk/release/*.apk
-          prerelease: false
-          make_latest: true
+          prerelease: true
+          make_latest: false
           fail_on_unmatched_files: true

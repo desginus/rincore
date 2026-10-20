@@ -113,10 +113,13 @@ fun ConversationArtifactsSheet(
     }
     // v4.8.125: 显示侧形态收敛 + 兜底去重 — 历史记录 (v4.8.121-124 持久化的多形态路径)
     // 也在此归一后再去重, 同一文件不多列; 解析链本就有多候选探针, 归一后仍可命中。
+    // v5.0.21 用户定案：按模型最后交互时间自上而下（新→旧）+ 去空去重
     val displayFiles = remember(files, assistant) {
         files
+            .filter { it.path.isNotBlank() }
             .map { f -> f.copy(path = ProducedFiles.canonicalPath(f.path, assistant?.workspaceCwd)) }
             .distinctBy { it.path }
+            .sortedByDescending { it.atMs }
     }
 
     var selected by remember { mutableStateOf<ProducedFile?>(null) }
