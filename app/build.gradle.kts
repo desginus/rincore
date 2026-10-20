@@ -25,7 +25,7 @@ android {
         minSdk = 26
         targetSdk = 37
         versionCode = 9999
-        versionName = "5.0.32"
+        versionName = "5.0.33"
 
         // v4.8.179: 开发者版本开关 — true=开发者版(含“开发者调试”入口/面板); 正式版=false
         buildConfigField("Boolean", "DEVELOPER_BUILD", "false")
@@ -93,12 +93,15 @@ android {
         }
         // v5.0.21 用户定案：测试版 = 可与正式版共存的独立包名变体
         // （.test 后缀 → 独立应用身份/独立数据目录，可与 me.rincore.app 正式版同时安装）
+        // v5.0.33 用户定案：用「实测正常的 research 构建配置」直接顶替正式版位置。
+        //  - 去掉 applicationIdSuffix → 包名回到 me.rincore.app（可覆盖安装正式版、继承其数据与工作区）
+        //  - 签名沿用 release signingConfig（initWith 继承，与正式版同签名 → 系统视为升级）
+        //  - versionCode 9999 高于此前所有版本 → 直接覆盖
+        //  - 其余构建配置与 research 完全一致（保持"正常的那套"）
         create("research") {
             initWith(getByName("release"))
-            applicationIdSuffix = ".test"
-            versionNameSuffix = "-test"
-            // 应用名区分走变体资源（app/src/research/res/values/strings.xml）——
-            // AGP9 的 buildType resValue 需开启 buildFeatures.resValues，改用资源目录更稳
+            applicationIdSuffix = null
+            versionNameSuffix = null
             matchingFallbacks.add("release")
         }
         debug {
