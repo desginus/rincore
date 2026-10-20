@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Files02
 import kotlinx.coroutines.launch
