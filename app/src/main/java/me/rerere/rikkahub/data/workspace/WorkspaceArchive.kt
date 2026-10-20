@@ -115,12 +115,12 @@ object WorkspaceArchive {
             TarGz.read(input) { entry, stream ->
                 val name = entry.name.trimStart('/')
                 // 只接受 workspaces/<id>/... 
-                if (!name.startsWith("workspaces/") || name.contains("..")) return@TarGz.read
+                if (!name.startsWith("workspaces/") || name.contains("..")) return@read
                 val rel = name.removePrefix("workspaces/").substringAfter('/', "")
-                if (rel.isBlank()) return@TarGz.read
+                if (rel.isBlank()) return@read
                 val target = File(root, rel)
                 // 防越界：目标必须在 root 之内
-                if (!target.canonicalPath.startsWith(root.canonicalPath)) return@TarGz.read
+                if (!target.canonicalPath.startsWith(root.canonicalPath)) return@read
                 when {
                     entry.isDirectory -> target.mkdirs()
                     entry.isSymlink -> {
