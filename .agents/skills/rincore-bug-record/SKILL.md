@@ -5,6 +5,24 @@ description: "[高优先级·RinCore Bug对照] RinCore 历史 Bug 完整记录�
 
 # RinCore Bug 记录（全部历史）
 
+## B201 对话打开即清空历史消息（数据吞噬事故，v5.0.16-5.0.18，2026-10-20）
+- **现象**：所有对话页空白（只有背景）；历史消息被"吞成新消息"；工具箱「本对话产出」仍有该对话正确内容（Settings 侧未受影响）。
+- **根因链（代码行级）**：
+  1. `ChatPage.kt:115` `LaunchedEffect(selectedFolderId) { vm.updateDraftFolder(selectedFolderId) }` —— 上游 3.0.0 语义（#2133：新会话跟随抽屉选中项目包），**打开对话页即无条件执行**。
+  2. `ChatVM.updateDraftFolder`（v5.0.16 新增）`updateConversation(conversation.value.copy(folderId)) + saveConversationAsync()`。
+  3. 此刻 `conversation.value` = `ConversationSession` 的初始空壳（`ChatService.createInitialConversation` = `Conversation.ofId(id, assistantId)`，**messageNodes 为空**），而 DB 加载在 `initializeConversation` 的协程里异步进行 —— 赛跑中空壳先到。
+  4. `ChatService.saveConversation` → `exists=true` → `ConversationRepository.updateConversation` → `messageNodeDAO.deleteByConversation(id)` **删光该对话所有消息** → `saveMessageNodes(id, emptyList())` 写回 0 条。
+  5. 每次打开对话触发一次 → 用户打开过的所有对话被清空；之后发送的新消息成为唯一一条（"全吞成新消息"）。
+- **为什么 5.0.15 及之前没有**：`updateDraftFolder` 与 `LaunchedEffect` 是 5.0.16 随上游 3.0.0 ChatPage/上游语义带入的；我方 `ConversationRepository.updateConversation` 的"删光重写"设计本身合理（消息编辑/重生成/切分支时整体重写），但被"空壳整体落下"触发就成了毁灭性覆盖。
+- **修复（v5.0.19，三层防护）**：
+  1. `ChatVM.updateDraftFolder`：先 `chatService.awaitConversationLoaded(15s)`，未初始化则**直接放弃写入**；初始化后只更新内存归属，**不再 `saveConversationAsync()`**（归属随发送/元数据保存落库）。
+  2. `ConversationRepository.updateConversation`：`messageNodes.isEmpty() && existing>0` → **跳过 delete + 写回**（只更新元数据列）；新增 `MessageNodeDAO.countByConversation`。
+  3. `ChatService.awaitConversationLoaded`：新增 API（50ms 轮询至 initialized 或 15s 超时）。
+- **数据损失（如实）**：已执行 `DELETE FROM message_node` + `nodes` 列写 `[]` + `message_fts` 删索引重建 → 应用内无残留。恢复途径仅：历史备份（本地/WebDAV/S3 整库快照 `VACUUM INTO`）、系统云备份（`allowBackup="true"`、`dataExtractionRules` 空=默认全量，可能含删除前快照）、设备 root/adb 级 forensics（需立即停用应用）。
+- **★教训 #137**：**任何"整对象落库"必须断言该对象已完成加载**——`initialized` 标志/空列表 + 库中已有数据 = 绝对禁止整体覆盖；空列表语义是"没有消息"，不是"删除所有消息"。
+- **★教训 #138**：页面打开时的"跟随状态"类写入（草稿归属/主题同步/默认值）必须延迟到数据加载完成后，且**优先只写内存**；UI 组合副作用 → 落库 = 竞态覆盖。
+- **★教训 #139**：验证盲区——5.0.16/5.0.17 交付时未验证"打开含历史消息的对话"这个最基础场景（因测试集中在模糊/UI）。今后每次发布必须跑「打开一个有历史的对话 → 消息可见 → 发一条 → 历史仍在」。
+
 ## B204 设置页/输入栏/工具箱三批 UI 重构（2026-10-20 凌晨）
 - 用户三批需求：①设置页按功能分类排序 + 当前焦点助手设置（记忆/MCP/技能/其他）搬回；②输入栏左=模型+思考、右=+（CS 式 AI 交互窗：拍照/图片/文件）与纸箱工具箱图标，工具箱统计环改剩余额度；③「更多」四项挪进工具箱、删 MCP/技能两项、空位放草图。
 - **实现要点**：设置页 8 组 + 助手组（getCurrentAssistant + MemoryRepository.produceState + Assistant* 直达）；ChatInput 加 3 回调 + Popup 菜单 + 纸箱图标；FilesPicker 删 2 项加 6 项 + 统计环 ContextUsageRing(remaining) 语义翻转 + SketchDialog 接线。
