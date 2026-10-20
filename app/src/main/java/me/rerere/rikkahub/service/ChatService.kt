@@ -1368,6 +1368,19 @@ class ChatService(
     fun isConversationInitialized(conversationId: Uuid): Boolean =
         sessionManager.get(conversationId)?.isInitialized() == true
 
+    /**
+     * v5.0.19 (B201 数据事故): 等待对话完成 DB 加载。
+     * 供"打开页面即写入归属/草稿"等早期写入方使用——未加载时的 session 是空壳
+     * （messageNodes 为空），任何整对象落库都会把历史消息删光。
+     */
+    suspend fun awaitConversationLoaded(conversationId: Uuid, timeoutMs: Long = 15_000) {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (isConversationInitialized(conversationId)) return
+            kotlinx.coroutines.delay(50)
+        }
+    }
+
     /** 4.8.32: 该会话是否正在生成 (压缩入口守卫 — 生成中禁止压缩)。 */
     fun isConversationGenerating(conversationId: Uuid): Boolean =
         sessionManager.get(conversationId)?.isGenerating == true

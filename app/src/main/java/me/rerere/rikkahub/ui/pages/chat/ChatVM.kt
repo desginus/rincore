@@ -203,8 +203,18 @@ class ChatVM(
 
     fun updateDraftFolder(folderId: Uuid?) {
         viewModelScope.launch {
-            updateConversation(conversation.value.copy(folderId = folderId))
-            saveConversationAsync()
+            // v5.0.19 (B201 数据事故根因修复):
+            // 旧实现 = conversation.value.copy(folderId) + saveConversationAsync()。
+            // 打开对话页时 LaunchedEffect(selectedFolderId) 立即触发，此刻 session 还是
+            // 空壳（Conversation.ofId，messageNodes 为空），落库经
+            // ConversationRepository.updateConversation 的 deleteByConversation
+            // 把该对话全部历史消息永久删除（= 用户报告的"消息被吞成新消息"）。
+            // 修复：等 DB 加载完成后再写内存归属；不在此处落库（归属随发送/元数据保存写入）。
+            chatService.awaitConversationLoaded(_conversationId)
+            if (!chatService.isConversationInitialized(_conversationId)) return@launch
+            chatService.updateConversationState(_conversationId) { current ->
+                if (current.folderId == folderId) current else current.copy(folderId = folderId)
+            }
         }
     }
 

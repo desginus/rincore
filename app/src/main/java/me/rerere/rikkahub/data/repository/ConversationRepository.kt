@@ -342,9 +342,15 @@ class ConversationRepository(
             conversationDAO.update(
                 conversationToConversationEntity(conversation)
             )
-            // 删除旧的节点，插入新的节点
-            messageNodeDAO.deleteByConversation(conversation.id.toString())
-            saveMessageNodes(conversation.id.toString(), conversation.messageNodes)
+            // v5.0.19 (B201 数据事故修复): 空消息列表绝不清空已落库节点。
+            // 事故链：ChatPage 打开即 updateDraftFolder(空壳) → saveConversation →
+            // 此处 deleteByConversation + 写入 0 条 = 该对话消息全部永久删除。
+            val existing = messageNodeDAO.countByConversation(conversation.id.toString())
+            if (conversation.messageNodes.isNotEmpty() || existing == 0) {
+                // 删除旧的节点，插入新的节点
+                messageNodeDAO.deleteByConversation(conversation.id.toString())
+                saveMessageNodes(conversation.id.toString(), conversation.messageNodes)
+            }
         }
         messageFtsManager.indexConversation(conversation)
     }

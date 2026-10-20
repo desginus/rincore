@@ -47,6 +47,9 @@ interface MessageNodeDAO {
     @Update
     suspend fun update(node: MessageNodeEntity)
 
+    @Query("SELECT COUNT(*) FROM message_node WHERE conversation_id = :conversationId")
+    suspend fun countByConversation(conversationId: String): Int
+
     @Query("DELETE FROM message_node WHERE conversation_id = :conversationId")
     suspend fun deleteByConversation(conversationId: String)
 
