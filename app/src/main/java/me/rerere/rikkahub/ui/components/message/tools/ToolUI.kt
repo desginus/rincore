@@ -105,10 +105,16 @@ object ToolUIRegistry {
         UseSkillToolUI,
         RecentChatsToolUI,
         ConversationSearchToolUI,
+        // v5.0.39 用户实证：5.0.3x 上游化时这 4 个渲染器未注册 → 工具调用只显示默认 UI
+        // （Task tool 页面看不到 / 工作区文件无渲染键 / 记忆工具无专属 UI / 后台任务无详情）
+        TaskToolUI,
+        MemoryToolUI,
         EditFileToolUI,
         ReadFileToolUI,
         WriteFileToolUI,
+        ShowFileToolUI,
         ShellToolUI,
+        JobToolUI,
     ).plus(MemoryFileToolUI.all).associateBy { it.toolName }
 
     /** 查找工具对应的渲染器, 未注册时返回默认渲染器 */
