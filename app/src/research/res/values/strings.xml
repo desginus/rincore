@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- v5.0.21: 测试版应用名（可与正式版共存，便于区分） -->
+    <string name="app_name">RinCore 测试版</string>
+</resources>

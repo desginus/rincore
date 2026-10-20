@@ -97,7 +97,8 @@ android {
             initWith(getByName("release"))
             applicationIdSuffix = ".test"
             versionNameSuffix = "-test"
-            resValue("string", "app_name", "RinCore 测试版")
+            // 应用名区分走变体资源（app/src/research/res/values/strings.xml）——
+            // AGP9 的 buildType resValue 需开启 buildFeatures.resValues，改用资源目录更稳
             matchingFallbacks.add("release")
         }
         debug {
