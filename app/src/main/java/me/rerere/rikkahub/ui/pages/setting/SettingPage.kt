@@ -541,6 +541,43 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
             }
         }
     }
+    // v5.0.37：清理确认对话框
+    cleanupReport?.let { report ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { if (!cleaning) cleanupReport = null },
+            title = { Text("可清理 ${"%.1f".format(report.totalBytes / 1024.0 / 1024.0 / 1024.0)} GB") },
+            text = {
+                Column {
+                    report.items.take(6).forEach { item ->
+                        Text(
+                            "· ${item.label}：${"%.1f".format(item.bytes / 1024.0 / 1024.0 / 1024.0)} GB",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    if (report.items.size > 6) Text("… 共 ${report.items.size} 项", style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(8.dp))
+                    Text("只删除导入/导出产生的备份与缓存，工作区正文不会被动。", style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !cleaning,
+                    onClick = {
+                        cleaning = true
+                        cleanupScope.launch {
+                            val freed = me.rerere.rikkahub.data.workspace.StorageCleanup.clean(cleanupContext, report)
+                            cleaning = false
+                            cleanupReport = null
+                            cleanupToaster.show("已释放 ${"%.1f".format(freed / 1024.0 / 1024.0 / 1024.0)} GB")
+                        }
+                    },
+                ) { Text(if (cleaning) "清理中…" else "清理") }
+            },
+            dismissButton = {
+                TextButton(enabled = !cleaning, onClick = { cleanupReport = null }) { Text("取消") }
+            },
+        )
+    }
 }
 
 private fun ColorMode.icon(): ImageVector = when (this) {
@@ -604,43 +641,6 @@ private fun ProviderConfigWarningCard(onClick: () -> Unit) {
                 Text(stringResource(R.string.setting_page_config))
             }
         }
-    }
-    // v5.0.37：清理确认对话框
-    cleanupReport?.let { report ->
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { if (!cleaning) cleanupReport = null },
-            title = { Text("可清理 ${"%.1f".format(report.totalBytes / 1024.0 / 1024.0 / 1024.0)} GB") },
-            text = {
-                Column {
-                    report.items.take(6).forEach { item ->
-                        Text(
-                            "· ${item.label}：${"%.1f".format(item.bytes / 1024.0 / 1024.0 / 1024.0)} GB",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    if (report.items.size > 6) Text("… 共 ${report.items.size} 项", style = MaterialTheme.typography.bodySmall)
-                    Spacer(Modifier.height(8.dp))
-                    Text("只删除导入/导出产生的备份与缓存，工作区正文不会被动。", style = MaterialTheme.typography.bodySmall)
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = !cleaning,
-                    onClick = {
-                        cleaning = true
-                        cleanupScope.launch {
-                            val freed = me.rerere.rikkahub.data.workspace.StorageCleanup.clean(cleanupContext, report)
-                            cleaning = false
-                            cleanupReport = null
-                            cleanupToaster.show("已释放 ${"%.1f".format(freed / 1024.0 / 1024.0 / 1024.0)} GB")
-                        }
-                    },
-                ) { Text(if (cleaning) "清理中…" else "清理") }
-            },
-            dismissButton = {
-                TextButton(enabled = !cleaning, onClick = { cleanupReport = null }) { Text("取消") }
-            },
-        )
     }
 
 }
