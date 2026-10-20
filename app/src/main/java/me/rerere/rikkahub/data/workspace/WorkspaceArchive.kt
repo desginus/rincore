@@ -52,6 +52,102 @@ object WorkspaceArchive {
         }
 
     /**
+     * v5.0.34 用户定案：**完整导出**（告别版）。
+     *
+     * 包含：
+     *  - `files/` —— 用户文件（重中之重）
+     *  - `linux/` —— rootfs（Python / pip 包 / 系统依赖都在此，换包名后要能直接接着用）
+     * 排除：
+     *  - `tmp/` —— 临时垃圾
+     *  - 不跟随符号链接（tar 里以 symlink 条目保存，避免重复打包爆炸）
+     */
+    suspend fun exportFull(
+        context: Context,
+        workspaceId: String,
+        output: java.io.OutputStream,
+        onProgress: (files: Int, bytes: Long) -> Unit = { _, _ -> },
+    ): Result = withContext(Dispatchers.IO) {
+        val wsRoot = File(workspacesRoot(context), workspaceId)
+        if (!wsRoot.exists()) return@withContext Result(0, 0)
+        val roots = listOf(
+            wsRoot.resolve("files").toPath() to "workspaces/$workspaceId/files",
+            wsRoot.resolve("linux").toPath() to "workspaces/$workspaceId/linux",
+        )
+        var finalFiles = 0
+        var finalBytes = 0L
+        TarGz.write(
+            output = output,
+            roots = roots,
+            excludeDirNames = setOf("tmp"),
+            onProgress = { f, b ->
+                finalFiles = f
+                finalBytes = b
+                onProgress(f, b)
+            },
+        )
+        Result(finalFiles, finalBytes)
+    }
+
+    /**
+     * v5.0.34：从 tar.gz 导入到指定工作区目录（与 exportFull 配对）。
+     *
+     * 安全：
+     *  - 拒绝 `..` 与绝对路径（防穿越）；
+     *  - 软链接只允许相对目标且不含 `..`；
+     *  - 目标已存在且有内容 → 整目录改名备份（`<id>.import-backup-<ts>`），失败回滚，备份永不自动删除。
+     */
+    suspend fun importFull(
+        context: Context,
+        targetWorkspaceId: String,
+        input: java.io.InputStream,
+    ): Result = withContext(Dispatchers.IO) {
+        val root = File(workspacesRoot(context), targetWorkspaceId)
+        val backup = File(workspacesRoot(context), "$targetWorkspaceId.import-backup-${System.currentTimeMillis()}")
+        var movedAway = false
+        if (root.exists() && root.listFiles()?.isNotEmpty() == true) {
+            if (!root.renameTo(backup)) error("无法备份目标工作区目录，已中止导入")
+            movedAway = true
+        }
+        var count = 0
+        var bytes = 0L
+        try {
+            root.mkdirs()
+            TarGz.read(input) { entry, stream ->
+                val name = entry.name.trimStart('/')
+                // 只接受 workspaces/<id>/... 
+                if (!name.startsWith("workspaces/") || name.contains("..")) return@TarGz.read
+                val rel = name.removePrefix("workspaces/").substringAfter('/', "")
+                if (rel.isBlank()) return@TarGz.read
+                val target = File(root, rel)
+                // 防越界：目标必须在 root 之内
+                if (!target.canonicalPath.startsWith(root.canonicalPath)) return@TarGz.read
+                when {
+                    entry.isDirectory -> target.mkdirs()
+                    entry.isSymlink -> {
+                        val linkTarget = entry.linkTarget
+                        val safeLink = linkTarget.isNotBlank() && !linkTarget.contains("..") && !linkTarget.startsWith("/")
+                        if (safeLink) {
+                            target.parentFile?.mkdirs()
+                            runCatching { java.nio.file.Files.createSymbolicLink(target.toPath(), File(linkTarget).toPath()) }
+                        }
+                    }
+                    else -> {
+                        target.parentFile?.mkdirs()
+                        java.io.FileOutputStream(target).use { out -> stream.copyTo(out, 64 * 1024) }
+                        count++
+                        bytes += target.length()
+                    }
+                }
+            }
+            Result(count, bytes)
+        } catch (t: Throwable) {
+            runCatching { root.deleteRecursively() }
+            if (movedAway) runCatching { backup.renameTo(root) }
+            throw t
+        }
+    }
+
+    /**
      * v5.0.31 用户定案：把 zip 解压到**指定的新工作区目录**（导入工作区）。
      *
      * zip 结构：`workspaces/<源id>/<工作区根下的相对路径>`。

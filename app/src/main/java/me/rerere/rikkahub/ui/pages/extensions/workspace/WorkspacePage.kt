@@ -71,7 +71,7 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
     val exportScope = androidx.compose.runtime.rememberCoroutineScope()
     val exportToaster = me.rerere.rikkahub.ui.context.LocalToaster.current
     val exportZipLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        contract = androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/zip"),
+        contract = androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/gzip"),
     ) { uri ->
         val target = exportLauncherTarget
         exportLauncherTarget = null
@@ -79,7 +79,8 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
         exportScope.launch {
             runCatching {
                 exportContext.contentResolver.openOutputStream(uri)?.use { os ->
-                    me.rerere.rikkahub.data.workspace.WorkspaceArchive.exportOne(
+                    // v5.0.34：完整导出（files/ + linux/ rootfs，排除 tmp/，符号链接按条目保存）
+                    me.rerere.rikkahub.data.workspace.WorkspaceArchive.exportFull(
                         exportContext, target.id.toString(), os
                     )
                 } ?: error("无法写入目标文件")
@@ -99,10 +100,10 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
                 val created = vm.createWorkspace("导入的工作区")
                     ?: error("创建工作区失败（重名或写库失败）")
                 exportContext.contentResolver.openInputStream(uri)?.use { ins ->
-                    me.rerere.rikkahub.data.workspace.WorkspaceArchive.extractInto(
+                    me.rerere.rikkahub.data.workspace.WorkspaceArchive.importFull(
                         exportContext, created.id, ins
                     )
-                } ?: error("无法读取 zip")
+                } ?: error("无法读取 tar.gz")
             }.onSuccess { r ->
                 exportToaster.show("已导入工作区：${r.files} 个文件（${r.bytes / 1024 / 1024}MB）")
             }.onFailure { e ->
@@ -112,7 +113,7 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
     }
     androidx.compose.runtime.LaunchedEffect(exportLauncherTarget) {
         exportLauncherTarget?.let {
-            exportZipLauncher.launch("RinCore-${it.name}-${System.currentTimeMillis()}.zip")
+            exportZipLauncher.launch("RinCore-${it.name}-${System.currentTimeMillis()}.tar.gz")
         }
     }
 
