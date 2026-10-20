@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.ai
 
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Box
 import me.rerere.hugeicons.stroke.Book02
 import me.rerere.hugeicons.stroke.AiBrain01
