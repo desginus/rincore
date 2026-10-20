@@ -127,11 +127,11 @@ object WorkspaceArchive {
                 userFiles.walkTopDown()
                     .onEnter { dir ->
                         // 跳过符号链接目录（rootfs 里的 /bin→/usr/bin 会导致重复打包爆炸）
-                        !dir.toPath().isSymbolicLink
+                        !java.nio.file.Files.isSymbolicLink(dir.toPath())
                     }
                     .forEach { f ->
                         if (!f.isFile) return@forEach
-                        if (f.toPath().isSymbolicLink) return@forEach
+                        if (java.nio.file.Files.isSymbolicLink(f.toPath())) return@forEach
                         val rel = f.relativeTo(userFiles).path.replace(File.separatorChar, '/')
                         zos.putNextEntry(ZipEntry("$ROOT_DIR/$workspaceId/files/$rel"))
                         FileInputStream(f).use { input -> input.copyTo(zos) }
