@@ -53,6 +53,30 @@ object WorkspaceArchive {
         }
 
     /**
+     * v5.0.30 用户定案：单个工作区导出（入口 = 工作区列表 → 重命名/删除之间的「导出工作区」）。
+     * 只读源目录，不写不删；zip 内路径统一为 `workspaces/<workspaceId>/...`，与整包导出同构。
+     */
+    suspend fun exportOne(context: Context, workspaceId: String, output: java.io.OutputStream): Result =
+        withContext(Dispatchers.IO) {
+            val root = File(workspacesRoot(context), workspaceId)
+            if (!root.exists()) return@withContext Result(0, 0)
+            var count = 0
+            var bytes = 0L
+            ZipOutputStream(output.buffered()).use { zos ->
+                root.walkTopDown().forEach { f ->
+                    if (!f.isFile) return@forEach
+                    val rel = f.relativeTo(root).path.replace(File.separatorChar, '/')
+                    zos.putNextEntry(ZipEntry("$ROOT_DIR/$workspaceId/$rel"))
+                    FileInputStream(f).use { input -> input.copyTo(zos) }
+                    zos.closeEntry()
+                    count++
+                    bytes += f.length()
+                }
+            }
+            Result(count, bytes)
+        }
+
+    /**
      * 从输入流导入（覆盖同名文件）。
      *
      * v5.0.28 用户定案「首先保证工作区数据安全」：

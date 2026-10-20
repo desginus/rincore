@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.pages.extensions.workspace
 
+import me.rerere.hugeicons.stroke.FileExport
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -61,6 +63,36 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
     var showAddDialog by rememberSaveable { mutableStateOf(false) }
     var editTarget by remember { mutableStateOf<WorkspaceEntity?>(null) }
     var deleteTarget by remember { mutableStateOf<WorkspaceEntity?>(null) }
+    // v5.0.30：导出工作区（单工作区 zip）
+    var exportLauncherTarget by remember { mutableStateOf<WorkspaceEntity?>(null) }
+    val exportContext = androidx.compose.ui.platform.LocalContext.current
+    val exportScope = androidx.compose.runtime.rememberCoroutineScope()
+    val exportToaster = me.rerere.rikkahub.ui.context.LocalToaster.current
+    val exportZipLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/zip"),
+    ) { uri ->
+        val target = exportLauncherTarget
+        exportLauncherTarget = null
+        if (uri == null || target == null) return@rememberLauncherForActivityResult
+        exportScope.launch {
+            runCatching {
+                exportContext.contentResolver.openOutputStream(uri)?.use { os ->
+                    me.rerere.rikkahub.data.workspace.WorkspaceArchive.exportOne(
+                        exportContext, target.id.toString(), os
+                    )
+                } ?: error("无法写入目标文件")
+            }.onSuccess { r ->
+                exportToaster.show("已导出「${target.name}」：${r.files} 个文件（${r.bytes / 1024 / 1024}MB）")
+            }.onFailure { e ->
+                exportToaster.show("导出失败：${e.message?.take(120)}")
+            }
+        }
+    }
+    androidx.compose.runtime.LaunchedEffect(exportLauncherTarget) {
+        exportLauncherTarget?.let {
+            exportZipLauncher.launch("RinCore-${it.name}-${System.currentTimeMillis()}.zip")
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -99,6 +131,7 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
                     workspace = workspace,
                     onRename = { editTarget = workspace },
                     onDelete = { deleteTarget = workspace },
+                    onExport = { exportLauncherTarget = workspace },
                     onOpen = { navController.navigate(Screen.WorkspaceDetail(workspace.id)) },
                 )
             }
@@ -151,6 +184,7 @@ private fun WorkspaceItem(
     workspace: WorkspaceEntity,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+    onExport: () -> Unit,
     onOpen: () -> Unit,
 ) {
     Surface(
@@ -192,6 +226,12 @@ private fun WorkspaceItem(
                         text = stringResource(R.string.common_rename),
                         icon = HugeIcons.PencilEdit01,
                         onClick = onRename,
+                    ),
+                    // v5.0.30 用户定案：导出工作区（重命名与删除之间）
+                    ItemAction(
+                        text = "导出工作区",
+                        icon = HugeIcons.FileExport,
+                        onClick = onExport,
                     ),
                     ItemAction(
                         text = stringResource(R.string.common_delete),

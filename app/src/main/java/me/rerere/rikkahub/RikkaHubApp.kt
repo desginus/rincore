@@ -87,6 +87,9 @@ class RikkaHubApp : Application() {
      * 幂等：完成后在 `files/.wipe_v5029_done` 写标记，后续启动不再执行。
      */
     private fun performOneTimeWipeKeepingWorkspace() {
+        // v5.0.30：只在正式版（me.rincore.app）执行；测试版/调试版跳过（它们本就是干净数据）
+        val pkg = applicationId ?: packageName
+        if (pkg.endsWith(".test") || pkg.endsWith(".debug")) return
         runCatching {
             val files = filesDir ?: return
             val flag = java.io.File(files, ".wipe_v5029_done")
