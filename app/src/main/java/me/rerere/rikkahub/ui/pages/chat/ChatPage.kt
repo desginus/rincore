@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.widthIn
 import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -628,16 +630,23 @@ private fun TopBar(
                         style = MaterialTheme.typography.bodyMedium,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    if (chatModel != null && provider != null) {
-                        Text(
-                            text = "${assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) }} / ${chatModel.displayName} (${provider.name})",
-                            overflow = TextOverflow.Ellipsis,
-                            maxLines = 1,
-                            color = LocalContentColor.current.copy(0.65f),
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 8.sp,
+                    androidx.compose.foundation.layout.Row(
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+                    ) {
+                        if (chatModel != null && provider != null) {
+                            Text(
+                                text = "${assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) }} / ${chatModel.displayName} (${provider.name})",
+                                overflow = TextOverflow.Ellipsis,
+                                maxLines = 1,
+                                color = LocalContentColor.current.copy(0.65f),
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 8.sp,
+                                )
                             )
-                        )
+                        }
+                        // v5.0.38: 恢复 5.0.15 的「项目包胶囊」（当前版本整段丢失）
+                        ConversationFolderPill(folderId = conversation.folderId)
                     }
                 }
             }
@@ -694,6 +703,33 @@ private fun TopBar(
                     Text(stringResource(R.string.chat_page_cancel))
                 }
             }
+        )
+    }
+}
+
+/**
+ * v5.0.38: 从 5.0.15 恢复 —— 项目包胶囊（会话归属的文件夹名，小圆角标签）。
+ * 当前 5.0.3x 整段丢失，导致聊天标题栏看不到所属项目包。
+ */
+@Composable
+private fun ConversationFolderPill(folderId: Uuid?) {
+    val id = folderId ?: return
+    val folderRepo: me.rerere.rikkahub.data.repository.FolderRepository =
+        org.koin.compose.koinInject()
+    val folder by remember(id) { folderRepo.getFolderFlow(id) }
+        .collectAsStateWithLifecycle(initialValue = null)
+    val name = folder?.name?.takeIf { it.isNotBlank() } ?: return
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        modifier = Modifier.widthIn(max = 120.dp),
+    ) {
+        Text(
+            text = name,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
         )
     }
 }
