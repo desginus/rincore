@@ -25,7 +25,7 @@ android {
         minSdk = 26
         targetSdk = 37
         versionCode = 9999
-        versionName = "5.0.34"
+        versionName = "5.0.35"
 
         // v4.8.179: 开发者版本开关 — true=开发者版(含“开发者调试”入口/面板); 正式版=false
         buildConfigField("Boolean", "DEVELOPER_BUILD", "false")
@@ -98,9 +98,12 @@ android {
         //  - 签名沿用 release signingConfig（initWith 继承，与正式版同签名 → 系统视为升级）
         //  - versionCode 9999 高于此前所有版本 → 直接覆盖
         //  - 其余构建配置与 research 完全一致（保持"正常的那套"）
+        // v5.0.35 用户定案：全新包名（独立系统身份，零残留），可作为长期使用的版本。
+        //  - 包名 me.rincore.app.hub（与正式版 me.rincore.app 不同 → 可共存、系统状态独立）
+        //  - 构建配置沿用 release（非 R8），签名同正式版
         create("research") {
             initWith(getByName("release"))
-            applicationIdSuffix = null
+            applicationIdSuffix = ".hub"
             versionNameSuffix = null
             matchingFallbacks.add("release")
         }

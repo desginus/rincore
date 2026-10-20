@@ -107,12 +107,21 @@ class RikkaHubApp : Application() {
 
             val workspaces = java.io.File(files, "workspaces")
             val bridgeDir = java.io.File(files, ".rin-bridge")
-            val keepInFiles = setOf("workspaces", ".rin-bridge", flag.name)
+            // v5.0.35 用户实证修复：upload/ 是聊天附件实体文件（备份会打包它），
+            // 绝不能当"其他"清掉——否则导入备份后所有附件引用都会「未找到该文件」。
+            val keepInFiles = setOf(
+                "workspaces",   // 工作区（用户指定绝对保留）
+                ".rin-bridge",  // 桥 token
+                "upload",       // 聊天附件（文档/图片/音频实体）
+                flag.name,
+            )
 
             // 安全基准：工作区与桥目录的规范路径（任何情况下都不得进入删除集合）
+            val uploadDir = java.io.File(files, "upload")
             val protectedPaths = setOfNotNull(
                 runCatching { workspaces.canonicalPath }.getOrNull(),
                 runCatching { bridgeDir.canonicalPath }.getOrNull(),
+                runCatching { uploadDir.canonicalPath }.getOrNull(),
             )
             fun isProtected(file: java.io.File): Boolean =
                 runCatching { file.canonicalPath }.getOrNull() in protectedPaths
