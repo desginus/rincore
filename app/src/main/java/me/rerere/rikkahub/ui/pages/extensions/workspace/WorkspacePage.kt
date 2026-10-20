@@ -66,12 +66,6 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
     var editTarget by remember { mutableStateOf<WorkspaceEntity?>(null) }
     var deleteTarget by remember { mutableStateOf<WorkspaceEntity?>(null) }
 
-    androidx.compose.runtime.LaunchedEffect(exportLauncherTarget) {
-        exportLauncherTarget?.let {
-            exportZipLauncher.launch("RinCore-${it.name}-${System.currentTimeMillis()}.tar.gz")
-        }
-    }
-
     Scaffold(
         topBar = {
             LargeFlexibleTopAppBar(
