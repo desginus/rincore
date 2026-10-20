@@ -483,6 +483,26 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = { Text("从 zip 恢复工作区（覆盖同名文件，保留其余）") },
                         headlineContent = { Text("导入工作区") },
                     )
+                    // v5.0.32 用户定案：工作区锁状态 / 一键解锁
+                    val workspaceLocked = me.rerere.rikkahub.data.workspace.WorkspaceLock.isLocked(wsContext)
+                    item(
+                        onClick = {
+                            if (workspaceLocked) {
+                                me.rerere.rikkahub.data.workspace.WorkspaceLock.unlock(wsContext)
+                                toaster.show("工作区已解锁：请手动重启应用，沙箱桥与工作区功能将恢复")
+                            } else {
+                                toaster.show("工作区当前为解锁状态")
+                            }
+                        },
+                        leadingContent = { CardGroupIcon(HugeIcons.Settings03, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = {
+                            Text(
+                                if (workspaceLocked) "当前已锁定：不启动沙箱桥、不访问工作区数据（点击解锁，需重启）"
+                                else "当前已解锁：沙箱桥与工作区功能正常"
+                            )
+                        },
+                        headlineContent = { Text(if (workspaceLocked) "工作区：已锁定" else "工作区：已解锁") },
+                    )
                     item(
                         onClick = { navController.navigate(Screen.SettingAdvanced) },
                         leadingContent = { CardGroupIcon(HugeIcons.Wrench01, containerColor = containerColor, contentColor = contentColor) },

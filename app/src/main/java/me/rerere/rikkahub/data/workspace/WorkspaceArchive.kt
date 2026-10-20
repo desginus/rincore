@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.data.workspace
 
 import android.content.Context
-import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -82,7 +81,14 @@ object WorkspaceArchive {
                         if (!entry.isDirectory && name.startsWith("$ROOT_DIR/") && !name.contains("..")) {
                             // 剥掉 workspaces/<源id>/
                             val afterRoot = name.removePrefix("$ROOT_DIR/")
-                            val rel = afterRoot.substringAfter('/', "")
+                            val rest = afterRoot.substringAfter('/', "")
+                            // v5.0.32：只接受 files/ 下的内容（旧 zip 里的 linux/、temp/ 一律跳过）
+                            if (!rest.startsWith("files/")) {
+                                zis.closeEntry()
+                                entry = zis.nextEntry
+                                continue
+                            }
+                            val rel = rest
                             if (rel.isNotBlank()) {
                                 val target = File(root, rel)
                                 target.parentFile?.mkdirs()
@@ -109,20 +115,30 @@ object WorkspaceArchive {
      */
     suspend fun exportOne(context: Context, workspaceId: String, output: java.io.OutputStream): Result =
         withContext(Dispatchers.IO) {
-            val root = File(workspacesRoot(context), workspaceId)
-            if (!root.exists()) return@withContext Result(0, 0)
+            val workspaceRoot = File(workspacesRoot(context), workspaceId)
+            if (!workspaceRoot.exists()) return@withContext Result(0, 0)
+            // v5.0.32 用户实证修复：只导出 files/（用户文件）；
+            // 排除 linux/（rootfs，GB 级，可重建）与 temp/（临时垃圾）。
+            val userFiles = File(workspaceRoot, "files")
+            if (!userFiles.exists()) return@withContext Result(0, 0)
             var count = 0
             var bytes = 0L
             ZipOutputStream(output.buffered()).use { zos ->
-                root.walkTopDown().forEach { f ->
-                    if (!f.isFile) return@forEach
-                    val rel = f.relativeTo(root).path.replace(File.separatorChar, '/')
-                    zos.putNextEntry(ZipEntry("$ROOT_DIR/$workspaceId/$rel"))
-                    FileInputStream(f).use { input -> input.copyTo(zos) }
-                    zos.closeEntry()
-                    count++
-                    bytes += f.length()
-                }
+                userFiles.walkTopDown()
+                    .onEnter { dir ->
+                        // 跳过符号链接目录（rootfs 里的 /bin→/usr/bin 会导致重复打包爆炸）
+                        !dir.toPath().isSymbolicLink
+                    }
+                    .forEach { f ->
+                        if (!f.isFile) return@forEach
+                        if (f.toPath().isSymbolicLink) return@forEach
+                        val rel = f.relativeTo(userFiles).path.replace(File.separatorChar, '/')
+                        zos.putNextEntry(ZipEntry("$ROOT_DIR/$workspaceId/files/$rel"))
+                        FileInputStream(f).use { input -> input.copyTo(zos) }
+                        zos.closeEntry()
+                        count++
+                        bytes += f.length()
+                    }
             }
             Result(count, bytes)
         }
