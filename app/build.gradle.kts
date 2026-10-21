@@ -25,7 +25,7 @@ android {
         minSdk = 26
         targetSdk = 37
         versionCode = 9999
-        versionName = "5.0.45"
+        versionName = "5.0.46"
 
         // v4.8.179: 开发者版本开关 — true=开发者版(含“开发者调试”入口/面板); 正式版=false
         buildConfigField("Boolean", "DEVELOPER_BUILD", "false")
@@ -103,9 +103,8 @@ android {
         //  - 构建配置沿用 release（非 R8），签名同正式版
         create("research") {
             initWith(getByName("release"))
-            // v5.0.42 用户定案（导出用）：**同包名 me.rincore.app** —— 覆盖安装正式版，
-            // 继承其全部数据与工作区，用户可在本版内完成「全量导出（含工作区）」，再决定卸载/换包名。
-            applicationIdSuffix = null
+            // v5.0.46：承载版 = `.hub` 独立包名（与正式版共存，导入 v5.0.45 导出的全量备份）
+            applicationIdSuffix = ".hub"
             versionNameSuffix = null
             matchingFallbacks.add("release")
         }
