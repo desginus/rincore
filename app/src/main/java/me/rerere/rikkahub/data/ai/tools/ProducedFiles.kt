@@ -27,6 +27,21 @@ data class ProducedFile(
     val tool: String,
     /** 最近一次产出时间 (epoch ms) */
     val atMs: Long,
+    /**
+     * v5.0.59 **唯一路由键（工作区）**：产出发生时所在工作区 id。
+     *
+     * 这是"点开产出"时唯一不需要猜的信息。旧记录为 null（只能回退探测）。
+     * 空字符串 = 当时确实没有工作区。
+     */
+    val workspaceId: String? = null,
+    /**
+     * v5.0.59 **唯一路由键（CWD）**：产出发生时生效的作用域，**相对形态**
+     * （`projects/news`，null = filesDir 根）。
+     *
+     * 与 `WorkspaceManager.workspaceScopeDir(filesDir, cwd)` 同一口径 —— 解析时
+     * `rootfsFileSize(wsId, path, cwd)` 一步即中，不需要任何搜索。
+     */
+    val cwd: String? = null,
 )
 
 object ProducedFiles {
@@ -72,6 +87,18 @@ object ProducedFiles {
         return "/workspace/" + full.trimStart('/')
     }
 
+    /**
+     * v5.0.59：作用域归一化 —— 与 `WorkspaceManager.workspaceScopeDir` 同口径。
+     * `/workspace/projects/news` 与 `projects/news` 与 `//projects/news/` 都压成 `projects/news`；
+     * `""` / `/workspace` / null 都压成 null（= filesDir 根）。
+     */
+    fun normalizeScope(raw: String?): String? {
+        val t = raw?.trim()?.replace('\\', '/')?.trim('/')?.trim() ?: return null
+        if (t.isEmpty() || t == "workspace") return null
+        val rel = if (t.startsWith("workspace/")) t.removePrefix("workspace/") else t
+        return rel.trim('/').ifBlank { null }
+    }
+
     /** 从工具名 + 参数提取产出路径 (已规范化; cwd = 环路作用域, 用于形态收敛) */
     fun extractPath(toolName: String, args: JsonObject?, cwd: String? = null): String? {
         val key = PATH_ARG[toolName] ?: return null
@@ -86,10 +113,21 @@ object ProducedFiles {
         toolName: String,
         path: String,
         nowMs: Long,
+        workspaceId: String? = null,
+        cwd: String? = null,
     ): Map<String, List<ProducedFile>> {
         val existing = current[conversationId].orEmpty()
+        val scope = normalizeScope(cwd)
         val updated = buildList {
-            add(ProducedFile(path = path, tool = toolName, atMs = nowMs))
+            add(
+                ProducedFile(
+                    path = path,
+                    tool = toolName,
+                    atMs = nowMs,
+                    workspaceId = workspaceId?.takeIf { it.isNotBlank() },
+                    cwd = scope,
+                )
+            )
             existing.forEach { if (it.path != path) add(it) }
         }.take(MAX_PER_CONVERSATION)
 
@@ -109,11 +147,15 @@ object ProducedFiles {
         conversationId: String,
         entries: List<Pair<String, String>>,
         nowMs: Long,
+        workspaceId: String? = null,
+        cwd: String? = null,
     ): Map<String, List<ProducedFile>> {
         if (entries.isEmpty()) return current
         var acc = current
         entries.forEach { (tool, path) ->
-            if (path.isNotBlank()) acc = record(acc, conversationId, tool, path, nowMs)
+            if (path.isNotBlank()) {
+                acc = record(acc, conversationId, tool, path, nowMs, workspaceId, cwd)
+            }
         }
         return acc
     }

@@ -94,6 +94,14 @@ import java.io.File
  *  - 长清单可达性: 产出清单可达 80 条, 无滚动时超出行高上限的胶囊被裁剪不可触达 —
  *    内容列加垂直滚动 + 高度上限 (嵌套滚动与 sheet 拖拽标准协同)。
  */
+/**
+ * v5.0.59：产出定位结果 —— **唯一路由键**（工作区 + rootfs 路径）。
+ */
+data class LocatedArtifact(
+    val workspaceId: String,
+    val rootfsPath: String,
+)
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ConversationArtifactsSheet(
@@ -126,28 +134,63 @@ fun ConversationArtifactsSheet(
     var pendingExport by remember { mutableStateOf<ProducedFile?>(null) }
     var renderResult by remember { mutableStateOf<RenderResult?>(null) }
     var renderLoading by remember { mutableStateOf(false) }
-    var chooser by remember { mutableStateOf<Pair<List<String>, CompletableDeferred<String?>>?>(null) }
+    // v5.0.59: 定位改为"唯一路由键 + 最小 CWD 集合"精确探测，不存在多命中选择场景
 
-    /** 解析入口: 多候选直取 → 文件名模糊; 多命中弹层让用户选 (取消/找不到返回 null 并 toast, 不报错) */
-    suspend fun resolveOrAsk(raw: String): String? {
-        val wsId = workspaceId
-        if (wsId == null) {
-            toaster.show(message = "该助手未绑定工作区", type = ToastType.Error)
+    /**
+     * v5.0.59（按"唯一对应码"重写）：产出文件定位。
+     *
+     * 输入是**记录本身**（[ProducedFile]），它携带定位键：
+     *   · `workspaceId` —— 产出发生时所在工作区
+     *   · `cwd`         —— 产出发生时生效的作用域（相对形态，与 workspaceScopeDir 同口径）
+     *
+     * 解析 = 对"最小 CWD 集合"做几次 `rootfsFileSize(wsId, path, cwd)` 精确探测：
+     *   记录里的 cwd → 当前项目包 CWD → 当前助手 CWD → 根
+     *
+     * 全程**不做任何目录遍历**。找不到 = 文件确实不在 → 明确报错，
+     * 不再出现"点了没反应"（旧分支解析失败后静默 return）。
+     */
+    suspend fun resolveOrAsk(hint: ProducedFile): LocatedArtifact? {
+        val name = hint.path.substringAfterLast('/').ifBlank { hint.path }
+
+        val wsIds = buildList {
+            hint.workspaceId?.takeIf { it.isNotBlank() }?.let { add(it) }
+            workspaceId?.takeIf { it.isNotBlank() && it !in this }?.let { add(it) }
+        }
+        if (wsIds.isEmpty()) {
+            toaster.show(
+                message = "未找到文件: $name（该对话没有绑定工作区，记录里也没有工作区信息）",
+                type = ToastType.Error,
+            )
             return null
         }
-        return when (val r = resolveScopedFile(workspaceRepository, wsId, ChipFile(raw, null), cwdCandidates)) {
-            is ScopedResolution.Resolved -> r.rootfsPath
-            is ScopedResolution.Ambiguous -> {
-                val deferred = CompletableDeferred<String?>()
-                chooser = r.candidates to deferred
-                deferred.await()
-            }
 
-            is ScopedResolution.NotFound -> {
-                toaster.show(message = r.detail.take(160), type = ToastType.Error)
-                null
+        val cwds = ArrayList<String?>()
+        hint.cwd?.let { cwds.add(it) }
+        cwdCandidates.forEach { if (it !in cwds) cwds.add(it) }
+        cwds.add(null)
+
+        val paths = ArrayList<String>()
+        paths.add(hint.path)
+        if (hint.path.startsWith("/workspace/workspace/")) {
+            paths.add("/workspace/" + hint.path.removePrefix("/workspace/workspace/"))
+        }
+
+        val tried = ArrayList<String>()
+        for (ws in wsIds) {
+            for (p in paths) {
+                for (cwd in cwds) {
+                    tried.add("$p @${cwd ?: "/"}")
+                    val ok = runCatching { workspaceRepository.rootfsFileSize(ws, p, cwd) }.isSuccess
+                    if (ok) return LocatedArtifact(ws, p)
+                }
             }
         }
+
+        toaster.show(
+            message = "未找到文件: $name（按 CWD 精确探测 ${tried.size} 处，均不存在）",
+            type = ToastType.Error,
+        )
+        return null
     }
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -157,9 +200,10 @@ fun ConversationArtifactsSheet(
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             runCatching {
-                val wsId = workspaceId ?: error("该助手未绑定工作区")
-                val resolved = resolveOrAsk(target.path) ?: return@launch
-                val file = materializeWorkspaceFile(context, workspaceRepository, wsId, resolved)
+                val loc = resolveOrAsk(target) ?: return@launch
+                val file = materializeWorkspaceFile(
+                    context, workspaceRepository, loc.workspaceId, loc.rootfsPath,
+                )
                 exportLocalFileTo(context, file, uri)
                 toaster.show(
                     message = "已导出: ${target.path.substringAfterLast('/')}",
@@ -181,10 +225,22 @@ fun ConversationArtifactsSheet(
             try {
                 withContext(Dispatchers.IO) {
                     runCatching {
-                        val wsId = workspaceId ?: error("该助手未绑定工作区")
-                        val resolved = resolveOrAsk(target.path) ?: return@withContext
-                        val resolvedName = resolved.substringAfterLast('/')
-                        val file = materializeWorkspaceFile(context, workspaceRepository, wsId, resolved)
+                        val loc = resolveOrAsk(target)
+                        if (loc == null) {
+                            // v5.0.59: 旧实现在这里静默 return —— 用户点"渲染"只看到转圈消失，
+                            // 什么都没发生（"点了没反应"的直接原因）。现在必须给出可见结果。
+                            renderResult = RenderResult.Unsupported(
+                                fileName,
+                                "未找到该文件：${target.path}\n" +
+                                    "已按记录的工作区与 CWD 精确探测过，均不存在。\n" +
+                                    "可在「工作区」里确认文件是否仍存在，或重新生成一次。",
+                            )
+                            return@withContext
+                        }
+                        val resolvedName = loc.rootfsPath.substringAfterLast('/')
+                        val file = materializeWorkspaceFile(
+                            context, workspaceRepository, loc.workspaceId, loc.rootfsPath,
+                        )
                         val taskDir = File(context.cacheDir, "file_actions_task").apply {
                             deleteRecursively()
                             mkdirs()
@@ -299,9 +355,10 @@ fun ConversationArtifactsSheet(
                                 onOpenChange(false)
                                 scope.launch {
                                     runCatching {
-                                        val wsId = workspaceId ?: error("该助手未绑定工作区")
-                                        val resolved = resolveOrAsk(sel.path) ?: return@launch
-                                        val file = materializeWorkspaceFile(context, workspaceRepository, wsId, resolved)
+                                        val loc = resolveOrAsk(sel) ?: return@launch
+                                        val file = materializeWorkspaceFile(
+                                            context, workspaceRepository, loc.workspaceId, loc.rootfsPath,
+                                        )
                                         shareLocalFile(context, file)
                                     }.onFailure { e ->
                                         toaster.show(
@@ -369,53 +426,6 @@ fun ConversationArtifactsSheet(
                 onDismiss = { renderResult = null },
             )
         }
-    }
-
-    // v4.8.63 同款: 模糊匹配多命中 — 弹层让用户选择 (不报错)
-    chooser?.let { (options, deferred) ->
-        AlertDialog(
-            onDismissRequest = {
-                deferred.complete(null)
-                chooser = null
-            },
-            title = { Text("选择文件") },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .heightIn(max = 320.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        "按文件名匹配到多个文件，请选择要使用的位置：",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    options.forEach { option ->
-                        Card(
-                            onClick = {
-                                deferred.complete(option)
-                                chooser = null
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(
-                                text = option,
-                                modifier = Modifier.padding(12.dp),
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = {
-                    deferred.complete(null)
-                    chooser = null
-                }) { Text("取消") }
-            },
-        )
     }
 }
 

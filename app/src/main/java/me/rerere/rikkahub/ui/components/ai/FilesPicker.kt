@@ -424,7 +424,12 @@ internal fun FilesPicker(
             open = showArtifactsSheet,
             files = producedFiles,
             assistant = assistant,
-            folderCwd = conversation.workspaceCwd,
+            // v5.0.59 ★「本对话产出点任何文件都未找到」的真根因：
+            // 这里原来传的是 conversation.workspaceCwd —— 该字段已"退役为数据壳"
+            // （全库没有任何路径再写它，恒为 null），于是 cwdCandidates 只剩助手级 CWD，
+            // 项目包对话产出的 /workspace/<包cwd>/xxx 永远探不到。
+            // 正确来源是上面 167 行已取好的 folderCwd（项目包 CWD）。
+            folderCwd = folderCwd,
             onOpenChange = { showArtifactsSheet = it },
         )
     }

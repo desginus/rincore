@@ -1170,6 +1170,12 @@ class GenerationHandler(
                             outcome.item.args as? kotlinx.serialization.json.JsonObject,
                             workspaceCwd,
                         ) ?: return@runCatching
+                        // v5.0.59「唯一对应码」：产出登记时把**定位键**一并落盘
+                        // （工作区 id + 生效 CWD），点击时一步 rootfsFileSize 命中，
+                        // 不再靠路径字符串猜、更不需要全盘搜索。
+                        val producedWsId = assistant.workspaceId?.toString()
+                        val producedCwd = me.rerere.rikkahub.data.ai.tools.ProducedFiles
+                            .normalizeScope(workspaceCwd)
                         settingsStore.update { s ->
                             s.copy(
                                 conversationProducedFiles = me.rerere.rikkahub.data.ai.tools.ProducedFiles.record(
@@ -1178,6 +1184,8 @@ class GenerationHandler(
                                     toolName = tool.toolName,
                                     path = produced,
                                     nowMs = System.currentTimeMillis(),
+                                    workspaceId = producedWsId,
+                                    cwd = producedCwd,
                                 )
                             )
                         }
@@ -1323,6 +1331,9 @@ class GenerationHandler(
                             conversationId = cid,
                             entries = filtered.map { path -> "workspace_scan" to path },
                             nowMs = System.currentTimeMillis(),
+                            workspaceId = assistant.workspaceId?.toString(),
+                            cwd = me.rerere.rikkahub.data.ai.tools.ProducedFiles
+                                .normalizeScope(workspaceCwd),
                         )
                     )
                 }

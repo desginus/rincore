@@ -105,6 +105,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceAtLeast
 import androidx.compose.ui.zIndex
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.delay
 import org.koin.compose.koinInject
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -700,6 +701,13 @@ private fun ChatListPreview(
     var showArtifactsSheet by remember { mutableStateOf(false) }
     // v4.8.92: 预算面板直连引擎（显示含未落盘的真实用量；清零走 SubAgentBudget.reset）
     val subAgentEngine: me.rerere.rikkahub.subagent.SubAgentEngine = koinInject()
+    // v5.0.59: 本对话产出面板的 CWD —— 与工具箱同源（项目包 CWD 优先）
+    val artifactsFolderRepository: me.rerere.rikkahub.data.repository.FolderRepository = koinInject()
+    val artifactsFolderCwd by remember(conversation.folderId) {
+        conversation.folderId?.let { fid ->
+            artifactsFolderRepository.getFolderFlow(fid).map { it?.cwd }
+        } ?: kotlinx.coroutines.flow.flowOf(null)
+    }.collectAsStateWithLifecycle(initialValue = null)
     val budgetScope = rememberCoroutineScope()
 
     // 过滤消息，同时保留原始 index 避免后续 O(n) indexOf 查找
@@ -766,7 +774,7 @@ private fun ChatListPreview(
             open = showArtifactsSheet,
             files = settings.conversationProducedFiles[conversation.id.toString()].orEmpty(),
             assistant = settings.getAssistantById(conversation.assistantId) ?: settings.getCurrentAssistant(),
-            folderCwd = null,
+            folderCwd = artifactsFolderCwd,
             onOpenChange = { showArtifactsSheet = it },
         )
 
