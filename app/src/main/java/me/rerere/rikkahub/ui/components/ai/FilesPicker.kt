@@ -126,7 +126,7 @@ internal fun FilesPicker(
     mcpManager: McpManager,
     onCompressContext: (additionalPrompt: String, targetTokens: Int, keepRecentMessages: Int) -> Job,
     onUpdateAssistant: (Assistant) -> Unit,
-    onUpdateWorkspaceCwd: (String?) -> Unit,
+    onUpdateWorkspaceCwd: (String?) -> Unit = {},
     showCompressDialog: Boolean,
     onShowCompressDialogChange: (Boolean) -> Unit,
     onDismiss: () -> Unit,
@@ -135,7 +135,7 @@ internal fun FilesPicker(
     onPickVideo: () -> Unit,
     onPickAudio: () -> Unit,
     onPickFile: () -> Unit,
-    onSketch: () -> Unit,
+    onSketch: () -> Unit = {},
     onStartVoiceMode: (() -> Unit)? = null,
     // v5.0.20 用户定版：工具箱 12 格 → 延迟自动回复开关
     onToggleDeferAutoReply: (Boolean) -> Unit = {},
