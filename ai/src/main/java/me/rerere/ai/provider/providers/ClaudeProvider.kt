@@ -281,7 +281,11 @@ class ClaudeProvider(
                 if (data == "[DONE]") {
                     return
                 }
-                if (data.isNotBlank()) lastEventAt.set(System.currentTimeMillis())
+                // v5.0.58: 同 OpenAI 族 —— 只有实质进度（text_delta / thinking_delta /
+                // input_json_delta）才刷新空闲计时；message_start / ping / 空 delta 不刷新。
+                if (me.rerere.ai.core.StreamProgress.hasSubstantiveDelta(data)) {
+                    lastEventAt.set(System.currentTimeMillis())
+                }
 
                 // v3.8.6: 诊断计数 (每事件累加, 成本可忽略)
                 val seq = eventCount.incrementAndGet()

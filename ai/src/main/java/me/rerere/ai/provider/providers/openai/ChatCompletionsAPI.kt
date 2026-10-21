@@ -403,9 +403,13 @@ class ChatCompletionsAPI(
                     close()
                     return
                 }
-                // 仅有效数据刷新空闲标记 — 空行 (keep-alive) 不刷新,
-                // 否则服务器保活会使看门狗永远无法检测真挂起
-                if (data.isNotBlank()) {
+                // v5.0.58 ★"输出停很久却不判死"的根因修复：
+                // 旧判据 data.isNotBlank() 会把"非空但无内容"的保活帧也算进度 ——
+                // {"choices":[{"delta":{}}]} / {"choices":[]} / {"usage":{...}} /
+                // {"delta":{"role":"assistant"}} 都会刷新空闲计时，导致看门狗永不触发，
+                // 上游真挂起时用户看到的是无期限的"停住"。
+                // 现改为**实质进度**判据（正文/思考/工具参数），空壳帧不刷新。
+                if (me.rerere.ai.core.StreamProgress.hasSubstantiveDelta(data)) {
                     lastEventAt.set(System.currentTimeMillis())
                     // v3.10.5: TTFT 插桩 — 首个有效 data 事件(含网关转换);
                     // 与 sentAtMs 差即首字延迟, 连接复用/缓存命中场景应显著下降

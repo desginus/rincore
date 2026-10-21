@@ -30,6 +30,101 @@ import kotlinx.coroutines.launch
  *   "平台连接无响应"/"生成无有效数据超时" 字样驱动 Init/Stream 分流)
  * - 超时 close(IOException) 并退出循环
  */
+/**
+ * v5.0.58（用户定版·新重试机制）：**结构化**看门狗超时异常。
+ *
+ * 取代此前 `IOException("生成无有效数据超时 (480s): ...")` + 消费者用中文字符串
+ * `contains("生成无有效数据超时")` 反推阶段的脆弱做法 —— 文案一改、一加前缀、
+ * 一本地化，分类就错，思考链静默超时会被误判成"发起失败"（5 次）或反之。
+ *
+ * [phase] 取值：header / first-event / thinking / stream，与
+ * [StreamWatchdog.currentPhase] 同名，重试分层直接按它做 when 分支。
+ */
+class StreamTimeoutException(
+    val phase: String,
+    val idleMs: Long,
+    val limitMs: Long,
+    message: String,
+) : java.io.IOException(message)
+
+/**
+ * v5.0.58：**实质进度**判据 —— 修复"网关发空包保活，看门狗永不触发"。
+ *
+ * 旧判据是 `data.isNotBlank()`：任何非空 SSE data 都刷新空闲计时。但很多网关/
+ * 中转的保活帧是非空 JSON：
+ *
+ *     {"choices":[{"delta":{}}]}                     空 delta
+ *     {"choices":[]}                                 空数组
+ *     {"usage":{...}}                                纯用量帧
+ *     {"choices":[{"delta":{"role":"assistant"}}]}   只有 role
+ *
+ * 它们一路刷新 lastEventAt → 看门狗永远判不死 → 上游真卡住时用户看到的是
+ * "输出停了，然后过好久好久"（这段"好久"其实是无期限）。
+ *
+ * 判据保守优先：无法确定时按"有进度"处理，宁可少判死也不误杀。
+ */
+object StreamProgress {
+
+    /**
+     * 内容字段白名单（OpenAI / Anthropic / 常见中转的写法）。
+     * 判定只认"取到了非空值"，不做通配 —— 宁可对未知格式判"无进度"
+     * （由看门狗再等满 150s/480s 才动手），也不让 role/usage 空壳帧
+     * 把空闲计时一路刷新到永不判死。
+     */
+    private val CONTENT_KEYS = listOf(
+        "content",           // OpenAI / Anthropic 正文
+        "reasoning",         // reasoning
+        "reasoning_content", // reasoning_content（DeepSeek/GLM 等）
+        "thinking",          // 思考链（部分厂商）
+        "tool_calls",        // OpenAI 工具调用
+        "tool_use",          // Anthropic 工具调用
+        "input_json_delta",  // Anthropic 工具参数增量（类型标记；真正内容在 partial_json）
+        "partial_json",      // Anthropic 工具参数实体
+        "text",              // Responses API / Anthropic text delta
+        "delta_text",        // 部分中转
+        "output_text",       // Responses API
+        "completion",        // 旧 completion 接口
+    )
+
+    /** `"key":"非空值"` → true（`""` 与 `null` 都不算） */
+    private fun hasNonEmptyString(data: String, key: String): Boolean {
+        val pattern = "\"$key\":\""
+        var idx = data.indexOf(pattern)
+        while (idx >= 0) {
+            val start = idx + pattern.length
+            if (start >= data.length) return false
+            if (data[start] != '"') return true
+            idx = data.indexOf(pattern, start)
+        }
+        return false
+    }
+
+    /** `"key":[非空数组]` → true（`[]` 不算） */
+    private fun hasNonEmptyArray(data: String, key: String): Boolean {
+        val pattern = "\"$key\":["
+        val idx = data.indexOf(pattern)
+        if (idx < 0) return false
+        var k = idx + pattern.length
+        while (k < data.length && data[k].isWhitespace()) k++
+        return k < data.length && data[k] != ']'
+    }
+
+    /**
+     * true = 这一帧带来了实际进展（正文/思考/工具参数），应刷新空闲计时。
+     * false = 空壳帧（空 delta、空数组、纯 role、纯 usage、空串值），不刷新。
+     */
+    fun hasSubstantiveDelta(data: String): Boolean {
+        if (data.isBlank()) return false
+        if (data.contains("\"delta\":{}")) return false
+        if (data.contains("\"choices\":[]")) return false
+        for (key in CONTENT_KEYS) {
+            if (hasNonEmptyString(data, key)) return true
+            if (hasNonEmptyArray(data, key)) return true
+        }
+        return false
+    }
+}
+
 class StreamWatchdog(
     // v4.8.125: 保留入参 (调用面兼容; 流阶段上限已统一 150s, 不再按族区分)
     isOpencode: Boolean,
@@ -120,7 +215,9 @@ class StreamWatchdog(
         val phase = currentPhase()
         return if (idleMs > phase.limitMs) {
             val msg = phase.closeMsg
-            onTimeout(java.io.IOException(msg))
+            // v5.0.58: 抛结构化异常（携带 phase/idle/limit）—— 重试分类直接读字段，
+            // 不再用中文字符串 contains 反推。文案仍保留（日志与用户可见报错不变）。
+            onTimeout(StreamTimeoutException(phase.name, idleMs, phase.limitMs, msg))
             msg
         } else null
     }

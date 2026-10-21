@@ -127,6 +127,10 @@ private data class RetryState(
     /** v4.8.76: 上一轮 API 活动时间戳 (epoch ms) — OC/CC 轮间探活的 gap 判据;
      *  per-generation 持有 (generateInternal 每轮独立调用, 局部变量无法跨轮)。 */
     var lastApiRoundAt: Long = 0L,
+    /** v5.0.58: 连续"秒失败"次数 — 连接被立即拒绝/系统级封锁时，
+     *  每次尝试 <1s 即失败，重试预算会在十几秒内烧光；达到阈值后退避抬到 30s。
+     *  一旦某次尝试活过 FAST_FAIL_WINDOW_MS 就清零。 */
+    var fastFailStreak: Int = 0,
     /** v4.8.105 (无感衔接 E): 最近一次工具批执行完成时间戳 (epoch ms) —
      *  工具结束 → 下一轮请求就绪 的 gap 分解埋点 (PREF/resume_gap)。 */
     var lastToolEndAt: Long = 0L,
@@ -761,9 +765,10 @@ class GenerationHandler(
                     lastMsg.parts.none {
                         it is UIMessagePart.Text || it is UIMessagePart.Reasoning || it is UIMessagePart.Tool
                     }
-                if (emptyResponse && emptyRetryCount < 1) {
+                // v5.0.58: 1 → 2 次（平台偶发空流，第 2 次多半成功；仍远小于流中断链）
+                if (emptyResponse && emptyRetryCount < 2) {
                     emptyRetryCount++
-                    CallTracer.event("RETRY", "empty_stream", "Empty assistant response, retrying once (step=$stepIndex)")
+                    CallTracer.event("RETRY", "empty_stream", "Empty assistant response, retry #$emptyRetryCount (step=$stepIndex)")
                     messages = messages.dropLast(1)
                     continue
                 }
@@ -2014,7 +2019,24 @@ class GenerationHandler(
                     is StreamFailure.DataTimeout -> RetryPhase.DataTimeout(used = retry.dataTimeout)
                     else -> RetryPhase.Stream(used = retry.stream)
                 }
-                when (val verdict = RetryDecision.decide(failure, phase, settings.networkSetting.enableAutoRetry)) {
+                // v5.0.58 快速失败检测：本次尝试存活 < FAST_FAIL_WINDOW_MS 计入 streak。
+                // 思考静默超时不参与（那是"活太久"，不可能秒失败）。
+                run {
+                    val attemptMs = System.currentTimeMillis() - attemptStartMs
+                    if (attemptMs >= FAST_FAIL_WINDOW_MS || failure is StreamFailure.DataTimeout) {
+                        retry.fastFailStreak = 0
+                    } else {
+                        retry.fastFailStreak++
+                    }
+                }
+                when (
+                    val verdict = RetryDecision.decide(
+                        failure = failure,
+                        phase = phase,
+                        autoRetryEnabled = settings.networkSetting.enableAutoRetry,
+                        fastFailStreak = retry.fastFailStreak,
+                    )
+                ) {
                     is RetryVerdict.Retry -> {
                         // 计数推进 (阶段计数器单一职责)
                         when (phase) {
@@ -2359,6 +2381,9 @@ private class LengthContinuationState {
 
 // v4.8.55: 长度截断自动续写上限 (正文与工具截断共用; 3 次 ≈ 单回答最多 4×max_tokens)
 private const val MAX_LENGTH_CONTINUATIONS = 3
+
+/** v5.0.58: 一次尝试存活多久算"不是秒失败"（低于此值计入 fastFailStreak） */
+private const val FAST_FAIL_WINDOW_MS = 1_000L
 
 // v4.8.55: 续写引导 — 请求级注入 (不落盘不显示; 覆盖正文截断与工具截断两种指引)
 private const val LENGTH_CONTINUATION_NUDGE =
