@@ -46,6 +46,15 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
+      # web-ui 是 :web 模块 buildWebUi 任务的输入，而 app 依赖 :web → pnpm 必须保留
+      - name: Setup Node.js + pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Install web-ui deps
+        run: cd web-ui && pnpm install --frozen-lockfile 2>/dev/null || pnpm install --no-frozen-lockfile
+
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
         continue-on-error: true
