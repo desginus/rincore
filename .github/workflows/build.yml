@@ -106,7 +106,7 @@ jobs:
         run: |
           ./gradlew \
             :app:compileResearchKotlin \
-            :ai:test \
+            :ai:compileDebugUnitTestKotlin \
             :markdown:test \
             assembleResearch \
             --no-daemon --stacktrace --build-cache --parallel --console=plain
