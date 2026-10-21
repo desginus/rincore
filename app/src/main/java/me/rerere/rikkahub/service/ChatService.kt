@@ -1546,9 +1546,16 @@ class ChatService(
     ) {
         if (parts.isEmptyInputMessage()) return
 
-        val currentConversation = getConversationFlow(conversationId).value
+        // v5.0.60 ★「气泡分支切换丢内容」根修（lost update）：
+        // 旧实现先在**函数开头**读取 conversation 快照，中间还夹着
+        // `settingsStore.settingsFlow.first()`（真正的挂起点）—— 在这段窗口里
+        // regenerateAtMessage / 流式落库都可能写入新状态，随后这里用**旧快照**
+        // 整体覆盖，"第二遍内容"就没了（且切回也找不回，因为它从未落库）。
+        // 现在：挂起点（取 settings / assistant）全部前移，写回改成
+        // updateConversationState 的**原子读改写**（中间无挂起），落库也取刚写入的权威状态。
+        val snapshot = getConversationFlow(conversationId).value
         val settings = settingsStore.settingsFlow.first()
-        val assistant = settings.getAssistantById(currentConversation.assistantId)
+        val assistant = settings.getAssistantById(snapshot.assistantId)
             ?: settings.getCurrentAssistant()
         val processedParts = preprocessUserInputParts(parts, assistant)
         var edited = false
@@ -1556,24 +1563,29 @@ class ChatService(
         // 编辑语义: 在目标节点追加新版本 (不替换) — 旧版本保留,
         // 界面下方 123 按钮可切换查看之前的消息。截断与重新生成
         // 由 regenerateAtMessage 完成 (ChatVM.handleMessageEdit 已接)。
-        val updatedNodes = currentConversation.messageNodes.map { node ->
-            if (!node.messages.any { it.id == messageId }) {
-                return@map node
+        updateConversationState(conversationId) { current ->
+            val updatedNodes = current.messageNodes.map { node ->
+                if (node.messages.none { it.id == messageId }) {
+                    node
+                } else {
+                    edited = true
+                    node.copy(
+                        messages = node.messages + UIMessage(
+                            role = node.role,
+                            parts = processedParts,
+                        ),
+                        // 指向新版本 (size = old+1, 指向最后一条)
+                        selectIndex = node.messages.size,
+                    )
+                }
             }
-            edited = true
-
-            node.copy(
-                messages = node.messages + UIMessage(
-                    role = node.role,
-                    parts = processedParts,
-                ),
-                selectIndex = node.messages.size // 指向新版本 (size = old+1, 指向最后一条)
-            )
+            if (edited) current.copy(messageNodes = updatedNodes) else current
         }
 
         if (!edited) return
 
-        saveConversation(conversationId, currentConversation.copy(messageNodes = updatedNodes))
+        // 落库用**刚写入的权威状态**，而不是函数开头的旧快照
+        saveConversation(conversationId, getConversationFlow(conversationId).value)
     }
 
     suspend fun forkConversationAtMessage(
