@@ -806,6 +806,7 @@ private fun ChatFilesPickerSheet(
     setting: Settings,
     conversation: Conversation,
     assistant: Assistant,
+    chatModel: me.rerere.ai.provider.Model?,
     vm: ChatVM,
     attachmentPickerActions: ChatAttachmentPickerActions,
     onStartVoiceMode: () -> Unit,
@@ -852,7 +853,7 @@ private fun ChatFilesPickerSheet(
                 vm.handleCompressContext(additionalPrompt, targetTokens, keepRecentMessages)
             },
             onRestoreCompressAt = { index ->
-                vm.restoreCompressAt(index)
+                vm.restoreCompressAt(index.toInt())
             },
             onUpdateAssistant = {
                 vm.updateSettings(
