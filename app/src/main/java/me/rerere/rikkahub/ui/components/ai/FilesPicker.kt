@@ -151,6 +151,15 @@ internal fun FilesPicker(
     val navController = LocalNavController.current
     val workspaceRepository: WorkspaceRepository = koinInject()
     val workspaces by workspaceRepository.listFlow().collectAsState(initial = emptyList())
+    // v5.0.51 用户定案：恢复 4.8.190 的 CWD 解析链 —— **项目包 CWD 优先，否则助手级**。
+    // 此前直接用 conversation.workspaceCwd，导致项目包锚定的 CWD 在工具箱里看不到、也重置不干净。
+    val folderRepository: me.rerere.rikkahub.data.repository.FolderRepository = koinInject()
+    val folderCwd by remember(conversation.folderId) {
+        conversation.folderId?.let { fid ->
+            folderRepository.getFolderFlow(fid).map { it?.cwd }
+        } ?: kotlinx.coroutines.flow.flowOf(null)
+    }.collectAsStateWithLifecycle(initialValue = null)
+    val effectiveCwd = me.rerere.rikkahub.data.workspace.EffectiveCwd.pick(folderCwd, assistant.workspaceCwd)
 
     val boundWorkspace = remember(workspaces, assistant.workspaceId) {
         workspaces.find { it.id == assistant.workspaceId?.toString() }
@@ -288,14 +297,21 @@ internal fun FilesPicker(
                         modifier = Modifier.weight(1f),
                     ) { onToggleDeferAutoReply(!settings.deferAutoReply) }
                     GlassToolTile(HugeIcons.Files02, "应用文件", modifier = Modifier.weight(1f)) {
-                        val workspaceId = assistant.workspaceId ?: return@GlassToolTile
+                        // v5.0.51 用户定案（对齐 4.8.190）：**直接进文件页**（此前 initialTab 缺省=0 → 落到基本页）。
+                        // 工作区回退：会话未绑定工作区时取第一个；无任何工作区才去列表页。
+                        val targetId = assistant.workspaceId?.toString() ?: workspaces.firstOrNull()?.id
                         onDismiss()
-                        navController.navigate(
-                            Screen.WorkspaceDetail(
-                                id = workspaceId.toString(),
-                                initialPath = conversation.workspaceCwd,
+                        if (targetId != null) {
+                            navController.navigate(
+                                Screen.WorkspaceDetail(
+                                    id = targetId,
+                                    initialTab = 1,
+                                    initialPath = effectiveCwd,
+                                )
                             )
-                        )
+                        } else {
+                            navController.navigate(Screen.Workspaces)
+                        }
                     }
                     // v5.0.25 用户定案：第 12 格 = 子代理预算（与「子代理」运行详情并列）
                     GlassToolTile(
@@ -352,10 +368,24 @@ internal fun FilesPicker(
     }
 
     if (showCwdSheet && boundWorkspace != null) {
+        val cwdScope = rememberCoroutineScope()
         WorkspaceCwdPickerSheet(
             workspaceId = boundWorkspace.id,
-            currentCwd = conversation.workspaceCwd,
+            currentCwd = effectiveCwd,
             onSelectCwd = { newCwd ->
+                // v5.0.51 对齐 4.8.190 / v4.8.138：项目包对话写包级 CWD；**重置(null)时必须连助手级一起清零**，
+                // 否则清掉包级后助手级仍生效 → 界面与沙箱毫无变化（用户"连重置都做不到"的根因）。
+                val fid = conversation.folderId
+                if (fid != null) {
+                    cwdScope.launch {
+                        folderRepository.updateCwd(fid, newCwd)
+                        if (newCwd == null && assistant.workspaceCwd != null) {
+                            onUpdateAssistant(assistant.copy(workspaceCwd = null))
+                        }
+                    }
+                } else {
+                    onUpdateAssistant(assistant.copy(workspaceCwd = newCwd))
+                }
                 onUpdateWorkspaceCwd(newCwd)
             },
             onDismiss = { showCwdSheet = false },

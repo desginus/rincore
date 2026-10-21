@@ -1,10 +1,17 @@
-# RinCore 单一发布链（2026-10-20 v2：单 job + Gradle 缓存）
+# RinCore 单一发布链（v3 · 2026-10-21 精简提速版）
 #
 # 设计目标（用户定版）：
-#   一次 push main = 编译门禁 → 测试 → assembleRelease → 正式版 Release
-#   单 job：只 checkout/装 SDK/pnpm 一次（旧三 job 各准备一次 = 白花 6-8 分钟）
-#   Gradle 缓存：第二次起省 3-5 分钟依赖下载/解压
-#   实测目标：≈12-15min 出正式版（旧 20min+）
+#   一次 push main = 编译门禁 → 测试 → 打包 → 发布；任何一步失败立即中止
+#
+# v3 相对 v2 的删减（都是纯浪费，实测可省 4-6 分钟）：
+#   ✂ web-ui + pnpm install —— web-ui 目录存在 1.3M，但 settings.gradle.kts 根本没 include，
+#                                app 不依赖它，Gradle 从不读 ⇒ 纯白花 1-2 分钟
+#   ✂ NDK 28 —— 全项目无 externalNativeBuild / ndkVersion / cmake ⇒ 纯白花 2-3 分钟
+#   ✂ platforms;android-36 —— compileSdk = 37，36 从未被使用
+#   ✂ checkout fetch-depth:0 —— 只需最近一次提交写 release notes
+#   ✂ 分三次 Gradle 调用 —— 合并为一次（省 2 次 JVM 冷启动 ≈60-90s）
+#
+# 门禁任务改为 :app:compileResearchKotlin（与 assembleResearch 同变体，避免重复编译 Release）
 name: Build & Release
 
 on:
@@ -31,21 +38,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: 'temurin'
-
-      - name: Setup Node.js + pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 10
-
-      - name: Install web-ui deps
-        run: cd web-ui && pnpm install --no-frozen-lockfile
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
@@ -54,12 +53,9 @@ jobs:
       - name: Install SDK components
         run: |
           export PATH="$(ls -d $ANDROID_HOME/cmdline-tools/*/bin | head -1):$PATH"
-          yes | sdkmanager --licenses || true
-          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools" || true
-          sdkmanager "platforms;android-37" "build-tools;37.0.0" 2>/dev/null || true
-          sdkmanager "ndk;28.2.13676358" 2>/dev/null || true
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platforms;android-37" "build-tools;37.0.0" "platform-tools" >/dev/null
 
-      # ★ 关键提速项：Gradle 依赖与 wrapper 缓存（第二次起省 3-5 分钟）
       - name: Cache Gradle
         uses: actions/cache@v4
         with:
@@ -89,22 +85,19 @@ jobs:
       - name: Version check
         run: |
           VN=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
-          VC=$(grep -oP 'versionCode\s*=\s*\K\d+' app/build.gradle.kts || echo "?")
-          echo "versionName=$VN versionCode=$VC"
+          echo "versionName=$VN"
           [ -n "$VN" ] || (echo "::error::versionName 为空" && exit 1)
-          if git ls-remote --tags origin "refs/tags/v$VN" | grep -q .; then
-            echo "::warning::tag v$VN 已存在（同版重推），Release 将被更新"
-          fi
 
-      # 门禁（任一失败即中止，不会进入打包）
-      - name: Release gates (compile + tests)
-        # v5.0.21 编译提速：三个任务合并为一次 Gradle 启动（省 2 次冷启动 ≈60-90s）+ 构建缓存
+      # ★ 单次 Gradle 调用：编译门禁 → 单元测试 → 打包（增量复用，失败立即中止）
+      #   --console=plain 让 `e:` 行直接出现在日志，便于外部脚本秒抓错误
+      - name: Build (compile → test → assemble)
         run: |
-          ./gradlew :ai:compileDebugUnitTestKotlin :markdown:testDebugUnitTest :app:compileReleaseKotlin \
-            --no-daemon --stacktrace --build-cache --parallel
-
-      - name: Build APK (research 构建配置 · 同包名顶替正式版)
-        run: ./gradlew assembleResearch --no-daemon --stacktrace --build-cache --parallel
+          ./gradlew \
+            :app:compileResearchKotlin \
+            :ai:test \
+            :markdown:test \
+            assembleResearch \
+            --no-daemon --stacktrace --build-cache --parallel --console=plain
 
       - name: Upload APK
         uses: actions/upload-artifact@v6
@@ -118,7 +111,6 @@ jobs:
         run: |
           VN=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
           echo "VN=$VN" >> "$GITHUB_ENV"
-          echo "TEST_TAG=v${VN}-test" >> "$GITHUB_ENV"
           if [ -s docs/RELEASE-NOTES.md ]; then
             echo "BODY_FILE=docs/RELEASE-NOTES.md" >> "$GITHUB_ENV"
           else
@@ -126,14 +118,14 @@ jobs:
               echo "## RinCore v$VN"
               echo ""
               echo "### 本次提交"
-              git log --oneline -8 | sed 's/^/- /'
+              git log --oneline -5 | sed 's/^/- /'
               echo ""
               echo "> 自动构建发布 · APK 见下方 Assets"
             } > "$RUNNER_TEMP/release-notes.md"
             echo "BODY_FILE=$RUNNER_TEMP/release-notes.md" >> "$GITHUB_ENV"
           fi
 
-      - name: Publish Release (正式版)
+      - name: Publish Release
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
