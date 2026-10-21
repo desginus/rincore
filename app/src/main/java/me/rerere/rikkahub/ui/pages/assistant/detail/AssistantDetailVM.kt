@@ -90,19 +90,6 @@ class AssistantDetailVM(
             scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = emptyList()
         )
 
-    /** 我方记忆 1.0：助手级记忆条目（「记忆」Tab 列表与管理用；与写入桶同口径）。 */
-    val assistantMemories = assistant
-        .flatMapLatest { currentAssistant ->
-            if (currentAssistant.useGlobalMemory) {
-                memoryRepository.getGlobalMemoriesFlow()
-            } else {
-                memoryRepository.getMemoriesOfAssistantFlow(assistantId.toString())
-            }
-        }
-        .stateIn(
-            scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = emptyList()
-        )
-
     /** v5.0.25：助手名下全部项目包记忆（记忆页「项目包」范围） */
     val folderMemories = assistant
         .map { it.id }
@@ -142,25 +129,6 @@ class AssistantDetailVM(
         .stateIn(
             scope = viewModelScope, started = SharingStarted.Eagerly,
             initialValue = MemoryConsolidationStatus()
-        )
-
-    /** v4.8.92: 该助手名下的全部单对话记忆（管理页「单对话记忆」视图用；与写入桶同口径）。 */
-    /** v5.0.25：助手名下全部项目包记忆（记忆页「项目包」范围） */
-    val folderMemories = assistant
-        .map { it.id }
-        .flatMapLatest { id -> memoryRepository.getFolderMemoriesOfAssistantFlow(id.toString()) }
-
-    val conversationMemories = assistant
-        .flatMapLatest { currentAssistant ->
-            val scopeId = if (currentAssistant.useGlobalMemory) {
-                MemoryRepository.GLOBAL_MEMORY_ID
-            } else {
-                assistantId.toString()
-            }
-            memoryRepository.getConversationMemoriesOfAssistantFlow(scopeId)
-        }
-        .stateIn(
-            scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = emptyList()
         )
 
     /** v4.8.92: 对话标题（来源标签/分组头展示；已删除对话返回 null）。 */

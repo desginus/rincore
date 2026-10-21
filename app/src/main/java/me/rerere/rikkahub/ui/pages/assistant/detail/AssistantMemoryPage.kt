@@ -157,7 +157,7 @@ fun AssistantMemoryPage(id: String) {
     // 5.0.0 回贴：我方记忆条目（助手级）+ 单对话记忆
     val assistantMemories by vm.assistantMemories.collectAsStateWithLifecycle()
     val conversationMemories by vm.conversationMemories.collectAsStateWithLifecycle()
-    val folderMemories by vm.folderMemories.collectAsStateWithLifecycle(initialValue = emptyList())
+    val folderMemories by vm.folderMemories.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     // v5.0.25 用户定案：记忆页分「记忆 / 设置」两个大卡（横向各半屏）

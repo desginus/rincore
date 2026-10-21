@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.ai
 
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import me.rerere.ai.ui.UIMessagePart
 import androidx.compose.foundation.layout.width
