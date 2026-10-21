@@ -109,6 +109,9 @@ class BackupVM(
         webDavSync.deleteBackupFile(settings.value.webDavConfig, item)
     }
 
+    /** v5.0.47：导入进度（阶段名 + 已处理字节），UI 直接展示 */
+    var restoreProgress by androidx.compose.runtime.mutableStateOf<Pair<String, Long>?>(null)
+
     /** v5.0.41：导出进度（阶段名 + 已打包字节），UI 直接展示 */
     var exportProgress by androidx.compose.runtime.mutableStateOf<Pair<String, Long>?>(null)
 

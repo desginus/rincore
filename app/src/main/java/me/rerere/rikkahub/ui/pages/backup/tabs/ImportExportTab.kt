@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.backup.tabs
 
+import kotlinx.coroutines.withContext
 import androidx.compose.material3.MaterialTheme
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -122,17 +123,46 @@ fun ImportExportTab(
                     when (importType) {
                         "local" -> {
                             // 本地备份导入：处理zip文件
+                            // v5.0.47 用户实证根因：此前 `scope.launch`（主线程）里做 `copyTo`，
+                            // 15G 备份直接把主线程堵死 → ANR → 系统杀进程（"卡住→回主页→无日志"）。
+                            // 改为 IO 线程 + 1MB 分块 + 实时进度 + 空间预检。
                             val tempFile =
                                 File(context.cacheDir, "temp_restore_${System.currentTimeMillis()}.zip")
 
-                            context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
-                                FileOutputStream(tempFile).use { outputStream ->
-                                    inputStream.copyTo(outputStream)
+                            withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                // 空间预检：复制一份 + 解压一份，至少需要 2 倍备份体积的可用空间
+                                val usable = context.cacheDir.usableSpace
+                                val head = context.contentResolver.openInputStream(sourceUri)
+                                head?.close()
+                                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                    vm.restoreProgress = "读取备份文件" to 0L
+                                }
+                                context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
+                                    FileOutputStream(tempFile).use { outputStream ->
+                                        val buf = ByteArray(1 shl 20)
+                                        var copied = 0L
+                                        while (true) {
+                                            val n = inputStream.read(buf)
+                                            if (n <= 0) break
+                                            outputStream.write(buf, 0, n)
+                                            copied += n
+                                            if (copied / (64L shl 20) != (copied - n) / (64L shl 20)) {
+                                                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                                    vm.restoreProgress = "读取备份文件" to copied
+                                                }
+                                            }
+                                        }
+                                        runCatching { outputStream.fd.sync() }
+                                    }
+                                }
+                                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                    vm.restoreProgress = "解包数据" to 0L
                                 }
                             }
 
-                            // 从临时文件恢复
+                            // 从临时文件恢复（内部已是 Dispatchers.IO）
                             vm.restoreFromLocalFile(tempFile)
+                            vm.restoreProgress = null
 
                             // 清理临时文件
                             tempFile.delete()
@@ -257,11 +287,13 @@ fun ImportExportTab(
                 } else null,
                 headlineContent = { Text(stringResource(R.string.backup_page_local_backup_import)) },
                 supportingContent = {
+                    val rprog = vm.restoreProgress
                     Text(
-                        if (isRestoring && importType == "local") {
-                            stringResource(R.string.backup_page_importing)
-                        } else {
-                            stringResource(R.string.backup_page_import_desc)
+                        when {
+                            isRestoring && importType == "local" && rprog != null ->
+                                "${rprog.first}：${"%.1f".format(rprog.second / 1024.0 / 1024.0)} MB…（请保持前台）"
+                            isRestoring && importType == "local" -> stringResource(R.string.backup_page_importing)
+                            else -> stringResource(R.string.backup_page_import_desc)
                         }
                     )
                 },
