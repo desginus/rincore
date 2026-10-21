@@ -7,6 +7,7 @@ package me.rerere.rikkahub.ui.components.ai
  * 功能: 附件/文件选择器
  * 差异: 工作区文件源接入, 选择与预览逻辑扩展
  * ───────────────────────────────────────────────────────────────*/
+import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import androidx.compose.material3.Badge
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
@@ -822,6 +823,7 @@ internal fun CountBadge(count: Int) {
     }
 }
 
+@Composable
 internal fun McpPickerSheet(
     assistant: Assistant,
     servers: List<McpServerConfig>,
