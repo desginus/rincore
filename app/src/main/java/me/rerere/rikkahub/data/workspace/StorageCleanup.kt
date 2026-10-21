@@ -5,30 +5,30 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
-///**
-// * v5.0.37 用户定案：**只留 workspaces 正文，其他全部删除**（对话数据用户已另行备份）。
-// *
-// * 保留（绝对）：
-// *  - `files/workspaces/<真实工作区 id>/` 整个目录（含 files/、linux/、tmp/）
-// *
-// * 删除（其余一切）：
-// *  - `files/workspaces/*.import-backup-*` / `*.backup-*`（导入时我留下的整目录副本，通常等于工作区体积）
-// *  - `files/` 下除 workspaces 外全部（upload / skills / fonts / media_creation / chat-media / 导出压缩包 …）
-// *  - `databases/`（聊天/设置/记忆 —— 用户已备份）
-// *  - `shared_prefs/`、`datastore/`（设置）
-// *  - `cache/`、`code_cache/`（含 GPU 着色器缓存）
-// *  - `no_backup/`、`app_webview/`、`app_textures/`
-// *
-// * 安全：真实工作区目录的 canonicalPath 进保护集合，永不进删除队列。
-// */
+// v5.0.40 用户最终定案（2026-10-21）：
+//   「工作区里的文件不要删，只保留文件 + 工作区的配置，剩下的全清，强制清除」
+//
+// 保留（绝对）：
+//   A. files/workspaces/<真实工作区 id>/files/**   —— 工作区文件（用户数据本体）
+//   B. databases/**                                —— 工作区配置 + 聊天记录（工作区列表靠它）
+//
+// 删除（其余一切）：
+//   C. files/workspaces/<id>/linux/**   —— rootfs（GB 级，可重建）
+//   D. files/workspaces/<id>/tmp/**     —— 临时
+//   E. files/workspaces/*.import-backup-* / *.backup-*  —— 我做的导入备份副本（本次元凶）
+//   F. files/ 下除 workspaces 外全部（upload / chat-media / media_creation / tool_outputs /
+//      skills / fonts / builtin_skills / .rin-bridge / 导出压缩包）
+//   G. shared_prefs/ cache/ code_cache/ no_backup/ app_webview/ app_textures/
+//
+// 安全：工作区 files 目录与 databases 的 canonicalPath 进保护集合，永不进删除队列。
 object StorageCleanup {
 
     data class Item(val path: String, val bytes: Long, val label: String, val keep: Boolean = false)
 
     data class Report(val items: List<Item>) {
-        /** 可删除总量（不含受保护项） */
         val totalBytes: Long get() = items.filter { !it.keep }.sumOf { it.bytes }
-        val protectedBytes: Long get() = items.filter { it.keep }.sumOf { it.bytes }
+        val keepBytes: Long get() = items.filter { it.keep }.sumOf { it.bytes }
+        val deleteCount: Int get() = items.count { !it.keep }
     }
 
     private fun sizeOf(file: File): Long =
@@ -37,72 +37,92 @@ object StorageCleanup {
             else file.walkTopDown().filter { it.isFile }.sumOf { it.length() }
         }.getOrDefault(0L)
 
-    private fun realWorkspaceCanonicalPaths(context: Context): Set<String> {
+    /** 受保护：每个真实工作区的 files 子目录 + databases */
+    private fun protectedPaths(context: Context): Set<String> {
+        val out = mutableSetOf<String>()
         val wsRoot = File(context.filesDir, "workspaces")
-        return wsRoot.listFiles()
+        wsRoot.listFiles()
             ?.filter { it.isDirectory && !it.name.contains(".import-backup-") && !it.name.contains(".backup-") }
-            ?.mapNotNull { runCatching { it.canonicalPath }.getOrNull() }
-            ?.toSet()
-            .orEmpty()
+            ?.forEach { ws ->
+                val filesDir = File(ws, "files")
+                if (filesDir.exists()) {
+                    runCatching { out += filesDir.canonicalPath }
+                }
+            }
+        val dbDir = File(context.filesDir.parentFile, "databases")
+        if (dbDir.exists()) runCatching { out += dbDir.canonicalPath }
+        return out
     }
 
     suspend fun scan(context: Context): Report = withContext(Dispatchers.IO) {
         val out = mutableListOf<Item>()
         val files = context.filesDir
         val wsRoot = File(files, "workspaces")
-        val protectedSet = realWorkspaceCanonicalPaths(context)
+        val protectedSet = protectedPaths(context)
 
-        // ① workspaces 下的导入备份副本 → 删
-        wsRoot.listFiles()?.forEach { child ->
-            if (child.name.contains(".import-backup-") || child.name.contains(".backup-")) {
-                val b = sizeOf(child)
-                if (b > 0) out += Item(child.absolutePath, b, "工作区备份副本（导入残留）")
+        fun addIfDeletable(file: File, label: String) {
+            if (!file.exists()) return
+            val cp = runCatching { file.canonicalPath }.getOrNull() ?: return
+            // 命中保护集合（或在其内部）→ 标记为保留，不参与删除
+            val isKept = protectedSet.any { cp == it || cp.startsWith("$it/") }
+            val size = sizeOf(file)
+            if (size <= 0L && !file.isDirectory) return
+            out += Item(file.absolutePath, size, label, keep = isKept)
+        }
+
+        // ① 各工作区：files 保留；linux/tmp 删除
+        wsRoot.listFiles()?.forEach { ws ->
+            if (ws.name.contains(".import-backup-") || ws.name.contains(".backup-")) {
+                out += Item(ws.absolutePath, sizeOf(ws), "导入备份副本（我留下的垃圾）", keep = false)
+                return@forEach
+            }
+            if (!ws.isDirectory) return@forEach
+            addIfDeletable(File(ws, "files"), "工作区文件（保留）")
+            addIfDeletable(File(ws, "linux"), "工作区 rootfs（可重建）")
+            addIfDeletable(File(ws, "tmp"), "工作区临时文件")
+            ws.listFiles()?.forEach { other ->
+                if (other.name !in setOf("files", "linux", "tmp")) {
+                    addIfDeletable(other, "工作区其他：${other.name}")
+                }
             }
         }
 
-        // ② 真实工作区 → 保留（仅用于展示）
-        wsRoot.listFiles()?.forEach { child ->
-            val cp = runCatching { child.canonicalPath }.getOrNull() ?: return@forEach
-            if (cp in protectedSet) {
-                out += Item(child.absolutePath, sizeOf(child), "工作区（保留）", keep = true)
-            }
-        }
-
-        // ③ files 下除 workspaces 外全部 → 删
+        // ② files 下除 workspaces 外全部
         files.listFiles()?.forEach { child ->
             if (child.name == "workspaces") return@forEach
-            val b = sizeOf(child)
-            if (b > 0) out += Item(child.absolutePath, b, "应用文件：${child.name}")
+            addIfDeletable(child, "应用文件：${child.name}")
         }
 
-        // ④ 应用私有根下其余目录 → 删
+        // ③ 应用私有根下其余（databases 会因保护集合标为 keep）
         files.parentFile?.listFiles()?.forEach { child ->
             if (child.name == "files") return@forEach
-            val b = sizeOf(child)
-            if (b > 0) out += Item(child.absolutePath, b, "应用数据：${child.name}")
+            addIfDeletable(child, "应用数据：${child.name}")
         }
 
         Report(out.sortedByDescending { it.bytes })
     }
 
-    /**
-     * 执行清理：删除所有非 protected 项。
-     * @return 释放字节数
-     */
-    suspend fun clean(context: Context, report: Report): Long = withContext(Dispatchers.IO) {
-        val protectedSet = realWorkspaceCanonicalPaths(context)
+    /** 执行清理：删除所有非 keep 项，返回释放字节；同时把 keep 项的真实体积也返回（便于 UI 展示） */
+    suspend fun clean(context: Context, report: Report): Pair<Long, Long> = withContext(Dispatchers.IO) {
+        val protectedSet = protectedPaths(context)
         var freed = 0L
+        var kept = 0L
         report.items.forEach { item ->
-            if (item.keep) return@forEach
+            if (item.keep) {
+                kept += item.bytes
+                return@forEach
+            }
             val f = File(item.path)
             val cp = runCatching { f.canonicalPath }.getOrNull()
-            // 双保险：真实工作区绝不删
-            if (cp != null && (cp in protectedSet || protectedSet.any { cp.startsWith("$it/") })) return@forEach
+            if (cp != null && protectedSet.any { cp == it || cp.startsWith("$it/") }) {
+                kept += item.bytes
+                return@forEach
+            }
             freed += sizeOf(f)
             runCatching { f.deleteRecursively() }
         }
         context.cacheDir?.deleteRecursively()
         runCatching { context.codeCacheDir?.deleteRecursively() }
-        freed
+        freed to kept
     }
 }

@@ -72,6 +72,20 @@ class BackupManager(
                             addFile(zip, file, "$folder/$relative")
                         }
                     }
+                    // v5.0.41 用户定案：**全量备份必须包含工作区**（此前 ATTACHMENT_FOLDERS 不含 workspaces，
+                    // 换包名/换机后工作区全丢）。用 tar.gz 保留 rootfs 符号链接；排除 tmp/ 临时垃圾。
+                    val wsRoot = File(context.filesDir, "workspaces")
+                    if (wsRoot.isDirectory && wsRoot.listFiles()?.isNotEmpty() == true) {
+                        val wsTar = File(staging, "workspaces.tar.gz")
+                        wsTar.outputStream().buffered().use { out ->
+                            me.rerere.rikkahub.data.workspace.TarGz.write(
+                                output = out,
+                                roots = listOf(wsRoot.toPath() to "workspaces"),
+                                excludeDirNames = setOf("tmp"),
+                            )
+                        }
+                        addFile(zip, wsTar, "workspaces.tar.gz")
+                    }
                 }
             }
             archive
@@ -98,6 +112,43 @@ class BackupManager(
                         for (entry in zip.entries()) {
                             currentCoroutineContext().ensureActive()
                             if (entry.isDirectory) continue
+                            // v5.0.41：工作区全量恢复（tar.gz → payload/files/workspaces）
+                            if (entry.name == "workspaces.tar.gz") {
+                                if (includeFiles) {
+                                    val wsDst = File(payload, "files/workspaces")
+                                    wsDst.mkdirs()
+                                    zip.getInputStream(entry).use { ins ->
+                                        me.rerere.rikkahub.data.workspace.TarGz.read(ins) { tarEntry, stream ->
+                                            val name = tarEntry.name.trimStart('/')
+                                            if (!name.startsWith("workspaces/") || name.contains("..")) return@read
+                                            val rel = name.removePrefix("workspaces/")
+                                            if (rel.isBlank()) return@read
+                                            val outFile = File(wsDst, rel)
+                                            if (!outFile.canonicalPath.startsWith(wsDst.canonicalPath)) return@read
+                                            when {
+                                                tarEntry.isDirectory -> outFile.mkdirs()
+                                                tarEntry.isSymlink -> {
+                                                    val t = tarEntry.linkTarget
+                                                    if (t.isNotBlank() && !t.contains("..") && !t.startsWith("/")) {
+                                                        outFile.parentFile?.mkdirs()
+                                                        runCatching {
+                                                            java.nio.file.Files.createSymbolicLink(
+                                                                outFile.toPath(), File(t).toPath()
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                                else -> {
+                                                    outFile.parentFile?.mkdirs()
+                                                    FileOutputStream(outFile).use { o -> stream.copyTo(o, 64 * 1024) }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    restoredEntries++
+                                }
+                                continue
+                            }
                             val target = when (entry.name) {
                                 "settings.json" -> File(staging, "settings.json")
                                 DatabaseBackup.ARCHIVE_DATABASE -> if (includeDatabase) stagedDatabase else null

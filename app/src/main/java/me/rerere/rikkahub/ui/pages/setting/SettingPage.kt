@@ -1,11 +1,5 @@
 package me.rerere.rikkahub.ui.pages.setting
 
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.Spacer
-import me.rerere.hugeicons.stroke.Delete01
-import me.rerere.hugeicons.stroke.Files02
-import kotlinx.coroutines.launch
-import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.widget.Toast
@@ -66,7 +60,6 @@ import me.rerere.hugeicons.stroke.Puzzle
 import me.rerere.hugeicons.stroke.Sorting01
 import me.rerere.hugeicons.stroke.Tools
 import me.rerere.hugeicons.stroke.Wrench01
-import me.rerere.hugeicons.stroke.BookOpen01
 import me.rerere.hugeicons.stroke.Brain02
 import me.rerere.hugeicons.stroke.Clapping01
 import me.rerere.hugeicons.stroke.Database02
@@ -76,7 +69,6 @@ import me.rerere.hugeicons.stroke.ImageUpload
 import me.rerere.hugeicons.stroke.InLove
 import me.rerere.hugeicons.stroke.LookTop
 import me.rerere.hugeicons.stroke.McpServer
-import me.rerere.hugeicons.stroke.Message02
 import me.rerere.hugeicons.stroke.Megaphone01
 import me.rerere.hugeicons.stroke.Moon02
 import me.rerere.hugeicons.stroke.Package
@@ -86,11 +78,11 @@ import me.rerere.hugeicons.stroke.Share04
 import me.rerere.hugeicons.stroke.SmartPhone01
 import me.rerere.hugeicons.stroke.Sun01
 import me.rerere.hugeicons.stroke.Tiktok
+import me.rerere.hugeicons.stroke.WavingHand01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.isNotConfigured
 import me.rerere.rikkahub.data.files.FilesManager
-import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.components.ui.CardGroupIcon
@@ -100,9 +92,12 @@ import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.rememberColorMode
 import me.rerere.rikkahub.ui.theme.ColorMode
 import me.rerere.rikkahub.ui.theme.CustomColors
+import me.rerere.rikkahub.utils.joinQQGroup
 import me.rerere.rikkahub.utils.openUrl
 import me.rerere.rikkahub.utils.plus
 import me.rerere.rikkahub.utils.writeClipboardText
+import me.rerere.ui.icons.DiscordIcon
+import me.rerere.ui.icons.TencentQQIcon
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 
@@ -114,16 +109,35 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
     val launchCount by vm.launchCount.collectAsStateWithLifecycle()
     val filesManager: FilesManager = koinInject()
 
-    // v5.0.37 用户实证：工作区导入/导出残留把存储撑到 70G → 一键清理
-    val cleanupContext = androidx.compose.ui.platform.LocalContext.current
-    val cleanupScope = androidx.compose.runtime.rememberCoroutineScope()
-    val cleanupToaster = me.rerere.rikkahub.ui.context.LocalToaster.current
-    var cleanupReport by remember { mutableStateOf<me.rerere.rikkahub.data.workspace.StorageCleanup.Report?>(null) }
-    var cleaning by remember { mutableStateOf(false) }
-
     // v5.0.14 回贴: 工具矩阵 / 内置工具 内嵌页（我方功能, 上游无此入口）
     var showDomainPage by remember { mutableStateOf(false) }
     var showBuiltinToolsPage by remember { mutableStateOf(false) }
+
+    if (!settings.init && launchCount > 100 && (launchCount - settings.sponsorAlertDismissedAt) >= 50) {
+        AlertDialog(
+            onDismissRequest = {
+                vm.updateSettings { it.copy(sponsorAlertDismissedAt = launchCount) }
+            },
+            icon = { Icon(HugeIcons.WavingHand01, null) },
+            title = { Text(stringResource(R.string.setting_page_sponsor_alert_title)) },
+            text = { Text(stringResource(R.string.setting_page_sponsor_alert_desc)) },
+            confirmButton = {
+                Button(onClick = {
+                    vm.updateSettings { it.copy(sponsorAlertDismissedAt = launchCount) }
+                    navController.navigate(Screen.SettingDonate)
+                }) {
+                    Text(stringResource(R.string.setting_page_sponsor_alert_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    vm.updateSettings { it.copy(sponsorAlertDismissedAt = launchCount) }
+                }) {
+                    Text(stringResource(R.string.setting_page_sponsor_alert_dismiss))
+                }
+            },
+        )
+    }
 
     if (showBuiltinToolsPage) {
         SettingBuiltinToolsPage(onBack = { showBuiltinToolsPage = false })
@@ -164,86 +178,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                 item {
                     ProviderConfigWarningCard(
                         onClick = { navController.navigate(Screen.SettingProvider) }
-                    )
-                }
-            }
-
-            item("assistantManagement") {
-                val containerColor = MaterialTheme.colorScheme.secondaryContainer
-                val contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                val currentAssistant = settings.getCurrentAssistant()
-                val memoryRepository: MemoryRepository = koinInject()
-                val memoryStats by produceState(initialValue = null as Pair<Int, Int>?, currentAssistant.id) {
-                    value = runCatching {
-                        memoryRepository.getMemoriesOfAssistant(currentAssistant.id.toString()).size to
-                            memoryRepository.getFiles(currentAssistant.id.toString()).size
-                    }.getOrNull()
-                }
-                val enabledMcpCount = settings.mcpServers.count { it.commonOptions.enable }
-                val enabledSkillCount = currentAssistant.enabledSkills.size
-                CardGroup(
-                    title = { Text("助手（当前焦点）") },
-                ) {
-                    item(
-                        onClick = { navController.navigate(Screen.AssistantDetail(currentAssistant.id.toString())) },
-                        leadingContent = { CardGroupIcon(HugeIcons.LookTop, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = {
-                            Text(
-                                buildString {
-                                    append("记忆 ")
-                                    append(memoryStats?.let { "${it.first} 条 / ${it.second} 文件" } ?: "…")
-                                    append(" · MCP ")
-                                    append(enabledMcpCount)
-                                    append(" · 技能 ")
-                                    append(enabledSkillCount)
-                                }
-                            )
-                        },
-                        headlineContent = { Text("当前助手 · ${currentAssistant.name}") },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.AssistantBasic(currentAssistant.id.toString())) },
-                        leadingContent = { CardGroupIcon(HugeIcons.Settings03, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = { Text("模型 / 思考级别 / 头像等基础项") },
-                        headlineContent = { Text("基础设定") },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.AssistantPrompt(currentAssistant.id.toString())) },
-                        leadingContent = { CardGroupIcon(HugeIcons.Message02, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = { Text("系统提示词 / 模式注入 / 预设消息") },
-                        headlineContent = { Text("提示词") },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.AssistantMemory(currentAssistant.id.toString())) },
-                        leadingContent = { CardGroupIcon(HugeIcons.Brain02, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = {
-                            Text(memoryStats?.let { "记忆条目 ${it.first} 条 · 记忆文件 ${it.second} 个" } ?: "记忆条目加载中…")
-                        },
-                        headlineContent = { Text("记忆内容") },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.SettingMcp) },
-                        leadingContent = { CardGroupIcon(HugeIcons.McpServer, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = { Text("已启用 $enabledMcpCount 个 / 共 ${settings.mcpServers.size} 个") },
-                        headlineContent = { Text("MCP 状态") },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.Skills) },
-                        leadingContent = { CardGroupIcon(HugeIcons.Puzzle, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = { Text("已启用 $enabledSkillCount 个技能") },
-                        headlineContent = { Text("技能状态") },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.AssistantLocalTool(currentAssistant.id.toString())) },
-                        leadingContent = { CardGroupIcon(HugeIcons.BookOpen01, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = { Text("内置工具开关 / 本地能力") },
-                        headlineContent = { Text("本地设置") },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.Assistant) },
-                        leadingContent = { CardGroupIcon(HugeIcons.LookTop, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_assistant_desc)) },
-                        headlineContent = { Text("助手列表") },
                     )
                 }
             }
@@ -293,6 +227,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         headlineContent = { Text(stringResource(R.string.setting_page_preferences)) },
                     )
                     item(
+                        onClick = { navController.navigate(Screen.Assistant) },
+                        leadingContent = { CardGroupIcon(HugeIcons.LookTop, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_assistant_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_assistant)) },
+                    )
+                    item(
                         onClick = { navController.navigate(Screen.Extensions) },
                         leadingContent = { CardGroupIcon(HugeIcons.Package, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(stringResource(R.string.setting_page_extensions_desc)) },
@@ -301,12 +241,11 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                 }
             }
 
-            // ── 模型 ─────────────────────────────────────────
             item("modelServices") {
                 val containerColor = MaterialTheme.colorScheme.tertiaryContainer
                 val contentColor = MaterialTheme.colorScheme.onTertiaryContainer
                 CardGroup(
-                    title = { Text("模型") },
+                    title = { Text(stringResource(R.string.setting_page_model_and_services)) },
                 ) {
                     item(
                         onClick = { navController.navigate(Screen.SettingModels) },
@@ -320,22 +259,37 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = { Text(stringResource(R.string.setting_page_providers_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_providers)) },
                     )
-                }
-            }
-
-            // ── 能力模块 ─────────────────────────────────────
-            item("capabilityModules") {
-                val containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                val contentColor = MaterialTheme.colorScheme.onTertiaryContainer
-                CardGroup(
-                    title = { Text("能力模块") },
-                ) {
+                    item(
+                        onClick = { navController.navigate(Screen.SettingSearch) },
+                        leadingContent = { CardGroupIcon(HugeIcons.GlobalSearch, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_search_service_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_search_service)) },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingSpeech) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Megaphone01, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_tts_service_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_tts_service)) },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingMedia) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Image02, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_media_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_media)) },
+                    )
                     item(
                         onClick = { navController.navigate(Screen.SettingMcp) },
                         leadingContent = { CardGroupIcon(HugeIcons.McpServer, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(stringResource(R.string.setting_page_mcp_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_mcp)) },
                     )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingWeb) },
+                        leadingContent = { CardGroupIcon(HugeIcons.ServerStack01, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_web_server_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_web_server)) },
+                    )
+                    // v5.0.14 回贴: Agent Skills / 插件（我方能力模块）
                     item(
                         onClick = { navController.navigate(Screen.Skills) },
                         leadingContent = { CardGroupIcon(HugeIcons.Puzzle, containerColor = containerColor, contentColor = contentColor) },
@@ -362,41 +316,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     )
                 }
             }
-
-            // ── 服务（搜索 / 语音 / 媒体 / Web） ────────────────
-            item("servicesSettings") {
-                val containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                val contentColor = MaterialTheme.colorScheme.onTertiaryContainer
-                CardGroup(
-                    title = { Text("服务") },
-                ) {
-                    item(
-                        onClick = { navController.navigate(Screen.SettingSearch) },
-                        leadingContent = { CardGroupIcon(HugeIcons.GlobalSearch, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_search_service_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_search_service)) },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.SettingSpeech) },
-                        leadingContent = { CardGroupIcon(HugeIcons.Megaphone01, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_tts_service_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_tts_service)) },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.SettingMedia) },
-                        leadingContent = { CardGroupIcon(HugeIcons.Image02, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_media_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_media)) },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.SettingWeb) },
-                        leadingContent = { CardGroupIcon(HugeIcons.ServerStack01, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_web_server_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_web_server)) },
-                    )
-                }
-            }
-
 
             item("dataSettings") {
                 val storageState by produceState(-1 to 0L) {
@@ -450,22 +369,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = { Text("导出崩溃报告（Markdown）——完整堆栈，便于反馈问题") },
                         headlineContent = { Text("崩溃报告") },
                     )
-                    // v5.0.37：清理工作区导入/导出残留（备份目录 / 导出压缩包 / 缓存）
-                    item(
-                        onClick = {
-                            cleanupScope.launch {
-                                val r = me.rerere.rikkahub.data.workspace.StorageCleanup.scan(cleanupContext)
-                                if (r.items.isEmpty()) {
-                                    cleanupToaster.show("没有可清理的残留")
-                                } else {
-                                    cleanupReport = r
-                                }
-                            }
-                        },
-                        leadingContent = { CardGroupIcon(HugeIcons.Delete01, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = { Text("工作区导入备份 / 导出压缩包 / 缓存（不会动工作区正文）") },
-                        headlineContent = { Text("清理残留文件") },
-                    )
                     item(
                         onClick = { navController.navigate(Screen.SettingAdvanced) },
                         leadingContent = { CardGroupIcon(HugeIcons.Wrench01, containerColor = containerColor, contentColor = contentColor) },
@@ -516,13 +419,65 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         onClick = { navController.navigate(Screen.SettingAbout) },
                         leadingContent = { CardGroupIcon(HugeIcons.Clapping01, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(stringResource(R.string.setting_page_about_desc)) },
+                        trailingContent = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                var showQQGroupSheet by remember { mutableStateOf(false) }
+                                IconButton(
+                                    onClick = { showQQGroupSheet = true }
+                                ) {
+                                    Icon(
+                                        imageVector = TencentQQIcon,
+                                        contentDescription = "QQ",
+                                        tint = MaterialTheme.colorScheme.secondary
+                                    )
+                                }
+                                if (showQQGroupSheet) {
+                                    QQGroupBottomSheet(
+                                        onDismiss = { showQQGroupSheet = false }
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        context.openUrl("https://discord.gg/9weBqxe5c4")
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = DiscordIcon,
+                                        contentDescription = "Discord",
+                                        tint = MaterialTheme.colorScheme.secondary
+                                    )
+                                }
+                            }
+                        },
                         headlineContent = { Text(stringResource(R.string.setting_page_about)) },
+                    )
+                    item(
+                        onClick = {
+                            val docUrl = if (java.util.Locale.getDefault().language == "zh") {
+                                "https://docs.rikka-ai.com/zh/introduction"
+                            } else {
+                                "https://docs.rikka-ai.com/introduction"
+                            }
+                            context.openUrl(docUrl)
+                        },
+                        leadingContent = { CardGroupIcon(HugeIcons.Book01, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_documentation_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_documentation)) },
                     )
                     item(
                         onClick = { navController.navigate(Screen.Log) },
                         leadingContent = { CardGroupIcon(HugeIcons.Bookshelf01, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(stringResource(R.string.setting_page_request_logs_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_request_logs)) },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingDonate) },
+                        leadingContent = { CardGroupIcon(HugeIcons.InLove, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_donate_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_donate)) },
                     )
                     item(
                         onClick = {
@@ -542,43 +497,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                 }
             }
         }
-    }
-    // v5.0.37：清理确认对话框
-    cleanupReport?.let { report ->
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { if (!cleaning) cleanupReport = null },
-            title = { Text("可清理 ${"%.1f".format(report.totalBytes / 1024.0 / 1024.0 / 1024.0)} GB") },
-            text = {
-                Column {
-                    report.items.take(6).forEach { item ->
-                        Text(
-                            "· ${item.label}：${"%.1f".format(item.bytes / 1024.0 / 1024.0 / 1024.0)} GB",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    if (report.items.size > 6) Text("… 共 ${report.items.size} 项", style = MaterialTheme.typography.bodySmall)
-                    Spacer(Modifier.height(8.dp))
-                    Text("只删除导入/导出产生的备份与缓存，工作区正文不会被动。", style = MaterialTheme.typography.bodySmall)
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = !cleaning,
-                    onClick = {
-                        cleaning = true
-                        cleanupScope.launch {
-                            val freed = me.rerere.rikkahub.data.workspace.StorageCleanup.clean(cleanupContext, report)
-                            cleaning = false
-                            cleanupReport = null
-                            cleanupToaster.show("已释放 ${"%.1f".format(freed / 1024.0 / 1024.0 / 1024.0)} GB")
-                        }
-                    },
-                ) { Text(if (cleaning) "清理中…" else "清理") }
-            },
-            dismissButton = {
-                TextButton(enabled = !cleaning, onClick = { cleanupReport = null }) { Text("取消") }
-            },
-        )
     }
 }
 
@@ -644,6 +562,57 @@ private fun ProviderConfigWarningCard(onClick: () -> Unit) {
             }
         }
     }
-
 }
 
+private data class QQGroup(
+    val name: String,
+    val key: String? = null,
+    val number: String? = null,
+    val icon: ImageVector = TencentQQIcon,
+)
+
+private val QQ_GROUPS = listOf(
+    QQGroup("RikkaHub 一群", "4POE46u9e_zoy1TkNfWdCvueR9CKFJdk"),
+    QQGroup("RikkaHub 二群", "Qsm0whzbPsm1UyNpR683ulLyMZ2Pqrw0"),
+    QQGroup("RikkaHub 三群", "Qc9oP-9tXioZeQEvEvI2_owWtBAIx3lS"),
+    QQGroup("抖音一群", number = "569655479852", icon = HugeIcons.Tiktok),
+)
+
+@Composable
+private fun QQGroupBottomSheet(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            QQ_GROUPS.forEach { group ->
+                ListItem(
+                    onClick = {
+                        if (group.number != null) {
+                            context.writeClipboardText(group.number)
+                            Toast.makeText(context, "群号已复制", Toast.LENGTH_SHORT).show()
+                        } else {
+                            context.joinQQGroup(group.key)
+                        }
+                        onDismiss()
+                    },
+                    supportingContent = group.number?.let { number ->
+                        { Text(number) }
+                    },
+                    leadingContent = {
+                        Icon(
+                            imageVector = group.icon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.secondary
+                        )
+                    },
+                ) {
+                    Text(group.name)
+                }
+            }
+        }
+    }
+}

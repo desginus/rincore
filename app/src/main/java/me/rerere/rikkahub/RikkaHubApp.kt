@@ -78,14 +78,6 @@ const val MEMORY_DREAM_NOTIFICATION_CHANNEL_ID = "memory_dream"
 const val GENERATION_FOREGROUND_NOTIFICATION_CHANNEL_ID = "generation_foreground"
 
 class RikkaHubApp : Application() {
-    /**
-     * v5.0.29 用户定案：一次性数据重置。
-     *
-     * 保留：`files/workspaces/`（工作区，全部内容，绝对不动）
-     * 清除：databases（聊天/设置/记忆）、shared_prefs、datastore、files 下其余项、cache
-     *
-     * 幂等：完成后在 `files/.wipe_v5029_done` 写标记，后续启动不再执行。
-     */
 
 
     override fun onCreate() {

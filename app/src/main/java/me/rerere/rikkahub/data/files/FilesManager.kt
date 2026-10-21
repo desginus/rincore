@@ -156,12 +156,10 @@ class FilesManager(
 
     fun createChatFilesByByteArrays(
         byteArrays: List<ByteArray>,
-        // v5.0.16: 上游 3.0.0 调用面（画板等）带文件名/类型；缺省保持历史行为
+        // v5.0.44：回滚 5.0.15 后兼容当前 ChatAttachmentPicker 调用（草图/裁剪自定义名与 MIME）
         displayName: String? = null,
         mimeType: String? = null,
     ): List<Uri> {
-        val name = displayName?.takeIf { it.isNotBlank() } ?: "image.png"
-        val mime = mimeType?.takeIf { it.isNotBlank() } ?: "image/png"
         val newUris = mutableListOf<Uri>()
         val dir = context.filesDir.resolve(FileFolders.UPLOAD)
         if (!dir.exists()) {
@@ -169,7 +167,11 @@ class FilesManager(
         }
         byteArrays.forEach { byteArray ->
             // v4.8.134 (B155): 原子取号+创建 — 并行读图各自独立文件, 不再同号覆盖
-            val file = FileUtils.createUploadFile(dir, displayName = name, mimeType = mime)
+            val file = FileUtils.createUploadFile(
+                dir,
+                displayName = displayName ?: "image.png",
+                mimeType = mimeType ?: "image/png",
+            )
             val newUri = file.toUri()
             file.outputStream().use { outputStream ->
                 outputStream.write(byteArray)
@@ -177,8 +179,8 @@ class FilesManager(
             trackManagedFile(
                 folder = FileFolders.UPLOAD,
                 file = file,
-                displayName = name,
-                mimeType = mime
+                displayName = "image.png",
+                mimeType = "image/png"
             )
             newUris.add(newUri)
         }

@@ -35,6 +35,9 @@ internal fun Modifier.chatInputHaze(
     containerColor: Color,
     shape: RoundedCornerShape,
 ): Modifier {
+    // v5.0.41 用户定案：玻璃/模糊双分支恢复（"平时用玻璃，玻璃的 bug 不明显"）。
+    // 说明：条纹为设备对包名 me.rincore.app 的系统级渲染状态问题（同设备其他包名正常、
+    // 双开同包名复现），与本分支无关；渲染效果按用户选择执行。
     if (!displaySetting.enableBlurEffect) return this
     return when (displaySetting.backgroundEffectType) {
         BackgroundEffectType.BLUR -> hazeBlur(
@@ -57,9 +60,8 @@ internal fun Modifier.chatInputHaze(
                         GlassDefaults.optics.copy(
                             blurRadius = OpticalSizeValue.Fixed(16.dp),
                             depth = OpticalSizeValue.Fixed(0.5f),
-                        )
+                        ),
                     )
-                    shape(shape)
                 },
             )
         }

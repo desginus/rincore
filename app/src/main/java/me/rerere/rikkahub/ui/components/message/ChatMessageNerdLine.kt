@@ -1,4 +1,10 @@
+/* 【域 F·主题渲染】 — 消息/文档渲染 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.message
+
+
+/* ───【原版对齐】ChatMessageNerdLine.kt | 差异 ±5 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.FlowRow
@@ -27,6 +33,7 @@ import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.utils.formatNumber
 import me.rerere.rikkahub.utils.toFixed
 import java.time.Duration
+import androidx.compose.runtime.getValue
 
 /**
  * 显示消息的技术统计信息（如 token 使用量）
@@ -36,7 +43,7 @@ fun ChatMessageNerdLine(
     message: UIMessage,
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f),
-    /** v5.0.36：5.0.15 调用签名兼容 */
+
     isLast: Boolean = false,
 ) {
     val settings = LocalSettings.current.displaySetting
@@ -84,16 +91,13 @@ fun ChatMessageNerdLine(
                         }
                     )
                     // TPS
-                    // 旧消息没有记录生成耗时，退回用创建到完成的总时长估算
-                    val durationMillis = message.finishedAt?.let { finishedAt ->
-                        message.generationTimeMs ?: Duration.between(
+                    if (message.finishedAt != null) {
+                        val duration = Duration.between(
                             message.createdAt.toJavaLocalDateTime(),
-                            finishedAt.toJavaLocalDateTime()
-                        ).toMillis()
-                    }
-                    if (durationMillis != null && durationMillis > 0) {
-                        val tps = usage.completionTokens.toFloat() / durationMillis * 1000
-                        val seconds = (durationMillis / 1000f).toFixed(1)
+                            message.finishedAt!!.toJavaLocalDateTime()
+                        )
+                        val tps = usage.completionTokens.toFloat() / duration.toMillis() * 1000
+                        val seconds = (duration.toMillis() / 1000f).toFixed(1)
                         StatsItem(
                             icon = {
                                 Icon(

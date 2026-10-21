@@ -770,6 +770,11 @@ class RouteActivity : ComponentActivity() {
                             entry<Screen.SettingFiles> {
                                 SettingFilesPage()
                             }
+                            entry<Screen.SettingAppStorage> {
+                                me.rerere.rikkahub.ui.pages.setting.SettingAppStoragePage(
+                                    onBack = { navController.popBackStack() },
+                                )
+                            }
                             entry<Screen.SettingCallTrace> {
                                 SettingCallTracePage()
                             }
@@ -1044,6 +1049,8 @@ sealed interface Screen : NavKey {
 
                 @Serializable
     data object SettingFiles : Screen
+    /** v5.0.40：应用文件浏览器（把 /data/data/<pkg>/ 彻底暴露给用户手动清理） */
+    data object SettingAppStorage : Screen
 
     @Serializable
     data object SettingCallTrace : Screen

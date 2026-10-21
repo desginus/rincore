@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.pages.setting
 
-import me.rerere.hugeicons.stroke.Book02
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -145,12 +144,6 @@ private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding:
         providers = settings.providers,
         type = ModelType.CHAT,
     )
-    // v5.0.25 用户定案：记忆专用模型（做梦/记忆整理）；未设置时显示 fastModel 作为回落
-    val memoryModel = rememberModelListState(
-        modelId = settings.memoryModelId ?: settings.fastModelId,
-        providers = settings.providers,
-        type = ModelType.CHAT,
-    )
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -231,14 +224,6 @@ private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding:
                     iconContainerColor = containerColor,
                     iconContentColor = contentColor,
                 )
-                modelItem(
-                    icon = HugeIcons.Book02,
-                    title = R.string.setting_model_page_memory_model,
-                    description = R.string.setting_model_page_memory_model_desc,
-                    state = memoryModel,
-                    iconContainerColor = containerColor,
-                    iconContentColor = contentColor,
-                )
             }
         }
     }
@@ -254,9 +239,6 @@ private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding:
     }
     ModelListSheet(state = ocrModel) {
         vm.updateSettings { latest -> latest.copy(ocrModelId = it.id) }
-    }
-    ModelListSheet(state = memoryModel) {
-        vm.updateSettings { latest -> latest.copy(memoryModelId = it.id) }
     }
 }
 

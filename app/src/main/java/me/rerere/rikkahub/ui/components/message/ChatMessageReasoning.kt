@@ -1,5 +1,10 @@
+/* 【域 F·主题渲染】 — 消息/文档渲染 | 地图: docs/APP_MAP.md §F */
 package me.rerere.rikkahub.ui.components.message
 
+
+/* ───【原版对齐】ChatMessageReasoning.kt | 差异 ±11 行
+ * 来源: 原版移植 + 自研小调整 (未达专项标注阈值, 对齐细节见对齐地图)
+ * ───────────────────────────────────────────────────────────────*/
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -23,10 +28,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Size
@@ -55,6 +58,8 @@ import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.DurationUnit
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 enum class ReasoningCardState(val expanded: Boolean) {
     Collapsed(false),
@@ -88,8 +93,9 @@ private fun rememberReasoningState(reasoning: UIMessagePart.Reasoning): Pair<Rea
     val state = remember(reasoning.createdAt) {
         ReasoningState(
             scrollState = scrollState,
-            initialDuration = reasoning.finishedAt?.let { it - reasoning.createdAt }
-                ?: (Clock.System.now() - reasoning.createdAt)
+            // 中断兜底: finishedAt null (中断/崩溃未收尾) → 0 时长 + 中断标记,
+            // 不再用 now-createdAt 持续累计 (P2-1: 中断后计时失真)
+            initialDuration = reasoning.finishedAt?.let { it - reasoning.createdAt } ?: Duration.ZERO
         )
     }
 
@@ -112,6 +118,8 @@ private fun rememberReasoningState(reasoning: UIMessagePart.Reasoning): Pair<Rea
         if (loading) {
             while (isActive) {
                 state.duration = (reasoning.finishedAt ?: Clock.System.now()) - reasoning.createdAt
+                // 4.1.5 对齐原版: 50ms 精度 (v3.6.47 的 500ms 是用户实测
+                // "思考计时每 0.5s 跳一下"的直接来源, 原版 delay(50))
                 delay(50)
             }
         }
@@ -216,7 +224,7 @@ fun ChainOfThoughtScope.ChatMessageReasoningStep(
         },
         label = {
             if (showThinkingTitle) {
-                ReasoningTitle(title = thinkingTitle!!)
+                ReasoningTitle(title = thinkingTitle)
             } else {
                 Text(
                     text = stringResource(

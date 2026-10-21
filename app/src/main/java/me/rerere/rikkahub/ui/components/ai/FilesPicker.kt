@@ -1,654 +1,816 @@
+/* 【域 A·对话核心】 — AI 组件 | 地图: docs/APP_MAP.md §A */
 package me.rerere.rikkahub.ui.components.ai
 
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.Box
-import me.rerere.hugeicons.stroke.Book02
-import me.rerere.hugeicons.stroke.AiBrain01
-import me.rerere.hugeicons.stroke.Clock02
-import me.rerere.hugeicons.stroke.Clock01
-import me.rerere.hugeicons.stroke.BubbleChatQuestion
-import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.layout.aspectRatio
+
+/* ───【原版对齐】FilesPicker | 差异 +321 行
+ * 来源: 原版移植 + 自研 (工作区文件选择)
+ * 功能: 附件/文件选择器
+ * 差异: 工作区文件源接入, 选择与预览逻辑扩展
+ * ───────────────────────────────────────────────────────────────*/
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.border
-import androidx.compose.foundation.background
-import kotlinx.coroutines.launch
-import me.rerere.ui.sketch.SketchResult
-import me.rerere.ui.sketch.SketchDialog
-import me.rerere.rikkahub.ui.pages.chat.ConversationArtifactsSheet
-import me.rerere.rikkahub.subagent.SubAgentRegistry
-import me.rerere.rikkahub.data.files.FilesManager
-import me.rerere.rikkahub.data.ai.tools.ProducedFile
-import androidx.activity.compose.BackHandler
-import androidx.annotation.StringRes
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.text.TextAutoSize
-import androidx.compose.material3.Badge
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.ListItemShapes
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedListItem
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ProvideTextStyle
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.util.fastForEach
-import kotlin.uuid.Uuid
 import kotlinx.coroutines.Job
-import me.rerere.ai.provider.Model
-import me.rerere.ai.provider.ProviderSetting
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.PencilEdit01
-import me.rerere.hugeicons.stroke.Activity01
-import me.rerere.hugeicons.stroke.LanguageCircle
-import me.rerere.hugeicons.stroke.ArrowLeft01
-import me.rerere.hugeicons.stroke.ArrowRight01
+import me.rerere.hugeicons.stroke.AiMagic
+import me.rerere.hugeicons.stroke.AiBrain01
 import me.rerere.hugeicons.stroke.Camera01
+import me.rerere.hugeicons.stroke.Clock02
+import me.rerere.hugeicons.stroke.Book02
 import me.rerere.hugeicons.stroke.Codesandbox
 import me.rerere.hugeicons.stroke.ComputerTerminal01
 import me.rerere.hugeicons.stroke.Files02
 import me.rerere.hugeicons.stroke.Folder01
-import me.rerere.hugeicons.stroke.Gauge
 import me.rerere.hugeicons.stroke.Image02
 import me.rerere.hugeicons.stroke.MusicNote03
-import me.rerere.hugeicons.stroke.Package
 import me.rerere.hugeicons.stroke.Package01
-import me.rerere.hugeicons.stroke.PaintBoard
 import me.rerere.hugeicons.stroke.Settings02
 import me.rerere.hugeicons.stroke.Video01
-import me.rerere.hugeicons.stroke.Voice
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.ai.mcp.McpManager
+import me.rerere.rikkahub.data.ai.mcp.McpStatus
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
-import me.rerere.rikkahub.data.model.lastContextTokens
+import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
+import me.rerere.rikkahub.data.workspace.EffectiveCwd
+import me.rerere.hugeicons.stroke.BubbleChatQuestion
+import me.rerere.rikkahub.subagent.SubAgentRegistry
+import me.rerere.rikkahub.subagent.SubAgentStatus
 import me.rerere.rikkahub.ui.components.ui.ExtensionSelector
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.hooks.ChatInputState
-import me.rerere.rikkahub.utils.formatNumber
 import me.rerere.workspace.WorkspaceShellStatus
 import org.koin.compose.koinInject
-
-private enum class FilesPickerPage {
-    MAIN,
-    MCP,
-    EXTENSIONS,
-}
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import kotlin.uuid.Uuid
+import me.rerere.hugeicons.stroke.ArrowTurnBackward
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 @Composable
 internal fun FilesPicker(
     conversation: Conversation,
-    // 会话视角下的助手和模型：会话开始后以会话上固定的配置为准
     assistant: Assistant,
-    chatModel: Model?,
     state: ChatInputState,
     mcpManager: McpManager,
-    onCompressContext: (additionalPrompt: String) -> Job,
+    onCompressContext: (additionalPrompt: String, targetTokens: Int, keepRecentMessages: Int) -> Job,
+    onRestoreCompressAt: (Int) -> Unit = {},
     onUpdateAssistant: (Assistant) -> Unit,
-    onUpdateWorkspaceCwd: (String?) -> Unit,
+    onUpdateConversation: (Conversation) -> Unit,
+    showInjectionSheet: Boolean,
+    onShowInjectionSheetChange: (Boolean) -> Unit,
     showCompressDialog: Boolean,
     onShowCompressDialogChange: (Boolean) -> Unit,
+    deferAutoReply: Boolean,
+    onToggleDeferAutoReply: (Boolean) -> Unit,
     onDismiss: () -> Unit,
     onTakePic: () -> Unit,
     onPickImage: () -> Unit,
     onPickVideo: () -> Unit,
     onPickAudio: () -> Unit,
     onPickFile: () -> Unit,
-    onSketch: () -> Unit,
     onStartVoiceMode: (() -> Unit)? = null,
-    // v5.0.20 用户定版：工具箱 12 格 → 延迟自动回复开关
-    onToggleDeferAutoReply: (Boolean) -> Unit = {},
+    // v5.0.42：回滚 5.0.15 后兼容当前 ChatPage 调用签名
+    chatModel: me.rerere.rikkahub.data.model.Model? = null,
+    onSketch: (() -> Unit)? = null,
+    onUpdateWorkspaceCwd: ((String?) -> Unit)? = null,
 ) {
     val settings = LocalSettings.current
-    val provider = chatModel?.findProvider(providers = settings.providers)
+    val provider = settings.getCurrentChatModel()?.findProvider(providers = settings.providers)
     val navController = LocalNavController.current
     val workspaceRepository: WorkspaceRepository = koinInject()
+    // v4.8.4: 记忆数据 (判断"存在真实记忆条目"用于状态着色)
+    val memoryRepository: me.rerere.rikkahub.data.repository.MemoryRepository = koinInject()
+    // v4.8.32: 生成态 — 生成中禁止压缩 (用户定版: 按钮灰化 + 逻辑守卫双保险)
+    val chatService: me.rerere.rikkahub.service.ChatService = koinInject()
+    val generationJob by chatService.getGenerationJobStateFlow(conversation.id)
+        .collectAsStateWithLifecycle(initialValue = null)
+    // 4.8.25: 项目包 CWD — 对话所属项目包 cwd 优先 (项目包锚定), 否则助手级。
+    // 响应式: 抽屉里修改项目包 CWD 后此处自动刷新。
+    val folderRepository: me.rerere.rikkahub.data.repository.FolderRepository = koinInject()
+    val folderCwd by remember(conversation.folderId) {
+        conversation.folderId?.let { fid -> folderRepository.getFolderFlow(fid).map { it?.cwd } }
+            ?: flowOf(null)
+    }.collectAsStateWithLifecycle(initialValue = null)
+    val effectiveCwd = EffectiveCwd.pick(folderCwd, assistant.workspaceCwd)
+    val pickerScope = rememberCoroutineScope()
+    val memories by memoryRepository.getMemoriesOfAssistantFlow(assistant.id.toString())
+        .collectAsStateWithLifecycle(initialValue = emptyList())
     val workspaces by workspaceRepository.listFlow().collectAsState(initial = emptyList())
+    val workspaceId = assistant.workspaceId?.toString()
+    val inputState = state
 
-    val boundWorkspace = remember(workspaces, assistant.workspaceId) {
-        workspaces.find { it.id == assistant.workspaceId?.toString() }
-    }
-    val showCwd = boundWorkspace != null && boundWorkspace.shellStatus == WorkspaceShellStatus.READY.name
-    var showCwdSheet by remember { mutableStateOf(false) }
-
-    // v5.0.17 用户定案：工具箱收纳对话功能入口（原「更多」菜单四项 + 本对话产出 + 草图），
-    // 移除 MCP / 技能（已归位设置页），空位放原版草图
-    val sketchScope = rememberCoroutineScope()
-    val filesManager: FilesManager = koinInject()
-    val subAgentRegistry: SubAgentRegistry = koinInject()
-    var showSketch by remember { mutableStateOf(false) }
-    var showSubAgentSheet by remember { mutableStateOf(false) }
-    var showSubAgentBudgetSheet by remember { mutableStateOf(false) }
-    var showArtifactsSheet by remember { mutableStateOf(false) }
-    val subAgentRuns by subAgentRegistry.runs.collectAsStateWithLifecycle()
-    val conversationRuns = remember(subAgentRuns, conversation.id) {
-        subAgentRuns.values
-            .filter { it.parentChatId == conversation.id.toString() }
-            .sortedByDescending { it.startedAtMs }
-    }
-    // v5.0.21 用户定案：按模型最后交互时间自上而下（新→旧），去空去重
-    val producedFiles = remember(settings.conversationProducedFiles, conversation.id) {
-        settings.conversationProducedFiles[conversation.id.toString()].orEmpty()
-            .filter { it.path.isNotBlank() }
-            .distinctBy { it.path }
-            .sortedByDescending { it.atMs }
-    }
-
-    var page by remember { mutableStateOf(FilesPickerPage.MAIN) }
-    // 在子页面时，返回键回到主页面而不是关闭 sheet
-    BackHandler(enabled = page != FilesPickerPage.MAIN) {
-        page = FilesPickerPage.MAIN
-    }
-    AnimatedContent(
-        targetState = page,
-        transitionSpec = {
-            if (targetState != FilesPickerPage.MAIN) {
-                slideInHorizontally { it } + fadeIn() togetherWith
-                    slideOutHorizontally { -it } + fadeOut()
-            } else {
-                slideInHorizontally { -it } + fadeIn() togetherWith
-                    slideOutHorizontally { it } + fadeOut()
-            }
-        },
-        label = "FilesPickerPage"
-    ) { currentPage ->
-        when (currentPage) {
-            FilesPickerPage.MCP -> McpPickerPage(
-                assistant = assistant,
-                servers = settings.mcpServers,
-                mcpManager = mcpManager,
-                onUpdateAssistant = onUpdateAssistant,
-                onBack = { page = FilesPickerPage.MAIN },
-            )
-
-            FilesPickerPage.EXTENSIONS -> ExtensionPickerPage(
-                assistant = assistant,
-                settings = settings,
-                onUpdateAssistant = onUpdateAssistant,
-                onBack = { page = FilesPickerPage.MAIN },
-                onDismissAll = onDismiss,
-            )
-
-            // v5.0.20 用户定版：工具箱 = 12 个方形入口（4 × 3），只要方形 UI 不要条形 UI。
-            // 删除拍照 / 照片 / 上传文件（草图保留）；整格使用输入栏同源玻璃卡片风格。
-            FilesPickerPage.MAIN -> Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // v4.8.7: 压缩留存管理上移 — 由原第二/三行之间挪至工具栏最顶部
+        // (用户定版: 位置统一管理; 仅当存在压缩留存/压缩上下文时显示, 否则无此 UI)。
+        // v3.8.13: 压缩后显示, 点击弹出留存位点列表 (查看原文 / 从此位点恢复, 级联撤销)
+        val retentions = conversation.compressRetentions
+        if (retentions.isNotEmpty() || conversation.compressedContext != null) {
+            var showRetentionDialog by remember { mutableStateOf(false) }
+            Surface(
+                onClick = { showRetentionDialog = true },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
             ) {
-                val contextTokens = remember(conversation.messageNodes) { conversation.lastContextTokens() }
-                val contextLength = chatModel?.contextLength?.takeIf { it > 0 }
-                val remainingText = if (contextTokens != null && contextLength != null) {
-                    "剩 " + ((contextLength - contextTokens).coerceAtLeast(0) / 1000) + "K"
-                } else null
-                val messageText = conversation.messageNodes.size.toString() + " 条"
-
-                // 第 1 行：草图 / 翻译 / 媒体生成 / 子代理情况
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
                 ) {
-                    GlassToolTile(HugeIcons.PaintBoard, "草图", modifier = Modifier.weight(1f)) { showSketch = true }
-                    GlassToolTile(HugeIcons.LanguageCircle, "翻译", modifier = Modifier.weight(1f)) {
-                        onDismiss()
-                        navController.navigate(Screen.Translator)
-                    }
-                    GlassToolTile(HugeIcons.Image02, "媒体生成", modifier = Modifier.weight(1f)) {
-                        onDismiss()
-                        navController.navigate(Screen.MediaCreationSessions)
-                    }
-                    GlassToolTile(
-                        HugeIcons.AiBrain01, "子代理", badge = conversationRuns.size, modifier = Modifier.weight(1f)
-                    ) { showSubAgentSheet = true }
-                }
-
-                // 第 2 行：观测 / 本对话产出 / 上下文速览 / 压缩历史
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    // v5.0.24 用户定案：观测删除 → 记忆（三范围：单对话 / 项目包 / 助手）
-                    GlassToolTile(HugeIcons.Book02, "记忆", modifier = Modifier.weight(1f)) {
-                        onDismiss()
-                        navController.navigate(Screen.AssistantMemory(assistant.id.toString()))
-                    }
-                    GlassToolTile(
-                        HugeIcons.Folder01, "本对话产出", badge = producedFiles.size, modifier = Modifier.weight(1f)
-                    ) { showArtifactsSheet = true }
-                    // v5.0.24 用户定案：环形 UI（基准固定 1M，亮色填充=已用占比，中心=当前消息条数）
-                    GlassToolTile(
-                        HugeIcons.BubbleChatQuestion, "上下文速览",
-                        ringProgress = ((contextTokens ?: 0).toFloat() / CONTEXT_WINDOW_BASELINE_TOKENS)
-                            .coerceIn(0f, 1f),
-                        ringCenterText = conversation.messageNodes.size.toString(),
-                        modifier = Modifier.weight(1f)
-                    ) { onShowCompressDialogChange(true) }
-                    GlassToolTile(
-                        HugeIcons.Package01, "压缩历史", modifier = Modifier.weight(1f)
-                    ) { onShowCompressDialogChange(true) }
-                }
-
-                // 第 3 行：延迟回复 / 应用文件 / 工作区 / 工作目录
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    GlassToolTile(
-                        HugeIcons.Clock01, "延迟回复",
-                        active = settings.deferAutoReply,
-                        modifier = Modifier.weight(1f),
-                    ) { onToggleDeferAutoReply(!settings.deferAutoReply) }
-                    GlassToolTile(HugeIcons.Files02, "应用文件", modifier = Modifier.weight(1f)) {
-                        val workspaceId = assistant.workspaceId ?: return@GlassToolTile
-                        onDismiss()
-                        navController.navigate(
-                            Screen.WorkspaceDetail(
-                                id = workspaceId.toString(),
-                                initialPath = conversation.workspaceCwd,
-                            )
-                        )
-                    }
-                    // v5.0.25 用户定案：第 12 格 = 子代理预算（与「子代理」运行详情并列）
-                    GlassToolTile(
-                        HugeIcons.Gauge, "子代理预算",
-                        badge = conversationRuns.size,
-                        modifier = Modifier.weight(1f),
-                    ) { showSubAgentBudgetSheet = true }
-                    GlassToolTile(HugeIcons.ComputerTerminal01, "工作目录", modifier = Modifier.weight(1f)) {
-                        showCwdSheet = true
-                    }
+                    Icon(
+                        HugeIcons.ArrowTurnBackward,
+                        null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "上下文压缩管理",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
                 }
             }
+            if (showRetentionDialog) {
+                CompressRetentionDialog(
+                    retentions = retentions,
+                    hasLegacy = conversation.compressedContext != null && retentions.isEmpty(),
+                    legacyNodes = conversation.compressedContext?.savedMessageNodes,
+                    onRestore = { index ->
+                        onRestoreCompressAt(index)
+                        showRetentionDialog = false
+                    },
+                    onDismiss = { showRetentionDialog = false },
+                )
+            }
+        }
+
+        // Row 1: 照片, 技能, 上传文件, 拍照
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            ImagePickButton(onClick = onPickImage, modifier = Modifier.weight(1f))
+            SkillsButton(onClick = {
+                onDismiss()
+                navController.navigate(Screen.Skills)
+            }, modifier = Modifier.weight(1f))
+            FilePickButton(onClick = onPickFile, modifier = Modifier.weight(1f))
+            TakePicButton(onLaunchCamera = onTakePic, modifier = Modifier.weight(1f))
+        }
+        // Row 2: MCP, 本地工具, 应用文件, 压缩历史
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            McpButton(
+                mcpManager = mcpManager,
+                assistant = assistant,
+                onUpdateAssistant = onUpdateAssistant,
+                modifier = Modifier.weight(1f),
+            )
+            DeferAutoReplySwitch(
+                deferAutoReply = deferAutoReply,
+                onToggle = onToggleDeferAutoReply,
+                modifier = Modifier.weight(1f),
+            )
+            WorkspaceFilePickButton(onClick = {
+                val wsId = assistant.workspaceId?.toString()
+                val firstWsId = workspaces.firstOrNull()?.id
+                val targetId = wsId ?: firstWsId
+                onDismiss()
+                if (targetId != null) {
+                    // v4.7.23: "应用文件"进入的默认目录 = 当前对话 CWD (用户定版);
+                    // 需要顶层时用户在页面内点返回键逐级上溯。
+                    navController.navigate(
+                        Screen.WorkspaceDetail(
+                            targetId,
+                            initialTab = 1,
+                            // 4.8.25: 项目包 CWD 优先 (与执行 CWD 一致)
+                            initialPath = effectiveCwd,
+                        )
+                    )
+                } else {
+                    navController.navigate(Screen.Workspaces)
+                }
+            }, modifier = Modifier.weight(1f))
+            CompressButton(onClick = {
+                onShowCompressDialogChange(true)
+            }, enabled = generationJob == null, modifier = Modifier.weight(1f))
+        }
+
+        val boundWorkspace = remember(workspaces, assistant.workspaceId) {
+            workspaces.find { it.id == assistant.workspaceId?.toString() }
+        }
+        var showCwdSheet by remember { mutableStateOf(false) }
+        var showSubAgentSheet by remember { mutableStateOf(false) }
+
+        // v3.11.26: 快捷入口第三行 — 与上方方块网格同款 (BigIconTextButton, weight(1f), SpaceEvenly)
+        // 子代理详情 / 模型记忆 / 工作区CWD / 上下文条数 — 高度对齐上方方块
+        val subAgentRegistry: me.rerere.rikkahub.subagent.SubAgentRegistry = koinInject()
+        val allRuns by subAgentRegistry.runs.collectAsState()
+        val conversationRuns = remember(allRuns, conversation.id) {
+            allRuns.values
+                .filter { it.parentChatId == conversation.id.toString() }
+                .sortedByDescending { it.startedAtMs }
+        }
+        val cwdReady = boundWorkspace != null && boundWorkspace.shellStatus == WorkspaceShellStatus.READY.name
+        // v4.8.4: 状态警示色判定 (与延时回复触发态同色 #2196F3) —
+        // ① 对话 token 总数 > 100k → 提醒可压缩; ② 子代理运行/等待中;
+        // ③ 记忆开启且有真实条目数据 (关闭则保持原状)
+        val memoryActive = assistant.enableMemory && memories.isNotEmpty()
+        // v4.8.51 修复 (用户实证): 上下文占用 = 最后一条带 usage 消息的 totalTokens
+        // (该次请求的全上下文 tokens)。原实现对全部消息 totalTokens 求和 — 每条
+        // 消息的该值都是"当时累计上下文", 求和严重放大, 小几十 K 上下文即误触
+        // 100K 阈值变蓝。
+        val currentContextTokens = conversation.messageNodes.asReversed()
+            .firstNotNullOfOrNull { node -> node.messages.getOrNull(node.selectIndex)?.usage?.totalTokens }
+            ?: 0
+        val tokensHot = currentContextTokens > 100_000
+        val subAgentsActive = conversationRuns.any { it.status == SubAgentStatus.RUNNING || it.status == SubAgentStatus.PENDING }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            // 1. 子代理详情 — 对话子代理的唯一展示窗口
+            BigIconTextButton(
+                modifier = Modifier.weight(1f),
+                icon = {
+                    // v4.8.4: 有运行中/等待中的子代理 → 图标变蓝示警
+                    Icon(
+                        HugeIcons.AiBrain01, null,
+                        tint = if (subAgentsActive) Color(0xFF2196F3) else LocalContentColor.current,
+                    )
+                },
+                text = {
+                    Text(
+                        text = if (conversationRuns.any { it.status == SubAgentStatus.RUNNING || it.status == SubAgentStatus.PENDING }) {
+                            stringResource(R.string.chat_quick_sub_agents_active,
+                                conversationRuns.count { it.status == SubAgentStatus.RUNNING || it.status == SubAgentStatus.PENDING })
+                        } else stringResource(R.string.chat_quick_sub_agents),
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                },
+            ) { showSubAgentSheet = true }
+            // 2. 模型记忆 — 直接路由当前助手记忆管理页 (无顶部选项卡)
+            BigIconTextButton(
+                modifier = Modifier.weight(1f),
+                icon = {
+                    // v4.8.4: 记忆开启且有真实条目 → 图标变蓝; 记忆关闭保持原状
+                    Icon(
+                        HugeIcons.Book02, null,
+                        tint = if (memoryActive) Color(0xFF2196F3) else LocalContentColor.current,
+                    )
+                },
+                text = { Text(stringResource(R.string.chat_quick_memory), maxLines = 1) },
+            ) {
+                onDismiss()
+                navController.navigate(Screen.AssistantMemory(assistant.id.toString()))
+            }
+            // 3. 工作区 CWD — 原底部文件夹入口迁入 (入口收纳; 未绑定工作区时置灰)
+            BigIconTextButton(
+                modifier = Modifier.weight(1f).alpha(if (cwdReady) 1f else 0.4f),
+                icon = { Icon(HugeIcons.Folder01, null) },
+                text = {
+                    val cwdRaw = effectiveCwd
+                    Text(
+                        // v4.8.3: 显示名净化 — 屏蔽 /workspace/ 基础前缀与各段 KEEP- 前缀
+                        text = if (cwdReady && !cwdRaw.isNullOrBlank()) cwdDisplayName(cwdRaw)
+                               else stringResource(R.string.chat_quick_cwd),
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                },
+            ) { if (cwdReady) showCwdSheet = true }
+            // 4. 当前上下文对话条数 — 压缩按条数计算, 这里给模型可见的条数统计 (只读)
+            BigIconTextButton(
+                modifier = Modifier.weight(1f),
+                icon = {
+                    // v4.8.4: 对话 token 总数 > 100k → 图标变蓝 (提醒可压缩)
+                    Icon(
+                        HugeIcons.BubbleChatQuestion, null,
+                        tint = if (tokensHot) Color(0xFF2196F3) else LocalContentColor.current,
+                    )
+                },
+                text = {
+                    Text(
+                        text = stringResource(R.string.chat_quick_context_count_value, conversation.messageNodes.size),
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                },
+            ) { }
+        }
+        if (showCwdSheet && boundWorkspace != null && boundWorkspace.shellStatus == WorkspaceShellStatus.READY.name) {
+            WorkspaceCwdPickerSheet(
+                workspaceId = boundWorkspace.id,
+                currentCwd = effectiveCwd,
+                onSelectCwd = { newCwd ->
+                    val fid = conversation.folderId
+                    if (fid != null) {
+                        // 项目包对话: 写入项目包 CWD (仅该包生效)
+                        pickerScope.launch {
+                            folderRepository.updateCwd(fid, newCwd)
+                            // v4.8.138 (治"点击重置无用"): 重置 = 回到工作区根 — 旧实现只清
+                            // 本包一层; 清掉本包后助手级 CWD 仍生效时界面/沙箱毫无变化 →
+                            // 一并清零, 确保重置后一定回到根。
+                            if (newCwd == null && assistant.workspaceCwd != null) {
+                                onUpdateAssistant(assistant.copy(workspaceCwd = null))
+                            }
+                        }
+                    } else {
+                        // v4.5.23: 写入助手级 CWD (settings 持久化) — 整个助手全部对话生效
+                        onUpdateAssistant(assistant.copy(workspaceCwd = newCwd))
+                    }
+                },
+                onDismiss = { showCwdSheet = false },
+            )
+        }
+        if (showSubAgentSheet) {
+            SubAgentDetailSheet(
+                runs = conversationRuns,
+                onCancel = { runId -> subAgentRegistry.requestCancel(runId) },
+                onDismiss = { showSubAgentSheet = false },
+            )
         }
     }
 
-    if (showSketch) {
-        SketchDialog(
-            onDismiss = { showSketch = false },
-            onConfirm = { result: SketchResult ->
-                showSketch = false
-                sketchScope.launch {
-                    filesManager.createChatFileBySketch(result)?.let { uri ->
-                        state.addImages(listOf(uri))
-                    }
-                }
-                onDismiss()
-            },
-        )
-    }
-
-    if (showSubAgentSheet) {
-        SubAgentDetailSheet(
-            runs = conversationRuns,
-            onCancel = { runId -> subAgentRegistry.requestCancel(runId) },
-            onDismiss = { showSubAgentSheet = false },
-        )
-    }
-
-    if (showSubAgentBudgetSheet) {
-        SubAgentBudgetSheet(
-            runs = conversationRuns,
-            onDismiss = { showSubAgentBudgetSheet = false },
-        )
-    }
-
-    if (showArtifactsSheet) {
-        ConversationArtifactsSheet(
-            open = showArtifactsSheet,
-            files = producedFiles,
+    // Injection Bottom Sheet
+    if (showInjectionSheet) {
+        InjectionQuickConfigSheet(
+            conversation = conversation,
             assistant = assistant,
-            folderCwd = conversation.workspaceCwd,
-            onOpenChange = { showArtifactsSheet = it },
-        )
-    }
-
-    if (showCwdSheet && boundWorkspace != null) {
-        WorkspaceCwdPickerSheet(
-            workspaceId = boundWorkspace.id,
-            currentCwd = conversation.workspaceCwd,
-            onSelectCwd = { newCwd ->
-                onUpdateWorkspaceCwd(newCwd)
-            },
-            onDismiss = { showCwdSheet = false },
+            settings = settings,
+            onUpdateAssistant = onUpdateAssistant,
+            onUpdateConversation = onUpdateConversation,
+            onDismiss = { onShowInjectionSheetChange(false) },
+            onDismissAll = onDismiss,
         )
     }
 
     // Compress Context Dialog
     if (showCompressDialog) {
-        CompressContextDialog(onDismiss = {
+        // v3.8.28: 默认保留条数 = ContextCompressor 智能推荐
+        // (按对话轮 + token 60% 定位, 始终保留最新轮, 保证真实压缩),
+        // 用户仍可在输入框手动微调条数
+        val recommendedKeep = remember(conversation.messageNodes) {
+            me.rerere.rikkahub.service.ContextCompressor.recommendedKeepMessages(conversation.currentMessages)
+        }
+        CompressContextDialog(
+            totalMessages = conversation.currentMessages.size,
+            defaultKeep = recommendedKeep,
+            onDismiss = {
             onShowCompressDialogChange(false)
             onDismiss()
-        }, onConfirm = onCompressContext)
+        }, onConfirm = { additionalPrompt, targetTokens, keepRecentMessages ->
+            onCompressContext(additionalPrompt, targetTokens, keepRecentMessages)
+        })
     }
 }
 
 @Composable
-private fun WorkspacePickerListItem(
-    assistant: Assistant,
-    workspaces: List<WorkspaceEntity>,
-    shapes: ListItemShapes,
-    onUpdateAssistant: (Assistant) -> Unit,
-    onNavigateToDetail: (String) -> Unit,
-    onNavigateToTerminal: (String) -> Unit,
-    onNavigateToManage: () -> Unit,
-) {
-    var showSheet by remember { mutableStateOf(false) }
-    val boundWorkspace = remember(workspaces, assistant.workspaceId) {
-        workspaces.find { it.id == assistant.workspaceId?.toString() }
-    }
-
-    SegmentedListItem(
-        onClick = { showSheet = true },
-        shapes = shapes,
-        leadingContent = {
-            Icon(
-                imageVector = HugeIcons.Codesandbox,
-                contentDescription = null,
-            )
-        },
-        supportingContent = {
-            Text(
-                text = boundWorkspace?.name ?: stringResource(R.string.assistant_page_workspace_unbound),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
-        trailingContent = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (boundWorkspace != null) {
-                    IconButton(onClick = { onNavigateToDetail(boundWorkspace.id) }) {
-                        Icon(
-                            imageVector = HugeIcons.Settings02,
-                            contentDescription = stringResource(R.string.workspace_detail),
-                        )
-                    }
-                    if (boundWorkspace.shellStatus != WorkspaceShellStatus.DISABLED.name) {
-                        IconButton(onClick = { onNavigateToTerminal(boundWorkspace.id) }) {
-                            Icon(
-                                imageVector = HugeIcons.ComputerTerminal01,
-                                contentDescription = stringResource(R.string.workspace_terminal),
-                            )
-                        }
-                    }
-                }
-            }
-        },
-    ) {
-        Text(stringResource(R.string.assistant_page_workspace))
-    }
-
-    if (showSheet) {
-        WorkspaceSelectSheet(
-            assistant = assistant,
-            workspaces = workspaces,
-            onSelect = { workspaceId ->
-                val newId = workspaceId?.let { Uuid.parse(it) }
-                if (newId != assistant.workspaceId) {
-                    // 会话的工作目录随工作区一并重置
-                    onUpdateAssistant(assistant.copy(workspaceId = newId))
-                }
-                showSheet = false
-            },
-            onManage = {
-                showSheet = false
-                onNavigateToManage()
-            },
-            onDismiss = { showSheet = false },
-        )
-    }
-}
-
-// 扩展选择页，作为子页面嵌在加号 sheet 里
-@Composable
-private fun ExtensionPickerPage(
+private fun InjectionQuickConfigSheet(
+    conversation: Conversation,
     assistant: Assistant,
     settings: Settings,
     onUpdateAssistant: (Assistant) -> Unit,
-    onBack: () -> Unit,
+    onUpdateConversation: (Conversation) -> Unit,
+    onDismiss: () -> Unit,
     onDismissAll: () -> Unit,
 ) {
+    val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
     val navController = LocalNavController.current
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .fillMaxHeight(0.75f)
-            .padding(horizontal = 16.dp),
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
     ) {
-        SheetHeader(
-            title = stringResource(R.string.assistant_page_tab_extensions),
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(HugeIcons.ArrowLeft01, contentDescription = stringResource(R.string.back))
-                }
-            },
-        )
-        ExtensionSelector(
-            assistant = assistant,
-            settings = settings,
-            onUpdate = onUpdateAssistant,
-            modifier = Modifier.weight(1f),
-            onNavigateToQuickMessages = {
-                onDismissAll()
-                navController.navigate(Screen.QuickMessages)
-            },
-            onNavigateToPrompts = {
-                onDismissAll()
-                navController.navigate(Screen.Prompts)
-            },
-            onNavigateToSkills = {
-                onDismissAll()
-                navController.navigate(Screen.Skills)
-            })
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.75f)
+                .padding(horizontal = 16.dp),
+        ) {
+            ExtensionSelector(
+                assistant = assistant,
+                settings = settings,
+                onUpdate = onUpdateAssistant,
+                conversation = conversation,
+                onUpdateConversation = onUpdateConversation,
+                modifier = Modifier.weight(1f),
+                onNavigateToQuickMessages = {
+                    onDismissAll()
+                    navController.navigate(Screen.QuickMessages)
+                },
+                onNavigateToPrompts = {
+                    onDismissAll()
+                    navController.navigate(Screen.Prompts)
+                },
+                onNavigateToSkills = {
+                    onDismissAll()
+                    navController.navigate(Screen.Skills)
+                })
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+        }
     }
 }
 
-private class AttachmentAction(
-    val icon: ImageVector,
-    @param:StringRes val label: Int,
-    val onClick: () -> Unit,
-)
-
-// 附件入口：一行最多四个，再多就均分成两行
-/**
- * 工具箱方形入口（v5.0.20 用户定版）：输入栏同源玻璃卡片——
- * 半透明底 + 圆角 + 1dp 高光描边，4 列 × 3 行，只要方形不要条形。
- */
-/** v5.0.24 用户定案：上下文环基准恒定 1M（不随模型 contextLength 变化）。 */
-private const val CONTEXT_WINDOW_BASELINE_TOKENS = 1_000_000f
+@Composable
+private fun ImagePickButton(onClick: () -> Unit = {}, modifier: Modifier = Modifier) {
+    BigIconTextButton(modifier = modifier, icon = {
+        Icon(HugeIcons.Image02, null)
+    }, text = {
+        Text(stringResource(R.string.photo))
+    }) {
+        onClick()
+    }
+}
 
 @Composable
-private fun GlassToolTile(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
+fun TakePicButton(onLaunchCamera: () -> Unit = {}, modifier: Modifier = Modifier) {
+    BigIconTextButton(modifier = modifier, icon = {
+        Icon(HugeIcons.Camera01, null)
+    }, text = {
+        Text(stringResource(R.string.take_picture))
+    }) {
+        onLaunchCamera()
+    }
+}
+
+@Composable
+fun VideoPickButton(onClick: () -> Unit = {}) {
+    BigIconTextButton(icon = {
+        Icon(HugeIcons.Video01, null)
+    }, text = {
+        Text(stringResource(R.string.video))
+    }) {
+        onClick()
+    }
+}
+
+@Composable
+fun AudioPickButton(onClick: () -> Unit = {}) {
+    BigIconTextButton(icon = {
+        Icon(HugeIcons.MusicNote03, null)
+    }, text = {
+        Text(stringResource(R.string.audio))
+    }) {
+        onClick()
+    }
+}
+
+@Composable
+fun FilePickButton(onClick: () -> Unit = {}, modifier: Modifier = Modifier) {
+    BigIconTextButton(modifier = modifier, icon = {
+        Icon(HugeIcons.Files02, null)
+    }, text = {
+        Text(stringResource(R.string.upload_file))
+    }) {
+        onClick()
+    }
+}
+
+/**
+ * v4.8.3: CWD 显示名净化 — 屏蔽 /workspace/ 基础前缀; 各路径段再屏蔽 KEEP- 前缀
+ * (目录分类标记, 展示无意义)。解析失败时回退原文本。
+ */
+private fun cwdDisplayName(raw: String): String {
+    val trimmed = raw.trim().removePrefix("/workspace/").removePrefix("workspace/").trimStart('/')
+    if (trimmed.isEmpty()) return raw.trim()
+    return trimmed.split('/').joinToString("/") { seg ->
+        seg.removePrefix("KEEP-").ifEmpty { seg }
+    }
+}
+
+@Composable
+private fun BigIconTextButton(
     modifier: Modifier = Modifier,
-    subtitle: String? = null,
-    badge: Int = 0,
-    active: Boolean = false,
-    // v5.0.24（用户定案）：上下文速览=环形 UI（基准 1M，亮色填充，中心消息条数）
-    ringProgress: Float? = null,
-    ringCenterText: String? = null,
+    icon: @Composable () -> Unit,
+    text: @Composable () -> Unit,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
-    val containerColor = if (active) {
-        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.62f)
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.55f)
-    }
-    val contentColor = if (active) {
-        MaterialTheme.colorScheme.onPrimaryContainer
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    val secondary = subtitle ?: if (badge > 0) badge.toString() + " 项" else null
-
+    val interactionSource = remember { MutableInteractionSource() }
     Column(
         modifier = modifier
-            .aspectRatio(1f)
-            .clip(RoundedCornerShape(20.dp))
-            .background(containerColor)
-            .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.32f),
-                shape = RoundedCornerShape(20.dp),
+            .clip(RoundedCornerShape(8.dp))
+            .alpha(if (enabled) 1f else 0.38f)
+            .clickable(
+                enabled = enabled,
+                interactionSource = interactionSource, indication = LocalIndication.current, onClick = onClick
             )
-            .clickable(onClick = onClick)
-            .padding(6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        if (ringProgress != null) {
-            Box(modifier = Modifier.size(28.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(
-                    progress = { ringProgress },
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    strokeWidth = 3.dp,
-                )
-                Text(
-                    text = ringCenterText.orEmpty(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
+            .semantics {
+                role = Role.Button
             }
-        } else {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                modifier = Modifier.size(24.dp),
-                tint = contentColor,
-            )
+            .wrapContentWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(8.dp)
+        ) {
+            Box(
+                modifier = Modifier.padding(horizontal = 32.dp, vertical = 16.dp)
+            ) {
+                icon()
+            }
         }
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        if (secondary != null) {
-            Text(
-                text = secondary,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
+        ProvideTextStyle(MaterialTheme.typography.bodySmall) {
+            text()
         }
     }
 }
 
+@Preview(showBackground = true)
 @Composable
-private fun AttachmentGrid(
-    actions: List<AttachmentAction>,
+private fun BigIconTextButtonPreview() {
+    Row(
+        modifier = Modifier.padding(16.dp)
+    ) {
+        BigIconTextButton(icon = {
+            Icon(HugeIcons.Image02, null)
+        }, text = {
+            Text(stringResource(R.string.photo))
+        }) {}
+    }
+}
+
+@Composable
+fun WorkspaceFilePickButton(onClick: () -> Unit = {}, modifier: Modifier = Modifier) {
+    BigIconTextButton(modifier = modifier, icon = {
+        Icon(HugeIcons.Folder01, null)
+    }, text = {
+        Text("应用文件")
+    }) {
+        onClick()
+    }
+}
+
+// v3.6.74: 本地工具入口移除, 该位置改为延时回复入口
+// v4.8.3: 交互重构 (用户定版) — 单点直接切换 (原"弹窗 + 完成"模式退役);
+// 更名"延时回复"; 触发态时钟图标变蓝 (一眼可辨的状态指示)。
+@Composable
+fun DeferAutoReplySwitch(
+    deferAutoReply: Boolean,
+    onToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val perRow = if (actions.size <= 4) actions.size else (actions.size + 1) / 2
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        actions.chunked(perRow).fastForEach { row ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                row.fastForEach { action ->
-                    AttachmentTile(
-                        action = action,
-                        modifier = Modifier.weight(1f),
+    BigIconTextButton(modifier = modifier, icon = {
+        Icon(
+            HugeIcons.Clock02, null,
+            tint = if (deferAutoReply) Color(0xFF2196F3) else LocalContentColor.current,
+        )
+    }, text = {
+        Text("延时回复")
+    }) {
+        onToggle(!deferAutoReply)
+    }
+}
+
+@Composable
+fun SkillsButton(onClick: () -> Unit = {}, modifier: Modifier = Modifier) {
+    BigIconTextButton(modifier = modifier, icon = {
+        Icon(HugeIcons.AiMagic, null)
+    }, text = {
+        Text("技能")
+    }) {
+        onClick()
+    }
+}
+
+@Composable
+private fun McpButton(
+    mcpManager: McpManager,
+    assistant: Assistant,
+    onUpdateAssistant: (Assistant) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val settings = LocalSettings.current
+    var showPicker by remember { mutableStateOf(false) }
+    val status by mcpManager.syncingStatus.collectAsStateWithLifecycle()
+    val loading = status.values.any { it == McpStatus.Connecting }
+    BigIconTextButton(modifier = modifier, icon = {
+        Icon(HugeIcons.Codesandbox, null)
+    }, text = {
+        Text("MCP")
+    }) {
+        showPicker = true
+    }
+    if (showPicker && settings.mcpServers.isNotEmpty()) {
+        McpPickerSheet(
+            assistant = assistant,
+            servers = settings.mcpServers,
+            loading = loading,
+            onUpdateAssistant = onUpdateAssistant,
+            onDismiss = { showPicker = false },
+        )
+    }
+}
+
+@Composable
+private fun CompressButton(onClick: () -> Unit, enabled: Boolean = true, modifier: Modifier = Modifier) {
+    BigIconTextButton(modifier = modifier, icon = {
+        Icon(HugeIcons.Package01, null)
+    }, text = {
+        Text("压缩历史")
+    }, enabled = enabled) {
+        onClick()
+    }
+}
+
+
+// v3.8.13: 压缩留存位点弹窗 — 列出最近 1~3 次压缩, 每项: 查看相关信息 / 从此点恢复
+@Composable
+private fun CompressRetentionDialog(
+    retentions: List<me.rerere.rikkahub.data.model.CompressRetention>,
+    hasLegacy: Boolean,
+    legacyNodes: List<MessageNode>? = null,
+    onRestore: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var viewNodes by remember { mutableStateOf<List<MessageNode>?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("上下文压缩管理") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "恢复某个位点将一并撤销其之后的所有压缩",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (retentions.isEmpty() && hasLegacy) {
+                    RetentionItem(
+                        label = "旧版压缩记录",
+                        note = "完整对话已被压缩",
+                        onView = { viewNodes = legacyNodes },
+                        onRestore = { onRestore(0) },
+                    )
+                }
+                retentions.forEachIndexed { index, r ->
+                    RetentionItem(
+                        label = r.retentionLabel.ifBlank { "压缩留存" },
+                        note = if (index > 0) "恢复将同时撤销其后的 $index 个压缩" else "恢复到此点状态",
+                        onView = { viewNodes = r.summaryMessageNodes.ifEmpty { r.savedMessageNodes } },
+                        onRestore = { onRestore(index) },
                     )
                 }
             }
-        }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("关闭") }
+        },
+    )
+
+    viewNodes?.let { nodes ->
+        RetentionDetailDialog(nodes = nodes) { viewNodes = null }
     }
 }
 
+// v3.8.19: 位点条目改条状窄 UI — 单行横排, 时间戳可收缩, 操作按钮紧凑
 @Composable
-private fun AttachmentTile(
-    action: AttachmentAction,
-    modifier: Modifier = Modifier,
+private fun RetentionItem(
+    label: String,
+    note: String,
+    onView: () -> Unit,
+    onRestore: () -> Unit,
 ) {
-    FilledTonalButton(
-        onClick = action.onClick,
-        // 按下时圆角收紧
-        shapes = ButtonDefaults.shapes(
-            shape = MaterialTheme.shapes.extraLarge,
-            pressedShape = MaterialTheme.shapes.medium,
-        ),
-        modifier = modifier.heightIn(min = 88.dp),
-        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 16.dp),
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Icon(
-                imageVector = action.icon,
-                contentDescription = null,
-                modifier = Modifier.size(28.dp),
-            )
-            Text(
-                text = stringResource(action.label),
-                // 四个并排时较长的译文放不下，自动缩小字号
-                autoSize = TextAutoSize.StepBased(minFontSize = 11.sp, maxFontSize = 14.sp),
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (note.isNotBlank()) {
+                    Text(
+                        note,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            TextButton(
+                onClick = onView,
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+            ) {
+                Text("查看", style = MaterialTheme.typography.labelSmall)
+            }
+            TextButton(
+                onClick = onRestore,
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+            ) {
+                Text("恢复", style = MaterialTheme.typography.labelSmall)
+            }
         }
     }
 }
 
-// 列表项尾部的已启用数量
+// v3.8.19: 查看显示本次压缩得到的摘要 (不再累积原文)
+@Composable
+private fun RetentionDetailDialog(nodes: List<MessageNode>, onDismiss: () -> Unit) {
+    val text = remember(nodes) {
+        nodes.joinToString("\n\n---\n\n") { node ->
+            runCatching { node.currentMessage }.getOrNull()?.parts
+                ?.filterIsInstance<UIMessagePart.Text>()
+                ?.joinToString("\n") { it.text }
+                ?: ""
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("压缩摘要") },
+        text = {
+            Text(
+                text.takeIf { it.isNotBlank() } ?: "(无文本内容)",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp)
+                    .verticalScroll(rememberScrollState()),
+            )
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
+    )
+}
+
 @Composable
 internal fun CountBadge(count: Int) {
     Badge(
@@ -659,34 +821,54 @@ internal fun CountBadge(count: Int) {
     }
 }
 
-// 上下文使用量进度环，接近上限时变色提醒压缩
-@Composable
-private fun ContextUsageRing(remaining: Float) {
-    val color = when {
-        remaining <= 0.1f -> MaterialTheme.colorScheme.error
-        remaining <= 0.3f -> MaterialTheme.colorScheme.tertiary
-        else -> MaterialTheme.colorScheme.primary
+internal fun McpPickerSheet(
+    assistant: Assistant,
+    servers: List<McpServerConfig>,
+    loading: Boolean,
+    onUpdateAssistant: (Assistant) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.7f)
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                text = stringResource(id = R.string.mcp_picker_title),
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.Bold
+                )
+            )
+            AnimatedVisibility(loading) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.padding(vertical = 4.dp)
+                ) {
+                    LinearWavyProgressIndicator()
+                    Text(
+                        text = stringResource(id = R.string.mcp_picker_syncing),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
+            }
+            McpPicker(
+                assistant = assistant,
+                servers = servers,
+                onUpdateAssistant = {
+                    onUpdateAssistant(it)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            )
+        }
     }
-    CircularProgressIndicator(
-        progress = { remaining.coerceIn(0f, 1f) },
-        modifier = Modifier.size(24.dp),
-        color = color,
-        strokeWidth = 3.dp,
-        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-private fun AttachmentGridPreview() {
-    AttachmentGrid(
-        actions = listOf(
-            AttachmentAction(HugeIcons.Camera01, R.string.take_picture) {},
-            AttachmentAction(HugeIcons.Image02, R.string.photo) {},
-            AttachmentAction(HugeIcons.Video01, R.string.video) {},
-            AttachmentAction(HugeIcons.MusicNote03, R.string.audio) {},
-            AttachmentAction(HugeIcons.Files02, R.string.upload_file) {},
-        ),
-        modifier = Modifier.padding(16.dp),
-    )
 }

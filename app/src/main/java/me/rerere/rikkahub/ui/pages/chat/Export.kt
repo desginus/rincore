@@ -897,10 +897,6 @@ private fun ExportedChatMessage(
                                             tool = step.tool
                                         )
                                     }
-
-                                    is ThinkingStep.ServerToolStep -> {
-                                        ExportedServerToolStep(step.tool)
-                                    }
                                 }
                             }
                         }
@@ -1094,35 +1090,6 @@ private fun ChainOfThoughtScope.ExportedToolStep(
         label = {
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.secondary,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
-        contentVisible = false,
-        content = null,
-    )
-}
-
-@Composable
-private fun ChainOfThoughtScope.ExportedServerToolStep(
-    tool: UIMessagePart.ServerTool,
-) {
-    ControlledChainOfThoughtStep(
-        expanded = true,
-        onExpandedChange = {},
-        icon = {
-            Icon(
-                imageVector = HugeIcons.Wrench01,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-                tint = MaterialTheme.colorScheme.secondary,
-            )
-        },
-        label = {
-            Text(
-                text = tool.toolName,
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.secondary,
                 maxLines = 2,
