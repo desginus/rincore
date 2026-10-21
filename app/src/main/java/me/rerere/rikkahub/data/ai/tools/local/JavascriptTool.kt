@@ -39,7 +39,7 @@ internal fun buildJavascriptTool(): Tool = Tool(
             required = listOf("code")
         )
     },
-    execute = {
+    execute = js@{
         // v5.0.60 ★「JS 计算工具卡住一直未完成」的机制性修复（长期待办）：
         // QuickJS 的 evaluate 是**阻塞 JNI 调用** —— 协程 withTimeout / cancel 都无法中断它，
         // 一旦脚本里有死循环或超长计算，协程会永久挂在那里，界面表现为"一直未完成"，
@@ -91,12 +91,12 @@ internal fun buildJavascriptTool(): Tool = Tool(
                 future.get(JS_EVAL_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
             } catch (e: java.util.concurrent.TimeoutException) {
                 future.cancel(true)
-                return@execute failPayload(
+                return@js failPayload(
                     "脚本执行超过 ${JS_EVAL_TIMEOUT_SECONDS}s 已中止（可能存在无限循环）。" +
                         "请缩短计算量或改写为可终止的循环。"
                 )
             } catch (e: java.util.concurrent.ExecutionException) {
-                return@execute failPayload(
+                return@js failPayload(
                     "脚本执行异常: ${e.cause?.message ?: e.message}"
                 )
             }
