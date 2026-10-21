@@ -622,7 +622,13 @@ private fun ChatPageContent(
                             )
                         )
                     },
-                    // v5.0.52：5.0.31 UI 的 ChatInput 需要搜索服务序号
+                    // v5.0.52：5.0.31 UI 的 ChatInput 需要搜索模式 + 搜索服务序号
+                    onUpdateSearchMode = { mode ->
+                        vm.updateSearch(
+                            enableWebSearch = mode == SearchMode.LOCAL,
+                            builtInSearch = mode == SearchMode.BUILT_IN,
+                        )
+                    },
                     onUpdateSearchService = { index ->
                         vm.updateSettings { it.copy(searchServiceSelected = index) }
                     },
