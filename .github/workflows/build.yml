@@ -54,7 +54,10 @@ jobs:
         run: |
           export PATH="$(ls -d $ANDROID_HOME/cmdline-tools/*/bin | head -1):$PATH"
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager "platforms;android-37" "build-tools;37.0.0" "platform-tools" >/dev/null
+          # 已安装的组件 sdkmanager 会返回非 0；这里只补缺，不因"已存在"失败
+          sdkmanager "platforms;android-37" "build-tools;37.0.0" "platform-tools" || true
+          echo "--- installed platforms ---"
+          sdkmanager --list_installed 2>/dev/null | head -20 || true
 
       - name: Cache Gradle
         uses: actions/cache@v4
