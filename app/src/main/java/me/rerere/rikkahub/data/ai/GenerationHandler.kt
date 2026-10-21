@@ -238,7 +238,10 @@ class GenerationHandler(
         /** 工具执行超时 (ms): 工具挂起时返回超时错误, 不阻塞整个生成流程 */
         // v4.8.72 (用户定版): 60s → 700s — 生成类接口实际耗时 70s 起;
         // 命令预算放宽到 600s (workspace_shell 上限) 之上再留 100s 余量 (沙箱启动/脚本开销)。
-        private const val TOOL_EXECUTION_TIMEOUT_MS = 700_000L
+        // v5.0.55 ★用户实证：原 700_000ms（11 分 40 秒）——工具一旦卡住（JS 同步 eval 不响应协程取消、
+// 网络无响应等）界面会「一直显示调用未完成」十几分钟。降到 120s 仍在合理区间（workspace_shell
+// 长任务应走 workspace_job 后台 job），卡死时最多两分钟就有明确超时回包。
+        private const val TOOL_EXECUTION_TIMEOUT_MS = 120_000L
 
         // v4.8.130: 断流重试预算 = 三轮链 18 次 (RetryPolicy.kt Stream — 每组
         // 300ms/700ms/1s/2s/3s/5s 递增退避, 用户定版)。旧 v3.11.24 的 45s 时间

@@ -200,7 +200,13 @@ internal suspend fun afterPreviousGeneration(previous: Job?, block: suspend () -
         block()
     } catch (e: CancellationException) {
         previous?.cancel()
-        withContext(NonCancellable) { previous?.join() }
+        // v5.0.55 ★用户实证「按停止没反应、要多按几遍」的根因：
+        // 原实现在 NonCancellable 里**无上限**等待 previous.join()；只要 previous 卡在
+        // 不响应取消的调用（同步 JS eval / 阻塞 IO / 网络），取消链就永远走不完。
+        // 改为最多等 2 秒（给正常 job 一点收尾时间），超时立即向上抛取消。
+        withContext(NonCancellable) {
+            kotlinx.coroutines.withTimeoutOrNull(2_000) { previous?.join() }
+        }
         throw e
     }
 }
