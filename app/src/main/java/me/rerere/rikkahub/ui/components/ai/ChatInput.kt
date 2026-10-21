@@ -155,7 +155,7 @@ fun ChatInput(
     onPickFile: (() -> Unit)? = null,
     onPickImage: (() -> Unit)? = null,
     onTakePic: (() -> Unit)? = null,
-    onUpdateSearchMode: ((me.rerere.rikkahub.data.model.SearchMode) -> Unit)? = null,
+    onUpdateSearchMode: ((SearchMode) -> Unit)? = null,
     onUpdateSearchService: ((kotlin.uuid.Uuid?) -> Unit)? = null,
 ) {
     val toaster = LocalToaster.current

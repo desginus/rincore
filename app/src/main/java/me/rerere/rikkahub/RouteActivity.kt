@@ -771,9 +771,7 @@ class RouteActivity : ComponentActivity() {
                                 SettingFilesPage()
                             }
                             entry<Screen.SettingAppStorage> {
-                                me.rerere.rikkahub.ui.pages.setting.SettingAppStoragePage(
-                                    onBack = { navController.popBackStack() },
-                                )
+                                me.rerere.rikkahub.ui.pages.setting.SettingAppStoragePage(onBack = {})
                             }
                             entry<Screen.SettingCallTrace> {
                                 SettingCallTracePage()
