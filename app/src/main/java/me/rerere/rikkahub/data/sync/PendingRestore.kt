@@ -115,6 +115,9 @@ internal class PendingRestore(
             }
         }
         collect(payload, "")
+        // v5.0.50：工作区（files/workspaces/**）已由 stageRestore 就地解压并落地，
+        // 绝不能再进逐文件 journal —— 几十万条记录会撑爆内存并导致 restore 失败。
+        paths.removeAll { it.startsWith("files/workspaces/") }
         paths.sort()
         val entries = paths.map { path ->
             RestoreEntry(path, install = true, hadOriginal = targetFile(path).exists())

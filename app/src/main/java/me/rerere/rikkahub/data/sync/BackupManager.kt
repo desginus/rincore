@@ -135,39 +135,69 @@ class BackupManager(
                             currentCoroutineContext().ensureActive()
                             if (entry.isDirectory) continue
                             // v5.0.41：工作区全量恢复（tar.gz → payload/files/workspaces）
+                            // v5.0.50 ★关键架构修正（用户实证"导入备份失败"的总根因）：
+                            //
+                            // 旧实现把 15G 工作区解到 `pending/payload/files/workspaces`，再由 PendingRestore
+                            // 逐文件生成 journal + 逐条 move。一个 15G rootfs 有**几十万个文件**：
+                            //   buildEntries 几十万条 → journal JSON 几十 MB → 每条一次 targetFile().exists()
+                            //   → 再几十万次 ATOMIC_MOVE → 内存/IO/时间全爆 → 抛异常 → RestoreFailedException
+                            //   → 用户看到"导入备份失败，已使用先前的数据"。
+                            //
+                            // 工作区是"目录树"，不需要 journal 的事务语义。改为**就地解压到最终位置**：
+                            //   ① 现有 workspaces 整目录改名备份（失败可回滚）
+                            //   ② 直接解压 tar.gz 到 filesDir/workspaces
+                            //   ③ 失败 → 删半成品 + 备份改回原名
+                            // 这样 PendingRestore 只需处理 database/settings/附件（几 MB），重启秒完成。
                             if (entry.name == "workspaces.tar.gz") {
                                 if (includeFiles) {
-                                    val wsDst = File(payload, "files/workspaces")
-                                    wsDst.mkdirs()
-                                    zip.getInputStream(entry).use { ins ->
-                                        me.rerere.rikkahub.data.workspace.TarGz.read(ins) { tarEntry, stream ->
-                                            val name = tarEntry.name.trimStart('/')
-                                            if (!name.startsWith("workspaces/") || name.contains("..")) return@read
-                                            val rel = name.removePrefix("workspaces/")
-                                            if (rel.isBlank()) return@read
-                                            val outFile = File(wsDst, rel)
-                                            if (!outFile.canonicalPath.startsWith(wsDst.canonicalPath)) return@read
-                                            when {
-                                                tarEntry.isDirectory -> outFile.mkdirs()
-                                                tarEntry.isSymlink -> {
-                                                    val t = tarEntry.linkTarget
-                                                    if (t.isNotBlank() && !t.contains("..") && !t.startsWith("/")) {
-                                                        outFile.parentFile?.mkdirs()
-                                                        runCatching {
-                                                            java.nio.file.Files.createSymbolicLink(
-                                                                outFile.toPath(), File(t).toPath()
-                                                            )
+                                    val wsRoot = File(context.filesDir, "workspaces")
+                                    val backupDir = File(
+                                        context.filesDir,
+                                        "workspaces.bak-" + System.currentTimeMillis(),
+                                    )
+                                    var hadPrevious = false
+                                    if (wsRoot.exists()) {
+                                        hadPrevious = wsRoot.renameTo(backupDir)
+                                        if (!hadPrevious) error("无法备份现有工作区目录，已中止导入")
+                                    }
+                                    check(wsRoot.mkdirs() || wsRoot.isDirectory) { "无法创建工作区目录" }
+                                    try {
+                                        zip.getInputStream(entry).use { ins ->
+                                            me.rerere.rikkahub.data.workspace.TarGz.read(ins) { tarEntry, stream ->
+                                                val name = tarEntry.name.trimStart('/')
+                                                if (!name.startsWith("workspaces/") || name.contains("..")) return@read
+                                                val rel = name.removePrefix("workspaces/")
+                                                if (rel.isBlank()) return@read
+                                                val outFile = File(wsRoot, rel)
+                                                val base = wsRoot.absolutePath.trimEnd(File.separatorChar)
+                                                if (!outFile.absolutePath.startsWith(base + File.separator)) return@read
+                                                when {
+                                                    tarEntry.isDirectory -> outFile.mkdirs()
+                                                    tarEntry.isSymlink -> {
+                                                        val t = tarEntry.linkTarget
+                                                        if (t.isNotBlank() && !t.contains("..") && !t.startsWith("/")) {
+                                                            outFile.parentFile?.mkdirs()
+                                                            runCatching {
+                                                                java.nio.file.Files.createSymbolicLink(
+                                                                    outFile.toPath(), File(t).toPath()
+                                                                )
+                                                            }
                                                         }
                                                     }
-                                                }
-                                                else -> {
-                                                    outFile.parentFile?.mkdirs()
-                                                    FileOutputStream(outFile).use { o -> stream.copyTo(o, 64 * 1024) }
+                                                    else -> {
+                                                        outFile.parentFile?.mkdirs()
+                                                        FileOutputStream(outFile).use { o -> stream.copyTo(o, 64 * 1024) }
+                                                    }
                                                 }
                                             }
                                         }
+                                        restoredEntries++
+                                    } catch (e: Throwable) {
+                                        // 回滚：删半成品，恢复原工作区
+                                        runCatching { wsRoot.deleteRecursively() }
+                                        if (hadPrevious) runCatching { backupDir.renameTo(wsRoot) }
+                                        throw e
                                     }
-                                    restoredEntries++
                                 }
                                 continue
                             }
