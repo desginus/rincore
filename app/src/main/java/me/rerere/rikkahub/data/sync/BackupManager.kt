@@ -41,7 +41,12 @@ class BackupManager(
 ) {
     private val restoreMutex = Mutex()
 
-    suspend fun createBackup(includeDatabase: Boolean, includeFiles: Boolean): File = withContext(Dispatchers.IO) {
+    suspend fun createBackup(
+        includeDatabase: Boolean,
+        includeFiles: Boolean,
+        // v5.0.41：进度回调（字节目录 = 当前已打包的用户数据量 + 阶段名）
+        onProgress: ((stage: String, bytes: Long) -> Unit)? = null,
+    ): File = withContext(Dispatchers.IO) {
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
         val archive = File.createTempFile("backup_${timestamp}_", ".zip", context.cacheDir)
         val staging = Files.createTempDirectory(context.cacheDir.toPath(), "backup-").toFile()
@@ -57,6 +62,7 @@ class BackupManager(
                     addFile(zip, snapshot, DatabaseBackup.ARCHIVE_DATABASE)
                 }
                 if (includeFiles) {
+                    onProgress?.invoke("附件", 0L)
                     for (folder in ATTACHMENT_FOLDERS) {
                         val directory = File(context.filesDir, folder)
                         val files = if (folder in NESTED_ATTACHMENT_FOLDERS) directory.walkTopDown().asSequence()
@@ -82,6 +88,7 @@ class BackupManager(
                                 output = out,
                                 roots = listOf(wsRoot.toPath() to "workspaces"),
                                 excludeDirNames = setOf("tmp"),
+                                onProgress = { files, bytes -> onProgress?.invoke("工作区", bytes) },
                             )
                         }
                         addFile(zip, wsTar, "workspaces.tar.gz")

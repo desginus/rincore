@@ -204,11 +204,14 @@ fun ImportExportTab(
                 } else null,
                 headlineContent = { Text(stringResource(R.string.backup_page_local_backup_export)) },
                 supportingContent = {
+                    val prog = vm.exportProgress
                     Text(
-                        if (isExporting) {
-                            stringResource(R.string.backup_page_exporting)
-                        } else {
-                            stringResource(R.string.backup_page_export_desc)
+                        when {
+                            // v5.0.41：显示阶段 + 已打包体积（工作区可能很大，让用户知道在动）
+                            isExporting && prog != null ->
+                                "正在打包${prog.first}：${"%.1f".format(prog.second / 1024.0 / 1024.0)} MB"
+                            isExporting -> stringResource(R.string.backup_page_exporting)
+                            else -> stringResource(R.string.backup_page_export_desc)
                         }
                     )
                 },

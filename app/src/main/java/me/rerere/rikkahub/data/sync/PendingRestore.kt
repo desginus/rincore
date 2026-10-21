@@ -63,7 +63,11 @@ internal class PendingRestore(
                 val source = File(pending, "payload/${entry.path}")
                 if (entry.install && !source.exists()) {
                     // A previous process already moved this source into place.
-                    check(target.isFile) { "Interrupted restore is missing ${entry.path}" }
+                    // v5.0.41：符号链接的 target.isFile 可能为 false（指向目录），改判存在性。
+                    check(
+                        target.exists() ||
+                            runCatching { java.nio.file.Files.isSymbolicLink(target.toPath()) }.getOrDefault(false)
+                    ) { "Interrupted restore is missing ${entry.path}" }
                 } else {
                     if (entry.hadOriginal && !original.exists()) move(target, original)
                     if (entry.install) move(source, target)
@@ -93,9 +97,24 @@ internal class PendingRestore(
 
     private fun buildEntries(): List<RestoreEntry> {
         val payload = File(pending, "payload")
-        val paths = payload.walkTopDown().filter { it.isFile }.map {
-            it.relativeTo(payload).invariantSeparatorsPath
-        }.toList().sorted()
+        // v5.0.41 用户实证修复：rootfs 里 /bin→usr/bin、/lib→usr/lib 是符号链接目录。
+        // 旧实现 `walkTopDown().filter { it.isFile }` 会把链接目录整个丢掉（isFile=false），
+        // 导致恢复后 Linux 环境起不来、用户装的 Python 失效。
+        // → 不跟随链接递归，但把链接本身作为条目纳入恢复（renameTo 会保留链接）。
+        val paths = mutableListOf<String>()
+        fun collect(dir: File, rel: String) {
+            dir.listFiles()?.forEach { f ->
+                val childRel = if (rel.isEmpty()) f.name else "$rel/${f.name}"
+                val link = runCatching { java.nio.file.Files.isSymbolicLink(f.toPath()) }.getOrDefault(false)
+                when {
+                    link -> paths.add(childRel)
+                    f.isDirectory -> collect(f, childRel)
+                    f.isFile -> paths.add(childRel)
+                }
+            }
+        }
+        collect(payload, "")
+        paths.sort()
         val entries = paths.map { path ->
             RestoreEntry(path, install = true, hadOriginal = targetFile(path).exists())
         }.toMutableList()
