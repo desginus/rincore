@@ -94,6 +94,56 @@ private enum class MemoryTab(
         @Composable get() = stringResource(labelRes)
 }
 
+/** v5.0.25：记忆页大分区 */
+private enum class MemorySection { MEMORY, SETTINGS }
+
+/** v5.0.25：记忆范围（层级） */
+private enum class MemoryScope { ASSISTANT, FOLDER, CONVERSATION }
+
+/** v5.0.25：记忆来源（主动写入 / 做梦整理） */
+private enum class MemoryCategory { ACTIVE, DREAM }
+
+/** 大卡：半屏宽、方块圆角、选中态高亮 */
+@Composable
+private fun MemorySectionCard(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Card(
+        onClick = onClick,
+        modifier = modifier,
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer
+            else MaterialTheme.colorScheme.surfaceContainerLow,
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 18.dp),
+            horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+                tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                else MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
 @Composable
 fun AssistantMemoryPage(id: String) {
     val vm: AssistantDetailVM = koinViewModel(
@@ -107,9 +157,13 @@ fun AssistantMemoryPage(id: String) {
     // 5.0.0 回贴：我方记忆条目（助手级）+ 单对话记忆
     val assistantMemories by vm.assistantMemories.collectAsStateWithLifecycle()
     val conversationMemories by vm.conversationMemories.collectAsStateWithLifecycle()
+    val folderMemories by vm.folderMemories.collectAsStateWithLifecycle(initialValue = emptyList())
     val navController = LocalNavController.current
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    val pagerState = rememberPagerState { MemoryTab.entries.size }
+    // v5.0.25 用户定案：记忆页分「记忆 / 设置」两个大卡（横向各半屏）
+    var memorySection by remember { mutableStateOf(MemorySection.MEMORY) }
+    var memoryScope by remember { mutableStateOf(MemoryScope.ASSISTANT) }
+    var memoryCategory by remember { mutableStateOf(MemoryCategory.ACTIVE) }
 
     Scaffold(
         topBar = {
@@ -121,7 +175,7 @@ fun AssistantMemoryPage(id: String) {
                     BackButton()
                 },
                 actions = {
-                    if (MemoryTab.entries[pagerState.currentPage] == MemoryTab.FILES) {
+                    if (memorySection == MemorySection.MEMORY && memoryCategory == MemoryCategory.DREAM) {
                         IconButton(onClick = { navController.navigate(Screen.MemoryFile(vm.memoryId, null)) }) {
                             Icon(HugeIcons.Add01, contentDescription = stringResource(R.string.add))
                         }
@@ -139,43 +193,102 @@ fun AssistantMemoryPage(id: String) {
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            PagerTabs(
-                pagerState = pagerState,
-                tabs = MemoryTab.entries,
-                modifier = Modifier.padding(bottom = 4.dp),
-                contentPadding = PaddingValues(horizontal = 16.dp),
-            )
-
-            HorizontalPager(
-                state = pagerState,
+            // v5.0.25：两个大卡（左记忆 / 右设置）
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
-            ) { page ->
-                when (MemoryTab.entries[page]) {
-                    MemoryTab.FILES -> MemoryFilesTab(
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                MemorySectionCard(
+                    label = stringResource(R.string.assistant_page_memory),
+                    icon = HugeIcons.Book02,
+                    selected = memorySection == MemorySection.MEMORY,
+                    modifier = Modifier.weight(1f),
+                ) { memorySection = MemorySection.MEMORY }
+                MemorySectionCard(
+                    label = stringResource(R.string.settings),
+                    icon = HugeIcons.Settings03,
+                    selected = memorySection == MemorySection.SETTINGS,
+                    modifier = Modifier.weight(1f),
+                ) { memorySection = MemorySection.SETTINGS }
+            }
+
+            if (memorySection == MemorySection.MEMORY) {
+                // 范围选择（助手 / 项目包 / 单对话）
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(
+                        selected = memoryScope == MemoryScope.ASSISTANT,
+                        onClick = { memoryScope = MemoryScope.ASSISTANT },
+                        label = { Text("助手记忆") },
+                    )
+                    FilterChip(
+                        selected = memoryScope == MemoryScope.FOLDER,
+                        onClick = { memoryScope = MemoryScope.FOLDER },
+                        label = { Text("项目包记忆") },
+                    )
+                    FilterChip(
+                        selected = memoryScope == MemoryScope.CONVERSATION,
+                        onClick = { memoryScope = MemoryScope.CONVERSATION },
+                        label = { Text("单对话记忆") },
+                    )
+                }
+                // 来源分类（主动写入 / 做梦整理）
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(
+                        selected = memoryCategory == MemoryCategory.ACTIVE,
+                        onClick = { memoryCategory = MemoryCategory.ACTIVE },
+                        label = { Text("主动写入") },
+                    )
+                    FilterChip(
+                        selected = memoryCategory == MemoryCategory.DREAM,
+                        onClick = { memoryCategory = MemoryCategory.DREAM },
+                        label = { Text("做梦整理") },
+                    )
+                }
+
+                if (memoryCategory == MemoryCategory.DREAM) {
+                    // 做梦整理 = 文件式记忆库（上游记忆 2.0）
+                    MemoryFilesTab(
                         memories = memories,
                         consolidation = consolidation.takeIf { assistant.enableMemory },
                         onOrganizeMemory = { vm.organizeMemory() },
                         onOpenMemory = { path -> navController.navigate(Screen.MemoryFile(vm.memoryId, path)) },
                         onDeleteMemory = { vm.deleteMemory(it) },
                     )
-
-                    MemoryTab.MEMORIES -> MemoryMemoriesTab(
-                        memories = assistantMemories,
-                        conversationMemories = conversationMemories,
+                } else {
+                    // 主动写入 = 条目式记忆，按范围过滤
+                    // v5.0.26：主动写入 = manual/user 来源的条目（dream 来源归「做梦整理」分类）
+                    val scopedMemories = when (memoryScope) {
+                        MemoryScope.ASSISTANT -> assistantMemories
+                        MemoryScope.FOLDER -> folderMemories
+                        MemoryScope.CONVERSATION -> emptyList()
+                    }.filter { it.source != "dream" }
+                    MemoryMemoriesTab(
+                        memories = scopedMemories,
+                        conversationMemories = if (memoryScope == MemoryScope.CONVERSATION) conversationMemories else emptyList(),
                         loadTitle = { vm.conversationTitle(it) },
                         loadRecentConversations = { vm.recentConversations() },
                         onAddMemory = { vm.addMemory(it) },
                         onUpdateMemory = { vm.updateMemory(it) },
                         onDeleteMemory = { vm.deleteMemory(it) },
                     )
-
-                    MemoryTab.SETTINGS -> MemorySettingsTab(
-                        assistant = assistant,
-                        onUpdateAssistant = { vm.update(it) },
-                    )
                 }
+            } else {
+                MemorySettingsTab(
+                    assistant = assistant,
+                    onUpdateAssistant = { vm.update(it) },
+                )
             }
         }
     }
@@ -270,6 +383,63 @@ private fun MemorySettingsTab(
                 enabled = assistant.enableMemory,
                 supportingContent = { Text("开启后，新记忆只挂载到当前对话：仅在该对话内可见，对话删除即销毁。") },
                 headlineContent = { Text("单对话记忆") },
+            )
+            // v5.0.54 用户定案：**新建记忆归属范围** — 三个锚点（助手 / 项目包 / 当前对话）
+            // 决定模型主动写入的记忆挂到哪个区块：助手级全助手可见；项目包内仅该包可见；对话级仅该对话可见。
+            item(
+                headlineContent = { Text("新建记忆归属") },
+                supportingContent = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            "模型主动写入（含做梦整理）的新记忆将挂到所选区块",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(
+                                0 to "助手级",
+                                1 to "项目包内",
+                                2 to "当前对话",
+                            ).forEach { (value, label) ->
+                                FilterChip(
+                                    selected = assistant.memoryWriteScope == value,
+                                    onClick = { onUpdateAssistant(assistant.copy(memoryWriteScope = value)) },
+                                    label = { Text(label) },
+                                    enabled = assistant.enableMemory,
+                                )
+                            }
+                        }
+                    }
+                },
+            )
+            // v5.0.16 用户定案：做梦（记忆整理）独立开关 + 范围限定
+            switchItem(
+                checked = assistant.memoryDreamEnabled,
+                onCheckedChange = {
+                    onUpdateAssistant(assistant.copy(memoryDreamEnabled = it))
+                },
+                enabled = assistant.enableMemory,
+                supportingContent = { Text("允许模型在对话结束后通过做梦主动整理并记录记忆") },
+                headlineContent = { Text("做梦主动记录") },
+            )
+            item(
+                headlineContent = { Text("做梦范围") },
+                supportingContent = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            0 to "整个助手",
+                            1 to "项目包内",
+                            2 to "当前对话",
+                        ).forEach { (value, label) ->
+                            FilterChip(
+                                selected = assistant.memoryDreamScope == value,
+                                onClick = { onUpdateAssistant(assistant.copy(memoryDreamScope = value)) },
+                                label = { Text(label) },
+                                enabled = assistant.enableMemory,
+                            )
+                        }
+                    }
+                },
             )
             switchItem(
                 checked = assistant.enableRecentChatsReference,

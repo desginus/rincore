@@ -196,6 +196,8 @@ class GenerationHandler(
     private val memoryRepo: MemoryRepository,
     private val settingsStore: SettingsStore,
     private val skillManager: me.rerere.rikkahub.data.files.SkillManager? = null,
+    // v5.0.54：记忆归属需要查会话所属项目包（memoryWriteScope=1 时写 folderId）
+    private val conversationRepository: me.rerere.rikkahub.data.repository.ConversationRepository? = null,
 ) {
 
     /**
@@ -474,12 +476,27 @@ class GenerationHandler(
                             onCreation = { content ->
                                 // v4.8.92: 单对话记忆模式开启时新记忆只挂载到当前对话；
                                 // 未开启则挂到助手，并记录来源对话（UI 小标签）。
+                                // v5.0.54 用户定案：**新建记忆归属**由 assistant.memoryWriteScope 锚定 —
+                                // 0=助手级（folderId/conversationId 都留空，全助手可见）
+                                // 1=项目包内（写 folderId，仅该包可见）2=当前对话（写 conversationId，仅该对话可见）
+                                // 兼容旧开关 conversationScopedMemory（true 等价 2）。
                                 val convId = conversationId?.toString()
+                                val writeScope = when {
+                                    assistant.memoryWriteScope != 0 -> assistant.memoryWriteScope
+                                    assistant.conversationScopedMemory -> 2
+                                    else -> 0
+                                }
+                                val folderIdOfConv = conversationId?.let { cid ->
+                                    runCatching {
+                                        conversationRepository?.getConversationById(cid)?.folderId?.toString()
+                                    }.getOrNull()
+                                }
                                 memoryRepo.addMemory(
                                     assistantId = memoryAssistantId,
                                     content = content,
-                                    conversationId = convId.takeIf { assistant.conversationScopedMemory },
+                                    conversationId = convId.takeIf { writeScope == 2 },
                                     sourceConversationId = convId,
+                                    folderId = folderIdOfConv.takeIf { writeScope == 1 },
                                 )
                             },
                             onUpdate = { id, content ->
@@ -567,12 +584,27 @@ class GenerationHandler(
                             onCreation = { content ->
                                 // v4.8.92: 单对话记忆模式开启时新记忆只挂载到当前对话；
                                 // 未开启则挂到助手，并记录来源对话（UI 小标签）。
+                                // v5.0.54 用户定案：**新建记忆归属**由 assistant.memoryWriteScope 锚定 —
+                                // 0=助手级（folderId/conversationId 都留空，全助手可见）
+                                // 1=项目包内（写 folderId，仅该包可见）2=当前对话（写 conversationId，仅该对话可见）
+                                // 兼容旧开关 conversationScopedMemory（true 等价 2）。
                                 val convId = conversationId?.toString()
+                                val writeScope = when {
+                                    assistant.memoryWriteScope != 0 -> assistant.memoryWriteScope
+                                    assistant.conversationScopedMemory -> 2
+                                    else -> 0
+                                }
+                                val folderIdOfConv = conversationId?.let { cid ->
+                                    runCatching {
+                                        conversationRepository?.getConversationById(cid)?.folderId?.toString()
+                                    }.getOrNull()
+                                }
                                 memoryRepo.addMemory(
                                     assistantId = memoryAssistantId,
                                     content = content,
-                                    conversationId = convId.takeIf { assistant.conversationScopedMemory },
+                                    conversationId = convId.takeIf { writeScope == 2 },
                                     sourceConversationId = convId,
+                                    folderId = folderIdOfConv.takeIf { writeScope == 1 },
                                 )
                             },
                             onUpdate = { id, content ->

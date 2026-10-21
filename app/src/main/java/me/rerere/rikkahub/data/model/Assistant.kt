@@ -37,6 +37,9 @@ data class Assistant(
     // 范围：0=整个助手 / 1=项目包内 / 2=当前对话
     val memoryDreamEnabled: Boolean = true,
     val memoryDreamScope: Int = 0,
+    /** v5.0.54 用户定案：新建记忆的归属范围 — 0=助手级 / 1=项目包内 / 2=当前对话。
+     *  决定模型主动写入的记忆挂到哪个区块（可见范围随之收窄）。 */
+    val memoryWriteScope: Int = 0,
     val enableRecentChatsReference: Boolean = false,
     val messageTemplate: String = "{{ message }}",
     val presetMessages: List<UIMessage> = emptyList(),

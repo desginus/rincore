@@ -235,6 +235,52 @@ internal fun FilesPicker(
                     .padding(bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                // v5.0.54 ★用户实证修复：压缩后**上下文留存管理横条**曾丢失（数据一直在，入口没了）。
+                // 用户看不到压缩记录、也无法撤销 → 误以为历史被彻底丢弃。恢复 4.8.190 的横条 + 位点弹窗。
+                run {
+                    val retentions = conversation.compressRetentions
+                    if (retentions.isNotEmpty() || conversation.compressedContext != null) {
+                        var showRetentionDialog by remember { mutableStateOf(false) }
+                        Surface(
+                            onClick = { showRetentionDialog = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                            ) {
+                                Icon(
+                                    me.rerere.hugeicons.stroke.ArrowTurnBackward,
+                                    null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "上下文压缩管理",
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                        }
+                        if (showRetentionDialog) {
+                            CompressRetentionDialog(
+                                retentions = retentions,
+                                hasLegacy = conversation.compressedContext != null && retentions.isEmpty(),
+                                legacyNodes = conversation.compressedContext?.savedMessageNodes,
+                                onRestore = { index ->
+                                    onRestoreCompressAt?.invoke(index.toLong())
+                                    showRetentionDialog = false
+                                },
+                                onDismiss = { showRetentionDialog = false },
+                            )
+                        }
+                    }
+                }
+
                 val contextTokens = remember(conversation.messageNodes) { conversation.lastContextTokens() }
                 val contextLength = chatModel?.contextLength?.takeIf { it > 0 }
                 val remainingText = if (contextTokens != null && contextLength != null) {
@@ -736,5 +782,131 @@ private fun AttachmentGridPreview() {
             AttachmentAction(HugeIcons.Files02, R.string.upload_file) {},
         ),
         modifier = Modifier.padding(16.dp),
+    )
+}
+
+private fun CompressRetentionDialog(
+    retentions: List<me.rerere.rikkahub.data.model.CompressRetention>,
+    hasLegacy: Boolean,
+    legacyNodes: List<MessageNode>? = null,
+    onRestore: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var viewNodes by remember { mutableStateOf<List<MessageNode>?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("上下文压缩管理") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "恢复某个位点将一并撤销其之后的所有压缩",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (retentions.isEmpty() && hasLegacy) {
+                    RetentionItem(
+                        label = "旧版压缩记录",
+                        note = "完整对话已被压缩",
+                        onView = { viewNodes = legacyNodes },
+                        onRestore = { onRestore(0) },
+                    )
+                }
+                retentions.forEachIndexed { index, r ->
+                    RetentionItem(
+                        label = r.retentionLabel.ifBlank { "压缩留存" },
+                        note = if (index > 0) "恢复将同时撤销其后的 $index 个压缩" else "恢复到此点状态",
+                        onView = { viewNodes = r.summaryMessageNodes.ifEmpty { r.savedMessageNodes } },
+                        onRestore = { onRestore(index) },
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("关闭") }
+        },
+    )
+
+    viewNodes?.let { nodes ->
+        RetentionDetailDialog(nodes = nodes) { viewNodes = null }
+    }
+}
+
+// v3.8.19: 位点条目改条状窄 UI — 单行横排, 时间戳可收缩, 操作按钮紧凑
+@Composable
+private fun RetentionItem(
+    label: String,
+    note: String,
+    onView: () -> Unit,
+    onRestore: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (note.isNotBlank()) {
+                    Text(
+                        note,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            TextButton(
+                onClick = onView,
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+            ) {
+                Text("查看", style = MaterialTheme.typography.labelSmall)
+            }
+            TextButton(
+                onClick = onRestore,
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+            ) {
+                Text("恢复", style = MaterialTheme.typography.labelSmall)
+            }
+        }
+    }
+}
+
+// v3.8.19: 查看显示本次压缩得到的摘要 (不再累积原文)
+@Composable
+private fun RetentionDetailDialog(nodes: List<MessageNode>, onDismiss: () -> Unit) {
+    val text = remember(nodes) {
+        nodes.joinToString("\n\n---\n\n") { node ->
+            runCatching { node.currentMessage }.getOrNull()?.parts
+                ?.filterIsInstance<UIMessagePart.Text>()
+                ?.joinToString("\n") { it.text }
+                ?: ""
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("压缩摘要") },
+        text = {
+            Text(
+                text.takeIf { it.isNotBlank() } ?: "(无文本内容)",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp)
+                    .verticalScroll(rememberScrollState()),
+            )
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
     )
 }

@@ -90,6 +90,41 @@ class AssistantDetailVM(
             scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = emptyList()
         )
 
+    /** 我方记忆 1.0：助手级记忆条目（「记忆」Tab 列表与管理用；与写入桶同口径）。 */
+    val assistantMemories = assistant
+        .flatMapLatest { currentAssistant ->
+            if (currentAssistant.useGlobalMemory) {
+                memoryRepository.getGlobalMemoriesFlow()
+            } else {
+                memoryRepository.getMemoriesOfAssistantFlow(assistantId.toString())
+            }
+        }
+        .stateIn(
+            scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = emptyList()
+        )
+
+    /** v5.0.25：助手名下全部项目包记忆（记忆页「项目包」范围） */
+    val folderMemories = assistant
+        .map { it.id }
+        .flatMapLatest { id -> memoryRepository.getFolderMemoriesOfAssistantFlow(id.toString()) }
+        .stateIn(
+            scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = emptyList()
+        )
+
+    /** v4.8.92 / v5.0.25：助手名下全部单对话记忆（记忆页「单对话」范围） */
+    val conversationMemories = assistant
+        .flatMapLatest { currentAssistant ->
+            val scopeId = if (currentAssistant.useGlobalMemory) {
+                MemoryRepository.GLOBAL_MEMORY_ID
+            } else {
+                assistantId.toString()
+            }
+            memoryRepository.getConversationMemoriesOfAssistantFlow(scopeId)
+        }
+        .stateIn(
+            scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = emptyList()
+        )
+
     /** 上游 3.0.0 记忆 2.0：Markdown 记忆文件库（FILES Tab）。 */
     val memories = assistant
         .flatMapLatest { currentAssistant ->

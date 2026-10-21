@@ -166,7 +166,8 @@ val dataSourceModule = module {
             json = get(),
             memoryRepo = get(),
             settingsStore = get(),
-            skillManager = getOrNull()
+            skillManager = getOrNull(),
+            conversationRepository = get()
         )
     }
 
