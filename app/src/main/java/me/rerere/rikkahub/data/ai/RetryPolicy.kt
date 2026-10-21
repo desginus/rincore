@@ -209,6 +209,15 @@ object RetryDecision {
         phase: RetryPhase,
         autoRetryEnabled: Boolean,
         fastFailStreak: Int = 0,
+        /**
+         * v5.0.61: 服务器建议的重试等待（来自 `Retry-After` 头，已在
+         * [me.rerere.ai.core.RetryAfter] 里封顶 120s）。
+         *
+         * 优先级最高 —— 服务器说"等 30s"就别 0.5s 再去撞（429/503 场景
+         * 固定短间隔重试会被上游判成恶意流量，越炸越狠）。仅作用于
+         * Init / Stream 两条链；思考静默（DataTimeout）不读它。
+         */
+        retryAfterMs: Long? = null,
         jitter: Boolean = true,
     ): RetryVerdict = when (failure) {
         is StreamFailure.InitPhase -> when {
@@ -218,11 +227,16 @@ object RetryDecision {
             !phase.hasQuota -> RetryVerdict.Abort((phase as RetryPhase.Init).exhaustedMessage())
             else -> {
                 val p = phase as RetryPhase.Init
-                val raw = if (failure.headerDead) 0L else p.backoffMs(p.used + 1, jitter)
+                val raw = when {
+                    retryAfterMs != null -> retryAfterMs
+                    failure.headerDead -> 0L
+                    else -> p.backoffMs(p.used + 1, jitter)
+                }
                 val delay = applyFastFail(raw, fastFailStreak)
                 RetryVerdict.Retry(
                     delay,
                     "connect fail, retry ${p.used + 1}/${p.total} (headerDead=${failure.headerDead}" +
+                        (if (retryAfterMs != null) ", retryAfter=${retryAfterMs}ms" else "") +
                         (if (fastFailStreak >= FAST_FAIL_THRESHOLD) ", fastFail=$fastFailStreak" else "") + ")"
                 )
             }
@@ -234,11 +248,12 @@ object RetryDecision {
             !phase.hasQuota -> RetryVerdict.Abort((phase as RetryPhase.Stream).exhaustedMessage())
             else -> {
                 val p = phase as RetryPhase.Stream
-                val raw = p.delayMs(jitter)
+                val raw = retryAfterMs ?: p.delayMs(jitter)
                 val delay = applyFastFail(raw, fastFailStreak)
                 RetryVerdict.Retry(
                     delay,
                     "${p.describe()} retry ${p.used + 1}/${p.total}" +
+                        (if (retryAfterMs != null) " retryAfter=${retryAfterMs}ms" else "") +
                         (if (fastFailStreak >= FAST_FAIL_THRESHOLD) " fastFail=$fastFailStreak" else "")
                 )
             }

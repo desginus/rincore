@@ -2040,12 +2040,15 @@ class GenerationHandler(
                         retry.fastFailStreak++
                     }
                 }
+                // v5.0.61: 429/503 若带 Retry-After，按服务器说的等（封顶 120s）
+                val retryAfterMs = (e as? me.rerere.ai.core.RetryAfterException)?.retryAfterMs
                 when (
                     val verdict = RetryDecision.decide(
                         failure = failure,
                         phase = phase,
                         autoRetryEnabled = settings.networkSetting.enableAutoRetry,
                         fastFailStreak = retry.fastFailStreak,
+                        retryAfterMs = retryAfterMs,
                     )
                 ) {
                     is RetryVerdict.Retry -> {

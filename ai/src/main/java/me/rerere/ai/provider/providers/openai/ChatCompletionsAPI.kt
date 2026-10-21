@@ -646,9 +646,26 @@ class ChatCompletionsAPI(
 
                 // 4.0.1: 5xx 服务端瞬时错误转 IOException 进重试链 (与 ClaudeProvider 同步) —
                 // HttpException 是 RuntimeException, 重试链只捕 IOException, 不转则 500 终态失败
-                if (exception != null && response?.code in 500..599 && exception !is IOException) {
-                    Log.w(TAG, "server error ${response?.code} — wrapping as IOException for retry chain")
-                    exception = IOException("[${response?.code}] ${exception.message}", exception)
+                // v5.0.61: 5xx **与 429** 都进重试链，并且优先尊重服务器的 Retry-After
+                // （之前 429 走同一分支但不读头 → 服务器说"等 30s"，我们 0.5s 再去撞）。
+                val retryableCode = response?.code ?: 0
+                if (exception != null && (retryableCode in 500..599 || retryableCode == 429) && exception !is IOException) {
+                    val suggested = me.rerere.ai.core.RetryAfter.parse(response?.header("Retry-After"))
+                    Log.w(
+                        TAG,
+                        "server error $retryableCode — wrapping for retry chain" +
+                            (if (suggested != null) " (Retry-After=${suggested}ms)" else ""),
+                    )
+                    exception = if (suggested != null) {
+                        me.rerere.ai.core.RetryAfterException(
+                            retryAfterMs = suggested,
+                            httpCode = retryableCode,
+                            message = "[$retryableCode] ${exception.message}",
+                            cause = exception,
+                        )
+                    } else {
+                        IOException("[$retryableCode] ${exception.message}", exception)
+                    }
                 }
 
                 // v4.8.54: 聚合网关上游瞬时错误场景分流 (与 v4.8.39 ResponseAPI 同款, 用户实证

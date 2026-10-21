@@ -113,6 +113,56 @@ class RetryPolicyTest {
         assertEquals(2_000L, (v as RetryVerdict.Retry).delayMs)
     }
 
+    // ── Retry-After（v5.0.61） ──
+
+    @Test
+    fun `服务器 Retry-After 优先于本地退避`() {
+        val v = RetryDecision.decide(
+            StreamFailure.StreamInterrupted,
+            RetryPhase.Stream(used = 0),
+            autoRetryEnabled = true,
+            retryAfterMs = 30_000L,
+            jitter = false,
+        )
+        assertEquals(30_000L, (v as RetryVerdict.Retry).delayMs)
+    }
+
+    @Test
+    fun `没有 Retry-After 时仍走本地退避`() {
+        val v = RetryDecision.decide(
+            StreamFailure.StreamInterrupted,
+            RetryPhase.Stream(used = 0),
+            autoRetryEnabled = true,
+            retryAfterMs = null,
+            jitter = false,
+        )
+        assertEquals(500L, (v as RetryVerdict.Retry).delayMs)
+    }
+
+    @Test
+    fun `Init 链也尊重 Retry-After`() {
+        val v = RetryDecision.decide(
+            StreamFailure.InitPhase(headerDead = true),
+            RetryPhase.Init(used = 0),
+            autoRetryEnabled = true,
+            retryAfterMs = 12_000L,
+            jitter = false,
+        )
+        // headerDead 原本不等待（0ms），但服务器明确要求 12s → 听服务器的
+        assertEquals(12_000L, (v as RetryVerdict.Retry).delayMs)
+    }
+
+    @Test
+    fun `思考静默不吃 Retry-After`() {
+        val v = RetryDecision.decide(
+            StreamFailure.DataTimeout,
+            RetryPhase.DataTimeout(used = 0),
+            autoRetryEnabled = true,
+            retryAfterMs = 60_000L,
+        )
+        assertEquals(2_000L, (v as RetryVerdict.Retry).delayMs)
+    }
+
     // ── 自动重试开关 ──
 
     @Test

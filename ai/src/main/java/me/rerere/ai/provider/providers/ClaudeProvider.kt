@@ -493,14 +493,31 @@ class ClaudeProvider(
                     val isTransient = when {
                         httpCode == null -> exception !is java.io.IOException
                         httpCode in 500..599 -> exception !is java.io.IOException
+                        // v5.0.61: 429 限流同样是有价值重试（且必须尊重 Retry-After）
+                        httpCode == 429 -> exception !is java.io.IOException
                         else -> false
                     }
                     if (exception != null && isTransient) {
-                        Log.w(TAG, "transient server failure (code=${httpCode ?: "null"}) — wrapping as IOException for retry chain")
-                        exception = java.io.IOException(
-                            "[${httpCode ?: "hang"}] ${exception.message}",
-                            exception,
+                        // v5.0.61: 读服务器 Retry-After（秒数或 HTTP-date，封顶 120s）
+                        val suggested = me.rerere.ai.core.RetryAfter.parse(response?.header("Retry-After"))
+                        Log.w(
+                            TAG,
+                            "transient server failure (code=${httpCode ?: "null"}) — wrapping for retry chain" +
+                                (if (suggested != null) " (Retry-After=${suggested}ms)" else ""),
                         )
+                        exception = if (suggested != null) {
+                            me.rerere.ai.core.RetryAfterException(
+                                retryAfterMs = suggested,
+                                httpCode = httpCode ?: 0,
+                                message = "[${httpCode ?: "hang"}] ${exception.message}",
+                                cause = exception,
+                            )
+                        } else {
+                            java.io.IOException(
+                                "[${httpCode ?: "hang"}] ${exception.message}",
+                                exception,
+                            )
+                        }
                     }
                     TraceLogger.dumpAndLog(TAG, exception ?: Exception("Unknown"), 60)
                     close(exception)
