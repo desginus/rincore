@@ -791,6 +791,7 @@ private fun ChatPageContent(
                 setting = setting,
                 conversation = conversation,
                 assistant = assistant,
+                chatModel = currentChatModel,
                 vm = vm,
                 attachmentPickerActions = attachmentPickerActions,
                 onStartVoiceMode = onStartVoiceMode,
@@ -847,7 +848,7 @@ private fun ChatFilesPickerSheet(
             conversation = conversation,
             state = inputState,
             assistant = assistant,
-            chatModel = currentChatModel,
+            chatModel = chatModel,
             mcpManager = vm.mcpManager,
             onCompressContext = { additionalPrompt, targetTokens, keepRecentMessages ->
                 vm.handleCompressContext(additionalPrompt, targetTokens, keepRecentMessages)
