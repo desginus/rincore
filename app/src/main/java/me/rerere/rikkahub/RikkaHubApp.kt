@@ -103,6 +103,10 @@ class RikkaHubApp : Application() {
         } catch (e: RestoreFailedException) {
             Log.e(TAG, "Backup restore rolled back", e)
             Toast.makeText(this, "备份恢复失败，已保留原数据。请重新导入备份。", Toast.LENGTH_LONG).show()
+        } catch (e: Throwable) {
+            // v5.0.49：原只捕获 RestoreFailedException，其它异常（OOM/空间不足/IO）会穿透 → 启动即闪退。
+            Log.e(TAG, "Backup restore crashed", e)
+            Toast.makeText(this, "备份恢复异常：${e.message ?: e.javaClass.simpleName}（原数据已保留）", Toast.LENGTH_LONG).show()
         }
         // v3.8.34: 运行日志持久化存储初始化 (轮次会话, 最多 10 轮)
         LogSessionStore.init(this)
@@ -126,6 +130,19 @@ class RikkaHubApp : Application() {
             androidContext(this@RikkaHubApp)
             workManagerFactory()
             modules(appModule, viewModelModule, dataSourceModule, repositoryModule, operitModule)
+        }
+        // v5.0.49 用户定案：**让工作区从零可用**。
+        // 备份里工作区"文件"在 workspaces.tar.gz，"条目"在 database 的 workspaces 表。
+        // 若用户只勾「文件与工作区」未勾「聊天记录」，或 DB 回滚，就会出现"目录在、列表空"。
+        // → 启动时扫描目录，给缺失的工作区补登记条目（root 用相对 id，跨包名安全），绝不删改已有数据。
+        get<AppScope>().launch(Dispatchers.IO) {
+            runCatching {
+                val added = me.rerere.rikkahub.data.workspace.WorkspaceHealer.heal(
+                    this@RikkaHubApp,
+                    get<me.rerere.rikkahub.data.db.dao.WorkspaceDAO>(),
+                )
+                if (added > 0) Log.i(TAG, "workspace healer: 补登记 $added 个工作区（目录在但 DB 无条目）")
+            }.onFailure { Log.w(TAG, "workspace healer failed", it) }
         }
         // v4.5.29 岔路口计划·阶段2: 刷新已启用 Operit 脚本工具缓存
         get<me.rerere.rikkahub.data.operit.runtime.OperitToolProvider>().let { provider ->

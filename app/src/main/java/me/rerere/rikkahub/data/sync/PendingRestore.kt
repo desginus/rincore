@@ -75,10 +75,11 @@ internal class PendingRestore(
             }
             val settings = File(pending, "settings.json")
             if (settings.isFile) restoreSettings(settings.readText())
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // v5.0.48：原只 catch Exception，IllegalArgumentException/Error 类会穿透 → 启动即闪退。
             try {
                 rollback(entries)
-            } catch (rollbackError: Exception) {
+            } catch (rollbackError: Throwable) {
                 e.addSuppressed(rollbackError)
                 // Do not start the app with a partially restored database. Keep the journal for retry.
                 throw e
@@ -164,8 +165,14 @@ internal class PendingRestore(
                 '\\' !in relativePath && relativePath.split('/').none { it == ".." || it == "." }) {
                 "Invalid backup file path: $relativePath"
             }
-            val target = File(root, relativePath).canonicalFile
-            require(target.path.startsWith(root.canonicalPath + File.separator)) {
+            // v5.0.48 用户实证修复：此处原用 canonicalFile —— 它会把**符号链接解析成真实路径**。
+            // rootfs 里 /bin→usr/bin、/lib→usr/lib 这类链接一旦被解析，路径就跳出 root，
+            // require 直接抛 "Backup file is outside its target directory" → 启动时 restore 抛异常 → 闪退。
+            // 改为纯路径规范化（不解析链接），安全性仍由上面的字符串检查保证（拒绝绝对路径/'..'/'\\'）。
+            val target = File(root, relativePath)
+            val rootPath = root.absolutePath.trimEnd(File.separatorChar)
+            val targetPath = target.absolutePath
+            require(targetPath == rootPath || targetPath.startsWith(rootPath + File.separator)) {
                 "Backup file is outside its target directory"
             }
             return target
