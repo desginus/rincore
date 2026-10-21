@@ -196,4 +196,4 @@ internal class PendingRestore(
 }
 
 /** Only thrown when original files are intact and the failed import has been isolated. */
-internal class RestoreFailedException(cause: Exception) : Exception("Backup restore failed; original files restored", cause)
+internal class RestoreFailedException(cause: Throwable) : Exception("Backup restore failed; original files restored", cause)
