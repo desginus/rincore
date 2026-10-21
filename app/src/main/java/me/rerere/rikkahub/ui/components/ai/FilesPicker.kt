@@ -7,6 +7,7 @@ package me.rerere.rikkahub.ui.components.ai
  * 功能: 附件/文件选择器
  * 差异: 工作区文件源接入, 选择与预览逻辑扩展
  * ───────────────────────────────────────────────────────────────*/
+import androidx.compose.material3.Badge
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -132,7 +133,7 @@ internal fun FilesPicker(
     onPickFile: () -> Unit,
     onStartVoiceMode: (() -> Unit)? = null,
     // v5.0.42：回滚 5.0.15 后兼容当前 ChatPage 调用签名
-    chatModel: me.rerere.rikkahub.data.model.Model? = null,
+    chatModel: me.rerere.ai.provider.Model? = null,
     onSketch: (() -> Unit)? = null,
     onUpdateWorkspaceCwd: ((String?) -> Unit)? = null,
 ) {
