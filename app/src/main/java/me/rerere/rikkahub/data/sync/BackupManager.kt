@@ -48,11 +48,26 @@ class BackupManager(
         onProgress: ((stage: String, bytes: Long) -> Unit)? = null,
     ): File = withContext(Dispatchers.IO) {
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
+        // v5.0.45 用户实证：导出中途进程被杀 → finally 不执行 → cache 里留下 20G+ 的
+        // staging 目录与半成品 zip（"文件没导出来，存储却被占了"）。每次导出前先清残留。
+        runCatching {
+            context.cacheDir.listFiles()?.forEach { f ->
+                if (f.name.startsWith("backup-") || f.name.startsWith("backup_")) {
+                    f.deleteRecursively()
+                }
+            }
+        }
         val archive = File.createTempFile("backup_${timestamp}_", ".zip", context.cacheDir)
         val staging = Files.createTempDirectory(context.cacheDir.toPath(), "backup-").toFile()
         try {
             val settings = settingsStore.settingsFlow.first()
-            ZipOutputStream(FileOutputStream(archive)).use { zip ->
+            ZipOutputStream(FileOutputStream(archive)).apply {
+                // v5.0.45 关键修复：设 NO_COMPRESSION。
+                // workspaces.tar.gz 本身已是 gzip 压缩，zip 再 DEFLATE 一遍纯属浪费：
+                // 20G 数据会把 CPU 打满数十分钟，应用在后台被系统杀掉（用户实测"提示导出中→回主页→文件没有"）。
+                // 存储介质写入带宽远高于此，不压缩后耗时从数十分钟降到数分钟级。
+                setLevel(java.util.zip.Deflater.NO_COMPRESSION)
+            }.use { zip ->
                 zip.putNextEntry(ZipEntry("settings.json"))
                 zip.write(json.encodeToString(settings).toByteArray(Charsets.UTF_8))
                 zip.closeEntry()

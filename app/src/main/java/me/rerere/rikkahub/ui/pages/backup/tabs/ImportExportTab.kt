@@ -240,7 +240,8 @@ fun ImportExportTab(
                             // v5.0.44：三阶段共用（打包工作区 / 归档工作区 / 写入文件），文案通用化
                             isExporting && prog != null ->
                                 "${prog.first}：${"%.1f".format(prog.second / 1024.0 / 1024.0)} MB…"
-                            isExporting -> stringResource(R.string.backup_page_exporting)
+                            // v5.0.45：导出是长任务，系统在后台可能杀进程 → 明确要求保持前台
+                            isExporting -> "导出中…（请保持应用在前台，不要切走）"
                             else -> stringResource(R.string.backup_page_export_desc)
                         }
                     )
