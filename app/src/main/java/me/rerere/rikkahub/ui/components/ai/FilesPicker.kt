@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.ai
 
+import me.rerere.ai.ui.UIMessagePart
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
@@ -259,7 +260,7 @@ internal fun FilesPicker(
                                 horizontalArrangement = Arrangement.Center,
                             ) {
                                 Icon(
-                                    me.rerere.hugeicons.stroke.ArrowTurnBackward,
+                                    ArrowTurnBackward,
                                     null,
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(18.dp),
@@ -791,6 +792,7 @@ private fun AttachmentGridPreview() {
     )
 }
 
+@Composable
 private fun CompressRetentionDialog(
     retentions: List<me.rerere.rikkahub.data.model.CompressRetention>,
     hasLegacy: Boolean,
