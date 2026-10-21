@@ -65,6 +65,12 @@ class SubAgentBudget(private val settingsStore: SettingsStore) {
     /** 当前上限（默认 1000K；v4.8.108 由 100K 提升——口径=账单口径） */
     fun limit(): Long = settingsStore.settingsFlow.value.subagentTokenBudget.coerceAtLeast(MIN_LIMIT)
 
+    /** v5.0.57：设置总预算上限（UI 滑杆保存）。低于 MIN_LIMIT 会被夹到硬下限。 */
+    suspend fun setLimit(limit: Long) {
+        val v = limit.coerceAtLeast(MIN_LIMIT)
+        settingsStore.update { it.copy(subagentTokenBudget = v) }
+    }
+
     /** 已用 = 落盘值 + 未落盘增量 */
     fun used(conversationId: String): Long =
         (settingsStore.settingsFlow.value.subagentTokenUsage[conversationId] ?: 0L) +

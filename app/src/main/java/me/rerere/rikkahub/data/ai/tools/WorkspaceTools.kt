@@ -601,6 +601,25 @@ private fun createGrepTool(
  * v4.6.1: 文件名搜索 (Glob) — 对齐业界: "File search: Use Glob (NOT find or ls)"。
  * 输出按修改时间倒序 (最新在前)。
  */
+/**
+ * v5.0.57: 通配符 → 正则（glob 语义：* 任意字符含 '/'，? 单字符，其余字面量）。
+ * 与 find -name / -path 的口径对齐：GNU find 的 * 可跨目录，故这里 * 映射为 ".*"。
+ */
+private fun globToRegex(glob: String): Regex {
+    val sb = StringBuilder("^")
+    for (ch in glob) {
+        when (ch) {
+            '*' -> sb.append(".*")
+            '?' -> sb.append('.')
+            '.', '(', ')', '+', '|', '^', '$', '@', '%', '[', ']', '{', '}', '\\' ->
+                sb.append('\\').append(ch)
+            else -> sb.append(ch)
+        }
+    }
+    sb.append('$')
+    return Regex(sb.toString())
+}
+
 private fun createGlobTool(
     workspaceId: String,
     needsApproval: (String) -> Boolean,
@@ -652,33 +671,47 @@ private fun createGlobTool(
         if (pathMode && !findPathPattern.startsWith("/") && !findPathPattern.startsWith("*")) {
             findPathPattern = "*/$findPathPattern"
         }
-        val matchArg = if (pathMode) "-path ${findPathPattern.shellQuote()}" else "-name $patternArg"
-        // mtime 倒序 (find -printf 不支持时降级为原序) — 全路径输出
-        // v4.8.82: 同 grep — 多取 1 行以精确区分"正好 N 个"与"不止 N 个"
-        val fetchLimit = maxResults + 1
-        val command = """
-            if find $pathArg -maxdepth 0 -printf '' 2>/dev/null; then
-              find $pathArg -type f $matchArg -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -n $fetchLimit | cut -d' ' -f2-
-            else
-              find $pathArg -type f $matchArg 2>/dev/null | head -n $fetchLimit
-            fi
-            exit 0
-        """.trimIndent()
-        val result = workspaceRepository.executeCommand(workspaceId, command, defaultCwd.orEmpty())
-        val output = (result.stdout ?: "").trim()
-        val lines = if (output.isBlank()) emptyList() else output.split('\n')
-        val truncated = lines.size > maxResults
-        // v4.8.135: truncated 时给出真实总数 (旧实现只报"已显示数", 无法判断规模)
-        var totalCount: Int? = null
-        if (truncated) {
-            totalCount = runCatching {
-                workspaceRepository.executeCommand(
-                    workspaceId,
-                    "find $pathArg -type f $matchArg 2>/dev/null | wc -l",
-                    defaultCwd.orEmpty(),
-                ).stdout?.trim()?.toIntOrNull()
-            }.getOrNull()
+        // v5.0.57 ★性能优化（用户要求「工具运行更快」）：原实现每次 workspace_glob 都
+        // 启动一个 proot 进程（冷启动 1-3 秒），且 truncated 时再起一次 `find | wc -l`，
+        // 双重冷启动。改为**原生文件遍历**（零进程），语义保持一致：
+        //   · 不含 '/' 或 "**" → 按文件名匹配（等价 find -name）
+        //   · 含 '/' 或 "**"   → 按相对整路径匹配（等价 find -path，* 可跨目录）
+        //   · mtime 倒序输出；truncated 时直接给出真实总数（不再二次启动）。
+        val relPath = searchPath.removePrefix("/workspace").trim('/')
+        val baseDir = runCatching {
+            workspaceRepository.resolveFile(
+                workspaceId,
+                me.rerere.workspace.WorkspaceStorageArea.FILES,
+                if (relPath.isBlank()) "/" else relPath,
+            )
+        }.getOrNull()
+        val matchedPaths: List<String> = if (baseDir == null) {
+            emptyList()
+        } else {
+            val nameRegex = runCatching { globToRegex(pattern) }.getOrNull()
+            val pathRegex = runCatching { globToRegex(findPathPattern) }.getOrNull()
+            baseDir.walkTopDown()
+                .onEnter { it.absolutePath.length < 4096 }
+                .filter { it.isFile }
+                .filter { f ->
+                    if (pathMode) {
+                        val rel = f.relativeTo(baseDir).invariantSeparatorsPath
+                        pathRegex?.matches(rel) == true || pathRegex?.matches("/$rel") == true
+                    } else {
+                        nameRegex?.matches(f.name) == true
+                    }
+                }
+                .sortedByDescending { it.lastModified() }
+                .map { f ->
+                    val rel = f.relativeTo(baseDir).invariantSeparatorsPath
+                    if (relPath.isBlank()) "$searchPath/$rel" else searchPath + "/" + rel
+                }
+                .toList()
         }
+        val lines = matchedPaths.take(maxResults + 1)
+        val truncated = matchedPaths.size > maxResults
+        var totalCount: Int? = null
+        if (truncated) totalCount = matchedPaths.size
         listOf(
             UIMessagePart.Text(
                 buildJsonObject {

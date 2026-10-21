@@ -477,6 +477,44 @@ class WorkspaceRepository(
 
     /** 按 Rootfs 内绝对路径读取文件大小, 支持 /workspace、bind mount 与 Rootfs 内部路径。
      *  v4.5.27: cwd 非空时 /workspace 解析到助手级子目录 (CWD 专一空间)。 */
+    /**
+     * v5.0.57 ★「本对话产出点击后统一提示未找到文件」的根因修复配套：
+     * 宿主侧按文件名查找（不经 proot，零进程启动、可限深、毫秒级）。
+     *
+     * 原兜底是 `workspace_shell: find /workspace -type f -name xxx`：
+     *  · proot 冷启动 1-3s；
+     *  · 工作区几十万文件时遍历极慢（`DEFAULT_COMMAND_TIMEOUT_MS` 是 600s）；
+     *  · 一旦拿不到输出就统一返回「未找到文件」，用户点任何产出都失败。
+     * 这里直接在 `<ws>/files` 下 walk，语义（文件名匹配、排除 .versions）保持一致。
+     */
+    suspend fun findFilesByBasename(
+        id: String,
+        name: String,
+        limit: Int = 50,
+    ): List<String> = withContext(Dispatchers.IO) {
+        if (name.isBlank()) return@withContext emptyList()
+        val workspace = dao.getById(id) ?: return@withContext emptyList()
+        manager.ensureWorkspace(workspace.root)
+        val base = manager.filesDir(workspace.root)
+        if (!base.isDirectory) return@withContext emptyList()
+        val out = ArrayList<String>()
+        runCatching {
+            base.walkTopDown()
+                .onEnter { dir ->
+                    // 剪掉版本快照与超大构建目录，避免白跑
+                    val n = dir.name
+                    n != ".versions" && n != "node_modules" && n != ".git"
+                }
+                .filter { it.isFile && it.name == name }
+                .forEach { f ->
+                    val rel = f.relativeTo(base).invariantSeparatorsPath
+                    out += "/workspace/$rel"
+                    if (out.size >= limit) return@runCatching
+                }
+        }
+        out.take(limit)
+    }
+
     suspend fun rootfsFileSize(
         id: String,
         path: String,

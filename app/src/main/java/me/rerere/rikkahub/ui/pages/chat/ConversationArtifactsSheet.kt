@@ -115,7 +115,10 @@ fun ConversationArtifactsSheet(
     // 也在此归一后再去重, 同一文件不多列; 解析链本就有多候选探针, 归一后仍可命中。
     val displayFiles = remember(files, assistant) {
         files
-            .map { f -> f.copy(path = ProducedFiles.canonicalPath(f.path, assistant?.workspaceCwd)) }
+            // v5.0.57：记录入库时已完成规范化（record 的 extractPath 带同一 cwd），
+            // 这里再调一次 canonicalPath 会在 cwd 带前缀时叠出 /workspace/workspace/... 双前缀，
+            // 导致「点任何产出都提示未找到文件」。直接使用已规范化路径。
+            .map { f -> f }
             .distinctBy { it.path }
     }
 

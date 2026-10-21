@@ -507,6 +507,11 @@ internal suspend fun resolveScopedFile(
             probes.add("/workspace/$v")
         } else {
             probes.add(v)
+            // v5.0.57：兼容历史脏数据 —— cwd 前缀重复拼接曾产生 "/workspace/workspace/xxx"，
+            // 剥掉重复的 workspace 段后再探一次，旧记录也能点开。
+            if (v.startsWith("/workspace/workspace/")) {
+                probes.add("/workspace/" + v.removePrefix("/workspace/workspace/"))
+            }
             if (v.startsWith("/workspace/")) {
                 // scope 相对形: "/workspace/xxx" 在旧 CWD 下实际位于 /workspace/<cwd>/xxx
                 val rel = v.removePrefix("/workspace/")
@@ -522,18 +527,15 @@ internal suspend fun resolveScopedFile(
     for (p in probes) if (exists(p)) return ScopedResolution.Resolved(p)
 
     // ③ 模糊: 按文件名全库查找 (排除版本快照), 后缀深度择优
+    // v5.0.57 ★根因修复：原实现走 `executeCommand("find /workspace ...")` —— proot 冷启动
+    // + 几十万文件全遍历（超时上限 600s），一旦拿不到输出就统一报「未找到文件」，
+    // 用户点「本对话产出」里任何文件都失败。改为**宿主侧 walk**（findFilesByBasename），
+    // 零进程启动、排除 .versions/node_modules/.git，毫秒级返回。
     val base = chip.raw.substringAfterLast('/').trim()
     if (base.isEmpty()) return ScopedResolution.NotFound("路径无效: ${chip.raw}")
-    val safeName = base.replace("'", "")
-    val stdout = runCatching {
-        repository.executeCommand(
-            workspaceId,
-            "find /workspace -type f -name '$safeName' -not -path '*/.versions/*' 2>/dev/null | head -50",
-            "",
-            me.rerere.workspace.WorkspaceManager.DEFAULT_COMMAND_TIMEOUT_MS,
-        ).stdout.orEmpty()
-    }.getOrDefault("")
-    val hits = stdout.lineSequence().map { it.trim() }.filter { it.startsWith("/workspace/") }.distinct().toList()
+    val hits = runCatching {
+        repository.findFilesByBasename(workspaceId, base, limit = 50)
+    }.getOrDefault(emptyList()).distinct()
     if (hits.isEmpty()) return ScopedResolution.NotFound("未找到文件: ${chip.raw}")
     if (hits.size == 1) return ScopedResolution.Resolved(hits[0])
     val rawSegs = chip.raw.split('/').filter { it.isNotBlank() }

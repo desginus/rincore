@@ -182,6 +182,8 @@ internal fun FilesPicker(
     val sketchScope = rememberCoroutineScope()
     val filesManager: FilesManager = koinInject()
     val subAgentRegistry: SubAgentRegistry = koinInject()
+    // v5.0.57：预算面板需要 SubAgentBudget（limit/used/reset/setLimit）
+    val subAgentBudget = koinInject<me.rerere.rikkahub.subagent.SubAgentEngine>().budget
     var showSketch by remember { mutableStateOf(false) }
     var showSubAgentSheet by remember { mutableStateOf(false) }
     var showSubAgentBudgetSheet by remember { mutableStateOf(false) }
@@ -409,6 +411,10 @@ internal fun FilesPicker(
     if (showSubAgentBudgetSheet) {
         SubAgentBudgetSheet(
             runs = conversationRuns,
+            assistant = assistant,
+            onUpdateAssistant = onUpdateAssistant,
+            budget = subAgentBudget,
+            conversationId = conversation.id.toString(),
             onDismiss = { showSubAgentBudgetSheet = false },
         )
     }

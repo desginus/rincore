@@ -359,31 +359,8 @@ private fun MemorySettingsTab(
                 supportingContent = { Text(stringResource(R.string.assistant_page_memory_desc)) },
                 headlineContent = { Text(stringResource(R.string.assistant_page_memory)) },
             )
-            switchItem(
-                checked = assistant.useGlobalMemory,
-                onCheckedChange = {
-                    onUpdateAssistant(
-                        assistant.copy(
-                            useGlobalMemory = it
-                        )
-                    )
-                },
-                enabled = assistant.enableMemory,
-                supportingContent = { Text(stringResource(R.string.assistant_page_global_memory_desc)) },
-                headlineContent = { Text(stringResource(R.string.assistant_page_global_memory)) },
-            )
-            // 5.0.0 回贴：我方单对话记忆开关
-            switchItem(
-                checked = assistant.conversationScopedMemory,
-                onCheckedChange = {
-                    onUpdateAssistant(
-                        assistant.copy(conversationScopedMemory = it)
-                    )
-                },
-                enabled = assistant.enableMemory,
-                supportingContent = { Text("开启后，新记忆只挂载到当前对话：仅在该对话内可见，对话删除即销毁。") },
-                headlineContent = { Text("单对话记忆") },
-            )
+            // v5.0.57 用户定案：上面两个旧开关（整个助手 / 单对话记忆）已删除——
+            // 语义被下方「新建记忆归属」三锚点完整覆盖，留着只会互相打架。
             // v5.0.54 用户定案：**新建记忆归属范围** — 三个锚点（助手 / 项目包 / 当前对话）
             // 决定模型主动写入的记忆挂到哪个区块：助手级全助手可见；项目包内仅该包可见；对话级仅该对话可见。
             item(

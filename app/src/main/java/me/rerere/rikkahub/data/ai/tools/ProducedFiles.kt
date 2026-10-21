@@ -56,7 +56,18 @@ object ProducedFiles {
             p.startsWith("/") -> return p
             else -> p
         }
-        val c = cwd?.trim()?.trim('/').orEmpty()
+        // v5.0.57 ★「本对话产出点击后统一提示未找到文件」的真根因：
+        // WorkspaceCwdPicker 的 toAbsolutePath() 存进 assistant/folder 的 cwd 是
+        // **带前缀形态** "/workspace/projects/foo"；而这里只做 trim('/') →
+        // c = "workspace/projects/foo" → 拼出 "/workspace/workspace/projects/foo/x.png"，
+        // 双重前缀 → resolveScopedFile 的 probes 全部落空 → 模糊查找也匹配不到 →
+        // 用户点任何产出都弹「未找到文件」。
+        // 修法：cwd 归一化为**纯相对作用域**（剥掉 /workspace 前缀），使本函数幂等。
+        val c = cwd?.trim()?.replace('\\', '/')?.trim('/')
+            ?.removePrefix("workspace/")
+            ?.removePrefix("workspace")
+            ?.trim('/')
+            .orEmpty()
         val full = if (c.isNotEmpty() && !rel.startsWith("$c/")) "$c/$rel" else rel
         return "/workspace/" + full.trimStart('/')
     }
