@@ -7,6 +7,7 @@ package me.rerere.rikkahub.ui.components.ai
  * 功能: 附件/文件选择器
  * 差异: 工作区文件源接入, 选择与预览逻辑扩展
  * ───────────────────────────────────────────────────────────────*/
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.animation.animateContentSize
@@ -860,7 +861,7 @@ internal fun McpPickerSheet(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier.padding(vertical = 4.dp)
                 ) {
-                    LinearWavyProgressIndicator()
+                    LinearProgressIndicator()
                     Text(
                         text = stringResource(id = R.string.mcp_picker_syncing),
                         style = MaterialTheme.typography.bodyLarge
