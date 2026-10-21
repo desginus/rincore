@@ -111,7 +111,6 @@ class BackupVM(
 
     /** v5.0.41：导出进度（阶段名 + 已打包字节），UI 直接展示 */
     var exportProgress by androidx.compose.runtime.mutableStateOf<Pair<String, Long>?>(null)
-        private set
 
     suspend fun exportToFile(): File {
         // v3.9.12 (2.4.11 移植): 按用户选择内容打包 (webDavConfig.items 复用为本地选择集)

@@ -69,11 +69,28 @@ fun ImportExportTab(
                     val exportFile = vm.exportToFile()
 
                     // 复制到用户选择的位置
+                    // v5.0.44 用户实证：打包结束后的 20G 复制**没有任何进度**，
+                    // 表现为「体积涨到差不多就忽然停住」→ 用户以为卡死/失败。
+                    // 改为分块复制并实时上报（每 ~16MB 更新一次，含总量），进度文案="写入文件"。
+                    val totalBytes = exportFile.length()
+                    var written = 0L
+                    vm.exportProgress = "写入文件" to 0L
                     context.contentResolver.openOutputStream(targetUri)?.use { outputStream ->
                         FileInputStream(exportFile).use { inputStream ->
-                            inputStream.copyTo(outputStream)
+                            val buf = ByteArray(1 shl 20) // 1MB
+                            while (true) {
+                                val n = inputStream.read(buf)
+                                if (n <= 0) break
+                                outputStream.write(buf, 0, n)
+                                written += n
+                                if (written / (16L shl 20) != (written - n) / (16L shl 20)) {
+                                    vm.exportProgress = "写入文件（共 ${"%.1f".format(totalBytes / 1024.0 / 1024.0)} MB）" to written
+                                }
+                            }
                         }
+                        runCatching { outputStream.flush() }
                     }
+                    vm.exportProgress = null
 
                     // 清理临时文件
                     exportFile.delete()
@@ -220,8 +237,9 @@ fun ImportExportTab(
                     Text(
                         when {
                             // v5.0.41：显示阶段 + 已打包体积（工作区可能很大，让用户知道在动）
+                            // v5.0.44：三阶段共用（打包工作区 / 归档工作区 / 写入文件），文案通用化
                             isExporting && prog != null ->
-                                "正在打包${prog.first}：${"%.1f".format(prog.second / 1024.0 / 1024.0)} MB"
+                                "${prog.first}：${"%.1f".format(prog.second / 1024.0 / 1024.0)} MB…"
                             isExporting -> stringResource(R.string.backup_page_exporting)
                             else -> stringResource(R.string.backup_page_export_desc)
                         }

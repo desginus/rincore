@@ -91,7 +91,7 @@ class BackupManager(
                                 onProgress = { files, bytes -> onProgress?.invoke("工作区", bytes) },
                             )
                         }
-                        addFile(zip, wsTar, "workspaces.tar.gz")
+                        addFile(zip, wsTar, "workspaces.tar.gz", onProgress = onProgress)
                     }
                 }
             }
@@ -216,9 +216,27 @@ class BackupManager(
         return true
     }
 
-    private fun addFile(zip: ZipOutputStream, file: File, name: String) {
+    private fun addFile(
+        zip: ZipOutputStream,
+        file: File,
+        name: String,
+        onProgress: ((stage: String, bytes: Long) -> Unit)? = null,
+    ) {
         zip.putNextEntry(ZipEntry(name))
-        file.inputStream().use { it.copyTo(zip) }
+        // v5.0.44：工作区 tar.gz 进 zip 是 20G 级复制，原实现无进度 → UI 表现为「突然停住」。
+        file.inputStream().use { input ->
+            val buf = ByteArray(1 shl 20)
+            var written = 0L
+            while (true) {
+                val n = input.read(buf)
+                if (n <= 0) break
+                zip.write(buf, 0, n)
+                written += n
+                if (written / (32L shl 20) != (written - n) / (32L shl 20)) {
+                    onProgress?.invoke("归档工作区", written)
+                }
+            }
+        }
         zip.closeEntry()
     }
 
