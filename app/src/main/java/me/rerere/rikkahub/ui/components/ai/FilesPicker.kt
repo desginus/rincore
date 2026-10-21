@@ -395,10 +395,21 @@ internal fun FilesPicker(
 
     // Compress Context Dialog
     if (showCompressDialog) {
-        CompressContextDialog(onDismiss = {
-            onShowCompressDialogChange(false)
-            onDismiss()
-        }, onConfirm = onCompressContext)
+        // v5.0.53 ★用户实证修复：此前调用**没传 totalMessages/defaultKeep** → 默认 0 →
+        // canCompress=false 且 runCompression 里 `keepRecentMessages > 0` 为假 →
+        // 一律抛"消息数量不够"。补上 ContextCompressor 的智能推荐（按对话轮 + token 60%，始终保留最新轮）。
+        val recommendedKeep = remember(conversation.messageNodes) {
+            me.rerere.rikkahub.service.ContextCompressor.recommendedKeepMessages(conversation.currentMessages)
+        }
+        CompressContextDialog(
+            totalMessages = conversation.currentMessages.size,
+            defaultKeep = recommendedKeep,
+            onDismiss = {
+                onShowCompressDialogChange(false)
+                onDismiss()
+            },
+            onConfirm = onCompressContext,
+        )
     }
 }
 

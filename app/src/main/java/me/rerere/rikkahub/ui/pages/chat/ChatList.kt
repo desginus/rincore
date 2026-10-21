@@ -757,39 +757,8 @@ private fun ChatListPreview(
                 shape = CircleShape,
                 maxLines = 1,
             )
-            Spacer(Modifier.width(4.dp))
-            // v4.8.104: 快捷入口 — AI翻译 / 图像生成（预算图标左边）
-            IconButton(onClick = onOpenTranslator) {
-                Icon(
-                    imageVector = HugeIcons.LanguageCircle,
-                    contentDescription = stringResource(R.string.chat_page_menu_ai_translator),
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-            // v5.0.11 (用户定版): 媒体创作入口 — 自抽屉移入此处（替换原图片生成位）
-            IconButton(onClick = onOpenMediaCreation) {
-                Icon(
-                    imageVector = HugeIcons.ImageToVideo,
-                    contentDescription = stringResource(R.string.media_creation_title),
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-            // v4.8.88 子代理预算：点开查看/调整本对话的 Token 上限与用量（超出即熔断）
-            IconButton(onClick = { showBudgetDialog = true }) {
-                Icon(
-                    imageVector = HugeIcons.Gauge,
-                    contentDescription = stringResource(R.string.subagent_budget_icon),
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-            // v4.8.121「本对话产出」：本对话中模型产出/修改过的文件（胶囊窗列表，点击直接打开）
-            IconButton(onClick = { showArtifactsSheet = true }) {
-                Icon(
-                    imageVector = HugeIcons.Folder01,
-                    contentDescription = stringResource(R.string.chat_page_menu_conversation_output),
-                    modifier = Modifier.size(22.dp),
-                )
-            }
+            // v5.0.53 用户定案：撤掉速览页搜索框右侧 4 个图标（AI翻译 / 多媒体 / 子代理预算 / 本对话产出）
+
         }
 
         // ── v4.8.121/123 本对话产出（清单一→选项弹层：渲染/分享/导出/打开）──

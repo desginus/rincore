@@ -635,6 +635,11 @@ private fun ChatPageContent(
                     onMoreClick = {
                         showFilesSheet = true
                     },
+                    // v5.0.53 ★用户实证：加号菜单里「拍照 / 图片 / 上传文件」点了完全无反应。
+                    // 根因 = 这三项在 ChatInput 里都是 `= {}` 默认空实现，而本处调用没接线。
+                    onTakePic = attachmentPickerActions.onTakePicture,
+                    onPickImage = attachmentPickerActions.onPickImage,
+                    onPickFile = attachmentPickerActions.onPickFile,
                 )
             },
             containerColor = Color.Transparent,
