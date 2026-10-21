@@ -184,6 +184,15 @@ fun ImportExportTab(
         CardGroup(
             title = { Text(stringResource(R.string.backup_page_local_backup_export)) },
         ) {
+            item(
+                headlineContent = {
+                    Text(
+                        "「文件与工作区」= 聊天附件 + 工作区全部内容（files 文件 + linux rootfs，含你装的 Python）；两者都必须勾选才是完整备份。",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                },
+                supportingContent = {},
+            )
             backupContentItem(
                 options = WebDavConfig.BackupItem.entries,
                 selected = selectedBackupItems,
@@ -191,7 +200,9 @@ fun ImportExportTab(
             ) { item ->
                 when (item) {
                     WebDavConfig.BackupItem.DATABASE -> stringResource(R.string.backup_page_chat_records)
-                    WebDavConfig.BackupItem.FILES -> stringResource(R.string.backup_page_files)
+                    // v5.0.43 用户核验定案：工作区（含 rootfs/Python）打包在 FILES 里，
+                    // 旧文案只写「文件」导致用户以为不含工作区 → 明确标注。
+                    WebDavConfig.BackupItem.FILES -> "文件与工作区（含 rootfs）"
                 }
             }
             item(
