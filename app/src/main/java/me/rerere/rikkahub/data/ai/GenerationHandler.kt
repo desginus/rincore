@@ -159,6 +159,13 @@ private class ToolExecOutcome(
 private val CONCURRENCY_SAFE_TOOLS = setOf(
     "workspace_read_file", "workspace_grep", "workspace_glob",
     "read_image", "upload_fetch", "subagent_list", "subagent_get",
+    // v5.0.56 ★用户实证「多组工具并发时全部互相干扰、最后全挂起」的根因：
+    // subagent_dispatch 前台会阻塞到子代理终态，却因不在白名单被当成「非并发安全」
+    // → 走**串行**批次 → 后续所有工具都得等它跑完 → 表现就是"子代理极慢 + 其他工具全卡住"。
+    // 子代理内部自带 appScope.launch(Dispatchers.IO) 执行，把它们放并行不会互踩。
+    "subagent_dispatch", "subagent_cancel",
+    // workspace_job 只负责「启动后台任务并立即返回」，本身不做长阻塞。
+    "workspace_job", "workspace_show_file",
 )
 
 private fun partitionExecQueueByConcurrency(queue: List<QueuedToolExec>): List<Pair<List<QueuedToolExec>, Boolean>> {
@@ -183,7 +190,7 @@ private const val TAG = "GenerationHandler"
 // 顶层直连工具集口径统一于 ToolsBuilder.topLevelToolSetOf (v4.8.83)
 
 /** v4.8.105 (无感衔接 B): 工具并行执行上限 (对齐 openai-agents max_function_tool_concurrency) */
-private const val MAX_PARALLEL_TOOL_EXECUTIONS = 4
+private const val MAX_PARALLEL_TOOL_EXECUTIONS = 6
 
 private const val MAX_TOOL_OUTPUT_CHARS = 32 * 1024
 private const val TOOL_OUTPUT_PREVIEW_CHARS = 4 * 1024

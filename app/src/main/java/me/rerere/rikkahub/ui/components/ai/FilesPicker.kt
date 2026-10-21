@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.ai
 
+import androidx.compose.foundation.verticalScroll
 import me.rerere.ai.ui.UIMessagePart
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.TextButton
@@ -260,7 +261,7 @@ internal fun FilesPicker(
                                 horizontalArrangement = Arrangement.Center,
                             ) {
                                 Icon(
-                                    ArrowTurnBackward,
+                                    HugeIcons.ArrowTurnBackward,
                                     null,
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(18.dp),
