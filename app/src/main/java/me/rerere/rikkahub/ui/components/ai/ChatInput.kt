@@ -289,6 +289,7 @@ fun ChatInput(
                         assistant = assistant,
                         completionProviders = completionProviders,
                         onSendMessage = { sendMessage() },
+                        toolPickerProvider = toolPickerProvider,
                     )
 
                     Row(
@@ -549,6 +550,8 @@ private fun TextInputRow(
     assistant: Assistant,
     completionProviders: List<ChatCompletionProvider>,
     onSendMessage: () -> Unit,
+    // v5.0.64: /@ 触发工具矩阵选择器 —— 数据源由 ChatInput 外层传入（内层函数看不到外层参数）
+    toolPickerProvider: (suspend () -> ToolMatrixPickerData?)? = null,
 ) {
     val settings = LocalSettings.current
     val filesManager: FilesManager = koinInject()
