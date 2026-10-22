@@ -689,11 +689,17 @@ private fun TextInputRow(
                 val text = state.textContent.text.toString()
                 val caret = state.textContent.selection.start.coerceIn(0, text.length)
                 text.take(caret)
-                    .substringAfterLast('\n')
-                    .substringAfterLast(' ')
-                    .substringAfterLast('\u3000')
-            }.collectLatest { token ->
-                if (token == "/" || token == "@") {
+            }.collectLatest { before ->
+                // v5.0.68 ★用户纠正：这里**只认 `/@`（斜杠+艾特）**，不是 `/` 也不是 `@`。
+                // 分工与 4.8.190 逐字一致（见其 detectToolMention 注释）：
+                //   · 空格后的 `@`  → **Workspace 文件补全**（WorkspaceCompletionProvider）
+                //   · 斜杠后的 `/@` → **工具矩阵**（ToolMatrixPickerPopup）
+                // 两者天然分流：`@` 前是 `/` 就不是文件补全的边界。
+                // v5.0.64 我错把 `@` 和 `/` 都接给工具矩阵，抢掉了 workspace 补全。
+                val isSlashAt = before.length >= 2 &&
+                    before[before.length - 1] == '@' &&
+                    before[before.length - 2] == '/'
+                if (isSlashAt) {
                     if (toolPickerData == null) {
                         toolPickerData = runCatching { provider() }.getOrNull()
                         toolPickerStack = emptyList()
@@ -715,7 +721,11 @@ private fun TextInputRow(
                     val text = state.textContent.text.toString()
                     val caret = state.textContent.selection.start.coerceIn(0, text.length)
                     val before = text.take(caret)
-                    val trigger = maxOf(before.lastIndexOf('/'), before.lastIndexOf('@'))
+                    // `/@` 是两字符触发：起点取斜杠位置（maxOf 会只取到 '@' → 留下一个 '/'）
+                    val trigger = if (before.length >= 2 &&
+                        before[before.length - 1] == '@' &&
+                        before[before.length - 2] == '/'
+                    ) before.length - 2 else maxOf(before.lastIndexOf('/'), before.lastIndexOf('@'))
                     if (trigger >= 0) {
                         // v5.0.64: state.textContent 是 **TextFieldState（val，不可赋值）**，
                         // 必须用 edit{ replace(...) } 改写；直接用 TextFieldValue 赋值会

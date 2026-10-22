@@ -476,12 +476,16 @@ class WorkspaceRepository(
         manager.startJob(workspace.root, command, cwd, jobId)
     }
 
-    suspend fun jobStatus(id: String, jobId: String): WorkspaceManager.JobStatus? = withContext(me.rerere.rikkahub.utils.AppDispatchers.Sandbox) {
+    suspend fun jobStatus(id: String, jobId: String): WorkspaceManager.JobStatus? = withContext(me.rerere.rikkahub.utils.AppDispatchers.Io) {
+        // v5.0.68 ★线程规划：jobStatus/jobLogTail/killJob 都是**毫秒级**的文件读/进程查，
+        // 旧实现与 executeCommand（最长 660s 阻塞）共用 Sandbox 的 limitedParallelism(8) ——
+        // 几条长命令就能占满槽位，模型轮询 job status 时排队等待，
+        // 表现就是"所有任务挤在一起、工具整体变慢"。短查询一律改走共享 IO 池。
         val workspace = dao.getById(id) ?: error("Workspace not found: $id")
         manager.jobStatus(workspace.root, jobId)
     }
 
-    suspend fun jobLogTail(id: String, jobId: String, maxBytes: Int = 6000): String = withContext(me.rerere.rikkahub.utils.AppDispatchers.Sandbox) {
+    suspend fun jobLogTail(id: String, jobId: String, maxBytes: Int = 6000): String = withContext(me.rerere.rikkahub.utils.AppDispatchers.Io) {
         val workspace = dao.getById(id) ?: error("Workspace not found: $id")
         val f = manager.jobLogFile(workspace.root, jobId)
         if (!f.exists()) "" else runCatching {
@@ -501,7 +505,7 @@ class WorkspaceRepository(
         }.getOrDefault("")
     }
 
-    suspend fun killJob(id: String, jobId: String): Int = withContext(me.rerere.rikkahub.utils.AppDispatchers.Sandbox) {
+    suspend fun killJob(id: String, jobId: String): Int = withContext(me.rerere.rikkahub.utils.AppDispatchers.Io) {
         val workspace = dao.getById(id) ?: error("Workspace not found: $id")
         manager.jobKill(workspace.root, jobId)
     }

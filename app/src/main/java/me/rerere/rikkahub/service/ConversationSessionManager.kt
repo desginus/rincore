@@ -53,8 +53,15 @@ class ConversationSessionManager(
         session
     }
 
-    fun acquire(conversationId: Uuid): ConversationSession = synchronized(lock) {
-        getOrCreate(conversationId).also { it.acquire() }
+    fun acquire(conversationId: Uuid): ConversationSession {
+        // v5.0.68 ★线程/切换稳定性：先走无锁快路径。
+        // 旧实现每次 acquire（withSession / 所有 flow 取值 / 每次切对话）都要抢
+        // `synchronized(lock)` 全局锁 —— 频繁切助手/对话时所有调用方挤在同一把锁上，
+        // 表现为"切换卡一下、偶尔串台"。命中已存在 session 时完全不需要锁。
+        get(conversationId)?.let { it.acquire(); return it }
+        return synchronized(lock) {
+            getOrCreate(conversationId).also { it.acquire() }
+        }
     }
 
     fun release(conversationId: Uuid) {
@@ -96,14 +103,16 @@ class ConversationSessionManager(
         removed.forEach { it.cleanup() }
     }
 
+    // v5.0.68：命中已存在 session 时走无锁快路径（见 acquire 注释）。
+    // 这三个 flow 在 UI 每次重组/每次切对话都会被取，旧的 getOrCreate 全部走全局锁。
     fun getConversationFlow(conversationId: Uuid): StateFlow<Conversation> =
-        getOrCreate(conversationId).state
+        (get(conversationId) ?: getOrCreate(conversationId)).state
 
     fun getProcessingStatusFlow(conversationId: Uuid): StateFlow<String?> =
-        getOrCreate(conversationId).processingStatus
+        (get(conversationId) ?: getOrCreate(conversationId)).processingStatus
 
     fun getMessageQueueFlow(conversationId: Uuid): StateFlow<MessageQueueState> =
-        getOrCreate(conversationId).messageQueue.state
+        (get(conversationId) ?: getOrCreate(conversationId)).messageQueue.state
 
     fun getGenerationJobStateFlow(conversationId: Uuid): Flow<Job?> =
         sessions.map { it[conversationId] }.distinctUntilChanged().flatMapLatest { session ->

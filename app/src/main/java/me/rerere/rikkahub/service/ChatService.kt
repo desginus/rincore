@@ -68,6 +68,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.Tool
@@ -292,6 +293,15 @@ class ChatService(
     val generationDoneFlow: SharedFlow<Uuid> = _generationDoneFlow.asSharedFlow()
 
     fun cleanup() = runCatching { sessionManager.cleanup() }
+
+    // v5.0.68 ★数据安全：per-conversation 写锁。
+    // 旧 `saveConversation` 是 suspend 函数，`existsConversationById` 是挂起点 ——
+    // 读快照与整对象写回之间存在窗口，两个并发保存（流式落库 + 用户编辑 / 分支切换 /
+    // 队列派发）会**后写覆盖先写**，这就是"切换后消息串了/少了"的数据层来源。
+    // 用 per-conversation Mutex 串行化同一对话的保存；不同对话互不阻塞（不引入全局锁）。
+    private val saveLocks = java.util.concurrent.ConcurrentHashMap<Uuid, kotlinx.coroutines.sync.Mutex>()
+    private fun saveLockFor(id: Uuid): kotlinx.coroutines.sync.Mutex =
+        saveLocks.getOrPut(id) { kotlinx.coroutines.sync.Mutex() }
 
     // ---- Session 管理 (v4.7.2: 2.5.3 ConversationSessionManager 收口) ----
 
@@ -1466,22 +1476,26 @@ class ChatService(
     }
 
     suspend fun saveConversation(conversationId: Uuid, conversation: Conversation) {
-        val exists = conversationRepo.existsConversationById(conversation.id)
-        if (!exists && conversation.title.isBlank() && conversation.messageNodes.isEmpty()) {
-            return // 新会话且为空时不保存
-        }
+        // v5.0.68: 同一对话的保存串行化（Mutex 不可重入 → dispatch 放到锁外）。
+        saveLockFor(conversationId).withLock {
+            val exists = conversationRepo.existsConversationById(conversation.id)
+            if (!exists && conversation.title.isBlank() && conversation.messageNodes.isEmpty()) {
+                return@withLock // 新会话且为空时不保存
+            }
 
-        val updatedConversation = conversation.copy()
-        updateConversation(conversationId, updatedConversation)
+            val updatedConversation = conversation.copy()
+            updateConversation(conversationId, updatedConversation)
 
-        if (!exists) {
-            conversationRepo.insertConversation(updatedConversation)
-        } else {
-            conversationRepo.updateConversation(updatedConversation)
+            if (!exists) {
+                conversationRepo.insertConversation(updatedConversation)
+            } else {
+                conversationRepo.updateConversation(updatedConversation)
+            }
         }
 
         // 删除消息或切换分支也可能解除工具审批阻塞，保存成功后重新检查队列。
         // 调度器仍会检查当前生成任务、待审批工具、暂停状态及编辑占位。
+        // 注意：必须在锁外调用 —— dispatch 可能再次触发 saveConversation。
         dispatchNextQueuedMessage(conversationId)
     }
 

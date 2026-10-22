@@ -496,6 +496,8 @@ fun MarkdownBlock(
         snapshotFlow { updatedContent }
             .distinctUntilChanged()
             .filter { it != initialRenderedContent }
+            // v5.0.68: 撤销上一版加的 sample —— 逐字对比 4.8.190 确认此处原本就是
+            // 直接 mapLatest（无节流），卡顿不在这层，不要在这里引入行为差异。
             .mapLatest { MarkdownParseCache.parseTransient(it, splitState) }
             .catch { exception -> exception.printStackTrace() }
             .flowOn(Dispatchers.Default)
