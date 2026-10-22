@@ -717,13 +717,13 @@ private fun TextInputRow(
                     val before = text.take(caret)
                     val trigger = maxOf(before.lastIndexOf('/'), before.lastIndexOf('@'))
                     if (trigger >= 0) {
-                        val insertion = "@${tool.name} "
-                        val head = before.substring(0, trigger) + insertion
-                        val tail = text.drop(caret)
-                        state.textContent = androidx.compose.ui.text.input.TextFieldValue(
-                            text = head + tail,
-                            selection = TextRange(head.length),
-                        )
+                        // v5.0.64: state.textContent 是 **TextFieldState（val，不可赋值）**，
+                        // 必须用 edit{ replace(...) } 改写；直接用 TextFieldValue 赋值会
+                        // 编译失败（'val' cannot be reassigned / Assignment type mismatch）。
+                        // replace 接受绝对索引，编辑器会把光标落到替换段末尾。
+                        state.textContent.edit {
+                            replace(trigger, caret, "@${tool.name} ")
+                        }
                     }
                     toolPickerData = null
                     toolPickerStack = emptyList()
