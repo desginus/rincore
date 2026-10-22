@@ -43,6 +43,17 @@ interface MemoryDAO {
     @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId AND conversation_id IS NOT NULL ORDER BY conversation_id ASC, id ASC")
     fun getConversationMemoriesOfAssistantFlow(assistantId: String): Flow<List<MemoryEntity>>
 
+    /**
+     * v5.0.67 ★项目包记忆的**真正实现**：取一批对话各自的「仅对话内可见」记忆。
+     * 用户定案：项目包不是独立存储层，而是「该对话 + 同包所有对话」的对话级记忆集合。
+     */
+    @Query("SELECT * FROM memoryentity WHERE conversation_id IN (:conversationIds) ORDER BY conversation_id ASC, id ASC")
+    suspend fun getMemoriesOfConversations(conversationIds: List<String>): List<MemoryEntity>
+
+    /** v5.0.67：删某 scope 下由做梦整理产生的条目（每次整理后全量重建，保证幂等） */
+    @Query("DELETE FROM memoryentity WHERE assistant_id = :assistantId AND source = 'dream' AND folder_id IS :folderId AND conversation_id IS :conversationId")
+    suspend fun deleteDreamMemories(assistantId: String, folderId: String?, conversationId: String?)
+
     @Query("DELETE FROM memoryentity WHERE conversation_id = :conversationId")
     suspend fun deleteMemoriesOfConversation(conversationId: String)
 

@@ -842,14 +842,26 @@ class ChatService(
                     } else {
                         memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
                     }
-                    // v5.0.24 三范围：助手级/全局（base） + 项目包（当前对话归属的包） + 单对话
+                    // v5.0.24 三范围：助手级/全局（base） + 项目包 + 单对话
                     val folderMemories = conversation.folderId?.let { folderId ->
                         runCatching { memoryRepository.getMemoriesOfFolder(folderId.toString()) }
                             .getOrDefault(emptyList())
                     } ?: emptyList()
-                    base + folderMemories + runCatching {
+                    // v5.0.67 ★用户定案的「项目包记忆」真正语义：
+                    // 项目包 = **该对话 + 归属同一项目包的所有对话** 的「仅对话内可见」记忆集合，
+                    // 不是独立的存储层。旧实现只注入 folderId 层（若从未写入就恒为空），
+                    // 同包其他对话的记忆**根本没有被注入** → "包内互通"名不副实。
+                    val siblingMemories = conversation.folderId?.let { fid ->
+                        runCatching {
+                            val ids = conversationRepo.getConversationIdsOfFolder(fid).map { it.toString() }
+                            memoryRepository.getMemoriesOfConversations(ids)
+                        }.getOrDefault(emptyList())
+                    } ?: emptyList()
+                    val ownMemories = runCatching {
                         memoryRepository.getMemoriesOfConversation(conversation.id.toString())
                     }.getOrDefault(emptyList())
+                    // 同包批量查询已包含本对话的记忆 → distinctBy 去重，避免 prompt 重复
+                    (base + folderMemories + siblingMemories + ownMemories).distinctBy { it.id }
                 },
                 inputTransformers = buildList {
                     addAll(inputTransformers)

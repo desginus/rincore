@@ -206,6 +206,28 @@ class MemoryConsolidator(
             .map { MemoryFile.normalizePath(it) ?: it }
             .distinct()
         val remaining = memoryRepository.getFiles(memoryId).associateBy { it.path }
+
+        // v5.0.67 ★用户定案：「做梦整理」必须能和「助手/项目包/单对话」三个存储标签交叉过滤，
+        // 而 MemoryFile 是文件式、没有 scope 维度 —— 所以每次整理结束后，把该 scope 下的
+        // dream 条目**全量重建**（Repository.syncDreamMemories 内部先删后写，幂等）。
+        // scope 推断：只整理 1 个对话 → 归该对话；整理多个 → 归它们的共同项目包（无则助手级）。
+        runCatching {
+            val scopeConv = conversationIds.singleOrNull()
+            val scopeFolder = if (scopeConv == null) {
+                batches.mapNotNull { it.conversation.folderId }.toSet().singleOrNull()
+            } else {
+                batches.firstOrNull()?.conversation?.folderId
+            }
+            assistants.forEach { a ->
+                memoryRepository.syncDreamMemories(
+                    assistantId = a.id.toString(),
+                    folderId = scopeFolder?.toString(),
+                    conversationId = scopeConv?.toString(),
+                    files = remaining.values.toList(),
+                )
+            }
+        }.onFailure { Logging.log(TAG, "syncDreamMemories: $it") }
+
         return MemoryConsolidationRun(
             memoryId = memoryId,
             finishedAt = System.currentTimeMillis(),
@@ -278,7 +300,9 @@ private fun Settings.consolidationModel(conversation: Conversation?, assistant: 
     val chatModel = conversation?.let { getChatModelOf(it) } ?: findModelById(assistant.chatModelId ?: chatModelId)
     // v5.0.25 用户定案：记忆有专用模型优先用它（做梦/整理），未配置再回落 fastModel
     val memoryModel = memoryModelId?.let { findModelById(it) }
-    return (memoryModel ?: fastModel ?: chatModel)?.copy(tools = emptySet())
+    // v5.0.67: 做梦（自动整理）可单独指定模型，优先于通用记忆模型
+    val dreamModel = dreamMemoryModelId?.let { findModelById(it) }
+    return (dreamModel ?: memoryModel ?: fastModel ?: chatModel)?.copy(tools = emptySet())
 }
 
 /**

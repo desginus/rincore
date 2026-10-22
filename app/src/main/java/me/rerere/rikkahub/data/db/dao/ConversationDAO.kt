@@ -44,6 +44,13 @@ interface ConversationDAO {
     @Query("SELECT id FROM conversationentity WHERE folder_id = :folderId AND title NOT LIKE '[Sub-agent]%'")
     suspend fun getConversationIdStringsOfFolder(folderId: String): List<String>
 
+    /**
+     * v5.0.67 记忆页「项目包记忆」视图：该助手名下**所有归入某个项目包**的对话 id。
+     * 项目包记忆 = 这些对话各自的「仅对话内可见」记忆集合（用户定案语义）。
+     */
+    @Query("SELECT id FROM conversationentity WHERE assistant_id = :assistantId AND folder_id IS NOT NULL AND title NOT LIKE '[Sub-agent]%'")
+    suspend fun getConversationIdsInFolders(assistantId: String): List<String>
+
     @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId AND title NOT LIKE '[Sub-agent]%' ORDER BY is_pinned DESC, update_at DESC LIMIT :limit")
     suspend fun getRecentConversationsOfAssistant(assistantId: String, limit: Int): List<ConversationEntity>
 

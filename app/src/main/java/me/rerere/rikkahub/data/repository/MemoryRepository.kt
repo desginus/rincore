@@ -217,6 +217,37 @@ class MemoryRepository(
         return memoryDAO.getMemoriesOfConversation(conversationId).map { it.toModel() }
     }
 
+    /**
+     * v5.0.67 ★用户定案的记忆二维语义（来源 × 存储）落地：
+     * 做梦整理原本只写 `MemoryFile`（文件式，没有 scope 维度）→ 无法按
+     * 「助手记忆/项目包记忆/单对话记忆」过滤。这里在每次整理结束后，把该 scope 下
+     * 的 dream 条目**全量重建**（先删后按文件写），保证幂等且与记忆库一致。
+     */
+    suspend fun syncDreamMemories(
+        assistantId: String,
+        folderId: String?,
+        conversationId: String?,
+        files: List<MemoryFile>,
+    ) {
+        memoryDAO.deleteDreamMemories(assistantId, folderId, conversationId)
+        files.forEach { file ->
+            if (file.content.isBlank()) return@forEach
+            addMemory(
+                assistantId = assistantId,
+                content = if (file.title.isBlank()) file.content else "【${file.title}】\n${file.content}",
+                conversationId = conversationId,
+                folderId = folderId,
+                source = "dream",
+            )
+        }
+    }
+
+    /** v5.0.67：一批对话的对话级记忆（项目包互通：同包所有对话的记忆互相可见） */
+    suspend fun getMemoriesOfConversations(conversationIds: List<String>): List<AssistantMemory> {
+        if (conversationIds.isEmpty()) return emptyList()
+        return memoryDAO.getMemoriesOfConversations(conversationIds).map { it.toModel() }
+    }
+
     /** 某助手（或全局桶）名下的全部单对话记忆（管理页「单对话记忆」视图用） */
     fun getConversationMemoriesOfAssistantFlow(assistantId: String): Flow<List<AssistantMemory>> =
         memoryDAO.getConversationMemoriesOfAssistantFlow(assistantId)

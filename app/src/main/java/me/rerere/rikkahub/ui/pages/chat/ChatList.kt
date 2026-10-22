@@ -497,6 +497,8 @@ private fun ChatListNormal(
                     onSelectFolder = onOrbitSelectFolder,
                     hazeState = hazeState,
                     blurEnabled = settings.displaySetting.enableBlurEffect,
+                    // v5.0.67：第三层（最近对话）高亮当前这一条
+                    currentConversationId = conversation.id,
                 )
             }
         }

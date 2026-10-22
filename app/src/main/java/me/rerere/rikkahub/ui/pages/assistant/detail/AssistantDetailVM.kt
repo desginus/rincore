@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -110,6 +111,24 @@ class AssistantDetailVM(
         }
         .stateIn(
             scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = emptyList()
+        )
+
+    /**
+     * v5.0.67 ★用户定案：「项目包记忆」不是独立存储层，而是
+     * 「该对话 + 归属同一项目包的所有对话」的**对话级记忆集合**。
+     * 这里给出该助手名下所有归入项目包的对话 id，供记忆页 FOLDER 视图过滤。
+     */
+    val folderConversationIds: StateFlow<Set<String>> = assistant
+        .flatMapLatest { current ->
+            flow {
+                val ids = runCatching {
+                    conversationRepository.getConversationIdsInFolders(current.id)
+                }.getOrDefault(emptyList())
+                emit(ids.map { it.toString() }.toSet())
+            }
+        }
+        .stateIn(
+            scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = emptySet()
         )
 
     /** 上游 3.0.0 记忆 2.0：Markdown 记忆文件库（FILES Tab）。 */

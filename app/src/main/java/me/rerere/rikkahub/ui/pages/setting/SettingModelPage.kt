@@ -32,6 +32,8 @@ import me.rerere.hugeicons.stroke.BubbleChat
 import me.rerere.hugeicons.stroke.ScanText
 import me.rerere.hugeicons.stroke.Translate
 import me.rerere.hugeicons.stroke.Zap
+import me.rerere.hugeicons.stroke.AiMagic
+
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.ui.components.ai.ModelField
@@ -144,6 +146,12 @@ private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding:
         providers = settings.providers,
         type = ModelType.CHAT,
     )
+    // v5.0.67 用户定案：做梦（自动记忆整理）单独一个模型选择，与记忆模型分开
+    val dreamMemoryModel = rememberModelListState(
+        modelId = settings.dreamMemoryModelId,
+        providers = settings.providers,
+        type = ModelType.CHAT,
+    )
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -167,6 +175,17 @@ private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding:
         item {
             val containerColor = MaterialTheme.colorScheme.tertiaryContainer
             val contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+            // v5.0.67：做梦记忆模型（用户要求单独一个 UI，不与记忆模型/快速模型混排）
+            CardGroup {
+                modelItem(
+                    icon = HugeIcons.AiMagic,
+                    title = R.string.setting_model_page_dream_model,
+                    description = R.string.setting_model_page_dream_model_desc,
+                    state = dreamMemoryModel,
+                    iconContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    iconContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
             // 标题和聊天建议都由快速模型生成，相关的选项跟它放在一组
             CardGroup {
                 modelItem(
@@ -239,6 +258,9 @@ private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding:
     }
     ModelListSheet(state = ocrModel) {
         vm.updateSettings { latest -> latest.copy(ocrModelId = it.id) }
+    }
+    ModelListSheet(state = dreamMemoryModel) {
+        vm.updateSettings { latest -> latest.copy(dreamMemoryModelId = it.id) }
     }
 }
 

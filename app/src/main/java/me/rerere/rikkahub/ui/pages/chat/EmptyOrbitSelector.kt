@@ -64,6 +64,10 @@ import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Folder
 import me.rerere.rikkahub.data.repository.FolderRepository
 import me.rerere.rikkahub.ui.context.LocalSettings
+import me.rerere.rikkahub.data.repository.ConversationRepository
+import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.rikkahub.RouteActivity
+import kotlinx.coroutines.flow.flow
 import org.koin.compose.koinInject
 
 // v4.8.158 (用户定版: "我指的是慢版，不是变快。干脆去调成100秒一圈"):
@@ -74,9 +78,15 @@ private val ORBIT_EDGE_DP = 52.dp
 // （顶部锚定会被标题栏吞掉；底部锚定与标题栏无关，任何机型都稳定）
 private val ORBIT_BOTTOM_EDGE_DP = 52.dp
 private const val ORBIT_TOP_RATIO = 0.38f
-private val INNER_GAP_DP = 64.dp
+private val INNER_GAP_DP = 52.dp
 private val ICON_DP = 42.dp
 private const val BOW_FACTOR = 0.16f
+
+/** v5.0.67 用户定案：星轨标签最多 3 个字 + 3 个点的省略号 */
+private fun orbitLabel(raw: String): String {
+    val t = raw.trim().ifBlank { "对话" }
+    return if (t.length <= 3) t else t.take(3) + "..."
+}
 
 @Composable
 fun EmptyOrbitSelector(
@@ -86,6 +96,8 @@ fun EmptyOrbitSelector(
     hazeState: HazeState? = null,
     blurEnabled: Boolean = true,
     modifier: Modifier = Modifier,
+    /** v5.0.67：第三层（最内）展示最近对话，用于高亮当前这一条 */
+    currentConversationId: Uuid? = null,
 ) {
     val settings = LocalSettings.current
     val folderRepo: FolderRepository = koinInject()
@@ -93,6 +105,20 @@ fun EmptyOrbitSelector(
         folderRepo.getFoldersOfAssistant(settings.assistantId)
     }.collectAsStateWithLifecycle(initialValue = emptyList())
     val assistants = settings.assistants
+
+    // v5.0.67 ★三层星轨的最内层：最近对话（最多 5 个；置顶由 SQL 的
+    // `ORDER BY is_pinned DESC, update_at DESC` 保证必然出现在前 5 里）。
+    // 范围 = 当前助手 + 当前选中的项目包；不够 5 个就空着，不补位。
+    val conversationRepo: ConversationRepository = koinInject()
+    val navController = LocalNavController.current
+    val recentConversations by remember(settings.assistantId, currentFolderId) {
+        flow {
+            val all = runCatching {
+                conversationRepo.getRecentConversations(settings.assistantId, limit = 40)
+            }.getOrDefault(emptyList())
+            emit(all.filter { it.folderId == currentFolderId }.take(5))
+        }
+    }.collectAsStateWithLifecycle(initialValue = emptyList())
 
     val transition = rememberInfiniteTransition(label = "orbit")
     val tState = transition.animateFloat(
@@ -192,6 +218,40 @@ fun EmptyOrbitSelector(
                 )
             }
         }
+        // v5.0.67 第三层：最近对话（再内缩一个 gap，紧贴内弧）
+        fun innerAt(p: Offset2, k: Float) = Offset2(p.x - nx * gapPx * k, p.y - ny * gapPx * k)
+        val a3 = innerAt(a, 2f)
+        val b3 = innerAt(b, 2f)
+        val c3 = innerAt(c, 2f)
+        val recentCount = recentConversations.size
+        recentConversations.forEachIndexed { index, conv ->
+            OrbitItem(
+                tState = tState,
+                phaseOffset = if (recentCount > 0) index.toFloat() / recentCount else 0f,
+                arcA = a3,
+                arcC = c3,
+                arcB = b3,
+                selected = conv.id == currentConversationId,
+                halfIcon = iconPx / 2f,
+                label = orbitLabel(conv.title),
+                hazeState = hazeState,
+                blurEnabled = blurEnabled,
+                onClick = { navController.navigate(RouteActivity.Screen.Chat(conv.id)) },
+            ) {
+                Box(
+                    modifier = Modifier.size(ICON_DP),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = HugeIcons.Message02,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+        }
+
         folders.forEachIndexed { index, folder ->
             val selected = folder.id == currentFolderId
             OrbitItem(

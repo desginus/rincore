@@ -257,33 +257,41 @@ fun AssistantMemoryPage(id: String) {
                     )
                 }
 
-                if (memoryCategory == MemoryCategory.DREAM) {
-                    // 做梦整理 = 文件式记忆库（上游记忆 2.0）
-                    MemoryFilesTab(
-                        memories = memories,
-                        consolidation = consolidation.takeIf { assistant.enableMemory },
-                        onOrganizeMemory = { vm.organizeMemory() },
-                        onOpenMemory = { path -> navController.navigate(Screen.MemoryFile(vm.memoryId, path)) },
-                        onDeleteMemory = { vm.deleteMemory(it) },
-                    )
-                } else {
-                    // 主动写入 = 条目式记忆，按范围过滤
-                    // v5.0.26：主动写入 = manual/user 来源的条目（dream 来源归「做梦整理」分类）
-                    val scopedMemories = when (memoryScope) {
-                        MemoryScope.ASSISTANT -> assistantMemories
-                        MemoryScope.FOLDER -> folderMemories
-                        MemoryScope.CONVERSATION -> emptyList()
-                    }.filter { it.source != "dream" }
-                    MemoryMemoriesTab(
-                        memories = scopedMemories,
-                        conversationMemories = if (memoryScope == MemoryScope.CONVERSATION) conversationMemories else emptyList(),
-                        loadTitle = { vm.conversationTitle(it) },
-                        loadRecentConversations = { vm.recentConversations() },
-                        onAddMemory = { vm.addMemory(it) },
-                        onUpdateMemory = { vm.updateMemory(it) },
-                        onDeleteMemory = { vm.deleteMemory(it) },
-                    )
+                // v5.0.67 ★用户定案的二维语义（来源 × 存储）：
+                //   来源标签：主动写入 = source != "dream"（模型调工具/用户手加）
+                //             做梦整理 = source == "dream"（自动整理产物，Consolidator 同步落库）
+                //   存储标签：助手记忆 = folderId/conversationId 都为空的条目
+                //             项目包记忆 = 该包 folderId 层 ∪ 同包所有对话的「仅对话内可见」记忆
+                //             单对话记忆 = conversationId 层的条目
+                // 两个维度**叉乘**，任何组合都能查到对应内容。
+                val matchSource: (me.rerere.rikkahub.data.model.AssistantMemory) -> Boolean = { m ->
+                    if (memoryCategory == MemoryCategory.DREAM) m.source == "dream" else m.source != "dream"
                 }
+                val folderConvIds by vm.folderConversationIds.collectAsStateWithLifecycle()
+                val scopedMemories = when (memoryScope) {
+                    MemoryScope.ASSISTANT -> assistantMemories.filter(matchSource)
+                    MemoryScope.FOLDER -> folderMemories.filter(matchSource)
+                    MemoryScope.CONVERSATION -> emptyList()
+                }
+                val scopedConversationMemories = when (memoryScope) {
+                    // 助手级：不列对话条���（它们是「单对话」的存储位置）
+                    MemoryScope.ASSISTANT -> emptyList()
+                    // 项目包：只列**归入项目包**的对话的记忆（同包多对话 → 按对话分组展示）
+                    MemoryScope.FOLDER -> conversationMemories
+                        .filter { it.conversationId != null && it.conversationId in folderConvIds }
+                        .filter(matchSource)
+                    // 单对话：本助手名下全部对话级记忆（按对话分组）
+                    MemoryScope.CONVERSATION -> conversationMemories.filter(matchSource)
+                }
+                MemoryMemoriesTab(
+                    memories = scopedMemories,
+                    conversationMemories = scopedConversationMemories,
+                    loadTitle = { vm.conversationTitle(it) },
+                    loadRecentConversations = { vm.recentConversations() },
+                    onAddMemory = { vm.addMemory(it) },
+                    onUpdateMemory = { vm.updateMemory(it) },
+                    onDeleteMemory = { vm.deleteMemory(it) },
+                )
             } else {
                 MemorySettingsTab(
                     assistant = assistant,
