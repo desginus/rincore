@@ -71,6 +71,22 @@ fun ZoomableAsyncImage(
     val workspaceDead = model != null && isVirtualWorkspaceUri(model) &&
         resolveWorkspaceRelPath(model) == null
     var workspaceFailed by remember(model) { mutableStateOf(false) }
+    // v5.0.65 ★「偶发图片渲染失败，只能看到 ALT 文本，之后一直不恢复」根修：
+    // 旧实现 onError 置 workspaceFailed=true 后，下面的 if 分支**永久**走纯文本占位，
+    // 再没有任何重试路径 —— 而失败常常是**时序问题**（模型先读图、随即在同一条回复里
+    // 引用，转存/落盘还没完成，Coil 第一次请求扑空）。
+    // 现在：失败后做有限次延迟重试（0.7s / 1.4s / 2.1s，共 3 次），期间重新走 AsyncImage。
+    // 注意 workspaceDead（流式尚未到达的残缺 workspace:// URL）**不重试** —— 那是等 URL
+    // 完整，重试只会造成请求风暴（v4.2.2 的教训）。
+    var workspaceRetry by remember(model) { mutableStateOf(0) }
+
+    androidx.compose.runtime.LaunchedEffect(model, workspaceFailed) {
+        if (workspaceFailed && workspaceRetry < 3) {
+            kotlinx.coroutines.delay(700L * (workspaceRetry + 1))
+            workspaceRetry += 1
+            workspaceFailed = false
+        }
+    }
     val context = LocalContext.current
     val placeholder = if (LocalDarkMode.current) R.drawable.placeholder_dark else R.drawable.placeholder
     val export = LocalExportContext.current
