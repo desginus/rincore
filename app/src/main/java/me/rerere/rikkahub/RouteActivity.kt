@@ -771,7 +771,10 @@ class RouteActivity : ComponentActivity() {
                                 SettingFilesPage()
                             }
                             entry<Screen.SettingAppStorage> {
-                                me.rerere.rikkahub.ui.pages.setting.SettingAppStoragePage(onBack = {})
+                                me.rerere.rikkahub.ui.pages.setting.SettingAppStoragePage(
+                                    // v5.0.69 ★接线修复：原来传空 lambda → 存储设置页的返回键点了没反应
+                                    onBack = { run { if (backStack.size > 1) backStack.removeLastOrNull() } },
+                                )
                             }
                             entry<Screen.SettingCallTrace> {
                                 SettingCallTracePage()

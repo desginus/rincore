@@ -601,6 +601,25 @@ private fun TextInputRow(
         // 现在补上触发 + 面板 + 插入三段。
         var toolPickerData by remember { mutableStateOf<ToolMatrixPickerData?>(null) }
         var toolPickerStack by remember { mutableStateOf<List<String>>(emptyList()) }
+
+        /** 把光标处的 `/@`（或 `/`、`@`）整段替换成 `@<name> `（工具/子区引用统一入口） */
+        fun insertToolMentionAtCursor(mention: String) {
+            val text = state.textContent.text.toString()
+            val caret = state.textContent.selection.start.coerceIn(0, text.length)
+            val before = text.take(caret)
+            // `/@` 是两字符触发：起点取斜杠位置（maxOf 会只取到 '@' → 留下一个 '/'）
+            val trigger = if (before.length >= 2 &&
+                before[before.length - 1] == '@' &&
+                before[before.length - 2] == '/'
+            ) before.length - 2 else maxOf(before.lastIndexOf('/'), before.lastIndexOf('@'))
+            if (trigger >= 0) {
+                // state.textContent 是 TextFieldState（val，不可赋值）→ 必须用 edit{ replace }
+                state.textContent.edit { replace(trigger, caret, mention) }
+            } else {
+                // 光标处没有触发字符（例如面板是从别处打开的）→ 直接插入到光标
+                state.textContent.edit { replace(caret, caret, mention) }
+            }
+        }
         val receiveContentListener = remember(
             settings.displaySetting.pasteLongTextAsFile, settings.displaySetting.pasteLongTextThreshold
         ) {
@@ -717,28 +736,24 @@ private fun TextInputRow(
                 onPush = { id -> toolPickerStack = toolPickerStack + id },
                 onBack = { toolPickerStack = toolPickerStack.dropLast(1) },
                 onPick = { tool ->
-                    // 把触发字符（/ 或 @）整段替换成 "@<工具名> "
-                    val text = state.textContent.text.toString()
-                    val caret = state.textContent.selection.start.coerceIn(0, text.length)
-                    val before = text.take(caret)
-                    // `/@` 是两字符触发：起点取斜杠位置（maxOf 会只取到 '@' → 留下一个 '/'）
-                    val trigger = if (before.length >= 2 &&
-                        before[before.length - 1] == '@' &&
-                        before[before.length - 2] == '/'
-                    ) before.length - 2 else maxOf(before.lastIndexOf('/'), before.lastIndexOf('@'))
-                    if (trigger >= 0) {
-                        // v5.0.64: state.textContent 是 **TextFieldState（val，不可赋值）**，
-                        // 必须用 edit{ replace(...) } 改写；直接用 TextFieldValue 赋值会
-                        // 编译失败（'val' cannot be reassigned / Assignment type mismatch）。
-                        // replace 接受绝对索引，编辑器会把光标落到替换段末尾。
-                        state.textContent.edit {
-                            replace(trigger, caret, "@${tool.name} ")
-                        }
-                    }
+                    // 用 rawName（真实工具名）：`name` 可能是 settings.toolNameOverrides 的别名，
+                    // `@别名` 在 ToolMentionTransformer 里解析不到真实工具。
+                    insertToolMentionAtCursor("@${tool.rawName} ")
                     toolPickerData = null
                     toolPickerStack = emptyList()
                 },
-                onPickZone = { zone -> toolPickerStack = toolPickerStack + zone.id },
+                // v5.0.69 ★用户实测纠正：子区行右侧的 @ 图标 = **把该子区作为 @提及引用**
+                // （插入输入框让模型加载/使用整个区），**不是**下钻。
+                // 下钻由行主体的 onPush 负责；我上一版把 onPickZone 接到了 push 上，
+                // 于是点 @ 图标会直接进区 → "这个 UI 完全失效"。
+                onPickZone = { zone ->
+                    // 与 4.8.190 逐字一致：插入 **完整路径 zone.id**（不是 label）。
+                    // `@提及` 由 ZoneRouter.resolveCandidates(token) 解析，只认路径/工具名；
+                    // label 只是显示名（叶子），插进去解析不到 → 等于没引用。
+                    insertToolMentionAtCursor("@${zone.id} ")
+                    toolPickerData = null
+                    toolPickerStack = emptyList()
+                },
                 onDismiss = {
                     toolPickerData = null
                     toolPickerStack = emptyList()
