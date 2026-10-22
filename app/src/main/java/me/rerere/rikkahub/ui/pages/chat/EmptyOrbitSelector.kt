@@ -236,7 +236,7 @@ fun EmptyOrbitSelector(
                 label = orbitLabel(conv.title),
                 hazeState = hazeState,
                 blurEnabled = blurEnabled,
-                onClick = { navController.navigate(Screen.Chat(conv.id)) },
+                onClick = { navController.navigate(Screen.Chat(conv.id.toString())) },
             ) {
                 Box(
                     modifier = Modifier.size(ICON_DP),
