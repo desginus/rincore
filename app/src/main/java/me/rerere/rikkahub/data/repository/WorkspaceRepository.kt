@@ -35,6 +35,11 @@ import kotlin.uuid.Uuid
 
 private const val MAX_PREVIEW_BYTES = 1 * 1024 * 1024L
 
+/** v5.0.66 (P6): CSI / OSC / 单字符 ANSI 转义序列（颜色、光标、标题设置） */
+private val ANSI_ESCAPE_REGEX = Regex(
+    "\u001B(?:\\[[0-9;?]*[ -/]*[@-~]|\\][^\u0007\u001B]*(?:\u0007|\u001B\\\\)|[@-Z\\\\-_])"
+)
+
 class WorkspaceRepository(
     private val dao: WorkspaceDAO,
     private val manager: WorkspaceManager,
@@ -494,13 +499,6 @@ class WorkspaceRepository(
                 text.replace(ANSI_ESCAPE_REGEX, "")
             }
         }.getOrDefault("")
-    }
-
-    private companion object {
-        /** CSI / OSC / 单字符转义序列（含颜色、光标、标题设置） */
-        private val ANSI_ESCAPE_REGEX = Regex(
-            "\u001B(?:\\[[0-9;?]*[ -/]*[@-~]|\\][^\u0007\u001B]*(?:\u0007|\u001B\\\\)|[@-Z\\\\-_])"
-        )
     }
 
     suspend fun killJob(id: String, jobId: String): Int = withContext(me.rerere.rikkahub.utils.AppDispatchers.Sandbox) {
