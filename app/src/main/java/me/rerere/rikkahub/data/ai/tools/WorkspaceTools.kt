@@ -104,7 +104,7 @@ private fun createWorkspaceToolsWithApprovals(
         createShowFileTool(workspaceId, ::needsApproval, workspaceRepository, cwd),
         createShellTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
         // v4.8.72: 后台任务原语 (长任务跨调用存活; 沙箱实例隔离下的唯一可靠状态源)
-        createJobTool(workspaceId, ::needsApproval, workspaceRepository),
+        createJobTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
         // v4.6.1: 代码探索双件套 (对齐 Claude Code 的 Grep/Glob 设计 —
         // 专用工具优于 shell 拼接: 结构化输出/统一截断/免审批只读)
         createGrepTool(workspaceId, ::needsApproval, workspaceRepository, shellCwd),
@@ -756,6 +756,11 @@ private fun createJobTool(
     workspaceId: String,
     needsApproval: (String) -> Boolean,
     workspaceRepository: WorkspaceRepository,
+    // v5.0.66 ★P1/P2：job 必须和 shell 用同一套 CWD 语义。
+    // 旧实现既不回落 defaultCwd、也不做挂载点转换 → 不传 cwd 时落在 filesDir 总根
+    // （用户看到"所有分区平铺"），传相对助手 CWD 的路径时又找不到（用户实测
+    // cd: /workspace/101519-...: No such file or directory）。
+    defaultCwd: String? = null,
 ) = Tool(
     name = "workspace_job",
     description = "Durable background jobs in the sandbox. Each workspace_shell call is a fresh isolated proot instance whose processes die when the call ends — long tasks MUST run as jobs to survive. " +
@@ -796,7 +801,20 @@ private fun createJobTool(
         when (action) {
             "start" -> {
                 val command = params.string("command") ?: error("command is required for action=start")
-                val cwd = workspaceCwdRel(params.string("cwd")).orEmpty()
+                // v5.0.66 ★P1/P2 修复（用户实测两条）：
+                //  · 不传 cwd 时 job 落在 filesDir 总根（ls 看到所有分区平铺），
+                //    而 workspace_shell 落在助手 CWD —— 同一个 /workspace 两个意思；
+                //  · 传相对助手 CWD 的路径（如 "101519-xxx/work"）时 job 不会补前缀，
+                //    直接 cd /workspace/101519-xxx/work 必失败。
+                // 现在与 shell 完全同口径：未传 → 助手 CWD；相对路径 → 补助手 CWD 前缀。
+                val relRaw = workspaceCwdRel(params.string("cwd"))
+                val jobBaseCwd = workspaceCwdRel(defaultCwd)
+                val cwd = when {
+                    relRaw == null -> jobBaseCwd.orEmpty()
+                    jobBaseCwd.isNullOrBlank() -> relRaw
+                    relRaw == jobBaseCwd || relRaw.startsWith("$jobBaseCwd/") -> relRaw
+                    else -> "$jobBaseCwd/$relRaw"
+                }
                 val jobId = "j" + java.lang.Long.toHexString(System.currentTimeMillis()) +
                     java.lang.Long.toHexString(System.nanoTime() % 0x10000L)
                 workspaceRepository.startJob(workspaceId, command, cwd, jobId)
@@ -806,7 +824,13 @@ private fun createJobTool(
                             put("job_id", jobId)
                             put("status", "started")
                             put("log_path", "/workspace/.rin-jobs/$jobId.log")
-                            put("note", "Durable job — keeps running after this call. Check with workspace_job {action:status, job_id}.")
+                            put(
+                                "note",
+                                "Durable job — keeps running after this call. Check with workspace_job {action:status, job_id}. " +
+                                    "NOTE: inside a job, /workspace is the WORKSPACE FILES ROOT (all partitions flat); " +
+                                    "the default working directory is the assistant CWD'$cwd' — use paths relative to /workspace, " +
+                                    "i.e. /workspace/<assistantCwd>/<your path>."
+                            )
                         }.toString()
                     )
                 )

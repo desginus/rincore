@@ -103,19 +103,40 @@ fun createReadImageTool(
         if (path.startsWith("/") && workspaceRepository != null && workspaceId.isNotBlank()) {
             val ext0 = path.substringAfterLast('.', "").lowercase()
             if (ext0 !in IMAGE_EXTENSIONS) return@Tool readImageError("Invalid: 非图片文件 ($path)", "仅支持 png/jpg/jpeg/webp/gif")
-            val bytes = runCatching {
-                workspaceRepository.readRootfsBuffer(workspaceId, path, cwd).toByteArray()
-            }.getOrNull()
-            if (bytes != null && bytes.isNotEmpty()) {
-                if (bytes.size.toLong() > READ_IMAGE_MAX_BYTES) return@Tool readImageError("Error: 文件过大 (${bytes.size / 1048576}MiB > 20MiB 上限)")
+            // v5.0.66 ★P4：中文路径 100% 失败的兜底 —— 若传入的是**百分号编码**形态
+            // （%E5%8D%A1…，占位文本里就是这种），先解码再交给 rootfs；原文形态同时保留重试。
+            // 旧实现直接拿编码串当文件名 → 必找不到（用户实测两个不同中文路径全失败）。
+            val decoded = if ('%' in path) runCatching {
+                me.rerere.rikkahub.utils.percentDecodeLenient(path)
+            }.getOrNull() else null
+            val candidates = buildList {
+                add(path)
+                if (decoded != null && decoded != path) add(decoded)
+            }
+            var bytes: ByteArray? = null
+            var lastErr: String? = null
+            for (candidate in candidates) {
+                val got = runCatching {
+                    workspaceRepository.readRootfsBuffer(workspaceId, candidate, cwd).toByteArray()
+                }.getOrNull()
+                if (got != null && got.isNotEmpty()) {
+                    bytes = got
+                    break
+                }
+                lastErr = candidate
+            }
+            @Suppress("NAME_SHADOWING")
+            val bytesFinal = bytes
+            if (bytesFinal != null && bytesFinal.isNotEmpty()) {
+                if (bytesFinal.size.toLong() > READ_IMAGE_MAX_BYTES) return@Tool readImageError("Error: 文件过大 (${bytesFinal.size / 1048576}MiB > 20MiB 上限)")
                 val uris = org.koin.core.context.GlobalContext.get().get<me.rerere.rikkahub.data.files.FilesManager>()
-                    .createChatFilesByByteArrays(listOf(bytes))
+                    .createChatFilesByByteArrays(listOf(bytesFinal))
                 return@Tool listOf(
                     UIMessagePart.Text("[图片] $path (经 read_image 重新加载)"),
                     UIMessagePart.Image(url = uris.first().toString()),
                 )
             }
-            rootfsErr = "rootfs 解析失败（cwd=${cwd ?: "(无)"}）"
+            rootfsErr = "rootfs 解析失败（cwd=${cwd ?: "(无)"}, 试过 ${candidates.size} 种形态${lastErr?.let { ", 最后=$it" } ?: ""}）"
         }
         val decoded = decodeFsPath(path)
         val file = File(decoded)

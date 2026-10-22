@@ -254,6 +254,23 @@ class GenerationHandler(
 // 长任务应走 workspace_job 后台 job），卡死时最多两分钟就有明确超时回包。
         private const val TOOL_EXECUTION_TIMEOUT_MS = 120_000L
 
+        /**
+         * v5.0.66 ★P3 修复（用户实测：schema 写 default 600 / max 600，实际
+         * "Tool execution timed out after 120s"）：`workspace_shell` 自己的
+         * `timeout` 参数（最大 600s）被**这一层的 120s 硬超时**提前掐死，
+         * 于是长命令永远跑不完（用户重建全书 3m17s 直接失败）。
+         * 给 shell 留出 命令超时 + 60s 缓冲；`workspace_job` 只做启动/查询，保持短超时。
+         */
+        private const val SHELL_TOOL_TIMEOUT_MS = 660_000L
+        private const val JOB_TOOL_TIMEOUT_MS = 60_000L
+
+        /** 按工具名决定工具层超时（v5.0.66，P3） */
+        private fun toolExecutionTimeoutMs(toolName: String): Long = when (toolName) {
+            "workspace_shell" -> SHELL_TOOL_TIMEOUT_MS
+            "workspace_job" -> JOB_TOOL_TIMEOUT_MS
+            else -> TOOL_EXECUTION_TIMEOUT_MS
+        }
+
         // v4.8.130: 断流重试预算 = 三轮链 18 次 (RetryPolicy.kt Stream — 每组
         // 300ms/700ms/1s/2s/3s/5s 递增退避, 用户定版)。旧 v3.11.24 的 45s 时间
         // 预算常量 (STREAM_RETRY_BUDGET_MS) 经全库核验已无任何消费点 (其注释
@@ -2218,19 +2235,22 @@ class GenerationHandler(
      */
     private suspend fun executeToolItemSafe(item: QueuedToolExec): ToolExecOutcome {
         val t0 = System.currentTimeMillis()
+        // v5.0.66 (P3): 不同工具用不同上限 —— workspace_shell 的命令自带 600s 预算，
+        // 不能被这里的 120s 提前掐死；其余工具保持 120s 防挂死。
+        val timeoutMs = toolExecutionTimeoutMs(item.tool.toolName)
         val outcome = try {
-            val value = withTimeout(TOOL_EXECUTION_TIMEOUT_MS) {
+            val value = withTimeout(timeoutMs) {
                 item.toolDef.execute(item.args)
             }
             ToolExecOutcome(item, value, System.currentTimeMillis(), null)
         } catch (e: TimeoutCancellationException) {
             CallTracer.event("TOOL", "timeout_${item.tool.toolName}",
-                "tool timed out after ${TOOL_EXECUTION_TIMEOUT_MS / 1000}s",
+                "tool timed out after ${timeoutMs / 1000}s",
                 metrics = sseDiagMetrics())
             ToolExecOutcome(
                 item,
                 listOf(UIMessagePart.Text(
-                    "Error: Tool execution timed out after ${TOOL_EXECUTION_TIMEOUT_MS / 1000}s (${item.tool.toolName}). " +
+                    "Error: Tool execution timed out after ${timeoutMs / 1000}s (${item.tool.toolName}). " +
                         "The tool may be hanging on network/IO. Reconsider: different parameters, another tool (invoke_tools), or answer in text."
                 )),
                 System.currentTimeMillis(),

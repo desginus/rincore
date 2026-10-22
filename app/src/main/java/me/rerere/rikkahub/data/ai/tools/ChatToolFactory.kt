@@ -113,21 +113,48 @@ class ChatToolFactory(
         val fileName = "${Uuid.random()}.txt"
         Log.i(TAG, "truncateOutput: saving $totalChars chars to $fileName")
         val fullText = textParts.joinToString("\n") { it.text }
-        val outputDir = File(context.filesDir, FileFolders.TOOL_OUTPUTS).apply { mkdirs() }
-        File(outputDir, fileName).writeText(fullText)
 
-        return listOf(
-            UIMessagePart.Text(
-                buildString {
-                    appendLine("[Tool output truncated: $totalChars characters total]")
-                    appendLine("Full output saved to: /tool_outputs/$fileName")
-                    appendLine("Use shell to read: `cat /tool_outputs/$fileName`")
-                    appendLine("Use shell to search: `grep \"pattern\" /tool_outputs/$fileName`")
-                    appendLine()
-                    append(fullText.take(TOOL_OUTPUT_PREVIEW_CHARS))
-                }
-            )
-        ) + output.filter { it !is UIMessagePart.Text }
+        // v5.0.66 ★P5 修复（用户实测："路径是工具自己给的，但 wc -l /tool_outputs/xxx 返回 0，
+        // 截断的大输出等于永久丢失"）：
+        //  旧实现 `File(outputDir, fileName).writeText(fullText)` 完全不检查结果，也不 catch ——
+        //  一旦写入失败（磁盘满 / 目录被清理 / 并发 mkdirs 失败），照样回一句
+        //  "Full output saved to: ..."，模型按提示去读必然扑空。
+        //  现在：写入后**校验非空**；失败则**不谎称已保存**，改为多吐内容 + 明确告知失败原因。
+        val saved = runCatching {
+            val outputDir = File(context.filesDir, FileFolders.TOOL_OUTPUTS).apply { mkdirs() }
+            val target = File(outputDir, fileName)
+            target.writeText(fullText)
+            target.takeIf { it.length() > 0L }
+        }.getOrNull()
+
+        return if (saved == null) {
+            listOf(
+                UIMessagePart.Text(
+                    buildString {
+                        appendLine("[Tool output truncated: $totalChars characters total — 落盘失败，以下不是完整内容]")
+                        appendLine("（无法写入 /tool_outputs，因此不提供文件路径，避免你去读一个不存在的文件）")
+                        appendLine("建议：把命令输出重定向到工作区文件后用 workspace_read_file 分页读，例如 `cmd > /workspace/log.txt 2>&1`。")
+                        appendLine()
+                        append(fullText.take(TOOL_OUTPUT_PREVIEW_CHARS * 2))
+                    }
+                )
+            ) + output.filter { it !is UIMessagePart.Text }
+        } else {
+            listOf(
+                UIMessagePart.Text(
+                    buildString {
+                        appendLine("[Tool output truncated: $totalChars characters total]")
+                        appendLine("Full output saved to: /tool_outputs/$fileName (${saved.length()} bytes)")
+                        // v5.0.66: 统一用 workspace_read_file 读（走 rootfs 解析，与工具层一致）；
+                        // shell 的 `cat` 只在 proot 的 /tool_outputs bind 可用时有效，不再作首选。
+                        appendLine("Read it with: workspace_read_file(path=\"/tool_outputs/$fileName\", offset=1, limit=2000)")
+                        appendLine("Or in shell: `grep \"pattern\" /tool_outputs/$fileName`（若 shell 报 No such file，改用上面的工具读法）")
+                        appendLine()
+                        append(fullText.take(TOOL_OUTPUT_PREVIEW_CHARS))
+                    }
+                )
+            ) + output.filter { it !is UIMessagePart.Text }
+        }
     }
 
     private suspend fun createWorkspaceToolsIfReady(workspaceId: String?, cwd: String?): List<Tool> {

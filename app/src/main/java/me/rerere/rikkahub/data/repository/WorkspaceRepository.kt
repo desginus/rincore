@@ -487,9 +487,20 @@ class WorkspaceRepository(
                     if (n <= 0) break
                     toSkip -= n
                 }
-                String(ins.readBytes(), Charsets.UTF_8)
+                // v5.0.66 ★P6：log_tail 里混入 ANSI 转义（\u001b[0;93m…）纯文本展示是乱码；
+                // 从字节中间截断还会切裂 UTF-8 多字节字符 → 用替换式严格解码 + 去 ANSI。
+                val raw = ins.readBytes()
+                val text = String(raw, Charsets.UTF_8)
+                text.replace(ANSI_ESCAPE_REGEX, "")
             }
         }.getOrDefault("")
+    }
+
+    private companion object {
+        /** CSI / OSC / 单字符转义序列（含颜色、光标、标题设置） */
+        private val ANSI_ESCAPE_REGEX = Regex(
+            "\u001B(?:\\[[0-9;?]*[ -/]*[@-~]|\\][^\u0007\u001B]*(?:\u0007|\u001B\\\\)|[@-Z\\\\-_])"
+        )
     }
 
     suspend fun killJob(id: String, jobId: String): Int = withContext(me.rerere.rikkahub.utils.AppDispatchers.Sandbox) {
