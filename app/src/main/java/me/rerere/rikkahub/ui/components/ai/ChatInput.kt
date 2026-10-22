@@ -592,6 +592,12 @@ private fun TextInputRow(
         var isFocused by remember { mutableStateOf(false) }
         var isFullScreen by remember { mutableStateOf(false) }
         var completionList by remember { mutableStateOf<ChatCompletionList?>(null) }
+        // v5.0.64 ★「/@ 快捷输入坏掉」根因修复：
+        // 参数 toolPickerProvider 从 v5.0.52 起就在签名里，但**整个函数体从未使用它** ——
+        // 输入 `/` 或 `@` 什么都不会发生（模型仍能收到 @提及 语义，但输入框没选择器）。
+        // 现在补上触发 + 面板 + 插入三段。
+        var toolPickerData by remember { mutableStateOf<ToolMatrixPickerData?>(null) }
+        var toolPickerStack by remember { mutableStateOf<List<String>>(emptyList()) }
         val receiveContentListener = remember(
             settings.displaySetting.pasteLongTextAsFile, settings.displaySetting.pasteLongTextThreshold
         ) {
@@ -666,6 +672,65 @@ private fun TextInputRow(
                     list.copy(items = mergedItems)
                 }
             }
+        }
+
+        // v5.0.64：`/` 或 `@`（光标前最后一个 token 恰为单字符）→ 打开工具矩阵选择器
+        LaunchedEffect(toolPickerProvider, isFocused) {
+            val provider = toolPickerProvider
+            if (provider == null) return@LaunchedEffect
+            if (!isFocused) {
+                toolPickerData = null
+                return@LaunchedEffect
+            }
+            snapshotFlow {
+                val text = state.textContent.text.toString()
+                val caret = state.textContent.selection.start.coerceIn(0, text.length)
+                text.take(caret)
+                    .substringAfterLast('\n')
+                    .substringAfterLast(' ')
+                    .substringAfterLast('\u3000')
+            }.collectLatest { token ->
+                if (token == "/" || token == "@") {
+                    if (toolPickerData == null) {
+                        toolPickerData = runCatching { provider() }.getOrNull()
+                        toolPickerStack = emptyList()
+                    }
+                } else {
+                    toolPickerData = null
+                }
+            }
+        }
+
+        toolPickerData?.let { data ->
+            ToolMatrixPickerPopup(
+                data = data,
+                zoneStack = toolPickerStack,
+                onPush = { id -> toolPickerStack = toolPickerStack + id },
+                onBack = { toolPickerStack = toolPickerStack.dropLast(1) },
+                onPick = { tool ->
+                    // 把触发字符（/ 或 @）整段替换成 "@<工具名> "
+                    val text = state.textContent.text.toString()
+                    val caret = state.textContent.selection.start.coerceIn(0, text.length)
+                    val before = text.take(caret)
+                    val trigger = maxOf(before.lastIndexOf('/'), before.lastIndexOf('@'))
+                    if (trigger >= 0) {
+                        val insertion = "@${tool.name} "
+                        val head = before.substring(0, trigger) + insertion
+                        val tail = text.drop(caret)
+                        state.textContent = androidx.compose.ui.text.input.TextFieldValue(
+                            text = head + tail,
+                            selection = TextRange(head.length),
+                        )
+                    }
+                    toolPickerData = null
+                    toolPickerStack = emptyList()
+                },
+                onPickZone = { zone -> toolPickerStack = toolPickerStack + zone.id },
+                onDismiss = {
+                    toolPickerData = null
+                    toolPickerStack = emptyList()
+                },
+            )
         }
 
         completionList?.takeIf { it.items.isNotEmpty() }?.let { list ->

@@ -53,11 +53,29 @@ object ChatMediaStore {
                 .take(60)
                 .ifBlank { "image" }
             val ext = src.extension.ifBlank { "png" }
+            // v5.0.64 ★P3 修复：原实现**一律**生成 "<base>_1.<ext>"，多图场景下
+            // page-1.png / page-2.png 变成 page-1_1.png / page-2_1.png 看着还行，
+            // 但一旦快照目录已有 page-1_1（重复固化），第二张就会落到 page-1_2 ——
+            // 文件名不再对应内容，alt 也全指向第一张。用户实测两行 alt 都是 page-1。
+            // 现在：**先试原名**（内容一致直接复用 → 幂等、不产生 _1 噪音），
+            // 只有真的同名不同内容才加序号。
             var out: File? = null
+            val direct = File(dir, "$base.$ext")
+            if (!direct.exists()) {
+                if (direct.createNewFile()) {
+                    src.inputStream().use { input ->
+                        direct.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    if (direct.length() > 0) out = direct else direct.delete()
+                }
+            } else if (direct.length() == src.length()) {
+                // 同名同大小 → 视为同一份（快照幂等，重复固化不再产生新文件）
+                out = direct
+            }
             var n = 1
             while (out == null && n <= 9999) {
                 val candidate = File(dir, "${base}_$n.$ext")
-                if (candidate.createNewFile()) {
+                if (!candidate.exists() && candidate.createNewFile()) {
                     src.inputStream().use { input ->
                         candidate.outputStream().use { output -> input.copyTo(output) }
                     }

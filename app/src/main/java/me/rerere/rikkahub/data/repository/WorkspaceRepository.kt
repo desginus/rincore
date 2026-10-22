@@ -408,6 +408,17 @@ class WorkspaceRepository(
         manager.resolveFile(workspace.root, path, area)
     }
 
+    /** v5.0.64：解析目录（glob 等需要目录入口的场景；不能用 resolveFile） */
+    suspend fun resolveDir(
+        id: String,
+        area: me.rerere.workspace.WorkspaceStorageArea,
+        path: String,
+    ) = withContext(Dispatchers.IO) {
+        val workspace = dao.getById(id) ?: error("Workspace not found: $id")
+        manager.ensureWorkspace(workspace.root)
+        manager.resolveDir(workspace.root, path, area)
+    }
+
     suspend fun exportFile(
         id: String,
         area: WorkspaceStorageArea,

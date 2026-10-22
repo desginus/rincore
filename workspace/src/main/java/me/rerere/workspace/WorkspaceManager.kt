@@ -106,6 +106,22 @@ class WorkspaceManager(
         return file
     }
 
+    /**
+     * v5.0.64 ★P2 修复：解析**目录**（`resolveFile` 带 `require(file.isFile)`，
+     * 拿它解析目录必抛 "Path is not a file"，被调用方 getOrNull() 吞掉 →
+     * `workspace_glob` 恒返回 0）。
+     */
+    fun resolveDir(
+        root: String,
+        path: String,
+        area: WorkspaceStorageArea = WorkspaceStorageArea.FILES,
+    ): File {
+        val dir = fileSystem.resolve(areaDir(root, area), path)
+        require(dir.exists()) { "Directory does not exist: $path" }
+        require(dir.isDirectory) { "Path is not a directory: $path" }
+        return dir
+    }
+
     fun exportFile(
         root: String,
         path: String,
@@ -233,7 +249,17 @@ class WorkspaceManager(
         if (cwd.isNullOrBlank()) return base
         return runCatching {
             val baseCanonical = base.canonicalFile
-            val scoped = File(baseCanonical, cwd.trim().trim('/')).canonicalFile
+            // v5.0.64 ★P1 修复：cwd 可能带 "/workspace" 前缀（WorkspaceCwdPicker 存的是
+            // 绝对形态 "/workspace/projects/foo"）。旧实现只 trim('/') → 得到
+            // "workspace/projects/foo" → 拼成 filesDir/workspace/projects/foo（多一层
+            // 不存在的 workspace 目录）→ 工具全落空；而 shell 侧用 workspaceCwdRel
+            // （已剥前缀）→ 两边不一致，正是用户踩的坑。
+            // 统一口径：剥掉前缀，与 WorkspaceTools.workspaceCwdRel / ProducedFiles.normalizeScope 一致。
+            var rel = cwd.trim().replace('\\', '/').trim('/')
+            if (rel == "workspace") rel = ""
+            if (rel.startsWith("workspace/")) rel = rel.removePrefix("workspace/")
+            if (rel.isBlank()) return base
+            val scoped = File(baseCanonical, rel).canonicalFile
             if (scoped.path == baseCanonical.path || scoped.path.startsWith(baseCanonical.path + File.separator)) {
                 scoped
             } else {

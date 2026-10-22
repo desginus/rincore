@@ -678,13 +678,26 @@ private fun createGlobTool(
         //   · 含 '/' 或 "**"   → 按相对整路径匹配（等价 find -path，* 可跨目录）
         //   · mtime 倒序输出；truncated 时直接给出真实总数（不再二次启动）。
         val relPath = searchPath.removePrefix("/workspace").trim('/')
-        val baseDir = runCatching {
-            workspaceRepository.resolveFile(
+        // v5.0.64 ★P2 真根因：这里原来用 resolveFile 解析**目录**，而
+        // WorkspaceManager.resolveFile 内部 require(file.isFile) 会直接抛
+        // "Path is not a file" → runCatching 吞掉 → baseDir=null →
+        // matchedPaths 恒为空 → workspace_glob 无论什么模式都返回 count: 0。
+        // 改用 resolveDir（新增），并把失败原因带出来而不是静默吞掉。
+        val baseDirResult = runCatching {
+            workspaceRepository.resolveDir(
                 workspaceId,
                 me.rerere.workspace.WorkspaceStorageArea.FILES,
                 if (relPath.isBlank()) "/" else relPath,
             )
-        }.getOrNull()
+        }
+        val baseDir = baseDirResult.getOrNull()
+        if (baseDir == null) {
+            error(
+                "workspace_glob 无法解析搜索根: ${searchPath}" +
+                    "（relPath=$relPath, 原因=${baseDirResult.exceptionOrNull()?.message}）" +
+                    "；注意工具侧的 /workspace = 工作区根，若要搜助手 CWD 请显式传 path"
+            )
+        }
         val matchedPaths: List<String> = if (baseDir == null) {
             emptyList()
         } else {
@@ -871,7 +884,8 @@ private fun createShellTool(
                     put(
                         "description",
                         if (!defaultCwd.isNullOrBlank()) {
-                            "Working directory relative to the workspace files root (/workspace). Defaults to '$defaultCwd' (= /workspace/$defaultCwd)."
+                            "Working directory relative to the workspace files root (/workspace). Defaults to '$defaultCwd' (= /workspace/$defaultCwd). " +
+                                "IMPORTANT: in this shell, /workspace is the WORKSPACE ROOT; file tools (read_file/write_file/glob) resolve /workspace against the CURRENT CWD instead — if a file you create here is not found by those tools, pass the CWD-relative path or copy it under /workspace/$defaultCwd/."
                         } else {
                             "Working directory relative to the workspace files root. Defaults to root."
                         }
@@ -967,12 +981,50 @@ private suspend fun WorkspaceRepository.readTextInRootfs(
  * 按 Rootfs 内绝对路径读入内存。路径映射交给 WorkspaceManager, 由它统一处理
  * /workspace、bind mount 与 Rootfs 内部路径。
  */
+/**
+ * v5.0.64 ★P1：路径解析失败时**回显解析结果**。
+ *
+ * 用户实测的坑：`workspace_shell` 里 `/workspace` 是工作区根（能看到兄弟目录），
+ * 而 `workspace_read_file` 的 `/workspace` 受**当前 CWD** 影响（= `filesDir/<cwd>`）。
+ * 两边不一致时，原来的报错只有一句 "File does not exist: /workspace/x.png"，
+ * 完全看不出工具把路径解析到了哪里 —— 这是最容易反复踩的坑。
+ * 现在把「绑定根 / CWD / 解析后宿主路径 / 是否存在」四行一起带出来。
+ */
+private suspend fun WorkspaceRepository.pathDiagnostic(
+    workspaceId: String,
+    path: String,
+    cwd: String?,
+): String = runCatching {
+    val ws = getById(workspaceId)
+    val manager = org.koin.core.context.GlobalContext.get()
+        .get<me.rerere.workspace.WorkspaceManager>()
+    val hostBase = ws?.root?.let { manager.filesDir(it) }
+    val scope = cwd?.trim()?.trim('/')?.takeIf { it.isNotEmpty() }
+    val resolved = if (path.startsWith("/workspace")) {
+        val rel = path.removePrefix("/workspace").trimStart('/')
+        val base = if (scope == null) hostBase else hostBase?.let { java.io.File(it, scope) }
+        base?.let { java.io.File(it, rel) }
+    } else {
+        null
+    }
+    buildString {
+        append("\n  · 工具侧 /workspace 根 = ").append(hostBase?.absolutePath ?: "(未知)")
+        append("\n  · 当前 CWD = ").append(scope ?: "(无，等于根)")
+        append("\n  · 解析后宿主路径 = ").append(resolved?.absolutePath ?: "(非 /workspace 路径)")
+        append("\n  · 该路径存在 = ").append(resolved?.exists() ?: false)
+        append("\n  · 注意：workspace_shell 的 /workspace 与文件工具的 /workspace 受不同 CWD 影响，")
+        append("若两者不一致请显式传绝对路径或把文件复制到同一侧。")
+    }
+}.getOrElse { "\n  · (诊断不可用: ${it.message})" }
+
 internal suspend fun WorkspaceRepository.readRootfsBuffer(
     workspaceId: String,
     path: String,
     cwd: String? = null,
 ): ByteArrayOutputStream {
-    val size = rootfsFileSize(workspaceId, path, cwd)
+    val size = runCatching { rootfsFileSize(workspaceId, path, cwd) }.getOrElse { e ->
+        error("${e.message}${pathDiagnostic(workspaceId, path, cwd)}")
+    }
     require(size <= MAX_READ_FILE_BYTES) {
         "File is too large to read: $path (${size / 1024 / 1024}MB, max ${MAX_READ_FILE_BYTES / 1024 / 1024}MB). Use shell commands like head, tail, or grep to read parts of it."
     }

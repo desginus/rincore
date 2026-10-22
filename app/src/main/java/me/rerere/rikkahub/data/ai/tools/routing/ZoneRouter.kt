@@ -400,11 +400,18 @@ class ZoneRouter(
                 for (child in children) {
                     tree.get(child)?.let {
                         appendLine("- **`${label(child)}`** — [触发描述] ${it.description} [触发条件] ${it.keywords.joinToString(" ")}")
+                        // v5.0.64 ★P4：子区必须附上**它自己的工具名**。旧输出只有子区描述，
+                        // 用户/模型调完 invoke_tools("搜索") 仍不知道"到底启用了哪些工具"，
+                        // 只能靠函数清单反推。
+                        val childTools = map.classified[child].orEmpty().map { t -> t.name }.sorted()
+                        if (childTools.isNotEmpty()) {
+                            appendLine("  工具：" + childTools.joinToString("、"))
+                        }
                     }
                 }
                 if (direct.isNotEmpty()) {
                     appendLine()
-                    appendLine("直接工具：")
+                    appendLine("直接工具（${direct.size} 个）：" + direct.map { it.name }.sorted().joinToString("、"))
                     for (t in direct.sortedBy { it.name }) appendLine(toolLine(t))
                 }
                 appendLine()
