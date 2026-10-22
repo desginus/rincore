@@ -45,6 +45,17 @@ class WorkspaceRepository(
     fun listFlow(): Flow<List<WorkspaceEntity>> = dao.listFlow()
 
     /**
+     * v5.0.62: rootfs 路径 → 宿主 File（安全解析，越界/不存在返回 null）。
+     * 用于**记录产出时**把宿主绝对路径一并落盘 —— 之后打开时一次 stat 即可，
+     * 不再依赖 CWD / rootfs 语义推断。
+     */
+    suspend fun hostFileFor(id: String, path: String, cwd: String? = null): java.io.File? =
+        withContext(Dispatchers.IO) {
+            val ws = dao.getById(id) ?: return@withContext null
+            manager.resolveRootfsFileSafe(ws.root, path, cwd)
+        }
+
+    /**
      * v4.8.116: 二进制写入 rootfs（浏览器截图等模型产物统一落盘）。
      * 与 writeTextInRootfs 同语义（cwd 作用域、路径映射），但走宿主直写
      * （PNG 走 shell base64 既慢又有长度上限）。仅 /workspace 区可写。

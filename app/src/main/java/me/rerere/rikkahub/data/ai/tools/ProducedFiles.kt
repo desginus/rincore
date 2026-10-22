@@ -42,6 +42,17 @@ data class ProducedFile(
      * `rootfsFileSize(wsId, path, cwd)` 一步即中，不需要任何搜索。
      */
     val cwd: String? = null,
+    /**
+     * v5.0.62 **最终答案：宿主文件系统绝对路径**。
+     *
+     * 这是"唯一对应码"的真正形态 —— 记录产出时它已经指向磁盘上那个真实的 File，
+     * 打开时 `File(hostPath).isFile` 一次 stat 就够，**不需要任何 rootfs 语义、CWD 拼接、
+     * 工作区匹配**。
+     *
+     * 跨包名/跨设备迁移时绝对路径会变（`/data/data/<pkg>/files/...`），所以解析侧
+     * 会退化一步：按 `"/files/"` 之后的相对部分在当前 `filesDir` 重建。
+     */
+    val hostPath: String? = null,
 )
 
 object ProducedFiles {
@@ -115,6 +126,7 @@ object ProducedFiles {
         nowMs: Long,
         workspaceId: String? = null,
         cwd: String? = null,
+        hostPath: String? = null,
     ): Map<String, List<ProducedFile>> {
         val existing = current[conversationId].orEmpty()
         val scope = normalizeScope(cwd)
@@ -126,6 +138,7 @@ object ProducedFiles {
                     atMs = nowMs,
                     workspaceId = workspaceId?.takeIf { it.isNotBlank() },
                     cwd = scope,
+                    hostPath = hostPath?.takeIf { it.isNotBlank() },
                 )
             )
             existing.forEach { if (it.path != path) add(it) }
@@ -149,12 +162,16 @@ object ProducedFiles {
         nowMs: Long,
         workspaceId: String? = null,
         cwd: String? = null,
+        hostPaths: Map<String, String> = emptyMap(),
     ): Map<String, List<ProducedFile>> {
         if (entries.isEmpty()) return current
         var acc = current
         entries.forEach { (tool, path) ->
             if (path.isNotBlank()) {
-                acc = record(acc, conversationId, tool, path, nowMs, workspaceId, cwd)
+                acc = record(
+                    acc, conversationId, tool, path, nowMs, workspaceId, cwd,
+                    hostPath = hostPaths[path],
+                )
             }
         }
         return acc
@@ -167,11 +184,14 @@ object ProducedFiles {
      * 生成路径的兜底; 排除 .versions 版本快照目录; 目录不计; 上限 200。
      * v4.8.146: cwdScope = 本对话生效 CWD (多对话并行时把归属边界收到本项目子树)。
      */
+    /** v5.0.62: 扫描结果 = (rootfs 形态路径, 宿主绝对路径) */
+    data class ScannedFile(val rootfsPath: String, val hostPath: String)
+
     suspend fun scanWorkspaceSince(
         workspaceId: String,
         sinceMs: Long,
         cwdScope: String? = null,
-    ): List<String> {
+    ): List<ScannedFile> {
         return runCatching {
             val koin = org.koin.core.context.GlobalContext.get()
             val repo = koin.get<me.rerere.rikkahub.data.repository.WorkspaceRepository>()
@@ -189,13 +209,17 @@ object ProducedFiles {
             val scopeRel = cwdScope?.trim()?.trim('/')?.takeIf { it.isNotEmpty() }
             val scopeRoot = scopeRel?.let { File(base, it) }?.takeIf { it.isDirectory } ?: base
 
-            val out = ArrayList<String>()
+            val out = ArrayList<ScannedFile>()
             val seq = scopeRoot.walkTopDown().onEnter { dir -> !dir.name.startsWith(".") }
             for (f in seq) {
                 if (out.size >= 200) break
                 if (f.isFile && f.lastModified() >= sinceMs) {
                     val rel = f.relativeTo(base).path.replace(File.separatorChar, '/')
-                    if (rel.isNotBlank()) out.add("/workspace/$rel")
+                    if (rel.isNotBlank()) {
+                        // v5.0.62: 宿主绝对路径一并带出 —— 登记时直接落盘，
+                        // 点开时 File(hostPath) 一次 stat 就行，不再做路径形态推断。
+                        out.add(ScannedFile("/workspace/$rel", f.absolutePath))
+                    }
                 }
             }
             out

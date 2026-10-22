@@ -361,35 +361,12 @@ private fun MemorySettingsTab(
             )
             // v5.0.57 用户定案：上面两个旧开关（整个助手 / 单对话记忆）已删除——
             // 语义被下方「新建记忆归属」三锚点完整覆盖，留着只会互相打架。
-            // v5.0.54 用户定案：**新建记忆归属范围** — 三个锚点（助手 / 项目包 / 当前对话）
-            // 决定模型主动写入的记忆挂到哪个区块：助手级全助手可见；项目包内仅该包可见；对话级仅该对话可见。
-            item(
-                headlineContent = { Text("新建记忆归属") },
-                supportingContent = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            "模型主动写入（含做梦整理）的新记忆将挂到所选区块",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf(
-                                0 to "助手级",
-                                1 to "项目包内",
-                                2 to "当前对话",
-                            ).forEach { (value, label) ->
-                                FilterChip(
-                                    selected = assistant.memoryWriteScope == value,
-                                    onClick = { onUpdateAssistant(assistant.copy(memoryWriteScope = value)) },
-                                    label = { Text(label) },
-                                    enabled = assistant.enableMemory,
-                                )
-                            }
-                        }
-                    }
-                },
-            )
-            // v5.0.16 用户定案：做梦（记忆整理）独立开关 + 范围限定
+            // v5.0.62 用户定案：原「新建记忆归属」与「做梦范围」两块 UI 删除 ——
+            // "整个助手 / 单个对话"这类归属选择本就应该由顶部范围 Chip 承担，
+            // 在设置里再摆一套只会互相打架（用户原话："这两个 UI 本不应该存在，
+            // 它们现在本应该被合并到上面去"）。
+            // 归属语义仍由 Assistant.memoryWriteScope / memoryDreamScope 承载（默认 0=助手级）。
+            // v5.0.16 用户定案：做梦（记忆整理）独立开关
             switchItem(
                 checked = assistant.memoryDreamEnabled,
                 onCheckedChange = {
@@ -398,25 +375,6 @@ private fun MemorySettingsTab(
                 enabled = assistant.enableMemory,
                 supportingContent = { Text("允许模型在对话结束后通过做梦主动整理并记录记忆") },
                 headlineContent = { Text("做梦主动记录") },
-            )
-            item(
-                headlineContent = { Text("做梦范围") },
-                supportingContent = {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(
-                            0 to "整个助手",
-                            1 to "项目包内",
-                            2 to "当前对话",
-                        ).forEach { (value, label) ->
-                            FilterChip(
-                                selected = assistant.memoryDreamScope == value,
-                                onClick = { onUpdateAssistant(assistant.copy(memoryDreamScope = value)) },
-                                label = { Text(label) },
-                                enabled = assistant.enableMemory,
-                            )
-                        }
-                    }
-                },
             )
             switchItem(
                 checked = assistant.enableRecentChatsReference,

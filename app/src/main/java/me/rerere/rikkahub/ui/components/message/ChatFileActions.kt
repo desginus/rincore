@@ -46,6 +46,23 @@ internal suspend fun materializeWorkspaceFile(
     return file
 }
 
+/**
+ * v5.0.62：宿主 File 直接物化 —— 产出记录现在带 `hostPath`，这里一次复制即可。
+ * 不再走 `exportResolvedFile`（那条链要 workspaceId + rootfs 语义 + CWD 推断）。
+ */
+internal fun materializeHostFile(
+    context: Context,
+    hostFile: File,
+    cacheSubDir: String = "file_actions",
+): File {
+    val dir = File(context.cacheDir, cacheSubDir).apply { mkdirs() }
+    val out = File(dir, hostFile.name)
+    hostFile.inputStream().use { input ->
+        out.outputStream().use { output -> input.copyTo(output) }
+    }
+    return out
+}
+
 /** 导出: 本地文件 → 系统另存目标 (统一入口; 失败抛异常由调用方 toast) */
 internal fun exportLocalFileTo(context: Context, file: File, target: Uri) {
     if (!file.isFile) error("文件不存在")

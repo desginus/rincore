@@ -98,8 +98,15 @@ import java.io.File
  * v5.0.59：产出定位结果 —— **唯一路由键**（工作区 + rootfs 路径）。
  */
 data class LocatedArtifact(
+    /** 产出发生的工作区（旧记录才用得到） */
     val workspaceId: String,
+    /** rootfs 形态路径（旧记录才用得到） */
     val rootfsPath: String,
+    /**
+     * v5.0.62 **宿主 File**：来自 `ProducedFile.hostPath`，一次 stat 就有。
+     * 有它时后续动作（导出/分享/渲染）直接读它，不再经过 rootfs 解析。
+     */
+    val hostFile: File? = null,
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -152,6 +159,34 @@ fun ConversationArtifactsSheet(
     suspend fun resolveOrAsk(hint: ProducedFile): LocatedArtifact? {
         val name = hint.path.substringAfterLast('/').ifBlank { hint.path }
 
+        // ── ① 唯一对应码：记录时落盘的宿主绝对路径（v5.0.62 起）─────────────
+        // 这就是"直接打开"：File(hostPath).isFile 一次 stat，不猜 CWD、不查工作区。
+        val recorded = hint.hostPath
+        if (!recorded.isNullOrBlank()) {
+            val direct = File(recorded)
+            if (direct.isFile) {
+                return LocatedArtifact(
+                    workspaceId = hint.workspaceId.orEmpty(),
+                    rootfsPath = hint.path,
+                    hostFile = direct,
+                )
+            }
+            // 跨包名 / 跨设备迁移：绝对路径里的包名段变了，按 /files/ 之后重建
+            val rel = recorded.substringAfter("/files/", "")
+            if (rel.isNotBlank()) {
+                val rebuilt = File(context.filesDir, rel)
+                if (rebuilt.isFile) {
+                    return LocatedArtifact(
+                        workspaceId = hint.workspaceId.orEmpty(),
+                        rootfsPath = hint.path,
+                        hostFile = rebuilt,
+                    )
+                }
+            }
+        }
+
+        // ── ② 旧记录（没有 hostPath）：按 rootfs 语义最小集合探测 ──────────
+
         val wsIds = buildList {
             hint.workspaceId?.takeIf { it.isNotBlank() }?.let { add(it) }
             workspaceId?.takeIf { it.isNotBlank() && it !in this }?.let { add(it) }
@@ -186,8 +221,16 @@ fun ConversationArtifactsSheet(
             }
         }
 
+        // v5.0.62: 找不到时**把记录原样打出来** —— 用户一眼就能看出是"记录的路径本身错了"
+        // 还是"文件真的被删了"，不用再来回猜。
         toaster.show(
-            message = "未找到文件: $name（按 CWD 精确探测 ${tried.size} 处，均不存在）",
+            message = buildString {
+                append("未找到文件: ").append(name)
+                append("\n记录路径: ").append(hint.path)
+                append("\nCWD: ").append(hint.cwd ?: "/")
+                append("\n宿主路径: ").append(hint.hostPath ?: "（旧记录未存）")
+                if (tried.isNotEmpty()) append("\n已探 ${tried.size} 处")
+            },
             type = ToastType.Error,
         )
         return null
@@ -201,7 +244,7 @@ fun ConversationArtifactsSheet(
         scope.launch {
             runCatching {
                 val loc = resolveOrAsk(target) ?: return@launch
-                val file = materializeWorkspaceFile(
+                val file = loc.hostFile ?: materializeWorkspaceFile(
                     context, workspaceRepository, loc.workspaceId, loc.rootfsPath,
                 )
                 exportLocalFileTo(context, file, uri)
@@ -238,7 +281,7 @@ fun ConversationArtifactsSheet(
                             return@withContext
                         }
                         val resolvedName = loc.rootfsPath.substringAfterLast('/')
-                        val file = materializeWorkspaceFile(
+                        val file = loc.hostFile ?: materializeWorkspaceFile(
                             context, workspaceRepository, loc.workspaceId, loc.rootfsPath,
                         )
                         val taskDir = File(context.cacheDir, "file_actions_task").apply {
@@ -356,7 +399,7 @@ fun ConversationArtifactsSheet(
                                 scope.launch {
                                     runCatching {
                                         val loc = resolveOrAsk(sel) ?: return@launch
-                                        val file = materializeWorkspaceFile(
+                                        val file = loc.hostFile ?: materializeWorkspaceFile(
                                             context, workspaceRepository, loc.workspaceId, loc.rootfsPath,
                                         )
                                         shareLocalFile(context, file)

@@ -1176,6 +1176,14 @@ class GenerationHandler(
                         val producedWsId = assistant.workspaceId?.toString()
                         val producedCwd = me.rerere.rikkahub.data.ai.tools.ProducedFiles
                             .normalizeScope(workspaceCwd)
+                        // v5.0.62: 登记时就把**宿主绝对路径**解析出来落盘。
+                        // 这是"唯一对应码"的最终形态：点开时 File(hostPath) 一次 stat，
+                        // 不需要 CWD 探测、不需要 rootfs 语义、不需要任何搜索。
+                        val producedHostPath = producedWsId?.let { ws ->
+                            withContext(Dispatchers.IO) {
+                                workspaceRepository.hostFileFor(ws, produced, producedCwd)?.absolutePath
+                            }
+                        }
                         settingsStore.update { s ->
                             s.copy(
                                 conversationProducedFiles = me.rerere.rikkahub.data.ai.tools.ProducedFiles.record(
@@ -1186,6 +1194,7 @@ class GenerationHandler(
                                     nowMs = System.currentTimeMillis(),
                                     workspaceId = producedWsId,
                                     cwd = producedCwd,
+                                    hostPath = producedHostPath,
                                 )
                             )
                         }
@@ -1324,12 +1333,14 @@ class GenerationHandler(
                         .flatten()
                         .filter { it.atMs >= sinceMs }
                         .mapTo(HashSet()) { it.path }
-                    val filtered = paths.filter { it !in foreignRecent }
+                    // v5.0.62: ScannedFile 自带宿主绝对路径 → 直接落盘
+                    val filtered = paths.filter { it.rootfsPath !in foreignRecent }
                     s.copy(
                         conversationProducedFiles = me.rerere.rikkahub.data.ai.tools.ProducedFiles.recordBatch(
                             current = s.conversationProducedFiles,
                             conversationId = cid,
-                            entries = filtered.map { path -> "workspace_scan" to path },
+                            entries = filtered.map { entry -> "workspace_scan" to entry.rootfsPath },
+                            hostPaths = filtered.associate { it.rootfsPath to it.hostPath },
                             nowMs = System.currentTimeMillis(),
                             workspaceId = assistant.workspaceId?.toString(),
                             cwd = me.rerere.rikkahub.data.ai.tools.ProducedFiles
