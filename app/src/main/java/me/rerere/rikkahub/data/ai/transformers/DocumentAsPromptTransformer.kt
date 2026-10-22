@@ -26,10 +26,53 @@ object DocumentAsPromptTransformer : InputMessageTransformer {
         ctx: TransformerContext,
         messages: List<UIMessage>,
     ): List<UIMessage> {
+        // v5.0.71 ★用户实测「加号 UI 添加的图片模型找不到、upload_fetch 也不认」根修：
+        // 两个分支都走一次图片注解（幂等，只追加不替换）。
+        val annotated = annotateLocalMedia(messages)
         return if (ctx.settings.fileUploadMode == "classic") {
-            transformClassic(messages)
+            transformClassic(annotated)
         } else {
-            transformCompat(messages)
+            transformCompat(annotated)
+        }
+    }
+
+    /**
+     * v5.0.71：给**本地图片** part 追加一段定位注解。
+     *
+     * 背景：`FilesManager.createChatFilesByContents` 会把加号 UI 添加的图片落到
+     * `files/upload/<上传码>_<原名>.ext`，上传码就是文件名前缀。但本 transformer
+     * 过去**只处理 `UIMessagePart.Document`** —— Image part 从来没带过 code/path，
+     * 模型收到图后既不知道它存在哪、也没有码可用：
+     *   · `upload_fetch(code=…)` 无从下手（码就在文件名里，但模型看不见）；
+     *   · `read_image(path=…)` 只能靠猜；
+     *   → 表现就是"加号输入的图片模型找不到"。
+     *
+     * 这里**只追加**一段纯文本（图片本体原样保留给多模态模型，不移除、不改 url），
+     * 让模型拿到确定的 code + 沙箱路径。远程 URL（http/https/base64）不产出注解。
+     */
+    private fun annotateLocalMedia(messages: List<UIMessage>): List<UIMessage> = messages.map { message ->
+        val notes = message.parts.mapNotNull { part ->
+            val (url, kind) = when (part) {
+                is UIMessagePart.Image -> part.url to "image"
+                is UIMessagePart.Video -> part.url to "video"
+                is UIMessagePart.Audio -> part.url to "audio"
+                else -> return@mapNotNull null
+            }
+            runCatching { UploadRef.resolveDocumentUrl(url) }.getOrNull()?.let { ref ->
+                val advice = when (kind) {
+                    "image" -> "需要再次查看时用 read_image(path=\"" + ref.sandboxPath + "\")"
+                    else -> "需要再次查看时用 workspace_read_file(path=\"" + ref.sandboxPath + "\")"
+                }
+                "<UploadFile name=\"" + ref.physicalName + "\" code=\"" + ref.code +
+                    "\" path=\"" + ref.sandboxPath + "\" type=\"" + kind + "\">\n" +
+                    "[这是用户上传的" + kind + "。" + advice +
+                    " 或 upload_fetch(code=\"" + ref.code + "\")；不要盲扫 /upload。]\n</UploadFile>"
+            }
+        }
+        if (notes.isEmpty()) {
+            message
+        } else {
+            message.copy(parts = message.parts + UIMessagePart.Text(notes.joinToString("\n")))
         }
     }
 
