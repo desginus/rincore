@@ -141,6 +141,9 @@ class ChatVM(
         viewModelScope.launch {
             snapshotFlow { inputState.textContent.text.toString() }
                 .collectLatest { text ->
+                    // v5.0.72: 每次变化先同步非 Compose 镜像（onCleared 只认它）
+                    inputState.syncMirror()
+                    if (text.isEmpty()) return@collectLatest
                     delay(1000)
                     draftStore.save(_conversationId, text)
                 }
@@ -164,9 +167,17 @@ class ChatVM(
         context.writeStringPreference("lastConversationId", _conversationId.toString())
     }
 
+    /** v5.0.72：发送成功后**显式**作废草稿（唯一合法的删除时机之一） */
+    fun clearDraft() {
+        draftStore.saveNow(_conversationId, "")
+        viewModelScope.launch { draftStore.clear(_conversationId) }
+    }
+
     override fun onCleared() {
-        // v4.8.70: 草稿兜底落盘 (发送后文本为空 → save 内部转 clear)
-        draftStore.saveNow(_conversationId, inputState.textContent.text.toString())
+        // v5.0.72 ★不再读 TextFieldState（Compose 快照状态在非 Compose 上下文不可靠，
+        // 旧实现读到空串 → DraftStore.save("") 曾等价 clear → 用户草稿被自己删掉）。
+        // 改为读 ChatInputState.latestText 这份纯 Kotlin 镜像；空串本身也不会再删草稿。
+        draftStore.saveNow(_conversationId, inputState.latestText)
         voiceSession.stop()
         super.onCleared()
         // 移除对话引用

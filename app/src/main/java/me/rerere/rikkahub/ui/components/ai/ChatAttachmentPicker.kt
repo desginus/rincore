@@ -54,40 +54,53 @@ internal fun rememberChatAttachmentPickerActions(
     val context = LocalContext.current
     val resources = LocalResources.current
     val toaster = LocalToaster.current
+    // v5.0.72：草图落盘用全进程 scope（绝不因 Composable 销毁/页面切换被取消）
+    val appScope: me.rerere.rikkahub.AppScope = koinInject()
     val filesManager: FilesManager = koinInject()
     val cameraPermission = rememberPermissionState(PermissionCamera)
     PermissionManager(permissionState = cameraPermission)
 
     /**
-     * v5.0.70 ★用户实测「草图/拍照/裁剪 点对号后图直接丢了」的统一修法：
-     * 这三条路径都是 `inputState.addImages(filesManager.createChatFilesByContents(...))` ——
-     * `createChatFilesByContents` 返回 **List<Uri>**，失败时是**空列表**，
-     * `addImages(emptyList())` 什么也不做、**也不报错** → 用户只看到"图没了"。
-     * 这里统一：保存失败必定 toast 出原因，绝不再静默。
+     * v5.0.72 ★输入模块重设计 · 附件写入的**唯一入口**。
+     *
+     * 旧实现的问题（三条路径共同病灶）：
+     *   · `inputState.addImages(createChatFilesByContents(...))` —— 失败返回**空列表**，
+     *     `addImages(emptyList())` 什么也不做也不报错 → 图静默消失；
+     *   · v5.0.70 的修法虽然补了 toast，但写文件是**同步**的 ——
+     *     一张 20MP 的图在主线程上读+写会直接卡住输入栏；
+     *   · 协程若挂在 `rememberCoroutineScope()` 上，页面/sheet 一变就可能被取消。
+     *
+     * 新契约：
+     *   1. **异步**：一律在 [appScope]（全进程 SupervisorJob）上跑，不占用、也不会随 UI 取消；
+     *   2. **零静默**：读失败/写失败/产出空列表 —— 三种情况都必 toast；
+     *   3. **单一路径**：拍照、裁剪、选图、草图全部经过这里，不再各写一套。
      */
-    fun addLocalImagesOrReport(sources: List<Uri>, onSuccess: () -> Unit = {}) {
-        val uris = try {
-            filesManager.createChatFilesByContents(sources)
-        } catch (e: Throwable) {
-            toaster.show("图片保存失败：${e.message ?: e::class.simpleName}", type = ToastType.Error)
-            emptyList()
-        }
-        if (uris.isEmpty()) {
-            if (sources.isNotEmpty()) {
+    fun addLocalImagesAsync(sources: List<Uri>, onSuccess: () -> Unit = {}) {
+        if (sources.isEmpty()) return
+        appScope.launch {
+            val uris = runCatching { filesManager.createChatFilesByContents(sources) }
+                .getOrElse { e ->
+                    toaster.show(
+                        "图片保存失败：${e.message ?: e::class.simpleName}",
+                        type = ToastType.Error,
+                    )
+                    return@launch
+                }
+            if (uris.isEmpty()) {
                 toaster.show("图片保存失败：未能生成附件文件", type = ToastType.Error)
+                return@launch
             }
-            return
+            inputState.addImages(uris)
+            onAttachmentAdded()
+            onSuccess()
         }
-        inputState.addImages(uris)
-        onAttachmentAdded()
-        onSuccess()
     }
 
     var cameraOutputUri by remember { mutableStateOf<Uri?>(null) }
     var cameraOutputFile by remember { mutableStateOf<File?>(null) }
     val (_, launchCameraCrop) = useCropLauncher(
         onCroppedImageReady = { croppedUri ->
-            addLocalImagesOrReport(listOf(croppedUri))
+            addLocalImagesAsync(listOf(croppedUri))
         },
         onCleanup = {
             cameraOutputFile?.delete()
@@ -98,7 +111,7 @@ internal fun rememberChatAttachmentPickerActions(
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { captureSuccessful ->
         if (captureSuccessful && cameraOutputUri != null) {
             if (setting.displaySetting.skipCropImage) {
-                addLocalImagesOrReport(listOf(cameraOutputUri!!)) {
+                addLocalImagesAsync(listOf(cameraOutputUri!!)) {
                     cameraOutputFile?.delete()
                     cameraOutputFile = null
                     cameraOutputUri = null
@@ -127,7 +140,7 @@ internal fun rememberChatAttachmentPickerActions(
     var preCropTempFile by remember { mutableStateOf<File?>(null) }
     val (_, launchImageCrop) = useCropLauncher(
         onCroppedImageReady = { croppedUri ->
-            addLocalImagesOrReport(listOf(croppedUri))
+            addLocalImagesAsync(listOf(croppedUri))
         },
         onCleanup = {
             preCropTempFile?.delete()
@@ -140,7 +153,7 @@ internal fun rememberChatAttachmentPickerActions(
                 Log.d("ImagePickButton", "Selected URIs: $selectedUris")
                 if (setting.displaySetting.skipCropImage) {
                     // v5.0.70：同草图/拍照，保存失败必须报出来（原来 addImages(emptyList) 静默丢图）
-                    addLocalImagesOrReport(selectedUris)
+                    addLocalImagesAsync(selectedUris)
                 } else if (selectedUris.size == 1) {
                     val tempFile = File(context.appTempFolder, "pick_temp_${System.currentTimeMillis()}.jpg")
                     runCatching {
@@ -218,29 +231,60 @@ internal fun rememberChatAttachmentPickerActions(
     val scope = rememberCoroutineScope()
     var showSketch by remember { mutableStateOf(false) }
     if (showSketch) {
+        // v5.0.72 ★草图链路重写（用户实测 v5.0.70 修法仍未生效：「画完点对号静默消失」）
+        //
+        // 逐段复核后确认旧实现仍有三个不确定点：
+        //   ① 协程用的是 rememberCoroutineScope() —— 依附 ChatPageContent 组合；
+        //      一旦这条链路在 sheet/弹层关闭、或页面切换的时序里被取消，
+        //      `scope.launch` 的 body 根本不执行，**既无图也无 toast**（正是"静默"）。
+        //   ② encode() 之后再 createChatFileBySketch() 又 encode 一遍；
+        //      如果 bitmap 压缩失败返回空字节，会写出 **0 字节文件**，
+        //      然后照常 addImages → 输入框里是一个加载不出来的空图（也像"丢了"）。
+        //   ③ 失败时仍会关对话框，用户没有重试机会。
+        //
+        // 新设计（零静默、绝不丢）：
+        //   · 同步校验 encode 结果，为空/异常 → **立即报错且不关对话框**（可重试）；
+        //   · 落盘用 AppScope（全进程 SupervisorJob，**不随任何 Composable 销毁而取消**）；
+        //   · 成功 → addImages + toast「已添加」；失败 → toast 原因 + 不关对话框。
         SketchDialog(
             onDismiss = { showSketch = false },
             onConfirm = { result ->
-                // v5.0.70 ★用户实测「点对号草图直接丢了」修复：
-                //  旧实现 `showSketch = false` **在** scope.launch 之前 → 对话框立刻关闭，
-                //  而保存是异步的、**没有任何 try/catch、也没有失败提示**：
-                //  只要 encode()（大画布编码 PNG/JPEG）或写文件抛异常，
-                //  协程静默死掉 → 用户只看到"对话框关了、图没了"。
-                //  现在：保存完成（成功或失败）后才关对话框；失败必定 toast 出原因。
-                scope.launch {
-                    try {
-                        val uri = filesManager.createChatFileBySketch(result)
+                val bytes = runCatching { result.encode() }.getOrElse { e ->
+                    toaster.show(
+                        "草图导出失败：${e.message ?: e::class.simpleName}",
+                        type = ToastType.Error,
+                    )
+                    null
+                }
+                if (bytes == null || bytes.isEmpty()) {
+                    if (bytes != null) {
+                        toaster.show("草图导出失败：图片编码为空", type = ToastType.Error)
+                    }
+                    // 不关对话框 —— 用户可重画或重试
+                } else {
+                    appScope.launch {
+                        val uri = runCatching {
+                            filesManager.createChatFilesByByteArrays(
+                                byteArrays = listOf(bytes),
+                                displayName = "sketch.${result.extension}",
+                                mimeType = result.mimeType,
+                            ).firstOrNull()
+                        }.getOrElse { e ->
+                            toaster.show(
+                                "草图保存失败：${e.message ?: e::class.simpleName}",
+                                type = ToastType.Error,
+                            )
+                            null
+                        }
                         if (uri != null) {
                             inputState.addImages(listOf(uri))
                             onAttachmentAdded()
+                            toaster.show("草图已添加到输入框", type = ToastType.Success)
+                            showSketch = false
                         } else {
+                            // 不关对话框：让用户直接重试，而不是"关了、没了"
                             toaster.show("草图保存失败：未能生成附件文件", type = ToastType.Error)
                         }
-                    } catch (e: Throwable) {
-                        if (e is kotlinx.coroutines.CancellationException) throw e
-                        toaster.show("草图保存失败：${e.message ?: e::class.simpleName}", type = ToastType.Error)
-                    } finally {
-                        showSketch = false
                     }
                 }
             },

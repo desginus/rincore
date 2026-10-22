@@ -33,11 +33,17 @@ class DraftStore(context: Context) {
         store.data.catch { emit(emptyPreferences()) }.first()[key(id)] ?: ""
     }.getOrDefault("")
 
+    /**
+     * v5.0.72 ★「输入的消息偶发消失」根修之二：
+     * 旧实现 `save("")` 等价于 `clear(id)` —— 把「输入框此刻是空的」和
+     * 「要作废这份草稿」混成了一个动作。任何一个读到空串的时刻
+     * （onCleared 读快照失败、输入刚被清空、竞态下的旧值）都会**删掉草稿**。
+     *
+     * 现在：**空串一律不写也不删**（no-op）。作废草稿必须走 [clear]，
+     * 只在「发送成功」「用户主动清空」两个显式场景调用。
+     */
     suspend fun save(id: Uuid, text: String) {
-        if (text.isEmpty()) {
-            clear(id)
-            return
-        }
+        if (text.isEmpty()) return
         runCatching { store.edit { it[key(id)] = text } }
     }
 

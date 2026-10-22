@@ -591,6 +591,8 @@ private fun ChatPageContent(
                             }
                         }
                         inputState.clearInput()
+                        // v5.0.72: 发送成功（消息已同步入队）后**显式**作废草稿
+                        vm.clearDraft()
                     },
                     onLongSendClick = {
                         if (inputState.isEditing()) {
@@ -605,6 +607,8 @@ private fun ChatPageContent(
                             }
                         }
                         inputState.clearInput()
+                        // v5.0.72: 同上 — 只有真正发出去之后才删草稿
+                        vm.clearDraft()
                     },
                     onUpdateChatModel = {
                         vm.setChatModel(assistant = setting.getCurrentAssistant(), model = it)

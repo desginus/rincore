@@ -15,6 +15,25 @@ import kotlin.uuid.Uuid
 
 class ChatInputState {
     val textContent = TextFieldState()
+
+    /**
+     * v5.0.72 ★「输入的消息偶发消失」根修之一：
+     * `TextFieldState` 是 Compose 快照状态 —— 在 **onCleared（ViewModel 销毁，非 Compose
+     * 上下文）** 里读它并不可靠，可能读到空串；旧 `onCleared` 正是拿这个空串去
+     * `DraftStore.save(id, "")`，而 `save("")` 内部等于 `clear(id)` →
+     * **正在输入的草稿被自己删掉**（用户感知：切走/返回后输入框空了）。
+     *
+     * 这里维护一份纯 Kotlin 镜像，由输入变化时同步更新；
+     * 持久化层（防抖落盘 / onCleared 兜底 / 发送后清理）只读这里。
+     */
+    @Volatile
+    var latestText: String = ""
+        private set
+
+    /** 把 Compose 侧当前文本同步到镜像（每次文本变化、onCleared 前都会调） */
+    fun syncMirror() {
+        latestText = textContent.text.toString()
+    }
     var messageContent by mutableStateOf(listOf<UIMessagePart>())
     var editingMessage by mutableStateOf<Uuid?>(null)
 
@@ -26,6 +45,7 @@ class ChatInputState {
 
     fun clearInput() {
         textContent.setTextAndPlaceCursorAtEnd("")
+        latestText = ""
         messageContent = emptyList()
         editingMessage = null
         editingReasoning = null
@@ -37,10 +57,13 @@ class ChatInputState {
 
     fun setMessageText(text: String) {
         textContent.setTextAndPlaceCursorAtEnd(text)
+        latestText = text
     }
 
     fun appendText(content: String) {
-        textContent.setTextAndPlaceCursorAtEnd(textContent.text.toString() + content)
+        val next = textContent.text.toString() + content
+        textContent.setTextAndPlaceCursorAtEnd(next)
+        latestText = next
     }
 
     fun setContents(contents: List<UIMessagePart>) {
