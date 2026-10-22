@@ -771,7 +771,10 @@ private fun MemoryMemoriesTab(
             )
             IconButton(
                 onClick = {
-                    if (manageConversationScope) {
+                    // v5.0.63: 原 manageConversationScope 已随两个 Chip 一起删除，
+                    // 改用「当前范围是否单对话」判断（顶部范围 Chip 选中单对话时
+                    // conversationMemories 才非空）
+                    if (conversationMemories.isNotEmpty()) {
                         // 单对话记忆：先选归属对话
                         showConversationPicker = true
                     } else {
