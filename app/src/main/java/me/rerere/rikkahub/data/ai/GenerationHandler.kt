@@ -1179,9 +1179,17 @@ class GenerationHandler(
                         // v5.0.62: 登记时就把**宿主绝对路径**解析出来落盘。
                         // 这是"唯一对应码"的最终形态：点开时 File(hostPath) 一次 stat，
                         // 不需要 CWD 探测、不需要 rootfs 语义、不需要任何搜索。
+                        // GenerationHandler 没有 workspaceRepository 构造参数（CI 实证
+                        // Unresolved reference），改用 Koin 全局取 —— 与 ProducedFiles
+                        // 的 scanWorkspaceSince 同一套做法，不引入新构造依赖。
                         val producedHostPath = producedWsId?.let { ws ->
                             withContext(Dispatchers.IO) {
-                                workspaceRepository.hostFileFor(ws, produced, producedCwd)?.absolutePath
+                                runCatching {
+                                    org.koin.core.context.GlobalContext.get()
+                                        .get<me.rerere.rikkahub.data.repository.WorkspaceRepository>()
+                                        .hostFileFor(ws, produced, producedCwd)
+                                        ?.absolutePath
+                                }.getOrNull()
                             }
                         }
                         settingsStore.update { s ->
