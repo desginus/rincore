@@ -361,11 +361,57 @@ private fun MemorySettingsTab(
             )
             // v5.0.57 用户定案：上面两个旧开关（整个助手 / 单对话记忆）已删除——
             // 语义被下方「新建记忆归属」三锚点完整覆盖，留着只会互相打架。
-            // v5.0.62 用户定案：原「新建记忆归属」与「做梦范围」两块 UI 删除 ——
-            // "整个助手 / 单个对话"这类归属选择本就应该由顶部范围 Chip 承担，
-            // 在设置里再摆一套只会互相打架（用户原话："这两个 UI 本不应该存在，
-            // 它们现在本应该被合并到上面去"）。
-            // 归属语义仍由 Assistant.memoryWriteScope / memoryDreamScope 承载（默认 0=助手级）。
+            // v5.0.63 ★回滚：v5.0.62 误删了**设置 tab** 的这两块（用户警告"你删除的是设置里的，
+            // 而不是记忆页的"）。设置里的归属/范围选择是功能的唯一入口，必须保留；
+            // 真正该删的「管理记忆」区块在记忆 tab（见 MemoryMemoriesTab）。
+            // v5.0.54 用户定案：**新建记忆归属范围** — 三个锚点（助手 / 项目包 / 当前对话）
+            // 决定模型主动写入的记忆挂到哪个区块：助手级全助手可见；项目包内仅该包可见；对话级仅该对话可见。
+            item(
+                headlineContent = { Text("新建记忆归属") },
+                supportingContent = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            "模型主动写入（含做梦整理）的新记忆将挂到所选区块",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(
+                                0 to "助手级",
+                                1 to "项目包内",
+                                2 to "当前对话",
+                            ).forEach { (value, label) ->
+                                FilterChip(
+                                    selected = assistant.memoryWriteScope == value,
+                                    onClick = { onUpdateAssistant(assistant.copy(memoryWriteScope = value)) },
+                                    label = { Text(label) },
+                                    enabled = assistant.enableMemory,
+                                )
+                            }
+                        }
+                    }
+                },
+            )
+            item(
+                headlineContent = { Text("做梦范围") },
+                supportingContent = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            0 to "整个助手",
+                            1 to "项目包内",
+                            2 to "当前对话",
+                        ).forEach { (value, label) ->
+                            FilterChip(
+                                selected = assistant.memoryDreamScope == value,
+                                onClick = { onUpdateAssistant(assistant.copy(memoryDreamScope = value)) },
+                                label = { Text(label) },
+                                enabled = assistant.enableMemory,
+                            )
+                        }
+                    }
+                },
+            )
+            // （v5.0.62 曾误删上面两块，v5.0.63 已回滚 —— 记录在此避免重犯）
             // v5.0.16 用户定案：做梦（记忆整理）独立开关
             switchItem(
                 checked = assistant.memoryDreamEnabled,
@@ -611,7 +657,6 @@ private fun MemoryMemoriesTab(
     var pendingDeleteMemory by remember { mutableStateOf<AssistantMemory?>(null) }
 
     // v4.8.92: 记忆范围管理 —— [整个助手] / [单对话记忆]
-    var manageConversationScope by remember { mutableStateOf(false) }
     var showConversationPicker by remember { mutableStateOf(false) }
     // 对话标题缓存（来源标签 / 分组头；已删除对话 → 显示"已删除的对话"）
     val memoryTitles by produceState<Map<String, String>>(
@@ -739,20 +784,13 @@ private fun MemoryMemoriesTab(
             }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(
-                selected = !manageConversationScope,
-                onClick = { manageConversationScope = false },
-                label = { Text("整个助手") },
-            )
-            FilterChip(
-                selected = manageConversationScope,
-                onClick = { manageConversationScope = true },
-                label = { Text("单对话记忆") },
-            )
-        }
-
-        if (!manageConversationScope) {
+        // v5.0.63 用户定案：这里原本还有「整个助手 / 单对话记忆」两个 FilterChip ——
+        // 归属范围已经由记忆页顶部的范围 Chip（助手记忆 / 项目包记忆 / 单对话记忆）承担，
+        // 在「管理记忆」里再摆一套属于重复 UI（用户原话："这两个 UI 本不应该存在，
+        // 它们现在本应该被合并到上面去"）。现在直接按顶部选中的范围决定视图：
+        //   conversationMemories 非空 = 当前范围是「单对话记忆」→ 按归属对话分组
+        //   否则 = 助手/项目包范围 → 平铺
+        if (conversationMemories.isEmpty()) {
             memories.fastForEach { memory ->
                 key(memory.id) {
                     MemoryItem(

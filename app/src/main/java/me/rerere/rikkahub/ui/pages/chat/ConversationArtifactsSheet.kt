@@ -239,24 +239,36 @@ fun ConversationArtifactsSheet(
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("*/*"),
     ) { uri ->
-        val target = pendingExport.also { pendingExport = null } ?: return@rememberLauncherForActivityResult
-        if (uri == null) return@rememberLauncherForActivityResult
+        val target = pendingExport.also { pendingExport = null }
+        if (target == null) {
+            onOpenChange(false)
+            return@rememberLauncherForActivityResult
+        }
+        if (uri == null) {
+            onOpenChange(false)
+            return@rememberLauncherForActivityResult
+        }
         scope.launch {
-            runCatching {
-                val loc = resolveOrAsk(target) ?: return@launch
-                val file = loc.hostFile ?: materializeWorkspaceFile(
-                    context, workspaceRepository, loc.workspaceId, loc.rootfsPath,
-                )
-                exportLocalFileTo(context, file, uri)
-                toaster.show(
-                    message = "已导出: ${target.path.substringAfterLast('/')}",
-                    type = ToastType.Success,
-                )
-            }.onFailure { e ->
-                toaster.show(
-                    message = "导出失败: ${e.message?.take(120) ?: "未知错误"}",
-                    type = ToastType.Error,
-                )
+            try {
+                runCatching {
+                    val loc = resolveOrAsk(target) ?: return@launch
+                    val file = loc.hostFile ?: materializeWorkspaceFile(
+                        context, workspaceRepository, loc.workspaceId, loc.rootfsPath,
+                    )
+                    exportLocalFileTo(context, file, uri)
+                    toaster.show(
+                        message = "已导出: ${target.path.substringAfterLast('/')}",
+                        type = ToastType.Success,
+                    )
+                }.onFailure { e ->
+                    toaster.show(
+                        message = "导出失败: ${e.message?.take(120) ?: "未知错误"}",
+                        type = ToastType.Error,
+                    )
+                }
+            } finally {
+                // 动作跑完才关 sheet（提前关会取消本协程 + 丢失 launcher 回调）
+                onOpenChange(false)
             }
         }
     }
@@ -378,7 +390,11 @@ fun ConversationArtifactsSheet(
                             onClick = {
                                 pendingExport = sel
                                 selected = null
-                                onOpenChange(false)
+                                // v5.0.63 ★关键修复：**不能在这里关 sheet**。
+                                // onOpenChange(false) 会让调用方 if (showArtifactsSheet) 整块出栈，
+                                // 本 Composable 被销毁 → rememberLauncherForActivityResult 的回调
+                                // 直接丢失（用户选完文件什么都没发生）。
+                                // 现在等系统文件选择器返回后再关。
                                 runCatching {
                                     exportLauncher.launch(fileName)
                                 }.onFailure { e ->
@@ -395,19 +411,25 @@ fun ConversationArtifactsSheet(
                             label = stringResource(R.string.common_share),
                             onClick = {
                                 selected = null
-                                onOpenChange(false)
+                                // v5.0.63 ★同上：先关 sheet = 销毁 scope，异步动作被取消。
+                                // 分享快（hostPath 一次 stat）所以碰巧能跑完，但仍是隐患，一并修。
                                 scope.launch {
-                                    runCatching {
-                                        val loc = resolveOrAsk(sel) ?: return@launch
-                                        val file = loc.hostFile ?: materializeWorkspaceFile(
-                                            context, workspaceRepository, loc.workspaceId, loc.rootfsPath,
-                                        )
-                                        shareLocalFile(context, file)
-                                    }.onFailure { e ->
-                                        toaster.show(
-                                            message = "分享失败: ${e.message?.take(120) ?: "未知错误"}",
-                                            type = ToastType.Error,
-                                        )
+                                    try {
+                                        runCatching {
+                                            val loc = resolveOrAsk(sel) ?: return@launch
+                                            val file = loc.hostFile ?: materializeWorkspaceFile(
+                                                context, workspaceRepository, loc.workspaceId, loc.rootfsPath,
+                                            )
+                                            shareLocalFile(context, file)
+                                        }.onFailure { e ->
+                                            toaster.show(
+                                                message = "分享失败: ${e.message?.take(120) ?: "未知错误"}",
+                                                type = ToastType.Error,
+                                            )
+                                        }
+                                    } finally {
+                                        // 动作跑完才关 sheet（提前关会取消本协程）
+                                        onOpenChange(false)
                                     }
                                 }
                             },
@@ -418,7 +440,12 @@ fun ConversationArtifactsSheet(
                                 label = "渲染",
                                 onClick = {
                                     selected = null
-                                    onOpenChange(false)
+                                    // v5.0.63 ★渲染没反应的真正原因：
+                                    // 旧代码先 onOpenChange(false) → 组件出栈 → rememberCoroutineScope
+                                    // 被取消 → renderSmart 渲染到一半被中断 → renderResult 永远为 null
+                                    // → 只有 renderLoading 转一圈消失，界面"毫无反应"。
+                                    // 分享能成功只是因为 hostPath 快路径 + 分享本身极快，赶在取消前跑完。
+                                    // 现在不关 sheet，等渲染结果 Dialog 关闭时再关。
                                     startRender(sel)
                                 },
                             )
@@ -466,7 +493,11 @@ fun ConversationArtifactsSheet(
         ) {
             RenderViewDialog(
                 result = renderResult!!,
-                onDismiss = { renderResult = null },
+                onDismiss = {
+                    renderResult = null
+                    // v5.0.63: 渲染结果关闭 → 这时才关产出面板
+                    onOpenChange(false)
+                },
             )
         }
     }
