@@ -181,6 +181,14 @@ internal fun FilesPicker(
     // 移除 MCP / 技能（已归位设置页），空位放原版草图
     val sketchScope = rememberCoroutineScope()
     val filesManager: FilesManager = koinInject()
+    // v5.0.73 ★草图第二个入口（加号菜单 → FilesPicker，用户实际用的就是这条）。
+    // 旧实现：`showSketch=false` → `sketchScope.launch { createChatFileBySketch()?.let{...} }`
+    //          → **立即 `onDismiss()` 关闭整个 FilesPicker sheet**。
+    // sheet 一关，`rememberCoroutineScope` 立刻被取消 → 编码/写文件根本没跑完 → 图彻底消失，
+    // 而且 `?.let` 让 null 也不报错 → 既无图也无提示 = 用户说的"静默消失"。
+    // 现在：同步校验 → AppScope 落盘（不随 sheet 销毁而取消）→ 成功才关、失败必报。
+    val sketchToaster = me.rerere.rikkahub.ui.context.LocalToaster.current
+    val sketchAppScope: me.rerere.rikkahub.AppScope = koinInject()
     val subAgentRegistry: SubAgentRegistry = koinInject()
     // v5.0.57：预算面板需要 SubAgentBudget（limit/used/reset/setLimit）
     val subAgentBudget = koinInject<me.rerere.rikkahub.subagent.SubAgentEngine>().budget
@@ -389,13 +397,54 @@ internal fun FilesPicker(
         SketchDialog(
             onDismiss = { showSketch = false },
             onConfirm = { result: SketchResult ->
-                showSketch = false
-                sketchScope.launch {
-                    filesManager.createChatFileBySketch(result)?.let { uri ->
-                        state.addImages(listOf(uri))
+                // 1) 同步校验导出结果（为空/异常 → 报错且**不关对话框**，可重试）
+                val bytes = runCatching { result.encode() }.getOrElse { e ->
+                    sketchToaster.show(
+                        "草图导出失败：${e.message ?: e::class.simpleName}",
+                        type = com.dokar.sonner.ToastType.Error,
+                    )
+                    null
+                }
+                if (bytes == null || bytes.isEmpty()) {
+                    if (bytes != null) {
+                        sketchToaster.show(
+                            "草图导出失败：图片编码为空",
+                            type = com.dokar.sonner.ToastType.Error,
+                        )
+                    }
+                } else {
+                    // 2) AppScope 落盘：不随 FilesPicker sheet 关闭而取消
+                    sketchAppScope.launch {
+                        val uri = runCatching {
+                            filesManager.createChatFilesByByteArrays(
+                                byteArrays = listOf(bytes),
+                                displayName = "sketch.${result.extension}",
+                                mimeType = result.mimeType,
+                            ).firstOrNull()
+                        }.getOrElse { e ->
+                            sketchToaster.show(
+                                "草图保存失败：${e.message ?: e::class.simpleName}",
+                                type = com.dokar.sonner.ToastType.Error,
+                            )
+                            null
+                        }
+                        if (uri != null) {
+                            state.addImages(listOf(uri))
+                            sketchToaster.show(
+                                "草图已添加到输入框",
+                                type = com.dokar.sonner.ToastType.Success,
+                            )
+                            // 3) 只有真正落盘成功后才关闭（先关 sketch 再关 sheet）
+                            showSketch = false
+                            onDismiss()
+                        } else {
+                            sketchToaster.show(
+                                "草图保存失败：未能生成附件文件",
+                                type = com.dokar.sonner.ToastType.Error,
+                            )
+                        }
                     }
                 }
-                onDismiss()
             },
         )
     }

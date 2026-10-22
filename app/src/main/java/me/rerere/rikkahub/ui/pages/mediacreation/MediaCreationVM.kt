@@ -284,7 +284,11 @@ class MediaCreationVM(
             val file = withContext(Dispatchers.IO) {
                 runCatching {
                     val dir = repository.draftDir(sessionId).apply { mkdirs() }
-                    File(dir, "${Uuid.random()}.${result.extension}").also { it.writeBytes(result.encode()) }
+                    // v5.0.73：encode 可能产出空字节（压缩失败），必须校验 ——
+                    // 否则会写入 0 字节文件并被当成有效素材（用户看到空白图）。
+                    val bytes = result.encode()
+                    require(bytes.isNotEmpty()) { "草图编码结果为空" }
+                    File(dir, "${Uuid.random()}.${result.extension}").also { it.writeBytes(bytes) }
                 }.onFailure {
                     Log.e(TAG, "Failed to save sketch", it)
                 }.getOrNull()
