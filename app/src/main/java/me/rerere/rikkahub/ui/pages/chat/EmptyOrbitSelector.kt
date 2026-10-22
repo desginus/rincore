@@ -66,7 +66,7 @@ import me.rerere.rikkahub.data.repository.FolderRepository
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.ui.context.LocalNavController
-import me.rerere.rikkahub.RouteActivity
+import me.rerere.rikkahub.Screen
 import kotlinx.coroutines.flow.flow
 import org.koin.compose.koinInject
 
@@ -236,7 +236,7 @@ fun EmptyOrbitSelector(
                 label = orbitLabel(conv.title),
                 hazeState = hazeState,
                 blurEnabled = blurEnabled,
-                onClick = { navController.navigate(RouteActivity.Screen.Chat(conv.id)) },
+                onClick = { navController.navigate(Screen.Chat(conv.id)) },
             ) {
                 Box(
                     modifier = Modifier.size(ICON_DP),

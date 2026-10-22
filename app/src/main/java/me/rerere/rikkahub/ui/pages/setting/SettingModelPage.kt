@@ -176,14 +176,19 @@ private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding:
             val containerColor = MaterialTheme.colorScheme.tertiaryContainer
             val contentColor = MaterialTheme.colorScheme.onTertiaryContainer
             // v5.0.67：做梦记忆模型（用户要求单独一个 UI，不与记忆模型/快速模型混排）
+            // 注意：modelItem 是 LazyListScope 扩展（非 @Composable），其参数在非 Composable
+            // 上下文求值 —— MaterialTheme 必须先取到局部变量再传，否则 CI 报
+            // "@Composable invocations can only happen from the context of a @Composable function"。
+            val dreamContainerColor = MaterialTheme.colorScheme.secondaryContainer
+            val dreamContentColor = MaterialTheme.colorScheme.onSecondaryContainer
             CardGroup {
                 modelItem(
                     icon = HugeIcons.AiMagic,
                     title = R.string.setting_model_page_dream_model,
                     description = R.string.setting_model_page_dream_model_desc,
                     state = dreamMemoryModel,
-                    iconContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    iconContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    iconContainerColor = dreamContainerColor,
+                    iconContentColor = dreamContentColor,
                 )
             }
             // 标题和聊天建议都由快速模型生成，相关的选项跟它放在一组
