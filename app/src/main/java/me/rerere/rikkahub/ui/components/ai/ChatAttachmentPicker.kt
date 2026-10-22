@@ -58,12 +58,36 @@ internal fun rememberChatAttachmentPickerActions(
     val cameraPermission = rememberPermissionState(PermissionCamera)
     PermissionManager(permissionState = cameraPermission)
 
+    /**
+     * v5.0.70 ★用户实测「草图/拍照/裁剪 点对号后图直接丢了」的统一修法：
+     * 这三条路径都是 `inputState.addImages(filesManager.createChatFilesByContents(...))` ——
+     * `createChatFilesByContents` 返回 **List<Uri>**，失败时是**空列表**，
+     * `addImages(emptyList())` 什么也不做、**也不报错** → 用户只看到"图没了"。
+     * 这里统一：保存失败必定 toast 出原因，绝不再静默。
+     */
+    fun addLocalImagesOrReport(sources: List<Uri>, onSuccess: () -> Unit = {}) {
+        val uris = try {
+            filesManager.createChatFilesByContents(sources)
+        } catch (e: Throwable) {
+            toaster.show("图片保存失败：${e.message ?: e::class.simpleName}", type = ToastType.Error)
+            emptyList()
+        }
+        if (uris.isEmpty()) {
+            if (sources.isNotEmpty()) {
+                toaster.show("图片保存失败：未能生成附件文件", type = ToastType.Error)
+            }
+            return
+        }
+        inputState.addImages(uris)
+        onAttachmentAdded()
+        onSuccess()
+    }
+
     var cameraOutputUri by remember { mutableStateOf<Uri?>(null) }
     var cameraOutputFile by remember { mutableStateOf<File?>(null) }
     val (_, launchCameraCrop) = useCropLauncher(
         onCroppedImageReady = { croppedUri ->
-            inputState.addImages(filesManager.createChatFilesByContents(listOf(croppedUri)))
-            onAttachmentAdded()
+            addLocalImagesOrReport(listOf(croppedUri))
         },
         onCleanup = {
             cameraOutputFile?.delete()
@@ -74,11 +98,11 @@ internal fun rememberChatAttachmentPickerActions(
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { captureSuccessful ->
         if (captureSuccessful && cameraOutputUri != null) {
             if (setting.displaySetting.skipCropImage) {
-                inputState.addImages(filesManager.createChatFilesByContents(listOf(cameraOutputUri!!)))
-                cameraOutputFile?.delete()
-                cameraOutputFile = null
-                cameraOutputUri = null
-                onAttachmentAdded()
+                addLocalImagesOrReport(listOf(cameraOutputUri!!)) {
+                    cameraOutputFile?.delete()
+                    cameraOutputFile = null
+                    cameraOutputUri = null
+                }
             } else {
                 launchCameraCrop(cameraOutputUri!!)
             }
@@ -103,8 +127,7 @@ internal fun rememberChatAttachmentPickerActions(
     var preCropTempFile by remember { mutableStateOf<File?>(null) }
     val (_, launchImageCrop) = useCropLauncher(
         onCroppedImageReady = { croppedUri ->
-            inputState.addImages(filesManager.createChatFilesByContents(listOf(croppedUri)))
-            onAttachmentAdded()
+            addLocalImagesOrReport(listOf(croppedUri))
         },
         onCleanup = {
             preCropTempFile?.delete()
@@ -116,8 +139,8 @@ internal fun rememberChatAttachmentPickerActions(
             if (selectedUris.isNotEmpty()) {
                 Log.d("ImagePickButton", "Selected URIs: $selectedUris")
                 if (setting.displaySetting.skipCropImage) {
-                    inputState.addImages(filesManager.createChatFilesByContents(selectedUris))
-                    onAttachmentAdded()
+                    // v5.0.70：同草图/拍照，保存失败必须报出来（原来 addImages(emptyList) 静默丢图）
+                    addLocalImagesOrReport(selectedUris)
                 } else if (selectedUris.size == 1) {
                     val tempFile = File(context.appTempFolder, "pick_temp_${System.currentTimeMillis()}.jpg")
                     runCatching {
@@ -198,10 +221,27 @@ internal fun rememberChatAttachmentPickerActions(
         SketchDialog(
             onDismiss = { showSketch = false },
             onConfirm = { result ->
-                showSketch = false
+                // v5.0.70 ★用户实测「点对号草图直接丢了」修复：
+                //  旧实现 `showSketch = false` **在** scope.launch 之前 → 对话框立刻关闭，
+                //  而保存是异步的、**没有任何 try/catch、也没有失败提示**：
+                //  只要 encode()（大画布编码 PNG/JPEG）或写文件抛异常，
+                //  协程静默死掉 → 用户只看到"对话框关了、图没了"。
+                //  现在：保存完成（成功或失败）后才关对话框；失败必定 toast 出原因。
                 scope.launch {
-                    inputState.addImages(listOfNotNull(filesManager.createChatFileBySketch(result)))
-                    onAttachmentAdded()
+                    try {
+                        val uri = filesManager.createChatFileBySketch(result)
+                        if (uri != null) {
+                            inputState.addImages(listOf(uri))
+                            onAttachmentAdded()
+                        } else {
+                            toaster.show("草图保存失败：未能生成附件文件", type = ToastType.Error)
+                        }
+                    } catch (e: Throwable) {
+                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        toaster.show("草图保存失败：${e.message ?: e::class.simpleName}", type = ToastType.Error)
+                    } finally {
+                        showSketch = false
+                    }
                 }
             },
         )
