@@ -115,12 +115,11 @@ class ConversationRepository(
     // v5.0.16 做梦范围=项目包：包内对话 id（不含子代理会话；存储为 TEXT，解析回 Uuid）
     suspend fun getConversationIdsOfFolder(folderId: Uuid): List<Uuid> =
         conversationDAO.getConversationIdStringsOfFolder(folderId.toString())
+            .mapNotNull { runCatching { Uuid.parse(it) }.getOrNull() }
 
     /** v5.0.67：该助手名下所有归入项目包的对话 id（记忆页项目包视图用） */
     suspend fun getConversationIdsInFolders(assistantId: Uuid): List<Uuid> =
-        conversationDAO.getConversationIdsInFolders(assistantId.toString()).mapNotNull {
-            runCatching { Uuid.parse(it) }.getOrNull()
-        }
+        conversationDAO.getConversationIdsInFolders(assistantId.toString())
             .mapNotNull { runCatching { Uuid.parse(it) }.getOrNull() }
 
     fun getConversationsOfFolderPaging(folderId: Uuid): Flow<PagingData<Conversation>> = Pager(
