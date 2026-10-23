@@ -63,7 +63,12 @@ internal fun useCropLauncher(
                 )
             }
         }
-        cropOutputUriNow()?.toFile()?.delete()
+        // v5.0.77 ★「图片保存失败：未能生成附件（crop_output_xxx.jpg ENOENT）」真根因修复：
+        // 旧实现在 onCroppedImageReady 回调返回后**立即 delete() 输出文件** ——
+        // 该契约只兼容"回调内同步消费"的旧实现；v5.0.75 把保存改为异步（IO 协程）后，
+        // 回调一返回文件即被删，IO 协程随后 openInputStream → ENOENT。
+        // 现删除责任移交收件箱门面（InboxStore）：导入成功后自动清理 cacheDir 下的
+        // 临时 file:// 源；CropLauncher 不再碰输出文件。
         cropOutputPath = null
         onCleanup?.invoke()
     }

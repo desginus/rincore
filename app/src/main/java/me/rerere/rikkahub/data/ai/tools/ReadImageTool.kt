@@ -141,21 +141,16 @@ fun createReadImageTool(
         val decoded = decodeFsPath(path)
         val file = File(decoded)
         val canonical = runCatching { file.canonicalPath }.getOrElse { return@Tool readImageError("Invalid: 路径无法解析: $path") }
-        val root = runCatching { allowedRoot.canonicalPath }.getOrElse { allowedRoot.path }
-        if (canonical != root && !canonical.startsWith(root + File.separator)) {
-            return@Tool readImageError(
-                "Invalid: 路径不在会话文件目录内",
-                "仅允许读取会话文件目录 ($root) 下的图片, 例如历史占位中标注的 upload/tool_outputs 文件",
-            )
-        }
+        // v5.0.77 ★用户指令：**解除读取范围限制** —— 只要模型给的是正确地址码（任意绝对
+        // 路径 / file:// / rootfs 语义路径），即可读取；不再用 allowedRoot 白名单拒收。
+        // allowedRoot 参数保留仅为调用点签名兼容，不再参与判定。
         if (!file.exists() || file.length() == 0L) {
             // v5.0.65: 把两侧解析结果都报出来 —— 用户/模型一眼能看出是"路径形态不对"还是"文件真没了"
             return@Tool readImageError(
                 "Invalid: 文件不存在或为空: $path",
                 listOfNotNull(
                     rootfsErr,
-                    "宿主侧解析 = $canonical（不在允许根 $root 下，或文件不存在）",
-                    "允许根 = $root",
+                    "宿主侧解析 = $canonical（文件不存在或为空）",
                     "提示：/workspace、/upload、/tool_outputs、/skills、/tmp 走工作区 rootfs；file:// 与宿主绝对路径走直读",
                 ).joinToString("；"),
             )

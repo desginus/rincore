@@ -22,6 +22,8 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.common.android.appTempFolder
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.files.InboxSource
+import me.rerere.rikkahub.data.files.InboxStore
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.ui.sketch.SketchDialog
 import me.rerere.ui.sketch.SketchResult
@@ -54,6 +56,8 @@ internal fun rememberChatAttachmentPickerActions(
     val context = LocalContext.current
     val resources = LocalResources.current
     val toaster = LocalToaster.current
+    // v5.0.77：收件箱单一门面（所有附件导入经 InboxStore；维修/扩展接口见 InboxStore.kt）
+    val inbox: me.rerere.rikkahub.data.files.InboxStore = koinInject()
     // v5.0.72：草图落盘用全进程 scope（绝不因 Composable 销毁/页面切换被取消）
     val appScope: me.rerere.rikkahub.AppScope = koinInject()
     val filesManager: FilesManager = koinInject()
@@ -77,40 +81,17 @@ internal fun rememberChatAttachmentPickerActions(
      */
     fun addLocalImagesAsync(sources: List<Uri>, onSuccess: () -> Unit = {}) {
         if (sources.isEmpty()) return
-        // v5.0.75 ★「相册上传/拍照崩了」真根修：**所有磁盘读写一律 Dispatchers.IO**。
-        // AppScope(=Dispatchers.Main) 上 launch 里 openInputStream/copyTo 读 20MB 相册图
-        // → 主线程 IO → ANR → 系统杀进程（用户看到的"崩了"）；runCatching 救不了 ANR。
-        // 形态：IO 线程读与写；Main(AppScope 本线程) 只做 UI 状态；顶层 try/catch 必报。
+        // v5.0.77：走收件箱门面（IO 线程导入 + 失败带来源 + cacheDir 临时源自动清理）
         appScope.launch {
             try {
-                val uris: List<Uri> = withContext(Dispatchers.IO) {
-                    filesManager.createChatFilesByContents(sources)
-                }
-                if (uris.isEmpty()) {
-                    val reason: String? = withContext(Dispatchers.IO) {
-                        sources.firstNotNullOfOrNull { uri ->
-                            runCatching {
-                                context.contentResolver.openInputStream(uri)?.use { it.read() }
-                                    ?: error("无法打开输入流（contentResolver 返回 null）")
-                                null
-                            }.exceptionOrNull()?.let { e ->
-                                "$uri → ${e.message ?: e::class.simpleName}"
-                            }
-                        }
-                    }
-                    toaster.show(
-                        "图片保存失败：未能生成附件" + (reason?.let { "（$it）" } ?: ""),
-                        type = ToastType.Error,
-                    )
-                    return@launch
-                }
-                inputState.addImages(uris)
+                val entries = inbox.importAll(sources.map { InboxSource.FromUri(it) })
+                inputState.addImages(entries.map { it.uri })
                 onAttachmentAdded()
                 onSuccess()
             } catch (e: Throwable) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 toaster.show(
-                    "图片保存失败：${e.message ?: e::class.simpleName}",
+                    e.message ?: "图片保存失败：未知错误",
                     type = ToastType.Error,
                 )
             }
@@ -118,42 +99,22 @@ internal fun rememberChatAttachmentPickerActions(
     }
 
     /**
-     * v5.0.74 ★拍照专用：**直接读本地文件**，完全绕开 content:// 解析链。
-     *
-     * 原因：拍照产生的 `cameraOutputFile` 就是我们自己 `cacheDir` 下的普通文件。
-     * 旧实现把它转成 `FileProvider` 的 `content://` 再交给
-     * `createChatFilesByContents`（内部 `getFileNameFromUri` / `getFileMimeType` /
-     * `contentResolver.openInputStream` 三步，任何一步失败整张图就没了），
-     * 这是"拍完照提示保存失败"的结构性来源。
-     * 直接 `readBytes()` 落盘，不依赖 URI 解析，失败也必定带原因。
+     * v5.0.77 拍照专用：本地 cacheDir 文件走 [InboxStore]（FromFile）门面；
+     * 导入成功后由门面自动清理 cacheDir 临时源，不再手工 readBytes 拼装。
      */
     fun addLocalFileAsync(file: File, onSuccess: () -> Unit = {}) {
         appScope.launch {
             try {
-                val uris: List<Uri> = withContext(Dispatchers.IO) {
-                    if (!file.isFile || file.length() == 0L) {
-                        throw IllegalStateException(
-                            "拍照文件不存在或为空（${file.name}，size=${file.length()}）"
-                        )
-                    }
-                    val bytes = file.readBytes()
-                    filesManager.createChatFilesByByteArrays(
-                        byteArrays = listOf(bytes),
-                        displayName = file.name,
-                        mimeType = "image/jpeg",
-                    )
-                }
-                if (uris.isEmpty()) {
-                    toaster.show("图片保存失败：未能生成附件文件", type = ToastType.Error)
-                    return@launch
-                }
-                inputState.addImages(uris)
+                val entry = inbox.import(
+                    InboxSource.FromFile(file, displayName = file.name, mime = "image/jpeg")
+                )
+                inputState.addImages(listOf(entry.uri))
                 onAttachmentAdded()
                 onSuccess()
             } catch (e: Throwable) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 toaster.show(
-                    "图片保存失败：${e.message ?: e::class.simpleName}",
+                    e.message ?: "图片保存失败：未知错误",
                     type = ToastType.Error,
                 )
             }
@@ -275,49 +236,81 @@ internal fun rememberChatAttachmentPickerActions(
             }
         }
 
+    val filePickerLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+            if (uris.isNotEmpty()) {
+                // v5.0.77：文档导入收口到收件箱门面（原 mapNotNull 内同步 createChatFiles
+                // 在主线程做磁盘 IO —— 与相册/拍照同源的 ANR 隐患）；失败必报、类型校验保留。
+                appScope.launch {
+                    try {
+                        val described = uris.map { uri ->
+                            Triple(
+                                uri,
+                                filesManager.getFileNameFromUri(uri) ?: "file",
+                                filesManager.getFileMimeType(uri) ?: "text/plain",
+                            )
+                        }
+                        described.filter { (_, name, mime) -> !isAllowedFileType(name, mime) }
+                            .forEach { (_, name, _) ->
+                                toaster.show(
+                                    resources.getString(R.string.chat_input_unsupported_file_type, name),
+                                    type = ToastType.Error,
+                                )
+                            }
+                        val allowed = described.filter { (_, name, mime) -> isAllowedFileType(name, mime) }
+                        if (allowed.isEmpty()) return@launch
+                        val entries = inbox.importAll(
+                            allowed.map { (uri, name, mime) -> InboxSource.FromUri(uri, name, mime) }
+                        )
+                        // entries 与 allowed 一一对应（importAll 顺序保留）
+                        val documents = entries.mapIndexed { index, entry ->
+                            UIMessagePart.Document(
+                                url = entry.uri.toString(),
+                                fileName = allowed[index].second,
+                                mime = allowed[index].third,
+                            )
+                        }
+                        inputState.addFiles(documents)
+                        onAttachmentAdded()
+                    } catch (e: Throwable) {
+                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        toaster.show(
+                            resources.getString(R.string.chat_input_file_read_failed, e.message ?: "未知错误"),
+                            type = ToastType.Error,
+                        )
+                    }
+                }
+            }
+        }
+
     val videoPickerLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { selectedUris ->
             if (selectedUris.isNotEmpty()) {
-                inputState.addVideos(filesManager.createChatFilesByContents(selectedUris))
-                onAttachmentAdded()
+                appScope.launch {
+                    try {
+                        val entries = inbox.importAll(selectedUris.map { InboxSource.FromUri(it) })
+                        inputState.addVideos(entries.map { it.uri })
+                        onAttachmentAdded()
+                    } catch (e: Throwable) {
+                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        toaster.show(e.message ?: "视频保存失败：未知错误", type = ToastType.Error)
+                    }
+                }
             }
         }
 
     val audioPickerLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { selectedUris ->
             if (selectedUris.isNotEmpty()) {
-                inputState.addAudios(filesManager.createChatFilesByContents(selectedUris))
-                onAttachmentAdded()
-            }
-        }
-
-    val filePickerLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-            if (uris.isNotEmpty()) {
-                val documents = uris.mapNotNull { uri ->
-                    val fileName = filesManager.getFileNameFromUri(uri) ?: "file"
-                    val mime = filesManager.getFileMimeType(uri) ?: "text/plain"
-                    if (isAllowedFileType(fileName, mime)) {
-                        val localUri = filesManager.createChatFilesByContents(listOf(uri)).firstOrNull()
-                            ?: run {
-                                toaster.show(
-                                    resources.getString(R.string.chat_input_file_read_failed, fileName),
-                                    type = ToastType.Error
-                                )
-                                return@mapNotNull null
-                            }
-                        UIMessagePart.Document(url = localUri.toString(), fileName = fileName, mime = mime)
-                    } else {
-                        toaster.show(
-                            resources.getString(R.string.chat_input_unsupported_file_type, fileName),
-                            type = ToastType.Error
-                        )
-                        null
+                appScope.launch {
+                    try {
+                        val entries = inbox.importAll(selectedUris.map { InboxSource.FromUri(it) })
+                        inputState.addAudios(entries.map { it.uri })
+                        onAttachmentAdded()
+                    } catch (e: Throwable) {
+                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        toaster.show(e.message ?: "音频保存失败：未知错误", type = ToastType.Error)
                     }
-                }
-                if (documents.isNotEmpty()) {
-                    inputState.addFiles(documents)
-                    onAttachmentAdded()
                 }
             }
         }
@@ -358,26 +351,23 @@ internal fun rememberChatAttachmentPickerActions(
                 } else {
                     appScope.launch {
                         try {
-                            val uri: Uri? = withContext(Dispatchers.IO) {
-                                filesManager.createChatFilesByByteArrays(
-                                    byteArrays = listOf(bytes),
+                            // v5.0.77：草图字节走收件箱门面（FromBytes）——导入成功后自动
+                            // 清理；失败带来源描述；不再手工 createChatFilesByByteArrays。
+                            val entry = inbox.import(
+                                InboxSource.FromBytes(
+                                    bytes = bytes,
                                     displayName = "sketch.${result.extension}",
-                                    mimeType = result.mimeType,
-                                ).firstOrNull()
-                            }
-                            if (uri != null) {
-                                inputState.addImages(listOf(uri))
-                                onAttachmentAdded()
-                                toaster.show("草图已添加到输入框", type = ToastType.Success)
-                                showSketch = false
-                            } else {
-                                // 不关对话框：让用户直接重试，而不是"关了、没了"
-                                toaster.show("草图保存失败：未能生成附件文件", type = ToastType.Error)
-                            }
+                                    mime = result.mimeType,
+                                )
+                            )
+                            inputState.addImages(listOf(entry.uri))
+                            onAttachmentAdded()
+                            toaster.show("草图已添加到输入框", type = ToastType.Success)
+                            showSketch = false
                         } catch (e: Throwable) {
                             if (e is kotlinx.coroutines.CancellationException) throw e
                             toaster.show(
-                                "草图保存失败：${e.message ?: e::class.simpleName}",
+                                e.message ?: "草图保存失败：未知错误",
                                 type = ToastType.Error,
                             )
                         }

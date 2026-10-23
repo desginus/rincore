@@ -182,7 +182,8 @@ internal fun FilesPicker(
 
     // v5.0.17 用户定案：工具箱收纳对话功能入口（原「更多」菜单四项 + 本对话产出 + 草图），
     // 移除 MCP / 技能（已归位设置页），空位放原版草图
-    val sketchScope = rememberCoroutineScope()
+    // v5.0.77：死变量清理 —— 旧 sketchScope（rememberCoroutineScope）已不再用于任何落盘，
+    // 草图走 sketchAppScope + InboxStore 门面；此变量删除。
     val filesManager: FilesManager = koinInject()
     // v5.0.73 ★草图第二个入口（加号菜单 → FilesPicker，用户实际用的就是这条）。
     // 旧实现：`showSketch=false` → `sketchScope.launch { createChatFileBySketch()?.let{...} }`
@@ -192,6 +193,8 @@ internal fun FilesPicker(
     // 现在：同步校验 → AppScope 落盘（不随 sheet 销毁而取消）→ 成功才关、失败必报。
     val sketchToaster = me.rerere.rikkahub.ui.context.LocalToaster.current
     val sketchAppScope: me.rerere.rikkahub.AppScope = koinInject()
+    // v5.0.77：收件箱单一门面（草图字节导入经 InboxStore.FromBytes）
+    val sketchInbox: me.rerere.rikkahub.data.files.InboxStore = koinInject()
     val subAgentRegistry: SubAgentRegistry = koinInject()
     // v5.0.57：预算面板需要 SubAgentBudget（limit/used/reset/setLimit）
     val subAgentBudget = koinInject<me.rerere.rikkahub.subagent.SubAgentEngine>().budget
@@ -416,38 +419,28 @@ internal fun FilesPicker(
                         )
                     }
                 } else {
-                    // 2) AppScope 落盘：**磁盘 IO 走 Dispatchers.IO**，UI 更新留在 Main。
-                    //    （v5.0.73 版在 Main 上做 encode/复制 = ANR = "崩了"的同一根因）
+                    // 2) AppScope 落盘：经收件箱门面（IO 线程导入 + 失败带来源 + 自动清临时件）
                     sketchAppScope.launch {
                         try {
-                            val uri: Uri? = withContext(Dispatchers.IO) {
-                                runCatching {
-                                    filesManager.createChatFilesByByteArrays(
-                                        byteArrays = listOf(bytes),
-                                        displayName = "sketch.${result.extension}",
-                                        mimeType = result.mimeType,
-                                    ).firstOrNull()
-                                }.getOrNull()
-                            }
-                            if (uri != null) {
-                                state.addImages(listOf(uri))
-                                sketchToaster.show(
-                                    "草图已添加到输入框",
-                                    type = com.dokar.sonner.ToastType.Success,
+                            val entry = sketchInbox.import(
+                                me.rerere.rikkahub.data.files.InboxSource.FromBytes(
+                                    bytes = bytes,
+                                    displayName = "sketch.${result.extension}",
+                                    mime = result.mimeType,
                                 )
-                                // 3) 只有真正落盘成功后才关闭（先关 sketch 再关 sheet）
-                                showSketch = false
-                                onDismiss()
-                            } else {
-                                sketchToaster.show(
-                                    "草图保存失败：未能生成附件文件",
-                                    type = com.dokar.sonner.ToastType.Error,
-                                )
-                            }
+                            )
+                            state.addImages(listOf(entry.uri))
+                            sketchToaster.show(
+                                "草图已添加到输入框",
+                                type = com.dokar.sonner.ToastType.Success,
+                            )
+                            // 3) 只有真正落盘成功后才关闭（先关 sketch 再关 sheet）
+                            showSketch = false
+                            onDismiss()
                         } catch (e: Throwable) {
                             if (e is kotlinx.coroutines.CancellationException) throw e
                             sketchToaster.show(
-                                "草图保存失败：${e.message ?: e::class.simpleName}",
+                                e.message ?: "草图保存失败：未知错误",
                                 type = com.dokar.sonner.ToastType.Error,
                             )
                         }

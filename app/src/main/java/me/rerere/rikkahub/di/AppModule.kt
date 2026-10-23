@@ -146,6 +146,11 @@ val appModule = module {
         AppScope()
     }
 
+    // v5.0.77：收件箱单一门面（上传→收件箱→编码→模型读取 全链收口）
+    single {
+        me.rerere.rikkahub.data.files.InboxStore(get())
+    }
+
     single<EmojiData> {
         EmojiUtils.loadEmoji(get())
     }
