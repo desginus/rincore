@@ -104,6 +104,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getQuickMessagesOfAssistant
 import me.rerere.rikkahub.data.files.FilesManager
+import me.rerere.rikkahub.data.files.InboxSource
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.QuickMessage
 import me.rerere.rikkahub.service.MessageQueueState
@@ -606,6 +607,11 @@ private fun TextInputRow(
         // 现在补上触发 + 面板 + 插入三段。
         var toolPickerData by remember { mutableStateOf<ToolMatrixPickerData?>(null) }
         var toolPickerStack by remember { mutableStateOf<List<String>>(emptyList()) }
+
+        // v5.0.78：内层作用域看不到外层 val（v5.0.64 同款坑）——粘贴处理所需依赖就地注入
+        val toaster = LocalToaster.current
+        val inbox: me.rerere.rikkahub.data.files.InboxStore = koinInject()
+        val appScope: me.rerere.rikkahub.AppScope = koinInject()
 
         /** 把光标处的 `/@`（或 `/`、`@`）整段替换成 `@<name> `（工具/子区引用统一入口） */
         fun insertToolMentionAtCursor(mention: String) {
