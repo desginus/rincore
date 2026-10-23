@@ -966,16 +966,20 @@ class ChatService(
             }.collect { chunk ->
                 when (chunk) {
                     is GenerationChunk.Messages -> {
-                        val updatedConversation = getConversationFlow(conversationId).value
-                            .updateCurrentMessages(chunk.messages)
-                        updateConversation(conversationId, updatedConversation)
+                        // v5.0.76 ★结构性重写：流式写入不再"外部读快照→整对象写回"。
+                        // 旧模式（读 state → updateCurrentMessages → updateConversation）在
+                        // 读与写之间是裸窗口：此刻用户切助手（归属 apply）或分支切换写入，
+                        // 流式的旧快照会把对方整个覆盖掉（lost update = 切换后消息消失）。
+                        // 新模式：session.apply 原子读改写；落库以 session.state 为唯一权威。
+                        val session = sessionManager.getOrCreate(conversationId)
+                        session.apply { it.updateCurrentMessages(chunk.messages) }
 
                         // v3.5.60 落盘节流 (1s): 每 chunk 全量写 → 每 1s 一次。
                         // 发热与落盘权衡: 丢失窗口 ≤1s (用户: 消息丢失是灾难性),
                         // IO 降 90%+, 收尾仍全量落盘。
                         val now = System.currentTimeMillis()
                         if (now - lastStreamPersistMs > 1_000) {
-                            saveConversation(conversationId, updatedConversation)
+                            persistConversationState(conversationId)
                             lastStreamPersistMs = now
                         }
 
@@ -1378,8 +1382,37 @@ class ChatService(
     }
 
     fun updateConversationState(conversationId: Uuid, update: (Conversation) -> Conversation) {
-        val current = getConversationFlow(conversationId).value
-        updateConversation(conversationId, update(current))
+        // v5.0.76：原子读改写（替代"读 state.value → update → updateConversation"的外部快照模式）。
+        // LOADING 期间自动排队，加载完成后按序重放 —— 归属同步再也不会覆盖/丢失。
+        sessionManager.getOrCreate(conversationId).apply(update)
+    }
+
+    /**
+     * v5.0.76：以 **session 内存态为唯一权威** 落库（锁内读、锁内写）。
+     *
+     * 所有"把当前对话写进 DB"的场景都应走这里，而不是把 UI/生成链的快照对象
+     * 交给 [saveConversation] —— 外部快照与 session 状态之间存在传播延迟，
+     * 用它整对象写回会把刚 apply 的归属/消息覆盖回旧值（切换后记录消失的根因）。
+     */
+    suspend fun persistConversationState(conversationId: Uuid) {
+        saveLockFor(conversationId).withLock {
+            val session = sessionManager.getOrCreate(conversationId)
+            if (!session.isInitialized()) {
+                Log.w(TAG, "persistConversationState: session not loaded yet, skip id=$conversationId")
+                return@withLock
+            }
+            val snapshot = session.state.value
+            val exists = conversationRepo.existsConversationById(conversationId)
+            if (!exists && snapshot.title.isBlank() && snapshot.messageNodes.isEmpty()) {
+                return@withLock // 新会话且为空时不保存
+            }
+            if (exists) {
+                conversationRepo.updateConversation(snapshot)
+            } else {
+                conversationRepo.insertConversation(snapshot)
+            }
+        }
+        dispatchNextQueuedMessage(conversationId)
     }
 
     /**
@@ -1478,13 +1511,27 @@ class ChatService(
     suspend fun saveConversation(conversationId: Uuid, conversation: Conversation) {
         // v5.0.68: 同一对话的保存串行化（Mutex 不可重入 → dispatch 放到锁外）。
         saveLockFor(conversationId).withLock {
+            val session = sessionManager.getOrCreate(conversationId)
+            // v5.0.76 ★加载窗口守卫（B201 类数据事故总闸）：
+            // session 尚未完成 DB 加载时，调用方手里的 conversation 大概率是空壳
+            // 或基于空壳的快照 —— 直接写内存会把 initialized 置 true、让 initialize
+            // 的 DB 权威数据被永久丢弃（"切换后聊天记录全部消失"的机制）。
+            // 这里等待加载完成（15s 上限）；仍未加载则明确跳过并记日志（检修点）。
+            if (!session.isInitialized()) {
+                awaitConversationLoaded(conversationId)
+                if (!session.isInitialized()) {
+                    Log.w(TAG, "saveConversation: skipped — session not loaded after wait, id=$conversationId")
+                    return@withLock
+                }
+            }
             val exists = conversationRepo.existsConversationById(conversation.id)
             if (!exists && conversation.title.isBlank() && conversation.messageNodes.isEmpty()) {
                 return@withLock // 新会话且为空时不保存
             }
 
             val updatedConversation = conversation.copy()
-            updateConversation(conversationId, updatedConversation)
+            // v5.0.76：内存写入改走原子 apply（不再是外部整对象盲覆盖）
+            session.apply { updatedConversation }
 
             if (!exists) {
                 conversationRepo.insertConversation(updatedConversation)
@@ -1530,7 +1577,7 @@ class ChatService(
                 }.collect { /* Final translation already handled in onStreamUpdate */ }
 
                 // Save the conversation after translation is complete
-                saveConversation(conversationId, getConversationFlow(conversationId).value)
+                persistConversationState(conversationId)
             } catch (e: Exception) {
                 // Clear translation field on error
                 clearTranslationField(conversationId, message.id)
@@ -1610,8 +1657,8 @@ class ChatService(
 
         if (!edited) return
 
-        // 落库用**刚写入的权威状态**，而不是函数开头的旧快照
-        saveConversation(conversationId, getConversationFlow(conversationId).value)
+        // 落库用**刚写入的权威状态**（锁内读 session.state），而不是函数开头的旧快照
+        persistConversationState(conversationId)
     }
 
     suspend fun forkConversationAtMessage(

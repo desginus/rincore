@@ -533,8 +533,11 @@ class ChatVM(
     }
 
     fun saveConversationAsync() {
+        // v5.0.76：落库以 session 内存态为唯一权威（persistConversationState 锁内读、锁内写）。
+        // 不再把 UI 层 flow 的快照对象交给 saveConversation —— 传播延迟下的旧快照
+        // 会把刚 apply 的归属/消息覆盖回旧值（切助手后记录消失的根因）。
         viewModelScope.launch {
-            chatService.saveConversation(_conversationId, conversation.value)
+            chatService.persistConversationState(_conversationId)
         }
     }
 

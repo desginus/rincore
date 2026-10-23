@@ -1,12 +1,13 @@
+/* ───【域 A·对话核心】ConversationSession.kt
+ * 职责: 单会话运行时 (Job/消息队列/状态机/原子状态写入)
+ * 常用改动: 会话状态 → state/setJob; 中断 → cancel
+ * 问题定位: 流式输出被旧快照覆盖/状态丢失/切换后消息消失 → 本文件
+ * 基线: v5.0.76 全量重写（不再对齐旧版逐字——旧版竞态是结构性的）
+ * 检修点: phase 状态流 / apply 排队日志 / 初始化重放计数
+ * ───────────────────────────────────────────────────────────────*/
 package me.rerere.rikkahub.service
 
-
-/* ───【域 A·对话核心】ConversationSession.kt
- * 职责: 单会话运行时 (Job/消息队列/互斥初始化/状态封装)
- * 常用改动: 会话状态 → state/setJob; 中断 → cancel
- * 问题定位: 流式输出被旧快照覆盖/状态丢失 → 本文件
- * 基线: 原版 2.5.3 对齐 (v4.7.2) | 地图: docs/APP_MAP.md §A | 历史: .claude/skills/rincore-bug-record
- * ───────────────────────────────────────────────────────────────*/
+import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -26,12 +27,18 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.uuid.Uuid
 
 // v4.8.35: 会话空闲回收 5s → 30 分钟 (用户定版: 保活类时间大幅延长)。
-// 原 5s 语义: UI 引用归零 (离开对话页) 5 秒即移出内存 — 切走再回来需
-// 全量重建 (DB 加载 + 状态装载 + 预热), 高频切换场景反复付重建成本。
-// 30 分钟: 会话 (消息内存态/处理状态/队列) 常驻, 切走切回即开即用;
-// 正在生成的会话不回收 (原 !isGenerating 守卫保留); 内存代价 = 每活跃
-// 会话一份消息列表, 数十 MB 量级, 移动端可接受。
+// 正在生成的会话不回收 (!isGenerating 守卫保留)。
 private const val IDLE_TIMEOUT_MS = 30 * 60_000L
+
+/**
+ * v5.0.76 检修点：会话生命周期阶段。
+ *
+ * NEW     空壳（尚未从 DB 加载，也未被外部写入初始化）
+ * LOADING DB 加载进行中 —— 期间 [apply] 的修改全部**排队**，绝不写 state
+ * READY   数据就绪（DB 权威数据已在内存，或外部已整对象初始化）
+ * FAILED  DB 加载失败 —— 读取方应看到明确错误态，而不是空壳装作正常
+ */
+enum class SessionPhase { NEW, LOADING, READY, FAILED }
 
 class ConversationSession(
     val id: Uuid,
@@ -40,9 +47,16 @@ class ConversationSession(
     private val onIdle: (Uuid) -> Unit,
     private val onGenerationFinished: (Uuid, Throwable?) -> Unit = { _, _ -> },
 ) {
-    // 会话状态 (2.5.3: 封装 — 外部经 updateConversation 写入, 读取走 StateFlow)
+    private val TAG = "ConversationSession"
+
+    // 会话状态：唯一权威在 _state；外部一律经 [apply] / [updateConversation] 修改
     private val _state = MutableStateFlow(initial)
     val state: StateFlow<Conversation> = _state.asStateFlow()
+
+    // v5.0.76 检修点：生命周期可观测
+    private val _phase = MutableStateFlow(SessionPhase.NEW)
+    val phase: StateFlow<SessionPhase> = _phase.asStateFlow()
+
     val messageQueue = MessageQueue()
 
     // 从队列取出到写入会话历史之间，附件仍需作为有效引用保留。
@@ -50,32 +64,99 @@ class ConversationSession(
     var submittingMessage: QueuedMessage? = null
         internal set
 
-    // 2.5.3: 页面切换和 SSE 重连只加载一次；活跃 session 的内存状态始终优先。
+    // state 锁：apply / initialize / updateConversation 共用，保证读写原子
+    private val stateLock = Any()
+
+    // LOADING 期间排队的修改（load 完成后按序重放）
+    private val pendingUpdates = ArrayDeque<(Conversation) -> Conversation>()
+
+    // 初始化互斥（并发 initialize 只跑一次 load）
     private val initializationMutex = Mutex()
     private val metadataMutex = Mutex()
+
     @Volatile
     private var initialized = false
 
+    /**
+     * v5.0.76 重写：DB 加载与并发写入的时序保证。
+     *
+     * 旧实现的结构性缺陷：
+     *   load() 是挂起点，加载期间任何 `updateConversation`（外部整对象、
+     *   归属同步、流式 chunk）都会把 `initialized` 置 true →
+     *   load 返回后 `if (!initialized)` 判假 → **DB 权威数据被永久丢弃**，
+     *   会话停留在空壳 → 用户看到"聊天记录全部消失"（重启才恢复）。
+     *
+     * 新保证：
+     *   1. LOADING 期间所有修改**排队不写**（apply 进 pendingUpdates）；
+     *   2. load 结果**必定**进入内存（DB 权威），随后按序重放排队修改；
+     *   3. load 失败 → phase=FAILED 并抛出（由调用方 toast），**绝不静默吞掉**。
+     */
     suspend fun initialize(load: suspend () -> Conversation) {
         initializationMutex.withLock {
-            if (initialized) return
-            val conversation = load()
-            synchronized(this) {
-                // 加载挂起期间可能已经通过保存或编辑写入了更新的状态。
-                if (!initialized) updateConversation(conversation)
+            synchronized(stateLock) {
+                if (initialized || _phase.value == SessionPhase.LOADING) return
+                _phase.value = SessionPhase.LOADING
+            }
+            val loaded: Conversation = try {
+                load()
+            } catch (e: CancellationException) {
+                synchronized(stateLock) { _phase.value = SessionPhase.FAILED }
+                Log.w(TAG, "initialize cancelled id=$id — phase=FAILED")
+                throw e
+            } catch (e: Throwable) {
+                synchronized(stateLock) { _phase.value = SessionPhase.FAILED }
+                Log.e(TAG, "initialize FAILED id=$id: ${e.message}", e)
+                throw IllegalStateException("会话数据加载失败", e)
+            }
+            val replayed = synchronized(stateLock) {
+                _state.value = loaded
+                initialized = true
+                _phase.value = SessionPhase.READY
+                val pending = pendingUpdates.toList()
+                pendingUpdates.clear()
+                var value = _state.value
+                pending.forEach { upd -> value = upd(value) }
+                _state.value = value
+                pending.size
+            }
+            if (replayed > 0) {
+                // 检修点：加载窗口期内排队了多少次修改（正常 0~2 次；多=高频写入路径）
+                Log.d(TAG, "initialize id=$id loaded + replayed $replayed pending updates")
             }
         }
     }
 
-    @Synchronized
-    fun updateConversation(conversation: Conversation) {
-        require(conversation.id == id)
-        _state.value = conversation
+    /**
+     * v5.0.76：**原子读改写** —— 一切"基于当前状态改一个字段"的写入的唯一入口。
+     *
+     * 替代旧模式 `state.value → update → updateConversation(result)`（外部读快照
+     * 与写回之间存在竞态窗口，是流式落库覆盖归属/消息的结构性来源）。
+     * LOADING 期间自动排队，load 完成后按序重放。
+     */
+    fun apply(update: (Conversation) -> Conversation): Conversation = synchronized(stateLock) {
+        if (_phase.value == SessionPhase.LOADING) {
+            pendingUpdates.addLast(update)
+            return _state.value
+        }
+        val next = update(_state.value)
+        _state.value = next
         initialized = true
+        next
     }
 
-    /** 4.8.27: 是否已完成 DB 加载 — 发送路径归属同步守卫
-     *  (防加载窗口期误判: 未初始化时 state 是空对话初始值, 不可据此判定归属)。 */
+    /** 整对象写入（保留兼容；内部同为 stateLock 原子）。 */
+    fun updateConversation(conversation: Conversation) {
+        require(conversation.id == id)
+        synchronized(stateLock) {
+            _state.value = conversation
+            initialized = true
+            if (_phase.value != SessionPhase.LOADING) {
+                _phase.value = SessionPhase.READY
+            }
+        }
+    }
+
+    /** 4.8.27: 是否已完成 DB 加载 — 发送路径归属同步守卫。 */
     fun isInitialized(): Boolean = initialized
 
     // 2.5.3: 元数据先应用到最新内存状态；落库只更新对应列，不能用旧消息快照覆盖流式输出。
@@ -84,9 +165,7 @@ class ConversationSession(
         persist: suspend (Conversation) -> Unit,
     ) {
         metadataMutex.withLock {
-            val updated = synchronized(this) {
-                update(state.value).also(::updateConversation)
-            }
+            val updated = apply(update)
             persist(updated)
         }
     }
@@ -94,14 +173,14 @@ class ConversationSession(
     // 2.5.3: 失败和取消也必须保存已收到的内容，且保存完成前不能释放生成任务。
     suspend fun finishGeneration(save: suspend (Conversation) -> Unit): Conversation =
         withContext(NonCancellable) {
-            val current = state.value
-            val conversation = current.copy(
-                messageNodes = current.messageNodes.map { node ->
-                    node.copy(messages = node.messages.map { it.finishReasoning() })
-                },
-                updateAt = Instant.now(),
-            )
-            updateConversation(conversation)
+            val conversation = apply { current ->
+                current.copy(
+                    messageNodes = current.messageNodes.map { node ->
+                        node.copy(messages = node.messages.map { it.finishReasoning() })
+                    },
+                    updateAt = Instant.now(),
+                )
+            }
             save(conversation)
             conversation
         }
@@ -113,9 +192,8 @@ class ConversationSession(
     val processingStatus = MutableStateFlow<String?>(null)
 
     /**
-     * v4.8.123 (用户定版): 压缩进行中标记 — 队列派发门据此把新消息挂起"等待中"
-     * (压缩期发送 = 与模型输出期同款排队)。由 ChatService.runCompression 设置,
-     * 结束(成功/失败/取消)的 finally 清除并统一派发排队消息。
+     * v4.8.123 (用户定版): 压缩进行中标记 — 队列派发门据此把新消息挂起"等待中"。
+     * 由 ChatService.runCompression 设置, 结束(成功/失败/取消)的 finally 清除并统一派发。
      */
     @Volatile
     var isCompressing: Boolean = false
@@ -184,7 +262,6 @@ class ConversationSession(
         idleCheckJob = null
     }
 
-    @Synchronized
     fun cleanup() {
         _generationJob.value = null
         cancelJobs()
@@ -210,3 +287,4 @@ internal suspend fun afterPreviousGeneration(previous: Job?, block: suspend () -
         throw e
     }
 }
+
