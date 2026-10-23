@@ -6,9 +6,8 @@ package me.rerere.rikkahub.ui.hooks
 
 import android.net.Uri
 import androidx.compose.foundation.text.input.TextFieldState
-import androidx.compose.foundation.text.input.append
-import androidx.compose.foundation.text.input.selectEnd
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
+import androidx.compose.ui.text.TextRange
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -63,19 +62,19 @@ class ChatInputState {
         // 表现就是"文本一直在往后加，光标却停在原地"。
         textContent.edit {
             replace(0, this.length, text)
-            this.selectEnd() // 语义 = 原版 setTextAndPlaceCursorAtEnd：写入后光标到尾
+            this.selection = TextRange(this.length) // 写入后光标到尾
         }
         latestText = text
     }
 
     fun appendText(content: String) {
-        // v5.0.78 ★光标 bug 根修：**增量 append**（TextFieldBuffer.append）——
+        // v5.0.78 ★光标 bug 根修：**增量 append**（TextFieldBuffer.append 成员函数）——
         // 旧实现 `next = old + content; setTextAndPlaceCursorAtEnd(next)` 是**整串重写**：
         // IME 组合（中文输入法/语音上屏）进行中被打断 → selection 重置到组合起点 →
         // 用户看到"文本一直往后加、光标停在原地"。edit+append 保持增量语义，selection 到尾。
         textContent.edit {
             append(content)
-            this.selectEnd()
+            this.selection = TextRange(this.length)
         }
         latestText = textContent.text.toString()
     }
