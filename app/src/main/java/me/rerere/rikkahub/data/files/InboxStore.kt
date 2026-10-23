@@ -16,6 +16,7 @@ package me.rerere.rikkahub.data.files
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -92,7 +93,7 @@ class InboxStore(
             _events.tryEmit(InboxEvent.Failed(described, e.message ?: "unknown"))
             throw e
         } catch (e: Throwable) {
-            _events.tryEmit(InboxEvent.Failed(described, e.message ?: e::class.simpleName))
+            _events.tryEmit(InboxEvent.Failed(described, e.message ?: e::class.simpleName ?: "unknown error"))
             throw InboxImportException(described, e)
         }
     }
