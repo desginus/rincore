@@ -84,6 +84,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.dokar.sonner.ToastType
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collectLatest
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
