@@ -87,6 +87,73 @@ internal fun rememberChatAttachmentPickerActions(
                     return@launch
                 }
             if (uris.isEmpty()) {
+                // v5.0.74 ★「拍完照提示图片保存失败」根修之一：
+                // createChatFilesByContents 内部是 `uris.forEach { runCatching { ... } }`
+                // —— 异常被**逐项吞掉**，上层只能看到空列表，用户只得到"未能生成附件"，
+                // 永远看不到真正原因（打不开输入流/文件不存在/MIME 解析失败…）。
+                // 这里对失败的 uri 做一次"单独复算"，把真实异常抓出来显示。
+                val reason = sources.firstNotNullOfOrNull { uri ->
+                    runCatching {
+                        context.contentResolver.openInputStream(uri)?.use { it.read() }
+                            ?: error("无法打开输入流（contentResolver 返回 null）")
+                        null
+                    }.exceptionOrNull()?.let { e ->
+                        "${uri} → ${e.message ?: e::class.simpleName}"
+                    }
+                }
+                toaster.show(
+                    "图片保存失败：未能生成附件" + (reason?.let { "（$it）" } ?: ""),
+                    type = ToastType.Error,
+                )
+                return@launch
+            }
+            inputState.addImages(uris)
+            onAttachmentAdded()
+            onSuccess()
+        }
+    }
+
+    /**
+     * v5.0.74 ★拍照专用：**直接读本地文件**，完全绕开 content:// 解析链。
+     *
+     * 原因：拍照产生的 `cameraOutputFile` 就是我们自己 `cacheDir` 下的普通文件。
+     * 旧实现把它转成 `FileProvider` 的 `content://` 再交给
+     * `createChatFilesByContents`（内部 `getFileNameFromUri` / `getFileMimeType` /
+     * `contentResolver.openInputStream` 三步，任何一步失败整张图就没了），
+     * 这是"拍完照提示保存失败"的结构性来源。
+     * 直接 `readBytes()` 落盘，不依赖 URI 解析，失败也必定带原因。
+     */
+    fun addLocalFileAsync(file: File, onSuccess: () -> Unit = {}) {
+        appScope.launch {
+            if (!file.isFile) {
+                toaster.show("图片保存失败：拍照文件不存在（${file.name}）", type = ToastType.Error)
+                return@launch
+            }
+            val bytes = runCatching { file.readBytes() }.getOrElse { e ->
+                toaster.show(
+                    "图片保存失败：${e.message ?: e::class.simpleName}",
+                    type = ToastType.Error,
+                )
+                return@launch
+            }
+            if (bytes.isEmpty()) {
+                toaster.show("图片保存失败：拍照文件为空（0 字节）", type = ToastType.Error)
+                return@launch
+            }
+            val uris = runCatching {
+                filesManager.createChatFilesByByteArrays(
+                    byteArrays = listOf(bytes),
+                    displayName = file.name,
+                    mimeType = "image/jpeg",
+                )
+            }.getOrElse { e ->
+                toaster.show(
+                    "图片保存失败：${e.message ?: e::class.simpleName}",
+                    type = ToastType.Error,
+                )
+                return@launch
+            }
+            if (uris.isEmpty()) {
                 toaster.show("图片保存失败：未能生成附件文件", type = ToastType.Error)
                 return@launch
             }
@@ -109,18 +176,48 @@ internal fun rememberChatAttachmentPickerActions(
         }
     )
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { captureSuccessful ->
-        if (captureSuccessful && cameraOutputUri != null) {
+        // v5.0.74 ★拍照链路重写：以**本地文件**为准，不再以 content:// uri 为准。
+        // 旧实现 `captureSuccessful && cameraOutputUri != null` —— 而 cameraOutputUri 是
+        // `remember`（非 rememberSaveable）：拍照会拉起系统相机，本进程被回收重建后它变 null
+        // → 走 else 分支删文件、什么都不加（静默丢图）。文件句柄才是可靠依据。
+        val file = cameraOutputFile
+        if (captureSuccessful && file != null && file.isFile && file.length() > 0) {
             if (setting.displaySetting.skipCropImage) {
-                addLocalImagesAsync(listOf(cameraOutputUri!!)) {
-                    cameraOutputFile?.delete()
+                addLocalFileAsync(file) {
+                    runCatching { file.delete() }
                     cameraOutputFile = null
                     cameraOutputUri = null
                 }
             } else {
-                launchCameraCrop(cameraOutputUri!!)
+                // 需要裁剪时仍交给 UCrop（它要一个可分享的 uri）
+                val uri = cameraOutputUri ?: runCatching {
+                    FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.fileprovider",
+                        file,
+                    )
+                }.getOrNull()
+                if (uri != null) {
+                    launchCameraCrop(uri)
+                } else {
+                    // 拿不到可分享 uri 就退化为不裁剪，绝不丢图
+                    toaster.show("无法生成裁剪用的图片地址，已直接添加原图", type = ToastType.Normal)
+                    addLocalFileAsync(file) {
+                        runCatching { file.delete() }
+                        cameraOutputFile = null
+                        cameraOutputUri = null
+                    }
+                }
             }
         } else {
-            cameraOutputFile?.delete()
+            val size = file?.length() ?: -1L
+            if (captureSuccessful) {
+                toaster.show(
+                    "拍照失败：没有生成有效图片文件（$size 字节）",
+                    type = ToastType.Error,
+                )
+            }
+            runCatching { file?.delete() }
             cameraOutputFile = null
             cameraOutputUri = null
         }
