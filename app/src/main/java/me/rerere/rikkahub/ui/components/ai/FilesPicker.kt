@@ -23,7 +23,9 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.rerere.ui.sketch.SketchResult
 import me.rerere.ui.sketch.SketchDialog
 import me.rerere.rikkahub.ui.pages.chat.ConversationArtifactsSheet
@@ -413,33 +415,38 @@ internal fun FilesPicker(
                         )
                     }
                 } else {
-                    // 2) AppScope 落盘：不随 FilesPicker sheet 关闭而取消
+                    // 2) AppScope 落盘：**磁盘 IO 走 Dispatchers.IO**，UI 更新留在 Main。
+                    //    （v5.0.73 版在 Main 上做 encode/复制 = ANR = "崩了"的同一根因）
                     sketchAppScope.launch {
-                        val uri = runCatching {
-                            filesManager.createChatFilesByByteArrays(
-                                byteArrays = listOf(bytes),
-                                displayName = "sketch.${result.extension}",
-                                mimeType = result.mimeType,
-                            ).firstOrNull()
-                        }.getOrElse { e ->
+                        try {
+                            val uri: Uri? = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    filesManager.createChatFilesByByteArrays(
+                                        byteArrays = listOf(bytes),
+                                        displayName = "sketch.${result.extension}",
+                                        mimeType = result.mimeType,
+                                    ).firstOrNull()
+                                }.getOrNull()
+                            }
+                            if (uri != null) {
+                                state.addImages(listOf(uri))
+                                sketchToaster.show(
+                                    "草图已添加到输入框",
+                                    type = com.dokar.sonner.ToastType.Success,
+                                )
+                                // 3) 只有真正落盘成功后才关闭（先关 sketch 再关 sheet）
+                                showSketch = false
+                                onDismiss()
+                            } else {
+                                sketchToaster.show(
+                                    "草图保存失败：未能生成附件文件",
+                                    type = com.dokar.sonner.ToastType.Error,
+                                )
+                            }
+                        } catch (e: Throwable) {
+                            if (e is kotlinx.coroutines.CancellationException) throw e
                             sketchToaster.show(
                                 "草图保存失败：${e.message ?: e::class.simpleName}",
-                                type = com.dokar.sonner.ToastType.Error,
-                            )
-                            null
-                        }
-                        if (uri != null) {
-                            state.addImages(listOf(uri))
-                            sketchToaster.show(
-                                "草图已添加到输入框",
-                                type = com.dokar.sonner.ToastType.Success,
-                            )
-                            // 3) 只有真正落盘成功后才关闭（先关 sketch 再关 sheet）
-                            showSketch = false
-                            onDismiss()
-                        } else {
-                            sketchToaster.show(
-                                "草图保存失败：未能生成附件文件",
                                 type = com.dokar.sonner.ToastType.Error,
                             )
                         }
