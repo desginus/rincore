@@ -75,6 +75,8 @@ class ChatVM(
     private val favoriteRepository: FavoriteRepository,
     private val folderRepository: FolderRepository,
     private val draftStore: DraftStore,
+    // v5.0.78：进程级 scope（预热 fire-and-forget 用；VM 销毁不中断预热）
+    private val appScope: me.rerere.rikkahub.AppScope,
 ) : ViewModel() {
     private val _conversationId: Uuid = Uuid.parse(id)
     val conversation: StateFlow<Conversation> = chatService.getConversationFlow(_conversationId)
@@ -146,6 +148,19 @@ class ChatVM(
                     if (text.isEmpty()) return@collectLatest
                     delay(1000)
                     draftStore.save(_conversationId, text)
+                }
+        }
+        // v5.0.78 ★触发式沙箱预热（用户指令"改为每次开始在输入框中输入的时候进行一次"）：
+        // 触发点 = "从空到非空"的**输入沿**（distinctUntilChanged，不逐键触发）；
+        // 预热器内部再带 60s 防抖窗（proot 走热是秒级 IO，频繁重复毫无意义，60s 内合并）。
+        // 旧启动预热（App.onCreate）已删 —— 启动期抢 IO，用户实测拖慢启动且收益有限。
+        viewModelScope.launch {
+            snapshotFlow { inputState.latestText.isNotEmpty() }
+                .distinctUntilChanged()
+                .collect { hasText ->
+                    if (hasText) {
+                        me.rerere.rikkahub.service.SandboxPrewarmer.warmOnTypingStartAsync(appScope)
+                    }
                 }
         }
 

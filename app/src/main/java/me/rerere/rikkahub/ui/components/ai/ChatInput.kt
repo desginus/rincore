@@ -555,6 +555,10 @@ private fun TextInputRow(
 ) {
     val settings = LocalSettings.current
     val filesManager: FilesManager = koinInject()
+    // v5.0.78：粘贴内容（图片/长文本）的导入统一走收件箱门面 + 全进程 scope
+    // （旧实现在 IME 内容接收管线里同步做磁盘 IO，大内容直接卡住输入处理）
+    val inbox: me.rerere.rikkahub.data.files.InboxStore = koinInject()
+    val appScope: me.rerere.rikkahub.AppScope = koinInject()
     val quickMessages = remember(settings.quickMessages, assistant.quickMessageIds) {
         settings.getQuickMessagesOfAssistant(assistant)
     }
@@ -625,15 +629,27 @@ private fun TextInputRow(
         ) {
             ReceiveContentListener { transferableContent ->
                 when {
+                    // v5.0.78 ★两处主线程磁盘 IO 消除：粘贴图片/长文本转文件一律收口到
+                    // 收件箱门面（InboxStore，IO 线程）—— 旧实现在 IME 内容接收管线里
+                    // 同步做 openInputStream/copyTo/createChatTextFile，大内容直接卡住
+                    // 输入处理（粘贴即卡，selection 更新被延迟）。现在：先 consume 阻止
+                    // 默认行为 + 异步门面导入，导入成功后才 addImages/addFiles + toast。
                     transferableContent.hasMediaType(MediaType.Image) -> {
                         transferableContent.consume { item ->
                             val uri = item.uri
                             if (uri != null) {
-                                state.addImages(
-                                    filesManager.createChatFilesByContents(
-                                        listOf(uri)
-                                    )
-                                )
+                                appScope.launch {
+                                    try {
+                                        val entry = inbox.import(InboxSource.FromUri(uri))
+                                        state.addImages(listOf(entry.uri))
+                                    } catch (e: Throwable) {
+                                        if (e is kotlinx.coroutines.CancellationException) throw e
+                                        toaster.show(
+                                            e.message ?: "粘贴图片保存失败：未知错误",
+                                            type = ToastType.Error,
+                                        )
+                                    }
+                                }
                             }
                             uri != null
                         }
@@ -643,8 +659,33 @@ private fun TextInputRow(
                         transferableContent.consume { item ->
                             val text = item.text?.toString()
                             if (text != null && text.length > settings.displaySetting.pasteLongTextThreshold) {
-                                val document = filesManager.createChatTextFile(text)
-                                state.addFiles(listOf(document))
+                                appScope.launch {
+                                    try {
+                                        val entry = inbox.import(
+                                            InboxSource.FromBytes(
+                                                bytes = text.encodeToByteArray(),
+                                                displayName = "paste_${System.currentTimeMillis()}.txt",
+                                                mime = "text/plain",
+                                            )
+                                        )
+                                        state.addFiles(
+                                            listOf(
+                                                UIMessagePart.Document(
+                                                    url = entry.uri.toString(),
+                                                    fileName = entry.displayName,
+                                                    mime = entry.mime,
+                                                )
+                                            )
+                                        )
+                                        toaster.show("长文本已转为文件附件", type = ToastType.Success)
+                                    } catch (e: Throwable) {
+                                        if (e is kotlinx.coroutines.CancellationException) throw e
+                                        toaster.show(
+                                            e.message ?: "长文本转文件失败：未知错误",
+                                            type = ToastType.Error,
+                                        )
+                                    }
+                                }
                                 true
                             } else {
                                 false

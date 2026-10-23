@@ -47,6 +47,7 @@ val viewModelModule = module {
             favoriteRepository = get(),
             folderRepository = get(),
             draftStore = get(),
+            appScope = get(),
         )
     }
     viewModelOf(::ChatDrawerVM)

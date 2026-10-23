@@ -256,9 +256,11 @@ class RikkaHubApp : Application() {
         get<AppScope>().launch(Dispatchers.IO) {
             runCatching { me.rerere.rikkahub.sandbox.SandboxBridgeServer.start(this@RikkaHubApp) }
         }
-        // v4.8.98: 沙箱预热 — 启动即后台把 proot/rootfs patch 走一遍 (30 分钟窗口节流),
-        // 首个 workspace 工具调用不再付冷启动成本 (软件-沙箱一体化的"常驻感")。
-        runCatching { me.rerere.rikkahub.service.SandboxPrewarmer.warmAsync(get<AppScope>()) }
+        // v5.0.78 ★预热机制重写（用户指令）："预热改为每次开始在输入框中输入的时候进行一次"。
+        // 旧实现=启动即后台预热 proot/rootfs/officecli —— 与启动期 Room/Coil/工作区扫描
+        // 抢 IO，用户实测"没什么用，反倒容易将数字等待时间拖得越来越长"（启动变慢）。
+        // 新形态：ChatVM 里"从空到非空的输入沿"触发（见 ChatVM snapshotFlow），
+        // 30 分钟节流 + 互斥幂等保留；恰好在用户即将发送前把沙箱走热。
         // v4.8.99 线程改革: 前后台状态单一事实源 (心跳能效策略消费) + 图像解析快照预热
         me.rerere.rikkahub.service.AppForegroundState.register(this)
         get<AppScope>().launch(Dispatchers.IO) {
