@@ -482,8 +482,17 @@ class ChatService(
         val session = sessionManager.get(conversationId) ?: return null
         // v5.0.83 ★绝不向空壳派发：未就绪时消息留在队列里，等 initializeConversation
         // 完成加载后主动派发（否则 sendQueuedMessage 会读到空壳 state 拼出"空壳+1条消息"落库）
+        // v5.0.84 ★自愈补全：session 存在但处于 NEW（从未加载，典型场景=会话被回收后
+        // backstack 复活的 VM 再次发送 / 新页 ChatVM 尚未跑到 initializeConversation）——
+        // 后台补一次加载；完成后 initializeConversation 内的补派发会把队列续上。
+        // 不再存在"消息永远躺在队列里无人派发"的路径。
         if (!session.isReady) {
-            Log.d(TAG, "dispatch: session not ready, queue kept id=$conversationId")
+            if (session.phase.value == SessionPhase.NEW) {
+                appScope.launch {
+                    runCatching { initializeConversation(conversationId) }
+                }
+            }
+            Log.d(TAG, "dispatch: session not ready, queue kept id=$conversationId (self-heal armed)")
             return null
         }
         synchronized(session) {

@@ -113,6 +113,8 @@ class WebDavSync(
     ): File = backupManager.createBackup(
         includeDatabase = WebDavConfig.BackupItem.DATABASE in config.items,
         includeFiles = WebDavConfig.BackupItem.FILES in config.items,
+        // v5.0.84：工作区独立成项 —— 只有勾选「工作区」才打包整个 workspaces（含 rootfs）
+        includeWorkspaces = WebDavConfig.BackupItem.WORKSPACE in config.items,
         onProgress = onProgress,
     )
 
@@ -120,6 +122,9 @@ class WebDavSync(
         archive = backupFile,
         includeDatabase = WebDavConfig.BackupItem.DATABASE in config.items,
         includeFiles = WebDavConfig.BackupItem.FILES in config.items,
+        // 导入兼容：勾「文件」或「工作区」都恢复工作区（zip 里没有则无操作）
+        includeWorkspaces = WebDavConfig.BackupItem.WORKSPACE in config.items ||
+            WebDavConfig.BackupItem.FILES in config.items,
     )
 
 }

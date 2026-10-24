@@ -46,5 +46,6 @@ data class S3Config(
     enum class BackupItem {
         DATABASE,
         FILES,
+        WORKSPACE,
     }
 }

@@ -44,6 +44,9 @@ class BackupManager(
     suspend fun createBackup(
         includeDatabase: Boolean,
         includeFiles: Boolean,
+        // v5.0.84 用户定案：工作区独立成项 —— 「软件本体」= DATABASE+FILES（与原版 3.1.0 一致），
+        // 「工作区」= 整个 workspaces 目录（files + linux rootfs），由 WORKSPACE 勾选控制。
+        includeWorkspaces: Boolean = false,
         // v5.0.41：进度回调（字节目录 = 当前已打包的用户数据量 + 阶段名）
         onProgress: ((stage: String, bytes: Long) -> Unit)? = null,
     ): File = withContext(Dispatchers.IO) {
@@ -93,10 +96,14 @@ class BackupManager(
                             addFile(zip, file, "$folder/$relative")
                         }
                     }
-                    // v5.0.41 用户定案：**全量备份必须包含工作区**（此前 ATTACHMENT_FOLDERS 不含 workspaces，
-                    // 换包名/换机后工作区全丢）。用 tar.gz 保留 rootfs 符号链接；排除 tmp/ 临时垃圾。
+                }
+                // v5.0.84 ★备份拆分：工作区（整个 workspaces 目录，含 files + linux rootfs）
+                // 从 FILES 分支独立出来 —— 勾选 WORKSPACE 才会打包。
+                // 用 tar.gz 保留 rootfs 符号链接；排除 tmp/ 临时垃圾。
+                if (includeWorkspaces) {
                     val wsRoot = File(context.filesDir, "workspaces")
                     if (wsRoot.isDirectory && wsRoot.listFiles()?.isNotEmpty() == true) {
+                        onProgress?.invoke("工作区", 0L)
                         val wsTar = File(staging, "workspaces.tar.gz")
                         wsTar.outputStream().buffered().use { out ->
                             me.rerere.rikkahub.data.workspace.TarGz.write(
@@ -119,7 +126,14 @@ class BackupManager(
         }
     }
 
-    suspend fun stageRestore(archive: File, includeDatabase: Boolean, includeFiles: Boolean) =
+    suspend fun stageRestore(
+        archive: File,
+        includeDatabase: Boolean,
+        includeFiles: Boolean,
+        // v5.0.84：工作区恢复独立开关；默认 true（旧备份里带 workspaces.tar.gz 时照旧恢复，
+        // 避免老用户勾「文件」导入却丢工作区）；调用方按勾选传 WORKSPACE/FILES 的并集。
+        includeWorkspaces: Boolean = true,
+    ) =
         withContext(Dispatchers.IO) {
             restoreMutex.withLock {
                 val restore = pendingRestore(context)
@@ -149,7 +163,7 @@ class BackupManager(
                             //   ③ 失败 → 删半成品 + 备份改回原名
                             // 这样 PendingRestore 只需处理 database/settings/附件（几 MB），重启秒完成。
                             if (entry.name == "workspaces.tar.gz") {
-                                if (includeFiles) {
+                                if (includeWorkspaces) {
                                     val wsRoot = File(context.filesDir, "workspaces")
                                     val backupDir = File(
                                         context.filesDir,

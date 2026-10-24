@@ -257,6 +257,9 @@ data class WebDavConfig(
     enum class BackupItem {
         DATABASE,
         FILES,
+        // v5.0.84 用户定案：备份拆分为「软件本体」（DATABASE+FILES，与原版 3.1.0 完全一致）
+        // 与「工作区」（WORKSPACE，我们后加的整工作区含 rootfs）两个独立能力。
+        WORKSPACE,
     }
 }
 

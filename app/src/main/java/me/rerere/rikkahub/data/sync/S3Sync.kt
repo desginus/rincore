@@ -102,12 +102,16 @@ class S3Sync(
     suspend fun prepareBackupFile(config: S3Config): File = backupManager.createBackup(
         includeDatabase = S3Config.BackupItem.DATABASE in config.items,
         includeFiles = S3Config.BackupItem.FILES in config.items,
+        // v5.0.84：工作区独立成项（勾选 WORKSPACE 才打包整个 workspaces）
+        includeWorkspaces = S3Config.BackupItem.WORKSPACE in config.items,
     )
 
     private suspend fun restoreFromBackupFile(backupFile: File, config: S3Config) = backupManager.stageRestore(
         archive = backupFile,
         includeDatabase = S3Config.BackupItem.DATABASE in config.items,
         includeFiles = S3Config.BackupItem.FILES in config.items,
+        includeWorkspaces = S3Config.BackupItem.WORKSPACE in config.items ||
+            S3Config.BackupItem.FILES in config.items,
     )
 
 }

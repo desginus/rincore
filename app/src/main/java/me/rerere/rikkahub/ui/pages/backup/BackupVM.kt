@@ -50,7 +50,10 @@ class BackupVM(
     val webDavBackupItems = MutableStateFlow<UiState<List<WebDavBackupItem>>>(UiState.Idle)
     val s3BackupItems = MutableStateFlow<UiState<List<S3BackupItem>>>(UiState.Idle)
     // v3.9.12 (2.4.11 移植): 本地备份导入内容选择 — 默认勾选全部条目
-    val localBackupItems = MutableStateFlow(WebDavConfig.BackupItem.entries.toList())
+    // v5.0.84：默认只勾「软件本体」（聊天记录+文件，对齐原版 3.1.0）；工作区体积大，需用户主动勾选
+    val localBackupItems = MutableStateFlow(
+        WebDavConfig.BackupItem.entries.filter { it != WebDavConfig.BackupItem.WORKSPACE }
+    )
 
     init {
         loadBackupFileItems()
