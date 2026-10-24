@@ -160,6 +160,8 @@ fun AssistantMemoryPage(id: String, conversationId: String? = null) {
     val conversationMemories by vm.conversationMemories.collectAsStateWithLifecycle()
     val folderMemories by vm.folderMemories.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
+    // v5.0.81：主动做梦/toast 反馈（点击即刻提示，运行中由底部状态卡承接）
+    val toaster = me.rerere.rikkahub.ui.context.LocalToaster.current
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     // v5.0.25 用户定案：记忆页分「记忆 / 设置」两个大卡（横向各半屏）
     var memorySection by remember { mutableStateOf(MemorySection.MEMORY) }
@@ -186,8 +188,17 @@ fun AssistantMemoryPage(id: String, conversationId: String? = null) {
                     // 点按钮立即对该对话做一次全量做梦整理（产物落为做梦记忆）。
                     if (memorySection == MemorySection.MEMORY && conversationId != null) {
                         val dreaming = vm.memoryConsolidation.collectAsStateWithLifecycle().value.running
+                        // v5.0.81 点击即刻 toast（stringResource 须在组合态先取出，onClick 里不可调）
+                        val toastStart = stringResource(R.string.memory_dreaming)
+                        val toastDisabled = stringResource(R.string.memory_dream_require_enabled)
                         IconButton(
-                            onClick = { vm.triggerDreamConsolidation(conversationId) },
+                            onClick = {
+                                if (vm.triggerDreamConsolidation(conversationId)) {
+                                    toaster.show(toastStart, type = com.dokar.sonner.ToastType.Info)
+                                } else {
+                                    toaster.show(toastDisabled, type = com.dokar.sonner.ToastType.Error)
+                                }
+                            },
                             enabled = !dreaming,
                         ) {
                             Icon(
@@ -298,6 +309,22 @@ fun AssistantMemoryPage(id: String, conversationId: String? = null) {
                         .filter(matchSource)
                     // 单对话：本助手名下全部对话级记忆（按对话分组）
                     MemoryScope.CONVERSATION -> conversationMemories.filter(matchSource)
+                }
+                // v5.0.81 ★做梦状态卡（用户："点击做梦之后会在上面有提示、抽屉页也会出现提示，
+                // 你这个和其他的没对上"）—— 复用与设置 tab「立即整理」**同一个组件**，
+                // 状态/转圈/最近一次结果完全一致；onOrganize 分流：带对话 id = 主动做梦
+                //（只整理当前对话），否则 = 全库立即整理（与设置 tab 同语义）。
+                if (conversationId != null) {
+                    // stringResource 只能在组合态取（onClick 内不可调；ToastType 全限定免 import）
+                    val noMemoryToast = stringResource(R.string.memory_dream_require_enabled)
+                    MemoryConsolidationSection(
+                        status = consolidation,
+                        onOrganize = {
+                            if (!vm.triggerDreamConsolidation(conversationId)) {
+                                toaster.show(noMemoryToast, type = com.dokar.sonner.ToastType.Error)
+                            }
+                        },
+                    )
                 }
                 MemoryMemoriesTab(
                     memories = scopedMemories,

@@ -1878,4 +1878,5 @@
   <string name="stats_range_all">All</string>
   <string name="stats_by_model">By model</string>
   <string name="stats_by_source">By source</string>
+  <string name="memory_dream_require_enabled">Memory is disabled for this assistant. Enable it in Settings first.</string>
 </resources>

@@ -1780,4 +1780,5 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="stats_range_all">全部</string>
   <string name="stats_by_model">按模型</string>
   <string name="stats_by_source">按来源</string>
+  <string name="memory_dream_require_enabled">该助手未开启记忆，请先在设置里开启</string>
 </resources>

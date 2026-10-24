@@ -118,6 +118,13 @@ val dataSourceModule = module {
         get<AppDatabase>().messageNodeDao()
     }
 
+    // v5.0.81 ★统计页崩溃修复（run 40079417400 崩溃报告）：StatsVM 新增的
+    // usageRecordDAO 构造参数没有对应 Koin 注册 → viewModelOf(::StatsVM) 解析失败
+    // = InstanceCreationException = 统计页一打开即崩。
+    single {
+        get<AppDatabase>().usageRecordDao()
+    }
+
     single {
         get<AppDatabase>().managedFileDao()
     }
