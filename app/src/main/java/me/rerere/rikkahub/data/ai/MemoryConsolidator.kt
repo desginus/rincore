@@ -169,9 +169,7 @@ class MemoryConsolidator(
                     batches.map { it.conversation.id }.toSet()
                 } else {
                     // 包内全部对话都可作素材（与注入链"包内互通"一致）
-                    conversationRepo.getConversationIdsOfFolder(commonFolder)
-                        .mapNotNull { runCatching { Uuid.parse(it) }.getOrNull() }
-                        .toSet()
+                    conversationRepo.getConversationIdsOfFolder(commonFolder).toSet()
                 }
             }
             2 -> conversationIds
