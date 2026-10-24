@@ -210,26 +210,36 @@ internal fun rememberChatAttachmentPickerActions(
                     // v5.0.70：同草图/拍照，保存失败必须报出来（原来 addImages(emptyList) 静默丢图）
                     addLocalImagesAsync(selectedUris)
                 } else if (selectedUris.size == 1) {
-                    val tempFile = File(context.appTempFolder, "pick_temp_${System.currentTimeMillis()}.jpg")
-                    runCatching {
-                        val source = selectedUris.first()
-                        // HEIF/HEIC（尤其 HDR HEIF）交给 UCrop 前先解码转为 JPEG，规避裁剪解码失败
-                        val converted = ImageUtils.isHeifImage(context, source) &&
-                            ImageUtils.convertHeifToJpeg(context, source, tempFile)
-                        if (!converted) {
-                            context.contentResolver.openInputStream(source)?.use { input ->
-                                tempFile.outputStream().use { output -> input.copyTo(output) }
+                    // v5.0.79 ★输入解码线程修复：HEIF 解码 + openInputStream copyTo 从主线程
+                    // 移到 AppScope+IO —— 单选走裁剪时这两步是毫秒~秒级磁盘/CPU 工作，
+                    // 在 ActivityResult 回调（主线程）里同步做 = 相册大图卡输入栏。
+                    // 成功后才切 UI 状态（preCropTempFile/launchImageCrop），失败回退原 uri 裁剪。
+                    appScope.launch {
+                        try {
+                            val tempFile = withContext(Dispatchers.IO) {
+                                File(context.appTempFolder, "pick_temp_${System.currentTimeMillis()}.jpg").also { tmp ->
+                                    val source = selectedUris.first()
+                                    // HEIF/HEIC（尤其 HDR HEIF）交给 UCrop 前先解码转为 JPEG，规避裁剪解码失败
+                                    val converted = ImageUtils.isHeifImage(context, source) &&
+                                        ImageUtils.convertHeifToJpeg(context, source, tmp)
+                                    if (!converted) {
+                                        context.contentResolver.openInputStream(source)?.use { input ->
+                                            tmp.outputStream().use { output -> input.copyTo(output) }
+                                        }
+                                    }
+                                }
                             }
+                            preCropTempFile = tempFile
+                            launchImageCrop(tempFile.toUri())
+                        } catch (e: Throwable) {
+                            if (e is kotlinx.coroutines.CancellationException) throw e
+                            Log.e("ImagePickButton", "Failed to copy image to temp, falling back", e)
+                            launchImageCrop(selectedUris.first())
                         }
-                        preCropTempFile = tempFile
-                        launchImageCrop(tempFile.toUri())
-                    }.onFailure {
-                        Log.e("ImagePickButton", "Failed to copy image to temp, falling back", it)
-                        launchImageCrop(selectedUris.first())
                     }
                 } else {
-                    inputState.addImages(filesManager.createChatFilesByContents(selectedUris))
-                    onAttachmentAdded()
+                    // v5.0.79：多选非裁剪分支同样收口门面（原为同步 createChatFilesByContents 主线程 IO）
+                    addLocalImagesAsync(selectedUris)
                 }
             } else {
                 Log.d("ImagePickButton", "No images selected")

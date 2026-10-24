@@ -25,6 +25,9 @@ object AppDispatchers {
     /** CPU 密集计算 — 序列化/解析/编码 (线程数=核数) */
     val Compute: CoroutineDispatcher get() = Dispatchers.Default
 
-    /** 沙箱进程专用隔离池 — proot 启动/阻塞等待/PTY/MCP stdio (与共享 IO 池隔离) */
-    val Sandbox: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(8)
+    /** 沙箱进程专用隔离池 — proot 启动/阻塞等待/PTY/MCP stdio (与共享 IO 池隔离)。
+     *  v5.0.79：8 → 12 —— 工具层并行度 MAX_PARALLEL_TOOL_EXECUTIONS=6，每条 shell 最长
+     *  阻塞 660s，8 个槽位极易被长命令占满导致 PTY/MCP stdio 排队；12 给短驻留
+     *  连接留余量（limitedParallelism 只是 IO 池的调度视图，无线程新增成本）。 */
+    val Sandbox: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(12)
 }

@@ -1100,7 +1100,10 @@ class GenerationHandler(
                         }.onFailure {
                             // 工具执行超时: 写回超时错误, 让模型继续 (不传播为取消)
                             if (it is TimeoutCancellationException) {
-                                Log.w(TAG, "generateText: tool ${tool.toolName} timed out after ${TOOL_EXECUTION_TIMEOUT_MS}ms")
+                                // v5.0.79：文案用**分档超时**（shell=660s/job=60s/其余=120s），
+                                // 旧文案写死 120s 常量 —— shell 实际跑到 660s 被掐时日志却写 120s（误导检修）。
+                                val actualTimeoutMs = toolExecutionTimeoutMs(tool.toolName)
+                                Log.w(TAG, "generateText: tool ${tool.toolName} timed out after ${actualTimeoutMs}ms")
                                 CallTracer.event("TOOL", "timeout_${tool.toolName}", "Tool execution timed out")
                                 executedTools += tool.copy(
                                     output = listOf(
@@ -1109,7 +1112,7 @@ class GenerationHandler(
                                                 buildJsonObject {
                                                     put(
                                                         "error",
-                                                        JsonPrimitive("工具执行超时(${TOOL_EXECUTION_TIMEOUT_MS / 1000}s): ${tool.toolName}")
+                                                        JsonPrimitive("工具执行超时(${actualTimeoutMs / 1000}s): ${tool.toolName}")
                                                     )
                                                 }
                                             )

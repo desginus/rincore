@@ -129,6 +129,8 @@ private fun createReadFileTool(
     description = """
         Read a file using the assistant's bound workspace Rootfs. Paths must be absolute inside Rootfs.
         Use /workspace for the workspace files area.
+        v5.0.79 ★语义分流：本工具只返回**文本**（带行号/分页）；**图片一律用 read_image**（返回图本体），
+        用本工具读图片只会得到二进制乱码；弹窗展示给用户用 workspace_show_file。
         Text files are returned with line numbers; large files are paginated: use offset (1-based start
         line) and limit (line count, default $READ_DEFAULT_LIMIT) to read further sections. The result
         reports totalLines and a continuation hint when truncated.
