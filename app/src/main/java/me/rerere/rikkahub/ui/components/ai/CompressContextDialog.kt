@@ -35,6 +35,10 @@ import kotlinx.coroutines.Job
 import me.rerere.rikkahub.ui.components.ui.OutlinedNumberInput
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import me.rerere.rikkahub.ui.components.motion.HyperDialog
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 
 @Composable
 fun CompressContextDialog(
@@ -51,7 +55,8 @@ fun CompressContextDialog(
     val canCompress = defaultKeep > 0
     val tokenOptions = listOf(500, 1000, 2000, 4000)
 
-    AlertDialog(
+    // v5.0.89 ★统一玻璃弹窗（用户定案：所有弹窗与输入框同一款玻璃）
+    HyperDialog(
         onDismissRequest = {
             // v4.8.6: 压缩进行中也可关闭 — "后台运行"语义 (Job 挂在 VM scope,
             // 关闭弹窗不影响压缩继续; 完成后自动应用, 失败走全局错误提示)。
@@ -64,6 +69,9 @@ fun CompressContextDialog(
         },
         text = {
             Column(
+                modifier = Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 run {

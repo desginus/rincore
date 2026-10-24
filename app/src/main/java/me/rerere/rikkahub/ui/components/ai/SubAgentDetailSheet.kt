@@ -38,6 +38,10 @@ import me.rerere.rikkahub.subagent.SubAgentStatus
 import kotlin.math.roundToInt
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
+import me.rerere.rikkahub.ui.components.motion.LocalHazeState
+import me.rerere.rikkahub.ui.components.motion.rinGlass
+import me.rerere.rikkahub.ui.components.motion.rinGlassHighlight
 
 /** 状态显示文案 */
 private fun statusLabel(status: SubAgentStatus): String = when (status) {
@@ -69,13 +73,19 @@ fun SubAgentDetailSheet(
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    // v5.0.89 ★统一玻璃（用户定案：所有弹窗与输入框同一款模糊/玻璃）
+    val glassShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        containerColor = Color.Transparent,
+        scrimColor = Color.Transparent,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .rinGlass(hazeState = LocalHazeState.current, shape = glassShape)
+                .rinGlassHighlight(glassShape)
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {

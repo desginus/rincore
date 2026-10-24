@@ -122,6 +122,7 @@ import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.utils.formatNumber
 import me.rerere.workspace.WorkspaceShellStatus
 import org.koin.compose.koinInject
+import me.rerere.rikkahub.ui.components.motion.HyperDialog
 
 private enum class FilesPickerPage {
     MAIN,
@@ -870,11 +871,17 @@ private fun CompressRetentionDialog(
     onDismiss: () -> Unit,
 ) {
     var viewNodes by remember { mutableStateOf<List<MessageNode>?>(null) }
-    AlertDialog(
+    // v5.0.89 ★统一玻璃弹窗（用户定案：所有弹窗与输入框同一款玻璃）
+    HyperDialog(
         onDismissRequest = onDismiss,
         title = { Text("上下文压缩管理") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 Text(
                     "恢复某个位点将一并撤销其之后的所有压缩",
                     style = MaterialTheme.typography.labelSmall,

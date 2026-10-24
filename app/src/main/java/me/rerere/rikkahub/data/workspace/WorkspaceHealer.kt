@@ -25,6 +25,44 @@ import java.io.File
  */
 object WorkspaceHealer {
 
+    /**
+     * v5.0.89（用户报「工作区里凭空多出 RENDER 和 RIN-GLBS 两个目录」）：
+     * 这两个目录**不是应用代码创建的**（全库无字面量），来源是运行期工具/脚本在工作区根
+     * 随手建的中转目录。这里只做**保守清理**：
+     *  - 只处理白名单名字（RENDER / RIN-GLBS / .render / render / rin-glbs）
+     *  - **只删空目录**（有内容一律不动，避免误删用户产物）
+     *  - 幂等，启动时跑一次
+     */
+    private val TEMP_DIR_NAMES = setOf(
+        "RENDER", "RIN-GLBS", "render", "rin-glbs", ".render", ".rin-glbs",
+    )
+
+    suspend fun purgeEmptyTempDirs(context: Context): Int = withContext(Dispatchers.IO) {
+        val wsRoot = File(context.filesDir, "workspaces")
+        if (!wsRoot.isDirectory) return@withContext 0
+        var removed = 0
+        wsRoot.listFiles()?.forEach { ws ->
+            if (!ws.isDirectory) return@forEach
+            val filesRoot = File(ws, "files")
+            if (!filesRoot.isDirectory) return@forEach
+            TEMP_DIR_NAMES.forEach { name ->
+                val dir = File(filesRoot, name)
+                if (dir.isDirectory) {
+                    val children = dir.listFiles()
+                    if (children.isNullOrEmpty()) {
+                        if (runCatching { dir.delete() }.getOrDefault(false)) removed++
+                    } else {
+                        android.util.Log.i(
+                            "WorkspaceHealer",
+                            "keep non-empty temp dir: ${dir.absolutePath} (${children.size} entries)",
+                        )
+                    }
+                }
+            }
+        }
+        removed
+    }
+
     suspend fun heal(context: Context, dao: WorkspaceDAO): Int = withContext(Dispatchers.IO) {
         val root = File(context.filesDir, "workspaces")
         if (!root.isDirectory) return@withContext 0

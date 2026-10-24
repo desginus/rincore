@@ -139,8 +139,12 @@ class RikkaHubApp : Application() {
             runCatching {
                 val added = me.rerere.rikkahub.data.workspace.WorkspaceHealer.heal(
                     this@RikkaHubApp,
-                    get<me.rerere.rikkahub.data.db.dao.WorkspaceDAO>(),
+                    get<me.rerere.rikkahub.data.db.dao.WorkspaceDAO>()
                 )
+                // v5.0.89（用户报「工作区凭空多出 RENDER 和 RIN-GLBS 目录」）：只清理**空**临时目录
+                runCatching {
+                    me.rerere.rikkahub.data.workspace.WorkspaceHealer.purgeEmptyTempDirs(this@RikkaHubApp)
+                }
                 if (added > 0) Log.i(TAG, "workspace healer: 补登记 $added 个工作区（目录在但 DB 无条目）")
             }.onFailure { Log.w(TAG, "workspace healer failed", it) }
         }

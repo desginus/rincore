@@ -59,6 +59,9 @@ import java.time.LocalDate
 import java.time.format.TextStyle
 import java.time.temporal.TemporalAdjusters
 import java.util.Locale
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.style.TextOverflow
 
 @Composable
 fun StatsPage(vm: StatsVM = koinViewModel()) {
@@ -383,66 +386,111 @@ private fun TokenUsageCard(
                     }
                 }
             }
-            // 总计
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(formatTokens(usage.promptTokens), style = MaterialTheme.typography.headlineSmall)
-                    Text(
-                        stringResource(R.string.stats_page_input_tokens),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(formatTokens(usage.completionTokens), style = MaterialTheme.typography.headlineSmall)
-                    Text(
-                        stringResource(R.string.stats_page_output_tokens),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (usage.cachedTokens > 0) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(formatTokens(usage.cachedTokens), style = MaterialTheme.typography.headlineSmall)
-                        Text(
-                            stringResource(R.string.stats_page_cached_tokens),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+            // 总计（v5.0.89 ★对标上游 StatCard：图标 + 大数字 + 小标签，而不是裸文字）
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatCard(
+                    modifier = Modifier.weight(1f),
+                    icon = HugeIcons.Cpu,
+                    label = stringResource(R.string.stats_page_input_tokens),
+                    value = formatTokens(usage.promptTokens),
+                )
+                StatCard(
+                    modifier = Modifier.weight(1f),
+                    icon = HugeIcons.Cpu,
+                    label = stringResource(R.string.stats_page_output_tokens),
+                    value = formatTokens(usage.completionTokens),
+                )
             }
-            // 按模型
+            if (usage.cachedTokens > 0) {
+                StatCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    icon = HugeIcons.Zap,
+                    label = stringResource(R.string.stats_page_cached_tokens),
+                    value = formatTokens(usage.cachedTokens),
+                )
+            }
+            // 按模型（v5.0.89 ★对标上游：卡片行 + 图标 + 占比条）
             if (usage.byModel.isNotEmpty()) {
                 Text(stringResource(R.string.stats_by_model), style = MaterialTheme.typography.titleSmall)
+                val modelTotal = usage.byModel.sumOf { it.promptTokens + it.completionTokens }.coerceAtLeast(1L)
                 usage.byModel.take(10).forEach { m ->
-                    Row(
+                    val my = m.promptTokens + m.completionTokens
+                    val fraction = (my.toFloat() / modelTotal.toFloat()).coerceIn(0f, 1f)
+                    Card(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        colors = CustomColors.cardColorsOnSurfaceContainer,
                     ) {
-                        Text(m.modelName ?: m.modelId ?: "unknown", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                        Text(
-                            formatTokens(m.promptTokens + m.completionTokens),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Column(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = HugeIcons.Cpu,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = m.modelName ?: "未知模型",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Text(
+                                    text = formatTokens(my),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(4.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth(fraction)
+                                        .height(4.dp)
+                                        .clip(RoundedCornerShape(2.dp))
+                                        .background(MaterialTheme.colorScheme.primary),
+                                )
+                            }
+                        }
                     }
                 }
             }
-            // 按来源
+            // 按来源（v5.0.89 ★彩色圆点 + 中文名 + 数值）
             if (usage.bySource.isNotEmpty()) {
                 Text(stringResource(R.string.stats_by_source), style = MaterialTheme.typography.titleSmall)
                 usage.bySource.forEach { s ->
-                    Row(
+                    val my = s.promptTokens + s.completionTokens
+                    Card(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        colors = CustomColors.cardColorsOnSurfaceContainer,
                     ) {
-                        Text(s.source, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                        Text(
-                            formatTokens(s.promptTokens + s.completionTokens),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary),
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(s.source, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                            Text(
+                                text = formatTokens(my),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }

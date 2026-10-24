@@ -963,7 +963,10 @@ private fun createShellTool(
         append("If a command is killed by timeout, RE-RUN IT AS A workspace_job — do not retry in shell. ")
         append("NOT AVAILABLE in this rootfs (do not try): LibreOffice/soffice (proot lacks standard /proc, aborts) — use `officecli view <file> screenshot` for document preview; ")
         append("Playwright/Chromium may crash on some environments — retry once with --no-sandbox, else switch to weasyprint/pdftoppm. ")
-        append("stderr noise like 'onnxruntime ... GPU device discovery failed' is harmless and is filtered from the result.")
+        append("stderr noise like 'onnxruntime ... GPU device discovery failed' is harmless and is filtered from the result. ")
+        // v5.0.89（用户报工作区凭空多出 RENDER / RIN-GLBS 目录）：约定临时产物位置
+        append("TEMP FILES: put intermediate/temp output under `.tmp/` inside /workspace; ")
+        append("do NOT create top-level directories such as RENDER/, RIN-GLBS/ in the workspace root — they pollute the user's file tree.")
     },
     parameters = {
         InputSchema.Obj(

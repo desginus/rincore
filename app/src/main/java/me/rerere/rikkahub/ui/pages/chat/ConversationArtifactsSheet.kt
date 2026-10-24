@@ -71,6 +71,10 @@ import me.rerere.rikkahub.ui.components.render.RenderViewDialog
 import me.rerere.rikkahub.ui.context.LocalToaster
 import org.koin.compose.koinInject
 import java.io.File
+import androidx.compose.foundation.shape.RoundedCornerShape
+import me.rerere.rikkahub.ui.components.motion.LocalHazeState
+import me.rerere.rikkahub.ui.components.motion.rinGlass
+import me.rerere.rikkahub.ui.components.motion.rinGlassHighlight
 
 /**
  * v4.8.121→v4.8.129 (用户定版「本对话产出」): 模型产出/修改过的文件清单 —
@@ -315,14 +319,22 @@ fun ConversationArtifactsSheet(
         // v4.8.136 (B157): dismiss 一律彻底关闭 —— 详细机制见文件头注释;
         // 「选项→列表」的一步回退在此用返回键实现, 不与 dismiss 语义混淆。
         androidx.activity.compose.BackHandler(enabled = selected != null) { selected = null }
-        ModalBottomSheet(onDismissRequest = {
-            selected = null
-            onOpenChange(false)
-        }) {
+        // v5.0.89 ★统一玻璃
+        val glassShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        ModalBottomSheet(
+            onDismissRequest = {
+                selected = null
+                onOpenChange(false)
+            },
+            containerColor = Color.Transparent,
+            scrimColor = Color.Transparent,
+        ) {
             val sel = selected
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .rinGlass(hazeState = LocalHazeState.current, shape = glassShape)
+                    .rinGlassHighlight(glassShape)
                     // v4.8.136: 长清单可达性 — 无滚动时超出半展开位的胶囊被裁剪且无法
                     // 触达 (产出上限 80 条); 嵌套滚动与 sheet 拖拽标准协同。
                     .heightIn(max = 520.dp)

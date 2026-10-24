@@ -28,6 +28,11 @@ import me.rerere.rikkahub.subagent.SubAgentBudget
 import me.rerere.rikkahub.subagent.SubAgentDefaults
 import me.rerere.rikkahub.subagent.SubAgentRun
 import me.rerere.rikkahub.subagent.SubAgentStatus
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
+import me.rerere.rikkahub.ui.components.motion.LocalHazeState
+import me.rerere.rikkahub.ui.components.motion.rinGlass
+import me.rerere.rikkahub.ui.components.motion.rinGlassHighlight
 
 /**
  * v5.0.57 用户定版：子代理**预算仪表盘**（与「子代理」运行详情并列的两个不同面板）。
@@ -63,10 +68,18 @@ fun SubAgentBudgetSheet(
         mutableFloatStateOf((limit / 1_000_000f).coerceIn(0.1f, 5f))
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    // v5.0.89 ★统一玻璃
+    val glassShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Color.Transparent,
+        scrimColor = Color.Transparent,
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .rinGlass(hazeState = LocalHazeState.current, shape = glassShape)
+                .rinGlassHighlight(glassShape)
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),

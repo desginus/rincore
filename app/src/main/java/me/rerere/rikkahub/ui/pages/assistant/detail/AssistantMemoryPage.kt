@@ -80,6 +80,10 @@ import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 
 // 记忆文件放第一页：从侧边栏的整理入口进来时能直接看到整理状态
 private enum class MemoryTab(
@@ -776,6 +780,8 @@ private fun MemoryMemoriesTab(
         if (it.id == 0L) onAddMemory(it) else onUpdateMemory(it)
     }
     var pendingDeleteMemory by remember { mutableStateOf<AssistantMemory?>(null) }
+    // v5.0.89：编辑对话框里点「单对话」但该记忆尚未归属对话时的提示位
+    var pendingScopeHint by remember { mutableStateOf(false) }
 
     // v4.8.92: 记忆范围管理 —— [整个助手] / [单对话记忆]
     var showConversationPicker by remember { mutableStateOf(false) }
@@ -798,13 +804,52 @@ private fun MemoryMemoriesTab(
             onDismissRequest = { memoryDialogState.dismiss() },
             title = { Text(stringResource(R.string.assistant_page_manage_memory_title)) },
             text = {
-                TextField(
-                    value = memory.content,
-                    onValueChange = { update(memory.copy(content = it)) },
-                    label = { Text(stringResource(R.string.assistant_page_manage_memory_title)) },
-                    minLines = 2,
-                    maxLines = 8,
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextField(
+                        value = memory.content,
+                        onValueChange = { update(memory.copy(content = it)) },
+                        label = { Text(stringResource(R.string.assistant_page_manage_memory_title)) },
+                        minLines = 2,
+                        maxLines = 8,
+                    )
+                    // v5.0.89 ★用户定案「让我自己确定把它放在哪个范围内」：
+                    // 这里可直接改归属；单对话归属必须由「+ → 选择归属对话」创建时指定。
+                    Text(
+                        text = "归属：" + when {
+                            memory.conversationId != null -> "仅该对话可见"
+                            memory.folderId != null -> "项目包内可见"
+                            else -> "助手全部对话可见"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = memory.conversationId == null && memory.folderId == null,
+                            onClick = {
+                                update(memory.copy(folderId = null, conversationId = null))
+                            },
+                            label = { Text("助手级") },
+                        )
+                        FilterChip(
+                            selected = memory.conversationId != null,
+                            onClick = {
+                                // 已属于某对话 → 保持；未归属 → 提示走新建入口
+                                if (memory.conversationId == null) {
+                                    pendingScopeHint = true
+                                }
+                            },
+                            label = { Text("单对话") },
+                        )
+                    }
+                    if (pendingScopeHint && memory.conversationId == null) {
+                        Text(
+                            text = "单对话归属请在新建时指定（右上角 + → 选择归属对话）",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
             },
             confirmButton = {
                 TextButton(onClick = { memoryDialogState.confirm() }) {
@@ -963,6 +1008,27 @@ private fun MemoryMemoriesTab(
     }
 }
 
+/** v5.0.89：记忆条目的「区间 / 性质」小标签（用户定案：每条记忆必须有明确 tag） */
+@Composable
+private fun MemoryChip(
+    text: String,
+    container: Color,
+    content: Color,
+) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(container)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = content,
+        )
+    }
+}
+
 /** v5.0.87：条目可见范围提示（页面与模型可见性一致的直白标注） */
 private fun memoryScopeHint(m: me.rerere.rikkahub.data.model.AssistantMemory): String =
     when {
@@ -1000,13 +1066,42 @@ private fun MemoryItem(
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
                 )
-                // v4.8.92: 小标签（来源对话 / 单对话可见性说明）
-                tag?.let {
-                    Text(
-                        text = it,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
+                // v5.0.89 ★用户定案：每条记忆必须能一眼看出「哪个区间」+「主动还是做梦」
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    MemoryChip(
+                        text = when {
+                            memory.conversationId != null -> "单对话"
+                            memory.folderId != null -> "项目包"
+                            else -> "助手级"
+                        },
+                        container = MaterialTheme.colorScheme.primaryContainer,
+                        content = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
+                    MemoryChip(
+                        text = if (memory.source == "dream") "做梦" else "主动",
+                        container = if (memory.source == "dream") {
+                            MaterialTheme.colorScheme.tertiaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        },
+                        content = if (memory.source == "dream") {
+                            MaterialTheme.colorScheme.onTertiaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        },
+                    )
+                    tag?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
             ItemActionMenu(
