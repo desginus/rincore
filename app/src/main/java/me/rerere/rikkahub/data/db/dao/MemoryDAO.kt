@@ -67,6 +67,14 @@ interface MemoryDAO {
     @Query("UPDATE memoryentity SET folder_id = NULL WHERE assistant_id = :assistantId AND source = 'dream' AND folder_id IS NOT NULL AND conversation_id IS NOT NULL")
     suspend fun clearFolderOnMixedDreams(assistantId: String)
 
+    /** v5.0.87：该助手名下未失效的做梦条目（同主题取代判定用） */
+    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId AND source = 'dream' AND (invalidated_at IS NULL OR invalidated_at = 0)")
+    suspend fun getActiveDreamMemories(assistantId: String): List<MemoryEntity>
+
+    /** v5.0.87：该助手名下未失效的非做梦条目（主动写入/用户添加） */
+    @Query("SELECT * FROM memoryentity WHERE assistant_id = :assistantId AND source != 'dream' AND (invalidated_at IS NULL OR invalidated_at = 0)")
+    suspend fun getActiveNonDreamMemories(assistantId: String): List<MemoryEntity>
+
     /** v5.0.85（用户 B3）：软删/废弃 —— 不再注入也不在管理页展示，留痕可审计 */
     @Query("UPDATE memoryentity SET invalidated_at = :at, updated_at = :at WHERE id = :id")
     suspend fun invalidateMemory(id: Long, at: Long)

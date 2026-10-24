@@ -295,20 +295,45 @@ fun AssistantMemoryPage(id: String, conversationId: String? = null) {
                     if (memoryCategory == MemoryCategory.DREAM) m.source == "dream" else m.source != "dream"
                 }
                 val folderConvIds by vm.folderConversationIds.collectAsStateWithLifecycle()
-                val scopedMemories = when (memoryScope) {
-                    MemoryScope.ASSISTANT -> assistantMemories.filter(matchSource)
-                    MemoryScope.FOLDER -> folderMemories.filter(matchSource)
-                    MemoryScope.CONVERSATION -> emptyList()
+                // v5.0.87 ★可见性统一（用户定案："只要模型能看到，我这里也得看到"）：
+                // 旧实现三档各只显示**单一存储层**（助手档只列助手级、包档只列 folder 层），
+                // 而模型注入链是 base + folder + 包内对话 + 本对话 的**并集** → 出现"模型看得到、
+                // 管理页看不到"。现在三档都改为「模型在该上下文实际可见的全部」：
+                //   整个助手 = 助手级 + 全部包层（对话层在下方按对话分组列出）
+                //   项目包   = 助手级 + 包层 + 包内对话层
+                //   单对话   = 助手级 + 包层 + 本对话层
+                // v5.0.87：与注入链的挂载分离保持一致（1=仅助手级 / 2=项目包内 / 3=仅当前对话）
+                val mountAllowed: (me.rerere.rikkahub.data.model.AssistantMemory) -> Boolean = { m ->
+                    val level = if (m.source == "dream") assistant.dreamMemoryMount else assistant.manualMemoryMount
+                    when (level) {
+                        1 -> m.folderId == null && m.conversationId == null
+                        3 -> (m.folderId == null && m.conversationId == null) ||
+                            (conversationId != null && m.conversationId == conversationId)
+                        else -> true
+                    }
                 }
+                val scopedMemories = (assistantMemories + folderMemories)
+                    .filter(matchSource)
+                    .filter(mountAllowed)
+                    .distinctBy { it.id }
                 val scopedConversationMemories = when (memoryScope) {
-                    // 助手级：不列对话条���（它们是「单对话」的存储位置）
-                    MemoryScope.ASSISTANT -> emptyList()
-                    // 项目包：只列**归入项目包**的对话的记忆（同包多对话 → 按对话分组展示）
+                    MemoryScope.ASSISTANT -> conversationMemories.filter(matchSource).filter(mountAllowed)
                     MemoryScope.FOLDER -> conversationMemories
                         .filter { it.conversationId != null && it.conversationId in folderConvIds }
                         .filter(matchSource)
-                    // 单对话：本助手名下全部对话级记忆（按对话分组）
-                    MemoryScope.CONVERSATION -> conversationMemories.filter(matchSource)
+                        .filter(mountAllowed)
+                    MemoryScope.CONVERSATION -> conversationMemories
+                        .filter { conversationId == null || it.conversationId == conversationId }
+                        .filter(matchSource)
+                        .filter(mountAllowed)
+                }
+                // 条目级可见范围提示（替掉旧文案"仅在该对话内可见"的单句笼统说法）
+                val scopeHintOf: (me.rerere.rikkahub.data.model.AssistantMemory) -> String = { m ->
+                    when {
+                        m.conversationId != null -> "仅本对话可见"
+                        m.folderId != null -> "项目包内可见（包内全部对话）"
+                        else -> "本助手全部对话可见"
+                    } + if (m.source == "dream") "｜做梦产物" else ""
                 }
                 // v5.0.81 ★做梦状态卡（用户："点击做梦之后会在上面有提示、抽屉页也会出现提示，
                 // 你这个和其他的没对上"）—— 复用与设置 tab「立即整理」**同一个组件**，
@@ -902,9 +927,12 @@ private fun MemoryMemoriesTab(
                 key(memory.id) {
                     MemoryItem(
                         memory = memory,
-                        tag = memory.sourceConversationId?.let { sid ->
-                            memoryTitles[sid]?.let { "来自「$it」" } ?: "来自已删除的对话"
-                        },
+                        tag = listOfNotNull(
+                            scopeHintOf(memory),
+                            memory.sourceConversationId?.let { sid ->
+                                memoryTitles[sid]?.let { "来自「$it」" } ?: "来自已删除的对话"
+                            },
+                        ).joinToString("｜"),
                         onEditMemory = { memoryDialogState.open(it) },
                         onDeleteMemory = { pendingDeleteMemory = it },
                     )
@@ -924,7 +952,7 @@ private fun MemoryMemoriesTab(
                     key(memory.id) {
                         MemoryItem(
                             memory = memory,
-                            tag = "仅在该对话内可见",
+                            tag = "仅「$title」可见" + if (memory.source == "dream") "｜做梦产物" else "",
                             onEditMemory = { memoryDialogState.open(it) },
                             onDeleteMemory = { pendingDeleteMemory = it },
                         )

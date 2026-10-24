@@ -253,8 +253,17 @@ class MemoryRepository(
         } else {
             memoryDAO.deleteDreamMemories(assistantId, folderId, conversationId)
         }
+        // v5.0.87：同主题已有主动条目（非做梦）时，不再生成做梦副本 ——
+        // 否则模型会同时收到"修改后的主动条目 + 修改前的做梦条目"（用户亲见的现象）。
+        val manualTopics = runCatching {
+            memoryDAO.getActiveNonDreamMemories(assistantId).map { normalizeTopic(memoryTopicKey(it.content)) }.toSet()
+        }.getOrDefault(emptySet())
         files.forEach { file ->
             if (file.content.isBlank()) return@forEach
+            val fileTopic = normalizeTopic(
+                memoryTopicKey(if (file.title.isBlank()) file.content else "【${file.title}】"),
+            )
+            if (fileTopic.isNotBlank() && fileTopic in manualTopics) return@forEach
             addMemory(
                 assistantId = assistantId,
                 content = if (file.title.isBlank()) file.content else "【${file.title}】\n${file.content}",
@@ -266,6 +275,48 @@ class MemoryRepository(
     }
 
     /** dream 条目 content 的首行标题（addMemory 存储形态 = "【title】\ncontent"） */
+    /**
+     * v5.0.87（用户亲见：修改一段记忆后，模型那里同时出现修改前与修改后的版本）：
+     * 同主题**旧做梦条目**在主动条目被写入/编辑后自动失效 —— 修改即取代，旧口径不再注入。
+     * 主题键 = 标题（【title】）或首行，空白/标点归一化后比对。
+     */
+    private suspend fun invalidateSupersededDreams(assistantId: String, content: String) {
+        val topic = normalizeTopic(memoryTopicKey(content))
+        if (topic.isBlank()) return
+        runCatching {
+            memoryDAO.getActiveDreamMemories(assistantId)
+                .filter { normalizeTopic(memoryTopicKey(it.content)) == topic }
+                .forEach { memoryDAO.invalidateMemory(it.id, System.currentTimeMillis()) }
+        }
+    }
+
+    /** v5.0.87：同助手 + 同归属层级 + 同主题的旧主动条目 → 失效（新写入即取代，用户定案"修改后旧记录删掉"） */
+    private suspend fun invalidateSupersededManual(
+        assistantId: String,
+        created: AssistantMemory,
+        content: String,
+    ) {
+        val topic = normalizeTopic(memoryTopicKey(content))
+        if (topic.isBlank()) return
+        runCatching {
+            memoryDAO.getActiveNonDreamMemories(assistantId)
+                .filter { it.id != created.id }
+                .filter { it.folderId == created.folderId && it.conversationId == created.conversationId }
+                .filter { normalizeTopic(memoryTopicKey(it.content)) == topic }
+                .forEach { memoryDAO.invalidateMemory(it.id, System.currentTimeMillis()) }
+        }
+    }
+
+    private fun memoryTopicKey(content: String): String {
+        val t = entryTitleOf(content).ifBlank { content.lineSequence().firstOrNull().orEmpty() }
+        return t.take(80)
+    }
+
+    private fun normalizeTopic(raw: String): String =
+        raw.filterNot { it.isWhitespace() || it in "【】[]（）()：:，,。.、" }
+            .lowercase()
+            .take(40)
+
     private fun entryTitleOf(content: String): String =
         if (content.startsWith("【")) content.substringBefore('】').removePrefix("【").trim() else ""
 
@@ -293,6 +344,7 @@ class MemoryRepository(
         val old = memoryDAO.getMemoryById(id) ?: error("Memory record #$id not found")
         val newMemory = old.copy(content = content, updatedAt = System.currentTimeMillis())
         memoryDAO.updateMemory(newMemory)
+        invalidateSupersededDreams(old.assistantId, content)
         return newMemory.toModel()
     }
 
@@ -310,6 +362,8 @@ class MemoryRepository(
         guardMemoryAccess(old, allowedAssistantId, currentConversationId)
         val newMemory = old.copy(content = content, updatedAt = System.currentTimeMillis())
         memoryDAO.updateMemory(newMemory)
+        // v5.0.87：编辑即取代 —— 同主题旧做梦条目自动失效（用户要求"修改后旧记录必须删掉"）
+        invalidateSupersededDreams(old.assistantId, content)
         return newMemory.toModel()
     }
 
@@ -349,6 +403,11 @@ class MemoryRepository(
                 updatedAt = System.currentTimeMillis(),
             )
         )
+        // v5.0.87：新写的主动记忆若与旧条目同主题 → 旧条目失效（不留矛盾版本）
+        if (source != "dream") {
+            invalidateSupersededDreams(assistantId, content)
+            invalidateSupersededManual(assistantId, memory, content)
+        }
         return memory
     }
 
