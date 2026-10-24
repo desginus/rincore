@@ -36,6 +36,7 @@ import me.rerere.rikkahub.data.model.Tag
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
+import me.rerere.rikkahub.data.repository.memoryId
 import kotlin.uuid.Uuid
 
 private const val TAG = "AssistantDetailVM"
