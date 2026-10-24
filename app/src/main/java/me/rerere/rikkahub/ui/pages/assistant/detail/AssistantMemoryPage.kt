@@ -327,14 +327,6 @@ fun AssistantMemoryPage(id: String, conversationId: String? = null) {
                         .filter(matchSource)
                         .filter(mountAllowed)
                 }
-                // 条目级可见范围提示（替掉旧文案"仅在该对话内可见"的单句笼统说法）
-                val scopeHintOf: (me.rerere.rikkahub.data.model.AssistantMemory) -> String = { m ->
-                    when {
-                        m.conversationId != null -> "仅本对话可见"
-                        m.folderId != null -> "项目包内可见（包内全部对话）"
-                        else -> "本助手全部对话可见"
-                    } + if (m.source == "dream") "｜做梦产物" else ""
-                }
                 // v5.0.81 ★做梦状态卡（用户："点击做梦之后会在上面有提示、抽屉页也会出现提示，
                 // 你这个和其他的没对上"）—— 复用与设置 tab「立即整理」**同一个组件**，
                 // 状态/转圈/最近一次结果完全一致；onOrganize 分流：带对话 id = 主动做梦
@@ -928,7 +920,7 @@ private fun MemoryMemoriesTab(
                     MemoryItem(
                         memory = memory,
                         tag = listOfNotNull(
-                            scopeHintOf(memory),
+                            memoryScopeHint(memory),
                             memory.sourceConversationId?.let { sid ->
                                 memoryTitles[sid]?.let { "来自「$it」" } ?: "来自已删除的对话"
                             },
@@ -970,6 +962,14 @@ private fun MemoryMemoriesTab(
         }
     }
 }
+
+/** v5.0.87：条目可见范围提示（页面与模型可见性一致的直白标注） */
+private fun memoryScopeHint(m: me.rerere.rikkahub.data.model.AssistantMemory): String =
+    when {
+        m.conversationId != null -> "仅本对话可见"
+        m.folderId != null -> "项目包内可见（包内全部对话）"
+        else -> "本助手全部对话可见"
+    } + if (m.source == "dream") "｜做梦产物" else ""
 
 @Composable
 private fun MemoryItem(
